@@ -24,6 +24,7 @@ package org.saiku.olap.dto;
 public class SaikuSelection extends AbstractSaikuObject {
 	
 	private String caption;
+	private String description;
 	private String dimensionUniqueName;
 	private String hierarchyUniqueName;
 	private String levelUniqueName;
@@ -40,9 +41,10 @@ public class SaikuSelection extends AbstractSaikuObject {
 		throw new RuntimeException("Unsupported Constructor. Serialization only");
 	}
 
-	public SaikuSelection(String name, String uniqueName, String caption, String dimensionUniqueName, String hierarchyUniqueName, String levelUniqueName, Type type ) {
+	public SaikuSelection(String name, String uniqueName, String caption, String description, String dimensionUniqueName, String hierarchyUniqueName, String levelUniqueName, Type type ) {
 		super(uniqueName,name);
 		this.caption = caption;
+		this.description = description;
 		this.dimensionUniqueName = dimensionUniqueName;
 		this.hierarchyUniqueName = hierarchyUniqueName;
 		this.levelUniqueName = levelUniqueName;
@@ -60,7 +62,11 @@ public class SaikuSelection extends AbstractSaikuObject {
 	public String getCaption() {
 		return caption;
 	}
-	
+
+	public String getDescription() {
+		return description;
+	}
+
 	public String getDimensionUniqueName() {
 		return dimensionUniqueName;
 	}

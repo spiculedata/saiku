@@ -23,6 +23,7 @@ public class SaikuMember extends AbstractSaikuObject {
 	
 	private String caption;
 	private String dimensionUniqueName;
+	private String description;
 	private String levelUniqueName;
 	
 	public SaikuMember() {
@@ -30,16 +31,21 @@ public class SaikuMember extends AbstractSaikuObject {
 		throw new RuntimeException("Unsupported Constructor. Serialization only");
 	}
 
-	public SaikuMember(String name, String uniqueName, String caption, String dimensionUniqueName, String levelUniqueName) {
+	public SaikuMember(String name, String uniqueName, String caption, String description, String dimensionUniqueName, String levelUniqueName) {
 		super(uniqueName,name);
 		this.caption = caption;
+		this.description = description;
 		this.dimensionUniqueName = dimensionUniqueName;
 	}
 
 	public String getCaption() {
 		return caption;
 	}
-	
+
+	public String getDescription() {
+		return description;
+	}
+
 	public String getLevelUniqueName() {
 		return levelUniqueName;
 	}

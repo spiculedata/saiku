@@ -47,7 +47,7 @@ public class ObjectUtil {
 
 
 	public static SaikuDimension convert(Dimension dim) {
-		SaikuDimension sDim = new SaikuDimension(dim.getName(), dim.getUniqueName(), dim.getCaption(), convertHierarchies(dim.getHierarchies()));
+		SaikuDimension sDim = new SaikuDimension(dim.getName(), dim.getUniqueName(), dim.getCaption(), dim.getDescription(), convertHierarchies(dim.getHierarchies()));
 		return sDim;
 	}
 
@@ -147,6 +147,7 @@ public class ObjectUtil {
 				sel.getRootElement().getName(),
 				sel.getUniqueName(),
 				sel.getRootElement().getCaption(),
+				sel.getRootElement().getDescription(),
 				sel.getDimension().getName(),
 				hierarchyUniqueName,
 				levelUniqueName,
@@ -159,23 +160,25 @@ public class ObjectUtil {
 				m.getName(), 
 				m.getUniqueName(), 
 				m.getCaption(), 
+				m.getDescription(),
 				m.getDimension().getUniqueName(),
 				m.getLevel().getUniqueName());
 	}
 	
-	public static SaikuDimensionSelection converDimensionSelection(QueryDimension dim) {
+	public static SaikuDimensionSelection convertDimensionSelection(QueryDimension dim) {
 		List<SaikuSelection> selections = ObjectUtil.convertSelections(dim.getInclusions());
 		return new SaikuDimensionSelection(
 				dim.getName(),
 				dim.getDimension().getUniqueName(),
 				dim.getDimension().getCaption(),
+				dim.getDimension().getDescription(),
 				selections);
 	}
 	
 	public static List<SaikuDimensionSelection> convertDimensionSelections(List<QueryDimension> dimensions) {
 		List<SaikuDimensionSelection> dims = new ArrayList<SaikuDimensionSelection>();
 		for (QueryDimension dim : dimensions) {
-			dims.add(converDimensionSelection(dim));
+			dims.add(convertDimensionSelection(dim));
 		}
 		return dims;
 	}

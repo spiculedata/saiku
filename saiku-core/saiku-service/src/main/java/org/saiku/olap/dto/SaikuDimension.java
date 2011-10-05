@@ -25,6 +25,7 @@ import java.util.List;
 public class SaikuDimension extends AbstractSaikuObject {
 	
 	private String caption;
+	private String description;
 	
 	private List<SaikuHierarchy> hierarchies;
 	
@@ -33,16 +34,21 @@ public class SaikuDimension extends AbstractSaikuObject {
 		throw new RuntimeException("Unsupported Constructor. Serialization only");
 	};
 	
-	public SaikuDimension(String name, String uniqueName, String caption, List<SaikuHierarchy> hierarchies) {
+	public SaikuDimension(String name, String uniqueName, String caption, String description, List<SaikuHierarchy> hierarchies) {
 		super(uniqueName,name);
 		this.caption = caption;
+		this.description = description;
 		this.hierarchies = hierarchies;
 	}
 
 	public String getCaption() {
 		return caption;
 	}
-	
+
+	public String getDescription() {
+		return description;
+	}
+
 	public List<SaikuHierarchy> getHierarchies() {
 		return hierarchies;
 	}
