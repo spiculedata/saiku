@@ -37,7 +37,7 @@ Saiku is a standard Java Web Application using the Tomcat Webserver.
 If you want to change the port just edit the following file accordingly: saiku-server/tomcat/conf/server.xml
 
 The package includes a default mondrian connection to the sample OLAP database foodmart, if you want to add your own OLAP datasource follow the instructions in the knowledgebase:
-http://projects.analytical-labs.com/knowledgebase/articles/3
+https://github.com/OSBI/saiku/wiki/Adding-a-new-data-source
 
 
 Important known problems
