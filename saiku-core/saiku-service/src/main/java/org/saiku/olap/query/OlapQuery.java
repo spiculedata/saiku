@@ -99,30 +99,41 @@ public class OlapQuery implements IQuery {
 	public QueryAxis getUnusedAxis() {
 		return this.query.getUnusedAxis();
 	}
-	
-	public void moveDimension(QueryDimension dimension, Axis axis) {
-		dimension.setHierarchizeMode(HierarchizeMode.PRE);
-		if (dimension.getName() != "Measures") {
-			dimension.setHierarchyConsistent(true);
-		}
-		QueryAxis unusedAxis = findInUnusedAxis(dimension);
-		QueryAxis newQueryAxis = query.getAxis(axis);
-		if (unusedAxis != null && newQueryAxis != null) {
-            unusedAxis.removeDimension(dimension);
-            newQueryAxis.addDimension(dimension);   
+
+    public void moveDimension(QueryDimension dimension, Axis targetAxis) {
+
+		QueryAxis actualAxis = findActualAxis(dimension);
+        QueryAxis targetQueryAxis = (targetAxis == null) ? query.getUnusedAxis() : query.getAxis(targetAxis);
+
+		if (actualAxis != null && targetQueryAxis != null && !targetQueryAxis.getDimensions().contains(dimension)) {
+            // Proceed do the things on the new dimension only if it is really necessary
+            if (targetAxis != null) {
+                // Do these things only for all axes != UNUSED
+                dimension.setHierarchizeMode(HierarchizeMode.PRE);
+                if (dimension.getName() != "Measures") {
+                    dimension.setHierarchyConsistent(true);
+                }
+            }
+            actualAxis.removeDimension(dimension);
+            targetQueryAxis.addDimension(dimension);
 		}
 	}
 
-	public void moveDimension(QueryDimension dimension, Axis axis, int position) {
-		dimension.setHierarchizeMode(HierarchizeMode.PRE);
-		if (dimension.getName() != "Measures") {
-			dimension.setHierarchyConsistent(true);
-		}
-        QueryAxis unusedAxis = findInUnusedAxis(dimension);
-        QueryAxis newQueryAxis = query.getAxis(axis);
-        if (unusedAxis != null && newQueryAxis != null) {
-            unusedAxis.removeDimension(dimension);
-            newQueryAxis.addDimension(position, dimension);   
+	public void moveDimension(QueryDimension dimension, Axis targetAxis, int position) {
+        QueryAxis actualAxis = findActualAxis(dimension);
+        QueryAxis targetQueryAxis = (targetAxis == null) ? query.getUnusedAxis() : query.getAxis(targetAxis);
+
+        if (actualAxis != null && targetQueryAxis != null && !targetQueryAxis.getDimensions().contains(dimension)) {
+            // Proceed do the things on the new dimension only if it is really necessary
+            if (targetAxis != null) {
+                // Do these things only for all axes != UNUSED
+                dimension.setHierarchizeMode(HierarchizeMode.PRE);
+                if (dimension.getName() != "Measures") {
+                    dimension.setHierarchyConsistent(true);
+                }
+            }
+            actualAxis.removeDimension(dimension);
+            targetQueryAxis.addDimension(position, dimension);
         }
     }
 	
@@ -130,27 +141,36 @@ public class OlapQuery implements IQuery {
 		return this.query.getDimension(name);
 	}
 
-    private QueryAxis findInUnusedAxis(QueryDimension dimension) {
+    private QueryAxis findActualAxis(QueryDimension  dimension) {
+        
+        QueryAxis theAxis = findUnusedAxis(dimension);
 
-        QueryAxis theUnusedAxis = null;
+        if (theAxis == null) theAxis = findInQueryAxis(dimension);
+
+        return theAxis;
+    }
+    
+    private QueryAxis findUnusedAxis(QueryDimension dimension) {
+
+        QueryAxis theAxis = null;
 
         if (query.getUnusedAxis().getDimensions().contains(dimension))
-            theUnusedAxis = query.getUnusedAxis();
-
-        return theUnusedAxis;
+            theAxis = query.getUnusedAxis();
+        return theAxis;
     }
 
-	private QueryAxis findInQueryAxis(QueryDimension dimension) {
+    private QueryAxis findInQueryAxis(QueryDimension dimension) {
+
         QueryAxis theAxis = null;
+
         Map<Axis,QueryAxis> axes = query.getAxes();
         for (Axis axis : axes.keySet()) {
             if (axes.get(axis).getDimensions().contains(dimension)) {
                 theAxis = axes.get(axis);
             }
         }
-
         return theAxis;
-	}
+    }
 
     public String getMdx() {
         final Writer writer = new StringWriter();

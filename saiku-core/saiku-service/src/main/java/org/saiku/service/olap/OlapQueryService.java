@@ -428,9 +428,8 @@ public class OlapQueryService implements Serializable {
 							}
 							dimension.getInclusions().removeAll(removals);
 							if (dimension.getInclusions().size() == 0) {
-								moveDimension(queryName, null , dimensionName, -1);
+                                removeDimension(queryName, dimensionName);
 							}
-
 						}
 					}
 				}
@@ -461,6 +460,13 @@ public class OlapQueryService implements Serializable {
 			throw new SaikuServiceException("Cannot move dimension:" + dimensionName + " to axis: "+axisName,e);
 		}
 	}
+
+    public void removeDimension(String queryName, String dimensionName) {
+        IQuery query = getIQuery(queryName);
+        moveDimension(queryName, "UNUSED" , dimensionName, -1);
+        query.getDimension(dimensionName).getExclusions().clear();
+        query.getDimension(dimensionName).getInclusions().clear();
+    }
 
 	public void removeDimension(String queryName, String axisName, String dimensionName) {
 		IQuery query = getIQuery(queryName);
