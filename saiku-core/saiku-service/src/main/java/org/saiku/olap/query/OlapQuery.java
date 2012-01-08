@@ -105,10 +105,10 @@ public class OlapQuery implements IQuery {
 		if (dimension.getName() != "Measures") {
 			dimension.setHierarchyConsistent(true);
 		}
-		QueryAxis oldQueryAxis = findAxis(dimension);
+		QueryAxis unusedAxis = findInUnusedAxis(dimension);
 		QueryAxis newQueryAxis = query.getAxis(axis);
-		if (oldQueryAxis != null && newQueryAxis != null) {
-            oldQueryAxis.removeDimension(dimension);
+		if (unusedAxis != null && newQueryAxis != null) {
+            unusedAxis.removeDimension(dimension);
             newQueryAxis.addDimension(dimension);   
 		}
 	}
@@ -118,10 +118,10 @@ public class OlapQuery implements IQuery {
 		if (dimension.getName() != "Measures") {
 			dimension.setHierarchyConsistent(true);
 		}
-        QueryAxis oldQueryAxis = findAxis(dimension);
+        QueryAxis unusedAxis = findInUnusedAxis(dimension);
         QueryAxis newQueryAxis = query.getAxis(axis);
-        if (oldQueryAxis != null && newQueryAxis != null) {
-            oldQueryAxis.removeDimension(dimension);
+        if (unusedAxis != null && newQueryAxis != null) {
+            unusedAxis.removeDimension(dimension);
             newQueryAxis.addDimension(position, dimension);   
         }
     }
@@ -129,21 +129,27 @@ public class OlapQuery implements IQuery {
 	public QueryDimension getDimension(String name) {
 		return this.query.getDimension(name);
 	}
-	
-	private QueryAxis findAxis(QueryDimension dimension) {
-		if (query.getUnusedAxis().getDimensions().contains(dimension)) {
-			return query.getUnusedAxis();
-		}
-		else {
-			Map<Axis,QueryAxis> axes = query.getAxes();
-			for (Axis axis : axes.keySet()) {
-				if (axes.get(axis).getDimensions().contains(dimension)) {
-					return axes.get(axis);
-				}
-			}
-		
-		}
-		return null;
+
+    private QueryAxis findInUnusedAxis(QueryDimension dimension) {
+
+        QueryAxis theUnusedAxis = null;
+
+        if (query.getUnusedAxis().getDimensions().contains(dimension))
+            theUnusedAxis = query.getUnusedAxis();
+
+        return theUnusedAxis;
+    }
+
+	private QueryAxis findInQueryAxis(QueryDimension dimension) {
+        QueryAxis theAxis = null;
+        Map<Axis,QueryAxis> axes = query.getAxes();
+        for (Axis axis : axes.keySet()) {
+            if (axes.get(axis).getDimensions().contains(dimension)) {
+                theAxis = axes.get(axis);
+            }
+        }
+
+        return theAxis;
 	}
 
     public String getMdx() {
