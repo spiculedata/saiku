@@ -109,8 +109,8 @@ public class OlapQuery implements IQuery {
             // Proceed do the things on the new dimension only if it is really necessary
             if (targetAxis != null) {
                 // Do these things only for all axes != UNUSED
+                dimension.setHierarchizeMode(HierarchizeMode.PRE);
                 if (dimension.getName() != "Measures") {
-                    dimension.setHierarchizeMode(HierarchizeMode.PRE);
                     dimension.setHierarchyConsistent(true);
                 }
             }
@@ -127,8 +127,8 @@ public class OlapQuery implements IQuery {
             // Proceed do the things on the new dimension only if it is really necessary
             if (targetAxis != null) {
                 // Do these things only for all axes != UNUSED
+                dimension.setHierarchizeMode(HierarchizeMode.PRE);
                 if (dimension.getName() != "Measures") {
-                    dimension.setHierarchizeMode(HierarchizeMode.PRE);
                     dimension.setHierarchyConsistent(true);
                 }
             }
