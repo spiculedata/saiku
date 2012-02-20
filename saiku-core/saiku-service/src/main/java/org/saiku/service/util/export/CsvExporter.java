@@ -65,13 +65,20 @@ public class CsvExporter {
 			    if (height == 0) {
 			        width = rs.getMetaData().getColumnCount();
 			        String header = null;
+			        StringBuffer buf = new StringBuffer();
 			        for (int s = 0; s < width; s++) {
+			            String string;
 			            if (header == null) {
-			            	header = enclosing + rs.getMetaData().getColumnName(s + 1) + enclosing;
+			                string = enclosing + rs.getMetaData().getColumnName(s + 1) + enclosing;
+			                buf.append(string);
+			            	//header = enclosing + rs.getMetaData().getColumnName(s + 1) + enclosing;
 			            } else {
-			            	header += delimiter + enclosing + rs.getMetaData().getColumnName(s + 1) + enclosing;
+			            	//header += delimiter + enclosing + rs.getMetaData().getColumnName(s + 1) + enclosing;
+			            	string = delimiter + enclosing + rs.getMetaData().getColumnName(s + 1) + enclosing;
+			            	buf.append(string);
 			            }
 			        }
+			        header = buf.toString();
 			        if (header != null) {
 			        	header += "\r\n";
 			        	sb.append(header);
@@ -140,20 +147,27 @@ public class CsvExporter {
 	private static byte[] export(String[][] resultSet, String delimiter) {
 		try {
 			String output = "";
+            StringBuffer buf = new StringBuffer();
 			if(resultSet.length > 0){
 				for(int i =  0; i < resultSet.length; i++){
 					String[] vs = resultSet[i];
+
 					for(int j = 0; j < vs.length ; j++){
 						String value = vs[j];
+						
 						if ( j > 0) {
-							output += delimiter + value;
+						    buf.append(delimiter + value);
+							//output += delimiter + value;
 						}
 						else {
-							output += value;
+						    buf.append(value);
+							//output += value;
 						}
 					}
-					output += "\r\n"; //$NON-NLS-1$
+					buf.append("\r\n");
+					//output += "\r\n"; //$NON-NLS-1$
 				}
+				output = buf.toString();
 				return output.getBytes("UTF8"); //$NON-NLS-1$
 			}
 		} catch (Throwable e) {

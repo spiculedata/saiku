@@ -25,6 +25,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URL;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,7 +42,7 @@ public class ClassPathResourceDatasourceManager implements IDatasourceManager {
 
 	private URL repoURL;
 
-	private Map<String,SaikuDatasource> datasources = new HashMap<String,SaikuDatasource>();
+	private Map<String,SaikuDatasource> datasources = Collections.synchronizedMap(new HashMap<String,SaikuDatasource>());
 
 	public ClassPathResourceDatasourceManager() {
 

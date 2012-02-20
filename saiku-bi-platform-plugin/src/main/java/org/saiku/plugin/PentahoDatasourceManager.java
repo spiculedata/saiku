@@ -35,7 +35,9 @@ import org.dom4j.Node;
 import org.pentaho.platform.engine.core.system.PentahoSystem;
 import org.pentaho.platform.engine.services.solution.PentahoEntityResolver;
 import org.pentaho.platform.util.xml.dom4j.XmlDom4JHelper;
+import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.datasource.SaikuDatasource;
+import org.saiku.plugin.util.PentahoDatasourceProcessor;
 import org.saiku.service.datasource.IDatasourceManager;
 import org.xml.sax.EntityResolver;
 
@@ -63,7 +65,6 @@ public class PentahoDatasourceManager implements IDatasourceManager {
 		try {
 			doc = XmlDom4JHelper.getDocFromFile(dataSources, loader);
 			String modified = doc.asXML();
-			modified = modified.replace("solution:", "file:" + PentahoSystem.getApplicationContext().getSolutionPath("") );
 			doc = XmlDom4JHelper.getDocFromString(modified, loader);
 
 			List<Node> nodes = doc.selectNodes("/DataSources/DataSource/Catalogs/Catalog"); //$NON-NLS-1$
@@ -87,6 +88,7 @@ public class PentahoDatasourceManager implements IDatasourceManager {
 				Properties props = new Properties();
 				props.put("driver", "mondrian.olap4j.MondrianOlap4jDriver");
 				props.put("location","jdbc:mondrian:" + ds.getStringValue() + ";Catalog=" + cat.getStringValue());
+				props.put(ISaikuConnection.DATASOURCE_PROCESSORS, PentahoDatasourceProcessor.class.getCanonicalName());
 				props.list(System.out);
 
 				SaikuDatasource sd = new SaikuDatasource(name, SaikuDatasource.Type.OLAP, props);

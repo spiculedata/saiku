@@ -19,6 +19,8 @@
  */
 package org.saiku.datasources.datasource;
 
+import java.io.StringReader;
+import java.io.StringWriter;
 import java.util.Properties;
 
 public class SaikuDatasource {
@@ -52,6 +54,12 @@ public class SaikuDatasource {
 
 	public Properties getProperties() {
 		return properties;
+	}
+	
+	@Override
+	public SaikuDatasource clone() {
+		Properties props = (Properties) properties.clone();
+		return new SaikuDatasource(name, type, props);
 	}
 
 }

@@ -49,6 +49,8 @@ public class OlapQuery implements IQuery {
 
     private static final Logger log = LoggerFactory.getLogger(OlapQuery.class);
 
+    private static final String SCENARIO = "Scenario";
+
 	private Query query;
 	private Properties properties = new Properties();
 
@@ -99,78 +101,22 @@ public class OlapQuery implements IQuery {
 	public QueryAxis getUnusedAxis() {
 		return this.query.getUnusedAxis();
 	}
-
-    public void moveDimension(QueryDimension dimension, Axis targetAxis) {
-
-		QueryAxis actualAxis = findActualAxis(dimension);
-        QueryAxis targetQueryAxis = (targetAxis == null) ? query.getUnusedAxis() : query.getAxis(targetAxis);
-
-		if (actualAxis != null && targetQueryAxis != null && !targetQueryAxis.getDimensions().contains(dimension)) {
-            // Proceed do the things on the new dimension only if it is really necessary
-            if (targetAxis != null) {
-                // Do these things only for all axes != UNUSED
-                dimension.setHierarchizeMode(HierarchizeMode.PRE);
-                if (dimension.getName() != "Measures") {
-                    dimension.setHierarchyConsistent(true);
-                }
-            }
-            actualAxis.removeDimension(dimension);
-            targetQueryAxis.addDimension(dimension);
+	
+	public void moveDimension(QueryDimension dimension, Axis axis) {
+		dimension.setHierarchizeMode(HierarchizeMode.PRE);
+		if (dimension.getName() != "Measures") {
+			dimension.setHierarchyConsistent(true);
 		}
+		QueryAxis oldQueryAxis = findAxis(dimension);
 	}
 
-	public void moveDimension(QueryDimension dimension, Axis targetAxis, int position) {
-        QueryAxis actualAxis = findActualAxis(dimension);
-        QueryAxis targetQueryAxis = (targetAxis == null) ? query.getUnusedAxis() : query.getAxis(targetAxis);
-
-        if (actualAxis != null && targetQueryAxis != null && !targetQueryAxis.getDimensions().contains(dimension)) {
-            // Proceed do the things on the new dimension only if it is really necessary
-            if (targetAxis != null) {
-                // Do these things only for all axes != UNUSED
-                dimension.setHierarchizeMode(HierarchizeMode.PRE);
-                if (dimension.getName() != "Measures") {
-                    dimension.setHierarchyConsistent(true);
-                }
-            }
-            actualAxis.removeDimension(dimension);
-            targetQueryAxis.addDimension(position, dimension);
+            newQueryAxis.addDimension(position, dimension);   
         }
     }
 	
 	public QueryDimension getDimension(String name) {
 		return this.query.getDimension(name);
 	}
-
-    private QueryAxis findActualAxis(QueryDimension  dimension) {
-        
-        QueryAxis theAxis = findUnusedAxis(dimension);
-
-        if (theAxis == null) theAxis = findInQueryAxis(dimension);
-
-        return theAxis;
-    }
-    
-    private QueryAxis findUnusedAxis(QueryDimension dimension) {
-
-        QueryAxis theAxis = null;
-
-        if (query.getUnusedAxis().getDimensions().contains(dimension))
-            theAxis = query.getUnusedAxis();
-        return theAxis;
-    }
-
-    private QueryAxis findInQueryAxis(QueryDimension dimension) {
-
-        QueryAxis theAxis = null;
-
-        Map<Axis,QueryAxis> axes = query.getAxes();
-        for (Axis axis : axes.keySet()) {
-            if (axes.get(axis).getDimensions().contains(dimension)) {
-                theAxis = axes.get(axis);
-            }
-        }
-        return theAxis;
-    }
 
     public String getMdx() {
         final Writer writer = new StringWriter();
@@ -187,9 +133,8 @@ public class OlapQuery implements IQuery {
     }
     
     public CellSet execute() throws Exception {
-
-    	if (scenario != null && query.getDimension("Scenario") != null) {
-    		QueryDimension dimension = query.getDimension("Scenario");
+    	if (scenario != null && query.getDimension(SCENARIO) != null) {
+    		QueryDimension dimension = query.getDimension(SCENARIO);
     		moveDimension(dimension, Axis.FILTER);
     		Selection sel = dimension.createSelection(IdentifierParser.parseIdentifier("[Scenario].[" + getScenario().getId() + "]"));
     		if (!dimension.getInclusions().contains(sel)) {
@@ -201,10 +146,10 @@ public class OlapQuery implements IQuery {
         mdx.validate();
         StringWriter writer = new StringWriter();
         mdx.getSelect().unparse(new ParseTreeWriter(new PrintWriter(writer)));
-        CellSet cellSet = mdx.execute();
         log.debug("Executing query (" + this.getName() + ") :\n" + writer.toString());
-    	if (scenario != null && query.getDimension("Scenario") != null) {
-    		QueryDimension dimension = query.getDimension("Scenario");
+        CellSet cellSet = mdx.execute();
+    	if (scenario != null && query.getDimension(SCENARIO) != null) {
+    		QueryDimension dimension = query.getDimension(SCENARIO);
     		dimension.getInclusions().clear();
     		moveDimension(dimension, null);
     	}

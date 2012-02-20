@@ -19,6 +19,7 @@
  */
 package org.saiku.web.impl;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -35,7 +36,12 @@ import org.saiku.service.ISessionService;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
-public class SecurityAwareConnectionManager extends AbstractConnectionManager {
+public class SecurityAwareConnectionManager extends AbstractConnectionManager implements Serializable {
+
+	/**
+	 * serialisation UID
+	 */
+	private static final long serialVersionUID = -5912836681963684201L;
 
 	private Map<String, ISaikuConnection> connections = new HashMap<String, ISaikuConnection>();
 
@@ -55,29 +61,42 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager {
 	@Override
 	protected ISaikuConnection getInternalConnection(String name, SaikuDatasource datasource) {
 
-		ISaikuConnection con;
+		ISaikuConnection con = null;
 		if (isDatasourceSecurity(datasource, ISaikuConnection.SECURITY_TYPE_PASSTHROUGH_VALUE) && sessionService != null) {
-			con = handlePassThrough(name, datasource);
-		} else {
-			if (!connections.containsKey(name)) {
-				con =  connect(name, datasource);
-				if (con != null) {
-					connections.put(con.getName(), con);
-				} else {
-					if (!errorConnections.contains(name)) {
-						errorConnections.add(name);
-					}
-				}
+			datasource = handlePassThrough(datasource);
+		}
 
-			} else {
-				con = connections.get(name);
-			}
-
-			if (con != null) {
-				con = applySecurity(con, datasource);
+		String newName = name;
+		if (isDatasourceSecurityEnabled(datasource) && sessionService != null) {
+			Map<String, Object> session = sessionService.getAllSessionObjects();
+			String username = (String) session.get("username");
+			if (username != null) {
+				newName = name + "-" + username;
 			}
 		}
+
+
+
+		if (!connections.containsKey(newName)) {
+			con =  connect(name, datasource);
+			if (con != null) {
+				connections.put(newName, con);
+			} else {
+				if (!errorConnections.contains(newName)) {
+					errorConnections.add(newName);
+				}
+			}
+
+		} else {
+			con = connections.get(newName);
+		}
+		if (con != null && !isDatasourceSecurity(datasource, ISaikuConnection.SECURITY_TYPE_PASSTHROUGH_VALUE)) {
+			con = applySecurity(con, datasource);
+		}
 		return con;
+
+
+
 	}
 
 	@Override
@@ -94,35 +113,18 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager {
 
 	}
 
-	private ISaikuConnection handlePassThrough(String name,
-			SaikuDatasource datasource) {
+	private SaikuDatasource handlePassThrough(SaikuDatasource datasource) {
 
 		Map<String, Object> session = sessionService.getAllSessionObjects();
 		String username = (String) session.get("username");
 
 		if (username != null) {
 			String password = (String) session.get("password");
-			String newName = name + "-" + username;
 			datasource.getProperties().setProperty("username",username);
 			if (password != null) {
 				datasource.getProperties().setProperty("password",password);
 			}
-			ISaikuConnection con;
-
-			if (!connections.containsKey(newName)) {
-				con =  connect(name, datasource);
-				if (con != null) {
-					connections.put(newName, con);
-				} else {
-					if (!errorConnections.contains(newName)) {
-						errorConnections.add(newName);
-					}
-				}
-
-			} else {
-				con = connections.get(newName);
-			}
-			return con;
+			return datasource;
 		}
 
 		return null;

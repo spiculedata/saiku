@@ -4,13 +4,18 @@
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.0.xsd">
 
-<bean id="classpathDsManager" class="org.saiku.service.datasource.ClassPathResourceDatasourceManager">
+	<bean id="classpathDsManager" class="org.saiku.service.datasource.ClassPathResourceDatasourceManager">
 		<property name="path" value="res:saiku-datasources"/>
 	</bean>
 	 <!--  <property name="path" value="file:///var/saiku/saiku-datasources/"/> -->
 	
-	<bean id="connectionManager" class="org.saiku.web.impl.SecurityAwareConnectionManager" init-method="init">
+	<bean id="sessionService" class="org.saiku.web.service.SessionService">
+	</bean>
+	
+	
+	<bean id="connectionManager" class="org.saiku.web.impl.SecurityAwareConnectionManager">
 		<property name="dataSourceManager" ref="classpathDsManager" />
+		<property name="sessionService" ref="sessionService" />
 	</bean>
 
 	<bean id="datasourceServiceBean" class="org.saiku.service.datasource.DatasourceService">
@@ -39,11 +44,7 @@
 		<property name="olapQueryService" ref="olapQueryBean" />
 		<property name="olapDiscoverService" ref="olapDiscoverServiceBean" />
 	</bean>
-	
-    <bean id="sessionService" class="org.saiku.web.service.SessionService">
-	</bean>
-	
-	
+
     <bean id="sessionResource" class="org.saiku.web.rest.resources.SessionResource">
 		<property name="sessionService" ref="sessionService" />
 	</bean>

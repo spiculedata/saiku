@@ -31,16 +31,12 @@ import java.util.Map;
 import org.olap4j.Cell;
 import org.olap4j.CellSet;
 import org.olap4j.CellSetAxis;
-import org.olap4j.OlapException;
 import org.olap4j.Position;
 import org.olap4j.impl.CoordinateIterator;
 import org.olap4j.impl.Olap4jUtil;
 import org.olap4j.metadata.Dimension;
 import org.olap4j.metadata.Level;
 import org.olap4j.metadata.Member;
-import org.olap4j.metadata.NamedList;
-import org.olap4j.metadata.Property;
-import org.saiku.olap.dto.resultset.AbstractBaseCell;
 import org.saiku.olap.dto.resultset.DataCell;
 import org.saiku.olap.dto.resultset.Matrix;
 import org.saiku.olap.dto.resultset.MemberCell;
@@ -298,25 +294,7 @@ public class CellSetFormatter implements ICellSetFormatter {
 			final DataCell cellInfo = new DataCell(true, false, coordList);
 			cellInfo.setCoordinates(cell.getCoordinateList());
 
-//			for (int z = 0; z < matrix.getMatrixHeight(); z++) {
-//				final AbstractBaseCell headerCell = matrix.get(x, z);
-//
-//				if (headerCell instanceof MemberCell && ((MemberCell) headerCell).getUniqueName() != null) {
-//				} else {
-//					cellInfo.setParentColMember((MemberCell) matrix.get(x, z - 1));
-//					break;
-//				}
-//			}
 
-//			for (int z = 0; z < matrix.getMatrixWidth(); z++) {
-//				final AbstractBaseCell headerCell = matrix.get(z, y);
-//				if (headerCell instanceof MemberCell && ((MemberCell) headerCell).getUniqueName() != null) {
-//
-//				} else {
-//					cellInfo.setParentRowMember((MemberCell) matrix.get(z - 1, y));
-//					break;
-//				}
-//			}
 
 			//            NamedList<Property> proplist = null;
 			//            try {
@@ -335,7 +313,7 @@ public class CellSetFormatter implements ICellSetFormatter {
 			if (cell.getValue() != null) {
 				try {
 					cellInfo.setRawNumber(cell.getDoubleValue());
-				} catch (OlapException e1) {
+				} catch (Exception e1) {
 				}
 			}
 			String cellValue = cell.getFormattedValue(); // First try to get a
@@ -414,50 +392,15 @@ public class CellSetFormatter implements ICellSetFormatter {
 			for (int y = 0; y < members.length; y++) {
 				final MemberCell memberInfo = new MemberCell();
 				final Member member = members[y];
-				final List<String> memberPath = new ArrayList<String>();
 				expanded = false;
-				Boolean exit = false;
-				if (member != null) {
-					for (int z = i+1; z < axis.getPositionCount() && exit == false; z++) {
-						List<Member> posMembers = axis.getPositions().get(z).getMembers();
-						for (int k = 0;k<posMembers.size();k++) {
-							Member possibleChild = posMembers.get(k);
-							if (possibleChild.getParentMember() !=  null && possibleChild.getParentMember().equals(member)) {
-								expanded = true;
-								exit = true;
-								break;
-
-							}
-							if (member.getUniqueName().equals(possibleChild.getUniqueName())) {
-								if (posMembers.size() == 1) {
-									exit = true;
-									break;
-								}
-								else {
-									Boolean notExpanded = false;
-									for (int t = k+1;t<posMembers.size() && notExpanded == false;t++) {
-										Member prevPosMember = axis.getPositions().get(z-1).getMembers().get(t);
-										if (posMembers.get(t).getDimension().equals(prevPosMember.getDimension())
-												&&
-												posMembers.get(t).getHierarchy().equals(prevPosMember.getHierarchy())
-												&&
-												!axis.getPositions().get(z-1).getMembers().get(t).equals(posMembers.get(t))  ) {
-
-											notExpanded = true;
-										}
-									}
-									if (!notExpanded) {
-										exit = true;
-										break;
-									}
-								}
-							}                         
-						}
+				int index = memberList.indexOf(member);
+				if (index >= 0) {
+					final AxisOrdinalInfo ordinalInfo = axisInfo.ordinalInfos.get(index);
+					int depth_i = ordinalInfo.getDepths().indexOf(member.getDepth());
+					if (depth_i > 0) {
+						expanded = true;
 					}
 				}
-				if (member != null)
-					memberPath.add(member.getUniqueName());
-				memberInfo.setMemberPath(memberPath);
 				memberInfo.setExpanded(expanded);
 				same = same && i > 0 && Olap4jUtil.equal(prevMembers[y], member);
 
@@ -525,7 +468,6 @@ public class CellSetFormatter implements ICellSetFormatter {
 				}
 				int x_parent = isColumns ? x : y-1;
 				int y_parent = isColumns ? y-1 : x;
-				int index = memberList.indexOf(member);
 				if (index >= 0) {
 					final AxisOrdinalInfo ordinalInfo = axisInfo.ordinalInfos.get(index);
 					int depth_i = ordinalInfo.getDepths().indexOf(member.getDepth());

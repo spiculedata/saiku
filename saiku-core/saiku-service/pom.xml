@@ -3,15 +3,49 @@
 	<parent>
 		<artifactId>saiku-core</artifactId>
 		<groupId>org.saiku</groupId>
-		<version>2.2-SNAPSHOT</version>
+		<version>2.2</version>
 	</parent>
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.saiku</groupId>
 	<artifactId>saiku-service</artifactId>
-	<version>2.2-SNAPSHOT</version>
+	<version>2.2</version>
 	<name>saiku - services</name>
 	<build>
 		<plugins>
+                        <plugin>
+                                <groupId>org.apache.maven.plugins</groupId>
+                                <artifactId>maven-antrun-plugin</artifactId>
+                                <version>1.2</version>
+                                <executions>
+                                        <execution>
+                                                <id>create-package</id>
+                                                <phase>test-compile</phase>
+                                                <goals>
+                                                        <goal>run</goal>
+                                                </goals>
+                                                <configuration>
+                                                        <tasks>
+                                                                <unzip dest="target/test/">
+                                                                        <fileset dir="${basedir}/../../util/">
+                                                                                <include name="foodmart_hsql.script.zip" />
+                                                                        </fileset>
+                                                                </unzip>
+                                				<copy todir="target/test/foodmart/">
+                                                                        <fileset dir="${basedir}/../../util/">
+                                                                                <include name="FoodMart.xml" />
+                                                                        </fileset>
+                                                                </copy>
+
+                                                                <copy todir="target/test-classes/org/saiku/" overwrite="true">
+                                                                        <fileset dir="target/test/">
+                                                                                <include name="foodmart_hsql.script" />
+                                                                        </fileset>
+                                                                </copy>
+                                                        </tasks>
+                                                </configuration>
+                                        </execution>
+                                </executions>
+                        </plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
@@ -37,7 +71,7 @@
 		<dependency>
 			<groupId>org.olap4j</groupId>
 			<artifactId>olap4j</artifactId>
-			<version>1.0.0-SNAPSHOT</version>
+			<version>1.0.1-SNAPSHOT</version>
 			<exclusions>
 				<exclusion>
 					<groupId>asm</groupId>
@@ -86,7 +120,7 @@
   		<dependency>
 			<groupId>org.olap4j</groupId>
 			<artifactId>olap4j-xmla</artifactId>
-			<version>1.0.0-SNAPSHOT</version>
+			<version>1.0.1-SNAPSHOT</version>
         </dependency>
    		<dependency>
 			<groupId>org.jdom</groupId>
@@ -116,5 +150,15 @@
 			<version>2.6.10</version>
 		</dependency>
 		
+		<dependency>
+			<groupId>junit</groupId>
+			<artifactId>junit</artifactId>
+			<version>4.10</version>
+		</dependency>
+		<dependency>
+			<groupId>hsqldb</groupId>
+			<artifactId>hsqldb</artifactId>
+			<version>1.8.0.10</version>
+		</dependency>
 	</dependencies>
 </project>

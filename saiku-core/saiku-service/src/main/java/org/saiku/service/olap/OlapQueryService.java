@@ -228,35 +228,34 @@ public class OlapQueryService implements Serializable {
 
 	public ResultSet drillthrough(String queryName, List<Integer> cellPosition, Integer maxrows) {
 		try {
-			IQuery q = getIQuery(queryName);
 			CellSet cs = OlapUtil.getCellSet(queryName);
 			SaikuCube cube = getQuery(queryName).getCube();
 			final OlapConnection con = olapDiscoverService.getNativeConnection(cube.getConnectionName()); 
 			final OlapStatement stmt = con.createStatement();
 
-			String select = "SELECT (";
+			String select = null;
+			StringBuffer buf = new StringBuffer();
+			buf.append("SELECT (");
 			for (int i = 0; i < cellPosition.size(); i++) {
 				List<Member> members = cs.getAxes().get(i).getPositions().get(cellPosition.get(i)).getMembers();
 				for (int k = 0; k < members.size(); k++) {
 					Member m = members.get(k);
 					if (k > 0 || i > 0) {
-						select += ", ";
+						buf.append(", ");
 					}
-					select += m.getUniqueName();
-
+					buf.append(m.getUniqueName());
 				}
 			}
-			
-			select += ") ON COLUMNS \r\n";
-			select += "FROM " + cube.getCubeName() + "\r\n";
+			buf.append(") ON COLUMNS \r\n");
+			buf.append("FROM " + cube.getCubeName() + "\r\n");
 			
 			SelectNode sn = (new DefaultMdxParserImpl().parseSelect(getMDXQuery(queryName))); 
 			final Writer writer = new StringWriter();
 			sn.getFilterAxis().unparse(new ParseTreeWriter(new PrintWriter(writer)));
 			if (StringUtils.isNotBlank(writer.toString())) {
-				select += "WHERE " + writer.toString();
+				buf.append("WHERE " + writer.toString());
 			}
-			 
+			select = buf.toString(); 
 			if (maxrows > 0) {
 				select = "DRILLTHROUGH MAXROWS " + maxrows + " " + select + "\r\n";
 			}
@@ -590,7 +589,9 @@ public class OlapQueryService implements Serializable {
 	public byte[] getExport(String queryName, String type, String formatter) {
 		formatter = formatter == null ? "" : formatter.toLowerCase();
 		if (formatter.equals("flat")) {
-			return getExport(queryName, type, new CellSetFormatter());
+			return getExport(queryName, type, new CellSetFormatter());			
+		}else if (formatter.equals("flattened")) {
+			return getExport(queryName, type, new FlattenedCellSetFormatter());
 		} else if (formatter.equals("hierarchical")) {
 			return getExport(queryName, type, new HierarchicalCellSetFormatter());
 		}

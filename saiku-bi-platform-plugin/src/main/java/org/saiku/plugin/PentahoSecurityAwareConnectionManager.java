@@ -60,7 +60,6 @@ public class PentahoSecurityAwareConnectionManager extends AbstractConnectionMan
 	@Override
 	protected ISaikuConnection getInternalConnection(String name, SaikuDatasource datasource) {
 		ISaikuConnection con;
-		//		System.out.println("LOAD CONNECTION::::::::::::" + name);
 		if (userAware && PentahoSessionHolder.getSession().getName() != null) {
 			name = name + "-" + PentahoSessionHolder.getSession().getName();
 		}
@@ -115,9 +114,7 @@ public class PentahoSecurityAwareConnectionManager extends AbstractConnectionMan
 				Properties props = new Properties();
 				props.load(sr);
 
-				//				String catalog = props.getProperty(RolapConnectionProperties.Catalog.name());
 				OlapConnection c = (OlapConnection) con.getConnection();
-				//				System.out.println("CatalogParse:" + c.getCatalog());
 
 				String[] validMondrianRolesForUser = mondrianUserRoleMapper.mapConnectionRoles(PentahoSessionHolder.getSession(), c.getCatalog());
 				if (setRole(con, validMondrianRolesForUser, datasource)) {

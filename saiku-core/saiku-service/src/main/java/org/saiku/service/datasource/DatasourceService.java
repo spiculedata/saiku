@@ -19,13 +19,19 @@
  */
 package org.saiku.service.datasource;
 
+import java.io.Serializable;
 import java.util.Map;
 
 import org.saiku.datasources.connection.IConnectionManager;
 import org.saiku.datasources.datasource.SaikuDatasource;
 
-public class DatasourceService {
-	
+public class DatasourceService implements Serializable {
+
+	/**
+	 * Unique serialization UID 
+	 */
+	private static final long serialVersionUID = -4407446633148181669L;
+
 	private IDatasourceManager datasources;
 	
 	private IConnectionManager connectionManager;

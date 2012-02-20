@@ -28,7 +28,6 @@ import java.util.List;
 import org.olap4j.OlapConnection;
 import org.olap4j.OlapDatabaseMetaData;
 import org.olap4j.OlapException;
-import org.olap4j.impl.IdentifierParser;
 import org.olap4j.mdx.IdentifierNode;
 import org.olap4j.mdx.IdentifierSegment;
 import org.olap4j.metadata.Catalog;
@@ -80,8 +79,9 @@ public class OlapMetaExplorer {
 						}
 						if (schemas.size() == 0) {
 							OlapDatabaseMetaData olapDbMeta = olapcon.getMetaData();
+                            ResultSet cubesResult = olapDbMeta.getCubes(cat.getName(), null, null);
+
 							try {
-								ResultSet cubesResult = olapDbMeta.getCubes(cat.getName(), null, null);
 								List<SaikuCube> cubes = new ArrayList<SaikuCube>();
 								while(cubesResult.next()) {
 
@@ -93,6 +93,13 @@ public class OlapMetaExplorer {
 								schemas.add(new SaikuSchema("",cubes));
 							} catch (SQLException e) {
 								throw new OlapException(e.getMessage(),e);
+							} finally {
+							    try {
+                                    cubesResult.close();
+                                } catch (SQLException e) {
+                                    // TODO Auto-generated catch block
+                                    e.printStackTrace();
+                                }
 							}
 
 						}
@@ -222,24 +229,21 @@ public class OlapMetaExplorer {
 		Cube nativeCube = getNativeCube(cube);
 		Dimension dim = nativeCube.getDimensions().get(dimensionName);
 		if (dim != null) {
-			SaikuDimension dimension = ObjectUtil.convert(dim);
-			return dimension;
+			return ObjectUtil.convert(dim);
 		}
 		return null;
 	}
 
 	public List<SaikuHierarchy> getAllHierarchies(SaikuCube cube) throws SaikuOlapException {
 		Cube nativeCube = getNativeCube(cube);
-		List<SaikuHierarchy> hierarchies = ObjectUtil.convertHierarchies(nativeCube.getHierarchies());
-		return hierarchies;
+		return ObjectUtil.convertHierarchies(nativeCube.getHierarchies());
 	}
 
 	public SaikuHierarchy getHierarchy(SaikuCube cube, String hierarchyName) throws SaikuOlapException {
 		Cube nativeCube = getNativeCube(cube);
 		Hierarchy h = nativeCube.getHierarchies().get(hierarchyName);
 		if (h != null) {
-			SaikuHierarchy hierarchy = ObjectUtil.convert(h);
-			return hierarchy;
+			return ObjectUtil.convert(h);
 		}
 		return null;
 	}

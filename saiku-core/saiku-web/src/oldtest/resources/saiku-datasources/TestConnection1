@@ -1,0 +1,7 @@
+type=OLAP
+name=TestConnection1
+driver=mondrian.olap4j.MondrianOlap4jDriver
+location=jdbc:mondrian:Jdbc=jdbc:hsqldb:file:target/test/foodmart/foodmart;Catalog=target/test/foodmart/FoodMart.xml;
+username=sa
+password=
+datasource.processors=org.saiku.web.rest.resources.DummyDatasourceProcessor

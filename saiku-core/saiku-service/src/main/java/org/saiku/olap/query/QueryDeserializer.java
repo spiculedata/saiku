@@ -57,7 +57,12 @@ import org.xml.sax.InputSource;
  */
 public class QueryDeserializer {
 
-
+    private static final String QUERY = "Query";
+    private static final String CUBE = "cube";
+    private static final String CONNECTION = "connection";
+    private static final String CATALOG = "catalog";
+    private static final String SCHEMA = "schema";
+    private static final String SELECTION = "Selection";
     private static Document dom;
     private static Query qm;
     private static String xml;
@@ -93,13 +98,13 @@ public class QueryDeserializer {
         dom = parser.build(source);
 
         Element queryElement = dom.getRootElement();
-        if (queryElement != null && queryElement.getName().equals("Query")) {
+        if (queryElement != null && queryElement.getName().equals(QUERY)) {
 
-        	String cubeName = queryElement.getAttributeValue("cube");
+        	String cubeName = queryElement.getAttributeValue(CUBE);
 
-        	String connectionName = queryElement.getAttributeValue("connection");
-        	String catalogName = queryElement.getAttributeValue("catalog");
-        	String schemaName = queryElement.getAttributeValue("schema");
+        	String connectionName = queryElement.getAttributeValue(CONNECTION);
+        	String catalogName = queryElement.getAttributeValue(CATALOG);
+        	String schemaName = queryElement.getAttributeValue(SCHEMA);
         	return new SaikuCube(connectionName,cubeName,cubeName,catalogName,schemaName);
         }
         throw new Exception("Cant find <QueryModel> nor <MDX> Query");
@@ -113,16 +118,16 @@ public class QueryDeserializer {
         dom = parser.build(source);
 
         Element queryElement = dom.getRootElement();
-        if (queryElement != null && queryElement.getName().equals("Query")) {
+        if (queryElement != null && queryElement.getName().equals(QUERY)) {
 
-        	String cubeName = queryElement.getAttributeValue("cube");
+        	String cubeName = queryElement.getAttributeValue(CUBE);
 
         	if (!StringUtils.isNotBlank(cubeName)) {
         		throw new QueryParseException("Cube for query not defined");
         	}
-        	String connectionName = queryElement.getAttributeValue("connection");
-        	String catalogName = queryElement.getAttributeValue("catalog");
-        	String schemaName = queryElement.getAttributeValue("schema");
+        	String connectionName = queryElement.getAttributeValue(CONNECTION);
+        	String catalogName = queryElement.getAttributeValue(CATALOG);
+        	String schemaName = queryElement.getAttributeValue(SCHEMA);
             Query tmpQuery = createEmptyQuery("tmp-1234",catalogName, schemaName, cubeName);
             Cube cub = tmpQuery.getCube();
         	return new SaikuCube(connectionName,cub.getUniqueName(), cub.getName(),catalogName,schemaName);
@@ -133,17 +138,17 @@ public class QueryDeserializer {
     private static IQuery createQmQuery() throws QueryParseException, SQLException {
 
         Element queryElement = dom.getRootElement();
-        if (queryElement != null && queryElement.getName().equals("Query")) {
+        if (queryElement != null && queryElement.getName().equals(QUERY)) {
 
             String queryName = queryElement.getAttributeValue("name");
-            String cubeName = queryElement.getAttributeValue("cube");
+            String cubeName = queryElement.getAttributeValue(CUBE);
 
             if (!StringUtils.isNotBlank(cubeName)) {
                 throw new QueryParseException("Cube for query not defined");
             }
-            String connectionName = queryElement.getAttributeValue("connection");
-            String catalogName = queryElement.getAttributeValue("catalog");
-            String schemaName = queryElement.getAttributeValue("schema");
+            String connectionName = queryElement.getAttributeValue(CONNECTION);
+            String catalogName = queryElement.getAttributeValue(CATALOG);
+            String schemaName = queryElement.getAttributeValue(SCHEMA);
 
             try {
                 Element qmElement = queryElement.getChild("QueryModel");
@@ -170,14 +175,14 @@ public class QueryDeserializer {
     private static IQuery createMdxQuery() throws QueryParseException, SQLException {
 
         Element queryElement = dom.getRootElement();
-        if (queryElement != null && queryElement.getName().equals("Query")) {
+        if (queryElement != null && queryElement.getName().equals(QUERY)) {
 
             String queryName = queryElement.getAttributeValue("name");
-            String cubeName = queryElement.getAttributeValue("cube");
+            String cubeName = queryElement.getAttributeValue(CUBE);
 
-            String connectionName = queryElement.getAttributeValue("connection");
-            String catalogName = queryElement.getAttributeValue("catalog");
-            String schemaName = queryElement.getAttributeValue("schema");
+            String connectionName = queryElement.getAttributeValue(CONNECTION);
+            String catalogName = queryElement.getAttributeValue(CATALOG);
+            String schemaName = queryElement.getAttributeValue(SCHEMA);
 
             try {
                 Element mdxElement = queryElement.getChild("MDX");
@@ -278,8 +283,8 @@ public class QueryDeserializer {
             
             Element inclusions = dimension.getChild("Inclusions");
             if (inclusions != null) {
-                for(int z = 0; z < inclusions.getChildren("Selection").size(); z++) {
-                    Element selectionElement = (Element) inclusions.getChildren("Selection").get(z);
+                for(int z = 0; z < inclusions.getChildren(SELECTION).size(); z++) {
+                    Element selectionElement = (Element) inclusions.getChildren(SELECTION).get(z);
                     String name = selectionElement.getAttributeValue("node");
                     String operator = selectionElement.getAttributeValue("operator");
                     String type = selectionElement.getAttributeValue("type");
@@ -300,8 +305,8 @@ public class QueryDeserializer {
 
                     Element contextElement = selectionElement.getChild("Context");
                     if (sel != null && contextElement != null) {
-                        for(int h = 0; h < contextElement.getChildren("Selection").size(); h++) {
-                            Element context = (Element) contextElement.getChildren("Selection").get(h);
+                        for(int h = 0; h < contextElement.getChildren(SELECTION).size(); h++) {
+                            Element context = (Element) contextElement.getChildren(SELECTION).get(h);
                             String contextname = context.getAttributeValue("node");
                             String contextoperator = context.getAttributeValue("operator");
                             String contextDimension = context.getAttributeValue("dimension");
@@ -326,8 +331,8 @@ public class QueryDeserializer {
             
             Element exclusions = dimension.getChild("Exclusions");
             if (inclusions != null) {
-                for(int z = 0; z < exclusions.getChildren("Selection").size(); z++) {
-                    Element selectionElement = (Element) exclusions.getChildren("Selection").get(z);
+                for(int z = 0; z < exclusions.getChildren(SELECTION).size(); z++) {
+                    Element selectionElement = (Element) exclusions.getChildren(SELECTION).get(z);
                     String name = selectionElement.getAttributeValue("node");
                     String operator = selectionElement.getAttributeValue("operator");
                     dim.exclude(Selection.Operator.valueOf(operator), IdentifierNode.parseIdentifier(name).getSegmentList());
@@ -357,7 +362,9 @@ public class QueryDeserializer {
 				Catalog cat = db.getCatalogs().get(catalogName);
 				if (cat != null) {
 					for (Schema schema : cat.getSchemas()) {
-						if (schema.getName().equals(schemaName)) {
+						if (schema.getName().equals(schemaName) 
+								|| (schema.getName().equals("") && schemaName == null))
+						{
 							for (Cube cub : schema.getCubes()) {
 								if (cub.getName().equals(cubeName) || cub.getUniqueName().equals(cubeName)) {
 									cube = cub;

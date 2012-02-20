@@ -20,22 +20,26 @@
 
 package org.saiku.web.rest.resources;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.fail;
-
+import java.util.Date;
 import java.util.List;
 
 import javax.servlet.ServletException;
 import javax.ws.rs.core.Response.Status;
 
+import junit.framework.TestCase;
+
+import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.saiku.olap.dto.SaikuQuery;
 import org.saiku.web.rest.objects.resultset.Cell;
 import org.saiku.web.rest.objects.resultset.QueryResult;
+import org.saiku.web.service.SessionService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
@@ -43,13 +47,24 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
  * @author bugg
  * 
  */
-@RunWith(SpringJUnit4ClassRunner.class)
+
 @ContextConfiguration(locations = { "saiku-beans.xml" })
-public class QueryResourceTest {
+@RunWith(SpringJUnit4ClassRunner.class)
+public class QueryResourceTest extends TestCase {
 
 	@Autowired
 	private QueryResource qs;
-
+	
+	@Autowired
+	private SessionService ss;
+	
+	@Before
+	public void setUp() throws Exception {
+		    Authentication auth =  new UsernamePasswordAuthenticationToken("testuser", null);
+		    SecurityContextHolder.getContext().setAuthentication(auth);
+		    ss.login(null, "testuser", null);
+	};
+	
 	@Test
 	public final void testCreateQuery() throws ServletException {
 
@@ -151,6 +166,33 @@ public class QueryResourceTest {
 		// Check a cell value
 		Cell[] cellarray = output.getCellset().get(0);
 		assertEquals("1997", cellarray[1].getValue());
+	}
+
+	@Test
+	public final void testExecuteMdx() throws ServletException {
+		// Create a query.
+		SaikuQuery testQuery = null;
+		testQuery = qs.createQuery("TestConnection1", "Sales", "FoodMart",
+				"FoodMart", null, "TestQuery1");
+
+		// Check the query isn't null.
+		assertNotNull(testQuery);
+		
+		qs.transformQm2Mdx("TestQuery1");
+
+		// Execute the query.
+		Long start = (new Date()).getTime();
+		QueryResult output = qs.executeMdx("TestQuery1","flattened", 
+				"SELECT "
+				+ "NON EMPTY {Hierarchize({[Measures].[Profit]})} ON COLUMNS, "
+				+ "NON EMPTY {Hierarchize({[Product].[Product Name].Members})} ON ROWS "
+				+ "FROM [Sales]");
+
+		Long end = (new Date()).getTime();
+		System.out.println("Total: " + (end-start) + "ms");
+		// Make sure output is not null.
+		assertNotNull(output);
+
 	}
 
 	/**

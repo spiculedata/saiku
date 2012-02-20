@@ -19,6 +19,7 @@
  */
 package org.saiku.service.olap;
 
+import java.io.Serializable;
 import java.util.List;
 
 import org.olap4j.OlapConnection;
@@ -34,7 +35,12 @@ import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.util.exception.SaikuServiceException;
 
-public class OlapDiscoverService {
+public class OlapDiscoverService implements Serializable {
+	
+	/**
+	 *  SerialVersionUID
+	 */
+	private static final long serialVersionUID = 884682532600907574L;
 	
 	private DatasourceService datasourceService;
 	private OlapMetaExplorer metaExplorer;
