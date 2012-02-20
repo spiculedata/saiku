@@ -20,6 +20,7 @@
 package org.saiku.olap.query;
 
 import java.io.ByteArrayInputStream;
+import java.nio.charset.CharsetEncoder;
 import java.sql.SQLException;
 
 import org.apache.commons.lang.StringUtils;
@@ -73,7 +74,7 @@ public class QueryDeserializer {
         QueryDeserializer.connection = connection;
         QueryDeserializer.xml = xml;
         SAXBuilder parser = new SAXBuilder();
-        source = new InputSource((new ByteArrayInputStream(QueryDeserializer.xml.getBytes())));
+        source = new InputSource((new ByteArrayInputStream(QueryDeserializer.xml.getBytes("UTF8"))));
         dom = parser.build(source);
         Element child =(Element) dom.getRootElement();
         Element qmElement = child.getChild("QueryModel");

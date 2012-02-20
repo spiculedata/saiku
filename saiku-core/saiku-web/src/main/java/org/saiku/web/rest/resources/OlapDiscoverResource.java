@@ -50,7 +50,7 @@ public class OlapDiscoverResource implements Serializable {
 	 */
 	private static final long serialVersionUID = 1L;
 
-	OlapDiscoverService olapDiscoverService;
+	private OlapDiscoverService olapDiscoverService;
     
     private static final Logger log = LoggerFactory.getLogger(OlapDiscoverResource.class);
     
@@ -72,7 +72,7 @@ public class OlapDiscoverResource implements Serializable {
 			return new ArrayList<SaikuConnection>();
 		}
     }
-    
+
     @GET
     @Produces({"application/json" })
   	@Path("/refresh")

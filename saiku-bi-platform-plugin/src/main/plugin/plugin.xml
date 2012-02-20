@@ -22,7 +22,7 @@
 
 	<menu-items>
 		<menu-item id="new-saiku" anchor="file-new-submenu" label="Saiku Analytics"
-			command="content/saiku-ui/index.html" type="MENU_ITEM" how="LAST_CHILD" />
+			command="content/saiku-ui/index.html?biplugin=true" type="MENU_ITEM" how="LAST_CHILD" />
 	</menu-items>
 	
 	<content-type type="saiku" mime-type="text/html">

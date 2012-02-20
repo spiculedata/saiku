@@ -103,20 +103,51 @@ public class OlapQuery implements IQuery {
 	}
 	
 	public void moveDimension(QueryDimension dimension, Axis axis) {
-		dimension.setHierarchizeMode(HierarchizeMode.PRE);
-		if (dimension.getName() != "Measures") {
-			dimension.setHierarchyConsistent(true);
-		}
-		QueryAxis oldQueryAxis = findAxis(dimension);
+			dimension.setHierarchizeMode(HierarchizeMode.PRE);
+			if (dimension.getName() != "Measures") {
+				dimension.setHierarchyConsistent(true);
+			}
+			QueryAxis oldQueryAxis = findAxis(dimension);
+			QueryAxis newQueryAxis = query.getAxis(axis);
+			if (oldQueryAxis != null && newQueryAxis != null && (oldQueryAxis.getLocation() != newQueryAxis.getLocation())) {
+			            oldQueryAxis.removeDimension(dimension);
+			            newQueryAxis.addDimension(dimension);
+			}
 	}
 
-            newQueryAxis.addDimension(position, dimension);   
-        }
-    }
+	public void moveDimension(QueryDimension dimension, Axis axis, int position) {
+			dimension.setHierarchizeMode(HierarchizeMode.PRE);
+			if (dimension.getName() != "Measures") {
+			dimension.setHierarchyConsistent(true);
+			}
+	    QueryAxis oldQueryAxis = findAxis(dimension);
+	    QueryAxis newQueryAxis = query.getAxis(axis);
+	    if (oldQueryAxis != null && newQueryAxis != null) {
+	        oldQueryAxis.removeDimension(dimension);
+	        newQueryAxis.addDimension(position, dimension);
+	    }
+  }
 	
 	public QueryDimension getDimension(String name) {
 		return this.query.getDimension(name);
 	}
+
+	private QueryAxis findAxis(QueryDimension dimension) {
+
+		if (query.getUnusedAxis().getDimensions().contains(dimension)) {
+			return query.getUnusedAxis();
+		}
+		else {
+				Map<Axis,QueryAxis> axes = query.getAxes();
+				for (Axis axis : axes.keySet()) {
+				if (axes.get(axis).getDimensions().contains(dimension)) {
+				return axes.get(axis);
+				}
+			}
+		}
+		return null;
+	}
+	
 
     public String getMdx() {
         final Writer writer = new StringWriter();

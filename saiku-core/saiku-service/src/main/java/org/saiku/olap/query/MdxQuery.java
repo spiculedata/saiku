@@ -102,7 +102,9 @@ public class MdxQuery implements IQuery {
     }
     
     public Properties getProperties() {
-    	return this.properties;
+    	Properties props = new Properties(this.properties);
+		props.put(QueryProperties.KEY_IS_DRILLTHROUGH, "true");
+		return props;
     }
     
     public String toXml() {
