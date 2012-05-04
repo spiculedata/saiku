@@ -26,7 +26,7 @@
 	<bean id="olapDiscoverServiceBean" class="org.saiku.service.olap.OlapDiscoverService">
 		<property name="datasourceService" ref="datasourceServiceBean" />
 	</bean>
-
+	
 	<bean id="olapQueryBean" scope="session" class="org.saiku.service.olap.OlapQueryService">
 		<property name="olapDiscoverService" ref="olapDiscoverServiceBean" />
 	</bean>
@@ -56,8 +56,13 @@
 	<bean id="repositoryBean" scope="request" class="org.saiku.web.rest.resources.BasicRepositoryResource">
 		<property name="olapQueryService" ref="olapQueryBean" />
 		<property name="path" value="res:saiku-repository"/>
-		<property name="olapDiscoverService" ref="olapDiscoverServiceBean" />
 	</bean>
  <!--  <property name="path" value="file:///var/saiku/saiku-datasources/"/> -->
+ 
+ 	<bean id="tagRepositoryBean" scope="request" class="org.saiku.web.rest.resources.BasicTagRepositoryResource">
+		<property name="olapQueryService" ref="olapQueryBean" />
+		<property name="path" value="res:saiku-repository"/>
+	</bean>
+ 
 
 </beans>

@@ -118,10 +118,13 @@ public class RestUtil {
 						position = number.toString();
 					}
 				}
-				metaprops.put("position", position);
-//				metaprops.put("formattedValue", "" + dcell.getFormattedValue());
-				// metaprops.put("rawValue", "" + dcell.getRawValue());
-				metaprops.put("raw", "" + dcell.getRawNumber());
+				if (position != null) {
+					metaprops.put("position", position);
+				}
+				
+				if (dcell != null && dcell.getRawNumber() != null) {
+					metaprops.put("raw", "" + dcell.getRawNumber());
+				}
 				
 //				Properties props = new Properties();
 //				props.putAll(dcell.getProperties());
@@ -134,18 +137,22 @@ public class RestUtil {
 //				Properties metaprops = new Properties();
 //				metaprops.put("children", "" + mcell.getChildMemberCount());
 //				metaprops.put("uniqueName", "" + mcell.getUniqueName());
-//				metaprops.put("formattedValue", "" +  mcell.getFormattedValue());
-//				metaprops.put("rawValue", "" + mcell.getRawValue());
 
 				Properties props = new Properties();
-				if ( mcell != null && mcell.getProperty("levelindex") != null) {
-					props.put("levelindex", mcell.getProperty("levelindex"));
+				if ( mcell != null) {
 					if (mcell.getParentDimension() != null) {
 						props.put("dimension", mcell.getParentDimension());
 					}
 					if (mcell.getUniqueName() != null) {
 						props.put("uniquename", mcell.getUniqueName());
 					}
+					if (mcell.getHierarchy() != null) {
+						props.put("hierarchy", mcell.getHierarchy());
+					}
+					if (mcell.getLevel() != null) {
+						props.put("level", mcell.getLevel());
+					}
+					
 				}
 //				props.putAll(mcell.getProperties());
 

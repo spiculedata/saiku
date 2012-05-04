@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.net.URLDecoder;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 
@@ -44,15 +45,12 @@ import javax.xml.bind.annotation.XmlAccessorType;
 import org.apache.commons.vfs.FileObject;
 import org.apache.commons.vfs.FileSystemManager;
 import org.apache.commons.vfs.VFS;
-import org.saiku.service.olap.OlapDiscoverService;
 import org.saiku.service.olap.OlapQueryService;
 import org.saiku.web.rest.objects.SavedQuery;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-
-import edu.emory.mathcs.backport.java.util.Collections;
 
 /**
  * QueryServlet contains all the methods required when manipulating an OLAP Query.
@@ -69,8 +67,6 @@ public class BasicRepositoryResource {
 	private OlapQueryService olapQueryService;
 
 	private FileObject repo;
-
-	private OlapDiscoverService olapDiscoverService;
 
 	public void setPath(String path) throws Exception {
 
@@ -98,11 +94,6 @@ public class BasicRepositoryResource {
 	@Autowired
 	public void setOlapQueryService(OlapQueryService olapqs) {
 		olapQueryService = olapqs;
-	}
-
-	@Autowired
-	public void setOlapDiscoverService(OlapDiscoverService olapds) {
-		olapDiscoverService = olapds;
 	}
 
 	/**

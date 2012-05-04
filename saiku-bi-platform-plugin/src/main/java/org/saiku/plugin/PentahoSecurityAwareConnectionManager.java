@@ -19,12 +19,10 @@
  */
 package org.saiku.plugin;
 
-import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 
 import mondrian.olap4j.SaikuMondrianHelper;
 
@@ -89,10 +87,16 @@ public class PentahoSecurityAwareConnectionManager extends AbstractConnectionMan
 	@Override
 	protected void refreshInternalConnection(String name, SaikuDatasource datasource) {
 		try {
-			ISaikuConnection con = connections.remove(name);
-			if (con.refresh(datasource.getProperties())) {
-				connections.put(name, con);
+			String newname = name;
+			if (userAware && PentahoSessionHolder.getSession().getName() != null) {
+				newname = name + "-" + PentahoSessionHolder.getSession().getName();
 			}
+			ISaikuConnection con = connections.remove(newname);
+			if (con != null) {
+				con.clearCache();
+			}
+			con = null;
+			getInternalConnection(name, datasource);
 		}
 		catch (Exception e) {
 			e.printStackTrace();
@@ -108,14 +112,7 @@ public class PentahoSecurityAwareConnectionManager extends AbstractConnectionMan
 		if (PentahoSystem.getObjectFactory().objectDefined(MDXConnection.MDX_CONNECTION_MAPPER_KEY)) {
 			IConnectionUserRoleMapper mondrianUserRoleMapper = PentahoSystem.get(IConnectionUserRoleMapper.class, MDXConnection.MDX_CONNECTION_MAPPER_KEY, null);
 			if (mondrianUserRoleMapper != null) {
-				String url = datasource.getProperties().getProperty(ISaikuConnection.URL_KEY);
-				url = url.replaceAll(";","\n");
-				StringReader sr = new StringReader(url);
-				Properties props = new Properties();
-				props.load(sr);
-
 				OlapConnection c = (OlapConnection) con.getConnection();
-
 				String[] validMondrianRolesForUser = mondrianUserRoleMapper.mapConnectionRoles(PentahoSessionHolder.getSession(), c.getCatalog());
 				if (setRole(con, validMondrianRolesForUser, datasource)) {
 					return con;
@@ -130,9 +127,19 @@ public class PentahoSecurityAwareConnectionManager extends AbstractConnectionMan
 	private boolean setRole(ISaikuConnection con, String[] validMondrianRolesForUser, SaikuDatasource datasource) {
 		if (con.getConnection() instanceof OlapConnection) 
 		{
-			OlapConnection c = (OlapConnection) con.getConnection();
-			System.out.println("Setting role to datasource:" + datasource.getName() + " role:" + validMondrianRolesForUser);
 			try {
+				OlapConnection c = (OlapConnection) con.getConnection();
+				String roles = "";
+				if (validMondrianRolesForUser != null && validMondrianRolesForUser.length > 0) {
+					for (String r : validMondrianRolesForUser) {
+						// lets make sure the role is actually available, just to be safe
+						if (c.getAvailableRoleNames().contains(r)) {
+							roles += r +";";
+						}
+					}
+				}
+				System.out.println("Setting role to datasource:" + datasource.getName() + " role: " + roles);
+
 				SaikuMondrianHelper.setRoles(c, validMondrianRolesForUser);
 				return true;
 			} catch (Exception e) {

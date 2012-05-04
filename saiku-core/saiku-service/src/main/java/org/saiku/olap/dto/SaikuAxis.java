@@ -25,16 +25,20 @@ public class SaikuAxis extends AbstractSaikuObject {
 
 	private List<SaikuDimensionSelection> dimensionSelections;
 	private int ordinal;
+	private String sortOrder;
+	private String sortLiteral;
 
 	public SaikuAxis() {		
 		super(null,null);
 		throw new RuntimeException("Unsupported Constructor. Serialization only");
 	}
 	
-	public SaikuAxis(String name, int ordinal, String uniqueName, List<SaikuDimensionSelection> dimsel) {
+	public SaikuAxis(String name, int ordinal, String uniqueName, List<SaikuDimensionSelection> dimsel, String sortOrder, String sortLiteral) {
 		super(uniqueName,name);
 		this.dimensionSelections = dimsel;
 		this.ordinal = ordinal;
+		this.sortOrder = sortOrder;
+		this.sortLiteral = sortLiteral;
 	}
 	
 	public List<SaikuDimensionSelection> getDimensionSelections() {
@@ -43,6 +47,14 @@ public class SaikuAxis extends AbstractSaikuObject {
 	
 	public int getOrdinal() {
 		return ordinal;
+	}
+
+	public String getSortOrder() {
+		return sortOrder;
+	}
+
+	public String getSortLiteral() {
+		return sortLiteral;
 	}
 
 

@@ -24,11 +24,13 @@ import java.util.Properties;
 
 import org.olap4j.Axis;
 import org.olap4j.CellSet;
+import org.olap4j.OlapStatement;
 import org.olap4j.Scenario;
 import org.olap4j.metadata.Cube;
 import org.olap4j.query.QueryAxis;
 import org.olap4j.query.QueryDimension;
 import org.saiku.olap.dto.SaikuCube;
+import org.saiku.olap.dto.SaikuTag;
 import org.saiku.olap.util.exception.SaikuOlapException;
 
 public interface IQuery {
@@ -59,5 +61,14 @@ public interface IQuery {
 	public void setMdx(String mdx);
 	public void setScenario(Scenario scenario);
 	public Scenario getScenario();
+	public void setTag(SaikuTag tag);
+	public SaikuTag getTag();
+	public void removeTag();
+	public void storeCellset(CellSet cs);
+	public CellSet getCellset();
+	public void setStatement(OlapStatement os);
+	public OlapStatement getStatement();
+	public void cancel() throws Exception;
+	
 
 }

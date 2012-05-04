@@ -89,14 +89,15 @@ public class SaikuOlapConnection implements ISaikuConnection {
 		return true;
 	}
 	
-	public boolean refresh(Properties props) throws Exception {
+	public boolean clearCache() throws Exception {
 		if (SaikuMondrianHelper.isMondrianConnection(olapConnection)) {
 			RolapConnection rcon = SaikuMondrianHelper.getMondrianConnection(olapConnection);
 			rcon.getCacheControl(null).flushSchemaCache();
 		}
-		connect(props);
 		return true;
 	}
+
+	
 
 	public String getDatasourceType() {
 		return ISaikuConnection.OLAP_DATASOURCE;

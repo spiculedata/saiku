@@ -24,8 +24,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
-import mondrian.spi.DynamicSchemaProcessor;
-
 import org.olap4j.OlapConnection;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.datasource.IDatasourceManager;
@@ -47,9 +45,7 @@ public abstract class AbstractConnectionManager implements IConnectionManager {
 
 	public abstract void init();
 
-
-	public ISaikuConnection getConnection(String name) {
-		SaikuDatasource datasource = ds.getDatasource(name);
+	private SaikuDatasource preProcess(SaikuDatasource datasource) {
 		if (datasource.getProperties().containsKey(ISaikuConnection.DATASOURCE_PROCESSORS)) {
 			datasource = datasource.clone();
 			String[] processors = datasource.getProperties().getProperty(ISaikuConnection.DATASOURCE_PROCESSORS).split(",");
@@ -69,6 +65,12 @@ public abstract class AbstractConnectionManager implements IConnectionManager {
 				}
 			}
 		}
+		return datasource;
+	}
+
+	public ISaikuConnection getConnection(String name) {
+		SaikuDatasource datasource = ds.getDatasource(name);
+		datasource = preProcess(datasource);
 		return getInternalConnection(name, datasource);
 	}
 
@@ -84,7 +86,9 @@ public abstract class AbstractConnectionManager implements IConnectionManager {
 	}
 
 	public void refreshConnection(String name) {
-		refreshInternalConnection(name, ds.getDatasource(name));
+		SaikuDatasource datasource = ds.getDatasource(name);
+		datasource = preProcess(datasource);
+		refreshInternalConnection(name, datasource);
 	}
 
 	public Map<String, ISaikuConnection> getAllConnections() {

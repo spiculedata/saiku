@@ -186,11 +186,14 @@ public class ObjectUtil {
 	public static SaikuAxis convertQueryAxis(QueryAxis axis) {
 		List<SaikuDimensionSelection> dims = ObjectUtil.convertDimensionSelections(axis.getDimensions());
 		Axis location = axis.getLocation();
+		String so = axis.getSortOrder() == null? null : axis.getSortOrder().name();
 		return new SaikuAxis(
 				location.name(),
 				location.axisOrdinal(),
 				axis.getName(),
-				dims);
+				dims,
+				so,
+				axis.getSortIdentifierNodeName());
 	}
 	
 	public static SaikuQuery convert(IQuery q) {

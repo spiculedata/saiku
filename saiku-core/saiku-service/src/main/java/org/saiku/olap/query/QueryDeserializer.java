@@ -157,7 +157,7 @@ public class QueryDeserializer {
                     qm = createEmptyQuery(queryName,catalogName, schemaName, cubeName);
                     manipulateQuery(qmElement);
                     SaikuCube cube = new SaikuCube(connectionName,cubeName, qm.getCube().getName(),catalogName,schemaName);
-                    return new OlapQuery(qm,cube,false);
+                    return new OlapQuery(qm,connection, cube,false);
                 }
                 else
                     throw new OlapException("Can't find child <QueryModel>");

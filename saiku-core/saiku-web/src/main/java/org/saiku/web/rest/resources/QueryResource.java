@@ -49,11 +49,13 @@ import javax.xml.bind.annotation.XmlAccessType;
 import javax.xml.bind.annotation.XmlAccessorType;
 
 import org.apache.commons.lang.exception.ExceptionUtils;
+import org.codehaus.jackson.annotate.JsonAutoDetect.Visibility;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.map.type.TypeFactory;
 import org.saiku.olap.dto.SaikuCube;
 import org.saiku.olap.dto.SaikuDimensionSelection;
 import org.saiku.olap.dto.SaikuQuery;
+import org.saiku.olap.dto.SaikuTag;
 import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.util.SaikuProperties;
 import org.saiku.olap.util.formatter.CellSetFormatter;
@@ -331,6 +333,23 @@ public class QueryResource {
 		}
 	}
 
+	@DELETE
+	@Path("/{queryname}/result")
+	public Status cancel(@PathParam("queryname") String queryName){
+		if (log.isDebugEnabled()) {
+			log.debug("TRACK\t"  + "\t/query/" + queryName + "/result\tDELETE");
+		}
+		try {
+
+			olapQueryService.cancel(queryName);
+			return Response.Status.OK;
+		}
+		catch (Exception e) {
+			log.error("Cannot execute query (" + queryName + ")",e);
+			return Response.Status.INTERNAL_SERVER_ERROR;
+		}
+	}
+	
 	@GET
 	@Produces({"application/json" })
 	@Path("/{queryname}/result")
@@ -433,7 +452,8 @@ public class QueryResource {
 	public QueryResult drillthrough(
 			@PathParam("queryname") String queryName, 
 			@QueryParam("maxrows") @DefaultValue("100") Integer maxrows,
-			@QueryParam("position") String position)
+			@QueryParam("position") String position,
+			@QueryParam("returns") String returns)
 	{
 		if (log.isDebugEnabled()) {
 			log.debug("TRACK\t"  + "\t/query/" + queryName + "/drillthrough\tGET");
@@ -443,7 +463,7 @@ public class QueryResource {
 		try {
 			Long start = (new Date()).getTime();
 			if (position == null) {
-				rs = olapQueryService.drillthrough(queryName, maxrows);
+				rs = olapQueryService.drillthrough(queryName, maxrows, returns);
 			} else {
 				String[] positions = position.split(":");
 				List<Integer> cellPosition = new ArrayList<Integer>();
@@ -453,7 +473,7 @@ public class QueryResource {
 					cellPosition.add(pInt);
 				}
 
-				rs = olapQueryService.drillthrough(queryName, cellPosition, maxrows);
+				rs = olapQueryService.drillthrough(queryName, cellPosition, maxrows, returns);
 			}
 			rsc = RestUtil.convert(rs);
 			Long runtime = (new Date()).getTime()- start;
@@ -490,7 +510,8 @@ public class QueryResource {
 	public Response getDrillthroughExport(			
 			@PathParam("queryname") String queryName, 
 			@QueryParam("maxrows") @DefaultValue("100") Integer maxrows,
-			@QueryParam("position") String position)
+			@QueryParam("position") String position,
+			@QueryParam("returns") String returns)
 	{
 		if (log.isDebugEnabled()) {
 			log.debug("TRACK\t"  + "\t/query/" + queryName + "/drillthrough/export/csv (maxrows:" + maxrows + " position" + position + ")\tGET");
@@ -499,7 +520,7 @@ public class QueryResource {
 
 		try {
 			if (position == null) {
-				rs = olapQueryService.drillthrough(queryName, maxrows);
+				rs = olapQueryService.drillthrough(queryName, maxrows, returns);
 			} else {
 				String[] positions = position.split(":");
 				List<Integer> cellPosition = new ArrayList<Integer>();
@@ -509,7 +530,7 @@ public class QueryResource {
 					cellPosition.add(pInt);
 				}
 
-				rs = olapQueryService.drillthrough(queryName, cellPosition, maxrows);
+				rs = olapQueryService.drillthrough(queryName, cellPosition, maxrows, returns);
 			}
 			byte[] doc = olapQueryService.exportResultSetCsv(rs);
 			String name = SaikuProperties.webExportCsvName;
@@ -621,6 +642,8 @@ public class QueryResource {
 		if (log.isDebugEnabled()) {
 			log.debug("TRACK\t"  + "\t/query/" + queryName + "/swapaxes\tPUT");
 		}
+		olapQueryService.clearSort(queryName, "ROWS");
+		olapQueryService.clearSort(queryName, "COLUMNS");
 		olapQueryService.swapAxes(queryName);
 		return Status.OK;
 
@@ -747,23 +770,35 @@ public class QueryResource {
 				List<SelectionRestObject> selections = mapper.readValue(selectionJSON, TypeFactory.collectionType(ArrayList.class, SelectionRestObject.class));
 
 
+
+				// remove stuff first, then add, removing removes all selections for that level first
+				for (SelectionRestObject selection : selections) {
+					if (selection.getType() != null && "member".equals(selection.getType().toLowerCase())) {
+						if (selection.getAction() != null && "delete".equals(selection.getAction().toLowerCase())) {
+							olapQueryService.removeMember(queryName, dimensionName, selection.getUniquename(), "MEMBER");
+						}
+					}
+					if (selection.getType() != null && "level".equals(selection.getType().toLowerCase())) {
+						if (selection.getAction() != null && "delete".equals(selection.getAction().toLowerCase())) {
+							olapQueryService.removeLevel(queryName, dimensionName, selection.getHierarchy(), selection.getUniquename());
+						}
+					}
+				}
 				for (SelectionRestObject selection : selections) {
 					if (selection.getType() != null && "member".equals(selection.getType().toLowerCase())) {
 						if (selection.getAction() != null && "add".equals(selection.getAction().toLowerCase())) {
-							includeMember("MEMBER", queryName, axisName, dimensionName, selection.getUniquename(), -1, -1);
-						}
-						if (selection.getAction() != null && "delete".equals(selection.getAction().toLowerCase())) {
-							removeMember("MEMBER", queryName, axisName, dimensionName, selection.getUniquename());
+							olapQueryService.includeMember(queryName, dimensionName, selection.getUniquename(), "MEMBER", -1);
 						}
 					}
 					if (selection.getType() != null && "level".equals(selection.getType().toLowerCase())) {
 						if (selection.getAction() != null && "add".equals(selection.getAction().toLowerCase())) {
-							includeLevel(queryName, axisName, dimensionName, selection.getHierarchy(), selection.getUniquename(), -1);
-						}
-						if (selection.getAction() != null && "delete".equals(selection.getAction().toLowerCase())) {
-							removeLevel(queryName, axisName, dimensionName, selection.getHierarchy(), selection.getUniquename());
+							olapQueryService.includeLevel(queryName, dimensionName, selection.getHierarchy(), selection.getUniquename());
 						}
 					}
+				}
+				SaikuDimensionSelection dimsels = getAxisDimensionInfo(queryName, axisName, dimensionName);
+				if (dimsels != null && dimsels.getSelections().size() == 0) {
+					moveDimension(queryName, "UNUSED", dimensionName, -1);
 				}
 				return Status.OK;
 			}
@@ -771,10 +806,9 @@ public class QueryResource {
 			log.error("Cannot updates selections for query (" + queryName + ")",e);
 		}
 		return Status.INTERNAL_SERVER_ERROR;
-
-
-
 	}
+	
+	
 
 	@DELETE
 	@Consumes("application/x-www-form-urlencoded")
@@ -856,6 +890,10 @@ public class QueryResource {
 		try{
 			boolean ret = olapQueryService.removeMember(queryName, dimensionName, uniqueMemberName, selectionType);
 			if(ret == true){
+				SaikuDimensionSelection dimsels = olapQueryService.getAxisDimensionSelections(queryName, axisName, dimensionName);
+				if (dimsels != null && dimsels.getSelections().size() == 0) {
+					olapQueryService.moveDimension(queryName, "UNUSED", dimensionName, -1);
+				}
 				return Status.OK;
 			}
 			else{
@@ -913,7 +951,12 @@ public class QueryResource {
 		}
 		try{
 			boolean ret = olapQueryService.removeLevel(queryName, dimensionName, uniqueHierarchyName, uniqueLevelName);
+			
 			if(ret == true){
+				SaikuDimensionSelection dimsels = olapQueryService.getAxisDimensionSelections(queryName, axisName, dimensionName);
+				if (dimsels != null && dimsels.getSelections().size() == 0) {
+					olapQueryService.moveDimension(queryName, "UNUSED", dimensionName, -1);
+				}
 				return Status.OK;
 			}
 			else{
@@ -925,4 +968,80 @@ public class QueryResource {
 			return Status.INTERNAL_SERVER_ERROR;
 		}
 	}
+	
+	
+	@PUT
+	@Produces({"application/json" })
+	@Path("/{queryname}/tag")
+	public Status activateTag(
+			@PathParam("queryname") String queryName,
+			@FormParam("tag") String tagJSON)
+	{
+		if (log.isDebugEnabled()) {
+			log.debug("TRACK\t"  + "\t/query/" + queryName + "/tags\tPUT");
+		}
+		try {
+			ObjectMapper mapper = new ObjectMapper();
+		    mapper.setVisibilityChecker(mapper.getVisibilityChecker().withFieldVisibility(Visibility.ANY));
+			SaikuTag tag = mapper.readValue(tagJSON, SaikuTag.class);
+			
+			olapQueryService.setTag(queryName, tag);
+			return Status.OK;
+		}
+		catch (Exception e) {
+			log.error("Cannot add tag " + tagJSON + " for query (" + queryName + ")",e);
+		}
+		return Status.INTERNAL_SERVER_ERROR;
+
+	}
+	
+	@DELETE
+	@Produces({"application/json" })
+	@Path("/{queryname}/tag")
+	public Status deactivateTag(
+			@PathParam("queryname") String queryName,
+			@PathParam("tagname") String tagName)
+	{
+		if (log.isDebugEnabled()) {
+			log.debug("TRACK\t"  + "\t/query/" + queryName + "/tags\tPUT");
+		}
+		try {
+			olapQueryService.disableTag(queryName);
+			return Status.OK;
+		}
+		catch (Exception e) {
+			log.error("Cannot remove tag " + tagName + " for query (" + queryName + ")",e);
+		}
+		return Status.INTERNAL_SERVER_ERROR;
+
+	}
+	
+	@POST
+	@Produces({"application/json" })
+	@Path("/{queryname}/axis/{axis}/sort/{sortorder}/{sortliteral}")
+	public void sortAxis(
+			@PathParam("queryname") String queryName, 
+			@PathParam("axis") String axisName,
+			@PathParam("sortorder") String sortOrder,
+			@PathParam("sortliteral") String sortLiteral)
+	{
+		if (log.isDebugEnabled()) {
+			log.debug("TRACK\t"  + "\t/query/" + queryName + "/axis/"+axisName+"/sort/" + sortOrder + "/" + sortLiteral +"\tPOST");
+		}
+		olapQueryService.sortAxis(queryName, axisName, sortLiteral, sortOrder);
+	}
+	
+	@DELETE
+	@Produces({"application/json" })
+	@Path("/{queryname}/axis/{axis}/sort")
+	public void clearSortAxis(
+			@PathParam("queryname") String queryName, 
+			@PathParam("axis") String axisName)
+	{
+		if (log.isDebugEnabled()) {
+			log.debug("TRACK\t"  + "\t/query/" + queryName + "/axis/"+axisName+"/sort/\tDELETE");
+		}
+		olapQueryService.clearSort(queryName, axisName);
+	}
+
 }

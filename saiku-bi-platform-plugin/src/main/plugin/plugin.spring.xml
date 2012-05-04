@@ -71,5 +71,10 @@
 	</bean>
 
   	<bean id="repositoryBean" class="org.saiku.plugin.resources.PentahoRepositoryResource" />
-
+  	
+  	 <bean id="tagRepositoryBean" class="org.saiku.plugin.resources.PentahoTagRepositoryResource">
+		<property name="olapQueryService" ref="olapQueryBean" />
+		<property name="path" value="saiku-repository"/>
+	</bean>
+	
 </beans>

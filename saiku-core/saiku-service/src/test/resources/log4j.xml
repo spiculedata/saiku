@@ -14,32 +14,6 @@
 
 <log4j:configuration xmlns:log4j="http://jakarta.apache.org/log4j/" debug="false">
 
-   <!-- ================================= -->
-   <!-- Preserve messages in a local file -->
-   <!-- ================================= -->
-
-   <!-- A time/date based rolling appender -->
-   <appender name="SAIKUFILE" class="org.apache.log4j.DailyRollingFileAppender">
-
-      <param name="File" value="${catalina.base}/logs/saiku.log"/>
-      <param name="Append" value="false"/>
-
-      <!-- Rollover at midnight each day -->
-      <param name="DatePattern" value="'.'yyyy-MM-dd"/>
-
-      <!-- Rollover at the top of each hour
-      <param name="DatePattern" value="'.'yyyy-MM-dd-HH"/>
-      -->
-
-      <layout class="org.apache.log4j.PatternLayout">
-         <!-- The default pattern: Date Priority [Category] Message\n -->
-         <param name="ConversionPattern" value="%d %-5p [%c] %m%n"/>
-
-         <!-- The full pattern: Date MS Priority [Category] (Thread:NDC) Message\n
-         <param name="ConversionPattern" value="%d %-5r %-5p [%c] (%t:%x) %m%n"/>
-          -->
-      </layout>
-   </appender>
 
    <!-- ============================== -->
    <!-- Append messages to the console -->
@@ -60,7 +34,7 @@
    <!-- ================ -->
 
    <category name="org.saiku">
-     <priority value="DEBUG"/>
+     <priority value="INFO"/>
    </category>
    
    <!-- ======================= -->
@@ -68,9 +42,8 @@
    <!-- ======================= -->
 
    <root>
-      <priority value="WARN" />
+      <priority value="INFO" />
       <appender-ref ref="SAIKUCONSOLE"/>
-      <appender-ref ref="SAIKUFILE"/>
    </root>
    
    

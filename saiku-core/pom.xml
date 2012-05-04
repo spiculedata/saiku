@@ -5,7 +5,7 @@
 	<artifactId>saiku-core</artifactId>
 	<packaging>pom</packaging>
 	<name>saiku - core libraries</name>
-    <version>2.3-SNAPSHOT</version>
+    <version>2.4-SNAPSHOT</version>
 	<properties>
 		<maven.compiler.source>1.5</maven.compiler.source>
 		<maven.compiler.target>1.5</maven.compiler.target>
@@ -79,6 +79,8 @@
                     <charset>UTF-8</charset>
                     <docencoding>UTF-8</docencoding>
                     <encoding>UTF-8</encoding>
+                    <verbose>false</verbose>
+                    <quiet>true</quiet>
                 </configuration>
                 <executions>
                     <execution>

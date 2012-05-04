@@ -27,10 +27,7 @@ public class SaikuMember extends AbstractSaikuObject {
 	private String levelUniqueName;
 	private String hierarchyUniqueName;
 	
-	public SaikuMember() {
-		super(null,null);
-		throw new RuntimeException("Unsupported Constructor. Serialization only");
-	}
+	public SaikuMember() {}
 
 	public SaikuMember(String name, String uniqueName, String caption, String description, String dimensionUniqueName, String hierarchyUniqueName, String levelUniqueName) {
 		super(uniqueName,name);

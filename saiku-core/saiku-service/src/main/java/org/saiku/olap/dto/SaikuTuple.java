@@ -19,37 +19,44 @@
  */
 package org.saiku.olap.dto;
 
+import java.util.ArrayList;
 import java.util.List;
 
-public class SaikuDimension extends AbstractSaikuObject {
-	
-	private String caption;
-	private String description;
-	
-	private List<SaikuHierarchy> hierarchies;
-	
-	public SaikuDimension() {
-		super(null,null);
-		throw new RuntimeException("Unsupported Constructor. Serialization only");
-	};
-	
-	public SaikuDimension(String name, String uniqueName, String caption, String description, List<SaikuHierarchy> hierarchies) {
-		super(uniqueName,name);
-		this.caption = caption;
-		this.description = description;
-		this.hierarchies = hierarchies;
-	}
+public class SaikuTuple {
 
-	public String getCaption() {
-		return caption;
+	private List<SaikuMember> saikuMembers;
+	
+	public SaikuTuple() {}
+	
+	public SaikuTuple(List<SaikuMember> members) {
+		this.saikuMembers = members;
 	}
-
-	public String getDescription() {
-		return description;
+	
+	public List<SaikuMember> getSaikuMembers() {
+		return saikuMembers;
 	}
-
-	public List<SaikuHierarchy> getHierarchies() {
-		return hierarchies;
+	
+	public void setSaikuMembers(List<SaikuMember> members) {
+		this.saikuMembers = members;
 	}
-
+	
+	public SaikuMember getSaikuMember(String dimensionUniqueName) {
+		for (SaikuMember m : saikuMembers) {
+			if (m.getDimensionUniqueName().equals(dimensionUniqueName)) {
+				return m;
+			}
+		}
+		return null;
+	}
+	
+	public List<SaikuMember> getOtherSaikuMembers(String dimensionUniqueName) {
+		List<SaikuMember> others = new ArrayList<SaikuMember>();
+		for (SaikuMember m : saikuMembers) {
+			if (!m.getDimensionUniqueName().equals(dimensionUniqueName)) {
+				others.add(m);
+			}
+		}
+		return others;
+	}
+	
 }

@@ -275,7 +275,8 @@ public class FlattenedCellSetFormatter implements ICellSetFormatter {
 						memberInfo.setRawValue(s);
 						memberInfo.setFormattedValue(s);
 						memberInfo.setProperty("__headertype", "row_header_header");
-						memberInfo.setProperty("levelindex", "" + levels.indexOf(xLevel));
+						memberInfo.setProperty("hierarchy", "" + xLevel.getHierarchy().getUniqueName());
+						memberInfo.setProperty("uniqueName", "" + xLevel.getUniqueName());
 					}
 					matrix.set(x, y, memberInfo);
 				}
@@ -307,34 +308,38 @@ public class FlattenedCellSetFormatter implements ICellSetFormatter {
 		List<Integer> doney = new ArrayList<Integer>();
 		for (final Cell cell : cellIter(pageCoords, cellSet)) {
 			final List<Integer> coordList = cell.getCoordinateList();
-			if (coordList.get(0) == 0) {
-				newxOffset = xOffsset;
-				donex = new ArrayList<Integer>();
-			}
-			int x = newxOffset;
-			if (coordList.size() > 0)
-				x += coordList.get(0);
 			int y = newyOffset;
-			if (coordList.size() > 1)
-				y += coordList.get(1);
+			int x = newxOffset;
+			if (coordList.size() > 0) {
+				if (coordList.get(0) == 0) {
+					newxOffset = xOffsset;
+					donex = new ArrayList<Integer>();
+				}
+				x = newxOffset;
+				if (coordList.size() > 0)
+					x += coordList.get(0);
+				y = newyOffset;
+				if (coordList.size() > 1)
+					y += coordList.get(1);
 
-			boolean stop = false;
-			if (ignorex.contains(coordList.get(0))) {
-				if (!donex.contains(coordList.get(0))) {
-					newxOffset--;
-					donex.add(coordList.get(0));
+				boolean stop = false;
+				if (coordList.size() > 0 && ignorex.contains(coordList.get(0))) {
+					if (!donex.contains(coordList.get(0))) {
+						newxOffset--;
+						donex.add(coordList.get(0));
+					}
+					stop = true;
 				}
-				stop = true;
-			}
-			if (ignorey.contains(coordList.get(1))) {
-				if (!doney.contains(coordList.get(1))) {
-					newyOffset--;
-					doney.add(coordList.get(1));
+				if (coordList.size() > 1 && ignorey.contains(coordList.get(1))) {
+					if (!doney.contains(coordList.get(1))) {
+						newyOffset--;
+						doney.add(coordList.get(1));
+					}
+					stop = true;
 				}
-				stop = true;
-			}
-			if (stop) {
-				continue;
+				if (stop) {
+					continue;
+				}
 			}
 			final DataCell cellInfo = new DataCell(true, false, coordList);
 			cellInfo.setCoordinates(cell.getCoordinateList());
@@ -481,9 +486,6 @@ public class FlattenedCellSetFormatter implements ICellSetFormatter {
 
 
 				if (member != null) {
-					if (lvls != null && lvls.get(member.getDimension()) != null) {
-						memberInfo.setProperty("levelindex", "" + lvls.get(member.getDimension()).indexOf(member.getLevel().getDepth()));
-					}
 					if (x - 1 == offset)
 						memberInfo.setLastRow(true);
 
@@ -492,6 +494,8 @@ public class FlattenedCellSetFormatter implements ICellSetFormatter {
 					memberInfo.setFormattedValue(member.getCaption()); // First try to get a formatted value
 					memberInfo.setParentDimension(member.getDimension().getName());
 					memberInfo.setUniquename(member.getUniqueName());
+					memberInfo.setHierarchy(member.getHierarchy().getName());
+					memberInfo.setLevel(member.getLevel().getUniqueName());
 //					try {
 //						memberInfo.setChildMemberCount(member.getChildMemberCount());
 //					} catch (OlapException e) {
@@ -555,11 +559,21 @@ public class FlattenedCellSetFormatter implements ICellSetFormatter {
 							parent = parent.getParentMember();
 						}
 						final MemberCell pInfo = new MemberCell();
-						pInfo.setRawValue(parent.getCaption());
-						pInfo.setFormattedValue(parent.getCaption()); // First try to get a formatted value
-						pInfo.setParentDimension(parent.getDimension().getName());
-						pInfo.setUniquename(parent.getUniqueName());
-						
+						if (parent != null) {
+							pInfo.setRawValue(parent.getCaption());
+							pInfo.setFormattedValue(parent.getCaption()); // First try to get a formatted value
+							pInfo.setParentDimension(parent.getDimension().getName());
+							pInfo.setHierarchy(parent.getHierarchy().getName());
+							pInfo.setUniquename(parent.getUniqueName());
+							pInfo.setLevel(parent.getLevel().getUniqueName());
+						} else {
+							pInfo.setRawValue("");
+							pInfo.setFormattedValue(""); // First try to get a formatted value
+							pInfo.setParentDimension(member.getDimension().getName());
+							pInfo.setHierarchy(member.getHierarchy().getName());
+							pInfo.setLevel(member.getLevel().getUniqueName());
+							pInfo.setUniquename("");
+						}
 						matrix.set(x_parent, y_parent, pInfo);
 						if (isColumns) {
 							y_parent--;

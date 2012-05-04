@@ -43,6 +43,10 @@ public class MemberCell extends AbstractBaseCell implements Serializable {
     private String rightOfDimension;
 
     private List<String> memberPath;
+    
+    private String hierarchy;
+    
+    private String level;
 
     //private HashMap<String, String> properties = new HashMap<String, String>();
     /**
@@ -95,7 +99,23 @@ public class MemberCell extends AbstractBaseCell implements Serializable {
         return parentDimension;
     }
 
-    /**
+    public String getHierarchy() {
+		return hierarchy;
+	}
+
+	public void setHierarchy(String hierarchy) {
+		this.hierarchy = hierarchy;
+	}
+
+	public String getLevel() {
+		return level;
+	}
+
+	public void setLevel(String level) {
+		this.level = level;
+	}
+
+	/**
      *Is the member expanded?.
      * 
      * @return the expanded

@@ -271,6 +271,8 @@ public class CellSetFormatter implements ICellSetFormatter {
 						memberInfo.setFormattedValue(s);
 						memberInfo.setProperty("__headertype", "row_header_header");
 						memberInfo.setProperty("levelindex", "" + levels.indexOf(xLevel));
+						memberInfo.setProperty("hierarchy", "" + xLevel.getHierarchy().getUniqueName());
+						memberInfo.setProperty("uniqueName", "" + xLevel.getUniqueName());
 					}
 					matrix.set(x, y, memberInfo);
 				}
@@ -416,6 +418,8 @@ public class CellSetFormatter implements ICellSetFormatter {
 					memberInfo.setRawValue(member.getCaption());
 					memberInfo.setFormattedValue(member.getCaption()); // First try to get a formatted value
 					memberInfo.setParentDimension(member.getDimension().getName());
+					memberInfo.setHierarchy(member.getHierarchy().getName());
+					memberInfo.setLevel(member.getLevel().getUniqueName());
 					memberInfo.setUniquename(member.getUniqueName());
 //					try {
 //						memberInfo.setChildMemberCount(member.getChildMemberCount());
@@ -482,6 +486,8 @@ public class CellSetFormatter implements ICellSetFormatter {
 						pInfo.setRawValue(parent.getCaption());
 						pInfo.setFormattedValue(parent.getCaption()); // First try to get a formatted value
 						pInfo.setParentDimension(parent.getDimension().getName());
+						pInfo.setHierarchy(parent.getHierarchy().getName());
+						pInfo.setLevel(parent.getLevel().getUniqueName());
 						pInfo.setUniquename(parent.getUniqueName());
 						matrix.set(x_parent, y_parent, pInfo);
 						if (isColumns) {

@@ -20,7 +20,6 @@
 package org.saiku.service.util.export;
 
 import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -32,6 +31,7 @@ import org.saiku.olap.util.OlapResultSetUtil;
 import org.saiku.olap.util.formatter.CellSetFormatter;
 import org.saiku.olap.util.formatter.ICellSetFormatter;
 import org.saiku.service.util.exception.SaikuServiceException;
+import org.saiku.service.util.KeyValue;
 
 public class CsvExporter {
 	
@@ -49,40 +49,55 @@ public class CsvExporter {
 	}
 	
 	public static byte[] exportCsv(ResultSet rs) { 
-		return getCsv(rs,",","\"");
+		return getCsv(rs,",","\"", true, null);
 	}
 	
 	public static byte[] exportCsv(ResultSet rs, String delimiter, String enclosing) {
-		return getCsv(rs, delimiter, enclosing);
+		return getCsv(rs, delimiter, enclosing, true, null);
+	}
+	
+	public static byte[] exportCsv(ResultSet rs, String delimiter, String enclosing, boolean printHeader, List<KeyValue<String,String>> additionalColumns) {
+		return getCsv(rs, delimiter, enclosing, printHeader, additionalColumns);
 	}
 
-	private static byte[] getCsv(ResultSet rs, String delimiter, String enclosing) {
+	private static byte[] getCsv(ResultSet rs, String delimiter, String enclosing, boolean printHeader, List<KeyValue<String,String>> additionalColumns) {
 		Integer width = 0;
+		
         Integer height = 0;
         StringBuilder sb = new StringBuilder();
+        String addCols = null;
         try {
 			while (rs.next()) {
 			    if (height == 0) {
 			        width = rs.getMetaData().getColumnCount();
 			        String header = null;
-			        StringBuffer buf = new StringBuffer();
-			        for (int s = 0; s < width; s++) {
-			            String string;
-			            if (header == null) {
-			                string = enclosing + rs.getMetaData().getColumnName(s + 1) + enclosing;
-			                buf.append(string);
-			            	//header = enclosing + rs.getMetaData().getColumnName(s + 1) + enclosing;
-			            } else {
-			            	//header += delimiter + enclosing + rs.getMetaData().getColumnName(s + 1) + enclosing;
-			            	string = delimiter + enclosing + rs.getMetaData().getColumnName(s + 1) + enclosing;
-			            	buf.append(string);
-			            }
+			        if (additionalColumns != null) {
+			        	for (KeyValue<String,String> kv : additionalColumns) {
+			        		if (header == null) {
+			        			header = "";
+			        			addCols ="";
+			        		} else {
+				            	header += delimiter;
+			        		}
+			        		header += enclosing + kv.getKey() + enclosing;
+			        		addCols += enclosing + kv.getValue() + enclosing + delimiter;
+			        	}
 			        }
-			        header = buf.toString();
-			        if (header != null) {
+			        for (int s = 0; s < width; s++) {
+			            if (header != null) {
+			            	header += delimiter;
+			            } else {
+			            	header = "";
+			            }
+			            header += enclosing + rs.getMetaData().getColumnName(s + 1) + enclosing;
+			        }
+			        if (header != null && printHeader) {
 			        	header += "\r\n";
 			        	sb.append(header);
 			        }
+			    }
+			    if (addCols != null) {
+			    	sb.append(addCols);
 			    }
 			    for (int i = 0; i < width; i++) {
 			    	String content = rs.getString(i + 1);

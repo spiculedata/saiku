@@ -35,10 +35,7 @@ public class SaikuSelection extends AbstractSaikuObject {
 	
 	private Type type;
 	
-	public SaikuSelection() {
-		super(null,null);
-		throw new RuntimeException("Unsupported Constructor. Serialization only");
-	}
+	public SaikuSelection() {}
 
 	public SaikuSelection(String name, String uniqueName, String caption, String description, String dimensionUniqueName, String hierarchyUniqueName, String levelUniqueName, Type type ) {
 		super(uniqueName,name);

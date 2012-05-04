@@ -41,6 +41,7 @@ import org.olap4j.query.QueryAxis;
 import org.olap4j.query.QueryDimension;
 import org.olap4j.type.CubeType;
 import org.saiku.olap.dto.SaikuCube;
+import org.saiku.olap.dto.SaikuTag;
 import org.saiku.olap.util.exception.SaikuOlapException;
 
 public class MdxQuery implements IQuery {
@@ -51,6 +52,8 @@ public class MdxQuery implements IQuery {
 	private OlapConnection connection;
 	private String name;
 	private Scenario scenario;
+	private CellSet cellset;
+	private OlapStatement statement;
 	
 	public MdxQuery(OlapConnection con, SaikuCube cube, String name, String mdx) {
 		this.cube = cube;
@@ -120,7 +123,10 @@ public class MdxQuery implements IQuery {
 		OlapConnection con = connection;
 		con.setCatalog(getSaikuCube().getCatalogName());
 		OlapStatement stmt = con.createStatement();
-		return stmt.executeOlapQuery(mdx);
+		this.statement = stmt;
+		CellSet cs = stmt.executeOlapQuery(mdx);
+		this.statement = null;
+		return cs;
 	}
 
 	public QueryType getType() {
@@ -213,5 +219,41 @@ public class MdxQuery implements IQuery {
 	
 	public Scenario getScenario() {
 		return scenario;
+	}
+
+	public void setTag(SaikuTag tag) {
+		throw new UnsupportedOperationException();		
+	}
+
+	public SaikuTag getTag() {
+		return null;
+	}
+
+	public void removeTag() {
+	}
+
+	public void storeCellset(CellSet cs) {
+		this.cellset = cs;
+		
+	}
+
+	public CellSet getCellset() {
+		return cellset;
+	}
+
+	public void setStatement(OlapStatement os) {
+		this.statement = os;
+		
+	}
+
+	public OlapStatement getStatement() {
+		return this.statement;
+	}
+	
+	public void cancel() throws Exception {
+		if (this.statement != null && !this.statement.isClosed()) {
+			statement.close();
+		}
+		this.statement = null;
 	}
 }

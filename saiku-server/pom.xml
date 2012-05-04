@@ -4,7 +4,7 @@
 	<groupId>org.saiku</groupId>
 	<artifactId>saiku-server</artifactId>
 	<packaging>pom</packaging>
-    <version>2.3-SNAPSHOT</version>
+    <version>2.4-SNAPSHOT</version>
 	<properties>
 		<tomcat.version>apache-tomcat-6.0.24</tomcat.version>
 		<tomcat.source>target/stage/tomcat/</tomcat.source>

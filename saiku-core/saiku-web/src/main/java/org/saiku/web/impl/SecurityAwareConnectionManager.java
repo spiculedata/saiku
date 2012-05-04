@@ -102,10 +102,21 @@ public class SecurityAwareConnectionManager extends AbstractConnectionManager im
 	@Override
 	protected void refreshInternalConnection(String name, SaikuDatasource datasource) {
 		try {
-			ISaikuConnection con = connections.remove(name);
-			if (con != null && con.refresh(datasource.getProperties())) {
-				connections.put(name, con);
+			String newName = name;
+			if (isDatasourceSecurityEnabled(datasource) && sessionService != null) {
+				Map<String, Object> session = sessionService.getAllSessionObjects();
+				String username = (String) session.get("username");
+				if (username != null) {
+					newName = name + "-" + username;
+				}
 			}
+
+			ISaikuConnection con = connections.remove(newName);
+			if (con != null) {
+				con.clearCache();
+			}
+			con = null;
+			getInternalConnection(name, datasource);
 		}
 		catch (Exception e) {
 			e.printStackTrace();

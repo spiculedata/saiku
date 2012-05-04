@@ -19,37 +19,20 @@
  */
 package org.saiku.olap.dto;
 
-import java.util.List;
 
-public class SaikuDimension extends AbstractSaikuObject {
-	
+public class SaikuTupleDimension extends AbstractSaikuObject {
+
 	private String caption;
-	private String description;
 	
-	private List<SaikuHierarchy> hierarchies;
+	public SaikuTupleDimension() {	};
 	
-	public SaikuDimension() {
-		super(null,null);
-		throw new RuntimeException("Unsupported Constructor. Serialization only");
-	};
-	
-	public SaikuDimension(String name, String uniqueName, String caption, String description, List<SaikuHierarchy> hierarchies) {
+	public SaikuTupleDimension(String name, String uniqueName, String caption) {
 		super(uniqueName,name);
 		this.caption = caption;
-		this.description = description;
-		this.hierarchies = hierarchies;
 	}
 
 	public String getCaption() {
 		return caption;
-	}
-
-	public String getDescription() {
-		return description;
-	}
-
-	public List<SaikuHierarchy> getHierarchies() {
-		return hierarchies;
 	}
 
 }
