@@ -25,4 +25,18 @@ The query files of the standalone version are stored in something equivalent to:
 The query files of the plugin are somewhere stored in your pentaho solution repository:
 	biserver-ce/pentaho-solutions/......
 	
-The files in there  
+USING THE SAME MONDRIAN AS THE BISERVER:
+------------------------------------------------------------------
+
+you can use the saiku-shareMondrian.sh provided in this folder or:
+
+delete the following JAR files from saiku/lib/
+- mondrian*.jar, olap4j*.jar, eigenbase*.jar (should be 1 mondrian, 2 olap4j, 3 eigenbase jar files)
+- open saiku/plugin.spring.xml and remove the following line (about line #33):
+......
+		<property name="datasourceResolverClass" value="org.saiku.plugin.PentahoDataSourceResolver" />
+.....
+
+restart your server or use the plugin adapter refresh in http://localhost:8080/pentaho/Admin
+thats it!
+

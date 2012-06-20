@@ -125,6 +125,9 @@ public class MdxQuery implements IQuery {
 		OlapStatement stmt = con.createStatement();
 		this.statement = stmt;
 		CellSet cs = stmt.executeOlapQuery(mdx);
+		if (statement != null) {
+			statement.close();
+		}
 		this.statement = null;
 		return cs;
 	}

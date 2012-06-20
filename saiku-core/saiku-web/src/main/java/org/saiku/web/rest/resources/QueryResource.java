@@ -762,7 +762,7 @@ public class QueryResource {
 			@PathParam("dimension") String dimensionName, 
 			@FormParam("selections") String selectionJSON) {
 		if (log.isDebugEnabled()) {
-			log.debug("TRACK\t"  + "\t/query/" + queryName + "/axis/"+axisName+"/dimension/"+dimensionName+"\tPUT");
+			log.debug("TRACK\t"  + "\t/query/" + queryName + "/axis/"+axisName+"/dimension/"+dimensionName+"\tPUT\t" + selectionJSON);
 		}
 		try{
 			if (selectionJSON != null) {

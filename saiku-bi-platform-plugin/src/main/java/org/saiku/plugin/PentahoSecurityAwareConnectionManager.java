@@ -134,13 +134,25 @@ public class PentahoSecurityAwareConnectionManager extends AbstractConnectionMan
 					for (String r : validMondrianRolesForUser) {
 						// lets make sure the role is actually available, just to be safe
 						if (c.getAvailableRoleNames().contains(r)) {
-							roles += r +";";
+							roles += r +",";
 						}
 					}
-				}
-				System.out.println("Setting role to datasource:" + datasource.getName() + " role: " + roles);
 
-				SaikuMondrianHelper.setRoles(c, validMondrianRolesForUser);
+					System.out.println("Setting role to datasource:" + datasource.getName() + " role: " + roles);
+
+					if (validMondrianRolesForUser != null && validMondrianRolesForUser.length == 0) {
+						return true;
+					}
+					else if (validMondrianRolesForUser != null && validMondrianRolesForUser.length == 1) {
+						c.setRoleName(validMondrianRolesForUser[0]);
+					} else {
+						SaikuMondrianHelper.setRoles(c, validMondrianRolesForUser);
+					}
+				} else {
+					c.setRoleName(null);
+				}
+
+
 				return true;
 			} catch (Exception e) {
 				e.printStackTrace();

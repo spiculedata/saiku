@@ -28,7 +28,9 @@
   </bean>
   
 
-	<bean id="pentahoDsManager" class="org.saiku.plugin.PentahoDatasourceManager">
+	<bean id="pentahoDsManager" class="org.saiku.plugin.PentahoDatasourceManager" init-method="init">
+		<property name="datasourceResolverClass" value="org.saiku.plugin.PentahoDataSourceResolver" />
+		<property name="saikuDatasourceProcessor" value="org.saiku.plugin.util.PentahoDatasourceProcessor" />
 	</bean>
 
 	<bean id="connectionManager" class="org.saiku.plugin.PentahoSecurityAwareConnectionManager" init-method="init">

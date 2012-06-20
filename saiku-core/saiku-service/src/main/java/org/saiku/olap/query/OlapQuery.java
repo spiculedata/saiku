@@ -175,7 +175,9 @@ public class OlapQuery implements IQuery {
 		OlapStatement stmt = connection.createStatement();
 		this.statement = stmt;
 		CellSet cellSet = stmt.executeOlapQuery(mdx);
-		this.statement.close();
+		if (this.statement != null) {
+			this.statement.close();
+		}
 		this.statement = null;
     	if (scenario != null && query.getDimension(SCENARIO) != null) {
     		QueryDimension dimension = query.getDimension(SCENARIO);

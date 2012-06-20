@@ -1,7 +1,7 @@
 #!/bin/bash
 cd saiku-core
-mvn clean install 
-# -DskipTests=true 
+mvn clean install  
+#-DskipTests=true 
 cd ..
 cd saiku-webapp
 mvn clean install

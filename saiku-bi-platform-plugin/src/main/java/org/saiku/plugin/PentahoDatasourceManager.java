@@ -47,11 +47,22 @@ public class PentahoDatasourceManager implements IDatasourceManager {
 
 	private Map<String,SaikuDatasource> datasources = new HashMap<String,SaikuDatasource>();
 
-	public PentahoDatasourceManager() {
-		load();
-		MondrianProperties.instance().DataSourceResolverClass.setString("org.saiku.plugin.PentahoDataSourceResolver");
-	}
+	private String saikuDatasourceProcessor;
 
+	public void setDatasourceResolverClass(String datasourceResolverClass) {
+		MondrianProperties.instance().DataSourceResolverClass.setString(datasourceResolverClass);
+	}
+	
+	public void setSaikuDatasourceProcessor(String datasourceProcessor) {
+		this.saikuDatasourceProcessor = datasourceProcessor;
+	}
+	
+	public PentahoDatasourceManager() {
+	}
+	
+	public void init() {
+		load();
+	}
 
 	public void load() {
 		datasources.clear();
@@ -88,7 +99,9 @@ public class PentahoDatasourceManager implements IDatasourceManager {
 				Properties props = new Properties();
 				props.put("driver", "mondrian.olap4j.MondrianOlap4jDriver");
 				props.put("location","jdbc:mondrian:" + ds.getStringValue() + ";Catalog=" + cat.getStringValue());
-				props.put(ISaikuConnection.DATASOURCE_PROCESSORS, PentahoDatasourceProcessor.class.getCanonicalName());
+				if (saikuDatasourceProcessor != null) {
+					props.put(ISaikuConnection.DATASOURCE_PROCESSORS, saikuDatasourceProcessor);
+				}
 				props.list(System.out);
 
 				SaikuDatasource sd = new SaikuDatasource(name, SaikuDatasource.Type.OLAP, props);
