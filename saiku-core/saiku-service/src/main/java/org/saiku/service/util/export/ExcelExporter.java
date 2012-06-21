@@ -44,6 +44,7 @@ import org.saiku.olap.util.OlapResultSetUtil;
 import org.saiku.olap.util.formatter.HierarchicalCellSetFormatter;
 import org.saiku.olap.util.formatter.ICellSetFormatter;
 import org.saiku.service.util.exception.SaikuServiceException;
+import org.saiku.service.util.export.excel.ExcelWorksheetBuilder;
 
 public class ExcelExporter {
 
@@ -57,12 +58,12 @@ public class ExcelExporter {
 	}
 
 	private static byte[] getExcel(CellDataSet table) {
-		if (table != null) {
 
+/*		if (table != null) {
 			AbstractBaseCell[][] rowData = table.getCellSetBody();
 			AbstractBaseCell[][] rowHeader = table.getCellSetHeaders();
 
-			String[][] result = new String[rowHeader.length + rowData.length][];
+            String[][] result = new String[rowHeader.length + rowData.length][];
 			for (int x = 0; x<rowHeader.length;x++) {
 				List<String> cols = new ArrayList<String>();
 				for(int y = 0; y < rowHeader[x].length;y++) {
@@ -87,9 +88,13 @@ public class ExcelExporter {
 			return export(result);
 		}
 		return new byte[0];
+		*/
+
+        ExcelWorksheetBuilder worksheetBuilder = new ExcelWorksheetBuilder(table, "Foglio 1");
+        return worksheetBuilder.build();
 	}
 
-	private static byte[] export(String[][] resultSet) {
+    private static byte[] export(String[][] resultSet) {
 		WritableWorkbook  wb = null;
 		try {
 			ByteArrayOutputStream bout = new ByteArrayOutputStream();
