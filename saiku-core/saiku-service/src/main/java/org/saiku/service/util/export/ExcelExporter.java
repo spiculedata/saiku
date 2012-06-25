@@ -19,7 +19,7 @@
  */
 package org.saiku.service.util.export;
 
-ultset.AbstractBaseCell;
+import org.olap4j.CellSet;
 import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.util.OlapResultSetUtil;
 import org.saiku.olap.util.formatter.HierarchicalCellSetFormatter;
