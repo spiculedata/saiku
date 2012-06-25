@@ -152,7 +152,6 @@ public class RestUtil {
 					if (mcell.getLevel() != null) {
 						props.put("level", mcell.getLevel());
 					}
-					
 				}
 //				props.putAll(mcell.getProperties());
 

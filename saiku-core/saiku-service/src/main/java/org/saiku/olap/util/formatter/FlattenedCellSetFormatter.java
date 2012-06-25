@@ -23,7 +23,6 @@ import java.text.DecimalFormat;
 import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -32,7 +31,6 @@ import java.util.Map;
 import org.olap4j.Cell;
 import org.olap4j.CellSet;
 import org.olap4j.CellSetAxis;
-import org.olap4j.OlapException;
 import org.olap4j.Position;
 import org.olap4j.impl.CoordinateIterator;
 import org.olap4j.impl.Olap4jUtil;
@@ -275,8 +273,10 @@ public class FlattenedCellSetFormatter implements ICellSetFormatter {
 						memberInfo.setRawValue(s);
 						memberInfo.setFormattedValue(s);
 						memberInfo.setProperty("__headertype", "row_header_header");
-						memberInfo.setProperty("hierarchy", "" + xLevel.getHierarchy().getUniqueName());
-						memberInfo.setProperty("uniqueName", "" + xLevel.getUniqueName());
+						memberInfo.setProperty("levelindex", "" + levels.indexOf(xLevel));
+						memberInfo.setHierarchy(xLevel.getHierarchy().getUniqueName());
+						memberInfo.setParentDimension(xLevel.getDimension().getName());
+						memberInfo.setLevel(xLevel.getUniqueName());
 					}
 					matrix.set(x, y, memberInfo);
 				}

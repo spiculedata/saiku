@@ -10,11 +10,7 @@
   <classpathentry kind="var" path="M2_REPO/commons-discovery/commons-discovery/0.2/commons-discovery-0.2.jar"/>
   <classpathentry kind="var" path="M2_REPO/commons-io/commons-io/1.4/commons-io-1.4.jar"/>
   <classpathentry kind="var" path="M2_REPO/commons-lang/commons-lang/2.4/commons-lang-2.4.jar"/>
-  <classpathentry kind="var" path="M2_REPO/commons-logging/commons-logging/1.1.1/commons-logging-1.1.1.jar" sourcepath="M2_REPO/commons-logging/commons-logging/1.1.1/commons-logging-1.1.1-sources.jar">
-    <attributes>
-      <attribute value="jar:file:/Users/pstoellberger/.m2/repository/commons-logging/commons-logging/1.1.1/commons-logging-1.1.1-javadoc.jar!/" name="javadoc_location"/>
-    </attributes>
-  </classpathentry>
+  <classpathentry kind="var" path="M2_REPO/commons-logging/commons-logging/1.1/commons-logging-1.1.jar"/>
   <classpathentry kind="var" path="M2_REPO/commons-math/commons-math/1.1/commons-math-1.1.jar"/>
   <classpathentry kind="var" path="M2_REPO/commons-pool/commons-pool/1.2/commons-pool-1.2.jar"/>
   <classpathentry kind="var" path="M2_REPO/commons-vfs/commons-vfs/1.0/commons-vfs-1.0.jar"/>
@@ -34,6 +30,7 @@
   <classpathentry kind="var" path="M2_REPO/pentaho/mondrian/3.4.0-SNAPSHOT/mondrian-3.4.0-SNAPSHOT.jar"/>
   <classpathentry kind="var" path="M2_REPO/org/olap4j/olap4j/1.0.1-SNAPSHOT/olap4j-1.0.1-SNAPSHOT.jar"/>
   <classpathentry kind="var" path="M2_REPO/org/olap4j/olap4j-xmla/1.0.1-SNAPSHOT/olap4j-xmla-1.0.1-SNAPSHOT.jar"/>
+  <classpathentry kind="var" path="M2_REPO/org/apache/poi/poi/3.6/poi-3.6.jar"/>
   <classpathentry kind="var" path="M2_REPO/org/slf4j/slf4j-api/1.6.1/slf4j-api-1.6.1.jar"/>
   <classpathentry kind="var" path="M2_REPO/org/slf4j/slf4j-log4j12/1.6.1/slf4j-log4j12-1.6.1.jar"/>
   <classpathentry kind="var" path="M2_REPO/xalan/xalan/2.4.1/xalan-2.4.1.jar"/>

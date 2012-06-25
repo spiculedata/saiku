@@ -19,31 +19,11 @@
  */
 package org.saiku.service.util.export;
 
-import java.io.ByteArrayOutputStream;
-import java.util.ArrayList;
-import java.util.List;
-
-import jxl.Workbook;
-import jxl.format.Alignment;
-import jxl.format.Border;
-import jxl.format.BorderLineStyle;
-import jxl.format.Colour;
-import jxl.write.Label;
-import jxl.write.NumberFormat;
-import jxl.write.WritableCellFormat;
-import jxl.write.WritableFont;
-import jxl.write.WritableSheet;
-import jxl.write.WritableWorkbook;
-import jxl.write.WriteException;
-
-import org.olap4j.CellSet;
-import org.saiku.olap.dto.resultset.AbstractBaseCell;
+ultset.AbstractBaseCell;
 import org.saiku.olap.dto.resultset.CellDataSet;
-import org.saiku.olap.dto.resultset.DataCell;
 import org.saiku.olap.util.OlapResultSetUtil;
 import org.saiku.olap.util.formatter.HierarchicalCellSetFormatter;
 import org.saiku.olap.util.formatter.ICellSetFormatter;
-import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.service.util.export.excel.ExcelWorksheetBuilder;
 
 public class ExcelExporter {
@@ -58,7 +38,6 @@ public class ExcelExporter {
 	}
 
 	private static byte[] getExcel(CellDataSet table) {
-
         // TBD Sheet name is parametric. Useful for future ideas or improvements
         ExcelWorksheetBuilder worksheetBuilder = new ExcelWorksheetBuilder(table, "Sheet 1");
         return worksheetBuilder.build();
