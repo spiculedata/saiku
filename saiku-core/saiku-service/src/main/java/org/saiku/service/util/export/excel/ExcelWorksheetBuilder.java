@@ -135,6 +135,12 @@ public class ExcelWorksheetBuilder {
             for (int y = 0; y < rowsetBody[x].length; y++) {
                 cell = sheetRow.createCell(y);
                 String value = rowsetBody[x][y].getFormattedValue();
+                if (value == null) {
+                    // If the row cells has a null values it means the value is repeated in the data internally
+                    // but not in the interface. To properly format the Excel export file we need that value so we
+                    // get it from the same position in the prev row
+                    value = workbookSheet.getRow(sheetRow.getRowNum()-1).getCell(y).getStringCellValue();
+                }
                 if (rowsetBody[x][y] instanceof DataCell && ((DataCell) rowsetBody[x][y]).getRawNumber() != null) {
                     Number numberValue = ((DataCell) rowsetBody[x][y]).getRawNumber();
                     cell.setCellStyle(numberCS);
