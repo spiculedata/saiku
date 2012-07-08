@@ -19,14 +19,15 @@
  */
 package org.saiku.web;
 
-import static org.junit.Assert.assertEquals;
-
+import com.sun.jersey.api.client.Client;
+import com.sun.jersey.api.client.WebResource;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.saiku.service.olap.OlapDiscoverService;
 
-import com.sun.jersey.api.client.Client;
-import com.sun.jersey.api.client.WebResource;
+import static org.junit.Assert.assertEquals;
+
+//import org.saiku.service.olap.OlapDiscoverService;
 
 public class DataSourceInterfaceTest extends AbstractServiceTest {
     /**

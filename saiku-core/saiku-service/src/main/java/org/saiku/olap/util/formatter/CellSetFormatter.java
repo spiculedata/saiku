@@ -102,18 +102,6 @@ public class CellSetFormatter implements ICellSetFormatter {
 	}
 
 	/**
-	 * @param formattedValue
-	 * @return values
-	 */
-	public static String getValueString(final String formattedValue) {
-		final String[] values = formattedValue.split("\\|"); //$NON-NLS-1$
-		if (values.length > 1) {
-			return values[1];
-		}
-		return values[0];
-	}
-
-	/**
 	 * Returns an iterator over cells in a result.
 	 */
 	private static Iterable<Cell> cellIter(final int[] pageCoords, final CellSet cellSet) {
@@ -341,7 +329,12 @@ public class CellSetFormatter implements ICellSetFormatter {
 				}
 				// the raw value
 			}
-			cellInfo.setFormattedValue(getValueString(cellValue));
+			Map<String, String> cellProperties = new HashMap<String, String>();
+			String val = Olap4jUtil.parseFormattedCellValue(cellValue, cellProperties);
+			if (!cellProperties.isEmpty()) {
+				cellInfo.setProperties(cellProperties);
+			}
+			cellInfo.setFormattedValue(val);
 			matrix.set(x, y, cellInfo);
 		}
 		return matrix;

@@ -126,8 +126,8 @@ public class RestUtil {
 					metaprops.put("raw", "" + dcell.getRawNumber());
 				}
 				
-//				Properties props = new Properties();
-//				props.putAll(dcell.getProperties());
+				
+				metaprops.putAll(dcell.getProperties());
 				
 				// TODO no properties  (NULL) for now - 
 				return new Cell(dcell.getFormattedValue(), metaprops, Cell.Type.DATA_CELL);

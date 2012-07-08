@@ -20,6 +20,7 @@
 package org.saiku.service.olap;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.olap4j.OlapConnection;
@@ -61,6 +62,19 @@ public class OlapDiscoverService implements Serializable {
 			throw new SaikuServiceException("Cannot retrieve all connections", e);
 		}
 	}
+	
+
+	public List<SaikuConnection> getConnection(String connectionName) {
+		List<SaikuConnection> connections = new ArrayList<SaikuConnection>();
+		try {
+			 SaikuConnection c = metaExplorer.getConnection(connectionName);
+			 connections.add(c);
+			 return connections;
+		} catch (SaikuOlapException e) {
+			throw new SaikuServiceException("Cannot retrieve all connections", e);
+		}
+	}
+
 	
 	public void refreshAllConnections() throws SaikuServiceException {
 		try {

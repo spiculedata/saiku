@@ -1,26 +1,16 @@
 package org.saiku;
 
-import java.io.BufferedReader;
-import java.io.DataInputStream;
-import java.io.FileNotFoundException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
-import java.sql.SQLException;
-import java.sql.Statement;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
-
-import javax.sql.DataSource;
-
 import org.hsqldb.jdbc.jdbcDataSource;
 import org.junit.Assert;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.datasource.DatasourceService;
+
+import javax.sql.DataSource;
+import java.io.*;
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
 
 public class AbstractServiceUtils {
 
@@ -60,7 +50,7 @@ public class AbstractServiceUtils {
                 try {
                     Class.forName("org.hsqldb.jdbcDriver");
                 
-                Connection c = DriverManager.getConnection("jdbc:hsqldb:file:target/test/myunittests", "SA", "");
+                Connection c = DriverManager.getConnection("jdbc:hsqldb:file:C:/Workdir/Pentaho/serasoft/sera-pivot/saiku/saiku-core/target/test/myunittests", "SA", "");
 
                 // Create the mondrian schema
                 //Connection c = ds.getConnection();
@@ -81,7 +71,7 @@ public class AbstractServiceUtils {
                 stm = c.createStatement();
                 
                 slurp(stm, AbstractServiceUtils.class
-                        .getResourceAsStream("foodmart_hsql.script")); //$NON-NLS-1$
+                        .getResourceAsStream("C:/Workdir/Pentaho/serasoft/sera-pivot/saiku/saiku-core/target/test/foodmart_hsql.script")); //$NON-NLS-1$
                 stm.executeBatch();
                 stm.clearBatch();
                 stm.close();

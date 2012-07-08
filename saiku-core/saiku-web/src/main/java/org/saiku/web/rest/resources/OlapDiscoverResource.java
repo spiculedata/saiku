@@ -60,7 +60,6 @@ public class OlapDiscoverResource implements Serializable {
     
     /**
      * Returns the datasources available.
-     * @throws SQLException 
      */
     @GET
     @Produces({"application/json" })
@@ -72,6 +71,23 @@ public class OlapDiscoverResource implements Serializable {
 			return new ArrayList<SaikuConnection>();
 		}
     }
+    
+    
+    /**
+     * Returns the datasources available.
+     */
+    @GET
+    @Produces({"application/json" })
+    @Path("/{connection}")
+     public List<SaikuConnection> getConnections( @PathParam("connection") String connectionName) {
+    	try {
+			return olapDiscoverService.getConnection(connectionName);
+		} catch (Exception e) {
+			log.error(this.getClass().getName(),e);
+			return new ArrayList<SaikuConnection>();
+		}
+    }
+
 
     @GET
     @Produces({"application/json" })
@@ -80,6 +96,19 @@ public class OlapDiscoverResource implements Serializable {
     	try {
     		olapDiscoverService.refreshAllConnections();
 			return olapDiscoverService.getAllConnections();
+		} catch (Exception e) {
+			log.error(this.getClass().getName(),e);
+			return new ArrayList<SaikuConnection>();
+		}
+    }
+    
+    @GET
+    @Produces({"application/json" })
+    @Path("/{connection}/refresh")
+     public List<SaikuConnection> refreshConnection( @PathParam("connection") String connectionName) {
+    	try {
+			olapDiscoverService.refreshConnection(connectionName);
+			return olapDiscoverService.getConnection(connectionName);
 		} catch (Exception e) {
 			log.error(this.getClass().getName(),e);
 			return new ArrayList<SaikuConnection>();
