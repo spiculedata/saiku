@@ -20,7 +20,9 @@
 package org.saiku.olap.dto.resultset;
 
 import java.io.Serializable;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 
 /**
@@ -32,19 +34,17 @@ public class DataCell extends AbstractBaseCell implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    /** The color value. */
-    private String colorValue = null; // Color held as hex String
-
     private Double rawNumber = null;
 
-    private MemberCell parentColMember = null;
-
-    private MemberCell parentRowMember = null;
-
     private List<Integer> coordinates = null;
-    //private HashMap<String,String> properties = new HashMap<String, String>();
-    
-    
+
+    private String formatString = null; // Definition of the property which holds the format string
+                                        // used to format cell values.
+    private String dataType = null;     // Definition of the datatype.
+    private String backColorValue = null;
+
+    private Map<String,String> properties = new HashMap<String, String>();
+
     /**
      * 
      * Blank constructor for serialization purposes, don't use it.
@@ -58,8 +58,6 @@ public class DataCell extends AbstractBaseCell implements Serializable {
      * 
      * Construct a Data Cell containing olap data.
      * 
-     * @param b
-     * @param c
      */
     public DataCell(final boolean right, final boolean sameAsPrev, List<Integer> coordinates) {
         super();
@@ -67,23 +65,30 @@ public class DataCell extends AbstractBaseCell implements Serializable {
         this.sameAsPrev = sameAsPrev;
         this.coordinates = coordinates;
     }
-    
-    public MemberCell getParentColMember() {
-        return parentColMember;
+
+    public String getFormatString() {
+        return formatString;
     }
 
-    public void setParentColMember(final MemberCell parentColMember) {
-        this.parentColMember = parentColMember;
+    public void setFormatString(String formatString) {
+        this.formatString = formatString;
     }
-//
-//    public MemberCell getParentRowMember() {
-//        return parentRowMember;
-//    }
 
-//    public void setParentRowMember(final MemberCell parentRowMember) {
-//        this.parentRowMember = parentRowMember;
-//    }
+    public String getDataType() {
+        return dataType;
+    }
 
+    public void setDataType(String dataType) {
+        this.dataType = dataType;
+    }
+
+    public String getBackColorValue() {
+        return backColorValue;
+    }
+
+    public void setBackColorValue(String backColorValue) {
+        this.backColorValue = backColorValue;
+    }
 
     public Number getRawNumber() {
         return rawNumber;
@@ -93,27 +98,6 @@ public class DataCell extends AbstractBaseCell implements Serializable {
         this.rawNumber = rawNumber;
     }
 
-
-
-    /**
-     * Gets the color value.
-     * 
-     * @return the color value
-     */
-    public String getColorValue() {
-        return colorValue;
-    }
-
-    /**
-     * Sets the color value.
-     * 
-     * @param colorValue
-     *            the new color value
-     */
-    public void setColorValue(final String colorValue) {
-        this.colorValue = colorValue;
-    }
-
     public List<Integer> getCoordinates() {
         return coordinates;
     }
@@ -121,17 +105,34 @@ public class DataCell extends AbstractBaseCell implements Serializable {
     public void setCoordinates(List<Integer> coordinates) {
         this.coordinates = coordinates;
     }
-    
-/*    public void setProperty(String name, String value){
+
+
+    public void setProperty(String name, String value){
         properties.put(name, value);
     }
-    
-    public HashMap<String, String> getProperties(){
+
+    public void setProperties(Map<String, String> props) {
+        properties.putAll(props);
+    }
+
+    public Map<String, String> getProperties(){
         return properties;
     }
-    
+
     public String getProperty(String name){
         return properties.get(name);
     }
-  */  
+
+
+
+    @Override
+    public String toString() {
+        return "DataCell{" +
+                ", rawNumber=" + rawNumber +
+                ", coordinates=" + coordinates +
+                ", formatString='" + formatString + '\'' +
+                ", dataType='" + dataType + '\'' +
+                ", backColorValue='" + backColorValue + '\'' +
+                '}';
+    }
 }
