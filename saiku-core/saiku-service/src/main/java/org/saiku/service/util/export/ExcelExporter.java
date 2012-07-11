@@ -20,27 +20,31 @@
 package org.saiku.service.util.export;
 
 import org.olap4j.CellSet;
+import org.saiku.olap.dto.SaikuDimensionSelection;
 import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.util.OlapResultSetUtil;
 import org.saiku.olap.util.formatter.HierarchicalCellSetFormatter;
 import org.saiku.olap.util.formatter.ICellSetFormatter;
 import org.saiku.service.util.export.excel.ExcelWorksheetBuilder;
 
+import java.util.List;
+
 public class ExcelExporter {
 
-	public static byte[] exportExcel(CellSet cellSet) {
-		return exportExcel(cellSet, new HierarchicalCellSetFormatter());
+	public static byte[] exportExcel(CellSet cellSet, List<SaikuDimensionSelection> filters) {
+		return exportExcel(cellSet, new HierarchicalCellSetFormatter(), filters);
 	}
 
-	public static byte[] exportExcel(CellSet cellSet, ICellSetFormatter formatter) {
+	public static byte[] exportExcel(CellSet cellSet,
+                                     ICellSetFormatter formatter,
+                                     List<SaikuDimensionSelection> filters) {
 		CellDataSet table = OlapResultSetUtil.cellSet2Matrix(cellSet, formatter);
-		return getExcel(table);
+		return getExcel(table, filters);
 	}
 
-	private static byte[] getExcel(CellDataSet table) {
-
+	private static byte[] getExcel(CellDataSet table, List<SaikuDimensionSelection> filters) {
         // TBD Sheet name is parametric. Useful for future ideas or improvements
-        ExcelWorksheetBuilder worksheetBuilder = new ExcelWorksheetBuilder(table, "Sheet 1");
+        ExcelWorksheetBuilder worksheetBuilder = new ExcelWorksheetBuilder(table, filters, "Sheet 1");
         return worksheetBuilder.build();
 	}
 }

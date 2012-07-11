@@ -23,7 +23,6 @@ import java.io.Serializable;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 
 
 /**
@@ -38,10 +37,12 @@ public class DataCell extends AbstractBaseCell implements Serializable {
     private Double rawNumber = null;
 
     private List<Integer> coordinates = null;
-    
+
+    private String formatString = null; // Definition of the property which holds the format string
+                                        // used to format cell values.
+
     private Map<String,String> properties = new HashMap<String, String>();
-    
-    
+
     /**
      * 
      * Blank constructor for serialization purposes, don't use it.
@@ -55,8 +56,6 @@ public class DataCell extends AbstractBaseCell implements Serializable {
      * 
      * Construct a Data Cell containing olap data.
      * 
-     * @param b
-     * @param c
      */
     public DataCell(final boolean right, final boolean sameAsPrev, List<Integer> coordinates) {
         super();
@@ -64,7 +63,15 @@ public class DataCell extends AbstractBaseCell implements Serializable {
         this.sameAsPrev = sameAsPrev;
         this.coordinates = coordinates;
     }
-    
+
+    public String getFormatString() {
+        return formatString;
+    }
+
+    public void setFormatString(String formatString) {
+        this.formatString = formatString;
+    }
+
     public Number getRawNumber() {
         return rawNumber;
     }
@@ -80,21 +87,31 @@ public class DataCell extends AbstractBaseCell implements Serializable {
     public void setCoordinates(List<Integer> coordinates) {
         this.coordinates = coordinates;
     }
-    
+
     public void setProperty(String name, String value){
         properties.put(name, value);
     }
-    
+
     public void setProperties(Map<String, String> props) {
-    	properties.putAll(props);
+        properties.putAll(props);
     }
-    
+
     public Map<String, String> getProperties(){
         return properties;
     }
-    
+
     public String getProperty(String name){
         return properties.get(name);
     }
-  
+
+
+
+    @Override
+    public String toString() {
+        return "DataCell{" +
+                ", rawNumber=" + rawNumber +
+                ", coordinates=" + coordinates +
+                ", formatString='" + formatString +
+                '}';
+    }
 }

@@ -1,18 +1,5 @@
 package org.saiku.olap.discover;
 
-import static org.junit.Assert.*;
-
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.URL;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
-
-import org.apache.commons.vfs.FileObject;
-import org.apache.commons.vfs.FileSystem;
-import org.apache.commons.vfs.FileUtil;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.olap4j.OlapConnection;
@@ -20,15 +7,19 @@ import org.saiku.AbstractServiceUtils;
 import org.saiku.TConnectionManager;
 import org.saiku.datasources.connection.IConnectionManager;
 import org.saiku.datasources.datasource.SaikuDatasource;
-import org.saiku.olap.dto.SaikuConnection;
-import org.saiku.olap.dto.SaikuCube;
-import org.saiku.olap.dto.SaikuDimension;
-import org.saiku.olap.dto.SaikuHierarchy;
-import org.saiku.olap.dto.SaikuLevel;
-import org.saiku.olap.dto.SaikuMember;
+import org.saiku.olap.dto.*;
 import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.datasource.ClassPathResourceDatasourceManager;
 import org.saiku.service.datasource.IDatasourceManager;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
+
+import static org.junit.Assert.*;
 
 
 public class OlapMetaExplorerTest {
@@ -287,7 +278,7 @@ public class OlapMetaExplorerTest {
     }
     
     @Test
-    public final void testGetMemeberChildren() throws SaikuOlapException{
+    public final void testGetMemberChildren() throws SaikuOlapException{
 
     	List<SaikuMember> members = olapMetaExplorer.getMemberChildren(olapMetaExplorer.getAllCubes().get(0), "[Department].[All Departments]");
     	
@@ -306,7 +297,7 @@ public class OlapMetaExplorerTest {
     }
     
     @Test
-    public final void testGetMemeber() throws SaikuOlapException{
+    public final void testGetMember() throws SaikuOlapException{
     	SaikuMember member = olapMetaExplorer.getMember(olapMetaExplorer.getAllCubes().get(0), "[Department].[All Departments]");
     	
     	assertNotNull(member);

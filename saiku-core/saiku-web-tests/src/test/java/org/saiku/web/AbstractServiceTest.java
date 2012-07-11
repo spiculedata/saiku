@@ -19,6 +19,18 @@
  */
 package org.saiku.web;
 
+import com.sun.jersey.api.client.config.DefaultClientConfig;
+import com.sun.jersey.test.framework.AppDescriptor;
+import com.sun.jersey.test.framework.JerseyTest;
+import com.sun.jersey.test.framework.WebAppDescriptor;
+import org.hsqldb.jdbc.jdbcDataSource;
+import org.olap4j.OlapConnection;
+import org.olap4j.OlapException;
+import org.olap4j.OlapWrapper;
+import org.saiku.service.olap.OlapDiscoverService;
+
+import javax.naming.Context;
+import javax.naming.InitialContext;
 import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.InputStream;
@@ -29,20 +41,6 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Properties;
 import java.util.UUID;
-
-import javax.naming.Context;
-import javax.naming.InitialContext;
-
-import org.hsqldb.jdbc.jdbcDataSource;
-import org.olap4j.OlapConnection;
-import org.olap4j.OlapException;
-import org.olap4j.OlapWrapper;
-import org.saiku.service.olap.OlapDiscoverService;
-
-import com.sun.jersey.api.client.config.DefaultClientConfig;
-import com.sun.jersey.test.framework.AppDescriptor;
-import com.sun.jersey.test.framework.JerseyTest;
-import com.sun.jersey.test.framework.WebAppDescriptor;
 
 public abstract class AbstractServiceTest extends JerseyTest {
 

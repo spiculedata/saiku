@@ -311,7 +311,7 @@ Iif("sales_fact_1997"."promotion_id" = 0, 0, "sales_fact_1997"."store_sales")
       </SQL>
     </MeasureExpression>
   </Measure>
-  <CalculatedMember
+  <!-- CalculatedMember
       name="Profit"
       dimension="Measures">
     <Formula>[Measures].[Store Sales] - [Measures].[Store Cost]</Formula>
@@ -320,11 +320,11 @@ Iif("sales_fact_1997"."promotion_id" = 0, 0, "sales_fact_1997"."store_sales")
   <CalculatedMember
       name="Profit last Period"
       dimension="Measures"
-      formula="COALESCEEMPTY((Measures.[Profit], [Time].PREVMEMBER),    Measures.[Profit])"
+      formula="COALESCEEMPTY((Measures.[Profit], [Time].PrevMember),    Measures.[Profit])"
       visible="false">
     <CalculatedMemberProperty name="FORMAT_STRING" value="$#,##0.00"/>
     <CalculatedMemberProperty name="MEMBER_ORDINAL" value="18"/>
-  </CalculatedMember>
+  </CalculatedMember >
   <CalculatedMember
       name="Profit Growth"
       dimension="Measures"
@@ -332,7 +332,7 @@ Iif("sales_fact_1997"."promotion_id" = 0, 0, "sales_fact_1997"."store_sales")
       visible="true"
       caption="Gewinn-Wachstum">
     <CalculatedMemberProperty name="FORMAT_STRING" value="0.0%"/>
-  </CalculatedMember>
+  </CalculatedMember -->
 </Cube>
 <Cube name="Sales Scenario" defaultMeasure="Unit Sales">
   <Table name="sales_fact_1997">
@@ -542,7 +542,7 @@ Iif("sales_fact_1997"."promotion_id" = 0, 0, "sales_fact_1997"."store_sales")
       </SQL>
     </MeasureExpression>
   </Measure>
-  <CalculatedMember
+  <!-- CalculatedMember
       name="Profit"
       dimension="Measures">
     <Formula>[Measures].[Store Sales] - [Measures].[Store Cost]</Formula>
@@ -563,7 +563,7 @@ Iif("sales_fact_1997"."promotion_id" = 0, 0, "sales_fact_1997"."store_sales")
       visible="true"
       caption="Gewinn-Wachstum">
     <CalculatedMemberProperty name="FORMAT_STRING" value="0.0%"/>
-  </CalculatedMember>
+  </CalculatedMember -->
 </Cube>
 
 <Cube name="Warehouse">
@@ -596,15 +596,15 @@ Iif("sales_fact_1997"."promotion_id" = 0, 0, "sales_fact_1997"."store_sales")
       </SQL>
     </MeasureExpression>
   </Measure>
-  <CalculatedMember
+  <!-- CalculatedMember
       name="Average Warehouse Sale"
       dimension="Measures">
     <Formula>[Measures].[Warehouse Sales] / [Measures].[Warehouse Cost]</Formula>
     <CalculatedMemberProperty name="FORMAT_STRING" value="$#,##0.00"/>
-  </CalculatedMember>
+  </CalculatedMember >
   <NamedSet name="Top Sellers">
     <Formula>TopCount([Warehouse].[Warehouse Name].MEMBERS, 5, [Measures].[Warehouse Sales])</Formula>
-  </NamedSet>    
+  </NamedSet -->
 </Cube>
 
 <!-- Test a cube based upon a single table. -->

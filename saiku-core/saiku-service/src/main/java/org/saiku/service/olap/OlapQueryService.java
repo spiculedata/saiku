@@ -19,28 +19,8 @@
  */
 package org.saiku.service.olap;
 
-import java.io.PrintWriter;
-import java.io.Serializable;
-import java.io.StringWriter;
-import java.io.Writer;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.concurrent.Executor;
-
 import org.apache.commons.lang.StringUtils;
-import org.olap4j.AllocationPolicy;
-import org.olap4j.Axis;
-import org.olap4j.CellSet;
-import org.olap4j.OlapConnection;
-import org.olap4j.OlapException;
-import org.olap4j.OlapStatement;
-import org.olap4j.Scenario;
+import org.olap4j.*;
 import org.olap4j.impl.IdentifierParser;
 import org.olap4j.mdx.IdentifierNode;
 import org.olap4j.mdx.IdentifierSegment;
@@ -51,19 +31,8 @@ import org.olap4j.metadata.Cube;
 import org.olap4j.metadata.Hierarchy;
 import org.olap4j.metadata.Level;
 import org.olap4j.metadata.Member;
-import org.olap4j.query.Query;
-import org.olap4j.query.QueryAxis;
-import org.olap4j.query.QueryDimension;
-import org.olap4j.query.Selection;
-import org.olap4j.query.SortOrder;
-import org.saiku.olap.dto.SaikuCube;
-import org.saiku.olap.dto.SaikuDimensionSelection;
-import org.saiku.olap.dto.SaikuMember;
-import org.saiku.olap.dto.SaikuQuery;
-import org.saiku.olap.dto.SaikuSelection;
-import org.saiku.olap.dto.SaikuTag;
-import org.saiku.olap.dto.SaikuTuple;
-import org.saiku.olap.dto.SaikuTupleDimension;
+import org.olap4j.query.*;
+import org.saiku.olap.dto.*;
 import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.query.IQuery;
 import org.saiku.olap.query.MdxQuery;
@@ -77,12 +46,19 @@ import org.saiku.olap.util.formatter.FlattenedCellSetFormatter;
 import org.saiku.olap.util.formatter.HierarchicalCellSetFormatter;
 import org.saiku.olap.util.formatter.ICellSetFormatter;
 import org.saiku.service.util.KeyValue;
-import org.saiku.service.util.ObjectHolder;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.service.util.export.CsvExporter;
 import org.saiku.service.util.export.ExcelExporter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.PrintWriter;
+import java.io.Serializable;
+import java.io.StringWriter;
+import java.io.Writer;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.*;
 
 public class OlapQueryService implements Serializable {
 
@@ -541,8 +517,7 @@ public class OlapQueryService implements Serializable {
 									}
 								}
 							}
-							dimension.getInclusions().removeAll(removals);
-						}
+                        }
 					}
 				}
 			}
@@ -571,7 +546,7 @@ public class OlapQueryService implements Serializable {
 		catch (Exception e) {
 			throw new SaikuServiceException("Cannot move dimension:" + dimensionName + " to axis: "+axisName,e);
 		}
-	}
+    }
 
 	public void removeDimension(String queryName, String axisName, String dimensionName) {
 		IQuery query = getIQuery(queryName);
@@ -726,11 +701,13 @@ public class OlapQueryService implements Serializable {
 		if (type != null) {
 			IQuery query = getIQuery(queryName);
 			CellSet rs = query.getCellset();
+            List<SaikuDimensionSelection> filters = getAxisSelection(queryName, "FILTER");
+
 			if (type.toLowerCase().equals("xls")) {
-				return ExcelExporter.exportExcel(rs,formatter);	
+				return ExcelExporter.exportExcel(rs, formatter, filters);
 			}
 			if (type.toLowerCase().equals("csv")) {
-				return CsvExporter.exportCsv(rs,",","\"", formatter);	
+				return CsvExporter.exportCsv(rs,",","\"", formatter);
 			}
 		}
 		return new byte[0];

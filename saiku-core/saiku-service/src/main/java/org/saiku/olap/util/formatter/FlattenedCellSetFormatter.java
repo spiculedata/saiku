@@ -19,15 +19,6 @@
  */
 package org.saiku.olap.util.formatter;
 
-import java.text.DecimalFormat;
-import java.util.AbstractList;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-
 import org.olap4j.Cell;
 import org.olap4j.CellSet;
 import org.olap4j.CellSetAxis;
@@ -37,13 +28,20 @@ import org.olap4j.impl.Olap4jUtil;
 import org.olap4j.metadata.Dimension;
 import org.olap4j.metadata.Level;
 import org.olap4j.metadata.Member;
+import org.olap4j.metadata.Property;
 import org.saiku.olap.dto.resultset.DataCell;
 import org.saiku.olap.dto.resultset.Matrix;
 import org.saiku.olap.dto.resultset.MemberCell;
 
+import java.text.DecimalFormat;
+import java.util.*;
+
 
 public class FlattenedCellSetFormatter implements ICellSetFormatter {
-	/**
+
+    private static final String NUMERIC_DATATYPE = "Numeric";
+
+    /**
 	 * Description of an axis.
 	 */
 	private static class AxisInfo {
@@ -217,7 +215,7 @@ public class FlattenedCellSetFormatter implements ICellSetFormatter {
 	 * 
 	 * @param cellSet
 	 *            Cell set
-	 * @param pw
+	 * @param pageCoords
 	 *            Print writer
 	 * @param pageCoords
 	 *            Coordinates of page [page, chapter, section, ...]
@@ -329,41 +327,9 @@ public class FlattenedCellSetFormatter implements ICellSetFormatter {
 					continue;
 				}
 			}
+
 			final DataCell cellInfo = new DataCell(true, false, coordList);
 			cellInfo.setCoordinates(cell.getCoordinateList());
-//			for (int z = 0; z < matrix.getMatrixHeight(); z++) {
-//				final AbstractBaseCell headerCell = matrix.get(x, z);
-//
-//				if (headerCell instanceof MemberCell && ((MemberCell) headerCell).getUniqueName() != null) {
-//				} else {
-//					cellInfo.setParentColMember((MemberCell) matrix.get(x, z - 1));
-//					break;
-//				}
-//			}
-//
-//			for (int z = 0; z < matrix.getMatrixWidth(); z++) {
-//				final AbstractBaseCell headerCell = matrix.get(z, y);
-//				if (headerCell instanceof MemberCell && ((MemberCell) headerCell).getUniqueName() != null) {
-//
-//				} else {
-//					cellInfo.setParentRowMember((MemberCell) matrix.get(z - 1, y));
-//					break;
-//				}
-//			}
-
-			//            NamedList<Property> proplist = null;
-			//            try {
-			//                proplist = cell.getCellSet().getMetaData().getCellProperties();
-			//                for(int i = 0; i<proplist.size(); i++){
-			//                	
-			//                    cellInfo.setProperty(proplist.get(i).getName(), cell.getPropertyValue(proplist.get(i)).toString());
-			//               }
-			//          
-			//            } catch (OlapException e1) {
-			//                // TODO Auto-generated catch block
-			//                e1.printStackTrace();
-			//            }
-
 
 			if (cell.getValue() != null) {
 				try {
@@ -393,7 +359,17 @@ public class FlattenedCellSetFormatter implements ICellSetFormatter {
 				}
 				// the raw value
 			}
-			Map<String, String> cellProperties = new HashMap<String, String>();
+
+            // This property is relevant for Excel export
+            String formatString = (String) cell.getPropertyValue(Property.StandardCellProperty.FORMAT_STRING);
+            if (formatString != null && !formatString.startsWith("|")) {
+                cellInfo.setFormatString(formatString);
+            } else {
+                formatString = formatString.substring(1, formatString.length());
+                cellInfo.setFormatString(formatString.substring(0, formatString.indexOf("|")));
+            }
+
+            Map<String, String> cellProperties = new HashMap<String, String>();
 			String val = Olap4jUtil.parseFormattedCellValue(cellValue, cellProperties);
 			if (!cellProperties.isEmpty()) {
 				cellInfo.setProperties(cellProperties);
@@ -416,7 +392,7 @@ public class FlattenedCellSetFormatter implements ICellSetFormatter {
 	 *            Description of axis
 	 * @param isColumns
 	 *            True if columns, false if rows
-	 * @param offset
+	 * @param oldoffset
 	 *            Ordinal of first cell to populate in matrix
 	 */
 	private void populateAxis(final Matrix matrix, final CellSetAxis axis, final AxisInfo axisInfo,

@@ -930,7 +930,7 @@ CONCAT(CONCAT("customer"."fname", ' '), "customer"."lname")
        name="Profit"
        dimension="Measures">
      <Formula>[Measures].[Store Sales] - [Measures].[Store Cost]</Formula>
-     <CalculatedMemberProperty name="FORMAT_STRING" value="$#,##0.00"/>
+     <CalculatedMemberProperty name="FORMAT_STRING" value="Iif(([Measures].[Store Sales] - [Measures].[Store Cost]) &lt; 10000, '|(#,##0.00 &#8364;)|style=red', '|#,##0.00 &#8364;|style=green')"/>
      <CalculatedMemberProperty name="MEMBER_ORDINAL" value="4"/>
    </CalculatedMember>
 

@@ -9,6 +9,17 @@
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
+    <orderEntry type="module" module-name="saiku-service" scope="TEST" />
+    <orderEntry type="library" name="ant:ant-junit:1.6.1" level="project" />
+    <orderEntry type="library" name="Maven: com.sun.jersey:jersey-client:1.8" level="project" />
+    <orderEntry type="library" name="Maven: junit:junit:4.10" level="project" />
+    <orderEntry type="library" name="Maven: hsqldb:hsqldb:1.8.0.10" level="project" />
+    <orderEntry type="library" name="Maven: org.olap4j:olap4j:1.0.1-SNAPSHOT" level="project" />
+    <orderEntry type="library" name="Maven: com.sun.jersey.jersey-test-framework:jersey-test-framework-core:1.8" level="project" />
+    <orderEntry type="library" name="Maven: javax.ws.rs:jsr311-api:1.1.1" level="project" />
+    <orderEntry type="library" name="Maven: com.sun.jersey:jersey-core:1.8" level="project" />
+    <orderEntry type="library" scope="TEST" name="org.springframework.security.oauth:spring-security-oauth2:1.0.0.BUILD-SNAPSHOT" level="project" />
+    <orderEntry type="library" name="classes" level="project" />
   </component>
 </module>
 
