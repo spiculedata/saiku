@@ -359,14 +359,15 @@ public class FlattenedCellSetFormatter implements ICellSetFormatter {
 				}
 				// the raw value
 			}
-            // My changes to be confirmed
-            // These properties are only relevant for body cells and not for header cells
-            cellInfo.setFormatString((String) cell.getPropertyValue(Property.StandardCellProperty.FORMAT_STRING));
-            cellInfo.setBackColorValue((String) cell.getPropertyValue(Property.StandardCellProperty.BACK_COLOR));
-            String dataType = (String) cell.getPropertyValue(Property.StandardCellProperty.DATATYPE);
-            // Following the latest OLAP4J specification if datatype is null by default it is assumed to be Numeric
-            cellInfo.setDataType((dataType == null ? NUMERIC_DATATYPE : dataType));
-            // My changes to be confirmed - end
+
+            // This property is relevant for Excel export
+            String formatString = (String) cell.getPropertyValue(Property.StandardCellProperty.FORMAT_STRING);
+            if (formatString != null && !formatString.startsWith("|")) {
+                cellInfo.setFormatString(formatString);
+            } else {
+                formatString = formatString.substring(1, formatString.length());
+                cellInfo.setFormatString(formatString.substring(0, formatString.indexOf("|")));
+            }
 
             Map<String, String> cellProperties = new HashMap<String, String>();
 			String val = Olap4jUtil.parseFormattedCellValue(cellValue, cellProperties);

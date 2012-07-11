@@ -1,6 +1,7 @@
 package org.saiku.service.util.export.excel;
 
 import org.apache.poi.hssf.usermodel.HSSFCellStyle;
+import org.apache.poi.hssf.usermodel.HSSFPalette;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.hssf.util.HSSFColor;
 import org.apache.poi.ss.usermodel.*;
@@ -14,10 +15,9 @@ import org.saiku.service.util.exception.SaikuServiceException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 
 /**
  * Created with IntelliJ IDEA.
@@ -32,6 +32,7 @@ public class ExcelWorksheetBuilder {
     private static final String BASIC_SHEET_FONT_FAMILY = "Arial";
     private static final short BASIC_SHEET_FONT_SIZE = 11;
     private static final String EMPTY_STRING = "";
+    private static final String CSS_COLORS_CODE_PROPERTIES = "/org/saiku/service/util/export/excel/resources/css-colors-codes.properties";
 
     private AbstractBaseCell[][] rowsetHeader;
     private AbstractBaseCell[][] rowsetBody;
@@ -42,10 +43,14 @@ public class ExcelWorksheetBuilder {
     private int topLeftCornerHeight;
     private HSSFCellStyle basicCS;
     private HSSFCellStyle numberCS;
-    private HSSFCellStyle dateCS;
     private HSSFCellStyle lighterHeaderCellCS;
     private HSSFCellStyle darkerHeaderCellCS;
     private List<SaikuDimensionSelection> queryFilters;
+    private Map<String, Integer> colorCodesMap;
+
+    HSSFPalette customColorsPalette;
+    int nextAvailableColorCode = 41;
+    Properties cssColorCodesProperties;
 
     public ExcelWorksheetBuilder(CellDataSet table, List<SaikuDimensionSelection> filters, String sheetName) {
 
@@ -56,6 +61,8 @@ public class ExcelWorksheetBuilder {
 
         queryFilters = filters;
         excelWorkbook = new HSSFWorkbook();
+        customColorsPalette = excelWorkbook.getCustomPalette();
+        colorCodesMap = new HashMap<String, Integer>();
         this.sheetName = sheetName;
         rowsetHeader = table.getCellSetHeaders();
         rowsetBody = table.getCellSetBody();
@@ -208,6 +215,7 @@ public class ExcelWorksheetBuilder {
 
         Row sheetRow = null;
         Cell cell = null;
+        String formatString = null;
 
         for (int x = 0; x < rowsetBody.length; x++) {
 
@@ -223,14 +231,83 @@ public class ExcelWorksheetBuilder {
                 }
                 if (rowsetBody[x][y] instanceof DataCell && ((DataCell) rowsetBody[x][y]).getRawNumber() != null) {
                     Number numberValue = ((DataCell) rowsetBody[x][y]).getRawNumber();
-                    cell.setCellStyle(numberCS);
                     cell.setCellValue(numberValue.doubleValue());
+                    applyCellFormatting(cell, x, y);
                 } else {
                     cell.setCellStyle(basicCS);
                     cell.setCellValue(value);
                 }
             }
         }
+    }
+
+    protected void applyCellFormatting(Cell cell, int x, int y) {
+        String formatString;
+        formatString = ((DataCell) rowsetBody[x][y]).getFormatString();
+        if (formatString != null) {
+            // Inherit formatting from cube schema FORMAT_STRING
+            CellStyle numberCSClone = excelWorkbook.createCellStyle();
+            DataFormat fmt = excelWorkbook.createDataFormat();
+            numberCSClone.cloneStyleFrom(numberCS);
+            numberCSClone.setDataFormat(fmt.getFormat(formatString));
+            // Check for cell background
+            Map<String, String> properties = ((DataCell) rowsetBody[x][y]).getProperties();
+            if (properties.containsKey("style")) {
+                short colorCodeIndex = getColorFromCustomPalette(properties.get("style"));
+                if (colorCodeIndex != -1) {
+                    numberCSClone.setFillForegroundColor(colorCodeIndex);
+                    numberCSClone.setFillPattern(HSSFCellStyle.SOLID_FOREGROUND);
+                }
+            }
+            cell.setCellStyle(numberCSClone);
+        } else {
+            cell.setCellStyle(numberCS);
+        }
+
+    }
+
+    private short getColorFromCustomPalette(String style) {
+
+        short returnedColorIndex = -1;
+        InputStream is = null;
+
+        if (colorCodesMap.containsKey(style)) {
+            returnedColorIndex = colorCodesMap.get(style).shortValue();
+        } else {
+            try {
+
+                if (cssColorCodesProperties == null) {
+                is = getClass().getResourceAsStream(CSS_COLORS_CODE_PROPERTIES);
+                    if (is != null) {
+                        cssColorCodesProperties = new Properties();
+                        cssColorCodesProperties.load(is);
+                    }
+                }
+
+                String colorCode = cssColorCodesProperties.getProperty(style);
+                if (colorCode != null) {
+                    int redCode = Integer.parseInt(colorCode.substring(1, 3), 16);
+                    int greenCode = Integer.parseInt(colorCode.substring(3, 5), 16);
+                    int blueCode = Integer.parseInt(colorCode.substring(5, 7), 16);
+                    customColorsPalette.setColorAtIndex(new Byte((byte) nextAvailableColorCode), new Byte((byte) redCode), new Byte((byte) greenCode), new Byte((byte) blueCode));
+                    returnedColorIndex = customColorsPalette.getColor(nextAvailableColorCode).getIndex();
+                    colorCodesMap.put(style, new Integer(returnedColorIndex));
+                    nextAvailableColorCode++;
+                }
+            } catch (IOException e) {
+                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+            } finally {
+                try {
+                    if (is != null)
+                        is.close();
+                } catch (IOException e) {
+                    e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+                }
+            }
+
+        }
+
+        return returnedColorIndex;  //To change body of created methods use File | Settings | File Templates.
     }
 
     protected int buildExcelTableHeader(int startRow) {

@@ -40,8 +40,6 @@ public class DataCell extends AbstractBaseCell implements Serializable {
 
     private String formatString = null; // Definition of the property which holds the format string
                                         // used to format cell values.
-    private String dataType = null;     // Definition of the datatype.
-    private String backColorValue = null;
 
     private Map<String,String> properties = new HashMap<String, String>();
 
@@ -74,22 +72,6 @@ public class DataCell extends AbstractBaseCell implements Serializable {
         this.formatString = formatString;
     }
 
-    public String getDataType() {
-        return dataType;
-    }
-
-    public void setDataType(String dataType) {
-        this.dataType = dataType;
-    }
-
-    public String getBackColorValue() {
-        return backColorValue;
-    }
-
-    public void setBackColorValue(String backColorValue) {
-        this.backColorValue = backColorValue;
-    }
-
     public Number getRawNumber() {
         return rawNumber;
     }
@@ -105,7 +87,6 @@ public class DataCell extends AbstractBaseCell implements Serializable {
     public void setCoordinates(List<Integer> coordinates) {
         this.coordinates = coordinates;
     }
-
 
     public void setProperty(String name, String value){
         properties.put(name, value);
@@ -130,9 +111,7 @@ public class DataCell extends AbstractBaseCell implements Serializable {
         return "DataCell{" +
                 ", rawNumber=" + rawNumber +
                 ", coordinates=" + coordinates +
-                ", formatString='" + formatString + '\'' +
-                ", dataType='" + dataType + '\'' +
-                ", backColorValue='" + backColorValue + '\'' +
+                ", formatString='" + formatString +
                 '}';
     }
 }
