@@ -47,7 +47,6 @@ public class SessionService implements ISessionService {
 
 	private AuthenticationManager authenticationManager;
 
-
 	Map<Object,Map<String,Object>> sessionHolder = new HashMap<Object,Map<String,Object>>();
 
 
@@ -144,5 +143,4 @@ public class SessionService implements ISessionService {
 		}
 		return new HashMap<String,Object>();
 	}
-
 }

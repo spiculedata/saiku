@@ -19,6 +19,7 @@
  */
 package org.saiku.web.rest.resources;
 
+
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -47,9 +48,17 @@ import org.apache.commons.vfs.FileObject;
 import org.apache.commons.vfs.FileSystemManager;
 import org.apache.commons.vfs.FileType;
 import org.apache.commons.vfs.VFS;
+import org.codehaus.jackson.map.ObjectMapper;
+import org.codehaus.jackson.map.type.TypeFactory;
+import org.saiku.service.util.exception.SaikuServiceException;
+import org.saiku.web.rest.objects.SelectionRestObject;
+import org.saiku.web.rest.objects.acl.Acl;
+import org.saiku.web.rest.objects.acl.AclEntry;
+import org.saiku.web.rest.objects.acl.enumeration.AclMethod;
 import org.saiku.web.rest.objects.repository.IRepositoryObject;
 import org.saiku.web.rest.objects.repository.RepositoryFileObject;
 import org.saiku.web.rest.objects.repository.RepositoryFolderObject;
+import org.saiku.web.service.SessionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -67,9 +76,11 @@ public class BasicRepositoryResource2 {
 	private static final Logger log = LoggerFactory.getLogger(BasicRepositoryResource2.class);
 
 	private FileObject repo;
+	private SessionService sessionService;
+	
+	private Acl acl;
 
 	public void setPath(String path) throws Exception {
-
 		FileSystemManager fileSystemManager;
 		try {
 			 if (!path.endsWith("" + File.separatorChar)) {
@@ -88,7 +99,18 @@ public class BasicRepositoryResource2 {
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
-
+	}
+	
+	public void setAcl(Acl acl) {
+		this.acl = acl;
+	}
+	
+	/**
+	 * Sets the sessionService
+	 * @param sessionService
+	 */
+	public void setSessionService(SessionService sessionService){
+		this.sessionService = sessionService;
 	}
 	
 	/**
@@ -112,7 +134,15 @@ public class BasicRepositoryResource2 {
 				if(path != null) {
 					folder = repo.resolveFile(path);
 				}
-				return getRepositoryObjects(folder, type);
+				
+				String username = sessionService.getAllSessionObjects().get("username").toString();
+				List<String> roles = (List<String> ) sessionService.getAllSessionObjects().get("roles");
+				//TODO : shall throw an exception ???
+				if ( !acl.canRead(folder,username, roles) ) {
+					return new ArrayList<IRepositoryObject>(); // empty  
+				} else {
+					return getRepositoryObjects(folder, type);
+				}
 			}
 			else {
 				throw new Exception("repo URL is null");
@@ -122,6 +152,51 @@ public class BasicRepositoryResource2 {
 			e.printStackTrace();
 		}
 		return objects;
+	}
+
+	@GET
+	@Produces({"application/json" })
+	@Path("/resource/acl")
+	public AclEntry getResourceAcl(@QueryParam("file") String file) {
+		try {
+			if (file == null || file.startsWith("/") || file.startsWith(".")) {
+				throw new IllegalArgumentException("Path cannot be null or start with \"/\" or \".\" - Illegal Path: " + file);
+			}
+			String username = sessionService.getAllSessionObjects().get("username").toString();
+			List<String> roles = (List<String> ) sessionService.getAllSessionObjects().get("roles");
+			FileObject repoFile = repo.resolveFile(file);
+			if (repoFile.exists() && acl.canGrant(repoFile, username, roles) ) {
+				return getAcl(repoFile);
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+			throw new SaikuServiceException("Error retrieving ACL for file: " + file, e);
+		}
+		throw new SaikuServiceException("You dont have permission to retrieve ACL for file: " + file);
+	}
+	
+	
+	@POST
+	@Produces({"application/json" })
+	@Path("/resource/acl")
+	public Status setResourceAcl(@FormParam("file") String file, @FormParam("acl") String aclEntry) {
+		try {
+			if (file == null || file.startsWith("/") || file.startsWith(".")) {
+				throw new IllegalArgumentException("Path cannot be null or start with \"/\" or \".\" - Illegal Path: " + file);
+			}
+			ObjectMapper mapper = new ObjectMapper();
+			AclEntry ae = mapper.readValue(aclEntry, AclEntry.class);
+			String username = sessionService.getAllSessionObjects().get("username").toString();
+			List<String> roles = (List<String> ) sessionService.getAllSessionObjects().get("roles");
+			FileObject repoFile = repo.resolveFile(file);
+			if (repoFile.exists() && acl.canGrant(repoFile, username, roles) ) {
+				setAcl(repoFile, ae);
+				return Status.OK;
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return Status.INTERNAL_SERVER_ERROR;
 	}
 
 
@@ -140,8 +215,12 @@ public class BasicRepositoryResource2 {
 			if (file == null || file.startsWith("/") || file.startsWith(".")) {
 				throw new IllegalArgumentException("Path cannot be null or start with \"/\" or \".\" - Illegal Path: " + file);
 			}
-
+			String username = sessionService.getAllSessionObjects().get("username").toString();
+			List<String> roles = (List<String> ) sessionService.getAllSessionObjects().get("roles");
 			FileObject repoFile = repo.resolveFile(file);
+			if ( !acl.canRead(repoFile, username, roles) ) {
+				return Response.status(Status.UNAUTHORIZED).build();
+			}
 			System.out.println("path:" + repo.getName().getRelativeName(repoFile.getName()));
 			if (repoFile.exists()) {
 				InputStreamReader reader = new InputStreamReader(repoFile.getContent().getInputStream());
@@ -183,7 +262,14 @@ public class BasicRepositoryResource2 {
 				throw new IllegalArgumentException("Path cannot be null or start with \"/\" or \".\" - Illegal Path: " + file);
 			}
 
+			String username = sessionService.getAllSessionObjects().get("username").toString();
+			List<String> roles = (List<String> ) sessionService.getAllSessionObjects().get("roles");
 			FileObject repoFile = repo.resolveFile(file);
+
+			if ( !acl.canWrite(repoFile,username, roles) ) {
+				return Status.UNAUTHORIZED;
+			}
+
 			if (repoFile == null) throw new Exception("Repo File not found");
 
 			if (repoFile.exists()) {
@@ -220,12 +306,20 @@ public class BasicRepositoryResource2 {
 			if (file == null || file.startsWith("/") || file.startsWith(".")) {
 				throw new IllegalArgumentException("Path cannot be null or start with \"/\" or \".\" - Illegal Path: " + file);
 			}
+	
+			
+			String username = sessionService.getAllSessionObjects().get("username").toString();
+			List<String> roles = (List<String> ) sessionService.getAllSessionObjects().get("roles");
+				FileObject repoFile = repo.resolveFile(file);
 
-			FileObject repoFile = repo.resolveFile(file);
-			if (repoFile != null && repoFile.exists()) {
-				repoFile.delete();
-			}
-			return Status.OK;
+				if (repoFile != null && repoFile.exists() ) {
+					if ( acl.canWrite(repoFile, username, roles) ){
+						repoFile.delete();
+						return Status.OK;
+					} else {
+						return Status.UNAUTHORIZED;
+					} 
+				}
 		} catch(Exception e){
 			log.error("Cannot save resource to (file: " + file + ")",e);
 		}
@@ -238,19 +332,51 @@ public class BasicRepositoryResource2 {
 			if (!file.isHidden()) {
 				String filename = file.getName().getBaseName();
 				String relativePath = repo.getName().getRelativeName(file.getName());
-				if (file.getType().equals(FileType.FILE)) {
-					if (StringUtils.isNotEmpty(fileType) && !filename.endsWith(fileType)) {
-						continue;
-					}
-					String extension = file.getName().getExtension();
 
-					repoObjects.add(new RepositoryFileObject(filename, "#" + relativePath, extension, relativePath));
-				}
-				if (file.getType().equals(FileType.FOLDER)) { 
-					repoObjects.add(new RepositoryFolderObject(filename, "#" + relativePath, relativePath, getRepositoryObjects(file, fileType)));
+				String username = sessionService.getAllSessionObjects().get("username").toString();
+				List<String> roles = (List<String> ) sessionService.getAllSessionObjects().get("roles");
+				if ( acl.canRead(file,username, roles) ) {
+					List<AclMethod> acls = acl.getMethods(file, username, roles);
+					if (file.getType().equals(FileType.FILE)) {
+						if (StringUtils.isNotEmpty(fileType) && !filename.endsWith(fileType)) {
+							continue;
+						}
+						String extension = file.getName().getExtension();
+
+						repoObjects.add(new RepositoryFileObject(filename, "#" + relativePath, extension, relativePath, acls));
+					}
+					if (file.getType().equals(FileType.FOLDER)) { 
+						repoObjects.add(new RepositoryFolderObject(filename, "#" + relativePath, relativePath, acls, getRepositoryObjects(file, fileType)));
+					}
 				}
 			}
 		}
 		return repoObjects;
 	}
+	
+
+	/**
+	 * Sets the permission for the resource
+	 * @param resource the resource
+	 * @param entry the permissions
+	 */
+	private void setAcl(FileObject resource, AclEntry entry){
+		this.acl.addEntry(resource, entry);
+		this.acl.writeAcl(resource);
+	}
+	/**
+	 * Returns the permission for the resource;
+	 * if the resource is not in the acl list 
+	 * an open access acl owned by {@link AclEntry#STATIC_OWNER}
+	 * is returned.
+	 * @param resource
+	 * @return
+	 */
+	private AclEntry getAcl(FileObject resource){
+		AclEntry entry = this.acl.getEntry(resource);
+		if ( entry == null ) entry = new AclEntry();
+		
+		return entry;
+	}
+
 }

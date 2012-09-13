@@ -49,6 +49,7 @@ import org.pentaho.platform.engine.core.solution.ActionInfo;
 import org.pentaho.platform.engine.core.system.PentahoSessionHolder;
 import org.pentaho.platform.engine.core.system.PentahoSystem;
 import org.saiku.plugin.util.PluginConfig;
+import org.saiku.web.rest.objects.acl.enumeration.AclMethod;
 import org.saiku.web.rest.objects.repository.IRepositoryObject;
 import org.saiku.web.rest.objects.repository.RepositoryFileObject;
 import org.saiku.web.rest.objects.repository.RepositoryFolderObject;
@@ -260,7 +261,10 @@ public class PentahoRepositoryResource2 {
 	{
 		final String xPathDir = "./file[@isDirectory='true']"; //$NON-NLS-1$
 		List<IRepositoryObject> repoObjects = new ArrayList<IRepositoryObject>();
-
+		List<AclMethod> acls = new ArrayList<AclMethod>();
+		acls.add(AclMethod.READ);
+		acls.add(AclMethod.WRITE);
+		
 		try
 		{
 			final List nodes = tree.selectNodes(xPathDir); //$NON-NLS-1$
@@ -302,14 +306,14 @@ public class PentahoRepositoryResource2 {
 							String t =  fileNode.valueOf("@localized-name");
 							String n = fileNode.valueOf("@name");
 							if (vis) {
-								children.add(new RepositoryFileObject(t, "#" + relativePath + "/" + n, fileType, relativePath));
+								children.add(new RepositoryFileObject(t, "#" + relativePath + "/" + n, fileType, relativePath, acls));
 							}
 						}
 						children.addAll(processTree(node, parentPath + "/" + name, fileType));
-						repoObjects.add(new RepositoryFolderObject(localizedName, "#" + relativePath, relativePath, children));
+						repoObjects.add(new RepositoryFolderObject(localizedName, "#" + relativePath, relativePath, acls, children));
 					} else if (visible && !isDirectory) {
 						if (StringUtils.isBlank(fileType) || name.endsWith(fileType)) {
-							repoObjects.add(new RepositoryFileObject(localizedName, "#" + relativePath + "/" + name, fileType, relativePath));
+							repoObjects.add(new RepositoryFileObject(localizedName, "#" + relativePath + "/" + name, fileType, relativePath, acls));
 						}
 					}
 
