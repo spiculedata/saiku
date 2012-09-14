@@ -49,9 +49,7 @@ import org.apache.commons.vfs.FileSystemManager;
 import org.apache.commons.vfs.FileType;
 import org.apache.commons.vfs.VFS;
 import org.codehaus.jackson.map.ObjectMapper;
-import org.codehaus.jackson.map.type.TypeFactory;
 import org.saiku.service.util.exception.SaikuServiceException;
-import org.saiku.web.rest.objects.SelectionRestObject;
 import org.saiku.web.rest.objects.acl.Acl;
 import org.saiku.web.rest.objects.acl.AclEntry;
 import org.saiku.web.rest.objects.acl.enumeration.AclMethod;
@@ -131,14 +129,17 @@ public class BasicRepositoryResource2 {
 
 			if (repo != null) {
 				FileObject folder = repo;
-				if(path != null) {
+				if (path != null) {
 					folder = repo.resolveFile(path);
+				} else {
+					path = repo.getName().getRelativeName(folder.getName());
 				}
 				
 				String username = sessionService.getAllSessionObjects().get("username").toString();
 				List<String> roles = (List<String> ) sessionService.getAllSessionObjects().get("roles");
+				
 				//TODO : shall throw an exception ???
-				if ( !acl.canRead(folder,username, roles) ) {
+				if ( !acl.canRead(path,username, roles) ) {
 					return new ArrayList<IRepositoryObject>(); // empty  
 				} else {
 					return getRepositoryObjects(folder, type);
@@ -164,9 +165,8 @@ public class BasicRepositoryResource2 {
 			}
 			String username = sessionService.getAllSessionObjects().get("username").toString();
 			List<String> roles = (List<String> ) sessionService.getAllSessionObjects().get("roles");
-			FileObject repoFile = repo.resolveFile(file);
-			if (repoFile.exists() && acl.canGrant(repoFile, username, roles) ) {
-				return getAcl(repoFile);
+			if (acl.canGrant(file, username, roles) ) {
+				return getAcl(file);
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -189,8 +189,8 @@ public class BasicRepositoryResource2 {
 			String username = sessionService.getAllSessionObjects().get("username").toString();
 			List<String> roles = (List<String> ) sessionService.getAllSessionObjects().get("roles");
 			FileObject repoFile = repo.resolveFile(file);
-			if (repoFile.exists() && acl.canGrant(repoFile, username, roles) ) {
-				setAcl(repoFile, ae);
+			if (repoFile.exists() && acl.canGrant(file, username, roles) ) {
+				acl.addEntry(file, ae);
 				return Status.OK;
 			}
 		} catch (Exception e) {
@@ -218,10 +218,10 @@ public class BasicRepositoryResource2 {
 			String username = sessionService.getAllSessionObjects().get("username").toString();
 			List<String> roles = (List<String> ) sessionService.getAllSessionObjects().get("roles");
 			FileObject repoFile = repo.resolveFile(file);
-			if ( !acl.canRead(repoFile, username, roles) ) {
+			if ( !acl.canRead(file, username, roles) ) {
 				return Response.status(Status.UNAUTHORIZED).build();
 			}
-			System.out.println("path:" + repo.getName().getRelativeName(repoFile.getName()));
+//			System.out.println("path:" + repo.getName().getRelativeName(repoFile.getName()));
 			if (repoFile.exists()) {
 				InputStreamReader reader = new InputStreamReader(repoFile.getContent().getInputStream());
 				BufferedReader br = new BufferedReader(reader);
@@ -266,7 +266,7 @@ public class BasicRepositoryResource2 {
 			List<String> roles = (List<String> ) sessionService.getAllSessionObjects().get("roles");
 			FileObject repoFile = repo.resolveFile(file);
 
-			if ( !acl.canWrite(repoFile,username, roles) ) {
+			if ( !acl.canWrite(file,username, roles) ) {
 				return Status.UNAUTHORIZED;
 			}
 
@@ -313,7 +313,7 @@ public class BasicRepositoryResource2 {
 				FileObject repoFile = repo.resolveFile(file);
 
 				if (repoFile != null && repoFile.exists() ) {
-					if ( acl.canWrite(repoFile, username, roles) ){
+					if ( acl.canWrite(file, username, roles) ){
 						repoFile.delete();
 						return Status.OK;
 					} else {
@@ -335,8 +335,8 @@ public class BasicRepositoryResource2 {
 
 				String username = sessionService.getAllSessionObjects().get("username").toString();
 				List<String> roles = (List<String> ) sessionService.getAllSessionObjects().get("roles");
-				if ( acl.canRead(file,username, roles) ) {
-					List<AclMethod> acls = acl.getMethods(file, username, roles);
+				if ( acl.canRead(relativePath,username, roles) ) {
+					List<AclMethod> acls = acl.getMethods(relativePath, username, roles);
 					if (file.getType().equals(FileType.FILE)) {
 						if (StringUtils.isNotEmpty(fileType) && !filename.endsWith(fileType)) {
 							continue;
@@ -355,27 +355,10 @@ public class BasicRepositoryResource2 {
 	}
 	
 
-	/**
-	 * Sets the permission for the resource
-	 * @param resource the resource
-	 * @param entry the permissions
-	 */
-	private void setAcl(FileObject resource, AclEntry entry){
-		this.acl.addEntry(resource, entry);
-		this.acl.writeAcl(resource);
-	}
-	/**
-	 * Returns the permission for the resource;
-	 * if the resource is not in the acl list 
-	 * an open access acl owned by {@link AclEntry#STATIC_OWNER}
-	 * is returned.
-	 * @param resource
-	 * @return
-	 */
-	private AclEntry getAcl(FileObject resource){
-		AclEntry entry = this.acl.getEntry(resource);
+
+	private AclEntry getAcl(String path){
+		AclEntry entry = this.acl.getEntry(path);
 		if ( entry == null ) entry = new AclEntry();
-		
 		return entry;
 	}
 
