@@ -39,8 +39,14 @@ public class SaikuCube extends AbstractSaikuObject {
 
 	@Override
 	public String getUniqueName() {
+		String name = "";
+		if(getCaption() == null || "".equals(getCaption()))
+			name = "[" + getName() + "]";
+		else
+			name = "[" + getCaption() + "].[" + getName() + "]";
+		
 		String uniqueName = "[" + connectionName + "].[" + catalogName + "]";
-		uniqueName += ".[" + schemaName + "].[" + getName() + "]";
+		uniqueName += ".[" + schemaName + "]." + name;
 		return uniqueName;
 	}
 	
