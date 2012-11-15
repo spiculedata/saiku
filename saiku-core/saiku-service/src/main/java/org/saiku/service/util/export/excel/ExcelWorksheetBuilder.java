@@ -88,6 +88,17 @@ public class ExcelWorksheetBuilder {
         numberCS.setFont(font);
         numberCS.setAlignment(CellStyle.ALIGN_RIGHT);
         setCellBordersColor(numberCS);
+        /* 
+        justasg:
+            Let's set default format, used if measure has no format at all.
+            More info: http://poi.apache.org/apidocs/org/apache/poi/ss/usermodel/BuiltinFormats.html#getBuiltinFormat(int)
+            If we don't have default format, it will output values up to maximum detail, i.e. 121212.3456789
+            and we like them as 121,212.346
+        */ 
+        DataFormat fmt = excelWorkbook.createDataFormat();
+        short dataFormat = fmt.getFormat("#,##0.000");
+        numberCS.setDataFormat(dataFormat);
+        
 
         Font headerFont = excelWorkbook.createFont();
         headerFont.setFontHeightInPoints((short) BASIC_SHEET_FONT_SIZE);
@@ -155,9 +166,11 @@ public class ExcelWorksheetBuilder {
 
     private int initExcelSheet() {
 
-        initSummarySheet();
+        
         // Main Workbook Sheet
         workbookSheet = excelWorkbook.createSheet(this.sheetName);
+    
+        initSummarySheet();
 
         return 0;
     }
@@ -244,11 +257,11 @@ public class ExcelWorksheetBuilder {
     protected void applyCellFormatting(Cell cell, int x, int y) {
         String formatString;
         formatString = ((DataCell) rowsetBody[x][y]).getFormatString();
-        if (formatString != null) {
+        if ((formatString != null) && (formatString.trim().length() > 0)) {
             // Inherit formatting from cube schema FORMAT_STRING
             CellStyle numberCSClone = excelWorkbook.createCellStyle();
-            DataFormat fmt = excelWorkbook.createDataFormat();
             numberCSClone.cloneStyleFrom(numberCS);
+            DataFormat fmt = excelWorkbook.createDataFormat();
             numberCSClone.setDataFormat(fmt.getFormat(formatString));
             // Check for cell background
             Map<String, String> properties = ((DataCell) rowsetBody[x][y]).getProperties();
