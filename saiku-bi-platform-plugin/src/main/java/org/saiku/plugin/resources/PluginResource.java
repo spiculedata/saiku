@@ -16,7 +16,14 @@
 package org.saiku.plugin.resources;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FilenameFilter;
+import java.io.IOException;
 import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Properties;
 
 import javax.ws.rs.GET;
@@ -30,9 +37,12 @@ import javax.xml.bind.annotation.XmlAccessorType;
 
 import org.dom4j.Document;
 import org.dom4j.DocumentHelper;
+import org.pentaho.platform.engine.core.system.PentahoSystem;
 import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.olap.dto.SaikuQuery;
+import org.saiku.plugin.util.packager.Packager;
+import org.saiku.plugin.util.ResourceManager;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.olap.OlapQueryService;
 import org.slf4j.Logger;
@@ -122,6 +132,68 @@ public class PluginResource {
 
 	}
 
+  
+  
+	@GET
+	@Produces({"text/plain" })
+	@Path("/plugins")
+	public String getPlugins() 
+	{
+      Packager packager = Packager.getInstance();
+      String searchRootDir = PentahoSystem.getApplicationContext().getSolutionPath("saiku/plugins");  
+      
+      File searchRootFile = new File(searchRootDir);
+      
+      if (!searchRootFile.exists())
+        return "";
+      
+      File[] files = getJsFiles(searchRootFile);      
+      
+      String pluginRootDir = PentahoSystem.getApplicationContext().getSolutionPath("system/saiku");
+      File rootDir = new File(searchRootDir);
+          
+      packager.registerPackage("scripts", Packager.Filetype.JS, searchRootDir, pluginRootDir + "/../../system/saiku/ui/js/scripts.js", files);          
+      packager.minifyPackage("scripts", Packager.Mode.CONCATENATE);
+      
+      try {
+        return ResourceManager.getInstance().getResourceAsString( "ui/js/scripts.js");
+      } catch (IOException ioe) {
+        ioe.printStackTrace();
+      }
+            
+      return "";
+	}
+  
+  
+  private File[] getJsFiles(File rootDir) {
+    List<File> result = new ArrayList<File>();
+    
+    File[] files = rootDir.listFiles(new FilenameFilter() {
+      public boolean accept(File file, String name) {
+        return name.endsWith(".js");
+      }            
+    });
+    
+    if (files != null)
+      result.addAll(Arrays.asList(files));
+
+    File[] folders = rootDir.listFiles(new FilenameFilter() {
+      public boolean accept(File file, String name) {
+        return file.isDirectory();
+      }            
+    });
+
+    if (folders != null) {
+      for (File f : folders) {
+        File[] partial = getJsFiles(f);
+        if (partial != null)
+          result.addAll(Arrays.asList(partial));
+      }
+    }
+
+    return result.toArray(new File[result.size()]);    
+  }
+  
 
 	//	private CdaSettings initCda(String sessionId, String domain) throws Exception {
 	//		CdaSettings cda = new CdaSettings("cda" + sessionId, null);
