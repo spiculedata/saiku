@@ -266,6 +266,19 @@
 			<version>2.0</version>
 			<scope>provided</scope>
 		</dependency>
+
+		<!-- Batik/SVG -->
+		<dependency>
+			<groupId>org.apache.xmlgraphics</groupId>
+			<artifactId>batik-transcoder</artifactId>
+			<version>1.7</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.xmlgraphics</groupId>
+			<artifactId>batik-codec</artifactId>
+			<version>1.7</version>
+		</dependency>
+
 	</dependencies>
 	<reporting>
 		<plugins>

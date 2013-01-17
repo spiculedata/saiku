@@ -25,6 +25,15 @@
 		<url-pattern>/oauth/*</url-pattern>
 	</servlet-mapping>
 
+	<servlet>
+		<servlet-name>converterServlet</servlet-name>
+		<servlet-class>org.saiku.web.svg.SvgConverterServlet</servlet-class>
+	</servlet>
+	<servlet-mapping>
+		<servlet-name>converterServlet</servlet-name>
+		<url-pattern>/svg</url-pattern>
+	</servlet-mapping>
+
  	<listener>
 		<listener-class>
 			org.springframework.web.context.request.RequestContextListener

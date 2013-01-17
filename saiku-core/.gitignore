@@ -17,3 +17,6 @@ local.properties
 saiku-web/src/test/resources/org/saiku/web/rest/resources/foodmart/foodmart.backup
 saiku-web/src/test/resources/org/saiku/web/rest/resources/foodmart/foodmart.data
 bin/
+#IntelliJ IDEA
+.idea
+*.iml
