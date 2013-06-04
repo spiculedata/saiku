@@ -7,7 +7,7 @@
 			<overlay id="startup.saikuAnalysis">
 				<toolbar id="mainToolbar">
 					<toolbarbutton id="newAnalysisButton" removeelement="true" image="../content/saiku-ui/images/src/saiku_32.png"
-						onclick="mainToolbarHandler.openUrl('Saiku Analytics','Saiku Analytics','content/saiku-ui/index.html?biplugin=true')"
+						onclick="mainToolbarHandler.openUrl('Saiku Analytics','Saiku Analytics','content/saiku-ui/index.html?integration=pentaho')"
 						tooltiptext="${saiku-plugin.label}" insertafter="newAnalysisButton" />
 				</toolbar>
 			</overlay>
@@ -15,14 +15,14 @@
 		
 		<overlay id="launch" resourcebundle="content/saiku/saikuplugin.properties">
 		<button id="saikuButton" image="content/saiku-ui/images/src/saiku_120.png" 
-						command="openURL('Saiku Analytics','Saiku Analytics','content/saiku-ui/index.html?biplugin=true')"
+						command="openURL('Saiku Analytics','Saiku Analytics','content/saiku-ui/index.html?integration=pentaho')"
 						label="${saiku-plugin.button}" />
 		</overlay>
 	</overlays>
 
 	<menu-items>
 		<menu-item id="new-saiku" anchor="file-new-submenu" label="Saiku Analytics"
-			command="content/saiku-ui/index.html?biplugin=true" type="MENU_ITEM" how="LAST_CHILD" />
+			command="content/saiku-ui/index.html?integration=pentaho" type="MENU_ITEM" how="LAST_CHILD" />
 	</menu-items>
 	
 	<content-type type="saiku" mime-type="text/html">
@@ -33,15 +33,15 @@
 		<operations>
 			<operation>
 				<id>RUN</id>
-				<command>content/saiku-ui/index.html?solution={solution}&amp;path={path}&amp;action={name}&amp;dimension_prefetch=false&amp;mode=view&amp;biplugin=true#query/open/{name}</command>
+				<command>content/saiku-ui/index.html?solution={solution}&amp;path={path}&amp;action={name}&amp;dimension_prefetch=false&amp;mode=view&amp;integration=pentaho#query/open/{name}</command>
 			</operation>
 			<operation>
 				<id>EDIT</id>
-				<command>content/saiku-ui/index.html?solution={solution}&amp;path={path}&amp;action={name}&amp;dimension_prefetch=false&amp;biplugin=true#query/open/{name}</command>
+				<command>content/saiku-ui/index.html?solution={solution}&amp;path={path}&amp;action={name}&amp;dimension_prefetch=false&amp;integration=pentaho#query/open/{name}</command>
 			</operation>
 			<operation>
         		<id>NEWWINDOW</id>
-        		<command>content/saiku-ui/index.html?solution={solution}&amp;path={path}&amp;action={name}&amp;dimension_prefetch=false&amp;mode=view&amp;biplugin=true#query/open/{name}</command>
+        		<command>content/saiku-ui/index.html?solution={solution}&amp;path={path}&amp;action={name}&amp;dimension_prefetch=false&amp;mode=view&amp;integration=pentaho#query/open/{name}</command>
         	</operation>
         	<operation>
                 <id>SCHEDULE_NEW</id>
