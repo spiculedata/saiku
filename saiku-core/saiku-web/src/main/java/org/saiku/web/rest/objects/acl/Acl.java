@@ -347,4 +347,8 @@ public class Acl {
 		return accessFile;
 	}
 
+	public FileObject resolveFile(String file) throws FileSystemException {
+		return repoRoot.resolveFile(file);
+	}
+
 }

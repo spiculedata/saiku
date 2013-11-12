@@ -197,7 +197,7 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
 			AclEntry ae = mapper.readValue(aclEntry, AclEntry.class);
 			String username = sessionService.getAllSessionObjects().get("username").toString();
 			List<String> roles = (List<String> ) sessionService.getAllSessionObjects().get("roles");
-			FileObject repoFile = repo.resolveFile(file);
+			FileObject repoFile = acl.resolveFile(file);
 			if (repoFile.exists() && acl.canGrant(file, username, roles) ) {
 				acl.addEntry(file, ae);
 				return Response.ok().build();
