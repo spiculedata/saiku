@@ -15,14 +15,11 @@
  */
 package org.saiku.plugin.resources;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Properties;
 
@@ -30,7 +27,6 @@ import javax.ws.rs.GET;
 import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
 import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.xml.bind.annotation.XmlAccessType;
 import javax.xml.bind.annotation.XmlAccessorType;
@@ -41,18 +37,14 @@ import org.pentaho.platform.engine.core.system.PentahoSystem;
 import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.olap.dto.SaikuQuery;
-import org.saiku.plugin.util.packager.Packager;
 import org.saiku.plugin.util.ResourceManager;
+import org.saiku.plugin.util.packager.Packager;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.olap.OlapQueryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-
-import pt.webdetails.cda.CdaEngine;
-import pt.webdetails.cda.query.QueryOptions;
-import pt.webdetails.cda.settings.CdaSettings;
 
 /**
  * QueryServlet contains all the methods required when manipulating an OLAP Query.
@@ -107,21 +99,22 @@ public class PluginResource {
 			String cdaString = getCda(query);
 			Document cda = DocumentHelper.parseText(cdaString);
 			
-		    final CdaSettings cdaSettings = new CdaSettings(cda, "cda1", null);
-		    
-		    log.debug("Doing query on Cda - Initializing CdaEngine");
-		    final CdaEngine engine = CdaEngine.getInstance();
-		    final QueryOptions queryOptions = new QueryOptions();
-		    queryOptions.setDataAccessId("1");
-		    queryOptions.setOutputType("json");
-		    log.info("Doing query");
-		    ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-		    PrintStream printstream = new PrintStream(outputStream);
-		    engine.doQuery(printstream, cdaSettings, queryOptions);
-			byte[] doc = outputStream.toByteArray();
-			
-			return Response.ok(doc, MediaType.APPLICATION_JSON).header(
-							"content-length",doc.length).build();
+			throw new UnsupportedOperationException("We dont support execution of CDA at this time");
+//		    final CdaSettings cdaSettings = new CdaSettings(cda, "cda1", null);
+//		    
+//		    log.debug("Doing query on Cda - Initializing CdaEngine");
+//		    final CdaEngine engine = CdaEngine.getInstance();
+//		    final QueryOptions queryOptions = new QueryOptions();
+//		    queryOptions.setDataAccessId("1");
+//		    queryOptions.setOutputType("json");
+//		    log.info("Doing query");
+//		    ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+//		    PrintStream printstream = new PrintStream(outputStream);
+//		    engine.doQuery(printstream, cdaSettings, queryOptions);
+//			byte[] doc = outputStream.toByteArray();
+//			
+//			return Response.ok(doc, MediaType.APPLICATION_JSON).header(
+//							"content-length",doc.length).build();
 			
 		} catch (Exception e) {
 			// TODO Auto-generated catch block

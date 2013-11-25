@@ -35,7 +35,11 @@ import javax.xml.bind.annotation.XmlAccessorType;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
+import org.pentaho.platform.api.engine.IAuthorizationPolicy;
+import org.pentaho.platform.engine.core.system.PentahoSystem;
+import org.pentaho.platform.security.policy.rolebased.actions.AdministerSecurityAction;
 import org.saiku.service.util.exception.SaikuServiceException;
+import org.saiku.web.rest.objects.acl.enumeration.AclMethod;
 import org.saiku.web.rest.objects.repository.IRepositoryObject;
 import org.saiku.web.rest.objects.repository.RepositoryFileObject;
 import org.saiku.web.rest.objects.repository.RepositoryFolderObject;
@@ -82,7 +86,7 @@ public class PentahoRepositoryResource2 implements ISaikuRepository {
 //				throw new IllegalArgumentException("Path cannot be null or start with \"/\" or \".\" - Illegal Path: " + path);
 //			}
 			
-			IUserContentAccess access = contentAccessFactory.getUserContentAccess(path);
+			IUserContentAccess access = contentAccessFactory.getUserContentAccess("/");
 			String root = (StringUtils.isBlank(path)) ? "/" : path;
 			return getRepositoryObjects(access, root, type);
 		} catch (Exception e) {
@@ -106,8 +110,8 @@ public class PentahoRepositoryResource2 implements ISaikuRepository {
 	public Response getResource (@QueryParam("file") String file)
 	{
 		try {
-			if (StringUtils.isBlank(file) || file.startsWith("/") || file.startsWith(".")) {
-				throw new IllegalArgumentException("Path cannot be null or start with \"/\" or \".\" - Illegal Path: " + file);
+			if (StringUtils.isBlank(file)) {
+				throw new IllegalArgumentException("Path cannot be null  - Illegal Path: " + file);
 			}
 
 			log.debug("Get repository file: " + file);
@@ -148,8 +152,8 @@ public class PentahoRepositoryResource2 implements ISaikuRepository {
 			@FormParam("content") String content)
 	{
 		try {
-			if (StringUtils.isBlank(file) || file.startsWith("/") || file.startsWith(".")) {
-				throw new IllegalArgumentException("Path cannot be null or start with \"/\" or \".\" - Illegal Path: " + file);
+			if (StringUtils.isBlank(file)) {
+				throw new IllegalArgumentException("Path cannot be null  - Illegal Path: " + file);
 			}
 			if (StringUtils.isBlank(content)) {
 				throw new IllegalArgumentException("Cannot save empty file to: " + file);
@@ -182,8 +186,8 @@ public class PentahoRepositoryResource2 implements ISaikuRepository {
 	@Path("/resource")
 	public Response deleteResource (@QueryParam("file") String file) {
 		try {
-			if (StringUtils.isBlank(file) || file.startsWith("/") || file.startsWith(".")) {
-				throw new IllegalArgumentException("Path cannot be null or start with \"/\" or \".\" - Illegal Path: " + file);
+			if (StringUtils.isBlank(file)) {
+				throw new IllegalArgumentException("Path cannot be null  - Illegal Path: " + file);
 			}
 
 			log.debug("Delete repository file: " + file);
@@ -334,27 +338,41 @@ public class PentahoRepositoryResource2 implements ISaikuRepository {
 		List<IRepositoryObject> repoObjects = new ArrayList<IRepositoryObject>();
 		IBasicFileFilter txtFilter = StringUtils.isBlank(type) ? null : new IBasicFileFilter() {
 			public boolean accept(IBasicFile file) {
-				return file.getExtension().equals(type);
+				return file.isDirectory() || file.getExtension().equals(type);
 			}
 		};
+		List<IBasicFile> files = new ArrayList<IBasicFile>();
+		IUserContentAccess access = contentAccessFactory.getUserContentAccess(null);
+		if (access.fileExists(path)) {
+			IBasicFile bf = access.fetchFile(path);
+			if (!bf.isDirectory()) {
+				files.add(bf);
+				log.debug("Found file in " + path);
+			} else {
+				files = root.listFiles(path, txtFilter, 0, true);
+				log.debug("Found files in " + path + " : " + files.size());
+			}
+		}
 
-		List<IBasicFile> files = root.listFiles(path, txtFilter, 0, true);
-		System.out.println("Found files in " + path + " : " + files.size());
+		
+		
 		for (IBasicFile file : files) {
 
 			String filename = file.getName();
 			// WHY IS GETPATH NULL?????
 			String relativePath = file.getFullPath();
+			
+			// Let's not include /etc for now
+//			if ("/etc".equals(relativePath)) {
+//				continue;
+//			}
 
-			if (path.equals(relativePath)) {
-				throw new SaikuServiceException("Something is fishy - base path and new base path are the same! " + path + " - " + relativePath);
-			}
+			List<AclMethod> acls = getAcl(path, false);
 			if (!file.isDirectory()) {
 				String extension = file.getExtension();
-				repoObjects.add(new RepositoryFileObject(filename, "#" + relativePath, extension, relativePath, null));
+				repoObjects.add(new RepositoryFileObject(filename, "#" + relativePath, extension, relativePath, acls));
 			} else { 
-				IUserContentAccess newroot = contentAccessFactory.getUserContentAccess(relativePath);
-				repoObjects.add(new RepositoryFolderObject(filename, "#" + relativePath, relativePath, null, getRepositoryObjects(newroot, relativePath, type)));
+				repoObjects.add(new RepositoryFolderObject(filename, "#" + relativePath, relativePath, acls, getRepositoryObjects(root, relativePath, type)));
 			}
 			Collections.sort(repoObjects, new Comparator<IRepositoryObject>() {
 
@@ -372,6 +390,23 @@ public class PentahoRepositoryResource2 implements ISaikuRepository {
 		return repoObjects;
 	}
 
+	
+	private List<AclMethod> getAcl(String file, boolean folder) {
+		List<AclMethod> acls = new ArrayList<AclMethod>();
+	    IAuthorizationPolicy policy = PentahoSystem.get( IAuthorizationPolicy.class );
+		boolean isAdmin = policy.isAllowed( AdministerSecurityAction.NAME );
+		IUserContentAccess access = contentAccessFactory.getUserContentAccess(null);
+		if (access.fileExists(file)) {
+			acls.add(AclMethod.READ);
+			if (isAdmin || access.hasAccess(file, FileAccess.WRITE)) {
+				acls.add(AclMethod.WRITE);	
+			}
+			if (isAdmin) {
+				acls.add(AclMethod.GRANT);
+			}
+		}
+		return acls;
+	}
 
 
 }

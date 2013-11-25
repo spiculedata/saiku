@@ -8,7 +8,12 @@
   			<menuitem id="new-saiku-analytics" label="Saiku Analytics" command="mantleXulHandler.openUrl('Saiku Analytics','Saiku Analytics','content/saiku-ui/index.html?biplugin5=true')" />
   		</menubar>				
     </overlay>
+    
+    <overlay id="launch"> 
+    	<button id="SaikuAnalytics" label="New Saiku Analytics" command="Home.openFile('Saiku Analytics','Saiku Analytics', 'content/saiku-ui/index.html?biplugin5=true');$('#btnCreateNew').popover('hide')"/> 
+    </overlay>
   </overlays>
+  
 <!--
     <content-types>
     	<content-type mime-type="text/xml" type="saiku">
@@ -32,31 +37,13 @@
 		<meta-provider>org.saiku.plugin.SaikuContentTypeMetaProvider</meta-provider>
 		<operations>
 			<operation>
-				<id>RUN</id>
-				<perspective>editor</perspective>
-				<command>content/saiku-ui/index.html?solution={solution}&amp;path={path}&amp;action={name}&amp;dimension_prefetch=false&amp;mode=view&amp;biplugin5=true#query/open/{name}</command>
+                <id>RUN</id>
+				<perspective>run</perspective>
 			</operation>
 			<operation>
 				<id>EDIT</id>
 				<perspective>editor</perspective>
-				<command>content/saiku-ui/index.html?solution={solution}&amp;path={path}&amp;action={name}&amp;dimension_prefetch=false&amp;biplugin5=true#query/open/{name}</command>
 			</operation>
-			<operation>
-        		<id>NEWWINDOW</id>
-        		<command>content/saiku-ui/index.html?solution={solution}&amp;path={path}&amp;action={name}&amp;dimension_prefetch=false&amp;mode=view&amp;biplugin5=true#query/open/{name}</command>
-        	</operation>
-        	<operation>
-                <id>SCHEDULE_NEW</id>
-                <command>content/saiku?schedule=true&amp;solution={solution}&amp;path={path}&amp;action={name}&amp;</command>
-            </operation>
-            <operation>
-                <id>SCHEDULE_EDIT</id>
-                <command>content/saiku?schedule=true&amp;solution={solution}&amp;path={path}&amp;action={name}&amp;</command>
-			</operation>
-            <operation>
-                <id>BACKGROUND</id>
-                <command>content/saiku?schedule=true&amp;solution={solution}&amp;path={path}&amp;action={name}&amp;</command>
-            </operation>
 		</operations>
 	</content-type>
 	

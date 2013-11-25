@@ -90,10 +90,18 @@
 	
   <bean id="saiku.editor" class="org.pentaho.platform.plugin.services.webservices.content.PluginFileContentGenerator" scope="prototype">
     <property name="mimeType" value="text/html" />
-    <property name="relativeFilePath" value="ui/index.html" />
+    <property name="relativeFilePath" value="ui/forward.html" />
     <property name="pluginId" value="saiku" />
   </bean> 
+
 	
+    <bean id="saiku.run" class="org.pentaho.platform.plugin.services.webservices.content.PluginFileContentGenerator" scope="prototype">
+        <property name="mimeType" value="text/html" />
+        <property name="relativeFilePath" value="ui/forward.html" />
+        <property name="pluginId" value="saiku" />
+    </bean>
+
+    
   <bean class="org.pentaho.platform.engine.core.solution.ContentInfo">
 	<property name="mimeType" value="text/xml"/>	
 	<property name="extension" value=".saiku"/>	
