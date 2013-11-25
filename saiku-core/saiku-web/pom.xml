@@ -6,19 +6,11 @@
 		<version>3.0-SNAPSHOT</version>
 	</parent>
 	<modelVersion>4.0.0</modelVersion>
-	<groupId>org.saiku</groupId>
 	<artifactId>saiku-web</artifactId>
-	<version>3.0-SNAPSHOT</version>
 	<name>saiku - web</name>
 	<packaging>jar</packaging>
 
-	<properties>
-		<spring.version>3.0.3.RELEASE</spring.version>
-		<spring.security.version>3.0.3.RELEASE</spring.security.version>
-	</properties>
-
 	<build>
-
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
@@ -34,19 +26,6 @@
 					</execution>
 				</executions>
 			</plugin>
-
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-compiler-plugin</artifactId>
-				<version>2.0.2</version>
-				<configuration>
-					<source>${maven.compiler.source}</source>
-					<target>${maven.compiler.target}</target>
-					<encoding>UTF-8</encoding>
-				</configuration>
-			</plugin>
-			
-
 			<plugin>
 				<groupId>org.mortbay.jetty</groupId>
 				<artifactId>maven-jetty-plugin</artifactId>
@@ -58,8 +37,6 @@
 					<phase>post-integration-test</phase> <goals> <goal>stop</goal> </goals> </execution> 
 					</executions> -->
 			</plugin>
-
-
 		</plugins>
 	</build>
 	<dependencies>
@@ -84,35 +61,31 @@
 			<version>1.2.14</version>
 		</dependency>
 		<!-- Spring modules -->
-<dependency>
-  <groupId>org.springframework</groupId>
-  <artifactId>spring-core</artifactId>
-  <version>${spring.version}</version>
-</dependency>
- 
- <dependency>
-  <groupId>org.springframework</groupId>
-  <artifactId>spring-beans</artifactId>
-  <version>${spring.version}</version>
-</dependency>
-<dependency>
-  <groupId>org.springframework</groupId>
-  <artifactId>spring-aop</artifactId>
-  <version>${spring.version}</version>
-</dependency>
-<dependency>
-  <groupId>org.springframework</groupId>
-  <artifactId>spring-context</artifactId>
-  <version>${spring.version}</version>
-</dependency>
- <dependency>
-  <groupId>org.springframework</groupId>
-  <artifactId>spring-context-support</artifactId>
-  <version>${spring.version}</version>
-</dependency>
- 
-
-
+		<dependency>
+			<groupId>org.springframework</groupId>
+			<artifactId>spring-core</artifactId>
+			<version>${spring.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework</groupId>
+			<artifactId>spring-beans</artifactId>
+			<version>${spring.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework</groupId>
+			<artifactId>spring-aop</artifactId>
+			<version>${spring.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework</groupId>
+			<artifactId>spring-context</artifactId>
+			<version>${spring.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework</groupId>
+			<artifactId>spring-context-support</artifactId>
+			<version>${spring.version}</version>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.security</groupId>
 			<artifactId>spring-security-taglibs</artifactId>
@@ -129,7 +102,6 @@
 			<artifactId>spring-security-ldap</artifactId>
 			<version>${spring.version}</version>
 		</dependency>
-		
 		<dependency>
 			<groupId>org.springframework</groupId>
 			<artifactId>spring-webmvc</artifactId>
@@ -140,13 +112,11 @@
 			<artifactId>enunciate-jersey-rt</artifactId>
 			<version>${enunciate.version}</version>
 		</dependency>
-
 		<dependency>
 			<groupId>org.springframework</groupId>
 			<artifactId>spring-test</artifactId>
 			<version>${spring.version}</version>
 		</dependency>
-
 		<dependency>
 			<groupId>com.sun.jersey</groupId>
 			<artifactId>jersey-core</artifactId>
@@ -157,7 +127,6 @@
 			<artifactId>jersey-multipart</artifactId>
 			<version>${jersey.version}</version>
 		</dependency>
-		
 		<dependency>
 			<groupId>javax.ws.rs</groupId>
 			<artifactId>jsr311-api</artifactId>
@@ -186,7 +155,6 @@
 			<artifactId>enunciate-rt</artifactId>
 			<version>${enunciate.version}</version>
 		</dependency>
-
 		<dependency>
 			<groupId>junit</groupId>
 			<artifactId>junit</artifactId>
@@ -233,8 +201,6 @@
 			<artifactId>commons-collections</artifactId>
 			<version>3.1</version>
 		</dependency>
-
-
 		<dependency>
 			<groupId>javax.servlet</groupId>
 			<artifactId>servlet-api</artifactId>
@@ -264,7 +230,7 @@
 		<dependency>
 			<groupId>commons-httpclient</groupId>
 			<artifactId>commons-httpclient</artifactId>
-			<version>20020423</version>
+			<version>3.1</version>
 		</dependency>
 		<dependency>
 			<groupId>javax.servlet.jsp</groupId>
@@ -272,7 +238,6 @@
 			<version>2.0</version>
 			<scope>provided</scope>
 		</dependency>
-
 		<!-- Batik/SVG -->
 		<dependency>
 			<groupId>org.apache.xmlgraphics</groupId>
@@ -294,13 +259,11 @@
 			<artifactId>xmlgraphics-commons</artifactId>
 			<version>1.2</version>
 		</dependency>
-<dependency>
-	<groupId>com.lowagie</groupId>
-	<artifactId>itext</artifactId>
-	<version>4.2.0</version>
-</dependency>
-            
-            
+		<dependency>
+			<groupId>com.lowagie</groupId>
+			<artifactId>itext</artifactId>
+			<version>4.2.0</version>
+		</dependency>
 	</dependencies>
 	<reporting>
 		<plugins>
