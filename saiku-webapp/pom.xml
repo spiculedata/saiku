@@ -15,7 +15,7 @@
 	<properties>
 		<spring.version>3.0.3.RELEASE</spring.version>
 		<spring.security.version>3.0.3.RELEASE</spring.security.version>
-		<enunciate.version>1.25</enunciate.version>
+		<enunciate.version>1.28</enunciate.version>
 		<jersey.version>1.11</jersey.version>
 	</properties>
 
