@@ -92,7 +92,7 @@ public class SaikuOlapConnection implements ISaikuConnection {
 		if (olapConnection.isWrapperFor(RolapConnection.class)) {
 			System.out.println("Clearing cache");
 			RolapConnection rcon = olapConnection.unwrap(RolapConnection.class);
-			rcon.getCacheControl(null).flushSchemaCache();
+			rcon.getCacheControl(null).flushSchema(rcon.getSchema());
 		}
 		return true;
 	}
