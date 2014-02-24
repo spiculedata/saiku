@@ -273,7 +273,7 @@ public class FlattenedCellSetFormatter implements ICellSetFormatter {
 
 			for(int yy=matrix.getMatrixHeight(); yy > matrix.getOffset() ; yy--) {
 				for(int xx=0; xx < headerwidth-1;xx++) {
-							if (matrix.get(xx,yy-1) != null && matrix.get(xx,yy) != null && matrix.get(xx,yy-1).getRawValue().equals(matrix.get(xx, yy).getRawValue())) {
+							if (matrix.get(xx,yy-1) != null && matrix.get(xx,yy) != null &&	((MemberCell) matrix.get(xx,yy-1)).getUniqueName().equals(((MemberCell) matrix.get(xx,yy)).getUniqueName())) {
 								matrix.set(xx, yy, new MemberCell());
 							}
 							else {
