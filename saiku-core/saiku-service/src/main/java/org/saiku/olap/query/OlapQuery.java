@@ -19,6 +19,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.io.Writer;
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
@@ -57,6 +58,7 @@ import org.saiku.service.util.exception.SaikuServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+
 public class OlapQuery implements IQuery {
 
 	private static final Logger log = LoggerFactory.getLogger(OlapQuery.class);
@@ -65,6 +67,7 @@ public class OlapQuery implements IQuery {
 
 	private Query query;
 	private Properties properties = new Properties();
+	private Map<String, String> totalsFunctions = new HashMap<String, String>();
 
 	private SaikuCube cube;
 
@@ -469,6 +472,22 @@ public class OlapQuery implements IQuery {
 
 	public ICellSetFormatter getFormatter() {
 		return formatter;
+	}
+
+	@Override
+	public void setTotalFunction(String uniqueLevelName, String value) {
+		totalsFunctions.put(uniqueLevelName, value);
+	}
+
+	@Override
+	public String getTotalFunction(String uniqueLevelName) {
+		String retVal = totalsFunctions.get(uniqueLevelName);
+		return retVal == null ? "" : retVal;
+	}
+
+	@Override
+	public Map<String, String> getTotalFunctions() {
+		return totalsFunctions;
 	}
 
 

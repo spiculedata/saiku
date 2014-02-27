@@ -30,10 +30,12 @@ public class SaikuSelection extends AbstractSaikuObject {
 	}
 	
 	private Type type;
+	private String showTotals;
+	private boolean disableTotals;
 	
 	public SaikuSelection() {}
 
-	public SaikuSelection(String name, String uniqueName, String caption, String description, String dimensionUniqueName, String hierarchyUniqueName, String levelUniqueName, Type type ) {
+	public SaikuSelection(String name, String uniqueName, String caption, String description, String dimensionUniqueName, String hierarchyUniqueName, String levelUniqueName, Type type, String showTotals, boolean disableTotals) {
 		super(uniqueName,name);
 		this.caption = caption;
 		this.description = description;
@@ -41,6 +43,8 @@ public class SaikuSelection extends AbstractSaikuObject {
 		this.hierarchyUniqueName = hierarchyUniqueName;
 		this.levelUniqueName = levelUniqueName;
 		this.type = type;
+		this.showTotals = showTotals;
+		this.disableTotals = disableTotals;
 	}
 
 	public String getHierarchyUniqueName() {
@@ -67,4 +71,12 @@ public class SaikuSelection extends AbstractSaikuObject {
 		return type;
 	}
 
+	public String getShowTotals() {
+		return showTotals;
+	}
+	
+	public boolean getDisableTotals() {
+		return disableTotals;
+	}	
+	
 }

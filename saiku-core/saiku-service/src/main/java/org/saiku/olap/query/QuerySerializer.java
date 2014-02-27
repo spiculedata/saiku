@@ -17,6 +17,7 @@ package org.saiku.olap.query;
 
 import java.io.StringWriter;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 import javax.xml.parsers.ParserConfigurationException;
@@ -105,6 +106,7 @@ public class QuerySerializer {
         	rootEle = appendQmQuery(rootEle);
         }
         rootEle = appendMdxQuery(rootEle);
+        appendTotalFunctions(rootEle);
         
         rootEle = appendProperties(rootEle);
         
@@ -132,6 +134,21 @@ public class QuerySerializer {
         rootElement.addContent(mdx);
         
         return rootElement;
+    }
+    
+    private Element appendTotalFunctions(Element rootElement) {
+    	Element totals = new Element("Totals");
+    	Map<String, String > functions = this.query.getTotalFunctions();
+    	for (String uniqueLevelName : functions.keySet()) {
+    		String functionName = functions.get(uniqueLevelName);
+    		Element function = new Element("Total");
+    		function.setAttribute("uniqueLevelName", uniqueLevelName);
+    		function.setAttribute("functionName", functionName);
+    		totals.addContent(function);
+    	}
+    	rootElement.addContent(totals);
+    	
+    	return rootElement;
     }
     
     private Element appendProperties(Element rootElement) {

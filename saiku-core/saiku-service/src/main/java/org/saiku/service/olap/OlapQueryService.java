@@ -59,6 +59,7 @@ import org.olap4j.metadata.Dimension;
 import org.olap4j.metadata.Hierarchy;
 import org.olap4j.metadata.Level;
 import org.olap4j.metadata.Level.Type;
+import org.olap4j.metadata.Measure;
 import org.olap4j.metadata.Member;
 import org.olap4j.metadata.MetadataElement;
 import org.olap4j.query.LimitFunction;
@@ -94,6 +95,10 @@ import org.saiku.olap.util.formatter.CellSetFormatter;
 import org.saiku.olap.util.formatter.FlattenedCellSetFormatter;
 import org.saiku.olap.util.formatter.HierarchicalCellSetFormatter;
 import org.saiku.olap.util.formatter.ICellSetFormatter;
+import org.saiku.service.olap.totals.AxisInfo;
+import org.saiku.service.olap.totals.TotalNode;
+import org.saiku.service.olap.totals.TotalsListsBuilder;
+import org.saiku.service.olap.totals.aggregators.TotalAggregator;
 import org.saiku.service.util.KeyValue;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.service.util.export.CsvExporter;
@@ -219,7 +224,7 @@ public class OlapQueryService implements Serializable {
 		}
 		return execute(queryName, new FlattenedCellSetFormatter());
 	}
-
+	
 	public CellDataSet execute(String queryName, ICellSetFormatter formatter) {
 		String runId = "runId:" + ID_GENERATOR.getAndIncrement();
 		try {
@@ -256,6 +261,36 @@ public class OlapQueryService implements Serializable {
 			result.setRuntime(new Double(format - start).intValue());
 			getIQuery(queryName).storeCellset(cellSet);
 			getIQuery(queryName).storeFormatter(formatter);
+			if (QueryType.QM.equals(query.getType()) && formatter instanceof FlattenedCellSetFormatter) {
+				QueryDimension queryDimension = query.getDimension("Measures");
+				Measure[] selectedMeasures = new Measure[queryDimension.getInclusions().size()];
+				for (int i = 0; i < selectedMeasures.length; i++)
+					selectedMeasures[i] = (Measure) queryDimension.getInclusions().get(i).getRootElement();
+				result.setSelectedMeasures(selectedMeasures);
+
+				int rowsIndex = 0;
+				if (!cellSet.getAxes().get(0).getAxisOrdinal().equals(Axis.ROWS)) {
+					rowsIndex = (rowsIndex + 1) & 1;
+				}
+				final AxisInfo[] axisInfos = new AxisInfo[]{new AxisInfo(cellSet.getAxes().get(rowsIndex)), new AxisInfo(cellSet.getAxes().get((rowsIndex + 1) & 1))};
+				List<TotalNode>[][] totals = new List[2][];
+				TotalsListsBuilder builder = null;
+				for (int index = 0; index < 2; index++) {
+					final int second = (index + 1) & 1;
+					TotalAggregator[] aggregators = new TotalAggregator[axisInfos[second].maxDepth + 1];
+					for (int i = 1; i < aggregators.length - 1; i++) {
+						String totalFunctionName = query.getTotalFunction(axisInfos[second].uniqueLevelNames.get(i - 1));
+						aggregators[i] = TotalAggregator.newInstanceByFunctionName(totalFunctionName);
+					}
+					String totalFunctionName = query.getTotalFunction(axisInfos[second].axis.getAxisOrdinal().name()); 
+					aggregators[0] = totalFunctionName != null ? TotalAggregator.newInstanceByFunctionName(totalFunctionName) : null;
+					builder = new TotalsListsBuilder(selectedMeasures, aggregators, cellSet, axisInfos[index], axisInfos[second]);
+					totals[index] = builder.buildTotalsLists();
+				}
+				result.setLeftOffset(axisInfos[0].maxDepth);
+				result.setRowTotalsLists(totals[1]);
+				result.setColTotalsLists(totals[0]);
+			}
 			return result;
 		} catch (Exception e) {
 			if (log.isInfoEnabled()) {
@@ -611,6 +646,15 @@ public class OlapQueryService implements Serializable {
 		}		
 		return query;
 	}
+	
+	public IQuery showGrandTotals(String queryName, String axisName, String functionName) {
+		IQuery query = getIQuery(queryName);
+		if ("not".equals(functionName)) {
+			functionName = null;
+		}
+		query.setTotalFunction(axisName, functionName);
+		return query;
+	}
 
 	public boolean includeChildren(String queryName, String dimensionName, String uniqueMemberName) {
 		IQuery query = getIQuery(queryName);
@@ -659,8 +703,12 @@ public class OlapQueryService implements Serializable {
 		}
 	}
 
+	public boolean includeMember(String queryName, String dimensionName, String uniqueMemberName, String selectionType, int memberposition) {
+		String defaultTotalsFunction = "";
+		return includeMember(queryName, dimensionName, uniqueMemberName, selectionType, defaultTotalsFunction, memberposition);
+	}
 
-	public boolean includeMember(String queryName, String dimensionName, String uniqueMemberName, String selectionType, int memberposition){
+	public boolean includeMember(String queryName, String dimensionName, String uniqueMemberName, String selectionType, String totalsFunction, int memberposition){
 		IQuery query = getIQuery(queryName);
 
 
@@ -677,6 +725,7 @@ public class OlapQueryService implements Serializable {
 				memberposition = dimension.getInclusions().size();
 			}
 			dimension.getInclusions().add(memberposition, sel);
+			query.setTotalFunction(((Member) sel.getRootElement()).getLevel().getUniqueName(), totalsFunction);
 			return true;
 		} catch (OlapException e) {
 			throw new SaikuServiceException("Cannot include member query ("+queryName+") dimension (" + dimensionName + ") member ("+
@@ -701,10 +750,16 @@ public class OlapQueryService implements Serializable {
 			throw new SaikuServiceException("Error removing member (" + uniqueMemberName + ") of dimension (" +dimensionName+")",e);
 		}
 	}
-
+	
 	public boolean includeLevel(String queryName, String dimensionName, String uniqueHierarchyName, String uniqueLevelName) {
+		String defaultTotalsFunction = "";
+		return includeLevel(queryName, dimensionName, uniqueHierarchyName, uniqueLevelName, defaultTotalsFunction);
+	}
+
+	public boolean includeLevel(String queryName, String dimensionName, String uniqueHierarchyName, String uniqueLevelName, String totalsFunction) {
 		IQuery query = getIQuery(queryName);
 		removeAllChildren(queryName, dimensionName);
+		
 		QueryDimension dimension = query.getDimension(dimensionName);
 		for (Hierarchy hierarchy : dimension.getDimension().getHierarchies()) {
 			if (hierarchy.getUniqueName().equals(uniqueHierarchyName)) {
@@ -714,6 +769,7 @@ public class OlapQueryService implements Serializable {
 						if (!dimension.getInclusions().contains(sel)) {
 							dimension.include(level);
 						}
+						query.setTotalFunction(uniqueLevelName, totalsFunction);
 						return true;
 					}
 				}
@@ -790,7 +846,7 @@ public class OlapQueryService implements Serializable {
 			QueryAxis qaxis = query.getAxis(axis);
 			if (qaxis != null) {
 				for (QueryDimension dim : qaxis.getDimensions()) {
-					dimsel.add(ObjectUtil.convertDimensionSelection(dim));
+					dimsel.add(ObjectUtil.convertDimensionSelection(dim, query));
 				}
 			}
 		} catch (SaikuOlapException e) {
@@ -806,7 +862,7 @@ public class OlapQueryService implements Serializable {
 			if (qaxis != null) {
 				QueryDimension dim = query.getDimension(dimension);
 				if (dim != null) {
-					return ObjectUtil.convertDimensionSelection(dim);
+					return ObjectUtil.convertDimensionSelection(dim, query);
 				}
 				else
 				{

@@ -1007,12 +1007,12 @@ public class QueryResource {
 				for (SelectionRestObject selection : selections) {
 					if (selection.getType() != null && "member".equals(selection.getType().toLowerCase())) {
 						if (selection.getAction() != null && "add".equals(selection.getAction().toLowerCase())) {
-							olapQueryService.includeMember(queryName, dimensionName, selection.getUniquename(), "MEMBER", -1);
+							olapQueryService.includeMember(queryName, dimensionName, selection.getUniquename(), "MEMBER", selection.getTotalsFunction(), -1);
 						}
 					}
 					if (selection.getType() != null && "level".equals(selection.getType().toLowerCase())) {
 						if (selection.getAction() != null && "add".equals(selection.getAction().toLowerCase())) {
-							olapQueryService.includeLevel(queryName, dimensionName, selection.getHierarchy(), selection.getUniquename());
+							olapQueryService.includeLevel(queryName, dimensionName, selection.getHierarchy(), selection.getUniquename(), selection.getTotalsFunction());
 						}
 					}
 				}
@@ -1372,6 +1372,22 @@ public class QueryResource {
 			log.debug("TRACK\t"  + "\t/query/" + queryName + "/axis/"+axisName+"/sort/" + sortOrder + "/" + sortLiteral +"\tPOST");
 		}
 		olapQueryService.sortAxis(queryName, axisName, sortLiteral, sortOrder);
+	}
+	
+	@PUT
+	@Produces({"application/json" })
+	@Path("/{queryname}/axis/{axis}/show_totals/{function}")
+	public SaikuQuery showGrandTotals(
+			@PathParam("queryname") String queryName, 
+			@PathParam("axis") String axisName,
+			@PathParam("function") String functionName
+			)	
+	{
+		if (log.isDebugEnabled()) {
+			log.debug("TRACK\t"  + "\t/query/" + queryName + "/axis/" + axisName + "/show_totals/" + functionName + "\tPUT");
+		}
+		IQuery query = olapQueryService.showGrandTotals(queryName, axisName, functionName);
+		return ObjectUtil.convert(query);
 	}
 	
 	@DELETE

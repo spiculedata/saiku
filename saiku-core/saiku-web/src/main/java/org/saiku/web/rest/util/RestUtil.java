@@ -16,17 +16,21 @@
 
 package org.saiku.web.rest.util;
 
+
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 
 import org.saiku.olap.dto.resultset.AbstractBaseCell;
 import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.dto.resultset.DataCell;
 import org.saiku.olap.dto.resultset.MemberCell;
+import org.saiku.service.olap.totals.TotalNode;
 import org.saiku.web.rest.objects.resultset.Cell;
 import org.saiku.web.rest.objects.resultset.QueryResult;
+import org.saiku.web.rest.objects.resultset.Total;
 
 public class RestUtil {
 	
@@ -79,6 +83,19 @@ public class RestUtil {
 		return convert(cellSet, 0);
 	}
 	
+	public static Total[][] convertTotals(List<TotalNode>[] totalLists) {
+		if (null == totalLists)
+			return null;
+		Total[][] retVal = new Total[totalLists.length][];
+		for (int i = 0; i < totalLists.length; i++) {
+			List<TotalNode> current = totalLists [i];
+			retVal[i] = new Total[current.size()];
+			for (int j = 0; j < current.size(); j++)
+				retVal[i][j] = new Total(current.get(j));
+		}
+		return retVal;
+	}
+	
 	public static QueryResult convert(CellDataSet cellSet, int limit) {
 		ArrayList<Cell[]> rows = new ArrayList<Cell[]>();
 		if (cellSet == null || cellSet.getCellSetBody() == null || cellSet.getCellSetHeaders() == null) {
@@ -97,7 +114,7 @@ public class RestUtil {
 			rows.add(convert(row, Cell.Type.ROW_HEADER));
 		}
 		
-		QueryResult qr = new QueryResult(rows, cellSet.getRuntime(), cellSet.getWidth(), cellSet.getHeight());
+		QueryResult qr = new QueryResult(rows, cellSet);
 		return qr;
 		
 	}

@@ -18,6 +18,7 @@ package org.saiku.olap.query;
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Properties;
 
 import org.apache.commons.lang.StringUtils;
@@ -155,7 +156,7 @@ public class QueryDeserializer {
                     manipulateQuery(qmElement);
                     SaikuCube cube = new SaikuCube(connectionName,cubeName, qm.getCube().getName(),qm.getCube().getCaption(),catalogName,schemaName);
                     IQuery q = new OlapQuery(qm,connection, cube,false);
-                    
+                    setTotals(q, queryElement);
                     Properties p = getProperties(queryElement);
                     q.setProperties(p);
                     return q;
@@ -206,6 +207,18 @@ public class QueryDeserializer {
         else {
             throw new QueryParseException("Cannot parse Query Model: Query node not found and/or more than 1 Query node found");
         }
+    }
+    
+    private void setTotals(IQuery q, Element queryElement) {
+    	final Element totals = queryElement.getChild("Totals");
+    	if (null != totals) {
+    		final List totalList = totals.getChildren("Total");
+    		for (Element function : (List<Element>)totalList) {
+    			final String uniqueLevelName = function.getAttributeValue("uniqueLevelName");
+    			final String functionName = function.getAttributeValue("functionName");
+    			q.setTotalFunction(uniqueLevelName, functionName);
+    		}
+    	}
     }
 
 	private Properties getProperties(Element queryElement) {
