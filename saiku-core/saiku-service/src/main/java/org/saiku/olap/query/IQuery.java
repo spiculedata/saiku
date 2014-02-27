@@ -75,6 +75,8 @@ public interface IQuery {
 	public OlapConnection getConnection();
 	public void storeFormatter(ICellSetFormatter formatter);
 	public ICellSetFormatter getFormatter();
-	
+	public void setTotalFunction(String uniqueLevelName, String value);
+	public String getTotalFunction(String uniqueLevelName);
+	public Map<String, String> getTotalFunctions();
 
 }

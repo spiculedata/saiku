@@ -25,6 +25,7 @@ public class SelectionRestObject {
 	private String hierarchy;
 	private String type;
 	private String action;
+	private String showTotals;
 
 
 	public SelectionRestObject() {
@@ -63,6 +64,13 @@ public class SelectionRestObject {
 		this.action = action;
 	}
 
+	public String getTotalsFunction() {
+		return showTotals;
+	}
+
+	public void setTotalsFunction(String showTotals) {
+		this.showTotals = showTotals;
+	}
 	
 	
 }

@@ -141,26 +141,51 @@ public class ObjectUtil {
 		return memberList;
 	}
 	
-	public static List<SaikuSelection> convertSelections(List<Selection> selections) {
+	public static List<SaikuSelection> convertSelections(List<Selection> selections, QueryDimension dim, IQuery query) {
 		List<SaikuSelection> selectionList= new ArrayList<SaikuSelection>();
 		for (Selection sel : selections) {
-			selectionList.add(convert(sel));
+			selectionList.add(convert(sel, dim, query));
 		}
 		return selectionList;
 	}
+	
+	public static Level getSelectionLevel(Selection sel) {
+		Level retVal;
+		if (Level.class.isAssignableFrom(sel.getRootElement().getClass())) {
+			retVal = (Level) sel.getRootElement();
+		} else {
+			retVal = ((Member) sel.getRootElement()).getLevel();
+		}
+		return retVal;
+	}
 
-	private static SaikuSelection convert(Selection sel) {
+	private static SaikuSelection convert(Selection sel, QueryDimension dim, IQuery query) {
 		Type type;
 		String hierarchyUniqueName;
 		String levelUniqueName;
+		Level level;
 		if (Level.class.isAssignableFrom(sel.getRootElement().getClass())) {
+		    level = (Level) sel.getRootElement();
 			type = SaikuSelection.Type.LEVEL;
 			hierarchyUniqueName = ((Level) sel.getRootElement()).getHierarchy().getUniqueName();
 			levelUniqueName = sel.getUniqueName();
 		} else {
+			level = ((Member) sel.getRootElement()).getLevel();
 			type = SaikuSelection.Type.MEMBER;
 			hierarchyUniqueName = ((Member) sel.getRootElement()).getHierarchy().getUniqueName();
 			levelUniqueName = ((Member) sel.getRootElement()).getLevel().getUniqueName();
+		}
+		String totalsFunction = query.getTotalFunction(level.getUniqueName());
+		List<QueryDimension> dimensions = dim.getAxis().getDimensions();
+		QueryDimension lastDimension = dimensions.get(dimensions.size() - 1);
+		Selection deepestSelection = null;
+		int selectionDepth = -1;
+		for (Selection selection : lastDimension.getInclusions()) {
+			Level current = getSelectionLevel(selection);
+			if (selectionDepth < current.getDepth()) {
+				deepestSelection = selection;
+				selectionDepth = current.getDepth();
+			}
 		}
 		return new SaikuSelection(
 				sel.getRootElement().getName(),
@@ -170,7 +195,9 @@ public class ObjectUtil {
 				sel.getDimension().getName(),
 				hierarchyUniqueName,
 				levelUniqueName,
-				type);
+				type, 
+				totalsFunction,
+				sel.equals(deepestSelection));
 
 	}
 
@@ -200,8 +227,8 @@ public class ObjectUtil {
 	}
 
 	
-	public static SaikuDimensionSelection convertDimensionSelection(QueryDimension dim) {
-		List<SaikuSelection> selections = ObjectUtil.convertSelections(dim.getInclusions());
+	public static SaikuDimensionSelection convertDimensionSelection(QueryDimension dim, IQuery query) {
+		List<SaikuSelection> selections = ObjectUtil.convertSelections(dim.getInclusions(), dim, query);
 		return new SaikuDimensionSelection(
 				dim.getName(),
 				dim.getDimension().getUniqueName(),
@@ -210,16 +237,16 @@ public class ObjectUtil {
 				selections);
 	}
 	
-	public static List<SaikuDimensionSelection> convertDimensionSelections(List<QueryDimension> dimensions) {
+	public static List<SaikuDimensionSelection> convertDimensionSelections(List<QueryDimension> dimensions, IQuery query) {
 		List<SaikuDimensionSelection> dims = new ArrayList<SaikuDimensionSelection>();
 		for (QueryDimension dim : dimensions) {
-			dims.add(convertDimensionSelection(dim));
+			dims.add(convertDimensionSelection(dim, query));
 		}
 		return dims;
 	}
 	
-	public static SaikuAxis convertQueryAxis(QueryAxis axis) {
-		List<SaikuDimensionSelection> dims = ObjectUtil.convertDimensionSelections(axis.getDimensions());
+	public static SaikuAxis convertQueryAxis(QueryAxis axis, IQuery query) {
+		List<SaikuDimensionSelection> dims = ObjectUtil.convertDimensionSelections(axis.getDimensions(), query);
 		Axis location = axis.getLocation();
 		String so = axis.getSortOrder() == null? null : axis.getSortOrder().name();
 		SaikuAxis sax = new SaikuAxis(
@@ -250,7 +277,7 @@ public class ObjectUtil {
 		if (q.getType().equals(IQuery.QueryType.QM)) {
 			for (Axis axis : q.getAxes().keySet()) {
 				if (axis != null) {
-					axes.add(convertQueryAxis(q.getAxis(axis)));
+					axes.add(convertQueryAxis(q.getAxis(axis), q));
 				}
 			}
 		}

@@ -212,4 +212,19 @@ public class MockQuery implements IQuery {
 		return null;
 	}
 
+	@Override
+	public void setTotalFunction(String uniqueLevelName, String value) {
+				
+	}
+
+	@Override
+	public String getTotalFunction(String uniqueLevelName) {
+		return null;
+	}
+
+	@Override
+	public Map<String, String> getTotalFunctions() {
+		return null;
+	}
+
 }

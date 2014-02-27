@@ -16,6 +16,10 @@
 package org.saiku.olap.dto.resultset;
 
 import java.io.Serializable;
+import java.util.List;
+
+import org.olap4j.metadata.Measure;
+import org.saiku.service.olap.totals.TotalNode;
 
 public class CellDataSet implements Serializable {
 
@@ -32,7 +36,17 @@ public class CellDataSet implements Serializable {
 
     private AbstractBaseCell[][] cellSetBody;
 
+    private Measure[] selectedMeasures;
+    
+    private List<TotalNode>[] colTotalsLists;
+    
+    private List<TotalNode>[] rowTotalsLists;
+
     private int offset;
+    
+    private int topOffset;
+    
+    private int leftOffset;
     
     public int runtime;
 
@@ -50,6 +64,7 @@ public class CellDataSet implements Serializable {
     }
 
     public void setCellSetHeaders(final AbstractBaseCell[][] cellSet) {
+    	this.topOffset = cellSet.length;
         this.cellSetHeader = cellSet;
     }
 
@@ -70,7 +85,43 @@ public class CellDataSet implements Serializable {
 
     }
 
-    /**
+	public int getTopOffset() {
+		return topOffset;
+	}
+
+	public int getLeftOffset() {
+		return leftOffset;
+	}
+
+	public void setLeftOffset(int leftOffset) {
+		this.leftOffset = leftOffset;
+	}
+
+	public Measure[] getSelectedMeasures() {
+		return selectedMeasures;
+	}
+
+	public void setSelectedMeasures(Measure[] selectedMeasures) {
+		this.selectedMeasures = selectedMeasures;
+	}
+
+	public List<TotalNode>[] getRowTotalsLists() {
+		return rowTotalsLists;
+	}
+
+	public void setRowTotalsLists(List<TotalNode>[] rowTotalsLists) {
+		this.rowTotalsLists = rowTotalsLists;
+	}
+	
+	public List<TotalNode>[] getColTotalsLists() {
+		return colTotalsLists;
+	}
+
+	public void setColTotalsLists(List<TotalNode>[] colTotalsLists) {
+		this.colTotalsLists = colTotalsLists;
+	}
+
+	/**
      * @param width
      *            the width to set
      */
