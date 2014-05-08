@@ -33,8 +33,21 @@ import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
 
+import com.lowagie.text.pdf.BaseFont;
+import org.saiku.olap.util.SaikuProperties;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public class PdfReport {
     private ReportData section= new ReportData(); 
+    private static final Logger log = LoggerFactory.getLogger(PdfReport.class);
+    private Font font = null; 
+    private String fontName = BaseFont.HELVETICA;
+	private Float fontSize = 8f;
+	private Integer fontStyle = Font.NORMAL;
+	private String fontEncoding = "UTF-8";
+	private Color fontColor = Color.BLACK;
     
 	public byte[] pdf(CellDataSet c, String svg) throws DocumentException, IOException {
 		section.setRowBody(c.getCellSetBody());
@@ -116,8 +129,8 @@ public class PdfReport {
 			PdfPTable table = new PdfPTable(dim);
 			table.setWidthPercentage(90);
 			
-			Font myFont = FontFactory.getFont(
-					FontFactory.HELVETICA, 8, Color.WHITE);
+			Font myFont = new Font(getFont());
+			myFont.setColor(Color.WHITE);
 			if(section.get(i).getDes()!=null){
 				if(section.get(i).getParent()!=null && section.get(i).getParent().getDes()!=null ){
 					section.get(i).setDes(section.get(i).getParent().getDes().trim()+"."+section.get(i).getDes().trim());
@@ -135,8 +148,7 @@ public class PdfReport {
 			if (section.get(i).getData() != null) {
 				for (int x = 0; x < section.get(i).getHead().size(); x++) {
 					PdfPCell cell = new PdfPCell(new Phrase(section.get(i)
-							.getHead().get(x), FontFactory.getFont(
-							FontFactory.HELVETICA, 8)));
+							.getHead().get(x), new Font(getFont())));
 					cell.setBackgroundColor(WebColors.getRGBColor("#B9D3EE"));
 					cell.setBorder(Rectangle.NO_BORDER);
 					cell.setBorder(Rectangle.BOTTOM);
@@ -155,7 +167,7 @@ public class PdfReport {
 							i).getData()[0].length; x++) {
 						PdfPCell cell = new PdfPCell(new Phrase(section.get(i)
 								.getData()[t][x].getFormattedValue(),
-								FontFactory.getFont(FontFactory.HELVETICA, 8)));
+								new Font(getFont())));
 						cell.setBorder(Rectangle.NO_BORDER);
 						cell.setBorder(Rectangle.BOTTOM);
 						int r=t %2;
@@ -186,6 +198,65 @@ public class PdfReport {
 		}
 	}
 
-	
-	
+	private Font getFont() {
+		if (font == null) {
+			try {
+				// load custom settings
+				SaikuProperties properties = new SaikuProperties();
+				if (properties.webExportPdfFontName != null)
+					fontName = properties.webExportPdfFontName;
+
+				if (properties.webExportPdfFontSize != null) {
+					String strSize = properties.webExportPdfFontSize;
+					try {
+						fontSize = Float.valueOf(strSize);
+					} catch (NumberFormatException e) {
+						log.error("Invalid saiku.web.export.pdf.font.size value " + strSize + ", should be formatted like 8.5");
+						e.printStackTrace();
+					}
+				}
+
+				if (properties.webExportPdfFontEncoding != null)
+					fontEncoding = properties.webExportPdfFontEncoding;
+
+				if (properties.webExportPdfFontStyle != null) {
+					String strStyle = properties.webExportPdfFontStyle;
+					if (strStyle != null) {
+						strStyle = strStyle.toUpperCase();
+						fontStyle = Font.NORMAL;
+						if (strStyle.contains("NORMAL")) fontStyle += Font.NORMAL;
+						if (strStyle.contains("ITALIC")) fontStyle += Font.ITALIC;
+						if (strStyle.contains("BOLD")) fontStyle += Font.BOLD;
+						if (strStyle.contains("BOLDITALIC")) fontStyle += Font.BOLDITALIC;
+						if (strStyle.contains("STRIKETHRU")) fontStyle += Font.STRIKETHRU;
+						if (strStyle.contains("UNDERLINE")) fontStyle += Font.UNDERLINE;
+					}
+				}
+
+				if (properties.webExportPdfFontColor != null) {
+					String strColor = properties.webExportPdfFontColor;
+					try {
+						fontColor = 
+							new Color(
+					            Integer.valueOf( strColor.substring( 1, 3 ), 16 ),
+					            Integer.valueOf( strColor.substring( 3, 5 ), 16 ),
+					            Integer.valueOf( strColor.substring( 5, 7 ), 16 ));
+					} catch (NumberFormatException e) {
+						log.error("Invalid saiku.web.export.pdf.font.color value " + strColor + ", should be formatted like #abcdef");
+						e.printStackTrace();
+					}
+				}
+
+				font = new Font(BaseFont.createFont(fontName, fontEncoding, true));
+			} catch (DocumentException e) {
+				log.error("Could not create custom font, reverting to default");
+				e.printStackTrace();
+				font = FontFactory.getFont(FontFactory.HELVETICA, 8);
+			} catch (IOException e) {
+				log.error("Could not read font: " + fontName);
+				e.printStackTrace();
+			}
+		}
+		return font;
+	}
 }

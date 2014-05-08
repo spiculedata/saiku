@@ -237,6 +237,11 @@ public class SaikuProperties extends Properties{
 	public static final String  webExportExcelName = getPropString("saiku.web.export.excel.name","saiku-export");
 	public static final String  webExportExcelFormat = getPropString("saiku.web.export.excel.format","xlsx");
 	public static final String  webExportExcelDefaultNumberFormat = getPropString("saiku.web.export.excel.numberformat","#,##0.00");	
+	public static final String  webExportPdfFontName = getPropString("saiku.web.export.pdf.font.name", "Helvetica");
+	public static final String  webExportPdfFontSize = getPropString("saiku.web.export.pdf.font.size", "8");
+	public static final String  webExportPdfFontEncoding = getPropString("saiku.web.export.pdf.font.encoding", "UTF-8");
+	public static final String  webExportPdfFontStyle = getPropString("saiku.web.export.pdf.font.style", "NORMAL");
+	public static final String  webExportPdfFontColor = getPropString("saiku.web.export.pdf.font.color", "#ffffff");
 	public static final String  formatDefautNumberFormat = getPropString("saiku.format.numberformat","#,##0.00");
 	public static final Locale  locale = getLocale();
 	public static final Boolean olapConvertQuery = getPropBoolean("saiku.olap.convert.query","false");
