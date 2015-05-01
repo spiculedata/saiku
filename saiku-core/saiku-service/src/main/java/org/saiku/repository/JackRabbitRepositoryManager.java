@@ -23,6 +23,7 @@ import org.saiku.service.util.exception.SaikuServiceException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.jackrabbit.api.JackrabbitRepository;
 import org.apache.jackrabbit.commons.JcrUtils;
@@ -947,7 +948,7 @@ System.out.println(e.getLocalizedMessage());
               if (StringUtils.isNotEmpty(fileType) && !node.getName().endsWith(fileType)) {
                 continue;
               }
-              String extension = ".saiku";//file.getName().getExtension();
+              String extension = FilenameUtils.getExtension(nodename);
 
               repoObjects.add(
                   new RepositoryFileObject(node.getName(), "#" + node.getPath(), extension, node.getPath(),
@@ -992,7 +993,7 @@ System.out.println(e.getLocalizedMessage());
                   if (StringUtils.isNotEmpty(fileType) && !filename.endsWith(fileType)) {
                     continue;
                   }
-                  String extension = ".saiku";//file.getName().getExtension();
+                  String extension = FilenameUtils.getExtension(nodename);
 
                   repoObjects
                       .add(new RepositoryFileObject(filename, "#" + relativePath, extension, relativePath,

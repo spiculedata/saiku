@@ -3,7 +3,11 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>bi.meteorite</groupId>
     <artifactId>saiku-web-tests</artifactId>
+<<<<<<< HEAD
+    <version>3.2-SNAPSHOT</version>
+=======
     <version>3.1</version>
+>>>>>>> refs/heads/master
     <packaging>jar</packaging>
 
     <name>saiku web tests for integration testing</name>

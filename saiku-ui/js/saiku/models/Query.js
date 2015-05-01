@@ -88,7 +88,7 @@ var Query = Backbone.Model.extend({
 		for(var k in this.attributes) {
 			var att = this.attributes[k];
 			if(k.substring(0,5)==="PARAM"){
-				var p = k.substring(5, k.size());
+				var p = k.substring(5, k.length);
 				exModel.parameters[p] = att;
 			}
 

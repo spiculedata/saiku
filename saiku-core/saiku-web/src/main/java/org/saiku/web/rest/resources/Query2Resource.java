@@ -635,10 +635,10 @@ public class Query2Resource {
     {
 
         try {
-            CellDataSet cs = thinQueryService.getFormattedResult(queryName, format);
-            QueryResult qr = RestUtil.convert(cs);
+            CellDataSet cellData = thinQueryService.getFormattedResult(queryName, format);
+            QueryResult queryResult = RestUtil.convert(cellData);
             PdfReport pdf = new PdfReport();
-            byte[] doc  = pdf.pdf(qr, svg);
+            byte[] doc  = pdf.createPdf(queryResult, svg);
             if(name==null || name.equals("")){
                 name = "export";
             }
