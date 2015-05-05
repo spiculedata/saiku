@@ -165,7 +165,6 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-config</artifactId>
-            <version>3.2.1.RELEASE</version>
         </dependency>
         <dependency>
             <groupId>commons-io</groupId>
@@ -256,7 +255,6 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-cas</artifactId>
-            <version>3.2.1.RELEASE</version>
         </dependency>
         <dependency>
             <groupId>org.jasig.cas.client</groupId>
@@ -266,7 +264,6 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-core</artifactId>
-            <version>3.2.1.RELEASE</version>
         </dependency>
 
     </dependencies>
