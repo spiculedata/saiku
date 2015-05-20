@@ -294,7 +294,7 @@ public class ExcelWorksheetBuilder {
 
     sheetRow = summarySheet.createRow((int) row);
     cell = sheetRow.createCell(0);
-    cell.setCellValue("Export made using Saiku OLAP client.");
+    cell.setCellValue(SaikuProperties.webExportExcelPoweredBy);
     summarySheet.addMergedRegion(new CellRangeAddress(row, row, 0, 10));
 
     // Autosize columns for summary sheet
