@@ -5,5 +5,5 @@
 	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.2.xsd">
 
 
-	<import resource="applicationContext-spring-security-jdbc.xml"/>
+	<import resource="applicationContext-spring-security-ims.xml"/>
 </beans>

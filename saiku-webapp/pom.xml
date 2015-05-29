@@ -6,17 +6,11 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
     <artifactId>saiku-webapp</artifactId>
-    <version>3.1.9</version>
     <name>saiku - webapp</name>
     <packaging>war</packaging>
 
-    <properties>
-        <repoconfig>../../repository/configuration.xml</repoconfig>
-        <repodata>../../repository/data</repodata>
-        <foodmartrepo>../../data</foodmartrepo>
-        <foodmartschema>../../data/FoodMart4.xml</foodmartschema>
-        <foodmarturl>jdbc:h2:../../data/foodmart;MODE=MySQL</foodmarturl>
-        <pluginpath>../webapps/ROOT/js/saiku/plugins/</pluginpath>
+    <properties>     
+        <derby.version>10.11.1.1</derby.version>
     </properties>
     <build>
         <plugins>
@@ -44,6 +38,9 @@
                     </instructions>
                 </configuration>
             </plugin>
+            <!-- START this is useless -->
+            
+            <!-- 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
@@ -69,6 +66,9 @@
                     </execution>
                 </executions>
             </plugin>
+             -->
+             
+			<!-- END this is useless -->
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -182,6 +182,20 @@
         </plugins>
     </build>
     <dependencies>
+    
+    	<dependency>
+    			<artifactId>servlet-api</artifactId>
+            	<groupId>javax.servlet</groupId>
+            	<scope>provided</scope>
+    	</dependency>
+    
+		<dependency>
+			<groupId>org.apache.derby</groupId>
+			<artifactId>derbyclient</artifactId>
+			<version>${derby.version}</version>
+		</dependency>
+
+    
         <dependency>
             <groupId>org.jasig.cas.client</groupId>
             <artifactId>cas-client-integration-tomcat-common</artifactId>
@@ -193,16 +207,37 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-cas</artifactId>
+            <version>${spring.security.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-taglibs</artifactId>
+			<version>${spring.security.version}</version>            
         </dependency>
         <dependency>
             <groupId>org.saiku</groupId>
             <artifactId>saiku-service</artifactId>
+            <exclusions>
+            	<exclusion>
+            		<artifactId>servlet-api</artifactId>
+            		<groupId>javax.servlet</groupId>
+            	</exclusion>
+            	<exclusion>
+            		<artifactId>servlet-api-2.5</artifactId>
+            		<groupId>org.mortbay.jetty</groupId>
+            	</exclusion>
+            	<exclusion>
+            		<artifactId>slf4j-log4j12</artifactId>
+            		<groupId>org.slf4j</groupId>
+            	</exclusion>
+            	<exclusion>
+            		<artifactId>javax.el-api</artifactId>
+            		<groupId>javax.el</groupId>
+            	</exclusion>
+            </exclusions>
         </dependency>
-
+        
+        
         <dependency>
             <groupId>org.saiku</groupId>
             <artifactId>saiku-web</artifactId>
@@ -210,11 +245,22 @@
         <dependency>
             <groupId>org.saiku</groupId>
             <artifactId>saiku-olap-util</artifactId>
+            <exclusions>
+            	<exclusion>
+            		<artifactId>slf4j-log4j12</artifactId>
+            		<groupId>org.slf4j</groupId>
+            	</exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.saiku</groupId>
             <artifactId>saiku-query</artifactId>
         </dependency>
+        
+		<dependency>
+                <groupId>javax.servlet</groupId>
+                <artifactId>jstl</artifactId>
+            </dependency>
         <dependency>
             <groupId>com.sun.jersey.contribs</groupId>
             <artifactId>jersey-spring</artifactId>
@@ -270,14 +316,38 @@
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
         </dependency>
+        <!-- 
         <dependency>
             <groupId>org.apache.hive</groupId>
             <artifactId>hive-jdbc</artifactId>
+            <exclusions>
+            	<exclusion>
+            		<artifactId>servlet-api</artifactId>
+            		<groupId>javax.servlet</groupId>
+            	</exclusion>
+            	<exclusion>
+            		<artifactId>slf4j-log4j12</artifactId>
+            		<groupId>org.slf4j</groupId>
+            	</exclusion>
+            </exclusions>
         </dependency>
+         -->
+        <!-- 
         <dependency>
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-common</artifactId>
+            <exclusions>
+            	<exclusion>
+            		<artifactId>servlet-api</artifactId>
+            		<groupId>javax.servlet</groupId>
+            	</exclusion>
+            	<exclusion>
+            		<artifactId>slf4j-log4j12</artifactId>
+            		<groupId>org.slf4j</groupId>
+            	</exclusion>
+            </exclusions>
         </dependency>
+         -->
         <dependency>
             <groupId>com.fasterxml.jackson.jaxrs</groupId>
             <artifactId>jackson-jaxrs-json-provider</artifactId>

@@ -17,11 +17,11 @@
         <module>saiku-core</module>
         <module>saiku-ui</module>
         <module>saiku-webapp</module>
-        <!--        <module>saiku-web-tests</module>-->
-        <module>saiku-server</module>
-        <module>saiku-bi-platform-plugin-p5</module>
+        <!--<module>saiku-server</module>-->
         <!--<module>saiku-web-tests</module>-->
-        <!--  <module>saiku-bi-platform-plugin</module>-->
+        <!--<module>saiku-bi-platform-plugin-p5</module>-->
+        <!--<module>saiku-web-tests</module>-->
+        <!--<module>saiku-bi-platform-plugin</module>-->
     <!--<module>saiku-service-osgi</module>-->
   </modules>
     <distributionManagement>
@@ -40,8 +40,8 @@
         <maven.compiler.source>1.5</maven.compiler.source>
         <maven.compiler.target>1.5</maven.compiler.target>
         <top.dir>${project.basedir}</top.dir>
-        <spring.version>3.2.1.RELEASE</spring.version>
-        <spring.security.version>3.2.1.RELEASE</spring.security.version>
+        <spring.version>3.2.13.RELEASE</spring.version>
+        <spring.security.version>3.2.7.RELEASE</spring.security.version>
         <slf4j.version>1.6.4</slf4j.version>
         <enunciate.version>1.28</enunciate.version>
         <jersey.version>1.19</jersey.version>
@@ -555,7 +555,7 @@
             <dependency>
                 <groupId>org.springframework.security</groupId>
                 <artifactId>spring-security-ldap</artifactId>
-                <version>${spring.version}</version>
+                <version>${spring.security.version}</version>
             </dependency>
             <!-- Batik/SVG -->
             <dependency>
@@ -925,17 +925,17 @@
             <dependency>
                 <groupId>org.springframework.security</groupId>
                 <artifactId>spring-security-core</artifactId>
-                <version>${spring.version}</version>
+                <version>${spring.security.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework.security</groupId>
                 <artifactId>spring-security-config</artifactId>
-                <version>${spring.version}</version>
+                <version>${spring.security.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework.security</groupId>
                 <artifactId>spring-security-web</artifactId>
-                <version>${spring.version}</version>
+                <version>${spring.security.version}</version>
             </dependency>
             <dependency>
                 <groupId>javax.servlet</groupId>

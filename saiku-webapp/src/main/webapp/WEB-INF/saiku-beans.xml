@@ -4,10 +4,12 @@
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.2.xsd">
 
-    <!--	<bean id="classpathDsManager"
+    	<bean id="classpathDsManager"
             class="org.saiku.service.datasource.ClassPathResourceDatasourceManager">
             <property name="path" value="res:saiku-datasources" />
-        </bean>-->
+        </bean>
+
+<!-- 
     <bean id="repositoryDsManager" class="org.saiku.service.datasource.RepositoryDatasourceManager" init-method="load" destroy-method="unload">
         <property name="userService" ref="userServiceBean"/>
         <property name="configurationpath" value="${repoconfig}"/>
@@ -16,22 +18,29 @@
         <property name="foodmartschema" value="${foodmartschema}"/>
         <property name="foodmarturl" value="${foodmarturl}"/>
     </bean>
+ -->    
 
     <!-- <property name="path" value="file:///var/saiku/saiku-datasources/"/> -->
+    <!-- 
     <bean id="h2database" class="org.saiku.database.Database" init-method="init">
         <property name="datasourceManager" ref="repositoryDsManager"/>
     </bean>
+     -->
 
     <bean id="sessionService" class="org.saiku.web.service.SessionService">
         <property name="authenticationManager" ref="authenticationManager" />
     </bean>
     <bean id="securityContextPersistenceFilter" class="org.springframework.security.web.context.SecurityContextPersistenceFilter" />
+
+<!-- 
     <bean class="org.saiku.datasources.connection.MondrianVFS" init-method="init" id="mondrianVFS">
         <property name="datasourceManager" ref="repositoryDsManager"/>
     </bean>
+ -->
+     
     <bean id="connectionManager" class="org.saiku.web.core.SecurityAwareConnectionManager" init-method="init"
-          destroy-method="destroy" depends-on="mondrianVFS">
-        <property name="dataSourceManager" ref="repositoryDsManager" />
+          destroy-method="destroy">
+        <property name="dataSourceManager" ref="classpathDsManager" />
         <property name="sessionService" ref="sessionService" />
 
     </bean>
@@ -40,14 +49,19 @@
         <property name="connectionManager" ref="connectionManager" />
     </bean>
 
+    
+    <!-- 
     <bean id="customerDAO" class="org.saiku.database.JdbcUserDAO">
         <property name="dataSource" ref="dataSource" />
     </bean>
+     -->
 
     <bean id="userServiceBean" class="org.saiku.service.user.UserService">
+    <!-- 
         <property name="jdbcUserDAO" ref="customerDAO"/>
+ 	-->        
         <property name="datasourceService" ref="datasourceServiceBean"/>
-        <property name="iDatasourceManager" ref="repositoryDsManager"/>
+        <property name="iDatasourceManager" ref="classpathDsManager"/>
         <property name="adminRoles">
             <list>
                 <value>ROLE_ADMIN</value>
@@ -59,7 +73,7 @@
         <property name="userService" ref="userServiceBean"/>
         <property name="datasourceService" ref="datasourceServiceBean"/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
-        <property name="repositoryDatasourceManager" ref="repositoryDsManager"/>
+        <property name="repositoryDatasourceManager" ref="classpathDsManager"/>
     </bean>
 
     <bean id="olapDiscoverServiceBean" class="org.saiku.service.olap.OlapDiscoverService">
@@ -94,7 +108,9 @@
     </bean>
 
     <bean id="platformBean" class="org.saiku.service.PlatformUtilsService">
+<!-- 
         <property name="path" value="${pluginpath}"/>
+ -->        
     </bean>
 
     <bean id="infoResource" class="org.saiku.web.rest.resources.InfoResource">

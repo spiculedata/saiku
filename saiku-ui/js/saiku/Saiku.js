@@ -28,7 +28,6 @@ var Saiku = {
      */
     tabs: new TabSet(),
 
-    splash: new SplashScreen(),
     /**
      * Model which handles session and authentication
      */
@@ -233,18 +232,22 @@ if (! Settings.BIPLUGIN) {
                 var i = plugins.size();
                 var j = 0;
                 plugins.each(function(log) {
-                    j = j+1;
+                    j = j + 1;
 					if(log.attributes.path != "js/saiku/plugins/I18n/plugin.js") {
 						jQuery.getScript(log.attributes.path);
 					}
 
                     if(j == i) {
-                        Saiku.session = new Session({}, {
-                            username: Settings.USERNAME,
-                            password: Settings.PASSWORD
-                        });
+                        // just wait a moment until we bootstrap the app since it's possible that we didn't load all the plugins
+                        // we can have problems on slow connection with this (the first tab will not be opened automatically)!
+                        setTimeout(function(){
+                            Saiku.session = new Session({}, {
+                                username: Settings.USERNAME,
+                                password: Settings.PASSWORD
+                            });
 
-                        Saiku.toolbar = new Toolbar();
+                            Saiku.toolbar = new Toolbar();
+                        }, 10);
                     }
                 });
             }

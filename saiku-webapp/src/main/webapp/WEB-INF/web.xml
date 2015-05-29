@@ -69,6 +69,8 @@
     <!-- ====================================================================== -->
     <!-- W E B D A V S E R V L E T -->
     <!-- ====================================================================== -->
+    
+    <!-- 
     <servlet>
         <servlet-name>Webdav</servlet-name>
         <description>
@@ -93,6 +95,7 @@
 
         <load-on-startup>4</load-on-startup>
     </servlet>
+     -->
     <!-- ====================================================================== -->
     <!-- J C R R E M O T I N G S E R V L E T -->
     <!-- ====================================================================== -->
@@ -130,10 +133,12 @@
     <!-- ====================================================================== -->
     <!-- S E R V L E T M A P P I N G -->
     <!-- ====================================================================== -->
+<!--     
     <servlet-mapping>
         <servlet-name>Webdav</servlet-name>
         <url-pattern>/repository/*</url-pattern>
     </servlet-mapping>
+ -->    
   <!--  <servlet-mapping>
         <servlet-name>JCRWebdavServer</servlet-name>
         <url-pattern>/server/*</url-pattern>

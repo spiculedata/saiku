@@ -1,9 +1,0 @@
-{
-	"username": "plugin",
-  	"password": "",
-    "saiku-webapp": "/pentaho/content/saiku/",
-    "saiku-ui-base" : "/pentaho/content/saiku-ui/",
-    "plugin":"true",
-    "saiku-rest-mountpoint" : ""
-    
-}

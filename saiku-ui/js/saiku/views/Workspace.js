@@ -27,7 +27,6 @@ var Workspace = Backbone.View.extend({
         'drop .workspace_results': 'remove_dimension',
         'click .refresh_cubes' : 'refresh',
         'click .cancel' : 'cancel',
-        'click .admin' : 'admin'
     },
 
     initialize: function(args) {
@@ -43,9 +42,6 @@ var Workspace = Backbone.View.extend({
         // Generate toolbar and append to workspace
         this.toolbar = new WorkspaceToolbar({ workspace: this });
         this.toolbar.render();
-
-		this.upgrade = new Upgrade({ workspace: this});
-		this.upgrade.render();
 
         this.querytoolbar = new QueryToolbar({ workspace: this });
         this.querytoolbar.render();
@@ -220,14 +216,9 @@ var Workspace = Backbone.View.extend({
             // Show toolbar
             $(this.el).find('.workspace_toolbar').append($(this.toolbar.el));
             $(this.el).find('.query_toolbar').append($(this.querytoolbar.el));
-			$(self.el).find('.upgrade').append($(self.upgrade.el));
-
-
         }
 
         this.switch_view_state(this.viewState, true);
-
-
 
         // Add results table
         $(this.el).find('.workspace_results')
@@ -241,18 +232,6 @@ var Workspace = Backbone.View.extend({
 
         // Fire off new workspace event
         Saiku.session.trigger('workspace:new', { workspace: this });
-
-        if (Settings.PLUGIN && Saiku.session.isAdmin) {
-            var $link = $('<a />')
-                .attr({
-                    href: '#adminconsole',
-                    title: 'Admin Console'
-                })
-                .click(Saiku.AdminConsole.show_admin)
-                .addClass('button admin_console');
-            $(this.el).find('.refresh_cubes_nav').css('margin-right', '40px');
-            $(this.el).find('.admin_console_nav').append($link);
-        }
 
         return this;
     },
@@ -883,10 +862,6 @@ var Workspace = Backbone.View.extend({
                 self.cancelled();
             }
         });
-    },
-
-    admin: function(event){
-        Saiku.AdminConsole.show_admin();
     },
 
     cancelled: function(args) {

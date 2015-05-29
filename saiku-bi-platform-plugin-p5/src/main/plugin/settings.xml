@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<settings>
-	<new-toolbar-button>4,Saiku Analytics view,Saiku Analytics,content/saiku-ui/index.html?biplugin5=true</new-toolbar-button>
-    
-    <cde-components>
-        <path>system/saiku/components</path>
-        <path>saiku/components</path>
-	</cde-components>
-</settings>

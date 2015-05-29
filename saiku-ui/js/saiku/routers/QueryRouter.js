@@ -60,15 +60,10 @@ var QueryRouter = Backbone.Router.extend({
 
 		var repositoryFile = new Repository({}, { dialog: dialog, file: options.file }).fetch({ async: false, data: { path: options.file }});
 
-
-
-
-
-
     },
 
-    open_query_repository: function( ) {
-        Toolbar.prototype.open_query( );
+    open_query_repository: function() {
+        Toolbar.prototype.open_query();
     }
 });
 

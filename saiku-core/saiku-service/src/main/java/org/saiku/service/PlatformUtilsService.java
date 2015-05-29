@@ -1,11 +1,13 @@
 package org.saiku.service;
 
-import org.saiku.service.util.dto.Plugin;
-import org.springframework.beans.factory.annotation.Autowired;
-
 import java.io.File;
 import java.io.FilenameFilter;
 import java.util.ArrayList;
+
+import javax.servlet.ServletContext;
+
+import org.saiku.service.util.dto.Plugin;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Created by bugg on 30/04/14.
@@ -13,8 +15,11 @@ import java.util.ArrayList;
 public class PlatformUtilsService {
 
   private String filePath;
-
+  
   @Autowired
+  private ServletContext servletContext;
+
+  @Autowired(required=false)
   public void setPath(String path) {
     this.filePath = path;
   }
@@ -26,6 +31,14 @@ public class PlatformUtilsService {
 
   public ArrayList<Plugin> getAvailablePlugins(){
     ArrayList l = new ArrayList<Plugin>(  );
+    
+
+	if (filePath == null) {
+		String realPath = servletContext.getRealPath("/");
+		filePath = realPath.substring(0, realPath.indexOf("/saiku-webapp")) + "/saiku-ui/js/saiku/plugins/";
+	}        
+
+    
     File f = new File(filePath);
 
     String[] directories = f.list(new FilenameFilter() {
