@@ -83,7 +83,7 @@ public class DataSourceMapper {
                 this.advanced += "security.type=" + ds.getProperties().get("security.type") + "\n";
             }
             if (ds.getProperties().containsKey("security.mapping")) {
-                this.advanced += "security.mapping" + ds.getProperties().get("security.mapping") + "\n";
+                this.advanced += "security.mapping=" + ds.getProperties().get("security.mapping") + "\n";
             }
             if (ds.getProperties().contains("encrypt.password")) {
                 this.advanced += "encrypt.password=" + ds.getProperties().get("encrypt.password") + "\n";
