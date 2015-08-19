@@ -3,11 +3,11 @@
 <parent>
 		<artifactId>saiku</artifactId>
 		<groupId>org.saiku</groupId>
-		<version>3.5-SNAPSHOT</version>
+		<version>3.4.3</version>
 	</parent>
 	<artifactId>saiku-ui</artifactId>
 	<packaging>pom</packaging>
-	<version>3.5-SNAPSHOT</version>
+	<version>3.4.3</version>
         <properties>
 	<checkstyle.skip>true</checkstyle.skip>
 	 <build.prod>false</build.prod>

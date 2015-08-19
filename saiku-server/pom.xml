@@ -2,13 +2,13 @@
         <parent>
                 <artifactId>saiku</artifactId>
                 <groupId>org.saiku</groupId>
-                <version>3.5-SNAPSHOT</version>
+                <version>3.4.3</version>
         </parent>
 	
 	<modelVersion>4.0.0</modelVersion>
 	<artifactId>saiku-server</artifactId>
 	<packaging>pom</packaging>
-    <version>3.5-SNAPSHOT</version>
+    <version>3.4.3</version>
 	<properties>
 		<min>nomin</min>
 	</properties>

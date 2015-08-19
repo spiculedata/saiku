@@ -5,7 +5,7 @@
     <groupId>org.saiku</groupId>
     <artifactId>saiku</artifactId>
     <packaging>pom</packaging>
-    <version>3.5-SNAPSHOT</version>
+    <version>3.4.3</version>
     <name>Saiku Module Project</name>
     <scm>
         <developerConnection>
