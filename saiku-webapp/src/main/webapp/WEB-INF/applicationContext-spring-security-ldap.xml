@@ -7,8 +7,8 @@
 <beans xmlns="http://www.springframework.org/schema/beans"
        xmlns:security="http://www.springframework.org/schema/security"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-       xsi:schemaLocation="http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security-3.2.xsd
-       		   http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.2.xsd">
+       xsi:schemaLocation="http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security-4.0.xsd
+       		   http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.0.xsd">
 
 	<security:authentication-manager alias="authenticationManager">
 		<security:authentication-provider ref="authenticationProvider" />
@@ -20,19 +20,19 @@
       <ref bean="authenticator" />
 		</constructor-arg>
 		<constructor-arg>
-			<ref local="populator" />
+			<ref bean="populator" />
 		</constructor-arg>
 	</bean>
 
   <bean id="authenticator" class="org.springframework.security.ldap.authentication.PasswordComparisonAuthenticator">
     <constructor-arg>
-      <ref local="contextSource" />
+      <ref bean="contextSource" />
     </constructor-arg>
     <property name="passwordEncoder">
-      <ref local="passwordEncoder" />
+      <ref bean="passwordEncoder" />
     </property>
     <property name="userSearch">
-      <ref local="userSearch" />
+      <ref bean="userSearch" />
     </property>
   </bean>
 
@@ -48,7 +48,7 @@
 		<constructor-arg index="0" value="${userSearch.searchBase}" />
 		<constructor-arg index="1" value="${userSearch.searchFilter}" />
 		<constructor-arg index="2">
-			<ref local="contextSource" />
+			<ref bean="contextSource" />
 		</constructor-arg>
 	</bean>
 
@@ -56,7 +56,7 @@
 	<bean id="populator"
 		class="org.springframework.security.ldap.userdetails.DefaultLdapAuthoritiesPopulator">
 		<constructor-arg index="0">
-			<ref local="contextSource" />
+			<ref bean="contextSource" />
 		</constructor-arg>
 		<constructor-arg index="1" value="${populator.groupSearchBase}" />
 		<property name="groupRoleAttribute" value="${populator.groupRoleAttribute}" />
@@ -70,10 +70,10 @@
 	<bean id="userDetailsService"
 		class="org.springframework.security.ldap.userdetails.LdapUserDetailsService">
 		<constructor-arg>
-			<ref local="userSearch" />
+			<ref bean="userSearch" />
 		</constructor-arg>
 		<constructor-arg>
-			<ref local="populator" />
+			<ref bean="populator" />
 		</constructor-arg>
 	</bean>
 

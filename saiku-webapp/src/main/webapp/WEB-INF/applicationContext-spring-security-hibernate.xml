@@ -10,17 +10,17 @@
 
     <bean id="authenticationProvider" class="org.springframework.security.providers.dao.DaoAuthenticationProvider">
         <property name="userDetailsService">
-            <ref local="userDetailsService" />
+            <ref bean="userDetailsService" />
         </property>
         <property name="passwordEncoder">
-            <ref local="passwordEncoder" />
+            <ref bean="passwordEncoder" />
         </property>
     </bean>
 
     <!-- UserDetailsService that delegates to an IUserRoleDao -->
     <bean id="userDetailsService" class="org.pentaho.platform.engine.security.userroledao.userdetailsservice.UserRoleDaoUserDetailsService">
         <property name="userRoleDao">
-            <ref local="userRoleDao" />
+            <ref bean="userRoleDao" />
         </property>
         <property name="rolePrefix" value="" />
         <property name="defaultRole" ref="defaultRole" />
@@ -30,16 +30,16 @@
     <bean id="userRoleDao" class="org.pentaho.platform.engine.security.userroledao.hibernate.HibernateUserRoleDao"
           init-method="init">
         <property name="sessionFactory">
-            <ref local="sessionFactory" />
+            <ref bean="sessionFactory" />
         </property>
         <property name="initHandler">
             <!-- detects if USERS table is empty and if so, inserts sample users and roles -->
             <bean class="org.pentaho.platform.engine.security.userroledao.hibernate.sample.SampleUsersAndRolesInitHandler">
                 <property name="sessionFactory">
-                    <ref local="sessionFactory" />
+                    <ref bean="sessionFactory" />
                 </property>
                 <property name="userRoleDao">
-                    <ref local="txnUserRoleDao" />
+                    <ref bean="txnUserRoleDao" />
                 </property>
             </bean>
         </property>
@@ -48,7 +48,7 @@
     <!-- an IUserRoleDao that decorates another IUserRoleDao with transactions -->
     <bean id="txnUserRoleDao" class="org.pentaho.platform.engine.security.userroledao.hibernate.UserRoleDaoTransactionDecorator">
         <property name="userRoleDao">
-            <ref local="userRoleDao" />
+            <ref bean="userRoleDao" />
         </property>
         <property name="transactionTemplate">
             <bean class="org.springframework.transaction.support.TransactionTemplate">
@@ -56,7 +56,7 @@
                 <property name="transactionManager">
                     <bean id="hibernateTransactionManager" class="org.springframework.orm.hibernate3.HibernateTransactionManager">
                         <property name="sessionFactory">
-                            <ref local="sessionFactory" />
+                            <ref bean="sessionFactory" />
                         </property>
                     </bean>
                 </property>
