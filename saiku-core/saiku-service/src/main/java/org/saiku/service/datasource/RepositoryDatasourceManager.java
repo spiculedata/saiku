@@ -19,28 +19,21 @@ package org.saiku.service.datasource;
 import org.saiku.database.dto.MondrianSchema;
 import org.saiku.datasources.connection.RepositoryFile;
 import org.saiku.datasources.datasource.SaikuDatasource;
-import org.saiku.repository.AclEntry;
-import org.saiku.repository.DataSource;
-import org.saiku.repository.IRepositoryManager;
-import org.saiku.repository.IRepositoryObject;
-import org.saiku.repository.JackRabbitRepositoryManager;
+import org.saiku.repository.*;
 import org.saiku.service.importer.LegacyImporter;
 import org.saiku.service.importer.LegacyImporterImpl;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.exception.SaikuServiceException;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.jcr.Node;
-import javax.jcr.PathNotFoundException;
-import javax.jcr.RepositoryException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
+
+import javax.jcr.Node;
+import javax.jcr.RepositoryException;
 
 /**
  * A Datasource Manager for the Saiku Repository API layer.
@@ -403,9 +396,6 @@ public class RepositoryDatasourceManager implements IDatasourceManager {
             if (eturn!=null){
                 return true;
             }
-            return false;
-        } catch(PathNotFoundException e)
-        {
             return false;
         } catch (RepositoryException e) {
             log.error("could not get home directory");
