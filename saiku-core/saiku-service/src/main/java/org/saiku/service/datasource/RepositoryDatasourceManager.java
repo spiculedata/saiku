@@ -33,6 +33,7 @@ import java.io.InputStream;
 import java.util.*;
 
 import javax.jcr.Node;
+import javax.jcr.PathNotFoundException;
 import javax.jcr.RepositoryException;
 
 /**
@@ -396,6 +397,8 @@ public class RepositoryDatasourceManager implements IDatasourceManager {
             if (eturn!=null){
                 return true;
             }
+            return false;
+        } catch(PathNotFoundException e) {
             return false;
         } catch (RepositoryException e) {
             log.error("could not get home directory");
