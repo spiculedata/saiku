@@ -405,7 +405,7 @@ var SelectionsModal = Modal.extend({
 
             // Filter out used members
             this.available_members = _.select(this.available_members, function(o) {
-                return used_members.indexOf(o.obj.caption) === -1;
+                return used_members.indexOf(obj.caption) === -1;
             });
 
             if (this.available_members.length > 0) {
