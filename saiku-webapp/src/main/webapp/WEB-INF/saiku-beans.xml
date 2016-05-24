@@ -1,8 +1,15 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 
 <beans xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-       xmlns="http://www.springframework.org/schema/beans" xmlns:context="http://www.springframework.org/schema/context"
-       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.0.xsd http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
+       xmlns="http://www.springframework.org/schema/beans"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:aop="http://www.springframework.org/schema/aop"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+       http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+       http://www.springframework.org/schema/context
+       http://www.springframework.org/schema/context/spring-context.xsd
+       http://www.springframework.org/schema/aop
+       http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
 
     <context:property-placeholder
             location="/WEB-INF/saiku-beans.properties"
@@ -16,11 +23,16 @@
             ignore-unresolvable="true"
             order ="-1" />
 
+    <bean id="sessionRegistry"
+          class="org.springframework.security.core.session.SessionRegistryImpl" />
+
     <!--	<bean id="classpathDsManager"
             class="org.saiku.service.datasource.ClassPathResourceDatasourceManager">
             <property name="path" value="res:saiku-datasources" />
         </bean>-->
     <bean id="repositoryDsManager" class="org.saiku.service.datasource.RepositoryDatasourceManager" init-method="load" destroy-method="unload">
+        <!--aop:scoped-proxy/-->
+
         <property name="userService" ref="userServiceBean"/>
         <property name="configurationpath" value="${repoconfig}"/>
         <property name="datadir" value="${repodata}"/>
@@ -35,7 +47,9 @@
         <property name="externalPropertiesFile" value="${external.properties.file}"/>
         <!-- If you change the repoPassword set this property for at least 1 restart to update the old repo password-->
         <!--<property name="oldRepoPassword" value="sa!kuanalyt!cs"/>-->
-
+        <property name="type" value="${repo.type}"/>
+        <property name="sessionRegistry" ref="sessionRepo"/>
+        <property name="workspaces" value="${workspaces}"/>
     </bean>
 
     <bean id="repoPasswordProviderBean" class="org.saiku.service.util.security.authentication.SimplePasswordProvider">
@@ -55,11 +69,16 @@
 
     <bean id="authorisationPredicate" class="org.saiku.service.util.security.authorisation.MustBeAuthenticatedAuthorisation"/>
 
+    <bean id="sessionRepo" class="org.saiku.repository.ScopedRepo" scope="session">
+        <aop:scoped-proxy/>
+    </bean>
+
     <bean id="sessionService" class="org.saiku.web.service.SessionService">
+        <property name="sessionRepo" ref="sessionRepo"/>
         <property name="authenticationManager" ref="authenticationManager"/>
         <property name="authorisationPredicate" ref="authorisationPredicate"/>
         <property name="l" ref="licenseUtilsBean"/>
-
+        <property name="orbisAuthEnabled" value="${orbis.auth.enabled}"/>
     </bean>
 
     <bean id="securityContextPersistenceFilter" class="org.springframework.security.web.context.SecurityContextPersistenceFilter"/>
@@ -91,7 +110,7 @@
     </bean>
 
     <bean id="userServiceBean" class="org.saiku.service.user.UserService">
-	<property name="jdbcUserDAO" ref="userDAO"/>
+        <property name="jdbcUserDAO" ref="userDAO"/>
         <property name="datasourceService" ref="datasourceServiceBean"/>
         <property name="iDatasourceManager" ref="repositoryDsManager"/>
         <property name="adminRoles">
@@ -196,5 +215,6 @@
     <bean id="statsBean" class="org.saiku.web.rest.resources.StatisticsResource"/>
 
     <bean id="startupBean" class="org.saiku.web.rest.util.StartupResource" init-method="init"/>
+
 
 </beans>

@@ -110,11 +110,16 @@ var Table = Backbone.View.extend({
             var used_levels = [];
 
              var v1 = self.workspace.query.helper.getHierarchy(h);
-             var v2 =
-             _.each(v1.levels, function(level){
-                 var lev = h+".["+level.name+"]";
-                used_levels.push(lev);
-             });
+             var v2;
+
+             if (v1) {
+                 v2 =
+                 _.each(v1.levels, function(level){
+                     var lev = h+".["+level.name+"]";
+                    used_levels.push(lev);
+                 });
+             }
+
             _.each(dimensions, function(dimension) {
                 if (dimension.name == d) {
                     _.each(dimension.hierarchies, function(hierarchy) {
@@ -234,6 +239,11 @@ var Table = Backbone.View.extend({
                     }
                     else if(key.substring(0,key.indexOf("-")) === "remove"){
                         var k = key.substring(key.indexOf("-") + 1);
+
+                        if (Settings.ALLOW_PARAMETERS) {
+                            self.workspace.query.helper.removeParameter(h, k);
+                            self.workspace.$el.find('.parameter_input').empty();
+                        }
 
                         self.workspace.query.helper.removeLevel(h, k);
                         self.workspace.drop_zones.synchronize_query();

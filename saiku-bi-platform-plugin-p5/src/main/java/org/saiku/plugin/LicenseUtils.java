@@ -6,6 +6,7 @@
 
 package org.saiku.plugin;
 
+import bi.meteorite.license.LicenseException;
 import bi.meteorite.license.SaikuLicense;
 import bi.meteorite.license.SaikuLicense2;
 
@@ -15,12 +16,7 @@ import org.saiku.service.license.Base64Coder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
+import java.io.*;
 import java.util.Date;
 import java.util.Properties;
 
@@ -29,7 +25,7 @@ import javax.jcr.RepositoryException;
 /**
  * Created by bugg on 01/07/14.
  */
-public class LicenseUtils extends org.saiku.LicenseUtils {
+public class LicenseUtils implements org.saiku.service.license.ILicenseUtils {
   private static final Logger log = LoggerFactory.getLogger(LicenseUtils.class);
 
   private IDatasourceManager repositoryDatasourceManager;
@@ -82,6 +78,9 @@ public class LicenseUtils extends org.saiku.LicenseUtils {
         .getInternalFileData("license.lic");
 
     Object obj = null;
+    if(file == null){
+      throw new RepositoryException("Could not find license in predefined places");
+    }
     byte[] b = Base64Coder.decode(file);
 
     try (ObjectInputStream in = new ObjectInputStream(new ByteArrayInputStream(
@@ -90,7 +89,10 @@ public class LicenseUtils extends org.saiku.LicenseUtils {
       try {
         license = in.readObject();
       } catch (ClassNotFoundException e) {
-        e.printStackTrace();
+        log.debug("Could not decode license(classnotfound) please fetch a new one", e);
+      }
+      catch (InvalidClassException e){
+        log.debug("Could not decode license, please fetch a new one", e);
       }
       return license;
     }
@@ -120,16 +122,15 @@ public class LicenseUtils extends org.saiku.LicenseUtils {
 
   }
 
-  public void validateLicense()
-      throws Exception {
+  public void validateLicense() throws RepositoryException, IOException, ClassNotFoundException, LicenseException {
     Object l = getLicense();
 
     if (l instanceof SaikuLicense) {
-      ((SaikuLicense) l).validate(new Date(), getVersion());
+      ((SaikuLicense) l).validate(new Date(), getVersion(), false, false, true, false);
     } else if (l instanceof SaikuLicense2) {
-      ((SaikuLicense2) l).validate(new Date(), getVersion());
+      ((SaikuLicense2) l).validate(new Date(), getVersion(), false, false, true, false);
     } else {
-      throw new Exception("Can't validate license");
+      throw new LicenseException("Can't validate license unknown license type");
     }
   }
 

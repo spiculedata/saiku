@@ -198,12 +198,11 @@ var TabPager = Backbone.View.extend({
     },
 
     select: function(event) {
-        var index = $(event.target).attr('href').replace('#', '');
+        var $currentTarget = $(event.currentTarget);
+        var index = $currentTarget.attr('href').replace('#', '');
         this.tabset._tabs[index].select();
         $(this.el).hide();
         event.preventDefault();
         return false;
     }
 });
-
-

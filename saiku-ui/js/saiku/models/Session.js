@@ -27,6 +27,7 @@ var Session = Backbone.Model.extend({
     upgradeTimeout: null,
     isAdmin: false,
     id: null,
+	atemptedToLoginByCookie: false,
     initialize: function(args, options) {
         // Attach a custom event bus to this model
         _.extend(this, Backbone.Events);
@@ -47,15 +48,29 @@ var Session = Backbone.Model.extend({
     },
 
     check_session: function() {
-        if (this.sessionid === null || this.username === null || this.password === null) {
-			var that = this;
-            this.clear();
-            this.fetch({ success: this.process_session, error: this.brute_force });
-        } else {
-            this.username = encodeURIComponent(options.username);
-            this.load_session();
-        }
+		// This authentication cookie is used only by Orbis authentication strategy
+		var authCookie = this.getCookie(Settings.ORBIS_AUTH.cookieName);
+
+		if (Settings.ORBIS_AUTH.enabled && authCookie && !this.atemptedToLoginByCookie) {
+			this.atemptedToLoginByCookie = true;
+			this.login('orbis', 'orbis');
+		} else {
+			if (this.sessionid === null || this.username === null || this.password === null) {
+				var that = this;
+				this.clear();
+				this.fetch({ success: this.process_session, error: this.brute_force });
+			} else {
+				this.username = encodeURIComponent(options.username);
+				this.load_session();
+			}
+		}
     },
+
+	getCookie: function(name) {
+		var value = "; " + document.cookie;
+		var parts = value.split("; " + name + "=");
+		if (parts.length == 2) return parts.pop().split(";").shift();
+	},
 
 	/**
 	 * This is a complete hack to get the BI platform plugin working.

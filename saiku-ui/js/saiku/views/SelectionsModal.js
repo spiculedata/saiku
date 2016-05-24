@@ -126,7 +126,7 @@ var SelectionsModal = Modal.extend({
 
                 }
             }
-            $(this.el).find('.parameter').removeClass('hide');
+            $(this.el).find('.parameter').removeClass('hidden');
         }
 
 
@@ -204,6 +204,7 @@ var SelectionsModal = Modal.extend({
 
     clear_search: function() {
         $(this.el).find('.filterbox').val('');
+        this.available_members = [];
         this.get_members();
     },
 

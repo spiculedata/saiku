@@ -32,7 +32,7 @@ public class PentahoQueryResource extends Query2Resource {
   /**
    *
    * Execute a Saiku Query
-   * @summary Execute Query
+   * Execute Query
    * @param tq Thin Query model
    * @return A query result set.
    */

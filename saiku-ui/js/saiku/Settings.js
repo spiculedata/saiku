@@ -27,7 +27,13 @@ var Settings = {
     REST_MOUNT_POINT: "/rest/saiku/",
     DIMENSION_PREFETCH: true,
     DIMENSION_SHOW_ALL: true,
-    DIMENSION_SHOW_REDUCED: false,
+    /*
+     * Valid values for DIMENSION_HIDE_HIERARCHY:
+     * 1) NONE
+     * 2) SINGLE_LEVEL
+     * 3) ALL
+     */
+    DIMENSION_HIDE_HIERARCHY: 'SINGLE_LEVEL',
     ERROR_LOGGING: false,
     I18N_LOCALE: "en",
     // number of erroneous ajax calls in a row before UI cant recover
@@ -113,7 +119,12 @@ var Settings = {
     PARENT_MEMBER_DIMENSION: false,
     EXT_DATASOURCE_PROPERTIES: false,
     SHOW_USER_MANAGEMENT: true,
-    SHOW_REFRESH_NONADMIN: false
+    SHOW_REFRESH_NONADMIN: false,
+    EMPTY_VALUE_CHARACTER: '-',
+	ORBIS_AUTH: {
+		enabled: false,
+		cookieName: 'SAIKU_AUTH_PRINCIPAL'
+	}
 };
 
 /**

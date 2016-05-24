@@ -23,7 +23,7 @@
  * - views/WorkspaceToolbar.js
  * - css/saiku/src/saiku.dropzone.css
  * - css/saiku/src/styles.css
- * - index.html
+ * - index.jsp
  */
 
 /**
@@ -179,9 +179,9 @@ var CalculatedMemberModal = Modal.extend({
     ],
 
     /**
-     * The events hash (or method) can be used to specify a set of DOM events 
+     * The events hash (or method) can be used to specify a set of DOM events
      * that will be bound to methods on your View through delegateEvents
-     * 
+     *
      * @property events
      * @type {Object}
      * @private
@@ -276,10 +276,10 @@ var CalculatedMemberModal = Modal.extend({
         var lPerc = (((($('body').width() - 800) / 2) * 100) / $('body').width());
 
         this.$el.dialog('option', 'position', 'center');
-        this.$el.parents('.ui-dialog').css({ 
-            width: '800px', 
-            top: tPerc + '%', 
-            left: lPerc + '%' 
+        this.$el.parents('.ui-dialog').css({
+            width: '800px',
+            top: tPerc + '%',
+            left: lPerc + '%'
         });
     },
 
@@ -312,7 +312,7 @@ var CalculatedMemberModal = Modal.extend({
         if (data && data.length !== 0) {
             if (type === 'calcmeasure') {
                 _.each(data, function(value) {
-                    $tpl += 
+                    $tpl +=
                         '<tr class="row-cms-' + self.replace_cms(value.name) + '">' +
                             '<td class="cms-name">' + value.name + '</td>' +
                             '<td class="cms-actions">' +
@@ -342,7 +342,7 @@ var CalculatedMemberModal = Modal.extend({
                 $tpl = '<p class="msg-no-cms i18n">No calculated measures created</p>';
             }
             else {
-                $tpl = '<p class="msg-no-cms i18n">No calculated members created</p>';    
+                $tpl = '<p class="msg-no-cms i18n">No calculated members created</p>';
             }
         }
 
@@ -376,8 +376,8 @@ var CalculatedMemberModal = Modal.extend({
         event.preventDefault();
         var self = this;
         var $currentTarget = $(event.currentTarget);
-        var cms = $currentTarget.data('type') === 'calcmeasure' 
-            ? this.workspace.query.helper.getCalculatedMeasures() 
+        var cms = $currentTarget.data('type') === 'calcmeasure'
+            ? this.workspace.query.helper.getCalculatedMeasures()
             : this.workspace.query.helper.getCalculatedMembers();
 
         this.$el.find('.cms-actions a').removeClass('on');
@@ -453,9 +453,9 @@ var CalculatedMemberModal = Modal.extend({
             args.workspace.query.helper.removeCalculatedMeasure(args.$delcms.data('name'));
         }
         else {
-            args.workspace.query.helper.removeCalculatedMember(args.$delcms.data('name'));    
+            args.workspace.query.helper.removeCalculatedMember(args.$delcms.data('name'));
         }
-        
+
         args.workspace.sync_query();
         args.workspace.drop_zones.set_measures();
         args.new();
@@ -517,8 +517,8 @@ var CalculatedMemberModal = Modal.extend({
      * @return {Boolean}     True/False if calculated measure/member exists
      */
     check_name_cms: function(type, name) {
-        var cms = type === 'calcmeasure' 
-            ? this.workspace.query.helper.getCalculatedMeasures() 
+        var cms = type === 'calcmeasure'
+            ? this.workspace.query.helper.getCalculatedMeasures()
             : this.workspace.query.helper.getCalculatedMembers();
 
         if (type === null || type === undefined) {
@@ -547,8 +547,8 @@ var CalculatedMemberModal = Modal.extend({
      * @return {Boolean} True/False if calculated measure/member length is > 0
      */
     check_len_cms: function(type) {
-        var cms = type === 'calcmeasure' 
-            ? this.workspace.query.helper.getCalculatedMeasures() 
+        var cms = type === 'calcmeasure'
+            ? this.workspace.query.helper.getCalculatedMeasures()
             : this.workspace.query.helper.getCalculatedMembers();
         if (cms.length > 0) {
             return true;
@@ -642,7 +642,7 @@ var CalculatedMemberModal = Modal.extend({
     type_dimension: function(event) {
         var dimensionDataType = this.$el.find('#cms-dimension option:selected').data('type');
 
-        if (event) { 
+        if (event) {
             event.preventDefault();
             this.reset_parent_member();
         }
@@ -804,17 +804,17 @@ var CalculatedMemberModal = Modal.extend({
         }
         if (alertMsg !== '') {
             alert(alertMsg);
-        } 
+        }
         else {
             if (dimension.dataType === 'calcmeasure') {
-                objMember = { 
+                objMember = {
                     name: name,
-                    formula: formula, 
-                    properties: {}, 
-                    uniqueName: name, 
+                    formula: formula,
+                    properties: {},
+                    uniqueName: name,
                     hierarchyName: dimension.val
                 };
-                
+
                 if (format) {
                     objMember.properties.FORMAT_STRING = format;
                 }
@@ -830,7 +830,7 @@ var CalculatedMemberModal = Modal.extend({
                 }
             }
             else {
-                objMember = { 
+                objMember = {
                     name: name,
                     dimension: dimension.dataDimension,
                     uniqueName: '[' + dimension.txt + '].[' + name + ']',
@@ -848,7 +848,7 @@ var CalculatedMemberModal = Modal.extend({
                 if (format) {
                     objMember.properties.FORMAT_STRING = format;
                 }
-                
+
                 if (this.pmUniqueName && !(_.isEmpty(this.pmUniqueName))) {
                     objMember.parentMember = this.pmUniqueName;
                     objMember.parentMemberLevel = this.pmLevel;

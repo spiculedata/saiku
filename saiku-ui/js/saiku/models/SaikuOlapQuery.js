@@ -185,6 +185,14 @@ SaikuOlapQueryHelper.prototype.getSelectionsForParameter = function(parameter){
   return m;
 };
 
+SaikuOlapQueryHelper.prototype.removeParameter = function(hierarchy, level) {
+  hierarchy = this.getHierarchy(hierarchy);
+  if (hierarchy && hierarchy.levels.hasOwnProperty(level)) {
+    var parameterName = hierarchy.levels[level].selection['parameterName'];
+    delete this.model().parameters[parameterName];
+  }
+};
+
 SaikuOlapQueryHelper.prototype.addtoSelection = function(membername, level){
   if(level.level.selection.members===undefined){
     level.selection.members = [];

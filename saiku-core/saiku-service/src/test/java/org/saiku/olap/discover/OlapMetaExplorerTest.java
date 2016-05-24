@@ -309,7 +309,7 @@ public class OlapMetaExplorerTest {
 
     @BeforeClass
     public static void setup() throws Exception {
-        File f = new File(System.getProperty("java.io.tmpdir") + "/files/");
+        /*File f = new File(System.getProperty("java.io.tmpdir") + "/files/");
         f.mkdir();
         IDatasourceManager ds = new ClassPathResourceDatasourceManager(System.getProperty("java.io.tmpdir") + "/files/");
         InputStream inputStream = OlapMetaExplorerTest.class.getResourceAsStream("../../connection.properties");
@@ -320,6 +320,6 @@ public class OlapMetaExplorerTest {
         IConnectionManager ic = new SimpleConnectionManager();
         ic.setDataSourceManager(ds);
 
-        olapMetaExplorer = new OlapMetaExplorer(ic);
+        olapMetaExplorer = new OlapMetaExplorer(ic);*/
     }
 }

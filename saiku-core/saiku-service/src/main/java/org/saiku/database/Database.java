@@ -10,7 +10,7 @@ import org.saiku.service.datasource.IDatasourceManager;
 import org.saiku.service.importer.LegacyImporter;
 import org.saiku.service.importer.LegacyImporterImpl;
 import org.saiku.service.license.Base64Coder;
-import org.saiku.service.license.LicenseUtils;
+import org.saiku.service.license.ILicenseUtils;
 
 import org.h2.jdbcx.JdbcDataSource;
 import org.slf4j.Logger;
@@ -48,15 +48,15 @@ public class Database {
     @Autowired
     ServletContext servletContext;
 
-    private  LicenseUtils licenseUtils;
+    private ILicenseUtils licenseUtils;
 
     private URL repoURL;
 
-    public LicenseUtils getLicenseUtils() {
+    public ILicenseUtils getLicenseUtils() {
         return licenseUtils;
     }
 
-    public void setLicenseUtils(LicenseUtils licenseUtils) {
+    public void setLicenseUtils(ILicenseUtils licenseUtils) {
         this.licenseUtils = licenseUtils;
     }
 

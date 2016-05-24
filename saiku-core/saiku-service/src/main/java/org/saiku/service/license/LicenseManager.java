@@ -10,6 +10,7 @@
  */
 package org.saiku.service.license;
 
+import bi.meteorite.license.EncryptionManager;
 import bi.meteorite.license.ILicense;
 
 import java.io.BufferedInputStream;

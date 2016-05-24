@@ -62,17 +62,108 @@
 	<session-config>
 		<session-timeout>60</session-timeout>
 	</session-config>
-	
+
+    <!-- BEGIN - Hazelcast Filter -->
+<!--    <filter>
+        <filter-name>hazelcast-filter</filter-name>
+        &lt;!&ndash;        <filter-class>com.hazelcast.web.WebFilter</filter-class>&ndash;&gt;
+        <filter-class>com.hazelcast.web.spring.SpringAwareWebFilter</filter-class>
+
+        <init-param>
+            <param-name>map-name</param-name>
+            <param-value>my-sessions</param-value>
+        </init-param>
+
+        <init-param>
+            <param-name>sticky-session</param-name>
+            <param-value>false</param-value>
+        </init-param>
+
+        <init-param>
+            <param-name>cookie-name</param-name>
+            <param-value>SAIKU_AUTH_PRINCIPAL</param-value>
+        </init-param>
+
+        <init-param>
+            <param-name>cookie-secure</param-name>
+            <param-value>false</param-value>
+        </init-param>
+
+        <init-param>
+            <param-name>cookie-http-only</param-name>
+            <param-value>false</param-value>
+        </init-param>
+
+        <init-param>
+            <param-name>debug</param-name>
+            <param-value>true</param-value>
+        </init-param>
+
+
+        <init-param>
+            <param-name>use-client</param-name>
+            <param-value>true</param-value>
+        </init-param>
+
+        <init-param>
+            <param-name>shutdown-on-destroy</param-name>
+            <param-value>true</param-value>
+        </init-param>
+    </filter>-->
+
+
+    <!--<filter-mapping>
+        <filter-name>hazelcast-filter</filter-name>
+        <url-pattern>/*</url-pattern>
+        <dispatcher>FORWARD</dispatcher>
+        <dispatcher>INCLUDE</dispatcher>
+        <dispatcher>REQUEST</dispatcher>
+    </filter-mapping>
+-->
+
+    <!-- BEGIN - Filter Definition --> 
 	<filter>
 		<filter-name>org.springframework.security.filterChainProxy</filter-name>
 		<filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
 	</filter>
+    <!-- The above filter is for Orbis / Hazelcast token based authentication -->
+   <!-- <filter>
+        <filter-name>hazelcastAuthFilter</filter-name>
+        <filter-class>org.saiku.web.service.HazelcastAuthFilter</filter-class>
+        <init-param>
+            <param-name>orbisAuthCookie</param-name>
+            <param-value>ORBIS_WORKSPACE_USER</param-value>
+        </init-param>
+        <init-param>
+            <param-name>hazelcastMapName</param-name>
+            <param-value>my-sessions</param-value>
+        </init-param>
+        <init-param>
+            <param-name>baseWorkspaceDir</param-name>
+            <param-value>../../repository/data</param-value>
+        </init-param>
+    </filter>-->
 
-	
+    <!-- END - Filter Definition -->
+
+    <!-- BEGIN - Filter Mapping -->
+    <!-- The above filter mapping is for Orbis / Hazelcast token based authentication -->
+    <!--<filter-mapping>
+        <filter-name>hazelcast-filter</filter-name>
+        <url-pattern>/*</url-pattern>
+        <dispatcher>FORWARD</dispatcher>
+        <dispatcher>INCLUDE</dispatcher>
+        <dispatcher>REQUEST</dispatcher>
+    </filter-mapping>
+    <filter-mapping>
+        <filter-name>hazelcastAuthFilter</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>-->
 	<filter-mapping>
 		<filter-name>org.springframework.security.filterChainProxy</filter-name>
 		<url-pattern>/*</url-pattern>
 	</filter-mapping>
+    <!-- END - Filter Mapping -->
 
     <listener>
         <listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>

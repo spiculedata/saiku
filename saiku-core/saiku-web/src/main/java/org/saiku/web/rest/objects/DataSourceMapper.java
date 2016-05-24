@@ -26,6 +26,7 @@ import java.util.UUID;
  */
 public class DataSourceMapper {
 
+    private String enabled;
     private String connectionname;
     private String jdbcurl;
     private String schema;
@@ -38,13 +39,15 @@ public class DataSourceMapper {
     private String advanced;
     private String security_type;
     private String propertyKey;
+    private String csv;
 
     public DataSourceMapper() {
 
     }
 
     public DataSourceMapper(SaikuDatasource ds) {
-        if (!ds.getProperties().containsKey("advanced") || ds.getProperties().getProperty("advanced").equals("false")) {
+        if ((!ds.getProperties().containsKey("advanced") && !ds.getProperties().containsKey("csv")) ||
+                (ds.getProperties().containsKey("advanced") && ds.getProperties().getProperty("advanced").equals("false"))) {
             String location = ds.getProperties().getProperty("location");
 
             String[] loc = location.split(";");
@@ -84,7 +87,40 @@ public class DataSourceMapper {
             }
 
 
-        } else {
+        }
+        else if(ds.getProperties().containsKey("csv")){
+            this.csv = "type=" + ds.getType().toString() + "\n";
+            this.csv += "name=" + ds.getName() + "\n";
+            this.csv += "driver=" + ds.getProperties().getProperty("driver") + "\n";
+            this.csv += "location=" + ds.getProperties().getProperty("location") + "\n";
+            if (ds.getProperties().containsKey("username")) {
+                this.csv += "username=" + ds.getProperties().get("username") + "\n";
+            }
+            if (ds.getProperties().containsKey("password")) {
+                this.csv += "password=" + ds.getProperties().get("password") + "\n";
+            }
+            if (ds.getProperties().containsKey("security.enabled")) {
+                this.csv += "security.enabled=" + ds.getProperties().get("security.enabled") + "\n";
+            }
+            if (ds.getProperties().containsKey("security.type")) {
+                this.csv += "security.type=" + ds.getProperties().get("security.type") + "\n";
+            }
+            if (ds.getProperties().containsKey("security.mapping")) {
+                this.csv += "security.mapping=" + ds.getProperties().get("security.mapping") + "\n";
+            }
+            if (ds.getProperties().contains("encrypt.password")) {
+                this.csv += "encrypt.password=" + ds.getProperties().get("encrypt.password") + "\n";
+            }
+            this.connectionname = ds.getName();
+            this.id = ds.getProperties().getProperty("id");
+
+
+            if(ds.getProperties().containsKey("enabled")){
+                this.enabled = ds.getProperties().getProperty("enabled");
+            }
+
+        }
+        else{
             this.advanced = "type=" + ds.getType().toString() + "\n";
             this.advanced += "name=" + ds.getName() + "\n";
             this.advanced += "driver=" + ds.getProperties().getProperty("driver") + "\n";
@@ -114,7 +150,7 @@ public class DataSourceMapper {
 
     public SaikuDatasource toSaikuDataSource() {
         Properties props = new Properties();
-        if (advanced == null) {
+        if (advanced == null && csv == null) {
             String location;
             if (connectiontype.equals("MONDRIAN")) {
                 props.setProperty("driver", "mondrian.olap4j.MondrianOlap4jDriver");
@@ -151,8 +187,16 @@ public class DataSourceMapper {
             return new SaikuDatasource(this.getConnectionname(), SaikuDatasource.Type.OLAP, props);
         } else {
             String name = null;
-
-            String[] lines = advanced.split("\\r?\\n");
+            String[] lines;
+            String type;
+            if(advanced!=null && !advanced.equals("false")&& !advanced.equals("")) {
+                lines = advanced.split("\\r?\\n");
+                type = "advanced";
+            }
+            else{
+                lines = csv.split("\\r?\\n");
+                type="csv";
+            }
 
             for (String row : lines) {
                 if (row.startsWith("name=")) {
@@ -199,9 +243,13 @@ public class DataSourceMapper {
                 if(row.startsWith("propertyKey=")){
                     props.setProperty("propertyKey", row.substring(12, row.length()));
                 }
+
+                if(row.startsWith("enabled=")){
+                    props.setProperty("enabled", row.substring(8, row.length()));
+                }
             }
 
-            props.setProperty("advanced", "true");
+            props.setProperty(type, "true");
 
             return new SaikuDatasource(name, SaikuDatasource.Type.OLAP, props);
         }
@@ -303,5 +351,21 @@ public class DataSourceMapper {
 
     public String getSecurity_type() {
         return security_type;
+    }
+
+    public String getEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(String enabled) {
+        this.enabled = enabled;
+    }
+
+    public String getCsv() {
+        return csv;
+    }
+
+    public void setCsv(String csv) {
+        this.csv = csv;
     }
 }

@@ -43,7 +43,7 @@ var AdminConsole = Backbone.View.extend({
         'click .backup_restore' : 'backup_restore',
         'click .submitrestore' : 'restoreFile',
         'click .submitrestorelegacy' : 'restoreLegacy',
-		//'click .download_schema' : 'download_schema',
+        //'click .download_schema' : 'download_schema',
         'click .license_info' : 'show_license_info',
         'click .license_users_list' : 'show_license_user_list',
         'click .add_license_user' : 'add_license_user',
@@ -145,26 +145,26 @@ var AdminConsole = Backbone.View.extend({
                 self.show_license_user_list();
             }
         });*/
-		this.licenseUsers.remove(user);
+        this.licenseUsers.remove(user);
 
-		var s =this.licenseUsers.first();
+        var s =this.licenseUsers.first();
 
-		if(s != null || s!= undefined){
-			s.save({}, {
-				data: JSON.stringify(self.licenseUsers.toJSON()),
-				contentType: "application/json",
-				success: function(data) {
-					$(self.el).find("input[name='username']").val('');
-					self.licenseUsers.fetch();
-					self.show_license_user_list();
-				},
-				error: function(data) {
-					$(self.el).find("input[name='username']").val('');
-					self.licenseUsers.fetch();
-					self.show_license_user_list();
-				}
-			});
-		}
+        if(s != null || s!= undefined){
+            s.save({}, {
+                data: JSON.stringify(self.licenseUsers.toJSON()),
+                contentType: "application/json",
+                success: function(data) {
+                    $(self.el).find("input[name='username']").val('');
+                    self.licenseUsers.fetch();
+                    self.show_license_user_list();
+                },
+                error: function(data) {
+                    $(self.el).find("input[name='username']").val('');
+                    self.licenseUsers.fetch();
+                    self.show_license_user_list();
+                }
+            });
+        }
 
 
 
@@ -254,6 +254,7 @@ var AdminConsole = Backbone.View.extend({
             "<div class='sidebar_separator' style='height: 676px;'></div>"+
             "    <div class='clear'></div>")();
     },
+
     create_schema: function(event){
         event.preventDefault();
         var conn = new Connection();
@@ -268,11 +269,13 @@ var AdminConsole = Backbone.View.extend({
             admin: this
         });
     },
+
     backup_restore: function(event){
         event.preventDefault();
         var html = this.backup_restore_template();
         $(this.el).find('.user_info').html(html);
     },
+
     caption: function() {
         return '<span class="i18n">Admin Console</span>';
     },
@@ -451,24 +454,24 @@ var AdminConsole = Backbone.View.extend({
     datasourcetemplate: _.template("<form><h3>Create Data Source</h3>"+
         "<div class='simpleConnection'><label for='connname'>Name:</label><input type='text' class='form-control' name='connname' value='<%= conn.connectionname %>'/><br />" +
         "<label for='drivertype'>Connection Type:</label><select name='drivertype' class='form-control drivertype'><option value='MONDRIAN'>Mondrian</option><option value='XMLA'>XMLA</option></select><br/>" +
-        "<% if(!Settings.EXT_DATASOURCE_PROPERTIES) { %>"+       
-	    "<label for='jdbcurl'>URL:</label><input name='jdbcurl' class='form-control' value='<%= conn.jdbcurl %>' type='text'/><br class='horridbr'/>" +
-	    "<% } else {	%>"+
-	    "<input name='jdbcurl' type='hidden'/>" +
-		"<% } %>"+
+        "<% if(!Settings.EXT_DATASOURCE_PROPERTIES) { %>"+
+        "<label for='jdbcurl'>URL:</label><input name='jdbcurl' class='form-control' value='<%= conn.jdbcurl %>' type='text'/><br class='horridbr'/>" +
+        "<% } else {    %>"+
+        "<input name='jdbcurl' type='hidden'/>" +
+        "<% } %>"+
         "<label for='schemapath'>Schema:</label><select class='form-control schemaselect' name='schemapath'>" +
         "<% _.each(schemas, function(path){%>" +
         "<option  <% if(conn.schema != null && conn.schema === 'mondrian://'+path.attributes.path){ print('selected'); } %> ><%= path.attributes.path %></option>" +
         "<%});%></select><br/>" +
-        "<% if(!Settings.EXT_DATASOURCE_PROPERTIES) { %>"+     
-		"<label for='driver'>Jdbc Driver: </label><input name='driver' class='form-control' value='<%= conn.driver %>' type='text'/><br class='horridbr'/>" +
+        "<% if(!Settings.EXT_DATASOURCE_PROPERTIES) { %>"+
+        "<label for='driver'>Jdbc Driver: </label><input name='driver' class='form-control' value='<%= conn.driver %>' type='text'/><br class='horridbr'/>" +
         "<label for='connusername'>Username: </label><input name='connusername' class='form-control' type='text' value='<%= conn.username %>'/><br/>" +
         "<label for='connpassword'>Password:</label><input name='connpassword' class='form-control' type='password' value='<%= conn.password %>'/><br/>" +
-		"<% } else {	%>"+
-		"<input name='driver' type='hidden'/>" +
-	    "<input name='connusername' type='hidden'/>" +
-	    "<input name='connpassword' type='hidden'/>" +
-		"<% } %>"+
+        "<% } else {    %>"+
+        "<input name='driver' type='hidden'/>" +
+        "<input name='connusername' type='hidden'/>" +
+        "<input name='connpassword' type='hidden'/>" +
+        "<% } %>"+
         "<label for='securityselect'>Security:</label><select class='form-control securityselect' id='secselect' name='securityselect'>" +
         "<option value='NONE'>None</option><option value='ONE2ONE'>One To One Mapping</option><option value='PASSTHROUGH'>Passthrough (for XMLA)</option></select><br/>" +
         "<% if(Settings.EXT_DATASOURCE_PROPERTIES) { %>"+
@@ -479,8 +482,8 @@ var AdminConsole = Backbone.View.extend({
         "<%});%>"+
         "</select><% } %><br/></div>" +
         "<div class='advconnection' style='display:none;'><textarea name='adv_text' class='form-control' rows='10' cols='75'><%= conn.advanced %></textarea></div>" +
-        "<br/><br/><a href='' name='advancedurl' class='advancedurl btn btn-default'>Advanced</a><% if(Settings.DATA_SOURCES_LOOKUP) { %> " +
-        "<a href='' name='getdatasources' class='btn btn-default getdatasources'>Data Sources</a> <% } %>" +
+        "<br/><br/><a href='' name='advancedurl' class='advancedurl btn btn-default'>Advanced</a>" +
+        "<% if(Settings.DATA_SOURCES_LOOKUP) { %><a href='' name='getdatasources' class='btn btn-default getdatasources'>Data Sources</a> <% } %>" +
         "<a href='<%= conn.id%>' class='user_button btn btn-danger form_button remove_datasource hide'>Remove</a>" +
         "<a href='<%= conn.id%>' class='user_button form_button btn btn-default save_datasource'>Save</a>" +
         "<a href='<%= conn.id%>' class='refresh_button form_button user_button btn btn-default hide'>Refresh" +
@@ -491,8 +494,8 @@ var AdminConsole = Backbone.View.extend({
         "<input name='fileschema' type='file' class='form-control upload_button'/><div class='clear'></div><br/>" +
         "<label for='schemaname'>Schema Name:</label><input name='schemaname' type='text' class='form-control' value='<%=" +
         " schema.id %>'/><br/>" +
-	    "<a href='<%= schema.id%>' class='user_button form_button btn btn-default remove_schema hide'>Remove</a>" +
-	    "<a href='/saiku/rest/saiku/admin/schema/<%= schema.id%>' class='user_button btn btn-default form_button download_schema hide'>Download</a><input type='submit' class='user_button form-control form_button upload_button submitdatasource' value='Upload'>" +
+        "<a href='<%= schema.id%>' class='user_button form_button btn btn-default remove_schema hide'>Remove</a>" +
+        "<a href='/saiku/rest/saiku/admin/schema/<%= schema.id%>' class='user_button btn btn-default form_button download_schema hide'>Download</a><input type='submit' class='user_button form-control form_button upload_button submitdatasource' value='Upload'>" +
         "<br/><div id='uploadstatus'></div>"),
     licenseInfoTemplate: _.template("<h3>License Information</h3>" +
         "<ul class='license_type'><li><strong>License Type: </strong></li>" +
@@ -551,7 +554,7 @@ var AdminConsole = Backbone.View.extend({
         });
 
         $(this.el).find('.remove_schema').removeClass("hide");
-		$(this.el).find('.download_schema').removeClass("hide");
+        $(this.el).find('.download_schema').removeClass("hide");
 
         $(this.el).find('.submitdatasource').hide();
         $(this.el).find('input[name="fileschema"]').hide();
@@ -577,9 +580,9 @@ var AdminConsole = Backbone.View.extend({
         else{
             this.simple_url(event);
         }
-		this.hide_driver_els(user.get("connectiontype"));
+        this.hide_driver_els(user.get("connectiontype"));
 
-		$(this.el).find('.drivertype').val(user.get("connectiontype"));
+        $(this.el).find('.drivertype').val(user.get("connectiontype"));
         if(user.get("security_type")) {
             $(this.el).find('#secselect').val(user.get("security_type").toUpperCase());
         }
@@ -834,8 +837,8 @@ var AdminConsole = Backbone.View.extend({
     },
 
     save_datasource: function (event) {
-    	event.preventDefault();
-    	var $currentTarget = $(event.currentTarget);
+        event.preventDefault();
+        var $currentTarget = $(event.currentTarget);
         $currentTarget.addClass('selected');
         var path = $currentTarget.attr('href').replace('#', '');
 
@@ -843,10 +846,10 @@ var AdminConsole = Backbone.View.extend({
         var this_p = this;
 
         if(path == undefined || path == "") {
-        	var conn = new Connection();
+            var conn = new Connection();
             this.datasources.add(conn);
         } else {
-        	var conn = this.datasources.get(path);
+            var conn = this.datasources.get(path);
         }
 
         var v = $(this.el).find("textarea[name='adv_text']").val();
@@ -854,19 +857,19 @@ var AdminConsole = Backbone.View.extend({
         if(v!=null && v!=undefined && v!=""){
             conn.set({"advanced": v});
         }
-		else if($(this.el).find(".drivertype").val() === 'MONGO'){
+        else if($(this.el).find(".drivertype").val() === 'MONGO'){
             var name = $(this.el).find("input[name='connname']").val();
             var schema = $(this.el).find("select[name='mongoschema']").val();
             var mondrianschema = $(this.el).find(".schemaselect").val();
-			var c = "type=OLAP\n"+
-			"name="+name+"\n"+
-			"driver=mondrian.olap4j.MondrianOlap4jDriver\n"+
-			"location=jdbc:mondrian:Jdbc=jdbc:calcite:model=mongo:///etc/mongoschema/"+schema+";Catalog=mondrian://"+mondrianschema+";JdbcDrivers=org.apache.calcite.jdbc.Driver;\n"+
-			"username=admin\n"+
-			"password=admin";
-			conn.set({"advanced": c});
-		}
-		else {
+            var c = "type=OLAP\n"+
+            "name="+name+"\n"+
+            "driver=mondrian.olap4j.MondrianOlap4jDriver\n"+
+            "location=jdbc:mondrian:Jdbc=jdbc:calcite:model=mongo:///etc/mongoschema/"+schema+";Catalog=mondrian://"+mondrianschema+";JdbcDrivers=org.apache.calcite.jdbc.Driver;\n"+
+            "username=admin\n"+
+            "password=admin";
+            conn.set({"advanced": c});
+        }
+        else {
             conn.set({"connectionname": $(this.el).find("input[name='connname']").val()});
             conn.set({"connectiontype": $(this.el).find(".drivertype").val()});
             conn.set({"jdbcurl": $(this.el).find("input[name='jdbcurl']").val()});
@@ -892,17 +895,17 @@ var AdminConsole = Backbone.View.extend({
         }
 
         conn.save({}, {
-			data: JSON.stringify(conn.attributes),
-			contentType: "application/json",
-			success : function() {
-				this_p.fetch_datasources();
-				$(this_p.el).find('.user_info').html("");
-			},
-			error : function(data, xhr) {
-				$(this_p.el).find('#savestatus').html("Save failed!<br/>(" + xhr.responseText + ")");
-				this_p.schemas.fetch();
-			}
-		});
+            data: JSON.stringify(conn.attributes),
+            contentType: "application/json",
+            success : function() {
+                this_p.fetch_datasources();
+                $(this_p.el).find('.user_info').html("");
+            },
+            error : function(data, xhr) {
+                $(this_p.el).find('#savestatus').html("Save failed!<br/>(" + xhr.responseText + ")");
+                this_p.schemas.fetch();
+            }
+        });
     },
 
     remove_datasource : function(event) {
@@ -929,18 +932,18 @@ var AdminConsole = Backbone.View.extend({
         var that = this;
         s.destroy({wait:true, success: function(){that.fetch_schemas();$(that.el).find('.user_info').html("");}})
     },
-	download_schema : function(event) {
-		event.preventDefault();
+    download_schema : function(event) {
+        event.preventDefault();
 
-		var $currentTarget = $(event.currentTarget);
-		// var $target = $currentTarget.find('a');
-		$currentTarget.addClass('selected');
-		var path = $currentTarget.attr('href').replace('#', '');
+        var $currentTarget = $(event.currentTarget);
+        // var $target = $currentTarget.find('a');
+        $currentTarget.addClass('selected');
+        var path = $currentTarget.attr('href').replace('#', '');
 
-		var s = this.schemas.get(path);
-		s.fetch({wait:true, success: function(){alert("here");}})
+        var s = this.schemas.get(path);
+        s.fetch({wait:true, success: function(){alert("here");}})
 
-	},
+    },
     remove_user : function(event){
         event.preventDefault();
 
@@ -985,45 +988,60 @@ var AdminConsole = Backbone.View.extend({
         $(this.el).find(".advconnection").hide();
 
     },
-	hide_driver_els :function(type){
-		switch(type) {
-			case "XMLA":
-				console.log("Xmla");
-				$(this.el).find('input[name="connusername"]').show();
-				$(this.el).find('input[name="connpassword"]').show();
-				$(this.el).find('input[name="driver"]').show();
-				$(this.el).find('input[name="jdbcurl"]').show();
-				$(this.el).find('.schemaselect').hide();
-				$(this.el).find('input[name="driver"]').hide();
+    hide_driver_els :function(type){
+        switch(type) {
+            case "XMLA":
+                console.log("Xmla");
+                $(this.el).find('label[for="connname"]').show();
+                $(this.el).find('label[for="drivertype"]').show();
+                $(this.el).find('label[for="jdbcurl"]').show();
+                $(this.el).find('label[for="schemapath"]').hide();
+                $(this.el).find('label[for="driver"]').hide();
+                $(this.el).find('label[for="connusername"]').show();
+                $(this.el).find('label[for="connpassword"]').show();
+                $(this.el).find('label[for="securityselect"]').show();
 
-				$(this.el).find('label[for="connusername"]').show();
-				$(this.el).find('label[for="connpassword"]').show();
-				$(this.el).find('label[for="driver"]').show();
-				$(this.el).find('label[for="jdbcurl"]').show();
-				$(this.el).find('label[for="schemapath"]').hide();
-				$(this.el).find('label[for="driver"]').hide();
-				$(this.el).find('.horridbr').hide();
-				break;
-			case "MONDRIAN":
-				console.log("mondrian");
-				$(this.el).find('input[name="connusername"]').show();
-				$(this.el).find('input[name="connpassword"]').show();
-				$(this.el).find('input[name="driver"]').show();
-				$(this.el).find('input[name="jdbcurl"]').show();
-				$(this.el).find('.schemaselect').show();
-				$(this.el).find('input[name="driver"]').show();
+                $(this.el).find('input[name="connname"]').show();
+                $(this.el).find('select[name="drivertype"]').show();
+                $(this.el).find('input[name="jdbcurl"]').show();
+                $(this.el).find('select[name="schemapath"]').hide();
+                $(this.el).find('input[name="driver"]').hide();
+                $(this.el).find('input[name="connusername"]').show();
+                $(this.el).find('input[name="connpassword"]').show();
+                $(this.el).find('select[name="securityselect"]').show();
 
+                $(this.el).parent().find('.advancedurl').show();
+                $(this.el).parent().find('.save_datasource').show();
 
-				$(this.el).find('label[for="connusername"]').show();
-				$(this.el).find('label[for="connpassword"]').show();
-				$(this.el).find('label[for="driver"]').show();
-				$(this.el).find('label[for="jdbcurl"]').show();
-				$(this.el).find('label[for="schemapath"]').show();
-				$(this.el).find('label[for="driver"]').show();
-				$(this.el).find('.horridbr').show();
-				break;
-		}
-	}
+                $(this.el).find('.horridbr').hide();
+                break;
+            case "MONDRIAN":
+                console.log("mondrian");
+                $(this.el).find('label[for="connname"]').show();
+                $(this.el).find('label[for="drivertype"]').show();
+                $(this.el).find('label[for="jdbcurl"]').show();
+                $(this.el).find('label[for="schemapath"]').show();
+                $(this.el).find('label[for="driver"]').show();
+                $(this.el).find('label[for="connusername"]').show();
+                $(this.el).find('label[for="connpassword"]').show();
+                $(this.el).find('label[for="securityselect"]').show();
+
+                $(this.el).find('input[name="connname"]').show();
+                $(this.el).find('select[name="drivertype"]').show();
+                $(this.el).find('input[name="jdbcurl"]').show();
+                $(this.el).find('select[name="schemapath"]').show();
+                $(this.el).find('input[name="driver"]').show();
+                $(this.el).find('input[name="connusername"]').show();
+                $(this.el).find('input[name="connpassword"]').show();
+                $(this.el).find('select[name="securityselect"]').show();
+
+                $(this.el).parent().find('.advancedurl').show();
+                $(this.el).parent().find('.save_datasource').show();
+
+                $(this.el).find('.horridbr').show();
+                break;
+        }
+    }
 
 });
 Saiku.events.bind('admin:loaddatasources', function(admin){
@@ -1046,7 +1064,6 @@ if(Saiku.session.isAdmin) {
         .addClass('admin');
     var $li = $("<li />").append($link);
     $(Saiku.toolbar.el).find('ul').append($li).append('<li class="separator">&nbsp;</li>');
-
 }
 });
 Saiku.events.bind('admin:changedriver', function(options){
@@ -1056,42 +1073,54 @@ Saiku.events.bind('admin:changedriver', function(options){
     switch(type) {
         case "XMLA":
             console.log("Xmla");
+            $(div).find('label[for="connname"]').show();
+            $(div).find('label[for="drivertype"]').show();
+            $(div).find('label[for="jdbcurl"]').show();
+            $(div).find('label[for="schemapath"]').hide();
+            $(div).find('label[for="driver"]').hide();
+            $(div).find('label[for="connusername"]').show();
+            $(div).find('label[for="connpassword"]').show();
+            $(div).find('label[for="securityselect"]').show();
+
+            $(div).find('input[name="connname"]').show();
+            $(div).find('select[name="drivertype"]').show();
+            $(div).find('input[name="jdbcurl"]').show();
+            $(div).find('select[name="schemapath"]').hide();
+            $(div).find('input[name="driver"]').hide();
             $(div).find('input[name="connusername"]').show();
             $(div).find('input[name="connpassword"]').show();
-            $(div).find('input[name="driver"]').show();
-            $(div).find('input[name="jdbcurl"]').show();
-			$(div).find('.schemaselect').hide();
-			$(div).find('input[name="driver"]').hide();
+            $(div).find('select[name="securityselect"]').show();
 
-			$(div).find('label[for="connusername"]').show();
-            $(div).find('label[for="connpassword"]').show();
-            $(div).find('label[for="driver"]').show();
-            $(div).find('label[for="jdbcurl"]').show();
-			$(div).find('label[for="schemapath"]').hide();
-			$(div).find('label[for="driver"]').hide();
-			$(div).find('.horridbr').hide();
+            $(div).parent().find('.advancedurl').show();
+            $(div).parent().find('.save_datasource').show();
 
-			break;
+            $(div).find('.horridbr').hide();
+            break;
         case "MONDRIAN":
             console.log("mondrian");
+            $(div).find('label[for="connname"]').show();
+            $(div).find('label[for="drivertype"]').show();
+            $(div).find('label[for="jdbcurl"]').show();
+            $(div).find('label[for="schemapath"]').show();
+            $(div).find('label[for="driver"]').show();
+            $(div).find('label[for="connusername"]').show();
+            $(div).find('label[for="connpassword"]').show();
+            $(div).find('label[for="securityselect"]').show();
+
+            $(div).find('input[name="connname"]').show();
+            $(div).find('select[name="drivertype"]').show();
+            $(div).find('input[name="jdbcurl"]').show();
+            $(div).find('select[name="schemapath"]').show();
+            $(div).find('input[name="driver"]').show();
             $(div).find('input[name="connusername"]').show();
             $(div).find('input[name="connpassword"]').show();
-            $(div).find('input[name="driver"]').show();
-            $(div).find('input[name="jdbcurl"]').show();
-			$(div).find('.schemaselect').show();
-			$(div).find('input[name="driver"]').show();
+            $(div).find('select[name="securityselect"]').show();
 
+            $(div).parent().find('.advancedurl').show();
+            $(div).parent().find('.save_datasource').show();
 
-			$(div).find('label[for="connusername"]').show();
-            $(div).find('label[for="connpassword"]').show();
-            $(div).find('label[for="driver"]').show();
-            $(div).find('label[for="jdbcurl"]').show();
-			$(div).find('.horridbr').show();
-
-			$(div).find('label[for="schemapath"]').show();
-			$(div).find('label[for="driver"]').show();
-
-			break;
+            $(div).find('.horridbr').show();
+            break;
     }
 });
 

@@ -284,6 +284,7 @@ public class ThinQueryService implements Serializable {
                     ThinLevel v2 = entry1.getValue();
                     if (v2.getSelection() != null) {
                         for (ThinMember m : v2.getSelection().getMembers()) {
+
                             if (m.getType()!=null && m.getType().equals("calculatedmember")) {
                                 Map<AxisLocation, ThinAxis> ax = queryModel.getAxes();
                                 ThinAxis sax = ax.get(entry.getKey());

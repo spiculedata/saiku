@@ -16,34 +16,63 @@
  
 /**
  * Node.js proxy for Saiku
+ *
  * Use this proxy to develop for the UI without having to install the server.
- * Requests will be proxied to demo.analytical-labs.com,
+ * Requests will be proxied to try.meteorite.bi,
  * or a Saiku server installation of your choice.
  * 
  * To play with the chaos monkey, set the CHAOS_MONKEY environment variable
  * to anything (Preferably a nice name for your chaos monkey).
  * 
- * To start the server, run `node server.js [port] [backend_host] [backend_port]`
+ * To start the server in HTTP mode,
+ * run `node server.js [port] [backend_host] [backend_port]`
+ *
+ * To start the server in HTTPS mode, you will need generate a self-signed 
+ * certificate, run the following commands in your shell:
+ * 
+ * $ [sudo] openssl genrsa -out key.pem
+ * $ [sudo] openssl req -new -key key.pem -out csr.pem
+ * $ [sudo] openssl x509 -req -days 9999 -in csr.pem -signkey key.pem -out cert.pem
+ * $ [sudo] rm csr.pem
+ *
+ * run `node server.js https [port] [backend_host] [backend_port]`
  */
 
 // newer versions of node.js use the lower-case argv
 var argv = process.ARGV || process.argv;
 
 var http = require('http');
+var https = require('https');
+var fs = require('fs');
 var express = require('express');
 var path = require('path');
 var app = express();
-var port = process.env.C9_PORT || parseInt(argv[2], 10) || 8080;
-var backend_host = argv[3] || 'dev.analytical-labs.com';
-var backend_port = argv[4] || 80;
-var backend_path_prefix = argv[5] || '';
-var auth = argv[6] || null;
+var port;
+var backend_host;
+var backend_port;
+var backend_path_prefix;
+var auth;
+
+if (argv[2] === 'https') {
+    port = process.env.C9_PORT || parseInt(argv[3], 10) || 8080;
+    backend_host = argv[4] || 'try.meteorite.bi';
+    backend_port = parseInt(argv[5], 10) || 80;
+    backend_path_prefix = argv[6] || '';
+    auth = argv[7] || null;
+}
+else {
+    port = process.env.C9_PORT || parseInt(argv[2], 10) || 8080;
+    backend_host = argv[3] || 'try.meteorite.bi';
+    backend_port = parseInt(argv[4], 10) || 80;
+    backend_path_prefix = argv[5] || '';
+    auth = argv[6] || null;
+}
 
 // Load static server
 var twoHours = 1000 * 60 * 60 * 2;
 app.use(express['static'](__dirname));
 
-var standard_prefix = "/saiku/rest/saiku/";
+var standard_prefix = '/saiku/rest/saiku/';
 
 // Proxy request
 function get_from_proxy(request, response) {
@@ -80,7 +109,7 @@ function get_from_proxy(request, response) {
     });
     
     proxy_request.addListener('error', function (error) {
-        console.log("ERROR:",error);
+        console.log('ERROR:', error);
     });    
     proxy_request.addListener('response', function (proxy_response) {
         proxy_response.addListener('data', function(chunk) {
@@ -96,21 +125,34 @@ function get_from_proxy(request, response) {
 
 // Unleash the chaos monkey!
 function unleash_chaos_monkey(request, response) {
-    var monkey = "The chaos monkey strikes again!";
+    var monkey = 'The chaos monkey strikes again!';
     response.writeHead(500, {
-        "Content-Type": "text/plain",
-        "Content-Length": monkey.length
+        'Content-Type': 'text/plain',
+        'Content-Length': monkey.length
     });
     response.write(monkey);
     response.end();
 }
 
 // Handle incoming requests
-app.all("/saiku/*", function(request, response) {
+app.all('/saiku/*', function(request, response) {
     request.headers.host = backend_host;
     get_from_proxy(request, response);
 });
-console.log("Connected to '", backend_host, ":", backend_port,"'");
-console.log("Proxy listening on", port);
 
-app.listen(port, '0.0.0.0');
+if (argv[2] === 'https') {
+    var options = {
+        key: fs.readFileSync('key.pem'),
+        cert: fs.readFileSync('cert.pem')
+    };
+
+    https.createServer(options, app).listen(port, function () {
+       console.log('Started!');
+    });
+}
+else {
+    app.listen(port, '0.0.0.0');
+}
+
+console.log('Connected to "', backend_host, ':', backend_port, '"');
+console.log('Proxy listening on', port);

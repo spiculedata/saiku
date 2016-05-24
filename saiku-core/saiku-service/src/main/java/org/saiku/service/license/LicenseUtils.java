@@ -7,10 +7,13 @@
 package org.saiku.service.license;
 
 
+import bi.meteorite.license.LicenseException;
 import bi.meteorite.license.SaikuLicense;
 import bi.meteorite.license.SaikuLicense2;
 
 import org.saiku.service.datasource.IDatasourceManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -26,17 +29,20 @@ import javax.jcr.RepositoryException;
 /**
  * Created by bugg on 01/07/14.
  */
-public class LicenseUtils extends org.saiku.LicenseUtils {
+public class LicenseUtils implements ILicenseUtils {
+  private static final Logger log = LoggerFactory.getLogger(LicenseUtils.class);
 
   private IDatasourceManager repositoryDatasourceManager;
   private String adminuser;
 
+  @Override
   public IDatasourceManager getRepositoryDatasourceManager() {
     return repositoryDatasourceManager;
   }
 
+  @Override
   public void setRepositoryDatasourceManager(
-      IDatasourceManager repositoryDatasourceManager) {
+          IDatasourceManager repositoryDatasourceManager) {
     this.repositoryDatasourceManager = repositoryDatasourceManager;
   }
 
@@ -49,6 +55,7 @@ public class LicenseUtils extends org.saiku.LicenseUtils {
 
   }
 
+  @Override
   public void setLicense(SaikuLicense lic) throws IOException {
 
     ByteArrayOutputStream bo = new ByteArrayOutputStream();
@@ -61,6 +68,7 @@ public class LicenseUtils extends org.saiku.LicenseUtils {
 
   }
 
+  @Override
   public void setLicense(String lic) {
 
     this.repositoryDatasourceManager.deleteFolder("/etc/license.lic");
@@ -70,6 +78,7 @@ public class LicenseUtils extends org.saiku.LicenseUtils {
 
   }
 
+  @Override
   public Object getLicense()
       throws IOException, ClassNotFoundException, RepositoryException {
 
@@ -85,7 +94,7 @@ public class LicenseUtils extends org.saiku.LicenseUtils {
       try {
         license = in.readObject();
       } catch (ClassNotFoundException e) {
-        e.printStackTrace();
+        log.debug("license not read from stream");
       }
       return license;
     }
@@ -93,6 +102,7 @@ public class LicenseUtils extends org.saiku.LicenseUtils {
 
   }
 
+  @Override
   public SaikuLicense getLicenseNo64()
       throws IOException, ClassNotFoundException, RepositoryException {
 
@@ -115,16 +125,17 @@ public class LicenseUtils extends org.saiku.LicenseUtils {
 
   }
 
+  @Override
   public void validateLicense()
-      throws Exception {
+          throws LicenseException, RepositoryException, IOException, ClassNotFoundException {
     Object l = getLicense();
 
     if (l instanceof SaikuLicense) {
-      ((SaikuLicense) l).validate(new Date(), getVersion());
+      ((SaikuLicense) l).validate(new Date(), getVersion(), false, false, true, false);
     } else if (l instanceof SaikuLicense2) {
-      ((SaikuLicense2) l).validate(new Date(), getVersion());
+      ((SaikuLicense2) l).validate(new Date(), getVersion(), false, false, true, false);
     } else {
-      throw new Exception("Can't validate license");
+      throw new LicenseException("Can't validate license");
     }
   }
 
@@ -159,10 +170,12 @@ public class LicenseUtils extends org.saiku.LicenseUtils {
   }
 
 
+  @Override
   public void setAdminuser(String adminuser) {
     this.adminuser = adminuser;
   }
 
+  @Override
   public String getAdminuser() {
     return adminuser;
   }

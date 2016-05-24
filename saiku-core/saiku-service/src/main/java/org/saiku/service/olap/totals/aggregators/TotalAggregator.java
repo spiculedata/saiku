@@ -10,14 +10,39 @@ import java.util.HashMap;
 import java.util.Map;
 
 public abstract class TotalAggregator {
-  private static final Map<String, TotalAggregator> all;
+  private static final Map<String, TotalAggregatorFactory> all;
+
+  private static interface TotalAggregatorFactory {
+    TotalAggregator create();
+  }
 
   static {
-    Map<String, TotalAggregator> tmp = new HashMap<>();
-    tmp.put( "sum", new SumAggregator( null ) );
-    tmp.put( "max", new MaxAggregator( null ) );
-    tmp.put( "min", new MinAggregator( null ) );
-    tmp.put( "avg", new AvgAggregator( null ) );
+    Map<String, TotalAggregatorFactory> tmp = new HashMap<>();
+
+    tmp.put( "sum", new TotalAggregatorFactory() {
+      public TotalAggregator create() {
+        return new SumAggregator( null );
+      }      
+    });
+
+    tmp.put( "max", new TotalAggregatorFactory() {
+      public TotalAggregator create() {
+        return new MaxAggregator( null );
+      }      
+    });
+
+    tmp.put( "min", new TotalAggregatorFactory() {
+      public TotalAggregator create() {
+        return new MinAggregator( null );
+      }      
+    });
+
+    tmp.put( "avg", new TotalAggregatorFactory() {
+      public TotalAggregator create() {
+        return new AvgAggregator( null );
+      }      
+    });
+
     all = Collections.unmodifiableMap( tmp );
   }
 
@@ -81,6 +106,6 @@ public abstract class TotalAggregator {
   }
 
   public static TotalAggregator newInstanceByFunctionName( final String functionName ) {
-    return all.get( functionName );
+    return all.get( functionName ).create( );
   }
 }

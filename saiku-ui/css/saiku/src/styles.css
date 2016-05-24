@@ -127,9 +127,9 @@ textarea, select {
 }
 
 .truncate {
-  	white-space: nowrap;
-  	overflow: hidden;
-  	text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .accordion-toggle {cursor: pointer;}
@@ -258,14 +258,14 @@ textarea, select {
     background-position: -1702px 5px;
 }
 #toolbar ul li a.help {
-	background-position: -1967px 4px;
+    background-position: -1967px 4px;
 }
 #toolbar ul li a.bug {
     background-position: -1480px 5px;
 }
 #toolbar ul li a.translate {
-	background-position: -1848px -86px;
-	color: #FFF;
+    background-position: -1848px -86px;
+    color: #FFF;
     text-align: right;
     text-decoration: none;
     text-shadow: 1px 1px 1px #000;
@@ -305,7 +305,7 @@ textarea, select {
     overflow: hidden;
 }
 .tabs a.pager {
-	background-position: -1919px -86px;
+    background-position: -1919px -86px;
     background-color: #DDD;
     border: 1px solid #BBB;
     float: right;
@@ -316,18 +316,18 @@ textarea, select {
     text-decoration: none;
 }
 .pager_contents {
-	position: absolute;
-	top: 75px;
-	right: 5px;
-	width: 200px;
-	height: 300px;
-	overflow: auto;
-	background-color: #EEE;
-	border: 1px solid #BBB;
+    position: absolute;
+    top: 75px;
+    right: 5px;
+    width: 200px;
+    height: 300px;
+    overflow: auto;
+    background-color: #EEE;
+    border: 1px solid #BBB;
 }
 .pager_contents a {
-	color: #666;
-	text-decoration: none;
+    color: #666;
+    text-decoration: none;
 }
 .tabs ul {
     background: #F8F8F8;
@@ -609,7 +609,7 @@ textarea, select {
     text-align: left !important;
     padding: 0.2em !important;
     line-height: 16px !important;
-	z-index: 99999;
+    z-index: 99999;
 }
 
 .ui-dialog.ui-draggable-dragging .form_button {
@@ -671,8 +671,8 @@ textarea, select {
 
 /** Dialog */
 .ui-widget {
-	font-family: inherit !important;
-	font-size: inherit !important;
+    font-family: inherit !important;
+    font-size: inherit !important;
 }
 .ui-widget-header {
     border: 0 !important;
@@ -717,7 +717,7 @@ textarea, select {
 
 
 .ui-dialog-content {
-	padding: 0 !important;
+    padding: 0 !important;
 }
 .ui-dialog-titlebar {
     background: #F0F0F0;
@@ -751,37 +751,37 @@ textarea, select {
 }
 
 .ui-dialog .ui-dialog-titlebar-close:hover {
-	padding: 1px;
-	background-position: -690px -97px;
-	background-color: transparent;
+    padding: 1px;
+    background-position: -690px -97px;
+    background-color: transparent;
     cursor: pointer;
 }
 
 .ui-icon {
-	background: none !important;
+    background: none !important;
 }
 
 .ui-state-hover {
-	border: 0px !important;
+    border: 0px !important;
 }
 .ui-dialog-content {
     padding: 10px;
 }
 .dialog_body {
-	padding: 5px;
-	overflow: auto !important;
+    padding: 5px;
+    overflow: auto !important;
 }
 .dialog_icon {
-	width: 100px;
-	height: 100px;
-	float: left;
+    width: 100px;
+    height: 100px;
+    float: left;
 }
 .dialog_info .dialog_icon {
     background-position: -910px -87px;
     width: 50px;
 }
 .dialog_info .dialog_body {
-	padding: 10px;
+    padding: 10px;
 }
 .dialog_mdx .dialog_icon {
     background-position: -1075px -87px;
@@ -801,18 +801,18 @@ textarea, select {
     width: 60px;
 }
 .dialog_delete .dialog_body {
-	padding-top: 10px;
+    padding-top: 10px;
 }
 .dialog_login .dialog_icon {
     background-position: -666px 15px;
 }
 .dialog_selections {
-	min-width: 800px !important;
-	height: 550px !important;
+    min-width: 800px !important;
+    height: 550px !important;
 }
 .dialog_selections .dialog_icon,
 .dialog_date-filter .dialog_icon {
-	display: none;
+    display: none;
 }
 .dialog_selections .dialog_body {
     height: 490px;
@@ -898,18 +898,18 @@ textarea, select {
 
 
 .totals_container {
-/*	margin:4px;
-	margin-bottom:0px;*/
+/*  margin:4px;
+    margin-bottom:0px;*/
     padding-bottom: 4px;
 }
 
 .totals_container label{
-	margin-right:4px;
+    margin-right:4px;
 }
 
 #show_totals {
-/*	width: 140px;
-	height: 20px*/
+/*  width: 140px;
+    height: 20px*/
 }
 
 .dialog_selections .filterbox {
@@ -1356,7 +1356,7 @@ textarea, select {
     clear: both;
 }
 .dialog_footer .form_button {
-	margin-left: 5px;
+    margin-left: 5px;
 }
 
 /** Workspace Area */
@@ -1417,14 +1417,14 @@ textarea, select {
 
 /** blockUI */
 .processing_container, .blockOverlay {
-	position: fixed;
-	top: 0;
-	left: 0;
-	width: 100%;
-	height: 100%;
-	background-color: #fff;
-	opacity: 0.5;
-	z-index: 9999;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #fff;
+    opacity: 0.5;
+    z-index: 9999;
     padding: 20px;
 }
 .processing_content {
@@ -1617,7 +1617,7 @@ a.disabled_toolbar:hover {
     background-position: -913px 7px;
 }
 .workspace_toolbar .toggle_sidebar {
-	background-position: -1635px -90px;
+    background-position: -1635px -90px;
 }
 .workspace_toolbar .drillthrough {
     background-position: -781px 7px;
@@ -1721,7 +1721,7 @@ a.disabled_toolbar:hover {
 }
 .query_toolbar a.button {
     text-align: center;
-	border: 1px solid transparent;
+    border: 1px solid transparent;
 }
 .query_toolbar a.button:hover {
     border: 1px solid #CCC;
@@ -2104,11 +2104,11 @@ a.disabled_toolbar:hover {
   .tipsy-w .tipsy-arrow { top: 50%; margin-top: -4px; left: 0; width: 5px; height: 9px; }
   #tooltip {
     position: absolute;
-	z-index: 3000;
-	border: 1px solid #111;
-	background-color: #eee;
-	padding: 5px;
-	opacity: 0.85;
+    z-index: 3000;
+    border: 1px solid #111;
+    background-color: #eee;
+    padding: 5px;
+    opacity: 0.85;
   }
   #tooltip h3, #tooltip div { margin: 0; }
 
@@ -2182,7 +2182,7 @@ span.cancel_search:hover {
 }
 .RepositoryObjects li.query {
     margin-left: 16px;
-	z-index: 10000;
+    z-index: 10000;
 }
 
 
@@ -2211,8 +2211,8 @@ span.cancel_search:hover {
 
 .RepositoryObjects li.query .icon {
     background-image: url('../../../images/src/saiku_16.png');
-	padding: 1px 8px 1px;
-	margin-right: 4px;
+    padding: 1px 8px 1px;
+    margin-right: 4px;
 }
 
 .RepositoryObjects li.query .icon_override {
@@ -2270,7 +2270,7 @@ span.cancel_search:hover {
     display: block;
     height: 16px;
     width: 16px;
-	background-image: url(../../../images/src/folder_add.png);
+    background-image: url(../../../images/src/folder_add.png);
 }
 
 .highlight_li {
@@ -2657,7 +2657,7 @@ margin-bottom: 20px;
 }
 
 #date-input {
-	width:50px;
+    width:50px;
 }
 .drop-over {
     background-color: #f0f8ff;

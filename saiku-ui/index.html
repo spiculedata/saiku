@@ -50,10 +50,10 @@
 </div>
 
 <!--
-<script type="text/javascript" src="https://www.google.com/jsapi" defer></script>
-<script src="https://maps.googleapis.com/maps/api/js?v=3.exp&signed_in=true&libraries=visualization&sensor=false&callback=initialize" defer></script>
-<link rel="stylesheet" href="http://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.3/leaflet.css">
-<script src="http://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.3/leaflet.js"></script>
+<script type="text/javascript" src="//www.google.com/jsapi" defer></script>
+<script src="//maps.googleapis.com/maps/api/js?v=3.exp&signed_in=true&libraries=visualization&sensor=false&callback=initialize" defer></script>
+<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.3/leaflet.css">
+<script src="//cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.3/leaflet.js"></script>
 -->
 
 <!--MAP PLACEHOLDER-->
@@ -294,7 +294,8 @@
                 <ul>
                 <% _.each(dimension.hierarchies, function(hierarchy) { %>
                     <% if (typeof hierarchy["visible"] == "undefined" || hierarchy["visible"]) { %>
-                        <% if (!Settings.DIMENSION_SHOW_REDUCED && dimension.hierarchies.length > 1) { %>
+                        <% if ((Settings.DIMENSION_HIDE_HIERARCHY === 'NONE' && dimension.hierarchies.length > 1)
+                        		|| (Settings.DIMENSION_HIDE_HIERARCHY === 'SINGLE_LEVEL' && ((Settings.DIMENSION_SHOW_ALL && hierarchy["levels"].length > 3) || (!Settings.DIMENSION_SHOW_ALL && hierarchy["levels"].length > 2)))) { %>
                             <li class="hierarchy hide">
                                 <a class="dimension" title="<%= hierarchy.description ? hierarchy.description : hierarchy.caption %>" href="#"  hierarchy="<%= hierarchy.name %>"><%= hierarchy.caption %></a>
                             </li>
@@ -304,7 +305,7 @@
                         <% _.each(hierarchy.levels, function(level) { %>
                             <% if ((Settings.DIMENSION_SHOW_ALL || level.name != "(All)") && (typeof level["visible"] == "undefined" || level["visible"])) { %>
                                 <li class="hide d_level">
-                                <a title="<%= Settings.DIMENSION_SHOW_REDUCED && dimension.hierarchies.length > 1? hierarchy.caption + ' - ' : '' %><%= level.description ? level.description : level.caption %>" level="<%= level.name %>" hierarchy="<%= hierarchy.uniqueName %>"
+                                <a title="<%= (Settings.DIMENSION_HIDE_HIERARCHY === 'SINGLE_LEVEL' || Settings.DIMENSION_HIDE_HIERARCHY === 'ALL') && dimension.hierarchies.length > 1? hierarchy.caption + ' - ' : '' %><%= level.description ? level.description : level.caption %>" level="<%= level.name %>" hierarchy="<%= hierarchy.uniqueName %>"
                                     class="level" href="#<%= encodeURIComponent(hierarchy.uniqueName) %>/<%= encodeURIComponent(level.name) %>"><%= level.caption %></a>
                                 </li>
                             <% } %>
@@ -732,7 +733,7 @@ title="Drill across on cell"></a></li>
 <script type="text/x-jquery-tmpl" id="template-repository-file">
             <li class='query'>
             <% if (Settings.ICON_16) { %>
-                <span class='icon_override' style='background-image: url('<%= Settings.ICON_16 %>');'></span>
+                <span class='icon_override' style='background-image: url(<%= Settings.ICON_16 %>);'></span>
             <% } else { %>
                 <span class='icon'></span>
             <% } %>
@@ -788,8 +789,8 @@ title="Drill across on cell"></a></li>
 					</select>
 				</div>
 				<div class="form-inline">
-                <label for="parameter" class="i18n hide parameter">Parameter Name</label>&nbsp;<input
-                name="parameter" id="parameter" class="form-control" type="text" class="parameter hide" /></div>
+                <label for="parameter" class="parameter hidden i18n">Parameter Name</label>&nbsp;<input
+                name="parameter" id="parameter" class="form-control parameter hidden" type="text" /></div>
             </div>
             <div class="info">
                 <div><label for="items_size" class="i18n">Items</label>: <span class="items_size"></span></div>
@@ -813,24 +814,24 @@ title="Drill across on cell"></a></li>
                 <% if (!option.calc) { %>
                     <li class="option_value">
                         <input type="checkbox" class="check_option"
-                            value="<%= encodeURIComponent(option.obj.uniqueName) %>" name="selections_checker"
+                            value="<%= encodeURIComponent(option.obj ? option.obj.uniqueName : option.uniqueName) %>" name="selections_checker"
                             id="selections_checker<%= counter %>"
-                            label="<%= encodeURIComponent(option.obj.caption) %>" />
-                            <label for="selections_checker<%= counter %>" class="caption"><%= option.obj.caption
+                            label="<%= encodeURIComponent(option.obj ? option.obj.caption : option.caption) %>" />
+                            <label for="selections_checker<%= counter %>" class="caption"><%= option.obj ? option.obj.caption : option.caption
                             %></label>
-                            <label for="selections_checker<%= counter %>" class="unique"><%= option.obj.uniqueName
+                            <label for="selections_checker<%= counter %>" class="unique"><%= option.obj ? option.obj.uniqueName : option.uniqueName
                             %></label>
                     </li>
                 <% } else { %>
                     <li class="option_value">
                         <input type="checkbox" class="check_option cmember"
-                            value="<%= encodeURIComponent(option.obj.uniqueName) %>" name="selections_checker"
+                            value="<%= encodeURIComponent(option.obj ? option.obj.uniqueName : option.uniqueName) %>" name="selections_checker"
                             id="selections_checker<%= counter %>"
-                            label="<%= encodeURIComponent(option.obj.caption) %>" />
+                            label="<%= encodeURIComponent(option.obj ? option.obj.caption : option.caption) %>" />
                             <label for="selections_checker<%= counter %>" class="caption" style="color: blue;"><%=
-                            option.obj.caption %></label>
+                            option.obj ? option.obj.caption : option.caption %></label>
                             <label for="selections_checker<%= counter %>" class="unique" style="color: blue;"><%=
-                            option.obj.uniqueName %></label>
+                            option.obj ? option.obj.uniqueName : option.uniqueName %></label>
                     </li>
                 <% } %>
             <% }); %>
@@ -952,6 +953,9 @@ title="Drill across on cell"></a></li>
 </ul>
 </script>
 <script type="text/javascript" src="js/ga.js"></script>
-<script src="http://localhost:35729/livereload.js"></script>
+<script>document.write('<script src="//'
+    + (location.host || 'localhost').split(':')[0]
+    + ':35729/livereload.js"></'
+    + 'script>')</script>
 </body>
 </html>

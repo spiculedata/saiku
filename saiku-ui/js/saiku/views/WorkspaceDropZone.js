@@ -112,9 +112,21 @@ var WorkspaceDropZone = Backbone.View.extend({
                 $(ui.helper).detach();
                 this.set_measures();
         } else {
+            var self = this;
             var hierarchy = $(ui.helper).find('a').attr('hierarchy');
             var fromAxis = $(this.el).find('ul.hierarchy[hierarchy="' + hierarchy + '"]').parents('.fields_list').attr('title');
             var level =  $(ui.helper).find('a').attr('level');
+
+            if (Settings.ALLOW_PARAMETERS) {
+                $.each($(ui.helper).find('li'), function(key, value) {
+                    if ($(value).hasClass('temphide')) {
+                        level = $(value).find('a').attr('level');
+                        self.workspace.query.helper.removeParameter(hierarchy, level);
+                    }
+                });
+                this.workspace.$el.find('.parameter_input').empty();
+            }
+            
             this.workspace.query.helper.removeHierarchy(hierarchy);
             this.workspace.sync_query();
             this.workspace.query.run();
@@ -199,21 +211,50 @@ var WorkspaceDropZone = Backbone.View.extend({
     },
 
     clear_axis: function(event) {
-        var self = this;
         event.preventDefault();
-        var axis = $(event.target).siblings('.fields_list_body').parent().attr('title');
-        if (axis == "DETAILS") {
-            this.workspace.query.helper.clearMeasures();
-        } else {
-            this.workspace.query.helper.clearAxis(axis);
+
+        var axisName = $(event.target).siblings('.fields_list_body').parent().attr('title');
+        var axisData = this.workspace.query.helper.getAxis(axisName);
+        var len = axisData.hierarchies.length;
+        var isRemovedParameter = false;
+        var hierarchy;
+        var level;
+
+        if (Settings.ALLOW_PARAMETERS) {
+            for (var i = 0; i < len; i++) {
+                for (var lName in axisData.hierarchies[i].levels) {
+                    if (axisData.hierarchies[i].levels.hasOwnProperty(lName)) {
+                        if (axisData.hierarchies[i].levels[lName].selection && 
+                            axisData.hierarchies[i].levels[lName].selection['parameterName']) {
+                            
+                            level = lName;
+                            hierarchy = axisData.hierarchies[i].name;
+                            this.workspace.query.helper.removeParameter(hierarchy, level);
+                        }
+                    }
+                }
+
+                if (i === (len - 1)) {
+                    isRemovedParameter = true;
+                    this.workspace.$el.find('.parameter_input').empty();
+                }
+            }
         }
 
-        // Trigger event when clear axis
-        Saiku.session.trigger('workspaceDropZone:clear_axis', { workspace: this.workspace, axis: axis });
+        if (isRemovedParameter || !Settings.ALLOW_PARAMETERS) {
+            if (axisName == "DETAILS") {
+                this.workspace.query.helper.clearMeasures();
+            } else {
+                this.workspace.query.helper.clearAxis(axisName);
+            }
 
-        this.workspace.sync_query();
-        this.workspace.query.run();
-        return false;
+            // Trigger event when clear axis
+            Saiku.session.trigger('workspaceDropZone:clear_axis', { workspace: this.workspace, axis: axisName });
+
+            this.workspace.sync_query();
+            this.workspace.query.run();
+            return false;
+        }
     },
 
     select_dimension: function(event, ui) {

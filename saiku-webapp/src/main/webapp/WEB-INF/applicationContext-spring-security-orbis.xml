@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--+
+	| Application context containing JDBC AuthenticationProvider
+	| implementation.
+	+-->
+
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:security="http://www.springframework.org/schema/security"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security-4.0.xsd
+			   http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.0.xsd http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
+
+
+    <security:authentication-manager alias="authenticationManager">
+        <security:authentication-provider ref="daoAuthenticationProvider" />
+    </security:authentication-manager>
+
+    <!-- Custom login configuration -->
+    <bean id="daoAuthenticationProvider" class="org.saiku.web.service.OrbisAuthenticationProvider"/>
+
+    <!-- Custom logout configuration -->
+    <bean id="orbisLogoutHandler" class="org.saiku.web.service.OrbisLogoutHandler"/>
+    <bean id="logoutFilter" class="org.springframework.security.web.authentication.logout.LogoutFilter">
+        <constructor-arg index="0" value="/saiku/session/login" />
+        <constructor-arg index="1">
+            <list>
+                <ref bean="orbisLogoutHandler" />
+            </list>
+        </constructor-arg>
+        <property name="filterProcessesUrl" value="/saiku/session/logout" />
+    </bean>
+
+</beans>

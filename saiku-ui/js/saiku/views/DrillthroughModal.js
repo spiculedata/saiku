@@ -189,11 +189,14 @@ var DrillthroughModal = Modal.extend({
 
 		//table.render({ data: response }, true);
 
+    if (typeof html === 'undefined' || html === '' || !html) {
+    	html = '<h3 style="text-align:center;">Your drill through returned 0 rows. Nothing to display!</h3>';
+    }
 
 		Saiku.ui.unblock();
-		var html = '<div id="fancy_results" class="workspace_results" style="overflow:visible">' + html + '</div>';
+		var htmlfancy = '<div id="fancy_results" class="workspace_results" style="overflow:visible">' + html + '</div>';
 		this.remove();
-		$.fancybox(html
+		$.fancybox(htmlfancy
 			,
 			{
 				'autoDimensions'    : false,

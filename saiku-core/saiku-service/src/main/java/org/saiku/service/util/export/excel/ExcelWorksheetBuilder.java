@@ -122,6 +122,7 @@ public class ExcelWorksheetBuilder {
         basicCS = excelWorkbook.createCellStyle();
         basicCS.setFont(font);
         basicCS.setAlignment(CellStyle.ALIGN_LEFT);
+        basicCS.setVerticalAlignment(CellStyle.VERTICAL_TOP);
         setCellBordersColor(basicCS);
 
         Font totalsFont = excelWorkbook.createFont();
@@ -326,6 +327,8 @@ public class ExcelWorksheetBuilder {
 
         Row sheetRow = null;
         Cell cell = null;
+        Map<Integer, String> tmpCellUniqueValueByColumn = new HashMap<>();
+        Map<Integer, Map<Integer, Boolean>> mergeRowsByColumn = new HashMap<>();
 
         if ((startingRow + rowsetBody.length) > maxRows) {
             log.warn("Excel sheet is truncated, only outputting " + maxRows + " rows of "
@@ -340,12 +343,20 @@ public class ExcelWorksheetBuilder {
 
         for (int x = 0; (x + startingRow) < maxRows && x < rowsetBody.length; x++) {
 
-            sheetRow = workbookSheet.createRow(x + startingRow);
+            int excelRowIndex = x + startingRow;
+            sheetRow = workbookSheet.createRow(excelRowIndex);
 
             int column = 0;
             for (int y = 0; y < maxColumns && y < rowsetBody[x].length; y++) {
                 cell = sheetRow.createCell(column);
-                String value = rowsetBody[x][y].getFormattedValue();
+
+                AbstractBaseCell baseCell = rowsetBody[x][y];
+
+                //Detect merge cells
+                findMergeCells(baseCell, excelRowIndex, y, mergeRowsByColumn, tmpCellUniqueValueByColumn);
+
+                String value = baseCell.getFormattedValue();
+
                 if (value == null && options.repeatValues) {
                     // If the row cells has a null values it means the value is
                     // repeated in the data internally
@@ -354,6 +365,7 @@ public class ExcelWorksheetBuilder {
                     // get it from the same position in the prev row
                     value = workbookSheet.getRow(sheetRow.getRowNum() - 1).getCell(column).getStringCellValue();
                 }
+
                 if (rowsetBody[x][y] instanceof DataCell && ((DataCell) rowsetBody[x][y]).getRawNumber() != null) {
                     Number numberValue = ((DataCell) rowsetBody[x][y]).getRawNumber();
                     cell.setCellValue(numberValue.doubleValue());
@@ -379,6 +391,9 @@ public class ExcelWorksheetBuilder {
 
         //Set row grand totals
         setRowTotalAggregationCell(rowScanTotals, rowCount, 0, true);
+
+        //Add merge cells
+        addMergedRegions(mergeRowsByColumn);
     }
 
     private void scanRowAndColumnAggregations(List<TotalNode>[] rowTotalsLists, Map<Integer, TotalAggregator[][]> rowScanTotals, List<TotalNode>[] colTotalsLists, Map<Integer, TotalAggregator[][]> colScanTotals) {
@@ -797,8 +812,83 @@ public class ExcelWorksheetBuilder {
      * @return
      */
     private int findTopLeftCornerHeight() {
-
         return rowsetHeader.length > 0 ? rowsetHeader.length - 1 : 0;
     }
 
+    /**
+     * @param mergeRowsByColumn merged indexes
+     */
+    private void addMergedRegions(Map<Integer, Map<Integer, Boolean>> mergeRowsByColumn) {
+        if (mergeRowsByColumn != null) {
+            for (Map.Entry<Integer, Map<Integer, Boolean>> e : mergeRowsByColumn.entrySet()) {
+
+                int col = e.getKey();
+
+                Map<Integer, Boolean> rows = e.getValue();
+
+                if (rows != null) {
+
+                    int mergeCount = 1;
+                    for (Map.Entry<Integer, Boolean> rowEntry : rows.entrySet()) {
+
+                        int row = rowEntry.getKey();
+
+                        boolean current = rowEntry.getValue();
+
+                        Boolean next = rows.get(rowEntry.getKey() + 1);
+
+                        if (current) {
+                            if (next == null || !next) {
+                                workbookSheet.addMergedRegion(new CellRangeAddress(row - mergeCount, row, col, col));
+                            }
+                            mergeCount++;
+                        } else {
+                            mergeCount = 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * @param baseCell                   current cell
+     * @param excelRowIndex              row index
+     * @param y                          column
+     * @param mergeRowsByColumn          merge indexes store
+     * @param tmpCellUniqueValueByColumn tmp map to compare previews value(max possible value = columns size)
+     */
+    private void findMergeCells(AbstractBaseCell baseCell,
+                                int excelRowIndex,
+                                int y,
+                                Map<Integer, Map<Integer, Boolean>> mergeRowsByColumn,
+                                Map<Integer, String> tmpCellUniqueValueByColumn) {
+        if (baseCell instanceof MemberCell) {
+
+            MemberCell memberCell = (MemberCell) baseCell;
+
+            Map<Integer, Boolean> rowMerge = mergeRowsByColumn.get(y);
+            if (rowMerge == null) {
+                rowMerge = new TreeMap<>();
+                mergeRowsByColumn.put(y, rowMerge);
+            }
+
+            //Compare preview and current cells
+            String previousValue = tmpCellUniqueValueByColumn.get(y);
+
+            Map<Integer, Boolean> previousColumn = mergeRowsByColumn.get(y - 1);
+
+            boolean merge = previousValue != null && previousValue.equals(memberCell.getUniqueName());
+
+            if (previousColumn != null) {
+                Boolean previewColumnCellmergeValue = previousColumn.get(excelRowIndex);
+                if ((previewColumnCellmergeValue != null) && (!previewColumnCellmergeValue) && merge) {
+                    merge = false;
+                }
+            }
+            rowMerge.put(excelRowIndex, merge);
+
+            tmpCellUniqueValueByColumn.put(y, memberCell.getUniqueName());
+        }
+    }
 }

@@ -90,30 +90,22 @@ public class JackrabbitSteps {
     public List<String> getHomeDirectoryList() {
         List<String> names = new ArrayList<>();
         NodeIterator nodes;
-        try {
-            nodes = iRepositoryManager.getHomeFolders();
-            while (nodes.hasNext()) {
-                Node node = nodes.nextNode();
-                try {
-                    AclEntry entry = new Acl2(node).getEntry(node.getPath());
-                    names.add(entry.getOwner());
-                } catch (RepositoryException e) {
-                    e.printStackTrace();
-                }
+        nodes = null;//iRepositoryManager.getHomeFolders();
+        while (nodes.hasNext()) {
+            Node node = nodes.nextNode();
+            try {
+                AclEntry entry = new Acl2(node).getEntry(node.getPath());
+                names.add(entry.getOwner());
+            } catch (RepositoryException e) {
+                e.printStackTrace();
             }
-        } catch (RepositoryException e) {
-            e.printStackTrace();
         }
         return names;
     }
 
     public Node getHomeDirectory(String directory) {
         Node node = null;
-        try {
-            node = iRepositoryManager.getHomeFolder(directory);
-        } catch (RepositoryException e) {
-            e.printStackTrace();
-        }
+        node = null;// iRepositoryManager.getHomeFolder(directory);
         return node;
     }
 
@@ -151,7 +143,7 @@ public class JackrabbitSteps {
 
     @Step
     public Node getFolders(String user, String folder) throws RepositoryException {
-        return iRepositoryManager.getFolder(user, folder);
+        return (Node) iRepositoryManager.getFolder(user, folder);
     }
 
     @Step

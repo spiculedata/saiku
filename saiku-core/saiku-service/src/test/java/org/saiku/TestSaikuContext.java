@@ -33,7 +33,7 @@ public class TestSaikuContext {
 	}
 
 	private void setup() throws Exception {
-		File f = new File(System.getProperty("java.io.tmpdir") + "/files/");
+		/*File f = new File(System.getProperty("java.io.tmpdir") + "/files/");
 		f.mkdir();
 
 		this.datasourceManager = new ClassPathResourceDatasourceManager(System.getProperty("java.io.tmpdir") + "/files/");
@@ -55,7 +55,7 @@ public class TestSaikuContext {
 		this.olapDiscoverService.setDatasourceService(datasourceService);
 
 		this.thinQueryService = new ThinQueryService();
-		thinQueryService.setOlapDiscoverService(olapDiscoverService);
+		thinQueryService.setOlapDiscoverService(olapDiscoverService);*/
 	}
 	
 	

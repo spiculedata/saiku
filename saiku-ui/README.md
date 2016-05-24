@@ -1,4 +1,4 @@
-# [Saiku UI](http://www.meteorite.bi) [![Saiku Analytics on Slack](http://chat.meteorite.bi/badge.svg)](http://chat.meteorite.bi/)
+# [Saiku UI](http://www.meteorite.bi)
 
 [![saiku-view](http://www.meteorite.bi/images/chart1.jpg)](http://www2.meteorite.bi/saiku-demo/)
 
@@ -9,9 +9,9 @@ For more information, see [Saiku](http://www.meteorite.bi).
 
 ## Table of Contents
   1. [Setup](#setup)
-  	- [Build Instructions](#build-instructions)
-  	- [Run UI on Node.js proxy](#run-ui-on-nodejs-proxy)
-  	- [LiveReload Browser](#livereload-browser)
+    - [Build Instructions](#build-instructions)
+    - [Run UI on Node.js proxy](#run-ui-on-nodejs-proxy)
+    - [LiveReload Browser](#livereload-browser)
   3. [Wiki](#wiki)
   4. [Community](#community)
   5. [Bugs and Feature Requests](#bugs-and-feature-requests)
@@ -28,35 +28,49 @@ For more information, see [Saiku](http://www.meteorite.bi).
 
 * Build using Maven
 
-	- USAGE: mvn TASK1, TASK2, ...
-	
-	- Main Tasks:
-	
-		+ clean: deletes all the build dirs
-		+ package: creates a .zip and .war (for dropping the UI in a java webapp environment) file in target/ that contains the Saiku UI
-		+ install: installs the .war file in local Maven repo (eg. ~/.m2)
+  - USAGE: mvn TASK1, TASK2, ...
+  
+  - Main Tasks:
+  
+    + clean: deletes all the build dirs
+    + package: creates a .zip and .war (for dropping the UI in a java webapp environment) file in target/ that contains the Saiku UI
+    + install: installs the .war file in local Maven repo (eg. ~/.m2)
 
 ### Run UI on Node.js proxy
 
 In order to run it locally you'll need a basic server setup.
 
-1. Install [NodeJS](http://nodejs.org/download/), if you don't have it yet.
+1. Install [NodeJS](https://nodejs.org/en/download/), if you don't have it yet.
 2. Install local dependencies:
 
-	```sh
-	npm install
-	```
-3. You can simply test and run the UI on a NodeJS proxy server called [server.js](https://github.com/OSBI/saiku-ui/blob/master/server.js), that will utilize a remote backend as source.
+  ```sh
+  npm install
+  ```
+3. You can simply test and run the UI on a NodeJS proxy server called [server.js](https://github.com/OSBI/saiku/blob/master/saiku-ui/server.js), that will utilize a remote backend as source.
 
-	Just run the following command in your command line and then access the UI in
-	the browser (by default, it will run at [http://localhost:8080](http://localhost:8080) and proxy requests to try.meteorite.bi:80):
+  Just run the following command in your command line and then access the UI in
+  the browser (by default, it will run at [http://localhost:8080](http://localhost:8080) and proxy requests to try.meteorite.bi:80):
 
-		node server.js [port] [backend_host] [backend_port]
+  ```sh
+  node server.js [port] [backend_host] [backend_port]
+  ```
 or
-	```sh
-	npm start
-	```
-	
+  ```sh
+  npm start
+  ```
+
+4. To start the server in **HTTPS** mode, you will need generate a self-signed certificate, run the following commands in your shell:
+
+  ```sh
+  openssl genrsa -out key.pem
+  openssl req -new -key key.pem -out csr.pem
+  openssl x509 -req -days 9999 -in csr.pem -signkey key.pem -out cert.pem
+  rm csr.pem
+  ```
+  ```sh
+  node server.js https [port] [backend_host] [backend_port]
+  ```
+
 ### LiveReload Browser
 
 Install [GruntJS](http://gruntjs.com/):
@@ -84,12 +98,10 @@ grunt watch
 
 ## Discussion List
 
-* [Saiku Analytics on Slack](http://chat.meteorite.bi/)
 * [Saiku Dev Group](https://groups.google.com/a/saiku.meteorite.bi/forum/#!forum/dev)
 * [Saiku User Group](https://groups.google.com/a/saiku.meteorite.bi/forum/#!forum/user)
-* [<strike>Saiku Forums</strike>](http://forums.meteorite.bi/)
 * [Stack Overflow](http://stackoverflow.com/questions/tagged/saiku)
-* [Freenode IRC - Channel: #saiku](http://webchat.freenode.net/?channels=##saiku)
+* [Freenode IRC - Channel: ##saiku](http://webchat.freenode.net/?channels=##saiku)
 
 ## Browser Support
 
@@ -101,7 +113,7 @@ IE 9+ ✔ | Latest ✔ | Latest ✔ | Latest ✔ | Latest ✔ |
 
 ## Team
 
-[Saiku UI](http://www.meteorite.bi) is maintained by these people and a bunch of awesome [contributors](https://github.com/OSBI/saiku-ui/graphs/contributors).
+[Saiku UI](http://www.meteorite.bi) is maintained by these people and a bunch of awesome [contributors](https://github.com/OSBI/saiku/graphs/contributors).
 
 [![Tom Barber](https://avatars0.githubusercontent.com/u/103544?v=2&s=70)](https://github.com/buggtb) | [![Paul Stoellberger](https://avatars3.githubusercontent.com/u/454645?v=2&s=70)](https://github.com/pstoellberger) | [![Mark Cahill](https://avatars3.githubusercontent.com/u/200365?v=2&s=70)](https://github.com/thinkjson) | [![Breno Polanski](https://avatars1.githubusercontent.com/u/1894191?v=2&s=70)](https://github.com/brenopolanski) | [![Luis Garcia](https://avatars2.githubusercontent.com/u/2557898?v=2&s=70)](https://github.com/PeterFalken) 
 --- | --- | --- | --- | --- | --- | --- |
@@ -109,17 +121,17 @@ IE 9+ ✔ | Latest ✔ | Latest ✔ | Latest ✔ | Latest ✔ |
 
 ## Contributing
 
-Check [CONTRIBUTING.md](https://github.com/OSBI/saiku-ui/blob/master/CONTRIBUTING.md#contributing) for more details. Some important information:
+Check [CONTRIBUTING.md](https://github.com/OSBI/saiku/blob/master/CONTRIBUTING.md) for more details. Some important information:
 
-* To get started, [sign the Contributor License Agreement](https://www.clahub.com/agreements/OSBI/saiku-ui).
+* To get started, [sign the Contributor License Agreement](https://www.clahub.com/agreements/OSBI/saiku).
 
-* If you find a bug then please report it on [Jira](http://jira.meteorite.bi/secure/Dashboard.jspa) or our [Support Forum](http://forums.meteorite.bi/).
+* If you find a bug then please report it on [Jira](http://jira.meteorite.bi/secure/Dashboard.jspa).
 
-* If you have a feature request, then please get in touch. We'd love to hear from you! Either post to our [forum](http://forums.meteorite.bi/t/saiku-3-and-beyond/9) or email: [info@meteorite.bi](mailto:info@meteorite.bi)
+* If you have a feature request, then please get in touch. We'd love to hear from you! Send a email for: [info@meteorite.bi](mailto:info@meteorite.bi)
 
 ## History
 
-For detailed changelog, check [Releases](https://github.com/OSBI/saiku-ui/releases).
+For detailed changelog, check [Releases](https://github.com/OSBI/saiku/releases).
 
 ## License
 
