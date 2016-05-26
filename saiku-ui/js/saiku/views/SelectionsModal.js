@@ -257,10 +257,10 @@ var SelectionsModal = Modal.extend({
                 hName = dName;
             }
         }
-        var level = new Level({}, { 
-            ui: this, 
-            cube: this.workspace.selected_cube, 
-            dimension: dName, 
+        var level = new Level({}, {
+            ui: this,
+            cube: this.workspace.selected_cube,
+            dimension: dName,
             hierarchy: hName
         });
 
@@ -405,7 +405,7 @@ var SelectionsModal = Modal.extend({
 
             // Filter out used members
             this.available_members = _.select(this.available_members, function(o) {
-                return used_members.indexOf(o.obj.caption) === -1;
+                return used_members.indexOf(o.caption) === -1;
             });
 
             if (this.available_members.length > 0) {
