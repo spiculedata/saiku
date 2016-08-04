@@ -354,7 +354,8 @@ public class ExcelWorksheetBuilder {
                     // get it from the same position in the prev row
                     value = workbookSheet.getRow(sheetRow.getRowNum() - 1).getCell(column).getStringCellValue();
                 }
-                if (rowsetBody[x][y] instanceof DataCell && ((DataCell) rowsetBody[x][y]).getRawNumber() != null) {
+                if (rowsetBody[x][y] instanceof DataCell && ((DataCell) rowsetBody[x][y]).getRawNumber() != null
+                		&& StringUtils.isNotBlank(((DataCell) rowsetBody[x][y]).getFormatString())) {
                     Number numberValue = ((DataCell) rowsetBody[x][y]).getRawNumber();
                     cell.setCellValue(numberValue.doubleValue());
                     applyCellFormatting(cell, x, y);

@@ -20,6 +20,7 @@ import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.olap.util.SaikuProperties;
 import org.saiku.service.olap.ThinQueryService;
+import org.saiku.service.olap.drillthrough.DrillThroughResult;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.web.export.JSConverter;
 import org.saiku.web.export.PdfReport;
@@ -457,6 +458,7 @@ public class Query2Resource {
             Long start = (new Date()).getTime();
             if (position == null) {
                 rs = thinQueryService.drillthrough(queryName, maxrows, returns);
+                rsc = RestUtil.convert(rs);
             } else {
                 String[] positions = position.split(":");
                 List<Integer> cellPosition = new ArrayList<>();
@@ -465,10 +467,9 @@ public class Query2Resource {
                     Integer pInt = Integer.parseInt(p);
                     cellPosition.add(pInt);
                 }
-
-                rs = thinQueryService.drillthrough(queryName, cellPosition, maxrows, returns);
+                DrillThroughResult drillthrough = thinQueryService.drillthroughWithCaptions(queryName, cellPosition, maxrows, returns);
+                rsc = RestUtil.convert(drillthrough);
             }
-            rsc = RestUtil.convert(rs);
             Long runtime = (new Date()).getTime()- start;
             rsc.setRuntime(runtime.intValue());
 
