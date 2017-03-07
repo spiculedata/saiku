@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,7 @@
  *   See the License for the specific language governing permissions and
  *   limitations under the License.
  */
- 
+
 /**
  * The "add a folder" dialog
  */
@@ -51,12 +51,11 @@ var FilterModal = Modal.extend({
 
     expression: " ",
     expressonType: "",
-    
 
     initialize: function(args) {
         var self = this;
         this.id = _.uniqueId('filter-modal-');
-        this.workspace = args.workspace;
+        this.workspace = args.workspace || args.query.workspace;
         this.axis = args.axis;
         this.query = args.query;
         this.success = args.success;
@@ -79,13 +78,9 @@ var FilterModal = Modal.extend({
             this.editor.setFontSize(11);
         });
 
-
-        
-
-        
         // fix event listening in IE < 9
         if(isIE && isIE < 9) {
-            $(this.el).find('form').on('submit', this.save);    
+            $(this.el).find('form').on('submit', this.save);
         }
 
     },
@@ -107,9 +102,9 @@ var FilterModal = Modal.extend({
             } else {
                 self.success(this.expression);
             }
-            this.close();    
+            this.close();
         }
-        
+
         return false;
     },
 
@@ -131,8 +126,7 @@ var FilterModal = Modal.extend({
             dataType: this.$el.find('#cms-dimension option:selected').data('type')
         };
         var editor = ace.edit(this.id);
-        var that = this;
-
+        var self = this;
 
          (new ParentMemberSelectorModal({
                 dialog: this,
@@ -149,7 +143,7 @@ var FilterModal = Modal.extend({
                 selected_member: this.selected_member,
                 close_callback: function(args){
                     var e = editor;
-                    that.close_select_modal(e, args);
+                    self.close_select_modal(e, args);
                 }
             })).render().open();
 
@@ -170,5 +164,4 @@ var FilterModal = Modal.extend({
     help: function(){
         window.open("http://wiki.meteorite.bi/display/SAIK/Filtering");
     }
-
 });

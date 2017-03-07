@@ -1,7 +1,61 @@
-
 function SaikuTableRenderer(data, options) {
     this._data = data;
     this._options = _.extend({}, SaikuRendererOptions, options);
+}
+
+function getAxisLevelsName(data, axisName) {
+    var queryData = data.query.queryModel.axes[axisName].hierarchies;
+    var len = queryData.length;
+    var arrLevels = [];
+
+    for (var i = 0; i < len; i++) {
+        for (var level in queryData[i].levels) {
+            if (queryData[i].levels.hasOwnProperty(level)) {
+                if (Settings.COLUMN_TITLE_TABLE_USE_LEVEL_CAPTION_NAME) {
+                    arrLevels.push(queryData[i].levels[level].caption);
+                }
+                else {
+                    arrLevels.push(level);
+                }
+            }
+        }
+    }
+
+    return arrLevels;
+}
+
+function getAxisSize(data, axisName) {
+    var queryData = data.query.queryModel.axes[axisName].hierarchies;
+    var len = queryData.length;
+    var axisSize = 0;
+
+    for (var i = 0; i < len; i++) {
+        axisSize += _.size(queryData[i].levels);
+    }
+
+    return axisSize;
+}
+
+function getDomColumnsLevelsName(htmlObject) {
+    var $htmlObject = $(htmlObject.closest('.workspace')
+                           .find('.workspace_fields')
+                           .find('.columns.axis_fields')
+                           .find('.hierarchy')
+                           .find('.d_level'));
+    var arrLevels = [];
+
+    $.each($htmlObject, function(key, level) {
+        if ($(level).attr('style') === 'display: list-item;') {
+            if (Settings.COLUMN_TITLE_TABLE_USE_LEVEL_CAPTION_NAME) {
+                arrLevels.push($(level).find('.level').attr('title'));
+            }
+            else {
+                arrLevels.push($(level).find('.level').attr('level'));
+            }
+        }
+    });
+
+    return arrLevels;
 }
 
 SaikuTableRenderer.prototype.render = function(data, options) {
@@ -105,16 +159,20 @@ SaikuTableRenderer.prototype.processData = function(data, options) {
 function genTotalDataCells(currentIndex, cellIndex, scanSums, scanIndexes, lists) {
     var contents = '';
     var lists = lists[ROWS];
+
     for (var i = scanSums.length - 1; i >= 0; i--) {
         if (currentIndex == scanSums[i]) {
             var currentListNode = lists[i][scanIndexes[i]];
-            for (var m = 0; m < currentListNode.cells.length; m++)
+            for (var m = 0; m < currentListNode.cells.length; m++) {
                 contents += '<td class="data total">' + currentListNode.cells[m][cellIndex].value + '</td>';
+            }
+
             scanIndexes[i]++;
             if (scanIndexes[i] < lists[i].length)
                 scanSums[i] += lists[i][scanIndexes[i]].width;
         }
     }
+
     return contents;
 }
 
@@ -259,19 +317,30 @@ function genTotalHeaderRowCells(currentIndex, scanSums, scanIndexes, totalsLists
 
                 var scanIndexes = {};
                 var scanSums = {};
-                for (var z = 0; z < totalsLists[ROWS].length; z++) {
-                    scanIndexes[z] = 0;
-                    scanSums[z] = totalsLists[ROWS][z][scanIndexes[z]].width;
+
+                if (totalsLists[ROWS]) {
+                    for (var z = 0; z < totalsLists[ROWS].length; z++) {
+                        scanIndexes[z] = 0;
+                        scanSums[z] = totalsLists[ROWS][z][scanIndexes[z]].width;
+                    }
                 }
+
                 for (var k = 0; k < colLists[i][colScanIndexes[i]].cells[m].length; k++) {
                     contents += '<td class="data total">' + colLists[i][colScanIndexes[i]].cells[m][k].value + '</td>';
-                    contents += totalIntersectionCells(k + 1, totalsLists[ROWS].length - 1, scanSums, scanIndexes, totalsLists[ROWS]);
+
+                    if (totalsLists[ROWS]) {
+                        contents += totalIntersectionCells(k + 1, totalsLists[ROWS].length - 1, scanSums, scanIndexes, totalsLists[ROWS]);
+                    }
                 }
+
                 contents += '</tr>';
             }
+
             colScanIndexes[i]++;
-            if (colScanIndexes[i] < colLists[i].length)
+
+            if (colScanIndexes[i] < colLists[i].length) {
                 colScanSums[i] += colLists[i][colScanIndexes[i]].width;
+            }
         }
     }
     return contents;
@@ -294,6 +363,46 @@ function topParentsDiffer(data, row, col) {
         if (data[row][col].properties.uniquename != data[row - 1][col].properties.uniquename)
             return true;
     return false;
+}
+
+/**
+ * This function is intended to traverse the totals arrays and cleanup empty
+ * totals. This will optimize the query result on screen, displaying just the
+ * needed cells.
+ * @param dirs The direction array ['ROWS', 'COLUMNS'] 
+ * @param totalsLists The totals from allData.rowTotalsLists and allData.colTotalsLists.
+ */
+function cleanupTotals(dirs, totalsLists) {
+    // For each direction (ROWS/COLUMNS)
+    for (var dirIndex = 0; dirIndex < dirs.length; dirIndex++) {
+        var dir = dirs[dirIndex];
+
+        // If there are defined totals
+        if (totalsLists[dir]) {
+            var isEmpty = true; // A flag to indicate if this total is empty
+            for (var row = 0; row < totalsLists[dir].length; row++) {
+                var totalsInfoArray = totalsLists[dir][row];
+                for (var totalIndex = 0; totalIndex < totalsInfoArray.length; totalIndex++) {
+                    var cells = totalsLists[dir][row][totalIndex].cells;
+                    for (var cellIndex = 0; cellIndex < cells.length; cellIndex++) {
+                        var cellArray = cells[cellIndex];
+                        // For each total cell
+                        for (var i = 0; i < cellArray.length; i++) {
+                            var cell = cellArray[i];
+                            // If it contains a value different from empty
+                            if (cell.value !== '-') {
+                                isEmpty = false; // So, this total is not empty
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (isEmpty) { // If this total is empty
+                totalsLists[dir] = null; // Remove it
+            }
+        }
+    }
 }
 
 SaikuTableRenderer.prototype.internalRender = function(allData, options) {
@@ -334,15 +443,42 @@ SaikuTableRenderer.prototype.internalRender = function(allData, options) {
 
     var dirs = [ROWS, COLUMNS];
 
+    var hasMeasures = allData.query.queryModel.details
+                   ? allData.query.queryModel.details.measures.length
+                   : 0;
+
+    if (typeof this._options.htmlObject === 'object' &&
+        Settings.ALLOW_AXIS_COLUMN_TITLE_TABLE &&
+        hasMeasures > 0 &&
+        allData.query.type === 'QUERYMODEL') {
+
+        var arrColumnTitleTable = getAxisLevelsName(allData, COLUMNS);
+        var arrDomColumnTitleTable = getDomColumnsLevelsName(this._options.htmlObject);
+        var colspanColumnTitleTable = getAxisSize(allData, ROWS);
+        var auxColumnTitleTable = 0;
+
+        if (arrColumnTitleTable.length === arrDomColumnTitleTable.length) {
+            arrColumnTitleTable = arrDomColumnTitleTable;
+        }
+        else {
+            arrColumnTitleTable = _.intersection(arrDomColumnTitleTable, arrColumnTitleTable);
+        }
+    }
+
     for (var i = 0; i < dirs.length; i++) {
         scanSums[dirs[i]] = new Array();
         scanIndexes[dirs[i]] = new Array();
     }
-    if (totalsLists[COLUMNS])
+
+    // Here we cleaup the empty totals 
+    cleanupTotals(dirs, totalsLists);
+
+    if (totalsLists[COLUMNS]) {
         for (var i = 0; i < totalsLists[COLUMNS].length; i++) {
             scanIndexes[COLUMNS][i] = 0;
             scanSums[COLUMNS][i] = totalsLists[COLUMNS][i][scanIndexes[COLUMNS][i]].width;
         }
+    }
 
     for (var row = 0, rowLen = table.length; row < rowLen; row++) {
         var rowShifted = row - allData.topOffset;
@@ -365,8 +501,21 @@ SaikuTableRenderer.prototype.internalRender = function(allData, options) {
         rowContent = "<tr>";
         var header = null;
 
-        if ( row === 0) {
+        if (row === 0) {
             rowContent = "<thead>" + rowContent;
+        }
+
+        if (typeof this._options.htmlObject === 'object' &&
+            Settings.ALLOW_AXIS_COLUMN_TITLE_TABLE &&
+            hasMeasures > 0 &&
+            allData.query.type === 'QUERYMODEL' &&
+            auxColumnTitleTable < arrColumnTitleTable.length) {
+
+            rowContent += '<th class="row_header" style="text-align: right;" colspan="' + colspanColumnTitleTable + '" title="' + arrColumnTitleTable[auxColumnTitleTable] + '">'
+                + (wrapContent ? '<div>' + arrColumnTitleTable[auxColumnTitleTable] + '</div>' : arrColumnTitleTable[auxColumnTitleTable])
+                + '</th>';
+
+            auxColumnTitleTable += 1;
         }
 
         for (var col = 0, colLen = table[row].length; col < colLen; col++) {
@@ -379,7 +528,10 @@ SaikuTableRenderer.prototype.internalRender = function(allData, options) {
 
             // If the cell is a column header and is null (top left of table)
             if (header.type === "COLUMN_HEADER" && header.value === "null" && (firstColumn == null || col < firstColumn)) {
-                rowContent += '<th class="all_null">&nbsp;</th>';
+                if ((!Settings.ALLOW_AXIS_COLUMN_TITLE_TABLE || hasMeasures === 0) ||
+                    allData.query.type === 'MDX') {
+                    rowContent += '<th class="all_null">&nbsp;</th>';
+                }
             } // If the cell is a column header and isn't null (column header of table)
             else if (header.type === "COLUMN_HEADER") {
                 if (firstColumn == null) {
@@ -472,7 +624,7 @@ SaikuTableRenderer.prototype.internalRender = function(allData, options) {
                     }
                 }
                 var value = (same ? "<div>&nbsp;</div>" : '<div rel="' + row + ":" + col + '">'
-							+ (sameAsPrevValue && Settings.ALLOW_TABLE_DATA_COLLAPSE ? '<span class="expander expanded">&#9660;</span>' : '' ) + header.value + '</div>');
+                            + (sameAsPrevValue && Settings.ALLOW_TABLE_DATA_COLLAPSE ? '<span class="expander expanded">&#9660;</span>' : '' ) + header.value + '</div>');
                 if (!wrapContent) {
                     value = (same ? "&nbsp;" : header.value );
                 }
@@ -600,6 +752,7 @@ SaikuTableRenderer.prototype.internalRender = function(allData, options) {
         }
         rowContent += "</tr>";
 
+        // Change it to let hideEmpty true by default
         if (options.hideEmpty && header.type === "DATA_CELL" && rowWithOnlyEmptyCells) {
             rowContent = '';
         }
@@ -647,7 +800,9 @@ SaikuTableRenderer.prototype.internalRender = function(allData, options) {
 SaikuTableRenderer.prototype.renderSummary = function(data) {
     if (data && data.query) {
         var hasSomethingToRender = false;
-        var measures = data.query.queryModel.details.measures;
+        var measures = data.query.queryModel.details
+                       ? data.query.queryModel.details.measures
+                       : [];
         var summaryData = {};
 
         for (var i = 0; i < measures.length; i++) {

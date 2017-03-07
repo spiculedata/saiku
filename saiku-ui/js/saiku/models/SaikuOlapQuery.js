@@ -204,7 +204,9 @@ SaikuOlapQueryHelper.prototype.setSelectionsForParameter = function(parameter, s
 SaikuOlapQueryHelper.prototype.removeParameter = function(hierarchy, level) {
   hierarchy = this.getHierarchy(hierarchy);
   if (hierarchy && hierarchy.levels.hasOwnProperty(level)) {
-    var parameterName = hierarchy.levels[level].selection['parameterName'];
+    var parameterName = hierarchy.levels[level].hasOwnProperty('selection')
+                        ? hierarchy.levels[level].selection['parameterName']
+                        : null;
     delete this.model().parameters[parameterName];
   }
 };
