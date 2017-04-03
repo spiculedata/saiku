@@ -497,7 +497,7 @@ var WorkspaceToolbar = Backbone.View.extend({
 		if(this.workspace.query.name!=undefined){
 			var filename = this.workspace.query.name.substring(this.workspace.query.name.lastIndexOf('/')+1).slice(0, -5);
 			window.location = Settings.REST_URL +
-			this.workspace.query.url() + "/export/xls/" + this.workspace.query.getProperty('saiku.olap.result.formatter')+"?exportname=" + encodeURIComponent(filename)+"xls";
+			this.workspace.query.url() + "/export/xls/" + this.workspace.query.getProperty('saiku.olap.result.formatter')+"?exportname=" + encodeURIComponent(filename)+".xlsx";
 		}
 		else{
 			window.location = Settings.REST_URL +
