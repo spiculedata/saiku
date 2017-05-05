@@ -511,7 +511,7 @@ SaikuTableRenderer.prototype.internalRender = function(allData, options) {
             allData.query.type === 'QUERYMODEL' &&
             auxColumnTitleTable < arrColumnTitleTable.length) {
 
-            rowContent += '<th class="row_header" style="text-align: right;" colspan="' + colspanColumnTitleTable + '" title="' + arrColumnTitleTable[auxColumnTitleTable] + '">'
+            rowContent += '<th class="row_header" style="text-align: right;" colspan="' + (colspanColumnTitleTable - 1) + '" title="' + arrColumnTitleTable[auxColumnTitleTable] + '">'
                 + (wrapContent ? '<div>' + arrColumnTitleTable[auxColumnTitleTable] + '</div>' : arrColumnTitleTable[auxColumnTitleTable])
                 + '</th>';
 
