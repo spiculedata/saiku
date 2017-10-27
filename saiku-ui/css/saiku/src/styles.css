@@ -1931,8 +1931,8 @@ a.disabled_toolbar:hover {
 	background-position: center;
 }
 
-.query_toolbar a.sunburst:hover,
-.query_toolbar a.sunburst.on {
+.query_toolbar a.multiplesunburst:hover,
+.query_toolbar a.multiplesunburst.on {
 	background: url('../../../images/chart/multiplesunburst.png') no-repeat 21px -1px;;
 	height: 32px;
 	background-position: center;
