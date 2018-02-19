@@ -173,7 +173,8 @@ var Settings = {
          */
         date_format: 'YYYY/MM/DD'
     },
-	EXTENDED_REPOSITORY_RESOURCE: false
+	EXTENDED_REPOSITORY_RESOURCE: false,
+    REPORT_TITLES: false
 };
 
 /**

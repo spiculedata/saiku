@@ -176,7 +176,7 @@
 <script type="text/javascript" src="js/saiku/models/Query.js"></script>
 <script type="text/javascript" src="js/saiku/views/SessionErrorModal.js"></script>
 <script type="text/javascript" src="js/saiku/views/WarningModal.js"></script>
-<script type="text/javascript" src="js/saiku/views/TitlesModal.js"></script>
+<script type="text/javascript" src="js/saiku/views/ReportTitlesModal.js"></script>
 <script type="text/javascript" src="js/saiku/views/GrowthModal.js"></script>
 <script type="text/javascript" src="js/saiku/views/FormatAsPercentageModal.js"></script>
 <script type="text/javascript" src="js/saiku/models/Session.js"></script>
@@ -561,11 +561,13 @@
             <li class="seperator"><a href="#query_scenario"
                 class="i18n table_mode query_scenario button disabled_toolbar sprite"
                 title="Query Scenario"></a></li>
-            <% if (Settings.USER_TITLES == true) { %>
-            <li class="seperator"><a href="#workspace_titles"
-                class="i18n workspace_titles button disabled_toolbar sprite"
-                title="Titles"></a></li>
-                <% } %>
+            <% if (Settings.REPORT_TITLES) { %>
+                <li class="seperator">
+                    <a href="#workspace_report_titles"
+                      class="i18n workspace_report_titles button disabled_toolbar sprite"
+                      title="Report Titles"></a>
+                </li>
+            <% } %>
 	<li class="seperator"><a href="#drillacross" id="drillacross_icon"
 class="i18n table_mode drillacross button disabled_toolbar sprite"
 title="Drill across on cell"></a></li>

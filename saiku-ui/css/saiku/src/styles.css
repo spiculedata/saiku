@@ -1637,6 +1637,10 @@ a.disabled_toolbar:hover {
 	background-image: url('../../../images/src/zoom.png');
 	background-position: 7px 7px;
 }
+.workspace_toolbar .workspace_report_titles {
+	background-image: url('../../../images/src/text.png');
+	background-position: 7px 7px;
+}
 
 .workspace_toolbar .switch_to_mdx {
 	background-image: url('../../../images/src/switch_to_mdx.png');

@@ -2,11 +2,11 @@
     <parent>
         <artifactId>saiku-core</artifactId>
         <groupId>org.saikuanalytics</groupId>
-        <version>3.16</version>
+        <version>3.17-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
     <artifactId>saiku-web</artifactId>
-    <version>3.16</version>
+    <version>3.17-SNAPSHOT</version>
     <name>saiku - web</name>
     <packaging>jar</packaging>
 
@@ -279,6 +279,13 @@
             <artifactId>hazelcast</artifactId>
             <version>3.6.2</version>
         </dependency>
+        
+        <!-- Google Simple JSON for easy plain parsing -->
+				<dependency>
+				    <groupId>com.googlecode.json-simple</groupId>
+				    <artifactId>json-simple</artifactId>
+				    <version>1.1.1</version>
+				</dependency>        
     </dependencies>
     <reporting>
         <plugins>

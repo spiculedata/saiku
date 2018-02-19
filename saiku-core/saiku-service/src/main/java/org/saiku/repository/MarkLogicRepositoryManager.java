@@ -55,7 +55,7 @@ public class MarkLogicRepositoryManager implements IRepositoryManager {
   private ScopedRepo sessionRegistry;
   private boolean workspaces;
 
-  private MarkLogicRepositoryManager(String host, int port, String username, String password, String database, String data, ScopedRepo sessionRegistry, boolean workspaces) {
+  public MarkLogicRepositoryManager(String host, int port, String username, String password, String database, String data, ScopedRepo sessionRegistry, boolean workspaces) {
     this.host = host;
     this.port = port;
     this.username = username;
@@ -342,6 +342,10 @@ public class MarkLogicRepositoryManager implements IRepositoryManager {
 
   @Override
   public void removeInternalFile(String s) throws RepositoryException {
+    if (s.contains("\\")) {
+      s = s.replace('\\', '/');
+    }
+    
     Map<String, String> params = ParamsMap.init().put("doc_uri", s).build();
     executeUpdate("xdmp:document-delete('%(doc_uri)')", params);
   }
@@ -495,7 +499,11 @@ public class MarkLogicRepositoryManager implements IRepositoryManager {
 
   @Override
   public List<IRepositoryObject> getAllFiles(List<String> type, String username, List<String> roles) {
-    return null;
+    try {
+      return getAllFiles(type, username, roles, "/");
+    } catch (Exception ex) {
+      return new java.util.ArrayList<IRepositoryObject>();
+    }
   }
 
   @Override
@@ -644,7 +652,7 @@ public class MarkLogicRepositoryManager implements IRepositoryManager {
       return folders;
     } catch (RequestException e) {
       log.error("Error while trying to fetch the home folders", e);
-      throw new RepositoryException(e);
+      return new File[] {}; // when a directory is empty, Marklogic throws an exception instead
     } finally {
       session.close();
     }

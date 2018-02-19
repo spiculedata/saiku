@@ -487,17 +487,15 @@ var WorkspaceToolbar = Backbone.View.extend({
         (new MDXModal({ mdx: this.workspace.query.model.mdx })).render().open();
     },
 
-    workspace_titles: function(event) {
-        //this.workspace.query.enrich();
-
-        (new TitlesModal({ query: this.workspace.query })).render().open();
+    workspace_report_titles: function(event) {
+        (new ReportTitlesModal({ query: this.workspace.query })).render().open();
     },
 
     export_xls: function(event) {
 		if(this.workspace.query.name!=undefined){
 			var filename = this.workspace.query.name.substring(this.workspace.query.name.lastIndexOf('/')+1).slice(0, -5);
 			window.location = Settings.REST_URL +
-			this.workspace.query.url() + "/export/xls/" + this.workspace.query.getProperty('saiku.olap.result.formatter')+"?exportname=" + encodeURIComponent(filename)+"xls";
+			this.workspace.query.url() + "/export/xls/" + this.workspace.query.getProperty('saiku.olap.result.formatter')+"?exportname=" + "\"" + encodeURIComponent(filename)+"xls" + "\"";
 		}
 		else{
 			window.location = Settings.REST_URL +
@@ -511,7 +509,7 @@ var WorkspaceToolbar = Backbone.View.extend({
 		if(this.workspace.query.name!=undefined){
 			var filename = this.workspace.query.name.substring(this.workspace.query.name.lastIndexOf('/')+1).slice(0, -6);
 			window.location = Settings.REST_URL +
-			this.workspace.query.url() + "/export/csv/" + this.workspace.query.getProperty('saiku.olap.result.formatter')+"?exportname=" + encodeURIComponent(filename);
+			this.workspace.query.url() + "/export/csv/" + this.workspace.query.getProperty('saiku.olap.result.formatter')+"?exportname=" + "\"" + encodeURIComponent(filename) + "\"";
 		}
 		else{
 			window.location = Settings.REST_URL +
@@ -525,7 +523,7 @@ var WorkspaceToolbar = Backbone.View.extend({
 		if(this.workspace.query.name!=undefined){
 			var filename = this.workspace.query.name.substring(this.workspace.query.name.lastIndexOf('/')+1).slice(0, -6);
 			window.location = Settings.REST_URL +
-			this.workspace.query.url() + "/export/pdf/" + this.workspace.query.getProperty('saiku.olap.result.formatter')+"?exportname=" + encodeURIComponent(filename);
+			this.workspace.query.url() + "/export/pdf/" + this.workspace.query.getProperty('saiku.olap.result.formatter')+"?exportname=" + "\"" + encodeURIComponent(filename) + "\"";
 		}
 		else{
 			window.location = Settings.REST_URL +

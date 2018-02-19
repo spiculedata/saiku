@@ -503,9 +503,17 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
 
         String[] extensions = new String[1];
         extensions[0] = "xml";
+        
+        String datadir = getDatadir();
+        
+        File testFile = new File(datadir);
+        
+        if (!testFile.exists()) {
+          testFile.mkdirs();
+        }
 
         Collection<File> files = FileUtils.listFiles(
-                new File(getDatadir() + "datasources"),
+                new File(datadir + "datasources"),
                 extensions,
                 true
         );
@@ -911,6 +919,13 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
     }
 
     private File getNode(String path) {
+        File f = new File(path);
+        
+        if (f.exists()) { // Check if the provided path is a full path already
+          return f; // If so, return the respective file
+        }
+        
+        // Otherwise, compose the path with the datadir basepath
         return new File(getDatadir() + path);
     }
 
@@ -946,23 +961,23 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
 
                 log.debug("Workspace directory set to:" + workspace);
                 return append + "/" + workspace + "/";
-            } else if (this.workspaces) {
+            } else {
                 log.debug("Workspace directory set to: unknown/");
                 if (!new File(append + "/unknown/etc").exists()) {
                     this.bootstrap(append + "/unknown");
                     this.start(userService);
                 }
                 return append + "/unknown/";
-            } else {
-                return append + "/";
             }
         } catch (Exception ex) {
             // This exception is expected at Saiku boot
         }
       }
+      
+      String basePath = append + "/unknown";
         
-      if (!new File(append + "/unknown/etc").exists()) {
-        this.bootstrap(append + "/unknown");
+      if (!new File(basePath + "/etc").exists()) {
+        this.bootstrap(basePath);
         
         try {
           this.start(userService);
