@@ -3238,3 +3238,8 @@ tr.introjs-showElement > th {
 		opacity: 0.0;
 	}
 }
+
+
+.style_negative_number{
+	color:red !important;
+}

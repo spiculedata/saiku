@@ -37,7 +37,7 @@ var Cube = Backbone.Model.extend({
 
 
         if (typeof localStorage !== "undefined" && localStorage) {
-            localStorage.setItem("cube." + this.get('key'), JSON.stringify(this));
+            localStorage.setItem("cube." + this.get('key'), JSON.stringify(this).replace(/ {3}/g, ''));
         }
         
         return response;
