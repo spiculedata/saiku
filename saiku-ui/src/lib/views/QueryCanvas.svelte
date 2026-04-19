@@ -5,15 +5,38 @@
   import type { AxisLocation, ThinHierarchy, ThinMeasure } from "$lib/api/query";
   import CellsetTable from "$lib/views/CellsetTable.svelte";
   import ChartView from "$lib/views/ChartView.svelte";
-  import { CHART_TYPES, type ChartType } from "$lib/views/chartTypes";
+  import { CHART_TYPES, DEFAULT_CHART_OPTIONS, type ChartType, type ChartOptions } from "$lib/views/chartTypes";
   import SelectionsModal from "$lib/modals/SelectionsModal.svelte";
+  import DrillthroughModal from "$lib/modals/DrillthroughModal.svelte";
+  import DrillthroughResultModal from "$lib/modals/DrillthroughResultModal.svelte";
+  import ChartEditorModal from "$lib/modals/ChartEditorModal.svelte";
   import { listLevelMembers, listRootMembers, type SaikuMember } from "$lib/api/discover";
+  import { datasources } from "$lib/stores/datasources.svelte";
+  import { drillthrough as fetchDrillthrough, type QueryResult } from "$lib/api/query";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
   type ViewMode = "grid" | "chart";
   let viewMode = $state<ViewMode>("grid");
   let chartType = $state<ChartType>("bar");
+  let chartOptions = $state<ChartOptions>({ ...DEFAULT_CHART_OPTIONS });
+  let chartEditorOpen = $state(false);
+
+  function chartGroups(): { name: string; items: typeof CHART_TYPES }[] {
+    const map = new Map<string, typeof CHART_TYPES>();
+    for (const c of CHART_TYPES) {
+      const arr = map.get(c.group) ?? [];
+      arr.push(c);
+      map.set(c.group, arr);
+    }
+    return Array.from(map.entries()).map(([name, items]) => ({ name, items }));
+  }
+
+  // Drillthrough modal state
+  let drillModalOpen = $state(false);
+  let drillResultOpen = $state(false);
+  let drillResult = $state<QueryResult | null>(null);
+  let drillPosition = $state<string | null>(null);
 
   let selectionsOpen = $state(false);
   let selectionsTarget = $state<{ axis: AxisLocation; hierarchyName: string; hierarchyCaption: string; levelName: string } | null>(null);
@@ -120,7 +143,7 @@
     }
   }
 
-  let resultHostEl: HTMLDivElement | null = null;
+  let resultHostEl = $state<HTMLDivElement | null>(null);
 
   $effect(() => {
     const el = resultHostEl;
@@ -147,7 +170,50 @@
       selectionsOpen = true;
     };
     el.addEventListener("saiku-filter-level", handler);
-    return () => el.removeEventListener("saiku-filter-level", handler);
+
+    const drillHandler = (ev: Event) => {
+      const ce = ev as CustomEvent<{ row: number; col: number }>;
+      if (!ce.detail) return;
+      drillPosition = `${ce.detail.row}:${ce.detail.col}`;
+      drillModalOpen = true;
+    };
+    el.addEventListener("saiku-drillthrough", drillHandler);
+
+    return () => {
+      el.removeEventListener("saiku-filter-level", handler);
+      el.removeEventListener("saiku-drillthrough", drillHandler);
+    };
+  });
+
+  async function runDrillthrough(opts: { dimensions: string[]; measures: string[]; maxRows: number }) {
+    drillModalOpen = false;
+    if (!query.current) return;
+    drillResult = null;
+    drillResultOpen = true;
+    try {
+      const returns = [...opts.dimensions, ...opts.measures];
+      // NOTE: legacy passed a per-axis cell-position here to narrow the drillthrough.
+      // The new UI only knows the visual (row, col) of the clicked data cell; sending
+      // that as `position` trips an IOOB on the backend for non-trivial cellsets, so we
+      // currently drill through the whole cellset and let the user filter by `returns`.
+      drillResult = await fetchDrillthrough(query.current.name, {
+        maxRows: opts.maxRows,
+        returns,
+      });
+    } catch (err) {
+      drillResultOpen = false;
+      toasts.danger("Drillthrough failed", err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  let cubeMetadata = $state<{ dimensions: import("$lib/api/discover").SaikuDimension[]; measures: import("$lib/api/discover").SaikuMeasure[] } | null>(null);
+  $effect(() => {
+    const cube = selection.cube;
+    if (!cube || !session.current) {
+      cubeMetadata = null;
+      return;
+    }
+    datasources.metadata(session.current.username, cube).then((md) => (cubeMetadata = md)).catch(() => {});
   });
 
   async function onSelectionsSave(uniqueNames: string[], type: "INCLUSION" | "EXCLUSION") {
@@ -263,11 +329,16 @@
         <label class="chart-pick">
           <span class="sr-only">Chart type</span>
           <select bind:value={chartType}>
-            {#each CHART_TYPES as c}
-              <option value={c.id}>{c.label}</option>
+            {#each chartGroups() as group}
+              <optgroup label={group.name}>
+                {#each group.items as c}
+                  <option value={c.id}>{c.label}</option>
+                {/each}
+              </optgroup>
             {/each}
           </select>
         </label>
+        <button type="button" class="chart-edit" title="Chart editor" onclick={() => (chartEditorOpen = true)}>⚙</button>
       {/if}
     </div>
     <div class="result-host" bind:this={resultHostEl}>
@@ -279,7 +350,7 @@
         {#if viewMode === "grid"}
           <CellsetTable result={query.result} />
         {:else}
-          <ChartView result={query.result} type={chartType} />
+          <ChartView result={query.result} type={chartType} options={chartOptions} />
         {/if}
       {:else}
         <p class="canvas__hint">{i18n.t("canvas.buildPrompt")}</p>
@@ -309,6 +380,38 @@
 {#if selectionsLoading && selectionsOpen}
   <p class="callout">Loading members…</p>
 {/if}
+
+<DrillthroughModal
+  dimensions={cubeMetadata?.dimensions ?? []}
+  measures={cubeMetadata?.measures ?? []}
+  maxRows={1000}
+  open={drillModalOpen}
+  onRun={runDrillthrough}
+  onExportCsv={(opts) => {
+    drillModalOpen = false;
+    if (!query.current) return;
+    const params = new URLSearchParams();
+    params.set("maxrows", "10000");
+    if (drillPosition) params.set("position", drillPosition);
+    const returns = [...opts.dimensions, ...opts.measures];
+    if (returns.length) params.set("returns", returns.join(","));
+    window.open(`/rest/saiku/api/query/${encodeURIComponent(query.current.name)}/drillthrough/export/csv?${params.toString()}`, "_blank");
+  }}
+  onCancel={() => (drillModalOpen = false)}
+/>
+
+<DrillthroughResultModal
+  result={drillResult}
+  open={drillResultOpen}
+  onClose={() => (drillResultOpen = false)}
+/>
+
+<ChartEditorModal
+  initial={chartOptions}
+  open={chartEditorOpen}
+  onSave={(next) => { chartOptions = next; chartEditorOpen = false; }}
+  onCancel={() => (chartEditorOpen = false)}
+/>
 
 <style>
   .canvas {
@@ -431,6 +534,16 @@
     color: var(--accent-fg);
     border-color: var(--accent);
   }
+  .chart-edit {
+    margin-left: auto;
+    background: transparent;
+    color: var(--fg-muted);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    padding: 2px 8px;
+  }
+  .chart-edit:hover { background: var(--bg-subtle); color: var(--fg); }
   .chart-pick select {
     padding: var(--space-1) var(--space-2);
     background: var(--bg);

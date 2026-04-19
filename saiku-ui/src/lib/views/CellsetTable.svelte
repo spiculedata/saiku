@@ -242,6 +242,21 @@
     return /^-?\d[\d,. ]*$/.test(v);
   }
 
+  function onDataCellContextMenu(e: MouseEvent, row: number, col: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    // row/col are indices into parsed.bodyRows / dataRows. Map to cellset absolute position:
+    // absolute row = headerRowCount + row ; absolute col = rowHeaderColCount + col
+    const absRow = parsed.headerRowCount + row;
+    const absCol = parsed.rowHeaderColCount + col;
+    wrapperEl?.dispatchEvent(
+      new CustomEvent("saiku-drillthrough", {
+        bubbles: true,
+        detail: { row: absRow, col: absCol, clientX: e.clientX, clientY: e.clientY },
+      }),
+    );
+  }
+
   function onDocumentClick(e: MouseEvent) {
     if (!menu.open) return;
     const target = e.target as Node | null;
@@ -295,9 +310,12 @@
                 >{c.value}</th>
               {/if}
             {/each}
-            {#each parsed.dataRows[r] as dc}
+            {#each parsed.dataRows[r] as dc, cIdx}
               {@const num = isNumeric(dc.value)}
-              <td class={num ? "data data-num" : "data"}>{dc.value}</td>
+              <td
+                class={num ? "data data-num" : "data"}
+                oncontextmenu={(e) => onDataCellContextMenu(e, r, cIdx)}
+              >{dc.value}</td>
             {/each}
           </tr>
         {/each}

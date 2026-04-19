@@ -177,6 +177,23 @@ export async function executeQuery(q: ThinQuery): Promise<QueryResult> {
   return (await res.json()) as QueryResult;
 }
 
+export async function drillthrough(
+  queryName: string,
+  opts: { maxRows?: number; position?: string; returns?: string[] } = {},
+): Promise<QueryResult> {
+  const params = new URLSearchParams();
+  params.set("maxrows", String(opts.maxRows ?? 1000));
+  if (opts.position) params.set("position", opts.position);
+  if (opts.returns?.length) params.set("returns", opts.returns.join(","));
+  const url = `${REST_BASE}/${encodeURIComponent(queryName)}/drillthrough?${params.toString()}`;
+  const res = await fetch(url, { credentials: "include" });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`drillthrough ${res.status}: ${text.slice(0, 200)}`);
+  }
+  return (await res.json()) as QueryResult;
+}
+
 export async function cancelQuery(name: string): Promise<void> {
   await fetch(`${REST_BASE}/${encodeURIComponent(name)}/cancel`, {
     method: "DELETE",

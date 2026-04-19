@@ -1,20 +1,19 @@
 <script lang="ts">
-  /**
-   * Legacy parity target: saiku-ui-legacy/js/saiku/views/WorkspaceToolbar.js
-   * + QueryToolbar.js. Actions partially wired in this slice — save/open
-   * go through repository store + modals; run/export still stubbed pending
-   * query execution slice.
-   */
-
   import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
   import OpenDialogModal, { type RepoEntry } from "$lib/modals/OpenDialogModal.svelte";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import WarningModal from "$lib/modals/WarningModal.svelte";
   import MDXModal from "$lib/modals/MDXModal.svelte";
+  import DrillAcrossModal from "$lib/modals/DrillAcrossModal.svelte";
+  import ReportTitlesModal, { type ReportTitles } from "$lib/modals/ReportTitlesModal.svelte";
   import { repository } from "$lib/stores/repository.svelte";
   import { getResource, saveResource } from "$lib/api/repository";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { query } from "$lib/stores/query.svelte";
+  import { selection } from "$lib/stores/selection.svelte";
+  import { session } from "$lib/stores/session.svelte";
+  import { datasources } from "$lib/stores/datasources.svelte";
+  import type { SaikuCube } from "$lib/api/discover";
   import { i18n } from "$lib/stores/i18n.svelte";
 
   let nonEmpty = $state(true);
@@ -33,6 +32,12 @@
   let warningOpen = $state(false);
   let warningMessage = $state("");
   let mdxOpen = $state(false);
+  let drillAcrossOpen = $state(false);
+  let reportTitlesOpen = $state(false);
+  let toolsMenuOpen = $state(false);
+  let exportMenuOpen = $state(false);
+
+  let reportTitles = $state<ReportTitles>({ title: "", subtitle: "", notes: "" });
 
   function deriveDefaults(): { folder: string; name: string } {
     const path = query.savedPath ?? "";
@@ -50,11 +55,8 @@
   }
 
   function onNew() {
-    if (query.dirty) {
-      confirmNewOpen = true;
-    } else {
-      resetQuery();
-    }
+    if (query.dirty) confirmNewOpen = true;
+    else resetQuery();
   }
 
   function resetQuery() {
@@ -64,10 +66,7 @@
     toasts.info("New query", "A fresh query workspace has been opened.");
   }
 
-  async function onOpen() {
-    await ensureRepoLoaded();
-    openOpen = true;
-  }
+  async function onOpen() { await ensureRepoLoaded(); openOpen = true; }
 
   async function onSave() {
     if (!query.current) {
@@ -119,14 +118,14 @@
   }
 
   function exportCurrent(kind: "xls" | "csv" | "pdf") {
+    exportMenuOpen = false;
     if (!query.current) {
       warningMessage = "Run a query first before exporting.";
       warningOpen = true;
       return;
     }
     const name = encodeURIComponent(query.current.name);
-    const url = `/rest/saiku/api/query/${name}/export/${kind}`;
-    window.open(url, "_blank");
+    window.open(`/rest/saiku/api/query/${name}/export/${kind}`, "_blank");
   }
 
   async function onSavePick(folder: string, name: string) {
@@ -164,35 +163,122 @@
     mdxOpen = false;
     await query.run();
   }
+
+  function closeToolsMenu() { toolsMenuOpen = false; }
+  function closeExportMenu() { exportMenuOpen = false; }
+
+  function openDrillAcross() {
+    closeToolsMenu();
+    drillAcrossOpen = true;
+  }
+
+  function openReportTitles() {
+    closeToolsMenu();
+    reportTitlesOpen = true;
+  }
+
+  async function onDrillAcross(target: SaikuCube) {
+    drillAcrossOpen = false;
+    selection.select(target);
+    query.initFor(target);
+    toasts.info("Drill across", `Switched cube to ${target.caption || target.name}`);
+  }
+
+  function drillAcrossTargets(): SaikuCube[] {
+    const cube = selection.cube;
+    if (!cube) return [];
+    const cubes: SaikuCube[] = [];
+    for (const conn of datasources.connections) {
+      for (const cat of conn.catalogs ?? []) {
+        for (const sch of cat.schemas ?? []) {
+          for (const c of sch.cubes ?? []) {
+            if (c.uniqueName !== cube.uniqueName) cubes.push(c);
+          }
+        }
+      }
+    }
+    return cubes;
+  }
+
+  function onReportTitlesSave(t: ReportTitles) {
+    reportTitles = t;
+    reportTitlesOpen = false;
+    if (query.current) {
+      query.current.properties = {
+        ...(query.current.properties ?? {}),
+        "saiku.report.title": t.title,
+        "saiku.report.subtitle": t.subtitle,
+        "saiku.report.notes": t.notes,
+      };
+    }
+    toasts.success("Titles saved", t.title || "(cleared)");
+  }
+
+  function handleBodyClick(e: MouseEvent) {
+    const t = e.target as Element | null;
+    if (t?.closest(".toolbar__menu")) return;
+    toolsMenuOpen = false;
+    exportMenuOpen = false;
+  }
+
+  $effect(() => {
+    // Seed the report titles panel from the current query on load.
+    const p = query.current?.properties ?? {};
+    reportTitles = {
+      title: String(p["saiku.report.title"] ?? ""),
+      subtitle: String(p["saiku.report.subtitle"] ?? ""),
+      notes: String(p["saiku.report.notes"] ?? ""),
+    };
+  });
 </script>
+
+<svelte:window onclick={handleBodyClick} />
 
 <div class="toolbar" role="toolbar" aria-label="Workspace toolbar">
   <div class="toolbar__group">
-    <button class="btn" onclick={onNew}>{i18n.t("toolbar.new")}</button>
-    <button class="btn" onclick={onOpen}>{i18n.t("toolbar.open")}</button>
-    <button class="btn" onclick={onSave}>{i18n.t("toolbar.save")}</button>
-    <button class="btn" onclick={onSaveAs}>{i18n.t("toolbar.saveAs")}</button>
+    <button class="btn btn--icon" onclick={onNew}>{i18n.t("toolbar.new")}</button>
+    <button class="btn btn--icon" onclick={onOpen}>{i18n.t("toolbar.open")}</button>
+    <button class="btn btn--icon" onclick={onSave}>{i18n.t("toolbar.save")}</button>
+    <button class="btn btn--icon" onclick={onSaveAs}>{i18n.t("toolbar.saveAs")}</button>
   </div>
   <div class="toolbar__sep"></div>
   <div class="toolbar__group">
-    <button class="btn btn--primary" onclick={onRun}>{i18n.t("toolbar.run")}</button>
+    <button class="btn btn--primary btn--icon" onclick={onRun}>{i18n.t("toolbar.run")}</button>
     <label class="toolbar__toggle">
       <input type="checkbox" bind:checked={query.autorun} /> {i18n.t("toolbar.autorun")}
     </label>
     <label class="toolbar__toggle">
       <input type="checkbox" bind:checked={nonEmpty} /> {i18n.t("toolbar.nonEmpty")}
     </label>
+    <button class="btn btn--icon" onclick={() => query.swapAxes()}>{i18n.t("toolbar.swap")}</button>
   </div>
   <div class="toolbar__sep"></div>
-  <div class="toolbar__group">
-    <button class="btn" onclick={() => query.swapAxes()}>{i18n.t("toolbar.swap")}</button>
-    <button class="btn" onclick={onShowMdx}>{i18n.t("toolbar.mdx")}</button>
+  <div class="toolbar__group toolbar__menu">
+    <button
+      class="btn btn--icon"
+      onclick={(e) => { e.stopPropagation(); toolsMenuOpen = !toolsMenuOpen; exportMenuOpen = false; }}
+    >Tools ▾</button>
+    {#if toolsMenuOpen}
+      <div class="toolbar__dropdown">
+        <button type="button" class="toolbar__item" onclick={onShowMdx}>{i18n.t("toolbar.mdx")}…</button>
+        <button type="button" class="toolbar__item" onclick={openDrillAcross}>Drill across…</button>
+        <button type="button" class="toolbar__item" onclick={openReportTitles}>Report titles…</button>
+      </div>
+    {/if}
   </div>
   <div class="toolbar__spacer"></div>
-  <div class="toolbar__group">
-    <button class="btn" onclick={() => exportCurrent("xls")}>{i18n.t("toolbar.export.xls")}</button>
-    <button class="btn" onclick={() => exportCurrent("csv")}>{i18n.t("toolbar.export.csv")}</button>
-    <button class="btn" onclick={() => exportCurrent("pdf")}>{i18n.t("toolbar.export.pdf")}</button>
+  <div class="toolbar__group toolbar__menu">
+    <button
+      class="btn btn--icon"
+      onclick={(e) => { e.stopPropagation(); exportMenuOpen = !exportMenuOpen; toolsMenuOpen = false; }}
+    >⬇ Export ▾</button>
+    {#if exportMenuOpen}
+      <div class="toolbar__dropdown toolbar__dropdown--right">
+        <button type="button" class="toolbar__item" onclick={() => exportCurrent("xls")}>📊 {i18n.t("toolbar.export.xls")}</button>
+        <button type="button" class="toolbar__item" onclick={() => exportCurrent("csv")}>📄 {i18n.t("toolbar.export.csv")}</button>
+        <button type="button" class="toolbar__item" onclick={() => exportCurrent("pdf")}>📕 {i18n.t("toolbar.export.pdf")}</button>
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -228,6 +314,20 @@
   onCancel={() => (openOpen = false)}
 />
 
+<DrillAcrossModal
+  targets={drillAcrossTargets()}
+  open={drillAcrossOpen}
+  onRun={onDrillAcross}
+  onCancel={() => (drillAcrossOpen = false)}
+/>
+
+<ReportTitlesModal
+  titles={reportTitles}
+  open={reportTitlesOpen}
+  onSave={onReportTitlesSave}
+  onCancel={() => (reportTitlesOpen = false)}
+/>
+
 <ConfirmModal
   title="Discard unsaved changes?"
   message="Starting a new query will discard your unsaved work."
@@ -235,10 +335,7 @@
   cancelLabel="Keep editing"
   variant="danger"
   open={confirmNewOpen}
-  onConfirm={() => {
-    confirmNewOpen = false;
-    resetQuery();
-  }}
+  onConfirm={() => { confirmNewOpen = false; resetQuery(); }}
   onCancel={() => (confirmNewOpen = false)}
 />
 
@@ -254,7 +351,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
+    padding: 6px var(--space-3);
     border-bottom: 1px solid var(--border);
     background: var(--bg-muted);
     flex-wrap: wrap;
@@ -262,11 +359,38 @@
   .toolbar__group {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
+    gap: 4px;
+    position: relative;
   }
+  .toolbar__menu { position: relative; }
+  .toolbar__dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 10px 24px rgba(0,0,0,0.4);
+    padding: 4px 0;
+    z-index: 50;
+    min-width: 200px;
+  }
+  .toolbar__dropdown--right { left: auto; right: 0; }
+  .toolbar__item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 6px var(--space-3);
+    background: transparent;
+    border: 0;
+    color: var(--fg);
+    font: inherit;
+    cursor: pointer;
+  }
+  .toolbar__item:hover { background: var(--bg-subtle); }
   .toolbar__sep {
     width: 1px;
-    height: 20px;
+    height: 22px;
     background: var(--border);
   }
   .toolbar__spacer { flex: 1; }
@@ -274,10 +398,15 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
-    padding: var(--space-1) var(--space-2);
+    padding: 2px 6px;
     color: var(--fg-muted);
     font-size: var(--fs-sm);
     cursor: pointer;
+    user-select: none;
   }
   .toolbar__toggle input { cursor: pointer; }
+  .btn--icon {
+    padding: 4px 10px;
+    line-height: 1.2;
+  }
 </style>
