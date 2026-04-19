@@ -101,3 +101,26 @@ export async function listMemberChildren(
     `${cubeUrl(username, cube)}/member/${encodeURIComponent(memberUniqueName)}/children`,
   );
 }
+
+export async function listLevelMembers(
+  username: string,
+  cube: SaikuCube,
+  dimensionName: string,
+  hierarchyUniqueName: string,
+  levelName: string,
+): Promise<SaikuMember[]> {
+  const base = cubeUrl(username, cube);
+  return getJson<SaikuMember[]>(
+    `${base}/dimensions/${encodeURIComponent(dimensionName)}/hierarchies/${encodeURIComponent(hierarchyUniqueName)}/levels/${encodeURIComponent(levelName)}`,
+  );
+}
+
+export async function listRootMembers(
+  username: string,
+  cube: SaikuCube,
+  hierarchyUniqueName: string,
+): Promise<SaikuMember[]> {
+  return getJson<SaikuMember[]>(
+    `${cubeUrl(username, cube)}/hierarchies/${encodeURIComponent(hierarchyUniqueName)}/rootmembers`,
+  );
+}

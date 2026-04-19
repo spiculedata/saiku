@@ -1,14 +1,23 @@
 <script lang="ts">
   import { query } from "$lib/stores/query.svelte";
   import { selection } from "$lib/stores/selection.svelte";
+  import { session } from "$lib/stores/session.svelte";
   import type { AxisLocation, ThinHierarchy, ThinMeasure } from "$lib/api/query";
   import CellsetTable from "$lib/views/CellsetTable.svelte";
   import ChartView from "$lib/views/ChartView.svelte";
   import { CHART_TYPES, type ChartType } from "$lib/views/chartTypes";
+  import SelectionsModal from "$lib/modals/SelectionsModal.svelte";
+  import { listLevelMembers, listRootMembers, type SaikuMember } from "$lib/api/discover";
+  import { toasts } from "$lib/stores/toasts.svelte";
 
   type ViewMode = "grid" | "chart";
   let viewMode = $state<ViewMode>("grid");
   let chartType = $state<ChartType>("bar");
+
+  let selectionsOpen = $state(false);
+  let selectionsTarget = $state<{ axis: AxisLocation; hierarchyName: string; hierarchyCaption: string; levelName: string } | null>(null);
+  let selectionsMembers = $state<SaikuMember[]>([]);
+  let selectionsLoading = $state(false);
 
   const axisLabels: Record<AxisLocation, string> = {
     COLUMNS: "Columns",
@@ -62,6 +71,54 @@
   function removeMeasure(uniqueName: string) {
     query.removeMeasure(uniqueName);
   }
+
+  async function openSelections(axis: AxisLocation, hier: ThinHierarchy) {
+    if (!selection.cube || !session.current) return;
+    const levelName = Object.keys(hier.levels)[0];
+    if (!levelName) return;
+    selectionsTarget = {
+      axis,
+      hierarchyName: hier.name,
+      hierarchyCaption: hier.caption ?? hier.name,
+      levelName,
+    };
+    selectionsOpen = true;
+    selectionsLoading = true;
+    selectionsMembers = [];
+    try {
+      // The dimension-name path requires just the dimension token from the hierarchy unique name.
+      const dimension = hier.name.split(".")[0]?.replace(/[[\]]/g, "") ?? hier.name;
+      selectionsMembers = await listLevelMembers(
+        session.current.username,
+        selection.cube,
+        dimension,
+        hier.uniqueName ?? hier.name,
+        levelName,
+      );
+    } catch (err) {
+      try {
+        selectionsMembers = await listRootMembers(
+          session.current.username,
+          selection.cube,
+          hier.uniqueName ?? hier.name,
+        );
+      } catch (err2) {
+        toasts.danger(
+          "Could not load members",
+          err2 instanceof Error ? err2.message : String(err2),
+        );
+      }
+    } finally {
+      selectionsLoading = false;
+    }
+  }
+
+  function onSelectionsSave(_uniqueNames: string[], _type: "INCLUSION" | "EXCLUSION") {
+    // Wire into query.updateSelections() when the selection
+    // shape lands on the query store.
+    selectionsOpen = false;
+    toasts.info("Selections", "Applied (selection persistence lands when the query JSON schema is extended).");
+  }
 </script>
 
 <div class="canvas">
@@ -91,10 +148,22 @@
               {/each}
             {/if}
             {#each query.current?.queryModel?.axes[axis].hierarchies ?? [] as h}
-              <button type="button" class="chip chip--level" onclick={() => removeHier(h.name)} title="Remove">
-                {hierChipLabel(h)}
-                <span class="chip__x">×</span>
-              </button>
+              <span class="chip chip--level">
+                <button
+                  type="button"
+                  class="chip__label"
+                  onclick={() => openSelections(axis, h)}
+                  title="Edit selections"
+                >
+                  {hierChipLabel(h)}
+                </button>
+                <button
+                  type="button"
+                  class="chip__x"
+                  aria-label="Remove {h.caption || h.name}"
+                  onclick={() => removeHier(h.name)}
+                >×</button>
+              </span>
             {/each}
             {#if (query.current?.queryModel?.axes[axis].hierarchies.length ?? 0) === 0
               && !(axis === "COLUMNS" && (query.current?.queryModel?.details.measures.length ?? 0) > 0)}
@@ -163,6 +232,26 @@
   {/if}
 </div>
 
+{#if selectionsTarget}
+  <SelectionsModal
+    levelCaption={selectionsTarget.hierarchyCaption + " › " + selectionsTarget.levelName}
+    available={selectionsMembers}
+    initialSelected={[]}
+    initialType="INCLUSION"
+    open={selectionsOpen}
+    onSave={onSelectionsSave}
+    onOpenDateFilter={() => {
+      selectionsOpen = false;
+      toasts.info("Date filter", "Date filter modal wiring ships in a later slice.");
+    }}
+    onCancel={() => (selectionsOpen = false)}
+  />
+{/if}
+
+{#if selectionsLoading && selectionsOpen}
+  <p class="callout">Loading members…</p>
+{/if}
+
 <style>
   .canvas {
     flex: 1;
@@ -214,17 +303,35 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
-    padding: 2px var(--space-2);
+    padding: 0;
     background: var(--bg);
     color: var(--fg);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-sm);
     font-size: var(--fs-xs);
+    overflow: hidden;
+  }
+  .chip--measure { color: var(--accent); padding: 2px var(--space-2); cursor: pointer; }
+  .chip:hover { background: var(--bg-subtle); }
+  .chip__label {
+    background: transparent;
+    color: inherit;
+    border: 0;
+    padding: 2px var(--space-2);
+    cursor: pointer;
+    font: inherit;
+  }
+  .chip__x {
+    background: transparent;
+    color: var(--fg-subtle);
+    border: 0;
+    border-left: 1px solid var(--border);
+    padding: 0 var(--space-1);
+    font-size: 14px;
+    line-height: 1;
     cursor: pointer;
   }
-  .chip--measure { color: var(--accent); }
-  .chip:hover { background: var(--bg-subtle); }
-  .chip__x { color: var(--fg-subtle); font-size: 14px; line-height: 1; }
+  .chip__x:hover { color: var(--danger); background: var(--bg-muted); }
   .grid-host { flex: 1; min-height: 260px; }
   .view-toggle {
     display: flex;

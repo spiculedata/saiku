@@ -2,7 +2,9 @@
   import { onMount } from "svelte";
   import { session } from "$lib/stores/session.svelte";
   import { theme } from "$lib/stores/theme.svelte";
+  import { platform } from "$lib/stores/platform.svelte";
   import ToastStack from "$lib/components/ToastStack.svelte";
+  import UpgradeBanner from "$lib/components/UpgradeBanner.svelte";
   import "$lib/styles/tokens.css";
   import "$lib/styles/app.css";
 
@@ -13,10 +15,18 @@
 
   onMount(() => {
     session.bootstrap();
+    platform.ping();
+  });
+
+  $effect(() => {
+    if (session.current && platform.version == null) {
+      platform.loadVersion();
+    }
   });
 </script>
 
 <div class="app">
+  <UpgradeBanner />
   <header class="topbar">
     <div class="topbar__brand">saiku</div>
     <div class="topbar__actions">
@@ -28,6 +38,13 @@
           <a class="btn" href="/admin">Admin</a>
         {/if}
         <a class="btn" href="/">Workspace</a>
+        <button
+          type="button"
+          class="btn"
+          aria-pressed={platform.fullscreen}
+          title={platform.fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+          onclick={() => platform.toggleFullscreen()}
+        >{platform.fullscreen ? "⤢" : "⤡"}</button>
         <span class="topbar__user">{session.current.username}</span>
         <button type="button" class="btn" onclick={() => session.logout()}>Sign out</button>
       {/if}
