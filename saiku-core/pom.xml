@@ -13,6 +13,7 @@
 
     <modules>
         <module>saiku-olap-util</module>
+        <module>saiku-semantic</module>
         <module>saiku-service</module>
         <module>saiku-web</module>
     </modules>
