@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Meta -->
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>Saiku Embedded - Next Generation Open Source Analytics in your App</title>
+
+  <!-- Favicon -->
+  <link rel="shortcut icon" href="./favicon.ico">
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" integrity="sha384-wvfXpqpZZVQGK6TAh5PVlGOfQNHSoD2xbE+QkPxCAFlNEevoEH3Sl0sibVcOQVnN" crossorigin="anonymous">
+  <link rel="stylesheet" href="../js/saiku/plugins/CCC_Chart/tipsy.css">
+  <link rel="stylesheet" href="./saiku.css">
+  <link rel="stylesheet" href="../css/saiku/src/saiku.table.css">
+  <style>
+    body {
+      font-family: 'Helvetica Neue', Arial, Helvetica, sans-serif;
+      color: #222;
+      background: none repeat scroll 0 0 #fff;
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-inverse navbar-fixed-top">
+    <div class="container-fluid">
+      <div class="navbar-header">
+        <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
+          <span class="sr-only">Toggle navigation</span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="#">Project name</a>
+      </div>
+      <div id="navbar" class="collapse navbar-collapse">
+        <ul class="nav navbar-nav">
+          <li class="active"><a href="#"><i class="fa fa-home"></i> Home</a></li>
+          <li><a href="#"><i class="fa fa-dashboard"></i> Dashboards</a></li>
+          <li><a href="#"><i class="fa fa-list"></i> Reports</a></li>
+          <li><a href="#"><i class="fa fa-bar-chart"></i> Analysis</a></li>
+          <li><a href="#"><i class="fa fa-flask"></i> Knowledge</a></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container-fluid" style="margin-top: 100px;">
+    <div class="row">
+      <div class="col-md-6">
+        <div class="panel panel-default">
+          <div class="panel-heading">
+            <h3 class="panel-title">Product Unit Sales / Marital Status</h3>
+          </div>
+          <div class="panel-body workspace_results" id="widget_1"></div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="panel panel-default">
+          <div class="panel-heading">
+            <h3 class="panel-title">Product Family per Quarter</h3>
+          </div>
+          <div class="panel-body workspace_results" id="widget_2"></div>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-6">
+        <div class="panel panel-default">
+          <div class="panel-heading">
+            <h3 class="panel-title">Panel title</h3>
+          </div>
+          <div class="panel-body workspace_results" id="widget_3"></div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="panel panel-default">
+          <div class="panel-heading">
+            <h3 class="panel-title">Panel title</h3>
+          </div>
+          <div class="panel-body workspace_results" id="widget_4"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!--  jQuery, jQuery UI -->
+  <script src="../js/jquery/jquery.min.js"></script>
+  <script src="../js/jquery/jquery-ui.min.js"></script>
+  <script src="../js/js-yaml/js-yaml.min.js"></script>
+
+  <!-- Backbone.js -->
+  <script src="../js/backbone/underscore.js"></script>
+  <script src="../js/backbone/json2.js"></script>
+  <script src="../js/backbone/backbone.js"></script>
+
+  <!-- CCC2 -->
+  <script src="../js/saiku/plugins/CCC_Chart/def.js"></script>
+  <script src="../js/saiku/plugins/CCC_Chart/protovis.js"></script>
+  <script src="../js/saiku/plugins/CCC_Chart/protovis-msie.js"></script>
+  <!-- <script src="../js/saiku/plugins/CCC_Chart/cdo.js"></script> -->
+  <script src="../js/saiku/plugins/CCC_Chart/pvc.js"></script>
+  <script src="../js/saiku/plugins/CCC_Chart/jquery.tipsy.js"></script>
+  <script src="../js/saiku/plugins/CCC_Chart/tipsy.js"></script>
+
+  <!-- Saiku Embedded Libraries -->
+  <script src="../js/saiku/Settings.js"></script>
+  <script src="../js/saiku/render/SaikuRenderer.js"></script>
+  <script src="../js/saiku/render/SaikuTableRenderer.js"></script>
+  <script src="../js/saiku/render/SaikuChartRenderer.js"></script>
+  <script src="../js/saiku/embed/SaikuEmbed.js"></script>
+
+  <script>
+    var myClient = new SaikuClient({
+      server: '/saiku', // required
+      path: '/rest/saiku/embed', // required
+      user: 'admin', // required
+      password: 'admin', // required
+      blockUI: true // optional
+    });
+
+    myClient.execute({
+      file: '/homes/home:admin/report_example_one.saiku', // required
+      htmlObject: '#widget_1', // required
+      render: 'table', // required - table || chart
+      params: {
+        family: 'testparameter'
+      }
+    });
+
+    myClient.execute({
+      file: '/homes/home:admin/report_example_two.saiku',
+      htmlObject: '#widget_2',
+      render: 'chart',
+      mode: 'stackedBar', // chart: line, bar, treemap, ...
+      zoom: true
+    });
+
+    myClient.execute({
+      file: '/homes/home:admin/report_example_third.saiku',
+      htmlObject: '#widget_3',
+      render: 'chart',
+      mode: 'line',
+      zoom: true,
+      chartDefinition: {
+        clickable: true,
+        clickAction: function(scene) {
+          //scene.datum.atoms.category + ' - ' + scene.datum.atoms.category2 + ' - ' + scene.datum.atoms.value
+          alert('You clicked on: Category: ' + scene.getCategoryLabel() + ' Series: ' + scene.getSeriesLabel() + ' Measure: ' +  scene.datum.atoms.value);
+          console.log(scene);
+        }
+      }
+    });
+
+    myClient.execute({
+      file: '/homes/home:admin/report_example_fourth.saiku',
+      htmlObject: '#widget_4',
+      render: 'chart',
+      mode: 'pie',
+      zoom: false,
+      chartDefinition: {
+        height: 400,
+        colors: ['red', 'blue', 'green', 'yellow'],
+        baseAxisSize: '600px',
+        baseAxisSizeMax : '200'
+      }
+    });
+  </script>
+</body>
+</html>

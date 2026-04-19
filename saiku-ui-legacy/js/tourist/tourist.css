@@ -1,0 +1,78 @@
+
+.tour-highlight{
+    background: transparent;
+    -moz-box-shadow: 0px 0px 7px 0px rgba(0, 241, 255, 0.701961);
+    -webkit-box-shadow: 0px 0px 7px 0px rgba(0, 241, 255, 0.701961);
+    -o-box-shadow: 0px 0px 7px 0px rgba(0, 241, 255, 0.701961);
+    box-shadow: 0px 0px 7px 0px rgba(0, 241, 255, 0.701961);
+    border-radius: 2px;
+}
+
+/* bootstrap styles */
+.tourist-popover{
+    padding: 0;
+}
+.tourist-popover .popover-content{
+    padding: 10px 0 0 0;
+    min-width: 200px;
+}
+.tourist-popover .popover-content p{
+    margin: 0 8px 10px 8px;
+}
+.tourist-popover .popover-content .action-label{
+    background: rgba(0, 111, 255, 0.168627);
+    font-size: 14px;
+    padding: 3px 10px;
+}
+.tourist-popover .popover-content .tour-counter{
+    margin: 0; padding: 0;
+    position: absolute;
+    left: 10px; bottom: 14px;
+    font-size: 11px;
+    color: #acacac;
+}
+.tourist-popover .tour-buttons{
+    padding: 8px 10px;
+    min-height: 28px;
+    background: #f5f5f5;
+    border-radius: 0px 0px 6px 6px;
+    box-sizing: content-box;
+}
+.tourist-popover .btn-close{
+    background: none;
+    border: none;
+    position: absolute;
+    top: 4px; right: 7px;
+    padding: 0;
+    opacity: .3;
+}
+.tourist-popover .btn-close:hover{
+    opacity: .5;
+}
+
+/* qtip2 styles */
+.qtip-tour, .qtip-tour .qtip-content{
+    padding: 0;
+}
+.qtip-tour .qtip-content{
+    padding-top: 10px;
+}
+.qtip-tour .qtip-content p{
+    margin: 0 8px 10px 8px;
+}
+.qtip-tour .qtip-content .action-label{
+    background: rgba(0, 111, 255, 0.168627);
+    font-size: 14px;
+    padding: 3px 10px;
+}
+.qtip-tour .qtip-content .tour-counter{
+    font-size: 11px;
+    color: #acacac;
+}
+.qtip-tour .tour-buttons{
+    padding: 8px 10px;
+    min-height: 28px;
+    background: #f5f5f5;
+    border-radius: 0px 0px 6px 6px;
+    box-sizing: content-box;
+}

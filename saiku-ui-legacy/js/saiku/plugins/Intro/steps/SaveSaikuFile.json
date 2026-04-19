@@ -1,0 +1,23 @@
+{
+  "steps": [
+    {
+      "element": "#save_query_form .search_file",
+      "intro": "Enter a name here from a saiku file"
+    },
+    {
+      "element": "#save_query_form .RepositoryObjects",
+      "intro": "Select a folder to save the file",
+      "position": "right"
+    },
+    {
+      "element": "#save_query_form #relative-file-path",
+      "intro": "Path where your file will be saved",
+      "position": "right"
+    },
+    {
+      "element": ".dialog_footer",
+      "intro": "Save the file",
+      "position": "right"
+    }
+  ]
+}

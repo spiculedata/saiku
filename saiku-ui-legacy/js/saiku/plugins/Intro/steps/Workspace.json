@@ -1,0 +1,163 @@
+{
+  "steps": [
+    {
+      "element": "#new_query",
+      "intro": "Click here to open a blank query"
+    },
+    {
+      "element": "#open_query",
+      "intro": "Click here to open a saved query",
+      "position": "right"
+    },
+    {
+      "element": ".admin",
+      "intro": "Click here for Administration functions",
+      "position": "right"
+    },
+    {
+      "element": ".dashboards",
+      "intro": "Click here for Dashboard Designer",
+      "position": "right"
+    },
+    {
+      "element": "#refresh_icon",
+      "intro": "Click here to refresh the cube list",
+      "position": "right"
+    },
+    {
+      "element": "#cubesselect",
+      "intro": "Select a cube from this menu",
+      "position": "right"
+    },
+    {
+      "element": ".metadata_attribute_wrapper",
+      "intro": "This is your list of available measures and dimensions",
+      "position": "right"
+    },
+    {
+      "element": ".button.sprite.open",
+      "intro": "Click here to open a query",
+      "position": "right"
+    },
+    {
+      "element": "#save_icon",
+      "intro": "Click here to save your active query",
+      "position": "right"
+    },
+    {
+      "element": ".button.sprite.new",
+      "intro": "Click here to new query",
+      "position": "right"
+    },
+    {
+      "element": "#edit_icon",
+      "intro": "Click here to switch between edit and view mode",
+      "position": "right"
+    },
+    {
+      "element": ".button.sprite.run",
+      "intro": "Click here to run query",
+      "position": "right"
+    },
+    {
+      "element": "#run_icon",
+      "intro": "Click here to automatic execution",
+      "position": "right"
+    },
+    {
+      "element": "#automatic_icon",
+      "intro": "Switch between automatic execution and manual mode",
+      "position": "right"
+    },
+    {
+      "element": "#group_icon",
+      "intro": "Group duplicated cells",
+      "position": "right"
+    },
+    {
+      "element": "#non_empty_icon",
+      "intro": "Click here to hide empty cells",
+      "position": "right"
+    },
+    {
+      "element": "#swap_axis_icon",
+      "intro": "Select this button to pivot your table 90 degrees",
+      "position": "right"
+    },
+    {
+      "element": "#show_mdx_icon",
+      "intro": "Show the MDX query used to create this report",
+      "position": "right"
+    },
+    {
+      "element": "#zoom_mode_icon",
+      "intro": "Select this icon then drag your mouse across the table to zoom into sepcific regions",
+      "position": "right"
+    },
+    {
+      "element": "#drillacross_icon",
+      "intro": "Select this icon then select a cell to drill across",
+      "position": "right"
+    },
+    {
+      "element": "#drillthrough_icon",
+      "intro": "Select this icon then select a cell to drill through and view its constituent data",
+      "position": "right"
+    },
+    {
+      "element": "#export_drillthrough_icon",
+      "intro": "Export a drill through to CSV",
+      "position": "right"
+    },
+    {
+      "element": "#export_xls_icon",
+      "intro": "Export the table to Excel",
+      "position": "right"
+    },
+    {
+      "element": "#export_csv_icon",
+      "intro": "Export the table to CSV",
+      "position": "right"
+    },
+    {
+      "element": "#export_pdf_icon",
+      "intro": "Export the table to PDF",
+      "position": "right"
+    },
+    {
+      "element": "#switch_to_mdx_icon",
+      "intro": "Switch to MDX mode",
+      "position": "right"
+    },
+    {
+      "element": "#fullscreen_icon",
+      "intro": "Show the table in fullscreen",
+      "position": "right"
+    },
+    {
+      "element": "#table_icon",
+      "intro": "Switch to table mode",
+      "position": "left"
+    },
+    {
+      "element": "#chart_icon",
+      "intro": "Switch to chart mode",
+      "position": "left"
+    },
+    {
+      "element": "#spark_bar_icon",
+      "intro": "Show spark bars alongside the table data",
+      "position": "left"
+    },
+    {
+      "element": "#spark_line_icon",
+      "intro": "Show spark lines alongside the table data",
+      "position": "left"
+    },
+    {
+      "element": "#stats_icon",
+      "intro": "Show stats about this table data",
+      "position": "left"
+    }
+  ]
+}

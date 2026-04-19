@@ -1,0 +1,62 @@
+<!--  
+Copyright 2015 OSBI Ltd
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<title>License Upload</title>
+
+	<!-- Meta -->
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"> 
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+	<!-- Favicon -->
+	<link rel="shortcut icon" href="favicon.ico">
+
+	<!-- CSS -->
+	<link rel="stylesheet" href="upload.css">
+</head>
+<body>
+	<div class="container debug">
+		<header class="clearfix debug">
+			<img class="saiku-logo" src="images/src/saiku.png" alt="Saiku Logo">
+			<h2 class="description debug">License Upload</h2>
+		</header>
+	</div>
+
+	<section>
+		<form class="form-upload">
+			<input class="file-upload" id="file-chooser" type="file">
+			<p>Drag your license or click in this area.</p>
+			<button class="btn-upload" id="btn-sendfile" type="button">Upload</button>
+			<div class="back-login">
+				<a id="btn-back-login" href="javascript:void(0)">&laquo; Back to the login screen</a>
+			</div>
+		</form>
+	</section>
+
+	<div id="notification">
+		<p>Oops... Something went wrong!</p>
+	</div>
+
+	<script src="js/jquery/jquery.min.js"></script>
+	<script src="upload.js"></script>
+	<script>
+		upload.init();
+	</script>
+</body>
+</html>

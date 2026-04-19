@@ -1,7 +1,12 @@
 # saiku-ui
 
-Vite + TypeScript + React rebuild of the Saiku UI. Phase 4 slice 1: foundation,
-design tokens (light/dark), login page, workspace shell.
+SvelteKit 2 + Svelte 5 (runes) + TypeScript (strict) rewrite of the Saiku UI.
+Phase 4 owns the full feature-complete port of the legacy Backbone UI; see
+[`docs/plans/2026-04-19-phase-4-sveltekit-port.md`](../docs/plans/2026-04-19-phase-4-sveltekit-port.md)
+for the view-by-view inventory and slice ordering.
+
+The original Backbone tree lives under `../saiku-ui-legacy/` as a read-only
+porting reference. It is deleted once the inventory hits 100 %.
 
 ## Dev flow
 
@@ -11,7 +16,7 @@ cd ..
 mvn -DskipTests -Dmaven.test.skip=true -pl saiku-launcher -am package
 java -jar saiku-launcher/target/saiku-3.17.jar serve --port 8080
 
-# Terminal 2 — run the UI in Vite dev mode (proxies /rest/* to :8080)
+# Terminal 2 — run the UI in SvelteKit dev mode (proxies /rest/* to :8080)
 cd saiku-ui
 npm install
 npm run dev
@@ -23,16 +28,7 @@ backend.
 
 ## Scripts
 
-- `npm run dev` — Vite dev server with HMR
-- `npm run build` — type-check (`tsc --noEmit`) and produce `dist/`
+- `npm run dev` — Vite/SvelteKit dev server with HMR
+- `npm run build` — produce static `dist/`
 - `npm run preview` — serve the built bundle locally
-- `npm run typecheck` — type-check only
-
-## Next slices
-
-- AG Grid workspace pivot grid
-- Monaco MDX / SQL editor with discover-backed autocomplete
-- ECharts visualisations (one chart type at a time, visual-regression tested)
-- Playwright smoke tests per screen
-- Maven `frontend-maven-plugin` integration so `mvn package` bundles `dist/`
-  into `saiku-webapp`
+- `npm run check` — `svelte-check` type-check

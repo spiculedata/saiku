@@ -1,0 +1,300 @@
+/*body {
+  display: block;
+  height: 100%;
+  font-family: 'News Cycle',Arial,sans-serif;
+  background: linear-gradient(#fff 0%, #e4e4e4 100%);
+}*/
+
+#splash {
+  width: 100%;
+  height: 100%;
+}
+
+#splash * {
+  margin: 0;
+  padding: 0;
+  text-decoration: none;
+}
+
+#splash nav {
+  float: left;
+  width: 100%;
+  border-bottom: 1px solid #ccc;
+  background: -webkit-gradient(linear,left top,left bottom,color-stop(#fff,0),color-stop(#e4e4e4,1));
+  background: -webkit-linear-gradient(#fff 0%, #e4e4e4 100%);
+  background:    -moz-linear-gradient(#fff 0%, #e4e4e4 100%);
+  background:      -o-linear-gradient(#fff 0%, #e4e4e4 100%);
+  background:         linear-gradient(#fff 0%, #e4e4e4 100%);
+}
+
+#splash nav h2 {
+  float: right;
+  margin-right: 100px;
+  font-weight: 400;
+  line-height: 48px;
+  color: #be1e2d;
+}
+
+#splash nav ul {
+  margin-left: 100px;
+  font-size: 21px;
+  line-height: 48px;
+  list-style: none;
+}
+
+#splash nav ul li {
+  display: inline-block;
+  float: left;
+  padding: 0 40px;
+  border-right: 1px solid #fff;
+}
+
+#splash nav ul li.enterprise {
+  background: -webkit-gradient(linear,left top,left bottom,color-stop(#a62323,0),color-stop(#be1e2d,1));
+  background: -webkit-linear-gradient(#a62323 0%, #be1e2d 100%);
+  background:    -moz-linear-gradient(#a62323 0%, #be1e2d 100%);
+  background:      -o-linear-gradient(#a62323 0%, #be1e2d 100%);
+  background:         linear-gradient(#a62323 0%, #be1e2d 100%);
+}
+
+#splash nav a {
+  color: #a7a9ac;
+}
+
+#splash nav a:hover,
+nav li.active a {
+  color: #6d6e71;
+}
+
+#splash nav li.enterprise a {
+  color: #fff;
+}
+
+#splash .stabs {
+  display: block;
+  float: left;
+  width: 100%;
+  height: 100%;
+  margin: 0 auto;
+}
+
+#splash .stabs section {
+  display: block;
+  width: 1100px;
+  margin: 0 auto;
+}
+
+#splash h1.saikulogo {
+  width: 275px;
+  height: 72px;
+  margin: 0.5%;
+  margin-bottom: 20px;
+  background: url('../../../images/src/saiku.png') center center no-repeat;
+  text-indent: -10000px;
+}
+
+#splash p {
+  max-width: 700px;
+  margin: 0.5%;
+  margin-bottom: 40px;
+}
+
+#splash p.fixed {
+  max-width: 500px;
+}
+
+#splash .stabs h2 {
+  clear: left;
+  margin-bottom: 12px;
+  margin-left: 0.5%;
+  font-weight: 400;
+  color: #6d6e71;
+}
+
+#splash small a {
+  color: #a7a9ac;
+}
+
+#splash ul.quicklinks {
+  float: left;
+  max-width: 500px;
+  margin-bottom: 40px;
+  list-style: none;
+  text-align: center;
+}
+
+#splash ul.quicklinks li {
+  float: left;
+  box-sizing: border-box;
+  width: 48%;
+  margin: 1%;
+  padding-bottom: 3px;
+  line-height: 36px;
+  border: 3px solid #be1e2d;
+  -webkit-border-radius: 4px;
+     -moz-border-radius: 4px;
+          border-radius: 4px;
+}
+
+#splash ul.quicklinks li a {
+  color: #be1e2d;
+}
+
+#splash ul.quicklinks li:hover {
+  background: -webkit-gradient(linear,left top,left bottom,color-stop(#a62323,0),color-stop(#be1e2d,1));
+  background: -webkit-linear-gradient(#a62323 0%, #be1e2d 100%);
+  background:    -moz-linear-gradient(#a62323 0%, #be1e2d 100%);
+  background:      -o-linear-gradient(#a62323 0%, #be1e2d 100%);
+  background:         linear-gradient(#a62323 0%, #be1e2d 100%);
+}
+
+#splash ul.quicklinks li:hover a {
+  color: #fff;
+}
+
+#splash a.button {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 48%;
+  margin: 0;
+  margin-right: 20px;
+  padding-bottom: 3px;
+  line-height: 36px;
+  color: #fff;
+  border: 3px solid #be1e2d;
+  -webkit-border-radius: 4px;
+     -moz-border-radius: 4px;
+          border-radius: 4px;
+  background: -webkit-gradient(linear,left top,left bottom,color-stop(#a62323,0),color-stop(#be1e2d,1));
+  background: -webkit-linear-gradient(#a62323 0%, #be1e2d 100%);
+  background:    -moz-linear-gradient(#a62323 0%, #be1e2d 100%);
+  background:      -o-linear-gradient(#a62323 0%, #be1e2d 100%);
+  background:         linear-gradient(#a62323 0%, #be1e2d 100%);
+  text-align: center;
+}
+
+#splash #welcome {
+  /*background: url('../../../images/src/mac.png') bottom right no-repeat;*/
+  background: url('../../../images/src/mac.png') right 150px no-repeat;
+}
+
+#splash table {
+  width: 100%;
+  color: #6d6e71;
+  text-align: center;
+}
+
+#splash table th {
+  font-size: 24px;
+  font-weight: 400;
+  text-align: center;
+}
+
+#splash a {
+  color: #be1e2d;
+}
+
+#splash a:hover {
+  color: #000;
+}
+
+@media screen and (max-width: 1200px) {
+  #splash {
+    position: inherit;
+    height: 100%;
+  }
+
+  nav ul {
+    margin-left: 0;
+  }
+
+  nav h2 {
+    margin-right: 20px;
+  }
+
+  .stabs section {
+    width: 960px;
+  }
+
+  #welcome {
+    background-size: 60%;
+  }
+}
+
+@media screen and (max-width: 1000px) {
+  #splash {
+    position: inherit;
+    height: 100%;
+  }
+
+  nav h2 {
+    font-size: 18px;
+  }
+
+  nav ul li {
+    font-size: 18px;
+  }
+
+  .stabs section {
+    width: 90%;
+    margin: 0 auto;
+  }
+
+  #welcome {
+    background-size: 40%;
+  }
+}
+
+@media screen and (max-width: 800px) {
+  #splash {
+    position: inherit;
+    height: 100%;
+  }
+
+  nav h2 {
+    font-size: 16px;
+  }
+
+  nav ul li {
+    padding: 0 20px;
+    font-size: 16px;
+  }
+}
+
+@media screen and (max-width: 600px) {
+  #splash {
+    position: inherit;
+    height: 100%;
+  }
+
+  h1.saikulogo {
+    width: 275px;
+    height: 72px;
+    background: url('../../../images/src/saikux2.png') top left no-repeat;
+    background-size: 275px 72px;
+  }
+
+  nav h2 {
+    display: none;
+  }
+
+  nav ul li {
+    width: 25%;
+    padding: 0 0;
+    font-size: 16px;
+    border-right: none;
+    text-align: center;
+  }
+
+  #welcome {
+    background: none;
+  }
+
+  ul.quicklinks li {
+    width: 98%;
+  }
+
+  a.button {
+    width: 96%;
+  }
+}

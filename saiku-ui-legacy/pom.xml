@@ -1,0 +1,318 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+<parent>
+		<artifactId>saiku</artifactId>
+		<groupId>org.saikuanalytics</groupId>
+	<version>3.17</version>
+	</parent>
+	<artifactId>saiku-ui</artifactId>
+	<packaging>pom</packaging>
+	<version>3.17</version>
+        <properties>
+	<checkstyle.skip>true</checkstyle.skip>
+	 <build.prod>false</build.prod>
+     </properties>
+	<build>
+		<pluginManagement>
+			<plugins>
+				<plugin>
+					<groupId>com.samaxes.maven</groupId>
+					<artifactId>minify-maven-plugin</artifactId>
+					<version>1.7.4-modify</version>
+				</plugin>
+			</plugins>
+		</pluginManagement>
+		<plugins>
+			<plugin>
+				<groupId>com.samaxes.maven</groupId>
+				<artifactId>minify-maven-plugin</artifactId>
+				<version>1.7.4-modify</version>
+				<executions>
+				<execution>
+				<id>default-minify</id>
+				<configuration>
+					<closureExterns>
+						<closureExtern>../externs/backbone_externs.js</closureExtern>
+						<closureExtern>../externs/jquery_externs.js</closureExtern>
+						<closureExtern>../externs/underscore_externs.js</closureExtern>
+					</closureExterns>
+					<closureUseDefaultExterns>true</closureUseDefaultExterns>
+					<closureSortDependencies>false</closureSortDependencies>
+					<jsEngine>CLOSURE</jsEngine>
+					<closureLanguage>ECMASCRIPT5</closureLanguage>
+					<jsFinalFile>saiku.js</jsFinalFile>
+					<webappSourceDir>${basedir}/js/saiku/</webappSourceDir>
+					<jsSourceDir>.</jsSourceDir>
+					<jsSourceIncludes>
+						<jsSourceInclude>models/SaikuOlapQuery.js</jsSourceInclude>
+						<jsSourceInclude>models/DateFilter.js</jsSourceInclude>
+						<jsSourceInclude>models/Level.js</jsSourceInclude>
+						<jsSourceInclude>render/SaikuRenderer.js</jsSourceInclude>
+						<jsSourceInclude>render/SaikuTableRenderer.js</jsSourceInclude>
+						<jsSourceInclude>render/SaikuChartRenderer.js</jsSourceInclude>
+						<jsSourceInclude>models/DataSources.js</jsSourceInclude>
+						<jsSourceInclude>models/Dimension.js</jsSourceInclude>
+						<jsSourceInclude>views/DimensionList.js</jsSourceInclude>
+						<jsSourceInclude>views/Toolbar.js</jsSourceInclude>
+						<jsSourceInclude>views/Upgrade.js</jsSourceInclude>
+						<jsSourceInclude>views/Modal.js</jsSourceInclude>
+						<jsSourceInclude>views/MDXModal.js</jsSourceInclude>
+						<jsSourceInclude>views/SelectionsModal.js</jsSourceInclude>
+						<jsSourceInclude>views/DrillthroughModal.js</jsSourceInclude>
+						<jsSourceInclude>views/DrillAcrossModal.js</jsSourceInclude>
+						<jsSourceInclude>views/PermissionsModal.js</jsSourceInclude>
+						<jsSourceInclude>views/DemoLoginForm.js</jsSourceInclude>
+						<jsSourceInclude>views/LoginForm.js</jsSourceInclude>
+						<jsSourceInclude>views/AboutModal.js</jsSourceInclude>
+						<jsSourceInclude>views/OverwriteModal.js</jsSourceInclude>
+						<jsSourceInclude>views/AddFolderModal.js</jsSourceInclude>
+						<jsSourceInclude>views/FilterModal.js</jsSourceInclude>
+						<jsSourceInclude>views/StringFilterModal.js</jsSourceInclude>
+						<jsSourceInclude>views/CustomFilterModal.js</jsSourceInclude>
+						<jsSourceInclude>views/CalculatedMemberModal.js</jsSourceInclude>
+						<jsSourceInclude>views/GrowthModal.js</jsSourceInclude>
+						<jsSourceInclude>views/FormatAsPercentageModal.js</jsSourceInclude>
+						<jsSourceInclude>views/ParentMemberSelectorModal.js</jsSourceInclude>
+						<jsSourceInclude>views/DataSourcesModal.js</jsSourceInclude>
+						<jsSourceInclude>views/QueryToolbar.js</jsSourceInclude>
+						<jsSourceInclude>views/WorkspaceToolbar.js</jsSourceInclude>
+						<jsSourceInclude>views/WorkspaceDropZone.js</jsSourceInclude>
+						<jsSourceInclude>views/Table.js</jsSourceInclude>
+						<jsSourceInclude>views/Workspace.js</jsSourceInclude>
+						<jsSourceInclude>views/DeleteRepositoryObject.js</jsSourceInclude>
+						<jsSourceInclude>views/MoveRepositoryObject.js</jsSourceInclude>
+						<jsSourceInclude>views/OpenQuery.js</jsSourceInclude>
+						<jsSourceInclude>views/SaveQuery.js</jsSourceInclude>
+						<jsSourceInclude>views/OpenDialog.js</jsSourceInclude>
+						<jsSourceInclude>views/Tab.js</jsSourceInclude>
+						<jsSourceInclude>views/TabSet.js</jsSourceInclude>
+						<jsSourceInclude>models/Repository.js</jsSourceInclude>
+						<jsSourceInclude>models/Result.js</jsSourceInclude>
+						<jsSourceInclude>models/QueryAction.js</jsSourceInclude>
+						<jsSourceInclude>models/QueryScenario.js</jsSourceInclude>
+						<jsSourceInclude>models/Query.js</jsSourceInclude>
+						<jsSourceInclude>models/Session.js</jsSourceInclude>
+						<jsSourceInclude>views/SessionErrorModal.js</jsSourceInclude>
+						<jsSourceInclude>views/SplashScreen.js</jsSourceInclude>
+						<jsSourceInclude>models/SessionWorkspace.js</jsSourceInclude>
+						<jsSourceInclude>models/Member.js</jsSourceInclude>
+						<jsSourceInclude>models/Plugin.js</jsSourceInclude>
+						<jsSourceInclude>models/Settings.js</jsSourceInclude>
+						<jsSourceInclude>models/License.js</jsSourceInclude>
+						<jsSourceInclude>Saiku.js</jsSourceInclude>
+						<jsSourceInclude>views/DateFilterModal.js</jsSourceInclude>
+						<jsSourceInclude>views/WarningModal.js</jsSourceInclude>
+						<jsSourceInclude>views/TitlesModal.js</jsSourceInclude>
+						<jsSourceInclude>adapters/SaikuServer.js</jsSourceInclude>
+						<jsSourceInclude>routers/QueryRouter.js</jsSourceInclude>
+						<jsSourceInclude>views/ChartEditor.js</jsSourceInclude>
+						<jsSourceInclude>views/Tour.js</jsSourceInclude>
+					</jsSourceIncludes>
+					<jsSourceExcludes>
+						<jsSourceExclude>Settings.js</jsSourceExclude>
+						<jsSourceExclude>**/plugins/**/*.js</jsSourceExclude>
+					</jsSourceExcludes>
+					</configuration>
+					<goals>
+						<goal>minify</goal>
+					</goals>
+				</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<artifactId>maven-resources-plugin</artifactId>
+				<version>2.7</version>
+				<executions>
+					<execution>
+						<id>copy-resources</id>
+						<phase>validate</phase>
+						<goals>
+							<goal>copy-resources</goal>
+						</goals>
+						<configuration>
+							<outputDirectory>${basedir}/target/saiku-ui/js/saiku</outputDirectory>
+						<resources>
+							<resource>
+								<directory>js/saiku</directory>
+								<filtering>true</filtering>
+								<includes>
+									<include>Settings.js</include>
+									<include>Settings.yaml</include>
+								</includes>
+							</resource>
+						</resources>
+						</configuration>
+					</execution>
+					<execution>
+						<id>copy-resources2</id>
+						<phase>validate</phase>
+						<goals>
+							<goal>copy-resources</goal>
+						</goals>
+						<configuration>
+							<outputDirectory>${basedir}/target/saiku-ui2/js/saiku</outputDirectory>
+							<resources>
+								<resource>
+									<directory>js/saiku</directory>
+									<filtering>true</filtering>
+									<includes>
+										<include>Settings.js</include>
+										<include>Settings.yaml</include>
+									</includes>
+								</resource>
+							</resources>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-antrun-plugin</artifactId>
+				<version>1.2</version>
+				<dependencies>
+					<dependency>
+						<groupId>ant-contrib</groupId>
+						<artifactId>ant-contrib</artifactId>
+						<version>1.0b3</version>
+						<exclusions>
+							<exclusion>
+								<groupId>ant</groupId>
+								<artifactId>ant</artifactId>
+							</exclusion>
+						</exclusions>
+					</dependency>
+					<dependency>
+						<groupId>org.apache.ant</groupId>
+						<artifactId>ant-nodeps</artifactId>
+						<version>1.8.1</version>
+					</dependency>
+				</dependencies>
+				<executions>
+					<execution>
+						<id>copy-package</id>
+						<phase>package</phase>
+						<goals>
+							<goal>run</goal>
+						</goals>
+						<configuration>
+							<tasks>
+							<mkdir dir="target/saiku-ui" />
+								<mkdir dir="target/saiku-ui2" />
+
+                                <copy file="target/saiku-ui-${project.version}/saiku.min.js" tofile="target/saiku-ui/saiku.min.js" />
+								<taskdef resource="net/sf/antcontrib/antcontrib.properties" classpathref="maven.plugin.classpath" />
+								<!--<if>
+								<equals arg1="${build.prod}" arg2="true" />
+								<then>-->
+									<copy todir="target/saiku-ui">
+										<fileset dir="${basedir}/">
+											<exclude name="js/saiku/" />
+											<exclude name="target/" />
+											<exclude name="pom.xml" />
+											<exclude name=".git/" />
+											<exclude name=".gitignore" />
+											<exclude name="utils/" />
+
+										</fileset>
+										<fileset dir="${basedir}/">
+											<include name="js/saiku/embed/" />
+											<include name="js/saiku/plugins/" />
+											<include name="js/saiku/render/" />
+
+											<include name="js/saiku/Settings.js" />
+											<include name="js/saiku/Settings.yaml" />
+											<include name="js/saiku/Saiku.js" />
+
+											<include name="js/saiku/adapters/" />
+											<include name="js/saiku/models/" />
+											<include name="js/saiku/render/" />
+											<include name="js/saiku/routers/" />
+											<include name="js/saiku/tests/" />
+											<include name="js/saiku/views/" />
+
+										</fileset>
+									</copy>
+
+									<copy todir="target/saiku-ui2">
+										<fileset dir="${basedir}/">
+											<exclude name="target/" />
+											<exclude name="pom.xml" />
+											<exclude name=".git/" />
+											<exclude name=".gitignore" />
+											<exclude name="utils/" />
+
+										</fileset>
+										<fileset dir="${basedir}/">
+											<include name="js/saiku/plugins/" />
+											<include name="js/saiku/Settings.js" />
+											<include name="js/saiku/Settings.yaml" />
+											<include name="js/saiku/Saiku.js" />
+										</fileset>
+									</copy>
+									<zip destfile="target/saiku-ui-nomunge-${project.version}.war">
+										<zipfileset dir="target/saiku-ui2/" />
+									</zip>
+								<zip destfile="target/saiku-ui-${project.version}.zip">
+									<zipfileset dir="target/saiku-ui/" />
+								</zip>
+								<zip destfile="target/saiku-ui-${project.version}.war">
+									<zipfileset dir="target/saiku-ui/" />
+								</zip>
+
+							</tasks>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+			    <groupId>org.codehaus.mojo</groupId>
+			    <artifactId>build-helper-maven-plugin</artifactId>
+			    <version>1.7</version>
+			    <executions>
+			        <execution>
+			            <id>attach-artifacts</id>
+			            <phase>package</phase>
+			            <goals>
+			                <goal>attach-artifact</goal>
+			            </goals>
+			            <configuration>
+							<artifacts>
+			                    <artifact>
+			                        <file>target/saiku-ui-${project.version}.war</file>
+			                        <type>war</type>
+			                    </artifact>
+								<artifact>
+									<file>target/saiku-ui-nomunge-${project.version}.war</file>
+									<classifier>nomin</classifier>
+									<type>war</type>
+								</artifact>
+			                     <artifact>
+			                        <file>target/saiku-ui-${project.version}.zip</file>
+			                        <type>zip</type>
+			                    </artifact>
+			                </artifacts>
+			            </configuration>
+			        </execution>
+			    </executions>
+			</plugin>
+
+		</plugins>
+	</build>
+     <repositories>
+        <repository>
+            <id>jsdoctk1</id>
+            <url>http://jsdoctk-plugin.googlecode.com/svn/repo</url>
+        </repository>
+    </repositories>
+    <pluginRepositories>
+        <pluginRepository>
+            <id>jsdoctk2</id>
+            <url>http://jsdoctk-plugin.googlecode.com/svn/repo</url>
+        </pluginRepository>
+        <pluginRepository>
+            <name>oss.sonatype.org</name>
+            <id>oss.sonatype.org</id>
+            <url>http://oss.sonatype.org/content/groups/public</url>
+        </pluginRepository>
+    </pluginRepositories>
+</project>

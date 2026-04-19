@@ -1,0 +1,42 @@
+{
+    "path": {
+        "css": [
+            "css/saiku/src/*.css",
+            "embed/*.css",
+            "embed/**/*.css",
+            "js/saiku/plugins/CCC_Chart/*.css",
+            "js/saiku/plugins/Dashboards/css/*.css",
+            "js/saiku/plugins/SchemaDesigner/css/*.css"
+        ],
+        "html": [
+            "./*.html",
+            "embed/*.html"
+        ],
+        "js": [
+            "embed/*.js",
+            "js/saiku/*.js",
+            "js/saiku/adapters/*.js",
+            "js/saiku/embed/*.js",
+            "js/saiku/plugins/AdminConsole/*.js",
+            "js/saiku/plugins/BIServer/*.js",
+            "js/saiku/plugins/CCC_Chart/*.js",
+            "js/saiku/plugins/Dashboards/*.js",
+            "js/saiku/plugins/Dashboards/js/dialogs/*.js",
+            "js/saiku/plugins/Dashboards/js/models/*.js",
+            "js/saiku/plugins/Dashboards/js/ui/*.js",
+            "js/saiku/plugins/filters/*.js",
+            "js/saiku/plugins/Fullscreen/*.js",
+            "js/saiku/plugins/I18n/*.js",
+            "js/saiku/plugins/I18n/po/*.json",
+            "js/saiku/plugins/SchemaDesigner/*.js",
+            "js/saiku/plugins/SchemaDesigner/js/dialogs/*.js",
+            "js/saiku/plugins/SchemaDesigner/js/models/*.js",
+            "js/saiku/plugins/SchemaDesigner/js/ui/*.js",
+            "js/saiku/plugins/Statistics/*.json",
+            "js/saiku/models/*.js",
+            "js/saiku/render/*.js",
+            "js/saiku/routers/*.js",
+            "js/saiku/views/*.js"
+        ]
+    }
+}

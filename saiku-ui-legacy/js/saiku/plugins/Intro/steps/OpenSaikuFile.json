@@ -1,0 +1,18 @@
+{
+  "steps": [
+    {
+      "element": ".search_file",
+      "intro": "Enter a name here from a saiku file"
+    },
+    {
+      "element": ".RepositoryObjects",
+      "intro": "Select a file",
+      "position": "right"
+    },
+    {
+      "element": ".dialog_footer",
+      "intro": "Open the file",
+      "position": "right"
+    }
+  ]
+}

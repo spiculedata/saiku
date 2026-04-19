@@ -1,0 +1,59 @@
+{
+  "name": "saiku-ui",
+  "description": "A user interface for the Saiku analytical tool",
+  "homepage": "http://www.meteorite.bi/saiku",
+  "author": {
+    "name": "Meteorite BI",
+    "email": "info@meteorite.bi",
+    "web": "http://www.meteorite.bi"
+  },
+  "contributors": [
+    {
+      "name": "Breno Polanski",
+      "url": "https://github.com/brenopolanski"
+    },
+    {
+      "name": "Bruno Gama Catão",
+      "url": "https://github.com/brunogamacatao"
+    },
+    {
+      "name": "Tom Barber",
+      "url": "https://github.com/buggtb"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:OSBI/saiku.git"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "meteorite-bi",
+    "saiku",
+    "saiku-ui",
+    "user-interface",
+    "analytics-client",
+    "business-intelligence"
+  ],
+  "bugs": {
+    "url": "https://github.com/OSBI/saiku/issues"
+  },
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js 9999 127.0.0.1 8080",
+    "dev": "npm start & gulp"
+  },
+  "engines": {
+    "node": ">=0.10.x",
+    "npm": ">=1.3.x"
+  },
+  "dependencies": {
+    "express": "^4.13.4"
+  },
+  "devDependencies": {
+    "browser-sync": "^2.18.12",
+    "eslint": "^4.18.1",
+    "gulp": "^3.9.1",
+    "proxy-middleware": "^0.15.0",
+    "url": "^0.11.0"
+  }
+}

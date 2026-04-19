@@ -1,0 +1,26 @@
+{
+  "Loading...": "ローディング．．．",
+  "Username": "ユーザー名",
+  "Password": "パスワード",
+  "Evaluation Login": "評価ログイン",
+  "Administrator": "システム管理者",
+  "Username: admin": "ユーザー名: admin",
+  "Password: admin": "パスワード: admin",
+  " Login ": "ログイン",
+  "Loading datasources....": "ローディング データソース．．．",
+  "New query": "新規クエリー",
+  "Open query": "クエリーを開く",
+  "Logout": "ログアウト",
+  "About": "Saiku について",
+  "Help": "ヘルプ",
+  "New": "新規",
+  "Duplicate": "重複",
+  "Close Others": "その他を閉じる",
+  "Close This": "これを閉じる",
+  "Open": "開く",
+  "Edit": "編集",
+  "Delete": "削除",
+  "New Folder": "新規フォルダー",
+
+
+}

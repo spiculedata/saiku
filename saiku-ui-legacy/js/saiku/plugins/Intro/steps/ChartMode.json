@@ -1,0 +1,79 @@
+{
+  "steps": [
+    {
+      "element": ".export_button",
+      "intro": "Export graphics in the format: PNG, JPG and PDF",
+      "position": "left"
+    },
+    {
+      "element": ".bar",
+      "intro": "Bar Chart",
+      "position": "left"
+    },
+    {
+      "element": ".stackedBar",
+      "intro": "Stacked Bar Chart",
+      "position": "left"
+    },
+    {
+      "element": ".stackedBar100",
+      "intro": "Bar 100% Chart",
+      "position": "left"
+    },
+    {
+      "element": ".multiple",
+      "intro": "Multiple Bar Chart",
+      "position": "left"
+    },
+    {
+      "element": ".line",
+      "intro": "Line Chart",
+      "position": "left"
+    },
+    {
+      "element": ".area",
+      "intro": "Area Chart",
+      "position": "left"
+    },
+    {
+      "element": ".heatgrid",
+      "intro": "Heat Grid Chart",
+      "position": "left"
+    },
+    {
+      "element": ".treemap",
+      "intro": "Tree Map Chart",
+      "position": "left"
+    },
+    {
+      "element": ".sunburst",
+      "intro": "Sunburst Chart",
+      "position": "left"
+    },
+    {
+      "element": ".multiplesunburst",
+      "intro": "Multi Sunburst Chart",
+      "position": "left"
+    },
+    {
+      "element": ".dot",
+      "intro": "Dot Chart",
+      "position": "left"
+    },
+    {
+      "element": ".waterfall",
+      "intro": "Waterfall Chart",
+      "position": "left"
+    },
+    {
+      "element": ".pie",
+      "intro": "Pie Chart",
+      "position": "left"
+    },
+    {
+      "element": ".radar",
+      "intro": "Radar Chart",
+      "position": "left"
+    }
+  ]
+}

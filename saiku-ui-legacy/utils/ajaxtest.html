@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+        <title>Saiku - Next Generation Open Source Analytics</title>
+        <link rel="stylesheet" href="http://ajax.googleapis.com/ajax/libs/jqueryui/1.7.2/themes/smoothness/jquery-ui.css" type="text/css" media="all" />
+        </head>
+    <body>
+       <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.6.2/jquery.min.js"></script>
+       <script src="http://ajax.googleapis.com/ajax/libs/jqueryui/1.8.14/jquery-ui.min.js" type="text/javascript"></script>
+        <script type="text/javascript">
+        ;(function (window) {
+
+  var
+    characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=',
+    fromCharCode = String.fromCharCode,
+    INVALID_CHARACTER_ERR = (function () {
+      // fabricate a suitable error object
+      try { document.createElement('$'); }
+      catch (error) { return error; }}());
+
+  // encoder
+  window.Base64 || (
+  window.Base64 = { encode: function (string) {
+    var
+      a, b, b1, b2, b3, b4, c, i = 0,
+      len = string.length, max = Math.max, result = '';
+
+    while (i < len) {
+      a = string.charCodeAt(i++) || 0;
+      b = string.charCodeAt(i++) || 0;
+      c = string.charCodeAt(i++) || 0;
+
+      if (max(a, b, c) > 0xFF) {
+        throw INVALID_CHARACTER_ERR;
+      }
+
+      b1 = (a >> 2) & 0x3F;
+      b2 = ((a & 0x3) << 4) | ((b >> 4) & 0xF);
+      b3 = ((b & 0xF) << 2) | ((c >> 6) & 0x3);
+      b4 = c & 0x3F;
+
+      if (!b) {
+        b3 = b4 = 64;
+      } else if (!c) {
+        b4 = 64;
+      }
+      result += characters.charAt(b1) + characters.charAt(b2) + characters.charAt(b3) + characters.charAt(b4);
+    }
+    return result;
+  }});
+
+}(this));
+        </script>
+        Cookie:<div id="cookie" />
+        <div>
+                Login<br>
+                <input type="text" id="username"/></br>
+                Password<br>
+                <input type="text" id="password"/></br>
+                User:<div id="user" ></div>
+                Pass:<div id="pass" ></div>
+                </br>
+        </div>
+        <input id="call" type="submit" value="login"/><br/>
+        <input id="session" type="submit" value="session"/><br/>
+        <input id="test" type="submit" value="test"/><br/>
+        <input id="logout" type="submit" value="logout"/><br/>
+        Request:<div id="result"></div>
+        Logout:<div id="logoutresult"></div>
+        
+        <script type="text/javascript"> 
+        
+        var username='';
+        var password='';
+                success = function(data, textStatus, jqXHR) {
+                            $("<span style='color:green;'>" + username + ":" + password + " = " + jqXHR.status + " … " +jqXHR.statusText + " </span><br/>").appendTo("#result");
+                };
+        
+                failure = function(jqXHR, textStatus, errorThrown) {
+                        
+                            $("<span style='color:red;'>" + username + ":" + password + " = " + jqXHR.status + " … " +jqXHR.statusText + " </span><br/>").appendTo("#result");
+                };
+
+        $('#call').click(function() {
+                username= $('#username').val();
+                password= $('#password').val();
+                
+                this.success = function(data, textStatus, jqXHR) {
+                            $("<span style='color:green;'>" + username + ":" + password + " = " + jqXHR.status + " … " +jqXHR.statusText + "..." + JSON.stringify(data) + " </span><br/>").appendTo("#result");
+                };
+        
+                this.failure = function(jqXHR, textStatus, errorThrown) {
+                        
+                            $("<span style='color:red;'>" + username + ":" + password + " = " + jqXHR.status + " … " +jqXHR.statusText + " </span><br/>").appendTo("#result");
+                };
+
+                params = {
+                    url:          "/saiku/rest/session",
+                    type:         "POST",
+                    cache:        false,
+                    contentType:  'application/x-www-form-urlencoded',
+                    success:      success,
+                    error:        failure,
+                    data: {username:username, password:password},
+                    beforeSend:   function(request) {
+//                                                    alert('xhr:' + username + ":" + password);
+
+//                                        var auth = "Basic " + Base64.encode(username + ":" + password);
+//                                      request.setRequestHeader('Authorization', auth);
+                                    }
+                };
+                
+
+            $.ajax(params);
+            return false;
+        });
+        
+                $('#test').click(function() {
+                username= $('#username').val();
+                password= $('#password').val();
+                
+
+                params = {
+                    url:          "/saiku/rest/saiku/{username}/discover",
+                    type:         "GET",
+                    cache:        false,
+                    contentType:  'application/x-www-form-urlencoded',
+                    success:      success,
+                    error:        failure,
+                    beforeSend:   function(request) {
+//                                                    alert('xhr:' + username + ":" + password);
+
+//                                        var auth = "Basic " + Base64.encode(username + ":" + password);
+//                                      request.setRequestHeader('Authorization', auth);
+                                    }
+                };
+                
+
+            $.ajax(params);
+            return false;
+        });
+
+      $('#session').click(function() {
+                username= $('#username').val();
+                password= $('#password').val();
+                
+
+                params = {
+                    url:          "/saiku/rest/session",
+                    type:         "GET",
+                    cache:        false,
+                    contentType:  'application/x-www-form-urlencoded',
+                    success:      success,
+                    error:        failure,
+                };
+                
+
+            $.ajax(params);
+            return false;
+        });
+        
+         $('#logout').click(function() {
+                $.ajax({
+                    url: "/saiku/rest/session",
+                    type: "DELETE", 
+                });
+                return false;
+        });
+
+        </script>
+        
+    </body>
+</html>

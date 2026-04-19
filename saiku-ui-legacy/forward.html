@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+    <body>
+        
+        <script type="text/javascript">
+
+            var loc = window.location.pathname;
+            var pathArray = (loc + "").split("/");
+            var path = pathArray[pathArray.length - 2].replace(/:/g, "/");
+            var mode = pathArray[pathArray.length - 1];
+            var modeUrl ="";
+            if (mode == "run") {
+                modeUrl = "&MODE=VIEW";
+            }
+            window.location = "../../../content/saiku-ui/index.html?biplugin5=true" + modeUrl + "&dimension_prefetch=false#query/open/" +  path;
+
+
+
+
+        </script>
+    </body>
+</html>

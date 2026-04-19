@@ -1,0 +1,7 @@
+<ifmodule mod_expires.c>
+	ExpiresDefault "access plus 1 month"
+</ifmodule>
+
+<IfModule mod_headers.c>
+   Header set Cache-Control "max-age=2592000, proxy-revalidate"
+</IfModule>
