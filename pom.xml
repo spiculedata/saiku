@@ -48,8 +48,8 @@
     </distributionManagement>
     -->
     <properties>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
         <top.dir>${project.basedir}</top.dir>
         <spring.version>4.1.6.RELEASE</spring.version>
         <spring.security.version>4.0.1.RELEASE</spring.security.version>
