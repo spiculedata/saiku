@@ -2,13 +2,43 @@
   import { datasources } from "$lib/stores/datasources.svelte";
   import { selection } from "$lib/stores/selection.svelte";
   import type { CubeMetadata } from "$lib/stores/datasources.svelte";
-  import type { SaikuCube } from "$lib/api/discover";
+  import type { SaikuCube, SaikuDimension, SaikuHierarchy, SaikuLevel, SaikuMeasure } from "$lib/api/discover";
+  import type { ThinMeasure } from "$lib/api/query";
 
   interface Props {
     username: string;
   }
 
   let { username }: Props = $props();
+
+  function onLevelDragStart(
+    e: DragEvent,
+    dim: SaikuDimension,
+    hier: SaikuHierarchy,
+    lvl: SaikuLevel,
+  ): void {
+    const payload = {
+      dimensionUniqueName: dim.uniqueName,
+      hierarchyName: hier.name,
+      hierarchyUniqueName: hier.uniqueName,
+      hierarchyCaption: hier.caption || hier.name,
+      levelName: lvl.name,
+      levelCaption: lvl.caption || lvl.name,
+    };
+    e.dataTransfer?.setData("application/x-saiku-level", JSON.stringify(payload));
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+  }
+
+  function onMeasureDragStart(e: DragEvent, m: SaikuMeasure): void {
+    const thin: ThinMeasure = {
+      name: m.name,
+      uniqueName: m.uniqueName,
+      caption: m.caption || m.name,
+      type: m.calculated ? "CALCULATED" : "EXACT",
+    };
+    e.dataTransfer?.setData("application/x-saiku-measure", JSON.stringify(thin));
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+  }
 
   let metadata = $state<CubeMetadata | null>(null);
   let loading = $state(false);
@@ -79,7 +109,13 @@
               <ul class="tree">
                 {#each items as measure}
                   <li class="tree__node">
-                    <button type="button" class="tree__row tree__row--measure" draggable="true" title={measure.caption}>
+                    <button
+                      type="button"
+                      class="tree__row tree__row--measure"
+                      draggable="true"
+                      title={measure.caption}
+                      ondragstart={(e) => onMeasureDragStart(e, measure)}
+                    >
                       <span class="tree__icon" aria-hidden="true">Σ</span>
                       <span class="tree__label">{measure.caption || measure.name}</span>
                     </button>
@@ -111,7 +147,13 @@
                 {#each dim.hierarchies ?? [] as hier}
                   {#each hier.levels ?? [] as lvl}
                     <li class="tree__node">
-                      <button type="button" class="tree__row tree__row--level" draggable="true" title={lvl.caption}>
+                      <button
+                        type="button"
+                        class="tree__row tree__row--level"
+                        draggable="true"
+                        title={lvl.caption}
+                        ondragstart={(e) => onLevelDragStart(e, dim, hier, lvl)}
+                      >
                         <span class="tree__icon" aria-hidden="true">—</span>
                         <span class="tree__label">{lvl.caption || lvl.name}</span>
                       </button>

@@ -12,10 +12,17 @@
   import WarningModal from "$lib/modals/WarningModal.svelte";
   import { repository } from "$lib/stores/repository.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { query } from "$lib/stores/query.svelte";
 
   let autorun = $state(true);
   let nonEmpty = $state(true);
-  let dirty = $state(false);
+
+  $effect(() => {
+    if (query.current?.queryModel) {
+      query.current.queryModel.axes.ROWS.nonEmpty = nonEmpty;
+      query.current.queryModel.axes.COLUMNS.nonEmpty = nonEmpty;
+    }
+  });
 
   let saveOpen = $state(false);
   let openOpen = $state(false);
@@ -30,7 +37,7 @@
   }
 
   function onNew() {
-    if (dirty) {
+    if (query.dirty) {
       confirmNewOpen = true;
     } else {
       resetQuery();
@@ -38,7 +45,9 @@
   }
 
   function resetQuery() {
-    dirty = false;
+    const cube = query.current?.cube ?? null;
+    query.reset();
+    if (cube) query.initFor(cube);
     toasts.info("New query", "A fresh query workspace has been opened.");
   }
 
@@ -52,20 +61,32 @@
     saveOpen = true;
   }
 
-  function onRun() {
-    warningMessage = "Query execution wires into /rest/saiku/api/query in the next Phase 4 slice.";
-    warningOpen = true;
+  async function onRun() {
+    if (!query.current) {
+      warningMessage = "Select a cube before running a query.";
+      warningOpen = true;
+      return;
+    }
+    await query.run();
   }
 
-  function stubExport(kind: string) {
-    toasts.info(`Export (${kind})`, "Export handlers land in the export slice.");
+  function exportCurrent(kind: "xls" | "csv" | "pdf") {
+    if (!query.current) {
+      warningMessage = "Run a query first before exporting.";
+      warningOpen = true;
+      return;
+    }
+    const name = encodeURIComponent(query.current.name);
+    const url = `/rest/saiku/api/query/${name}/export/${kind}`;
+    window.open(url, "_blank");
   }
 
   function onSavePick(folder: string, name: string) {
     saveOpen = false;
     toasts.success("Saved (stub)", `${folder || "/"}/${name}`);
-    // Real save wires into query.saveAs() once query execution ships.
-    dirty = false;
+    // Real save wires into repository.saveResource() once query serialization
+    // matches the legacy .saiku JSON format.
+    query.dirty = false;
   }
 
   function onOpenPick(entry: RepoEntry) {
@@ -93,14 +114,14 @@
   </div>
   <div class="toolbar__sep"></div>
   <div class="toolbar__group">
-    <button class="btn" title="Swap axes" onclick={() => toasts.info("Swap axes", "Handler wires in query execution slice.")}>⇄ Swap</button>
+    <button class="btn" title="Swap axes" onclick={() => { query.swapAxes(); if (autorun) query.run(); }}>⇄ Swap</button>
     <button class="btn" title="Show MDX" onclick={() => toasts.info("MDX editor", "Monaco-backed MDX modal ships in the MDX slice.")}>MDX</button>
   </div>
   <div class="toolbar__spacer"></div>
   <div class="toolbar__group">
-    <button class="btn" title="Export XLS" onclick={() => stubExport("XLS")}>XLS</button>
-    <button class="btn" title="Export CSV" onclick={() => stubExport("CSV")}>CSV</button>
-    <button class="btn" title="Export PDF" onclick={() => stubExport("PDF")}>PDF</button>
+    <button class="btn" title="Export XLS" onclick={() => exportCurrent("xls")}>XLS</button>
+    <button class="btn" title="Export CSV" onclick={() => exportCurrent("csv")}>CSV</button>
+    <button class="btn" title="Export PDF" onclick={() => exportCurrent("pdf")}>PDF</button>
   </div>
 </div>
 
