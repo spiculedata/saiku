@@ -17,20 +17,23 @@
 </label>
 
 <style>
-  .locale { cursor: pointer; padding-right: 6px; }
+  .locale { cursor: pointer; line-height: 1; }
   .locale select {
     background: transparent;
     color: inherit;
     border: none;
     outline: none;
     font: inherit;
+    line-height: inherit;
     cursor: pointer;
     appearance: none;
-    padding: 0 18px 0 0;
+    margin: 0;
+    padding: 0 14px 0 0;
+    height: auto;
     background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
                       linear-gradient(135deg, currentColor 50%, transparent 50%);
-    background-position: calc(100% - 10px) 55%, calc(100% - 5px) 55%;
-    background-size: 5px 5px, 5px 5px;
+    background-position: calc(100% - 8px) 55%, calc(100% - 4px) 55%;
+    background-size: 4px 4px, 4px 4px;
     background-repeat: no-repeat;
   }
   .locale select:focus { outline: none; }
