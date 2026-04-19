@@ -7,18 +7,32 @@
   import UpgradeBanner from "$lib/components/UpgradeBanner.svelte";
   import LocalePicker from "$lib/components/LocalePicker.svelte";
   import Tour from "$lib/components/Tour.svelte";
+  import SessionErrorModal from "$lib/modals/SessionErrorModal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
+  import { installAuthInterceptor, onAuthFailure } from "$lib/api/http";
   import "$lib/styles/tokens.css";
   import "$lib/styles/app.css";
 
   let { children } = $props();
 
+  let sessionError = $state<{ open: boolean; message: string }>({ open: false, message: "" });
+
   // Keep a reference so $effect runs in this layout's context.
   theme;
 
   onMount(() => {
+    installAuthInterceptor();
+    const unsub = onAuthFailure((status) => {
+      if (session.current) {
+        sessionError = {
+          open: true,
+          message: `Your session ended (${status}).`,
+        };
+      }
+    });
     session.bootstrap();
     platform.ping();
+    return () => unsub();
   });
 
   $effect(() => {
@@ -68,6 +82,14 @@
   </main>
   <ToastStack />
   {#if session.current}<Tour />{/if}
+  <SessionErrorModal
+    message={sessionError.message}
+    open={sessionError.open}
+    onReload={() => {
+      sessionError = { open: false, message: "" };
+      location.reload();
+    }}
+  />
 </div>
 
 <style>
