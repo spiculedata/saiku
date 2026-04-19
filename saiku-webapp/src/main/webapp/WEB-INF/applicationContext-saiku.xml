@@ -33,7 +33,17 @@
     </security:http>
     <security:http pattern="/repository/**" security="none">
     </security:http>
-    <security:http auto-config='true' use-expressions="true"> 
+    <security:http pattern="/ui/**" security="none">
+    </security:http>
+    <security:http pattern="/" security="none">
+    </security:http>
+    <security:http pattern="/index.jsp" security="none">
+    </security:http>
+    <security:http pattern="/style.css" security="none">
+    </security:http>
+    <security:http pattern="/images/**" security="none">
+    </security:http>
+    <security:http auto-config='true' use-expressions="true">
       <!--access-denied-page="/login.jsp"-->
       <security:csrf disabled="true"/>
       <security:intercept-url pattern="/serverdocs/**" access="isAnonymous()" />

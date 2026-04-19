@@ -92,7 +92,12 @@ public class SaikuLauncher implements Callable<Integer> {
             }));
 
             server.start();
-            System.out.println("Saiku ready at http://" + host + ":" + port + contextPath);
+            String base = "http://" + host + ":" + port + contextPath;
+            if (!base.endsWith("/")) base = base + "/";
+            System.out.println("Saiku ready:");
+            System.out.println("  Workspace : " + base + "ui/");
+            System.out.println("  Admin     : " + base + "ui/admin");
+            System.out.println("  REST API  : " + base + "rest/saiku/");
             server.join();
             return 0;
         }

@@ -4,3 +4,4 @@ dist/
 .vite/
 *.local
 .DS_Store
+.node/

@@ -237,6 +237,9 @@
                         <phase>generate-resources</phase>
                         <configuration>
                             <arguments>run build</arguments>
+                            <environmentVariables>
+                                <SAIKU_BASE_PATH>/ui</SAIKU_BASE_PATH>
+                            </environmentVariables>
                         </configuration>
                     </execution>
                 </executions>
