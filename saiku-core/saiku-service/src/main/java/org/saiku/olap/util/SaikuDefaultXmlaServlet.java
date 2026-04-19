@@ -16,79 +16,73 @@
 
 package org.saiku.olap.util;
 
-import org.saiku.datasources.connection.IConnectionManager;
-import org.saiku.olap.util.exception.SaikuOlapException;
-
-import org.olap4j.OlapConnection;
-import org.springframework.web.context.WebApplicationContext;
-import org.springframework.web.context.support.WebApplicationContextUtils;
-
 import java.sql.SQLException;
 import java.util.Map;
 import java.util.Properties;
-
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
-
 import mondrian.xmla.XmlaHandler;
 import mondrian.xmla.XmlaRequest;
 import mondrian.xmla.impl.DefaultXmlaServlet;
+import org.olap4j.OlapConnection;
+import org.saiku.datasources.connection.IConnectionManager;
+import org.saiku.olap.util.exception.SaikuOlapException;
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.web.context.support.WebApplicationContextUtils;
 
 /**
  * Created by bugg on 30/03/15.
  */
-public class SaikuDefaultXmlaServlet extends DefaultXmlaServlet{
+public class SaikuDefaultXmlaServlet extends DefaultXmlaServlet {
 
-  private static IConnectionManager connections;
+    private static IConnectionManager connections;
 
-  public SaikuDefaultXmlaServlet() {
-    super();
+    public SaikuDefaultXmlaServlet() {
+        super();
+    }
 
+    @Override
+    public void init(ServletConfig config) throws ServletException {
+        super.init(config);
 
-  }
-  @Override
-  public void init(ServletConfig config) throws ServletException{
-    super.init(config);
+        ServletContext context = getServletContext();
 
-    ServletContext context = getServletContext();
+        WebApplicationContext applicationContext = WebApplicationContextUtils.getWebApplicationContext(context);
+        connections = (IConnectionManager) applicationContext.getBean("connectionManager");
+    }
 
-    WebApplicationContext applicationContext =
-        WebApplicationContextUtils
-            .getWebApplicationContext(context);
-    connections = (IConnectionManager) applicationContext.getBean("connectionManager");
-  }
-  @Override
-  protected XmlaHandler.ConnectionFactory createConnectionFactory(ServletConfig servletConfig) throws ServletException {
-    return new XmlaHandler.ConnectionFactory() {
-      private final XmlaHandler.XmlaExtra extra =
-          new XmlaHandler.XmlaExtraImpl();
-      public OlapConnection getConnection(String s, String s1, String s2, Properties properties) throws SQLException {
-        try {
-          connections.refreshAllConnections();
-          return connections.getOlapConnection(System.getProperty("xmla_datasource"));
-        } catch (SaikuOlapException e) {
-          e.printStackTrace();
-        }
-        return null;
-      }
+    @Override
+    protected XmlaHandler.ConnectionFactory createConnectionFactory(ServletConfig servletConfig)
+            throws ServletException {
+        return new XmlaHandler.ConnectionFactory() {
+            private final XmlaHandler.XmlaExtra extra = new XmlaHandler.XmlaExtraImpl();
 
-      public Map<String, Object> getPreConfiguredDiscoverDatasourcesResponse() {
+            public OlapConnection getConnection(String s, String s1, String s2, Properties properties)
+                    throws SQLException {
+                try {
+                    connections.refreshAllConnections();
+                    return connections.getOlapConnection(System.getProperty("xmla_datasource"));
+                } catch (SaikuOlapException e) {
+                    e.printStackTrace();
+                }
+                return null;
+            }
 
-        return null; //getDiscoverDatasourcesPreConfiguredResponse(servletConfig);
-      }
+            public Map<String, Object> getPreConfiguredDiscoverDatasourcesResponse() {
 
-      public XmlaHandler.Request startRequest(XmlaRequest xmlaRequest, OlapConnection olapConnection) {
-        return null;
-      }
+                return null; // getDiscoverDatasourcesPreConfiguredResponse(servletConfig);
+            }
 
-      public void endRequest(XmlaHandler.Request request) {
+            public XmlaHandler.Request startRequest(XmlaRequest xmlaRequest, OlapConnection olapConnection) {
+                return null;
+            }
 
-      }
+            public void endRequest(XmlaHandler.Request request) {}
 
-      public XmlaHandler.XmlaExtra getExtra() {
-        return extra;
-      }
-    };
-  }
+            public XmlaHandler.XmlaExtra getExtra() {
+                return extra;
+            }
+        };
+    }
 }

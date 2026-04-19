@@ -5,29 +5,28 @@ import org.olap4j.metadata.Measure;
 
 public class MaxAggregator extends TotalAggregator {
 
-  MaxAggregator(Format format) {
-    super( format );
-  }
-
-  private Double max = null;
-
-  @Override
-  public void addData( double data ) {
-    if ( max == null ) {
-      max = data;
-    } else if ( max < data ) {
-      max = data;
+    MaxAggregator(Format format) {
+        super(format);
     }
-  }
 
-  @Override
-  public Double getValue() {
-    return max;
-  }
+    private Double max = null;
 
-  @Override
-  public TotalAggregator newInstance( Format format, Measure measure ) {
-    return new MaxAggregator( format );
-  }
+    @Override
+    public void addData(double data) {
+        if (max == null) {
+            max = data;
+        } else if (max < data) {
+            max = data;
+        }
+    }
 
+    @Override
+    public Double getValue() {
+        return max;
+    }
+
+    @Override
+    public TotalAggregator newInstance(Format format, Measure measure) {
+        return new MaxAggregator(format);
+    }
 }

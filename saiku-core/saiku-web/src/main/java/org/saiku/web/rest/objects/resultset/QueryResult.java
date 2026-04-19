@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,111 +16,124 @@
 package org.saiku.web.rest.objects.resultset;
 
 import java.util.List;
-
 import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.service.util.ISaikuQuery;
 import org.saiku.web.rest.util.RestUtil;
 
 public class QueryResult {
-	
-	private List<Cell[]> cellset;
+
+    private List<Cell[]> cellset;
     private Total[][] rowTotalsLists;
     private Total[][] colTotalsLists;
-	private Integer runtime;
-	private String error;
-	private Integer height;
-	private Integer width;
-	private ISaikuQuery query;
-	private int topOffset;
-	private int leftOffset;
-	
-	public QueryResult(List<Cell[]> cellset, CellDataSet cellDataSet) {
-		this(cellset, cellDataSet.getRuntime(), cellDataSet.getWidth(), cellDataSet.getHeight(), cellDataSet.getLeftOffset(), cellDataSet.getTopOffset(), RestUtil.convertTotals(cellDataSet.getRowTotalsLists()), RestUtil.convertTotals(cellDataSet.getColTotalsLists()));
-	}
-	
-	private QueryResult(List<Cell[]> cellset, int runtime, int width, int height, int leftOffset, int topOffset,
-						Total[][] rowTotalsLists, Total[][] colTotalsLists) {
-		this(cellset, runtime, width, height);
-		this.rowTotalsLists = rowTotalsLists;
-		this.colTotalsLists = colTotalsLists;
-		this.topOffset = topOffset;
-		this.leftOffset = leftOffset;
-	}
-	public QueryResult(List<Cell[]> cellset, int runtime, int width, int height) {
-		this.cellset = cellset;
-		this.runtime = runtime;
-		this.height = height;
-		this.width = width;
-	}
-	
-	public QueryResult(String error) {
-		this.error = error;
-	}
+    private Integer runtime;
+    private String error;
+    private Integer height;
+    private Integer width;
+    private ISaikuQuery query;
+    private int topOffset;
+    private int leftOffset;
 
-	public List<Cell[]> getCellset() {
-		return cellset;
-	}
+    public QueryResult(List<Cell[]> cellset, CellDataSet cellDataSet) {
+        this(
+                cellset,
+                cellDataSet.getRuntime(),
+                cellDataSet.getWidth(),
+                cellDataSet.getHeight(),
+                cellDataSet.getLeftOffset(),
+                cellDataSet.getTopOffset(),
+                RestUtil.convertTotals(cellDataSet.getRowTotalsLists()),
+                RestUtil.convertTotals(cellDataSet.getColTotalsLists()));
+    }
 
-	public Integer getRuntime() {
-		return runtime;
-	}
+    private QueryResult(
+            List<Cell[]> cellset,
+            int runtime,
+            int width,
+            int height,
+            int leftOffset,
+            int topOffset,
+            Total[][] rowTotalsLists,
+            Total[][] colTotalsLists) {
+        this(cellset, runtime, width, height);
+        this.rowTotalsLists = rowTotalsLists;
+        this.colTotalsLists = colTotalsLists;
+        this.topOffset = topOffset;
+        this.leftOffset = leftOffset;
+    }
 
-	public String getError() {
-		return error;
-	}
+    public QueryResult(List<Cell[]> cellset, int runtime, int width, int height) {
+        this.cellset = cellset;
+        this.runtime = runtime;
+        this.height = height;
+        this.width = width;
+    }
 
-	public Integer getHeight() {
-		return height;
-	}
+    public QueryResult(String error) {
+        this.error = error;
+    }
 
-	public Integer getWidth() {
-		return width;
-	}
-	
-	public void setRuntime(Integer runtime) {
-		this.runtime = runtime;
-	}
+    public List<Cell[]> getCellset() {
+        return cellset;
+    }
 
-	public void setHeight(Integer height) {
-		this.height = height;
-	}
+    public Integer getRuntime() {
+        return runtime;
+    }
 
-	public void setWidth(Integer width) {
-		this.width = width;
-	}
+    public String getError() {
+        return error;
+    }
 
-	public void setQuery(ThinQuery query) {
-		this.query = query;
-		
-	}
+    public Integer getHeight() {
+        return height;
+    }
 
-	public ISaikuQuery getQuery() {
-		return query;
-	}
+    public Integer getWidth() {
+        return width;
+    }
 
-	public Total[][] getRowTotalsLists() {
-		return rowTotalsLists;
-	}
+    public void setRuntime(Integer runtime) {
+        this.runtime = runtime;
+    }
 
-	public void setRowTotalsLists(Total[][] rowTotalsLists) {
-		this.rowTotalsLists = rowTotalsLists;
-	}
-	
-	public Total[][] getColTotalsLists() {
-		return colTotalsLists;
-	}
+    public void setHeight(Integer height) {
+        this.height = height;
+    }
 
-	public void setColTotalsLists(Total[][] colTotalsLists) {
-		this.colTotalsLists = colTotalsLists;
-	}
+    public void setWidth(Integer width) {
+        this.width = width;
+    }
 
-	public int getTopOffset() {
-		return topOffset;
-	}
+    public void setQuery(ThinQuery query) {
+        this.query = query;
+    }
 
-	public int getLeftOffset() {
-		return leftOffset;
-	}
+    public ISaikuQuery getQuery() {
+        return query;
+    }
 
+    public Total[][] getRowTotalsLists() {
+        return rowTotalsLists;
+    }
+
+    public void setRowTotalsLists(Total[][] rowTotalsLists) {
+        this.rowTotalsLists = rowTotalsLists;
+    }
+
+    public Total[][] getColTotalsLists() {
+        return colTotalsLists;
+    }
+
+    public void setColTotalsLists(Total[][] colTotalsLists) {
+        this.colTotalsLists = colTotalsLists;
+    }
+
+    public int getTopOffset() {
+        return topOffset;
+    }
+
+    public int getLeftOffset() {
+        return leftOffset;
+    }
 }

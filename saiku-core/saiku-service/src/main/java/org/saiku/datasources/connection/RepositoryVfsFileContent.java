@@ -11,128 +11,92 @@ import org.apache.commons.vfs.FileSystemException;
 import org.apache.commons.vfs.RandomAccessContent;
 import org.apache.commons.vfs.util.RandomAccessMode;
 
-class RepositoryVfsFileContent
-        implements FileContent
-{
+class RepositoryVfsFileContent implements FileContent {
     private RepositoryVfsFileObject fileObject = null;
     private InputStream inputStream = null;
     private boolean isOpen;
 
-    public RepositoryVfsFileContent(){
+    public RepositoryVfsFileContent() {}
 
-    }
-
-    public RepositoryVfsFileContent(RepositoryVfsFileObject repositoryVfsFileObject)
-    {
+    public RepositoryVfsFileContent(RepositoryVfsFileObject repositoryVfsFileObject) {
         this.fileObject = repositoryVfsFileObject;
     }
 
-    public FileObject getFile()
-    {
+    public FileObject getFile() {
         return this.fileObject;
     }
 
-    public long getSize()
-            throws FileSystemException
-    {
+    public long getSize() throws FileSystemException {
         return 0L;
     }
 
-    public long getLastModifiedTime()
-            throws FileSystemException
-    {
+    public long getLastModifiedTime() throws FileSystemException {
         return 0L;
     }
 
-    public void setLastModifiedTime(long l)
-            throws FileSystemException
-    {}
+    public void setLastModifiedTime(long l) throws FileSystemException {}
 
     public boolean hasAttribute(String s) {
         return false;
     }
 
-    public Map getAttributes()
-            throws FileSystemException
-    {
+    public Map getAttributes() throws FileSystemException {
         return null;
     }
 
-    public String[] getAttributeNames()
-            throws FileSystemException
-    {
+    public String[] getAttributeNames() throws FileSystemException {
         return new String[0];
     }
 
-    public Object getAttribute(String s)
-            throws FileSystemException
-    {
+    public Object getAttribute(String s) throws FileSystemException {
         return null;
     }
 
-    public void setAttribute(String s, Object o)
-            throws FileSystemException
-    {}
+    public void setAttribute(String s, Object o) throws FileSystemException {}
 
     public void removeAttribute(String s) {}
 
-    public Certificate[] getCertificates()
-            throws FileSystemException
-    {
+    public Certificate[] getCertificates() throws FileSystemException {
         return new Certificate[0];
     }
 
-    public InputStream getInputStream()
-            throws FileSystemException
-    {
+    public InputStream getInputStream() throws FileSystemException {
         this.inputStream = this.fileObject.getInputStream();
         this.isOpen = true;
         return this.inputStream;
     }
 
-    public OutputStream getOutputStream()
-            throws FileSystemException
-    {
+    public OutputStream getOutputStream() throws FileSystemException {
         return null;
     }
 
-    public RandomAccessContent getRandomAccessContent(RandomAccessMode randomAccessMode)
-            throws FileSystemException
-    {
+    public RandomAccessContent getRandomAccessContent(RandomAccessMode randomAccessMode) throws FileSystemException {
         return null;
     }
 
-    public OutputStream getOutputStream(boolean b)
-            throws FileSystemException
-    {
+    public OutputStream getOutputStream(boolean b) throws FileSystemException {
         return null;
     }
 
-    public void close()
-            throws FileSystemException
-    {
+    public void close() throws FileSystemException {
         if (!this.isOpen) {
             return;
         }
         if (this.inputStream != null) {
-            try
-            {
+            try {
                 this.inputStream.close();
+            } catch (Exception e) {
             }
-            catch (Exception e) {}
         }
         this.isOpen = false;
         this.fileObject.close();
     }
 
-    public FileContentInfo getContentInfo()
-            throws FileSystemException
-    {
+    public FileContentInfo getContentInfo() throws FileSystemException {
         return null;
     }
 
-    public boolean isOpen()
-    {
+    public boolean isOpen() {
         return false;
     }
 }

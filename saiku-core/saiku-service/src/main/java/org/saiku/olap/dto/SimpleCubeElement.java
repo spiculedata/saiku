@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,21 +15,18 @@
  */
 package org.saiku.olap.dto;
 
-
 public class SimpleCubeElement extends AbstractSaikuObject {
 
-  private String caption;
+    private String caption;
 
-  public SimpleCubeElement() {
-  }
+    public SimpleCubeElement() {}
 
-  public SimpleCubeElement( String name, String uniqueName, String caption ) {
-    super( uniqueName, name );
-    this.caption = caption;
-  }
+    public SimpleCubeElement(String name, String uniqueName, String caption) {
+        super(uniqueName, name);
+        this.caption = caption;
+    }
 
-  public String getCaption() {
-    return caption;
-  }
-
+    public String getCaption() {
+        return caption;
+    }
 }

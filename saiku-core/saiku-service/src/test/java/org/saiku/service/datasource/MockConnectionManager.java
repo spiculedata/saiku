@@ -1,22 +1,17 @@
 package org.saiku.service.datasource;
 
+import java.util.Map;
 import org.olap4j.OlapConnection;
 import org.saiku.datasources.connection.IConnectionManager;
 import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.olap.util.exception.SaikuOlapException;
 
-import java.util.Map;
-
 public class MockConnectionManager implements IConnectionManager {
     @Override
-    public void init() throws SaikuOlapException {
-
-    }
+    public void init() throws SaikuOlapException {}
 
     @Override
-    public void setDataSourceManager(IDatasourceManager ds) {
-
-    }
+    public void setDataSourceManager(IDatasourceManager ds) {}
 
     @Override
     public IDatasourceManager getDataSourceManager() {
@@ -24,14 +19,10 @@ public class MockConnectionManager implements IConnectionManager {
     }
 
     @Override
-    public void refreshConnection(String name) {
-
-    }
+    public void refreshConnection(String name) {}
 
     @Override
-    public void refreshAllConnections() {
-
-    }
+    public void refreshAllConnections() {}
 
     @Override
     public OlapConnection getOlapConnection(String name) throws SaikuOlapException {

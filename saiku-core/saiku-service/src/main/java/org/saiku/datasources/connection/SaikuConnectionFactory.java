@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,21 +17,19 @@ package org.saiku.datasources.connection;
 
 import org.saiku.datasources.datasource.SaikuDatasource;
 
-
 public class SaikuConnectionFactory {
 
-
-  public static ISaikuConnection getConnection( SaikuDatasource datasource ) throws Exception {
-    if(datasource!=null) {
-      switch( datasource.getType() ) {
-        case OLAP:
-          ISaikuConnection con = new SaikuOlapConnection( datasource.getName(), datasource.getProperties() );
-          if ( con.connect() ) {
-            return con;
-          }
-          break;
-      }
+    public static ISaikuConnection getConnection(SaikuDatasource datasource) throws Exception {
+        if (datasource != null) {
+            switch (datasource.getType()) {
+                case OLAP:
+                    ISaikuConnection con = new SaikuOlapConnection(datasource.getName(), datasource.getProperties());
+                    if (con.connect()) {
+                        return con;
+                    }
+                    break;
+            }
+        }
+        return null;
     }
-    return null;
-  }
 }

@@ -1,9 +1,7 @@
 package org.saiku.service.importer;
 
-
-import org.saiku.repository.IRepositoryManager;
-
 import java.util.List;
+import org.saiku.repository.IRepositoryManager;
 
 public interface LegacyImporter {
 

@@ -4,66 +4,75 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ThinFilter {
-	
-	private FilterFlavour flavour;
-	private FilterOperator operator;
-	private FilterFunction function;
-	private List<String> expressions = new ArrayList<>();
 
-	public enum FilterFlavour {
-		Generic, Measure, Name, NameLike, N
-	}
-	
-	public enum FilterOperator {
-		EQUALS, NOTEQUAL, GREATER, GREATER_EQUALS, SMALLER, SMALLER_EQUALS, LIKE
-	}
+    private FilterFlavour flavour;
+    private FilterOperator operator;
+    private FilterFunction function;
+    private List<String> expressions = new ArrayList<>();
 
-	public enum FilterFunction {
-		Filter, TopCount, TopPercent, TopSum, BottomCount, BottomPercent, BottomSum
-	}
+    public enum FilterFlavour {
+        Generic,
+        Measure,
+        Name,
+        NameLike,
+        N
+    }
 
-	public ThinFilter() {}
+    public enum FilterOperator {
+        EQUALS,
+        NOTEQUAL,
+        GREATER,
+        GREATER_EQUALS,
+        SMALLER,
+        SMALLER_EQUALS,
+        LIKE
+    }
 
-  public ThinFilter(
-			FilterFlavour flavour, 
-			FilterOperator operator,
-			FilterFunction function, 
-			List<String> expressions) 
-	{
-		this.flavour = flavour;
-		this.operator = operator;
-		this.function = function;
-		this.expressions = expressions;
-	}
+    public enum FilterFunction {
+        Filter,
+        TopCount,
+        TopPercent,
+        TopSum,
+        BottomCount,
+        BottomPercent,
+        BottomSum
+    }
 
-	/**
-	 * @return the flavour
-	 */
-	public FilterFlavour getFlavour() {
-		return flavour;
-	}
+    public ThinFilter() {}
 
-	/**
-	 * @return the operator
-	 */
-	public FilterOperator getOperator() {
-		return operator;
-	}
+    public ThinFilter(
+            FilterFlavour flavour, FilterOperator operator, FilterFunction function, List<String> expressions) {
+        this.flavour = flavour;
+        this.operator = operator;
+        this.function = function;
+        this.expressions = expressions;
+    }
 
-	/**
-	 * @return the function
-	 */
-	public FilterFunction getFunction() {
-		return function;
-	}
+    /**
+     * @return the flavour
+     */
+    public FilterFlavour getFlavour() {
+        return flavour;
+    }
 
-	/**
-	 * @return the expressions
-	 */
-	public List<String> getExpressions() {
-		return expressions;
-	}
-	
-	
+    /**
+     * @return the operator
+     */
+    public FilterOperator getOperator() {
+        return operator;
+    }
 
+    /**
+     * @return the function
+     */
+    public FilterFunction getFunction() {
+        return function;
+    }
+
+    /**
+     * @return the expressions
+     */
+    public List<String> getExpressions() {
+        return expressions;
+    }
 }

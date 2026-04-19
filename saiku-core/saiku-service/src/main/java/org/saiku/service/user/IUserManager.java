@@ -1,27 +1,26 @@
 package org.saiku.service.user;
 
-import org.saiku.database.dto.SaikuUser;
-
 import java.util.List;
+import org.saiku.database.dto.SaikuUser;
 
 /**
  * Created by bugg on 01/05/14.
  */
 public interface IUserManager {
 
-  SaikuUser addUser(SaikuUser u);
+    SaikuUser addUser(SaikuUser u);
 
-  boolean deleteUser(SaikuUser u);
+    boolean deleteUser(SaikuUser u);
 
-  SaikuUser setUser(SaikuUser u);
+    SaikuUser setUser(SaikuUser u);
 
-  SaikuUser getUser(int id);
+    SaikuUser getUser(int id);
 
-  String[] getRoles(SaikuUser u);
+    String[] getRoles(SaikuUser u);
 
-  void addRole(SaikuUser u);
+    void addRole(SaikuUser u);
 
-  void removeRole(SaikuUser u);
+    void removeRole(SaikuUser u);
 
     void removeUser(String username);
 
@@ -33,6 +32,5 @@ public interface IUserManager {
 
     String getActiveUsername();
 
-
-  String getSessionId();
+    String getSessionId();
 }

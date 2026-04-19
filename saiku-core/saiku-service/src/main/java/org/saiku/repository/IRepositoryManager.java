@@ -15,41 +15,38 @@
  */
 package org.saiku.repository;
 
-
-import org.saiku.datasources.connection.RepositoryFile;
-import org.saiku.service.user.UserService;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
-
 import javax.jcr.RepositoryException;
+import org.saiku.datasources.connection.RepositoryFile;
+import org.saiku.service.user.UserService;
 
 /**
  * Repository Manager Interface
  */
 public interface IRepositoryManager {
-  void init();
+    void init();
 
-  boolean start(UserService userService) throws RepositoryException;
+    boolean start(UserService userService) throws RepositoryException;
 
-  void createUser( String u ) throws RepositoryException;
+    void createUser(String u) throws RepositoryException;
 
-  Object getHomeFolders() throws RepositoryException;
+    Object getHomeFolders() throws RepositoryException;
 
-  Object getHomeFolder( String directory ) throws RepositoryException;
+    Object getHomeFolder(String directory) throws RepositoryException;
 
-  Object getFolder( String user, String directory ) throws RepositoryException;
+    Object getFolder(String user, String directory) throws RepositoryException;
 
-  void shutdown();
+    void shutdown();
 
-  boolean createFolder( String username, String folder ) throws RepositoryException;
+    boolean createFolder(String username, String folder) throws RepositoryException;
 
-  boolean deleteFolder( String folder ) throws RepositoryException;
+    boolean deleteFolder(String folder) throws RepositoryException;
 
-  void deleteRepository() throws RepositoryException;
+    void deleteRepository() throws RepositoryException;
 
-  boolean moveFolder(String user, String folder, String source, String target) throws RepositoryException;
+    boolean moveFolder(String user, String folder, String source, String target) throws RepositoryException;
 
     Object saveFile(Object file, String path, String user, String type, List<String> roles) throws RepositoryException;
 
@@ -57,10 +54,9 @@ public interface IRepositoryManager {
 
     void moveFile(String source, String target, String user, List<String> roles) throws RepositoryException;
 
-
     Object saveInternalFile(Object file, String path, String type) throws RepositoryException;
 
-  Object saveBinaryInternalFile(InputStream file, String path, String type) throws RepositoryException;
+    Object saveBinaryInternalFile(InputStream file, String path, String type) throws RepositoryException;
 
     String getFile(String s, String username, List<String> roles) throws RepositoryException;
 
@@ -84,8 +80,8 @@ public interface IRepositoryManager {
 
     List<IRepositoryObject> getAllFiles(List<String> type, String username, List<String> roles);
 
-    List<IRepositoryObject> getAllFiles(List<String> type, String username, List<String> roles, String path) throws
-        RepositoryException;
+    List<IRepositoryObject> getAllFiles(List<String> type, String username, List<String> roles, String path)
+            throws RepositoryException;
 
     void deleteFile(String datasourcePath);
 
@@ -98,5 +94,4 @@ public interface IRepositoryManager {
     void createFileMixin(String type) throws RepositoryException;
 
     Object getRepositoryObject();
-
 }

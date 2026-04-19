@@ -12,8 +12,7 @@ public class RepositoryFile {
     private String fileId = null;
     private byte[] data;
 
-    private RepositoryFile() {
-    }
+    private RepositoryFile() {}
 
     public RepositoryFile(String fileName, RepositoryFile parent, byte[] data) {
         this(fileName, parent, data, System.currentTimeMillis());

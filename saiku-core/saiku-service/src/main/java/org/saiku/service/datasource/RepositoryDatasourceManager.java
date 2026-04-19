@@ -16,8 +16,15 @@
 
 package org.saiku.service.datasource;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.*;
+import javax.jcr.PathNotFoundException;
+import javax.jcr.RepositoryException;
+import javax.servlet.http.HttpSession;
 import org.apache.commons.lang.StringUtils;
-import org.apache.commons.lang.SystemUtils;
 import org.saiku.database.dto.MondrianSchema;
 import org.saiku.datasources.connection.IConnectionManager;
 import org.saiku.datasources.connection.ISaikuConnection;
@@ -28,33 +35,11 @@ import org.saiku.service.importer.JujuSource;
 import org.saiku.service.importer.LegacyImporter;
 import org.saiku.service.importer.LegacyImporterImpl;
 import org.saiku.service.user.UserService;
-import org.saiku.service.util.exception.SaikuServiceException;
-
 import org.saiku.service.util.security.authentication.PasswordProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.session.SessionRegistry;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
-
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Paths;
-import java.util.*;
-
-import javax.jcr.PathNotFoundException;
-import javax.jcr.RepositoryException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpSession;
-
 import org.springframework.context.ApplicationListener;
 import org.springframework.security.web.session.HttpSessionCreatedEvent;
-
 
 /**
  * A Datasource Manager for the Saiku Repository API layer.
@@ -62,8 +47,9 @@ import org.springframework.security.web.session.HttpSessionCreatedEvent;
 public class RepositoryDatasourceManager implements IDatasourceManager, ApplicationListener<HttpSessionCreatedEvent> {
     public static final String ORBIS_WORKSPACE_DIR = "workspace";
     public static final String SAIKU_AUTH_PRINCIPAL = "SAIKU_AUTH_PRINCIPAL";
-    
-    private final Map<String, SaikuDatasource> datasources = Collections.synchronizedMap(new HashMap<String, SaikuDatasource>());
+
+    private final Map<String, SaikuDatasource> datasources =
+            Collections.synchronizedMap(new HashMap<String, SaikuDatasource>());
     public IConnectionManager connectionManager;
     private ScopedRepo sessionRegistry;
     private boolean workspaces;
@@ -91,15 +77,15 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     private String database;
     private String datasourceProcessor;
     private String connectionProcessor;
-    
+
     public void setConnectionManager(IConnectionManager connectionManager) {
-      this.connectionManager = connectionManager;
+        this.connectionManager = connectionManager;
     }
-  
+
     // Whenever a new Spring Security Session
     public void onApplicationEvent(HttpSessionCreatedEvent sessionEvent) {
-      // Reload the datasources
-      loadDatasources(checkForExternalDataSourceProperties());
+        // Reload the datasources
+        loadDatasources(checkForExternalDataSourceProperties());
     }
 
     public void load() {
@@ -108,12 +94,19 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         // Instantiate the appropriate repository manager
         if (type.equals("classpath")) {
             separator = "/";
-            log.debug("init datadir= "+datadir);
-            irm = ClassPathRepositoryManager.getClassPathRepositoryManager(cleanse(datadir), defaultRole, sessionRegistry, workspaces);
-            log.debug("2nd init datadir= "+datadir);
+            log.debug("init datadir= " + datadir);
+            irm = ClassPathRepositoryManager.getClassPathRepositoryManager(
+                    cleanse(datadir), defaultRole, sessionRegistry, workspaces);
+            log.debug("2nd init datadir= " + datadir);
         } else {
-            irm = JackRabbitRepositoryManager.getJackRabbitRepositoryManager(configurationpath, datadir, repopasswordprovider.getPassword(),
-                    oldpassword, defaultRole, sessionRegistry, workspaces);
+            irm = JackRabbitRepositoryManager.getJackRabbitRepositoryManager(
+                    configurationpath,
+                    datadir,
+                    repopasswordprovider.getPassword(),
+                    oldpassword,
+                    defaultRole,
+                    sessionRegistry,
+                    workspaces);
         }
 
         // Perform the repository manager startup routines
@@ -144,7 +137,6 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         }
 
         return p;
-
     }
 
     public String[] getAvailablePropertiesKeys() {
@@ -180,7 +172,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         if (ds.getCsv() != null && ds.getCsv().equals("true")) {
             String split[] = ds.getLocation().split("=");
             String loc = split[2];
-            if(split[2].startsWith("mondrian:")){
+            if (split[2].startsWith("mondrian:")) {
                 split[2] = "mondrian:/" + getDatadir() + "datasources/" + ds.getName() + "-csv.json;Catalog";
             } else {
                 split[2] = getDatadir() + "datasources/" + ds.getName() + "-csv.json;Catalog";
@@ -202,20 +194,20 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
             path = path.replaceAll("[/]+", "/");
 
             log.debug("Trimmed path is: " + path);
-            if(!datadir.equals("${CLASSPATH_REPO_PATH_UNPARSED}")) {
+            if (!datadir.equals("${CLASSPATH_REPO_PATH_UNPARSED}")) {
                 path = path.replaceFirst(getDatadir(), "");
             }
-            
+
             // When using Jackrabbit, paths should follow JCR standards
             if (this.type.equals("jackrabbit")) {
-              if (!path.startsWith("mondrian://")) {
-                String oldHomePrefix = "/homes/";
-                String newHomePrefix = "mondrian://homes/home:";
+                if (!path.startsWith("mondrian://")) {
+                    String oldHomePrefix = "/homes/";
+                    String newHomePrefix = "mondrian://homes/home:";
 
-                path = newHomePrefix + path.substring(oldHomePrefix.length());
-              }
+                    path = newHomePrefix + path.substring(oldHomePrefix.length());
+                }
             }
-            
+
             boolean f = true;
 
             if (new File(getDatadir() + path).exists() && new File(getDatadir() + path).isDirectory()) {
@@ -225,23 +217,27 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
             path = path.replace("\\", "/");
             path = path.replaceAll("[/]+", "/");
 
-            if(!path.startsWith("mondrian:")) {
+            if (!path.startsWith("mondrian:")) {
                 String pathToSave = getDatadir() + path;
 
                 pathToSave = pathToSave.replace("\\", "/");
                 pathToSave = pathToSave.replaceAll("[/]+", "/");
 
-                irm.saveInternalFile(this.getCSVJson(f, ds.getName(), pathToSave),
-                    separator + "datasources" + separator + ds.getName() + "-csv.json", null);
-            } else{
-                irm.saveInternalFile(this.getCSVJson(f, ds.getName(), path),
-                    separator + "datasources" + separator + ds.getName() + "-csv.json", null);
+                irm.saveInternalFile(
+                        this.getCSVJson(f, ds.getName(), pathToSave),
+                        separator + "datasources" + separator + ds.getName() + "-csv.json",
+                        null);
+            } else {
+                irm.saveInternalFile(
+                        this.getCSVJson(f, ds.getName(), path),
+                        separator + "datasources" + separator + ds.getName() + "-csv.json",
+                        null);
             }
 
             irm.saveDataSource(ds, separator + "datasources" + separator + ds.getName() + ".sds", "fixme");
-            
+
             String name = ds.getName();
-            
+
             // Adding the connection before refreshing it
             SaikuDatasource sds = new SaikuDatasource(name, SaikuDatasource.Type.OLAP, datasource.getProperties());
             datasources.put(ds.getName(), sds);
@@ -254,7 +250,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
 
         String name = ds.getName();
         SaikuDatasource sds = new SaikuDatasource(name, SaikuDatasource.Type.OLAP, datasource.getProperties());
-        
+
         // It stores the datasource name prefixed with the workspace name
         datasources.put(name, sds);
 
@@ -276,7 +272,6 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
             } catch (RepositoryException e) {
                 log.error("Could not add data source" + datasource.getName(), e);
             }
-
         }
         return dsources;
     }
@@ -294,7 +289,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
                 if (data.getId().equals(datasourceId)) {
                     datasources.remove(data.getName());
                     String path = data.getPath();
-                    if(!datadir.equals("${CLASSPATH_REPO_PATH_UNPARSED}")) {
+                    if (!datadir.equals("${CLASSPATH_REPO_PATH_UNPARSED}")) {
                         path = path.replaceFirst(datadir, "");
                     }
                     irm.deleteFile(path);
@@ -324,12 +319,10 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         } else {
             return false;
         }
-
-
     }
 
     public Map<String, SaikuDatasource> getDatasources(String[] roles) {
-      return datasources;
+        return datasources;
     }
 
     public SaikuDatasource getDatasource(String datasourceName) {
@@ -350,7 +343,6 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
 
     public void addSchema(String file, String path, String name) throws Exception {
         irm.saveInternalFile(file, path, "nt:mondrianschema");
-
     }
 
     public List<MondrianSchema> getMondrianSchema() {
@@ -363,14 +355,13 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     }
 
     public MondrianSchema getMondrianSchema(String catalog) {
-        //return irm.getMondrianSchema();
+        // return irm.getMondrianSchema();
         return null;
     }
 
     public RepositoryFile getFile(String file) {
         return irm.getFile(file);
     }
-
 
     public String getFileData(String file, String username, List<String> roles) {
         try {
@@ -384,15 +375,11 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     public String getInternalFileData(String file) throws RepositoryException {
 
         return irm.getInternalFile(file);
-
-
     }
 
     public InputStream getBinaryInternalFileData(String file) throws RepositoryException {
 
         return irm.getBinaryInternalFile(file);
-
-
     }
 
     public String saveFile(String path, Object content, String user, List<String> roles) {
@@ -467,7 +454,6 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         return null;
     }
 
-
     public void createUser(String username) {
         try {
             irm.createUser(username);
@@ -495,7 +481,6 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
             log.error("Set ACL Failed", e);
         }
     }
-
 
     public void setUserService(UserService userService) {
         this.userService = userService;
@@ -564,7 +549,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     }
 
     public void setDatadir(String datadir) {
-            datadir=datadir.replaceFirst(":", ":/");
+        datadir = datadir.replaceFirst(":", ":/");
 
         this.datadir = datadir;
     }
@@ -595,20 +580,21 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
             return "/";
         }
     }
-    
+
     private String getCookieUsername() {
-      String cookieUsername = null;
-      javax.servlet.http.HttpSession session = getSession(); // Use a variable instead of a method call for debugging purposes
-      
-      if (session != null && workspaces && session.getAttribute(SAIKU_AUTH_PRINCIPAL) != null) {
-        cookieUsername = (String) session.getAttribute(SAIKU_AUTH_PRINCIPAL);
-      }
-      
-      if (cookieUsername != null && cookieUsername.trim().length() == 0) {
-        cookieUsername = null;
-      }
-      
-      return cookieUsername;
+        String cookieUsername = null;
+        javax.servlet.http.HttpSession session =
+                getSession(); // Use a variable instead of a method call for debugging purposes
+
+        if (session != null && workspaces && session.getAttribute(SAIKU_AUTH_PRINCIPAL) != null) {
+            cookieUsername = (String) session.getAttribute(SAIKU_AUTH_PRINCIPAL);
+        }
+
+        if (cookieUsername != null && cookieUsername.trim().length() == 0) {
+            cookieUsername = null;
+        }
+
+        return cookieUsername;
     }
 
     private String getworkspacedir() {
@@ -679,7 +665,6 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         return earthquakeschema;
     }
 
-
     public void setEarthquakeUrl(String earthquakeurl) {
         this.earthquakeurl = earthquakeurl;
     }
@@ -720,9 +705,9 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     public void setType(String type) {
         this.type = type;
     }
-    
+
     public String getType() {
-      return this.type;
+        return this.type;
     }
 
     private String getCSVJson(boolean file, String name, String path) {
@@ -733,40 +718,38 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         if (!file) {
             p = "directory: '" + path + "'\n";
 
-            return "{\n" +
-                    "version: '1.0',\n" +
-                    "defaultSchema: '" + name + "',\n" +
-                    "schemas: [\n" +
-                    "{\n" +
-                    "name: '" + name + "',\n" +
-                    "type: 'custom',\n" +
-                    "factory: 'org.apache.calcite.adapter.csv.CsvSchemaFactory',\n" +
-                    "operand: {\n" +
-                    p +
-                    "}\n" +
-                    "}\n" +
-                    "]\n" +
-                    "}";
+            return "{\n" + "version: '1.0',\n"
+                    + "defaultSchema: '"
+                    + name + "',\n" + "schemas: [\n"
+                    + "{\n"
+                    + "name: '"
+                    + name + "',\n" + "type: 'custom',\n"
+                    + "factory: 'org.apache.calcite.adapter.csv.CsvSchemaFactory',\n"
+                    + "operand: {\n"
+                    + p
+                    + "}\n"
+                    + "}\n"
+                    + "]\n"
+                    + "}";
         } else {
             p = "file: '" + path + "',";
 
-            return "{\n" +
-                    "version: '1.0',\n" +
-                    "defaultSchema: '" + name + "',\n" +
-                    "schemas: [\n" +
-                    "{\n" +
-                    "name: '" + name + "',\n" +
-                    "tables:[{\n" +
-                    "name: '" + name + "1',\n" +
-                    "type: 'custom',\n" +
-                    "factory: 'org.apache.calcite.adapter.csv.CsvTableFactory',\n" +
-                    "operand: {\n" +
-                    p +
-                    "flavor: 'scannable'\n" +
-                    "}\n" +
-                    "}]}\n" +
-                    "]\n" +
-                    "}";
+            return "{\n" + "version: '1.0',\n"
+                    + "defaultSchema: '"
+                    + name + "',\n" + "schemas: [\n"
+                    + "{\n"
+                    + "name: '"
+                    + name + "',\n" + "tables:[{\n"
+                    + "name: '"
+                    + name + "1',\n" + "type: 'custom',\n"
+                    + "factory: 'org.apache.calcite.adapter.csv.CsvTableFactory',\n"
+                    + "operand: {\n"
+                    + p
+                    + "flavor: 'scannable'\n"
+                    + "}\n"
+                    + "}]}\n"
+                    + "]\n"
+                    + "}";
         }
     }
 
@@ -778,15 +761,14 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         this.sessionRegistry = sessionRegistry;
     }
 
-
     public void setWorkspaces(String workspaces) {
         this.workspaces = Boolean.parseBoolean(workspaces);
     }
 
     public List<JujuSource> getJujuDatasources() {
-                LegacyImporter l = new LegacyImporterImpl(null);
-                return l.importJujuDatasources();
-        }
+        LegacyImporter l = new LegacyImporterImpl(null);
+        return l.importJujuDatasources();
+    }
 
     public String getHost() {
         return host;
@@ -837,150 +819,150 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     }
 
     private void loadDatasources(Properties ext) {
-      datasources.clear();
-      
-      List<DataSource> exporteddatasources = null;
-  
-      try {
-        exporteddatasources = irm.getAllDataSources();
-      } catch (RepositoryException e1) {
-        log.error("Could not export data sources", e1);
-      }
-  
-      if (exporteddatasources != null) {
-        int i = 0;
-        while (i < exporteddatasources.size()) {
-          DataSource file = exporteddatasources.get(i);
-  
-          try {
-            if (file.getName() != null && file.getType() != null) {
-  
-              SaikuDatasource.Type t = SaikuDatasource.Type.valueOf(file.getType().toUpperCase());
-              SaikuDatasource ds = new SaikuDatasource(file.getName(), t, setupDataSourceProperties(file, ext));
-              datasources.put(file.getName(), ds);
+        datasources.clear();
+
+        List<DataSource> exporteddatasources = null;
+
+        try {
+            exporteddatasources = irm.getAllDataSources();
+        } catch (RepositoryException e1) {
+            log.error("Could not export data sources", e1);
+        }
+
+        if (exporteddatasources != null) {
+            int i = 0;
+            while (i < exporteddatasources.size()) {
+                DataSource file = exporteddatasources.get(i);
+
+                try {
+                    if (file.getName() != null && file.getType() != null) {
+
+                        SaikuDatasource.Type t =
+                                SaikuDatasource.Type.valueOf(file.getType().toUpperCase());
+                        SaikuDatasource ds =
+                                new SaikuDatasource(file.getName(), t, setupDataSourceProperties(file, ext));
+                        datasources.put(file.getName(), ds);
+                    }
+                } catch (Exception e) {
+                    // throw new SaikuServiceException("Failed to add datasource", e);
+                    log.error("Failed to add datasource", e);
+                }
+                i++;
             }
-          } catch (Exception e) {
-            // throw new SaikuServiceException("Failed to add datasource", e);
-            log.error("Failed to add datasource", e);
-          }
-          i++;
         }
-      }
     }
-    
+
     private Properties setupDataSourceProperties(DataSource file, Properties ext) {
-      Properties props = new Properties();
-      
-      // DataSource driver
-      if (file.getDriver() != null) {
-        props.put("driver", file.getDriver());
-      } else if (file.getPropertyKey() != null
-          && ext.containsKey("datasource." + file.getPropertyKey() + ".driver")) {
-        String p = ext.getProperty("datasource." + file.getPropertyKey() + ".driver");
-        props.put("driver", p);
-      }
+        Properties props = new Properties();
 
-      // DataSource location
-      if (file.getPropertyKey() != null && ext.containsKey("datasource." + file.getPropertyKey() + ".location")) {
-        String p = ext.getProperty("datasource." + file.getPropertyKey() + ".location");
-        if (ext.containsKey("datasource." + file.getPropertyKey() + ".schemaoverride")) {
-          String[] spl = p.split(";");
-          spl[1] = "Catalog=mondrian://" + file.getSchema();
-          StringBuilder sb = new StringBuilder();
-          for (String str : spl) {
-            sb.append(str + ";");
-          }
-          props.put("location", sb.toString());
-        } else {
-          props.put("location", p);
+        // DataSource driver
+        if (file.getDriver() != null) {
+            props.put("driver", file.getDriver());
+        } else if (file.getPropertyKey() != null
+                && ext.containsKey("datasource." + file.getPropertyKey() + ".driver")) {
+            String p = ext.getProperty("datasource." + file.getPropertyKey() + ".driver");
+            props.put("driver", p);
         }
-      } else if (file.getLocation() != null) {
-        props.put("location", file.getLocation());
-      }
-      
-      // DataSource username
-      if (file.getUsername() != null && file.getPropertyKey() == null) {
-        props.put("username", file.getUsername());
-      } else if (file.getPropertyKey() != null
-          && ext.containsKey("datasource." + file.getPropertyKey() + ".username")) {
-        String p = ext.getProperty("datasource." + file.getPropertyKey() + ".username");
-        props.put("username", p);
-      }
-      
-      // DataSource password
-      if (file.getPassword() != null && file.getPropertyKey() == null) {
-        props.put("password", file.getPassword());
-      } else if (file.getPropertyKey() != null
-          && ext.containsKey("datasource." + file.getPropertyKey() + ".password")) {
-        String p = ext.getProperty("datasource." + file.getPropertyKey() + ".password");
-        props.put("password", p);
-      }
-      
-      // DataSource path
-      if (file.getPath() != null) {
-        props.put("path", file.getPath());
-      } else if (file.getPropertyKey() != null
-          && ext.containsKey("datasource." + file.getPropertyKey() + ".path")) {
-        String p = ext.getProperty("datasource." + file.getPropertyKey() + ".path");
-        props.put("path", p);
-      }
-      
-      // DataSource id
-      if (file.getId() != null) {
-        props.put("id", file.getId());
-      }
-      
-      // Some security properties
-      if (file.getSecurityenabled() != null) {
-        props.put("security.enabled", file.getSecurityenabled());
-      } else if (file.getPropertyKey() != null
-          && ext.containsKey("datasource." + file.getPropertyKey() + ".security.enabled")) {
-        String p = ext.getProperty("datasource." + file.getPropertyKey() + ".security.enabled");
-        props.put("security.enabled", p);
-      }
-      
-      if (file.getSecuritytype() != null) {
-        props.put("security.type", file.getSecuritytype());
-      } else if (file.getPropertyKey() != null
-          && ext.containsKey("datasource." + file.getPropertyKey() + ".security.type")) {
-        String p = ext.getProperty("datasource." + file.getPropertyKey() + ".security.type");
-        props.put("security.type", p);
-      }
-      
-      if (file.getSecuritymapping() != null) {
-        props.put("security.mapping", file.getSecuritymapping());
-      } else if (file.getPropertyKey() != null
-          && ext.containsKey("datasource." + file.getPropertyKey() + ".security.mapping")) {
-        String p = ext.getProperty("datasource." + file.getPropertyKey() + ".security.mapping");
-        props.put("security.mapping", p);
-      }
-      
-      if (file.getAdvanced() != null) {
-        props.put("advanced", file.getAdvanced());
-      }
-      
-      // CSV flag
-      if (file.getCsv() != null) {
-        props.put("csv", file.getCsv());
-      }
-      
-      if (file.getEnabled() != null) {
-        props.put("enabled", file.getEnabled());
-      }
-      
-      if (file.getPropertyKey() != null) {
-        props.put("propertykey", file.getPropertyKey());
-      }
 
-      if (datasourceProcessor != null) {
-        props.put(ISaikuConnection.DATASOURCE_PROCESSORS, datasourceProcessor);
-      }
+        // DataSource location
+        if (file.getPropertyKey() != null && ext.containsKey("datasource." + file.getPropertyKey() + ".location")) {
+            String p = ext.getProperty("datasource." + file.getPropertyKey() + ".location");
+            if (ext.containsKey("datasource." + file.getPropertyKey() + ".schemaoverride")) {
+                String[] spl = p.split(";");
+                spl[1] = "Catalog=mondrian://" + file.getSchema();
+                StringBuilder sb = new StringBuilder();
+                for (String str : spl) {
+                    sb.append(str + ";");
+                }
+                props.put("location", sb.toString());
+            } else {
+                props.put("location", p);
+            }
+        } else if (file.getLocation() != null) {
+            props.put("location", file.getLocation());
+        }
 
-      if (connectionProcessor != null) {
-        props.put(ISaikuConnection.CONNECTION_PROCESSORS, connectionProcessor);
-      }
+        // DataSource username
+        if (file.getUsername() != null && file.getPropertyKey() == null) {
+            props.put("username", file.getUsername());
+        } else if (file.getPropertyKey() != null
+                && ext.containsKey("datasource." + file.getPropertyKey() + ".username")) {
+            String p = ext.getProperty("datasource." + file.getPropertyKey() + ".username");
+            props.put("username", p);
+        }
 
-      return props;
+        // DataSource password
+        if (file.getPassword() != null && file.getPropertyKey() == null) {
+            props.put("password", file.getPassword());
+        } else if (file.getPropertyKey() != null
+                && ext.containsKey("datasource." + file.getPropertyKey() + ".password")) {
+            String p = ext.getProperty("datasource." + file.getPropertyKey() + ".password");
+            props.put("password", p);
+        }
+
+        // DataSource path
+        if (file.getPath() != null) {
+            props.put("path", file.getPath());
+        } else if (file.getPropertyKey() != null && ext.containsKey("datasource." + file.getPropertyKey() + ".path")) {
+            String p = ext.getProperty("datasource." + file.getPropertyKey() + ".path");
+            props.put("path", p);
+        }
+
+        // DataSource id
+        if (file.getId() != null) {
+            props.put("id", file.getId());
+        }
+
+        // Some security properties
+        if (file.getSecurityenabled() != null) {
+            props.put("security.enabled", file.getSecurityenabled());
+        } else if (file.getPropertyKey() != null
+                && ext.containsKey("datasource." + file.getPropertyKey() + ".security.enabled")) {
+            String p = ext.getProperty("datasource." + file.getPropertyKey() + ".security.enabled");
+            props.put("security.enabled", p);
+        }
+
+        if (file.getSecuritytype() != null) {
+            props.put("security.type", file.getSecuritytype());
+        } else if (file.getPropertyKey() != null
+                && ext.containsKey("datasource." + file.getPropertyKey() + ".security.type")) {
+            String p = ext.getProperty("datasource." + file.getPropertyKey() + ".security.type");
+            props.put("security.type", p);
+        }
+
+        if (file.getSecuritymapping() != null) {
+            props.put("security.mapping", file.getSecuritymapping());
+        } else if (file.getPropertyKey() != null
+                && ext.containsKey("datasource." + file.getPropertyKey() + ".security.mapping")) {
+            String p = ext.getProperty("datasource." + file.getPropertyKey() + ".security.mapping");
+            props.put("security.mapping", p);
+        }
+
+        if (file.getAdvanced() != null) {
+            props.put("advanced", file.getAdvanced());
+        }
+
+        // CSV flag
+        if (file.getCsv() != null) {
+            props.put("csv", file.getCsv());
+        }
+
+        if (file.getEnabled() != null) {
+            props.put("enabled", file.getEnabled());
+        }
+
+        if (file.getPropertyKey() != null) {
+            props.put("propertykey", file.getPropertyKey());
+        }
+
+        if (datasourceProcessor != null) {
+            props.put(ISaikuConnection.DATASOURCE_PROCESSORS, datasourceProcessor);
+        }
+
+        if (connectionProcessor != null) {
+            props.put(ISaikuConnection.CONNECTION_PROCESSORS, connectionProcessor);
+        }
+
+        return props;
     }
 }
-

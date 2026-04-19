@@ -16,26 +16,32 @@
 
 package mondrian.olap4j;
 
+import java.util.Map;
+import mondrian.olap.Annotation;
 import org.olap4j.metadata.Dimension;
 import org.olap4j.metadata.Hierarchy;
 import org.olap4j.metadata.Level;
-
-import java.util.Map;
-
-import mondrian.olap.Annotation;
 
 /**
  * Created by bugg on 20/11/14.
  */
 public interface LevelInterface {
 
-  String getName();
-  String getUniqueName();
-  String getCaption();
-  String getDescription();
-  Dimension getDimension();
-  Hierarchy getHierarchy();
-  boolean isVisible();
-  Level.Type getLevelType();
-  Map<String, Annotation> getAnnotations();
+    String getName();
+
+    String getUniqueName();
+
+    String getCaption();
+
+    String getDescription();
+
+    Dimension getDimension();
+
+    Hierarchy getHierarchy();
+
+    boolean isVisible();
+
+    Level.Type getLevelType();
+
+    Map<String, Annotation> getAnnotations();
 }

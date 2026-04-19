@@ -12,7 +12,6 @@ public class SaikuDataSourceNotFoundException extends SaikuDataSourceException {
     /**
      * @see java.lang.Exception#Exception(String))
      */
-
     public SaikuDataSourceNotFoundException(String message) {
         super(message);
     }

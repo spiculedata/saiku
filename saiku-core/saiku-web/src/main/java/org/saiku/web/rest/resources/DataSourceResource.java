@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,26 +15,21 @@
  */
 package org.saiku.web.rest.resources;
 
+import com.qmino.miredot.annotations.ReturnType;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Map;
+import javax.ws.rs.*;
+import javax.ws.rs.core.Response;
+import javax.ws.rs.core.Response.Status;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.web.rest.objects.DataSourceMapper;
-
-import com.qmino.miredot.annotations.ReturnType;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.Map;
-
-import javax.ws.rs.*;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
 
 /**
  * Data Source Manipulation Utility Endpoints
@@ -60,9 +55,11 @@ public class DataSourceResource {
     @GET
     @Produces({"application/json"})
     public Collection<SaikuDatasource> getDatasources() {
-        //TODO: admin security?
+        // TODO: admin security?
         try {
-            return datasourceService.getDatasources(userService.getCurrentUserRoles()).values();
+            return datasourceService
+                    .getDatasources(userService.getCurrentUserRoles())
+                    .values();
         } catch (SaikuServiceException e) {
             log.error(this.getClass().getName(), e);
             return new ArrayList<>();
@@ -97,17 +94,23 @@ public class DataSourceResource {
     public Response getDatasourceById(@PathParam("id") String id) {
         try {
             SaikuDatasource saikuDatasource = null;
-            Map<String, SaikuDatasource> datasources = datasourceService.getDatasources(userService.getCurrentUserRoles());
+            Map<String, SaikuDatasource> datasources =
+                    datasourceService.getDatasources(userService.getCurrentUserRoles());
             for (SaikuDatasource currentDatasource : datasources.values()) {
                 if (currentDatasource.getProperties().getProperty("id").equals(id)) {
                     saikuDatasource = currentDatasource;
                     break;
                 }
             }
-            return Response.ok().type("application/json").entity(new DataSourceMapper(saikuDatasource)).build();
+            return Response.ok()
+                    .type("application/json")
+                    .entity(new DataSourceMapper(saikuDatasource))
+                    .build();
         } catch (Exception e) {
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(e.getLocalizedMessage())
-                .type("text/plain").build();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
     }
 
@@ -120,7 +123,8 @@ public class DataSourceResource {
         boolean overwrite = true;
         try {
             SaikuDatasource saikuDatasource = null;
-            Map<String, SaikuDatasource> datasources = datasourceService.getDatasources(userService.getCurrentUserRoles());
+            Map<String, SaikuDatasource> datasources =
+                    datasourceService.getDatasources(userService.getCurrentUserRoles());
             for (SaikuDatasource currentDatasource : datasources.values()) {
                 if (currentDatasource.getProperties().getProperty("id").equals(id)) {
                     saikuDatasource = currentDatasource;
@@ -129,10 +133,15 @@ public class DataSourceResource {
                     break;
                 }
             }
-            return Response.ok().type("application/json").entity(saikuDatasource).build();
+            return Response.ok()
+                    .type("application/json")
+                    .entity(saikuDatasource)
+                    .build();
         } catch (Exception e) {
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(e.getLocalizedMessage())
-                .type("text/plain").build();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
     }
 
@@ -157,11 +166,10 @@ public class DataSourceResource {
     }
 
     public UserService getUserService() {
-      return userService;
+        return userService;
     }
 
     public void setUserService(UserService userService) {
-      this.userService = userService;
+        this.userService = userService;
     }
-
 }

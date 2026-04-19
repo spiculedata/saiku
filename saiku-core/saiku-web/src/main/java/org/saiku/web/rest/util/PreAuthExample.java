@@ -21,21 +21,19 @@ import org.springframework.security.cas.authentication.CasAssertionAuthenticatio
 import org.springframework.security.core.userdetails.AuthenticationUserDetailsService;
 import org.springframework.security.core.userdetails.UserDetails;
 
-
-
 /**
  * Created by bugg on 12/03/15.
  */
-public abstract class PreAuthExample implements AuthenticationUserDetailsService{
-  public final UserDetails loadUserDetails(final CasAssertionAuthenticationToken token) {
-    return loadUserDetails(token.getAssertion());
-  }
-  /**
-   * Protected template method for construct a {@link org.springframework.security.core.userdetails.UserDetails} via the supplied CAS
-   * assertion.
-   *
-   * @param assertion the assertion to use to construct the new UserDetails. CANNOT be NULL.
-   * @return the newly constructed UserDetails.
-   */
-  protected abstract UserDetails loadUserDetails(Assertion assertion);
+public abstract class PreAuthExample implements AuthenticationUserDetailsService {
+    public final UserDetails loadUserDetails(final CasAssertionAuthenticationToken token) {
+        return loadUserDetails(token.getAssertion());
+    }
+    /**
+     * Protected template method for construct a {@link org.springframework.security.core.userdetails.UserDetails} via the supplied CAS
+     * assertion.
+     *
+     * @param assertion the assertion to use to construct the new UserDetails. CANNOT be NULL.
+     * @return the newly constructed UserDetails.
+     */
+    protected abstract UserDetails loadUserDetails(Assertion assertion);
 }

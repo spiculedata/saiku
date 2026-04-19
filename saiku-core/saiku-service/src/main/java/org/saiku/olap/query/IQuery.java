@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +15,8 @@
  */
 package org.saiku.olap.query;
 
+import java.util.Map;
+import java.util.Properties;
 import org.olap4j.Axis;
 import org.olap4j.CellSet;
 import org.olap4j.OlapConnection;
@@ -29,95 +31,94 @@ import org.saiku.olap.dto.filter.SaikuFilter;
 import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.olap.util.formatter.ICellSetFormatter;
 
-import java.util.Map;
-import java.util.Properties;
-
 public interface IQuery {
 
-  enum QueryType {MDX, QM}
+    enum QueryType {
+        MDX,
+        QM
+    }
 
-  String getName();
+    String getName();
 
-  SaikuCube getSaikuCube();
+    SaikuCube getSaikuCube();
 
-  CellSet execute() throws Exception;
+    CellSet execute() throws Exception;
 
-  String getMdx();
+    String getMdx();
 
-  void resetQuery();
+    void resetQuery();
 
-  void setProperties(Properties props);
+    void setProperties(Properties props);
 
-  Properties getProperties();
+    Properties getProperties();
 
-  String toXml();
+    String toXml();
 
-  Boolean isDrillThroughEnabled();
+    Boolean isDrillThroughEnabled();
 
-  QueryType getType();
+    QueryType getType();
 
-  void swapAxes();
+    void swapAxes();
 
-  Map<Axis, QueryAxis> getAxes();
+    Map<Axis, QueryAxis> getAxes();
 
-  QueryAxis getAxis(Axis axis);
+    QueryAxis getAxis(Axis axis);
 
-  QueryAxis getAxis(String name) throws SaikuOlapException;
+    QueryAxis getAxis(String name) throws SaikuOlapException;
 
-  Cube getCube();
+    Cube getCube();
 
-  QueryAxis getUnusedAxis();
+    QueryAxis getUnusedAxis();
 
-  void moveDimension(QueryDimension dimension, Axis axis);
+    void moveDimension(QueryDimension dimension, Axis axis);
 
-  void moveDimension(QueryDimension dimension, Axis axis, int position);
+    void moveDimension(QueryDimension dimension, Axis axis, int position);
 
-  QueryDimension getDimension(String name);
+    QueryDimension getDimension(String name);
 
-  void resetAxisSelections(QueryAxis axis);
+    void resetAxisSelections(QueryAxis axis);
 
-  void clearAllQuerySelections();
+    void clearAllQuerySelections();
 
-  void setMdx(String mdx);
+    void setMdx(String mdx);
 
-  void setScenario(Scenario scenario);
+    void setScenario(Scenario scenario);
 
-  Scenario getScenario();
+    Scenario getScenario();
 
-  void setTag(SaikuTag tag);
+    void setTag(SaikuTag tag);
 
-  SaikuTag getTag();
+    SaikuTag getTag();
 
-  void removeTag();
+    void removeTag();
 
-  void setFilter(SaikuFilter filter);
+    void setFilter(SaikuFilter filter);
 
-  SaikuFilter getFilter();
+    SaikuFilter getFilter();
 
-  void removeFilter();
+    void removeFilter();
 
-  void storeCellset(CellSet cs);
+    void storeCellset(CellSet cs);
 
-  CellSet getCellset();
+    CellSet getCellset();
 
-  void setStatement(OlapStatement os);
+    void setStatement(OlapStatement os);
 
-  OlapStatement getStatement();
+    OlapStatement getStatement();
 
-  void cancel() throws Exception;
+    void cancel() throws Exception;
 
-  void clearAxis(String axisName) throws SaikuOlapException;
+    void clearAxis(String axisName) throws SaikuOlapException;
 
-  OlapConnection getConnection();
+    OlapConnection getConnection();
 
-  void storeFormatter(ICellSetFormatter formatter);
+    void storeFormatter(ICellSetFormatter formatter);
 
-  ICellSetFormatter getFormatter();
+    ICellSetFormatter getFormatter();
 
-  void setTotalFunction(String uniqueLevelName, String value);
+    void setTotalFunction(String uniqueLevelName, String value);
 
-  String getTotalFunction(String uniqueLevelName);
+    String getTotalFunction(String uniqueLevelName);
 
-  Map<String, String> getTotalFunctions();
-
+    Map<String, String> getTotalFunctions();
 }

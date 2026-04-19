@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +19,5 @@ import org.saiku.datasources.datasource.SaikuDatasource;
 
 public interface IDatasourceProcessor {
 
-  SaikuDatasource process(SaikuDatasource ds);
-
+    SaikuDatasource process(SaikuDatasource ds);
 }

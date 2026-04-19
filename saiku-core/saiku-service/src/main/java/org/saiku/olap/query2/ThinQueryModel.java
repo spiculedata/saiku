@@ -7,139 +7,140 @@ import java.util.Map;
 
 public class ThinQueryModel {
 
-	private Map<AxisLocation, ThinAxis> axes = new HashMap<>();
-	private boolean visualTotals = false;
-	private String visualTotalsPattern;
-	private boolean lowestLevelsOnly = false;
-	private ThinDetails details;
-	private List<ThinCalculatedMeasure> calculatedMeasures = new ArrayList<>();
-	private List<ThinCalculatedMember> calculatedMembers = new ArrayList<>();
+    private Map<AxisLocation, ThinAxis> axes = new HashMap<>();
+    private boolean visualTotals = false;
+    private String visualTotalsPattern;
+    private boolean lowestLevelsOnly = false;
+    private ThinDetails details;
+    private List<ThinCalculatedMeasure> calculatedMeasures = new ArrayList<>();
+    private List<ThinCalculatedMember> calculatedMembers = new ArrayList<>();
 
-  public enum AxisLocation {
-		FILTER,
-		COLUMNS,
-		ROWS,
-		PAGES
-	}
+    public enum AxisLocation {
+        FILTER,
+        COLUMNS,
+        ROWS,
+        PAGES
+    }
 
-	/**
-	 * @return the axes
-	 */
-	public Map<AxisLocation, ThinAxis> getAxes() {
-		return axes;
-	}
-	
-	public ThinAxis getAxis(AxisLocation axis) {
-		return axes.get(axis);
-	}
+    /**
+     * @return the axes
+     */
+    public Map<AxisLocation, ThinAxis> getAxes() {
+        return axes;
+    }
 
-	/**
-	 * @param axes the axes to set
-	 */
-	public void setAxes(Map<AxisLocation, ThinAxis> axes) {
-		this.axes = axes;
-	}
+    public ThinAxis getAxis(AxisLocation axis) {
+        return axes.get(axis);
+    }
 
-	/**
-	 * @return the visualTotals
-	 */
-	public boolean isVisualTotals() {
-		return visualTotals;
-	}
+    /**
+     * @param axes the axes to set
+     */
+    public void setAxes(Map<AxisLocation, ThinAxis> axes) {
+        this.axes = axes;
+    }
 
-	/**
-	 * @param visualTotals the visualTotals to set
-	 */
-	public void setVisualTotals(boolean visualTotals) {
-		this.visualTotals = visualTotals;
-	}
+    /**
+     * @return the visualTotals
+     */
+    public boolean isVisualTotals() {
+        return visualTotals;
+    }
 
-	/**
-	 * @return the visualTotalsPattern
-	 */
-	public String getVisualTotalsPattern() {
-		return visualTotalsPattern;
-	}
+    /**
+     * @param visualTotals the visualTotals to set
+     */
+    public void setVisualTotals(boolean visualTotals) {
+        this.visualTotals = visualTotals;
+    }
 
-	/**
-	 * @param visualTotalsPattern the visualTotalsPattern to set
-	 */
-	public void setVisualTotalsPattern(String visualTotalsPattern) {
-		this.visualTotalsPattern = visualTotalsPattern;
-	}
-	
-	/**
-	 * @return the lowestLevelsOnly
-	 */
-	public boolean isLowestLevelsOnly() {
-		return lowestLevelsOnly;
-	}
+    /**
+     * @return the visualTotalsPattern
+     */
+    public String getVisualTotalsPattern() {
+        return visualTotalsPattern;
+    }
 
-	/**
-	 */
-	public void setLowestLevelsOnly(boolean lowest) {
-		this.lowestLevelsOnly = lowest;
-	}
+    /**
+     * @param visualTotalsPattern the visualTotalsPattern to set
+     */
+    public void setVisualTotalsPattern(String visualTotalsPattern) {
+        this.visualTotalsPattern = visualTotalsPattern;
+    }
 
-	public List<ThinCalculatedMeasure> getCalculatedMeasures() {
-		return calculatedMeasures;
-	}
+    /**
+     * @return the lowestLevelsOnly
+     */
+    public boolean isLowestLevelsOnly() {
+        return lowestLevelsOnly;
+    }
 
-	public void setCalculatedMeasures(List<ThinCalculatedMeasure> calculatedMeasures) {
-		this.calculatedMeasures = calculatedMeasures;
-	}
+    /**
+     */
+    public void setLowestLevelsOnly(boolean lowest) {
+        this.lowestLevelsOnly = lowest;
+    }
 
-  	public List<ThinCalculatedMember> getCalculatedMembers() {
-		return calculatedMembers;
-  	}
+    public List<ThinCalculatedMeasure> getCalculatedMeasures() {
+        return calculatedMeasures;
+    }
 
-  	public void setCalculatedMembers(List<ThinCalculatedMember> calculatedMembers) {
-		this.calculatedMembers = calculatedMembers;
-  	}
+    public void setCalculatedMeasures(List<ThinCalculatedMeasure> calculatedMeasures) {
+        this.calculatedMeasures = calculatedMeasures;
+    }
 
-  public ThinDetails getDetails() {
-		return details;
-	}
+    public List<ThinCalculatedMember> getCalculatedMembers() {
+        return calculatedMembers;
+    }
 
-	public void setDetails(ThinDetails details) {
-		this.details = details;
-	}
+    public void setCalculatedMembers(List<ThinCalculatedMember> calculatedMembers) {
+        this.calculatedMembers = calculatedMembers;
+    }
 
-	public boolean hasAggregators() {
-		if (axes != null) {
-			for (ThinAxis ta : axes.values()) {
-				if (ta.getAggregators().size() > 0) {
-					return true;
-				}
-				if (ta.getHierarchies() != null) {
-					for (ThinHierarchy th : ta.getHierarchies()) {
-						for (ThinLevel tl : th.getLevels().values()) {
-							if (tl.getAggregators() != null && tl.getAggregators().size() > 0) {
-								return true;
-							}
-						}
-					}
-				}
-			}
-		}
-		// TODO Auto-generated method stub
-		return false;
-	}
+    public ThinDetails getDetails() {
+        return details;
+    }
 
-	public ThinLevel getLevel(String name) {
-		for (ThinAxis ta : axes.values()) {
-			if (ta.getHierarchies() != null) {
-				for (ThinHierarchy th : ta.getHierarchies()) {
-          for (ThinLevel level : th.getLevels().values()) {
-            String uniqueName = th.getName() + ".[" + level.getName() + "]";
-            if (name != null && name.equals(uniqueName)) {
-              return level;
+    public void setDetails(ThinDetails details) {
+        this.details = details;
+    }
+
+    public boolean hasAggregators() {
+        if (axes != null) {
+            for (ThinAxis ta : axes.values()) {
+                if (ta.getAggregators().size() > 0) {
+                    return true;
+                }
+                if (ta.getHierarchies() != null) {
+                    for (ThinHierarchy th : ta.getHierarchies()) {
+                        for (ThinLevel tl : th.getLevels().values()) {
+                            if (tl.getAggregators() != null
+                                    && tl.getAggregators().size() > 0) {
+                                return true;
+                            }
+                        }
+                    }
+                }
             }
-          }
-				}
-			}
-		}
+        }
+        // TODO Auto-generated method stub
+        return false;
+    }
 
-		return null;
-	}
+    public ThinLevel getLevel(String name) {
+        for (ThinAxis ta : axes.values()) {
+            if (ta.getHierarchies() != null) {
+                for (ThinHierarchy th : ta.getHierarchies()) {
+                    for (ThinLevel level : th.getLevels().values()) {
+                        String uniqueName = th.getName() + ".[" + level.getName() + "]";
+                        if (name != null && name.equals(uniqueName)) {
+                            return level;
+                        }
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
 }

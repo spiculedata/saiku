@@ -1,12 +1,11 @@
 package org.saiku.web.export;
 
-import org.w3c.dom.Document;
-
 import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMResult;
 import javax.xml.transform.dom.DOMSource;
+import org.w3c.dom.Document;
 
 class FoConverter {
 
@@ -38,5 +37,4 @@ class FoConverter {
         }
         return transformer;
     }
-
 }

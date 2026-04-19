@@ -14,8 +14,10 @@
  * limitations under the License.
  */
 
-  package org.saiku.web.rest.util;
+package org.saiku.web.rest.util;
 
+import java.util.ArrayList;
+import java.util.List;
 import org.jasig.cas.client.validation.Assertion;
 import org.springframework.security.cas.userdetails.AbstractCasAssertionUserDetailsService;
 import org.springframework.security.core.GrantedAuthority;
@@ -23,20 +25,16 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 
-import java.util.ArrayList;
-import java.util.List;
-
 /**
  * Created by bugg on 12/03/15.
  */
 final class GrantedAuth extends AbstractCasAssertionUserDetailsService {
-  private static final SimpleGrantedAuthority ROLE_USER = new SimpleGrantedAuthority(
-      "ROLE_USER");
-  @Override
-  protected UserDetails loadUserDetails(Assertion assertion) {
-    final List<GrantedAuthority> grantedAuthorities = new ArrayList<>();
-    grantedAuthorities.add(ROLE_USER);
-    return new User(assertion.getPrincipal().getName(), "NO_PASSWORD",
-        true, true, true, true, grantedAuthorities);
-  }
+    private static final SimpleGrantedAuthority ROLE_USER = new SimpleGrantedAuthority("ROLE_USER");
+
+    @Override
+    protected UserDetails loadUserDetails(Assertion assertion) {
+        final List<GrantedAuthority> grantedAuthorities = new ArrayList<>();
+        grantedAuthorities.add(ROLE_USER);
+        return new User(assertion.getPrincipal().getName(), "NO_PASSWORD", true, true, true, true, grantedAuthorities);
+    }
 }

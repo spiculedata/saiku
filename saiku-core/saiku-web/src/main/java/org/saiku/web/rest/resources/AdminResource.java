@@ -15,38 +15,34 @@
  */
 package org.saiku.web.rest.resources;
 
+import com.qmino.miredot.annotations.ReturnType;
+import com.sun.jersey.core.header.FormDataContentDisposition;
+import com.sun.jersey.multipart.FormDataParam;
+import java.io.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
+import javax.jcr.RepositoryException;
+import javax.ws.rs.*;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+import javax.ws.rs.core.StreamingOutput;
+import org.apache.commons.io.IOUtils;
 import org.saiku.database.dto.MondrianSchema;
 import org.saiku.database.dto.SaikuUser;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.log.LogExtractor;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.datasource.IDatasourceManager;
+import org.saiku.service.importer.JujuSource;
 import org.saiku.service.olap.OlapDiscoverService;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.exception.SaikuDataSourceException;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.web.rest.objects.DataSourceMapper;
-
-import com.qmino.miredot.annotations.ReturnType;
-import com.sun.jersey.core.header.FormDataContentDisposition;
-import com.sun.jersey.multipart.FormDataParam;
-
-import org.apache.commons.io.IOUtils;
-import org.saiku.service.importer.JujuSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-
-import java.io.*;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
-
-import javax.jcr.RepositoryException;
-import javax.ws.rs.*;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.StreamingOutput;
 
 /**
  * AdminResource for the Saiku 3.0+ Admin console
@@ -82,15 +78,13 @@ public class AdminResource {
         userService = us;
     }
 
-
     private IDatasourceManager repositoryDatasourceManager;
 
     public IDatasourceManager getRepositoryDatasourceManager() {
         return repositoryDatasourceManager;
     }
 
-    public void setRepositoryDatasourceManager(
-        IDatasourceManager repositoryDatasourceManager) {
+    public void setRepositoryDatasourceManager(IDatasourceManager repositoryDatasourceManager) {
         this.repositoryDatasourceManager = repositoryDatasourceManager;
     }
     /**
@@ -99,24 +93,29 @@ public class AdminResource {
      * @summary Get Saiku Datasources
      */
     @GET
-    @Produces( {"application/json"})
+    @Produces({"application/json"})
     @Path("/datasources")
     @ReturnType("java.lang.List<SaikuDatasource>")
     public Response getAvailableDataSources() {
-        if(!userService.isAdmin()){
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
-        
+
         List<DataSourceMapper> l = new ArrayList<>();
-        
+
         try {
-            for (SaikuDatasource d : datasourceService.getDatasources(userService.getCurrentUserRoles()).values()) {
+            for (SaikuDatasource d : datasourceService
+                    .getDatasources(userService.getCurrentUserRoles())
+                    .values()) {
                 l.add(new DataSourceMapper(d));
             }
             return Response.ok().entity(l).build();
         } catch (SaikuServiceException e) {
             log.error(this.getClass().getName(), e);
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(e.getLocalizedMessage()).type("text/plain").build();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
     }
 
@@ -128,21 +127,23 @@ public class AdminResource {
      * @return A response containing the datasource.
      */
     @PUT
-    @Produces( {"application/json"})
-    @Consumes( {"application/json"})
+    @Produces({"application/json"})
+    @Consumes({"application/json"})
     @Path("/datasources/{id}")
     @ReturnType("org.saiku.web.rest.objects.DataSourceMapper")
     public Response updateDatasource(DataSourceMapper json, @PathParam("id") String id) {
-        if(!userService.isAdmin()){
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
 
         try {
             datasourceService.addDatasource(json.toSaikuDataSource(), true, userService.getCurrentUserRoles());
             return Response.ok().type("application/json").entity(json).build();
-        } catch (Exception e){
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(e.getLocalizedMessage())
-                           .type("text/plain").build();
+        } catch (Exception e) {
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
     }
 
@@ -153,23 +154,27 @@ public class AdminResource {
      * @return A response containing the data source definition.
      */
     @GET
-    @Produces( {"application/json"})
+    @Produces({"application/json"})
     @Path("/datasources/{id}/refresh")
     @ReturnType("java.util.List<SaikuConnection>")
     public Response refreshDatasource(@PathParam("id") String id) {
-        if(!userService.isAdmin()){
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
 
         try {
             olapDiscoverService.refreshConnection(id);
-            return Response.ok().entity(olapDiscoverService.getConnection(id)).type("application/json").build();
+            return Response.ok()
+                    .entity(olapDiscoverService.getConnection(id))
+                    .type("application/json")
+                    .build();
         } catch (Exception e) {
             log.error(this.getClass().getName(), e);
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(e.getLocalizedMessage())
-                           .type("text/plain").build();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
-
     }
 
     /**
@@ -179,12 +184,12 @@ public class AdminResource {
      * @return A response containing the data source object
      */
     @POST
-    @Produces( {"application/json"})
-    @Consumes( {"application/json"})
+    @Produces({"application/json"})
+    @Consumes({"application/json"})
     @Path("/datasources")
     @ReturnType("org.saiku.web.rest.objects.DataSourceMapper")
     public Response createDatasource(DataSourceMapper json) {
-        if(!userService.isAdmin()){
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
 
@@ -193,9 +198,11 @@ public class AdminResource {
             return Response.ok().entity(json).type("application/json").build();
         } catch (Exception e) {
             log.error("Error adding data source", e);
-            return Response.serverError().status(Response.Status.INTERNAL_SERVER_ERROR)
-                           .entity(e.getLocalizedMessage())
-                           .type("text/plain").build();
+            return Response.serverError()
+                    .status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
     }
 
@@ -208,14 +215,16 @@ public class AdminResource {
     @DELETE
     @Path("/datasources/{id}")
     public Response deleteDatasource(@PathParam("id") String id) {
-        if(!userService.isAdmin()){
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
-        
+
         datasourceService.removeDatasource(id);
-        
-        return Response.ok().type("application/json")
-            .entity(datasourceService.getDatasources(userService.getCurrentUserRoles())).build();
+
+        return Response.ok()
+                .type("application/json")
+                .entity(datasourceService.getDatasources(userService.getCurrentUserRoles()))
+                .build();
     }
 
     /**
@@ -224,12 +233,12 @@ public class AdminResource {
      * @return A list of schema
      */
     @GET
-    @Produces( {"application/json"})
+    @Produces({"application/json"})
     @Path("/schema")
     @ReturnType("java.util.List<MondrianSchema>")
     public Response getAvailableSchema() {
 
-        if(!userService.isAdmin()){
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
         return Response.ok().entity(datasourceService.getAvailableSchema()).build();
@@ -245,13 +254,16 @@ public class AdminResource {
      * @return A response containing a list of available schema.
      */
     @PUT
-    @Produces( {"application/json"})
+    @Produces({"application/json"})
     @Consumes("multipart/form-data")
     @Path("/schema/{id}")
     @ReturnType("java.util.List<MondrianSchema>")
-    public Response uploadSchemaPut(@FormDataParam("file") InputStream is, @FormDataParam("file") FormDataContentDisposition detail,
-                                    @FormDataParam("name") String name, @PathParam("id") String id) {
-        if(!userService.isAdmin()){
+    public Response uploadSchemaPut(
+            @FormDataParam("file") InputStream is,
+            @FormDataParam("file") FormDataContentDisposition detail,
+            @FormDataParam("name") String name,
+            @PathParam("id") String id) {
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
         String path = "/datasources/" + name + ".xml";
@@ -260,12 +272,13 @@ public class AdminResource {
             datasourceService.addSchema(schema, path, name);
             return Response.ok().entity(datasourceService.getAvailableSchema()).build();
         } catch (Exception e) {
-            log.error("Error uploading schema: "+name, e);
-            return Response.serverError().status(Response.Status.INTERNAL_SERVER_ERROR)
-                           .entity(e.getLocalizedMessage())
-                           .type("text/plain").build();
+            log.error("Error uploading schema: " + name, e);
+            return Response.serverError()
+                    .status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
-
     }
 
     /**
@@ -279,13 +292,16 @@ public class AdminResource {
      * @return A response containing a list of available schema.
      */
     @POST
-    @Produces( {"application/json"})
+    @Produces({"application/json"})
     @Consumes("multipart/form-data")
     @Path("/schema/{id}")
     @ReturnType("java.util.List<MondrianSchema>")
-    public Response uploadSchema(@FormDataParam("file") InputStream is, @FormDataParam("file") FormDataContentDisposition detail,
-                                 @FormDataParam("name") String name, @PathParam("id") String id) {
-        if(!userService.isAdmin()){
+    public Response uploadSchema(
+            @FormDataParam("file") InputStream is,
+            @FormDataParam("file") FormDataContentDisposition detail,
+            @FormDataParam("name") String name,
+            @PathParam("id") String id) {
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
         String path = "/datasources/" + name + ".xml";
@@ -294,12 +310,13 @@ public class AdminResource {
             datasourceService.addSchema(schema, path, name);
             return Response.ok().entity(datasourceService.getAvailableSchema()).build();
         } catch (Exception e) {
-            log.error("Error uploading schema: "+name, e);
-            return Response.serverError().status(Response.Status.INTERNAL_SERVER_ERROR)
-                           .entity(e.getLocalizedMessage())
-                           .type("text/plain").build();
+            log.error("Error uploading schema: " + name, e);
+            return Response.serverError()
+                    .status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
-
     }
 
     /**
@@ -319,12 +336,20 @@ public class AdminResource {
             SaikuDatasource saikuDatasource = datasourceService.getDatasource(datasourceName);
             datasourceService.setLocaleOfDataSource(saikuDatasource, locale);
             datasourceService.addDatasource(saikuDatasource, overwrite, userService.getCurrentUserRoles());
-            return Response.ok().type("application/json").entity(new DataSourceMapper(saikuDatasource)).build();
-        } catch(SaikuDataSourceException e){
-            return Response.ok().type("application/json").entity(e.getLocalizedMessage()).build();
+            return Response.ok()
+                    .type("application/json")
+                    .entity(new DataSourceMapper(saikuDatasource))
+                    .build();
+        } catch (SaikuDataSourceException e) {
+            return Response.ok()
+                    .type("application/json")
+                    .entity(e.getLocalizedMessage())
+                    .build();
         } catch (Exception e) {
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(e.getLocalizedMessage())
-                .type("text/plain").build();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
     }
 
@@ -334,15 +359,14 @@ public class AdminResource {
      * @return A list of available users.
      */
     @GET
-    @Produces( {"application/json"})
+    @Produces({"application/json"})
     @Path("/users")
     @ReturnType("java.util.List<SaikuUser>")
     public Response getExistingUsers() {
-        if(!userService.isAdmin()){
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
         return Response.ok().entity(userService.getUsers()).build();
-
     }
 
     /**
@@ -355,11 +379,13 @@ public class AdminResource {
     @Path("/schema/{id}")
     @ReturnType("java.util.List<MondrianSchema>")
     public Response deleteSchema(@PathParam("id") String id) {
-        if(!userService.isAdmin()){
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
         datasourceService.removeSchema(id);
-        return Response.status(Response.Status.NO_CONTENT).entity(datasourceService.getAvailableSchema()).build();
+        return Response.status(Response.Status.NO_CONTENT)
+                .entity(datasourceService.getAvailableSchema())
+                .build();
     }
 
     /**
@@ -371,16 +397,16 @@ public class AdminResource {
     @Path("/schema/{id}")
     @Produces("application/xml")
     @ReturnType("MondrianSchema")
-    public Response getSavedSchema(@PathParam("id") String id){
-        if(!userService.isAdmin()){
+    public Response getSavedSchema(@PathParam("id") String id) {
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
         String p = "";
-        for(MondrianSchema s :datasourceService.getAvailableSchema()){
-            if(s.getName().equals(id)){
+        for (MondrianSchema s : datasourceService.getAvailableSchema()) {
+            if (s.getName().equals(id)) {
 
                 try {
-                    p= repositoryDatasourceManager.getInternalFileData(s.getPath());
+                    p = repositoryDatasourceManager.getInternalFileData(s.getPath());
                 } catch (RepositoryException e) {
                     Response.serverError().entity(e.getLocalizedMessage()).build();
                 }
@@ -388,10 +414,9 @@ public class AdminResource {
             }
         }
 
-        return Response
-            .ok(p.getBytes(), MediaType.APPLICATION_OCTET_STREAM)
-            .header("content-disposition", "attachment; filename = " + id)
-            .build();
+        return Response.ok(p.getBytes(), MediaType.APPLICATION_OCTET_STREAM)
+                .header("content-disposition", "attachment; filename = " + id)
+                .build();
     }
 
     /**
@@ -403,7 +428,7 @@ public class AdminResource {
     @Path("/datasource/import")
     public Response importLegacyDatasources() {
 
-        if(!userService.isAdmin()){
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
         datasourceService.importLegacyDatasources();
@@ -418,7 +443,7 @@ public class AdminResource {
     @GET
     @Path("/schema/import")
     public Response importLegacySchema() {
-        if(!userService.isAdmin()){
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
 
@@ -435,7 +460,7 @@ public class AdminResource {
     @Path("/users/import")
     public Response importLegacyUsers() {
 
-        if(!userService.isAdmin()){
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
         datasourceService.importLegacyUsers();
@@ -449,11 +474,11 @@ public class AdminResource {
      * @return A response containing the user details object for the selected user.
      */
     @GET
-    @Produces( {"application/json"})
+    @Produces({"application/json"})
     @Path("/users/{id}")
     @ReturnType("org.saiku.database.dto.SaikuUser")
     public Response getUserDetails(@PathParam("id") int id) {
-        if(!userService.isAdmin()){
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
         return Response.ok().entity(userService.getUser(id)).build();
@@ -467,19 +492,22 @@ public class AdminResource {
      * @return A response containing a user object.
      */
     @PUT
-    @Produces( {"application/json"})
+    @Produces({"application/json"})
     @Consumes("application/json")
     @Path("/users/{username}")
     @ReturnType("org.saiku.database.dto.SaikuUser")
     public Response updateUserDetails(SaikuUser jsonString, @PathParam("username") String userName) {
-        if(!userService.isAdmin()){
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
-        if(jsonString.getPassword() == null || jsonString.getPassword().equals("")) {
-            return Response.ok().entity(userService.updateUser(jsonString, false)).build();
-        }
-        else{
-            return Response.ok().entity(userService.updateUser(jsonString, true)).build();
+        if (jsonString.getPassword() == null || jsonString.getPassword().equals("")) {
+            return Response.ok()
+                    .entity(userService.updateUser(jsonString, false))
+                    .build();
+        } else {
+            return Response.ok()
+                    .entity(userService.updateUser(jsonString, true))
+                    .build();
         }
     }
 
@@ -490,13 +518,13 @@ public class AdminResource {
      * @return A response containing the user object.
      */
     @POST
-    @Produces( {"application/json"})
-    @Consumes( {"application/json"})
+    @Produces({"application/json"})
+    @Consumes({"application/json"})
     @Path("/users")
     @ReturnType("org.saiku.database.dto.SaikuUser")
     public Response createUserDetails(SaikuUser jsonString) {
 
-        if(!userService.isAdmin()){
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
         return Response.ok().entity(userService.addUser(jsonString)).build();
@@ -509,10 +537,10 @@ public class AdminResource {
      * @return A status 200.
      */
     @DELETE
-    @Produces( {"application/json"})
+    @Produces({"application/json"})
     @Path("/users/{username}")
     public Response removeUser(@PathParam("username") String username) {
-        if(!userService.isAdmin()){
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
         userService.removeUser(username);
@@ -544,13 +572,12 @@ public class AdminResource {
                 try {
                     br.close();
                 } catch (IOException e) {
-                    log.error("IO Exception closing input stream",e );
+                    log.error("IO Exception closing input stream", e);
                 }
             }
         }
 
         return sb.toString();
-
     }
 
     /**
@@ -562,7 +589,7 @@ public class AdminResource {
     @Produces("text/plain")
     @Path("/version")
     @ReturnType("java.lang.String")
-    public Response getVersion(){
+    public Response getVersion() {
         Properties prop = new Properties();
         String version = "";
         ClassLoader classloader = Thread.currentThread().getContextClassLoader();
@@ -587,15 +614,14 @@ public class AdminResource {
     @GET
     @Produces("application/zip")
     @Path("/backup")
-    public StreamingOutput getBackup(){
-        if(!userService.isAdmin()){
+    public StreamingOutput getBackup() {
+        if (!userService.isAdmin()) {
             return null;
         }
         return new StreamingOutput() {
             public void write(OutputStream output) throws IOException, WebApplicationException {
                 BufferedOutputStream bus = new BufferedOutputStream(output);
                 bus.write(datasourceService.exportRepository());
-
             }
         };
     }
@@ -611,8 +637,9 @@ public class AdminResource {
     @Produces("text/plain")
     @Consumes("multipart/form-data")
     @Path("/restore")
-    public Response postRestore(@FormDataParam("file") InputStream is, @FormDataParam("file") FormDataContentDisposition detail){
-        if(!userService.isAdmin()){
+    public Response postRestore(
+            @FormDataParam("file") InputStream is, @FormDataParam("file") FormDataContentDisposition detail) {
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
         try {
@@ -622,7 +649,10 @@ public class AdminResource {
         } catch (IOException e) {
             log.error("Error reading restore file", e);
         }
-        return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity("Restore Ok").type("text/plain").build();
+        return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity("Restore Ok")
+                .type("text/plain")
+                .build();
     }
 
     /**
@@ -635,8 +665,9 @@ public class AdminResource {
     @Produces("text/plain")
     @Consumes("multipart/form-data")
     @Path("/legacyfiles")
-    public Response postRestoreFiles(@FormDataParam("file") InputStream is, @FormDataParam("file") FormDataContentDisposition detail){
-        if(!userService.isAdmin()){
+    public Response postRestoreFiles(
+            @FormDataParam("file") InputStream is, @FormDataParam("file") FormDataContentDisposition detail) {
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
         try {
@@ -646,20 +677,25 @@ public class AdminResource {
         } catch (IOException e) {
             log.error("Error reading restore file", e);
         }
-        return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity("Restore Ok").type("text/plain").build();
+        return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity("Restore Ok")
+                .type("text/plain")
+                .build();
     }
 
     @GET
     @Produces("text/plain")
     @Path("/log/{logname}")
-    public Response getLogFile(@PathParam("logname") String logname){
-        if(!userService.isAdmin()){
+    public Response getLogFile(@PathParam("logname") String logname) {
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
         try {
-            return Response.status(Response.Status.OK).entity(logExtractor.readLog(logname)).build();
+            return Response.status(Response.Status.OK)
+                    .entity(logExtractor.readLog(logname))
+                    .build();
         } catch (IOException e) {
-            log.error("Could not read log file",e);
+            log.error("Could not read log file", e);
             return Response.serverError().entity("Could not read log file").build();
         }
     }
@@ -667,22 +703,21 @@ public class AdminResource {
     @GET
     @Produces("application/json")
     @Path("/datakeys")
-    public Response getPropertiesKeys(){
-        return Response.ok(repositoryDatasourceManager.getAvailablePropertiesKeys()).build();
+    public Response getPropertiesKeys() {
+        return Response.ok(repositoryDatasourceManager.getAvailablePropertiesKeys())
+                .build();
     }
 
     @GET
     @Produces("application/json")
     @Path("/attacheddatasources")
-    public Response getDataSources(){
-        if(!userService.isAdmin()){
+    public Response getDataSources() {
+        if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
 
         List<JujuSource> list = repositoryDatasourceManager.getJujuDatasources();
 
-
         return Response.ok(list).build();
-
     }
 }

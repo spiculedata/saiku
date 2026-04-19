@@ -5,6 +5,23 @@ import com.lowagie.text.PageSize;
 import com.lowagie.text.Rectangle;
 import com.lowagie.text.pdf.PdfContentByte;
 import com.lowagie.text.pdf.PdfWriter;
+import java.awt.*;
+import java.awt.print.PageFormat;
+import java.awt.print.Paper;
+import java.io.*;
+import java.net.URISyntaxException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.transform.Result;
+import javax.xml.transform.Source;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.sax.SAXResult;
 import org.apache.batik.transcoder.TranscoderInput;
 import org.apache.batik.transcoder.print.PrintTranscoder;
 import org.apache.commons.lang.StringUtils;
@@ -15,27 +32,7 @@ import org.apache.fop.apps.MimeConstants;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.service.util.export.PdfPerformanceLogger;
 import org.saiku.web.rest.objects.resultset.QueryResult;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.xml.sax.SAXException;
-
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.transform.Result;
-import javax.xml.transform.Source;
-import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.dom.DOMSource;
-import javax.xml.transform.sax.SAXResult;
-import java.awt.*;
-import java.awt.print.PageFormat;
-import java.awt.print.Paper;
-import java.io.*;
-import java.net.URISyntaxException;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 
 /**
  * This PdfReport reads in a QueryResult and converts it to HTML, DOM, FO and eventually to a byte array containing the PDF data
@@ -83,7 +80,9 @@ public class PdfReport {
 
     private int calculateResultWidth(QueryResult queryResult) {
         int length = 0;
-        if (queryResult != null && queryResult.getCellset() != null && queryResult.getCellset().size() > 0) {
+        if (queryResult != null
+                && queryResult.getCellset() != null
+                && queryResult.getCellset().size() > 0) {
             length = queryResult.getCellset().get(0).length;
         }
         if (length == 0) {
@@ -91,7 +90,6 @@ public class PdfReport {
         }
 
         return length;
-
     }
 
     private void addSvgImage(String svg, Document document, PdfWriter pdfWriter) {
@@ -101,15 +99,14 @@ public class PdfReport {
             stringBuffer.insert(stringBuffer.indexOf("<svg") + 4, " xmlns='http://www.w3.org/2000/svg'");
         }
 
-        String t = "<?xml version='1.0' encoding='ISO-8859-1'"
-                + " standalone='no'?>" + stringBuffer.toString();
+        String t = "<?xml version='1.0' encoding='ISO-8859-1'" + " standalone='no'?>" + stringBuffer.toString();
         PdfContentByte cb = pdfWriter.getDirectContent();
         cb.saveState();
         cb.concatCTM(1.0f, 0, 0, 1.0f, 36, 0);
         float width = document.getPageSize().getWidth() - 20;
         float height = document.getPageSize().getHeight() - 20;
         Graphics2D graphics = cb.createGraphics(width, height);
-        //graphics.rotate(Math.toRadians(-90), 100, 100);
+        // graphics.rotate(Math.toRadians(-90), 100, 100);
         PrintTranscoder prm = new PrintTranscoder();
         TranscoderInput ti = new TranscoderInput(new StringReader(t));
         prm.transcode(ti, null);
@@ -191,12 +188,12 @@ public class PdfReport {
     private byte[] fo2Pdf(org.w3c.dom.Document foDocument, String styleSheet, Rectangle size) {
         FopFactoryBuilder builder = null;
         try {
-            builder = new FopFactoryBuilder(this.getClass().getResource("fop_config.xml").toURI());
+            builder = new FopFactoryBuilder(
+                    this.getClass().getResource("fop_config.xml").toURI());
         } catch (URISyntaxException e) {
             e.printStackTrace();
         }
         builder.setStrictFOValidation(false);
-
 
         try {
             // Specify an external configuration file, to ease user changes, like adding custom fonts
@@ -235,13 +232,16 @@ public class PdfReport {
             DOMSource xslDomSource = new DOMSource(xslDoc);
 
             return tFactory.newTransformer(xslDomSource);
-        } catch (javax.xml.transform.TransformerException | ParserConfigurationException | SAXException | IOException e) {
+        } catch (javax.xml.transform.TransformerException
+                | ParserConfigurationException
+                | SAXException
+                | IOException e) {
             e.printStackTrace();
             return null;
         }
     }
-	
-	 private Rectangle getQueryResultSize(QueryResult queryResult) {
+
+    private Rectangle getQueryResultSize(QueryResult queryResult) {
         int resultWidth = calculateResultWidth(queryResult);
         return calculateDocumentSize(resultWidth);
     }

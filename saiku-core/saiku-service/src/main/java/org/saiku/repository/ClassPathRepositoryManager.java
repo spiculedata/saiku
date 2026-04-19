@@ -15,19 +15,7 @@
  */
 package org.saiku.repository;
 
-
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.FilenameUtils;
-import org.saiku.database.dto.MondrianSchema;
-import org.saiku.datasources.connection.RepositoryFile;
-import org.saiku.service.user.UserService;
-import org.saiku.service.util.exception.SaikuServiceException;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -41,13 +29,20 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
-
 import javax.jcr.RepositoryException;
 import javax.servlet.http.HttpSession;
 import javax.xml.bind.JAXBContext;
 import javax.xml.bind.JAXBException;
 import javax.xml.bind.Marshaller;
 import javax.xml.bind.Unmarshaller;
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.FilenameUtils;
+import org.saiku.database.dto.MondrianSchema;
+import org.saiku.datasources.connection.RepositoryFile;
+import org.saiku.service.user.UserService;
+import org.saiku.service.util.exception.SaikuServiceException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Classpath Repository Manager for Saiku.
@@ -66,36 +61,35 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
     private String sep = "/";
     private ScopedRepo sessionRegistry;
 
-    private ClassPathRepositoryManager(String data, String defaultRole, ScopedRepo sessionRegistry, boolean workspaces) {
+    private ClassPathRepositoryManager(
+            String data, String defaultRole, ScopedRepo sessionRegistry, boolean workspaces) {
 
-        log.info("Path is "+ data);
+        log.info("Path is " + data);
         this.append = cleanse(data);
-        log.info("Path is now"+ data);
+        log.info("Path is now" + data);
         this.defaultRole = defaultRole;
         this.sessionRegistry = sessionRegistry;
         this.workspaces = workspaces;
     }
 
-    public static synchronized ClassPathRepositoryManager getClassPathRepositoryManager(String data, String defaultRole, ScopedRepo sessionRegistry, boolean workspaces) {
+    public static synchronized ClassPathRepositoryManager getClassPathRepositoryManager(
+            String data, String defaultRole, ScopedRepo sessionRegistry, boolean workspaces) {
         if (ref == null)
             // it's ok, we can call this constructor
             ref = new ClassPathRepositoryManager(data, defaultRole, sessionRegistry, workspaces);
         return ref;
     }
 
-    public Object clone()
-            throws CloneNotSupportedException {
+    public Object clone() throws CloneNotSupportedException {
         throw new CloneNotSupportedException();
         // that'll teach 'em
     }
 
-    public void init() {
-
-    }
+    public void init() {}
 
     public boolean start(UserService userService) throws RepositoryException {
         this.userService = userService;
-        
+
         if (session == null) {
             File f = new File(this.append, "unknown");
             File f2 = new File(this.append, "etc");
@@ -141,7 +135,8 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
                 } catch (IOException e1) {
                     log.debug("Failed to find license 1");
                     try {
-                        FileUtils.copyFile(new File(append, "unknown/etc/license.lic"), this.createNode("/etc/license.lic"));
+                        FileUtils.copyFile(
+                                new File(append, "unknown/etc/license.lic"), this.createNode("/etc/license.lic"));
                     } catch (IOException e2) {
                         log.debug("failed to find any licenses. Giving up");
                     }
@@ -197,10 +192,9 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
             acl2.addEntry(n.getPath(), e);
             acl2.serialize(n);
         }
-        
+
         return true;
     }
-
 
     public void createUser(String u) throws RepositoryException {
 
@@ -211,9 +205,7 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
         Acl2 acl2 = new Acl2(node);
         acl2.addEntry(node.getPath(), e);
         acl2.serialize(node);
-
     }
-
 
     public Object getHomeFolders() throws RepositoryException {
 
@@ -235,9 +227,7 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
         return this.getAllFoldersInCurrentDirectory(directory);
     }
 
-    public void shutdown() {
-
-    }
+    public void shutdown() {}
 
     public boolean createFolder(String username, String folder) throws RepositoryException {
         this.createFolder(folder);
@@ -254,19 +244,16 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
         return true;
     }
 
-
-    public void deleteRepository() throws RepositoryException {
-
-    }
+    public void deleteRepository() throws RepositoryException {}
 
     public boolean moveFolder(String user, String folder, String source, String target) throws RepositoryException {
         return false;
     }
 
-    public Object saveFile(Object file, String path, String user, String type, List<String> roles) throws
-            RepositoryException {
+    public Object saveFile(Object file, String path, String user, String type, List<String> roles)
+            throws RepositoryException {
         if (file == null) {
-            //Create new folder
+            // Create new folder
             String parent;
             if (path.contains(sep)) {
                 parent = path.substring(0, path.lastIndexOf(sep));
@@ -292,21 +279,20 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
             Acl2 acl2 = new Acl2(n);
             acl2.setAdminRoles(userService.getAdminRoles());
 
-
             File check = this.getNode(filename);
             if (check.exists()) {
                 check.delete();
             }
-            
+
             File resNode = this.createNode(path);
-            
+
             FileWriter fileWriter;
-            
+
             try {
                 if (resNode.getParentFile() != null && !resNode.getParentFile().exists()) {
-                  resNode.getParentFile().mkdirs();
+                    resNode.getParentFile().mkdirs();
                 }
-              
+
                 fileWriter = new FileWriter(resNode);
 
                 fileWriter.write((String) file);
@@ -325,20 +311,14 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
         Acl2 acl2 = new Acl2(node);
         acl2.setAdminRoles(userService.getAdminRoles());
         if (!acl2.canRead(node, user, roles)) {
-            //TODO Throw exception
+            // TODO Throw exception
             throw new RepositoryException();
-
         }
 
         this.getNode(path).delete();
-
     }
 
-    public void moveFile(String source, String target, String user, List<String> roles) throws RepositoryException {
-
-
-    }
-
+    public void moveFile(String source, String target, String user, List<String> roles) throws RepositoryException {}
 
     public Object saveInternalFile(Object file, String path, String type) throws RepositoryException {
         File f = null;
@@ -353,19 +333,17 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
 
             String filename = path;
 
-            if(filename.equals("/etc/license.lic")){
-                File check = new File(append+filename);
+            if (filename.equals("/etc/license.lic")) {
+                File check = new File(append + filename);
                 if (check.exists()) {
                     check.delete();
                 }
-                f = new File(append+filename);
-            }
-            else {
+                f = new File(append + filename);
+            } else {
                 File check = this.getNode(filename);
                 if (check.exists()) {
                     check.delete();
                 }
-
 
                 f = this.createNode(filename);
             }
@@ -380,14 +358,13 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
                 e.printStackTrace();
             }
 
-
             return f;
         }
     }
 
     public Object saveBinaryInternalFile(InputStream file, String path, String type) throws RepositoryException {
         if (file == null) {
-            //Create new folder
+            // Create new folder
             String parent = path.substring(0, path.lastIndexOf(sep));
 
             int pos = path.lastIndexOf(sep);
@@ -406,8 +383,7 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
 
             File resNode = this.createNode(filename);
 
-            FileOutputStream outputStream =
-                    null;
+            FileOutputStream outputStream = null;
             try {
                 outputStream = new FileOutputStream(new File(filename));
             } catch (FileNotFoundException e) {
@@ -440,7 +416,7 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
         Acl2 acl2 = new Acl2(node);
         acl2.setAdminRoles(userService.getAdminRoles());
         if (!acl2.canRead(node, username, roles)) {
-            //TODO Throw exception
+            // TODO Throw exception
             throw new RepositoryException();
         }
 
@@ -462,13 +438,11 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
             e.printStackTrace();
         }
         return null;
-
     }
-
 
     public String getInternalFile(String s) throws RepositoryException {
         byte[] encoded = new byte[0];
-        if(!s.equals("/etc/license.lic")) {
+        if (!s.equals("/etc/license.lic")) {
             try {
                 if (Paths.get(s).isAbsolute() && s.startsWith(this.getDatadir())) {
                     encoded = Files.readAllBytes(Paths.get(s));
@@ -478,8 +452,7 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
             } catch (IOException e) {
                 log.debug("Missing file", e);
             }
-        }
-        else{
+        } else {
             try {
                 encoded = Files.readAllBytes(Paths.get(append + s));
             } catch (IOException e) {
@@ -514,26 +487,21 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
 
     public void removeInternalFile(String s) throws RepositoryException {
         this.getNode(s).delete();
-
     }
 
     public List<MondrianSchema> getAllSchema() throws RepositoryException {
 
         String[] extensions = new String[1];
         extensions[0] = "xml";
-        
+
         String datadir = getDatadir();
         File testFile = new File(datadir);
-        
+
         if (!testFile.exists()) {
-          testFile.mkdirs();
+            testFile.mkdirs();
         }
 
-        Collection<File> files = FileUtils.listFiles(
-                new File(datadir + "datasources"),
-                extensions,
-                true
-        );
+        Collection<File> files = FileUtils.listFiles(new File(datadir + "datasources"), extensions, true);
         List<MondrianSchema> schema = new ArrayList<>();
 
         for (File file : files) {
@@ -546,13 +514,16 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
                         MondrianSchema ms = new MondrianSchema();
                         ms.setName(file.getName());
 
-                        ms.setPath(file.getPath().substring(this.getDatadir().length() - 2, file.getPath().length()));
+                        ms.setPath(file.getPath()
+                                .substring(
+                                        this.getDatadir().length() - 2,
+                                        file.getPath().length()));
                         schema.add(ms);
                         break;
                     }
                 }
             } catch (FileNotFoundException e) {
-                //handle this
+                // handle this
             }
         }
 
@@ -568,8 +539,8 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
         return null;
     }
 
-    public List<IRepositoryObject> getAllFiles(List<String> type, String username, List<String> roles, String path) throws
-            RepositoryException {
+    public List<IRepositoryObject> getAllFiles(List<String> type, String username, List<String> roles, String path)
+            throws RepositoryException {
 
         File file = this.getNode(path);
         if (file.exists()) {
@@ -581,9 +552,7 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
         }
 
         return null;
-
     }
-
 
     public void deleteFile(String datasourcePath) {
         File n;
@@ -594,7 +563,6 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
         } catch (RepositoryException e) {
             log.error("Could not remove file " + datasourcePath, e);
         }
-
     }
 
     private AclEntry getAclObj(String path) {
@@ -630,7 +598,6 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
 
     public void setACL(String object, String acl, String username, List<String> roles) throws RepositoryException {
 
-
         ObjectMapper mapper = new ObjectMapper();
         log.debug("Set ACL to " + object + " : " + acl);
         AclEntry ae = null;
@@ -650,7 +617,6 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
         Acl2 acl2 = new Acl2(node);
         acl2.setAdminRoles(userService.getAdminRoles());
 
-
         if (acl2.canGrant(node, username, roles)) {
             if (node != null) {
                 acl2.addEntry(object, ae);
@@ -664,11 +630,7 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
 
         String[] extensions = new String[1];
         extensions[0] = "xml";
-        Collection<File> files = FileUtils.listFiles(
-                new File(getDatadir()),
-                extensions,
-                true
-        );
+        Collection<File> files = FileUtils.listFiles(new File(getDatadir()), extensions, true);
 
         for (File file : files) {
 
@@ -686,10 +648,7 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
     }
 
     @Override
-    public void createFileMixin(String type) throws RepositoryException {
-
-    }
-
+    public void createFileMixin(String type) throws RepositoryException {}
 
     public List<DataSource> getAllDataSources() throws RepositoryException {
 
@@ -697,11 +656,7 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
 
         String[] extensions = new String[1];
         extensions[0] = "sds";
-        Collection<File> files = FileUtils.listFiles(
-                new File(append),
-                extensions,
-                true
-        );
+        Collection<File> files = FileUtils.listFiles(new File(append), extensions, true);
 
         for (File file : files) {
             JAXBContext jaxbContext = null;
@@ -762,13 +717,12 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
 
             jaxbMarshaller.marshal(ds, baos);
 
-
         } catch (JAXBException e) {
             log.error("Could not read XML", e);
         }
 
         int pos = path.lastIndexOf(sep);
-        //File n = getFolder(path.substring(0, pos));
+        // File n = getFolder(path.substring(0, pos));
         File f = this.createNode(path);
         try {
             FileWriter fileWriter = new FileWriter(f);
@@ -779,16 +733,13 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
         } catch (IOException e) {
             e.printStackTrace();
         }
-
     }
 
     public byte[] exportRepository() throws RepositoryException, IOException {
         return null;
     }
 
-    public void restoreRepository(byte[] xml) throws RepositoryException, IOException {
-
-    }
+    public void restoreRepository(byte[] xml) throws RepositoryException, IOException {}
 
     public RepositoryFile getFile(String fileUrl) {
         fileUrl = fixPath(fileUrl);
@@ -801,29 +752,26 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
         }
 
         return new RepositoryFile(n != null ? n.getName() : null, null, null, fileUrl);
-
     }
-
 
     public Object getRepository() {
         return null;
     }
 
     public void setRepository(Object repository) {
-        //this.repository = repository;
+        // this.repository = repository;
     }
-
 
     public Object getRepositoryObject() {
         return null;
     }
 
-
-    private List<IRepositoryObject> getRepoObjects(File root, List<String> fileType, String username, List<String> roles,
-                                                   boolean includeparent) throws Exception {
+    private List<IRepositoryObject> getRepoObjects(
+            File root, List<String> fileType, String username, List<String> roles, boolean includeparent)
+            throws Exception {
         List<IRepositoryObject> repoObjects = new ArrayList<IRepositoryObject>();
         ArrayList<File> objects = new ArrayList<>();
-        
+
         if (root.isDirectory()) {
             this.listf(root.getAbsolutePath(), objects);
 
@@ -836,69 +784,76 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
         acl.setAdminRoles(userService.getAdminRoles());
 
         for (File file : objects) {
-          try {
-            if (!file.isHidden()) {
-                String filename = file.getName();
-                String relativePath = file.getPath();
-                String datadir = getDatadir();
+            try {
+                if (!file.isHidden()) {
+                    String filename = file.getName();
+                    String relativePath = file.getPath();
+                    String datadir = getDatadir();
 
-                if (relativePath.startsWith(datadir) && datadir.length() >= 0) { // If we have an absolute path
-                    relativePath = relativePath.substring(datadir.length(), relativePath.length()); //Make it relative to the datadir
-                }
+                    if (relativePath.startsWith(datadir) && datadir.length() >= 0) { // If we have an absolute path
+                        relativePath = relativePath.substring(
+                                datadir.length(), relativePath.length()); // Make it relative to the datadir
+                    }
 
-                relativePath = relativePath.replace("\\", "/");
+                    relativePath = relativePath.replace("\\", "/");
 
-                if (acl.canRead(relativePath, username, roles)) {
-                    List<AclMethod> acls = acl.getMethods(new File(relativePath), username, roles);
-                    
-                    if (file.isFile()) {
-                        if (!fileType.isEmpty()) {
-                            for (String ft : fileType) {
-                                if (!filename.endsWith(ft)) {
-                                    continue;
+                    if (acl.canRead(relativePath, username, roles)) {
+                        List<AclMethod> acls = acl.getMethods(new File(relativePath), username, roles);
+
+                        if (file.isFile()) {
+                            if (!fileType.isEmpty()) {
+                                for (String ft : fileType) {
+                                    if (!filename.endsWith(ft)) {
+                                        continue;
+                                    }
+
+                                    String extension = FilenameUtils.getExtension(file.getPath());
+                                    repoObjects.add(new RepositoryFileObject(
+                                            filename, "#" + relativePath, extension, relativePath, acls));
                                 }
-                                
-                                String extension = FilenameUtils.getExtension(file.getPath());
-                                repoObjects.add(new RepositoryFileObject(filename, "#" + relativePath, extension, relativePath, acls));
                             }
                         }
-                    }
-                    
-                    if (file.isDirectory()) {
-                        repoObjects.add(new RepositoryFolderObject(filename, "#" + relativePath, relativePath, acls, getRepoObjects(file, fileType, username, roles, false)));
+
+                        if (file.isDirectory()) {
+                            repoObjects.add(new RepositoryFolderObject(
+                                    filename,
+                                    "#" + relativePath,
+                                    relativePath,
+                                    acls,
+                                    getRepoObjects(file, fileType, username, roles, false)));
+                        }
                     }
                 }
+            } catch (Exception ex) {
+                // If a problem happens when handling one file, it will still return the repoObjects list
+                ex.printStackTrace();
             }
-          } catch (Exception ex) {
-            // If a problem happens when handling one file, it will still return the repoObjects list
-            ex.printStackTrace();  
-          }
         }
-        
-        // Just after it has filled the repoObjects, sort it alphabetically, putting the directories first 
+
+        // Just after it has filled the repoObjects, sort it alphabetically, putting the directories first
         Collections.sort(repoObjects, new Comparator<IRepositoryObject>() {
-          public int compare(IRepositoryObject o1, IRepositoryObject o2) {
-              if (o1.getType().equals(IRepositoryObject.Type.FOLDER) && o2.getType().equals(IRepositoryObject.Type.FILE))
-                  return -1;
-              if (o1.getType().equals(IRepositoryObject.Type.FILE) && o2.getType().equals(IRepositoryObject.Type.FOLDER))
-                  return 1;
-              return o1.getName().toLowerCase().compareTo(o2.getName().toLowerCase());
-          }
+            public int compare(IRepositoryObject o1, IRepositoryObject o2) {
+                if (o1.getType().equals(IRepositoryObject.Type.FOLDER)
+                        && o2.getType().equals(IRepositoryObject.Type.FILE)) return -1;
+                if (o1.getType().equals(IRepositoryObject.Type.FILE)
+                        && o2.getType().equals(IRepositoryObject.Type.FOLDER)) return 1;
+                return o1.getName().toLowerCase().compareTo(o2.getName().toLowerCase());
+            }
         });
-        
+
         return repoObjects;
     }
 
     private void listf(String directoryName, ArrayList<File> files) {
         if (directoryName == null || files == null) return;
-        
+
         File directory = new File(fixPath(directoryName));
 
         // get all the files from a directory
         File[] fList = directory.listFiles();
-        
+
         if (fList != null && fList.length > 0) {
-          Collections.addAll(files, fList);
+            Collections.addAll(files, fList);
         }
     }
 
@@ -922,8 +877,6 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
                 found = true;
             } catch (IOException e1) {
                 log.debug("Failed to find license 1");
-
-
             }
         }
 
@@ -952,7 +905,6 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
 
         file.delete();
     }
-
 
     private File getFolder(String path) throws RepositoryException {
         return this.getNode(path);
@@ -987,58 +939,57 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
 
     private HttpSession getSession() {
         try {
-          return sessionRegistry.getSession();
+            return sessionRegistry.getSession();
         } catch (Exception e) {
-          log.debug("Error while fetching the HTTPSession", e);
+            log.debug("Error while fetching the HTTPSession", e);
         }
-        
+
         return null;
     }
 
     private String getDatadir() {
-      HttpSession session = getSession(); // Use a variable instead of a method call for debugging purposes
-      
-      if (session != null) {
-        try {
-            if (workspaces && session.getAttribute(ORBIS_WORKSPACE_DIR) != null) {
-                String workspace = (String) session.getAttribute(ORBIS_WORKSPACE_DIR);
-                workspace = cleanse(workspace);
-                log.debug("Check " + append + "/" + workspace + "/ exists");
-                if (!new File(append + "/" + workspace + "/").exists()) {
-                    this.bootstrap(append + "/" + workspace);
-                    this.start(userService);
-                }
+        HttpSession session = getSession(); // Use a variable instead of a method call for debugging purposes
 
-                log.debug("Workspace directory set to:" + workspace);
-                return fixPath(append + "/" + workspace + "/");
-            } else {
-                log.debug("Workspace directory set to: unknown/");
-                if (!new File(append + "/unknown/etc").exists()) {
-                    this.bootstrap(append + "/unknown");
-                    this.start(userService);
-                }
+        if (session != null) {
+            try {
+                if (workspaces && session.getAttribute(ORBIS_WORKSPACE_DIR) != null) {
+                    String workspace = (String) session.getAttribute(ORBIS_WORKSPACE_DIR);
+                    workspace = cleanse(workspace);
+                    log.debug("Check " + append + "/" + workspace + "/ exists");
+                    if (!new File(append + "/" + workspace + "/").exists()) {
+                        this.bootstrap(append + "/" + workspace);
+                        this.start(userService);
+                    }
 
-                return fixPath(append + "/unknown/");
+                    log.debug("Workspace directory set to:" + workspace);
+                    return fixPath(append + "/" + workspace + "/");
+                } else {
+                    log.debug("Workspace directory set to: unknown/");
+                    if (!new File(append + "/unknown/etc").exists()) {
+                        this.bootstrap(append + "/unknown");
+                        this.start(userService);
+                    }
+
+                    return fixPath(append + "/unknown/");
+                }
+            } catch (Exception ex) {
+                // This exception is expected at Saiku boot
             }
-        } catch (Exception ex) {
-            // This exception is expected at Saiku boot
         }
-      }
-      
 
-      String basePath = fixPath(append + "/unknown");
-        
-      if (!new File(fixPath(basePath + "/etc")).exists()) {
-        this.bootstrap(basePath);
-        
-        try {
-          this.start(userService);
-        } catch (RepositoryException e) {
-          log.error("Error while starting the repository manager", e);
+        String basePath = fixPath(append + "/unknown");
+
+        if (!new File(fixPath(basePath + "/etc")).exists()) {
+            this.bootstrap(basePath);
+
+            try {
+                this.start(userService);
+            } catch (RepositoryException e) {
+                log.error("Error while starting the repository manager", e);
+            }
         }
-      }
-      
-      return fixPath(append + "unknown/");
+
+        return fixPath(append + "unknown/");
     }
 
     private String cleanse(String workspace) {

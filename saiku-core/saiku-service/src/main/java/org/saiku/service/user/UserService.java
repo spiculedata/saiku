@@ -1,19 +1,17 @@
 package org.saiku.service.user;
 
-import org.saiku.database.JdbcUserDAO;
-import org.saiku.database.dto.SaikuUser;
-import org.saiku.service.ISessionService;
-import org.saiku.service.datasource.DatasourceService;
-import org.saiku.service.datasource.IDatasourceManager;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import org.saiku.database.JdbcUserDAO;
+import org.saiku.database.dto.SaikuUser;
+import org.saiku.service.ISessionService;
+import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.datasource.IDatasourceManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Created by bugg on 01/05/14.
@@ -28,7 +26,7 @@ public class UserService implements IUserManager, Serializable {
     private List<String> adminRoles;
     private static final Logger log = LoggerFactory.getLogger(UserService.class);
 
-    public void setAdminRoles( List<String> adminRoles ) {
+    public void setAdminRoles(List<String> adminRoles) {
         this.adminRoles = adminRoles;
     }
 
@@ -40,8 +38,7 @@ public class UserService implements IUserManager, Serializable {
         this.iDatasourceManager = repo;
     }
 
-
-    public void setSessionService(ISessionService sessionService){
+    public void setSessionService(ISessionService sessionService) {
         this.sessionService = sessionService;
     }
 
@@ -75,7 +72,6 @@ public class UserService implements IUserManager, Serializable {
         List<SaikuUser> l = new ArrayList<>();
         for (Object user : users) {
             l.add((SaikuUser) user);
-
         }
         return l;
     }
@@ -102,7 +98,6 @@ public class UserService implements IUserManager, Serializable {
         uDAO.deleteUser(username);
 
         iDatasourceManager.deleteFolder("homes/" + u.getUsername());
-
     }
 
     public SaikuUser updateUser(SaikuUser u, boolean updatepassword) {
@@ -110,20 +105,19 @@ public class UserService implements IUserManager, Serializable {
         uDAO.updateRoles(u);
 
         return user;
-
     }
-    
+
     @SuppressWarnings("unchecked")
     private List<String> getCurrentUserRolesList() {
-      if (sessionService != null && 
-          sessionService.getAllSessionObjects() != null &&
-          sessionService.getAllSessionObjects().get("roles") != null) {
-        return (List<String>)sessionService.getAllSessionObjects().get("roles");
-      }
-      
-      return new ArrayList<String>();
+        if (sessionService != null
+                && sessionService.getAllSessionObjects() != null
+                && sessionService.getAllSessionObjects().get("roles") != null) {
+            return (List<String>) sessionService.getAllSessionObjects().get("roles");
+        }
+
+        return new ArrayList<String>();
     }
-    
+
     public String[] getCurrentUserRoles() {
         List<String> roles = getCurrentUserRolesList();
         String[] rolesArray = new String[roles.size()];
@@ -133,30 +127,27 @@ public class UserService implements IUserManager, Serializable {
     public boolean isAdmin() {
         List<String> roles = getCurrentUserRolesList();
 
-        if (roles!=null) {
+        if (roles != null) {
             return !Collections.disjoint(roles, adminRoles);
         } else {
             return true;
         }
     }
 
-    public void checkFolders(){
+    public void checkFolders() {
 
-        String username = (String ) sessionService.getAllSessionObjects().get("username");
+        String username = (String) sessionService.getAllSessionObjects().get("username");
 
         boolean home = true;
-        if(username != null) {
-          home = datasourceService.hasHomeDirectory(username);
+        if (username != null) {
+            home = datasourceService.hasHomeDirectory(username);
         }
-        if(!home){
+        if (!home) {
             datasourceService.createUserHome(username);
         }
-
-
-
     }
 
-    public List<String> getAdminRoles(){
+    public List<String> getAdminRoles() {
         return adminRoles;
     }
 
@@ -174,7 +165,7 @@ public class UserService implements IUserManager, Serializable {
         try {
             return (String) sessionService.getSession().get("sessionid");
         } catch (Exception e) {
-            log.error("Could not get sessionid: "+e.getMessage());
+            log.error("Could not get sessionid: " + e.getMessage());
         }
         return null;
     }

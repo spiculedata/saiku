@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,40 +20,38 @@ import java.util.List;
 
 public class SaikuTuple {
 
-  private List<SaikuMember> saikuMembers;
+    private List<SaikuMember> saikuMembers;
 
-  public SaikuTuple() {
-  }
+    public SaikuTuple() {}
 
-  public SaikuTuple( List<SaikuMember> members ) {
-    this.saikuMembers = members;
-  }
-
-  public List<SaikuMember> getSaikuMembers() {
-    return saikuMembers;
-  }
-
-  public void setSaikuMembers( List<SaikuMember> members ) {
-    this.saikuMembers = members;
-  }
-
-  public SaikuMember getSaikuMember( String dimensionUniqueName ) {
-    for ( SaikuMember m : saikuMembers ) {
-      if ( m.getDimensionUniqueName().equals( dimensionUniqueName ) ) {
-        return m;
-      }
+    public SaikuTuple(List<SaikuMember> members) {
+        this.saikuMembers = members;
     }
-    return null;
-  }
 
-  public List<SaikuMember> getOtherSaikuMembers( String dimensionUniqueName ) {
-    List<SaikuMember> others = new ArrayList<>();
-    for ( SaikuMember m : saikuMembers ) {
-      if ( !m.getDimensionUniqueName().equals( dimensionUniqueName ) ) {
-        others.add( m );
-      }
+    public List<SaikuMember> getSaikuMembers() {
+        return saikuMembers;
     }
-    return others;
-  }
 
+    public void setSaikuMembers(List<SaikuMember> members) {
+        this.saikuMembers = members;
+    }
+
+    public SaikuMember getSaikuMember(String dimensionUniqueName) {
+        for (SaikuMember m : saikuMembers) {
+            if (m.getDimensionUniqueName().equals(dimensionUniqueName)) {
+                return m;
+            }
+        }
+        return null;
+    }
+
+    public List<SaikuMember> getOtherSaikuMembers(String dimensionUniqueName) {
+        List<SaikuMember> others = new ArrayList<>();
+        for (SaikuMember m : saikuMembers) {
+            if (!m.getDimensionUniqueName().equals(dimensionUniqueName)) {
+                others.add(m);
+            }
+        }
+        return others;
+    }
 }

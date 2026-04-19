@@ -1,9 +1,8 @@
 package org.saiku.security;
 
+import java.util.regex.Pattern;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-
-import java.util.regex.Pattern;
 
 public class NoReHashPasswordEncoder implements PasswordEncoder {
     private PasswordEncoder encoder;

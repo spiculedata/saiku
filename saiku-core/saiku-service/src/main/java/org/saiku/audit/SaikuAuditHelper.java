@@ -22,15 +22,24 @@ import java.util.UUID;
  */
 public interface SaikuAuditHelper {
 
-  UUID startAudit(
-      String processId,
-      String actionName,
-      String objectName,
-      String userSession,
-      String sessionId,
-      String message,
-      Object logger );
+    UUID startAudit(
+            String processId,
+            String actionName,
+            String objectName,
+            String userSession,
+            String sessionId,
+            String message,
+            Object logger);
 
-  void endAudit( String processId, String actionName, String objectName, String userSession, String sessionId, String
-      message, Object logger, long start, UUID uuid, long end );
+    void endAudit(
+            String processId,
+            String actionName,
+            String objectName,
+            String userSession,
+            String sessionId,
+            String message,
+            Object logger,
+            long start,
+            UUID uuid,
+            long end);
 }

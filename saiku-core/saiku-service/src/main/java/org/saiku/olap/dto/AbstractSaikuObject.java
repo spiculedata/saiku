@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,62 +17,60 @@ package org.saiku.olap.dto;
 
 public class AbstractSaikuObject implements ISaikuObject, Comparable<ISaikuObject> {
 
-  private String uniqueName;
-  private String name;
+    private String uniqueName;
+    private String name;
 
-  AbstractSaikuObject() {
-  }
+    AbstractSaikuObject() {}
 
-  AbstractSaikuObject(String uniqueName, String name) {
-    this.uniqueName = uniqueName;
-    this.name = name;
-  }
-
-  public String getUniqueName() {
-    return uniqueName;
-  }
-
-  public String getName() {
-    return name;
-  }
-
-  @Override
-  public int hashCode() {
-    final int prime = 31;
-    int result = 1;
-    result = prime * result + ( ( uniqueName == null ) ? 0 : uniqueName.hashCode() );
-    return result;
-  }
-
-  @Override
-  public boolean equals( Object obj ) {
-    if ( this == obj ) {
-      return true;
+    AbstractSaikuObject(String uniqueName, String name) {
+        this.uniqueName = uniqueName;
+        this.name = name;
     }
-    if ( obj == null ) {
-      return false;
-    }
-    if ( getClass() != obj.getClass() ) {
-      return false;
-    }
-    AbstractSaikuObject other = (AbstractSaikuObject) obj;
-    if ( uniqueName == null ) {
-      if ( other.uniqueName != null ) {
-        return false;
-      }
-    } else if ( !uniqueName.equals( other.uniqueName ) ) {
-      return false;
-    }
-    return true;
-  }
 
-  @Override
-  public String toString() {
-    return this.uniqueName;
-  }
+    public String getUniqueName() {
+        return uniqueName;
+    }
 
-  public int compareTo( ISaikuObject o ) {
-    return getUniqueName().compareTo( o.getUniqueName() );
-  }
+    public String getName() {
+        return name;
+    }
 
+    @Override
+    public int hashCode() {
+        final int prime = 31;
+        int result = 1;
+        result = prime * result + ((uniqueName == null) ? 0 : uniqueName.hashCode());
+        return result;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (obj == null) {
+            return false;
+        }
+        if (getClass() != obj.getClass()) {
+            return false;
+        }
+        AbstractSaikuObject other = (AbstractSaikuObject) obj;
+        if (uniqueName == null) {
+            if (other.uniqueName != null) {
+                return false;
+            }
+        } else if (!uniqueName.equals(other.uniqueName)) {
+            return false;
+        }
+        return true;
+    }
+
+    @Override
+    public String toString() {
+        return this.uniqueName;
+    }
+
+    public int compareTo(ISaikuObject o) {
+        return getUniqueName().compareTo(o.getUniqueName());
+    }
 }

@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,87 +20,84 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-
 /**
  * The Class CellInfo.
  */
 public class DataCell extends AbstractBaseCell implements Serializable {
 
-  private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-  private Double rawNumber = null;
+    private Double rawNumber = null;
 
-  private List<Integer> coordinates = null;
+    private List<Integer> coordinates = null;
 
-  private String formatString = null; // Definition of the property which holds the format string
-  // used to format cell values.
+    private String formatString = null; // Definition of the property which holds the format string
+    // used to format cell values.
 
-  private final Map<String, String> properties = new HashMap<>();
+    private final Map<String, String> properties = new HashMap<>();
 
-  /**
-   * Blank constructor for serialization purposes, don't use it.
-   */
-  public DataCell() {
-    super();
-  }
+    /**
+     * Blank constructor for serialization purposes, don't use it.
+     */
+    public DataCell() {
+        super();
+    }
 
-  /**
-   * Construct a Data Cell containing olap data.
-   */
-  public DataCell( final boolean right, final boolean sameAsPrev, List<Integer> coordinates ) {
-    super();
-    this.right = right;
-    this.sameAsPrev = sameAsPrev;
-    this.coordinates = coordinates;
-  }
+    /**
+     * Construct a Data Cell containing olap data.
+     */
+    public DataCell(final boolean right, final boolean sameAsPrev, List<Integer> coordinates) {
+        super();
+        this.right = right;
+        this.sameAsPrev = sameAsPrev;
+        this.coordinates = coordinates;
+    }
 
-  public String getFormatString() {
-    return formatString;
-  }
+    public String getFormatString() {
+        return formatString;
+    }
 
-  public void setFormatString( String formatString ) {
-    this.formatString = formatString;
-  }
+    public void setFormatString(String formatString) {
+        this.formatString = formatString;
+    }
 
-  public Number getRawNumber() {
-    return rawNumber;
-  }
+    public Number getRawNumber() {
+        return rawNumber;
+    }
 
-  public void setRawNumber( final Double rawNumber ) {
-    this.rawNumber = rawNumber;
-  }
+    public void setRawNumber(final Double rawNumber) {
+        this.rawNumber = rawNumber;
+    }
 
-  public List<Integer> getCoordinates() {
-    return coordinates;
-  }
+    public List<Integer> getCoordinates() {
+        return coordinates;
+    }
 
-  public void setCoordinates( List<Integer> coordinates ) {
-    this.coordinates = coordinates;
-  }
+    public void setCoordinates(List<Integer> coordinates) {
+        this.coordinates = coordinates;
+    }
 
-  public void setProperty( String name, String value ) {
-    properties.put( name, value );
-  }
+    public void setProperty(String name, String value) {
+        properties.put(name, value);
+    }
 
-  public void setProperties( Map<String, String> props ) {
-    properties.putAll( props );
-  }
+    public void setProperties(Map<String, String> props) {
+        properties.putAll(props);
+    }
 
-  public Map<String, String> getProperties() {
-    return properties;
-  }
+    public Map<String, String> getProperties() {
+        return properties;
+    }
 
-  public String getProperty( String name ) {
-    return properties.get( name );
-  }
+    public String getProperty(String name) {
+        return properties.get(name);
+    }
 
-
-  @Override
-  public String toString() {
-    return "DataCell{" +
-      ", rawNumber=" + rawNumber +
-      ", coordinates=" + coordinates +
-      ", formatString='" + formatString +
-      '}';
-  }
+    @Override
+    public String toString() {
+        return "DataCell{" + ", rawNumber="
+                + rawNumber + ", coordinates="
+                + coordinates + ", formatString='"
+                + formatString + '}';
+    }
 }

@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,46 +24,44 @@ import org.saiku.olap.util.formatter.ICellSetFormatter;
 
 public class OlapResultSetUtil {
 
-  public static CellDataSet cellSet2Matrix( final CellSet cellSet ) {
-    final ICellSetFormatter formatter = new HierarchicalCellSetFormatter();
-    return cellSet2Matrix( cellSet, formatter );
-  }
-
-  public static CellDataSet cellSet2Matrix( final CellSet cellSet, ICellSetFormatter formatter ) {
-    if ( cellSet == null ) {
-      return new CellDataSet( 0, 0 );
+    public static CellDataSet cellSet2Matrix(final CellSet cellSet) {
+        final ICellSetFormatter formatter = new HierarchicalCellSetFormatter();
+        return cellSet2Matrix(cellSet, formatter);
     }
 
-    final Matrix matrix = formatter.format( cellSet );
-    final CellDataSet cds = new CellDataSet( matrix.getMatrixWidth(), matrix.getMatrixHeight() );
+    public static CellDataSet cellSet2Matrix(final CellSet cellSet, ICellSetFormatter formatter) {
+        if (cellSet == null) {
+            return new CellDataSet(0, 0);
+        }
 
-    int z = 0;
-    final AbstractBaseCell[][] bodyvalues =
-      new AbstractBaseCell[ matrix.getMatrixHeight() - matrix.getOffset() ]
-                          [ matrix.getMatrixWidth() ];
+        final Matrix matrix = formatter.format(cellSet);
+        final CellDataSet cds = new CellDataSet(matrix.getMatrixWidth(), matrix.getMatrixHeight());
 
-    for ( int y = matrix.getOffset(); y < matrix.getMatrixHeight(); y++ ) {
-      for ( int x = 0; x < matrix.getMatrixWidth(); x++ ) {
-        bodyvalues[ z ][ x ] = matrix.get( x, y );
-      }
+        int z = 0;
+        final AbstractBaseCell[][] bodyvalues =
+                new AbstractBaseCell[matrix.getMatrixHeight() - matrix.getOffset()][matrix.getMatrixWidth()];
 
-      z++;
+        for (int y = matrix.getOffset(); y < matrix.getMatrixHeight(); y++) {
+            for (int x = 0; x < matrix.getMatrixWidth(); x++) {
+                bodyvalues[z][x] = matrix.get(x, y);
+            }
+
+            z++;
+        }
+
+        cds.setCellSetBody(bodyvalues);
+
+        final AbstractBaseCell[][] headervalues = new AbstractBaseCell[matrix.getOffset()][matrix.getMatrixWidth()];
+
+        for (int y = 0; y < matrix.getOffset(); y++) {
+            for (int x = 0; x < matrix.getMatrixWidth(); x++) {
+                headervalues[y][x] = matrix.get(x, y);
+            }
+        }
+
+        cds.setCellSetHeaders(headervalues);
+        cds.setOffset(matrix.getOffset());
+
+        return cds;
     }
-
-    cds.setCellSetBody( bodyvalues );
-
-    final AbstractBaseCell[][] headervalues =
-        new AbstractBaseCell[ matrix.getOffset() ][ matrix.getMatrixWidth() ];
-
-    for ( int y = 0; y < matrix.getOffset(); y++ ) {
-      for ( int x = 0; x < matrix.getMatrixWidth(); x++ ) {
-        headervalues[ y ][ x ] = matrix.get( x, y );
-      }
-    }
-
-    cds.setCellSetHeaders( headervalues );
-    cds.setOffset( matrix.getOffset() );
-
-    return cds;
-  }
 }

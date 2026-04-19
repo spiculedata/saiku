@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,5 +20,5 @@ import org.saiku.olap.dto.resultset.Matrix;
 
 public interface ICellSetFormatter {
 
-  Matrix format(final CellSet cellSet);
+    Matrix format(final CellSet cellSet);
 }

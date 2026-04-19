@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,49 +20,50 @@ import java.util.List;
 
 public class SaikuTag extends AbstractSaikuObject {
 
-  private List<SaikuTuple> saikuTuples;
-  private String name;
-  private List<SimpleCubeElement> saikuTupleDimensions;
-  private List<SaikuDimensionSelection> saikuDimensionSelections;
+    private List<SaikuTuple> saikuTuples;
+    private String name;
+    private List<SimpleCubeElement> saikuTupleDimensions;
+    private List<SaikuDimensionSelection> saikuDimensionSelections;
 
-  public SaikuTag() {
-  }
+    public SaikuTag() {}
 
-  public SaikuTag( String name, List<SimpleCubeElement> saikuTupleDimensions, List<SaikuTuple> saikuTuples,
-                   List<SaikuDimensionSelection> filterSelections ) {
-    super( name, name );
-    this.saikuTuples = saikuTuples;
-    this.name = name;
-    this.saikuTupleDimensions = saikuTupleDimensions;
-    this.saikuDimensionSelections = filterSelections;
-  }
-
-  public List<SaikuMember> getSaikuMembers( String dimensionUniqueName ) {
-    List<SaikuMember> members = new ArrayList<>();
-    for ( SaikuTuple t : saikuTuples ) {
-      for ( SaikuMember m : t.getSaikuMembers() ) {
-        if ( m.getDimensionUniqueName().equals( dimensionUniqueName ) ) {
-          members.add( m );
-        }
-      }
+    public SaikuTag(
+            String name,
+            List<SimpleCubeElement> saikuTupleDimensions,
+            List<SaikuTuple> saikuTuples,
+            List<SaikuDimensionSelection> filterSelections) {
+        super(name, name);
+        this.saikuTuples = saikuTuples;
+        this.name = name;
+        this.saikuTupleDimensions = saikuTupleDimensions;
+        this.saikuDimensionSelections = filterSelections;
     }
-    return members;
-  }
 
-  public List<SaikuTuple> getSaikuTuples() {
-    return saikuTuples;
-  }
+    public List<SaikuMember> getSaikuMembers(String dimensionUniqueName) {
+        List<SaikuMember> members = new ArrayList<>();
+        for (SaikuTuple t : saikuTuples) {
+            for (SaikuMember m : t.getSaikuMembers()) {
+                if (m.getDimensionUniqueName().equals(dimensionUniqueName)) {
+                    members.add(m);
+                }
+            }
+        }
+        return members;
+    }
 
-  public List<SimpleCubeElement> getSaikuTupleDimensions() {
-    return saikuTupleDimensions;
-  }
+    public List<SaikuTuple> getSaikuTuples() {
+        return saikuTuples;
+    }
 
-  public List<SaikuDimensionSelection> getSaikuDimensionSelections() {
-    return saikuDimensionSelections;
-  }
+    public List<SimpleCubeElement> getSaikuTupleDimensions() {
+        return saikuTupleDimensions;
+    }
 
-  public String getName() {
-    return name;
-  }
+    public List<SaikuDimensionSelection> getSaikuDimensionSelections() {
+        return saikuDimensionSelections;
+    }
 
+    public String getName() {
+        return name;
+    }
 }

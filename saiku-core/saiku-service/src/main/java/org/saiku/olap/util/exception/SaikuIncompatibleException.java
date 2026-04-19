@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,34 +17,33 @@ package org.saiku.olap.util.exception;
 
 public class SaikuIncompatibleException extends Exception {
 
-  private static final long serialVersionUID = 6079334291828346380L;
+    private static final long serialVersionUID = 6079334291828346380L;
 
-  /**
-   * @see java.lang.Exception#Exception()
-   */
-  public SaikuIncompatibleException() {
-    super();
-  }
+    /**
+     * @see java.lang.Exception#Exception()
+     */
+    public SaikuIncompatibleException() {
+        super();
+    }
 
-  /**
-   * @see java.lang.Exception#Exception(String))
-   */
+    /**
+     * @see java.lang.Exception#Exception(String))
+     */
+    public SaikuIncompatibleException(String message) {
+        super(message);
+    }
 
-  public SaikuIncompatibleException( String message ) {
-    super( message );
-  }
+    /**
+     * @see java.lang.Exception#Exception(Throwable)
+     */
+    public SaikuIncompatibleException(Throwable cause) {
+        super(cause);
+    }
 
-  /**
-   * @see java.lang.Exception#Exception(Throwable)
-   */
-  public SaikuIncompatibleException( Throwable cause ) {
-    super( cause );
-  }
-
-  /**
-   * @see java.lang.Exception#Exception(String, Throwable)
-   */
-  public SaikuIncompatibleException( String message, Throwable cause ) {
-    super( message, cause );
-  }
+    /**
+     * @see java.lang.Exception#Exception(String, Throwable)
+     */
+    public SaikuIncompatibleException(String message, Throwable cause) {
+        super(message, cause);
+    }
 }

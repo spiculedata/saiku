@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,21 +15,18 @@
  */
 package org.saiku.datasources.connection;
 
+import static org.saiku.datasources.connection.encrypt.CryptoUtil.decrypt;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.util.Properties;
+import mondrian.rolap.RolapConnection;
 import org.olap4j.OlapConnection;
 import org.olap4j.OlapWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.util.Properties;
-
-import mondrian.rolap.RolapConnection;
-
-import static org.saiku.datasources.connection.encrypt.CryptoUtil.decrypt;
-
 public class SaikuOlapConnection implements ISaikuConnection {
-
 
     private String name;
     private boolean initialized = false;
@@ -40,7 +37,6 @@ public class SaikuOlapConnection implements ISaikuConnection {
     private String passwordenc;
 
     private static final Logger log = LoggerFactory.getLogger(SaikuOlapConnection.class);
-
 
     public SaikuOlapConnection(String name, Properties props) {
         this.name = name;
@@ -69,22 +65,22 @@ public class SaikuOlapConnection implements ISaikuConnection {
         try {
             safemode = System.getProperty("saiku.safemode");
         } catch (Exception e) {
-            //Safemode doesn't exist, not a problem.
+            // Safemode doesn't exist, not a problem.
         }
         if (safemode != null && safemode.equals("true")) {
             log.debug("Not starting connection " + name + ", Saiku in safe mode");
             return false;
         } else {
-            if((props.containsKey("csv") && props.getProperty("csv").equals("true")) || 
-               (props.containsKey("enabled") && props.getProperty("enabled").equals("true")) ||
-               (!props.containsKey("enabled"))) {
+            if ((props.containsKey("csv") && props.getProperty("csv").equals("true"))
+                    || (props.containsKey("enabled")
+                            && props.getProperty("enabled").equals("true"))
+                    || (!props.containsKey("enabled"))) {
                 this.username = props.getProperty(ISaikuConnection.USERNAME_KEY);
                 this.password = props.getProperty(ISaikuConnection.PASSWORD_KEY);
                 String driver = props.getProperty(ISaikuConnection.DRIVER_KEY);
                 this.passwordenc = props.getProperty(ISaikuConnection.PASSWORD_ENCRYPT_KEY);
                 this.properties = props;
                 String url = props.getProperty(ISaikuConnection.URL_KEY);
-
 
                 if (this.passwordenc != null && this.passwordenc.equals("true")) {
                     this.password = decryptPassword(password);
@@ -105,28 +101,28 @@ public class SaikuOlapConnection implements ISaikuConnection {
                         url += "JdbcPassword=" + password + ";";
                     }
                 }
-                
+
                 // Tweak database URL to follow JCR standards when using Jackrabbit
                 if (url.contains("mondrian://") && url.contains("model")) {
-                  String[] urlTokens = url.split(";");
-                  
-                  if (!urlTokens[0].contains("mondrian://")) {
-                    String[] jdbcTokens = urlTokens[0].split(":");
-                    
-                    if (jdbcTokens.length == 5) {
-                      String[] modelTokens = jdbcTokens[4].split("/");
-                      String modelName = modelTokens[modelTokens.length - 1];
-                      
-                      if (!modelName.endsWith("-csv.json")) {
-                        modelName = modelName.substring(0, modelName.length() - 4) + "-csv.json";
-                      }
-                      
-                      jdbcTokens[4] = "model=mondrian://datasources/" + modelName;
-                      
-                      urlTokens[0] = String.join(":", jdbcTokens);
-                      url = String.join(";", urlTokens);
+                    String[] urlTokens = url.split(";");
+
+                    if (!urlTokens[0].contains("mondrian://")) {
+                        String[] jdbcTokens = urlTokens[0].split(":");
+
+                        if (jdbcTokens.length == 5) {
+                            String[] modelTokens = jdbcTokens[4].split("/");
+                            String modelName = modelTokens[modelTokens.length - 1];
+
+                            if (!modelName.endsWith("-csv.json")) {
+                                modelName = modelName.substring(0, modelName.length() - 4) + "-csv.json";
+                            }
+
+                            jdbcTokens[4] = "model=mondrian://datasources/" + modelName;
+
+                            urlTokens[0] = String.join(":", jdbcTokens);
+                            url = String.join(";", urlTokens);
+                        }
                     }
-                  }
                 }
 
                 Class.forName(driver);
@@ -145,8 +141,8 @@ public class SaikuOlapConnection implements ISaikuConnection {
                     initialized = true;
                     return true;
                 }
-            }
-            else if(props.containsKey("enabled") && props.getProperty("enabled").equals("false")){
+            } else if (props.containsKey("enabled")
+                    && props.getProperty("enabled").equals("false")) {
                 log.info("Datasource marked as disabled.");
                 return false;
             }
@@ -159,11 +155,9 @@ public class SaikuOlapConnection implements ISaikuConnection {
             log.info("Clearing cache");
             RolapConnection rcon = olapConnection.unwrap(RolapConnection.class);
             rcon.getCacheControl(null).flushSchemaCache();
-
         }
         return true;
     }
-
 
     public String getDatasourceType() {
         return ISaikuConnection.OLAP_DATASOURCE;
@@ -194,5 +188,4 @@ public class SaikuOlapConnection implements ISaikuConnection {
     public Properties getProperties() {
         return properties;
     }
-
 }

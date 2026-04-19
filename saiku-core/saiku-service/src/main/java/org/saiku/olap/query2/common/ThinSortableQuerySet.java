@@ -1,15 +1,14 @@
 package org.saiku.olap.query2.common;
 
-
 public interface ThinSortableQuerySet extends ThinQuerySet {
 
-	/**
+    /**
      * Sorts the Hierarchy members by name in the
      * order supplied as a parameter.
      * @param order The {@link SortOrder} to use.
      */
     void sort(SortOrder order);
-    
+
     /**
      * Sorts the Hierarchy members by name in the
      * order supplied as a parameter using the given
@@ -24,7 +23,7 @@ public interface ThinSortableQuerySet extends ThinQuerySet {
      * @return A value of {@link SortOrder}
      */
     SortOrder getSortOrder();
-    
+
     /**
      * Returns the current literal used for sorting
      * @return A sort evaluation literal
@@ -36,7 +35,6 @@ public interface ThinSortableQuerySet extends ThinQuerySet {
      */
     void clearSort();
 
-    
     /**
      * Returns the current mode of hierarchization, or null
      * if no hierarchization is currently performed.
@@ -74,7 +72,7 @@ public interface ThinSortableQuerySet extends ThinQuerySet {
      * selected on an axis.
      */
     void clearHierarchizeMode();
-    
+
     /**
      * Defines in which way the hierarchize operation
      * should be performed.
@@ -89,7 +87,7 @@ public interface ThinSortableQuerySet extends ThinQuerySet {
          */
         POST
     }
-    
+
     enum SortOrder {
         /**
          * Ascending sort order. Members of
@@ -116,5 +114,4 @@ public interface ThinSortableQuerySet extends ThinQuerySet {
          */
         BDESC
     }
-    
 }
