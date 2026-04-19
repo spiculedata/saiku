@@ -182,3 +182,99 @@ export async function parseArrowExecute(buffer: ArrayBuffer): Promise<QueryResul
   };
   return result;
 }
+
+// --- Drillthrough adapter -----------------------------------------------
+
+const DRILLTHROUGH_METADATA_KEY = "saiku.drillthrough";
+
+interface DrillthroughMetadata {
+  captions: string[];
+  rowCount: number;
+  runtimeMs?: number;
+}
+
+function readDrillthroughMetadata(
+  schemaMetadata: Map<string, string> | undefined,
+): DrillthroughMetadata {
+  if (!schemaMetadata) {
+    throw new Error("Arrow drillthrough stream missing schema metadata");
+  }
+  const raw = schemaMetadata.get(DRILLTHROUGH_METADATA_KEY);
+  if (!raw) {
+    throw new Error(`Arrow drillthrough stream missing ${DRILLTHROUGH_METADATA_KEY} metadata entry`);
+  }
+  const parsed = JSON.parse(raw) as Partial<DrillthroughMetadata>;
+  if (!Array.isArray(parsed.captions) || typeof parsed.rowCount !== "number") {
+    throw new Error("Arrow drillthrough metadata malformed");
+  }
+  return {
+    captions: parsed.captions.map(String),
+    rowCount: parsed.rowCount,
+    runtimeMs: parsed.runtimeMs,
+  };
+}
+
+/**
+ * Parse an Arrow IPC stream produced by ArrowDrillthroughWriter into the
+ * legacy `QueryResult` shape the Svelte DrillthroughResultModal already
+ * consumes. First cellset row is column headers (COLUMN_HEADER); subsequent
+ * rows are DATA_CELLs. For Float64 columns we tag the cell properties with
+ * `numeric: "true"` so the modal can right-align them — JSON drillthrough
+ * responses have no per-column type info and default to left-align (that
+ * divergence is intentional; the JSON path is shrinking, not growing).
+ */
+export async function parseArrowDrillthrough(buffer: ArrayBuffer): Promise<QueryResult> {
+  const arrow = await import("apache-arrow");
+  const table = arrow.tableFromIPC(new Uint8Array(buffer));
+  const schemaMetadata = table.schema.metadata as Map<string, string> | undefined;
+  const meta = readDrillthroughMetadata(schemaMetadata);
+
+  const fields = table.schema.fields;
+  const colCount = fields.length;
+  const height = meta.rowCount;
+
+  // Column types: a column is numeric iff its Arrow type is FloatingPoint.
+  // (ArrowDrillthroughWriter collapses all JDBC numerics to Float64; strings
+  // and date/timestamps are dictionary-encoded Utf8.)
+  const isNumeric = new Array<boolean>(colCount);
+  for (let c = 0; c < colCount; c++) {
+    // Arrow's TypeId enum entry for FloatingPoint is 3; using the name via
+    // toString is brittle, so compare via the type's toString which
+    // reliably yields "Float64" for our numeric columns.
+    const t = fields[c].type;
+    isNumeric[c] = t?.toString?.().startsWith("Float") ?? false;
+  }
+
+  // Build column-header row from captions (fallback to field name).
+  const header: CellEntry[] = [];
+  for (let c = 0; c < colCount; c++) {
+    const caption = c < meta.captions.length ? meta.captions[c] : fields[c].name;
+    header.push({ value: caption, type: "COLUMN_HEADER" });
+  }
+  const cellset: CellEntry[][] = [header];
+
+  // Data rows.
+  const getters: ((i: number) => unknown)[] = [];
+  for (let c = 0; c < colCount; c++) {
+    const col = table.getChild(fields[c].name);
+    getters.push((i) => col?.get(i));
+  }
+  for (let i = 0; i < height; i++) {
+    const row: CellEntry[] = [];
+    for (let c = 0; c < colCount; c++) {
+      const v = getters[c](i);
+      const value = v === null || v === undefined ? "" : String(v);
+      const properties: Record<string, string> = {};
+      if (isNumeric[c]) properties.numeric = "true";
+      row.push({ value, type: "DATA_CELL", properties });
+    }
+    cellset.push(row);
+  }
+
+  return {
+    cellset,
+    width: colCount,
+    height,
+    runtime: meta.runtimeMs,
+  };
+}

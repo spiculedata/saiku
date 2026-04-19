@@ -43,9 +43,12 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
 import org.olap4j.CellSet;
 import org.saiku.olap.dto.SimpleCubeElement;
+import org.saiku.olap.dto.resultset.AbstractBaseCell;
 import org.saiku.olap.dto.resultset.CellDataSet;
+import org.saiku.olap.dto.resultset.MemberCell;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.olap.result.ArrowCellsetWriter;
+import org.saiku.olap.result.ArrowDrillthroughWriter;
 import org.saiku.olap.util.SaikuProperties;
 import org.saiku.service.async.AsyncQueryHandle;
 import org.saiku.service.async.AsyncQueryService;
@@ -247,8 +250,7 @@ public class Query2Resource {
         // Cache-first path: on hit we stream the stored Arrow bytes straight
         // back without touching Mondrian. On miss the service executes,
         // encodes, caches, and returns the fresh bytes.
-        final org.saiku.service.cache.SaikuQueryCache.CachedQueryResult r =
-                thinQueryService.executeCached(tq);
+        final org.saiku.service.cache.SaikuQueryCache.CachedQueryResult r = thinQueryService.executeCached(tq);
         final byte[] bytes = r.arrowBytes;
         StreamingOutput body = new StreamingOutput() {
             @Override
@@ -629,45 +631,65 @@ public class Query2Resource {
      * @param returns The returned dimensions and levels
      * @return A query result set.
      */
+    // TODO (phase 5): drillthrough intentionally does NOT go through the
+    // SaikuQueryCache (Task 5). The cache keys for execute are MDX+params;
+    // drillthrough also depends on cell position, maxrows, and returns list,
+    // and invalidation semantics differ. If/when we add caching here it
+    // needs its own key space and TTL policy.
     @GET
-    @Produces({"application/json"})
+    @Produces({ARROW_STREAM_MEDIA_TYPE, "application/json"})
     @Path("/{queryname}/drillthrough")
-    public QueryResult drillthrough(
+    public Response drillthrough(
             @PathParam("queryname") String queryName,
             @QueryParam("maxrows") @DefaultValue("100") Integer maxrows,
             @QueryParam("position") String position,
-            @QueryParam("returns") String returns) {
+            @QueryParam("returns") String returns,
+            @Context HttpHeaders headers) {
         if (log.isDebugEnabled()) {
             log.debug("TRACK\t" + "\t/query/" + queryName + "/drillthrough\tGET");
         }
-        QueryResult rsc;
+        boolean arrow = clientPrefersArrow(headers);
         ResultSet rs = null;
         try {
             Long start = (new Date()).getTime();
+            DrillThroughResult dtr = null;
             if (position == null) {
                 rs = thinQueryService.drillthrough(queryName, maxrows, returns);
-                rsc = RestUtil.convert(rs);
             } else {
                 String[] positions = position.split(":");
                 List<Integer> cellPosition = new ArrayList<>();
-
                 for (String p : positions) {
-                    Integer pInt = Integer.parseInt(p);
-                    cellPosition.add(pInt);
+                    cellPosition.add(Integer.parseInt(p));
                 }
-                DrillThroughResult drillthrough =
-                        thinQueryService.drillthroughWithCaptions(queryName, cellPosition, maxrows, returns);
-                rsc = RestUtil.convert(drillthrough);
+                dtr = thinQueryService.drillthroughWithCaptions(queryName, cellPosition, maxrows, returns);
+                rs = dtr.getResultSet();
+            }
+
+            if (arrow) {
+                return drillthroughArrow(rs, dtr, start);
+            }
+
+            QueryResult rsc;
+            if (dtr != null) {
+                rsc = RestUtil.convert(dtr);
+            } else {
+                rsc = RestUtil.convert(rs);
             }
             Long runtime = (new Date()).getTime() - start;
             rsc.setRuntime(runtime.intValue());
+            return Response.ok(rsc).type(MediaType.APPLICATION_JSON).build();
 
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ")", e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            rsc = new QueryResult(error);
+            return Response.ok(new QueryResult(error))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
 
         } finally {
+            // Arrow path materialises rows eagerly into the ByteArrayOutputStream
+            // before the response body is written, so it is safe to close the
+            // ResultSet here for both JSON and Arrow branches.
             if (rs != null) {
                 Statement statement = null;
                 try {
@@ -685,7 +707,56 @@ public class Query2Resource {
                 }
             }
         }
-        return rsc;
+    }
+
+    private Response drillthroughArrow(ResultSet rs, DrillThroughResult dtr, long startMs) throws Exception {
+        String[] captions = extractCaptions(rs, dtr);
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        ArrowDrillthroughWriter.WriteResult wr = new ArrowDrillthroughWriter().write(rs, captions, baos);
+        final byte[] bytes = baos.toByteArray();
+        long runtime = Math.max(0L, System.currentTimeMillis() - startMs);
+        StreamingOutput body = new StreamingOutput() {
+            @Override
+            public void write(java.io.OutputStream output) throws java.io.IOException {
+                output.write(bytes);
+            }
+        };
+        return Response.ok(body, ARROW_STREAM_MEDIA_TYPE)
+                .header("X-Saiku-Runtime-Ms", String.valueOf(runtime))
+                .header("X-Saiku-Row-Count", String.valueOf(wr.rowCount))
+                .build();
+    }
+
+    private static String[] extractCaptions(ResultSet rs, DrillThroughResult dtr) {
+        if (dtr == null) {
+            return null; // let the writer fall back to JDBC column labels
+        }
+        int width;
+        try {
+            width = rs.getMetaData().getColumnCount();
+        } catch (SQLException ex) {
+            return dtr.getSimpleHeaders();
+        }
+        // Prefer rich cellHeaders (last row = leaf captions) when present,
+        // else the flat simpleHeaders array populated from the "returns" list.
+        AbstractBaseCell[][] cellHeaders = dtr.getCellHeaders();
+        if (cellHeaders != null && cellHeaders.length > 0) {
+            AbstractBaseCell[] last = cellHeaders[cellHeaders.length - 1];
+            if (last != null && last.length >= width) {
+                String[] out = new String[width];
+                for (int i = 0; i < width; i++) {
+                    AbstractBaseCell c = last[i];
+                    if (c instanceof MemberCell) {
+                        String cap = ((MemberCell) c).getFormattedValue();
+                        out[i] = cap != null ? cap : "";
+                    } else {
+                        out[i] = "";
+                    }
+                }
+                return out;
+            }
+        }
+        return dtr.getSimpleHeaders();
     }
 
     /**

@@ -303,10 +303,20 @@ export async function drillthrough(
   if (opts.position) params.set("position", opts.position);
   if (opts.returns?.length) params.set("returns", opts.returns.join(","));
   const url = `${REST_BASE}/${encodeURIComponent(queryName)}/drillthrough?${params.toString()}`;
-  const res = await fetch(url, { credentials: "include" });
+  // Same Arrow-on-negotiation dance as executeQuery. Kill-switch via
+  // localStorage.saiku_force_json=1 falls back to the legacy JSON path.
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: { Accept: acceptHeader() },
+  });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`drillthrough ${res.status}: ${text.slice(0, 200)}`);
+  }
+  const contentType = res.headers.get("content-type") ?? "";
+  if (contentType.includes("arrow")) {
+    const { parseArrowDrillthrough } = await import("$lib/api/arrow");
+    return parseArrowDrillthrough(await res.arrayBuffer());
   }
   return (await res.json()) as QueryResult;
 }
