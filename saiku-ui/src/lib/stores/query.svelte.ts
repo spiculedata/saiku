@@ -25,12 +25,29 @@ class QueryStore {
   running = $state<boolean>(false);
   error = $state<string | null>(null);
   dirty = $state<boolean>(false);
+  savedPath = $state<string | null>(null);
 
   initFor(cube: SaikuCube): void {
     this.current = newQuery(cube);
     this.result = null;
     this.error = null;
     this.dirty = false;
+    this.savedPath = null;
+  }
+
+  loadFromJson(raw: string, path: string): void {
+    const parsed = JSON.parse(raw) as ThinQuery;
+    this.current = parsed;
+    this.result = null;
+    this.error = null;
+    this.dirty = false;
+    this.savedPath = path;
+  }
+
+  markSaved(path: string): void {
+    this.savedPath = path;
+    this.dirty = false;
+    if (this.current) this.current.name = path;
   }
 
   reset(): void {
@@ -38,6 +55,7 @@ class QueryStore {
     this.result = null;
     this.error = null;
     this.dirty = false;
+    this.savedPath = null;
   }
 
   private findAxisForHierarchy(name: string): AxisLocation | null {

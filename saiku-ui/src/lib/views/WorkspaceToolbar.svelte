@@ -10,7 +10,9 @@
   import OpenDialogModal, { type RepoEntry } from "$lib/modals/OpenDialogModal.svelte";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import WarningModal from "$lib/modals/WarningModal.svelte";
+  import MDXModal from "$lib/modals/MDXModal.svelte";
   import { repository } from "$lib/stores/repository.svelte";
+  import { getResource, saveResource } from "$lib/api/repository";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { query } from "$lib/stores/query.svelte";
 
@@ -25,10 +27,21 @@
   });
 
   let saveOpen = $state(false);
+  let saveAsMode = $state(false);
   let openOpen = $state(false);
   let confirmNewOpen = $state(false);
   let warningOpen = $state(false);
   let warningMessage = $state("");
+  let mdxOpen = $state(false);
+
+  function deriveDefaults(): { folder: string; name: string } {
+    const path = query.savedPath ?? "";
+    if (!path) return { folder: "", name: "Untitled.saiku" };
+    const idx = path.lastIndexOf("/");
+    const folder = idx > 0 ? path.slice(0, idx) : "";
+    const name = idx >= 0 ? path.slice(idx + 1) : path;
+    return { folder, name };
+  }
 
   async function ensureRepoLoaded() {
     if (!repository.loaded && !repository.loading) {
@@ -57,8 +70,43 @@
   }
 
   async function onSave() {
+    if (!query.current) {
+      warningMessage = "Select a cube first.";
+      warningOpen = true;
+      return;
+    }
     await ensureRepoLoaded();
+    if (query.savedPath) {
+      try {
+        await saveResource(query.savedPath, JSON.stringify(query.current));
+        query.markSaved(query.savedPath);
+        toasts.success("Saved", query.savedPath);
+      } catch (e) {
+        toasts.danger("Save failed", e instanceof Error ? e.message : String(e));
+      }
+      return;
+    }
+    saveAsMode = false;
     saveOpen = true;
+  }
+
+  async function onSaveAs() {
+    if (!query.current) {
+      warningMessage = "Select a cube first.";
+      warningOpen = true;
+      return;
+    }
+    await ensureRepoLoaded();
+    saveAsMode = true;
+    saveOpen = true;
+  }
+
+  function onShowMdx() {
+    if (!query.current?.mdx && !query.result) {
+      toasts.info("No MDX yet", "Run the query first to see its generated MDX.");
+      return;
+    }
+    mdxOpen = true;
   }
 
   async function onRun() {
@@ -81,17 +129,40 @@
     window.open(url, "_blank");
   }
 
-  function onSavePick(folder: string, name: string) {
+  async function onSavePick(folder: string, name: string) {
     saveOpen = false;
-    toasts.success("Saved (stub)", `${folder || "/"}/${name}`);
-    // Real save wires into repository.saveResource() once query serialization
-    // matches the legacy .saiku JSON format.
-    query.dirty = false;
+    if (!query.current) return;
+    const filename = name.endsWith(".saiku") ? name : `${name}.saiku`;
+    const path = folder ? `${folder}/${filename}` : filename;
+    try {
+      await saveResource(path, JSON.stringify(query.current));
+      query.markSaved(path);
+      toasts.success("Saved", path);
+      await repository.refresh();
+    } catch (e) {
+      toasts.danger("Save failed", e instanceof Error ? e.message : String(e));
+    }
   }
 
-  function onOpenPick(entry: RepoEntry) {
+  async function onOpenPick(entry: RepoEntry) {
     openOpen = false;
-    toasts.info("Opened (stub)", entry.path);
+    if (entry.type !== "file") return;
+    try {
+      const body = await getResource(entry.path);
+      query.loadFromJson(body, entry.path);
+      toasts.success("Opened", entry.path);
+      if (autorun) await query.run();
+    } catch (e) {
+      toasts.danger("Open failed", e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function onRunMdx(mdx: string) {
+    if (!query.current) return;
+    query.current.mdx = mdx;
+    query.current.type = "MDX";
+    mdxOpen = false;
+    await query.run();
   }
 </script>
 
@@ -100,7 +171,7 @@
     <button class="btn" title="New query" onclick={onNew}>＋ New</button>
     <button class="btn" title="Open query" onclick={onOpen}>📂 Open</button>
     <button class="btn" title="Save" onclick={onSave}>💾 Save</button>
-    <button class="btn" title="Save As" onclick={onSave}>Save As…</button>
+    <button class="btn" title="Save As" onclick={onSaveAs}>Save As…</button>
   </div>
   <div class="toolbar__sep"></div>
   <div class="toolbar__group">
@@ -115,7 +186,7 @@
   <div class="toolbar__sep"></div>
   <div class="toolbar__group">
     <button class="btn" title="Swap axes" onclick={() => { query.swapAxes(); if (autorun) query.run(); }}>⇄ Swap</button>
-    <button class="btn" title="Show MDX" onclick={() => toasts.info("MDX editor", "Monaco-backed MDX modal ships in the MDX slice.")}>MDX</button>
+    <button class="btn" title="Show MDX" onclick={onShowMdx}>MDX</button>
   </div>
   <div class="toolbar__spacer"></div>
   <div class="toolbar__group">
@@ -125,13 +196,23 @@
   </div>
 </div>
 
-<SaveQueryModal
-  defaultName="Untitled query"
-  defaultFolder=""
-  folders={repository.folders}
-  open={saveOpen}
-  onSave={onSavePick}
-  onCancel={() => (saveOpen = false)}
+{#if saveOpen}
+  {@const d = deriveDefaults()}
+  <SaveQueryModal
+    defaultName={saveAsMode ? `Copy of ${d.name}` : d.name}
+    defaultFolder={d.folder}
+    folders={repository.folders}
+    open={saveOpen}
+    onSave={onSavePick}
+    onCancel={() => (saveOpen = false)}
+  />
+{/if}
+
+<MDXModal
+  mdx={query.current?.mdx ?? query.result?.query?.mdx ?? ""}
+  open={mdxOpen}
+  onRun={onRunMdx}
+  onCancel={() => (mdxOpen = false)}
 />
 
 <OpenDialogModal
