@@ -15,11 +15,20 @@
     </scm>
     <modules>
         <module>saiku-core</module>
-        <module>saiku-ui</module>
         <module>saiku-webapp</module>
-        <module>saiku-server</module>
+        <!-- Phase 0 reactor: Java backend only.
+             Excluded:
+               saiku-ui       - legacy Backbone/Grunt build using a custom minify
+                                plugin from a dead Google Code repo; rebuilt in
+                                Phase 4/6 with Vite/Svelte.
+               saiku-server   - assembles the Tomcat distribution from saiku-ui
+                                artefacts; reintroduced in Phase 1 as a Spring
+                                Boot fat JAR.
+               saiku-bi-platform-plugin-p7(.1) - Pentaho integration; deleted in
+                                Phase 1. -->
+        <!--<module>saiku-ui</module>-->
+        <!--<module>saiku-server</module>-->
         <!--<module>saiku-bi-platform-plugin-p7</module>-->
-        <!-- p7.1 disabled: depends on the removed commercial license module and MarkLogic backend; Phase 1 deletes it entirely -->
         <!--<module>saiku-bi-platform-plugin-p7.1</module>-->
     </modules>
 
@@ -39,8 +48,8 @@
     </distributionManagement>
     -->
     <properties>
-        <maven.compiler.source>1.7</maven.compiler.source>
-        <maven.compiler.target>1.7</maven.compiler.target>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
         <top.dir>${project.basedir}</top.dir>
         <spring.version>4.1.6.RELEASE</spring.version>
         <spring.security.version>4.0.1.RELEASE</spring.security.version>
@@ -229,15 +238,10 @@
         </plugins>
     </reporting>-->
     <profiles>
-            <profile>
-                <id>ci</id>
-                <modules>
-                <module>saiku-core</module>
-                <module>saiku-ui</module>
-                <module>saiku-webapp</module>
-                <module>saiku-server</module>
-            </modules>
-        </profile>
+        <!-- Phase 0 note: the legacy "ci" profile (which used to exclude the
+             Pentaho plugin from the reactor) has been removed; its membership
+             is now the default top-level <modules> list. -->
+
         <profile>
             <id>security</id>
             <build>
@@ -1016,21 +1020,10 @@
                 <version>1.0.0</version>
             </dependency>
 
-            <dependency>
-                <groupId>org.apache.calcite</groupId>
-                <artifactId>calcite-core</artifactId>
-                <version>${calcite.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.calcite</groupId>
-                <artifactId>calcite-avatica</artifactId>
-                <version>${calcite.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.calcite</groupId>
-                <artifactId>calcite-mongodb</artifactId>
-                <version>${calcite.version}</version>
-            </dependency>
+            <!-- Calcite dependencyManagement removed: Saiku doesn't import org.apache.calcite
+                 directly, and the old 0.9.2-incubating-SNAPSHOT is no longer resolvable.
+                 Any transitive consumer will pull its own declared version. -->
+
             <dependency>
                 <groupId>com.cenqua.clover</groupId>
                 <artifactId>clover</artifactId>
