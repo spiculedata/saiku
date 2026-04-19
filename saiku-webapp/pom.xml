@@ -63,7 +63,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-war-plugin</artifactId>
-                <version>2.6</version>
+                <version>3.4.0</version>
                 <executions>
                     <execution>
                         <!-- First step is to disable the default-war build step. -->
@@ -191,7 +191,7 @@
             </plugin>
             <plugin>
                 <artifactId>maven-war-plugin</artifactId>
-                <version>2.6</version>
+                <version>3.4.0</version>
                 <configuration>
                     <warSourceExcludes>WEB-INF/saiku-beans.xml</warSourceExcludes>
                 </configuration>
