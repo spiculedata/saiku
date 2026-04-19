@@ -120,6 +120,36 @@
     }
   }
 
+  let resultHostEl: HTMLDivElement | null = null;
+
+  $effect(() => {
+    const el = resultHostEl;
+    if (!el) return;
+    const handler = (ev: Event) => {
+      const ce = ev as CustomEvent<{
+        axis: AxisLocation;
+        hierarchyName: string;
+        hierarchyCaption: string;
+        levelName: string;
+        members: SaikuMember[];
+      }>;
+      const d = ce.detail;
+      if (!d) return;
+      selectionsTarget = {
+        axis: d.axis,
+        hierarchyName: d.hierarchyName,
+        hierarchyCaption: d.hierarchyCaption,
+        levelName: d.levelName,
+      };
+      const existing = query.getLevelSelection(d.hierarchyName, d.levelName);
+      selectionsInitial = { uniqueNames: existing.memberUniqueNames, type: existing.type };
+      selectionsMembers = d.members;
+      selectionsOpen = true;
+    };
+    el.addEventListener("saiku-filter-level", handler);
+    return () => el.removeEventListener("saiku-filter-level", handler);
+  });
+
   async function onSelectionsSave(uniqueNames: string[], type: "INCLUSION" | "EXCLUSION") {
     if (!selectionsTarget) return;
     query.setLevelSelection(
@@ -228,7 +258,7 @@
         </label>
       {/if}
     </div>
-    <div class="grid-host">
+    <div class="result-host" bind:this={resultHostEl}>
       {#if query.running}
         <p class="canvas__hint">{i18n.t("canvas.running")}</p>
       {:else if query.error}
@@ -367,7 +397,8 @@
     cursor: pointer;
   }
   .chip__x:hover { color: var(--danger); background: var(--bg-muted); }
-  .grid-host { flex: 1; min-height: 0; overflow: auto; }
+  .result-host { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .result-host :global(.runtime) { flex: 0 0 auto; }
   .view-toggle {
     display: flex;
     align-items: center;

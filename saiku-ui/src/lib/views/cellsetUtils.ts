@@ -84,6 +84,33 @@ export function parseCellset(result: QueryResult): ParsedCellset {
   };
 }
 
+/**
+ * For each row, mark row-header cells whose value is a duplicate of the cell directly above in
+ * the same column (Mondrian already sends empty strings for repeated parents, but older cellsets
+ * sometimes repeat the parent value — treat both as "null"/indent cells to match legacy
+ * Saiku's row_null rendering).
+ */
+export function rowHeaderDisplay(parsed: ParsedCellset): { isNull: boolean }[][] {
+  const out: { isNull: boolean }[][] = [];
+  for (let r = 0; r < parsed.bodyRows.length; r++) {
+    const row: { isNull: boolean }[] = [];
+    for (let c = 0; c < parsed.rowHeaderColCount; c++) {
+      const here = parsed.bodyRows[r][c];
+      const above = r > 0 ? parsed.bodyRows[r - 1][c] : undefined;
+      const hereVal = here?.value ?? "";
+      const aboveVal = above?.value ?? "";
+      const hereUn = here?.properties?.uniquename;
+      const aboveUn = above?.properties?.uniquename;
+      const isNull =
+        hereVal === "" ||
+        (above != null && hereUn != null && aboveUn != null && hereUn === aboveUn);
+      row.push({ isNull });
+    }
+    out.push(row);
+  }
+  return out;
+}
+
 export function toNumber(cell: CellEntry | undefined): number | null {
   if (!cell || cell.value == null || cell.value === "") return null;
   const rawProp = cell.properties?.raw;
