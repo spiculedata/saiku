@@ -1,5 +1,6 @@
 <script lang="ts">
   import { session } from "$lib/stores/session.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   let username = $state("admin");
   let password = $state("");
@@ -13,7 +14,7 @@
     try {
       await session.login(username, password);
     } catch (err) {
-      error = err instanceof Error ? err.message : "Login failed";
+      error = err instanceof Error ? err.message : i18n.t("login.failed");
     } finally {
       busy = false;
     }
@@ -21,16 +22,16 @@
 </script>
 
 <form class="login" onsubmit={onSubmit}>
-  <h1>Sign in to Saiku</h1>
+  <h1>{i18n.t("login.title")}</h1>
   {#if error}
     <p class="callout callout--danger" role="alert">{error}</p>
   {/if}
   <label class="field">
-    <span class="field__label">Username</span>
+    <span class="field__label">{i18n.t("login.username")}</span>
     <input class="field__input" bind:value={username} autocomplete="username" required />
   </label>
   <label class="field">
-    <span class="field__label">Password</span>
+    <span class="field__label">{i18n.t("login.password")}</span>
     <input
       class="field__input"
       type="password"
@@ -40,7 +41,7 @@
     />
   </label>
   <button type="submit" class="btn btn--primary btn--wide" disabled={busy}>
-    {busy ? "Signing in…" : "Sign in"}
+    {busy ? i18n.t("login.submitting") : i18n.t("login.submit")}
   </button>
 </form>
 

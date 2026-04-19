@@ -5,6 +5,8 @@
   import { platform } from "$lib/stores/platform.svelte";
   import ToastStack from "$lib/components/ToastStack.svelte";
   import UpgradeBanner from "$lib/components/UpgradeBanner.svelte";
+  import LocalePicker from "$lib/components/LocalePicker.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
   import "$lib/styles/tokens.css";
   import "$lib/styles/app.css";
 
@@ -28,25 +30,34 @@
 <div class="app">
   <UpgradeBanner />
   <header class="topbar">
-    <div class="topbar__brand">saiku</div>
+    <div class="topbar__brand">{i18n.t("brand")}</div>
     <div class="topbar__actions">
+      <LocalePicker />
       <button type="button" class="btn" onclick={() => theme.toggle()}>
-        {theme.theme === "dark" ? "☾ dark" : theme.theme === "light" ? "☀ light" : "⌘ system"}
+        {theme.theme === "dark"
+          ? `☾ ${i18n.t("topbar.theme.dark")}`
+          : theme.theme === "light"
+            ? `☀ ${i18n.t("topbar.theme.light")}`
+            : `⌘ ${i18n.t("topbar.theme.system")}`}
       </button>
       {#if session.current}
         {#if session.isAdmin}
-          <a class="btn" href="/admin">Admin</a>
+          <a class="btn" href="/admin">{i18n.t("topbar.admin")}</a>
         {/if}
-        <a class="btn" href="/">Workspace</a>
+        <a class="btn" href="/">{i18n.t("topbar.workspace")}</a>
         <button
           type="button"
           class="btn"
           aria-pressed={platform.fullscreen}
-          title={platform.fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+          title={platform.fullscreen
+            ? i18n.t("topbar.fullscreen.exit")
+            : i18n.t("topbar.fullscreen.enter")}
           onclick={() => platform.toggleFullscreen()}
         >{platform.fullscreen ? "⤢" : "⤡"}</button>
         <span class="topbar__user">{session.current.username}</span>
-        <button type="button" class="btn" onclick={() => session.logout()}>Sign out</button>
+        <button type="button" class="btn" onclick={() => session.logout()}>
+          {i18n.t("topbar.signOut")}
+        </button>
       {/if}
     </div>
   </header>

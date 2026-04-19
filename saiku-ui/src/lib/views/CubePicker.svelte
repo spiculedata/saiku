@@ -4,6 +4,7 @@
   import { session } from "$lib/stores/session.svelte";
   import type { SaikuCube } from "$lib/api/discover";
   import { cubeKey } from "$lib/stores/datasources.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   interface Props {
     username: string;
@@ -51,7 +52,7 @@
 </script>
 
 <div class="cube-picker">
-  <label class="cube-picker__label" for="cubes-select">Cubes</label>
+  <label class="cube-picker__label" for="cubes-select">{i18n.t("cubes.label")}</label>
   <div class="cube-picker__row">
     <select
       id="cubes-select"
@@ -61,7 +62,7 @@
       disabled={datasources.loading}
     >
       <option value="">
-        {datasources.loading ? "Loading…" : "Select a cube"}
+        {datasources.loading ? i18n.t("cubes.loading") : i18n.t("cubes.selectPrompt")}
       </option>
       {#each datasources.connections as conn}
         {#each conn.catalogs as cat}
@@ -79,15 +80,18 @@
         {/each}
       {/each}
     </select>
-    <button type="button" class="btn cube-picker__refresh" onclick={onRefresh} aria-label="Refresh cubes">⟳</button>
+    <button
+      type="button"
+      class="btn cube-picker__refresh"
+      onclick={onRefresh}
+      aria-label={i18n.t("cubes.refresh")}
+    >⟳</button>
   </div>
   {#if datasources.error}
     <p class="callout callout--danger">{datasources.error}</p>
   {/if}
   {#if !datasources.loading && datasources.connections.length === 0 && !datasources.error}
-    <p class="cube-picker__empty">
-      No cubes available. Add a datasource in the admin console.
-    </p>
+    <p class="cube-picker__empty">{i18n.t("cubes.empty")}</p>
   {/if}
 </div>
 

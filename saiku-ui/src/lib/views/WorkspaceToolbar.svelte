@@ -15,6 +15,7 @@
   import { getResource, saveResource } from "$lib/api/repository";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { query } from "$lib/stores/query.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   let autorun = $state(true);
   let nonEmpty = $state(true);
@@ -168,31 +169,31 @@
 
 <div class="toolbar" role="toolbar" aria-label="Workspace toolbar">
   <div class="toolbar__group">
-    <button class="btn" title="New query" onclick={onNew}>＋ New</button>
-    <button class="btn" title="Open query" onclick={onOpen}>📂 Open</button>
-    <button class="btn" title="Save" onclick={onSave}>💾 Save</button>
-    <button class="btn" title="Save As" onclick={onSaveAs}>Save As…</button>
+    <button class="btn" onclick={onNew}>{i18n.t("toolbar.new")}</button>
+    <button class="btn" onclick={onOpen}>{i18n.t("toolbar.open")}</button>
+    <button class="btn" onclick={onSave}>{i18n.t("toolbar.save")}</button>
+    <button class="btn" onclick={onSaveAs}>{i18n.t("toolbar.saveAs")}</button>
   </div>
   <div class="toolbar__sep"></div>
   <div class="toolbar__group">
-    <button class="btn btn--primary" title="Run query" onclick={onRun}>▶ Run</button>
+    <button class="btn btn--primary" onclick={onRun}>{i18n.t("toolbar.run")}</button>
     <label class="toolbar__toggle">
-      <input type="checkbox" bind:checked={autorun} /> Autorun
+      <input type="checkbox" bind:checked={autorun} /> {i18n.t("toolbar.autorun")}
     </label>
     <label class="toolbar__toggle">
-      <input type="checkbox" bind:checked={nonEmpty} /> Non-empty
+      <input type="checkbox" bind:checked={nonEmpty} /> {i18n.t("toolbar.nonEmpty")}
     </label>
   </div>
   <div class="toolbar__sep"></div>
   <div class="toolbar__group">
-    <button class="btn" title="Swap axes" onclick={() => { query.swapAxes(); if (autorun) query.run(); }}>⇄ Swap</button>
-    <button class="btn" title="Show MDX" onclick={onShowMdx}>MDX</button>
+    <button class="btn" onclick={() => { query.swapAxes(); if (autorun) query.run(); }}>{i18n.t("toolbar.swap")}</button>
+    <button class="btn" onclick={onShowMdx}>{i18n.t("toolbar.mdx")}</button>
   </div>
   <div class="toolbar__spacer"></div>
   <div class="toolbar__group">
-    <button class="btn" title="Export XLS" onclick={() => exportCurrent("xls")}>XLS</button>
-    <button class="btn" title="Export CSV" onclick={() => exportCurrent("csv")}>CSV</button>
-    <button class="btn" title="Export PDF" onclick={() => exportCurrent("pdf")}>PDF</button>
+    <button class="btn" onclick={() => exportCurrent("xls")}>{i18n.t("toolbar.export.xls")}</button>
+    <button class="btn" onclick={() => exportCurrent("csv")}>{i18n.t("toolbar.export.csv")}</button>
+    <button class="btn" onclick={() => exportCurrent("pdf")}>{i18n.t("toolbar.export.pdf")}</button>
   </div>
 </div>
 
