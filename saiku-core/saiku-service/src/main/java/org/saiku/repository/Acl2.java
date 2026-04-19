@@ -19,20 +19,20 @@ package org.saiku.repository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.File;
-import java.util.*;
-import javax.jcr.Node;
-import javax.jcr.PathNotFoundException;
-import javax.jcr.RepositoryException;
-import org.apache.commons.io.FilenameUtils;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import org.apache.commons.lang.StringUtils;
-import org.apache.jackrabbit.commons.JcrUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Created by bugg on 24/06/14.
+ * Filesystem-backed access control list. Jackrabbit-era {@code javax.jcr.Node}
+ * variants were removed in Phase 2.
  */
 class Acl2 {
 
@@ -40,142 +40,15 @@ class Acl2 {
 
     private List<String> adminRoles;
 
-    public Acl2(File n) {}
-
-    public void setAdminRoles(List<String> adminRoles) {
-        this.adminRoles = adminRoles;
-    }
-
     private AclMethod rootMethod = AclMethod.WRITE;
 
     @NotNull
     private final Map<String, AclEntry> acl = new TreeMap<>();
 
-    public Acl2(@NotNull Node root) {
-        readAclTree(root);
-    }
+    public Acl2(File n) {}
 
-    /**
-     * Returns the access method to the specified resource for the user or role
-     *
-     * @param node     the resource to which you want to access
-     * @param username the username of the user that's accessing
-     * @param roles    the role of the user that's accessing
-     * @return
-     */
-    @NotNull
-    public List<AclMethod> getMethods(@NotNull Node node, String username, @NotNull List<String> roles) {
-        try {
-            ObjectMapper mapper = new ObjectMapper();
-            // LOG.debug("Set ACL to " + object + " : " + acl);
-            // String acl = null;
-            AclEntry entry = null;
-            Map<String, AclEntry> acl = new TreeMap<>();
-
-            try {
-                TypeReference<Map<String, AclEntry>> ref = new TypeReference<Map<String, AclEntry>>() {};
-                acl = mapper.readValue(node.getProperty("owner").getString(), ref);
-                // mapper.readValue(acl, AclEntry.class);
-                entry = acl.get(node.getPath());
-                /// entry = e.getValue();
-            } catch (PathNotFoundException e) {
-                // Figure out if its a folder
-
-                if (node.getMixinNodeTypes().length == 0
-                        && (FilenameUtils.getExtension(node.getName()).equals("")
-                                || FilenameUtils.getExtension(node.getName()) == null)) {
-                    node.addMixin("nt:saikufolders");
-                }
-
-                HashMap<String, List<AclMethod>> m = new HashMap<>();
-                AclEntry e2 = new AclEntry("admin", AclType.PUBLIC, m, null);
-                Acl2 acl2 = new Acl2(node);
-                acl2.addEntry(node.getPath(), e2);
-                acl2.serialize(node);
-
-                node.getSession().save();
-
-                LOG.debug("Path(owner) not found: " + node.getPath(), e.getCause());
-            } catch (Exception e) {
-                LOG.debug("Exception: " + node.getPath(), e.getCause());
-            }
-            AclMethod method;
-
-            if (node.getPath().startsWith("..")) {
-                return getAllAcls(AclMethod.NONE);
-            }
-            if (isAdminRole(roles)) {
-                return getAllAcls(AclMethod.GRANT);
-            }
-            if (entry != null) {
-                switch (entry.getType()) {
-                    case PRIVATE:
-                        if (!entry.getOwner().equals(username)) {
-                            method = AclMethod.NONE;
-                        } else {
-                            method = AclMethod.GRANT;
-                        }
-                        break;
-                    case SECURED:
-                        // check user permission
-                        List<AclMethod> allMethods = new ArrayList<>();
-
-                        if (StringUtils.isNotBlank(entry.getOwner())
-                                && entry.getOwner().equals(username)) {
-                            allMethods.add(AclMethod.GRANT);
-                        }
-                        List<AclMethod> userMethods =
-                                entry.getUsers() != null && entry.getUsers().containsKey(username)
-                                        ? entry.getUsers().get(username)
-                                        : new ArrayList<AclMethod>();
-
-                        List<AclMethod> roleMethods = new ArrayList<>();
-                        for (String role : roles) {
-                            List<AclMethod> r =
-                                    entry.getRoles() != null && entry.getRoles().containsKey(role)
-                                            ? entry.getRoles().get(role)
-                                            : new ArrayList<AclMethod>();
-                            roleMethods.addAll(r);
-                        }
-
-                        allMethods.addAll(userMethods);
-                        allMethods.addAll(roleMethods);
-
-                        if (allMethods.size() == 0) {
-                            // no role nor user acl
-                            method = AclMethod.NONE;
-                        } else {
-                            // return the strongest role
-                            method = AclMethod.max(allMethods);
-                        }
-
-                        break;
-                    default:
-                        // PUBLIC ACCESS
-                        method = AclMethod.WRITE;
-                        break;
-                }
-            } else {
-
-                if (node.getParent() == null) {
-                    method = AclMethod.NONE;
-                } else if (node.getParent().getName().equals("/")) {
-                    return getAllAcls(rootMethod);
-                } else {
-                    Node parent = node.getParent();
-
-                    List<AclMethod> parentMethods = getMethods(parent, username, roles);
-                    method = AclMethod.max(parentMethods);
-                }
-            }
-            //  String parentPath = repoRoot
-            return getAllAcls(method);
-        } catch (Exception e) {
-            LOG.debug("Error", e.getCause());
-        }
-        List<AclMethod> noMethod = new ArrayList<>();
-        noMethod.add(AclMethod.NONE);
-        return noMethod;
+    public void setAdminRoles(List<String> adminRoles) {
+        this.adminRoles = adminRoles;
     }
 
     public void setRootAcl(String rootAcl) {
@@ -201,57 +74,10 @@ class Acl2 {
         return methods;
     }
 
-    public boolean canGrant(@NotNull Node node, String username, @NotNull List<String> roles) {
-        List<AclMethod> acls = getMethods(node, username, roles);
-        return acls.contains(AclMethod.GRANT);
-    }
-
     public void addEntry(String path, @Nullable AclEntry entry) {
-        try {
-            if (entry != null) {
-                acl.put(path, entry);
-                // writeAcl( path, entry );
-            }
-        } catch (Exception e) {
-            // logger.error( "Cannot add entry for resource: " + path, e );
+        if (entry != null) {
+            acl.put(path, entry);
         }
-    }
-
-    public Node serialize(@NotNull Node node) {
-        try {
-            ObjectMapper mapper = new ObjectMapper();
-            node.setProperty("owner", "");
-            node.setProperty("owner", mapper.writeValueAsString(acl));
-            return node;
-        } catch (Exception e) {
-            try {
-                LOG.info("Error while reading ACL files at path: " + node.getPath(), e.getCause());
-            } catch (RepositoryException e1) {
-                LOG.info("Repository Exception", e1.getCause());
-            }
-        }
-        return node;
-    }
-
-    private Map<String, AclEntry> deserialize(@Nullable Node node) {
-        ObjectMapper mapper = new ObjectMapper();
-        Map<String, AclEntry> acl = new TreeMap<>();
-        try {
-            if (node != null && node.getProperty("owner") != null) {
-                TypeReference<Map<String, AclEntry>> ref = new TypeReference<Map<String, AclEntry>>() {};
-
-                acl = mapper.readValue(node.getProperty("owner").getString(), ref);
-            }
-        } catch (Exception e) {
-
-            try {
-                LOG.info("Error while reading ACL files at path: " + node.getPath(), e.getCause());
-            } catch (RepositoryException e1) {
-                LOG.info("Repository Exception", e1.getCause());
-            }
-        }
-
-        return acl;
     }
 
     @Nullable
@@ -259,93 +85,14 @@ class Acl2 {
         return acl.containsKey(path) ? acl.get(path) : null;
     }
 
-    public boolean canRead(@Nullable Node path, String username, @NotNull List<String> roles) {
-        if (path == null) {
-            return false;
-        }
-        List<AclMethod> acls = getMethods(path, username, roles);
-        return acls.contains(AclMethod.READ);
-    }
-
-    public boolean canWrite(@Nullable Node path, String username, @NotNull List<String> roles) {
-        if (path == null) {
-            return false;
-        }
-        List<AclMethod> acls = getMethods(path, username, roles);
-        return !acls.contains(AclMethod.WRITE);
-    }
-
-    private void readAclTree(@NotNull Node resource) {
-        try {
-
-            String s = resource.getPrimaryNodeType().getName();
-            // resource.getPrimaryNodeType().getName().equals( "nt:folder" )
-            //        ? resource : resource.getParent();
-
-            String jsonFile = resource.getProperty("owner").getString();
-
-            if (jsonFile != null && !jsonFile.equals("")) {
-                Map<String, AclEntry> folderAclMap = deserialize(resource);
-                Map<String, AclEntry> aclMap = new TreeMap<>();
-
-                for (String key : folderAclMap.keySet()) {
-                    if (key.equals(resource.getPath())) {
-                        AclEntry entry = folderAclMap.get(key);
-                        // FileName fn = folder.resolveFile( key ).getName();
-                        // String childPath = repoRoot.getName().getRelativeName( fn );
-                        aclMap.put(resource.getPath(), entry);
-                    }
-                }
-
-                acl.putAll(aclMap);
-            }
-
-            for (Node file : JcrUtils.getChildNodes(resource)) {
-                // if ( file.getPrimaryNodeType().equals( "nt:folder" ) ) {
-                if (!file.getName().equals("/")
-                        && !file.getName().startsWith("jcr:")
-                        && !file.getName().startsWith("rep:")) {
-
-                    readAclTree(file);
-                }
-                // }
-            }
-        } catch (Exception e) {
-
-            try {
-                LOG.info("Error while reading ACL files at path: " + resource.getPath(), e.getCause());
-
-            } catch (RepositoryException e1) {
-                LOG.info("Repository Exception", e1.getCause());
-            }
-        }
-    }
-
-    /**
-     * Returns the list of the administrator roles
-     *
-     * @return
-     */
     public List<String> getAdminRoles() {
         return adminRoles;
     }
 
-    /**
-     * Checks if a specific role is in the list of the admin roles
-     *
-     * @param role
-     * @return
-     */
     private boolean isAdminRole(String role) {
-        return adminRoles.contains(role);
+        return adminRoles != null && adminRoles.contains(role);
     }
 
-    /**
-     * Checks if a list of roles contains an admin role
-     *
-     * @param roles
-     * @return
-     */
     private boolean isAdminRole(@NotNull List<String> roles) {
         for (String role : roles) {
             if (isAdminRole(role)) {
@@ -355,7 +102,6 @@ class Acl2 {
         return false;
     }
 
-    // File based methods
     public void serialize(File n) {
         try {
             File f = new File(n, "acl.json");
@@ -432,7 +178,6 @@ class Acl2 {
                         }
                         break;
                     case SECURED:
-                        // check user permission
                         List<AclMethod> allMethods = new ArrayList<>();
 
                         if (StringUtils.isNotBlank(entry.getOwner())
@@ -458,16 +203,13 @@ class Acl2 {
                         allMethods.addAll(roleMethods);
 
                         if (allMethods.size() == 0) {
-                            // no role nor user acl
                             method = AclMethod.NONE;
                         } else {
-                            // return the strongest role
                             method = AclMethod.max(allMethods);
                         }
 
                         break;
                     default:
-                        // PUBLIC ACCESS
                         method = AclMethod.WRITE;
                         break;
                 }
@@ -482,7 +224,6 @@ class Acl2 {
                 }
             }
 
-            //  String parentPath = repoRoot
             return getAllAcls(method);
         } catch (Exception e) {
             LOG.debug("Error", e.getCause());
