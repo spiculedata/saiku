@@ -54,13 +54,28 @@ public class Database {
     public void init() throws SQLException {
         initDB();
         loadUsers();
-        loadFoodmart();
-        loadEarthquakes();
+        try {
+            loadFoodmart();
+        } catch (Exception e) {
+            log.warn("Foodmart sample data not loaded: {}", e.getMessage());
+        }
+        try {
+            loadEarthquakes();
+        } catch (Exception e) {
+            log.warn("Earthquakes sample data not loaded: {}", e.getMessage());
+        }
         loadLegacyDatasources();
     }
 
+    private static String expandSaikuHome(String s) {
+        if (s == null) return null;
+        String home = System.getProperty("saiku.home");
+        if (home == null || home.isEmpty()) return s;
+        return s.replace("../../", home + "/").replace("${saiku.home}", home);
+    }
+
     private void initDB() {
-        String url = servletContext.getInitParameter("db.url");
+        String url = expandSaikuHome(servletContext.getInitParameter("db.url"));
         String user = servletContext.getInitParameter("db.user");
         String pword = servletContext.getInitParameter("db.password");
         ds = new JdbcDataSource();

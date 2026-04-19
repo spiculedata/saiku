@@ -15,6 +15,7 @@
             location="/WEB-INF/saiku-beans.properties"
             ignore-resource-not-found="true"
             ignore-unresolvable="true"
+            system-properties-mode="OVERRIDE"
             order ="0" />
 
     <context:property-placeholder
@@ -69,9 +70,7 @@
 
     <bean id="authorisationPredicate" class="org.saiku.service.util.security.authorisation.MustBeAuthenticatedAuthorisation"/>
 
-    <bean id="sessionRepo" class="org.saiku.repository.ScopedRepo" scope="session">
-        <aop:scoped-proxy/>
-    </bean>
+    <bean id="sessionRepo" class="org.saiku.repository.ScopedRepo"/>
 
     <bean id="sessionService" class="org.saiku.web.service.SessionService">
         <property name="sessionRepo" ref="sessionRepo"/>

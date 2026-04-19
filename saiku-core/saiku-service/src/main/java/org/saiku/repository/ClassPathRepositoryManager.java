@@ -57,6 +57,7 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
     private UserService userService;
     private String append;
     private String session = null;
+    private boolean bootstrapping;
 
     private String sep = "/";
     private ScopedRepo sessionRegistry;
@@ -950,15 +951,20 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
     private String getDatadir() {
         HttpSession session = getSession(); // Use a variable instead of a method call for debugging purposes
 
-        if (session != null) {
+        if (session != null && !bootstrapping) {
             try {
                 if (workspaces && session.getAttribute(ORBIS_WORKSPACE_DIR) != null) {
                     String workspace = (String) session.getAttribute(ORBIS_WORKSPACE_DIR);
                     workspace = cleanse(workspace);
                     log.debug("Check " + append + "/" + workspace + "/ exists");
                     if (!new File(append + "/" + workspace + "/").exists()) {
-                        this.bootstrap(append + "/" + workspace);
-                        this.start(userService);
+                        bootstrapping = true;
+                        try {
+                            this.bootstrap(append + "/" + workspace);
+                            this.start(userService);
+                        } finally {
+                            bootstrapping = false;
+                        }
                     }
 
                     log.debug("Workspace directory set to:" + workspace);
@@ -966,8 +972,13 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
                 } else {
                     log.debug("Workspace directory set to: unknown/");
                     if (!new File(append + "/unknown/etc").exists()) {
-                        this.bootstrap(append + "/unknown");
-                        this.start(userService);
+                        bootstrapping = true;
+                        try {
+                            this.bootstrap(append + "/unknown");
+                            this.start(userService);
+                        } finally {
+                            bootstrapping = false;
+                        }
                     }
 
                     return fixPath(append + "/unknown/");
@@ -979,13 +990,15 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
 
         String basePath = fixPath(append + "/unknown");
 
-        if (!new File(fixPath(basePath + "/etc")).exists()) {
-            this.bootstrap(basePath);
-
+        if (!bootstrapping && !new File(fixPath(basePath + "/etc")).exists()) {
+            bootstrapping = true;
             try {
+                this.bootstrap(basePath);
                 this.start(userService);
             } catch (RepositoryException e) {
                 log.error("Error while starting the repository manager", e);
+            } finally {
+                bootstrapping = false;
             }
         }
 
