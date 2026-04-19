@@ -92,7 +92,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         // Phase 2: Jackrabbit content-repo backend deleted; only classpath remains.
         separator = "/";
         log.debug("init datadir= " + datadir);
-        irm = ClassPathRepositoryManager.getClassPathRepositoryManager(
+        irm = FilesystemRepositoryManager.getFilesystemRepositoryManager(
                 cleanse(datadir), defaultRole, sessionRegistry, workspaces);
         log.debug("2nd init datadir= " + datadir);
 

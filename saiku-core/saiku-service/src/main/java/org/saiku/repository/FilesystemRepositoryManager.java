@@ -47,11 +47,11 @@ import org.slf4j.LoggerFactory;
 /**
  * Classpath Repository Manager for Saiku.
  */
-public class ClassPathRepositoryManager implements IRepositoryManager {
+public class FilesystemRepositoryManager implements IRepositoryManager {
     private static final String ORBIS_WORKSPACE_DIR = "workspace";
-    private static final Logger log = LoggerFactory.getLogger(ClassPathRepositoryManager.class);
+    private static final Logger log = LoggerFactory.getLogger(FilesystemRepositoryManager.class);
 
-    private static ClassPathRepositoryManager ref;
+    private static FilesystemRepositoryManager ref;
     private final String defaultRole;
     private final boolean workspaces;
     private UserService userService;
@@ -62,7 +62,7 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
     private String sep = "/";
     private ScopedRepo sessionRegistry;
 
-    private ClassPathRepositoryManager(
+    private FilesystemRepositoryManager(
             String data, String defaultRole, ScopedRepo sessionRegistry, boolean workspaces) {
 
         log.info("Path is " + data);
@@ -73,11 +73,11 @@ public class ClassPathRepositoryManager implements IRepositoryManager {
         this.workspaces = workspaces;
     }
 
-    public static synchronized ClassPathRepositoryManager getClassPathRepositoryManager(
+    public static synchronized FilesystemRepositoryManager getFilesystemRepositoryManager(
             String data, String defaultRole, ScopedRepo sessionRegistry, boolean workspaces) {
         if (ref == null)
             // it's ok, we can call this constructor
-            ref = new ClassPathRepositoryManager(data, defaultRole, sessionRegistry, workspaces);
+            ref = new FilesystemRepositoryManager(data, defaultRole, sessionRegistry, workspaces);
         return ref;
     }
 

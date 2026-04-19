@@ -25,13 +25,7 @@
             order ="-1" />
 
     <bean id="sessionRegistry"
-          class="org.springframework.security.core.session.SessionRegistryImpl" />
-
-    <!--	<bean id="classpathDsManager"
-            class="org.saiku.service.datasource.ClassPathResourceDatasourceManager">
-            <property name="path" value="res:saiku-datasources" />
-        </bean>-->
-    <bean id="repositoryDsManager" class="org.saiku.service.datasource.RepositoryDatasourceManager" init-method="load" destroy-method="unload">
+          class="org.springframework.security.core.session.SessionRegistryImpl" />    <bean id="repositoryDsManager" class="org.saiku.service.datasource.RepositoryDatasourceManager" init-method="load" destroy-method="unload">
         <!--aop:scoped-proxy/-->
 
         <property name="userService" ref="userServiceBean"/>
