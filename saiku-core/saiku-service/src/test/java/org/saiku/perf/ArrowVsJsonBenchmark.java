@@ -285,23 +285,20 @@ public class ArrowVsJsonBenchmark {
 
     @SuppressWarnings("unchecked")
     private static <T> T proxy(Class<?>[] ifaces, Map<String, Object> answers, Class<T> primary) {
-        Object obj = Proxy.newProxyInstance(
-                ArrowVsJsonBenchmark.class.getClassLoader(),
-                ifaces,
-                (p, m, a) -> {
-                    if ("toString".equals(m.getName())) return primary.getSimpleName() + "@fake";
-                    if ("equals".equals(m.getName())) return p == a[0];
-                    if ("hashCode".equals(m.getName())) return System.identityHashCode(p);
-                    Object ans = answers.get(m.getName());
-                    if (ans != null) return ans;
-                    Class<?> rt = m.getReturnType();
-                    if (rt == boolean.class) return Boolean.FALSE;
-                    if (rt == int.class) return 0;
-                    if (rt == long.class) return 0L;
-                    if (rt == double.class) return 0d;
-                    if (rt.isPrimitive()) return 0;
-                    return null;
-                });
+        Object obj = Proxy.newProxyInstance(ArrowVsJsonBenchmark.class.getClassLoader(), ifaces, (p, m, a) -> {
+            if ("toString".equals(m.getName())) return primary.getSimpleName() + "@fake";
+            if ("equals".equals(m.getName())) return p == a[0];
+            if ("hashCode".equals(m.getName())) return System.identityHashCode(p);
+            Object ans = answers.get(m.getName());
+            if (ans != null) return ans;
+            Class<?> rt = m.getReturnType();
+            if (rt == boolean.class) return Boolean.FALSE;
+            if (rt == int.class) return 0;
+            if (rt == long.class) return 0L;
+            if (rt == double.class) return 0d;
+            if (rt.isPrimitive()) return 0;
+            return null;
+        });
         return (T) obj;
     }
 
@@ -326,11 +323,9 @@ public class ArrowVsJsonBenchmark {
     /** Build a deterministic CellSet with {@code rows} rows and {@code cols} measures. */
     static CellSet buildFakeCellSet(int rows, int cols) {
         Dimension rdim = proxy(Dimension.class, Collections.singletonMap("getName", "Store"));
-        Hierarchy rhier = proxy(
-                Hierarchy.class,
-                mapOf("getName", "Store", "getUniqueName", "[Store]", "getDimension", rdim));
-        Level rlvl = proxy(
-                Level.class, mapOf("getName", "City", "getUniqueName", "[Store].[City]"));
+        Hierarchy rhier =
+                proxy(Hierarchy.class, mapOf("getName", "Store", "getUniqueName", "[Store]", "getDimension", rdim));
+        Level rlvl = proxy(Level.class, mapOf("getName", "City", "getUniqueName", "[Store].[City]"));
 
         List<Position> rowPositions = new ArrayList<>(rows);
         for (int i = 0; i < rows; i++) {
@@ -348,11 +343,9 @@ public class ArrowVsJsonBenchmark {
 
         Dimension mdim = proxy(Dimension.class, Collections.singletonMap("getName", "Measures"));
         Hierarchy mhier = proxy(
-                Hierarchy.class,
-                mapOf("getName", "Measures", "getUniqueName", "[Measures]", "getDimension", mdim));
-        Level mlvl = proxy(
-                Level.class,
-                mapOf("getName", "MeasuresLevel", "getUniqueName", "[Measures].[MeasuresLevel]"));
+                Hierarchy.class, mapOf("getName", "Measures", "getUniqueName", "[Measures]", "getDimension", mdim));
+        Level mlvl =
+                proxy(Level.class, mapOf("getName", "MeasuresLevel", "getUniqueName", "[Measures].[MeasuresLevel]"));
 
         List<Position> colPositions = new ArrayList<>(cols);
         for (int c = 0; c < cols; c++) {
