@@ -27,8 +27,6 @@ import org.saiku.datasources.connection.RepositoryFile;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.repository.*;
 import org.saiku.service.importer.JujuSource;
-import org.saiku.service.importer.LegacyImporter;
-import org.saiku.service.importer.LegacyImporterImpl;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.service.util.security.authentication.PasswordProvider;
@@ -486,10 +484,7 @@ public class ClassPathResourceDatasourceManager implements IDatasourceManager {
         return false;
     }
 
-    public void restoreLegacyFiles(byte[] data) {
-        LegacyImporter l = new LegacyImporterImpl(null);
-        l.importLegacyReports(irm, data);
-    }
+    public void restoreLegacyFiles(byte[] data) {}
 
     public Object getRepository() {
         return irm.getRepositoryObject();
