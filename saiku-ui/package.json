@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "ag-grid-community": "^35.2.1",
-    "echarts": "^6.0.0"
+    "echarts": "^6.0.0",
+    "monaco-editor": "^0.55.1"
   }
 }

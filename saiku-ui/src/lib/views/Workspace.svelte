@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { SaikuSession } from "$lib/api/session";
   import Modal from "$lib/components/Modal.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
   import CubePicker from "$lib/views/CubePicker.svelte";
   import DimensionList from "$lib/views/DimensionList.svelte";
   import WorkspaceToolbar from "$lib/views/WorkspaceToolbar.svelte";
@@ -19,7 +20,7 @@
     <CubePicker username={session.username} />
     <DimensionList username={session.username} />
     <div class="workspace__sidebar-footer">
-      <button type="button" class="btn" onclick={() => (aboutOpen = true)}>About Saiku</button>
+      <button type="button" class="btn" onclick={() => (aboutOpen = true)}>{i18n.t("modal.about.title")}</button>
     </div>
   </aside>
   <section class="workspace__main">
@@ -32,14 +33,13 @@
   </section>
 </div>
 
-<Modal title="About Saiku" open={aboutOpen} size="sm" onClose={() => (aboutOpen = false)}>
-  <p>Saiku 3.17 — modernised stack.</p>
+<Modal title={i18n.t("modal.about.title")} open={aboutOpen} size="sm" onClose={() => (aboutOpen = false)}>
+  <p>{i18n.t("modal.about.tagline")}</p>
   <p>
-    Signed in as <strong>{session.username}</strong>
-    ({session.roles.join(", ")}).
+    <strong>{session.username}</strong> · {session.roles.join(", ")}
   </p>
   {#snippet footer()}
-    <button class="btn btn--primary" onclick={() => (aboutOpen = false)}>Close</button>
+    <button class="btn btn--primary" onclick={() => (aboutOpen = false)}>{i18n.t("modal.close")}</button>
   {/snippet}
 </Modal>
 

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/OpenDialog.js. Expects a flat
    * list from /rest/saiku/api/repository for the first slice. The tree
@@ -32,15 +33,19 @@
   );
 </script>
 
-<Modal title="Open query" {open} size="lg" onClose={onCancel}>
+<Modal title={i18n.t("modal.open.title")} {open} size="lg" onClose={onCancel}>
   <label class="field">
-    <span class="field__label">Filter</span>
-    <input class="field__input" bind:value={search} placeholder="Search by name or path" />
+    <span class="field__label">{i18n.t("modal.open.filter")}</span>
+    <input
+      class="field__input"
+      bind:value={search}
+      placeholder={i18n.t("modal.open.searchPlaceholder")}
+    />
   </label>
   {#if loading}
-    <p class="hint">Loading repository…</p>
+    <p class="hint">{i18n.t("modal.open.loading")}</p>
   {:else if entries.length === 0}
-    <p class="hint">No saved queries yet.</p>
+    <p class="hint">{i18n.t("modal.open.empty")}</p>
   {:else}
     <ul class="repo">
       {#each filtered as entry}
@@ -60,7 +65,7 @@
     </ul>
   {/if}
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>Close</button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.close")}</button>
   {/snippet}
 </Modal>
 

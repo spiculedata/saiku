@@ -6,6 +6,7 @@
   import ToastStack from "$lib/components/ToastStack.svelte";
   import UpgradeBanner from "$lib/components/UpgradeBanner.svelte";
   import LocalePicker from "$lib/components/LocalePicker.svelte";
+  import Tour from "$lib/components/Tour.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import "$lib/styles/tokens.css";
   import "$lib/styles/app.css";
@@ -66,6 +67,7 @@
     {@render children()}
   </main>
   <ToastStack />
+  {#if session.current}<Tour />{/if}
 </div>
 
 <style>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/SaveQuery.js. */
   interface Props {
@@ -25,9 +26,9 @@
   const valid = $derived(name.trim().length > 0);
 </script>
 
-<Modal title="Save query" {open} size="md" onClose={onCancel}>
+<Modal title={i18n.t("modal.save.title")} {open} size="md" onClose={onCancel}>
   <label class="field">
-    <span class="field__label">Folder</span>
+    <span class="field__label">{i18n.t("modal.save.folder")}</span>
     <select class="field__input" bind:value={folder}>
       {#each folders as f}
         <option value={f}>{f || "/"}</option>
@@ -35,16 +36,16 @@
     </select>
   </label>
   <label class="field">
-    <span class="field__label">Name</span>
+    <span class="field__label">{i18n.t("modal.save.name")}</span>
     <input class="field__input" bind:value={name} autocomplete="off" required />
   </label>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>Cancel</button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
     <button
       type="button"
       class="btn btn--primary"
       disabled={!valid}
       onclick={() => onSave(folder, name.trim())}
-    >Save</button>
+    >{i18n.t("modal.save")}</button>
   {/snippet}
 </Modal>

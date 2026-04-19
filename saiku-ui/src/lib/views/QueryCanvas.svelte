@@ -9,6 +9,7 @@
   import SelectionsModal from "$lib/modals/SelectionsModal.svelte";
   import { listLevelMembers, listRootMembers, type SaikuMember } from "$lib/api/discover";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   type ViewMode = "grid" | "chart";
   let viewMode = $state<ViewMode>("grid");
@@ -19,12 +20,12 @@
   let selectionsMembers = $state<SaikuMember[]>([]);
   let selectionsLoading = $state(false);
 
-  const axisLabels: Record<AxisLocation, string> = {
-    COLUMNS: "Columns",
-    ROWS: "Rows",
-    FILTER: "Filter",
+  const axisLabels = $derived<Record<AxisLocation, string>>({
+    COLUMNS: i18n.t("canvas.columns"),
+    ROWS: i18n.t("canvas.rows"),
+    FILTER: i18n.t("canvas.filter"),
     PAGES: "Pages",
-  };
+  });
 
   $effect(() => {
     if (selection.cube && (!query.current || query.current.cube.uniqueName !== selection.cube.uniqueName)) {
@@ -124,8 +125,8 @@
 <div class="canvas">
   {#if !selection.cube}
     <div class="canvas__empty">
-      <p>No cube selected.</p>
-      <p class="canvas__hint">Pick a cube in the sidebar to start building a query.</p>
+      <p>{i18n.t("canvas.noCube")}</p>
+      <p class="canvas__hint">{i18n.t("canvas.pickPrompt")}</p>
     </div>
   {:else}
     <div class="dropzones">
@@ -167,7 +168,9 @@
             {/each}
             {#if (query.current?.queryModel?.axes[axis].hierarchies.length ?? 0) === 0
               && !(axis === "COLUMNS" && (query.current?.queryModel?.details.measures.length ?? 0) > 0)}
-              <span class="chips__empty">Drop levels {axis === "COLUMNS" ? "or measures" : ""} here</span>
+              <span class="chips__empty">
+                {axis === "COLUMNS" ? i18n.t("canvas.dropLevelsMeasures") : i18n.t("canvas.dropLevels")}
+              </span>
             {/if}
           </div>
         </div>
@@ -188,7 +191,7 @@
             </button>
           {/each}
           {#if (query.current?.queryModel?.axes.FILTER.hierarchies.length ?? 0) === 0}
-            <span class="chips__empty">Drop filters here</span>
+            <span class="chips__empty">{i18n.t("canvas.dropFilters")}</span>
           {/if}
         </div>
       </div>
@@ -196,10 +199,10 @@
 
     <div class="view-toggle" role="tablist" aria-label="Result view">
       <button type="button" role="tab" class:active={viewMode === "grid"} onclick={() => (viewMode = "grid")}>
-        Grid
+        {i18n.t("canvas.view.grid")}
       </button>
       <button type="button" role="tab" class:active={viewMode === "chart"} onclick={() => (viewMode = "chart")}>
-        Chart
+        {i18n.t("canvas.view.chart")}
       </button>
       {#if viewMode === "chart"}
         <label class="chart-pick">
@@ -214,7 +217,7 @@
     </div>
     <div class="grid-host">
       {#if query.running}
-        <p class="canvas__hint">Running query…</p>
+        <p class="canvas__hint">{i18n.t("canvas.running")}</p>
       {:else if query.error}
         <p class="callout callout--danger">{query.error}</p>
       {:else if query.result}
@@ -224,9 +227,7 @@
           <ChartView result={query.result} type={chartType} />
         {/if}
       {:else}
-        <p class="canvas__hint">
-          Drop levels onto <strong>Rows</strong>/<strong>Columns</strong> and measures onto <strong>Columns</strong>, then hit <strong>Run</strong>.
-        </p>
+        <p class="canvas__hint">{i18n.t("canvas.buildPrompt")}</p>
       {/if}
     </div>
   {/if}
