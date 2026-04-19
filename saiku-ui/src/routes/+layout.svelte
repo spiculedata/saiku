@@ -7,6 +7,7 @@
   import ToastStack from "$lib/components/ToastStack.svelte";
   import UpgradeBanner from "$lib/components/UpgradeBanner.svelte";
   import LocalePicker from "$lib/components/LocalePicker.svelte";
+  import { Moon, Sun, Monitor, Maximize2, Minimize2, LogOut, Shield, Home } from "lucide-svelte";
   import Tour from "$lib/components/Tour.svelte";
   import SessionErrorModal from "$lib/modals/SessionErrorModal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -50,17 +51,19 @@
     <div class="topbar__actions">
       <LocalePicker />
       <button type="button" class="btn" onclick={() => theme.toggle()}>
-        {theme.theme === "dark"
-          ? `☾ ${i18n.t("topbar.theme.dark")}`
-          : theme.theme === "light"
-            ? `☀ ${i18n.t("topbar.theme.light")}`
-            : `⌘ ${i18n.t("topbar.theme.system")}`}
+        {#if theme.theme === "dark"}
+          <Moon size={14} /><span>{i18n.t("topbar.theme.dark")}</span>
+        {:else if theme.theme === "light"}
+          <Sun size={14} /><span>{i18n.t("topbar.theme.light")}</span>
+        {:else}
+          <Monitor size={14} /><span>{i18n.t("topbar.theme.system")}</span>
+        {/if}
       </button>
       {#if session.current}
         {#if session.isAdmin}
-          <a class="btn" href="{base}/admin">{i18n.t("topbar.admin")}</a>
+          <a class="btn" href="{base}/admin"><Shield size={14} /><span>{i18n.t("topbar.admin")}</span></a>
         {/if}
-        <a class="btn" href="{base}/">{i18n.t("topbar.workspace")}</a>
+        <a class="btn" href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
         <button
           type="button"
           class="btn"
@@ -69,10 +72,10 @@
             ? i18n.t("topbar.fullscreen.exit")
             : i18n.t("topbar.fullscreen.enter")}
           onclick={() => platform.toggleFullscreen()}
-        >{platform.fullscreen ? "⤢" : "⤡"}</button>
+        >{#if platform.fullscreen}<Minimize2 size={14} />{:else}<Maximize2 size={14} />{/if}</button>
         <span class="topbar__user">{session.current.username}</span>
         <button type="button" class="btn" onclick={() => session.logout()}>
-          {i18n.t("topbar.signOut")}
+          <LogOut size={14} /><span>{i18n.t("topbar.signOut")}</span>
         </button>
       {/if}
     </div>
