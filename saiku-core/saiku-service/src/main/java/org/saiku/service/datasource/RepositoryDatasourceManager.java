@@ -32,8 +32,6 @@ import org.saiku.datasources.connection.RepositoryFile;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.repository.*;
 import org.saiku.service.importer.JujuSource;
-import org.saiku.service.importer.LegacyImporter;
-import org.saiku.service.importer.LegacyImporterImpl;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.security.authentication.PasswordProvider;
 import org.slf4j.Logger;
@@ -91,23 +89,12 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     public void load() {
         Properties ext = checkForExternalDataSourceProperties();
 
-        // Instantiate the appropriate repository manager
-        if (type.equals("classpath")) {
-            separator = "/";
-            log.debug("init datadir= " + datadir);
-            irm = ClassPathRepositoryManager.getClassPathRepositoryManager(
-                    cleanse(datadir), defaultRole, sessionRegistry, workspaces);
-            log.debug("2nd init datadir= " + datadir);
-        } else {
-            irm = JackRabbitRepositoryManager.getJackRabbitRepositoryManager(
-                    configurationpath,
-                    datadir,
-                    repopasswordprovider.getPassword(),
-                    oldpassword,
-                    defaultRole,
-                    sessionRegistry,
-                    workspaces);
-        }
+        // Phase 2: Jackrabbit content-repo backend deleted; only classpath remains.
+        separator = "/";
+        log.debug("init datadir= " + datadir);
+        irm = ClassPathRepositoryManager.getClassPathRepositoryManager(
+                cleanse(datadir), defaultRole, sessionRegistry, workspaces);
+        log.debug("2nd init datadir= " + datadir);
 
         // Perform the repository manager startup routines
         try {
@@ -531,10 +518,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         return false;
     }
 
-    public void restoreLegacyFiles(byte[] data) {
-        LegacyImporter l = new LegacyImporterImpl(null);
-        l.importLegacyReports(irm, data);
-    }
+    public void restoreLegacyFiles(byte[] data) {}
 
     public Object getRepository() {
         return irm.getRepositoryObject();
@@ -766,8 +750,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     }
 
     public List<JujuSource> getJujuDatasources() {
-        LegacyImporter l = new LegacyImporterImpl(null);
-        return l.importJujuDatasources();
+        return java.util.Collections.emptyList();
     }
 
     public String getHost() {

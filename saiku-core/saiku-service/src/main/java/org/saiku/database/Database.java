@@ -19,8 +19,6 @@ import org.apache.commons.io.FileUtils;
 import org.h2.jdbcx.JdbcDataSource;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.datasource.IDatasourceManager;
-import org.saiku.service.importer.LegacyImporter;
-import org.saiku.service.importer.LegacyImporterImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -293,9 +291,6 @@ public class Database {
 
         result.next();
         if (result.getInt("c") == 0) {
-            LegacyImporter l = new LegacyImporterImpl(dsm);
-            l.importSchema();
-            l.importDatasources();
             statement.execute("INSERT INTO LOG(log) VALUES('insert datasources');");
         }
     }
