@@ -108,7 +108,8 @@ public class Database {
                 p.setProperty(
                         "location",
                         "jdbc:mondrian:Jdbc=jdbc:h2:" + dsm.getFoodmartdir() + "/foodmart;"
-                                + "Catalog=mondrian:///datasources/foodmart4.xml;JdbcDrivers=org.h2.Driver");
+                                + "Catalog=" + new java.io.File(dsm.getFoodmartschema()).toURI()
+                                + ";JdbcDrivers=org.h2.Driver");
                 p.setProperty("username", "sa");
                 p.setProperty("password", "");
                 p.setProperty("id", "4432dd20-fcae-11e3-a3ac-0800200c9a66");
@@ -167,7 +168,8 @@ public class Database {
                 p.setProperty(
                         "location",
                         "jdbc:mondrian:Jdbc=jdbc:h2:" + dsm.getEarthquakeDir() + "/earthquakes;MODE=MySQL;"
-                                + "Catalog=mondrian:///datasources/earthquakes.xml;JdbcDrivers=org.h2.Driver");
+                                + "Catalog=" + new java.io.File(dsm.getEarthquakeSchema()).toURI()
+                                + ";JdbcDrivers=org.h2.Driver");
                 p.setProperty("username", "sa");
                 p.setProperty("password", "");
                 p.setProperty("id", "4432dd20-fcae-11e3-a3ac-0800200c9a67");
