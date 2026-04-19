@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { session } from "$lib/stores/session.svelte";
   import { theme } from "$lib/stores/theme.svelte";
+  import ToastStack from "$lib/components/ToastStack.svelte";
   import "$lib/styles/tokens.css";
   import "$lib/styles/app.css";
 
@@ -32,6 +33,7 @@
   <main class="app__main">
     {@render children()}
   </main>
+  <ToastStack />
 </div>
 
 <style>
