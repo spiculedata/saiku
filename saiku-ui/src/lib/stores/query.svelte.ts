@@ -230,13 +230,20 @@ class QueryStore {
   hasRunnableShape(): boolean {
     const q = this.current?.queryModel;
     if (!q) return false;
-    return q.details.measures.length > 0 || q.axes.COLUMNS.hierarchies.length > 0 || q.axes.ROWS.hierarchies.length > 0;
+    // A runnable shape needs at least one measure (on COLUMNS) AND at least
+    // one hierarchy on ROWS or COLUMNS. Running without either produces an
+    // ugly server-side MDX error, so we silently short-circuit instead.
+    const hasMeasure = q.details.measures.length > 0;
+    const hasHierarchy = q.axes.COLUMNS.hierarchies.length > 0 || q.axes.ROWS.hierarchies.length > 0;
+    return hasMeasure && hasHierarchy;
   }
 
   async run(): Promise<void> {
     if (!this.current) return;
     if (!this.hasRunnableShape()) {
-      toasts.warning("Nothing to run", "Add a measure or level to an axis first.");
+      // Silently no-op with a gentle hint — old UI waited for the query to
+      // fill in rather than surfacing an ugly server error.
+      toasts.info("Add a measure to Columns first", "Drag a measure and a dimension onto the axes before running.");
       return;
     }
     this.running = true;
