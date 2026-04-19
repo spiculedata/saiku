@@ -226,10 +226,6 @@
       		<param-name>jakarta.ws.rs.Application</param-name>
       		<param-value>org.saiku.web.rest.SaikuJerseyApplication</param-value>
     	</init-param>
-        <init-param>
-            <param-name>jersey.config.server.tracing.type</param-name>
-            <param-value>ALL</param-value>
-        </init-param>
     	<load-on-startup>1</load-on-startup>
   	</servlet>
 

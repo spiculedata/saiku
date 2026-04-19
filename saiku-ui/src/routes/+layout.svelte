@@ -97,7 +97,8 @@
   .app {
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
   }
   .topbar {
     display: flex;
@@ -123,6 +124,8 @@
   }
   .app__main {
     flex: 1;
+    min-height: 0;
     display: flex;
+    overflow: hidden;
   }
 </style>

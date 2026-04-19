@@ -17,8 +17,10 @@
 
 <div class="workspace">
   <aside class="workspace__sidebar">
-    <CubePicker username={session.username} />
-    <DimensionList username={session.username} />
+    <div class="workspace__sidebar-scroll">
+      <CubePicker username={session.username} />
+      <DimensionList username={session.username} />
+    </div>
     <div class="workspace__sidebar-footer">
       <button type="button" class="btn" onclick={() => (aboutOpen = true)}>{i18n.t("modal.about.title")}</button>
     </div>
@@ -46,26 +48,37 @@
 <style>
   .workspace {
     flex: 1;
+    min-height: 0;
     display: grid;
     grid-template-columns: 300px 1fr;
     gap: 1px;
     background: var(--border);
+    overflow: hidden;
   }
   .workspace__sidebar,
   .workspace__main {
     background: var(--bg);
-    overflow: auto;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
   }
   .workspace__sidebar {
     display: flex;
     flex-direction: column;
+  }
+  .workspace__sidebar-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
     padding: var(--space-4);
+    display: flex;
+    flex-direction: column;
     gap: var(--space-3);
   }
   .workspace__sidebar-footer {
-    margin-top: auto;
-    padding-top: var(--space-3);
+    padding: var(--space-3) var(--space-4);
     border-top: 1px solid var(--border);
+    background: var(--bg-muted);
   }
   .workspace__main {
     display: flex;

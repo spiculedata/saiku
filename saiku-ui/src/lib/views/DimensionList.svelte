@@ -18,6 +18,7 @@
     lvl: SaikuLevel,
   ): void {
     const payload = {
+      dimensionName: dim.name,
       dimensionUniqueName: dim.uniqueName,
       hierarchyName: hier.name,
       hierarchyUniqueName: hier.uniqueName,
@@ -145,20 +146,50 @@
             {#if expanded[did] !== false}
               <ul class="tree">
                 {#each dim.hierarchies ?? [] as hier}
-                  {#each hier.levels ?? [] as lvl}
+                  {@const hid = `h:${dim.uniqueName}:${hier.name}`}
+                  {@const singleHier = (dim.hierarchies ?? []).length === 1}
+                  {#if singleHier}
+                    {#each hier.levels ?? [] as lvl}
+                      <li class="tree__node">
+                        <button
+                          type="button"
+                          class="tree__row tree__row--level"
+                          draggable="true"
+                          title={lvl.caption}
+                          ondragstart={(e) => onLevelDragStart(e, dim, hier, lvl)}
+                        >
+                          <span class="tree__icon" aria-hidden="true">—</span>
+                          <span class="tree__label">{lvl.caption || lvl.name}</span>
+                        </button>
+                      </li>
+                    {/each}
+                  {:else}
                     <li class="tree__node">
-                      <button
-                        type="button"
-                        class="tree__row tree__row--level"
-                        draggable="true"
-                        title={lvl.caption}
-                        ondragstart={(e) => onLevelDragStart(e, dim, hier, lvl)}
-                      >
-                        <span class="tree__icon" aria-hidden="true">—</span>
-                        <span class="tree__label">{lvl.caption || lvl.name}</span>
+                      <button type="button" class="tree__row tree__row--hier" onclick={() => toggle(hid)}>
+                        <span class="tree__twisty">{expanded[hid] === false ? "▸" : "▾"}</span>
+                        <span class="tree__icon" aria-hidden="true">∴</span>
+                        <span class="tree__label">{hier.caption || hier.name}</span>
                       </button>
+                      {#if expanded[hid] !== false}
+                        <ul class="tree">
+                          {#each hier.levels ?? [] as lvl}
+                            <li class="tree__node">
+                              <button
+                                type="button"
+                                class="tree__row tree__row--level"
+                                draggable="true"
+                                title={lvl.caption}
+                                ondragstart={(e) => onLevelDragStart(e, dim, hier, lvl)}
+                              >
+                                <span class="tree__icon" aria-hidden="true">—</span>
+                                <span class="tree__label">{lvl.caption || lvl.name}</span>
+                              </button>
+                            </li>
+                          {/each}
+                        </ul>
+                      {/if}
                     </li>
-                  {/each}
+                  {/if}
                 {/each}
               </ul>
             {/if}

@@ -13,8 +13,8 @@ export interface ThinLevel {
 
 export interface ThinHierarchy {
   name: string;
-  uniqueName?: string;
   caption?: string;
+  dimension?: string;
   levels: Record<string, ThinLevel>;
   cmembers: Record<string, string>;
 }

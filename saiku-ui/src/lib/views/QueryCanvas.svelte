@@ -99,7 +99,7 @@
         session.current.username,
         selection.cube,
         dimension,
-        hier.uniqueName ?? hier.name,
+        hier.name,
         levelName,
       );
     } catch (err) {
@@ -107,7 +107,7 @@
         selectionsMembers = await listRootMembers(
           session.current.username,
           selection.cube,
-          hier.uniqueName ?? hier.name,
+          hier.name,
         );
       } catch (err2) {
         toasts.danger(
@@ -141,7 +141,28 @@
       <p class="canvas__hint">{i18n.t("canvas.pickPrompt")}</p>
     </div>
   {:else}
-    <div class="dropzones">
+    <div class="canvas__body">
+    <aside class="dropzones">
+      <div
+        class="dropzone dropzone--filter"
+        role="region"
+        aria-label="Filter"
+        ondragover={onDragOver}
+        ondrop={(e) => onDropAxis("FILTER", e)}
+      >
+        <header>{axisLabels.FILTER}</header>
+        <div class="chips">
+          {#each query.current?.queryModel?.axes.FILTER.hierarchies ?? [] as h}
+            <button type="button" class="chip chip--level" onclick={() => removeHier(h.name)}>
+              {hierChipLabel(h)}
+              <span class="chip__x">×</span>
+            </button>
+          {/each}
+          {#if (query.current?.queryModel?.axes.FILTER.hierarchies.length ?? 0) === 0}
+            <span class="chips__empty">{i18n.t("canvas.dropFilters")}</span>
+          {/if}
+        </div>
+      </div>
       {#each ["COLUMNS", "ROWS"] as const as axis}
         <div
           class="dropzone"
@@ -187,28 +208,8 @@
           </div>
         </div>
       {/each}
-      <div
-        class="dropzone dropzone--filter"
-        role="region"
-        aria-label="Filter"
-        ondragover={onDragOver}
-        ondrop={(e) => onDropAxis("FILTER", e)}
-      >
-        <header>{axisLabels.FILTER}</header>
-        <div class="chips">
-          {#each query.current?.queryModel?.axes.FILTER.hierarchies ?? [] as h}
-            <button type="button" class="chip chip--level" onclick={() => removeHier(h.name)}>
-              {hierChipLabel(h)}
-              <span class="chip__x">×</span>
-            </button>
-          {/each}
-          {#if (query.current?.queryModel?.axes.FILTER.hierarchies.length ?? 0) === 0}
-            <span class="chips__empty">{i18n.t("canvas.dropFilters")}</span>
-          {/if}
-        </div>
-      </div>
-    </div>
-
+    </aside>
+    <div class="canvas__result">
     <div class="view-toggle" role="tablist" aria-label="Result view">
       <button type="button" role="tab" class:active={viewMode === "grid"} onclick={() => (viewMode = "grid")}>
         {i18n.t("canvas.view.grid")}
@@ -242,6 +243,8 @@
         <p class="canvas__hint">{i18n.t("canvas.buildPrompt")}</p>
       {/if}
     </div>
+    </div>
+    </div>
   {/if}
 </div>
 
@@ -268,10 +271,27 @@
 <style>
   .canvas {
     flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
     padding: var(--space-3);
+    overflow: hidden;
+  }
+  .canvas__body {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: var(--space-3);
+    overflow: hidden;
+  }
+  .canvas__result {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    overflow: hidden;
   }
   .canvas__empty {
     display: flex;
@@ -286,11 +306,12 @@
   }
   .canvas__hint { color: var(--fg-subtle); font-size: var(--fs-sm); margin: 0; }
   .dropzones {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    flex-direction: column;
     gap: var(--space-2);
+    overflow-y: auto;
+    padding-right: var(--space-1);
   }
-  .dropzone--filter { grid-column: span 2; }
   .dropzone {
     border: 1px dashed var(--border-strong);
     border-radius: var(--radius-md);
@@ -298,6 +319,7 @@
     min-height: 54px;
     background: var(--bg-muted);
   }
+  .dropzone--filter { background: var(--bg-subtle); }
   .dropzone header {
     font-size: var(--fs-xs);
     font-weight: 600;
@@ -345,7 +367,7 @@
     cursor: pointer;
   }
   .chip__x:hover { color: var(--danger); background: var(--bg-muted); }
-  .grid-host { flex: 1; min-height: 260px; }
+  .grid-host { flex: 1; min-height: 0; overflow: auto; }
   .view-toggle {
     display: flex;
     align-items: center;

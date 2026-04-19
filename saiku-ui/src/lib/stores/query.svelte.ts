@@ -11,6 +11,7 @@ import type { SaikuCube } from "$lib/api/discover";
 import { toasts } from "$lib/stores/toasts.svelte";
 
 export interface LevelDrop {
+  dimensionName: string;
   dimensionUniqueName: string;
   hierarchyName: string;
   hierarchyUniqueName: string;
@@ -58,11 +59,11 @@ class QueryStore {
     this.savedPath = null;
   }
 
-  private findAxisForHierarchy(name: string): AxisLocation | null {
+  private findAxisForHierarchy(uniqueName: string): AxisLocation | null {
     if (!this.current?.queryModel) return null;
     const axes = this.current.queryModel.axes;
     for (const loc of Object.keys(axes) as AxisLocation[]) {
-      if (axes[loc].hierarchies.some((h) => h.name === name)) return loc;
+      if (axes[loc].hierarchies.some((h) => h.name === uniqueName)) return loc;
     }
     return null;
   }
@@ -70,19 +71,19 @@ class QueryStore {
   includeLevel(axis: AxisLocation, drop: LevelDrop, position = -1): void {
     if (!this.current?.queryModel) return;
     const model = this.current.queryModel;
-    const existing = this.findAxisForHierarchy(drop.hierarchyName);
+    const existing = this.findAxisForHierarchy(drop.hierarchyUniqueName);
 
     let hier: ThinHierarchy;
     if (existing) {
       const fromAxis = model.axes[existing];
-      const idx = fromAxis.hierarchies.findIndex((h) => h.name === drop.hierarchyName);
+      const idx = fromAxis.hierarchies.findIndex((h) => h.name === drop.hierarchyUniqueName);
       hier = fromAxis.hierarchies[idx];
       fromAxis.hierarchies.splice(idx, 1);
     } else {
       hier = {
-        name: drop.hierarchyName,
-        uniqueName: drop.hierarchyUniqueName,
+        name: drop.hierarchyUniqueName,
         caption: drop.hierarchyCaption,
+        dimension: drop.dimensionName,
         levels: {},
         cmembers: {},
       };
