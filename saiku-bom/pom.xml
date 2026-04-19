@@ -24,6 +24,7 @@
         <jbehave.version>3.9.3</jbehave.version>
         <saiku-query.version>0.4-SNAPSHOT</saiku-query.version>
         <jackson.version>2.17.3</jackson.version>
+        <arrow.version>15.0.2</arrow.version>
     </properties>
 
     <dependencyManagement>
@@ -715,6 +716,23 @@
                 <groupId>com.atlassian.jira</groupId>
                 <artifactId>jira-rest-java-client-core</artifactId>
                 <version>2.0.0-m31</version>
+            </dependency>
+
+            <!-- Apache Arrow for IPC columnar transport -->
+            <dependency>
+                <groupId>org.apache.arrow</groupId>
+                <artifactId>arrow-vector</artifactId>
+                <version>${arrow.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.arrow</groupId>
+                <artifactId>arrow-memory-netty</artifactId>
+                <version>${arrow.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.arrow</groupId>
+                <artifactId>arrow-format</artifactId>
+                <version>${arrow.version}</version>
             </dependency>
         </dependencies>
 
