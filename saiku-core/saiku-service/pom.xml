@@ -359,5 +359,11 @@
 			<artifactId>arrow-memory-netty</artifactId>
 			<scope>runtime</scope>
 		</dependency>
+
+		<!-- Caffeine: in-memory LRU index for disk-backed Arrow query cache -->
+		<dependency>
+			<groupId>com.github.ben-manes.caffeine</groupId>
+			<artifactId>caffeine</artifactId>
+		</dependency>
 	</dependencies>
 </project>

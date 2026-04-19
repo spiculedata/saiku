@@ -1,0 +1,175 @@
+/*
+ *   Copyright 2026 Spicule Ltd
+ *
+ *   Licensed under the Apache License, Version 2.0 (the "License");
+ *   you may not use this file except in compliance with the License.
+ */
+package org.saiku.service.cache;
+
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.saiku.service.cache.SaikuQueryCache.CachedQueryResult;
+
+public class SaikuQueryCacheTest {
+
+    private Path tmpHome;
+    private Path cacheDir;
+    private SaikuQueryCache cache;
+
+    @Before
+    public void setUp() throws IOException {
+        tmpHome = Files.createTempDirectory("saiku-cache-test-");
+        cacheDir = tmpHome.resolve("cache");
+        cache = new SaikuQueryCache(cacheDir, TimeUnit.MINUTES.toMillis(30), 268_435_456L, true);
+    }
+
+    @After
+    public void tearDown() throws IOException {
+        if (tmpHome != null && Files.exists(tmpHome)) {
+            // Delete recursively.
+            Files.walk(tmpHome)
+                    .sorted((a, b) -> b.getNameCount() - a.getNameCount())
+                    .forEach(p -> {
+                        try {
+                            Files.deleteIfExists(p);
+                        } catch (IOException ignored) {
+                        }
+                    });
+        }
+    }
+
+    private Supplier<CachedQueryResult> supplierProducing(byte[] bytes, long runtime, int rows, AtomicInteger calls) {
+        return () -> {
+            calls.incrementAndGet();
+            return new CachedQueryResult(bytes, runtime, rows, false);
+        };
+    }
+
+    @Test
+    public void firstGetInvokesSupplier_writesArrowAndMetaFiles() {
+        AtomicInteger calls = new AtomicInteger(0);
+        byte[] payload = "arrow-bytes-1".getBytes();
+        String key = "key-one";
+
+        CachedQueryResult r = cache.get(key, "v1", supplierProducing(payload, 42L, 7, calls));
+
+        assertEquals(1, calls.get());
+        assertFalse("first call should be a miss", r.cacheHit);
+        assertArrayEquals(payload, r.arrowBytes);
+        assertEquals(42L, r.runtimeMs);
+        assertEquals(7, r.rows);
+        assertTrue("arrow file missing", Files.exists(cacheDir.resolve(key + ".arrow")));
+        assertTrue("meta file missing", Files.exists(cacheDir.resolve(key + ".meta.json")));
+    }
+
+    @Test
+    public void secondGetIsCacheHit_doesNotInvokeSupplier() {
+        AtomicInteger calls = new AtomicInteger(0);
+        byte[] payload = "arrow-bytes-2".getBytes();
+        String key = "key-two";
+
+        cache.get(key, "v1", supplierProducing(payload, 5L, 3, calls));
+        CachedQueryResult second = cache.get(key, "v1", supplierProducing(new byte[0], 999L, 999, calls));
+
+        assertEquals("supplier should have been called exactly once", 1, calls.get());
+        assertTrue(second.cacheHit);
+        assertArrayEquals(payload, second.arrowBytes);
+    }
+
+    @Test
+    public void invalidateDeletesBothFiles() {
+        AtomicInteger calls = new AtomicInteger(0);
+        String key = "key-three";
+        cache.get(key, "v1", supplierProducing("xyz".getBytes(), 1L, 1, calls));
+
+        assertTrue(Files.exists(cacheDir.resolve(key + ".arrow")));
+        cache.invalidate(key);
+
+        assertFalse(Files.exists(cacheDir.resolve(key + ".arrow")));
+        assertFalse(Files.exists(cacheDir.resolve(key + ".meta.json")));
+    }
+
+    @Test
+    public void bumpingCubeVersionInvalidates() {
+        AtomicInteger calls = new AtomicInteger(0);
+        String key = "key-four";
+        byte[] v1Payload = "v1".getBytes();
+        byte[] v2Payload = "v2".getBytes();
+
+        cache.get(key, "cube-v1", supplierProducing(v1Payload, 1L, 1, calls));
+        // Different cubeVersion means the stored entry is stale → miss + fresh store.
+        CachedQueryResult afterBump = cache.get(key, "cube-v2", () -> {
+            calls.incrementAndGet();
+            return new CachedQueryResult(v2Payload, 9L, 2, false);
+        });
+
+        assertEquals("supplier called once per logical miss", 2, calls.get());
+        assertFalse(afterBump.cacheHit);
+        assertArrayEquals(v2Payload, afterBump.arrowBytes);
+
+        // Re-read with new version → hit.
+        CachedQueryResult hit = cache.get(key, "cube-v2", () -> {
+            calls.incrementAndGet();
+            return new CachedQueryResult(new byte[0], 0L, 0, false);
+        });
+        assertEquals(2, calls.get());
+        assertTrue(hit.cacheHit);
+    }
+
+    @Test
+    public void whenBudgetExceeded_oldestEntryEvicted() throws Exception {
+        // Force a tiny budget so two 100-byte entries overflow on the second write.
+        SaikuQueryCache tiny = new SaikuQueryCache(cacheDir, TimeUnit.MINUTES.toMillis(30), 150L, true);
+        AtomicInteger calls = new AtomicInteger(0);
+
+        byte[] oldPayload = new byte[100];
+        byte[] newPayload = new byte[100];
+
+        tiny.get("old", "v", supplierProducing(oldPayload, 1L, 1, calls));
+        // Ensure createdAt differs.
+        Thread.sleep(10);
+        tiny.get("new", "v", supplierProducing(newPayload, 1L, 1, calls));
+
+        assertFalse("oldest arrow should have been evicted", Files.exists(cacheDir.resolve("old.arrow")));
+        assertFalse("oldest meta should have been evicted", Files.exists(cacheDir.resolve("old.meta.json")));
+        assertTrue("newest arrow should be present", Files.exists(cacheDir.resolve("new.arrow")));
+    }
+
+    @Test
+    public void disabledCache_alwaysCallsSupplier_noFilesWritten() {
+        SaikuQueryCache off = new SaikuQueryCache(cacheDir, TimeUnit.MINUTES.toMillis(30), 268_435_456L, false);
+        AtomicInteger calls = new AtomicInteger(0);
+
+        off.get("k", "v", supplierProducing("a".getBytes(), 1L, 1, calls));
+        off.get("k", "v", supplierProducing("a".getBytes(), 1L, 1, calls));
+
+        assertEquals(2, calls.get());
+        assertFalse(Files.exists(cacheDir.resolve("k.arrow")));
+    }
+
+    @Test
+    public void ttlExpiredEntryIsEvictedOnRead() throws Exception {
+        // 1ms TTL → immediately stale.
+        SaikuQueryCache shortTtl = new SaikuQueryCache(cacheDir, 1L, 268_435_456L, true);
+        AtomicInteger calls = new AtomicInteger(0);
+
+        shortTtl.get("k", "v", supplierProducing("a".getBytes(), 1L, 1, calls));
+        Thread.sleep(10);
+        CachedQueryResult r = shortTtl.get("k", "v", supplierProducing("b".getBytes(), 2L, 2, calls));
+
+        assertEquals(2, calls.get());
+        assertFalse(r.cacheHit);
+    }
+}

@@ -148,6 +148,26 @@ public class Query2ResourceArrowTest {
 
         @Override
         public CellDataSet execute(ThinQuery tq) {
+            installContext(tq);
+            return new CellDataSet();
+        }
+
+        @Override
+        public org.saiku.service.cache.SaikuQueryCache.CachedQueryResult executeCached(ThinQuery tq) {
+            installContext(tq);
+            // Serialise the stashed CellSet to Arrow bytes directly — this is
+            // what the production path does on a cache miss; we skip the
+            // disk cache entirely by returning a miss result.
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            try {
+                new org.saiku.olap.result.ArrowCellsetWriter().write(cellSet, query, baos);
+            } catch (java.io.IOException e) {
+                throw new RuntimeException(e);
+            }
+            return new org.saiku.service.cache.SaikuQueryCache.CachedQueryResult(baos.toByteArray(), 0L, 0, false);
+        }
+
+        private void installContext(ThinQuery tq) {
             QueryContext ctx = new QueryContext(Type.OLAP, query);
             ctx.store(ObjectKey.QUERY, query);
             ctx.store(ObjectKey.RESULT, cellSet);
@@ -161,7 +181,6 @@ public class Query2ResourceArrowTest {
             } catch (ReflectiveOperationException e) {
                 throw new RuntimeException(e);
             }
-            return new CellDataSet();
         }
     }
 

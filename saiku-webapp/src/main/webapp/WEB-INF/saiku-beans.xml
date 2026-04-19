@@ -150,10 +150,18 @@
         <property name="repository" ref="repository2bean"/>
     </bean>
 
+    <!--
+      Disk-backed Arrow query cache. Shared singleton across sessions: the
+      cache key already encodes cube + query semantics, and per-session
+      scoping would defeat the point of caching.
+    -->
+    <bean id="saikuQueryCacheBean" class="org.saiku.service.cache.SaikuQueryCache"/>
+
     <bean id="thinQueryBean" scope="session"
           class="org.saiku.service.olap.ThinQueryService">
         <aop:scoped-proxy/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <property name="queryCache" ref="saikuQueryCacheBean"/>
     </bean>
 
     <bean id="platformBean" class="org.saiku.service.PlatformUtilsService">

@@ -25,6 +25,7 @@
         <saiku-query.version>0.4-SNAPSHOT</saiku-query.version>
         <jackson.version>2.17.3</jackson.version>
         <arrow.version>15.0.2</arrow.version>
+        <caffeine.version>3.1.8</caffeine.version>
     </properties>
 
     <dependencyManagement>
@@ -733,6 +734,13 @@
                 <groupId>org.apache.arrow</groupId>
                 <artifactId>arrow-format</artifactId>
                 <version>${arrow.version}</version>
+            </dependency>
+
+            <!-- Caffeine: in-memory LRU index for disk-backed Arrow query cache -->
+            <dependency>
+                <groupId>com.github.ben-manes.caffeine</groupId>
+                <artifactId>caffeine</artifactId>
+                <version>${caffeine.version}</version>
             </dependency>
         </dependencies>
 

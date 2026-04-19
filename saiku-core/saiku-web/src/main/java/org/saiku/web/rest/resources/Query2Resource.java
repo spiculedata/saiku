@@ -244,17 +244,22 @@ public class Query2Resource {
     }
 
     private Response executeArrow(final ThinQuery tq) throws Exception {
-        // Populate the query context (stores the CellSet under ObjectKey.RESULT).
-        thinQueryService.execute(tq);
-        final CellSet cellSet = thinQueryService.getContext(tq.getName()).getOlapResult();
-        final ThinQuery tqAfter = thinQueryService.getContext(tq.getName()).getOlapQuery();
+        // Cache-first path: on hit we stream the stored Arrow bytes straight
+        // back without touching Mondrian. On miss the service executes,
+        // encodes, caches, and returns the fresh bytes.
+        final org.saiku.service.cache.SaikuQueryCache.CachedQueryResult r =
+                thinQueryService.executeCached(tq);
+        final byte[] bytes = r.arrowBytes;
         StreamingOutput body = new StreamingOutput() {
             @Override
             public void write(java.io.OutputStream output) throws java.io.IOException {
-                new ArrowCellsetWriter().write(cellSet, tqAfter, output);
+                output.write(bytes);
             }
         };
-        return Response.ok(body, ARROW_STREAM_MEDIA_TYPE).build();
+        return Response.ok(body, ARROW_STREAM_MEDIA_TYPE)
+                .header("X-Saiku-Cache", r.cacheHit ? "hit" : "miss")
+                .header("X-Saiku-Runtime-Ms", String.valueOf(r.runtimeMs))
+                .build();
     }
 
     // ===== Async execute / status / result / cancel ==========================
