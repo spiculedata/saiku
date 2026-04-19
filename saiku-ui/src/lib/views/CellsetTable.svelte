@@ -311,6 +311,74 @@
     return /^-?\d[\d,. ]*$/.test(v);
   }
 
+  // --- Drag-to-select range on data cells ---
+  interface CellCoord { r: number; c: number }
+  let sel = $state<{ anchor: CellCoord | null; focus: CellCoord | null; dragging: boolean }>({
+    anchor: null,
+    focus: null,
+    dragging: false,
+  });
+
+  function selRect(): { r0: number; r1: number; c0: number; c1: number } | null {
+    if (!sel.anchor || !sel.focus) return null;
+    return {
+      r0: Math.min(sel.anchor.r, sel.focus.r),
+      r1: Math.max(sel.anchor.r, sel.focus.r),
+      c0: Math.min(sel.anchor.c, sel.focus.c),
+      c1: Math.max(sel.anchor.c, sel.focus.c),
+    };
+  }
+  function isSelected(r: number, c: number): boolean {
+    const b = selRect();
+    return !!b && r >= b.r0 && r <= b.r1 && c >= b.c0 && c <= b.c1;
+  }
+  function onCellMouseDown(e: MouseEvent, r: number, c: number) {
+    if (e.button !== 0) return; // only left-click
+    sel = { anchor: { r, c }, focus: { r, c }, dragging: true };
+    e.preventDefault(); // suppress text selection while dragging
+  }
+  function onCellMouseEnter(r: number, c: number) {
+    if (!sel.dragging) return;
+    sel = { ...sel, focus: { r, c } };
+  }
+  function endDrag() {
+    if (sel.dragging) sel = { ...sel, dragging: false };
+  }
+  function clearSelection() {
+    sel = { anchor: null, focus: null, dragging: false };
+  }
+  function toNumber(cell: CellEntry | undefined): number | null {
+    if (!cell) return null;
+    const raw = cell.properties?.raw;
+    const src = raw ?? cell.value;
+    if (src == null || src === "") return null;
+    const n = Number(String(src).replace(/[, ]/g, ""));
+    return Number.isFinite(n) ? n : null;
+  }
+  let selStats = $derived.by(() => {
+    const b = selRect();
+    if (!b) return null;
+    let count = 0, sum = 0, min = Infinity, max = -Infinity;
+    const cellCount = (b.r1 - b.r0 + 1) * (b.c1 - b.c0 + 1);
+    for (let r = b.r0; r <= b.r1; r++) {
+      const row = parsed.dataRows[r];
+      if (!row) continue;
+      for (let c = b.c0; c <= b.c1; c++) {
+        const n = toNumber(row[c]);
+        if (n == null) continue;
+        count++;
+        sum += n;
+        if (n < min) min = n;
+        if (n > max) max = n;
+      }
+    }
+    if (count === 0) return { cells: cellCount, count: 0, sum: 0, avg: 0, min: 0, max: 0 };
+    return { cells: cellCount, count, sum, avg: sum / count, min, max };
+  });
+  function fmtNum(n: number): string {
+    return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—";
+  }
+
   function onDataCellContextMenu(e: MouseEvent, row: number, col: number) {
     e.preventDefault();
     e.stopPropagation();
@@ -335,7 +403,7 @@
   }
 </script>
 
-<svelte:window onclick={onDocumentClick} />
+<svelte:window onclick={onDocumentClick} onmouseup={endDrag} />
 
 {#if result.error}
   <p class="callout callout--danger">{result.error}</p>
@@ -388,8 +456,11 @@
             {/each}
             {#each parsed.dataRows[r] as dc, cIdx}
               {@const num = isNumeric(dc.value)}
+              {@const selected = isSelected(r, cIdx)}
               <td
-                class={num ? "data data-num" : "data"}
+                class={(num ? "data data-num" : "data") + (selected ? " data--selected" : "")}
+                onmousedown={(e) => onCellMouseDown(e, r, cIdx)}
+                onmouseenter={() => onCellMouseEnter(r, cIdx)}
                 oncontextmenu={(e) => onDataCellContextMenu(e, r, cIdx)}
               >{dc.value}</td>
             {/each}
@@ -413,6 +484,17 @@
       </tbody>
     </table>
   </div>
+  {#if selStats}
+    <div class="sel-stats" role="status" aria-live="polite">
+      <span>Selected: <strong>{selStats.cells}</strong> cell{selStats.cells === 1 ? "" : "s"}</span>
+      <span>Count: <strong>{selStats.count}</strong></span>
+      <span>Sum: <strong>{fmtNum(selStats.sum)}</strong></span>
+      <span>Avg: <strong>{fmtNum(selStats.avg)}</strong></span>
+      <span>Min: <strong>{fmtNum(selStats.min)}</strong></span>
+      <span>Max: <strong>{fmtNum(selStats.max)}</strong></span>
+      <button type="button" class="sel-stats__clear" onclick={clearSelection} title="Clear selection">×</button>
+    </div>
+  {/if}
   {#if result.runtime != null}
     <p class="runtime">
       Runtime: {result.runtime} ms · {result.height ?? 0} rows × {result.width ?? 0} cols
@@ -548,6 +630,34 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
+  .cellset td.data { cursor: cell; user-select: none; }
+  .cellset td.data--selected { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+  .sel-stats {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-top: 0;
+    background: var(--bg-muted);
+    color: var(--fg-muted);
+    font-size: var(--fs-sm);
+    font-variant-numeric: tabular-nums;
+  }
+  .sel-stats strong { color: var(--fg); font-weight: 600; }
+  .sel-stats__clear {
+    margin-left: auto;
+    border: none;
+    background: transparent;
+    color: var(--fg-muted);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+  }
+  .sel-stats__clear:hover { color: var(--danger); background: var(--bg-subtle); }
   .cellset th.spark-col {
     min-width: 140px;
   }
