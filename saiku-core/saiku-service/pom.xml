@@ -386,12 +386,4 @@
 			<version>8.0.6</version>
 		</dependency>
 	</dependencies>
-	<repositories>
-		<!-- MarkLogic repository -->
-		<repository>
-			<id>MarkLogic-releases</id>
-			<name>MarkLogic Releases</name>
-			<url>http://developer.marklogic.com/maven2</url>
-		</repository>
-	</repositories>
 </project>
