@@ -24,6 +24,10 @@
         {theme.theme === "dark" ? "☾ dark" : theme.theme === "light" ? "☀ light" : "⌘ system"}
       </button>
       {#if session.current}
+        {#if session.isAdmin}
+          <a class="btn" href="/admin">Admin</a>
+        {/if}
+        <a class="btn" href="/">Workspace</a>
         <span class="topbar__user">{session.current.username}</span>
         <button type="button" class="btn" onclick={() => session.logout()}>Sign out</button>
       {/if}
