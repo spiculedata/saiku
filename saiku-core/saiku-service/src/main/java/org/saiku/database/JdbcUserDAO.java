@@ -29,7 +29,7 @@ public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
     private ServletContext servletContext;
 
     public JdbcUserDAO() {
-        InputStream stream = loader.getResourceAsStream("../database-queries.properties");
+        InputStream stream = loader.getResourceAsStream("database-queries.properties");
         try {
             prop.load(stream);
         } catch (IOException e) {

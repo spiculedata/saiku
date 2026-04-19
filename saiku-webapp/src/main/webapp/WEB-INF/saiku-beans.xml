@@ -81,11 +81,8 @@
     </bean>
 
     <bean id="securityContextPersistenceFilter" class="org.springframework.security.web.context.SecurityContextPersistenceFilter"/>
-    <bean class="org.saiku.datasources.connection.MondrianVFS" init-method="init" id="mondrianVFS">
-        <property name="datasourceManager" ref="repositoryDsManager"/>
-    </bean>
     <bean id="connectionManager" class="org.saiku.web.core.SecurityAwareConnectionManager" init-method="init"
-          destroy-method="destroy" depends-on="mondrianVFS">
+          destroy-method="destroy">
         <property name="userService" ref="userServiceBean"/>
         <property name="dataSourceManager" ref="repositoryDsManager"/>
         <property name="sessionService" ref="sessionService"/>

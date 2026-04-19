@@ -172,33 +172,8 @@
     </listener>
 
 
-    <!-- ====================================================================== -->
-    <!-- W E B D A V S E R V L E T -->
-    <!-- ====================================================================== -->
-    <servlet>
-        <servlet-name>Webdav</servlet-name>
-        <description>
-            The webdav servlet that connects HTTP request to the repository.
-        </description>
-        <servlet-class>org.saiku.repository.SaikuWebdavServlet</servlet-class>
-        <init-param>
-            <param-name>resource-path-prefix</param-name>
-            <param-value>/repository</param-value>
-            <description>
-                defines the prefix for spooling resources out of the repository.
-            </description>
-        </init-param>
-        <init-param>
-            <param-name>resource-config</param-name>
-            <param-value>/WEB-INF/config.xml</param-value>
-            <description>
-                Defines various dav-resource configuration parameters.
-            </description>
-        </init-param>
+    <!-- Phase 2: Jackrabbit WebDAV servlet removed. -->
 
-
-        <load-on-startup>4</load-on-startup>
-    </servlet>
     <!-- ====================================================================== -->
     <!-- J C R R E M O T I N G S E R V L E T -->
     <!-- ====================================================================== -->
@@ -236,10 +211,6 @@
     <!-- ====================================================================== -->
     <!-- S E R V L E T M A P P I N G -->
     <!-- ====================================================================== -->
-    <servlet-mapping>
-        <servlet-name>Webdav</servlet-name>
-        <url-pattern>/repository/*</url-pattern>
-    </servlet-mapping>
   <!--  <servlet-mapping>
         <servlet-name>JCRWebdavServer</servlet-name>
         <url-pattern>/server/*</url-pattern>
