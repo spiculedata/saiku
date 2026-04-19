@@ -4,7 +4,6 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
 import javax.servlet.http.HttpServletRequest;
-import javax.ws.rs.core.MultivaluedMap;
 import org.apache.commons.lang.StringUtils;
 
 public class ServletUtil {
@@ -19,10 +18,6 @@ public class ServletUtil {
 
         Map<String, String> queryParams = new HashMap<>();
         if (req != null) {
-            // ... and the query parameters
-            // We identify any pathParams starting with "param" as query parameters
-
-            // FIXME we should probably be able to have array params as well
             Enumeration<String> enumeration = req.getParameterNames();
             while (enumeration.hasMoreElements()) {
                 String param = (String) enumeration.nextElement();
@@ -40,16 +35,16 @@ public class ServletUtil {
         return queryParams;
     }
 
-    private static Map<String, String> getParameters(MultivaluedMap<String, String> formParams) {
+    private static Map<String, String> getParameters(Map<String, String> formParams) {
         return getParameters(formParams, PREFIX_PARAMETER);
     }
 
-    private static Map<String, String> getParameters(MultivaluedMap<String, String> formParams, String prefix) {
+    private static Map<String, String> getParameters(Map<String, String> formParams, String prefix) {
         Map<String, String> queryParams = new HashMap<>();
         if (formParams != null) {
-            for (String key : formParams.keySet()) {
-                String param = key;
-                String value = formParams.getFirst(key);
+            for (Map.Entry<String, String> entry : formParams.entrySet()) {
+                String param = entry.getKey();
+                String value = entry.getValue();
 
                 if (StringUtils.isNotBlank(prefix)) {
                     if (param.toLowerCase().startsWith(prefix)) {
@@ -79,7 +74,7 @@ public class ServletUtil {
         return replaceParameters(query, queryParams);
     }
 
-    public static String replaceParameters(MultivaluedMap<String, String> formParams, String query) {
+    public static String replaceParameters(Map<String, String> formParams, String query) {
         Map<String, String> queryParams = getParameters(formParams);
         return replaceParameters(query, queryParams);
     }
