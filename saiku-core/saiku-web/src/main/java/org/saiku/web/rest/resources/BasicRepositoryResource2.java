@@ -41,9 +41,6 @@ import javax.ws.rs.core.Response.Status;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
-import org.apache.commons.vfs.FileObject;
-import org.apache.commons.vfs.FileSystemManager;
-import org.apache.commons.vfs.VFS;
 import org.saiku.repository.AclEntry;
 import org.saiku.repository.IRepositoryObject;
 import org.saiku.service.ISessionService;
@@ -68,28 +65,22 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
 
     // private Acl acl;
     private DatasourceService datasourceService;
-    private FileObject repo;
+    private File repo;
 
     public void setDatasourceService(DatasourceService ds) {
         datasourceService = ds;
     }
 
     public void setPath(String path) throws Exception {
-        FileSystemManager fileSystemManager;
         try {
             if (!path.endsWith("" + File.separatorChar)) {
                 path += File.separatorChar;
             }
-            fileSystemManager = VFS.getManager();
-            FileObject fileObject;
-            fileObject = fileSystemManager.resolveFile(path);
-            if (fileObject == null) {
-                throw new IOException("File cannot be resolved: " + path);
-            }
-            if (!fileObject.exists()) {
+            File file = new File(path);
+            if (!file.exists()) {
                 throw new IOException("File does not exist: " + path);
             }
-            repo = fileObject;
+            repo = file;
         } catch (Exception e) {
             log.error("Error setting path for repository: " + path, e);
         }
