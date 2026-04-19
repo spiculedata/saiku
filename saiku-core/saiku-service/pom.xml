@@ -262,23 +262,6 @@
 			<groupId>net.serenity-bdd</groupId>
 			<artifactId>serenity-jbehave</artifactId>
 		</dependency>
-		<dependency>
-			<groupId>org.apache.jackrabbit</groupId>
-			<artifactId>jackrabbit-core</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.jackrabbit</groupId>
-			<artifactId>jackrabbit-api</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>commons-vfs</groupId>
-			<artifactId>commons-vfs</artifactId>
-		</dependency>
-
-		<dependency>
-			<groupId>org.apache.jackrabbit</groupId>
-			<artifactId>jackrabbit-webdav</artifactId>
-		</dependency>
 		<!--<dependency> <groupId>net.thucydides</groupId> <artifactId>thucydides-core</artifactId> 
 			</dependency> -->
 		<dependency>
@@ -288,10 +271,6 @@
 		<dependency>
 			<groupId>org.jbehave</groupId>
 			<artifactId>jbehave-core</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.jackrabbit</groupId>
-			<artifactId>jackrabbit-jcr-server</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>junit</groupId>
@@ -346,10 +325,6 @@
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-core</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.jackrabbit</groupId>
-			<artifactId>jackrabbit-jcr-commons</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>commons-lang</groupId>

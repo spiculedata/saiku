@@ -91,23 +91,12 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     public void load() {
         Properties ext = checkForExternalDataSourceProperties();
 
-        // Instantiate the appropriate repository manager
-        if (type.equals("classpath")) {
-            separator = "/";
-            log.debug("init datadir= " + datadir);
-            irm = ClassPathRepositoryManager.getClassPathRepositoryManager(
-                    cleanse(datadir), defaultRole, sessionRegistry, workspaces);
-            log.debug("2nd init datadir= " + datadir);
-        } else {
-            irm = JackRabbitRepositoryManager.getJackRabbitRepositoryManager(
-                    configurationpath,
-                    datadir,
-                    repopasswordprovider.getPassword(),
-                    oldpassword,
-                    defaultRole,
-                    sessionRegistry,
-                    workspaces);
-        }
+        // Phase 2: Jackrabbit removed. The only remaining backend is classpath/filesystem.
+        separator = "/";
+        log.debug("init datadir= " + datadir);
+        irm = ClassPathRepositoryManager.getClassPathRepositoryManager(
+                cleanse(datadir), defaultRole, sessionRegistry, workspaces);
+        log.debug("2nd init datadir= " + datadir);
 
         // Perform the repository manager startup routines
         try {
