@@ -1,5 +1,6 @@
 package org.saiku.database;
 
+import jakarta.servlet.ServletContext;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -14,7 +15,6 @@ import java.sql.Statement;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Properties;
-import javax.servlet.ServletContext;
 import org.apache.commons.io.FileUtils;
 import org.h2.jdbcx.JdbcDataSource;
 import org.saiku.datasources.datasource.SaikuDatasource;

@@ -1,5 +1,6 @@
 package org.saiku.database;
 
+import jakarta.servlet.ServletContext;
 import java.io.IOException;
 import java.io.InputStream;
 import java.sql.ResultSet;
@@ -9,7 +10,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Properties;
-import javax.servlet.ServletContext;
 import org.apache.commons.lang3.ArrayUtils;
 import org.saiku.UserDAO;
 import org.saiku.database.dto.SaikuUser;
@@ -29,11 +29,16 @@ public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
     private ServletContext servletContext;
 
     public JdbcUserDAO() {
-        InputStream stream = loader.getResourceAsStream("../database-queries.properties");
-        try {
-            prop.load(stream);
-        } catch (IOException e) {
-            e.printStackTrace();
+        InputStream stream = loader.getResourceAsStream("database-queries.properties");
+        if (stream == null) {
+            stream = loader.getResourceAsStream("/database-queries.properties");
+        }
+        if (stream != null) {
+            try (InputStream in = stream) {
+                prop.load(in);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 

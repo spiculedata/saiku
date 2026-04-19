@@ -1,10 +1,10 @@
 package org.saiku.service.datasource;
 
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpSessionContext;
 import java.util.*;
 import java.util.Enumeration;
-import javax.servlet.ServletContext;
-import javax.servlet.http.HttpSession;
-import javax.servlet.http.HttpSessionContext;
 
 public class MockHttpSession implements HttpSession {
     private Map<String, Object> attributes;

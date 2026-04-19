@@ -16,8 +16,17 @@
 package org.saiku.web.rest.resources;
 
 import com.qmino.miredot.annotations.ReturnType;
-import com.sun.jersey.core.header.FormDataContentDisposition;
-import com.sun.jersey.multipart.FormDataParam;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.FormParam;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -27,23 +36,11 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.FormParam;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
-import org.apache.commons.vfs.FileObject;
-import org.apache.commons.vfs.FileSystemManager;
-import org.apache.commons.vfs.VFS;
+import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
+import org.glassfish.jersey.media.multipart.FormDataParam;
 import org.saiku.repository.AclEntry;
 import org.saiku.repository.IRepositoryObject;
 import org.saiku.service.ISessionService;
@@ -51,14 +48,12 @@ import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
 
 /**
  * QueryServlet contains all the methods required when manipulating an OLAP Query.
  * @author Paul Stoellberger
  *
  */
-@Component
 @Path("/saiku/api/repository")
 public class BasicRepositoryResource2 implements ISaikuRepository {
 
@@ -68,28 +63,22 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
 
     // private Acl acl;
     private DatasourceService datasourceService;
-    private FileObject repo;
+    private File repo;
 
     public void setDatasourceService(DatasourceService ds) {
         datasourceService = ds;
     }
 
     public void setPath(String path) throws Exception {
-        FileSystemManager fileSystemManager;
         try {
             if (!path.endsWith("" + File.separatorChar)) {
                 path += File.separatorChar;
             }
-            fileSystemManager = VFS.getManager();
-            FileObject fileObject;
-            fileObject = fileSystemManager.resolveFile(path);
-            if (fileObject == null) {
-                throw new IOException("File cannot be resolved: " + path);
-            }
-            if (!fileObject.exists()) {
+            File f = new File(path);
+            if (!f.exists()) {
                 throw new IOException("File does not exist: " + path);
             }
-            repo = fileObject;
+            repo = f;
         } catch (Exception e) {
             log.error("Error setting path for repository: " + path, e);
         }

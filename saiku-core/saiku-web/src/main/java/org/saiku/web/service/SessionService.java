@@ -16,13 +16,13 @@
 
 package org.saiku.web.service;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpSession;
 import org.apache.commons.lang.StringUtils;
 import org.saiku.repository.ScopedRepo;
 import org.saiku.service.ISessionService;
@@ -35,9 +35,12 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetails;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.context.request.RequestContextHolder;
 
 public class SessionService implements ISessionService {
@@ -46,6 +49,7 @@ public class SessionService implements ISessionService {
 
     private AuthenticationManager authenticationManager;
     private AuthorisationPredicate authorisationPredicate;
+    private final SecurityContextRepository securityContextRepository = new HttpSessionSecurityContextRepository();
 
     private final Map<Object, Map<String, Object>> sessionHolder = new HashMap<>();
 
@@ -69,7 +73,7 @@ public class SessionService implements ISessionService {
     }
 
     /* (non-Javadoc)
-     * @see org.saiku.web.service.ISessionService#login(javax.servlet.http.HttpServletRequest, java.lang.String, java.lang.String)
+     * @see org.saiku.web.service.ISessionService#login(jakarta.servlet.http.HttpServletRequest, java.lang.String, java.lang.String)
      */
     public Map<String, Object> login(HttpServletRequest req, String username, String password) {
         HttpSession session = ((HttpServletRequest) req).getSession(true);
@@ -145,7 +149,7 @@ public class SessionService implements ISessionService {
     }
 
     /* (non-Javadoc)
-     * @see org.saiku.web.service.ISessionService#logout(javax.servlet.http.HttpServletRequest)
+     * @see org.saiku.web.service.ISessionService#logout(jakarta.servlet.http.HttpServletRequest)
      */
     public void logout(HttpServletRequest req) {
         if (SecurityContextHolder.getContext() != null
@@ -167,7 +171,7 @@ public class SessionService implements ISessionService {
     }
 
     /* (non-Javadoc)
-     * @see org.saiku.web.service.ISessionService#authenticate(javax.servlet.http.HttpServletRequest, java.lang.String, java.lang.String)
+     * @see org.saiku.web.service.ISessionService#authenticate(jakarta.servlet.http.HttpServletRequest, java.lang.String, java.lang.String)
      */
     public void authenticate(HttpServletRequest req, String username, String password) {
         try {
@@ -175,14 +179,20 @@ public class SessionService implements ISessionService {
             token.setDetails(new WebAuthenticationDetails(req));
             Authentication authentication = this.authenticationManager.authenticate(token);
             log.debug("Logging in with [{}]", authentication.getPrincipal());
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+            SecurityContext context = SecurityContextHolder.getContext();
+            context.setAuthentication(authentication);
+            jakarta.servlet.http.HttpServletResponse res =
+                    ((org.springframework.web.context.request.ServletRequestAttributes)
+                                    RequestContextHolder.currentRequestAttributes())
+                            .getResponse();
+            securityContextRepository.saveContext(context, req, res);
         } catch (BadCredentialsException bd) {
             throw new RuntimeException("Authentication failed for: " + username, bd);
         }
     }
 
     /* (non-Javadoc)
-     * @see org.saiku.web.service.ISessionService#getSession(javax.servlet.http.HttpServletRequest)
+     * @see org.saiku.web.service.ISessionService#getSession(jakarta.servlet.http.HttpServletRequest)
      */
     public Map<String, Object> getSession() {
         if (SecurityContextHolder.getContext() != null

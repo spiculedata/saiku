@@ -16,12 +16,12 @@
 package org.saiku.web.rest.resources;
 
 import com.qmino.miredot.annotations.ReturnType;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Map;
-import javax.ws.rs.*;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.user.UserService;
@@ -29,12 +29,10 @@ import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.web.rest.objects.DataSourceMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
 
 /**
  * Data Source Manipulation Utility Endpoints
  */
-@Component
 @Path("/saiku/{username}/org.saiku.datasources")
 public class DataSourceResource {
 

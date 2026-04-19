@@ -1,7 +1,7 @@
 package org.saiku.repository;
 
-import javax.xml.bind.annotation.XmlElement;
-import javax.xml.bind.annotation.XmlRootElement;
+import jakarta.xml.bind.annotation.XmlElement;
+import jakarta.xml.bind.annotation.XmlRootElement;
 import org.saiku.datasources.datasource.SaikuDatasource;
 
 /**

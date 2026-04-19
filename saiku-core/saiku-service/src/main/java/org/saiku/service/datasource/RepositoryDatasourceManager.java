@@ -16,6 +16,7 @@
 
 package org.saiku.service.datasource;
 
+import jakarta.servlet.http.HttpSession;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -23,7 +24,6 @@ import java.io.InputStream;
 import java.util.*;
 import javax.jcr.PathNotFoundException;
 import javax.jcr.RepositoryException;
-import javax.servlet.http.HttpSession;
 import org.apache.commons.lang.StringUtils;
 import org.saiku.database.dto.MondrianSchema;
 import org.saiku.datasources.connection.IConnectionManager;
@@ -567,7 +567,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
 
     private String getCookieUsername() {
         String cookieUsername = null;
-        javax.servlet.http.HttpSession session =
+        jakarta.servlet.http.HttpSession session =
                 getSession(); // Use a variable instead of a method call for debugging purposes
 
         if (session != null && workspaces && session.getAttribute(SAIKU_AUTH_PRINCIPAL) != null) {

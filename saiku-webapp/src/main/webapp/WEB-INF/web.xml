@@ -173,33 +173,6 @@
 
 
     <!-- ====================================================================== -->
-    <!-- W E B D A V S E R V L E T -->
-    <!-- ====================================================================== -->
-    <servlet>
-        <servlet-name>Webdav</servlet-name>
-        <description>
-            The webdav servlet that connects HTTP request to the repository.
-        </description>
-        <servlet-class>org.saiku.repository.SaikuWebdavServlet</servlet-class>
-        <init-param>
-            <param-name>resource-path-prefix</param-name>
-            <param-value>/repository</param-value>
-            <description>
-                defines the prefix for spooling resources out of the repository.
-            </description>
-        </init-param>
-        <init-param>
-            <param-name>resource-config</param-name>
-            <param-value>/WEB-INF/config.xml</param-value>
-            <description>
-                Defines various dav-resource configuration parameters.
-            </description>
-        </init-param>
-
-
-        <load-on-startup>4</load-on-startup>
-    </servlet>
-    <!-- ====================================================================== -->
     <!-- J C R R E M O T I N G S E R V L E T -->
     <!-- ====================================================================== -->
    <!-- <servlet>
@@ -236,10 +209,6 @@
     <!-- ====================================================================== -->
     <!-- S E R V L E T M A P P I N G -->
     <!-- ====================================================================== -->
-    <servlet-mapping>
-        <servlet-name>Webdav</servlet-name>
-        <url-pattern>/repository/*</url-pattern>
-    </servlet-mapping>
   <!--  <servlet-mapping>
         <servlet-name>JCRWebdavServer</servlet-name>
         <url-pattern>/server/*</url-pattern>
@@ -249,54 +218,22 @@
         <url-pattern>/rmi</url-pattern>
     </servlet-mapping>-->
 
-    <servlet>
-        <servlet-name>H2Console</servlet-name>
-        <servlet-class>org.h2.server.web.WebServlet</servlet-class>
-        <!--
-        <init-param>
-            <param-name>webAllowOthers</param-name>
-            <param-value></param-value>
-        </init-param>
-        <init-param>
-            <param-name>trace</param-name>
-            <param-value></param-value>
-        </init-param>
-        -->
-        <load-on-startup>1</load-on-startup>
-    </servlet>
-    <servlet-mapping>
-        <servlet-name>H2Console</servlet-name>
-        <url-pattern>/console/*</url-pattern>
-    </servlet-mapping>
 
 	<servlet>
     	<servlet-name>jersey2</servlet-name>
-    	<servlet-class>com.sun.jersey.spi.spring.container.servlet.SpringServlet</servlet-class>
+    	<servlet-class>org.glassfish.jersey.servlet.ServletContainer</servlet-class>
     	<init-param>
-      		<param-name>com.sun.jersey.config.property.packages</param-name>
+      		<param-name>jersey.config.server.provider.packages</param-name>
       		<param-value>org.saiku.web;com.fasterxml.jackson.jaxrs.json</param-value>
     	</init-param>
         <init-param>
-            <param-name>com.sun.jersey.api.json.POJOMappingFeature</param-name>
-            <param-value>true</param-value>
-        </init-param>
-    	<!--<init-param>
-      		<param-name>com.sun.jersey.spi.container.ContainerRequestFilters</param-name>
-      		<param-value>com.sun.jersey.api.container.filter.PostReplaceFilter</param-value>
-    	</init-param>-->
-        <init-param>
-            <param-name>com.sun.jersey.config.feature.Trace</param-name>
-            <param-value>true</param-value>
+            <param-name>jersey.config.server.tracing.type</param-name>
+            <param-value>ALL</param-value>
         </init-param>
         <init-param>
-            <param-name>jaxrs.providers</param-name>
-            <param-value>org.saiku.web.rest.SerializableProvider</param-value>
+            <param-name>jersey.config.server.provider.classnames</param-name>
+            <param-value>org.glassfish.jersey.media.multipart.MultiPartFeature,org.saiku.web.rest.SerializableProvider</param-value>
         </init-param>
-<!-- 		<init-param>
-		    <param-name>com.sun.jersey.spi.container.ContainerResponseFilters</param-name>
-		    <param-value>com.sun.jersey.api.container.filter.GZIPContentEncodingFilter</param-value>
-		</init-param>  -->
-
     	<load-on-startup>1</load-on-startup>
   	</servlet>
 

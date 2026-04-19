@@ -1,21 +1,19 @@
 package org.saiku.web.rest.resources;
 
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
 import java.util.List;
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
 import mondrian.olap.MondrianServer;
 import mondrian.olap.MondrianServer.MondrianVersion;
 import mondrian.server.monitor.ConnectionInfo;
 import mondrian.server.monitor.Monitor;
 import mondrian.server.monitor.ServerInfo;
 import mondrian.server.monitor.StatementInfo;
-import org.springframework.stereotype.Component;
 
 /**
  * Mondrian Server Info and Stats Endpoints.
  */
-@Component
 @Path("/saiku/statistics")
 public class StatisticsResource {
 

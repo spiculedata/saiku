@@ -16,11 +16,11 @@
 
 package org.saiku.olap.util;
 
+import jakarta.servlet.ServletConfig;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.ServletException;
 import java.sql.SQLException;
 import java.util.*;
-import javax.servlet.ServletConfig;
-import javax.servlet.ServletContext;
-import javax.servlet.ServletException;
 import mondrian.xmla.XmlaHandler;
 import mondrian.xmla.XmlaHandler.ConnectionFactory;
 import mondrian.xmla.XmlaHandler.Request;

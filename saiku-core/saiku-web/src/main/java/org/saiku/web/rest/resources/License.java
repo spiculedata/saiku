@@ -7,15 +7,14 @@
 package org.saiku.web.rest.resources;
 
 import com.qmino.miredot.annotations.ReturnType;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Response;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
-import javax.ws.rs.*;
-import javax.ws.rs.core.Response;
 import org.saiku.database.Database;
 import org.saiku.service.user.UserService;
 import org.saiku.web.rest.objects.UserList;
-import org.springframework.stereotype.Component;
 
 /**
  * Saiku license information resource.
@@ -23,7 +22,6 @@ import org.springframework.stereotype.Component;
  * @since 3.0
  * @author tbarber
  */
-@Component
 @Path("/saiku/api/license")
 public class License {
 
