@@ -19,6 +19,17 @@
   let parsed = $derived(parseCellset(result));
   let rowDisplay = $derived(rowHeaderDisplay(parsed));
 
+  /** Depth of a row-header member, derived from how many `].[` segments its
+   *  uniqueName contains. `[Customers].[USA]` → 0, `[Customers].[USA].[CA]` → 1,
+   *  `[Customers].[USA].[CA].[Altadena]` → 2. Used to indent nested members so
+   *  parent/child relationships are visually distinct. */
+  function depthOf(c: CellEntry | undefined): number {
+    const un = c?.properties?.uniquename;
+    if (!un) return 0;
+    const m = un.match(/\]\.\[/g);
+    return Math.max(0, (m?.length ?? 0) - 1);
+  }
+
   function sparkRange(): { min: number; max: number } {
     let min = Infinity, max = -Infinity;
     for (const row of parsed.dataRows) {
@@ -366,8 +377,10 @@
               {#if display.isNull}
                 <th class="row_null"></th>
               {:else}
+                {@const d = depthOf(c)}
                 <th
-                  class="row"
+                  class={d > 0 ? "row row--nested" : "row"}
+                  style={d > 0 ? `padding-left: calc(12px + ${d}em);` : ""}
                   title={c.value}
                   oncontextmenu={(e) => openMenu(e, c, "ROWS")}
                 >{c.value}</th>
@@ -517,6 +530,7 @@
     left: 0;
     z-index: 1;
   }
+  .cellset tbody th.row--nested { font-weight: 500; color: var(--fg-muted); }
   .cellset tbody th.row:hover {
     background: var(--bg-subtle);
   }
