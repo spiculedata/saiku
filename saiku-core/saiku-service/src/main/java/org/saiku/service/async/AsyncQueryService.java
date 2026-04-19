@@ -24,6 +24,8 @@ import org.saiku.olap.query2.ThinQuery;
 import org.saiku.service.olap.ThinQueryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
 
 /**
  * Wraps {@link ThinQueryService} with a fire-and-poll asynchronous execution
@@ -98,6 +100,22 @@ public class AsyncQueryService {
      * whose status is {@code PENDING} until the worker picks it up.
      */
     public AsyncQueryHandle submit(final ThinQuery query) {
+        return submit(query, null);
+    }
+
+    /**
+     * Submit a query for async execution, propagating the caller's Spring
+     * {@link RequestAttributes} to the worker thread. This is required when
+     * {@link #thinQueryService} is a session-scoped bean (as in the default
+     * webapp wiring): the executor thread has no HTTP request/session, so
+     * resolving the scoped proxy without propagation throws
+     * "Scope 'session' is not active for the current thread".
+     *
+     * <p>TODO: if the submitting HTTP request finishes and its session is
+     * invalidated before the worker runs, the scoped proxy will still fail.
+     * We rely on the client polling, which keeps the session alive.
+     */
+    public AsyncQueryHandle submit(final ThinQuery query, final RequestAttributes requestAttributes) {
         if (thinQueryService == null) {
             throw new IllegalStateException("AsyncQueryService.thinQueryService not wired — cannot submit");
         }
@@ -107,11 +125,25 @@ public class AsyncQueryService {
 
         CompletableFuture<CellSet> fut = CompletableFuture.supplyAsync(
                 () -> {
-                    handle.compareAndSetStatus(AsyncQueryHandle.Status.PENDING, AsyncQueryHandle.Status.RUNNING);
-                    thinQueryService.execute(query);
-                    // ThinQueryService.execute stashes the CellSet into its
-                    // per-query context keyed by the query name; fetch it.
-                    return thinQueryService.getContext(query.getName()).getOlapResult();
+                    RequestAttributes previous = RequestContextHolder.getRequestAttributes();
+                    if (requestAttributes != null) {
+                        RequestContextHolder.setRequestAttributes(requestAttributes, true);
+                    }
+                    try {
+                        handle.compareAndSetStatus(AsyncQueryHandle.Status.PENDING, AsyncQueryHandle.Status.RUNNING);
+                        thinQueryService.execute(query);
+                        // ThinQueryService.execute stashes the CellSet into its
+                        // per-query context keyed by the query name; fetch it.
+                        return thinQueryService.getContext(query.getName()).getOlapResult();
+                    } finally {
+                        if (requestAttributes != null) {
+                            if (previous != null) {
+                                RequestContextHolder.setRequestAttributes(previous);
+                            } else {
+                                RequestContextHolder.resetRequestAttributes();
+                            }
+                        }
+                    }
                 },
                 executor);
 

@@ -61,6 +61,8 @@ import org.saiku.web.rest.objects.resultset.QueryResult;
 import org.saiku.web.rest.util.RestUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
 
 /**
  * Saiku Query Endpoints
@@ -283,7 +285,15 @@ public class Query2Resource {
                     .build();
         }
         try {
-            AsyncQueryHandle h = asyncQueryService.submit(tq);
+            // Capture the caller's request attributes so the async worker
+            // thread can resolve session-scoped beans (e.g. thinQueryBean).
+            RequestAttributes requestAttributes = null;
+            try {
+                requestAttributes = RequestContextHolder.currentRequestAttributes();
+            } catch (IllegalStateException ignore) {
+                // No request bound — leave null; submit() falls back to legacy path.
+            }
+            AsyncQueryHandle h = asyncQueryService.submit(tq, requestAttributes);
             Map<String, Object> body = new java.util.LinkedHashMap<>();
             body.put("queryId", h.getId());
             body.put("status", h.getStatus().name());
@@ -307,7 +317,7 @@ public class Query2Resource {
      */
     @GET
     @Produces({"application/json"})
-    @Path("/{id}/status")
+    @Path("/async/{id}/status")
     public Response asyncStatus(@PathParam("id") String id) {
         if (asyncQueryService == null) {
             return Response.status(Status.NOT_FOUND).build();
@@ -334,7 +344,7 @@ public class Query2Resource {
      */
     @GET
     @Produces({ARROW_STREAM_MEDIA_TYPE, "application/json"})
-    @Path("/{id}/result")
+    @Path("/async/{id}/result")
     public Response asyncResult(@PathParam("id") String id, @Context HttpHeaders headers) {
         if (asyncQueryService == null) {
             return Response.status(Status.NOT_FOUND).build();
@@ -384,7 +394,7 @@ public class Query2Resource {
      * @return 204 No Content on success, 404 otherwise.
      */
     @DELETE
-    @Path("/{id}/cancel")
+    @Path("/async/{id}/cancel")
     public Response asyncCancel(@PathParam("id") String id) {
         if (asyncQueryService == null) {
             return Response.status(Status.NOT_FOUND).build();

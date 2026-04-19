@@ -32,6 +32,7 @@ import org.olap4j.CellSet;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.service.async.AsyncQueryHandle;
 import org.saiku.service.async.AsyncQueryService;
+import org.springframework.web.context.request.RequestAttributes;
 
 /**
  * Happy-path unit test for the async /execute-async /status /result /cancel
@@ -58,6 +59,11 @@ public class AsyncQueryResourceTest {
 
         @Override
         public AsyncQueryHandle submit(ThinQuery q) {
+            return submit(q, null);
+        }
+
+        @Override
+        public AsyncQueryHandle submit(ThinQuery q, RequestAttributes ignored) {
             String id = java.util.UUID.randomUUID().toString();
             AsyncQueryHandle h = new AsyncQueryHandle(id, q);
             h.setFuture(CompletableFuture.completedFuture(cellSet));
