@@ -18,23 +18,28 @@ package org.saiku.web.rest.resources;
 import com.qmino.miredot.annotations.ReturnType;
 import java.util.Map;
 import javax.servlet.http.HttpServletRequest;
-import javax.ws.rs.*;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
 import org.apache.commons.lang.StringUtils;
 import org.saiku.service.ISessionService;
 import org.saiku.service.user.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Saiku Session Endpoints
  */
 @Component
-@Path("/saiku/session")
+@RestController
+@RequestMapping("/saiku/session")
 public class SessionResource {
 
     private static final Logger log = LoggerFactory.getLogger(SessionResource.class);
@@ -56,72 +61,50 @@ public class SessionResource {
 
     /**
      * Login to Saiku
-     * @summary Login
-     * @param req Servlet request
-     * @param username Username
-     * @param password Password
-     * @return A 200 response
      */
-    @POST
-    @Consumes("application/x-www-form-urlencoded")
-    public Response login(
-            @Context HttpServletRequest req,
-            @FormParam("username") String username,
-            @FormParam("password") String password) {
+    @PostMapping(consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    public ResponseEntity<?> login(
+            HttpServletRequest req,
+            @RequestParam(name = "username", required = false) String username,
+            @RequestParam(name = "password", required = false) String password) {
         try {
             sessionService.login(req, username, password);
-            return Response.ok().build();
+            return ResponseEntity.ok().build();
         } catch (Exception e) {
             log.debug("Error logging in:" + username, e);
-            return Response.status(Status.INTERNAL_SERVER_ERROR)
-                    .entity(e.getLocalizedMessage())
-                    .build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getLocalizedMessage());
         }
     }
 
     /**
      * Clear logged in users session.
-     * @summary Login
-     * @param req Servlet request
-     * @param username Username
-     * @param password Password
-     * @return A 200 response
      */
-    @POST
-    @Path("/clear")
-    @Consumes("application/x-www-form-urlencoded")
-    public Response clearSession(
-            @Context HttpServletRequest req,
-            @FormParam("username") String username,
-            @FormParam("password") String password) {
+    @PostMapping(path = "/clear", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    public ResponseEntity<?> clearSession(
+            HttpServletRequest req,
+            @RequestParam(name = "username", required = false) String username,
+            @RequestParam(name = "password", required = false) String password) {
         try {
             sessionService.clearSessions(req, username, password);
-            return Response.ok("Session cleared").build();
+            return ResponseEntity.ok("Session cleared");
         } catch (Exception e) {
             log.debug("Error clearing sessions for:" + username, e);
-            return Response.status(Status.INTERNAL_SERVER_ERROR)
-                    .entity(e.getLocalizedMessage())
-                    .build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getLocalizedMessage());
         }
     }
 
     /**
      * Get the session in the request
-     * @summary Get session
-     * @param req The servlet request
-     * @return A reponse with a session map
      */
-    @GET
-    @Consumes("application/x-www-form-urlencoded")
-    @Produces(MediaType.APPLICATION_JSON)
+    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     @ReturnType("java.util.Map<String, Object>")
-    public Response getSession(@Context HttpServletRequest req) {
+    public ResponseEntity<?> getSession(HttpServletRequest req) {
 
         Map<String, Object> sess = null;
         try {
             sess = sessionService.getSession();
         } catch (Exception e) {
-            return Response.serverError().entity(e.getLocalizedMessage()).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getLocalizedMessage());
         }
         try {
             String acceptLanguage = req.getLocale().getLanguage();
@@ -143,21 +126,15 @@ public class SessionResource {
             // TODO detect if plugin or not.
         }
 
-        return Response.ok().entity(sess).build();
+        return ResponseEntity.ok(sess);
     }
 
     /**
      * Logout of the Session
-     * @summary Logout
-     * @param req The servlet request
-     * @return A 200 response.
      */
-    @DELETE
-    public Response logout(@Context HttpServletRequest req) {
+    @DeleteMapping
+    public ResponseEntity<?> logout(HttpServletRequest req) {
         sessionService.logout(req);
-        //		NewCookie terminate = new NewCookie(TokenBasedRememberMeServices.SPRING_SECURITY_REMEMBER_ME_COOKIE_KEY,
-        // null);
-
-        return Response.ok().build();
+        return ResponseEntity.ok().build();
     }
 }
