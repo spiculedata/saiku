@@ -183,10 +183,22 @@
         <header>{axisLabels.FILTER}</header>
         <div class="chips">
           {#each query.current?.queryModel?.axes.FILTER.hierarchies ?? [] as h}
-            <button type="button" class="chip chip--level" onclick={() => removeHier(h.name)}>
-              {hierChipLabel(h)}
-              <span class="chip__x">×</span>
-            </button>
+            <span class="chip chip--level">
+              <button
+                type="button"
+                class="chip__label"
+                onclick={() => openSelections("FILTER", h)}
+                title="Edit selections"
+              >
+                {hierChipLabel(h)}
+              </button>
+              <button
+                type="button"
+                class="chip__x"
+                aria-label="Remove {h.caption || h.name}"
+                onclick={() => removeHier(h.name)}
+              >×</button>
+            </span>
           {/each}
           {#if (query.current?.queryModel?.axes.FILTER.hierarchies.length ?? 0) === 0}
             <span class="chips__empty">{i18n.t("canvas.dropFilters")}</span>
