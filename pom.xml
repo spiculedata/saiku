@@ -455,7 +455,7 @@
             <dependency>
                 <groupId>org.olap4j</groupId>
                 <artifactId>olap4j</artifactId>
-                <version>TRUNK-SNAPSHOT</version>
+                <version>1.2.0-spicule-1</version>
             </dependency>
             <dependency>
                 <groupId>org.mongodb</groupId>
@@ -506,12 +506,12 @@
             <dependency>
                 <groupId>org.olap4j</groupId>
                 <artifactId>olap4j-xmla</artifactId>
-                <version>TRUNK-SNAPSHOT</version>
+                <version>1.2.0-spicule-1</version>
             </dependency>
             <dependency>
                 <groupId>org.olap4j</groupId>
                 <artifactId>olap4j-xmlaserver</artifactId>
-                <version>1.2.0</version>
+                <version>1.2.0-spicule-1</version>
             </dependency>
             <dependency>
                 <groupId>org.jdom</groupId>
@@ -728,7 +728,7 @@
             <dependency>
                 <groupId>pentaho</groupId>
                 <artifactId>mondrian</artifactId>
-                <version>4.3.0.1.2-SPARK</version>
+                <version>4.8.0.0-SAIKU</version>
             </dependency>
             <!-- Spring modules -->
             <dependency>
