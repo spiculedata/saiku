@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { base } from "$app/paths";
   import { session } from "$lib/stores/session.svelte";
   import { theme } from "$lib/stores/theme.svelte";
   import { platform } from "$lib/stores/platform.svelte";
@@ -57,9 +58,9 @@
       </button>
       {#if session.current}
         {#if session.isAdmin}
-          <a class="btn" href="/admin">{i18n.t("topbar.admin")}</a>
+          <a class="btn" href="{base}/admin">{i18n.t("topbar.admin")}</a>
         {/if}
-        <a class="btn" href="/">{i18n.t("topbar.workspace")}</a>
+        <a class="btn" href="{base}/">{i18n.t("topbar.workspace")}</a>
         <button
           type="button"
           class="btn"
