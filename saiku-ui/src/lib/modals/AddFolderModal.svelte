@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/AddFolderModal.js. */
   interface Props {
@@ -27,13 +28,13 @@
     </label>
   </form>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>Cancel</button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
     <button
       type="button"
       class="btn btn--primary"
       disabled={!name.trim()}
       onclick={() => onCreate(name.trim())}
-    >Create</button>
+    >{i18n.t("modal.save")}</button>
   {/snippet}
 </Modal>
 

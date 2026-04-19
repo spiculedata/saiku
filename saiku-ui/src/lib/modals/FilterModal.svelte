@@ -1,5 +1,7 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import MonacoEditor from "$lib/components/MonacoEditor.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/FilterModal.js — custom MDX
    * expression (ORDER / FILTER / LIMIT / TOPCOUNT) applied to an axis. */
@@ -53,16 +55,14 @@
       </select>
     </label>
   {/if}
-  <label class="field">
+  <div class="field">
     <span class="field__label">{expressionType} MDX expression</span>
-    <textarea class="field__input mdx" bind:value={buffer} rows="8" spellcheck="false"></textarea>
-  </label>
+    {#if open}
+      <MonacoEditor value={buffer} language="mdx" minHeight="220px" onChange={(v) => (buffer = v)} />
+    {/if}
+  </div>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>Cancel</button>
-    <button type="button" class="btn btn--primary" onclick={() => onSave(buffer, sort)}>OK</button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
+    <button type="button" class="btn btn--primary" onclick={() => onSave(buffer, sort)}>{i18n.t("modal.ok")}</button>
   {/snippet}
 </Modal>
-
-<style>
-  .mdx { font-family: var(--font-mono); font-size: var(--fs-sm); resize: vertical; }
-</style>

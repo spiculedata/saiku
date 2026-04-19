@@ -19,6 +19,10 @@
   let selectionsTarget = $state<{ axis: AxisLocation; hierarchyName: string; hierarchyCaption: string; levelName: string } | null>(null);
   let selectionsMembers = $state<SaikuMember[]>([]);
   let selectionsLoading = $state(false);
+  let selectionsInitial = $state<{ uniqueNames: string[]; type: "INCLUSION" | "EXCLUSION" }>({
+    uniqueNames: [],
+    type: "INCLUSION",
+  });
 
   const axisLabels = $derived<Record<AxisLocation, string>>({
     COLUMNS: i18n.t("canvas.columns"),
@@ -83,6 +87,8 @@
       hierarchyCaption: hier.caption ?? hier.name,
       levelName,
     };
+    const existing = query.getLevelSelection(hier.name, levelName);
+    selectionsInitial = { uniqueNames: existing.memberUniqueNames, type: existing.type };
     selectionsOpen = true;
     selectionsLoading = true;
     selectionsMembers = [];
@@ -114,11 +120,17 @@
     }
   }
 
-  function onSelectionsSave(_uniqueNames: string[], _type: "INCLUSION" | "EXCLUSION") {
-    // Wire into query.updateSelections() when the selection
-    // shape lands on the query store.
+  async function onSelectionsSave(uniqueNames: string[], type: "INCLUSION" | "EXCLUSION") {
+    if (!selectionsTarget) return;
+    query.setLevelSelection(
+      selectionsTarget.hierarchyName,
+      selectionsTarget.levelName,
+      uniqueNames,
+      type,
+    );
     selectionsOpen = false;
-    toasts.info("Selections", "Applied (selection persistence lands when the query JSON schema is extended).");
+    toasts.success(i18n.t("toast.saved"), `${uniqueNames.length} selection(s) applied`);
+    if (query.hasRunnableShape()) await query.run();
   }
 </script>
 
@@ -237,8 +249,8 @@
   <SelectionsModal
     levelCaption={selectionsTarget.hierarchyCaption + " › " + selectionsTarget.levelName}
     available={selectionsMembers}
-    initialSelected={[]}
-    initialType="INCLUSION"
+    initialSelected={selectionsInitial.uniqueNames}
+    initialType={selectionsInitial.type}
     open={selectionsOpen}
     onSave={onSelectionsSave}
     onOpenDateFilter={() => {

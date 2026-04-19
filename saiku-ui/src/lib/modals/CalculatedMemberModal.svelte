@@ -1,5 +1,7 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import MonacoEditor from "$lib/components/MonacoEditor.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/CalculatedMemberModal.js. */
   export interface CalculatedMember {
@@ -48,20 +50,18 @@
       {/each}
     </select>
   </label>
-  <label class="field">
+  <div class="field">
     <span class="field__label">Formula (MDX)</span>
-    <textarea class="field__input mdx" bind:value={form.formula} rows="8" spellcheck="false"></textarea>
-  </label>
+    {#if open}
+      <MonacoEditor value={form.formula} language="mdx" minHeight="200px" onChange={(v) => (form.formula = v)} />
+    {/if}
+  </div>
   <label class="field">
     <span class="field__label">Format string</span>
     <input class="field__input" bind:value={form.formatString} />
   </label>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>Cancel</button>
-    <button type="button" class="btn btn--primary" disabled={!valid} onclick={() => onSave(form)}>Save</button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
+    <button type="button" class="btn btn--primary" disabled={!valid} onclick={() => onSave(form)}>{i18n.t("modal.save")}</button>
   {/snippet}
 </Modal>
-
-<style>
-  .mdx { font-family: var(--font-mono); font-size: var(--fs-sm); resize: vertical; }
-</style>

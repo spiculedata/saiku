@@ -138,6 +138,52 @@ class QueryStore {
     this.dirty = true;
   }
 
+  setLevelSelection(
+    hierarchyName: string,
+    levelName: string,
+    memberUniqueNames: string[],
+    type: "INCLUSION" | "EXCLUSION",
+  ): void {
+    if (!this.current?.queryModel) return;
+    for (const loc of Object.keys(this.current.queryModel.axes) as AxisLocation[]) {
+      const axis = this.current.queryModel.axes[loc];
+      const hier = axis.hierarchies.find((h) => h.name === hierarchyName);
+      if (!hier) continue;
+      const level = hier.levels[levelName];
+      if (!level) continue;
+      if (memberUniqueNames.length === 0) {
+        delete level.selection;
+      } else {
+        level.selection = {
+          type,
+          members: memberUniqueNames.map((uniqueName) => ({ uniqueName })),
+        };
+      }
+      this.dirty = true;
+      return;
+    }
+  }
+
+  getLevelSelection(
+    hierarchyName: string,
+    levelName: string,
+  ): { memberUniqueNames: string[]; type: "INCLUSION" | "EXCLUSION" } {
+    if (!this.current?.queryModel) return { memberUniqueNames: [], type: "INCLUSION" };
+    for (const loc of Object.keys(this.current.queryModel.axes) as AxisLocation[]) {
+      const hier = this.current.queryModel.axes[loc].hierarchies.find(
+        (h) => h.name === hierarchyName,
+      );
+      if (!hier) continue;
+      const level = hier.levels[levelName];
+      if (!level?.selection) return { memberUniqueNames: [], type: "INCLUSION" };
+      const uniqueNames = (level.selection.members as Array<{ uniqueName?: string }>)
+        .map((m) => m.uniqueName)
+        .filter((v): v is string => !!v);
+      return { memberUniqueNames: uniqueNames, type: level.selection.type };
+    }
+    return { memberUniqueNames: [], type: "INCLUSION" };
+  }
+
   hasRunnableShape(): boolean {
     const q = this.current?.queryModel;
     if (!q) return false;
