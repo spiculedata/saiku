@@ -32,6 +32,7 @@
   "toolbar.run": "▶ Exécuter",
   "toolbar.autorun": "Exécution auto",
   "toolbar.nonEmpty": "Non vide",
+  "toolbar.async": "Asynchrone",
   "toolbar.swap": "⇄ Échanger",
   "toolbar.mdx": "MDX",
   "toolbar.export.xls": "XLS",

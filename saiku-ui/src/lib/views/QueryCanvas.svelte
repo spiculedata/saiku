@@ -17,7 +17,7 @@
   import FilterModal from "$lib/modals/FilterModal.svelte";
   import ContextMenu from "$lib/components/ContextMenu.svelte";
   type ContextMenuItem = { id: string; label: string; disabled?: boolean; danger?: boolean; sep?: boolean };
-  import { MoreHorizontal } from "lucide-svelte";
+  import { MoreHorizontal, Loader2, XCircle } from "lucide-svelte";
   import { listLevelMembers, listRootMembers, type SaikuMember } from "$lib/api/discover";
   import { datasources } from "$lib/stores/datasources.svelte";
   import { drillthrough as fetchDrillthrough, type QueryResult } from "$lib/api/query";
@@ -639,8 +639,18 @@
         <button type="button" class="chart-edit" title="Chart editor" onclick={() => (chartEditorOpen = true)}>⚙</button>
       {/if}
     </div>
+    {#if query.running}
+      <div class="run-progress" role="status" aria-live="polite">
+        <Loader2 class="spin" size={14} />
+        <span>Running… ({(query.runningElapsedMs / 1000).toFixed(1)}s)</span>
+        <button class="tb-btn tb-btn--ghost tb-btn--sm" onclick={() => query.cancel()} title="Cancel query">
+          <XCircle size={14} />
+          <span>Cancel</span>
+        </button>
+      </div>
+    {/if}
     <div class="result-host" bind:this={resultHostEl}>
-      {#if query.running}
+      {#if query.running && !query.result}
         <p class="canvas__hint">{i18n.t("canvas.running")}</p>
       {:else if query.error}
         <p class="callout callout--danger">{query.error}</p>
@@ -913,6 +923,38 @@
     color: var(--fg);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-sm);
+  }
+  .run-progress {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-muted);
+    color: var(--fg-muted);
+    font-size: var(--fs-sm);
+  }
+  .run-progress :global(.spin) {
+    animation: spin 900ms linear infinite;
+  }
+  .run-progress button {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    color: var(--fg);
+    cursor: pointer;
+    font: inherit;
+  }
+  .run-progress button:hover { background: var(--bg-subtle); }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
   }
   .sr-only {
     position: absolute;

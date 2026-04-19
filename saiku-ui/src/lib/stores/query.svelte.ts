@@ -1,5 +1,7 @@
 import {
+  cancelQuery,
   executeQuery,
+  executeQueryAsync,
   newQuery,
   type AxisLocation,
   type QueryResult,
@@ -20,6 +22,18 @@ export interface LevelDrop {
   levelCaption: string;
 }
 
+function readBoolLS(key: string, fallback: boolean): boolean {
+  if (typeof localStorage === "undefined") return fallback;
+  const raw = localStorage.getItem(key);
+  if (raw === null) return fallback;
+  return raw === "1" || raw === "true";
+}
+
+function writeBoolLS(key: string, value: boolean): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(key, value ? "1" : "0");
+}
+
 class QueryStore {
   current = $state<ThinQuery | null>(null);
   result = $state<QueryResult | null>(null);
@@ -28,6 +42,20 @@ class QueryStore {
   dirty = $state<boolean>(false);
   savedPath = $state<string | null>(null);
   autorun = $state<boolean>(true);
+  #async = $state<boolean>(readBoolLS("saiku_async", false));
+  runningQueryId = $state<string | null>(null);
+  runningElapsedMs = $state<number>(0);
+
+  private abortController: AbortController | null = null;
+  private elapsedTimer: ReturnType<typeof setInterval> | null = null;
+
+  get async(): boolean {
+    return this.#async;
+  }
+  set async(value: boolean) {
+    this.#async = value;
+    writeBoolLS("saiku_async", value);
+  }
 
   private markDirty(): void {
     this.dirty = true;
@@ -213,14 +241,58 @@ class QueryStore {
     }
     this.running = true;
     this.error = null;
+    this.runningQueryId = null;
+    this.runningElapsedMs = 0;
+    const startedAt = Date.now();
+    this.elapsedTimer = setInterval(() => {
+      this.runningElapsedMs = Date.now() - startedAt;
+    }, 250);
     try {
-      this.result = await executeQuery(this.current);
+      if (this.async) {
+        const controller = new AbortController();
+        this.abortController = controller;
+        try {
+          const r = await executeQueryAsync(this.current, {
+            signal: controller.signal,
+            onQueryId: (id) => { this.runningQueryId = id; },
+          });
+          this.result = r;
+        } catch (err) {
+          const name = (err as { name?: string }).name;
+          if (name === "AbortError") {
+            // User cancelled — leave result untouched, no error banner.
+            return;
+          }
+          throw err;
+        }
+      } else {
+        this.result = await executeQuery(this.current);
+      }
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
+      this.result = { cellset: [], error: this.error } as QueryResult;
       toasts.danger("Query failed", this.error);
     } finally {
       this.running = false;
+      this.abortController = null;
+      this.runningQueryId = null;
+      if (this.elapsedTimer) {
+        clearInterval(this.elapsedTimer);
+        this.elapsedTimer = null;
+      }
     }
+  }
+
+  async cancel(): Promise<void> {
+    const id = this.runningQueryId;
+    if (id) {
+      try {
+        await cancelQuery(id);
+      } catch {
+        // best-effort
+      }
+    }
+    this.abortController?.abort();
   }
 }
 

@@ -291,6 +291,10 @@
           <input type="checkbox" bind:checked={nonEmpty} />
           <span>{i18n.t("toolbar.nonEmpty")}</span>
         </label>
+        <label class="toolbar__check" title="Submit queries asynchronously with progress + cancel">
+          <input type="checkbox" bind:checked={query.async} />
+          <span>{i18n.t("toolbar.async")}</span>
+        </label>
       </div>
     {/if}
     <button class="tb-btn" title={i18n.t("toolbar.swap")} aria-label={i18n.t("toolbar.swap")} onclick={() => query.swapAxes()}>

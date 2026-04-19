@@ -92,6 +92,25 @@ export interface QueryResult {
 
 const REST_BASE = "/rest/saiku/api/query";
 
+export type AsyncStatus = "PENDING" | "RUNNING" | "DONE" | "FAILED" | "CANCELLED";
+
+function acceptHeader(): string {
+  const forceJson =
+    typeof localStorage !== "undefined" && localStorage.getItem("saiku_force_json") === "1";
+  return forceJson
+    ? "application/json"
+    : "application/vnd.apache.arrow.stream, application/json;q=0.1";
+}
+
+async function parseResultResponse(res: Response): Promise<QueryResult> {
+  const contentType = res.headers.get("content-type") ?? "";
+  if (contentType.includes("arrow")) {
+    const { parseArrowExecute } = await import("$lib/api/arrow");
+    return parseArrowExecute(await res.arrayBuffer());
+  }
+  return (await res.json()) as QueryResult;
+}
+
 export function newQueryModel(): ThinQueryModel {
   return {
     axes: {
@@ -166,29 +185,113 @@ export function newQuery(cube: SaikuCube): ThinQuery {
 export async function executeQuery(q: ThinQuery): Promise<QueryResult> {
   // Kill-switch: set localStorage.saiku_force_json=1 to fall back to the
   // legacy JSON path (e.g. for debugging an Arrow serialisation bug).
-  const forceJson =
-    typeof localStorage !== "undefined" && localStorage.getItem("saiku_force_json") === "1";
-  const accept = forceJson
-    ? "application/json"
-    : "application/vnd.apache.arrow.stream, application/json;q=0.1";
   const res = await fetch(`${REST_BASE}/execute`, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json", Accept: accept },
+    headers: { "Content-Type": "application/json", Accept: acceptHeader() },
     body: JSON.stringify(q),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`execute ${res.status}: ${text.slice(0, 200)}`);
   }
-  const contentType = res.headers.get("content-type") ?? "";
-  if (contentType.includes("arrow")) {
-    // Lazy-load the Arrow adapter so apache-arrow stays out of the initial
-    // bundle. The dynamic import means bundlers emit a separate chunk.
-    const { parseArrowExecute } = await import("$lib/api/arrow");
-    return parseArrowExecute(await res.arrayBuffer());
+  // Lazy-load the Arrow adapter so apache-arrow stays out of the initial
+  // bundle. The dynamic import means bundlers emit a separate chunk.
+  return parseResultResponse(res);
+}
+
+export async function executeQueryAsync(
+  q: ThinQuery,
+  opts: {
+    onStatus?: (s: AsyncStatus) => void;
+    onQueryId?: (id: string) => void;
+    signal?: AbortSignal;
+  } = {},
+): Promise<QueryResult & { queryId: string }> {
+  const submit = await fetch(`${REST_BASE}/execute-async`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(q),
+    signal: opts.signal,
+  });
+  if (!submit.ok) {
+    const text = await submit.text().catch(() => "");
+    throw new Error(`execute-async ${submit.status}: ${text.slice(0, 200)}`);
   }
-  return (await res.json()) as QueryResult;
+  const { queryId, status: initialStatus } = (await submit.json()) as {
+    queryId: string;
+    status: AsyncStatus;
+  };
+  opts.onQueryId?.(queryId);
+  opts.onStatus?.(initialStatus);
+
+  const encodedId = encodeURIComponent(queryId);
+
+  let delay = 500;
+  const maxDelay = 5000;
+
+  const abortError = (): Error => {
+    if (typeof DOMException !== "undefined") return new DOMException("aborted", "AbortError");
+    const e = new Error("aborted");
+    e.name = "AbortError";
+    return e;
+  };
+
+  const handleAbort = async (): Promise<never> => {
+    try {
+      await fetch(`${REST_BASE}/${encodedId}/cancel`, { method: "DELETE", credentials: "include" });
+    } catch {
+      // swallow — the caller already knows this was cancelled
+    }
+    throw abortError();
+  };
+
+  for (;;) {
+    if (opts.signal?.aborted) await handleAbort();
+    await new Promise<void>((resolve, reject) => {
+      const t = setTimeout(resolve, delay);
+      if (opts.signal) {
+        const onAbort = () => { clearTimeout(t); reject(abortError()); };
+        if (opts.signal.aborted) { clearTimeout(t); reject(abortError()); return; }
+        opts.signal.addEventListener("abort", onAbort, { once: true });
+      }
+    }).catch(async (err) => {
+      if ((err as { name?: string }).name === "AbortError") await handleAbort();
+      throw err;
+    });
+
+    const statusRes = await fetch(`${REST_BASE}/${encodedId}/status`, {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+      signal: opts.signal,
+    }).catch(async (err) => {
+      if ((err as { name?: string }).name === "AbortError") await handleAbort();
+      throw err;
+    });
+    if (!statusRes.ok) {
+      const text = await statusRes.text().catch(() => "");
+      throw new Error(`status ${statusRes.status}: ${text.slice(0, 200)}`);
+    }
+    const body = (await statusRes.json()) as { id: string; status: AsyncStatus; errorMessage?: string };
+    opts.onStatus?.(body.status);
+    if (body.status === "DONE") break;
+    if (body.status === "FAILED") throw new Error(body.errorMessage ?? "query failed");
+    if (body.status === "CANCELLED") throw abortError();
+    delay = Math.min(Math.round(delay * 1.5), maxDelay);
+  }
+
+  const resultRes = await fetch(`${REST_BASE}/${encodedId}/result`, {
+    credentials: "include",
+    headers: { Accept: acceptHeader() },
+    signal: opts.signal,
+  });
+  if (!resultRes.ok) {
+    const text = await resultRes.text().catch(() => "");
+    throw new Error(`result ${resultRes.status}: ${text.slice(0, 200)}`);
+  }
+  const result = await parseResultResponse(resultRes);
+  return { ...result, queryId };
 }
 
 export async function drillthrough(
