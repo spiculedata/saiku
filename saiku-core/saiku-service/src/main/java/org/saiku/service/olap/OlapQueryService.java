@@ -81,7 +81,7 @@ public class OlapQueryService implements Serializable {
         olapDiscoverService = os;
     }
 
-    private OlapQueryService() {}
+    public OlapQueryService() {}
 
     public void destroy() {
         for (Object q : queries.keySet().toArray()) {
