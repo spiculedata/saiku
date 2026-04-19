@@ -14,39 +14,10 @@
         <tag>saiku-3.9-SNAPSHOT</tag>
     </scm>
     <modules>
+        <module>saiku-bom</module>
         <module>saiku-core</module>
         <module>saiku-webapp</module>
-        <!-- Phase 0 reactor: Java backend only.
-             Excluded:
-               saiku-ui       - legacy Backbone/Grunt build using a custom minify
-                                plugin from a dead Google Code repo; rebuilt in
-                                Phase 4/6 with Vite/Svelte.
-               saiku-server   - assembles the Tomcat distribution from saiku-ui
-                                artefacts; reintroduced in Phase 1 as a Spring
-                                Boot fat JAR.
-               saiku-bi-platform-plugin-p7(.1) - Pentaho integration; deleted in
-                                Phase 1. -->
-        <!--<module>saiku-ui</module>-->
-        <!--<module>saiku-server</module>-->
-        <!--<module>saiku-bi-platform-plugin-p7</module>-->
-        <!--<module>saiku-bi-platform-plugin-p7.1</module>-->
     </modules>
-
-    <!-- distribution management disabled pending repo refresh -->
-    <!--
-    <distributionManagement>
-        <repository>
-            <id>utility</id>
-            <name>utility-releases</name>
-            <url>http://repo.meteorite.bi/repository/alabs-release-local/</url>
-        </repository>
-        <snapshotRepository>
-            <id>utility</id>
-            <name>utility-snapshots</name>
-            <url>http://repo.meteorite.bi/repository/alabs-snapshot-local/</url>
-        </snapshotRepository>
-    </distributionManagement>
-    -->
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
