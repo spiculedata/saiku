@@ -1,4 +1,21 @@
 <script lang="ts">
+  import {
+    FilePlus2,
+    FolderOpen,
+    Save,
+    Copy,
+    Play,
+    ArrowLeftRight,
+    Wrench,
+    Download,
+    FileSpreadsheet,
+    FileText,
+    FileType,
+    ChevronDown,
+    Braces,
+    Sigma,
+    Tags,
+  } from "lucide-svelte";
   import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
   import OpenDialogModal, { type RepoEntry } from "$lib/modals/OpenDialogModal.svelte";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
@@ -235,48 +252,78 @@
 <svelte:window onclick={handleBodyClick} />
 
 <div class="toolbar" role="toolbar" aria-label="Workspace toolbar">
-  <div class="toolbar__group">
-    <button class="btn btn--icon" onclick={onNew}>{i18n.t("toolbar.new")}</button>
-    <button class="btn btn--icon" onclick={onOpen}>{i18n.t("toolbar.open")}</button>
-    <button class="btn btn--icon" onclick={onSave}>{i18n.t("toolbar.save")}</button>
-    <button class="btn btn--icon" onclick={onSaveAs}>{i18n.t("toolbar.saveAs")}</button>
+  <div class="toolbar__group" role="group" aria-label="File">
+    <button class="tb-btn" title={i18n.t("toolbar.new")} aria-label={i18n.t("toolbar.new")} onclick={onNew}>
+      <FilePlus2 size={18} />
+    </button>
+    <button class="tb-btn" title={i18n.t("toolbar.open")} aria-label={i18n.t("toolbar.open")} onclick={onOpen}>
+      <FolderOpen size={18} />
+    </button>
+    <button class="tb-btn" title={i18n.t("toolbar.save")} aria-label={i18n.t("toolbar.save")} onclick={onSave}>
+      <Save size={18} />
+    </button>
+    <button class="tb-btn" title={i18n.t("toolbar.saveAs")} aria-label={i18n.t("toolbar.saveAs")} onclick={onSaveAs}>
+      <Copy size={18} />
+    </button>
   </div>
   <div class="toolbar__sep"></div>
-  <div class="toolbar__group">
-    <button class="btn btn--primary btn--icon" onclick={onRun}>{i18n.t("toolbar.run")}</button>
-    <label class="toolbar__toggle">
+  <div class="toolbar__group" role="group" aria-label="Query">
+    <button class="tb-btn tb-btn--primary" title={i18n.t("toolbar.run")} onclick={onRun}>
+      <Play size={18} /><span class="tb-btn__label">{i18n.t("toolbar.run")}</span>
+    </button>
+    <label class="toolbar__toggle" title="Automatically run queries after each edit">
       <input type="checkbox" bind:checked={query.autorun} /> {i18n.t("toolbar.autorun")}
     </label>
-    <label class="toolbar__toggle">
+    <label class="toolbar__toggle" title="Hide empty rows and columns">
       <input type="checkbox" bind:checked={nonEmpty} /> {i18n.t("toolbar.nonEmpty")}
     </label>
-    <button class="btn btn--icon" onclick={() => query.swapAxes()}>{i18n.t("toolbar.swap")}</button>
+    <button class="tb-btn" title={i18n.t("toolbar.swap")} aria-label={i18n.t("toolbar.swap")} onclick={() => query.swapAxes()}>
+      <ArrowLeftRight size={18} />
+    </button>
   </div>
   <div class="toolbar__sep"></div>
-  <div class="toolbar__group toolbar__menu">
+  <div class="toolbar__group toolbar__menu" role="group" aria-label="Tools">
     <button
-      class="btn btn--icon"
+      class="tb-btn"
       onclick={(e) => { e.stopPropagation(); toolsMenuOpen = !toolsMenuOpen; exportMenuOpen = false; }}
-    >Tools ▾</button>
+      title="Tools"
+    >
+      <Wrench size={18} /><span class="tb-btn__label">Tools</span><ChevronDown size={14} />
+    </button>
     {#if toolsMenuOpen}
       <div class="toolbar__dropdown">
-        <button type="button" class="toolbar__item" onclick={onShowMdx}>{i18n.t("toolbar.mdx")}…</button>
-        <button type="button" class="toolbar__item" onclick={openDrillAcross}>Drill across…</button>
-        <button type="button" class="toolbar__item" onclick={openReportTitles}>Report titles…</button>
+        <button type="button" class="toolbar__item" onclick={onShowMdx}>
+          <Braces size={16} /> <span>{i18n.t("toolbar.mdx")}…</span>
+        </button>
+        <button type="button" class="toolbar__item" onclick={openDrillAcross}>
+          <ArrowLeftRight size={16} /> <span>Drill across…</span>
+        </button>
+        <button type="button" class="toolbar__item" onclick={openReportTitles}>
+          <Tags size={16} /> <span>Report titles…</span>
+        </button>
       </div>
     {/if}
   </div>
   <div class="toolbar__spacer"></div>
-  <div class="toolbar__group toolbar__menu">
+  <div class="toolbar__group toolbar__menu" role="group" aria-label="Export">
     <button
-      class="btn btn--icon"
+      class="tb-btn"
       onclick={(e) => { e.stopPropagation(); exportMenuOpen = !exportMenuOpen; toolsMenuOpen = false; }}
-    >⬇ Export ▾</button>
+      title="Export"
+    >
+      <Download size={18} /><span class="tb-btn__label">Export</span><ChevronDown size={14} />
+    </button>
     {#if exportMenuOpen}
       <div class="toolbar__dropdown toolbar__dropdown--right">
-        <button type="button" class="toolbar__item" onclick={() => exportCurrent("xls")}>📊 {i18n.t("toolbar.export.xls")}</button>
-        <button type="button" class="toolbar__item" onclick={() => exportCurrent("csv")}>📄 {i18n.t("toolbar.export.csv")}</button>
-        <button type="button" class="toolbar__item" onclick={() => exportCurrent("pdf")}>📕 {i18n.t("toolbar.export.pdf")}</button>
+        <button type="button" class="toolbar__item" onclick={() => exportCurrent("xls")}>
+          <FileSpreadsheet size={16} /> <span>{i18n.t("toolbar.export.xls")}</span>
+        </button>
+        <button type="button" class="toolbar__item" onclick={() => exportCurrent("csv")}>
+          <FileText size={16} /> <span>{i18n.t("toolbar.export.csv")}</span>
+        </button>
+        <button type="button" class="toolbar__item" onclick={() => exportCurrent("pdf")}>
+          <FileType size={16} /> <span>{i18n.t("toolbar.export.pdf")}</span>
+        </button>
       </div>
     {/if}
   </div>
@@ -350,8 +397,8 @@
   .toolbar {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    padding: 6px var(--space-3);
+    gap: 6px;
+    padding: 6px 10px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-muted);
     flex-wrap: wrap;
@@ -359,30 +406,33 @@
   .toolbar__group {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 2px;
     position: relative;
   }
   .toolbar__menu { position: relative; }
   .toolbar__dropdown {
     position: absolute;
-    top: calc(100% + 4px);
+    top: calc(100% + 6px);
     left: 0;
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    box-shadow: 0 10px 24px rgba(0,0,0,0.4);
-    padding: 4px 0;
+    border-radius: 6px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+    padding: 4px;
     z-index: 50;
-    min-width: 200px;
+    min-width: 220px;
   }
   .toolbar__dropdown--right { left: auto; right: 0; }
   .toolbar__item {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 10px;
     width: 100%;
     text-align: left;
-    padding: 6px var(--space-3);
+    padding: 7px 12px;
     background: transparent;
     border: 0;
+    border-radius: 4px;
     color: var(--fg);
     font: inherit;
     cursor: pointer;
@@ -392,21 +442,42 @@
     width: 1px;
     height: 22px;
     background: var(--border);
+    margin: 0 4px;
   }
   .toolbar__spacer { flex: 1; }
   .toolbar__toggle {
     display: inline-flex;
     align-items: center;
-    gap: var(--space-1);
-    padding: 2px 6px;
+    gap: 6px;
+    padding: 4px 8px;
     color: var(--fg-muted);
     font-size: var(--fs-sm);
     cursor: pointer;
     user-select: none;
+    border-radius: 4px;
   }
+  .toolbar__toggle:hover { background: var(--bg-subtle); color: var(--fg); }
   .toolbar__toggle input { cursor: pointer; }
-  .btn--icon {
-    padding: 4px 10px;
-    line-height: 1.2;
+
+  .tb-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    color: var(--fg-muted);
+    cursor: pointer;
+    font: inherit;
   }
+  .tb-btn:hover { background: var(--bg-subtle); color: var(--fg); }
+  .tb-btn:active { transform: translateY(1px); }
+  .tb-btn__label { font-size: var(--fs-sm); }
+  .tb-btn--primary {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+  }
+  .tb-btn--primary:hover { filter: brightness(1.1); background: var(--accent); color: var(--bg); }
 </style>

@@ -8,6 +8,17 @@
   import MeasuresModal from "$lib/modals/MeasuresModal.svelte";
   import CalculatedMemberModal, { type CalculatedMember } from "$lib/modals/CalculatedMemberModal.svelte";
   import SelectionsModal from "$lib/modals/SelectionsModal.svelte";
+  import {
+    Sigma,
+    Folder,
+    GitFork,
+    ChevronDown,
+    ChevronRight,
+    Settings2,
+    Plus,
+    Minus,
+    Filter,
+  } from "lucide-svelte";
   import type { CubeMetadata } from "$lib/stores/datasources.svelte";
   import type { SaikuCube, SaikuDimension, SaikuHierarchy, SaikuLevel, SaikuMeasure } from "$lib/api/discover";
   import type { ThinMeasure } from "$lib/api/query";
@@ -247,8 +258,12 @@
       <header class="panel__header panel__header--row">
         <span>Measures</span>
         <span class="panel__actions">
-          <button type="button" class="panel__action" title="Manage measures" onclick={openMeasuresModal}>⚙</button>
-          <button type="button" class="panel__action" title="New calculated measure" onclick={() => openCalculatedModal()}>+</button>
+          <button type="button" class="panel__action" title="Manage measures" onclick={openMeasuresModal}>
+            <Settings2 size={14} />
+          </button>
+          <button type="button" class="panel__action" title="New calculated measure" onclick={() => openCalculatedModal()}>
+            <Plus size={14} />
+          </button>
         </span>
       </header>
       <ul class="tree">
@@ -256,7 +271,9 @@
           {@const gid = `m:${group}`}
           <li class="tree__node">
             <button type="button" class="tree__row tree__row--group" onclick={() => toggle(gid)}>
-              <span class="tree__twisty">{expanded[gid] === false ? "▸" : "▾"}</span>
+              <span class="tree__twisty">
+                {#if expanded[gid] === false}<ChevronRight size={12} />{:else}<ChevronDown size={12} />{/if}
+              </span>
               <span class="tree__label">{group}</span>
               <span class="tree__count">{items.length}</span>
             </button>
@@ -271,7 +288,7 @@
                       title={measure.caption}
                       ondragstart={(e) => onMeasureDragStart(e, measure)}
                     >
-                      <span class="tree__icon" aria-hidden="true">Σ</span>
+                      <span class="tree__icon tree__icon--measure" aria-hidden="true"><Sigma size={13} /></span>
                       <span class="tree__label">{measure.caption || measure.name}</span>
                     </button>
                   </li>
@@ -293,8 +310,10 @@
           {@const did = `d:${dim.uniqueName}`}
           <li class="tree__node">
             <button type="button" class="tree__row tree__row--dim" onclick={() => toggle(did)} title={dim.caption}>
-              <span class="tree__twisty">{expanded[did] === false ? "▸" : "▾"}</span>
-              <span class="tree__icon" aria-hidden="true">📁</span>
+              <span class="tree__twisty">
+                {#if expanded[did] === false}<ChevronRight size={12} />{:else}<ChevronDown size={12} />{/if}
+              </span>
+              <span class="tree__icon" aria-hidden="true"><Folder size={13} /></span>
               <span class="tree__label">{dim.caption || dim.name}</span>
             </button>
             {#if expanded[did] !== false}
@@ -313,7 +332,7 @@
                             title={lvl.caption}
                             ondragstart={(e) => onLevelDragStart(e, dim, hier, lvl)}
                           >
-                            <span class="tree__icon" aria-hidden="true">—</span>
+                            <span class="tree__icon tree__icon--level" aria-hidden="true"><Minus size={11} /></span>
                             <span class="tree__label">{lvl.caption || lvl.name}</span>
                           </button>
                           <button
@@ -321,15 +340,17 @@
                             class="tree__gear"
                             title="Filter members…"
                             onclick={() => openDimensionFilter(dim, hier, lvl)}
-                          >⚙</button>
+                          ><Filter size={11} /></button>
                         </span>
                       </li>
                     {/each}
                   {:else}
                     <li class="tree__node">
                       <button type="button" class="tree__row tree__row--hier" onclick={() => toggle(hid)}>
-                        <span class="tree__twisty">{expanded[hid] === false ? "▸" : "▾"}</span>
-                        <span class="tree__icon" aria-hidden="true">∴</span>
+                        <span class="tree__twisty">
+                          {#if expanded[hid] === false}<ChevronRight size={12} />{:else}<ChevronDown size={12} />{/if}
+                        </span>
+                        <span class="tree__icon" aria-hidden="true"><GitFork size={13} /></span>
                         <span class="tree__label">{hier.caption || hier.name}</span>
                       </button>
                       {#if expanded[hid] !== false}
@@ -344,7 +365,7 @@
                                   title={lvl.caption}
                                   ondragstart={(e) => onLevelDragStart(e, dim, hier, lvl)}
                                 >
-                                  <span class="tree__icon" aria-hidden="true">—</span>
+                                  <span class="tree__icon tree__icon--level" aria-hidden="true"><Minus size={11} /></span>
                                   <span class="tree__label">{lvl.caption || lvl.name}</span>
                                 </button>
                                 <button
@@ -352,7 +373,7 @@
                                   class="tree__gear"
                                   title="Filter members…"
                                   onclick={() => openDimensionFilter(dim, hier, lvl)}
-                                >⚙</button>
+                                ><Filter size={11} /></button>
                               </span>
                             </li>
                           {/each}
@@ -439,14 +460,15 @@
   }
   .panel__actions { display: inline-flex; gap: 4px; }
   .panel__action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
     border: 1px solid transparent;
     color: var(--fg-muted);
-    font-size: 12px;
-    padding: 0 6px;
-    border-radius: var(--radius-sm);
+    padding: 4px;
+    border-radius: 4px;
     cursor: pointer;
-    line-height: 1.6;
   }
   .panel__action:hover { background: var(--bg-subtle); color: var(--fg); }
   .tree__drag {
@@ -464,12 +486,16 @@
   }
   .tree__gear {
     opacity: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
     border: 0;
     color: var(--fg-subtle);
     cursor: pointer;
-    padding: 0 4px;
-    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    transition: opacity 120ms ease;
   }
   .tree__row--level:hover .tree__gear { opacity: 1; }
   .tree__gear:hover { color: var(--fg); }
@@ -503,25 +529,29 @@
   .tree__row:hover { background: var(--bg-subtle); }
   .tree__row--group { font-weight: 600; }
   .tree__row--measure {
-    color: var(--accent);
+    color: #e06c75;
     cursor: grab;
   }
+  .tree__row--measure .tree__icon--measure { color: #e06c75; }
   .tree__row--dim { color: var(--fg); }
-  .tree__row--level {
-    color: var(--fg-muted);
-    cursor: grab;
-  }
+  .tree__row--level { color: var(--fg-muted); }
+  .tree__row--level .tree__drag { cursor: grab; }
+  .tree__row--hier { color: #9aa8bc; }
   .tree__twisty {
-    display: inline-block;
-    width: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
     color: var(--fg-subtle);
-    font-size: 10px;
   }
   .tree__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 16px;
-    text-align: center;
     color: var(--fg-subtle);
   }
+  .tree__icon--level { color: var(--fg-subtle); }
   .tree__label {
     flex: 1;
     overflow: hidden;
