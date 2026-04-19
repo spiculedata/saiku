@@ -3,6 +3,12 @@
   import { selection } from "$lib/stores/selection.svelte";
   import type { AxisLocation, ThinHierarchy, ThinMeasure } from "$lib/api/query";
   import CellsetTable from "$lib/views/CellsetTable.svelte";
+  import ChartView from "$lib/views/ChartView.svelte";
+  import { CHART_TYPES, type ChartType } from "$lib/views/chartTypes";
+
+  type ViewMode = "grid" | "chart";
+  let viewMode = $state<ViewMode>("grid");
+  let chartType = $state<ChartType>("bar");
 
   const axisLabels: Record<AxisLocation, string> = {
     COLUMNS: "Columns",
@@ -119,13 +125,35 @@
       </div>
     </div>
 
+    <div class="view-toggle" role="tablist" aria-label="Result view">
+      <button type="button" role="tab" class:active={viewMode === "grid"} onclick={() => (viewMode = "grid")}>
+        Grid
+      </button>
+      <button type="button" role="tab" class:active={viewMode === "chart"} onclick={() => (viewMode = "chart")}>
+        Chart
+      </button>
+      {#if viewMode === "chart"}
+        <label class="chart-pick">
+          <span class="sr-only">Chart type</span>
+          <select bind:value={chartType}>
+            {#each CHART_TYPES as c}
+              <option value={c.id}>{c.label}</option>
+            {/each}
+          </select>
+        </label>
+      {/if}
+    </div>
     <div class="grid-host">
       {#if query.running}
         <p class="canvas__hint">Running query…</p>
       {:else if query.error}
         <p class="callout callout--danger">{query.error}</p>
       {:else if query.result}
-        <CellsetTable result={query.result} />
+        {#if viewMode === "grid"}
+          <CellsetTable result={query.result} />
+        {:else}
+          <ChartView result={query.result} type={chartType} />
+        {/if}
       {:else}
         <p class="canvas__hint">
           Drop levels onto <strong>Rows</strong>/<strong>Columns</strong> and measures onto <strong>Columns</strong>, then hit <strong>Run</strong>.
@@ -198,4 +226,38 @@
   .chip:hover { background: var(--bg-subtle); }
   .chip__x { color: var(--fg-subtle); font-size: 14px; line-height: 1; }
   .grid-host { flex: 1; min-height: 260px; }
+  .view-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) 0;
+  }
+  .view-toggle button {
+    padding: var(--space-1) var(--space-3);
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    color: var(--fg-muted);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font: inherit;
+  }
+  .view-toggle button.active {
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-color: var(--accent);
+  }
+  .chart-pick select {
+    padding: var(--space-1) var(--space-2);
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
 </style>
