@@ -47,7 +47,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import mondrian.olap4j.MondrianOlap4jLevel;
 import mondrian.olap4j.SaikuMondrianHelper;
 import mondrian.rolap.RolapCubeLevel;
 
