@@ -21,10 +21,13 @@ import com.fasterxml.jackson.databind.type.CollectionType;
 import com.qmino.miredot.annotations.ReturnType;
 import jakarta.servlet.ServletException;
 import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.Response.Status;
+import jakarta.ws.rs.core.StreamingOutput;
 import jakarta.xml.bind.annotation.XmlAccessType;
 import jakarta.xml.bind.annotation.XmlAccessorType;
 import java.io.InputStream;
@@ -38,9 +41,11 @@ import java.util.Map;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
+import org.olap4j.CellSet;
 import org.saiku.olap.dto.SimpleCubeElement;
 import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.query2.ThinQuery;
+import org.saiku.olap.result.ArrowCellsetWriter;
 import org.saiku.olap.util.SaikuProperties;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.drillthrough.DrillThroughResult;
@@ -168,10 +173,13 @@ public class Query2Resource {
      * @param tq Thin Query model
      * @return A query result set.
      */
+    public static final String ARROW_STREAM_MEDIA_TYPE = "application/vnd.apache.arrow.stream";
+
     @POST
     @Consumes({"application/json"})
+    @Produces({ARROW_STREAM_MEDIA_TYPE, "application/json"})
     @Path("/execute")
-    public QueryResult execute(ThinQuery tq) {
+    public Response execute(ThinQuery tq, @Context HttpHeaders headers) {
         try {
             if (thinQueryService.isMdxDrillthrough(tq)) {
                 Long start = (new Date()).getTime();
@@ -180,18 +188,59 @@ public class Query2Resource {
                 rsc.setQuery(tq);
                 Long runtime = (new Date()).getTime() - start;
                 rsc.setRuntime(runtime.intValue());
-                return rsc;
+                return Response.ok(rsc).type(MediaType.APPLICATION_JSON).build();
+            }
+
+            if (clientPrefersArrow(headers)) {
+                return executeArrow(tq);
             }
 
             QueryResult qr = RestUtil.convert(thinQueryService.execute(tq));
             ThinQuery tqAfter = thinQueryService.getContext(tq.getName()).getOlapQuery();
             qr.setQuery(tqAfter);
-            return qr;
+            return Response.ok(qr).type(MediaType.APPLICATION_JSON).build();
         } catch (Exception e) {
             log.error("Cannot execute query (" + tq + ")", e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            return new QueryResult(error);
+            return Response.ok(new QueryResult(error)).type(MediaType.APPLICATION_JSON).build();
         }
+    }
+
+    private boolean clientPrefersArrow(HttpHeaders headers) {
+        if (headers == null) {
+            return false;
+        }
+        List<MediaType> accept = headers.getAcceptableMediaTypes();
+        if (accept == null || accept.isEmpty()) {
+            return false;
+        }
+        // Jersey returns Accept types sorted by q-value descending. Treat the first
+        // matching concrete type as the winner — if Arrow appears before JSON, the
+        // client asked for it.
+        for (MediaType mt : accept) {
+            String full = mt.getType() + "/" + mt.getSubtype();
+            if (ARROW_STREAM_MEDIA_TYPE.equalsIgnoreCase(full)) {
+                return true;
+            }
+            if (MediaType.APPLICATION_JSON.equalsIgnoreCase(full)) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private Response executeArrow(final ThinQuery tq) throws Exception {
+        // Populate the query context (stores the CellSet under ObjectKey.RESULT).
+        thinQueryService.execute(tq);
+        final CellSet cellSet = thinQueryService.getContext(tq.getName()).getOlapResult();
+        final ThinQuery tqAfter = thinQueryService.getContext(tq.getName()).getOlapQuery();
+        StreamingOutput body = new StreamingOutput() {
+            @Override
+            public void write(java.io.OutputStream output) throws java.io.IOException {
+                new ArrowCellsetWriter().write(cellSet, tqAfter, output);
+            }
+        };
+        return Response.ok(body, ARROW_STREAM_MEDIA_TYPE).build();
     }
 
     /**
