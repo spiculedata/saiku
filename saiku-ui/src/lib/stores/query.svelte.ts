@@ -135,6 +135,21 @@ class QueryStore {
     this.markDirty();
   }
 
+  /** Move an existing hierarchy from its current axis to another axis,
+   *  preserving its levels/cmembers. Used by chip drag-and-drop between
+   *  drop-zones. No-op if the hierarchy is already on {@code toAxis}. */
+  moveHierarchyToAxis(hierarchyName: string, toAxis: AxisLocation): void {
+    if (!this.current?.queryModel) return;
+    const fromAxis = this.findAxisForHierarchy(hierarchyName);
+    if (!fromAxis || fromAxis === toAxis) return;
+    const model = this.current.queryModel;
+    const idx = model.axes[fromAxis].hierarchies.findIndex((h) => h.name === hierarchyName);
+    if (idx < 0) return;
+    const [hier] = model.axes[fromAxis].hierarchies.splice(idx, 1);
+    model.axes[toAxis].hierarchies.push(hier);
+    this.markDirty();
+  }
+
   removeHierarchy(hierarchyName: string): void {
     if (!this.current?.queryModel) return;
     const loc = this.findAxisForHierarchy(hierarchyName);

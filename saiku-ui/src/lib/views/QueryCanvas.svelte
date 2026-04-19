@@ -17,7 +17,7 @@
   import FilterModal from "$lib/modals/FilterModal.svelte";
   import ContextMenu from "$lib/components/ContextMenu.svelte";
   type ContextMenuItem = { id: string; label: string; disabled?: boolean; danger?: boolean; sep?: boolean };
-  import { MoreHorizontal, Loader2, XCircle } from "lucide-svelte";
+  import { MoreHorizontal, Loader2, XCircle, ChevronDown } from "lucide-svelte";
   import { listLevelMembers, listRootMembers, type SaikuMember } from "$lib/api/discover";
   import { datasources } from "$lib/stores/datasources.svelte";
   import { drillthrough as fetchDrillthrough, type QueryResult } from "$lib/api/query";
@@ -29,6 +29,22 @@
   let chartType = $state<ChartType>("bar");
   let chartOptions = $state<ChartOptions>({ ...DEFAULT_CHART_OPTIONS });
   let chartEditorOpen = $state(false);
+  let moreViewOpen = $state(false);
+  const moreViewModes: ViewMode[] = ["stats", "sparkline", "sparkbar"];
+  const moreViewLabels: Record<ViewMode, string> = {
+    grid: "Grid",
+    chart: "Chart",
+    stats: "Stats",
+    sparkline: "Sparkline",
+    sparkbar: "Sparkbar",
+  };
+  function isMoreMode(m: ViewMode): boolean {
+    return (moreViewModes as ViewMode[]).includes(m);
+  }
+  function pickMoreMode(m: ViewMode) {
+    viewMode = m;
+    moreViewOpen = false;
+  }
 
   function chartGroups(): { name: string; items: typeof CHART_TYPES }[] {
     const map = new Map<string, typeof CHART_TYPES>();
@@ -336,7 +352,8 @@
 
   function onDragOver(e: DragEvent) {
     if (e.dataTransfer?.types?.includes("application/x-saiku-level") ||
-        e.dataTransfer?.types?.includes("application/x-saiku-measure")) {
+        e.dataTransfer?.types?.includes("application/x-saiku-measure") ||
+        e.dataTransfer?.types?.includes("application/x-saiku-chip")) {
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
     }
@@ -344,15 +361,43 @@
 
   function onDropAxis(axis: AxisLocation, e: DragEvent) {
     e.preventDefault();
+    const chipPayload = e.dataTransfer?.getData("application/x-saiku-chip");
     const levelPayload = e.dataTransfer?.getData("application/x-saiku-level");
     const measurePayload = e.dataTransfer?.getData("application/x-saiku-measure");
-    if (levelPayload) {
+    if (chipPayload) {
+      // Chip moved between axes. Measures on COLUMNS are axis-locked so we
+      // punt on moving them (reorder-within-axis not supported either).
+      try {
+        const p = JSON.parse(chipPayload) as
+          | { kind: "hierarchy"; axis: AxisLocation; name: string }
+          | { kind: "measure"; axis: AxisLocation; uniqueName: string };
+        if (p.kind === "hierarchy") {
+          if (p.axis === axis) return; // no-op, same axis
+          query.moveHierarchyToAxis(p.name, axis);
+        }
+        // measure chips: ignore non-COLUMNS targets; no reorder support yet.
+      } catch {
+        /* malformed payload — ignore */
+      }
+    } else if (levelPayload) {
       const drop = JSON.parse(levelPayload);
       query.includeLevel(axis, drop);
     } else if (measurePayload) {
       const m = JSON.parse(measurePayload) as ThinMeasure;
       query.addMeasure(m);
     }
+  }
+
+  function onHierChipDragStart(e: DragEvent, axis: AxisLocation, h: ThinHierarchy) {
+    const payload = { kind: "hierarchy" as const, axis, name: h.name };
+    e.dataTransfer?.setData("application/x-saiku-chip", JSON.stringify(payload));
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+  }
+
+  function onMeasureChipDragStart(e: DragEvent, m: ThinMeasure) {
+    const payload = { kind: "measure" as const, axis: "COLUMNS" as AxisLocation, uniqueName: m.uniqueName };
+    e.dataTransfer?.setData("application/x-saiku-chip", JSON.stringify(payload));
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
   }
 
   function hierChipLabel(h: ThinHierarchy): string {
@@ -510,43 +555,6 @@
   {:else}
     <div class="canvas__body">
     <aside class="dropzones">
-      <div
-        class="dropzone dropzone--filter"
-        role="region"
-        aria-label="Filter"
-        ondragover={onDragOver}
-        ondrop={(e) => onDropAxis("FILTER", e)}
-      >
-        <header>
-          <span>{axisLabels.FILTER}</span>
-          <button type="button" class="dropzone__menu" title="Axis options" onclick={(e) => openAxisMenu(e, "FILTER")}>
-            <MoreHorizontal size={14} />
-          </button>
-        </header>
-        <div class="chips">
-          {#each query.current?.queryModel?.axes.FILTER.hierarchies ?? [] as h}
-            <span class="chip chip--level" oncontextmenu={(e) => openHierMenu(e, "FILTER", h)}>
-              <button
-                type="button"
-                class="chip__label"
-                onclick={() => openSelections("FILTER", h)}
-                title="Edit selections"
-              >
-                {hierChipLabel(h)}
-              </button>
-              <button
-                type="button"
-                class="chip__x"
-                aria-label="Remove {h.caption || h.name}"
-                onclick={() => removeHier(h.name)}
-              >×</button>
-            </span>
-          {/each}
-          {#if (query.current?.queryModel?.axes.FILTER.hierarchies.length ?? 0) === 0}
-            <span class="chips__empty">{i18n.t("canvas.dropFilters")}</span>
-          {/if}
-        </div>
-      </div>
       {#each ["COLUMNS", "ROWS"] as const as axis}
         <div
           class="dropzone"
@@ -564,7 +572,12 @@
           <div class="chips">
             {#if axis === "COLUMNS" && query.current}
               {#each query.current.queryModel?.details.measures ?? [] as m}
-                <span class="chip chip--measure" oncontextmenu={(e) => openMeasureMenu(e, m)}>
+                <span
+                  class="chip chip--measure"
+                  draggable="true"
+                  ondragstart={(e) => onMeasureChipDragStart(e, m)}
+                  oncontextmenu={(e) => openMeasureMenu(e, m)}
+                >
                   <span class="chip__label" title="Right-click for options">
                     Σ {m.caption || m.name}
                   </span>
@@ -579,7 +592,12 @@
               {/each}
             {/if}
             {#each query.current?.queryModel?.axes[axis].hierarchies ?? [] as h}
-              <span class="chip chip--level" oncontextmenu={(e) => openHierMenu(e, axis, h)}>
+              <span
+                class="chip chip--level"
+                draggable="true"
+                ondragstart={(e) => onHierChipDragStart(e, axis, h)}
+                oncontextmenu={(e) => openHierMenu(e, axis, h)}
+              >
                 <button
                   type="button"
                   class="chip__label"
@@ -605,6 +623,48 @@
           </div>
         </div>
       {/each}
+      <div
+        class="dropzone dropzone--filter"
+        role="region"
+        aria-label="Filter"
+        ondragover={onDragOver}
+        ondrop={(e) => onDropAxis("FILTER", e)}
+      >
+        <header>
+          <span>{axisLabels.FILTER}</span>
+          <button type="button" class="dropzone__menu" title="Axis options" onclick={(e) => openAxisMenu(e, "FILTER")}>
+            <MoreHorizontal size={14} />
+          </button>
+        </header>
+        <div class="chips">
+          {#each query.current?.queryModel?.axes.FILTER.hierarchies ?? [] as h}
+            <span
+              class="chip chip--level"
+              draggable="true"
+              ondragstart={(e) => onHierChipDragStart(e, "FILTER", h)}
+              oncontextmenu={(e) => openHierMenu(e, "FILTER", h)}
+            >
+              <button
+                type="button"
+                class="chip__label"
+                onclick={() => openSelections("FILTER", h)}
+                title="Edit selections"
+              >
+                {hierChipLabel(h)}
+              </button>
+              <button
+                type="button"
+                class="chip__x"
+                aria-label="Remove {h.caption || h.name}"
+                onclick={() => removeHier(h.name)}
+              >×</button>
+            </span>
+          {/each}
+          {#if (query.current?.queryModel?.axes.FILTER.hierarchies.length ?? 0) === 0}
+            <span class="chips__empty">{i18n.t("canvas.dropFilters")}</span>
+          {/if}
+        </div>
+      </div>
     </aside>
     <div class="canvas__result">
     <div class="view-toggle" role="tablist" aria-label="Result view">
@@ -614,15 +674,32 @@
       <button type="button" role="tab" class:active={viewMode === "chart"} onclick={() => (viewMode = "chart")}>
         {i18n.t("canvas.view.chart")}
       </button>
-      <button type="button" role="tab" class:active={viewMode === "stats"} onclick={() => (viewMode = "stats")}>
-        Stats
-      </button>
-      <button type="button" role="tab" class:active={viewMode === "sparkline"} onclick={() => (viewMode = "sparkline")}>
-        Sparkline
-      </button>
-      <button type="button" role="tab" class:active={viewMode === "sparkbar"} onclick={() => (viewMode = "sparkbar")}>
-        Sparkbar
-      </button>
+      <div class="view-more">
+        <button
+          type="button"
+          role="tab"
+          class:active={isMoreMode(viewMode)}
+          onclick={() => (moreViewOpen = !moreViewOpen)}
+          title="Other views"
+        >
+          <span>{isMoreMode(viewMode) ? moreViewLabels[viewMode] : "More"}</span>
+          <ChevronDown size={14} />
+        </button>
+        {#if moreViewOpen}
+          <div class="view-more__menu" role="menu">
+            {#each moreViewModes as m}
+              <button
+                type="button"
+                role="menuitem"
+                class:active={viewMode === m}
+                onclick={() => pickMoreMode(m)}
+              >
+                {moreViewLabels[m]}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
       {#if viewMode === "chart"}
         <label class="chart-pick">
           <span class="sr-only">Chart type</span>
@@ -907,6 +984,37 @@
     color: var(--accent-fg);
     border-color: var(--accent);
   }
+  .view-more { position: relative; display: inline-flex; }
+  .view-more > button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .view-more__menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 140px;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    padding: var(--space-1) 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+  }
+  .view-more__menu button {
+    text-align: left;
+    padding: var(--space-1) var(--space-3);
+    background: transparent;
+    border: none;
+    color: var(--fg);
+    cursor: pointer;
+    font: inherit;
+  }
+  .view-more__menu button:hover { background: var(--bg-subtle); }
+  .view-more__menu button.active { background: var(--accent); color: var(--accent-fg); }
   .chart-edit {
     margin-left: auto;
     background: transparent;

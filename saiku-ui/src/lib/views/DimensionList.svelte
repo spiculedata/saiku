@@ -59,6 +59,30 @@
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
   }
 
+  /** Click-to-drop: add measure onto COLUMNS as a measure. Mirrors the
+   *  drag-drop payload but skips the DnD machinery. Old UI behaviour. */
+  function onMeasureClick(m: SaikuMeasure): void {
+    query.addMeasure({
+      name: m.name,
+      uniqueName: m.uniqueName,
+      caption: m.caption || m.name,
+      type: m.calculated ? "CALCULATED" : "EXACT",
+    });
+  }
+
+  /** Click-to-drop: drop a level onto ROWS by default. */
+  function onLevelClick(dim: SaikuDimension, hier: SaikuHierarchy, lvl: SaikuLevel): void {
+    query.includeLevel("ROWS", {
+      dimensionName: dim.name,
+      dimensionUniqueName: dim.uniqueName,
+      hierarchyName: hier.name,
+      hierarchyUniqueName: hier.uniqueName,
+      hierarchyCaption: hier.caption || hier.name,
+      levelName: lvl.name,
+      levelCaption: lvl.caption || lvl.name,
+    });
+  }
+
   let metadata = $state<CubeMetadata | null>(null);
   let loading = $state(false);
   let error = $state<string | null>(null);
@@ -287,6 +311,7 @@
                       draggable="true"
                       title={measure.caption}
                       ondragstart={(e) => onMeasureDragStart(e, measure)}
+                      onclick={() => onMeasureClick(measure)}
                     >
                       <span class="tree__icon tree__icon--measure" aria-hidden="true"><Sigma size={13} /></span>
                       <span class="tree__label">{measure.caption || measure.name}</span>
@@ -331,6 +356,7 @@
                             draggable="true"
                             title={lvl.caption}
                             ondragstart={(e) => onLevelDragStart(e, dim, hier, lvl)}
+                            onclick={() => onLevelClick(dim, hier, lvl)}
                           >
                             <span class="tree__icon tree__icon--level" aria-hidden="true"><Minus size={11} /></span>
                             <span class="tree__label">{lvl.caption || lvl.name}</span>
@@ -364,6 +390,7 @@
                                   draggable="true"
                                   title={lvl.caption}
                                   ondragstart={(e) => onLevelDragStart(e, dim, hier, lvl)}
+                                  onclick={() => onLevelClick(dim, hier, lvl)}
                                 >
                                   <span class="tree__icon tree__icon--level" aria-hidden="true"><Minus size={11} /></span>
                                   <span class="tree__label">{lvl.caption || lvl.name}</span>
