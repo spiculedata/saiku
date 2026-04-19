@@ -17,24 +17,25 @@ package org.saiku.web.rest.resources;
 
 import com.qmino.miredot.annotations.ReturnType;
 import java.util.List;
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.GenericEntity;
-import javax.ws.rs.core.Response;
 import javax.xml.bind.annotation.XmlAccessType;
 import javax.xml.bind.annotation.XmlAccessorType;
 import org.saiku.service.PlatformUtilsService;
 import org.saiku.service.util.dto.Plugin;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Info Resource to get platform information.
  */
 @Component
-@Path("/saiku/info")
+@RestController
+@RequestMapping("/saiku/info")
 @XmlAccessorType(XmlAccessType.NONE)
 public class InfoResource {
 
@@ -52,12 +53,9 @@ public class InfoResource {
      * @summary Get plugins
      * @return A response containing a list of plugins.
      */
-    @GET
-    @Produces({"application/json"})
+    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     @ReturnType("java.util.List<Plugin>")
-    public Response getAvailablePlugins() {
-
-        GenericEntity<List<Plugin>> entity = new GenericEntity<List<Plugin>>(platformService.getAvailablePlugins()) {};
-        return Response.ok(entity).build();
+    public ResponseEntity<List<Plugin>> getAvailablePlugins() {
+        return ResponseEntity.ok(platformService.getAvailablePlugins());
     }
 }
