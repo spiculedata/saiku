@@ -126,10 +126,7 @@ public class License {
      * @param l A List of UserList objects
      * @return A response indicating whether the operation was successful.
      */
-    @PostMapping(
-            path = "/users",
-            consumes = MediaType.APPLICATION_JSON_VALUE,
-            produces = MediaType.TEXT_PLAIN_VALUE)
+    @PostMapping(path = "/users", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.TEXT_PLAIN_VALUE)
     @ReturnType("java.lang.String")
     public ResponseEntity<?> createUserList(@RequestBody List<UserList> l) {
         try {
@@ -150,10 +147,7 @@ public class License {
      * @param l A list of UserList objects
      * @return A response indicating whether the operation was successful.
      */
-    @PutMapping(
-            path = "/users",
-            consumes = MediaType.APPLICATION_JSON_VALUE,
-            produces = MediaType.TEXT_PLAIN_VALUE)
+    @PutMapping(path = "/users", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.TEXT_PLAIN_VALUE)
     @ReturnType("java.lang.String")
     public ResponseEntity<?> updateUserList(@RequestBody List<UserList> l) {
         try {

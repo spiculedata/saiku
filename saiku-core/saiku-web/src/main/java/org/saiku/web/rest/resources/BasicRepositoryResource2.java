@@ -136,8 +136,7 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
      * Set the ACL information for a file/folder.
      */
     @PostMapping(path = "/resource/acl", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> setResourceAcl(
-            @RequestParam("file") String file, @RequestParam("acl") String aclEntry) {
+    public ResponseEntity<?> setResourceAcl(@RequestParam("file") String file, @RequestParam("acl") String aclEntry) {
         try {
             String username =
                     sessionService.getAllSessionObjects().get("username").toString();

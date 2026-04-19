@@ -326,9 +326,7 @@ public class Query2Resource {
     /**
      * Zoom into a query result table.
      */
-    @PostMapping(
-            path = "/{queryname}/zoomin",
-            consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    @PostMapping(path = "/{queryname}/zoomin", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     public ThinQuery zoomIn(
             @PathVariable("queryname") String queryName,
             @RequestParam(name = "selections", required = false) String positionListString) {
@@ -482,8 +480,7 @@ public class Query2Resource {
      */
     @PostMapping(path = "/{queryname}/export/pdf", produces = "application/pdf")
     public ResponseEntity<?> exportPdfWithChart(
-            @PathVariable("queryname") String queryName,
-            @RequestParam(name = "svg", defaultValue = "") String svg) {
+            @PathVariable("queryname") String queryName, @RequestParam(name = "svg", defaultValue = "") String svg) {
         return exportPdfWithChartAndFormat(queryName, null, svg, null);
     }
 
