@@ -60,36 +60,6 @@
                 <version>2.4.0</version>
             </dependency>
             <dependency>
-                <groupId>org.springframework.security</groupId>
-                <artifactId>spring-security-cas</artifactId>
-                <version>${spring.security.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.jasig.cas.client</groupId>
-                <artifactId>cas-client-core</artifactId>
-                <version>3.3.2</version>
-                <exclusions>
-                    <exclusion>
-                        <groupId>org.bouncycastle</groupId>
-                        <artifactId>bcprov-jdk15</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>org.slf4j</groupId>
-                        <artifactId>log4j-over-slf4j</artifactId>
-                    </exclusion>
-                </exclusions>
-            </dependency>
-            <dependency>
-                <groupId>org.jasig.cas.client</groupId>
-                <artifactId>cas-client-integration-tomcat-common</artifactId>
-                <version>3.3.2</version>
-            </dependency>
-            <dependency>
-                <groupId>org.jasig.cas.client</groupId>
-                <artifactId>cas-client-integration-tomcat-v7</artifactId>
-                <version>3.3.2</version>
-            </dependency>
-            <dependency>
                 <groupId>org.mozilla</groupId>
                 <artifactId>rhino</artifactId>
                 <version>1.7R5</version>
@@ -291,11 +261,6 @@
             </dependency>
 
             <dependency>
-                <groupId>org.hibernate.javax.persistence</groupId>
-                <artifactId>hibernate-jpa-2.1-api</artifactId>
-                <version>1.0.0.Final</version>
-            </dependency>
-            <dependency>
                 <groupId>org.jbehave</groupId>
                 <artifactId>jbehave-core</artifactId>
                 <version>${jbehave.version}</version>
@@ -320,16 +285,6 @@
                 <artifactId>htmlcleaner</artifactId>
                 <version>2.10</version>
             </dependency>
-            <dependency>
-                <groupId>org.hibernate</groupId>
-                <artifactId>hibernate-annotations</artifactId>
-                <version>3.5.6-Final</version>
-            </dependency>
-            <dependency>
-                <groupId>org.hibernate</groupId>
-                <artifactId>hibernate-core</artifactId>
-                <version>4.3.5.Final</version>
-            </dependency>
             <!--dependency>
                 <groupId>com.fasterxml.jackson.core</groupId>
                 <artifactId>jackson-core</artifactId>
@@ -344,11 +299,6 @@
                 <groupId>org.saikuanalytics</groupId>
                 <artifactId>saiku-web</artifactId>
                 <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.springframework.security</groupId>
-                <artifactId>spring-security-ldap</artifactId>
-                <version>${spring.version}</version>
             </dependency>
             <!-- Batik/SVG -->
             <dependency>
