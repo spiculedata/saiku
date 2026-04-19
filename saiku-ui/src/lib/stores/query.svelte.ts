@@ -27,6 +27,14 @@ class QueryStore {
   error = $state<string | null>(null);
   dirty = $state<boolean>(false);
   savedPath = $state<string | null>(null);
+  autorun = $state<boolean>(true);
+
+  private markDirty(): void {
+    this.dirty = true;
+    if (this.autorun && this.hasRunnableShape()) {
+      void this.run();
+    }
+  }
 
   initFor(cube: SaikuCube): void {
     this.current = newQuery(cube);
@@ -96,7 +104,7 @@ class QueryStore {
     } else {
       target.push(hier);
     }
-    this.dirty = true;
+    this.markDirty();
   }
 
   removeHierarchy(hierarchyName: string): void {
@@ -105,7 +113,7 @@ class QueryStore {
     if (!loc) return;
     const axis = this.current.queryModel.axes[loc];
     axis.hierarchies = axis.hierarchies.filter((h) => h.name !== hierarchyName);
-    this.dirty = true;
+    this.markDirty();
   }
 
   addMeasure(m: ThinMeasure): void {
@@ -113,14 +121,20 @@ class QueryStore {
     const list = this.current.queryModel.details.measures;
     if (list.some((x) => x.uniqueName === m.uniqueName)) return;
     list.push(m);
-    this.dirty = true;
+    this.markDirty();
+  }
+
+  setMeasures(list: ThinMeasure[]): void {
+    if (!this.current?.queryModel) return;
+    this.current.queryModel.details.measures = [...list];
+    this.markDirty();
   }
 
   removeMeasure(uniqueName: string): void {
     if (!this.current?.queryModel) return;
     const details = this.current.queryModel.details;
     details.measures = details.measures.filter((m) => m.uniqueName !== uniqueName);
-    this.dirty = true;
+    this.markDirty();
   }
 
   swapAxes(): void {
@@ -130,13 +144,13 @@ class QueryStore {
     const b = m.axes.COLUMNS;
     m.axes.ROWS = { ...b, location: "ROWS" };
     m.axes.COLUMNS = { ...a, location: "COLUMNS" };
-    this.dirty = true;
+    this.markDirty();
   }
 
   setNonEmpty(axis: AxisLocation, nonEmpty: boolean): void {
     if (!this.current?.queryModel) return;
     this.current.queryModel.axes[axis].nonEmpty = nonEmpty;
-    this.dirty = true;
+    this.markDirty();
   }
 
   setLevelSelection(
@@ -160,7 +174,7 @@ class QueryStore {
           members: memberUniqueNames.map((uniqueName) => ({ uniqueName })),
         };
       }
-      this.dirty = true;
+      this.markDirty();
       return;
     }
   }

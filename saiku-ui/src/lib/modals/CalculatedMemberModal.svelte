@@ -1,9 +1,7 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
-  import MonacoEditor from "$lib/components/MonacoEditor.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
-  /** Port of saiku-ui-legacy/js/saiku/views/CalculatedMemberModal.js. */
   export interface CalculatedMember {
     name: string;
     parent: string;
@@ -12,56 +10,294 @@
     dimension?: string;
   }
 
+  interface MeasurePaletteItem {
+    caption: string;
+    uniqueName: string;
+  }
+
   interface Props {
     initial?: CalculatedMember;
     hierarchies: string[];
+    measures?: MeasurePaletteItem[];
     open: boolean;
     onSave: (m: CalculatedMember) => void;
     onCancel: () => void;
   }
 
+  const FORMAT_PRESETS: { label: string; value: string }[] = [
+    { label: "Integer", value: "#,##0" },
+    { label: "Decimal (2)", value: "#,##0.00" },
+    { label: "Decimal (4)", value: "#,##0.0000" },
+    { label: "Percentage", value: "0.00%" },
+    { label: "Currency (USD)", value: "$#,##0.00" },
+    { label: "Currency (EUR)", value: "€#,##0.00" },
+    { label: "Scientific", value: "0.00E+00" },
+    { label: "Plain", value: "Standard" },
+  ];
+
+  const OPERATORS = [
+    "+", "-", "*", "/", "(", ")", ",", "=", ">", "<", ">=", "<=",
+  ];
+
+  const FUNCTION_TEMPLATES: { label: string; snippet: string; cursor: number }[] = [
+    { label: "IIF", snippet: "IIF(<cond>, <then>, <else>)", cursor: 4 },
+    { label: "CASE", snippet: "CASE WHEN <cond> THEN <val> ELSE <val> END", cursor: 10 },
+    { label: "SUM", snippet: "SUM(<set>)", cursor: 4 },
+    { label: "AVG", snippet: "AVG(<set>)", cursor: 4 },
+    { label: "MIN", snippet: "MIN(<set>)", cursor: 4 },
+    { label: "MAX", snippet: "MAX(<set>)", cursor: 4 },
+    { label: "COUNT", snippet: "COUNT(<set>)", cursor: 6 },
+    { label: "RANK", snippet: "RANK(<member>, <set>)", cursor: 5 },
+    { label: "ParallelPeriod", snippet: "PARALLELPERIOD([Time].[Time].[Quarter], 1, <member>)", cursor: 15 },
+    { label: "CurrentMember", snippet: "[Time].[Time].CurrentMember", cursor: 27 },
+    { label: "PrevMember", snippet: "<member>.PrevMember", cursor: 8 },
+    { label: "Children", snippet: "<member>.Children", cursor: 8 },
+  ];
+
   let {
-    initial = { name: "", parent: "", formula: "", formatString: "#,##0.00" },
+    initial = { name: "", parent: "[Measures]", formula: "", formatString: "#,##0.00" },
     hierarchies,
+    measures = [],
     open,
     onSave,
     onCancel,
   }: Props = $props();
 
   let form = $state<CalculatedMember>({ ...initial });
+  let textarea: HTMLTextAreaElement | null = null;
+  let measureFilter = $state("");
 
   $effect(() => {
     if (open) form = { ...initial };
   });
 
-  const valid = $derived(form.name.trim() && form.formula.trim());
+  const filteredMeasures = $derived(
+    measureFilter
+      ? measures.filter((m) => m.caption.toLowerCase().includes(measureFilter.toLowerCase()))
+      : measures,
+  );
+
+  function insertAtCursor(text: string, caretOffset?: number) {
+    if (!textarea) {
+      form.formula = (form.formula ?? "") + text;
+      return;
+    }
+    const start = textarea.selectionStart ?? form.formula.length;
+    const end = textarea.selectionEnd ?? start;
+    const next = form.formula.slice(0, start) + text + form.formula.slice(end);
+    form.formula = next;
+    const caret = start + (caretOffset ?? text.length);
+    queueMicrotask(() => {
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(caret, caret);
+    });
+  }
+
+  const validName = $derived(/^[A-Za-z_][A-Za-z0-9_ -]*$/.test(form.name.trim()));
+  const valid = $derived(validName && form.formula.trim().length > 0);
+
+  function hierarchyOptions(): string[] {
+    const opts = [...new Set(["[Measures]", ...(hierarchies ?? [])])];
+    return opts;
+  }
 </script>
 
-<Modal title="Calculated member" {open} size="lg" onClose={onCancel}>
-  <label class="field">
-    <span class="field__label">Name</span>
-    <input class="field__input" bind:value={form.name} />
-  </label>
-  <label class="field">
-    <span class="field__label">Parent hierarchy</span>
-    <select class="field__input" bind:value={form.parent}>
-      {#each hierarchies as h}
-        <option value={h}>{h}</option>
-      {/each}
-    </select>
-  </label>
-  <div class="field">
-    <span class="field__label">Formula (MDX)</span>
-    {#if open}
-      <MonacoEditor value={form.formula} language="mdx" minHeight="200px" onChange={(v) => (form.formula = v)} />
-    {/if}
+<Modal title="Calculated Measure" {open} size="lg" onClose={onCancel}>
+  <div class="wizard">
+    <div class="wizard__left">
+      <label class="field">
+        <span class="field__label">Name</span>
+        <input
+          class="field__input"
+          bind:value={form.name}
+          placeholder="e.g. Gross Margin"
+          aria-invalid={form.name.trim().length > 0 && !validName}
+        />
+        {#if form.name.trim().length > 0 && !validName}
+          <span class="field__error">Use letters, digits, spaces, - or _ (must start with a letter)</span>
+        {/if}
+      </label>
+
+      <label class="field">
+        <span class="field__label">Parent hierarchy</span>
+        <select class="field__input" bind:value={form.parent}>
+          {#each hierarchyOptions() as h}
+            <option value={h}>{h}</option>
+          {/each}
+        </select>
+        <span class="field__hint">Most calculated measures belong to [Measures].</span>
+      </label>
+
+      <label class="field">
+        <span class="field__label">Formula (MDX)</span>
+        <textarea
+          class="field__input formula"
+          rows="6"
+          bind:value={form.formula}
+          bind:this={textarea}
+          placeholder="e.g. [Measures].[Store Sales] - [Measures].[Store Cost]"
+        ></textarea>
+      </label>
+
+      <label class="field">
+        <span class="field__label">Format string</span>
+        <div class="format-row">
+          <input class="field__input" bind:value={form.formatString} />
+          <select
+            class="field__input format-row__preset"
+            onchange={(e) => {
+              const v = (e.target as HTMLSelectElement).value;
+              if (v) form.formatString = v;
+            }}
+            value=""
+          >
+            <option value="">Presets…</option>
+            {#each FORMAT_PRESETS as p}
+              <option value={p.value}>{p.label} ({p.value})</option>
+            {/each}
+          </select>
+        </div>
+      </label>
+
+      <div class="preview">
+        <div class="preview__label">MDX preview</div>
+        <pre>WITH MEMBER {form.parent}.[{form.name.trim() || "…"}] AS '{form.formula.trim() || "…"}',
+  FORMAT_STRING = '{form.formatString}', SOLVE_ORDER = 200
+SELECT …</pre>
+      </div>
+    </div>
+
+    <div class="wizard__right">
+      <div class="palette">
+        <div class="palette__title">Measures</div>
+        <input
+          class="field__input palette__filter"
+          bind:value={measureFilter}
+          placeholder="Filter measures"
+        />
+        <ul class="palette__list">
+          {#each filteredMeasures as m}
+            <li>
+              <button
+                type="button"
+                class="palette__btn"
+                title={m.uniqueName}
+                onclick={() => insertAtCursor(m.uniqueName)}
+              >{m.caption}</button>
+            </li>
+          {/each}
+          {#if filteredMeasures.length === 0}
+            <li class="palette__empty">No measures</li>
+          {/if}
+        </ul>
+      </div>
+
+      <div class="palette">
+        <div class="palette__title">Operators</div>
+        <div class="palette__grid">
+          {#each OPERATORS as op}
+            <button type="button" class="palette__chip" onclick={() => insertAtCursor(` ${op} `)}>{op}</button>
+          {/each}
+        </div>
+      </div>
+
+      <div class="palette">
+        <div class="palette__title">Functions</div>
+        <ul class="palette__list">
+          {#each FUNCTION_TEMPLATES as fn}
+            <li>
+              <button
+                type="button"
+                class="palette__btn"
+                title={fn.snippet}
+                onclick={() => insertAtCursor(fn.snippet, fn.cursor)}
+              >{fn.label}</button>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    </div>
   </div>
-  <label class="field">
-    <span class="field__label">Format string</span>
-    <input class="field__input" bind:value={form.formatString} />
-  </label>
   {#snippet footer()}
     <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
-    <button type="button" class="btn btn--primary" disabled={!valid} onclick={() => onSave(form)}>{i18n.t("modal.save")}</button>
+    <button
+      type="button"
+      class="btn btn--primary"
+      disabled={!valid}
+      onclick={() => onSave({ ...form, name: form.name.trim(), formula: form.formula.trim() })}
+    >{i18n.t("modal.save")}</button>
   {/snippet}
 </Modal>
+
+<style>
+  .wizard {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(220px, 1fr);
+    gap: var(--space-4);
+  }
+  .wizard__left { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+  .wizard__right { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+  .formula {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: var(--fs-sm);
+    resize: vertical;
+  }
+  .format-row { display: flex; gap: var(--space-2); }
+  .format-row__preset { max-width: 220px; }
+  .preview {
+    background: var(--bg-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-2) var(--space-3);
+  }
+  .preview__label { font-size: var(--fs-xs); color: var(--fg-subtle); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+  .preview pre {
+    margin: 0;
+    font-size: var(--fs-xs);
+    white-space: pre-wrap;
+    color: var(--fg-muted);
+  }
+  .palette {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-muted);
+    padding: var(--space-2);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+  .palette__title { font-size: var(--fs-xs); color: var(--fg-subtle); text-transform: uppercase; letter-spacing: 0.06em; }
+  .palette__filter { margin: 0; }
+  .palette__list { list-style: none; padding: 0; margin: 0; max-height: 220px; overflow-y: auto; }
+  .palette__btn {
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    color: var(--fg);
+    padding: 3px 6px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font: inherit;
+  }
+  .palette__btn:hover { background: var(--bg-subtle); }
+  .palette__empty { color: var(--fg-subtle); padding: 3px 6px; font-size: var(--fs-xs); }
+  .palette__grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .palette__chip {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 2px 0;
+    color: var(--fg);
+    font: inherit;
+    cursor: pointer;
+  }
+  .palette__chip:hover { background: var(--bg-subtle); }
+  .field__error { color: var(--danger); font-size: var(--fs-xs); }
+  .field__hint { color: var(--fg-subtle); font-size: var(--fs-xs); }
+</style>

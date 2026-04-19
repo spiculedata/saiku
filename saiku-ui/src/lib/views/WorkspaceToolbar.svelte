@@ -17,7 +17,6 @@
   import { query } from "$lib/stores/query.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
-  let autorun = $state(true);
   let nonEmpty = $state(true);
 
   $effect(() => {
@@ -152,7 +151,7 @@
       const body = await getResource(entry.path);
       query.loadFromJson(body, entry.path);
       toasts.success("Opened", entry.path);
-      if (autorun) await query.run();
+      if (query.autorun) await query.run();
     } catch (e) {
       toasts.danger("Open failed", e instanceof Error ? e.message : String(e));
     }
@@ -178,7 +177,7 @@
   <div class="toolbar__group">
     <button class="btn btn--primary" onclick={onRun}>{i18n.t("toolbar.run")}</button>
     <label class="toolbar__toggle">
-      <input type="checkbox" bind:checked={autorun} /> {i18n.t("toolbar.autorun")}
+      <input type="checkbox" bind:checked={query.autorun} /> {i18n.t("toolbar.autorun")}
     </label>
     <label class="toolbar__toggle">
       <input type="checkbox" bind:checked={nonEmpty} /> {i18n.t("toolbar.nonEmpty")}
@@ -186,7 +185,7 @@
   </div>
   <div class="toolbar__sep"></div>
   <div class="toolbar__group">
-    <button class="btn" onclick={() => { query.swapAxes(); if (autorun) query.run(); }}>{i18n.t("toolbar.swap")}</button>
+    <button class="btn" onclick={() => query.swapAxes()}>{i18n.t("toolbar.swap")}</button>
     <button class="btn" onclick={onShowMdx}>{i18n.t("toolbar.mdx")}</button>
   </div>
   <div class="toolbar__spacer"></div>
