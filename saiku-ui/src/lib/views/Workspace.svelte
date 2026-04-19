@@ -1,6 +1,10 @@
 <script lang="ts">
   import type { SaikuSession } from "$lib/api/session";
   import Modal from "$lib/components/Modal.svelte";
+  import CubePicker from "$lib/views/CubePicker.svelte";
+  import DimensionList from "$lib/views/DimensionList.svelte";
+  import WorkspaceToolbar from "$lib/views/WorkspaceToolbar.svelte";
+  import QueryCanvas from "$lib/views/QueryCanvas.svelte";
 
   interface Props {
     session: SaikuSession;
@@ -12,29 +16,28 @@
 
 <div class="workspace">
   <aside class="workspace__sidebar">
-    <div class="workspace__sidebar-header">
-      <h2>Cubes</h2>
-      <button type="button" class="btn" onclick={() => (aboutOpen = true)}>About</button>
+    <CubePicker username={session.username} />
+    <DimensionList username={session.username} />
+    <div class="workspace__sidebar-footer">
+      <button type="button" class="btn" onclick={() => (aboutOpen = true)}>About Saiku</button>
     </div>
-    <div class="placeholder">Datasource tree — next slice</div>
   </aside>
   <section class="workspace__main">
     <div class="tabset">
       <div class="tab tab--active">Unsaved query</div>
+      <button type="button" class="tab tab--new" aria-label="New query">+</button>
     </div>
-    <div class="workspace__content">
-      <p>Welcome, <strong>{session.username}</strong>.</p>
-      <p class="workspace__roles">Roles: {session.roles.join(", ")}</p>
-      <div class="placeholder placeholder--grid">
-        Pivot grid (AG Grid) lands in the next Phase 4 slice.
-      </div>
-    </div>
+    <WorkspaceToolbar />
+    <QueryCanvas />
   </section>
 </div>
 
 <Modal title="About Saiku" open={aboutOpen} size="sm" onClose={() => (aboutOpen = false)}>
   <p>Saiku 3.17 — modernised stack.</p>
-  <p>Signed in as <strong>{session.username}</strong> ({session.roles.join(", ")}).</p>
+  <p>
+    Signed in as <strong>{session.username}</strong>
+    ({session.roles.join(", ")}).
+  </p>
   {#snippet footer()}
     <button class="btn btn--primary" onclick={() => (aboutOpen = false)}>Close</button>
   {/snippet}
@@ -44,7 +47,7 @@
   .workspace {
     flex: 1;
     display: grid;
-    grid-template-columns: 280px 1fr;
+    grid-template-columns: 300px 1fr;
     gap: 1px;
     background: var(--border);
   }
@@ -54,20 +57,15 @@
     overflow: auto;
   }
   .workspace__sidebar {
-    padding: var(--space-4);
-  }
-  .workspace__sidebar-header {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--space-3);
+    flex-direction: column;
+    padding: var(--space-4);
+    gap: var(--space-3);
   }
-  .workspace__sidebar h2 {
-    margin: 0;
-    font-size: var(--fs-md);
-    color: var(--fg-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+  .workspace__sidebar-footer {
+    margin-top: auto;
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
   }
   .workspace__main {
     display: flex;
@@ -75,7 +73,8 @@
   }
   .tabset {
     display: flex;
-    padding: 0 var(--space-4);
+    align-items: stretch;
+    padding: 0 var(--space-2);
     border-bottom: 1px solid var(--border);
     background: var(--bg-muted);
   }
@@ -83,29 +82,18 @@
     padding: var(--space-3) var(--space-4);
     color: var(--fg-muted);
     border-bottom: 2px solid transparent;
+    background: transparent;
+    border-top: 0;
+    border-left: 0;
+    border-right: 0;
+    font: inherit;
+    cursor: pointer;
   }
   .tab--active {
     color: var(--fg);
     border-bottom-color: var(--accent);
   }
-  .workspace__content {
-    padding: var(--space-5);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-  }
-  .workspace__roles {
-    color: var(--fg-muted);
-    font-size: var(--fs-sm);
-  }
-  .placeholder {
-    padding: var(--space-5);
-    border: 1px dashed var(--border-strong);
-    border-radius: var(--radius-md);
+  .tab--new {
     color: var(--fg-subtle);
-    text-align: center;
-  }
-  .placeholder--grid {
-    min-height: 360px;
   }
 </style>

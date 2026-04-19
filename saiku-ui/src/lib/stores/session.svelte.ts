@@ -1,4 +1,6 @@
 import { getCurrentSession, login as apiLogin, logout as apiLogout, type SaikuSession } from "$lib/api/session";
+import { datasources } from "$lib/stores/datasources.svelte";
+import { selection } from "$lib/stores/selection.svelte";
 
 class SessionStore {
   current = $state<SaikuSession | null>(null);
@@ -21,6 +23,8 @@ class SessionStore {
   async logout(): Promise<void> {
     await apiLogout();
     this.current = null;
+    datasources.clear();
+    selection.clear();
   }
 
   get isAdmin(): boolean {
