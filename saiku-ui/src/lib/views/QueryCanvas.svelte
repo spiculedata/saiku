@@ -5,18 +5,27 @@
   import type { AxisLocation, ThinHierarchy, ThinMeasure } from "$lib/api/query";
   import CellsetTable from "$lib/views/CellsetTable.svelte";
   import ChartView from "$lib/views/ChartView.svelte";
+  import StatsView from "$lib/views/StatsView.svelte";
+  import SparklineView from "$lib/views/SparklineView.svelte";
   import { CHART_TYPES, DEFAULT_CHART_OPTIONS, type ChartType, type ChartOptions } from "$lib/views/chartTypes";
   import SelectionsModal from "$lib/modals/SelectionsModal.svelte";
   import DrillthroughModal from "$lib/modals/DrillthroughModal.svelte";
   import DrillthroughResultModal from "$lib/modals/DrillthroughResultModal.svelte";
   import ChartEditorModal from "$lib/modals/ChartEditorModal.svelte";
+  import CustomFilterModal from "$lib/modals/CustomFilterModal.svelte";
+  import FormatAsPercentageModal from "$lib/modals/FormatAsPercentageModal.svelte";
+  import GrowthModal from "$lib/modals/GrowthModal.svelte";
+  import FilterModal from "$lib/modals/FilterModal.svelte";
+  import ContextMenu from "$lib/components/ContextMenu.svelte";
+  type ContextMenuItem = { id: string; label: string; disabled?: boolean; danger?: boolean; sep?: boolean };
+  import { MoreHorizontal } from "lucide-svelte";
   import { listLevelMembers, listRootMembers, type SaikuMember } from "$lib/api/discover";
   import { datasources } from "$lib/stores/datasources.svelte";
   import { drillthrough as fetchDrillthrough, type QueryResult } from "$lib/api/query";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
-  type ViewMode = "grid" | "chart";
+  type ViewMode = "grid" | "chart" | "stats" | "sparkline" | "sparkbar";
   let viewMode = $state<ViewMode>("grid");
   let chartType = $state<ChartType>("bar");
   let chartOptions = $state<ChartOptions>({ ...DEFAULT_CHART_OPTIONS });
@@ -37,6 +46,202 @@
   let drillResultOpen = $state(false);
   let drillResult = $state<QueryResult | null>(null);
   let drillPosition = $state<string | null>(null);
+
+  // --- Context menu state + downstream modals ---
+  interface MenuCtx {
+    open: boolean;
+    x: number;
+    y: number;
+    items: ContextMenuItem[];
+    // payload for the action handler
+    kind: "measure" | "hierarchy" | "axis" | null;
+    axis: AxisLocation | null;
+    measure: ThinMeasure | null;
+    hierarchy: ThinHierarchy | null;
+  }
+  let menu = $state<MenuCtx>({ open: false, x: 0, y: 0, items: [], kind: null, axis: null, measure: null, hierarchy: null });
+
+  let customFilterOpen = $state(false);
+  let customFilterTarget = $state<ThinMeasure | null>(null);
+  let formatPctOpen = $state(false);
+  let formatPctTarget = $state<{ measure: ThinMeasure } | null>(null);
+  let growthOpen = $state(false);
+  let growthTarget = $state<ThinMeasure | null>(null);
+
+  let axisFilterOpen = $state(false);
+  let axisFilterTarget = $state<{ axis: AxisLocation; type: "Order" | "Filter" | "TopCount" | "BottomCount" | "Limit"; expression: string; sort: string } | null>(null);
+
+  function openMeasureMenu(e: MouseEvent, m: ThinMeasure) {
+    e.preventDefault();
+    e.stopPropagation();
+    menu = {
+      open: true,
+      x: e.clientX, y: e.clientY,
+      kind: "measure",
+      axis: "COLUMNS",
+      measure: m,
+      hierarchy: null,
+      items: [
+        { id: "filter", label: "Filter by value…" },
+        { id: "format-pct", label: "Format as percentage…" },
+        { id: "growth", label: "Growth calculation…" },
+        { id: "_sep", sep: true, label: "" },
+        { id: "remove", label: "Remove measure", danger: true },
+      ],
+    };
+  }
+
+  function openHierMenu(e: MouseEvent, axis: AxisLocation, h: ThinHierarchy) {
+    e.preventDefault();
+    e.stopPropagation();
+    menu = {
+      open: true,
+      x: e.clientX, y: e.clientY,
+      kind: "hierarchy",
+      axis, measure: null, hierarchy: h,
+      items: [
+        { id: "selections", label: "Edit selections…" },
+        { id: "_sep", sep: true, label: "" },
+        { id: "remove", label: "Remove hierarchy", danger: true },
+      ],
+    };
+  }
+
+  function openAxisMenu(e: MouseEvent, axis: AxisLocation) {
+    e.preventDefault();
+    e.stopPropagation();
+    menu = {
+      open: true,
+      x: e.clientX, y: e.clientY,
+      kind: "axis",
+      axis, measure: null, hierarchy: null,
+      items: [
+        { id: "filter-order", label: "Order (custom MDX)…" },
+        { id: "filter-filter", label: "Filter (custom MDX)…" },
+        { id: "filter-top", label: "Top count…" },
+        { id: "filter-bot", label: "Bottom count…" },
+        { id: "filter-limit", label: "Limit…" },
+      ],
+    };
+  }
+
+  function onMenuPick(id: string) {
+    const m = menu;
+    menu = { ...m, open: false };
+    if (!id) return;
+    if (m.kind === "measure" && m.measure) {
+      if (id === "filter") {
+        customFilterTarget = m.measure;
+        customFilterOpen = true;
+      } else if (id === "format-pct") {
+        formatPctTarget = { measure: m.measure };
+        formatPctOpen = true;
+      } else if (id === "growth") {
+        growthTarget = m.measure;
+        growthOpen = true;
+      } else if (id === "remove") {
+        query.removeMeasure(m.measure.uniqueName);
+      }
+      return;
+    }
+    if (m.kind === "hierarchy" && m.axis && m.hierarchy) {
+      if (id === "selections") openSelections(m.axis, m.hierarchy);
+      else if (id === "remove") query.removeHierarchy(m.hierarchy.name);
+      return;
+    }
+    if (m.kind === "axis" && m.axis) {
+      const axis = m.axis;
+      const model = query.current?.queryModel;
+      const existing = model?.axes[axis].mdx ?? "";
+      let type: "Order" | "Filter" | "TopCount" | "BottomCount" | "Limit" = "Filter";
+      if (id === "filter-order") type = "Order";
+      else if (id === "filter-filter") type = "Filter";
+      else if (id === "filter-top") type = "TopCount";
+      else if (id === "filter-bot") type = "BottomCount";
+      else if (id === "filter-limit") type = "Limit";
+      axisFilterTarget = { axis, type, expression: existing, sort: "ASC" };
+      axisFilterOpen = true;
+    }
+  }
+
+  function onCustomFilterApply(op: string, value: string, value2?: string) {
+    customFilterOpen = false;
+    const m = customFilterTarget;
+    if (!m || !query.current?.queryModel) return;
+    let expr = `${m.uniqueName} ${op} ${value}`;
+    if (op === "BETWEEN") expr = `${m.uniqueName} >= ${value} AND ${m.uniqueName} <= ${value2}`;
+    else if (op === "NOT BETWEEN") expr = `NOT (${m.uniqueName} >= ${value} AND ${m.uniqueName} <= ${value2})`;
+    const axis = query.current.queryModel.axes.ROWS;
+    axis.mdx = axis.mdx
+      ? `FILTER(${axis.mdx}, ${expr})`
+      : `FILTER({[Measures].CurrentMember}, ${expr})`;
+    toasts.success("Filter applied", `${m.caption} ${op} ${value}`);
+    void query.run();
+  }
+
+  function onFormatPctApply(axis: "ROWS" | "COLUMNS" | "GRAND_TOTAL", _scope: "all" | "selected") {
+    formatPctOpen = false;
+    const t = formatPctTarget;
+    if (!t || !query.current?.queryModel) return;
+    const calcName = `${t.measure.name} %`;
+    const ref = axis === "ROWS"
+      ? "Axis(1).Item(0).Item(0).Dimension.CurrentMember.Parent"
+      : axis === "COLUMNS"
+        ? "Axis(0).Item(0).Item(0).Dimension.CurrentMember.Parent"
+        : "[All]";
+    const denom = `([Measures].[${t.measure.name}], ${ref})`;
+    const formula = `IIF(${denom} = 0, null, [Measures].[${t.measure.name}] / ${denom})`;
+    const next = (query.current.queryModel.calculatedMeasures ?? []).filter(
+      (x) => (x as { name?: string }).name !== calcName,
+    );
+    next.push({ name: calcName, formula, properties: { FORMAT_STRING: "0.00%", SOLVE_ORDER: "200" } });
+    query.current.queryModel.calculatedMeasures = next;
+    query.addMeasure({ name: calcName, uniqueName: `[Measures].[${calcName}]`, caption: calcName, type: "CALCULATED" });
+    toasts.success("Formatted as %", calcName);
+  }
+
+  function onGrowthApply(basis: string, ref?: string) {
+    growthOpen = false;
+    const m = growthTarget;
+    if (!m || !query.current?.queryModel) return;
+    const calcName = `${m.name} growth`;
+    let prev: string;
+    if (basis === "previous") prev = `(${m.uniqueName}, Axis(1).Item(0).Item(0).PrevMember)`;
+    else if (basis === "first") prev = `(${m.uniqueName}, Axis(1).Item(0).Item(0).FirstSibling)`;
+    else prev = `(${m.uniqueName}, ${ref ?? ""})`;
+    const formula = `(${m.uniqueName} - ${prev}) / ${prev}`;
+    const next = (query.current.queryModel.calculatedMeasures ?? []).filter(
+      (x) => (x as { name?: string }).name !== calcName,
+    );
+    next.push({ name: calcName, formula, properties: { FORMAT_STRING: "0.00%", SOLVE_ORDER: "300" } });
+    query.current.queryModel.calculatedMeasures = next;
+    query.addMeasure({ name: calcName, uniqueName: `[Measures].[${calcName}]`, caption: calcName, type: "CALCULATED" });
+    toasts.success("Growth calc added", calcName);
+  }
+
+  function onAxisFilterSave(expression: string, sort?: string) {
+    axisFilterOpen = false;
+    const t = axisFilterTarget;
+    if (!t || !query.current?.queryModel) return;
+    const axis = query.current.queryModel.axes[t.axis];
+    if (t.type === "Order") {
+      axis.sortOrder = sort ?? "ASC";
+      axis.sortEvaluationLiteral = expression || null;
+    } else if (t.type === "TopCount" || t.type === "BottomCount") {
+      const fn = t.type.toUpperCase();
+      axis.mdx = axis.mdx ? `${fn}(${axis.mdx}, ${expression})` : null;
+      if (!axis.mdx) {
+        toasts.warning("No axis set", `Drop a hierarchy onto ${t.axis} first.`);
+        return;
+      }
+    } else if (t.type === "Limit") {
+      axis.mdx = axis.mdx ? `HEAD(${axis.mdx}, ${expression})` : null;
+    } else {
+      axis.mdx = axis.mdx ? `FILTER(${axis.mdx}, ${expression})` : `FILTER({}, ${expression})`;
+    }
+    toasts.success("Axis expression applied", `${t.type} on ${t.axis}`);
+    void query.run();
+  }
 
   let selectionsOpen = $state(false);
   let selectionsTarget = $state<{ axis: AxisLocation; hierarchyName: string; hierarchyCaption: string; levelName: string } | null>(null);
@@ -246,10 +451,15 @@
         ondragover={onDragOver}
         ondrop={(e) => onDropAxis("FILTER", e)}
       >
-        <header>{axisLabels.FILTER}</header>
+        <header>
+          <span>{axisLabels.FILTER}</span>
+          <button type="button" class="dropzone__menu" title="Axis options" onclick={(e) => openAxisMenu(e, "FILTER")}>
+            <MoreHorizontal size={14} />
+          </button>
+        </header>
         <div class="chips">
           {#each query.current?.queryModel?.axes.FILTER.hierarchies ?? [] as h}
-            <span class="chip chip--level">
+            <span class="chip chip--level" oncontextmenu={(e) => openHierMenu(e, "FILTER", h)}>
               <button
                 type="button"
                 class="chip__label"
@@ -279,18 +489,31 @@
           ondragover={onDragOver}
           ondrop={(e) => onDropAxis(axis, e)}
         >
-          <header>{axisLabels[axis]}</header>
+          <header>
+            <span>{axisLabels[axis]}</span>
+            <button type="button" class="dropzone__menu" title="Axis options" onclick={(e) => openAxisMenu(e, axis)}>
+              <MoreHorizontal size={14} />
+            </button>
+          </header>
           <div class="chips">
             {#if axis === "COLUMNS" && query.current}
               {#each query.current.queryModel?.details.measures ?? [] as m}
-                <button type="button" class="chip chip--measure" onclick={() => removeMeasure(m.uniqueName)} title="Remove measure">
-                  Σ {m.caption || m.name}
-                  <span class="chip__x">×</span>
-                </button>
+                <span class="chip chip--measure" oncontextmenu={(e) => openMeasureMenu(e, m)}>
+                  <span class="chip__label" title="Right-click for options">
+                    Σ {m.caption || m.name}
+                  </span>
+                  <button
+                    type="button"
+                    class="chip__x"
+                    title="Remove measure"
+                    aria-label="Remove {m.caption || m.name}"
+                    onclick={() => removeMeasure(m.uniqueName)}
+                  >×</button>
+                </span>
               {/each}
             {/if}
             {#each query.current?.queryModel?.axes[axis].hierarchies ?? [] as h}
-              <span class="chip chip--level">
+              <span class="chip chip--level" oncontextmenu={(e) => openHierMenu(e, axis, h)}>
                 <button
                   type="button"
                   class="chip__label"
@@ -325,6 +548,15 @@
       <button type="button" role="tab" class:active={viewMode === "chart"} onclick={() => (viewMode = "chart")}>
         {i18n.t("canvas.view.chart")}
       </button>
+      <button type="button" role="tab" class:active={viewMode === "stats"} onclick={() => (viewMode = "stats")}>
+        Stats
+      </button>
+      <button type="button" role="tab" class:active={viewMode === "sparkline"} onclick={() => (viewMode = "sparkline")}>
+        Sparkline
+      </button>
+      <button type="button" role="tab" class:active={viewMode === "sparkbar"} onclick={() => (viewMode = "sparkbar")}>
+        Sparkbar
+      </button>
       {#if viewMode === "chart"}
         <label class="chart-pick">
           <span class="sr-only">Chart type</span>
@@ -349,8 +581,14 @@
       {:else if query.result}
         {#if viewMode === "grid"}
           <CellsetTable result={query.result} />
-        {:else}
+        {:else if viewMode === "chart"}
           <ChartView result={query.result} type={chartType} options={chartOptions} />
+        {:else if viewMode === "stats"}
+          <StatsView result={query.result} />
+        {:else if viewMode === "sparkline"}
+          <SparklineView result={query.result} mode="line" />
+        {:else if viewMode === "sparkbar"}
+          <SparklineView result={query.result} mode="bar" />
         {/if}
       {:else}
         <p class="canvas__hint">{i18n.t("canvas.buildPrompt")}</p>
@@ -413,6 +651,48 @@
   onCancel={() => (chartEditorOpen = false)}
 />
 
+<ContextMenu
+  open={menu.open}
+  x={menu.x}
+  y={menu.y}
+  items={menu.items}
+  onPick={onMenuPick}
+  onClose={() => (menu = { ...menu, open: false })}
+/>
+
+<CustomFilterModal
+  measureCaption={customFilterTarget?.caption ?? customFilterTarget?.name ?? ""}
+  open={customFilterOpen}
+  onApply={onCustomFilterApply}
+  onCancel={() => (customFilterOpen = false)}
+/>
+
+<FormatAsPercentageModal
+  defaultAxis="COLUMNS"
+  scope="all"
+  open={formatPctOpen}
+  onApply={onFormatPctApply}
+  onCancel={() => (formatPctOpen = false)}
+/>
+
+<GrowthModal
+  open={growthOpen}
+  onApply={onGrowthApply}
+  onCancel={() => (growthOpen = false)}
+/>
+
+{#if axisFilterTarget}
+  <FilterModal
+    axis={axisFilterTarget.axis}
+    expressionType={axisFilterTarget.type}
+    expression={axisFilterTarget.expression}
+    sortFunction={axisFilterTarget.sort as "ASC" | "BASC" | "DESC" | "BDESC"}
+    open={axisFilterOpen}
+    onSave={onAxisFilterSave}
+    onCancel={() => (axisFilterOpen = false)}
+  />
+{/if}
+
 <style>
   .canvas {
     flex: 1;
@@ -466,6 +746,9 @@
   }
   .dropzone--filter { background: var(--bg-subtle); }
   .dropzone header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     font-size: var(--fs-xs);
     font-weight: 600;
     text-transform: uppercase;
@@ -473,6 +756,20 @@
     color: var(--fg-muted);
     margin-bottom: var(--space-1);
   }
+  .dropzone__menu {
+    background: transparent;
+    border: 0;
+    color: var(--fg-subtle);
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .dropzone:hover .dropzone__menu { opacity: 1; }
+  .dropzone__menu:hover { background: var(--bg-subtle); color: var(--fg); }
   .chips {
     display: flex;
     flex-wrap: wrap;

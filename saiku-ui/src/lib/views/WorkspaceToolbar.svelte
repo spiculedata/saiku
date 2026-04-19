@@ -53,6 +53,7 @@
   let reportTitlesOpen = $state(false);
   let toolsMenuOpen = $state(false);
   let exportMenuOpen = $state(false);
+  let runMenuOpen = $state(false);
 
   let reportTitles = $state<ReportTitles>({ title: "", subtitle: "", notes: "" });
 
@@ -236,6 +237,7 @@
     if (t?.closest(".toolbar__menu")) return;
     toolsMenuOpen = false;
     exportMenuOpen = false;
+    runMenuOpen = false;
   }
 
   $effect(() => {
@@ -267,16 +269,30 @@
     </button>
   </div>
   <div class="toolbar__sep"></div>
-  <div class="toolbar__group" role="group" aria-label="Query">
-    <button class="tb-btn tb-btn--primary" title={i18n.t("toolbar.run")} onclick={onRun}>
-      <Play size={18} /><span class="tb-btn__label">{i18n.t("toolbar.run")}</span>
-    </button>
-    <label class="toolbar__toggle" title="Automatically run queries after each edit">
-      <input type="checkbox" bind:checked={query.autorun} /> {i18n.t("toolbar.autorun")}
-    </label>
-    <label class="toolbar__toggle" title="Hide empty rows and columns">
-      <input type="checkbox" bind:checked={nonEmpty} /> {i18n.t("toolbar.nonEmpty")}
-    </label>
+  <div class="toolbar__group toolbar__menu" role="group" aria-label="Query">
+    <div class="split-btn">
+      <button class="tb-btn tb-btn--primary split-btn__main" title={i18n.t("toolbar.run")} onclick={onRun}>
+        <Play size={18} /><span class="tb-btn__label">{i18n.t("toolbar.run")}</span>
+      </button>
+      <button
+        class="tb-btn tb-btn--primary split-btn__caret"
+        title="Run options"
+        aria-label="Run options"
+        onclick={(e) => { e.stopPropagation(); runMenuOpen = !runMenuOpen; toolsMenuOpen = false; exportMenuOpen = false; }}
+      ><ChevronDown size={14} /></button>
+    </div>
+    {#if runMenuOpen}
+      <div class="toolbar__dropdown">
+        <label class="toolbar__check" title="Automatically run queries after each edit">
+          <input type="checkbox" bind:checked={query.autorun} />
+          <span>{i18n.t("toolbar.autorun")}</span>
+        </label>
+        <label class="toolbar__check" title="Hide empty rows and columns">
+          <input type="checkbox" bind:checked={nonEmpty} />
+          <span>{i18n.t("toolbar.nonEmpty")}</span>
+        </label>
+      </div>
+    {/if}
     <button class="tb-btn" title={i18n.t("toolbar.swap")} aria-label={i18n.t("toolbar.swap")} onclick={() => query.swapAxes()}>
       <ArrowLeftRight size={18} />
     </button>
@@ -480,4 +496,32 @@
     border-color: var(--accent);
   }
   .tb-btn--primary:hover { filter: brightness(1.1); background: var(--accent); color: var(--bg); }
+
+  .split-btn {
+    display: inline-flex;
+    align-items: stretch;
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  .split-btn__main {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right: 1px solid rgba(0,0,0,0.25);
+  }
+  .split-btn__caret {
+    padding: 6px 6px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+  .toolbar__check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px;
+    cursor: pointer;
+    color: var(--fg);
+    font: inherit;
+    border-radius: 4px;
+  }
+  .toolbar__check:hover { background: var(--bg-subtle); }
 </style>
