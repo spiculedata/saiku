@@ -164,15 +164,29 @@ export function newQuery(cube: SaikuCube): ThinQuery {
 }
 
 export async function executeQuery(q: ThinQuery): Promise<QueryResult> {
+  // Kill-switch: set localStorage.saiku_force_json=1 to fall back to the
+  // legacy JSON path (e.g. for debugging an Arrow serialisation bug).
+  const forceJson =
+    typeof localStorage !== "undefined" && localStorage.getItem("saiku_force_json") === "1";
+  const accept = forceJson
+    ? "application/json"
+    : "application/vnd.apache.arrow.stream, application/json;q=0.1";
   const res = await fetch(`${REST_BASE}/execute`, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: { "Content-Type": "application/json", Accept: accept },
     body: JSON.stringify(q),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`execute ${res.status}: ${text.slice(0, 200)}`);
+  }
+  const contentType = res.headers.get("content-type") ?? "";
+  if (contentType.includes("arrow")) {
+    // Lazy-load the Arrow adapter so apache-arrow stays out of the initial
+    // bundle. The dynamic import means bundlers emit a separate chunk.
+    const { parseArrowExecute } = await import("$lib/api/arrow");
+    return parseArrowExecute(await res.arrayBuffer());
   }
   return (await res.json()) as QueryResult;
 }
