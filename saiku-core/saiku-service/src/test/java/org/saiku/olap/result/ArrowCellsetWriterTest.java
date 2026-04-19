@@ -11,6 +11,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.lang.reflect.InvocationHandler;
@@ -22,7 +23,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.FieldVector;
@@ -44,8 +44,6 @@ import org.olap4j.metadata.Hierarchy;
 import org.olap4j.metadata.Level;
 import org.olap4j.metadata.Member;
 import org.saiku.olap.query2.ThinQuery;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Exercises {@link ArrowCellsetWriter} against a hand-rolled fake CellSet
@@ -69,7 +67,7 @@ public class ArrowCellsetWriterTest {
         assertTrue("writer produced bytes", bytes.length > 0);
 
         try (BufferAllocator alloc = new RootAllocator();
-             ArrowStreamReader reader = new ArrowStreamReader(new ByteArrayInputStream(bytes), alloc)) {
+                ArrowStreamReader reader = new ArrowStreamReader(new ByteArrayInputStream(bytes), alloc)) {
             VectorSchemaRoot root = reader.getVectorSchemaRoot();
             Schema schema = root.getSchema();
 
@@ -113,7 +111,10 @@ public class ArrowCellsetWriterTest {
         List<String> out = new ArrayList<>();
         for (int i = 0; i < encoded.getValueCount(); i++) {
             Object idxObj = encoded.getObject(i);
-            if (idxObj == null) { out.add(null); continue; }
+            if (idxObj == null) {
+                out.add(null);
+                continue;
+            }
             int idx = ((Number) idxObj).intValue();
             byte[] b = dictVec.get(idx);
             out.add(b == null ? null : new String(b, java.nio.charset.StandardCharsets.UTF_8));
@@ -124,15 +125,13 @@ public class ArrowCellsetWriterTest {
     // --- fakes via Proxy ---------------------------------------------------
 
     private static <T> T proxy(Class<T> iface, Map<String, Object> answers) {
-        return proxy(new Class<?>[]{iface}, answers, iface);
+        return proxy(new Class<?>[] {iface}, answers, iface);
     }
 
     @SuppressWarnings("unchecked")
     private static <T> T proxy(Class<?>[] ifaces, Map<String, Object> answers, Class<T> primary) {
-        Object obj = Proxy.newProxyInstance(
-                ArrowCellsetWriterTest.class.getClassLoader(),
-                ifaces,
-                new InvocationHandler() {
+        Object obj =
+                Proxy.newProxyInstance(ArrowCellsetWriterTest.class.getClassLoader(), ifaces, new InvocationHandler() {
                     @Override
                     public Object invoke(Object p, Method m, Object[] a) {
                         if ("toString".equals(m.getName())) return primary.getSimpleName() + "@fake";
@@ -159,7 +158,8 @@ public class ArrowCellsetWriterTest {
     private CellSet buildFakeCellSet() {
         // Row axis members
         Dimension dim = proxy(Dimension.class, map("getName", "Store"));
-        Hierarchy hier = proxy(Hierarchy.class, map("getName", "Store", "getUniqueName", "[Store]", "getDimension", dim));
+        Hierarchy hier =
+                proxy(Hierarchy.class, map("getName", "Store", "getUniqueName", "[Store]", "getDimension", dim));
         Level lvl = proxy(Level.class, map("getName", "State", "getUniqueName", "[Store].[State]"));
 
         Member mUSA = member("USA", "[Store].[USA]", dim, hier, lvl);
@@ -179,12 +179,13 @@ public class ArrowCellsetWriterTest {
 
         // Column axis: measures
         Dimension mdim = proxy(Dimension.class, map("getName", "Measures"));
-        Hierarchy mhier = proxy(Hierarchy.class, map("getName", "Measures", "getUniqueName", "[Measures]", "getDimension", mdim));
+        Hierarchy mhier =
+                proxy(Hierarchy.class, map("getName", "Measures", "getUniqueName", "[Measures]", "getDimension", mdim));
         Level mlvl = proxy(Level.class, map("getName", "MeasuresLevel", "getUniqueName", "[Measures].[MeasuresLevel]"));
         Member meas1 = member("Unit Sales", "[Measures].[Unit Sales]", mdim, mhier, mlvl);
         Member meas2 = member("Store Sales", "[Measures].[Store Sales]", mdim, mhier, mlvl);
-        List<Position> colPositions = Arrays.asList(pos(Collections.singletonList(meas1)),
-                pos(Collections.singletonList(meas2)));
+        List<Position> colPositions =
+                Arrays.asList(pos(Collections.singletonList(meas1)), pos(Collections.singletonList(meas2)));
         Map<String, Object> colAxisAnswers = new HashMap<>();
         colAxisAnswers.put("getAxisOrdinal", Axis.COLUMNS);
         colAxisAnswers.put("getPositions", colPositions);
@@ -192,9 +193,9 @@ public class ArrowCellsetWriterTest {
         CellSetAxis colAxis = proxy(CellSetAxis.class, colAxisAnswers);
 
         double[][] values = {
-            { 1.0, 10.0 },
-            { 2.0, 20.0 },
-            { 3.0, 30.0 }
+            {1.0, 10.0},
+            {2.0, 20.0},
+            {3.0, 30.0}
         };
         final Map<List<Integer>, Cell> cellByCoord = new HashMap<>();
         for (int r = 0; r < 3; r++) {
@@ -213,18 +214,23 @@ public class ArrowCellsetWriterTest {
         // CellSet proxy — override getCell(List) dynamically.
         InvocationHandler cellSetHandler = new InvocationHandler() {
             final List<CellSetAxis> axes = Arrays.asList(colAxis, rowAxis);
+
             @Override
             public Object invoke(Object p, Method m, Object[] a) {
                 switch (m.getName()) {
-                    case "getAxes": return axes;
+                    case "getAxes":
+                        return axes;
                     case "getCell":
                         if (a != null && a.length == 1 && a[0] instanceof List) {
                             return cellByCoord.get(a[0]);
                         }
                         return null;
-                    case "toString": return "CellSet@fake";
-                    case "equals": return p == a[0];
-                    case "hashCode": return System.identityHashCode(p);
+                    case "toString":
+                        return "CellSet@fake";
+                    case "equals":
+                        return p == a[0];
+                    case "hashCode":
+                        return System.identityHashCode(p);
                     default:
                         Class<?> rt = m.getReturnType();
                         if (rt == boolean.class) return false;
@@ -237,9 +243,7 @@ public class ArrowCellsetWriterTest {
             }
         };
         return (CellSet) Proxy.newProxyInstance(
-                ArrowCellsetWriterTest.class.getClassLoader(),
-                new Class<?>[]{CellSet.class},
-                cellSetHandler);
+                ArrowCellsetWriterTest.class.getClassLoader(), new Class<?>[] {CellSet.class}, cellSetHandler);
     }
 
     private static Member member(String caption, String uniqueName, Dimension d, Hierarchy h, Level l) {

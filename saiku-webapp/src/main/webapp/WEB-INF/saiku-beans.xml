@@ -164,11 +164,18 @@
         <property name="platformUtilsService" ref="platformBean"/>
     </bean>
 
+    <bean id="asyncQueryServiceBean"
+          class="org.saiku.service.async.AsyncQueryService"
+          destroy-method="shutdown">
+        <property name="thinQueryService" ref="thinQueryBean"/>
+    </bean>
+
     <bean id="queryResource2" scope="request"
           class="org.saiku.web.rest.resources.Query2Resource">
         <aop:scoped-proxy/>
         <property name="thinQueryService" ref="thinQueryBean"/>
         <property name="repository" ref="repository2bean"/>
+        <property name="asyncQueryService" ref="asyncQueryServiceBean"/>
     </bean>
 
     <bean id="sessionResource" class="org.saiku.web.rest.resources.SessionResource">

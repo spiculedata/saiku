@@ -47,6 +47,8 @@ import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.olap.result.ArrowCellsetWriter;
 import org.saiku.olap.util.SaikuProperties;
+import org.saiku.service.async.AsyncQueryHandle;
+import org.saiku.service.async.AsyncQueryService;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.drillthrough.DrillThroughResult;
 import org.saiku.service.util.exception.SaikuServiceException;
@@ -78,6 +80,16 @@ public class Query2Resource {
     // @Autowired
     public void setRepository(ISaikuRepository repository) {
         this.repository = repository;
+    }
+
+    private AsyncQueryService asyncQueryService;
+
+    public void setAsyncQueryService(AsyncQueryService asyncQueryService) {
+        this.asyncQueryService = asyncQueryService;
+    }
+
+    public AsyncQueryService getAsyncQueryService() {
+        return asyncQueryService;
     }
 
     /**
@@ -202,7 +214,9 @@ public class Query2Resource {
         } catch (Exception e) {
             log.error("Cannot execute query (" + tq + ")", e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            return Response.ok(new QueryResult(error)).type(MediaType.APPLICATION_JSON).build();
+            return Response.ok(new QueryResult(error))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
         }
     }
 
@@ -241,6 +255,138 @@ public class Query2Resource {
             }
         };
         return Response.ok(body, ARROW_STREAM_MEDIA_TYPE).build();
+    }
+
+    // ===== Async execute / status / result / cancel ==========================
+
+    /**
+     * Kick off an async query execution.
+     * @summary Submit a query for async execution.
+     * @param tq The thin query
+     * @return 202 Accepted + { queryId, status: "PENDING" }
+     */
+    @POST
+    @Consumes({"application/json"})
+    @Produces({"application/json"})
+    @Path("/execute-async")
+    public Response executeAsync(ThinQuery tq) {
+        if (asyncQueryService == null) {
+            return Response.serverError()
+                    .entity("AsyncQueryService not configured")
+                    .build();
+        }
+        try {
+            AsyncQueryHandle h = asyncQueryService.submit(tq);
+            Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put("queryId", h.getId());
+            body.put("status", h.getStatus().name());
+            return Response.status(Status.ACCEPTED)
+                    .entity(body)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        } catch (Exception e) {
+            log.error("Cannot submit async query", e);
+            return Response.serverError()
+                    .entity(ExceptionUtils.getRootCauseMessage(e))
+                    .build();
+        }
+    }
+
+    /**
+     * Poll async query status.
+     * @summary Async status.
+     * @param id The async handle id
+     * @return { id, status, errorMessage? }
+     */
+    @GET
+    @Produces({"application/json"})
+    @Path("/{id}/status")
+    public Response asyncStatus(@PathParam("id") String id) {
+        if (asyncQueryService == null) {
+            return Response.status(Status.NOT_FOUND).build();
+        }
+        AsyncQueryHandle h = asyncQueryService.get(id);
+        if (h == null) {
+            return Response.status(Status.NOT_FOUND).build();
+        }
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("id", h.getId());
+        body.put("status", h.getStatus().name());
+        if (h.getErrorMessage() != null) {
+            body.put("errorMessage", h.getErrorMessage());
+        }
+        return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
+     * Fetch a completed async result. Content-negotiates Arrow vs JSON. Only
+     * valid once status == DONE; otherwise 409 CONFLICT.
+     * @summary Async result.
+     * @param id The async handle id
+     * @return Arrow stream or JSON QueryResult
+     */
+    @GET
+    @Produces({ARROW_STREAM_MEDIA_TYPE, "application/json"})
+    @Path("/{id}/result")
+    public Response asyncResult(@PathParam("id") String id, @Context HttpHeaders headers) {
+        if (asyncQueryService == null) {
+            return Response.status(Status.NOT_FOUND).build();
+        }
+        AsyncQueryHandle h = asyncQueryService.get(id);
+        if (h == null) {
+            return Response.status(Status.NOT_FOUND).build();
+        }
+        if (h.getStatus() == AsyncQueryHandle.Status.FAILED) {
+            return Response.status(Status.INTERNAL_SERVER_ERROR)
+                    .entity(new QueryResult(h.getErrorMessage() == null ? "failed" : h.getErrorMessage()))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        if (h.getStatus() != AsyncQueryHandle.Status.DONE) {
+            // PENDING, RUNNING, CANCELLED — not ready.
+            return Response.status(Status.CONFLICT)
+                    .entity(h.getStatus().name())
+                    .type(MediaType.TEXT_PLAIN)
+                    .build();
+        }
+        final CellSet cellSet = asyncQueryService.result(id);
+        if (cellSet == null) {
+            return Response.status(Status.NOT_FOUND).build();
+        }
+        final ThinQuery tqAfter = h.getQuery();
+
+        if (clientPrefersArrow(headers)) {
+            StreamingOutput body = new StreamingOutput() {
+                @Override
+                public void write(java.io.OutputStream output) throws java.io.IOException {
+                    new ArrowCellsetWriter().write(cellSet, tqAfter, output);
+                }
+            };
+            return Response.ok(body, ARROW_STREAM_MEDIA_TYPE).build();
+        }
+        CellDataSet cds = org.saiku.olap.util.OlapResultSetUtil.cellSet2Matrix(cellSet);
+        QueryResult qr = RestUtil.convert(cds);
+        qr.setQuery(tqAfter);
+        return Response.ok(qr).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
+     * Cancel a running async query.
+     * @summary Async cancel.
+     * @param id The async handle id
+     * @return 204 No Content on success, 404 otherwise.
+     */
+    @DELETE
+    @Path("/{id}/cancel")
+    public Response asyncCancel(@PathParam("id") String id) {
+        if (asyncQueryService == null) {
+            return Response.status(Status.NOT_FOUND).build();
+        }
+        boolean cancelled = asyncQueryService.cancel(id);
+        if (!cancelled) {
+            return Response.status(Status.NOT_FOUND).build();
+        }
+        return Response.status(Status.NO_CONTENT).build();
     }
 
     /**

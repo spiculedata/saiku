@@ -1,0 +1,242 @@
+/*
+ *   Copyright 2026 Spicule Ltd
+ *
+ *   Licensed under the Apache License, Version 2.0 (the "License");
+ *   you may not use this file except in compliance with the License.
+ */
+package org.saiku.service.async;
+
+import java.sql.SQLException;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.olap4j.CellSet;
+import org.saiku.olap.query2.ThinQuery;
+import org.saiku.service.olap.ThinQueryService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Wraps {@link ThinQueryService} with a fire-and-poll asynchronous execution
+ * lifecycle so clients can kick off long-running MDX queries, poll for status,
+ * then stream the result only when it's ready.
+ *
+ * <p>Threading model:
+ * <ul>
+ *   <li>A {@link ThreadPoolExecutor} (default 4/16/200) runs the actual OLAP
+ *       work off-request-thread.</li>
+ *   <li>A scheduled sweeper evicts completed handles: those whose result was
+ *       already fetched and are &gt;5 min idle, or (failsafe) any handle
+ *       terminal for &gt;30 min.</li>
+ *   <li>Cancellation interrupts the future and best-effort cancels the OLAP
+ *       statement via {@link ThinQueryService#cancel(String)} (off the caller
+ *       thread to avoid blocking the request).</li>
+ * </ul>
+ *
+ * <p>The synchronous {@code /execute} path is untouched — this class does not
+ * sit in the middle of it.
+ */
+public class AsyncQueryService {
+
+    private static final Logger log = LoggerFactory.getLogger(AsyncQueryService.class);
+
+    private static final long SWEEP_PERIOD_SECONDS = 60L;
+    private static final long IDLE_AFTER_FETCH_MS = TimeUnit.MINUTES.toMillis(5);
+    private static final long IDLE_FAILSAFE_MS = TimeUnit.MINUTES.toMillis(30);
+
+    private ThinQueryService thinQueryService;
+
+    private final ThreadPoolExecutor executor;
+    private final ScheduledExecutorService sweeper;
+    private final ConcurrentHashMap<String, AsyncQueryHandle> handles = new ConcurrentHashMap<>();
+
+    public AsyncQueryService() {
+        this(defaultExecutor());
+    }
+
+    public AsyncQueryService(ThreadPoolExecutor executor) {
+        this.executor = executor;
+        this.sweeper = Executors.newSingleThreadScheduledExecutor(namedDaemon("saiku-async-sweeper"));
+        this.sweeper.scheduleAtFixedRate(this::sweep, SWEEP_PERIOD_SECONDS, SWEEP_PERIOD_SECONDS, TimeUnit.SECONDS);
+    }
+
+    public void setThinQueryService(ThinQueryService thinQueryService) {
+        this.thinQueryService = thinQueryService;
+    }
+
+    public ThinQueryService getThinQueryService() {
+        return thinQueryService;
+    }
+
+    private static ThreadPoolExecutor defaultExecutor() {
+        ThreadPoolExecutor tpe = new ThreadPoolExecutor(
+                4, 16, 60L, TimeUnit.SECONDS, new LinkedBlockingQueue<>(200), namedDaemon("saiku-async-query"));
+        tpe.allowCoreThreadTimeOut(false);
+        return tpe;
+    }
+
+    private static ThreadFactory namedDaemon(final String base) {
+        final AtomicInteger seq = new AtomicInteger(0);
+        return r -> {
+            Thread t = new Thread(r, base + "-" + seq.incrementAndGet());
+            t.setDaemon(true);
+            return t;
+        };
+    }
+
+    /**
+     * Submit a query for async execution. Returns immediately with a handle
+     * whose status is {@code PENDING} until the worker picks it up.
+     */
+    public AsyncQueryHandle submit(final ThinQuery query) {
+        if (thinQueryService == null) {
+            throw new IllegalStateException("AsyncQueryService.thinQueryService not wired — cannot submit");
+        }
+        final String id = UUID.randomUUID().toString();
+        final AsyncQueryHandle handle = new AsyncQueryHandle(id, query);
+        handles.put(id, handle);
+
+        CompletableFuture<CellSet> fut = CompletableFuture.supplyAsync(
+                () -> {
+                    handle.compareAndSetStatus(AsyncQueryHandle.Status.PENDING, AsyncQueryHandle.Status.RUNNING);
+                    thinQueryService.execute(query);
+                    // ThinQueryService.execute stashes the CellSet into its
+                    // per-query context keyed by the query name; fetch it.
+                    return thinQueryService.getContext(query.getName()).getOlapResult();
+                },
+                executor);
+
+        fut.whenComplete((cellSet, err) -> {
+            handle.touch();
+            if (err != null) {
+                // CompletableFuture wraps in CompletionException — unwrap.
+                Throwable root = err.getCause() != null ? err.getCause() : err;
+                if (handle.getStatus() != AsyncQueryHandle.Status.CANCELLED) {
+                    handle.setStatus(AsyncQueryHandle.Status.FAILED);
+                    handle.setErrorMessage(
+                            root.getMessage() == null ? root.getClass().getSimpleName() : root.getMessage());
+                }
+                log.debug("Async query {} failed: {}", id, root.toString());
+            } else {
+                handle.compareAndSetStatus(AsyncQueryHandle.Status.RUNNING, AsyncQueryHandle.Status.DONE);
+            }
+        });
+
+        handle.setFuture(fut);
+        return handle;
+    }
+
+    public AsyncQueryHandle get(String id) {
+        AsyncQueryHandle h = handles.get(id);
+        if (h != null) {
+            h.touch();
+        }
+        return h;
+    }
+
+    /**
+     * Fetch the completed CellSet for {@code id}. Marks the handle as
+     * result-fetched so the sweeper can evict it after the idle window.
+     * Returns null if the handle is missing or not yet DONE.
+     */
+    public CellSet result(String id) {
+        AsyncQueryHandle h = handles.get(id);
+        if (h == null) {
+            return null;
+        }
+        if (h.getStatus() != AsyncQueryHandle.Status.DONE) {
+            return null;
+        }
+        CompletableFuture<CellSet> f = h.getFuture();
+        if (f == null) {
+            return null;
+        }
+        try {
+            CellSet cs = f.getNow(null);
+            if (cs != null) {
+                h.markResultFetched();
+            }
+            return cs;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Cancel a running/pending query. Cancels the future and schedules a
+     * best-effort statement cancel on the executor so we don't block the
+     * calling thread on the JDBC/OLAP driver.
+     */
+    public boolean cancel(final String id) {
+        final AsyncQueryHandle h = handles.get(id);
+        if (h == null) {
+            return false;
+        }
+        h.setStatus(AsyncQueryHandle.Status.CANCELLED);
+        CompletableFuture<CellSet> fut = h.getFuture();
+        if (fut != null) {
+            fut.cancel(true);
+        }
+        // Best-effort: close the underlying OLAP statement off-thread.
+        final ThinQueryService tqs = this.thinQueryService;
+        if (tqs != null && h.getQuery() != null && h.getQuery().getName() != null) {
+            executor.execute(() -> {
+                try {
+                    tqs.cancel(h.getQuery().getName());
+                } catch (SQLException e) {
+                    log.debug("Cancel for {} couldn't close statement: {}", id, e.toString());
+                } catch (Exception e) {
+                    log.debug("Cancel for {} failed: {}", id, e.toString());
+                }
+            });
+        }
+        return true;
+    }
+
+    /** Visible for tests / metrics. */
+    public int size() {
+        return handles.size();
+    }
+
+    void sweep() {
+        try {
+            long now = System.currentTimeMillis();
+            Iterator<Map.Entry<String, AsyncQueryHandle>> it =
+                    handles.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<String, AsyncQueryHandle> e = it.next();
+                AsyncQueryHandle h = e.getValue();
+                AsyncQueryHandle.Status s = h.getStatus();
+                boolean terminal = s == AsyncQueryHandle.Status.DONE
+                        || s == AsyncQueryHandle.Status.FAILED
+                        || s == AsyncQueryHandle.Status.CANCELLED;
+                if (!terminal) {
+                    continue;
+                }
+                long idle = now - h.getLastAccessedAt();
+                if (h.isResultFetched() && idle > IDLE_AFTER_FETCH_MS) {
+                    it.remove();
+                } else if (idle > IDLE_FAILSAFE_MS) {
+                    it.remove();
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("async-query sweeper hiccup: {}", ex.toString());
+        }
+    }
+
+    /** Shut the executor down — call from webapp shutdown if desired. */
+    public void shutdown() {
+        sweeper.shutdownNow();
+        executor.shutdownNow();
+    }
+}

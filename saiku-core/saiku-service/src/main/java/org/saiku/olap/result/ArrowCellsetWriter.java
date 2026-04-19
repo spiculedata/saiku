@@ -8,7 +8,6 @@
 package org.saiku.olap.result;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.channels.Channels;
@@ -19,7 +18,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
-
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.FieldVector;
@@ -78,8 +76,8 @@ public final class ArrowCellsetWriter {
             Schema schema = new Schema(fields, buildMetadata(shape, query, started));
 
             try (VectorSchemaRoot root = VectorSchemaRoot.create(schema, allocator);
-                 DictionaryProvider.MapDictionaryProvider provider =
-                         new DictionaryProvider.MapDictionaryProvider()) {
+                    DictionaryProvider.MapDictionaryProvider provider =
+                            new DictionaryProvider.MapDictionaryProvider()) {
 
                 // Create dictionary vectors, one per dictionary id. We populate
                 // them in fillRoot() as values are encountered.
@@ -98,13 +96,11 @@ public final class ArrowCellsetWriter {
                     // finalise dictionary vectors and register with provider
                     for (DictBuilder db : dicts.values()) {
                         db.vector.setValueCount(db.size());
-                        DictionaryEncoding enc = new DictionaryEncoding(
-                                db.id, false, new ArrowType.Int(32, true));
+                        DictionaryEncoding enc = new DictionaryEncoding(db.id, false, new ArrowType.Int(32, true));
                         provider.put(new Dictionary(db.vector, enc));
                     }
 
-                    try (ArrowStreamWriter writer = new ArrowStreamWriter(
-                            root, provider, Channels.newChannel(out))) {
+                    try (ArrowStreamWriter writer = new ArrowStreamWriter(root, provider, Channels.newChannel(out))) {
                         writer.start();
                         writer.writeBatch();
                         writer.end();
@@ -121,9 +117,7 @@ public final class ArrowCellsetWriter {
 
     // ---- schema ----------------------------------------------------------
 
-    private static List<Field> buildFields(CellsetShape shape,
-                                           AtomicLong dictIdSeq,
-                                           Map<String, Long> dictIds) {
+    private static List<Field> buildFields(CellsetShape shape, AtomicLong dictIdSeq, Map<String, Long> dictIds) {
         List<Field> fields = new ArrayList<>();
 
         String[] rowSuffixes = {"_value", "_uniqueName", "_dimension", "_hierarchy", "_level"};
@@ -134,7 +128,8 @@ public final class ArrowCellsetWriter {
             }
         }
         for (int j = 0; j < shape.dataColCount; j++) {
-            fields.add(new Field("c" + j + "_raw",
+            fields.add(new Field(
+                    "c" + j + "_raw",
                     FieldType.nullable(new ArrowType.FloatingPoint(FloatingPointPrecision.DOUBLE)),
                     null));
             fields.add(dictStringField("c" + j + "_fmt", dictIdSeq, dictIds));
@@ -142,9 +137,7 @@ public final class ArrowCellsetWriter {
         return fields;
     }
 
-    private static Field dictStringField(String name,
-                                         AtomicLong dictIdSeq,
-                                         Map<String, Long> dictIds) {
+    private static Field dictStringField(String name, AtomicLong dictIdSeq, Map<String, Long> dictIds) {
         long id = dictIdSeq.getAndIncrement();
         dictIds.put(name, id);
         DictionaryEncoding enc = new DictionaryEncoding(id, false, new ArrowType.Int(32, true));
@@ -153,9 +146,7 @@ public final class ArrowCellsetWriter {
         return new Field(name, ft, null);
     }
 
-    private static Map<String, String> buildMetadata(CellsetShape shape,
-                                                     ThinQuery query,
-                                                     long started) {
+    private static Map<String, String> buildMetadata(CellsetShape shape, ThinQuery query, long started) {
         Map<String, Object> blob = new LinkedHashMap<>();
         blob.put("rowHeaderColCount", shape.rowHeaderColCount);
         blob.put("columnHeaderRows", shape.columnHeaderRows);
@@ -176,10 +167,8 @@ public final class ArrowCellsetWriter {
 
     // ---- body ------------------------------------------------------------
 
-    private static void fillRoot(VectorSchemaRoot root,
-                                 CellSet cellSet,
-                                 CellsetShape shape,
-                                 Map<String, DictBuilder> dicts) {
+    private static void fillRoot(
+            VectorSchemaRoot root, CellSet cellSet, CellsetShape shape, Map<String, DictBuilder> dicts) {
         int rowCount = shape.rowCount;
         root.setRowCount(rowCount);
 
@@ -279,7 +268,9 @@ public final class ArrowCellsetWriter {
         return (IntVector) v;
     }
 
-    private static String nullToEmpty(String s) { return s == null ? "" : s; }
+    private static String nullToEmpty(String s) {
+        return s == null ? "" : s;
+    }
 
     private static String safeCaption(Member m) {
         String c = m.getCaption();
@@ -311,7 +302,9 @@ public final class ArrowCellsetWriter {
             return idx;
         }
 
-        int size() { return next; }
+        int size() {
+            return next;
+        }
     }
 
     /**
@@ -326,11 +319,12 @@ public final class ArrowCellsetWriter {
         final List<List<String>> columnHeaderRows;
         final List<Position> rowPositions;
 
-        private CellsetShape(int rowHeaderColCount,
-                             int dataColCount,
-                             int rowCount,
-                             List<List<String>> columnHeaderRows,
-                             List<Position> rowPositions) {
+        private CellsetShape(
+                int rowHeaderColCount,
+                int dataColCount,
+                int rowCount,
+                List<List<String>> columnHeaderRows,
+                List<Position> rowPositions) {
             this.rowHeaderColCount = rowHeaderColCount;
             this.dataColCount = dataColCount;
             this.rowCount = rowCount;
@@ -389,8 +383,7 @@ public final class ArrowCellsetWriter {
                 colHeaderRows.add(new ArrayList<>());
             }
 
-            return new CellsetShape(rowHeaderDepth, dataColCount, rowCount,
-                    colHeaderRows, rowPositions);
+            return new CellsetShape(rowHeaderDepth, dataColCount, rowCount, colHeaderRows, rowPositions);
         }
     }
 }
