@@ -16,8 +16,6 @@
 package org.saiku.web.rest.resources;
 
 import com.qmino.miredot.annotations.ReturnType;
-import com.sun.jersey.core.header.FormDataContentDisposition;
-import com.sun.jersey.multipart.FormDataParam;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -27,17 +25,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.FormParam;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
@@ -48,7 +35,17 @@ import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * QueryServlet contains all the methods required when manipulating an OLAP Query.
@@ -56,14 +53,14 @@ import org.springframework.stereotype.Component;
  *
  */
 @Component
-@Path("/saiku/api/repository")
+@RestController
+@RequestMapping("/saiku/api/repository")
 public class BasicRepositoryResource2 implements ISaikuRepository {
 
     private static final Logger log = LoggerFactory.getLogger(BasicRepositoryResource2.class);
 
     private ISessionService sessionService;
 
-    // private Acl acl;
     private DatasourceService datasourceService;
     private File repo;
 
@@ -86,25 +83,15 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
         }
     }
 
-    /*public void setAcl(Acl acl) {
-    	this.acl = acl;
-    }*/
-
-    /**
-     * Sets the sessionService
-     * @summary Set the session service
-     * @param sessionService The session service
-     */
     public void setSessionService(ISessionService sessionService) {
         this.sessionService = sessionService;
     }
 
-    /* (non-Javadoc)
-     * @see org.saiku.web.rest.resources.ISaikuRepository#getRepository(java.lang.String, java.lang.String)
-     */
-    @GET
-    @Produces({"application/json"})
-    public List<IRepositoryObject> getRepository(@QueryParam("path") String path, @QueryParam("type") String type) {
+    @Override
+    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+    public List<IRepositoryObject> getRepository(
+            @RequestParam(name = "path", required = false) String path,
+            @RequestParam(name = "type", required = false) String type) {
         if (sessionService == null
                 || sessionService.getAllSessionObjects() == null
                 || sessionService.getAllSessionObjects().get("username") == null) {
@@ -128,15 +115,10 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
 
     /**
      * Get the ACL information for a given resource.
-     * @summary Get ACL information.
-     * @param file The file object
-     * @return An AclEntry Object.
      */
-    @GET
-    @Produces({"application/json"})
-    @Path("/resource/acl")
+    @GetMapping(path = "/resource/acl", produces = MediaType.APPLICATION_JSON_VALUE)
     @ReturnType("org.saiku.repository.AclEntry")
-    public AclEntry getResourceAcl(@QueryParam("file") String file) {
+    public AclEntry getResourceAcl(@RequestParam(name = "file", required = false) String file) {
         try {
             String username =
                     sessionService.getAllSessionObjects().get("username").toString();
@@ -152,40 +134,26 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
 
     /**
      * Set the ACL information for a file/folder.
-     * @summary Set the ACL information
-     * @param file The file you want to change
-     * @param aclEntry The ACL information.
-     * @return A response 200.
      */
-    @POST
-    @Produces({"application/json"})
-    @Path("/resource/acl")
-    public Response setResourceAcl(@FormParam("file") String file, @FormParam("acl") String aclEntry) {
+    @PostMapping(path = "/resource/acl", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> setResourceAcl(
+            @RequestParam("file") String file, @RequestParam("acl") String aclEntry) {
         try {
             String username =
                     sessionService.getAllSessionObjects().get("username").toString();
             List<String> roles =
                     (List<String>) sessionService.getAllSessionObjects().get("roles");
             datasourceService.setResourceACL(file, aclEntry, username, roles);
-            return Response.ok().build();
-
-            // log.debug("Repo file does not exist or cannot grant access. repo file:" + repoFile + " - file: " + file);
+            return ResponseEntity.ok().build();
         } catch (Exception e) {
             log.error("An error occured while setting permissions to file: " + file, e);
         }
-        return Response.serverError().build();
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
     }
 
-    /**
-     * Get an object from the repository.
-     * @summary Fetch from the repository.
-     * @param file - The name of the repository file to load.
-     * @return A response containing the file data.
-     */
-    @GET
-    @Produces({"text/plain"})
-    @Path("/resource")
-    public Response getResource(@QueryParam("file") String file) {
+    @Override
+    @GetMapping(path = "/resource", produces = MediaType.TEXT_PLAIN_VALUE)
+    public ResponseEntity<?> getResource(@RequestParam(name = "file", required = false) String file) {
         String username = sessionService.getAllSessionObjects().get("username").toString();
         List<String> roles =
                 (List<String>) sessionService.getAllSessionObjects().get("roles");
@@ -196,156 +164,79 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
         } catch (UnsupportedEncodingException e) {
             log.error("Error reading file encoding", e);
         }
-        return Response.ok(data, MediaType.TEXT_PLAIN)
-                .header("content-length", data.length)
-                .build();
-        /*
-        			if ( !acl.canRead(file, username, roles) ) {
-        				return Response.serverError().status(Status.FORBIDDEN).build();
-        			}
-        */
+        return ResponseEntity.ok()
+                .contentType(MediaType.TEXT_PLAIN)
+                .header("content-length", String.valueOf(data.length))
+                .body(data);
     }
 
-    /**
-     * Save an object to the repository.
-     * @summary Save object
-     * @param file - The name of the repository file to load.
-     * @param content - The content to save.
-     * @return A response status 200.
-     */
-    @POST
-    @Path("/resource")
-    public Response saveResource(@FormParam("file") String file, @FormParam("content") String content) {
+    @Override
+    @PostMapping("/resource")
+    public ResponseEntity<?> saveResource(
+            @RequestParam(name = "file") String file, @RequestParam(name = "content") String content) {
         String username = sessionService.getAllSessionObjects().get("username").toString();
         List<String> roles =
                 (List<String>) sessionService.getAllSessionObjects().get("roles");
         String resp = datasourceService.saveFile(content, file, username, roles);
         if (resp.equals("Save Okay")) {
-            return Response.ok().build();
+            return ResponseEntity.ok().build();
         } else {
-            return Response.serverError()
-                    .entity("Cannot save resource to ( file: " + file + ")")
-                    .type("text/plain")
-                    .build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .contentType(MediaType.TEXT_PLAIN)
+                    .body("Cannot save resource to ( file: " + file + ")");
         }
-        /*
-        		return Response.serverError().status(Status.FORBIDDEN)
-        					.entity("You don't have permissions to save here!")
-        						.type("text/plain").build();
-        */
     }
 
-    /**
-     * Delete a resource from the repository
-     * @param file - The name of the repository file to load.
-     * @return a response status 200.
-     */
-    @DELETE
-    @Path("/resource")
-    public Response deleteResource(@QueryParam("file") String file) {
+    @Override
+    @DeleteMapping("/resource")
+    public ResponseEntity<?> deleteResource(@RequestParam(name = "file", required = false) String file) {
         String username = sessionService.getAllSessionObjects().get("username").toString();
         List<String> roles =
                 (List<String>) sessionService.getAllSessionObjects().get("roles");
         String resp = datasourceService.removeFile(file, username, roles);
         if (resp.equals("Remove Okay")) {
-            return Response.ok().build();
+            return ResponseEntity.ok().build();
         } else {
-            return Response.serverError()
-                    .entity("Cannot save resource to ( file: " + file + ")")
-                    .type("text/plain")
-                    .build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .contentType(MediaType.TEXT_PLAIN)
+                    .body("Cannot save resource to ( file: " + file + ")");
         }
     }
 
     /**
      * Move an object within the repository.
-     * @summary Move object.
-     * @param source Source object
-     * @param target Target location
-     * @return A response status 200
      */
-    @POST
-    @Path("/resource/move")
-    public Response moveResource(@FormParam("source") String source, @FormParam("target") String target) {
+    @PostMapping("/resource/move")
+    public ResponseEntity<?> moveResource(
+            @RequestParam("source") String source, @RequestParam("target") String target) {
         String username = sessionService.getAllSessionObjects().get("username").toString();
         List<String> roles =
                 (List<String>) sessionService.getAllSessionObjects().get("roles");
         String resp = datasourceService.moveFile(source, target, username, roles);
         if (resp.equals("Move Okay")) {
-            return Response.ok().entity("{}").build();
+            return ResponseEntity.ok("{}");
         } else {
-            return Response.serverError()
-                    .entity("Cannot move resource to ( file: " + target + ")")
-                    .type("text/plain")
-                    .build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .contentType(MediaType.TEXT_PLAIN)
+                    .body("Cannot move resource to ( file: " + target + ")");
         }
-
-        /*try {
-        	if (source == null || source.startsWith("/") || source.startsWith(".")) {
-        		throw new IllegalArgumentException("Path cannot be null or start with \"/\" or \".\" - Illegal Path: " + source);
-        	}
-        	if (target == null || target.startsWith("/") || target.startsWith(".")) {
-        		throw new IllegalArgumentException("Path cannot be null or start with \"/\" or \".\" - Illegal Path: " + target);
-        	}
-
-        	String username = sessionService.getAllSessionObjects().get("username").toString();
-        	List<String> roles = (List<String> ) sessionService.getAllSessionObjects().get("roles");
-        	FileObject targetFile = repo.resolveFile(target);
-
-        	if ( !acl.canWrite(target,username, roles) ) {
-        		return Response.serverError().status(Status.FORBIDDEN)
-        					.entity("You don't have permissions to save here!")
-        						.type("text/plain").build();
-        	}
-
-        	if (targetFile == null) throw new Exception("Repo File not found");
-
-        	if (targetFile.exists()) {
-        		throw new Exception("Target file exists already. Cannot write: " + target);
-        	}
-
-        	FileObject sourceFile = repo.resolveFile(source);
-        	if ( !acl.canRead(source, username, roles) ) {
-        		return Response.serverError().status(Status.FORBIDDEN).entity("You don't have permissions to read the source file: " + source).build();
-        	}
-
-        	if (!sourceFile.exists()) {
-        		throw new Exception("Source file does not exist: " + source);
-        	}
-        	if (!sourceFile.canRenameTo(targetFile)) {
-        		throw new Exception("Cannot rename " + source + " to " + target);
-        	}
-        	sourceFile.moveTo(targetFile);
-        	return Response.ok().build();
-        } catch(Exception e){
-        	log.error("Cannot move resource from " + source + " to " + target ,e);
-        	return Response.serverError().entity("Cannot move resource from " + source + " to " + target + " ( " + e.getMessage() + ")").type("text/plain").build();
-        }
-        */
     }
 
     /**
      * Upload a zip archive to the server.
-     * @param test Not used.
-     * @param uploadedInputStream File Info
-     * @param fileDetail File Info
-     * @param directory Location
-     * @return A response status 200
      */
-    @POST
-    @Path("/zipupload")
-    @Consumes(MediaType.MULTIPART_FORM_DATA)
-    public Response uploadArchiveZip(
-            @QueryParam("test") String test,
-            @FormDataParam("file") InputStream uploadedInputStream,
-            @FormDataParam("file") FormDataContentDisposition fileDetail,
-            @FormDataParam("directory") String directory) {
-        String zipFile = fileDetail.getFileName();
+    @PostMapping(path = "/zipupload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> uploadArchiveZip(
+            @RequestParam(name = "test", required = false) String test,
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(name = "directory", required = false) String directory) {
+        String zipFile = file.getOriginalFilename();
         String output = "";
         try {
             if (StringUtils.isBlank(zipFile)) throw new Exception("You must specify a zip file to upload");
 
             output = "Uploding file: " + zipFile + " ...\r\n";
+            InputStream uploadedInputStream = file.getInputStream();
             ZipInputStream zis = new ZipInputStream(uploadedInputStream);
             ZipEntry ze = zis.getNextEntry();
             byte[] doc = null;
@@ -367,11 +258,11 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
                 String fullPath = (StringUtils.isNotBlank(directory)) ? directory + "/" + fileName : fileName;
 
                 String content = new String(doc);
-                Response r = saveResource(fullPath, content);
+                ResponseEntity<?> r = saveResource(fullPath, content);
                 doc = null;
 
-                if (Status.OK.getStatusCode() != r.getStatus()) {
-                    output += " ERROR: " + r.getEntity().toString() + "\r\n";
+                if (HttpStatus.OK.value() != r.getStatusCodeValue()) {
+                    output += " ERROR: " + String.valueOf(r.getBody()) + "\r\n";
                 } else {
                     output += " OK\r\n";
                 }
@@ -385,12 +276,12 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
             uploadedInputStream.close();
 
             output += " SUCCESSFUL!\r\n";
-            return Response.ok(output).build();
+            return ResponseEntity.ok(output);
 
         } catch (Exception e) {
             log.error("Cannot unzip resources " + zipFile, e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            return Response.serverError().entity(output + "\r\n" + error).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(output + "\r\n" + error);
         }
     }
 }
