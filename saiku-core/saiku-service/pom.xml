@@ -145,11 +145,6 @@
 	</build>
 	<dependencies>
 		<dependency>
-			<groupId>bi.meteorite</groupId>
-			<artifactId>licenseserver-core</artifactId>
-			<version>1.0-SNAPSHOT</version>
-		</dependency>
-		<dependency>
 			<groupId>org.saiku</groupId>
 			<artifactId>saiku-query</artifactId>
 		</dependency>

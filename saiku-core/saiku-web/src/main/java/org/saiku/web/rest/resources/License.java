@@ -6,9 +6,7 @@
 
 package org.saiku.web.rest.resources;
 
-import org.saiku.service.license.ILicenseUtils;
 import org.saiku.database.Database;
-import org.saiku.service.license.Base64Coder;
 import org.saiku.service.user.UserService;
 import org.saiku.web.rest.objects.UserList;
 
@@ -16,15 +14,10 @@ import com.qmino.miredot.annotations.ReturnType;
 
 import org.springframework.stereotype.Component;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.ObjectInputStream;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
-import javax.jcr.RepositoryException;
 import javax.ws.rs.*;
 import javax.ws.rs.core.Response;
 
@@ -38,16 +31,7 @@ import javax.ws.rs.core.Response;
 @Path("/saiku/api/license")
 public class License {
 
-  private ILicenseUtils licenseUtils;
   private UserService userService;
-
-  public ILicenseUtils getLicenseUtils() {
-    return licenseUtils;
-  }
-
-  public void setLicenseUtils(ILicenseUtils licenseUtils) {
-    this.licenseUtils = licenseUtils;
-  }
 
   private Database databaseManager;
 
@@ -61,75 +45,6 @@ public class License {
 
   public void setUserService(UserService us) {
     userService = us;
-  }
-
-  /**
-   * Get the saiku
-   * @summary Get the Saiku License installed on the current server
-   * @return A response containing a license object.
-   */
-  @GET
-  @Produces({ "application/json" })
-  public Response getLicense() {
-    try {
-      return Response.ok().entity(licenseUtils.getLicense()).build();
-    } catch (IOException | RepositoryException | ClassNotFoundException e) {
-      e.printStackTrace();
-    }
-    return Response.serverError().build();
-  }
-
-  private static final int SIZE = 2048;
-
-
-  /**
-   * Upload a new license to the Saiku server.
-   * @summary Upload a new license
-   * @param is A license encapsulated in an input stream
-   * @return An acknowledgement as to whether the server installation was successful.
-   */
-  @POST
-  @Consumes("application/x-java-serialized-object")
-  @Produces("text/plain")
-  @ReturnType("java.lang.String")
-  public Response saveLicense(InputStream is) {
-    ObjectInputStream si = null;
-    byte[] sig;
-    byte[] data = null;
-    try {
-      si = new ObjectInputStream(is);
-    } catch (IOException e) {
-      e.printStackTrace();
-    }
-
-    try {
-      int sigLength = si.readInt();
-      sig = new byte[sigLength];
-      si.read(sig);
-
-      ByteArrayOutputStream dataStream = new ByteArrayOutputStream();
-      byte[] buf = new byte[SIZE];
-      int len;
-      while ((len = si.read(buf)) != -1) {
-        dataStream.write(buf, 0, len);
-      }
-      dataStream.flush();
-      data = dataStream.toByteArray();
-      dataStream.close();
-    } catch (IOException e) {
-      e.printStackTrace();
-    } finally {
-      try {
-        si.close();
-      } catch (IOException e) {
-        e.printStackTrace();
-      }
-    }
-
-
-    getLicenseUtils().setLicense(new String(Base64Coder.encode(data)));
-
-    return Response.ok("License Upload Successful").build();
   }
 
   /**

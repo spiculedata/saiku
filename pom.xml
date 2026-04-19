@@ -19,7 +19,8 @@
         <module>saiku-webapp</module>
         <module>saiku-server</module>
         <!--<module>saiku-bi-platform-plugin-p7</module>-->
-        <module>saiku-bi-platform-plugin-p7.1</module>
+        <!-- p7.1 disabled: depends on the removed commercial license module and MarkLogic backend; Phase 1 deletes it entirely -->
+        <!--<module>saiku-bi-platform-plugin-p7.1</module>-->
     </modules>
 
     <!-- distribution management disabled pending repo refresh -->
