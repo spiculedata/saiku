@@ -10,7 +10,7 @@
     onClose: () => void;
   }
 
-  let { title = "Warning", message, open, onClose }: Props = $props();
+  let { title = i18n.t("modal.warning.title"), message, open, onClose }: Props = $props();
 </script>
 
 <Modal {title} {open} size="sm" {onClose}>

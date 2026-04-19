@@ -8,27 +8,23 @@
   "topbar.theme.dark": "dunkel",
   "topbar.theme.light": "hell",
   "topbar.theme.system": "system",
-
   "login.title": "Bei Saiku anmelden",
   "login.username": "Benutzername",
   "login.password": "Passwort",
   "login.submit": "Anmelden",
   "login.submitting": "Anmeldung läuft…",
   "login.failed": "Anmeldung fehlgeschlagen",
-
   "cubes.label": "Cubes",
   "cubes.selectPrompt": "Cube auswählen",
   "cubes.loading": "Wird geladen…",
   "cubes.empty": "Keine Cubes verfügbar. Fügen Sie in der Administration eine Datenquelle hinzu.",
   "cubes.refresh": "Cubes aktualisieren",
-
   "panels.select": "Wählen Sie einen Cube, um Kennzahlen und Dimensionen zu sehen.",
   "panels.loading": "Cube-Metadaten werden geladen…",
   "panels.measures": "Kennzahlen",
   "panels.dimensions": "Dimensionen",
   "panels.noMeasures": "Keine Kennzahlen",
   "panels.noDimensions": "Keine Dimensionen",
-
   "toolbar.new": "+ Neu",
   "toolbar.open": "📂 Öffnen",
   "toolbar.save": "💾 Speichern",
@@ -41,7 +37,6 @@
   "toolbar.export.xls": "XLS",
   "toolbar.export.csv": "CSV",
   "toolbar.export.pdf": "PDF",
-
   "canvas.noCube": "Kein Cube ausgewählt.",
   "canvas.pickPrompt": "Wählen Sie links einen Cube, um eine Abfrage zu erstellen.",
   "canvas.buildPrompt": "Ebenen auf Zeilen/Spalten ziehen und Kennzahlen auf Spalten — dann Ausführen.",
@@ -54,7 +49,6 @@
   "canvas.dropFilters": "Filter hier ablegen",
   "canvas.view.grid": "Tabelle",
   "canvas.view.chart": "Diagramm",
-
   "modal.close": "Schließen",
   "modal.cancel": "Abbrechen",
   "modal.ok": "OK",
@@ -70,13 +64,11 @@
   "modal.open.searchPlaceholder": "Suche nach Name oder Pfad",
   "modal.open.empty": "Noch keine gespeicherten Abfragen.",
   "modal.open.loading": "Repository wird geladen…",
-
   "admin.tabs.users": "Benutzer",
   "admin.tabs.datasources": "Datenquellen",
   "admin.tabs.schemas": "Schemata",
   "admin.tabs.logs": "Protokolle",
   "admin.notAllowed": "Nur für Administratoren",
-
   "toast.newQuery": "Neue Abfrage",
   "toast.newQuery.body": "Ein neuer Arbeitsbereich wurde geöffnet.",
   "toast.saved": "Gespeichert",
@@ -86,8 +78,27 @@
   "toast.queryFailed": "Abfrage fehlgeschlagen",
   "toast.nothingToRun": "Nichts zum Ausführen",
   "toast.nothingToRun.body": "Fügen Sie zuerst eine Kennzahl oder Ebene zu einer Achse hinzu.",
-
   "upgrade.available": "Eine neuere Version von Saiku ist verfügbar",
   "upgrade.current": "aktuell",
-  "upgrade.releaseNotes": "Versionshinweise"
+  "upgrade.releaseNotes": "Versionshinweise",
+  "admin.addUser": "+ Benutzer hinzufügen",
+  "admin.addDatasource": "+ Datenquelle",
+  "admin.uploadSchema": "+ Schema hochladen",
+  "admin.refresh": "Aktualisieren",
+  "admin.edit": "Bearbeiten",
+  "admin.delete": "Löschen",
+  "admin.empty": "Keine Einträge.",
+  "admin.users.username": "Benutzername",
+  "admin.users.email": "E-Mail",
+  "admin.users.password": "Passwort",
+  "admin.users.roles": "Rollen",
+  "admin.logs.fetch": "Laden",
+  "admin.logs.loading": "Lade…",
+  "admin.logs.idle": "(Klicken Sie auf Laden)",
+  "modal.delete.title": "Löschen",
+  "modal.overwrite.title": "Datei vorhanden",
+  "modal.addFolder.title": "Neuer Ordner",
+  "modal.warning.title": "Warnung",
+  "modal.session.title": "Sitzung beendet",
+  "modal.session.reload": "Neu laden"
 }

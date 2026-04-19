@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { adminDatasources, type AdminDatasource } from "$lib/api/admin";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import Modal from "$lib/components/Modal.svelte";
 
@@ -77,8 +78,8 @@
 
 <div class="pane">
   <header class="pane__header">
-    <h2>Datasources</h2>
-    <button type="button" class="btn btn--primary" onclick={startNew}>+ Add datasource</button>
+    <h2>{i18n.t("admin.tabs.datasources")}</h2>
+    <button type="button" class="btn btn--primary" onclick={startNew}>{i18n.t("admin.addDatasource")}</button>
   </header>
   {#if error}<p class="callout callout--danger">{error}</p>{/if}
   {#if loading}
@@ -94,9 +95,9 @@
             <td>{ds.type}</td>
             <td>{ds.schemaName ?? ""}</td>
             <td class="row-actions">
-              <button class="btn" onclick={() => refreshDs(ds)}>Refresh</button>
-              <button class="btn" onclick={() => (editing = { ...ds })}>Edit</button>
-              <button class="btn btn--danger" onclick={() => (deleting = ds)}>Delete</button>
+              <button class="btn" onclick={() => refreshDs(ds)}>{i18n.t("admin.refresh")}</button>
+              <button class="btn" onclick={() => (editing = { ...ds })}>{i18n.t("admin.edit")}</button>
+              <button class="btn btn--danger" onclick={() => (deleting = ds)}>{i18n.t("admin.delete")}</button>
             </td>
           </tr>
         {/each}

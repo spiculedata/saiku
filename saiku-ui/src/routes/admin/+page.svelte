@@ -1,5 +1,6 @@
 <script lang="ts">
   import { session } from "$lib/stores/session.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
   import UsersAdmin from "$lib/views/admin/UsersAdmin.svelte";
   import DatasourcesAdmin from "$lib/views/admin/DatasourcesAdmin.svelte";
   import SchemasAdmin from "$lib/views/admin/SchemasAdmin.svelte";
@@ -11,21 +12,21 @@
 </script>
 
 {#if session.loading}
-  <div class="loading">Loading…</div>
+  <div class="loading">{i18n.t("cubes.loading")}</div>
 {:else if !session.current}
   <LoginForm />
 {:else if !session.isAdmin}
   <div class="forbidden">
-    <h1>Admin only</h1>
+    <h1>{i18n.t("admin.notAllowed")}</h1>
     <p>Your account does not have the <code>ROLE_ADMIN</code> grant.</p>
   </div>
 {:else}
   <div class="admin">
     <nav class="admin__tabs" role="tablist">
-      <button type="button" role="tab" class:active={tab === "users"} onclick={() => (tab = "users")}>Users</button>
-      <button type="button" role="tab" class:active={tab === "datasources"} onclick={() => (tab = "datasources")}>Datasources</button>
-      <button type="button" role="tab" class:active={tab === "schemas"} onclick={() => (tab = "schemas")}>Schemas</button>
-      <button type="button" role="tab" class:active={tab === "logs"} onclick={() => (tab = "logs")}>Logs</button>
+      <button type="button" role="tab" class:active={tab === "users"} onclick={() => (tab = "users")}>{i18n.t("admin.tabs.users")}</button>
+      <button type="button" role="tab" class:active={tab === "datasources"} onclick={() => (tab = "datasources")}>{i18n.t("admin.tabs.datasources")}</button>
+      <button type="button" role="tab" class:active={tab === "schemas"} onclick={() => (tab = "schemas")}>{i18n.t("admin.tabs.schemas")}</button>
+      <button type="button" role="tab" class:active={tab === "logs"} onclick={() => (tab = "logs")}>{i18n.t("admin.tabs.logs")}</button>
     </nav>
     <section class="admin__body">
       {#if tab === "users"}

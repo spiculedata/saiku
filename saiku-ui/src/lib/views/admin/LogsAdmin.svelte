@@ -1,6 +1,7 @@
 <script lang="ts">
   import { adminLogs } from "$lib/api/admin";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   const LOG_NAMES = ["saiku", "saiku-audit", "mondrian_sql", "mondrian"];
 
@@ -23,7 +24,7 @@
 
 <div class="pane">
   <header class="pane__header">
-    <h2>Logs</h2>
+    <h2>{i18n.t("admin.tabs.logs")}</h2>
     <div class="controls">
       <select class="field__input" bind:value={name}>
         {#each LOG_NAMES as n}
@@ -31,11 +32,11 @@
         {/each}
       </select>
       <button type="button" class="btn btn--primary" onclick={load} disabled={loading}>
-        {loading ? "Loading…" : "Fetch"}
+        {loading ? i18n.t("admin.logs.loading") : i18n.t("admin.logs.fetch")}
       </button>
     </div>
   </header>
-  <pre class="log">{content || "(click Fetch to load)"}</pre>
+  <pre class="log">{content || i18n.t("admin.logs.idle")}</pre>
 </div>
 
 <style>

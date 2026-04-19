@@ -19,7 +19,7 @@
   }
 </script>
 
-<Modal title="New folder" {open} size="sm" onClose={onCancel}>
+<Modal title={i18n.t("modal.addFolder.title")} {open} size="sm" onClose={onCancel}>
   <form onsubmit={submit}>
     <p class="hint">Create under <code>{parentPath || "/"}</code>.</p>
     <label class="field">

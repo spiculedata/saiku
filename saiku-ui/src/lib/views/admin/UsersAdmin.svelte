@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { users, type AdminUser } from "$lib/api/admin";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import Modal from "$lib/components/Modal.svelte";
 
@@ -65,15 +66,20 @@
 
 <div class="pane">
   <header class="pane__header">
-    <h2>Users</h2>
-    <button type="button" class="btn btn--primary" onclick={startNew}>+ Add user</button>
+    <h2>{i18n.t("admin.tabs.users")}</h2>
+    <button type="button" class="btn btn--primary" onclick={startNew}>{i18n.t("admin.addUser")}</button>
   </header>
   {#if error}<p class="callout callout--danger">{error}</p>{/if}
   {#if loading}
-    <p>Loading users…</p>
+    <p>{i18n.t("cubes.loading")}</p>
   {:else}
     <table class="grid">
-      <thead><tr><th>Username</th><th>Email</th><th>Roles</th><th></th></tr></thead>
+      <thead><tr>
+        <th>{i18n.t("admin.users.username")}</th>
+        <th>{i18n.t("admin.users.email")}</th>
+        <th>{i18n.t("admin.users.roles")}</th>
+        <th></th>
+      </tr></thead>
       <tbody>
         {#each list as u}
           <tr>
@@ -81,13 +87,13 @@
             <td>{u.email ?? ""}</td>
             <td>{u.roles.join(", ")}</td>
             <td class="row-actions">
-              <button class="btn" onclick={() => (editing = { ...u, password: "" })}>Edit</button>
-              <button class="btn btn--danger" onclick={() => (deleting = u)}>Delete</button>
+              <button class="btn" onclick={() => (editing = { ...u, password: "" })}>{i18n.t("admin.edit")}</button>
+              <button class="btn btn--danger" onclick={() => (deleting = u)}>{i18n.t("admin.delete")}</button>
             </td>
           </tr>
         {/each}
         {#if list.length === 0}
-          <tr><td colspan="4" class="empty">No users.</td></tr>
+          <tr><td colspan="4" class="empty">{i18n.t("admin.empty")}</td></tr>
         {/if}
       </tbody>
     </table>
@@ -119,8 +125,8 @@
     </fieldset>
   {/if}
   {#snippet footer()}
-    <button class="btn" onclick={() => (editing = null)}>Cancel</button>
-    <button class="btn btn--primary" onclick={save}>Save</button>
+    <button class="btn" onclick={() => (editing = null)}>{i18n.t("modal.cancel")}</button>
+    <button class="btn btn--primary" onclick={save}>{i18n.t("modal.save")}</button>
   {/snippet}
 </Modal>
 

@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { adminSchemas, type AdminSchema } from "$lib/api/admin";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import Modal from "$lib/components/Modal.svelte";
 
@@ -64,8 +65,8 @@
 
 <div class="pane">
   <header class="pane__header">
-    <h2>Schemas</h2>
-    <button type="button" class="btn btn--primary" onclick={() => (uploading = true)}>+ Upload schema</button>
+    <h2>{i18n.t("admin.tabs.schemas")}</h2>
+    <button type="button" class="btn btn--primary" onclick={() => (uploading = true)}>{i18n.t("admin.uploadSchema")}</button>
   </header>
   {#if error}<p class="callout callout--danger">{error}</p>{/if}
   {#if loading}
