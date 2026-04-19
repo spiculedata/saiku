@@ -22,9 +22,9 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <top.dir>${project.basedir}</top.dir>
-        <spring.version>4.1.6.RELEASE</spring.version>
-        <spring.security.version>4.0.1.RELEASE</spring.security.version>
-        <slf4j.version>1.6.4</slf4j.version>
+        <spring.version>4.3.30.RELEASE</spring.version>
+        <spring.security.version>4.2.20.RELEASE</spring.security.version>
+        <slf4j.version>1.7.36</slf4j.version>
         <jersey.version>1.19</jersey.version>
         <tomcat.version>apache-tomcat-9.0.8</tomcat.version>
         <tomcat.source>target/stage/tomcat/</tomcat.source>
@@ -35,6 +35,7 @@
         <serenity.version>1.0.58</serenity.version>
         <jbehave.version>3.9.3</jbehave.version>
         <saiku-query.version>0.4-SNAPSHOT</saiku-query.version>
+        <jackson.version>2.17.3</jackson.version>
     </properties>
     <repositories>
         <repository>
