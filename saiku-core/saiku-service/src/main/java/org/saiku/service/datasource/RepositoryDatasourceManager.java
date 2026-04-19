@@ -105,10 +105,8 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     public void load() {
         Properties ext = checkForExternalDataSourceProperties();
 
-        // Instantiate the appropriate repository manager 
-        if (type.equals("marklogic")) {
-            irm = MarkLogicRepositoryManager.getMarkLogicRepositoryManager(host, Integer.parseInt(port), username, password, database, cleanse(datadir), sessionRegistry, workspaces);
-        } else if (type.equals("classpath")) {
+        // Instantiate the appropriate repository manager
+        if (type.equals("classpath")) {
             separator = "/";
             log.debug("init datadir= "+datadir);
             irm = ClassPathRepositoryManager.getClassPathRepositoryManager(cleanse(datadir), defaultRole, sessionRegistry, workspaces);
@@ -209,16 +207,12 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
             }
             
             // When using Jackrabbit, paths should follow JCR standards
-            if (this.type.equals("jackrabbit") || this.type.equals("marklogic")) {
+            if (this.type.equals("jackrabbit")) {
               if (!path.startsWith("mondrian://")) {
-                if (this.type.equals("marklogic")) {
-                  path = "mondrian:/" + path;
-                } else {
-                  String oldHomePrefix = "/homes/";
-                  String newHomePrefix = "mondrian://homes/home:";
-                  
-                  path = newHomePrefix + path.substring(oldHomePrefix.length());
-                }
+                String oldHomePrefix = "/homes/";
+                String newHomePrefix = "mondrian://homes/home:";
+
+                path = newHomePrefix + path.substring(oldHomePrefix.length());
               }
             }
             

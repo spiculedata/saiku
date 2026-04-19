@@ -50,7 +50,6 @@
         <property name="type" value="${repo.type}"/>
         <property name="sessionRegistry" ref="sessionRepo"/>
         <property name="workspaces" value="${workspaces}"/>
-        <!-- MarkLogic specific properties -->
         <property name="host" value="${repo.host}"/>
         <property name="port" value="${repo.port}"/>
         <property name="username" value="${repo.username}"/>

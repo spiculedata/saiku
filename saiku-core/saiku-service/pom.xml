@@ -374,11 +374,5 @@
 			<groupId>org.springframework.security</groupId>
 			<artifactId>spring-security-core</artifactId>
 		</dependency>
-		<!-- MarkLogic dependency -->
-		<dependency>
-			<groupId>com.marklogic</groupId>
-			<artifactId>marklogic-xcc</artifactId>
-			<version>8.0.6</version>
-		</dependency>
 	</dependencies>
 </project>
