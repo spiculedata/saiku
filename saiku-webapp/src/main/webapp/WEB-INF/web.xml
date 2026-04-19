@@ -240,46 +240,21 @@
         <url-pattern>/console/*</url-pattern>
     </servlet-mapping>
 
-	<servlet>
-    	<servlet-name>jersey2</servlet-name>
-    	<servlet-class>com.sun.jersey.spi.spring.container.servlet.SpringServlet</servlet-class>
-    	<init-param>
-      		<param-name>com.sun.jersey.config.property.packages</param-name>
-      		<param-value>org.saiku.web;com.fasterxml.jackson.jaxrs.json</param-value>
-    	</init-param>
+    <servlet>
+        <servlet-name>rest</servlet-name>
+        <servlet-class>org.springframework.web.servlet.DispatcherServlet</servlet-class>
         <init-param>
-            <param-name>com.sun.jersey.api.json.POJOMappingFeature</param-name>
-            <param-value>true</param-value>
+            <param-name>contextConfigLocation</param-name>
+            <param-value>/WEB-INF/spring-rest.xml</param-value>
         </init-param>
-    	<!--<init-param>
-      		<param-name>com.sun.jersey.spi.container.ContainerRequestFilters</param-name>
-      		<param-value>com.sun.jersey.api.container.filter.PostReplaceFilter</param-value>
-    	</init-param>-->
-        <init-param>
-            <param-name>com.sun.jersey.config.feature.Trace</param-name>
-            <param-value>true</param-value>
-        </init-param>
-        <init-param>
-            <param-name>jaxrs.providers</param-name>
-            <param-value>org.saiku.web.rest.SerializableProvider</param-value>
-        </init-param>
-<!-- 		<init-param>
-		    <param-name>com.sun.jersey.spi.container.ContainerResponseFilters</param-name>
-		    <param-value>com.sun.jersey.api.container.filter.GZIPContentEncodingFilter</param-value>
-		</init-param>  -->
+        <multipart-config/>
+        <load-on-startup>2</load-on-startup>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>rest</servlet-name>
+        <url-pattern>/rest/*</url-pattern>
+    </servlet-mapping>
 
-    	<load-on-startup>1</load-on-startup>
-  	</servlet>
-
-	  <servlet-mapping>
-	    <servlet-name>jersey2</servlet-name>
-	    <url-pattern>/rest/*</url-pattern>
-	  </servlet-mapping>
-
-  <!--<servlet-mapping>
-    <servlet-name>jersey2</servlet-name>
-    <url-pattern>/rest/saiku/session</url-pattern>
-  </servlet-mapping>-->
     <servlet>
         <servlet-name>xmla</servlet-name>
         <servlet-class>org.saiku.olap.util.SaikuXmlaServlet</servlet-class>
