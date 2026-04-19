@@ -50,7 +50,6 @@
         <property name="type" value="${repo.type}"/>
         <property name="sessionRegistry" ref="sessionRepo"/>
         <property name="workspaces" value="${workspaces}"/>
-        <!-- MarkLogic specific properties -->
         <property name="host" value="${repo.host}"/>
         <property name="port" value="${repo.port}"/>
         <property name="username" value="${repo.username}"/>
@@ -60,11 +59,6 @@
 
     <bean id="repoPasswordProviderBean" class="org.saiku.service.util.security.authentication.SimplePasswordProvider">
         <constructor-arg index="0" value="${webdav.password}"/>
-    </bean>
-
-
-    <bean id="licenseUtilsBean" class="org.saiku.service.license.LicenseUtils" init-method="init">
-        <property name="repositoryDatasourceManager" ref="repositoryDsManager" />
     </bean>
 
 
@@ -83,7 +77,6 @@
         <property name="sessionRepo" ref="sessionRepo"/>
         <property name="authenticationManager" ref="authenticationManager"/>
         <property name="authorisationPredicate" ref="authorisationPredicate"/>
-        <property name="l" ref="licenseUtilsBean"/>
         <property name="orbisAuthEnabled" value="${orbis.auth.enabled}"/>
     </bean>
 
@@ -210,12 +203,8 @@
     </bean>
 
 
-    <bean id="licenseUtils" class="org.saiku.service.license.LicenseUtils">
-        <property name="repositoryDatasourceManager" ref="repositoryDsManager"/>
-    </bean>
     <bean id="licenseBean" class="org.saiku.web.rest.resources.License">
         <property name="databaseManager" ref="h2database"/>
-        <property name="licenseUtils" ref="licenseUtils"/>
         <property name="userService" ref="userServiceBean"/>
     </bean>
 

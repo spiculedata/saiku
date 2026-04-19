@@ -15,15 +15,6 @@
  */
 package org.saiku.service.olap;
 
-import org.saiku.olap.discover.OlapMetaExplorer;
-import org.saiku.olap.dto.*;
-import org.saiku.olap.util.exception.SaikuOlapException;
-import org.saiku.service.datasource.DatasourceService;
-import org.saiku.service.util.exception.SaikuServiceException;
-
-import org.olap4j.OlapConnection;
-import org.olap4j.metadata.Cube;
-
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.Serializable;
@@ -31,204 +22,213 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
 import mondrian.rolap.RolapConnection;
+import org.olap4j.OlapConnection;
+import org.olap4j.metadata.Cube;
+import org.saiku.olap.discover.OlapMetaExplorer;
+import org.saiku.olap.dto.*;
+import org.saiku.olap.util.exception.SaikuOlapException;
+import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.util.exception.SaikuServiceException;
 
 public class OlapDiscoverService implements Serializable {
 
-  /**
-   *  SerialVersionUID
-   */
-  private static final long serialVersionUID = 884682532600907574L;
+    /**
+     *  SerialVersionUID
+     */
+    private static final long serialVersionUID = 884682532600907574L;
 
-  private DatasourceService datasourceService;
-  private transient OlapMetaExplorer metaExplorer;
+    private DatasourceService datasourceService;
+    private transient OlapMetaExplorer metaExplorer;
 
-  public void setDatasourceService(DatasourceService ds) {
-    datasourceService = ds;
-    metaExplorer = new OlapMetaExplorer(ds.getConnectionManager());
-  }
-
-  public List<SaikuCube> getAllCubes() throws SaikuOlapException {
-    return metaExplorer.getAllCubes();
-  }
-
-  public List<SaikuConnection> getAllConnections() throws SaikuServiceException {
-    try {
-      return metaExplorer.getAllConnections();
-    } catch (SaikuOlapException e) {
-      throw new SaikuServiceException("Cannot retrieve all connections", e);
+    public void setDatasourceService(DatasourceService ds) {
+        datasourceService = ds;
+        metaExplorer = new OlapMetaExplorer(ds.getConnectionManager());
     }
-  }
 
-
-  public List<SaikuConnection> getConnection(String connectionName) {
-    List<SaikuConnection> connections = new ArrayList<>();
-    try {
-      SaikuConnection c = metaExplorer.getConnection(connectionName);
-      connections.add(c);
-      return connections;
-    } catch (SaikuOlapException e) {
-      throw new SaikuServiceException("Cannot retrieve all connections", e);
+    public List<SaikuCube> getAllCubes() throws SaikuOlapException {
+        return metaExplorer.getAllCubes();
     }
-  }
 
-
-  public void refreshAllConnections() throws SaikuServiceException {
-    try {
-      datasourceService.getConnectionManager().refreshAllConnections();
-    } catch (Exception e) {
-      throw new SaikuServiceException("Cannot refresh all connections", e);
+    public List<SaikuConnection> getAllConnections() throws SaikuServiceException {
+        try {
+            return metaExplorer.getAllConnections();
+        } catch (SaikuOlapException e) {
+            throw new SaikuServiceException("Cannot retrieve all connections", e);
+        }
     }
-  }
 
-  public void refreshConnection(String name) throws SaikuServiceException {
-    try {
-      datasourceService.getConnectionManager().refreshConnection(name);
-    } catch (Exception e) {
-      throw new SaikuServiceException("Cannot refresh all connections", e);
+    public List<SaikuConnection> getConnection(String connectionName) {
+        List<SaikuConnection> connections = new ArrayList<>();
+        try {
+            SaikuConnection c = metaExplorer.getConnection(connectionName);
+            connections.add(c);
+            return connections;
+        } catch (SaikuOlapException e) {
+            throw new SaikuServiceException("Cannot retrieve all connections", e);
+        }
     }
-  }
 
-  public Cube getNativeCube(SaikuCube cube) throws SaikuServiceException {
-    try {
-      return metaExplorer.getNativeCube(cube);
-    } catch (SaikuOlapException e) {
-      throw new SaikuServiceException("Cannot get native cube for cube ( " + cube + " )", e);
+    public void refreshAllConnections() throws SaikuServiceException {
+        try {
+            datasourceService.getConnectionManager().refreshAllConnections();
+        } catch (Exception e) {
+            throw new SaikuServiceException("Cannot refresh all connections", e);
+        }
     }
-  }
 
-  public OlapConnection getNativeConnection(String name) throws SaikuServiceException {
-    try {
-      return metaExplorer.getNativeConnection(name);
-    } catch (SaikuOlapException e) {
-      throw new SaikuServiceException("Cannot get native connection for cube ( " + name + " )", e);
+    public void refreshConnection(String name) throws SaikuServiceException {
+        try {
+            datasourceService.getConnectionManager().refreshConnection(name);
+        } catch (Exception e) {
+            throw new SaikuServiceException("Cannot refresh all connections", e);
+        }
     }
-  }
 
-  public List<SaikuDimension> getAllDimensions(SaikuCube cube) throws SaikuServiceException {
-    try {
-      return metaExplorer.getAllDimensions(cube);
-    } catch (SaikuOlapException e) {
-      throw new SaikuServiceException("Cannot get all dimensions for cube ( " + cube + " )", e);
+    public Cube getNativeCube(SaikuCube cube) throws SaikuServiceException {
+        try {
+            return metaExplorer.getNativeCube(cube);
+        } catch (SaikuOlapException e) {
+            throw new SaikuServiceException("Cannot get native cube for cube ( " + cube + " )", e);
+        }
     }
-  }
 
-  public SaikuDimension getDimension(SaikuCube cube, String dimensionName) throws SaikuServiceException {
-    try {
-      return metaExplorer.getDimension(cube, dimensionName);
-    } catch (SaikuOlapException e) {
-      throw new SaikuServiceException("Cannot get dimension (" + dimensionName + " ) for cube ( " + cube + " )", e);
+    public OlapConnection getNativeConnection(String name) throws SaikuServiceException {
+        try {
+            return metaExplorer.getNativeConnection(name);
+        } catch (SaikuOlapException e) {
+            throw new SaikuServiceException("Cannot get native connection for cube ( " + name + " )", e);
+        }
     }
-  }
 
-  public List<SaikuHierarchy> getAllHierarchies(SaikuCube cube) throws SaikuServiceException {
-    try {
-      return metaExplorer.getAllHierarchies(cube);
-    } catch (SaikuOlapException e) {
-      throw new SaikuServiceException("Cannot get all hierarchies for cube ( " + cube + " )", e);
+    public List<SaikuDimension> getAllDimensions(SaikuCube cube) throws SaikuServiceException {
+        try {
+            return metaExplorer.getAllDimensions(cube);
+        } catch (SaikuOlapException e) {
+            throw new SaikuServiceException("Cannot get all dimensions for cube ( " + cube + " )", e);
+        }
     }
-  }
 
-  public List<SaikuHierarchy> getAllDimensionHierarchies(SaikuCube cube, String dimensionName) {
-    try {
-      SaikuDimension dim = metaExplorer.getDimension(cube, dimensionName);
-      if (dim == null) {
-        throw new SaikuServiceException("Cannot find dimension ( "+ dimensionName + ") for cube ( " + cube + " )");
-      }
-      return dim.getHierarchies();
-
-    } catch (SaikuOlapException e) {
-      throw new SaikuServiceException("Cannot get all hierarchies for cube ( " + cube + " ) dimension ( " + dimensionName + " )", e);
+    public SaikuDimension getDimension(SaikuCube cube, String dimensionName) throws SaikuServiceException {
+        try {
+            return metaExplorer.getDimension(cube, dimensionName);
+        } catch (SaikuOlapException e) {
+            throw new SaikuServiceException(
+                    "Cannot get dimension (" + dimensionName + " ) for cube ( " + cube + " )", e);
+        }
     }
-  }
 
-  public List<SaikuLevel> getAllHierarchyLevels(SaikuCube cube, String dimensionName, String hierarchyName) {
-    try {
-
-      return metaExplorer.getAllLevels(cube, dimensionName, hierarchyName);
-
-    } catch (SaikuOlapException e) {
-      throw new SaikuServiceException("Cannot get all levels for cube ( " + cube
-        + " ) dimension ( " + dimensionName + " ) hierarchy ( " + hierarchyName + " )", e);
-
+    public List<SaikuHierarchy> getAllHierarchies(SaikuCube cube) throws SaikuServiceException {
+        try {
+            return metaExplorer.getAllHierarchies(cube);
+        } catch (SaikuOlapException e) {
+            throw new SaikuServiceException("Cannot get all hierarchies for cube ( " + cube + " )", e);
+        }
     }
-  }
 
-  public List<SimpleCubeElement> getLevelMembers(SaikuCube cube, String hierarchyName, String levelName) {
-    return getLevelMembers(cube, hierarchyName, levelName, null, -1);
-  }
+    public List<SaikuHierarchy> getAllDimensionHierarchies(SaikuCube cube, String dimensionName) {
+        try {
+            SaikuDimension dim = metaExplorer.getDimension(cube, dimensionName);
+            if (dim == null) {
+                throw new SaikuServiceException(
+                        "Cannot find dimension ( " + dimensionName + ") for cube ( " + cube + " )");
+            }
+            return dim.getHierarchies();
 
-  public List<SimpleCubeElement> getLevelMembers(SaikuCube cube, String hierarchyName, String levelName, int searchLimit) {
-    return getLevelMembers(cube, hierarchyName, levelName, null, searchLimit);
-  }
-
-  public List<SimpleCubeElement> getLevelMembers(SaikuCube cube, String hierarchyName, String levelName, String searchString, int searchLimit) {
-    try {
-
-      return metaExplorer.getAllMembers(cube, hierarchyName, levelName, searchString, searchLimit);
-
-    } catch (SaikuOlapException e) {
-      throw new SaikuServiceException("Cannot get all members for cube ( " + cube
-        + " ) hierarchy ( " + hierarchyName + " )", e);
+        } catch (SaikuOlapException e) {
+            throw new SaikuServiceException(
+                    "Cannot get all hierarchies for cube ( " + cube + " ) dimension ( " + dimensionName + " )", e);
+        }
     }
-  }
 
-  public List<SaikuMember> getMeasures(SaikuCube cube) {
-    try {
-      return metaExplorer.getAllMeasures(cube);
-    } catch (SaikuOlapException e) {
-      throw new SaikuServiceException("Cannot get all measures for cube ( " + cube + " )", e);
+    public List<SaikuLevel> getAllHierarchyLevels(SaikuCube cube, String dimensionName, String hierarchyName) {
+        try {
+
+            return metaExplorer.getAllLevels(cube, dimensionName, hierarchyName);
+
+        } catch (SaikuOlapException e) {
+            throw new SaikuServiceException(
+                    "Cannot get all levels for cube ( " + cube + " ) dimension ( " + dimensionName + " ) hierarchy ( "
+                            + hierarchyName + " )",
+                    e);
+        }
     }
-  }
 
-  public List<SaikuMember> getHierarchyRootMembers(SaikuCube cube, String hierarchyName) {
-    try {
-      return metaExplorer.getHierarchyRootMembers(cube, hierarchyName);
-    } catch (SaikuOlapException e) {
-      throw new SaikuServiceException(e);
+    public List<SimpleCubeElement> getLevelMembers(SaikuCube cube, String hierarchyName, String levelName) {
+        return getLevelMembers(cube, hierarchyName, levelName, null, -1);
     }
-  }
 
-  public List<SaikuMember> getMemberChildren(SaikuCube cube, String uniqueMemberName) {
-    try {
-      return metaExplorer.getMemberChildren(cube, uniqueMemberName);
-    } catch (SaikuOlapException e) {
-      throw new SaikuServiceException(e);
+    public List<SimpleCubeElement> getLevelMembers(
+            SaikuCube cube, String hierarchyName, String levelName, int searchLimit) {
+        return getLevelMembers(cube, hierarchyName, levelName, null, searchLimit);
     }
-  }
 
-  public SaikuMember getMember(SaikuCube cube, String uniqueMemberName) {
-    try {
-      return metaExplorer.getMember(cube, uniqueMemberName);
-    } catch (SaikuOlapException e) {
-      throw new SaikuServiceException(e);
+    public List<SimpleCubeElement> getLevelMembers(
+            SaikuCube cube, String hierarchyName, String levelName, String searchString, int searchLimit) {
+        try {
+
+            return metaExplorer.getAllMembers(cube, hierarchyName, levelName, searchString, searchLimit);
+
+        } catch (SaikuOlapException e) {
+            throw new SaikuServiceException(
+                    "Cannot get all members for cube ( " + cube + " ) hierarchy ( " + hierarchyName + " )", e);
+        }
     }
-  }
 
-  public Map<String, Object> getProperties(SaikuCube cube) {
-    Map<String, Object> properties = new HashMap<>();
-    try {
-      Cube c = getNativeCube(cube);
-      OlapConnection con = c.getSchema().getCatalog().getDatabase().getOlapConnection();
-      properties.put("saiku.olap.query.drillthrough", c.isDrillThroughEnabled());
-      properties.put("org.saiku.query.explain", con.isWrapperFor(RolapConnection.class));
-
-      try {
-        Boolean isScenario = (c.getDimensions().get("Scenario") != null);
-        properties.put("org.saiku.connection.scenario", isScenario);
-      } catch (Exception e) {
-        properties.put("org.saiku.connection.scenario", false);
-      }
-    } catch (Exception e) {
-      throw new SaikuServiceException(e);
+    public List<SaikuMember> getMeasures(SaikuCube cube) {
+        try {
+            return metaExplorer.getAllMeasures(cube);
+        } catch (SaikuOlapException e) {
+            throw new SaikuServiceException("Cannot get all measures for cube ( " + cube + " )", e);
+        }
     }
-    return properties;
-  }
 
-  private void readObject(ObjectInputStream stream)
-      throws IOException, ClassNotFoundException {
-    stream.defaultReadObject();
-    metaExplorer = new OlapMetaExplorer( datasourceService.getConnectionManager() );
-  }
+    public List<SaikuMember> getHierarchyRootMembers(SaikuCube cube, String hierarchyName) {
+        try {
+            return metaExplorer.getHierarchyRootMembers(cube, hierarchyName);
+        } catch (SaikuOlapException e) {
+            throw new SaikuServiceException(e);
+        }
+    }
+
+    public List<SaikuMember> getMemberChildren(SaikuCube cube, String uniqueMemberName) {
+        try {
+            return metaExplorer.getMemberChildren(cube, uniqueMemberName);
+        } catch (SaikuOlapException e) {
+            throw new SaikuServiceException(e);
+        }
+    }
+
+    public SaikuMember getMember(SaikuCube cube, String uniqueMemberName) {
+        try {
+            return metaExplorer.getMember(cube, uniqueMemberName);
+        } catch (SaikuOlapException e) {
+            throw new SaikuServiceException(e);
+        }
+    }
+
+    public Map<String, Object> getProperties(SaikuCube cube) {
+        Map<String, Object> properties = new HashMap<>();
+        try {
+            Cube c = getNativeCube(cube);
+            OlapConnection con = c.getSchema().getCatalog().getDatabase().getOlapConnection();
+            properties.put("saiku.olap.query.drillthrough", c.isDrillThroughEnabled());
+            properties.put("org.saiku.query.explain", con.isWrapperFor(RolapConnection.class));
+
+            try {
+                Boolean isScenario = (c.getDimensions().get("Scenario") != null);
+                properties.put("org.saiku.connection.scenario", isScenario);
+            } catch (Exception e) {
+                properties.put("org.saiku.connection.scenario", false);
+            }
+        } catch (Exception e) {
+            throw new SaikuServiceException(e);
+        }
+        return properties;
+    }
+
+    private void readObject(ObjectInputStream stream) throws IOException, ClassNotFoundException {
+        stream.defaultReadObject();
+        metaExplorer = new OlapMetaExplorer(datasourceService.getConnectionManager());
+    }
 }

@@ -1,17 +1,14 @@
 package org.saiku.web.export;
 
-import org.saiku.web.rest.objects.resultset.QueryResult;
-
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
+import java.io.*;
+import java.util.Properties;
 import org.apache.commons.io.IOUtils;
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.Scriptable;
 import org.mozilla.javascript.ScriptableObject;
-
-import java.io.*;
-import java.util.Properties;
+import org.saiku.web.rest.objects.resultset.QueryResult;
 
 public class JSConverter {
     public static String convertToHtml(QueryResult queryResult, boolean wrapcontent) throws IOException {
@@ -22,7 +19,8 @@ public class JSConverter {
         return content;
     }
 
-    private static void useJavascriptToConvertToHtml(QueryResult queryResult, StringWriter stringWriter) throws IOException {
+    private static void useJavascriptToConvertToHtml(QueryResult queryResult, StringWriter stringWriter)
+            throws IOException {
         Context javascriptContext = createJavascriptContext();
         Scriptable globalScope = javascriptContext.initStandardObjects();
         loadJavascriptScripts(javascriptContext, globalScope);
@@ -33,10 +31,9 @@ public class JSConverter {
     }
 
     private static void executeJavascript(Context javascriptContext, Scriptable globalScope) {
-        String code =
-            "eval('var cellset = ' + data); \n" +
-                "var renderer = new SaikuTableRenderer(); \n" +
-                "var html = renderer.render(cellset, { wrapContent : " + false + " }); out.write(html);";
+        String code = "eval('var cellset = ' + data); \n" + "var renderer = new SaikuTableRenderer(); \n"
+                + "var html = renderer.render(cellset, { wrapContent : "
+                + false + " }); out.write(html);";
         javascriptContext.evaluateString(globalScope, code, "<mem>", 1, null);
     }
 
@@ -46,7 +43,8 @@ public class JSConverter {
         ScriptableObject.putProperty(globalScope, "out", wrappedOut);
     }
 
-    private static void loadDataIntoJsContext(QueryResult queryResult, Scriptable globalScope) throws JsonProcessingException {
+    private static void loadDataIntoJsContext(QueryResult queryResult, Scriptable globalScope)
+            throws JsonProcessingException {
         // load data of queryResult into JS environment
         ObjectMapper objectMapper = new ObjectMapper();
         String data = objectMapper.writeValueAsString(queryResult);
@@ -73,8 +71,8 @@ public class JSConverter {
 
     private static String appendSaikuCommercialIfNecessary(String content) {
         if (getVersion() != null && !getVersion().contains("EE")) {
-            content =
-                content + "<div style='margin-top:10px;'><h5>Export Provided By Saiku Analytics Community Edition(http://meteorite.bi)"
+            content = content
+                    + "<div style='margin-top:10px;'><h5>Export Provided By Saiku Analytics Community Edition(http://meteorite.bi)"
                     + "</h5></div>";
         }
         content = content.replaceAll("&nbsp;", " ");
@@ -94,7 +92,7 @@ public class JSConverter {
         InputStream is = classloader.getResourceAsStream("org/saiku/web/rest/resources/version.properties");
         try {
 
-            //input = new FileInputStream("version.properties");
+            // input = new FileInputStream("version.properties");
 
             // load a properties file
             prop.load(is);

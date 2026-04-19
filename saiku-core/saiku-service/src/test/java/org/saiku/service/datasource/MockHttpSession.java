@@ -1,11 +1,10 @@
 package org.saiku.service.datasource;
 
 import java.util.*;
-
+import java.util.Enumeration;
 import javax.servlet.ServletContext;
 import javax.servlet.http.HttpSession;
 import javax.servlet.http.HttpSessionContext;
-import java.util.Enumeration;
 
 public class MockHttpSession implements HttpSession {
     private Map<String, Object> attributes;
@@ -35,9 +34,7 @@ public class MockHttpSession implements HttpSession {
     }
 
     @Override
-    public void setMaxInactiveInterval(int interval) {
-
-    }
+    public void setMaxInactiveInterval(int interval) {}
 
     @Override
     public int getMaxInactiveInterval() {
@@ -75,24 +72,16 @@ public class MockHttpSession implements HttpSession {
     }
 
     @Override
-    public void putValue(String name, Object value) {
-
-    }
+    public void putValue(String name, Object value) {}
 
     @Override
-    public void removeAttribute(String name) {
-
-    }
+    public void removeAttribute(String name) {}
 
     @Override
-    public void removeValue(String name) {
-
-    }
+    public void removeValue(String name) {}
 
     @Override
-    public void invalidate() {
-
-    }
+    public void invalidate() {}
 
     @Override
     public boolean isNew() {

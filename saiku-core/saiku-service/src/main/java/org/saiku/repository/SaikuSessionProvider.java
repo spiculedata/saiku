@@ -16,29 +16,26 @@
 
 package org.saiku.repository;
 
-import org.apache.jackrabbit.server.SessionProvider;
-
 import javax.jcr.*;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
+import org.apache.jackrabbit.server.SessionProvider;
 
 /**
  * Created by bugg on 01/06/15.
  */
 class SaikuSessionProvider implements SessionProvider {
-  public Session getSession(HttpServletRequest request, Repository repository, String workspace)
-      throws ServletException, RepositoryException {
-    Session s = null;
+    public Session getSession(HttpServletRequest request, Repository repository, String workspace)
+            throws ServletException, RepositoryException {
+        Session s = null;
 
-    SimpleCredentials c = new SimpleCredentials("anon", "anon".toCharArray());
+        SimpleCredentials c = new SimpleCredentials("anon", "anon".toCharArray());
         s = repository.login(c, workspace);
 
+        return s;
+    }
 
-
-    return s;
-  }
-
-  public void releaseSession(Session session) {
-    session.logout();
-  }
+    public void releaseSession(Session session) {
+        session.logout();
+    }
 }

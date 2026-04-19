@@ -1,14 +1,13 @@
 package org.saiku.service.util.export;
 
+import java.util.Date;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Date;
 
 /**
  * Class to log the load of converting queries to PDF's.
  */
-public class PdfPerformanceLogger{
+public class PdfPerformanceLogger {
     private static final Logger log = LoggerFactory.getLogger(PdfPerformanceLogger.class);
 
     private final long start;
@@ -21,27 +20,28 @@ public class PdfPerformanceLogger{
         this.start = (new Date()).getTime();
     }
 
-    public void queryToHtmlStart(){
+    public void queryToHtmlStart() {
         queryToHtmlStart = getCurrentTime();
     }
 
-    public void setQueryToHtmlStop(){
+    public void setQueryToHtmlStop() {
         queryToHtmlEnd = getCurrentTime();
     }
 
-    public void renderStart(){
+    public void renderStart() {
         renderStart = getCurrentTime();
     }
 
-    public void renderStop(){
+    public void renderStop() {
         renderEnd = getCurrentTime();
     }
 
-    public void logResults(){
-        log.debug("PDF Output - JSConverter: " + (queryToHtmlEnd - queryToHtmlStart) + "ms PDF Render: " + (renderEnd - renderStart) + "ms");
+    public void logResults() {
+        log.debug("PDF Output - JSConverter: " + (queryToHtmlEnd - queryToHtmlStart) + "ms PDF Render: "
+                + (renderEnd - renderStart) + "ms");
     }
 
-    private long getCurrentTime(){
+    private long getCurrentTime() {
         return (new Date()).getTime();
     }
 }

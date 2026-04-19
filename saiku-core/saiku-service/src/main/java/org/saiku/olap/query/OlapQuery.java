@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +15,24 @@
  */
 package org.saiku.olap.query;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.io.Writer;
+import java.math.BigDecimal;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
+import mondrian.rolap.RolapConnection;
+import org.apache.commons.lang.StringUtils;
+import org.olap4j.*;
+import org.olap4j.Axis.Standard;
+import org.olap4j.impl.IdentifierParser;
+import org.olap4j.mdx.ParseTreeWriter;
+import org.olap4j.mdx.SelectNode;
+import org.olap4j.metadata.Catalog;
+import org.olap4j.metadata.Cube;
+import org.olap4j.query.*;
+import org.olap4j.query.QueryDimension.HierarchizeMode;
 import org.saiku.olap.dto.SaikuCube;
 import org.saiku.olap.dto.SaikuTag;
 import org.saiku.olap.dto.filter.SaikuFilter;
@@ -26,30 +44,8 @@ import org.saiku.olap.util.exception.SaikuIncompatibleException;
 import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.olap.util.formatter.ICellSetFormatter;
 import org.saiku.service.util.exception.SaikuServiceException;
-
-import org.apache.commons.lang.StringUtils;
-import org.olap4j.*;
-import org.olap4j.Axis.Standard;
-import org.olap4j.impl.IdentifierParser;
-import org.olap4j.mdx.ParseTreeWriter;
-import org.olap4j.mdx.SelectNode;
-import org.olap4j.metadata.Catalog;
-import org.olap4j.metadata.Cube;
-import org.olap4j.query.*;
-import org.olap4j.query.QueryDimension.HierarchizeMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.io.Writer;
-import java.math.BigDecimal;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
-
-import mondrian.rolap.RolapConnection;
-
 
 public class OlapQuery implements IQuery {
 
@@ -87,12 +83,11 @@ public class OlapQuery implements IQuery {
     }
 
     public OlapQuery(Query query, OlapConnection connection, SaikuCube cube) {
-        this(query,connection, cube,true);
+        this(query, connection, cube, true);
     }
 
     public void swapAxes() {
         this.query.swapAxes();
-
 
         QueryAxis rows = query.getAxis(Axis.ROWS);
         QueryAxis cols = query.getAxis(Axis.COLUMNS);
@@ -118,7 +113,6 @@ public class OlapQuery implements IQuery {
             cols.clearFilter();
             cols.clearLimitFunction();
 
-
             // columns
             if (rows.getLimitFunction() != null) {
                 cols.limit(rows.getLimitFunction(), rows.getLimitFunctionN(), rows.getLimitFunctionSortLiteral());
@@ -130,7 +124,6 @@ public class OlapQuery implements IQuery {
             rows.clearFilter();
             rows.clearLimitFunction();
 
-
             // rows
             if (colLimit != null) {
                 rows.limit(colLimit, colN, colLimitSort);
@@ -139,8 +132,8 @@ public class OlapQuery implements IQuery {
                 rows.filter(colFilter);
             }
 
-        } catch (NoSuchMethodError e) {}
-
+        } catch (NoSuchMethodError e) {
+        }
     }
 
     public Map<Axis, QueryAxis> getAxes() {
@@ -157,7 +150,7 @@ public class OlapQuery implements IQuery {
         }
         Standard standardAxis = Standard.valueOf(name);
         if (standardAxis == null)
-            throw new SaikuOlapException("Axis ("+name+") not found for query ("+ query.getName() + ")");
+            throw new SaikuOlapException("Axis (" + name + ") not found for query (" + query.getName() + ")");
 
         Axis queryAxis = Axis.Factory.forOrdinal(standardAxis.axisOrdinal());
         return query.getAxis(queryAxis);
@@ -186,19 +179,24 @@ public class OlapQuery implements IQuery {
             dimension.clearHierarchizeMode();
         }
 
-        if (oldQueryAxis != null && newQueryAxis != null && (oldQueryAxis.getLocation() != newQueryAxis.getLocation()) && oldQueryAxis.getLocation() != null)
-        {
+        if (oldQueryAxis != null
+                && newQueryAxis != null
+                && (oldQueryAxis.getLocation() != newQueryAxis.getLocation())
+                && oldQueryAxis.getLocation() != null) {
             for (QueryAxis qAxis : query.getAxes().values()) {
                 if (qAxis.getSortOrder() != null && qAxis.getSortIdentifierNodeName() != null) {
                     String sortLiteral = qAxis.getSortIdentifierNodeName();
-                    if (sortLiteral.startsWith(dimension.getDimension().getUniqueName()) || sortLiteral.startsWith("[" + dimension.getName())) {
+                    if (sortLiteral.startsWith(dimension.getDimension().getUniqueName())
+                            || sortLiteral.startsWith("[" + dimension.getName())) {
                         qAxis.clearSort();
                     }
                 }
             }
         }
 
-        if (oldQueryAxis != null && newQueryAxis != null && (position > -1 || (oldQueryAxis.getLocation() != newQueryAxis.getLocation()))) {
+        if (oldQueryAxis != null
+                && newQueryAxis != null
+                && (position > -1 || (oldQueryAxis.getLocation() != newQueryAxis.getLocation()))) {
             oldQueryAxis.removeDimension(dimension);
             if (position > -1) {
                 newQueryAxis.addDimension(position, dimension);
@@ -215,15 +213,13 @@ public class OlapQuery implements IQuery {
     private QueryAxis findAxis(QueryDimension dimension) {
         if (query.getUnusedAxis().getDimensions().contains(dimension)) {
             return query.getUnusedAxis();
-        }
-        else {
-            Map<Axis,QueryAxis> axes = query.getAxes();
+        } else {
+            Map<Axis, QueryAxis> axes = query.getAxes();
             for (Axis axis : axes.keySet()) {
                 if (axes.get(axis).getDimensions().contains(dimension)) {
                     return axes.get(axis);
                 }
             }
-
         }
         return null;
     }
@@ -264,7 +260,8 @@ public class OlapQuery implements IQuery {
             if (scenario != null && query.getDimension(SCENARIO) != null) {
                 QueryDimension dimension = query.getDimension(SCENARIO);
                 moveDimension(dimension, Axis.FILTER);
-                Selection sel = dimension.createSelection(IdentifierParser.parseIdentifier("[Scenario].[" + getScenario().getId() + "]"));
+                Selection sel = dimension.createSelection(IdentifierParser.parseIdentifier(
+                        "[Scenario].[" + getScenario().getId() + "]"));
                 if (!dimension.getInclusions().contains(sel)) {
                     dimension.getInclusions().add(sel);
                 }
@@ -291,7 +288,6 @@ public class OlapQuery implements IQuery {
                 this.statement.close();
             }
         }
-
     }
 
     private void applyDefaultProperties() {
@@ -311,13 +307,13 @@ public class OlapQuery implements IQuery {
             axis.clearFilter();
             axis.clearLimitFunction();
             axis.clearSort();
-        } catch (NoSuchMethodError e) {}
-
+        } catch (NoSuchMethodError e) {
+        }
     }
 
     public void clearAllQuerySelections() {
         resetAxisSelections(getUnusedAxis());
-        Map<Axis,QueryAxis> axes = getAxes();
+        Map<Axis, QueryAxis> axes = getAxes();
         for (Axis axis : axes.keySet()) {
             resetAxisSelections(axes.get(axis));
         }
@@ -325,10 +321,10 @@ public class OlapQuery implements IQuery {
 
     public void resetQuery() {
         clearAllQuerySelections();
-        Map<Axis,QueryAxis> axes = getAxes();
+        Map<Axis, QueryAxis> axes = getAxes();
         for (Axis axis : axes.keySet()) {
             QueryAxis qAxis = axes.get(axis);
-            for (int i = 0; i < qAxis.getDimensions().size(); i++ ) {
+            for (int i = 0; i < qAxis.getDimensions().size(); i++) {
                 QueryDimension qDim = qAxis.getDimensions().get(0);
                 moveDimension(qDim, null);
             }
@@ -339,7 +335,7 @@ public class OlapQuery implements IQuery {
         if (StringUtils.isNotBlank(axisName)) {
             QueryAxis qAxis = getAxis(axisName);
             resetAxisSelections(qAxis);
-            for (int i = 0; i < qAxis.getDimensions().size(); i++ ) {
+            for (int i = 0; i < qAxis.getDimensions().size(); i++) {
                 QueryDimension qDim = qAxis.getDimensions().get(0);
                 moveDimension(qDim, null);
             }
@@ -365,11 +361,11 @@ public class OlapQuery implements IQuery {
             connection.createScenario();
             if (query.getDimension("Scenario") != null) {
                 this.properties.put("org.saiku.connection.scenario", Boolean.toString(true));
-            }
-            else {
+            } else {
                 this.properties.put("org.saiku.connection.scenario", Boolean.toString(false));
             }
-            this.properties.put("org.saiku.query.explain", Boolean.toString(connection.isWrapperFor(RolapConnection.class)));
+            this.properties.put(
+                    "org.saiku.query.explain", Boolean.toString(connection.isWrapperFor(RolapConnection.class)));
         } catch (Exception e) {
             this.properties.put("org.saiku.connection.scenario", Boolean.toString(false));
             this.properties.put("org.saiku.query.explain", Boolean.toString(false));
@@ -428,7 +424,6 @@ public class OlapQuery implements IQuery {
 
     public void storeCellset(CellSet cs) {
         this.cellset = cs;
-
     }
 
     public CellSet getCellset() {
@@ -437,7 +432,6 @@ public class OlapQuery implements IQuery {
 
     public void setStatement(OlapStatement os) {
         this.statement = os;
-
     }
 
     public OlapStatement getStatement() {
@@ -458,7 +452,6 @@ public class OlapQuery implements IQuery {
 
     public void storeFormatter(ICellSetFormatter formatter) {
         this.formatter = formatter;
-
     }
 
     public ICellSetFormatter getFormatter() {
@@ -480,6 +473,4 @@ public class OlapQuery implements IQuery {
     public Query getQuery() {
         return query;
     }
-
-
 }

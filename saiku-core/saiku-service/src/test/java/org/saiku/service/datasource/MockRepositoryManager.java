@@ -1,5 +1,9 @@
 package org.saiku.service.datasource;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.*;
+import javax.jcr.RepositoryException;
 import org.saiku.database.dto.MondrianSchema;
 import org.saiku.datasources.connection.RepositoryFile;
 import org.saiku.repository.AclEntry;
@@ -8,19 +12,12 @@ import org.saiku.repository.IRepositoryManager;
 import org.saiku.repository.IRepositoryObject;
 import org.saiku.service.user.UserService;
 
-import javax.jcr.RepositoryException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.*;
-
 public class MockRepositoryManager implements IRepositoryManager {
     private Map<String, Object> files = new HashMap<>();
     private Map<String, DataSource> datasources = new HashMap<>();
 
     @Override
-    public void init() {
-
-    }
+    public void init() {}
 
     @Override
     public boolean start(UserService userService) throws RepositoryException {
@@ -28,9 +25,7 @@ public class MockRepositoryManager implements IRepositoryManager {
     }
 
     @Override
-    public void createUser(String u) throws RepositoryException {
-
-    }
+    public void createUser(String u) throws RepositoryException {}
 
     @Override
     public Object getHomeFolders() throws RepositoryException {
@@ -48,9 +43,7 @@ public class MockRepositoryManager implements IRepositoryManager {
     }
 
     @Override
-    public void shutdown() {
-
-    }
+    public void shutdown() {}
 
     @Override
     public boolean createFolder(String username, String folder) throws RepositoryException {
@@ -63,9 +56,7 @@ public class MockRepositoryManager implements IRepositoryManager {
     }
 
     @Override
-    public void deleteRepository() throws RepositoryException {
-
-    }
+    public void deleteRepository() throws RepositoryException {}
 
     @Override
     public boolean moveFolder(String user, String folder, String source, String target) throws RepositoryException {
@@ -73,19 +64,16 @@ public class MockRepositoryManager implements IRepositoryManager {
     }
 
     @Override
-    public Object saveFile(Object file, String path, String user, String type, List<String> roles) throws RepositoryException {
+    public Object saveFile(Object file, String path, String user, String type, List<String> roles)
+            throws RepositoryException {
         return null;
     }
 
     @Override
-    public void removeFile(String path, String user, List<String> roles) throws RepositoryException {
-
-    }
+    public void removeFile(String path, String user, List<String> roles) throws RepositoryException {}
 
     @Override
-    public void moveFile(String source, String target, String user, List<String> roles) throws RepositoryException {
-
-    }
+    public void moveFile(String source, String target, String user, List<String> roles) throws RepositoryException {}
 
     @Override
     public Object saveInternalFile(Object file, String path, String type) throws RepositoryException {
@@ -102,12 +90,12 @@ public class MockRepositoryManager implements IRepositoryManager {
 
     @Override
     public String getFile(String s, String username, List<String> roles) throws RepositoryException {
-        return (String)this.files.get(s);
+        return (String) this.files.get(s);
     }
 
     @Override
     public String getInternalFile(String s) throws RepositoryException {
-        return (String)this.files.get(s);
+        return (String) this.files.get(s);
     }
 
     @Override
@@ -116,9 +104,7 @@ public class MockRepositoryManager implements IRepositoryManager {
     }
 
     @Override
-    public void removeInternalFile(String s) throws RepositoryException {
-
-    }
+    public void removeInternalFile(String s) throws RepositoryException {}
 
     @Override
     public List<MondrianSchema> getAllSchema() throws RepositoryException {
@@ -146,9 +132,7 @@ public class MockRepositoryManager implements IRepositoryManager {
     }
 
     @Override
-    public void restoreRepository(byte[] xml) throws RepositoryException, IOException {
-
-    }
+    public void restoreRepository(byte[] xml) throws RepositoryException, IOException {}
 
     @Override
     public RepositoryFile getFile(String fileUrl) {
@@ -161,14 +145,13 @@ public class MockRepositoryManager implements IRepositoryManager {
     }
 
     @Override
-    public List<IRepositoryObject> getAllFiles(List<String> type, String username, List<String> roles, String path) throws RepositoryException {
+    public List<IRepositoryObject> getAllFiles(List<String> type, String username, List<String> roles, String path)
+            throws RepositoryException {
         return null;
     }
 
     @Override
-    public void deleteFile(String datasourcePath) {
-
-    }
+    public void deleteFile(String datasourcePath) {}
 
     @Override
     public AclEntry getACL(String object, String username, List<String> roles) {
@@ -176,9 +159,7 @@ public class MockRepositoryManager implements IRepositoryManager {
     }
 
     @Override
-    public void setACL(String object, String acl, String username, List<String> roles) throws RepositoryException {
-
-    }
+    public void setACL(String object, String acl, String username, List<String> roles) throws RepositoryException {}
 
     @Override
     public List<MondrianSchema> getInternalFilesOfFileType(String type) throws RepositoryException {
@@ -186,9 +167,7 @@ public class MockRepositoryManager implements IRepositoryManager {
     }
 
     @Override
-    public void createFileMixin(String type) throws RepositoryException {
-
-    }
+    public void createFileMixin(String type) throws RepositoryException {}
 
     @Override
     public Object getRepositoryObject() {

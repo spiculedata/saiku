@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,53 +20,52 @@ import java.util.Properties;
 
 public class SaikuQuery extends AbstractSaikuObject {
 
-  private SaikuCube cube;
+    private SaikuCube cube;
 
-  private List<SaikuAxis> axes;
+    private List<SaikuAxis> axes;
 
-  private String mdx;
+    private String mdx;
 
-  private String type;
+    private String type;
 
-  private Properties properties;
+    private Properties properties;
 
-  public SaikuQuery() {
-    super( null, null );
-    throw new RuntimeException( "Unsupported Constructor. Serialization only" );
-  }
+    public SaikuQuery() {
+        super(null, null);
+        throw new RuntimeException("Unsupported Constructor. Serialization only");
+    }
 
-  public SaikuQuery( String name, SaikuCube cube, List<SaikuAxis> axes, String mdx, String type, Properties props ) {
-    super( name, name );
-    this.cube = cube;
-    this.axes = axes;
-    this.mdx = mdx;
-    this.type = type;
-    this.properties = props;
-  }
+    public SaikuQuery(String name, SaikuCube cube, List<SaikuAxis> axes, String mdx, String type, Properties props) {
+        super(name, name);
+        this.cube = cube;
+        this.axes = axes;
+        this.mdx = mdx;
+        this.type = type;
+        this.properties = props;
+    }
 
-  public List<SaikuAxis> getSaikuAxes() {
-    return axes;
-  }
+    public List<SaikuAxis> getSaikuAxes() {
+        return axes;
+    }
 
-  @Override
-  public String getUniqueName() {
-    return cube.getUniqueName() + ".[" + getName() + "]";
-  }
+    @Override
+    public String getUniqueName() {
+        return cube.getUniqueName() + ".[" + getName() + "]";
+    }
 
-  public SaikuCube getCube() {
-    return cube;
-  }
+    public SaikuCube getCube() {
+        return cube;
+    }
 
-  public String getMdx() {
-    return mdx;
-  }
+    public String getMdx() {
+        return mdx;
+    }
 
-  public String getType() {
-    return type;
-  }
+    public String getType() {
+        return type;
+    }
 
-  public Properties getProperties() {
-    return properties;
-  }
+    public Properties getProperties() {
+        return properties;
+    }
 }
-

@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,17 +16,15 @@
 
 package org.saiku.olap.util;
 
-import org.saiku.olap.dto.SaikuDimension;
-
 import java.util.Comparator;
-
+import org.saiku.olap.dto.SaikuDimension;
 
 public class SaikuDimensionCaptionComparator implements Comparator<SaikuDimension> {
 
-  public int compare( SaikuDimension o1, SaikuDimension o2 ) {
-    if ( o1.getCaption() == null || o2.getCaption() == null ) {
-      return 0;
+    public int compare(SaikuDimension o1, SaikuDimension o2) {
+        if (o1.getCaption() == null || o2.getCaption() == null) {
+            return 0;
+        }
+        return o1.getCaption().compareTo(o2.getCaption());
     }
-    return o1.getCaption().compareTo( o2.getCaption() );
-  }
 }

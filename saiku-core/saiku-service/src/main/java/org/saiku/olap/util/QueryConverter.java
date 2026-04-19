@@ -30,12 +30,12 @@ public class QueryConverter {
                 org.saiku.query.QueryAxis sAxis = sQuery.getAxis(axis.getLocation());
                 convertAxis(axis, sAxis, sQuery);
             }
-
         }
         return sQuery;
     }
 
-    private static void convertAxis(QueryAxis axis, org.saiku.query.QueryAxis sAxis, org.saiku.query.Query sQuery) throws Exception {
+    private static void convertAxis(QueryAxis axis, org.saiku.query.QueryAxis sAxis, org.saiku.query.Query sQuery)
+            throws Exception {
 
         for (QueryDimension qD : axis.getDimensions()) {
             convertDimension(qD, sAxis, sQuery);
@@ -51,30 +51,29 @@ public class QueryConverter {
         }
 
         if (axis.getLimitFunction() != null) {
-            NFilter nf = new NFilter(MdxFunctionType.valueOf(
-                    axis.getLimitFunction().toString()),
+            NFilter nf = new NFilter(
+                    MdxFunctionType.valueOf(axis.getLimitFunction().toString()),
                     axis.getLimitFunctionN().intValue(),
                     axis.getLimitFunctionSortLiteral());
             sAxis.addFilter(nf);
         }
 
         sAxis.setNonEmpty(axis.isNonEmpty());
-
-
-
-
     }
 
-    private static void convertDimension(QueryDimension qD, org.saiku.query.QueryAxis sAxis, org.saiku.query.Query sQuery) throws Exception {
+    private static void convertDimension(
+            QueryDimension qD, org.saiku.query.QueryAxis sAxis, org.saiku.query.Query sQuery) throws Exception {
         boolean first = true;
         String hierarchyName = null;
         QueryHierarchy qh = null;
         for (Selection sel : qD.getInclusions()) {
             if (first) {
                 if ((sel.getRootElement() instanceof Member)) {
-                    hierarchyName = ((Member) sel.getRootElement()).getHierarchy().getUniqueName();
+                    hierarchyName =
+                            ((Member) sel.getRootElement()).getHierarchy().getUniqueName();
                 } else {
-                    hierarchyName = ((Level) sel.getRootElement()).getHierarchy().getUniqueName();
+                    hierarchyName =
+                            ((Level) sel.getRootElement()).getHierarchy().getUniqueName();
                 }
 
                 qh = sQuery.getHierarchy(hierarchyName);
@@ -88,14 +87,13 @@ public class QueryConverter {
                 if (sel.getOperator().equals(Operator.MEMBER)) {
                     qh.includeMember(sel.getRootElement().getUniqueName());
                 } else {
-                    throw new SaikuIncompatibleException("Cannot convert member selection using operator: " + sel.getOperator());
+                    throw new SaikuIncompatibleException(
+                            "Cannot convert member selection using operator: " + sel.getOperator());
                 }
             } else {
                 qh.includeLevel(sel.getRootElement().getName());
             }
         }
-         sAxis.addHierarchy(qh);
-
+        sAxis.addHierarchy(qh);
     }
-
 }

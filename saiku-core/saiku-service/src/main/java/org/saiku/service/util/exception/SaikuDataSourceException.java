@@ -12,7 +12,6 @@ public class SaikuDataSourceException extends SaikuServiceException {
     /**
      * @see java.lang.Exception#Exception(String))
      */
-
     public SaikuDataSourceException(String message) {
         super(message);
     }
@@ -30,5 +29,4 @@ public class SaikuDataSourceException extends SaikuServiceException {
     SaikuDataSourceException(String message, Throwable cause) {
         super(message, cause);
     }
-
 }

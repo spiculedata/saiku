@@ -11,53 +11,42 @@ import org.apache.commons.vfs.impl.DefaultFileSystemManager;
 import org.apache.commons.vfs.provider.FileProvider;
 import org.saiku.service.datasource.IDatasourceManager;
 
-public class MondrianVFS
-        implements FileProvider
-{
+public class MondrianVFS implements FileProvider {
     private IDatasourceManager datasourceManager;
 
-    public void setDatasourceManager(IDatasourceManager dms)
-    {
+    public void setDatasourceManager(IDatasourceManager dms) {
         this.datasourceManager = dms;
     }
 
-    public void init()
-    {
-        try
-        {
-            DefaultFileSystemManager dfsm = (DefaultFileSystemManager)VFS.getManager();
+    public void init() {
+        try {
+            DefaultFileSystemManager dfsm = (DefaultFileSystemManager) VFS.getManager();
             if (!dfsm.hasProvider("mondrian")) {
                 dfsm.addProvider("mondrian", this);
             }
+        } catch (FileSystemException e) {
         }
-        catch (FileSystemException e) {}
     }
 
     public FileObject findFile(FileObject fileObject, String catalog, FileSystemOptions fileSystemOptions)
-            throws FileSystemException
-    {
+            throws FileSystemException {
         return new RepositoryVfsFileObject(catalog, this.datasourceManager);
     }
 
     public FileObject createFileSystem(String s, FileObject fileObject, FileSystemOptions fileSystemOptions)
-            throws FileSystemException
-    {
+            throws FileSystemException {
         return null;
     }
 
-    public FileSystemConfigBuilder getConfigBuilder()
-    {
+    public FileSystemConfigBuilder getConfigBuilder() {
         return null;
     }
 
-    public Collection getCapabilities()
-    {
+    public Collection getCapabilities() {
         return null;
     }
 
-    public FileName parseUri(FileName fileName, String s)
-            throws FileSystemException
-    {
+    public FileName parseUri(FileName fileName, String s) throws FileSystemException {
         return null;
     }
 }

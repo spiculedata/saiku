@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,42 +19,37 @@ import java.util.Properties;
 
 public class SaikuDatasource {
 
-  private String name;
-  private Type type;
-  private Properties properties;
+    private String name;
+    private Type type;
+    private Properties properties;
 
-  public SaikuDatasource() {
-  }
+    public SaikuDatasource() {}
 
-  public SaikuDatasource( String name, Type type, Properties properties ) {
-    this.name = name;
-    this.type = type;
-    this.properties = properties;
-  }
+    public SaikuDatasource(String name, Type type, Properties properties) {
+        this.name = name;
+        this.type = type;
+        this.properties = properties;
+    }
 
+    public enum Type {
+        OLAP
+    }
 
-  public enum Type {
-    OLAP
-  }
+    public String getName() {
+        return name;
+    }
 
-  public String getName() {
-    return name;
-  }
+    public Type getType() {
+        return type;
+    }
 
+    public Properties getProperties() {
+        return properties;
+    }
 
-  public Type getType() {
-    return type;
-  }
-
-
-  public Properties getProperties() {
-    return properties;
-  }
-
-  @Override
-  public SaikuDatasource clone() {
-    Properties props = (Properties) properties.clone();
-    return new SaikuDatasource( name, type, props );
-  }
-
+    @Override
+    public SaikuDatasource clone() {
+        Properties props = (Properties) properties.clone();
+        return new SaikuDatasource(name, type, props);
+    }
 }

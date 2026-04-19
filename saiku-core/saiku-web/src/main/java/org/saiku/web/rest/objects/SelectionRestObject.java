@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,57 +20,52 @@ import javax.xml.bind.annotation.XmlAccessorType;
 
 @XmlAccessorType(XmlAccessType.FIELD)
 public class SelectionRestObject {
-	
-	private String uniquename;
-	private String hierarchy;
-	private String type;
-	private String action;
-	private String showTotals;
 
+    private String uniquename;
+    private String hierarchy;
+    private String type;
+    private String action;
+    private String showTotals;
 
-	public SelectionRestObject() {
-	}
-	
-	
-	public String getUniquename() {
-		return uniquename;
-	}
+    public SelectionRestObject() {}
 
-	public String getType() {
-		return type;
-	}
+    public String getUniquename() {
+        return uniquename;
+    }
 
-	public String getHierarchy() {
-		return hierarchy;
-	}
+    public String getType() {
+        return type;
+    }
 
-	public String getAction() {
-		return action;
-	}
+    public String getHierarchy() {
+        return hierarchy;
+    }
 
-	public void setUniquename(String uniquename) {
-		this.uniquename = uniquename;
-	}
+    public String getAction() {
+        return action;
+    }
 
-	public void setHierarchy(String hierarchy) {
-		this.hierarchy = hierarchy;
-	}
+    public void setUniquename(String uniquename) {
+        this.uniquename = uniquename;
+    }
 
-	public void setType(String type) {
-		this.type = type;
-	}
+    public void setHierarchy(String hierarchy) {
+        this.hierarchy = hierarchy;
+    }
 
-	public void setAction(String action) {
-		this.action = action;
-	}
+    public void setType(String type) {
+        this.type = type;
+    }
 
-	public String getTotalsFunction() {
-		return showTotals;
-	}
+    public void setAction(String action) {
+        this.action = action;
+    }
 
-	public void setTotalsFunction(String showTotals) {
-		this.showTotals = showTotals;
-	}
-	
-	
+    public String getTotalsFunction() {
+        return showTotals;
+    }
+
+    public void setTotalsFunction(String showTotals) {
+        this.showTotals = showTotals;
+    }
 }

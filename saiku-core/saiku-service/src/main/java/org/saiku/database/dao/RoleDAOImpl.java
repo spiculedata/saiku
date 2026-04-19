@@ -2,7 +2,6 @@ package org.saiku.database.dao;
 
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
-import org.saiku.database.dao.RoleDAO;
 import org.saiku.database.dto.Role;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -11,15 +10,14 @@ import org.springframework.beans.factory.annotation.Autowired;
  */
 public class RoleDAOImpl implements RoleDAO {
 
-  @Autowired
-  private SessionFactory sessionFactory;
+    @Autowired
+    private SessionFactory sessionFactory;
 
-  private Session getCurrentSession() {
-    return sessionFactory.getCurrentSession();
-  }
+    private Session getCurrentSession() {
+        return sessionFactory.getCurrentSession();
+    }
 
-  public Role getRole(int id) {
-    return (Role) getCurrentSession().load(Role.class, id);
-  }
-
+    public Role getRole(int id) {
+        return (Role) getCurrentSession().load(Role.class, id);
+    }
 }

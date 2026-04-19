@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.olap.util.exception.SaikuOlapException;
 import org.slf4j.Logger;
@@ -14,21 +13,20 @@ public class SimpleConnectionManager extends AbstractConnectionManager {
     private Map<String, ISaikuConnection> connections = new HashMap<>();
     private final List<String> errorConnections = new ArrayList<>();
     private static final Logger log = LoggerFactory.getLogger(SimpleConnectionManager.class);
- 
-    
+
     @Override
     public void init() throws SaikuOlapException {
-    	this.connections = getAllConnections();
+        this.connections = getAllConnections();
     }
 
     @Override
     protected ISaikuConnection getInternalConnection(String name, SaikuDatasource datasource)
-      throws SaikuOlapException {
+            throws SaikuOlapException {
 
         ISaikuConnection con;
 
         if (!connections.containsKey(name)) {
-            con =  connect(name, datasource);
+            con = connect(name, datasource);
             if (con != null) {
                 connections.put(name, con);
             } else {
@@ -45,35 +43,33 @@ public class SimpleConnectionManager extends AbstractConnectionManager {
 
     @Override
     protected ISaikuConnection refreshInternalConnection(String name, SaikuDatasource datasource) {
-		try {
+        try {
             ISaikuConnection con = connections.remove(name);
-			if (con != null) {
-				con.clearCache();
-			}
+            if (con != null) {
+                con.clearCache();
+            }
             return getInternalConnection(name, datasource);
-		}
-		catch (Exception e) {
-			log.error("Could not get internal connection", e);
-		}
-		return null;
+        } catch (Exception e) {
+            log.error("Could not get internal connection", e);
+        }
+        return null;
     }
 
     private ISaikuConnection connect(String name, SaikuDatasource datasource) throws SaikuOlapException {
-      if ( datasource != null ) {
+        if (datasource != null) {
 
+            try {
+                ISaikuConnection con = SaikuConnectionFactory.getConnection(datasource);
+                if (con.initialized()) {
+                    return con;
+                }
+            } catch (Exception e) {
+                log.error("Could not get connection", e);
+            }
 
-        try {
-          ISaikuConnection con = SaikuConnectionFactory.getConnection( datasource );
-          if ( con.initialized() ) {
-            return con;
-          }
-        } catch ( Exception e ) {
-          log.error("Could not get connection", e);
+            return null;
         }
 
-        return null;
-      }
-
-    throw new SaikuOlapException(  "Cannot find connection: (" + name + ")"  );
-  }
+        throw new SaikuOlapException("Cannot find connection: (" + name + ")");
+    }
 }

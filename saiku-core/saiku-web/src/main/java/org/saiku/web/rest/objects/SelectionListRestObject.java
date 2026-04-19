@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,29 +17,25 @@ package org.saiku.web.rest.objects;
 
 import java.util.ArrayList;
 import java.util.List;
-
 import javax.xml.bind.annotation.XmlAccessType;
 import javax.xml.bind.annotation.XmlAccessorType;
 
 @XmlAccessorType(XmlAccessType.FIELD)
 class SelectionListRestObject {
-	
-	private List<SelectionRestObject> selections = new ArrayList<>();
 
-	public SelectionListRestObject() {
-	}
-	
-	public SelectionListRestObject(List<SelectionRestObject> selections) {
-		this.selections = selections;
-	}
+    private List<SelectionRestObject> selections = new ArrayList<>();
 
-	public List<SelectionRestObject> getSelections() {
-		return selections;
-	}
+    public SelectionListRestObject() {}
 
-	public void setSelections(List<SelectionRestObject> selections) {
-		this.selections = selections;
-	}
-	
-		
+    public SelectionListRestObject(List<SelectionRestObject> selections) {
+        this.selections = selections;
+    }
+
+    public List<SelectionRestObject> getSelections() {
+        return selections;
+    }
+
+    public void setSelections(List<SelectionRestObject> selections) {
+        this.selections = selections;
+    }
 }

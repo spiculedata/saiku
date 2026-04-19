@@ -63,7 +63,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-war-plugin</artifactId>
-                <version>2.6</version>
+                <version>3.4.0</version>
                 <executions>
                     <execution>
                         <!-- First step is to disable the default-war build step. -->
@@ -191,7 +191,7 @@
             </plugin>
             <plugin>
                 <artifactId>maven-war-plugin</artifactId>
-                <version>2.6</version>
+                <version>3.4.0</version>
                 <configuration>
                     <warSourceExcludes>WEB-INF/saiku-beans.xml</warSourceExcludes>
                 </configuration>
@@ -222,10 +222,24 @@
         <dependency>
             <groupId>org.apache.hive</groupId>
             <artifactId>hive-jdbc</artifactId>
+            <exclusions>
+                <exclusion><groupId>net.hydromatic</groupId><artifactId>quidem</artifactId></exclusion>
+                <exclusion><groupId>net.hydromatic</groupId><artifactId>linq4j</artifactId></exclusion>
+                <exclusion><groupId>org.pentaho</groupId><artifactId>pentaho-aggdesigner-algorithm</artifactId></exclusion>
+                <exclusion><groupId>org.apache.calcite</groupId><artifactId>calcite-core</artifactId></exclusion>
+                <exclusion><groupId>org.apache.calcite</groupId><artifactId>calcite-avatica</artifactId></exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.hive</groupId>
             <artifactId>hive-cli</artifactId>
+            <exclusions>
+                <exclusion><groupId>net.hydromatic</groupId><artifactId>quidem</artifactId></exclusion>
+                <exclusion><groupId>net.hydromatic</groupId><artifactId>linq4j</artifactId></exclusion>
+                <exclusion><groupId>org.pentaho</groupId><artifactId>pentaho-aggdesigner-algorithm</artifactId></exclusion>
+                <exclusion><groupId>org.apache.calcite</groupId><artifactId>calcite-core</artifactId></exclusion>
+                <exclusion><groupId>org.apache.calcite</groupId><artifactId>calcite-avatica</artifactId></exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.saikuanalytics</groupId>
@@ -316,6 +330,13 @@
         <dependency>
             <groupId>org.apache.hive</groupId>
             <artifactId>hive-jdbc</artifactId>
+            <exclusions>
+                <exclusion><groupId>net.hydromatic</groupId><artifactId>quidem</artifactId></exclusion>
+                <exclusion><groupId>net.hydromatic</groupId><artifactId>linq4j</artifactId></exclusion>
+                <exclusion><groupId>org.pentaho</groupId><artifactId>pentaho-aggdesigner-algorithm</artifactId></exclusion>
+                <exclusion><groupId>org.apache.calcite</groupId><artifactId>calcite-core</artifactId></exclusion>
+                <exclusion><groupId>org.apache.calcite</groupId><artifactId>calcite-avatica</artifactId></exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.hadoop</groupId>

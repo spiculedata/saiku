@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,20 +19,19 @@ import java.util.List;
 
 public class SaikuConnection extends AbstractSaikuObject {
 
-  private List<SaikuCatalog> catalogs;
+    private List<SaikuCatalog> catalogs;
 
-  public SaikuConnection() {
-    super( null, null );
-    throw new RuntimeException( "Unsupported Constructor. Serialization only" );
-  }
+    public SaikuConnection() {
+        super(null, null);
+        throw new RuntimeException("Unsupported Constructor. Serialization only");
+    }
 
-  public SaikuConnection( String connectionName, List<SaikuCatalog> catalogs ) {
-    super( connectionName, connectionName );
-    this.catalogs = catalogs;
-  }
+    public SaikuConnection(String connectionName, List<SaikuCatalog> catalogs) {
+        super(connectionName, connectionName);
+        this.catalogs = catalogs;
+    }
 
-  public List<SaikuCatalog> getCatalogs() {
-    return catalogs;
-  }
-
+    public List<SaikuCatalog> getCatalogs() {
+        return catalogs;
+    }
 }

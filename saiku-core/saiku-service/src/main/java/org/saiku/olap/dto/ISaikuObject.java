@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,14 +17,13 @@ package org.saiku.olap.dto;
 
 public interface ISaikuObject {
 
-  String getUniqueName();
+    String getUniqueName();
 
-  String getName();
+    String getName();
 
-  int hashCode();
+    int hashCode();
 
-  boolean equals(Object obj);
+    boolean equals(Object obj);
 
-  String toString();
-
+    String toString();
 }

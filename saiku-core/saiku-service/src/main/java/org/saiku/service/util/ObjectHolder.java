@@ -15,46 +15,42 @@
  */
 package org.saiku.service.util;
 
+import java.util.HashMap;
+import java.util.Map;
 import org.saiku.olap.query.IQuery;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
-import java.util.Map;
-
 class ObjectHolder {
 
-  private final ThreadLocal<Map<String, IQuery>> threadQueries = new ThreadLocal<>();
+    private final ThreadLocal<Map<String, IQuery>> threadQueries = new ThreadLocal<>();
 
-  private static final Logger LOG = LoggerFactory.getLogger( ObjectHolder.class );
+    private static final Logger LOG = LoggerFactory.getLogger(ObjectHolder.class);
 
-  public void putIQuery( String queryName, IQuery query ) {
-    getIQueryMap().put( queryName, query );
-  }
-
-  public void removeIQuery( String queryName ) {
-    getIQueryMap().remove( queryName );
-  }
-
-
-  public IQuery getIQuery( String queryName ) {
-    IQuery query = getIQueryMap().get( queryName );
-    if ( query == null ) {
-      throw new SaikuServiceException( "No query with name (" + queryName + ") found" );
+    public void putIQuery(String queryName, IQuery query) {
+        getIQueryMap().put(queryName, query);
     }
-    return query;
-  }
 
-  private Map<String, IQuery> getIQueryMap() {
-    LOG.trace(
-      "ObjectHoler.getIQueryMap : Thread ID " + Thread.currentThread().getId() + " Name: " + Thread.currentThread()
-        .getName() );
-    if ( threadQueries.get() == null ) {
-      threadQueries.set( new HashMap<String, IQuery>() );
+    public void removeIQuery(String queryName) {
+        getIQueryMap().remove(queryName);
     }
-    return threadQueries.get();
-  }
 
+    public IQuery getIQuery(String queryName) {
+        IQuery query = getIQueryMap().get(queryName);
+        if (query == null) {
+            throw new SaikuServiceException("No query with name (" + queryName + ") found");
+        }
+        return query;
+    }
 
+    private Map<String, IQuery> getIQueryMap() {
+        LOG.trace(
+                "ObjectHoler.getIQueryMap : Thread ID " + Thread.currentThread().getId() + " Name: "
+                        + Thread.currentThread().getName());
+        if (threadQueries.get() == null) {
+            threadQueries.set(new HashMap<String, IQuery>());
+        }
+        return threadQueries.get();
+    }
 }

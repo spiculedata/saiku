@@ -1,68 +1,67 @@
 package org.saiku.olap.query2;
 
 public class ThinMember {
-	
-	private String name;
-	private String uniqueName;
-	private String caption;
-	private String type;
 
-	public ThinMember() {}
+    private String name;
+    private String uniqueName;
+    private String caption;
+    private String type;
 
-  public ThinMember(String name, String uniqueName, String caption) {
-		this.name = name;
-		this.uniqueName = uniqueName;
-		this.caption = caption;
-	}
+    public ThinMember() {}
 
-	/**
-	 * @return the name
-	 */
-	public String getName() {
-		return name;
-	}
+    public ThinMember(String name, String uniqueName, String caption) {
+        this.name = name;
+        this.uniqueName = uniqueName;
+        this.caption = caption;
+    }
 
-	/**
-	 * @param name the name to set
-	 */
-	public void setName(String name) {
-		this.name = name;
-	}
+    /**
+     * @return the name
+     */
+    public String getName() {
+        return name;
+    }
 
-	/**
-	 * @return the uniqueName
-	 */
-	public String getUniqueName() {
-		return uniqueName;
-	}
+    /**
+     * @param name the name to set
+     */
+    public void setName(String name) {
+        this.name = name;
+    }
 
-	/**
-	 * @param uniqueName the uniqueName to set
-	 */
-	public void setUniqueName(String uniqueName) {
-		this.uniqueName = uniqueName;
-	}
+    /**
+     * @return the uniqueName
+     */
+    public String getUniqueName() {
+        return uniqueName;
+    }
 
-	/**
-	 * @return the caption
-	 */
-	public String getCaption() {
-		return caption;
-	}
+    /**
+     * @param uniqueName the uniqueName to set
+     */
+    public void setUniqueName(String uniqueName) {
+        this.uniqueName = uniqueName;
+    }
 
-	/**
-	 * @param caption the caption to set
-	 */
-	public void setCaption(String caption) {
-		this.caption = caption;
-	}
+    /**
+     * @return the caption
+     */
+    public String getCaption() {
+        return caption;
+    }
 
+    /**
+     * @param caption the caption to set
+     */
+    public void setCaption(String caption) {
+        this.caption = caption;
+    }
 
-  public String getType() {
-	return type;
-  }
+    public String getType() {
+        return type;
+    }
 
-  public void setType(String type) {
-	this.type = type;
-  }
+    public void setType(String type) {
+        this.type = type;
+    }
 }

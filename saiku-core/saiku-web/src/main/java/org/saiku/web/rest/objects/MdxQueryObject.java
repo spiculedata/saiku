@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,18 +17,17 @@ package org.saiku.web.rest.objects;
 
 public class MdxQueryObject {
 
-	private String mdx;
+    private String mdx;
 
-	public MdxQueryObject(String mdx) {
-		this.mdx = mdx;
-	}
-	
-	public String getMdx() {
-		return mdx;
-	}
+    public MdxQueryObject(String mdx) {
+        this.mdx = mdx;
+    }
 
-	public void setMdx(String mdx) {
-		this.mdx = mdx;
-	}
-	
+    public String getMdx() {
+        return mdx;
+    }
+
+    public void setMdx(String mdx) {
+        this.mdx = mdx;
+    }
 }

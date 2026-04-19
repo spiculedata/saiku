@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,21 +19,19 @@ import java.util.List;
 
 public class SaikuSchema extends AbstractSaikuObject {
 
-  private List<SaikuCube> cubes;
+    private List<SaikuCube> cubes;
 
-  public SaikuSchema() {
-    super( null, null );
-    throw new RuntimeException( "Unsupported Constructor. Serialization only" );
-  }
+    public SaikuSchema() {
+        super(null, null);
+        throw new RuntimeException("Unsupported Constructor. Serialization only");
+    }
 
-  public SaikuSchema( String name, List<SaikuCube> cubes ) {
-    super( name, name );
-    this.cubes = cubes;
-  }
+    public SaikuSchema(String name, List<SaikuCube> cubes) {
+        super(name, name);
+        this.cubes = cubes;
+    }
 
-  public List<SaikuCube> getCubes() {
-    return cubes;
-  }
-
-
+    public List<SaikuCube> getCubes() {
+        return cubes;
+    }
 }

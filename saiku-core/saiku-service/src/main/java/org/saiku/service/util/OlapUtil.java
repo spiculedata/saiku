@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,37 +15,32 @@
  */
 package org.saiku.service.util;
 
-import org.olap4j.CellSet;
-
 import java.util.HashMap;
 import java.util.Map;
+import org.olap4j.CellSet;
 
 class OlapUtil {
 
+    private static final Map<String, CellSet> cellSetMap = new HashMap<>();
 
-  private static final Map<String, CellSet> cellSetMap = new HashMap<>();
-
-
-  /**
-   * storeCellSet stores a cellset generated from a query so we can manipulate it at a later date.
-   *
-   * @param cellSet
-   * @param queryId
-   */
-  public static void storeCellSet( final String queryId, final CellSet cellSet ) {
-    if ( cellSetMap.containsKey( queryId ) ) {
-      cellSetMap.remove( queryId );
+    /**
+     * storeCellSet stores a cellset generated from a query so we can manipulate it at a later date.
+     *
+     * @param cellSet
+     * @param queryId
+     */
+    public static void storeCellSet(final String queryId, final CellSet cellSet) {
+        if (cellSetMap.containsKey(queryId)) {
+            cellSetMap.remove(queryId);
+        }
+        cellSetMap.put(queryId, cellSet);
     }
-    cellSetMap.put( queryId, cellSet );
-  }
 
-  public static CellSet getCellSet( final String queryId ) {
-    return cellSetMap.get( queryId );
+    public static CellSet getCellSet(final String queryId) {
+        return cellSetMap.get(queryId);
+    }
 
-  }
-
-  public static void deleteCellSet( final String queryId ) {
-    cellSetMap.remove( queryId );
-  }
-
+    public static void deleteCellSet(final String queryId) {
+        cellSetMap.remove(queryId);
+    }
 }

@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +15,7 @@
  */
 package org.saiku.service.util.export;
 
+import java.util.List;
 import org.olap4j.CellSet;
 import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.query2.ThinHierarchy;
@@ -25,24 +26,18 @@ import org.saiku.olap.util.formatter.ICellSetFormatter;
 import org.saiku.service.util.export.excel.ExcelBuilderOptions;
 import org.saiku.service.util.export.excel.ExcelWorksheetBuilder;
 
-import java.util.List;
-
 public class ExcelExporter {
 
     public static byte[] exportExcel(CellSet cellSet, List<ThinHierarchy> filters) {
         return exportExcel(cellSet, new HierarchicalCellSetFormatter(), filters);
     }
 
-    public static byte[] exportExcel(CellSet cellSet,
-                                     ICellSetFormatter formatter,
-                                     List<ThinHierarchy> filters) {
+    public static byte[] exportExcel(CellSet cellSet, ICellSetFormatter formatter, List<ThinHierarchy> filters) {
         CellDataSet table = OlapResultSetUtil.cellSet2Matrix(cellSet, formatter);
         return exportExcel(table, formatter, filters);
     }
 
-    public static byte[] exportExcel(CellDataSet table,
-                                     ICellSetFormatter formatter,
-                                     List<ThinHierarchy> filters) {
+    public static byte[] exportExcel(CellDataSet table, ICellSetFormatter formatter, List<ThinHierarchy> filters) {
         ExcelBuilderOptions exb = new ExcelBuilderOptions();
         exb.repeatValues = (formatter instanceof FlattenedCellSetFormatter);
         return getExcel(table, filters, exb);
@@ -53,5 +48,4 @@ public class ExcelExporter {
         ExcelWorksheetBuilder worksheetBuilder = new ExcelWorksheetBuilder(table, filters, options);
         return worksheetBuilder.build();
     }
-
 }

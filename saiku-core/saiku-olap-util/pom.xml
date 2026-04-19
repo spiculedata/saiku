@@ -61,7 +61,6 @@
 		<dependency>
 			<groupId>pentaho</groupId>
 			<artifactId>mondrian</artifactId>
-			<version>4.3.0.1.1-SPARK</version>
 		</dependency>
 		<dependency>
 			<groupId>eigenbase</groupId>

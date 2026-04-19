@@ -4,7 +4,6 @@ import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
-
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.springframework.security.authentication.AuthenticationProvider;
@@ -41,7 +40,14 @@ public class OrbisAuthenticationProvider implements AuthenticationProvider {
         }
 
         String role = "ROLE_" + getUserRole(username).toUpperCase();
-        User user = new User(username, username, true, true, true, true, AuthorityUtils.createAuthorityList("ROLE_USER", "ROLE_ORBIS", role));
+        User user = new User(
+                username,
+                username,
+                true,
+                true,
+                true,
+                true,
+                AuthorityUtils.createAuthorityList("ROLE_USER", "ROLE_ORBIS", role));
 
         userCache.put(username, user);
 
@@ -103,45 +109,44 @@ public class OrbisAuthenticationProvider implements AuthenticationProvider {
         this.hazelcastPort = hazelcastPort;
     }
 
-    private static final String DEFAULT_JSON_RESPONSE = "{\n" +
-            "    \"id\": \"1797609737\",\n" +
-            "    \"displayName\": \"unknown\",\n" +
-            "    \"lastUpdated\": \"2018-01-23 14:35\",\n" +
-            "    \"lastActive\": \"2018-01-23 14:35\",\n" +
-            "    \"role\": \"admin\",\n" +
-            "    \"systemProvidedName\": \"dcgs-test-a\",\n" +
-            "    \"email\": {\n" +
-            "        \"preferred\": \"nipr\",\n" +
-            "        \"addresses\": [\n" +
-            "            {\n" +
-            "                \"type\": \"jwics\",\n" +
-            "                \"value\": \"\"\n" +
-            "            },\n" +
-            "            {\n" +
-            "                \"type\": \"sipr\",\n" +
-            "                \"value\": \"\"\n" +
-            "            },\n" +
-            "            {\n" +
-            "                \"type\": \"nipr\",\n" +
-            "                \"value\": \"dcgs@mill.com\"\n" +
-            "            }\n" +
-            "        ]\n" +
-            "    },\n" +
-            "    \"phone\": {\n" +
-            "        \"preferred\": \"secure\",\n" +
-            "        \"numbers\": [\n" +
-            "            {\n" +
-            "                \"type\": \"comm\",\n" +
-            "                \"value\": \"\"\n" +
-            "            },\n" +
-            "            {\n" +
-            "                \"type\": \"secure\",\n" +
-            "                \"value\": \"1234567890\"\n" +
-            "            }\n" +
-            "        ]\n" +
-            "    },\n" +
-            "    \"preferences\": {}\n" +
-            "}";
+    private static final String DEFAULT_JSON_RESPONSE = "{\n" + "    \"id\": \"1797609737\",\n"
+            + "    \"displayName\": \"unknown\",\n"
+            + "    \"lastUpdated\": \"2018-01-23 14:35\",\n"
+            + "    \"lastActive\": \"2018-01-23 14:35\",\n"
+            + "    \"role\": \"admin\",\n"
+            + "    \"systemProvidedName\": \"dcgs-test-a\",\n"
+            + "    \"email\": {\n"
+            + "        \"preferred\": \"nipr\",\n"
+            + "        \"addresses\": [\n"
+            + "            {\n"
+            + "                \"type\": \"jwics\",\n"
+            + "                \"value\": \"\"\n"
+            + "            },\n"
+            + "            {\n"
+            + "                \"type\": \"sipr\",\n"
+            + "                \"value\": \"\"\n"
+            + "            },\n"
+            + "            {\n"
+            + "                \"type\": \"nipr\",\n"
+            + "                \"value\": \"dcgs@mill.com\"\n"
+            + "            }\n"
+            + "        ]\n"
+            + "    },\n"
+            + "    \"phone\": {\n"
+            + "        \"preferred\": \"secure\",\n"
+            + "        \"numbers\": [\n"
+            + "            {\n"
+            + "                \"type\": \"comm\",\n"
+            + "                \"value\": \"\"\n"
+            + "            },\n"
+            + "            {\n"
+            + "                \"type\": \"secure\",\n"
+            + "                \"value\": \"1234567890\"\n"
+            + "            }\n"
+            + "        ]\n"
+            + "    },\n"
+            + "    \"preferences\": {}\n"
+            + "}";
 
     private static final String DEFAULT_ROLE = "admin";
 }

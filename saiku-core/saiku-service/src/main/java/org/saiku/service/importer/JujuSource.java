@@ -11,8 +11,7 @@ public class JujuSource {
     String password;
     String driver;
 
-    public JujuSource() {
-    }
+    public JujuSource() {}
 
     public JujuSource(String name, String url, String username, String password, String driver) {
         this.name = name;

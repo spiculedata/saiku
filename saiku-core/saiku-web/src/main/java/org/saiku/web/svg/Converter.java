@@ -4,7 +4,9 @@ package org.saiku.web.svg;
  * @author Tomasz Nurkiewicz
  * @since 1/15/13, 10:29 AM
  */
-
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import org.apache.batik.transcoder.*;
 import org.apache.batik.transcoder.image.JPEGTranscoder;
 import org.apache.batik.transcoder.image.PNGTranscoder;
@@ -12,78 +14,71 @@ import org.apache.batik.transcoder.image.TIFFTranscoder;
 import org.apache.commons.io.IOUtils;
 import org.apache.fop.svg.PDFTranscoder;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+public abstract class Converter {
 
-public abstract class Converter
-{
-
-    abstract public void convert(InputStream in, OutputStream out, Integer size) throws IOException, TranscoderException;
+    public abstract void convert(InputStream in, OutputStream out, Integer size)
+            throws IOException, TranscoderException;
 
     private final String contentType;
     private final String extension;
 
-    Converter(String contentType, String extension)
-    {
+    Converter(String contentType, String extension) {
         this.contentType = contentType;
         this.extension = extension;
     }
 
-    public String getContentType()
-    {
+    public String getContentType() {
         return contentType;
     }
 
-    public String getExtension()
-    {
+    public String getExtension() {
         return extension;
     }
 
-    public static Converter byType(String type)
-    {
-        if (type.equals("SVG")) { return new SvgConverter(); }
-        if (type.equals("PNG")) { return new PngConverter(); }
-        if (type.equals("TIFF")) { return new TiffConverter(); }
-        if (type.equals("JPG")) { return new JpgConverter(); }
-        if (type.equals("PDF")) { return new PdfConverter(); }
+    public static Converter byType(String type) {
+        if (type.equals("SVG")) {
+            return new SvgConverter();
+        }
+        if (type.equals("PNG")) {
+            return new PngConverter();
+        }
+        if (type.equals("TIFF")) {
+            return new TiffConverter();
+        }
+        if (type.equals("JPG")) {
+            return new JpgConverter();
+        }
+        if (type.equals("PDF")) {
+            return new PdfConverter();
+        }
         return null;
     }
 }
 
-class SvgConverter extends Converter
-{
+class SvgConverter extends Converter {
 
-    public SvgConverter()
-    {
+    public SvgConverter() {
         super("image/svg+xml", "svg");
     }
 
-    public void convert(InputStream in, OutputStream out, Integer size) throws IOException
-    {
+    public void convert(InputStream in, OutputStream out, Integer size) throws IOException {
         IOUtils.copy(in, out);
     }
-
 }
 
-abstract class BatikConverter extends Converter
-{
+abstract class BatikConverter extends Converter {
 
-    BatikConverter(String extension)
-    {
+    BatikConverter(String extension) {
         super("image/" + extension, extension);
     }
 
-    BatikConverter(String contentType, String extension)
-    {
+    BatikConverter(String contentType, String extension) {
         super(contentType, extension);
     }
 
-    public void convert(InputStream in, OutputStream out, Integer size) throws TranscoderException
-    {
+    public void convert(InputStream in, OutputStream out, Integer size) throws TranscoderException {
         Transcoder t = createTranscoder();
-        if (size != null)
-        {
+        if (size != null) {
             final float sizeBound = Math.max(Math.min(size, 2000.0f), 32.0f);
             t.addTranscodingHint(SVGAbstractTranscoder.KEY_WIDTH, sizeBound);
         }
@@ -91,58 +86,50 @@ abstract class BatikConverter extends Converter
     }
 
     protected abstract Transcoder createTranscoder();
-
 }
 
-class PngConverter extends BatikConverter
-{
+class PngConverter extends BatikConverter {
 
-    public PngConverter()
-    {
+    public PngConverter() {
         super("png");
     }
 
-    protected Transcoder createTranscoder() { return new PNGTranscoder();}
-
+    protected Transcoder createTranscoder() {
+        return new PNGTranscoder();
+    }
 }
 
-class JpgConverter extends BatikConverter
-{
+class JpgConverter extends BatikConverter {
 
-    public JpgConverter()
-    {
+    public JpgConverter() {
         super("image/jpeg", "jpg");
     }
 
-    protected Transcoder createTranscoder()
-    {
+    protected Transcoder createTranscoder() {
         Transcoder t = new JPEGTranscoder();
         t.addTranscodingHint(JPEGTranscoder.KEY_QUALITY, 0.95f);
         return t;
     }
-
 }
 
-class TiffConverter extends BatikConverter
-{
+class TiffConverter extends BatikConverter {
 
-    public TiffConverter()
-    {
+    public TiffConverter() {
         super("tiff");
     }
 
-    protected Transcoder createTranscoder() {return new TIFFTranscoder();}
-
+    protected Transcoder createTranscoder() {
+        return new TIFFTranscoder();
+    }
 }
 
-class PdfConverter extends BatikConverter
-{
+class PdfConverter extends BatikConverter {
 
-    public PdfConverter()
-    {
+    public PdfConverter() {
         super("application/pdf", "pdf");
     }
 
-    protected Transcoder createTranscoder() {return new PDFTranscoder();}
-
+    protected Transcoder createTranscoder() {
+        return new PDFTranscoder();
+    }
 }

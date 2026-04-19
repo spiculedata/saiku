@@ -22,7 +22,7 @@ import org.olap4j.metadata.Level;
  * Created by bugg on 18/02/15.
  */
 public class Checker {
-  public boolean checker(Level level){
-    return level instanceof MondrianOlap4jLevel;
-  }
+    public boolean checker(Level level) {
+        return level instanceof MondrianOlap4jLevel;
+    }
 }

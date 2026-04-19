@@ -3,82 +3,81 @@ package org.saiku.repository;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
-
-import org.apache.commons.lang.builder.ToStringBuilder;
-
 import java.util.List;
-
+import org.apache.commons.lang.builder.ToStringBuilder;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonSerialize(include = JsonSerialize.Inclusion.NON_NULL)
 public class RepositoryFolderObject implements IRepositoryObject {
 
-	private Type type;
-	private String name;
-	private String id;
-	private String path;
-	private List<IRepositoryObject> repoObjects;
-	private List<AclMethod> acl;
+    private Type type;
+    private String name;
+    private String id;
+    private String path;
+    private List<IRepositoryObject> repoObjects;
+    private List<AclMethod> acl;
 
-	public RepositoryFolderObject(String name, String id, String path, List<AclMethod> acl, List<IRepositoryObject> repoObjects) {
-		this.type = Type.FOLDER;
-		this.name = name;
-		this.id = id;
-		this.path = path;
-		this.repoObjects = repoObjects;
-		this.acl = acl;
-	}
-	public Type getType() {
-		return type;
-	}
+    public RepositoryFolderObject(
+            String name, String id, String path, List<AclMethod> acl, List<IRepositoryObject> repoObjects) {
+        this.type = Type.FOLDER;
+        this.name = name;
+        this.id = id;
+        this.path = path;
+        this.repoObjects = repoObjects;
+        this.acl = acl;
+    }
 
-	public String getName() {
-		return name;
-	}
+    public Type getType() {
+        return type;
+    }
 
-	public String getId() {
-		return id;
-	}
-	
-	public String getPath() {
-		return path;
-	}
-	
-	public List<AclMethod> getAcl() {
-		return acl;
-	}
+    public String getName() {
+        return name;
+    }
 
-  @JsonProperty
-	public List<IRepositoryObject> getRepoObjects() {
-		return repoObjects;
-	}
+    public String getId() {
+        return id;
+    }
 
-  public void setType(Type type) {
-    this.type = type;
-  }
+    public String getPath() {
+        return path;
+    }
 
-  public void setName(String name) {
-    this.name = name;
-  }
+    public List<AclMethod> getAcl() {
+        return acl;
+    }
 
-  public void setId(String id) {
-    this.id = id;
-  }
+    @JsonProperty
+    public List<IRepositoryObject> getRepoObjects() {
+        return repoObjects;
+    }
 
-  public void setPath(String path) {
-    this.path = path;
-  }
+    public void setType(Type type) {
+        this.type = type;
+    }
 
-  public void setRepoObjects(List<IRepositoryObject> repoObjects) {
-    this.repoObjects = repoObjects;
-  }
+    public void setName(String name) {
+        this.name = name;
+    }
 
-  public void setAcl(List<AclMethod> acl) {
-    this.acl = acl;
-  }
+    public void setId(String id) {
+        this.id = id;
+    }
 
-  @Override
-  public String toString() {
-    return ToStringBuilder.reflectionToString(this);
-  }
+    public void setPath(String path) {
+        this.path = path;
+    }
+
+    public void setRepoObjects(List<IRepositoryObject> repoObjects) {
+        this.repoObjects = repoObjects;
+    }
+
+    public void setAcl(List<AclMethod> acl) {
+        this.acl = acl;
+    }
+
+    @Override
+    public String toString() {
+        return ToStringBuilder.reflectionToString(this);
+    }
 }

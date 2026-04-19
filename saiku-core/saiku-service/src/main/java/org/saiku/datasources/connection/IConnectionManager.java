@@ -1,4 +1,4 @@
-/*  
+/*
  *   Copyright 2012 OSBI Ltd
  *
  *   Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,31 +15,28 @@
  */
 package org.saiku.datasources.connection;
 
+import java.util.Map;
 import org.olap4j.OlapConnection;
 import org.saiku.olap.util.exception.SaikuOlapException;
 import org.saiku.service.datasource.IDatasourceManager;
 
-import java.util.Map;
-
 public interface IConnectionManager {
 
+    void init() throws SaikuOlapException;
 
-	void init() throws SaikuOlapException;
-	
-	void setDataSourceManager(IDatasourceManager ds);
-	
-	IDatasourceManager getDataSourceManager();
-	
-	void refreshConnection(String name);
+    void setDataSourceManager(IDatasourceManager ds);
+
+    IDatasourceManager getDataSourceManager();
+
+    void refreshConnection(String name);
 
     void refreshAllConnections();
-	
-	OlapConnection getOlapConnection(String name) throws SaikuOlapException;
-	
-	Map<String, OlapConnection> getAllOlapConnections() throws SaikuOlapException;
-	
-	ISaikuConnection getConnection(String name) throws SaikuOlapException;
-	
-	Map<String, ISaikuConnection> getAllConnections() throws SaikuOlapException;
 
+    OlapConnection getOlapConnection(String name) throws SaikuOlapException;
+
+    Map<String, OlapConnection> getAllOlapConnections() throws SaikuOlapException;
+
+    ISaikuConnection getConnection(String name) throws SaikuOlapException;
+
+    Map<String, ISaikuConnection> getAllConnections() throws SaikuOlapException;
 }

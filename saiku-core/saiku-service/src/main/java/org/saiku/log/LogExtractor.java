@@ -16,33 +16,32 @@
 
 package org.saiku.log;
 
+import java.io.File;
+import java.io.IOException;
 import org.apache.commons.io.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.File;
-import java.io.IOException;
 
 /**
  * Read and return log files.
  */
 public class LogExtractor {
 
-  private String logdirectory;
-  private static final Logger log = LoggerFactory.getLogger(LogExtractor.class);
+    private String logdirectory;
+    private static final Logger log = LoggerFactory.getLogger(LogExtractor.class);
 
-  public String readLog(String path) throws IOException {
-      if(path.contains("..")){
-        throw new IOException("Cannot display file outside of log folder");
-      }
-      return FileUtils.readFileToString(new File(logdirectory+File.separator+path));
-  }
+    public String readLog(String path) throws IOException {
+        if (path.contains("..")) {
+            throw new IOException("Cannot display file outside of log folder");
+        }
+        return FileUtils.readFileToString(new File(logdirectory + File.separator + path));
+    }
 
-  public String getLogdirectory() {
-    return logdirectory;
-  }
+    public String getLogdirectory() {
+        return logdirectory;
+    }
 
-  public void setLogdirectory(String logdirectory) {
-    this.logdirectory = logdirectory;
-  }
+    public void setLogdirectory(String logdirectory) {
+        this.logdirectory = logdirectory;
+    }
 }

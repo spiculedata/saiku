@@ -1,11 +1,9 @@
 package org.saiku.security;
 
-import org.junit.Test;
-import org.saiku.security.NoReHashPasswordEncoder;
+import static org.junit.Assert.*;
 
 import java.util.regex.Pattern;
-
-import static org.junit.Assert.*;
+import org.junit.Test;
 
 public class NoReHashPasswordEncoderTest {
     private NoReHashPasswordEncoder encoder = new NoReHashPasswordEncoder();
