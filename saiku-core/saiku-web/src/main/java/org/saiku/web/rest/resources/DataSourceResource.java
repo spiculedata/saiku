@@ -19,9 +19,6 @@ import com.qmino.miredot.annotations.ReturnType;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Map;
-import javax.ws.rs.*;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.user.UserService;
@@ -29,13 +26,24 @@ import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.web.rest.objects.DataSourceMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Data Source Manipulation Utility Endpoints
  */
 @Component
-@Path("/saiku/{username}/org.saiku.datasources")
+@RestController
+@RequestMapping("/saiku/{username}/org.saiku.datasources")
 public class DataSourceResource {
 
     private static final Logger log = LoggerFactory.getLogger(DataSourceResource.class);
@@ -48,14 +56,9 @@ public class DataSourceResource {
 
     /**
      * Get Data Sources available on the server.
-     *
-     * @return A Collection of SaikuDatasource's.
-     * @summary Get Data Sources
      */
-    @GET
-    @Produces({"application/json"})
+    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     public Collection<SaikuDatasource> getDatasources() {
-        // TODO: admin security?
         try {
             return datasourceService
                     .getDatasources(userService.getCurrentUserRoles())
@@ -68,30 +71,19 @@ public class DataSourceResource {
 
     /**
      * Delete available data source from the server.
-     *
-     * @param datasourceName - The name of the data source.
-     * @return A GONE Status.
-     * @summary Delete data source
      */
-    @DELETE
-    @Path("/{datasource}")
-    public Status deleteDatasource(@PathParam("datasource") String datasourceName) {
+    @DeleteMapping("/{datasource}")
+    public HttpStatus deleteDatasource(@PathVariable("datasource") String datasourceName) {
         datasourceService.removeDatasource(datasourceName);
-        return (Status.GONE);
+        return HttpStatus.GONE;
     }
 
     /**
      * Get a specific data source from the server by ID.
-     *
-     * @param id The data source id.
-     * @return A Saiku Datasource.
-     * @summary Get Data Source.
      */
-    @GET
-    @Produces({"application/json"})
-    @Path("/{id}")
+    @GetMapping(path = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
     @ReturnType("org.saiku.web.rest.objects.DataSourceMapper")
-    public Response getDatasourceById(@PathParam("id") String id) {
+    public ResponseEntity<?> getDatasourceById(@PathVariable("id") String id) {
         try {
             SaikuDatasource saikuDatasource = null;
             Map<String, SaikuDatasource> datasources =
@@ -102,24 +94,22 @@ public class DataSourceResource {
                     break;
                 }
             }
-            return Response.ok()
-                    .type("application/json")
-                    .entity(new DataSourceMapper(saikuDatasource))
-                    .build();
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(new DataSourceMapper(saikuDatasource));
         } catch (Exception e) {
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity(e.getLocalizedMessage())
-                    .type("text/plain")
-                    .build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .contentType(MediaType.TEXT_PLAIN)
+                    .body(e.getLocalizedMessage());
         }
     }
 
-    @PUT
-    @Produces({"application/json"})
-    @Consumes({"application/json"})
-    @Path("/{id}")
+    @PutMapping(
+            path = "/{id}",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE)
     @ReturnType("org.saiku.web.rest.objects.DataSourceMapper")
-    public Response updateDatasourceLocale(String locale, @PathParam("id") String id) {
+    public ResponseEntity<?> updateDatasourceLocale(@RequestBody String locale, @PathVariable("id") String id) {
         boolean overwrite = true;
         try {
             SaikuDatasource saikuDatasource = null;
@@ -133,15 +123,11 @@ public class DataSourceResource {
                     break;
                 }
             }
-            return Response.ok()
-                    .type("application/json")
-                    .entity(saikuDatasource)
-                    .build();
+            return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(saikuDatasource);
         } catch (Exception e) {
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity(e.getLocalizedMessage())
-                    .type("text/plain")
-                    .build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .contentType(MediaType.TEXT_PLAIN)
+                    .body(e.getLocalizedMessage());
         }
     }
 
@@ -156,7 +142,6 @@ public class DataSourceResource {
         String referenceText = "locale=";
         int start = location.toLowerCase().indexOf(referenceText);
         if (start == -1) {
-            // warn user
             return "no locale!";
         } else {
             start += referenceText.length();

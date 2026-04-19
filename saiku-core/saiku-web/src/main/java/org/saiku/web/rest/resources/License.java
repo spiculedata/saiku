@@ -10,12 +10,20 @@ import com.qmino.miredot.annotations.ReturnType;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
-import javax.ws.rs.*;
-import javax.ws.rs.core.Response;
 import org.saiku.database.Database;
 import org.saiku.service.user.UserService;
 import org.saiku.web.rest.objects.UserList;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Saiku license information resource.
@@ -24,7 +32,8 @@ import org.springframework.stereotype.Component;
  * @author tbarber
  */
 @Component
-@Path("/saiku/api/license")
+@RestController
+@RequestMapping("/saiku/api/license")
 public class License {
 
     private UserService userService;
@@ -48,34 +57,10 @@ public class License {
      * @summary License validation
      * @return A response indicating whether the operation was successful.
      */
-    @GET
-    @Path("/validate")
-    @Produces({"text/plain"})
+    @GetMapping(path = "/validate", produces = MediaType.TEXT_PLAIN_VALUE)
     @ReturnType("java.lang.String")
-    public Response validateLicense() {
-        //    if(!userService.isAdmin()){
-        //      return Response.status(Response.Status.FORBIDDEN).build();
-        //    }
-        //    try {
-        //      licenseUtils.validateLicense();
-        //    } catch (IOException e) {
-        //      e.printStackTrace();
-        //      return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-        //                     .entity(e.getLocalizedMessage()).build();
-        //    } catch (ClassNotFoundException e) {
-        //      e.printStackTrace();
-        //      return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-        //                     .entity(e.getLocalizedMessage()).build();
-        //    } catch (LicenseException e) {
-        //      return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-        //                     .entity(e.getLocalizedMessage()).build();
-        //    } catch (RepositoryException e) {
-        //      return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-        //                     .entity("Could not find license file").build();
-        //    } catch (Exception e) {
-        //      e.printStackTrace();
-        //    }
-        return Response.ok().entity("Valid License").build();
+    public ResponseEntity<?> validateLicense() {
+        return ResponseEntity.ok("Valid License");
     }
 
     /**
@@ -83,30 +68,28 @@ public class License {
      * @summary Get the user list
      * @return A list of users.
      */
-    @GET
-    @Path("/usercount")
-    @Produces({"application/json"})
+    @GetMapping(path = "/usercount", produces = MediaType.APPLICATION_JSON_VALUE)
     @ReturnType("java.util.ArrayList<UserList>")
-    public Response getUserCount() {
+    public ResponseEntity<?> getUserCount() {
         if (!userService.isAdmin()) {
-            return Response.status(Response.Status.FORBIDDEN).build();
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         try {
             List<String> l = getAuthUsers();
             if (l != null) {
-                List<UserList> ul = new ArrayList();
+                List<UserList> ul = new ArrayList<>();
                 int i = 0;
                 for (String l2 : l) {
                     ul.add(new UserList(l2, i));
                     i++;
                 }
-                return Response.ok().entity(ul.size()).build();
+                return ResponseEntity.ok(ul.size());
             }
         } catch (SQLException e) {
             e.printStackTrace();
-            return Response.ok().entity(0).build();
+            return ResponseEntity.ok(0);
         }
-        return Response.ok().entity(0).build();
+        return ResponseEntity.ok(0);
     }
 
     /**
@@ -114,24 +97,22 @@ public class License {
      * @summary Get the user list
      * @return A list of users.
      */
-    @GET
-    @Path("/users")
-    @Produces({"application/json"})
+    @GetMapping(path = "/users", produces = MediaType.APPLICATION_JSON_VALUE)
     @ReturnType("java.util.ArrayList<UserList>")
-    public Response getUserlist() {
+    public ResponseEntity<?> getUserlist() {
         if (!userService.isAdmin()) {
-            return Response.status(Response.Status.FORBIDDEN).build();
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         try {
             List<String> l = getAuthUsers();
             if (l != null) {
-                List<UserList> ul = new ArrayList();
+                List<UserList> ul = new ArrayList<>();
                 int i = 0;
                 for (String l2 : l) {
                     ul.add(new UserList(l2, i));
                     i++;
                 }
-                return Response.ok().entity(ul).build();
+                return ResponseEntity.ok(ul);
             }
         } catch (SQLException e) {
             e.printStackTrace();
@@ -145,12 +126,9 @@ public class License {
      * @param l A List of UserList objects
      * @return A response indicating whether the operation was successful.
      */
-    @POST
-    @Path("/users")
-    @Produces({"text/plain"})
-    @Consumes({"application/json"})
+    @PostMapping(path = "/users", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.TEXT_PLAIN_VALUE)
     @ReturnType("java.lang.String")
-    public Response createUserList(List<UserList> l) {
+    public ResponseEntity<?> createUserList(@RequestBody List<UserList> l) {
         try {
             List<String> l3 = new ArrayList<>();
             for (UserList l2 : l) {
@@ -160,7 +138,7 @@ public class License {
         } catch (SQLException e) {
             e.printStackTrace();
         }
-        return Response.ok().entity("List created").build();
+        return ResponseEntity.ok("List created");
     }
 
     /**
@@ -169,12 +147,9 @@ public class License {
      * @param l A list of UserList objects
      * @return A response indicating whether the operation was successful.
      */
-    @PUT
-    @Path("/users")
-    @Produces({"text/plain"})
-    @Consumes({"application/json"})
+    @PutMapping(path = "/users", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.TEXT_PLAIN_VALUE)
     @ReturnType("java.lang.String")
-    public Response updateUserList(List<UserList> l) {
+    public ResponseEntity<?> updateUserList(@RequestBody List<UserList> l) {
         try {
             List<String> l3 = new ArrayList<>();
             for (UserList l2 : l) {
@@ -184,7 +159,7 @@ public class License {
         } catch (SQLException e) {
             e.printStackTrace();
         }
-        return Response.ok().entity("List updated").build();
+        return ResponseEntity.ok("List updated");
     }
 
     /**
@@ -192,11 +167,9 @@ public class License {
      * @summary Delete user list.
      * @return A response indicating whether the operation was successful.
      */
-    @DELETE
-    @Path("/users")
-    @Produces({"application/json"})
+    @DeleteMapping(path = "/users", produces = MediaType.APPLICATION_JSON_VALUE)
     @ReturnType("java.lang.String")
-    public Response deleteUserlist() {
+    public ResponseEntity<?> deleteUserlist() {
 
         try {
             List<String> l = getAuthUsers();
@@ -206,7 +179,7 @@ public class License {
                 ul.add(new UserList(l2, i));
                 i++;
             }
-            return Response.ok().entity(ul).build();
+            return ResponseEntity.ok(ul);
         } catch (SQLException e) {
             e.printStackTrace();
         }
@@ -226,15 +199,13 @@ public class License {
      * Get the user quota for existing users with no license
      * @return a list of user quota.
      */
-    @GET
-    @Produces("application/json")
-    @Path("/quota")
+    @GetMapping(path = "/quota", produces = MediaType.APPLICATION_JSON_VALUE)
     @ReturnType("java.util.List<UserQuota>")
-    public Response getUserQuota() {
+    public ResponseEntity<?> getUserQuota() {
         if (!userService.isAdmin()) {
-            return Response.status(Response.Status.FORBIDDEN).build();
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
-        return Response.ok().entity(100000000).build();
+        return ResponseEntity.ok(100000000);
     }
 
     /**

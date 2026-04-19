@@ -23,13 +23,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import javax.ws.rs.FormParam;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.Response;
 import javax.xml.bind.annotation.XmlAccessType;
 import javax.xml.bind.annotation.XmlAccessorType;
 import org.apache.commons.lang.StringUtils;
@@ -39,7 +32,15 @@ import org.saiku.service.ISessionService;
 import org.saiku.service.olap.OlapQueryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 /**
  * QueryServlet contains all the methods required when manipulating an OLAP Query.
@@ -47,7 +48,8 @@ import org.springframework.stereotype.Component;
  *
  */
 @Component
-@Path("/saiku/{username}/filters")
+@RestController
+@RequestMapping("/saiku/{username}/filters")
 @XmlAccessorType(XmlAccessType.NONE)
 public class FilterRepositoryResource {
 
@@ -75,50 +77,38 @@ public class FilterRepositoryResource {
 
     private Map<String, SaikuFilter> getFiltersInternal(String query) {
         Map<String, SaikuFilter> allFilters = new HashMap<>();
-        // Map<String, SaikuFilter> filters = deserialize(getUserFile());
-        // allFilters.putAll(filters);
         if (StringUtils.isNotBlank(query)) {
             allFilters = olapQueryService.getValidFilters(query, allFilters);
         }
-
-        // return MapUtils.orderedMap(allFilters);
         return null;
     }
 
     /**
      * Get filternames as JSON.
-     * @param queryName The query name.
-     * @return A response containing the filter names.
      */
-    @GET
-    @Produces({"application/json"})
-    @Path("/names/")
+    @GetMapping(path = "/names/", produces = MediaType.APPLICATION_JSON_VALUE)
     @ReturnType("java.lang.List<String>")
-    public Response getSavedFilterNames(@QueryParam("queryname") String queryName) {
+    public ResponseEntity<?> getSavedFilterNames(@RequestParam(name = "queryname", required = false) String queryName) {
         try {
             Map<String, SaikuFilter> allFilters = getFiltersInternal(queryName);
             List<String> filternames = new ArrayList<>(allFilters.keySet());
             Collections.sort(filternames);
-            return Response.ok(filternames).build();
+            return ResponseEntity.ok(filternames);
 
         } catch (Exception e) {
             log.error("Cannot filter names", e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            return Response.serverError().entity(error).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }
 
     /**
      * Get Saved Filters as JSON.
-     * @summary Get filters as JSON.
-     * @param queryName The query name.
-     * @param filterName The filter name.
-     * @return A response containing the JSON.
      */
-    @GET
-    @Produces({"application/json"})
-    public Response getSavedFilters(
-            @QueryParam("query") String queryName, @QueryParam("filtername") String filterName) {
+    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> getSavedFilters(
+            @RequestParam(name = "query", required = false) String queryName,
+            @RequestParam(name = "filtername", required = false) String filterName) {
         try {
             Map<String, SaikuFilter> allFilters = new HashMap<>();
             if (StringUtils.isNotBlank(queryName)) {
@@ -133,25 +123,20 @@ public class FilterRepositoryResource {
             } else {
                 allFilters = getFiltersInternal();
             }
-            return Response.ok(allFilters).build();
+            return ResponseEntity.ok(allFilters);
         } catch (Exception e) {
             log.error("Cannot get filter details", e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            return Response.serverError().entity(error).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }
 
     /**
      * Save filter
-     * @summary Save Filter.
-     * @param filterJSON The Filter JSON object.
-     * @return A response containing the filter.
      */
-    @POST
-    @Produces({"application/json"})
-    @Path("/{filtername}")
+    @PostMapping(path = "/{filtername}", produces = MediaType.APPLICATION_JSON_VALUE)
     @ReturnType("org.saiku.olap.dto.filter.SaikuFilter")
-    public Response saveFilter(@FormParam("filter") String filterJSON) {
+    public ResponseEntity<?> saveFilter(@RequestParam("filter") String filterJSON) {
         try {
 
             ObjectMapper mapper = new ObjectMapper();
@@ -163,11 +148,11 @@ public class FilterRepositoryResource {
             filter.setOwner(username);
             Map<String, SaikuFilter> filters = getFiltersInternal();
             filters.put(filter.getName(), filter);
-            return Response.ok(filter).build();
+            return ResponseEntity.ok(filter);
         } catch (Exception e) {
             log.error("Cannot save filter (" + filterJSON + ")", e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            return Response.serverError().entity(error).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }
 }

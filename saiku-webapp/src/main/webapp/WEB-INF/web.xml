@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE web-app PUBLIC
-  "-//Sun Microsystems, Inc.//DTD Web Application 2.3//EN"
-  "http://java.sun.com/dtd/web-app_2_3.dtd">
-<web-app>
+<web-app xmlns="http://xmlns.jcp.org/xml/ns/javaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/javaee http://xmlns.jcp.org/xml/ns/javaee/web-app_3_1.xsd"
+         version="3.1">
 
 	<display-name>saiku</display-name>
 
@@ -240,46 +240,27 @@
         <url-pattern>/console/*</url-pattern>
     </servlet-mapping>
 
-	<servlet>
-    	<servlet-name>jersey2</servlet-name>
-    	<servlet-class>com.sun.jersey.spi.spring.container.servlet.SpringServlet</servlet-class>
-    	<init-param>
-      		<param-name>com.sun.jersey.config.property.packages</param-name>
-      		<param-value>org.saiku.web;com.fasterxml.jackson.jaxrs.json</param-value>
-    	</init-param>
+    <servlet>
+        <servlet-name>rest</servlet-name>
+        <servlet-class>org.springframework.web.servlet.DispatcherServlet</servlet-class>
+        <!-- Empty contextConfigLocation: DispatcherServlet reuses the root WebApplicationContext,
+             so @RequestMapping resolves on controllers declared in saiku-beans.xml. -->
         <init-param>
-            <param-name>com.sun.jersey.api.json.POJOMappingFeature</param-name>
-            <param-value>true</param-value>
+            <param-name>contextConfigLocation</param-name>
+            <param-value></param-value>
         </init-param>
-    	<!--<init-param>
-      		<param-name>com.sun.jersey.spi.container.ContainerRequestFilters</param-name>
-      		<param-value>com.sun.jersey.api.container.filter.PostReplaceFilter</param-value>
-    	</init-param>-->
-        <init-param>
-            <param-name>com.sun.jersey.config.feature.Trace</param-name>
-            <param-value>true</param-value>
-        </init-param>
-        <init-param>
-            <param-name>jaxrs.providers</param-name>
-            <param-value>org.saiku.web.rest.SerializableProvider</param-value>
-        </init-param>
-<!-- 		<init-param>
-		    <param-name>com.sun.jersey.spi.container.ContainerResponseFilters</param-name>
-		    <param-value>com.sun.jersey.api.container.filter.GZIPContentEncodingFilter</param-value>
-		</init-param>  -->
+        <load-on-startup>2</load-on-startup>
+        <multipart-config>
+            <max-file-size>52428800</max-file-size>
+            <max-request-size>52428800</max-request-size>
+            <file-size-threshold>0</file-size-threshold>
+        </multipart-config>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>rest</servlet-name>
+        <url-pattern>/rest/*</url-pattern>
+    </servlet-mapping>
 
-    	<load-on-startup>1</load-on-startup>
-  	</servlet>
-
-	  <servlet-mapping>
-	    <servlet-name>jersey2</servlet-name>
-	    <url-pattern>/rest/*</url-pattern>
-	  </servlet-mapping>
-
-  <!--<servlet-mapping>
-    <servlet-name>jersey2</servlet-name>
-    <url-pattern>/rest/saiku/session</url-pattern>
-  </servlet-mapping>-->
     <servlet>
         <servlet-name>xmla</servlet-name>
         <servlet-class>org.saiku.olap.util.SaikuXmlaServlet</servlet-class>
