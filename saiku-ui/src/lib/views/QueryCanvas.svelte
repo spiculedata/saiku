@@ -6,7 +6,6 @@
   import CellsetTable from "$lib/views/CellsetTable.svelte";
   import ChartView from "$lib/views/ChartView.svelte";
   import StatsView from "$lib/views/StatsView.svelte";
-  import SparklineView from "$lib/views/SparklineView.svelte";
   import { CHART_TYPES, DEFAULT_CHART_OPTIONS, type ChartType, type ChartOptions } from "$lib/views/chartTypes";
   import SelectionsModal from "$lib/modals/SelectionsModal.svelte";
   import DrillthroughModal from "$lib/modals/DrillthroughModal.svelte";
@@ -152,45 +151,88 @@
     if (m.kind === "axis" && m.axis) {
       const axis = m.axis;
       const model = query.current?.queryModel;
-      const existing = model?.axes[axis].mdx ?? "";
       let type: "Order" | "Filter" | "TopCount" | "BottomCount" | "Limit" = "Filter";
-      if (id === "filter-order") type = "Order";
-      else if (id === "filter-filter") type = "Filter";
-      else if (id === "filter-top") type = "TopCount";
-      else if (id === "filter-bot") type = "BottomCount";
-      else if (id === "filter-limit") type = "Limit";
-      axisFilterTarget = { axis, type, expression: existing, sort: "ASC" };
+      let placeholder = "";
+      if (id === "filter-order") { type = "Order"; placeholder = "[Measures].[Unit Sales]"; }
+      else if (id === "filter-filter") { type = "Filter"; placeholder = "[Measures].[Unit Sales] > 100000"; }
+      else if (id === "filter-top") { type = "TopCount"; placeholder = "10, [Measures].[Unit Sales]"; }
+      else if (id === "filter-bot") { type = "BottomCount"; placeholder = "10, [Measures].[Unit Sales]"; }
+      else if (id === "filter-limit") { type = "Limit"; placeholder = "10"; }
+      const sortOrder = model?.axes[axis].sortOrder ?? "ASC";
+      axisFilterTarget = { axis, type, expression: placeholder, sort: sortOrder };
       axisFilterOpen = true;
     }
+  }
+
+  /** Primary ROWS hierarchy unique name (needed for valid Mondrian MDX — Axis() refs
+   *  only work in SELECT, not inside WITH MEMBER). */
+  function primaryRowsHier(): { hier: string; deepestLevel: string } | null {
+    const model = query.current?.queryModel;
+    if (!model) return null;
+    const rows = model.axes.ROWS.hierarchies;
+    if (rows.length === 0) return null;
+    const h = rows[0];
+    const lvls = Object.keys(h.levels);
+    if (lvls.length === 0) return { hier: h.name, deepestLevel: "" };
+    return { hier: h.name, deepestLevel: lvls[lvls.length - 1] };
+  }
+
+  function primaryColumnsHier(): string | null {
+    const model = query.current?.queryModel;
+    if (!model) return null;
+    const cols = model.axes.COLUMNS.hierarchies;
+    return cols.length > 0 ? cols[0].name : null;
+  }
+
+  /** Build the MDX set expression representing the existing ROWS axis. Preserves
+   *  any mdx override the user set previously; otherwise expands to the deepest
+   *  level members of the primary hierarchy. */
+  function rowsAxisSet(): string | null {
+    const model = query.current?.queryModel;
+    if (!model) return null;
+    const axis = model.axes.ROWS;
+    if (axis.mdx) return axis.mdx;
+    const p = primaryRowsHier();
+    if (!p || !p.deepestLevel) return null;
+    return `${p.hier}.[${p.deepestLevel}].Members`;
   }
 
   function onCustomFilterApply(op: string, value: string, value2?: string) {
     customFilterOpen = false;
     const m = customFilterTarget;
     if (!m || !query.current?.queryModel) return;
-    let expr = `${m.uniqueName} ${op} ${value}`;
+    const set = rowsAxisSet();
+    if (!set) {
+      toasts.warning("Drop a hierarchy on ROWS first", "Filter-by-value needs an existing ROWS axis to constrain.");
+      return;
+    }
+    let expr: string;
     if (op === "BETWEEN") expr = `${m.uniqueName} >= ${value} AND ${m.uniqueName} <= ${value2}`;
     else if (op === "NOT BETWEEN") expr = `NOT (${m.uniqueName} >= ${value} AND ${m.uniqueName} <= ${value2})`;
-    const axis = query.current.queryModel.axes.ROWS;
-    axis.mdx = axis.mdx
-      ? `FILTER(${axis.mdx}, ${expr})`
-      : `FILTER({[Measures].CurrentMember}, ${expr})`;
+    else expr = `${m.uniqueName} ${op} ${value}`;
+    query.current.queryModel.axes.ROWS.mdx = `FILTER(${set}, ${expr})`;
     toasts.success("Filter applied", `${m.caption} ${op} ${value}`);
     void query.run();
   }
 
-  function onFormatPctApply(axis: "ROWS" | "COLUMNS" | "GRAND_TOTAL", _scope: "all" | "selected") {
+  function onFormatPctApply(base: "ROWS" | "COLUMNS" | "GRAND_TOTAL", _scope: "all" | "selected") {
     formatPctOpen = false;
     const t = formatPctTarget;
     if (!t || !query.current?.queryModel) return;
     const calcName = `${t.measure.name} %`;
-    const ref = axis === "ROWS"
-      ? "Axis(1).Item(0).Item(0).Dimension.CurrentMember.Parent"
-      : axis === "COLUMNS"
-        ? "Axis(0).Item(0).Item(0).Dimension.CurrentMember.Parent"
-        : "[All]";
-    const denom = `([Measures].[${t.measure.name}], ${ref})`;
-    const formula = `IIF(${denom} = 0, null, [Measures].[${t.measure.name}] / ${denom})`;
+    let denomTuple: string;
+    if (base === "ROWS") {
+      const p = primaryRowsHier();
+      if (!p) { toasts.warning("No ROWS hierarchy", "Drop a hierarchy onto ROWS before using percent-of-row-total."); return; }
+      denomTuple = `([Measures].[${t.measure.name}], ${p.hier}.CurrentMember.Parent)`;
+    } else if (base === "COLUMNS") {
+      const c = primaryColumnsHier();
+      if (!c) { toasts.warning("No COLUMNS hierarchy", "Drop a hierarchy onto COLUMNS before using percent-of-column-total."); return; }
+      denomTuple = `([Measures].[${t.measure.name}], ${c}.CurrentMember.Parent)`;
+    } else {
+      denomTuple = `([Measures].[${t.measure.name}])`;
+    }
+    const formula = `IIF(${denomTuple} = 0, null, [Measures].[${t.measure.name}] / ${denomTuple})`;
     const next = (query.current.queryModel.calculatedMeasures ?? []).filter(
       (x) => (x as { name?: string }).name !== calcName,
     );
@@ -204,12 +246,15 @@
     growthOpen = false;
     const m = growthTarget;
     if (!m || !query.current?.queryModel) return;
+    const p = primaryRowsHier();
+    if (!p) { toasts.warning("No ROWS hierarchy", "Growth needs a hierarchy on ROWS to reference a previous/first member."); return; }
     const calcName = `${m.name} growth`;
     let prev: string;
-    if (basis === "previous") prev = `(${m.uniqueName}, Axis(1).Item(0).Item(0).PrevMember)`;
-    else if (basis === "first") prev = `(${m.uniqueName}, Axis(1).Item(0).Item(0).FirstSibling)`;
-    else prev = `(${m.uniqueName}, ${ref ?? ""})`;
-    const formula = `(${m.uniqueName} - ${prev}) / ${prev}`;
+    if (basis === "previous") prev = `(${m.uniqueName}, ${p.hier}.CurrentMember.PrevMember)`;
+    else if (basis === "first") prev = `(${m.uniqueName}, ${p.hier}.CurrentMember.FirstSibling)`;
+    else if (basis === "specific" && ref) prev = `(${m.uniqueName}, ${ref})`;
+    else { toasts.warning("Reference missing", "Provide a member unique name for the 'specific' basis."); return; }
+    const formula = `IIF(${prev} = 0, null, (${m.uniqueName} - ${prev}) / ${prev})`;
     const next = (query.current.queryModel.calculatedMeasures ?? []).filter(
       (x) => (x as { name?: string }).name !== calcName,
     );
@@ -217,6 +262,22 @@
     query.current.queryModel.calculatedMeasures = next;
     query.addMeasure({ name: calcName, uniqueName: `[Measures].[${calcName}]`, caption: calcName, type: "CALCULATED" });
     toasts.success("Growth calc added", calcName);
+  }
+
+  function baseAxisSet(axisLoc: AxisLocation): string | null {
+    const model = query.current?.queryModel;
+    if (!model) return null;
+    const axis = model.axes[axisLoc];
+    if (axis.mdx) return axis.mdx;
+    const hierarchies = axis.hierarchies;
+    if (hierarchies.length === 0) return null;
+    const parts: string[] = [];
+    for (const h of hierarchies) {
+      const lvls = Object.keys(h.levels);
+      if (lvls.length === 0) return null;
+      parts.push(`${h.name}.[${lvls[lvls.length - 1]}].Members`);
+    }
+    return parts.length === 1 ? parts[0] : `CROSSJOIN(${parts.join(", ")})`;
   }
 
   function onAxisFilterSave(expression: string, sort?: string) {
@@ -227,17 +288,22 @@
     if (t.type === "Order") {
       axis.sortOrder = sort ?? "ASC";
       axis.sortEvaluationLiteral = expression || null;
-    } else if (t.type === "TopCount" || t.type === "BottomCount") {
+      toasts.success("Sort applied", `${t.axis}: ${sort ?? "ASC"} by ${expression}`);
+      void query.run();
+      return;
+    }
+    const base = baseAxisSet(t.axis);
+    if (!base) {
+      toasts.warning(`${t.axis} is empty`, `Drop a hierarchy onto ${t.axis} before applying an axis MDX expression.`);
+      return;
+    }
+    if (t.type === "TopCount" || t.type === "BottomCount") {
       const fn = t.type.toUpperCase();
-      axis.mdx = axis.mdx ? `${fn}(${axis.mdx}, ${expression})` : null;
-      if (!axis.mdx) {
-        toasts.warning("No axis set", `Drop a hierarchy onto ${t.axis} first.`);
-        return;
-      }
+      axis.mdx = `${fn}(${base}, ${expression})`;
     } else if (t.type === "Limit") {
-      axis.mdx = axis.mdx ? `HEAD(${axis.mdx}, ${expression})` : null;
+      axis.mdx = `HEAD(${base}, ${expression})`;
     } else {
-      axis.mdx = axis.mdx ? `FILTER(${axis.mdx}, ${expression})` : `FILTER({}, ${expression})`;
+      axis.mdx = `FILTER(${base}, ${expression})`;
     }
     toasts.success("Axis expression applied", `${t.type} on ${t.axis}`);
     void query.run();
@@ -579,16 +645,16 @@
       {:else if query.error}
         <p class="callout callout--danger">{query.error}</p>
       {:else if query.result}
-        {#if viewMode === "grid"}
-          <CellsetTable result={query.result} />
-        {:else if viewMode === "chart"}
+        {#if viewMode === "chart"}
           <ChartView result={query.result} type={chartType} options={chartOptions} />
         {:else if viewMode === "stats"}
           <StatsView result={query.result} />
         {:else if viewMode === "sparkline"}
-          <SparklineView result={query.result} mode="line" />
+          <CellsetTable result={query.result} spark="line" />
         {:else if viewMode === "sparkbar"}
-          <SparklineView result={query.result} mode="bar" />
+          <CellsetTable result={query.result} spark="bar" />
+        {:else}
+          <CellsetTable result={query.result} />
         {/if}
       {:else}
         <p class="canvas__hint">{i18n.t("canvas.buildPrompt")}</p>

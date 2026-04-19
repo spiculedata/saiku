@@ -10,12 +10,70 @@
 
   interface Props {
     result: QueryResult;
+    /** Inline chart rendered in an extra column per body row. */
+    spark?: "none" | "line" | "bar";
   }
 
-  let { result }: Props = $props();
+  let { result, spark = "none" }: Props = $props();
 
   let parsed = $derived(parseCellset(result));
   let rowDisplay = $derived(rowHeaderDisplay(parsed));
+
+  function sparkRange(): { min: number; max: number } {
+    let min = Infinity, max = -Infinity;
+    for (const row of parsed.dataRows) {
+      for (const cell of row) {
+        const n = Number(String(cell.value ?? "").replace(/[, ]/g, ""));
+        if (Number.isFinite(n)) {
+          if (n < min) min = n;
+          if (n > max) max = n;
+        }
+      }
+    }
+    if (min === Infinity) min = 0;
+    if (max === -Infinity) max = 1;
+    if (min === max) { max = min + 1; }
+    return { min, max };
+  }
+
+  function sparkValues(rowIdx: number): (number | null)[] {
+    const row = parsed.dataRows[rowIdx] ?? [];
+    return row.map((c) => {
+      const n = Number(String(c.value ?? "").replace(/[, ]/g, ""));
+      return Number.isFinite(n) ? n : null;
+    });
+  }
+
+  function linePath(vals: (number | null)[], min: number, max: number, w: number, h: number): string {
+    if (vals.length === 0) return "";
+    const span = max - min || 1;
+    const step = vals.length > 1 ? w / (vals.length - 1) : 0;
+    const parts: string[] = [];
+    for (let i = 0; i < vals.length; i++) {
+      const v = vals[i];
+      if (v == null) continue;
+      const x = i * step;
+      const y = h - ((v - min) / span) * h;
+      parts.push(`${parts.length === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`);
+    }
+    return parts.join(" ");
+  }
+
+  function barRects(vals: (number | null)[], min: number, max: number, w: number, h: number): { x: number; y: number; w: number; h: number }[] {
+    const span = max - min || 1;
+    const step = w / Math.max(vals.length, 1);
+    const out: { x: number; y: number; w: number; h: number }[] = [];
+    for (let i = 0; i < vals.length; i++) {
+      const v = vals[i];
+      if (v == null) continue;
+      const bh = ((v - min) / span) * h;
+      out.push({ x: i * step + 1, y: h - bh, w: Math.max(1, step - 2), h: bh });
+    }
+    return out;
+  }
+
+  const SPARK_W = 120;
+  const SPARK_H = 20;
 
   // Context menu state
   interface LevelItem {
@@ -292,6 +350,11 @@
                 <th class="col_null"></th>
               {/if}
             {/each}
+            {#if spark !== "none"}
+              <th class={rIdx === parsed.columnHeaderRows.length - 1 ? "col col--last spark-col" : "col spark-col"}>
+                {rIdx === parsed.columnHeaderRows.length - 1 ? (spark === "bar" ? "Sparkbar" : "Sparkline") : "\u00A0"}
+              </th>
+            {/if}
           </tr>
         {/each}
       </thead>
@@ -317,6 +380,21 @@
                 oncontextmenu={(e) => onDataCellContextMenu(e, r, cIdx)}
               >{dc.value}</td>
             {/each}
+            {#if spark !== "none"}
+              {@const range = sparkRange()}
+              {@const vals = sparkValues(r)}
+              <td class="data spark-cell">
+                <svg viewBox={`0 0 ${SPARK_W} ${SPARK_H}`} width={SPARK_W} height={SPARK_H} aria-hidden="true">
+                  {#if spark === "line"}
+                    <path d={linePath(vals, range.min, range.max, SPARK_W, SPARK_H)} stroke="var(--accent)" stroke-width="1.5" fill="none" />
+                  {:else}
+                    {#each barRects(vals, range.min, range.max, SPARK_W, SPARK_H) as b}
+                      <rect x={b.x} y={b.y} width={b.w} height={b.h} fill="var(--accent)" />
+                    {/each}
+                  {/if}
+                </svg>
+              </td>
+            {/if}
           </tr>
         {/each}
       </tbody>
@@ -455,6 +533,15 @@
   .cellset td.data-num {
     text-align: right;
     font-variant-numeric: tabular-nums;
+  }
+  .cellset th.spark-col {
+    min-width: 140px;
+  }
+  .cellset td.spark-cell {
+    padding: 2px 6px;
+  }
+  .cellset td.spark-cell svg {
+    display: block;
   }
   .cellset tbody tr:hover td.data,
   .cellset tbody tr:hover th.row {
