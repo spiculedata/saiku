@@ -118,12 +118,14 @@ public class Database {
                 } catch (Exception e) {
                     log.error("Can't add schema file to repo", e);
                 }
+                String catalogUri =
+                        new java.io.File(dsm.getFoodmartschema()).toURI().toString();
                 Properties p = new Properties();
                 p.setProperty("driver", "mondrian.olap4j.MondrianOlap4jDriver");
                 p.setProperty(
                         "location",
                         "jdbc:mondrian:Jdbc=jdbc:h2:" + dsm.getFoodmartdir() + "/foodmart;"
-                                + "Catalog=mondrian:///datasources/foodmart4.xml;JdbcDrivers=org.h2.Driver");
+                                + "Catalog=" + catalogUri + ";JdbcDrivers=org.h2.Driver");
                 p.setProperty("username", "sa");
                 p.setProperty("password", "");
                 p.setProperty("id", "4432dd20-fcae-11e3-a3ac-0800200c9a66");

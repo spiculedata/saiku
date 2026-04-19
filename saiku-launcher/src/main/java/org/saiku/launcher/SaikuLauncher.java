@@ -6,6 +6,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.concurrent.Callable;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import org.eclipse.jetty.ee10.webapp.WebAppContext;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
@@ -63,12 +65,15 @@ public class SaikuLauncher implements Callable<Integer> {
         @Override
         public Integer call() throws Exception {
             Path saikuHome = (home != null ? home : Paths.get("saiku-home")).toAbsolutePath();
-            Files.createDirectories(saikuHome.resolve("data"));
+            Path dataDir = saikuHome.resolve("data");
+            Files.createDirectories(dataDir);
             Files.createDirectories(saikuHome.resolve("repository").resolve("data"));
             Files.createDirectories(saikuHome.resolve("logs"));
             Files.createDirectories(saikuHome.resolve("plugins"));
             System.setProperty("saiku.home", saikuHome.toString());
             System.out.println("Saiku home: " + saikuHome);
+
+            stageSeedAssets(dataDir);
 
             Path warPath = extractWar();
 
@@ -100,6 +105,35 @@ public class SaikuLauncher implements Callable<Integer> {
             System.out.println("  REST API  : " + base + "rest/saiku/");
             server.join();
             return 0;
+        }
+
+        private void stageSeedAssets(Path dataDir) throws Exception {
+            Path schema = dataDir.resolve("FoodMart4.xml");
+            if (!Files.exists(schema)) {
+                try (InputStream in = SaikuLauncher.class.getResourceAsStream("/seed/FoodMart4.xml")) {
+                    if (in != null) {
+                        Files.copy(in, schema, StandardCopyOption.REPLACE_EXISTING);
+                        System.out.println("Seeded: " + schema);
+                    }
+                }
+            }
+            Path sql = dataDir.resolve("foodmart_h2.sql");
+            if (!Files.exists(sql)) {
+                try (InputStream in = SaikuLauncher.class.getResourceAsStream("/seed/foodmart_h2.sql.zip")) {
+                    if (in != null) {
+                        try (ZipInputStream zis = new ZipInputStream(in)) {
+                            ZipEntry e;
+                            while ((e = zis.getNextEntry()) != null) {
+                                if (e.getName().endsWith("foodmart_h2.sql")) {
+                                    Files.copy(zis, sql, StandardCopyOption.REPLACE_EXISTING);
+                                    System.out.println("Seeded: " + sql);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         private Path extractWar() throws Exception {
