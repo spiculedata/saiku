@@ -153,21 +153,22 @@ public class ThinQueryService implements Serializable {
         if (queryCache == null || !queryCache.isEnabled()) {
             CachedQueryResult r = runAndMaterialise(tq);
             log.info(
-                    "query name={} bytes={} format=arrow cacheHit=false runtimeMs={} cached=off",
-                    tq.getName(),
+                    "saiku.query.executed format=arrow cacheHit=false bytes={} runtimeMs={} rows={} queryName={}",
                     r.arrowBytes == null ? 0 : r.arrowBytes.length,
-                    r.runtimeMs);
+                    r.runtimeMs,
+                    r.rows,
+                    tq.getName());
             return r;
         }
 
         CachedQueryResult result = queryCache.get(key, cubeVersion, () -> runAndMaterialise(tq));
         log.info(
-                "query name={} bytes={} format=arrow cacheHit={} runtimeMs={} key={}",
-                tq.getName(),
-                result.arrowBytes == null ? 0 : result.arrowBytes.length,
+                "saiku.query.executed format=arrow cacheHit={} bytes={} runtimeMs={} rows={} queryName={}",
                 result.cacheHit,
+                result.arrowBytes == null ? 0 : result.arrowBytes.length,
                 result.runtimeMs,
-                key);
+                result.rows,
+                tq.getName());
         return result;
     }
 
@@ -329,6 +330,11 @@ public class ThinQueryService implements Serializable {
                     + (totals - start) + "ms");
 
             result.setRuntime(new Double(format - start).intValue());
+            log.info(
+                    "saiku.query.executed format=json cacheHit=false bytes=-1 runtimeMs={} rows={} queryName={}",
+                    (totals - start),
+                    result.getHeight(),
+                    tq.getName());
             return result;
         } catch (Exception | Error e) {
             throw new SaikuServiceException("Can't execute query: " + tq.getName(), e);
