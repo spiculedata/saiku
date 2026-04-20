@@ -13,6 +13,9 @@
     initialSelected: string[];
     initialType: SelectionType;
     open: boolean;
+    /** If false, the "Open date filter" button is hidden. Usually set from a
+     *  caption heuristic on the hierarchy (see `looksLikeTimeHierarchy`). */
+    showDateFilter?: boolean;
     onSave: (uniqueNames: string[], type: SelectionType) => void;
     onOpenDateFilter: () => void;
     onCancel: () => void;
@@ -24,6 +27,7 @@
     initialSelected,
     initialType,
     open,
+    showDateFilter = true,
     onSave,
     onOpenDateFilter,
     onCancel,
@@ -97,7 +101,9 @@
     {/if}
   </ul>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onOpenDateFilter}>{i18n.t("modal.selections.openDate")}</button>
+    {#if showDateFilter}
+      <button type="button" class="btn" onclick={onOpenDateFilter}>{i18n.t("modal.selections.openDate")}</button>
+    {/if}
     <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
     <button type="button" class="btn btn--primary" onclick={() => onSave(Array.from(selected), type)}>{i18n.t("modal.ok")}</button>
   {/snippet}

@@ -16,6 +16,8 @@
   import FormatAsPercentageModal from "$lib/modals/FormatAsPercentageModal.svelte";
   import GrowthModal from "$lib/modals/GrowthModal.svelte";
   import FilterModal from "$lib/modals/FilterModal.svelte";
+  import DateFilterModal from "$lib/modals/DateFilterModal.svelte";
+  import { looksLikeTimeHierarchy } from "$lib/modals/dateFilterMdx";
   import ContextMenu from "$lib/components/ContextMenu.svelte";
   type ContextMenuItem = { id: string; label: string; disabled?: boolean; danger?: boolean; sep?: boolean };
   import { MoreHorizontal, Loader2, XCircle, ChevronDown } from "lucide-svelte";
@@ -75,6 +77,14 @@
   let formatPctTarget = $state<{ measure: ThinMeasure } | null>(null);
   let growthOpen = $state(false);
   let growthTarget = $state<ThinMeasure | null>(null);
+
+  let dateFilterOpen = $state(false);
+  let dateFilterTarget = $state<{
+    axis: AxisLocation;
+    hierarchyName: string;
+    hierarchyCaption: string;
+    levelName: string;
+  } | null>(null);
 
   let axisFilterOpen = $state(false);
   let axisFilterTarget = $state<{ axis: AxisLocation; type: "Order" | "Filter" | "TopCount" | "BottomCount" | "Limit"; expression: string; sort: string } | null>(null);
@@ -315,6 +325,21 @@
       axis.mdx = `FILTER(${base}, ${expression})`;
     }
     toasts.success(i18n.t("toast.axisExprApplied"), `${t.type} on ${t.axis}`);
+    void query.run();
+  }
+
+  function onDateFilterApply(mdx: string) {
+    dateFilterOpen = false;
+    const t = dateFilterTarget;
+    if (!t || !query.current?.queryModel) return;
+    const axis = query.current.queryModel.axes[t.axis];
+    const hadExisting = !!axis.mdx;
+    axis.mdx = mdx;
+    if (hadExisting) {
+      toasts.warning(i18n.t("toast.dateFilter"), i18n.t("toast.dateFilter.replaced"));
+    } else {
+      toasts.success(i18n.t("toast.dateFilter"), i18n.t("toast.dateFilter.body"));
+    }
     void query.run();
   }
 
@@ -850,9 +875,14 @@
     initialType={selectionsInitial.type}
     open={selectionsOpen}
     onSave={onSelectionsSave}
+    showDateFilter={looksLikeTimeHierarchy(selectionsTarget.hierarchyCaption)}
     onOpenDateFilter={() => {
+      // Hand off the currently-open Selections target to the date-filter
+      // modal. Closing Selections first avoids stacked overlays.
+      if (!selectionsTarget) return;
+      dateFilterTarget = { ...selectionsTarget };
       selectionsOpen = false;
-      toasts.info(i18n.t("toast.dateFilter"), i18n.t("toast.dateFilter.body"));
+      dateFilterOpen = true;
     }}
     onCancel={() => (selectionsOpen = false)}
   />
@@ -923,6 +953,17 @@
   onApply={onGrowthApply}
   onCancel={() => (growthOpen = false)}
 />
+
+{#if dateFilterTarget}
+  <DateFilterModal
+    open={dateFilterOpen}
+    hierarchyCaption={dateFilterTarget.hierarchyCaption}
+    hierarchyName={dateFilterTarget.hierarchyName}
+    levelName={`${dateFilterTarget.hierarchyName}.[${dateFilterTarget.levelName}]`}
+    onApply={onDateFilterApply}
+    onCancel={() => (dateFilterOpen = false)}
+  />
+{/if}
 
 {#if axisFilterTarget}
   <FilterModal
