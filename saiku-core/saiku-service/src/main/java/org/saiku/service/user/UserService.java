@@ -24,7 +24,16 @@ public class UserService implements IUserManager, Serializable {
     private DatasourceService datasourceService;
     private ISessionService sessionService;
     private List<String> adminRoles;
+    private PasswordPolicy passwordPolicy = new PasswordPolicy();
     private static final Logger log = LoggerFactory.getLogger(UserService.class);
+
+    public void setPasswordPolicy(PasswordPolicy passwordPolicy) {
+        if (passwordPolicy != null) this.passwordPolicy = passwordPolicy;
+    }
+
+    public PasswordPolicy getPasswordPolicy() {
+        return passwordPolicy;
+    }
 
     public void setAdminRoles(List<String> adminRoles) {
         this.adminRoles = adminRoles;
@@ -51,6 +60,10 @@ public class UserService implements IUserManager, Serializable {
     }
 
     public SaikuUser addUser(SaikuUser u) {
+        // New user: enforce password policy before touching the DAO. The
+        // policy only runs on raw passwords at point-of-entry — existing
+        // hashed entries in the user table are never re-validated.
+        passwordPolicy.validate(u.getUsername(), u.getPassword());
         uDAO.insert(u);
         uDAO.insertRole(u);
         iDatasourceManager.createUser(u.getUsername());
@@ -101,6 +114,11 @@ public class UserService implements IUserManager, Serializable {
     }
 
     public SaikuUser updateUser(SaikuUser u, boolean updatepassword) {
+        // Only validate when the caller is actually changing the password —
+        // otherwise u.getPassword() may be null/empty/already-hashed.
+        if (updatepassword) {
+            passwordPolicy.validate(u.getUsername(), u.getPassword());
+        }
         SaikuUser user = uDAO.updateUser(u, updatepassword);
         uDAO.updateRoles(u);
 

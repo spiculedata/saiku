@@ -24,7 +24,6 @@ import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
-import org.saiku.repository.RepositoryException;
 import org.apache.commons.io.IOUtils;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.glassfish.jersey.media.multipart.FormDataParam;
@@ -32,6 +31,7 @@ import org.saiku.database.dto.MondrianSchema;
 import org.saiku.database.dto.SaikuUser;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.log.LogExtractor;
+import org.saiku.repository.RepositoryException;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.datasource.IDatasourceManager;
 import org.saiku.service.importer.JujuSource;
@@ -498,13 +498,20 @@ public class AdminResource {
         if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
-        if (jsonString.getPassword() == null || jsonString.getPassword().equals("")) {
-            return Response.ok()
-                    .entity(userService.updateUser(jsonString, false))
-                    .build();
-        } else {
-            return Response.ok()
-                    .entity(userService.updateUser(jsonString, true))
+        try {
+            if (jsonString.getPassword() == null || jsonString.getPassword().equals("")) {
+                return Response.ok()
+                        .entity(userService.updateUser(jsonString, false))
+                        .build();
+            } else {
+                return Response.ok()
+                        .entity(userService.updateUser(jsonString, true))
+                        .build();
+            }
+        } catch (IllegalArgumentException policy) {
+            // Password-policy violation — surface as 400 so the UI can display.
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(policy.getMessage())
                     .build();
         }
     }
@@ -525,7 +532,13 @@ public class AdminResource {
         if (!userService.isAdmin()) {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
-        return Response.ok().entity(userService.addUser(jsonString)).build();
+        try {
+            return Response.ok().entity(userService.addUser(jsonString)).build();
+        } catch (IllegalArgumentException policy) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(policy.getMessage())
+                    .build();
+        }
     }
 
     /**
