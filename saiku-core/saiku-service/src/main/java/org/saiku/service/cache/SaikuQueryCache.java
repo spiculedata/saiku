@@ -157,6 +157,24 @@ public class SaikuQueryCache {
                 }
             }
         }
+        // Delete orphan .arrow files whose sidecar is missing — a crash after
+        // writing the arrow but before the meta sidecar (or after an
+        // interrupted invalidate) would otherwise leak bytes indefinitely.
+        try (DirectoryStream<Path> ds = Files.newDirectoryStream(cacheDir, "*" + ARROW_SUFFIX)) {
+            for (Path arrow : ds) {
+                String name = arrow.getFileName().toString();
+                String key = name.substring(0, name.length() - ARROW_SUFFIX.length());
+                Path meta = metaPath(key);
+                if (!Files.exists(meta)) {
+                    try {
+                        Files.deleteIfExists(arrow);
+                        log.debug("Deleted orphan arrow file {} (no sidecar)", arrow);
+                    } catch (IOException ioe) {
+                        log.debug("Failed to delete orphan arrow {}: {}", arrow, ioe.toString());
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -223,7 +241,12 @@ public class SaikuQueryCache {
                     r.rows,
                     cubeVersion == null ? "" : cubeVersion,
                     r.arrowBytes.length);
-            mapper.writerWithDefaultPrettyPrinter().writeValue(meta.toFile(), e);
+            // Write meta via tmp + atomic move, same pattern as the arrow file,
+            // so a crash mid-write never leaves a half-serialised sidecar that
+            // would poison reindexFromDisk() / the budget walk.
+            Path metaTmp = meta.resolveSibling(meta.getFileName().toString() + ".tmp");
+            mapper.writerWithDefaultPrettyPrinter().writeValue(metaTmp.toFile(), e);
+            Files.move(metaTmp, meta, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             index.put(key, e);
 
             evictIfOverBudget();
