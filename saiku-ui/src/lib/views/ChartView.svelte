@@ -5,6 +5,7 @@
   import { parseCellset, toNumber } from "$lib/views/cellsetUtils";
   import type { ChartType, ChartOptions } from "$lib/views/chartTypes";
   import { DEFAULT_CHART_OPTIONS } from "$lib/views/chartTypes";
+  import { theme } from "$lib/stores/theme.svelte";
 
   interface Props {
     result: QueryResult;
@@ -17,13 +18,32 @@
   let host: HTMLDivElement | null = null;
   let chart: echarts.ECharts | null = null;
 
-  const AXIS_LABEL = { color: "#a8aeba" };
-  const AXIS_LINE = { lineStyle: { color: "#333a49" } };
-  const SPLIT = { lineStyle: { color: "#1a1e27" } };
+  interface ThemeTokens {
+    fg: string;
+    fgMuted: string;
+    bg: string;
+    bgMuted: string;
+    border: string;
+    accent: string;
+  }
 
-  function legendConfig(o: ChartOptions) {
+  function resolveThemeTokens(): ThemeTokens {
+    const cs = getComputedStyle(document.documentElement);
+    const get = (name: string, fallback: string) =>
+      cs.getPropertyValue(name).trim() || fallback;
+    return {
+      fg: get("--fg", "#0f172a"),
+      fgMuted: get("--fg-muted", "#475569"),
+      bg: get("--bg", "#ffffff"),
+      bgMuted: get("--bg-muted", "#f6f7f9"),
+      border: get("--border", "#e2e8f0"),
+      accent: get("--accent", "#4f46e5"),
+    };
+  }
+
+  function legendConfig(o: ChartOptions, tk: ThemeTokens) {
     if (!o.showLegend) return { show: false };
-    const position: Record<string, unknown> = { textStyle: { color: "#e6e8ec" } };
+    const position: Record<string, unknown> = { textStyle: { color: tk.fg } };
     if (o.legendPosition === "top") position.top = 10;
     else if (o.legendPosition === "bottom") position.bottom = 10;
     else if (o.legendPosition === "left") { position.left = 10; position.top = "middle"; position.orient = "vertical"; }
@@ -31,9 +51,9 @@
     return position;
   }
 
-  function titleConfig(o: ChartOptions) {
+  function titleConfig(o: ChartOptions, tk: ThemeTokens) {
     if (!o.title) return undefined;
-    return { text: o.title, left: "center", textStyle: { color: "#e6e8ec" } };
+    return { text: o.title, left: "center", textStyle: { color: tk.fg } };
   }
 
   function linearRegression(vals: (number | null)[]): number[] {
@@ -85,7 +105,7 @@
     return out;
   }
 
-  function trendSeries(name: string, vals: (number | null)[], o: ChartOptions) {
+  function trendSeries(name: string, vals: (number | null)[], o: ChartOptions, tk: ThemeTokens) {
     if (o.trendLine === "none") return [];
     const period = Math.max(2, o.trendPeriod || 3);
     let data: (number | null)[] = [];
@@ -106,48 +126,75 @@
       data,
       smooth: true,
       showSymbol: false,
-      lineStyle: { type: "dashed" as const, width: 2 },
+      lineStyle: { type: "dashed" as const, width: 2, color: tk.fgMuted },
+      itemStyle: { color: tk.fgMuted },
     }];
   }
 
   function buildOption(r: QueryResult, t: ChartType, o: ChartOptions): echarts.EChartsOption {
+    const tk = resolveThemeTokens();
     const parsed = parseCellset(r);
     const rows = parsed.rowCategories;
     const cols = parsed.columnCategories;
     const matrix: (number | null)[][] = parsed.dataRows.map((row) => row.map(toNumber));
 
-    const baseAxis = { type: "category" as const, axisLabel: AXIS_LABEL, axisLine: AXIS_LINE, splitLine: SPLIT };
-    const valueAxis = { type: "value" as const, axisLabel: AXIS_LABEL, axisLine: AXIS_LINE, splitLine: SPLIT };
-    const legend = legendConfig(o);
-    const title = titleConfig(o);
-    const tooltip = { trigger: "axis" as const, backgroundColor: "#11141b", borderColor: "#242935", textStyle: { color: "#e6e8ec" } };
+    const axisLabel = { color: tk.fgMuted };
+    const axisLine = { lineStyle: { color: tk.border } };
+    const axisTick = { lineStyle: { color: tk.border } };
+    const splitLine = { lineStyle: { color: tk.border, opacity: 0.5 } };
+    const nameTextStyle = { color: tk.fg };
+
+    const baseAxis = {
+      type: "category" as const,
+      axisLabel, axisLine, axisTick, splitLine, nameTextStyle,
+    };
+    const valueAxis = {
+      type: "value" as const,
+      axisLabel, axisLine, axisTick, splitLine, nameTextStyle,
+    };
+    const legend = legendConfig(o, tk);
+    const title = titleConfig(o, tk);
+    const tooltip = {
+      trigger: "axis" as const,
+      backgroundColor: tk.bg,
+      borderColor: tk.border,
+      textStyle: { color: tk.fg },
+    };
+    const itemTooltip = {
+      backgroundColor: tk.bg,
+      borderColor: tk.border,
+      textStyle: { color: tk.fg },
+    };
     const xName = o.xAxisLabel || undefined;
     const yName = o.yAxisLabel || undefined;
+
+    const common = { backgroundColor: "transparent", textStyle: { color: tk.fg } };
 
     if (t === "pie" || t === "donut") {
       const totals = cols.map((_, c) => matrix.reduce((s, row) => s + (row[c] ?? 0), 0));
       const radius = t === "donut" ? ["45%", "70%"] : ["0%", "70%"];
       return {
+        ...common,
         title, legend,
-        tooltip: { trigger: "item", backgroundColor: "#11141b", textStyle: { color: "#e6e8ec" } },
+        tooltip: { trigger: "item", ...itemTooltip },
         series: [{
           type: "pie",
           radius,
-          label: { color: "#e6e8ec" },
+          label: { color: tk.fg },
           data: cols.map((name, c) => ({ name, value: totals[c] })),
         }],
       };
     }
 
     if (t === "treemap") {
-      // Each row = node, each column = measure series → flatten using first measure
       const data = rows.map((name, i) => ({
         name,
         value: (matrix[i] ?? []).reduce((s, v) => s + (v ?? 0), 0),
       })).filter((d) => d.value > 0);
       return {
+        ...common,
         title,
-        tooltip: { backgroundColor: "#11141b", textStyle: { color: "#e6e8ec" } },
+        tooltip: itemTooltip,
         series: [{
           type: "treemap",
           data,
@@ -163,8 +210,9 @@
         value: (matrix[i] ?? []).reduce((s, v) => s + (v ?? 0), 0),
       })).filter((d) => d.value > 0);
       return {
+        ...common,
         title,
-        tooltip: { backgroundColor: "#11141b", textStyle: { color: "#e6e8ec" } },
+        tooltip: itemTooltip,
         series: [{ type: "sunburst", data, radius: [0, "90%"], label: { color: "#fff" } }],
       };
     }
@@ -180,12 +228,17 @@
       const min = values.length ? Math.min(...values) : 0;
       const max = values.length ? Math.max(...values) : 1;
       return {
+        ...common,
         title,
-        tooltip: { backgroundColor: "#11141b", textStyle: { color: "#e6e8ec" } },
+        tooltip: itemTooltip,
         grid: { left: 120, top: 40, right: 40, bottom: 80 },
         xAxis: { ...baseAxis, data: cols, name: xName },
         yAxis: { ...baseAxis, data: rows, inverse: true, name: yName },
-        visualMap: { min, max, calculable: true, orient: "horizontal", left: "center", bottom: 10, textStyle: { color: "#a8aeba" } },
+        visualMap: {
+          min, max, calculable: true, orient: "horizontal",
+          left: "center", bottom: 10,
+          textStyle: { color: tk.fgMuted },
+        },
         series: [{ type: "heatmap", data, label: { show: false }, emphasis: { itemStyle: { shadowBlur: 10 } } }],
       };
     }
@@ -193,18 +246,26 @@
     if (t === "radar") {
       const max = Math.max(0, ...matrix.flatMap((r) => r.map((v) => Math.abs(v ?? 0))));
       return {
+        ...common,
         title,
-        tooltip: { backgroundColor: "#11141b", textStyle: { color: "#e6e8ec" } },
+        tooltip: itemTooltip,
         legend,
-        radar: { indicator: cols.map((c) => ({ name: c, max: max || 1 })), axisName: { color: "#a8aeba" } },
+        radar: {
+          indicator: cols.map((c) => ({ name: c, max: max || 1 })),
+          axisName: { color: tk.fgMuted },
+          axisLine: { lineStyle: { color: tk.border } },
+          splitLine: { lineStyle: { color: tk.border, opacity: 0.5 } },
+          splitArea: { areaStyle: { color: [tk.bg, tk.bgMuted], opacity: 0.3 } },
+        },
         series: [{ type: "radar", data: rows.map((r, i) => ({ name: r, value: matrix[i].map((v) => v ?? 0) })) }],
       };
     }
 
     if (t === "scatter" || t === "bubble") {
       return {
+        ...common,
         title,
-        tooltip: { backgroundColor: "#11141b", textStyle: { color: "#e6e8ec" } },
+        tooltip: itemTooltip,
         legend,
         xAxis: { ...baseAxis, data: cols, name: xName },
         yAxis: { ...valueAxis, name: yName },
@@ -224,7 +285,6 @@
     }
 
     if (t === "waterfall") {
-      // Waterfall over rows (first measure). Transparent spacer stack + delta stack.
       const vals = matrix.map((r) => r[0] ?? 0);
       const spacers: number[] = [];
       const positives: (number | null)[] = [];
@@ -243,6 +303,7 @@
         running += v;
       }
       return {
+        ...common,
         title,
         tooltip,
         legend,
@@ -270,10 +331,11 @@
       data: matrix.map((row) => row[c] ?? 0),
     }));
     const trend = kind === "line" && cols.length > 0
-      ? trendSeries(cols[0], matrix.map((row) => row[0] ?? null), o)
+      ? trendSeries(cols[0], matrix.map((row) => row[0] ?? null), o, tk)
       : [];
 
     return {
+      ...common,
       title, tooltip, legend,
       grid: { left: 60, top: title ? 50 : 40, right: 40, bottom: 60 },
       xAxis: { ...baseAxis, data: rows, name: xName },
@@ -284,12 +346,16 @@
 
   function render() {
     if (!chart) return;
-    chart.setOption(buildOption(result, type, options), true);
+    const opt = buildOption(result, type, options);
+    chart.setOption(opt, {
+      notMerge: false,
+      replaceMerge: ["xAxis", "yAxis", "legend", "tooltip", "title", "visualMap", "radar"],
+    });
   }
 
   onMount(() => {
     if (host) {
-      chart = echarts.init(host, "dark");
+      chart = echarts.init(host, null);
       render();
       const ro = new ResizeObserver(() => chart?.resize());
       ro.observe(host);
@@ -308,6 +374,8 @@
     void options.legendPosition;
     void options.trendLine;
     void options.trendPeriod;
+    // Re-theme when the effective theme flips.
+    void theme.effective;
     if (chart) render();
   });
 
