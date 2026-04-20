@@ -45,7 +45,16 @@
     </security:http>
     <security:http auto-config='true' use-expressions="true">
       <!--access-denied-page="/login.jsp"-->
-      <security:csrf disabled="true"/>
+      <!--
+        CSRF: enforced on state-changing /rest/** methods.
+        - Token is stored in a non-HttpOnly XSRF-TOKEN cookie so the SPA can read it
+          and echo it as X-XSRF-TOKEN on non-GET requests.
+        - The /rest/saiku/session login endpoint is exempt (bootstrap): there's no
+          session yet at login time, so no cookie to echo. HTTP Basic is also exempt
+          (stateless, no browser form).
+      -->
+      <security:csrf token-repository-ref="csrfTokenRepository"
+                     request-matcher-ref="csrfRequestMatcher"/>
       <security:intercept-url pattern="/serverdocs/**" access="isAnonymous()" />
 	    <security:intercept-url pattern="/rest/saiku/session*" access="isAnonymous() or isFullyAuthenticated()" />
     	<security:intercept-url pattern="/rest/saiku/api/license/usercount" access="isAnonymous() or isFullyAuthenticated()" />
@@ -55,6 +64,13 @@
       <security:logout logout-url="/logout"/>
  	    <security:http-basic/>
     </security:http>
+
+    <!-- Tier-1 auth hardening: CSRF wiring -->
+    <bean id="csrfTokenRepository"
+          class="org.springframework.security.web.csrf.CookieCsrfTokenRepository"
+          factory-method="withHttpOnlyFalse"/>
+    <bean id="csrfRequestMatcher"
+          class="org.saiku.web.security.csrf.SaikuCsrfRequestMatcher"/>
 
     <import resource="applicationContext-spring-security.xml"/>
 
