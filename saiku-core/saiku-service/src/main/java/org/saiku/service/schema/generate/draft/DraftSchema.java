@@ -12,6 +12,7 @@ public class DraftSchema {
 
     private String name;
     private final List<DraftCube> cubes = new ArrayList<>();
+    private final List<DraftDimension> sharedDimensions = new ArrayList<>();
 
     public DraftSchema(String name) {
         this.name = name;
@@ -27,5 +28,10 @@ public class DraftSchema {
 
     public List<DraftCube> cubes() {
         return cubes;
+    }
+
+    /** Shared dimensions defined at schema scope (e.g. a shared Time dimension). */
+    public List<DraftDimension> sharedDimensions() {
+        return sharedDimensions;
     }
 }

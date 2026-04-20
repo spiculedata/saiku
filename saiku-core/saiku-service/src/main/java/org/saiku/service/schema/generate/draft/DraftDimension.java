@@ -14,6 +14,7 @@ public class DraftDimension {
     private String name;
     private Type type;
     private String sourceTable;
+    private String foreignKey;
     private final List<DraftHierarchy> hierarchies = new ArrayList<>();
     private Provenance provenance;
 
@@ -45,6 +46,14 @@ public class DraftDimension {
 
     public void setSourceTable(String sourceTable) {
         this.sourceTable = sourceTable;
+    }
+
+    public String foreignKey() {
+        return foreignKey;
+    }
+
+    public void setForeignKey(String foreignKey) {
+        this.foreignKey = foreignKey;
     }
 
     public List<DraftHierarchy> hierarchies() {
