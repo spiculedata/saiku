@@ -120,6 +120,23 @@ a:hover {
 }
 
 /* -------------------------------------------------------------------------
+ * Embed mode (?embed=1): chromeless layout for iframes. The topbar/sidebar/
+ * toolbar/tabs are hidden by component-level {#if !embed.active} guards; the
+ * rules below collapse the canvas body to a single column and tighten
+ * padding so the grid fills the viewport.
+ * ------------------------------------------------------------------------- */
+body.saiku-embed .canvas {
+  padding: 4px;
+}
+body.saiku-embed .canvas__body {
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+body.saiku-embed .dropzones {
+  display: none;
+}
+
+/* -------------------------------------------------------------------------
  * Print styles — Cmd+P produces a chromeless, ink-friendly printout of the
  * current query result. We hide every piece of UI chrome (topbar, sidebar,
  * toolbar, chart/view toggles, selection stats) and let the cellset occupy

@@ -4,6 +4,7 @@
   import { session } from "$lib/stores/session.svelte";
   import { theme } from "$lib/stores/theme.svelte";
   import { platform } from "$lib/stores/platform.svelte";
+  import { embed } from "$lib/stores/embed.svelte";
   import ToastStack from "$lib/components/ToastStack.svelte";
   import UpgradeBanner from "$lib/components/UpgradeBanner.svelte";
   import LocalePicker from "$lib/components/LocalePicker.svelte";
@@ -34,6 +35,7 @@
   theme;
 
   onMount(() => {
+    embed.bootstrap();
     installAuthInterceptor();
     const unsub = onAuthFailure((status) => {
       if (session.current) {
@@ -63,7 +65,10 @@
 </script>
 
 <div class="app">
-  <UpgradeBanner />
+  {#if !embed.active}
+    <UpgradeBanner />
+  {/if}
+  {#if !embed.active}
   <header class="topbar">
     <div class="topbar__brand">
       {#if brandLogo}
@@ -112,6 +117,7 @@
       {/if}
     </div>
   </header>
+  {/if}
 
   <main class="app__main">
     {@render children()}

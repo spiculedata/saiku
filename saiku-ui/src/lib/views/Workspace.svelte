@@ -9,6 +9,7 @@
   import QueryCanvas from "$lib/views/QueryCanvas.svelte";
   import { query } from "$lib/stores/query.svelte";
   import { selection } from "$lib/stores/selection.svelte";
+  import { embed } from "$lib/stores/embed.svelte";
   import {
     deserializeQueryFromHash,
     serializeQueryToHash,
@@ -86,22 +87,26 @@
   });
 </script>
 
-<div class="workspace">
-  <aside class="workspace__sidebar">
-    <div class="workspace__sidebar-scroll">
-      <CubePicker username={session.username} />
-      <DimensionList username={session.username} />
-    </div>
-    <div class="workspace__sidebar-footer">
-      <button type="button" class="btn" onclick={() => (aboutOpen = true)}>{i18n.t("modal.about.title")}</button>
-    </div>
-  </aside>
+<div class="workspace" class:workspace--embed={embed.active}>
+  {#if !embed.active}
+    <aside class="workspace__sidebar">
+      <div class="workspace__sidebar-scroll">
+        <CubePicker username={session.username} />
+        <DimensionList username={session.username} />
+      </div>
+      <div class="workspace__sidebar-footer">
+        <button type="button" class="btn" onclick={() => (aboutOpen = true)}>{i18n.t("modal.about.title")}</button>
+      </div>
+    </aside>
+  {/if}
   <section class="workspace__main">
-    <div class="tabset">
-      <div class="tab tab--active">{i18n.t("workspace.unsavedQuery")}</div>
-      <button type="button" class="tab tab--new" aria-label={i18n.t("toast.newQuery")}>+</button>
-    </div>
-    <WorkspaceToolbar />
+    {#if !embed.active}
+      <div class="tabset">
+        <div class="tab tab--active">{i18n.t("workspace.unsavedQuery")}</div>
+        <button type="button" class="tab tab--new" aria-label={i18n.t("toast.newQuery")}>+</button>
+      </div>
+      <WorkspaceToolbar />
+    {/if}
     <QueryCanvas />
   </section>
 </div>
@@ -125,6 +130,10 @@
     gap: 1px;
     background: var(--border);
     overflow: hidden;
+  }
+  .workspace--embed {
+    grid-template-columns: 1fr;
+    gap: 0;
   }
   .workspace__sidebar,
   .workspace__main {
