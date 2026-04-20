@@ -192,6 +192,11 @@
          fronted by a proxy you control). -->
     <bean id="loginRateLimiter" class="org.saiku.web.security.ratelimit.LoginRateLimiter"/>
 
+    <!-- Tier-1 auth hardening: bridges Spring Security auth events onto the
+         structured audit log (org.saiku.audit). Captures the HTTP-Basic /
+         filter-chain path; SessionResource audits form-login directly. -->
+    <bean id="saikuAuditListener" class="org.saiku.web.security.audit.SpringSecurityAuditListener"/>
+
     <bean id="sessionResource" class="org.saiku.web.rest.resources.SessionResource">
         <property name="sessionService" ref="sessionService"/>
         <property name="userService" ref="userServiceBean"/>
