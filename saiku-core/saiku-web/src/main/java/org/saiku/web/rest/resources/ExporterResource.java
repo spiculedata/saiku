@@ -31,7 +31,6 @@ import java.util.*;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.saiku.olap.query2.ThinQuery;
-import org.saiku.web.rest.objects.resultset.QueryResult;
 import org.saiku.web.rest.util.ServletUtil;
 import org.saiku.web.svg.Converter;
 import org.slf4j.Logger;
@@ -98,7 +97,7 @@ public class ExporterResource {
                     tq.getProperties().putAll(p);
                 }
             }
-            query2Resource.execute(tq);
+            query2Resource.execute(tq, null);
             return query2Resource.getQueryExcelExport(queryName, formatter, name);
         } catch (Exception e) {
             log.error("Error exporting XLS for file: " + file, e);
@@ -146,7 +145,7 @@ public class ExporterResource {
                     tq.getProperties().putAll(p);
                 }
             }
-            query2Resource.execute(tq);
+            query2Resource.execute(tq, null);
             return query2Resource.getQueryCsvExport(queryName);
         } catch (Exception e) {
             log.error("Error exporting CSV for file: " + file, e);
@@ -193,8 +192,7 @@ public class ExporterResource {
                     tq.getProperties().putAll(p);
                 }
             }
-            QueryResult qr = query2Resource.execute(tq);
-            return Response.ok().entity(qr).build();
+            return query2Resource.execute(tq, null);
         } catch (Exception e) {
             log.error("Error exporting JSON for file: " + file, e);
             return Response.serverError()
