@@ -319,6 +319,108 @@
     dragging: false,
   });
 
+  // --- Keyboard navigation: focused cell is the "cursor" ---
+  let focused = $state<CellCoord | null>(null);
+
+  function gridBounds(): { rows: number; cols: number } {
+    const rows = parsed.dataRows.length;
+    const cols = parsed.dataRows[0]?.length ?? 0;
+    return { rows, cols };
+  }
+
+  /** Seed focus to (0,0) the first time a non-empty cellset arrives, and
+   *  drop stale focus when the cellset changes out from under us. */
+  $effect(() => {
+    const { rows, cols } = gridBounds();
+    if (rows === 0 || cols === 0) {
+      focused = null;
+      return;
+    }
+    if (!focused) {
+      focused = { r: 0, c: 0 };
+    } else if (focused.r >= rows || focused.c >= cols) {
+      focused = { r: Math.min(focused.r, rows - 1), c: Math.min(focused.c, cols - 1) };
+    }
+  });
+
+  function moveFocus(dr: number, dc: number, extendSelection: boolean): void {
+    const { rows, cols } = gridBounds();
+    if (rows === 0 || cols === 0) return;
+    const cur = focused ?? { r: 0, c: 0 };
+    const nr = Math.max(0, Math.min(rows - 1, cur.r + dr));
+    const nc = Math.max(0, Math.min(cols - 1, cur.c + dc));
+    setFocus({ r: nr, c: nc }, extendSelection);
+  }
+
+  function setFocus(to: CellCoord, extendSelection: boolean): void {
+    focused = to;
+    if (extendSelection) {
+      if (!sel.anchor) {
+        // Seed the anchor at the previous focus / current cell so shift-arrow
+        // extends from where the user started.
+        sel = { anchor: to, focus: to, dragging: false };
+      } else {
+        sel = { ...sel, focus: to };
+      }
+    }
+    scrollFocusedIntoView();
+  }
+
+  function scrollFocusedIntoView(): void {
+    if (!wrapperEl || !focused) return;
+    // Defer a tick so the DOM reflects the new focused class / row before we
+    // try to find the <td>. Svelte 5 reactive updates are sync enough that a
+    // queueMicrotask is usually sufficient.
+    queueMicrotask(() => {
+      if (!wrapperEl || !focused) return;
+      const cell = wrapperEl.querySelector<HTMLTableCellElement>(
+        `td.data[data-r="${focused.r}"][data-c="${focused.c}"]`,
+      );
+      cell?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    });
+  }
+
+  function onGridKeydown(e: KeyboardEvent) {
+    // Ignore when typing into a descendant form control (e.g. the context
+    // menu submenu buttons don't accept text, but be safe).
+    const target = e.target as HTMLElement | null;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+    if (menu.open) return;
+
+    const { rows, cols } = gridBounds();
+    if (rows === 0 || cols === 0) return;
+
+    const shift = e.shiftKey;
+    const mod = e.ctrlKey || e.metaKey;
+    let handled = true;
+    switch (e.key) {
+      case "ArrowUp": moveFocus(-1, 0, shift); break;
+      case "ArrowDown": moveFocus(1, 0, shift); break;
+      case "ArrowLeft": moveFocus(0, -1, shift); break;
+      case "ArrowRight": moveFocus(0, 1, shift); break;
+      case "PageUp": moveFocus(-10, 0, shift); break;
+      case "PageDown": moveFocus(10, 0, shift); break;
+      case "Home":
+        if (mod) setFocus({ r: 0, c: 0 }, shift);
+        else setFocus({ r: focused?.r ?? 0, c: 0 }, shift);
+        break;
+      case "End":
+        if (mod) setFocus({ r: rows - 1, c: cols - 1 }, shift);
+        else setFocus({ r: focused?.r ?? 0, c: cols - 1 }, shift);
+        break;
+      case "Escape":
+        clearSelection();
+        break;
+      default:
+        handled = false;
+    }
+    if (handled) e.preventDefault();
+  }
+
+  function isFocused(r: number, c: number): boolean {
+    return !!focused && focused.r === r && focused.c === c;
+  }
+
   function selRect(): { r0: number; r1: number; c0: number; c1: number } | null {
     if (!sel.anchor || !sel.focus) return null;
     return {
@@ -335,11 +437,13 @@
   function onCellMouseDown(e: MouseEvent, r: number, c: number) {
     if (e.button !== 0) return; // only left-click
     sel = { anchor: { r, c }, focus: { r, c }, dragging: true };
+    focused = { r, c };
     e.preventDefault(); // suppress text selection while dragging
   }
   function onCellMouseEnter(r: number, c: number) {
     if (!sel.dragging) return;
     sel = { ...sel, focus: { r, c } };
+    focused = { r, c };
   }
   function endDrag() {
     if (sel.dragging) sel = { ...sel, dragging: false };
@@ -410,7 +514,15 @@
 {:else if (result.cellset?.length ?? 0) === 0}
   <p class="empty">No rows returned.</p>
 {:else}
-  <div class="cellset-wrap" bind:this={wrapperEl}>
+  <div
+    class="cellset-wrap"
+    bind:this={wrapperEl}
+    tabindex="0"
+    role="grid"
+    aria-rowcount={parsed.dataRows.length}
+    aria-colcount={parsed.dataRows[0]?.length ?? 0}
+    onkeydown={onGridKeydown}
+  >
     <table class="cellset">
       <thead>
         {#each parsed.columnHeaderRows as hdrRow, rIdx}
@@ -457,8 +569,13 @@
             {#each parsed.dataRows[r] as dc, cIdx}
               {@const num = isNumeric(dc.value)}
               {@const selected = isSelected(r, cIdx)}
+              {@const hasFocus = isFocused(r, cIdx)}
               <td
-                class={(num ? "data data-num" : "data") + (selected ? " data--selected" : "")}
+                class={(num ? "data data-num" : "data")
+                  + (selected ? " data--selected" : "")
+                  + (hasFocus ? " data--focused" : "")}
+                data-r={r}
+                data-c={cIdx}
                 onmousedown={(e) => onCellMouseDown(e, r, cIdx)}
                 onmouseenter={() => onCellMouseEnter(r, cIdx)}
                 oncontextmenu={(e) => onDataCellContextMenu(e, r, cIdx)}
@@ -632,6 +749,18 @@
   }
   .cellset td.data { cursor: cell; user-select: none; }
   .cellset td.data--selected { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+  .cellset td.data--focused {
+    box-shadow: inset 0 0 0 2px var(--accent);
+    position: relative;
+  }
+  .cellset-wrap:focus {
+    outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+    outline-offset: -2px;
+  }
+  .cellset-wrap:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
   .sel-stats {
     flex: 0 0 auto;
     display: flex;
