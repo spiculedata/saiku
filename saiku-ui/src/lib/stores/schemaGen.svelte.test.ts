@@ -76,12 +76,18 @@ const DRAFT_B: DraftView = {
 
 const OP_1: SuggestionOp = {
   op: "rename",
-  target: { kind: "cube", path: ["Orders"] },
-  newName: "Sales Orders",
+  targetPath: "cubes/Orders",
+  oldCaption: "Orders",
+  newCaption: "Sales Orders",
+  description: null,
+  confidence: 0.9,
+  rationale: "friendlier caption",
 };
 const OP_2: SuggestionOp = {
   op: "ignore",
-  target: { kind: "column", path: ["Orders", "notes"] },
+  targetPath: "cubes/Orders/measures/notes",
+  confidence: 0.4,
+  rationale: "internal audit field",
 };
 
 function suggestionsWith(ops: SuggestionOp[]): SuggestionView {

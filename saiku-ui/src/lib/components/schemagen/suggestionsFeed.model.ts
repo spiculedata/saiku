@@ -5,14 +5,14 @@
  * grouping, confidence bucketing, and the "before → after" preview strings
  * live here so they can be unit-tested without a browser.
  *
- * The UI-facing `FeedSuggestionOp` union mirrors the backend `SuggestionOp`
- * sealed hierarchy in saiku-service (RenameOp / HierarchyOp / AggregatorOp /
- * DegenerateDimOp / IgnoreOp). It is defined locally rather than reused from
- * api/schemaGen.ts because the existing client-side type there predates the
- * confidence/rationale fields and still carries a placeholder shape; rather
- * than churn the client and its tests here we keep a faithful, narrowly-
- * scoped definition next to the feed that consumes it.
+ * Op types are reused directly from `$lib/api/schemaGen` — the client is now
+ * the single source of truth for the backend SuggestionOp contract. We keep
+ * `FeedSuggestionOp` / `FeedSuggestionView` aliases so downstream imports
+ * don't have to change, and so we retain a handle to rename later if the feed
+ * ever diverges from the transport shape.
  */
+
+import type { SuggestionOp, SuggestionView } from "$lib/api/schemaGen";
 
 /** Discriminator values for the five op variants. Stable group ordering follows this list. */
 export type OpType =
@@ -22,53 +22,8 @@ export type OpType =
   | "degenerateDim"
   | "ignore";
 
-/** Fields every op carries, regardless of variant. */
-interface OpCommon {
-  targetPath: string;
-  confidence: number;
-  rationale: string;
-}
-
-export interface FeedRenameOp extends OpCommon {
-  op: "rename";
-  oldCaption: string;
-  newCaption: string;
-  description?: string | null;
-}
-
-export interface FeedHierarchyOp extends OpCommon {
-  op: "hierarchy";
-  hierarchyName: string;
-  levelColumns: string[];
-}
-
-export interface FeedAggregatorOp extends OpCommon {
-  op: "aggregator";
-  oldAggregator: string;
-  newAggregator: string;
-}
-
-export interface FeedDegenerateDimOp extends OpCommon {
-  op: "degenerateDim";
-  factColumn: string;
-  dimName: string;
-}
-
-export interface FeedIgnoreOp extends OpCommon {
-  op: "ignore";
-}
-
-export type FeedSuggestionOp =
-  | FeedRenameOp
-  | FeedHierarchyOp
-  | FeedAggregatorOp
-  | FeedDegenerateDimOp
-  | FeedIgnoreOp;
-
-export interface FeedSuggestionView {
-  ops: FeedSuggestionOp[];
-  degraded: boolean;
-}
+export type FeedSuggestionOp = SuggestionOp;
+export type FeedSuggestionView = SuggestionView;
 
 export type ConfidenceTier = "high" | "medium" | "low";
 

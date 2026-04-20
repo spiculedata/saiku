@@ -118,7 +118,16 @@ export interface SuggestionView {
   degraded: boolean;
 }
 
-/** Discriminated union of operations the user can apply to a draft. */
+/**
+ * Discriminated union of operations the enrichment layer (rules / LLM)
+ * proposes or the UI applies against a draft.
+ *
+ * Matches the backend sealed hierarchy in
+ * {@code org.saiku.service.schema.generate.enrich.ops.SuggestionOp}: every op
+ * carries a {@code targetPath} (e.g. {@code cubes/Sales/measures/Amount}),
+ * a nominal {@code confidence} in {@code [0.0, 1.0]}, and a short
+ * {@code rationale} string. Op-specific fields follow.
+ */
 export type SuggestionOp =
   | RenameOp
   | HierarchyOp
@@ -126,39 +135,45 @@ export type SuggestionOp =
   | DegenerateDimOp
   | IgnoreOp;
 
-/** Target selector used by every op — matches the backend `OpTarget` record. */
-export interface OpTarget {
-  kind: string;
-  path: string[];
+/** Fields every op carries, regardless of variant. */
+interface OpCommon {
+  targetPath: string;
+  confidence: number;
+  rationale: string;
 }
 
-export interface RenameOp {
+/** Set a friendlier caption (and optional description) on any named element. */
+export interface RenameOp extends OpCommon {
   op: "rename";
-  target: OpTarget;
-  newName: string;
+  oldCaption: string;
+  newCaption: string;
+  description?: string | null;
 }
 
-export interface HierarchyOp {
+/** Propose a multi-level hierarchy on a dimension. */
+export interface HierarchyOp extends OpCommon {
   op: "hierarchy";
-  target: OpTarget;
-  levels: string[];
+  hierarchyName: string;
+  levelColumns: string[];
 }
 
-export interface AggregatorOp {
+/** Change a measure's aggregator. */
+export interface AggregatorOp extends OpCommon {
   op: "aggregator";
-  target: OpTarget;
-  aggregator: string;
+  oldAggregator: string;
+  newAggregator: string;
 }
 
-export interface DegenerateDimOp {
+/** Promote a fact-table column to a degenerate dimension on a cube. */
+export interface DegenerateDimOp extends OpCommon {
   op: "degenerateDim";
-  target: OpTarget;
-  column: string;
+  factColumn: string;
+  dimName: string;
 }
 
-export interface IgnoreOp {
+/** Propose dropping an element (cube, dim, hierarchy, level, or measure). */
+export interface IgnoreOp extends OpCommon {
   op: "ignore";
-  target: OpTarget;
 }
 
 export interface SchemaGenClient {

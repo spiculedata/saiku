@@ -137,8 +137,12 @@ describe("createSchemaGenClient", () => {
   it("applyOp POSTs the op wrapped in { op } and returns the updated draft", async () => {
     const op: SuggestionOp = {
       op: "rename",
-      target: { kind: "cube", path: ["Sales"] },
-      newName: "Sales2",
+      targetPath: "cubes/Sales",
+      oldCaption: "Sales",
+      newCaption: "Sales2",
+      description: null,
+      confidence: 0.9,
+      rationale: "friendlier caption",
     };
     const draft: DraftView = {
       schemaName: "Sales",
