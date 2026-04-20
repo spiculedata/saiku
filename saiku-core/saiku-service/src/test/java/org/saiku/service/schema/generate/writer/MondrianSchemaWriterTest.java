@@ -319,6 +319,102 @@ public class MondrianSchemaWriterTest {
         return d;
     }
 
+    /**
+     * A {@link DraftLevel} with a {@code nameColumn} set must emit a {@code nameColumn} attribute
+     * on the Mondrian Attribute, and that attribute must survive a round-trip through Mondrian's
+     * own parser. When {@code nameColumn} is null the attribute must not appear at all — this
+     * preserves the pre-F6 output for levels with no distinct caption source.
+     */
+    @Test
+    public void levelWithNameColumnEmitsAttributeAndRoundTrips() throws Exception {
+        DraftSchema schema = new DraftSchema("Sales");
+        DraftCube cube = new DraftCube("Orders", "orders", PROV);
+        schema.cubes().add(cube);
+
+        DraftDimension customer = new DraftDimension("Customer", DraftDimension.Type.STANDARD, PROV);
+        customer.setSourceTable("customers");
+        customer.setForeignKey("customer_id");
+        cube.dimensions().add(customer);
+
+        DraftHierarchy hier = new DraftHierarchy("Customer", "id", PROV);
+        customer.hierarchies().add(hier);
+
+        DraftLevel named = new DraftLevel("Customer", "id", DraftLevel.Type.REGULAR, PROV);
+        named.setNameColumn("name");
+        hier.levels().add(named);
+
+        cube.measures().add(new DraftMeasure("Fact Count", "id", DraftMeasure.Aggregator.COUNT_STAR, PROV));
+
+        String xml = new MondrianSchemaWriter().write(schema);
+
+        // Attribute carries keyColumn=id and nameColumn=name.
+        assertTrue(
+                "expected Attribute with keyColumn=\"id\" nameColumn=\"name\"",
+                xml.matches("(?s).*<Attribute[^>]*name=\"Customer\"[^>]*keyColumn=\"id\"[^>]*nameColumn=\"name\".*")
+                        || xml.matches(
+                                "(?s).*<Attribute[^>]*name=\"Customer\"[^>]*nameColumn=\"name\"[^>]*keyColumn=\"id\".*"));
+
+        // Round-trip: parse via Mondrian and confirm the Attribute.nameColumn field.
+        Parser parser = XOMUtil.createDefaultParser();
+        DOMWrapper dom = parser.parse(xml);
+        MondrianDef.Schema mSchema = new MondrianDef.Schema(dom);
+        MondrianDef.Attribute parsed = findAttribute(mSchema, "Customer", "Customer");
+        assertNotNull("Attribute 'Customer' missing from parsed schema", parsed);
+        assertEquals("id", parsed.keyColumn);
+        assertEquals("name", parsed.nameColumn);
+    }
+
+    @Test
+    public void levelWithoutNameColumnOmitsAttribute() throws Exception {
+        DraftSchema schema = new DraftSchema("Sales");
+        DraftCube cube = new DraftCube("Orders", "orders", PROV);
+        schema.cubes().add(cube);
+
+        DraftDimension codes = new DraftDimension("Codes", DraftDimension.Type.STANDARD, PROV);
+        codes.setSourceTable("codes");
+        codes.setForeignKey("code_id");
+        cube.dimensions().add(codes);
+
+        DraftHierarchy hier = new DraftHierarchy("Codes", "id", PROV);
+        codes.hierarchies().add(hier);
+        // No nameColumn — key only, original behaviour.
+        hier.levels().add(new DraftLevel("Code", "id", DraftLevel.Type.REGULAR, PROV));
+
+        cube.measures().add(new DraftMeasure("Fact Count", "id", DraftMeasure.Aggregator.COUNT_STAR, PROV));
+
+        String xml = new MondrianSchemaWriter().write(schema);
+        assertFalse(
+                "null nameColumn must not emit a nameColumn attribute",
+                xml.matches("(?s).*<Attribute[^>]*name=\"Code\"[^>]*nameColumn=.*"));
+    }
+
+    private static MondrianDef.Attribute findAttribute(MondrianDef.Schema s, String dimName, String attrName) {
+        for (MondrianDef.SchemaElement se : s.childArray) {
+            if (se instanceof MondrianDef.Cube) {
+                MondrianDef.Cube c = (MondrianDef.Cube) se;
+                for (MondrianDef.CubeElement ce : c.childArray) {
+                    if (ce instanceof MondrianDef.Dimensions) {
+                        for (MondrianDef.Dimension d : ((MondrianDef.Dimensions) ce).array) {
+                            if (!dimName.equals(d.name)) {
+                                continue;
+                            }
+                            for (MondrianDef.DimensionElement de : d.childArray) {
+                                if (de instanceof MondrianDef.Attributes) {
+                                    for (MondrianDef.Attribute a : ((MondrianDef.Attributes) de).array) {
+                                        if (attrName.equals(a.name)) {
+                                            return a;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     private static DraftLevel timeLevel(String name, DraftLevel.Type type, String column, String expression) {
         DraftLevel l = new DraftLevel(name, column, type, PROV);
         l.setExpression(expression);

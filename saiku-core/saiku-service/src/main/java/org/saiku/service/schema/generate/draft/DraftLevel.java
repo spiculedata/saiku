@@ -32,6 +32,16 @@ public class DraftLevel {
      */
     private String table;
 
+    /**
+     * Optional human-readable caption column (Mondrian {@code nameColumn}). When set, the writer
+     * emits it on the level's Attribute so Saiku shows the string rather than the raw key id on
+     * drillthrough / member listings. {@code null} means the level renders the key directly —
+     * original behaviour. When non-null, {@link #column} is still the Attribute's {@code keyColumn}
+     * (so distinct-member identity is preserved) and {@code nameColumn} is a second column on the
+     * same physical table used purely for display.
+     */
+    private String nameColumn;
+
     public DraftLevel(String name, String column, Type type, Provenance provenance) {
         this.name = name;
         this.column = column;
@@ -85,5 +95,13 @@ public class DraftLevel {
 
     public void setTable(String table) {
         this.table = table;
+    }
+
+    public String nameColumn() {
+        return nameColumn;
+    }
+
+    public void setNameColumn(String nameColumn) {
+        this.nameColumn = nameColumn;
     }
 }

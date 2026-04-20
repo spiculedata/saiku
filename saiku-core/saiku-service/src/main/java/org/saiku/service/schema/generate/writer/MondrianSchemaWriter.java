@@ -45,8 +45,6 @@ import org.saiku.service.schema.generate.enrich.ops.SuggestionOp;
  * <p>Known simplifications (tracked for future tasks, not blockers for A9):
  *
  * <ul>
- *   <li>{@link DraftLevel} has no {@code nameColumn} field, so attributes only carry {@code
- *       keyColumn}.
  *   <li>Only one-hop snowflakes are emitted (the shape {@link
  *       org.saiku.service.schema.generate.infer.DimensionBuilder} detects). Multi-hop lookups are
  *       not recursed — each snowflake dim adds exactly one lookup {@code Table} + one {@code Link}.
@@ -336,6 +334,12 @@ public class MondrianSchemaWriter {
                 MondrianDef.Attribute a = new MondrianDef.Attribute();
                 a.name = l.name();
                 a.keyColumn = l.column();
+                // nameColumn is the human-readable caption source. MondrianDef.Attribute
+                // exposes it as a plain String attribute (verified against
+                // mondrian-4.8.1.0-SAIKU-jakarta sources), so we emit it directly.
+                if (l.nameColumn() != null) {
+                    a.nameColumn = l.nameColumn();
+                }
                 a.levelType = levelType(l.type());
                 a.hasHierarchy = Boolean.FALSE;
                 // Snowflake-side levels carry an explicit physical table so Mondrian routes

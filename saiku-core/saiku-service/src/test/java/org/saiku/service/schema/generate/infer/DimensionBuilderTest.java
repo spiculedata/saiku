@@ -59,8 +59,10 @@ public class DimensionBuilderTest {
         DraftLevel level = h.levels().get(0);
         assertEquals(DraftLevel.Type.REGULAR, level.type());
         assertEquals("id", level.name());
-        // Caption-source column = "name" when there is exactly one non-PK string col.
-        assertEquals("name", level.column());
+        // Level KEY (column) = PK so distinct members aren't collapsed.
+        assertEquals("id", level.column());
+        // Caption source (nameColumn) = "name" when there is exactly one non-PK string col.
+        assertEquals("name", level.nameColumn());
     }
 
     @Test
@@ -78,6 +80,8 @@ public class DimensionBuilderTest {
         DraftHierarchy h = dim.hierarchies().get(0);
         assertEquals(1, h.levels().size());
         assertEquals("id", h.levels().get(0).column());
+        // No string column → no nameColumn set.
+        assertNull(h.levels().get(0).nameColumn());
     }
 
     @Test
@@ -114,12 +118,14 @@ public class DimensionBuilderTest {
         assertEquals("id", join.rightKey());
 
         assertEquals(2, h.levels().size());
-        // First level on products.
+        // First level on products: KEY is the PK, nameColumn carries the caption.
         DraftLevel first = h.levels().get(0);
-        assertEquals("name", first.column());
-        // Second level on the child (categories) uses its single non-PK string col.
+        assertEquals("id", first.column());
+        assertEquals("name", first.nameColumn());
+        // Second level on the child (categories): KEY is the child PK, nameColumn = single string col.
         DraftLevel second = h.levels().get(1);
-        assertEquals("label", second.column());
+        assertEquals("id", second.column());
+        assertEquals("label", second.nameColumn());
         assertEquals(DraftLevel.Type.REGULAR, second.type());
         // Snowflake-side level must carry its physical table so the writer can emit
         // table="<lookup>" on the Mondrian Attribute.
@@ -170,8 +176,9 @@ public class DimensionBuilderTest {
         assertEquals("rule:dim-flat", dim.provenance().ruleId());
         DraftHierarchy h = dim.hierarchies().get(0);
         assertNull(h.join());
-        // Zero string cols after excluding PK? No — name is a string; a_id/b_id are ints. So one string col → caption.
+        // One string col ("name") → caption moves to nameColumn; KEY stays on the PK.
         assertEquals(1, h.levels().size());
-        assertEquals("name", h.levels().get(0).column());
+        assertEquals("id", h.levels().get(0).column());
+        assertEquals("name", h.levels().get(0).nameColumn());
     }
 }

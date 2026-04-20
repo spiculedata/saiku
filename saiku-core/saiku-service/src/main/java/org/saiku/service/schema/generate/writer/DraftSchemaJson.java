@@ -151,6 +151,7 @@ public final class DraftSchemaJson {
         putIfNotNull(n, "column", l.column());
         putIfNotNull(n, "expression", l.expression());
         putIfNotNull(n, "name", l.name());
+        putIfNotNull(n, "nameColumn", l.nameColumn());
         n.set("provenance", provenanceNode(l.provenance()));
         putIfNotNull(n, "table", l.table());
         if (l.type() != null) {
@@ -281,6 +282,7 @@ public final class DraftSchemaJson {
                 textOrNull(n, "name"), textOrNull(n, "column"), type, readProvenance(n.get("provenance")));
         level.setExpression(textOrNull(n, "expression"));
         level.setTable(textOrNull(n, "table"));
+        level.setNameColumn(textOrNull(n, "nameColumn"));
         return level;
     }
 

@@ -4,8 +4,9 @@
       "foreignKey" : "account_id",
       "hierarchies" : [ {
         "levels" : [ {
-          "column" : "name",
+          "column" : "id",
           "name" : "id",
+          "nameColumn" : "name",
           "provenance" : {
             "confidence" : 1.0,
             "ruleId" : "rule:dim-flat",
@@ -33,8 +34,9 @@
       "foreignKey" : "merchant_id",
       "hierarchies" : [ {
         "levels" : [ {
-          "column" : "name",
+          "column" : "id",
           "name" : "id",
+          "nameColumn" : "name",
           "provenance" : {
             "confidence" : 1.0,
             "ruleId" : "rule:dim-flat",
@@ -62,8 +64,9 @@
       "foreignKey" : "category_id",
       "hierarchies" : [ {
         "levels" : [ {
-          "column" : "name",
+          "column" : "id",
           "name" : "id",
+          "nameColumn" : "name",
           "provenance" : {
             "confidence" : 1.0,
             "ruleId" : "rule:dim-flat",

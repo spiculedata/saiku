@@ -10,8 +10,9 @@
           "rightTable" : "product_category"
         },
         "levels" : [ {
-          "column" : "name",
+          "column" : "id",
           "name" : "id",
+          "nameColumn" : "name",
           "provenance" : {
             "confidence" : 0.9,
             "ruleId" : "rule:snowflake-1hop",
@@ -19,8 +20,9 @@
           },
           "type" : "REGULAR"
         }, {
-          "column" : "label",
+          "column" : "id",
           "name" : "id",
+          "nameColumn" : "label",
           "provenance" : {
             "confidence" : 0.9,
             "ruleId" : "rule:snowflake-1hop",
@@ -49,8 +51,9 @@
       "foreignKey" : "customer_id",
       "hierarchies" : [ {
         "levels" : [ {
-          "column" : "name",
+          "column" : "id",
           "name" : "id",
+          "nameColumn" : "name",
           "provenance" : {
             "confidence" : 1.0,
             "ruleId" : "rule:dim-flat",

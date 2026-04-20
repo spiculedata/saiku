@@ -95,18 +95,22 @@ public class DimensionBuilder {
                 stringCols.add(c);
             }
         }
-        String column;
-        String levelName;
-        if (stringCols.size() == 1) {
-            column = stringCols.get(0).name();
-            levelName = pkName != null ? pkName : column;
-        } else {
-            column = pkName != null
-                    ? pkName
-                    : (table.columns().isEmpty() ? null : table.columns().get(0).name());
-            levelName = column;
+        // Level KEY (column) always prefers the PK so distinct-member identity is preserved —
+        // using the caption string as the key would collapse rows that share a name but differ
+        // by id, and would blow up on non-unique captions. Fall back to the first column only
+        // when the table has no PK at all.
+        String column = pkName != null
+                ? pkName
+                : (table.columns().isEmpty() ? null : table.columns().get(0).name());
+        String levelName = column;
+        // Caption source (nameColumn) = the sole non-PK string column when exactly one exists.
+        // Zero or many string cols → no caption; Mondrian will render the key directly.
+        String nameCol = stringCols.size() == 1 ? stringCols.get(0).name() : null;
+        DraftLevel level = new DraftLevel(levelName, column, DraftLevel.Type.REGULAR, prov);
+        if (nameCol != null) {
+            level.setNameColumn(nameCol);
         }
-        return new DraftLevel(levelName, column, DraftLevel.Type.REGULAR, prov);
+        return level;
     }
 
     private String primaryKeyName(DbTable table) {
