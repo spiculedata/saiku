@@ -9,6 +9,14 @@
 */
 package mondrian.rolap;
 
+import java.lang.reflect.Proxy;
+import java.sql.*;
+import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicLong;
+import javax.sql.DataSource;
 import mondrian.olap.MondrianProperties;
 import mondrian.olap.Util;
 import mondrian.server.Execution;
@@ -16,17 +24,7 @@ import mondrian.server.Locus;
 import mondrian.server.monitor.*;
 import mondrian.server.monitor.SqlStatementEvent.Purpose;
 import mondrian.util.*;
-
 import org.apache.log4j.Logger;
-
-import java.lang.reflect.Proxy;
-import java.sql.*;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.Semaphore;
-import java.util.*;
-import java.util.concurrent.atomic.AtomicLong;
-import javax.sql.DataSource;
 
 /**
  * SqlStatement contains a SQL statement and associated resources throughout
@@ -64,8 +62,8 @@ public class SqlStatement implements DBStatement {
     // used for SQL logging, allows for a SQL Statement UID
     private static final AtomicLong ID_GENERATOR = new AtomicLong();
 
-    private static final Semaphore querySemaphore = new Semaphore(
-        MondrianProperties.instance().QueryLimit.get(), true);
+    private static final Semaphore querySemaphore =
+            new Semaphore(MondrianProperties.instance().QueryLimit.get(), true);
 
     private final DataSource dataSource;
     private Connection jdbcConnection;
@@ -81,8 +79,7 @@ public class SqlStatement implements DBStatement {
     public int rowCount;
     private long startTimeNanos;
     private long startTimeMillis;
-    private final Map<Object, Accessor> accessors =
-        new HashMap<Object, Accessor>();
+    private final Map<Object, Accessor> accessors = new HashMap<Object, Accessor>();
     private State state = State.FRESH;
     private final long id;
     private Util.Function1<Statement, Void> callback;
@@ -102,16 +99,15 @@ public class SqlStatement implements DBStatement {
      * @param resultSetConcurrency Result set concurrency
      */
     public SqlStatement(
-        DataSource dataSource,
-        String sql,
-        List<Type> types,
-        int maxRows,
-        int firstRowOrdinal,
-        Locus locus,
-        int resultSetType,
-        int resultSetConcurrency,
-        Util.Function1<Statement, Void> callback)
-    {
+            DataSource dataSource,
+            String sql,
+            List<Type> types,
+            int maxRows,
+            int firstRowOrdinal,
+            Locus locus,
+            int resultSetType,
+            int resultSetConcurrency,
+            Util.Function1<Statement, Void> callback) {
         this.callback = callback;
         this.id = ID_GENERATOR.getAndIncrement();
         this.dataSource = dataSource;
@@ -144,10 +140,7 @@ public class SqlStatement implements DBStatement {
             // Trace start of execution.
             if (RolapUtil.SQL_LOGGER.isDebugEnabled()) {
                 StringBuilder sqllog = new StringBuilder();
-                sqllog.append(id)
-                    .append(": ")
-                    .append(locus.component)
-                    .append(": executing sql [");
+                sqllog.append(id).append(": ").append(locus.component).append(": executing sql [");
                 if (sql.indexOf('\n') >= 0) {
                     // SQL appears to be formatted as multiple lines. Make it
                     // start on its own line.
@@ -173,9 +166,7 @@ public class SqlStatement implements DBStatement {
             if (resultSetType < 0 || resultSetConcurrency < 0) {
                 statement = jdbcConnection.createStatement();
             } else {
-                statement = jdbcConnection.createStatement(
-                    resultSetType,
-                    resultSetConcurrency);
+                statement = jdbcConnection.createStatement(resultSetType, resultSetConcurrency);
             }
             if (maxRows > 0) {
                 statement.setMaxRows(maxRows);
@@ -190,14 +181,10 @@ public class SqlStatement implements DBStatement {
                 }
             }
 
-            locus.getServer().getMonitor().sendEvent(
-                new SqlStatementStartEvent(
-                    startTimeMillis,
-                    id,
-                    locus,
-                    sql,
-                    getPurpose(),
-                    getCellRequestCount()));
+            locus.getServer()
+                    .getMonitor()
+                    .sendEvent(new SqlStatementStartEvent(
+                            startTimeMillis, id, locus, sql, getPurpose(), getCellRequestCount()));
 
             this.resultSet = statement.executeQuery(sql);
 
@@ -225,14 +212,9 @@ public class SqlStatement implements DBStatement {
             Util.addDatabaseTime(executeMillis);
             status = ", exec " + executeMillis + " ms";
 
-            locus.getServer().getMonitor().sendEvent(
-                new SqlStatementExecuteEvent(
-                    timeMillis,
-                    id,
-                    locus,
-                    sql,
-                    getPurpose(),
-                    executeNanos));
+            locus.getServer()
+                    .getMonitor()
+                    .sendEvent(new SqlStatementExecuteEvent(timeMillis, id, locus, sql, getPurpose(), executeNanos));
 
             // Compute accessors. They ensure that we use the most efficient
             // method (e.g. getInt, getDouble, getObject) for the type of the
@@ -246,9 +228,7 @@ public class SqlStatement implements DBStatement {
                 // REVIEW: Is caching always needed? Some drivers don't need it;
                 //   some columns are only used once.
                 final boolean caching = true;
-                accessors.put(
-                    index,
-                    createAccessor(accessors.size(), type, caching));
+                accessors.put(index, createAccessor(accessors.size(), type, caching));
                 index++;
             }
         } catch (Throwable e) {
@@ -264,8 +244,7 @@ public class SqlStatement implements DBStatement {
             RolapUtil.SQL_LOGGER.debug(id + ": " + status);
 
             if (RolapUtil.LOGGER.isDebugEnabled()) {
-                RolapUtil.LOGGER.debug(
-                    locus.component + ": executing sql [" + sql + "]" + status);
+                RolapUtil.LOGGER.debug(locus.component + ": executing sql [" + sql + "]" + status);
             }
         }
     }
@@ -302,48 +281,34 @@ public class SqlStatement implements DBStatement {
         jdbcConnection = null;
 
         if (ex != null) {
-            throw Util.newError(
-                ex,
-                locus.message + "; sql=[" + sql + "]");
+            throw Util.newError(ex, locus.message + "; sql=[" + sql + "]");
         }
 
         long endTime = System.currentTimeMillis();
         long totalMs = endTime - startTimeMillis;
-        String status =
-            ", exec+fetch " + totalMs + " ms, " + rowCount + " rows";
+        String status = ", exec+fetch " + totalMs + " ms, " + rowCount + " rows";
 
-        locus.execution.getQueryTiming().markFull(
-            TIMING_NAME + locus.component, totalMs);
+        locus.execution.getQueryTiming().markFull(TIMING_NAME + locus.component, totalMs);
 
         RolapUtil.SQL_LOGGER.debug(id + ": " + status);
 
         Counters.SQL_STATEMENT_CLOSE_COUNT.incrementAndGet();
         boolean remove = Counters.SQL_STATEMENT_EXECUTING_IDS.remove(id);
         status += ", ex=" + Counters.SQL_STATEMENT_EXECUTE_COUNT.get()
-            + ", close=" + Counters.SQL_STATEMENT_CLOSE_COUNT.get()
-            + ", open=" + Counters.SQL_STATEMENT_EXECUTING_IDS;
+                + ", close=" + Counters.SQL_STATEMENT_CLOSE_COUNT.get()
+                + ", open=" + Counters.SQL_STATEMENT_EXECUTING_IDS;
 
         if (RolapUtil.LOGGER.isDebugEnabled()) {
-            RolapUtil.LOGGER.debug(
-                locus.component + ": done executing sql [" + sql + "]"
-                + status);
+            RolapUtil.LOGGER.debug(locus.component + ": done executing sql [" + sql + "]" + status);
         }
 
         if (!remove) {
-            throw new AssertionError(
-                "SqlStatement closed that was never executed: " + id);
+            throw new AssertionError("SqlStatement closed that was never executed: " + id);
         }
 
-        locus.getServer().getMonitor().sendEvent(
-            new SqlStatementEndEvent(
-                endTime,
-                id,
-                locus,
-                sql,
-                getPurpose(),
-                rowCount,
-                false,
-                null));
+        locus.getServer()
+                .getMonitor()
+                .sendEvent(new SqlStatementEndEvent(endTime, id, locus, sql, getPurpose(), rowCount, false, null));
     }
 
     public ResultSet getResultSet() {
@@ -359,8 +324,7 @@ public class SqlStatement implements DBStatement {
      * @return Runtime exception
      */
     public RuntimeException handle(Throwable e) {
-        RuntimeException runtimeException =
-            Util.newError(e, locus.message + "; sql=[" + sql + "]");
+        RuntimeException runtimeException = Util.newError(e, locus.message + "; sql=[" + sql + "]");
         try {
             close();
         } catch (Throwable t) {
@@ -400,50 +364,50 @@ public class SqlStatement implements DBStatement {
         }
         final int columnPlusOne = column + 1;
         switch (type) {
-        case OBJECT:
-            return new Accessor() {
-                public Comparable get() throws SQLException {
-                    return (Comparable) resultSet.getObject(columnPlusOne);
-                }
-            };
-        case STRING:
-            return new Accessor() {
-                public Comparable get() throws SQLException {
-                    return resultSet.getString(columnPlusOne);
-                }
-            };
-        case INT:
-            return new Accessor() {
-                public Comparable get() throws SQLException {
-                    final int val = resultSet.getInt(columnPlusOne);
-                    if (val == 0 && resultSet.wasNull()) {
-                        return null;
+            case OBJECT:
+                return new Accessor() {
+                    public Comparable get() throws SQLException {
+                        return (Comparable) resultSet.getObject(columnPlusOne);
                     }
-                    return val;
-                }
-            };
-        case LONG:
-            return new Accessor() {
-                public Comparable get() throws SQLException {
-                    final long val = resultSet.getLong(columnPlusOne);
-                    if (val == 0 && resultSet.wasNull()) {
-                        return null;
+                };
+            case STRING:
+                return new Accessor() {
+                    public Comparable get() throws SQLException {
+                        return resultSet.getString(columnPlusOne);
                     }
-                    return val;
-                }
-            };
-        case DOUBLE:
-            return new Accessor() {
-                public Comparable get() throws SQLException {
-                    final double val = resultSet.getDouble(columnPlusOne);
-                    if (val == 0 && resultSet.wasNull()) {
-                        return null;
+                };
+            case INT:
+                return new Accessor() {
+                    public Comparable get() throws SQLException {
+                        final int val = resultSet.getInt(columnPlusOne);
+                        if (val == 0 && resultSet.wasNull()) {
+                            return null;
+                        }
+                        return val;
                     }
-                    return val;
-                }
-            };
-        default:
-            throw Util.unexpected(type);
+                };
+            case LONG:
+                return new Accessor() {
+                    public Comparable get() throws SQLException {
+                        final long val = resultSet.getLong(columnPlusOne);
+                        if (val == 0 && resultSet.wasNull()) {
+                            return null;
+                        }
+                        return val;
+                    }
+                };
+            case DOUBLE:
+                return new Accessor() {
+                    public Comparable get() throws SQLException {
+                        final double val = resultSet.getDouble(columnPlusOne);
+                        if (val == 0 && resultSet.wasNull()) {
+                            return null;
+                        }
+                        return val;
+                    }
+                };
+            default:
+                throw Util.unexpected(type);
         }
     }
 
@@ -451,16 +415,16 @@ public class SqlStatement implements DBStatement {
         final ResultSetMetaData metaData = resultSet.getMetaData();
         final int columnCount = metaData.getColumnCount();
         assert this.types == null || this.types.size() == columnCount
-            : "types " + types + " cardinality != column count " + columnCount;
+                : "types " + types + " cardinality != column count " + columnCount;
         List<Type> types = new ArrayList<Type>();
         for (int i = 0; i < columnCount; i++) {
-            final Type suggestedType =
-                this.types == null ? null : this.types.get(i);
+            final Type suggestedType = this.types == null ? null : this.types.get(i);
             // There might not be a schema constructed yet,
             // so watch out here for NPEs.
-            RolapSchema schema = locus.execution.getMondrianStatement()
-                .getMondrianConnection()
-                .getSchema();
+            RolapSchema schema = locus.execution
+                    .getMondrianStatement()
+                    .getMondrianConnection()
+                    .getSchema();
 
             if (suggestedType != null) {
                 types.add(suggestedType);
@@ -498,9 +462,7 @@ public class SqlStatement implements DBStatement {
         if (loader == null) loader = ResultSet.class.getClassLoader();
         if (loader == null) loader = ClassLoader.getSystemClassLoader();
         return (ResultSet) Proxy.newProxyInstance(
-            loader,
-            new Class<?>[] {ResultSet.class},
-            new MyDelegatingInvocationHandler(this));
+                loader, new Class<?>[] {ResultSet.class}, new MyDelegatingInvocationHandler(this));
     }
 
     private SqlStatementEvent.Purpose getPurpose() {
@@ -536,18 +498,18 @@ public class SqlStatement implements DBStatement {
 
         public Object get(ResultSet resultSet, int column) throws SQLException {
             switch (this) {
-            case OBJECT:
-                return resultSet.getObject(column + 1);
-            case STRING:
-                return resultSet.getString(column + 1);
-            case INT:
-                return resultSet.getInt(column + 1);
-            case LONG:
-                return resultSet.getLong(column + 1);
-            case DOUBLE:
-                return resultSet.getDouble(column + 1);
-            default:
-                throw Util.unexpected(this);
+                case OBJECT:
+                    return resultSet.getObject(column + 1);
+                case STRING:
+                    return resultSet.getString(column + 1);
+                case INT:
+                    return resultSet.getInt(column + 1);
+                case LONG:
+                    return resultSet.getLong(column + 1);
+                case DOUBLE:
+                    return resultSet.getDouble(column + 1);
+                default:
+                    throw Util.unexpected(this);
             }
         }
     }
@@ -563,9 +525,7 @@ public class SqlStatement implements DBStatement {
      * JDBC connection and statement also.
      */
     // must be public for reflection to work
-    public static class MyDelegatingInvocationHandler
-        extends DelegatingInvocationHandler
-    {
+    public static class MyDelegatingInvocationHandler extends DelegatingInvocationHandler {
         private final SqlStatement sqlStatement;
 
         /**
@@ -603,16 +563,12 @@ public class SqlStatement implements DBStatement {
         private final int cellRequestCount;
 
         public StatementLocus(
-            Execution execution,
-            String component,
-            String message,
-            SqlStatementEvent.Purpose purpose,
-            int cellRequestCount)
-        {
-            super(
-                execution,
-                component,
-                message);
+                Execution execution,
+                String component,
+                String message,
+                SqlStatementEvent.Purpose purpose,
+                int cellRequestCount) {
+            super(execution, component, message);
             this.purpose = purpose;
             this.cellRequestCount = cellRequestCount;
         }
