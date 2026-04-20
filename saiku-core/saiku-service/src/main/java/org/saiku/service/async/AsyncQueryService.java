@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
@@ -59,6 +60,14 @@ public class AsyncQueryService {
 
     private final ThreadPoolExecutor executor;
     private final ScheduledExecutorService sweeper;
+    /**
+     * Dedicated single-thread executor for best-effort statement cancels.
+     * Keeping this off the main work executor means a saturated queue can't
+     * prevent us from tearing down a running MDX statement — the whole point
+     * of cancel() is to drain the work, so it must never queue behind it.
+     */
+    private final ExecutorService cancelExecutor;
+
     private final ConcurrentHashMap<String, AsyncQueryHandle> handles = new ConcurrentHashMap<>();
 
     public AsyncQueryService() {
@@ -69,6 +78,7 @@ public class AsyncQueryService {
         this.executor = executor;
         this.sweeper = Executors.newSingleThreadScheduledExecutor(namedDaemon("saiku-async-sweeper"));
         this.sweeper.scheduleAtFixedRate(this::sweep, SWEEP_PERIOD_SECONDS, SWEEP_PERIOD_SECONDS, TimeUnit.SECONDS);
+        this.cancelExecutor = Executors.newSingleThreadExecutor(namedDaemon("saiku-async-cancel"));
     }
 
     public void setThinQueryService(ThinQueryService thinQueryService) {
@@ -235,7 +245,7 @@ public class AsyncQueryService {
         // Best-effort: close the underlying OLAP statement off-thread.
         final ThinQueryService tqs = this.thinQueryService;
         if (tqs != null && h.getQuery() != null && h.getQuery().getName() != null) {
-            executor.execute(() -> {
+            cancelExecutor.execute(() -> {
                 try {
                     tqs.cancel(h.getQuery().getName());
                 } catch (SQLException e) {
@@ -284,5 +294,6 @@ public class AsyncQueryService {
     public void shutdown() {
         sweeper.shutdownNow();
         executor.shutdownNow();
+        cancelExecutor.shutdownNow();
     }
 }
