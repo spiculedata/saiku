@@ -267,8 +267,11 @@ public class SchemaGeneratorResource {
             draft.setName(req.schemaName());
         }
         String xml;
+        String sidecar;
         try {
-            xml = writer.write(draft);
+            MondrianSchemaWriter.WriteResult written = writer.writeWithSidecar(draft, s.opLog());
+            xml = written.xml();
+            sidecar = written.sidecarJson();
         } catch (Exception e) {
             LOG.warn("Failed to serialise draft for session {}: {}", sessionId, e.getMessage(), e);
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
@@ -276,9 +279,6 @@ public class SchemaGeneratorResource {
                     .build();
         }
         String name = draft.name() == null ? "generated" : draft.name();
-        // TODO(C4/E1): emit the full provenance-bearing sidecar JSON here. For now we hand through
-        // a minimal marker so callers can see the save path works.
-        String sidecar = "{\"schemaName\":\"" + name + "\",\"generated\":true}";
         try {
             sink.writeSchema(s.dataSourceId(), name, xml, sidecar);
         } catch (Exception e) {
@@ -310,24 +310,28 @@ public class SchemaGeneratorResource {
     }
 
     /**
-     * Default production {@link SchemaSink} backed by {@link DatasourceService#addSchema}. Placed
-     * here so wiring (C4) can simply call {@code new SchemaGeneratorResource(..., schemaSink)}.
+     * Default production {@link SchemaSink} backed by {@link DatasourceService}. Placed here so
+     * wiring (C4) can simply call {@code new SchemaGeneratorResource(..., schemaSink)}.
      *
      * <p>Writes the XML to {@code /datasources/&lt;name&gt;.xml} (matching the path convention
-     * used by {@code AdminResource.uploadSchema}). The sidecar JSON is not yet persisted — it
-     * currently no-ops with a log entry. Restoring sidecar persistence is a follow-up.
+     * used by {@code AdminResource.uploadSchema}) and the sidecar JSON to
+     * {@code /datasources/&lt;name&gt;.generated.json} alongside it. The sidecar persists the draft
+     * tree plus applied op log so later re-runs can compute a delta and restrict enrichment to new
+     * elements only.
      */
     public static SchemaSink datasourceBackedSink(DatasourceService datasourceService) {
         return (dataSourceId, name, xml, sidecarJson) -> {
-            String path = "/datasources/" + name + ".xml";
-            datasourceService.addSchema(xml, path, name);
-            // TODO(C4/E1): persist sidecarJson alongside the schema XML once the repository API
-            // for generic file writes is selected. For now we log that a sidecar was produced.
-            if (sidecarJson != null) {
+            String xmlPath = "/datasources/" + name + ".xml";
+            datasourceService.addSchema(xml, xmlPath, name);
+            if (sidecarJson != null && !sidecarJson.isEmpty()) {
+                String sidecarPath = "/datasources/" + name + ".generated.json";
+                String status = datasourceService.saveInternalFile(sidecarPath, sidecarJson, "nt:saikufiles");
                 LOG.info(
-                        "Schema {} saved; sidecar ({} bytes) not yet persisted (TODO C4/E1).",
+                        "Schema {} saved; sidecar ({} bytes) persisted to {} — {}",
                         name,
-                        sidecarJson.length());
+                        sidecarJson.length(),
+                        sidecarPath,
+                        status);
             }
         };
     }

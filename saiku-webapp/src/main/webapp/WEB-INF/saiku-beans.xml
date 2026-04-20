@@ -289,6 +289,11 @@
         <constructor-arg ref="datasourceServiceBean"/>
     </bean>
 
+    <bean id="sidecarStore"
+          class="org.saiku.service.schema.generate.session.RepositorySidecarStore">
+        <constructor-arg ref="datasourceServiceBean"/>
+    </bean>
+
     <bean id="schemaGenOrchestrator"
           class="org.saiku.service.schema.generate.session.SchemaGenOrchestrator">
         <constructor-arg ref="schemaGenSessionStore"/>
@@ -297,6 +302,7 @@
         <constructor-arg ref="llmEnricher"/>
         <constructor-arg ref="schemaGenExecutor"/>
         <constructor-arg ref="schemaGenConnectionProvider"/>
+        <constructor-arg ref="sidecarStore"/>
     </bean>
 
     <bean id="mondrianSchemaWriter"

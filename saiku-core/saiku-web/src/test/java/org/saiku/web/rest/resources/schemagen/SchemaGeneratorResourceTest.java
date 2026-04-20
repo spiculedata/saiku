@@ -34,6 +34,8 @@ import org.saiku.service.schema.generate.introspect.JdbcIntrospector;
 import org.saiku.service.schema.generate.session.SchemaGenOrchestrator;
 import org.saiku.service.schema.generate.session.SchemaGenSession;
 import org.saiku.service.schema.generate.session.SchemaGenSessionStore;
+import org.saiku.service.schema.generate.writer.GeneratedSidecar;
+import org.saiku.service.schema.generate.writer.GeneratedSidecarIo;
 import org.saiku.service.schema.generate.writer.MondrianSchemaWriter;
 
 /**
@@ -173,6 +175,32 @@ public class SchemaGeneratorResourceTest {
         RecordingSchemaSink.Write w = sink.writes.get(0);
         assertTrue("xml should look like a Mondrian schema", w.xml.contains("<Schema"));
         assertNotNull(w.name);
+        assertNotNull("sidecar JSON should be emitted on save", w.sidecarJson);
+        assertFalse("sidecar JSON should not be empty", w.sidecarJson.isEmpty());
+        // Sidecar should parse back through the canonical reader and carry the draft tree.
+        GeneratedSidecar parsed = GeneratedSidecarIo.read(w.sidecarJson);
+        assertNotNull(parsed.draft());
+        assertEquals(w.name, parsed.schemaName());
+        assertNotNull(parsed.opLog());
+    }
+
+    // -- 5b. Save after applying an op records that op in the sidecar opLog -----
+
+    @Test
+    public void save_sidecarCapturesAppliedOps() {
+        StartResponse started = (StartResponse) resource.start(DATA_SOURCE_ID).getEntity();
+        DraftView before = (DraftView) resource.draft(started.sessionId()).getEntity();
+        String cubeName = before.cubes().get(0).name();
+        SuggestionOp op = new RenameOp("cubes/" + cubeName, cubeName, "Renamed Cube", null, 1.0, "test");
+        resource.applyOp(started.sessionId(), new OpRequest(op));
+
+        Response r = resource.save(started.sessionId(), null);
+        assertEquals(204, r.getStatus());
+
+        RecordingSchemaSink.Write w = sink.writes.get(0);
+        GeneratedSidecar parsed = GeneratedSidecarIo.read(w.sidecarJson);
+        assertEquals(1, parsed.opLog().size());
+        assertTrue(parsed.opLog().get(0) instanceof RenameOp);
     }
 
     // -- 6. GET /draft with unknown session returns 404 -------------------------

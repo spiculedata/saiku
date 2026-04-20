@@ -123,6 +123,34 @@ public class DatasourceService implements Serializable {
         datasources.addSchema(schema, path, name);
     }
 
+    /**
+     * Persist an arbitrary internal file (UTF-8 string content) at {@code path}. Used by the
+     * schema-generation save path to write the {@code <schemaName>.generated.json} sidecar
+     * alongside the XML. {@code type} is a JCR-style node type hint (e.g. {@code nt:saikufiles});
+     * the filesystem implementation ignores it.
+     *
+     * @return underlying repo status string (non-null), mirroring the manager's contract
+     */
+    public String saveInternalFile(String path, String content, String type) {
+        return datasources.saveInternalFile(path, content, type);
+    }
+
+    /**
+     * Read an internal file's contents. Returns {@code null} if the file does not exist (the
+     * repository layer propagates RepositoryException for genuine I/O errors).
+     *
+     * <p>Used by the schema-generation re-run path to load a previously-persisted sidecar JSON.
+     */
+    public String getInternalFileData(String path) {
+        try {
+            return datasources.getInternalFileData(path);
+        } catch (org.saiku.repository.RepositoryException e) {
+            // Treat repository errors as "not present" for the caller's convenience; true I/O
+            // faults are logged at the manager layer.
+            return null;
+        }
+    }
+
     public String saveFile(String content, String path, String name, List<String> roles) {
         return datasources.saveFile(path, content, name, roles);
     }
