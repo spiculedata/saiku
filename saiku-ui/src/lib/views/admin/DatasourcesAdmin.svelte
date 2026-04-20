@@ -5,6 +5,7 @@
   import { i18n } from "$lib/stores/i18n.svelte";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import { canGenerateSchema, generateSchemaHref } from "./dataSourceActions";
 
   let list = $state<AdminDatasource[]>([]);
   let loading = $state(true);
@@ -95,6 +96,15 @@
             <td>{ds.type}</td>
             <td>{ds.schemaName ?? ""}</td>
             <td class="row-actions">
+              {#if canGenerateSchema(ds)}
+                <a
+                  class="btn"
+                  data-testid="generate-schema-link"
+                  href={generateSchemaHref(ds)}
+                >
+                  Generate schema
+                </a>
+              {/if}
               <button class="btn" onclick={() => refreshDs(ds)}>{i18n.t("admin.refresh")}</button>
               <button class="btn" onclick={() => (editing = { ...ds })}>{i18n.t("admin.edit")}</button>
               <button class="btn btn--danger" onclick={() => (deleting = ds)}>{i18n.t("admin.delete")}</button>
