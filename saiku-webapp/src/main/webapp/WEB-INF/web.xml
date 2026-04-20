@@ -356,4 +356,16 @@
         <url-pattern>/xmla/*</url-pattern>
     </servlet-mapping>
 
+    <!-- Operator theming overlay: serves ${saiku.home}/branding/* at /ui/branding/*.
+         If the file does not exist, returns 404 so the UI falls back to defaults. -->
+    <servlet>
+        <servlet-name>branding</servlet-name>
+        <servlet-class>org.saiku.web.servlet.BrandingServlet</servlet-class>
+        <load-on-startup>2</load-on-startup>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>branding</servlet-name>
+        <url-pattern>/ui/branding/*</url-pattern>
+    </servlet-mapping>
+
 </web-app>

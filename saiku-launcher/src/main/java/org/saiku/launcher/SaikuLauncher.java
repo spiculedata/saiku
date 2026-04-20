@@ -66,14 +66,17 @@ public class SaikuLauncher implements Callable<Integer> {
         public Integer call() throws Exception {
             Path saikuHome = (home != null ? home : Paths.get("saiku-home")).toAbsolutePath();
             Path dataDir = saikuHome.resolve("data");
+            Path brandingDir = saikuHome.resolve("branding");
             Files.createDirectories(dataDir);
             Files.createDirectories(saikuHome.resolve("repository").resolve("data"));
             Files.createDirectories(saikuHome.resolve("logs"));
             Files.createDirectories(saikuHome.resolve("plugins"));
+            Files.createDirectories(brandingDir);
             System.setProperty("saiku.home", saikuHome.toString());
             System.out.println("Saiku home: " + saikuHome);
 
             stageSeedAssets(dataDir);
+            stageBrandingSample(brandingDir);
 
             Path warPath = extractWar();
 
@@ -131,6 +134,18 @@ public class SaikuLauncher implements Callable<Integer> {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        private void stageBrandingSample(Path brandingDir) throws Exception {
+            Path sample = brandingDir.resolve("brand.css.sample");
+            if (!Files.exists(sample)) {
+                try (InputStream in = SaikuLauncher.class.getResourceAsStream("/seed/brand.css.sample")) {
+                    if (in != null) {
+                        Files.copy(in, sample, StandardCopyOption.REPLACE_EXISTING);
+                        System.out.println("Seeded: " + sample);
                     }
                 }
             }

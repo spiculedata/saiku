@@ -14,6 +14,14 @@ const config = {
       precompress: false,
       strict: true,
     }),
+    prerender: {
+      // The branding overlay is served at runtime from <saiku.home>/branding/
+      // and is expected to 404 at build time; don't fail the build for it.
+      handleHttpError: ({ path, referrer, message }) => {
+        if (path.startsWith("/ui/branding/")) return;
+        throw new Error(`${message} (linked from ${referrer})`);
+      },
+    },
     paths: {
       base: basePath,
       relative: true,

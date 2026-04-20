@@ -19,6 +19,17 @@
 
   let sessionError = $state<{ open: boolean; message: string }>({ open: false, message: "" });
 
+  // Operator branding: try SVG, then PNG logo from <saiku.home>/branding/.
+  // Fall back to the text brand if neither exists.
+  let brandLogo = $state<string | null>("/ui/branding/logo.svg");
+  function onBrandLogoError() {
+    if (brandLogo === "/ui/branding/logo.svg") {
+      brandLogo = "/ui/branding/logo.png";
+    } else {
+      brandLogo = null;
+    }
+  }
+
   // Keep a reference so $effect runs in this layout's context.
   theme;
 
@@ -54,7 +65,18 @@
 <div class="app">
   <UpgradeBanner />
   <header class="topbar">
-    <div class="topbar__brand">{i18n.t("brand")}</div>
+    <div class="topbar__brand">
+      {#if brandLogo}
+        <img
+          class="topbar__brand-logo"
+          src={brandLogo}
+          alt={i18n.t("brand")}
+          onerror={onBrandLogoError}
+        />
+      {:else}
+        {i18n.t("brand")}
+      {/if}
+    </div>
     <div class="topbar__actions">
       <LocalePicker />
       <button type="button" class="btn" onclick={() => theme.toggle()}>
@@ -122,6 +144,13 @@
   .topbar__brand {
     font-weight: 700;
     letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+  }
+  .topbar__brand-logo {
+    height: var(--brand-logo-height, 24px);
+    width: auto;
+    display: block;
   }
   .topbar__actions {
     display: flex;
