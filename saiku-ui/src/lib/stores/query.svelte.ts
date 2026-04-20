@@ -150,6 +150,44 @@ class QueryStore {
     this.markDirty();
   }
 
+  /** Reorder a hierarchy within its own axis by inserting it just before `targetName`.
+   *  If `targetName` is null, move to the end. No-op if source === target. */
+  reorderHierarchy(axis: AxisLocation, sourceName: string, targetName: string | null): void {
+    if (!this.current?.queryModel) return;
+    const axisModel = this.current.queryModel.axes[axis];
+    const list = axisModel.hierarchies;
+    const fromIdx = list.findIndex((h) => h.name === sourceName);
+    if (fromIdx < 0) return;
+    const [hier] = list.splice(fromIdx, 1);
+    if (targetName == null) {
+      list.push(hier);
+    } else {
+      const toIdx = list.findIndex((h) => h.name === targetName);
+      if (toIdx < 0) list.push(hier);
+      else list.splice(toIdx, 0, hier);
+    }
+    this.markDirty();
+  }
+
+  /** Reorder a measure on the COLUMNS axis by inserting it just before `targetUniqueName`.
+   *  If `targetUniqueName` is null, move to the end. */
+  reorderMeasure(sourceUniqueName: string, targetUniqueName: string | null): void {
+    if (!this.current?.queryModel) return;
+    const details = this.current.queryModel.details;
+    const list = details.measures;
+    const fromIdx = list.findIndex((m) => m.uniqueName === sourceUniqueName);
+    if (fromIdx < 0) return;
+    const [m] = list.splice(fromIdx, 1);
+    if (targetUniqueName == null) {
+      list.push(m);
+    } else {
+      const toIdx = list.findIndex((x) => x.uniqueName === targetUniqueName);
+      if (toIdx < 0) list.push(m);
+      else list.splice(toIdx, 0, m);
+    }
+    this.markDirty();
+  }
+
   removeHierarchy(hierarchyName: string): void {
     if (!this.current?.queryModel) return;
     const loc = this.findAxisForHierarchy(hierarchyName);

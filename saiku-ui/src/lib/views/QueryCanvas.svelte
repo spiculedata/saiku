@@ -418,6 +418,36 @@
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
   }
 
+  /** Drop a dragged chip onto a sibling chip — reorder within axis if same-kind,
+   *  otherwise bubble to the zone to handle as a cross-axis move. */
+  function onChipDrop(e: DragEvent, targetAxis: AxisLocation, target: { kind: "hierarchy"; name: string } | { kind: "measure"; uniqueName: string }) {
+    const chipPayload = e.dataTransfer?.getData("application/x-saiku-chip");
+    if (!chipPayload) return; // not a chip drag; let the zone handle it
+    const payload = JSON.parse(chipPayload) as
+      | { kind: "hierarchy"; axis: AxisLocation; name: string }
+      | { kind: "measure"; axis: AxisLocation; uniqueName: string };
+    // Only same-axis, same-kind drops are reorders. Otherwise defer to the zone handler.
+    if (payload.kind === "hierarchy" && target.kind === "hierarchy" && payload.axis === targetAxis) {
+      if (payload.name !== target.name) {
+        e.preventDefault();
+        e.stopPropagation();
+        clearDragOver();
+        query.reorderHierarchy(targetAxis, payload.name, target.name);
+      }
+      return;
+    }
+    if (payload.kind === "measure" && target.kind === "measure" && targetAxis === "COLUMNS") {
+      if (payload.uniqueName !== target.uniqueName) {
+        e.preventDefault();
+        e.stopPropagation();
+        clearDragOver();
+        query.reorderMeasure(payload.uniqueName, target.uniqueName);
+      }
+      return;
+    }
+    // mismatched kinds or different axis: let the dropzone handle as a move.
+  }
+
   function hierChipLabel(h: ThinHierarchy): string {
     const levelNames = Object.keys(h.levels);
     const head = h.caption || h.name;
@@ -596,6 +626,8 @@
                   class="chip chip--measure"
                   draggable="true"
                   ondragstart={(e) => onMeasureChipDragStart(e, m)}
+                  ondragover={onDragOver}
+                  ondrop={(e) => onChipDrop(e, "COLUMNS", { kind: "measure", uniqueName: m.uniqueName })}
                   oncontextmenu={(e) => openMeasureMenu(e, m)}
                 >
                   <span class="chip__label" title="Right-click for options">
@@ -616,6 +648,8 @@
                 class="chip chip--level"
                 draggable="true"
                 ondragstart={(e) => onHierChipDragStart(e, axis, h)}
+                ondragover={onDragOver}
+                ondrop={(e) => onChipDrop(e, axis, { kind: "hierarchy", name: h.name })}
                 oncontextmenu={(e) => openHierMenu(e, axis, h)}
               >
                 <button
@@ -664,6 +698,8 @@
               class="chip chip--level"
               draggable="true"
               ondragstart={(e) => onHierChipDragStart(e, "FILTER", h)}
+              ondragover={onDragOver}
+              ondrop={(e) => onChipDrop(e, "FILTER", { kind: "hierarchy", name: h.name })}
               oncontextmenu={(e) => openHierMenu(e, "FILTER", h)}
             >
               <button
