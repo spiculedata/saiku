@@ -60,7 +60,7 @@
       const q = await readSavedQuery(entry.path);
       onOpenQuery(entry.path, q);
     } catch (err) {
-      toasts.danger("Open failed", err instanceof Error ? err.message : String(err));
+      toasts.danger(i18n.t("toast.openFailed"), err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -70,13 +70,13 @@
       const idx = entry.path.lastIndexOf("/");
       const folder = idx > 0 ? entry.path.slice(0, idx) : "";
       const baseName = entry.name.replace(/\.saiku$/i, "");
-      const newName = `Copy of ${baseName}.saiku`;
+      const newName = `${i18n.t("saved.copyPrefix")} ${baseName}.saiku`;
       const newPath = folder ? `${folder}/${newName}` : newName;
       await writeSavedQuery(newPath, q);
-      toasts.success("Duplicated", newPath);
+      toasts.success(i18n.t("toast.duplicated"), newPath);
       await refresh();
     } catch (err) {
-      toasts.danger("Duplicate failed", err instanceof Error ? err.message : String(err));
+      toasts.danger(i18n.t("toast.duplicateFailed"), err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -103,11 +103,11 @@
     const newPath = folder ? `${folder}/${newName}` : newName;
     try {
       await moveSavedQuery(entry.path, newPath);
-      toasts.success("Renamed", newPath);
+      toasts.success(i18n.t("toast.renamed"), newPath);
       renaming = null;
       await refresh();
     } catch (err) {
-      toasts.danger("Rename failed", err instanceof Error ? err.message : String(err));
+      toasts.danger(i18n.t("toast.renameFailed"), err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -116,11 +116,11 @@
     if (!entry) return;
     try {
       await deleteSavedQuery(entry.path);
-      toasts.success("Deleted", entry.path);
+      toasts.success(i18n.t("toast.deleted"), entry.path);
       confirming = null;
       await refresh();
     } catch (err) {
-      toasts.danger("Delete failed", err instanceof Error ? err.message : String(err));
+      toasts.danger(i18n.t("toast.deleteFailed"), err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -147,7 +147,7 @@
   {#if loading}
     <p class="hint">{i18n.t("modal.open.loading")}</p>
   {:else if filtered.length === 0}
-    <p class="hint">{search ? "No matches." : i18n.t("modal.open.empty")}</p>
+    <p class="hint">{search ? i18n.t("saved.noMatches") : i18n.t("modal.open.empty")}</p>
   {:else}
     <ul class="saved__list">
       {#each filtered as entry (entry.path)}
@@ -163,8 +163,8 @@
                 }}
                 autofocus
               />
-              <button type="button" class="btn btn--primary" onclick={() => commitRename()}>Save</button>
-              <button type="button" class="btn" onclick={() => (renaming = null)}>Cancel</button>
+              <button type="button" class="btn btn--primary" onclick={() => commitRename()}>{i18n.t("modal.save")}</button>
+              <button type="button" class="btn" onclick={() => (renaming = null)}>{i18n.t("modal.cancel")}</button>
             </div>
           {:else}
             <button
@@ -172,25 +172,25 @@
               class="saved__main"
               ondblclick={() => doOpen(entry)}
               onkeydown={(e) => onRowKey(e, entry)}
-              title="Double-click or press Enter to open"
+              title={i18n.t("saved.openHint")}
             >
               <span class="saved__name">{entry.name}</span>
               <span class="saved__path">{entry.path}</span>
             </button>
             <div class="saved__actions">
-              <button type="button" class="icon-btn" title="Open" onclick={() => doOpen(entry)}>
+              <button type="button" class="icon-btn" title={i18n.t("saved.open")} onclick={() => doOpen(entry)}>
                 <FolderOpen size={16} />
               </button>
-              <button type="button" class="icon-btn" title="Duplicate" onclick={() => doDuplicate(entry)}>
+              <button type="button" class="icon-btn" title={i18n.t("saved.duplicate")} onclick={() => doDuplicate(entry)}>
                 <Copy size={16} />
               </button>
-              <button type="button" class="icon-btn" title="Rename" onclick={() => beginRename(entry)}>
+              <button type="button" class="icon-btn" title={i18n.t("saved.rename")} onclick={() => beginRename(entry)}>
                 <Pencil size={16} />
               </button>
               <button
                 type="button"
                 class="icon-btn icon-btn--danger"
-                title="Delete"
+                title={i18n.t("modal.delete")}
                 onclick={() => (confirming = entry)}
               >
                 <Trash2 size={16} />
@@ -204,10 +204,10 @@
 
   {#if confirming}
     <div class="saved__confirm">
-      <p>Delete <strong>{confirming.name}</strong>? This cannot be undone.</p>
+      <p>{i18n.t("saved.deletePrompt").replace("{name}", confirming.name)}</p>
       <div class="saved__confirm-actions">
-        <button type="button" class="btn" onclick={() => (confirming = null)}>Cancel</button>
-        <button type="button" class="btn btn--danger" onclick={() => commitDelete()}>Delete</button>
+        <button type="button" class="btn" onclick={() => (confirming = null)}>{i18n.t("modal.cancel")}</button>
+        <button type="button" class="btn btn--danger" onclick={() => commitDelete()}>{i18n.t("modal.delete")}</button>
       </div>
     </div>
   {/if}

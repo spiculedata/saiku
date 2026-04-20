@@ -1,6 +1,7 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
   import type { QueryResult } from "$lib/api/query";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   interface Props {
     result: QueryResult | null;
@@ -11,13 +12,13 @@
   let { result, open, onClose }: Props = $props();
 </script>
 
-<Modal title="Drillthrough result" {open} size="xl" onClose={onClose}>
+<Modal title={i18n.t("modal.drillthroughResult.title")} {open} size="xl" onClose={onClose}>
   {#if !result}
-    <p class="empty">Loading…</p>
+    <p class="empty">{i18n.t("cubes.loading")}</p>
   {:else if result.error}
     <p class="callout callout--danger">{result.error}</p>
   {:else if !result.cellset || result.cellset.length === 0}
-    <p class="empty">No rows returned.</p>
+    <p class="empty">{i18n.t("modal.drillthroughResult.noRows")}</p>
   {:else}
     <div class="scroll">
       <table class="dt">
@@ -44,10 +45,10 @@
         </tbody>
       </table>
     </div>
-    <p class="hint">{(result.cellset.length - 1).toLocaleString()} rows · {result.runtime ?? 0} ms</p>
+    <p class="hint">{(result.cellset.length - 1).toLocaleString()} {i18n.t("units.rows")} · {result.runtime ?? 0} {i18n.t("units.ms")}</p>
   {/if}
   {#snippet footer()}
-    <button type="button" class="btn btn--primary" onclick={onClose}>Close</button>
+    <button type="button" class="btn btn--primary" onclick={onClose}>{i18n.t("modal.close")}</button>
   {/snippet}
 </Modal>
 

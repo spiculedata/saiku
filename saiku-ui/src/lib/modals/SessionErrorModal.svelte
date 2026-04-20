@@ -41,8 +41,8 @@
       await session.login(username, password);
       const hadPending = hasPendingOps();
       notifySessionResumed();
-      if (hadPending) toasts.success("Resumed", "Replaying your last action.");
-      else toasts.success("Signed in");
+      if (hadPending) toasts.success(i18n.t("toast.resumed"), i18n.t("toast.resumed.body"));
+      else toasts.success(i18n.t("toast.signedIn"));
       // Caller sets open=false by listening for onResumed below.
       onResumed();
     } catch (ex) {
@@ -69,7 +69,7 @@
 
 <Modal title={i18n.t("modal.session.title")} {open} size="sm" onClose={onReload}>
   <p class="callout callout--danger">{message}</p>
-  <p>Your session ended — sign in and we'll keep going.</p>
+  <p>{i18n.t("modal.session.body")}</p>
   <form class="resume-login" onsubmit={onSubmit}>
     {#if err}
       <p class="callout callout--danger" role="alert">{err}</p>
@@ -105,7 +105,7 @@
     </div>
   </form>
   {#snippet footer()}
-    <span class="footer-hint">Press Enter to sign in.</span>
+    <span class="footer-hint">{i18n.t("modal.session.hint")}</span>
   {/snippet}
 </Modal>
 

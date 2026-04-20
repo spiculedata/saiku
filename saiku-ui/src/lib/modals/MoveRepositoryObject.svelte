@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/MoveRepositoryObject.js. */
   interface Props {
@@ -14,10 +15,10 @@
   let target = $state<string>(folders[0] ?? "");
 </script>
 
-<Modal title="Move item" {open} size="md" onClose={onCancel}>
-  <p class="hint">Move <code>{sourcePath}</code> to:</p>
+<Modal title={i18n.t("modal.move.title")} {open} size="md" onClose={onCancel}>
+  <p class="hint">{i18n.t("modal.move.prompt")} <code>{sourcePath}</code>.</p>
   <label class="field">
-    <span class="field__label">Destination folder</span>
+    <span class="field__label">{i18n.t("modal.move.destination")}</span>
     <select class="field__input" bind:value={target}>
       {#each folders as f}
         <option value={f}>{f || "/"}</option>
@@ -25,8 +26,8 @@
     </select>
   </label>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>Cancel</button>
-    <button type="button" class="btn btn--primary" onclick={() => onMove(target)}>Move</button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
+    <button type="button" class="btn btn--primary" onclick={() => onMove(target)}>{i18n.t("modal.move.action")}</button>
   {/snippet}
 </Modal>
 

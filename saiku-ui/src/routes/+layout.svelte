@@ -39,7 +39,7 @@
       if (session.current) {
         sessionError = {
           open: true,
-          message: `Your session ended (${status}).`,
+          message: `${i18n.t("session.ended")} (${status}).`,
         };
       }
     });

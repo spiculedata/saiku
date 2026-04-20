@@ -1,6 +1,7 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
   import type { SaikuDimension, SaikuMeasure } from "$lib/api/discover";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/DrillthroughModal.js. */
   interface Props {
@@ -47,10 +48,10 @@
   }
 </script>
 
-<Modal title="Drillthrough" {open} size="lg" onClose={onCancel}>
+<Modal title={i18n.t("modal.drillthrough.title")} {open} size="lg" onClose={onCancel}>
   <div class="cols">
     <section>
-      <h3>Dimensions</h3>
+      <h3>{i18n.t("panels.dimensions")}</h3>
       <ul class="list">
         {#each dimensions as d}
           <li>
@@ -63,7 +64,7 @@
       </ul>
     </section>
     <section>
-      <h3>Measures</h3>
+      <h3>{i18n.t("panels.measures")}</h3>
       <ul class="list">
         {#each measures as m}
           <li>
@@ -77,13 +78,13 @@
     </section>
   </div>
   <label class="field">
-    <span class="field__label">Max rows</span>
+    <span class="field__label">{i18n.t("modal.drillthrough.maxRows")}</span>
     <input class="field__input" type="number" min="1" bind:value={rows} />
   </label>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>Cancel</button>
-    <button type="button" class="btn" onclick={() => onExportCsv(args())}>Export CSV</button>
-    <button type="button" class="btn btn--primary" onclick={() => onRun(args())}>Run</button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
+    <button type="button" class="btn" onclick={() => onExportCsv(args())}>{i18n.t("modal.drillthrough.exportCsv")}</button>
+    <button type="button" class="btn btn--primary" onclick={() => onRun(args())}>{i18n.t("toolbar.run")}</button>
   {/snippet}
 </Modal>
 

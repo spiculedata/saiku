@@ -5,31 +5,15 @@
 
   interface Step {
     selector: string;
-    title: string;
-    body: string;
+    titleKey: string;
+    bodyKey: string;
   }
 
   const STEPS: Step[] = [
-    {
-      selector: "#cubes-select",
-      title: "Pick a cube",
-      body: "Datasources and cubes live here. Pick one to browse its measures and dimensions.",
-    },
-    {
-      selector: ".workspace__sidebar",
-      title: "Measures and dimensions",
-      body: "Drag a measure or a level from the sidebar onto the axes to the right.",
-    },
-    {
-      selector: ".dropzone",
-      title: "Build a query",
-      body: "Drop levels onto Rows/Columns and measures onto Columns. Toggle Autorun to re-run on every change.",
-    },
-    {
-      selector: ".view-toggle",
-      title: "Grid or chart",
-      body: "Switch between the pivot grid and any of ten chart types, any time after you've run the query.",
-    },
+    { selector: "#cubes-select", titleKey: "tour.pickCube.title", bodyKey: "tour.pickCube.body" },
+    { selector: ".workspace__sidebar", titleKey: "tour.measDim.title", bodyKey: "tour.measDim.body" },
+    { selector: ".dropzone", titleKey: "tour.build.title", bodyKey: "tour.build.body" },
+    { selector: ".view-toggle", titleKey: "tour.gridChart.title", bodyKey: "tour.gridChart.body" },
   ];
 
   const STORAGE_KEY = "saiku.tour.done";
@@ -98,7 +82,7 @@
 </script>
 
 {#if active}
-  <div class="tour" role="dialog" aria-modal="true" aria-label={STEPS[stepIdx].title}>
+  <div class="tour" role="dialog" aria-modal="true" aria-label={i18n.t(STEPS[stepIdx].titleKey)}>
     {#if anchor}
       <div
         class="tour__highlight"
@@ -117,19 +101,19 @@
         : "top: 40%; left: 50%; transform: translate(-50%, -50%);"}
     >
       <header>
-        <strong>{STEPS[stepIdx].title}</strong>
+        <strong>{i18n.t(STEPS[stepIdx].titleKey)}</strong>
         <span class="step">{stepIdx + 1} / {STEPS.length}</span>
       </header>
-      <p>{STEPS[stepIdx].body}</p>
+      <p>{i18n.t(STEPS[stepIdx].bodyKey)}</p>
       <footer>
         <button type="button" class="btn" onclick={skip}>
-          {i18n.t("modal.close", "Skip")}
+          {i18n.t("tour.skip")}
         </button>
         {#if stepIdx > 0}
-          <button type="button" class="btn" onclick={prev}>Back</button>
+          <button type="button" class="btn" onclick={prev}>{i18n.t("tour.back")}</button>
         {/if}
         <button type="button" class="btn btn--primary" onclick={next}>
-          {stepIdx === STEPS.length - 1 ? "Done" : "Next"}
+          {stepIdx === STEPS.length - 1 ? i18n.t("tour.done") : i18n.t("tour.next")}
         </button>
       </footer>
     </div>

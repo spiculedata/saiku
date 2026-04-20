@@ -1,6 +1,7 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
   import type { SaikuMember } from "$lib/api/discover";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/SelectionsModal.js — member
    * selections for a level, with include/exclude + search + show-unique. */
@@ -62,24 +63,24 @@
   }
 </script>
 
-<Modal title={`Selections for ${levelCaption}`} {open} size="lg" onClose={onCancel}>
+<Modal title={`${i18n.t("modal.selections.title")} ${levelCaption}`} {open} size="lg" onClose={onCancel}>
   <div class="row">
     <label class="field field--grow">
-      <span class="field__label">Filter members</span>
-      <input class="field__input" bind:value={search} placeholder="Search by name or caption" />
+      <span class="field__label">{i18n.t("modal.selections.filterMembers")}</span>
+      <input class="field__input" bind:value={search} placeholder={i18n.t("modal.selections.searchPlaceholder")} />
     </label>
     <label class="field">
-      <span class="field__label">Mode</span>
+      <span class="field__label">{i18n.t("modal.selections.mode")}</span>
       <select class="field__input" bind:value={type}>
-        <option value="INCLUSION">Include</option>
-        <option value="EXCLUSION">Exclude</option>
+        <option value="INCLUSION">{i18n.t("modal.selections.include")}</option>
+        <option value="EXCLUSION">{i18n.t("modal.selections.exclude")}</option>
       </select>
     </label>
   </div>
   <div class="bar">
-    <button type="button" class="btn" onclick={selectAll}>Select all</button>
-    <button type="button" class="btn" onclick={clear}>Clear</button>
-    <span class="count">{selected.size} selected</span>
+    <button type="button" class="btn" onclick={selectAll}>{i18n.t("modal.selections.selectAll")}</button>
+    <button type="button" class="btn" onclick={clear}>{i18n.t("modal.selections.clear")}</button>
+    <span class="count">{selected.size} {i18n.t("modal.selections.selected")}</span>
   </div>
   <ul class="members">
     {#each filtered as m}
@@ -92,13 +93,13 @@
       </li>
     {/each}
     {#if filtered.length === 0}
-      <li class="empty">No members match.</li>
+      <li class="empty">{i18n.t("modal.selections.noMatch")}</li>
     {/if}
   </ul>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onOpenDateFilter}>Open date filter</button>
-    <button type="button" class="btn" onclick={onCancel}>Cancel</button>
-    <button type="button" class="btn btn--primary" onclick={() => onSave(Array.from(selected), type)}>OK</button>
+    <button type="button" class="btn" onclick={onOpenDateFilter}>{i18n.t("modal.selections.openDate")}</button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
+    <button type="button" class="btn btn--primary" onclick={() => onSave(Array.from(selected), type)}>{i18n.t("modal.ok")}</button>
   {/snippet}
 </Modal>
 

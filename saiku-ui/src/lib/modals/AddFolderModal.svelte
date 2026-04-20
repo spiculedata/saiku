@@ -21,9 +21,9 @@
 
 <Modal title={i18n.t("modal.addFolder.title")} {open} size="sm" onClose={onCancel}>
   <form onsubmit={submit}>
-    <p class="hint">Create under <code>{parentPath || "/"}</code>.</p>
+    <p class="hint">{i18n.t("modal.addFolder.under")} <code>{parentPath || "/"}</code>.</p>
     <label class="field">
-      <span class="field__label">Folder name</span>
+      <span class="field__label">{i18n.t("modal.addFolder.name")}</span>
       <input class="field__input" bind:value={name} autocomplete="off" required />
     </label>
   </form>

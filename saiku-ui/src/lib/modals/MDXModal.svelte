@@ -29,8 +29,8 @@
     <MonacoEditor value={buffer} language="mdx" minHeight="320px" onChange={(v) => (buffer = v)} />
   {/if}
   {#snippet footer()}
-    <button type="button" class="btn" onclick={copy}>Copy</button>
+    <button type="button" class="btn" onclick={copy}>{i18n.t("modal.mdx.copy")}</button>
     <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.close")}</button>
-    <button type="button" class="btn btn--primary" onclick={() => onRun(buffer)}>Run MDX</button>
+    <button type="button" class="btn btn--primary" onclick={() => onRun(buffer)}>{i18n.t("modal.mdx.run")}</button>
   {/snippet}
 </Modal>

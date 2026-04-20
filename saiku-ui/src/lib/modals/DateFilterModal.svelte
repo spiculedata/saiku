@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/DateFilterModal.js. */
   type DateFilterType =
@@ -52,9 +53,9 @@
   const isRange = $derived(value.type === "CUSTOM_RANGE");
 </script>
 
-<Modal title="Date filter" {open} size="md" onClose={onCancel}>
+<Modal title={i18n.t("modal.dateFilter.title")} {open} size="md" onClose={onCancel}>
   <label class="field">
-    <span class="field__label">Filter type</span>
+    <span class="field__label">{i18n.t("modal.dateFilter.type")}</span>
     <select class="field__input" bind:value={value.type}>
       {#each DATE_FILTER_TYPES as t}
         <option value={t}>{t.replaceAll("_", " ")}</option>
@@ -69,18 +70,18 @@
   {:else if isRange}
     <div class="row">
       <label class="field field--grow">
-        <span class="field__label">From</span>
+        <span class="field__label">{i18n.t("modal.dateFilter.from")}</span>
         <input class="field__input" type="date" bind:value={value.from} />
       </label>
       <label class="field field--grow">
-        <span class="field__label">To</span>
+        <span class="field__label">{i18n.t("modal.dateFilter.to")}</span>
         <input class="field__input" type="date" bind:value={value.to} />
       </label>
     </div>
   {/if}
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>Cancel</button>
-    <button type="button" class="btn btn--primary" onclick={() => onApply(value)}>Apply</button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
+    <button type="button" class="btn btn--primary" onclick={() => onApply(value)}>{i18n.t("modal.apply")}</button>
   {/snippet}
 </Modal>
 

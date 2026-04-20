@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/CustomFilterModal.js.
    * Quick one-shot filter on a measure: operator + value. */
@@ -40,10 +41,10 @@
   const needsSecond = $derived(op === "BETWEEN" || op === "NOT BETWEEN");
 </script>
 
-<Modal title={`Filter ${measureCaption}`} {open} size="md" onClose={onCancel}>
+<Modal title={`${i18n.t("modal.customFilter.title")} ${measureCaption}`} {open} size="md" onClose={onCancel}>
   <div class="row">
     <label class="field field--grow">
-      <span class="field__label">Operator</span>
+      <span class="field__label">{i18n.t("modal.customFilter.operator")}</span>
       <select class="field__input" bind:value={op}>
         {#each OPERATORS as o}
           <option value={o}>{o}</option>
@@ -51,19 +52,19 @@
       </select>
     </label>
     <label class="field field--grow">
-      <span class="field__label">Value</span>
+      <span class="field__label">{i18n.t("modal.customFilter.value")}</span>
       <input class="field__input" type="number" bind:value />
     </label>
     {#if needsSecond}
       <label class="field field--grow">
-        <span class="field__label">And</span>
+        <span class="field__label">{i18n.t("modal.customFilter.and")}</span>
         <input class="field__input" type="number" bind:value={value2} />
       </label>
     {/if}
   </div>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>Cancel</button>
-    <button type="button" class="btn btn--primary" onclick={() => onApply(op, value, needsSecond ? value2 : undefined)}>Apply</button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
+    <button type="button" class="btn btn--primary" onclick={() => onApply(op, value, needsSecond ? value2 : undefined)}>{i18n.t("modal.apply")}</button>
   {/snippet}
 </Modal>
 

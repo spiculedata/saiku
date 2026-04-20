@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/PermissionsModal.js. */
   export type AclType = "PRIVATE" | "SECURED" | "PUBLIC";
@@ -35,19 +36,19 @@
   }
 </script>
 
-<Modal title={`Permissions — ${path}`} {open} size="lg" onClose={onCancel}>
+<Modal title={`${i18n.t("modal.permissions.title")} — ${path}`} {open} size="lg" onClose={onCancel}>
   <label class="field">
-    <span class="field__label">Visibility</span>
+    <span class="field__label">{i18n.t("modal.permissions.visibility")}</span>
     <select class="field__input" bind:value={acl.type}>
-      <option value="PRIVATE">Private (owner only)</option>
-      <option value="SECURED">Secured (per role/user)</option>
-      <option value="PUBLIC">Public</option>
+      <option value="PRIVATE">{i18n.t("modal.permissions.private")}</option>
+      <option value="SECURED">{i18n.t("modal.permissions.secured")}</option>
+      <option value="PUBLIC">{i18n.t("modal.permissions.public")}</option>
     </select>
   </label>
   {#if acl.type === "SECURED"}
     <table class="grid">
       <thead>
-        <tr><th>Role</th><th>Read</th><th>Write</th><th>Grant</th></tr>
+        <tr><th>{i18n.t("modal.permissions.role")}</th><th>{i18n.t("modal.permissions.read")}</th><th>{i18n.t("modal.permissions.write")}</th><th>{i18n.t("modal.permissions.grant")}</th></tr>
       </thead>
       <tbody>
         {#each allRoles as r}
@@ -68,8 +69,8 @@
     </table>
   {/if}
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>Cancel</button>
-    <button type="button" class="btn btn--primary" onclick={() => onSave(acl)}>Save</button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
+    <button type="button" class="btn btn--primary" onclick={() => onSave(acl)}>{i18n.t("modal.save")}</button>
   {/snippet}
 </Modal>
 

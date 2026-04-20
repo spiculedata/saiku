@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/ReportTitlesModal.js. */
   export interface ReportTitles {
@@ -23,21 +24,21 @@
   });
 </script>
 
-<Modal title="Report titles" {open} size="md" onClose={onCancel}>
+<Modal title={i18n.t("modal.reportTitles.title")} {open} size="md" onClose={onCancel}>
   <label class="field">
-    <span class="field__label">Title</span>
+    <span class="field__label">{i18n.t("modal.reportTitles.titleLabel")}</span>
     <input class="field__input" bind:value={form.title} />
   </label>
   <label class="field">
-    <span class="field__label">Subtitle</span>
+    <span class="field__label">{i18n.t("modal.reportTitles.subtitle")}</span>
     <input class="field__input" bind:value={form.subtitle} />
   </label>
   <label class="field">
-    <span class="field__label">Notes</span>
+    <span class="field__label">{i18n.t("modal.reportTitles.notes")}</span>
     <textarea class="field__input" rows="4" bind:value={form.notes}></textarea>
   </label>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>Cancel</button>
-    <button type="button" class="btn btn--primary" onclick={() => onSave(form)}>Save</button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
+    <button type="button" class="btn btn--primary" onclick={() => onSave(form)}>{i18n.t("modal.save")}</button>
   {/snippet}
 </Modal>

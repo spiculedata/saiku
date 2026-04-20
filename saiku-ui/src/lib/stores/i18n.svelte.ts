@@ -60,7 +60,17 @@ class I18nStore {
 
   t(key: string, fallback?: string): string {
     const bundle = BUNDLES[this.locale];
-    return bundle[key] ?? fallback ?? key;
+    const hit = bundle[key];
+    if (hit !== undefined) return hit;
+    // Fall back to English when the active locale does not have the key.
+    // This lets us ship new keys in en.json only and have non-en locales
+    // render the English text until a translator fills them in, instead of
+    // showing the raw dotted key.
+    if (this.locale !== "en") {
+      const enHit = BUNDLES.en[key];
+      if (enHit !== undefined) return enHit;
+    }
+    return fallback ?? key;
   }
 }
 

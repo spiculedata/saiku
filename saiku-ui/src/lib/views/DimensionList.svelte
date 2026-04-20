@@ -5,6 +5,7 @@
   import { session } from "$lib/stores/session.svelte";
   import { listLevelMembers, listRootMembers, type SaikuMember } from "$lib/api/discover";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
   import MeasuresModal from "$lib/modals/MeasuresModal.svelte";
   import CalculatedMemberModal, { type CalculatedMember } from "$lib/modals/CalculatedMemberModal.svelte";
   import SelectionsModal from "$lib/modals/SelectionsModal.svelte";
@@ -177,7 +178,7 @@
       type: "CALCULATED",
     });
     calculatedOpen = false;
-    toasts.success("Calculated measure", `${m.name} added to query`);
+    toasts.success(i18n.t("toast.calcMeasure"), i18n.t("toast.calcMeasure.body").replace("{name}", m.name));
   }
 
   // ---- Dimensions quick-filter modal ----
@@ -220,7 +221,7 @@
           hier.uniqueName,
         );
       } catch (err) {
-        toasts.danger("Could not load members", err instanceof Error ? err.message : String(err));
+        toasts.danger(i18n.t("toast.loadMembersFailed"), err instanceof Error ? err.message : String(err));
       }
     }
     dimModalTarget = {
@@ -272,20 +273,20 @@
 
 <div class="panels">
   {#if !selection.cube}
-    <p class="panels__hint">Select a cube to browse its measures and dimensions.</p>
+    <p class="panels__hint">{i18n.t("panels.select")}</p>
   {:else if loading}
-    <p class="panels__hint">Loading cube metadata…</p>
+    <p class="panels__hint">{i18n.t("panels.loading")}</p>
   {:else if error}
     <p class="callout callout--danger">{error}</p>
   {:else if metadata}
     <section class="panel">
       <header class="panel__header panel__header--row">
-        <span>Measures</span>
+        <span>{i18n.t("panels.measures")}</span>
         <span class="panel__actions">
-          <button type="button" class="panel__action" title="Manage measures" onclick={openMeasuresModal}>
+          <button type="button" class="panel__action" title={i18n.t("panels.manageMeasures")} onclick={openMeasuresModal}>
             <Settings2 size={14} />
           </button>
-          <button type="button" class="panel__action" title="New calculated measure" onclick={() => openCalculatedModal()}>
+          <button type="button" class="panel__action" title={i18n.t("panels.newCalcMeasure")} onclick={() => openCalculatedModal()}>
             <Plus size={14} />
           </button>
         </span>
@@ -323,13 +324,13 @@
           </li>
         {/each}
         {#if metadata.measures.length === 0}
-          <li class="tree__empty">No measures</li>
+          <li class="tree__empty">{i18n.t("panels.noMeasures")}</li>
         {/if}
       </ul>
     </section>
 
     <section class="panel">
-      <header class="panel__header">Dimensions</header>
+      <header class="panel__header">{i18n.t("panels.dimensions")}</header>
       <ul class="tree">
         {#each metadata.dimensions.filter((d) => d.name !== "Measures") as dim}
           {@const did = `d:${dim.uniqueName}`}
@@ -364,7 +365,7 @@
                           <button
                             type="button"
                             class="tree__gear"
-                            title="Filter members…"
+                            title={i18n.t("panels.filterMembers")}
                             onclick={() => openDimensionFilter(dim, hier, lvl)}
                           ><Filter size={11} /></button>
                         </span>
@@ -398,7 +399,7 @@
                                 <button
                                   type="button"
                                   class="tree__gear"
-                                  title="Filter members…"
+                                  title={i18n.t("panels.filterMembers")}
                                   onclick={() => openDimensionFilter(dim, hier, lvl)}
                                 ><Filter size={11} /></button>
                               </span>
@@ -414,7 +415,7 @@
           </li>
         {/each}
         {#if metadata.dimensions.length === 0}
-          <li class="tree__empty">No dimensions</li>
+          <li class="tree__empty">{i18n.t("panels.noDimensions")}</li>
         {/if}
       </ul>
     </section>
@@ -452,7 +453,7 @@
   />
 {/if}
 {#if dimModalLoading && dimModalOpen}
-  <p class="callout">Loading members…</p>
+  <p class="callout">{i18n.t("canvas.loadingMembers")}</p>
 {/if}
 
 <style>

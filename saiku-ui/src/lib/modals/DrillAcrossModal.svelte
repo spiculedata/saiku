@@ -1,6 +1,7 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
   import type { SaikuCube } from "$lib/api/discover";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/DrillAcrossModal.js. */
   interface Props {
@@ -18,9 +19,9 @@
   });
 </script>
 
-<Modal title="Drill across" {open} size="md" onClose={onCancel}>
+<Modal title={i18n.t("modal.drillAcross.title")} {open} size="md" onClose={onCancel}>
   <label class="field">
-    <span class="field__label">Target cube</span>
+    <span class="field__label">{i18n.t("modal.drillAcross.target")}</span>
     <select class="field__input" bind:value={picked}>
       {#each targets as c}
         <option value={c.uniqueName}>{c.caption || c.name}</option>
@@ -28,10 +29,10 @@
     </select>
   </label>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>Cancel</button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
     <button type="button" class="btn btn--primary" onclick={() => {
       const t = targets.find((x) => x.uniqueName === picked);
       if (t) onRun(t);
-    }}>Run</button>
+    }}>{i18n.t("toolbar.run")}</button>
   {/snippet}
 </Modal>

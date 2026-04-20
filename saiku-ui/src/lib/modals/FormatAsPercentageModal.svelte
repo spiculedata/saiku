@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/FormatAsPercentageModal.js. */
   export type PercentageAxis = "COLUMNS" | "ROWS" | "GRAND_TOTAL";
@@ -25,24 +26,24 @@
   });
 </script>
 
-<Modal title="Format as percentage" {open} size="md" onClose={onCancel}>
+<Modal title={i18n.t("modal.percent.title")} {open} size="md" onClose={onCancel}>
   <label class="field">
-    <span class="field__label">Base axis</span>
+    <span class="field__label">{i18n.t("modal.percent.baseAxis")}</span>
     <select class="field__input" bind:value={axis}>
-      <option value="ROWS">Row total</option>
-      <option value="COLUMNS">Column total</option>
-      <option value="GRAND_TOTAL">Grand total</option>
+      <option value="ROWS">{i18n.t("modal.percent.rowTotal")}</option>
+      <option value="COLUMNS">{i18n.t("modal.percent.columnTotal")}</option>
+      <option value="GRAND_TOTAL">{i18n.t("modal.percent.grandTotal")}</option>
     </select>
   </label>
   <label class="field">
-    <span class="field__label">Apply to</span>
+    <span class="field__label">{i18n.t("modal.percent.applyTo")}</span>
     <select class="field__input" bind:value={s}>
-      <option value="all">All measures</option>
-      <option value="selected">Selected cells only</option>
+      <option value="all">{i18n.t("modal.percent.allMeasures")}</option>
+      <option value="selected">{i18n.t("modal.percent.selectedOnly")}</option>
     </select>
   </label>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>Cancel</button>
-    <button type="button" class="btn btn--primary" onclick={() => onApply(axis, s)}>Apply</button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
+    <button type="button" class="btn btn--primary" onclick={() => onApply(axis, s)}>{i18n.t("modal.apply")}</button>
   {/snippet}
 </Modal>

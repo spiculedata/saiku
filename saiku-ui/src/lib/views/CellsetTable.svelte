@@ -7,6 +7,7 @@
   import { session } from "$lib/stores/session.svelte";
   import { listLevelMembers, listRootMembers } from "$lib/api/discover";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   interface Props {
     result: QueryResult;
@@ -298,7 +299,7 @@
           menu.hierarchyUniqueName,
         );
       } catch (err) {
-        toasts.danger("Could not load members", err instanceof Error ? err.message : String(err));
+        toasts.danger(i18n.t("toast.loadMembersFailed"), err instanceof Error ? err.message : String(err));
         return [];
       }
     }
@@ -580,7 +581,7 @@
 {#if result.error}
   <p class="callout callout--danger">{result.error}</p>
 {:else if (result.cellset?.length ?? 0) === 0}
-  <p class="empty">No rows returned.</p>
+  <p class="empty">{i18n.t("cellset.noRows")}</p>
 {:else}
   <div
     class="cellset-wrap"
@@ -679,18 +680,18 @@
   </div>
   {#if selStats}
     <div class="sel-stats" role="status" aria-live="polite">
-      <span>Selected: <strong>{selStats.cells}</strong> cell{selStats.cells === 1 ? "" : "s"}</span>
-      <span>Count: <strong>{selStats.count}</strong></span>
-      <span>Sum: <strong>{fmtNum(selStats.sum)}</strong></span>
-      <span>Avg: <strong>{fmtNum(selStats.avg)}</strong></span>
-      <span>Min: <strong>{fmtNum(selStats.min)}</strong></span>
-      <span>Max: <strong>{fmtNum(selStats.max)}</strong></span>
-      <button type="button" class="sel-stats__clear" onclick={clearSelection} title="Clear selection">×</button>
+      <span>{i18n.t("stats.selected")}: <strong>{selStats.cells}</strong> {selStats.cells === 1 ? i18n.t("stats.cell") : i18n.t("stats.cells")}</span>
+      <span>{i18n.t("stats.count")}: <strong>{selStats.count}</strong></span>
+      <span>{i18n.t("stats.sum")}: <strong>{fmtNum(selStats.sum)}</strong></span>
+      <span>{i18n.t("stats.avg")}: <strong>{fmtNum(selStats.avg)}</strong></span>
+      <span>{i18n.t("stats.min")}: <strong>{fmtNum(selStats.min)}</strong></span>
+      <span>{i18n.t("stats.max")}: <strong>{fmtNum(selStats.max)}</strong></span>
+      <button type="button" class="sel-stats__clear" onclick={clearSelection} title={i18n.t("stats.clearSelection")}>×</button>
     </div>
   {/if}
   {#if result.runtime != null}
     <p class="runtime">
-      Runtime: {result.runtime} ms · {result.height ?? 0} rows × {result.width ?? 0} cols
+      {i18n.t("stats.runtime")}: {result.runtime} {i18n.t("units.ms")} · {result.height ?? 0} {i18n.t("units.rows")} × {result.width ?? 0} {i18n.t("units.cols")}
     </p>
   {/if}
 {/if}
@@ -704,11 +705,11 @@
       class="cellset-ctx-menu__item"
       disabled={!menu.memberUniqueName}
       onclick={keepOnly}
-    >Keep Only</button>
+    >{i18n.t("cellset.menu.keepOnly")}</button>
     {#if menu.dimensionName && menu.dimensionName !== "Measures"}
       <div class="cellset-ctx-menu__item cellset-ctx-menu__item--parent">
         <button type="button" onclick={() => (menu.sub = menu.sub === "include" ? null : "include")}>
-          Include Level ▸
+          {i18n.t("cellset.menu.includeLevel")} ▸
         </button>
         {#if menu.sub === "include"}
           <div class="cellset-ctx-menu__sub">
@@ -721,14 +722,14 @@
               >{lvl.caption}</button>
             {/each}
             {#if menu.levels.length === 0}
-              <div class="cellset-ctx-menu__empty">No levels available</div>
+              <div class="cellset-ctx-menu__empty">{i18n.t("cellset.menu.noLevels")}</div>
             {/if}
           </div>
         {/if}
       </div>
       <div class="cellset-ctx-menu__item cellset-ctx-menu__item--parent">
         <button type="button" onclick={() => (menu.sub = menu.sub === "remove" ? null : "remove")}>
-          Remove Level ▸
+          {i18n.t("cellset.menu.removeLevel")} ▸
         </button>
         {#if menu.sub === "remove"}
           <div class="cellset-ctx-menu__sub">
@@ -740,13 +741,13 @@
               >{lvl.caption}</button>
             {/each}
             {#if menu.levels.filter((l) => l.used).length === 0}
-              <div class="cellset-ctx-menu__empty">Nothing to remove</div>
+              <div class="cellset-ctx-menu__empty">{i18n.t("cellset.menu.nothingToRemove")}</div>
             {/if}
           </div>
         {/if}
       </div>
       <button type="button" class="cellset-ctx-menu__item" onclick={filterLevel}>
-        Filter Level…
+        {i18n.t("cellset.menu.filterLevel")}
       </button>
     {/if}
   </div>

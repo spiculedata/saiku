@@ -1,6 +1,7 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
   import type { SaikuMember } from "$lib/api/discover";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/ParentMemberSelectorModal.js. */
   interface Props {
@@ -21,8 +22,8 @@
   );
 </script>
 
-<Modal title="Parent member" {open} size="md" onClose={onCancel}>
-  <input class="field__input" placeholder="Search members" bind:value={search} />
+<Modal title={i18n.t("modal.parentMember.title")} {open} size="md" onClose={onCancel}>
+  <input class="field__input" placeholder={i18n.t("modal.parentMember.search")} bind:value={search} />
   <ul class="list">
     {#each filtered as m}
       <li>
@@ -34,7 +35,7 @@
     {/each}
   </ul>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>Close</button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.close")}</button>
   {/snippet}
 </Modal>
 

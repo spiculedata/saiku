@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/GrowthModal.js. */
   export type GrowthBasis = "previous" | "first" | "specific";
@@ -22,22 +23,22 @@
   });
 </script>
 
-<Modal title="Growth" {open} size="md" onClose={onCancel}>
+<Modal title={i18n.t("modal.growth.title")} {open} size="md" onClose={onCancel}>
   <fieldset class="field">
-    <legend class="field__label">Compare against</legend>
-    <label class="radio"><input type="radio" name="basis" value="previous" bind:group={basis} /> Previous period</label>
-    <label class="radio"><input type="radio" name="basis" value="first" bind:group={basis} /> First period</label>
-    <label class="radio"><input type="radio" name="basis" value="specific" bind:group={basis} /> Specific member</label>
+    <legend class="field__label">{i18n.t("modal.growth.compareAgainst")}</legend>
+    <label class="radio"><input type="radio" name="basis" value="previous" bind:group={basis} /> {i18n.t("modal.growth.previousPeriod")}</label>
+    <label class="radio"><input type="radio" name="basis" value="first" bind:group={basis} /> {i18n.t("modal.growth.firstPeriod")}</label>
+    <label class="radio"><input type="radio" name="basis" value="specific" bind:group={basis} /> {i18n.t("modal.growth.specificMember")}</label>
   </fieldset>
   {#if basis === "specific"}
     <label class="field">
-      <span class="field__label">Reference member (unique name)</span>
+      <span class="field__label">{i18n.t("modal.growth.referenceMember")}</span>
       <input class="field__input" bind:value={reference} />
     </label>
   {/if}
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>Cancel</button>
-    <button type="button" class="btn btn--primary" onclick={() => onApply(basis, basis === "specific" ? reference : undefined)}>Apply</button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
+    <button type="button" class="btn btn--primary" onclick={() => onApply(basis, basis === "specific" ? reference : undefined)}>{i18n.t("modal.apply")}</button>
   {/snippet}
 </Modal>
 

@@ -10,11 +10,11 @@
     onCancel: () => void;
   }
 
-  const TREND_MODES: { id: TrendLineMode; label: string }[] = [
-    { id: "none", label: "None" },
-    { id: "linear", label: "Linear regression" },
-    { id: "ma", label: "Moving average" },
-    { id: "wma", label: "Weighted moving average" },
+  const TREND_MODES: { id: TrendLineMode; labelKey: string }[] = [
+    { id: "none", labelKey: "modal.chart.trend.none" },
+    { id: "linear", labelKey: "modal.chart.trend.linear" },
+    { id: "ma", labelKey: "modal.chart.trend.ma" },
+    { id: "wma", labelKey: "modal.chart.trend.wma" },
   ];
 
   const LEGEND_POSITIONS: ChartOptions["legendPosition"][] = [
@@ -29,31 +29,31 @@
   });
 </script>
 
-<Modal title="Chart editor" {open} size="md" onClose={onCancel}>
+<Modal title={i18n.t("modal.chart.title")} {open} size="md" onClose={onCancel}>
   <div class="grid">
     <label class="field">
-      <span class="field__label">Title</span>
-      <input class="field__input" bind:value={form.title} placeholder="Chart title" />
+      <span class="field__label">{i18n.t("modal.chart.chartTitle")}</span>
+      <input class="field__input" bind:value={form.title} placeholder={i18n.t("modal.chart.chartTitlePlaceholder")} />
     </label>
     <div class="row">
       <label class="field field--grow">
-        <span class="field__label">X axis label</span>
+        <span class="field__label">{i18n.t("modal.chart.xAxis")}</span>
         <input class="field__input" bind:value={form.xAxisLabel} />
       </label>
       <label class="field field--grow">
-        <span class="field__label">Y axis label</span>
+        <span class="field__label">{i18n.t("modal.chart.yAxis")}</span>
         <input class="field__input" bind:value={form.yAxisLabel} />
       </label>
     </div>
     <div class="row">
       <label class="field field--grow">
-        <span class="field__label">Legend</span>
+        <span class="field__label">{i18n.t("modal.chart.legend")}</span>
         <label class="toggle">
-          <input type="checkbox" bind:checked={form.showLegend} /> Show legend
+          <input type="checkbox" bind:checked={form.showLegend} /> {i18n.t("modal.chart.showLegend")}
         </label>
       </label>
       <label class="field field--grow">
-        <span class="field__label">Legend position</span>
+        <span class="field__label">{i18n.t("modal.chart.legendPosition")}</span>
         <select class="field__input" bind:value={form.legendPosition} disabled={!form.showLegend}>
           {#each LEGEND_POSITIONS as p}
             <option value={p}>{p}</option>
@@ -63,15 +63,15 @@
     </div>
     <div class="row">
       <label class="field field--grow">
-        <span class="field__label">Trend line</span>
+        <span class="field__label">{i18n.t("modal.chart.trendLine")}</span>
         <select class="field__input" bind:value={form.trendLine}>
           {#each TREND_MODES as m}
-            <option value={m.id}>{m.label}</option>
+            <option value={m.id}>{i18n.t(m.labelKey)}</option>
           {/each}
         </select>
       </label>
       <label class="field field--grow">
-        <span class="field__label">Period (for moving averages)</span>
+        <span class="field__label">{i18n.t("modal.chart.period")}</span>
         <input
           class="field__input"
           type="number"
@@ -82,9 +82,7 @@
         />
       </label>
     </div>
-    <p class="hint">
-      Trend lines currently render on line/stacked-line/area charts using the first measure column.
-    </p>
+    <p class="hint">{i18n.t("modal.chart.trendHint")}</p>
   </div>
 
   {#snippet footer()}

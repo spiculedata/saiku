@@ -82,14 +82,14 @@
     const cube = query.current?.cube ?? null;
     query.reset();
     if (cube) query.initFor(cube);
-    toasts.info("New query", "A fresh query workspace has been opened.");
+    toasts.info(i18n.t("toast.newQuery"), i18n.t("toast.newQuery.body"));
   }
 
   async function onOpen() { await ensureRepoLoaded(); openOpen = true; }
 
   async function onSave() {
     if (!query.current) {
-      warningMessage = "Select a cube first.";
+      warningMessage = i18n.t("warning.selectCube");
       warningOpen = true;
       return;
     }
@@ -98,9 +98,9 @@
       try {
         await saveResource(query.savedPath, JSON.stringify(query.current));
         query.markSaved(query.savedPath);
-        toasts.success("Saved", query.savedPath);
+        toasts.success(i18n.t("toast.saved"), query.savedPath);
       } catch (e) {
-        toasts.danger("Save failed", e instanceof Error ? e.message : String(e));
+        toasts.danger(i18n.t("toast.saveFailed"), e instanceof Error ? e.message : String(e));
       }
       return;
     }
@@ -110,7 +110,7 @@
 
   async function onSaveAs() {
     if (!query.current) {
-      warningMessage = "Select a cube first.";
+      warningMessage = i18n.t("warning.selectCube");
       warningOpen = true;
       return;
     }
@@ -121,7 +121,7 @@
 
   function onShowMdx() {
     if (!query.current?.mdx && !query.result) {
-      toasts.info("No MDX yet", "Run the query first to see its generated MDX.");
+      toasts.info(i18n.t("toast.noMdx"), i18n.t("toast.noMdx.body"));
       return;
     }
     mdxOpen = true;
@@ -129,7 +129,7 @@
 
   async function onRun() {
     if (!query.current) {
-      warningMessage = "Select a cube before running a query.";
+      warningMessage = i18n.t("warning.selectCubeToRun");
       warningOpen = true;
       return;
     }
@@ -139,7 +139,7 @@
   function exportCurrent(kind: "xls" | "csv" | "pdf") {
     exportMenuOpen = false;
     if (!query.current) {
-      warningMessage = "Run a query first before exporting.";
+      warningMessage = i18n.t("warning.runBeforeExport");
       warningOpen = true;
       return;
     }
@@ -155,10 +155,10 @@
     try {
       await saveResource(path, JSON.stringify(query.current));
       query.markSaved(path);
-      toasts.success("Saved", path);
+      toasts.success(i18n.t("toast.saved"), path);
       await repository.refresh();
     } catch (e) {
-      toasts.danger("Save failed", e instanceof Error ? e.message : String(e));
+      toasts.danger(i18n.t("toast.saveFailed"), e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -169,10 +169,10 @@
       // loaded query — otherwise DimensionList stays on the old cube.
       if (q.cube) selection.select(q.cube);
       query.hydrate(q, path);
-      toasts.success("Opened", path);
+      toasts.success(i18n.t("toast.opened"), path);
       if (query.autorun && query.hasRunnableShape()) await query.run();
     } catch (e) {
-      toasts.danger("Open failed", e instanceof Error ? e.message : String(e));
+      toasts.danger(i18n.t("toast.openFailed"), e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -201,7 +201,7 @@
     drillAcrossOpen = false;
     selection.select(target);
     query.initFor(target);
-    toasts.info("Drill across", `Switched cube to ${target.caption || target.name}`);
+    toasts.info(i18n.t("toast.drillAcross"), i18n.t("toast.drillAcross.body").replace("{cube}", target.caption || target.name));
   }
 
   function drillAcrossTargets(): SaikuCube[] {
@@ -231,7 +231,7 @@
         "saiku.report.notes": t.notes,
       };
     }
-    toasts.success("Titles saved", t.title || "(cleared)");
+    toasts.success(i18n.t("toast.titlesSaved"), t.title || i18n.t("toast.titlesSaved.cleared"));
   }
 
   function handleBodyClick(e: MouseEvent) {
@@ -286,22 +286,22 @@
       </button>
       <button
         class="tb-btn tb-btn--primary split-btn__caret"
-        title="Run options"
-        aria-label="Run options"
+        title={i18n.t("toolbar.runOptions")}
+        aria-label={i18n.t("toolbar.runOptions")}
         onclick={(e) => { e.stopPropagation(); runMenuOpen = !runMenuOpen; toolsMenuOpen = false; exportMenuOpen = false; }}
       ><ChevronDown size={14} /></button>
     </div>
     {#if runMenuOpen}
       <div class="toolbar__dropdown">
-        <label class="toolbar__check" title="Automatically run queries after each edit">
+        <label class="toolbar__check" title={i18n.t("toolbar.autorun.hint")}>
           <input type="checkbox" bind:checked={query.autorun} />
           <span>{i18n.t("toolbar.autorun")}</span>
         </label>
-        <label class="toolbar__check" title="Hide empty rows and columns">
+        <label class="toolbar__check" title={i18n.t("toolbar.nonEmpty.hint")}>
           <input type="checkbox" bind:checked={nonEmpty} />
           <span>{i18n.t("toolbar.nonEmpty")}</span>
         </label>
-        <label class="toolbar__check" title="Submit queries asynchronously with progress + cancel">
+        <label class="toolbar__check" title={i18n.t("toolbar.async.hint")}>
           <input type="checkbox" bind:checked={query.async} />
           <span>{i18n.t("toolbar.async")}</span>
         </label>
@@ -316,9 +316,9 @@
     <button
       class="tb-btn"
       onclick={(e) => { e.stopPropagation(); toolsMenuOpen = !toolsMenuOpen; exportMenuOpen = false; }}
-      title="Tools"
+      title={i18n.t("toolbar.tools")}
     >
-      <Wrench size={18} /><span class="tb-btn__label">Tools</span><ChevronDown size={14} />
+      <Wrench size={18} /><span class="tb-btn__label">{i18n.t("toolbar.tools")}</span><ChevronDown size={14} />
     </button>
     {#if toolsMenuOpen}
       <div class="toolbar__dropdown">
@@ -326,10 +326,10 @@
           <Braces size={16} /> <span>{i18n.t("toolbar.mdx")}…</span>
         </button>
         <button type="button" class="toolbar__item" onclick={openDrillAcross}>
-          <ArrowLeftRight size={16} /> <span>Drill across…</span>
+          <ArrowLeftRight size={16} /> <span>{i18n.t("toolbar.drillAcross")}…</span>
         </button>
         <button type="button" class="toolbar__item" onclick={openReportTitles}>
-          <Tags size={16} /> <span>Report titles…</span>
+          <Tags size={16} /> <span>{i18n.t("toolbar.reportTitles")}…</span>
         </button>
       </div>
     {/if}
@@ -339,9 +339,9 @@
     <button
       class="tb-btn"
       onclick={(e) => { e.stopPropagation(); exportMenuOpen = !exportMenuOpen; toolsMenuOpen = false; }}
-      title="Export"
+      title={i18n.t("toolbar.export")}
     >
-      <Download size={18} /><span class="tb-btn__label">Export</span><ChevronDown size={14} />
+      <Download size={18} /><span class="tb-btn__label">{i18n.t("toolbar.export")}</span><ChevronDown size={14} />
     </button>
     {#if exportMenuOpen}
       <div class="toolbar__dropdown toolbar__dropdown--right">
@@ -362,7 +362,7 @@
 {#if saveOpen}
   {@const d = deriveDefaults()}
   <SaveQueryModal
-    defaultName={saveAsMode ? `Copy of ${d.name}` : d.name}
+    defaultName={saveAsMode ? `${i18n.t("saved.copyPrefix")} ${d.name}` : d.name}
     defaultFolder={d.folder}
     folders={repository.folders}
     open={saveOpen}
@@ -399,10 +399,10 @@
 />
 
 <ConfirmModal
-  title="Discard unsaved changes?"
-  message="Starting a new query will discard your unsaved work."
-  confirmLabel="Discard"
-  cancelLabel="Keep editing"
+  title={i18n.t("modal.discard.title")}
+  message={i18n.t("modal.discard.message")}
+  confirmLabel={i18n.t("modal.discard.confirm")}
+  cancelLabel={i18n.t("modal.discard.cancel")}
   variant="danger"
   open={confirmNewOpen}
   onConfirm={() => { confirmNewOpen = false; resetQuery(); }}
@@ -410,7 +410,7 @@
 />
 
 <WarningModal
-  title="Not yet wired"
+  title={i18n.t("modal.warning.title")}
   message={warningMessage}
   open={warningOpen}
   onClose={() => (warningOpen = false)}

@@ -1,6 +1,7 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
   import type { SaikuMeasure } from "$lib/api/discover";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/MeasuresModal.js. */
   interface Props {
@@ -33,22 +34,22 @@
   }
 </script>
 
-<Modal title="Measures" {open} size="md" onClose={onCancel}>
-  <input class="field__input" placeholder="Filter measures" bind:value={search} />
+<Modal title={i18n.t("panels.measures")} {open} size="md" onClose={onCancel}>
+  <input class="field__input" placeholder={i18n.t("modal.calc.filterMeasures")} bind:value={search} />
   <ul class="list">
     {#each filtered as m}
       <li>
         <label>
           <input type="checkbox" checked={picks.has(m.uniqueName)} onchange={() => toggle(m.uniqueName)} />
           <span class="name">{m.caption || m.name}</span>
-          {#if m.calculated}<span class="badge">calc</span>{/if}
+          {#if m.calculated}<span class="badge">{i18n.t("modal.measures.calcBadge")}</span>{/if}
         </label>
       </li>
     {/each}
   </ul>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>Cancel</button>
-    <button type="button" class="btn btn--primary" onclick={() => onSave(Array.from(picks))}>Save</button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
+    <button type="button" class="btn btn--primary" onclick={() => onSave(Array.from(picks))}>{i18n.t("modal.save")}</button>
   {/snippet}
 </Modal>
 

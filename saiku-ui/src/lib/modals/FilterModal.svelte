@@ -44,10 +44,10 @@
   });
 </script>
 
-<Modal title={`Custom ${expressionType} for ${axis}`} {open} size="lg" onClose={onCancel}>
+<Modal title={`${i18n.t("modal.filter.custom")} ${expressionType} ${i18n.t("modal.filter.for")} ${axis}`} {open} size="lg" onClose={onCancel}>
   {#if expressionType === "Order"}
     <label class="field">
-      <span class="field__label">Sort</span>
+      <span class="field__label">{i18n.t("modal.filter.sort")}</span>
       <select class="field__input" bind:value={sort}>
         {#each SORT_FUNCTIONS as fn}
           <option value={fn}>{fn}</option>
@@ -56,7 +56,7 @@
     </label>
   {/if}
   <div class="field">
-    <span class="field__label">{expressionType} MDX expression</span>
+    <span class="field__label">{expressionType} {i18n.t("modal.filter.mdxExpression")}</span>
     {#if open}
       <MonacoEditor value={buffer} language="mdx" minHeight="220px" onChange={(v) => (buffer = v)} />
     {/if}

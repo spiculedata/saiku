@@ -98,8 +98,8 @@
   </aside>
   <section class="workspace__main">
     <div class="tabset">
-      <div class="tab tab--active">Unsaved query</div>
-      <button type="button" class="tab tab--new" aria-label="New query">+</button>
+      <div class="tab tab--active">{i18n.t("workspace.unsavedQuery")}</div>
+      <button type="button" class="tab tab--new" aria-label={i18n.t("toast.newQuery")}>+</button>
     </div>
     <WorkspaceToolbar />
     <QueryCanvas />

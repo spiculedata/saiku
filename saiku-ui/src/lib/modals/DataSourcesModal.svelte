@@ -1,6 +1,7 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
   import { datasources } from "$lib/stores/datasources.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/DataSourcesModal.js. */
   interface Props {
@@ -16,19 +17,19 @@
   }
 </script>
 
-<Modal title="Datasources" {open} size="lg" {onClose}>
+<Modal title={i18n.t("modal.datasources.title")} {open} size="lg" {onClose}>
   <div class="bar">
     <button type="button" class="btn" onclick={refresh} disabled={datasources.loading}>
-      ⟳ Refresh
+      ⟳ {i18n.t("admin.refresh")}
     </button>
   </div>
   {#if datasources.connections.length === 0}
-    <p class="hint">No connections available.</p>
+    <p class="hint">{i18n.t("modal.datasources.empty")}</p>
   {:else}
     <table class="grid">
       <thead>
         <tr>
-          <th>Connection</th><th>Catalog</th><th>Schema</th><th>Cube</th>
+          <th>{i18n.t("modal.datasources.col.connection")}</th><th>{i18n.t("modal.datasources.col.catalog")}</th><th>{i18n.t("modal.datasources.col.schema")}</th><th>{i18n.t("modal.datasources.col.cube")}</th>
         </tr>
       </thead>
       <tbody>
@@ -39,7 +40,7 @@
                 <tr>
                   <td>{c.name}</td>
                   <td>{cat.name}</td>
-                  <td>{sch.name || "(default)"}</td>
+                  <td>{sch.name || i18n.t("modal.datasources.defaultSchema")}</td>
                   <td>{cube.caption || cube.name}</td>
                 </tr>
               {/each}
@@ -50,7 +51,7 @@
     </table>
   {/if}
   {#snippet footer()}
-    <button type="button" class="btn btn--primary" onclick={onClose}>Close</button>
+    <button type="button" class="btn btn--primary" onclick={onClose}>{i18n.t("modal.close")}</button>
   {/snippet}
 </Modal>
 

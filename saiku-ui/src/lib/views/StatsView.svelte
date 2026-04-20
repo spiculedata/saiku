@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { QueryResult } from "$lib/api/query";
   import { parseCellset, toNumber } from "$lib/views/cellsetUtils";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   interface Props { result: QueryResult }
   let { result }: Props = $props();
@@ -44,19 +45,19 @@
 {#if result.error}
   <p class="callout callout--danger">{result.error}</p>
 {:else if !result.cellset || result.cellset.length === 0}
-  <p class="empty">No rows returned.</p>
+  <p class="empty">{i18n.t("cellset.noRows")}</p>
 {:else}
   <div class="stats-wrap">
     <table class="stats">
       <thead>
         <tr>
-          <th>Column</th>
-          <th>Count</th>
-          <th>Min</th>
-          <th>Max</th>
-          <th>Sum</th>
-          <th>Average</th>
-          <th>Std dev</th>
+          <th>{i18n.t("stats.col.column")}</th>
+          <th>{i18n.t("stats.count")}</th>
+          <th>{i18n.t("stats.min")}</th>
+          <th>{i18n.t("stats.max")}</th>
+          <th>{i18n.t("stats.sum")}</th>
+          <th>{i18n.t("stats.average")}</th>
+          <th>{i18n.t("stats.stdDev")}</th>
         </tr>
       </thead>
       <tbody>

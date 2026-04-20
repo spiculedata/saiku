@@ -28,13 +28,9 @@
   let chartEditorOpen = $state(false);
   let moreViewOpen = $state(false);
   const moreViewModes: ViewMode[] = ["stats", "sparkline", "sparkbar"];
-  const moreViewLabels: Record<ViewMode, string> = {
-    grid: "Grid",
-    chart: "Chart",
-    stats: "Stats",
-    sparkline: "Sparkline",
-    sparkbar: "Sparkbar",
-  };
+  function viewModeLabel(m: ViewMode): string {
+    return i18n.t(`canvas.view.${m}`);
+  }
   function isMoreMode(m: ViewMode): boolean {
     return (moreViewModes as ViewMode[]).includes(m);
   }
@@ -94,11 +90,11 @@
       measure: m,
       hierarchy: null,
       items: [
-        { id: "filter", label: "Filter by value…" },
-        { id: "format-pct", label: "Format as percentage…" },
-        { id: "growth", label: "Growth calculation…" },
+        { id: "filter", label: i18n.t("canvas.menu.filterValue") },
+        { id: "format-pct", label: i18n.t("canvas.menu.formatPercent") },
+        { id: "growth", label: i18n.t("canvas.menu.growthCalc") },
         { id: "_sep", sep: true, label: "" },
-        { id: "remove", label: "Remove measure", danger: true },
+        { id: "remove", label: i18n.t("canvas.menu.removeMeasure"), danger: true },
       ],
     };
   }
@@ -112,9 +108,9 @@
       kind: "hierarchy",
       axis, measure: null, hierarchy: h,
       items: [
-        { id: "selections", label: "Edit selections…" },
+        { id: "selections", label: i18n.t("canvas.menu.editSelections") },
         { id: "_sep", sep: true, label: "" },
-        { id: "remove", label: "Remove hierarchy", danger: true },
+        { id: "remove", label: i18n.t("canvas.menu.removeHierarchy"), danger: true },
       ],
     };
   }
@@ -128,11 +124,11 @@
       kind: "axis",
       axis, measure: null, hierarchy: null,
       items: [
-        { id: "filter-order", label: "Order (custom MDX)…" },
-        { id: "filter-filter", label: "Filter (custom MDX)…" },
-        { id: "filter-top", label: "Top count…" },
-        { id: "filter-bot", label: "Bottom count…" },
-        { id: "filter-limit", label: "Limit…" },
+        { id: "filter-order", label: i18n.t("canvas.menu.orderMdx") },
+        { id: "filter-filter", label: i18n.t("canvas.menu.filterMdx") },
+        { id: "filter-top", label: i18n.t("canvas.menu.topCount") },
+        { id: "filter-bot", label: i18n.t("canvas.menu.bottomCount") },
+        { id: "filter-limit", label: i18n.t("canvas.menu.limit") },
       ],
     };
   }
@@ -216,7 +212,7 @@
     if (!m || !query.current?.queryModel) return;
     const set = rowsAxisSet();
     if (!set) {
-      toasts.warning("Drop a hierarchy on ROWS first", "Filter-by-value needs an existing ROWS axis to constrain.");
+      toasts.warning(i18n.t("toast.dropRowsFirst"), i18n.t("toast.dropRowsFirst.body"));
       return;
     }
     let expr: string;
@@ -224,7 +220,7 @@
     else if (op === "NOT BETWEEN") expr = `NOT (${m.uniqueName} >= ${value} AND ${m.uniqueName} <= ${value2})`;
     else expr = `${m.uniqueName} ${op} ${value}`;
     query.current.queryModel.axes.ROWS.mdx = `FILTER(${set}, ${expr})`;
-    toasts.success("Filter applied", `${m.caption} ${op} ${value}`);
+    toasts.success(i18n.t("toast.filterApplied"), `${m.caption} ${op} ${value}`);
     void query.run();
   }
 
@@ -236,11 +232,11 @@
     let denomTuple: string;
     if (base === "ROWS") {
       const p = primaryRowsHier();
-      if (!p) { toasts.warning("No ROWS hierarchy", "Drop a hierarchy onto ROWS before using percent-of-row-total."); return; }
+      if (!p) { toasts.warning(i18n.t("toast.noRowsHier"), i18n.t("toast.noRowsHier.pct")); return; }
       denomTuple = `([Measures].[${t.measure.name}], ${p.hier}.CurrentMember.Parent)`;
     } else if (base === "COLUMNS") {
       const c = primaryColumnsHier();
-      if (!c) { toasts.warning("No COLUMNS hierarchy", "Drop a hierarchy onto COLUMNS before using percent-of-column-total."); return; }
+      if (!c) { toasts.warning(i18n.t("toast.noColsHier"), i18n.t("toast.noColsHier.pct")); return; }
       denomTuple = `([Measures].[${t.measure.name}], ${c}.CurrentMember.Parent)`;
     } else {
       denomTuple = `([Measures].[${t.measure.name}])`;
@@ -252,7 +248,7 @@
     next.push({ name: calcName, formula, properties: { FORMAT_STRING: "0.00%", SOLVE_ORDER: "200" } });
     query.current.queryModel.calculatedMeasures = next;
     query.addMeasure({ name: calcName, uniqueName: `[Measures].[${calcName}]`, caption: calcName, type: "CALCULATED" });
-    toasts.success("Formatted as %", calcName);
+    toasts.success(i18n.t("toast.formatPct"), calcName);
   }
 
   function onGrowthApply(basis: string, ref?: string) {
@@ -260,13 +256,13 @@
     const m = growthTarget;
     if (!m || !query.current?.queryModel) return;
     const p = primaryRowsHier();
-    if (!p) { toasts.warning("No ROWS hierarchy", "Growth needs a hierarchy on ROWS to reference a previous/first member."); return; }
+    if (!p) { toasts.warning(i18n.t("toast.noRowsHier"), i18n.t("toast.noRowsHier.growth")); return; }
     const calcName = `${m.name} growth`;
     let prev: string;
     if (basis === "previous") prev = `(${m.uniqueName}, ${p.hier}.CurrentMember.PrevMember)`;
     else if (basis === "first") prev = `(${m.uniqueName}, ${p.hier}.CurrentMember.FirstSibling)`;
     else if (basis === "specific" && ref) prev = `(${m.uniqueName}, ${ref})`;
-    else { toasts.warning("Reference missing", "Provide a member unique name for the 'specific' basis."); return; }
+    else { toasts.warning(i18n.t("toast.refMissing"), i18n.t("toast.refMissing.body")); return; }
     const formula = `IIF(${prev} = 0, null, (${m.uniqueName} - ${prev}) / ${prev})`;
     const next = (query.current.queryModel.calculatedMeasures ?? []).filter(
       (x) => (x as { name?: string }).name !== calcName,
@@ -274,7 +270,7 @@
     next.push({ name: calcName, formula, properties: { FORMAT_STRING: "0.00%", SOLVE_ORDER: "300" } });
     query.current.queryModel.calculatedMeasures = next;
     query.addMeasure({ name: calcName, uniqueName: `[Measures].[${calcName}]`, caption: calcName, type: "CALCULATED" });
-    toasts.success("Growth calc added", calcName);
+    toasts.success(i18n.t("toast.growthAdded"), calcName);
   }
 
   function baseAxisSet(axisLoc: AxisLocation): string | null {
@@ -301,13 +297,13 @@
     if (t.type === "Order") {
       axis.sortOrder = sort ?? "ASC";
       axis.sortEvaluationLiteral = expression || null;
-      toasts.success("Sort applied", `${t.axis}: ${sort ?? "ASC"} by ${expression}`);
+      toasts.success(i18n.t("toast.sortApplied"), `${t.axis}: ${sort ?? "ASC"} by ${expression}`);
       void query.run();
       return;
     }
     const base = baseAxisSet(t.axis);
     if (!base) {
-      toasts.warning(`${t.axis} is empty`, `Drop a hierarchy onto ${t.axis} before applying an axis MDX expression.`);
+      toasts.warning(`${t.axis} ${i18n.t("toast.axisEmpty")}`, i18n.t("toast.axisEmpty.body").replace("{axis}", t.axis));
       return;
     }
     if (t.type === "TopCount" || t.type === "BottomCount") {
@@ -318,7 +314,7 @@
     } else {
       axis.mdx = `FILTER(${base}, ${expression})`;
     }
-    toasts.success("Axis expression applied", `${t.type} on ${t.axis}`);
+    toasts.success(i18n.t("toast.axisExprApplied"), `${t.type} on ${t.axis}`);
     void query.run();
   }
 
@@ -335,7 +331,7 @@
     COLUMNS: i18n.t("canvas.columns"),
     ROWS: i18n.t("canvas.rows"),
     FILTER: i18n.t("canvas.filter"),
-    PAGES: "Pages",
+    PAGES: i18n.t("canvas.pages"),
   });
 
   $effect(() => {
@@ -529,7 +525,7 @@
         );
       } catch (err2) {
         toasts.danger(
-          "Could not load members",
+          i18n.t("toast.loadMembersFailed"),
           err2 instanceof Error ? err2.message : String(err2),
         );
       }
@@ -597,7 +593,7 @@
       });
     } catch (err) {
       drillResultOpen = false;
-      toasts.danger("Drillthrough failed", err instanceof Error ? err.message : String(err));
+      toasts.danger(i18n.t("toast.drillFailed"), err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -620,7 +616,7 @@
       type,
     );
     selectionsOpen = false;
-    toasts.success(i18n.t("toast.saved"), `${uniqueNames.length} selection(s) applied`);
+    toasts.success(i18n.t("toast.saved"), i18n.t("toast.selectionsApplied").replace("{n}", String(uniqueNames.length)));
     if (query.hasRunnableShape()) await query.run();
   }
 </script>
@@ -648,7 +644,7 @@
         >
           <header>
             <span>{axisLabels[axis]}</span>
-            <button type="button" class="dropzone__menu" title="Axis options" onclick={(e) => openAxisMenu(e, axis)}>
+            <button type="button" class="dropzone__menu" title={i18n.t("canvas.axisOptions")} onclick={(e) => openAxisMenu(e, axis)}>
               <MoreHorizontal size={14} />
             </button>
           </header>
@@ -664,14 +660,14 @@
                   ondrop={(e) => onChipDrop(e, "COLUMNS", { kind: "measure", uniqueName: m.uniqueName })}
                   oncontextmenu={(e) => openMeasureMenu(e, m)}
                 >
-                  <span class="chip__label" title="Right-click for options">
+                  <span class="chip__label" title={i18n.t("canvas.chip.rightClickHint")}>
                     Σ {m.caption || m.name}
                   </span>
                   <button
                     type="button"
                     class="chip__x"
-                    title="Remove measure"
-                    aria-label="Remove {m.caption || m.name}"
+                    title={i18n.t("canvas.menu.removeMeasure")}
+                    aria-label="{i18n.t('canvas.menu.removeMeasure')} {m.caption || m.name}"
                     onclick={() => removeMeasure(m.uniqueName)}
                   >×</button>
                 </span>
@@ -691,14 +687,14 @@
                   type="button"
                   class="chip__label"
                   onclick={() => openSelections(axis, h)}
-                  title="Edit selections"
+                  title={i18n.t("canvas.menu.editSelections")}
                 >
                   {hierChipLabel(h)}
                 </button>
                 <button
                   type="button"
                   class="chip__x"
-                  aria-label="Remove {h.caption || h.name}"
+                  aria-label="{i18n.t('canvas.menu.removeHierarchy')} {h.caption || h.name}"
                   onclick={() => removeHier(h.name)}
                 >×</button>
               </span>
@@ -715,7 +711,7 @@
       <div
         class={dragOverAxis === "FILTER" ? "dropzone dropzone--filter is-dragover" : "dropzone dropzone--filter"}
         role="region"
-        aria-label="Filter"
+        aria-label={i18n.t("canvas.filter")}
         ondragover={onDragOver}
         ondragenter={(e) => onDragEnterAxis("FILTER", e)}
         ondragleave={(e) => onDragLeaveAxis("FILTER", e)}
@@ -742,14 +738,14 @@
                 type="button"
                 class="chip__label"
                 onclick={() => openSelections("FILTER", h)}
-                title="Edit selections"
+                title={i18n.t("canvas.menu.editSelections")}
               >
                 {hierChipLabel(h)}
               </button>
               <button
                 type="button"
                 class="chip__x"
-                aria-label="Remove {h.caption || h.name}"
+                aria-label="{i18n.t('canvas.menu.removeHierarchy')} {h.caption || h.name}"
                 onclick={() => removeHier(h.name)}
               >×</button>
             </span>
@@ -761,7 +757,7 @@
       </div>
     </aside>
     <div class="canvas__result">
-    <div class="view-toggle" role="tablist" aria-label="Result view">
+    <div class="view-toggle" role="tablist" aria-label={i18n.t("canvas.resultView")}>
       <button type="button" role="tab" class:active={query.viewMode === "grid"} onclick={() => (query.viewMode = "grid")}>
         {i18n.t("canvas.view.grid")}
       </button>
@@ -774,9 +770,9 @@
           role="tab"
           class:active={isMoreMode(query.viewMode)}
           onclick={() => (moreViewOpen = !moreViewOpen)}
-          title="Other views"
+          title={i18n.t("canvas.view.other")}
         >
-          <span>{isMoreMode(query.viewMode) ? moreViewLabels[query.viewMode] : "More"}</span>
+          <span>{isMoreMode(query.viewMode) ? viewModeLabel(query.viewMode) : i18n.t("canvas.view.more")}</span>
           <ChevronDown size={14} />
         </button>
         {#if moreViewOpen}
@@ -788,7 +784,7 @@
                 class:active={query.viewMode === m}
                 onclick={() => pickMoreMode(m)}
               >
-                {moreViewLabels[m]}
+                {viewModeLabel(m)}
               </button>
             {/each}
           </div>
@@ -796,7 +792,7 @@
       </div>
       {#if query.viewMode === "chart"}
         <label class="chart-pick">
-          <span class="sr-only">Chart type</span>
+          <span class="sr-only">{i18n.t("canvas.chartType")}</span>
           <select bind:value={query.chartType}>
             {#each chartGroups() as group}
               <optgroup label={group.name}>
@@ -807,16 +803,16 @@
             {/each}
           </select>
         </label>
-        <button type="button" class="chart-edit" title="Chart editor" onclick={() => (chartEditorOpen = true)}>⚙</button>
+        <button type="button" class="chart-edit" title={i18n.t("modal.chart.title")} onclick={() => (chartEditorOpen = true)}>⚙</button>
       {/if}
     </div>
     {#if query.running}
       <div class="run-progress" role="status" aria-live="polite">
         <Loader2 class="spin" size={14} />
-        <span>Running… ({(query.runningElapsedMs / 1000).toFixed(1)}s)</span>
-        <button class="tb-btn tb-btn--ghost tb-btn--sm" onclick={() => query.cancel()} title="Cancel query">
+        <span>{i18n.t("canvas.running.short")} ({(query.runningElapsedMs / 1000).toFixed(1)}s)</span>
+        <button class="tb-btn tb-btn--ghost tb-btn--sm" onclick={() => query.cancel()} title={i18n.t("canvas.cancelQuery")}>
           <XCircle size={14} />
-          <span>Cancel</span>
+          <span>{i18n.t("modal.cancel")}</span>
         </button>
       </div>
     {/if}
@@ -856,14 +852,14 @@
     onSave={onSelectionsSave}
     onOpenDateFilter={() => {
       selectionsOpen = false;
-      toasts.info("Date filter", "Date filter modal wiring ships in a later slice.");
+      toasts.info(i18n.t("toast.dateFilter"), i18n.t("toast.dateFilter.body"));
     }}
     onCancel={() => (selectionsOpen = false)}
   />
 {/if}
 
 {#if selectionsLoading && selectionsOpen}
-  <p class="callout">Loading members…</p>
+  <p class="callout">{i18n.t("canvas.loadingMembers")}</p>
 {/if}
 
 <DrillthroughModal

@@ -103,45 +103,45 @@
   }
 </script>
 
-<Modal title="Calculated Measure" {open} size="lg" onClose={onCancel}>
+<Modal title={i18n.t("modal.calc.title")} {open} size="lg" onClose={onCancel}>
   <div class="wizard">
     <div class="wizard__left">
       <label class="field">
-        <span class="field__label">Name</span>
+        <span class="field__label">{i18n.t("modal.calc.name")}</span>
         <input
           class="field__input"
           bind:value={form.name}
-          placeholder="e.g. Gross Margin"
+          placeholder={i18n.t("modal.calc.namePlaceholder")}
           aria-invalid={form.name.trim().length > 0 && !validName}
         />
         {#if form.name.trim().length > 0 && !validName}
-          <span class="field__error">Use letters, digits, spaces, - or _ (must start with a letter)</span>
+          <span class="field__error">{i18n.t("modal.calc.nameError")}</span>
         {/if}
       </label>
 
       <label class="field">
-        <span class="field__label">Parent hierarchy</span>
+        <span class="field__label">{i18n.t("modal.calc.parentHierarchy")}</span>
         <select class="field__input" bind:value={form.parent}>
           {#each hierarchyOptions() as h}
             <option value={h}>{h}</option>
           {/each}
         </select>
-        <span class="field__hint">Most calculated measures belong to [Measures].</span>
+        <span class="field__hint">{i18n.t("modal.calc.parentHint")}</span>
       </label>
 
       <label class="field">
-        <span class="field__label">Formula (MDX)</span>
+        <span class="field__label">{i18n.t("modal.calc.formula")}</span>
         <textarea
           class="field__input formula"
           rows="6"
           bind:value={form.formula}
           bind:this={textarea}
-          placeholder="e.g. [Measures].[Store Sales] - [Measures].[Store Cost]"
+          placeholder={i18n.t("modal.calc.formulaPlaceholder")}
         ></textarea>
       </label>
 
       <label class="field">
-        <span class="field__label">Format string</span>
+        <span class="field__label">{i18n.t("modal.calc.formatString")}</span>
         <div class="format-row">
           <input class="field__input" bind:value={form.formatString} />
           <select
@@ -152,7 +152,7 @@
             }}
             value=""
           >
-            <option value="">Presets…</option>
+            <option value="">{i18n.t("modal.calc.presets")}</option>
             {#each FORMAT_PRESETS as p}
               <option value={p.value}>{p.label} ({p.value})</option>
             {/each}
@@ -161,7 +161,7 @@
       </label>
 
       <div class="preview">
-        <div class="preview__label">MDX preview</div>
+        <div class="preview__label">{i18n.t("modal.calc.mdxPreview")}</div>
         <pre>WITH MEMBER {form.parent}.[{form.name.trim() || "…"}] AS '{form.formula.trim() || "…"}',
   FORMAT_STRING = '{form.formatString}', SOLVE_ORDER = 200
 SELECT …</pre>
@@ -170,11 +170,11 @@ SELECT …</pre>
 
     <div class="wizard__right">
       <div class="palette">
-        <div class="palette__title">Measures</div>
+        <div class="palette__title">{i18n.t("panels.measures")}</div>
         <input
           class="field__input palette__filter"
           bind:value={measureFilter}
-          placeholder="Filter measures"
+          placeholder={i18n.t("modal.calc.filterMeasures")}
         />
         <ul class="palette__list">
           {#each filteredMeasures as m}
@@ -188,13 +188,13 @@ SELECT …</pre>
             </li>
           {/each}
           {#if filteredMeasures.length === 0}
-            <li class="palette__empty">No measures</li>
+            <li class="palette__empty">{i18n.t("panels.noMeasures")}</li>
           {/if}
         </ul>
       </div>
 
       <div class="palette">
-        <div class="palette__title">Operators</div>
+        <div class="palette__title">{i18n.t("modal.calc.operators")}</div>
         <div class="palette__grid">
           {#each OPERATORS as op}
             <button type="button" class="palette__chip" onclick={() => insertAtCursor(` ${op} `)}>{op}</button>
@@ -203,7 +203,7 @@ SELECT …</pre>
       </div>
 
       <div class="palette">
-        <div class="palette__title">Functions</div>
+        <div class="palette__title">{i18n.t("modal.calc.functions")}</div>
         <ul class="palette__list">
           {#each FUNCTION_TEMPLATES as fn}
             <li>

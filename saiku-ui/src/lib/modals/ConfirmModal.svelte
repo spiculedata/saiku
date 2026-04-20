@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   interface Props {
     title: string;
@@ -15,8 +16,8 @@
   let {
     title,
     message,
-    confirmLabel = "Confirm",
-    cancelLabel = "Cancel",
+    confirmLabel = i18n.t("modal.confirm"),
+    cancelLabel = i18n.t("modal.cancel"),
     variant = "default",
     open,
     onConfirm,
