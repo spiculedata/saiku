@@ -37,15 +37,24 @@
     <bean id="schemaInferrer"
           class="org.saiku.service.schema.generate.infer.SchemaInferrer"/>
 
-    <bean id="noopProvider"
-          class="org.saiku.service.schema.generate.enrich.provider.NoopProvider"/>
+    <!-- Default (no overrides) produces a NoopProvider — mirrors production. -->
+    <bean id="llmProviderFactory"
+          class="org.saiku.service.schema.generate.enrich.provider.LlmProviderFactory">
+        <constructor-arg><null/></constructor-arg>
+        <constructor-arg><null/></constructor-arg>
+        <constructor-arg><null/></constructor-arg>
+    </bean>
+
+    <bean id="llmProvider"
+          factory-bean="llmProviderFactory"
+          factory-method="build"/>
 
     <bean id="piiFilter"
           class="org.saiku.service.schema.generate.enrich.PiiFilter"/>
 
     <bean id="llmEnricher"
           class="org.saiku.service.schema.generate.enrich.LlmEnricher">
-        <constructor-arg ref="noopProvider"/>
+        <constructor-arg ref="llmProvider"/>
         <constructor-arg ref="piiFilter"/>
         <constructor-arg value="2"/>
     </bean>

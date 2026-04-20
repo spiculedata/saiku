@@ -264,17 +264,28 @@
     <bean id="schemaInferrer"
           class="org.saiku.service.schema.generate.infer.SchemaInferrer"/>
 
-    <!-- Default LLM provider is the no-op. Swap to AnthropicProvider via a separate
-         override config when API credentials are wired. -->
-    <bean id="noopProvider"
-          class="org.saiku.service.schema.generate.enrich.provider.NoopProvider"/>
+    <!-- Schema-gen LLM provider: config-driven (saiku.schemagen.llm.provider in
+         saiku-beans.properties). Defaults to 'noop' (offline rule-based).
+         Flip to 'anthropic' and supply saiku.schemagen.llm.anthropic.apiKey
+         (or set the ANTHROPIC_API_KEY env var) to enable live enrichment.
+         Missing/invalid config falls back to NoopProvider with a WARN log. -->
+    <bean id="llmProviderFactory"
+          class="org.saiku.service.schema.generate.enrich.provider.LlmProviderFactory">
+        <constructor-arg value="${saiku.schemagen.llm.provider:noop}"/>
+        <constructor-arg value="${saiku.schemagen.llm.anthropic.apiKey:}"/>
+        <constructor-arg value="${saiku.schemagen.llm.anthropic.model:}"/>
+    </bean>
+
+    <bean id="llmProvider"
+          factory-bean="llmProviderFactory"
+          factory-method="build"/>
 
     <bean id="piiFilter"
           class="org.saiku.service.schema.generate.enrich.PiiFilter"/>
 
     <bean id="llmEnricher"
           class="org.saiku.service.schema.generate.enrich.LlmEnricher">
-        <constructor-arg ref="noopProvider"/>
+        <constructor-arg ref="llmProvider"/>
         <constructor-arg ref="piiFilter"/>
         <constructor-arg value="2"/>
     </bean>

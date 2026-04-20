@@ -14,6 +14,8 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 import org.saiku.service.schema.generate.apply.OpApplier;
 import org.saiku.service.schema.generate.enrich.LlmEnricher;
+import org.saiku.service.schema.generate.enrich.provider.LlmProvider;
+import org.saiku.service.schema.generate.enrich.provider.LlmProviderFactory;
 import org.saiku.service.schema.generate.enrich.provider.NoopProvider;
 import org.saiku.service.schema.generate.infer.SchemaInferrer;
 import org.saiku.service.schema.generate.introspect.JdbcIntrospector;
@@ -36,7 +38,14 @@ public class SchemaGenWiringSmokeTest {
             assertNotNull(ctx.getBean("schemaGenSessionStore", SchemaGenSessionStore.class));
             assertNotNull(ctx.getBean("jdbcIntrospector", JdbcIntrospector.class));
             assertNotNull(ctx.getBean("schemaInferrer", SchemaInferrer.class));
-            assertNotNull(ctx.getBean("noopProvider", NoopProvider.class));
+            // Factory-driven provider: default (no props) produces a NoopProvider.
+            assertNotNull(ctx.getBean("llmProviderFactory", LlmProviderFactory.class));
+            LlmProvider llmProvider = ctx.getBean("llmProvider", LlmProvider.class);
+            assertNotNull(llmProvider);
+            assertTrue(
+                    "default wiring should produce NoopProvider, got "
+                            + llmProvider.getClass().getName(),
+                    llmProvider instanceof NoopProvider);
             assertNotNull(ctx.getBean("llmEnricher", LlmEnricher.class));
             assertNotNull(ctx.getBean("opApplier", OpApplier.class));
             assertNotNull(ctx.getBean("mondrianSchemaWriter", MondrianSchemaWriter.class));
