@@ -159,7 +159,21 @@ public class AsyncQueryService {
                 }
                 log.debug("Async query {} failed: {}", id, root.toString());
             } else {
-                handle.compareAndSetStatus(AsyncQueryHandle.Status.RUNNING, AsyncQueryHandle.Status.DONE);
+                // Race window: cancel() may have flipped the handle to CANCELLED
+                // milliseconds before the query actually finished. In that case
+                // the successful CellSet is stranded — close it now rather than
+                // leaving it pinned until the sweeper evicts the handle.
+                if (handle.getStatus() == AsyncQueryHandle.Status.CANCELLED) {
+                    if (cellSet != null) {
+                        try {
+                            cellSet.close();
+                        } catch (Exception closeEx) {
+                            log.debug("Orphaned CellSet close for {} failed: {}", id, closeEx.toString());
+                        }
+                    }
+                } else {
+                    handle.compareAndSetStatus(AsyncQueryHandle.Status.RUNNING, AsyncQueryHandle.Status.DONE);
+                }
             }
         });
 
