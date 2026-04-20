@@ -13,6 +13,7 @@ import org.saiku.service.schema.generate.draft.DraftHierarchy;
 import org.saiku.service.schema.generate.draft.DraftLevel;
 import org.saiku.service.schema.generate.draft.DraftMeasure;
 import org.saiku.service.schema.generate.draft.DraftSchema;
+import org.saiku.service.schema.generate.enrich.ops.SuggestionOp;
 
 /**
  * Emits Mondrian 4 schema XML from a {@link DraftSchema} by building the Mondrian object graph and
@@ -57,6 +58,22 @@ public class MondrianSchemaWriter {
         MondrianDef.Schema mSchema = convert(draft);
         return mSchema.toXML();
     }
+
+    /**
+     * Emit both the Mondrian XML and the canonical {@code <schemaName>.generated.json} sidecar in
+     * one call — the production save path wants both atomically. The XML is identical to
+     * {@link #write(DraftSchema)}; the sidecar embeds the draft + op log via {@link
+     * GeneratedSidecarIo}.
+     */
+    public WriteResult writeWithSidecar(DraftSchema draft, List<SuggestionOp> opLog) {
+        String xml = write(draft);
+        GeneratedSidecar sidecar =
+                GeneratedSidecarIo.build(draft, opLog == null ? List.of() : opLog, draft.name(), null);
+        return new WriteResult(xml, GeneratedSidecarIo.write(sidecar));
+    }
+
+    /** Result pair: Mondrian schema XML + sidecar JSON. */
+    public record WriteResult(String xml, String sidecarJson) {}
 
     // --- conversion -------------------------------------------------------
 

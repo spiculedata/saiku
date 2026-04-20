@@ -14,6 +14,7 @@ import java.util.List;
 import org.junit.Test;
 import org.saiku.service.schema.generate.draft.DraftSchema;
 import org.saiku.service.schema.generate.model.DbModel;
+import org.saiku.service.schema.generate.writer.DraftSchemaJson;
 
 /**
  * Golden-file coverage for the rule-based inferrer. For each fixture JSON under
