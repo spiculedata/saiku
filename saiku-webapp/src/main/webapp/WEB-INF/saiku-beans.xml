@@ -236,5 +236,89 @@
 
     <bean id="startupBean" class="org.saiku.web.rest.util.StartupResource" init-method="init"/>
 
+    <!-- ==========================================================================
+         Schema-generation pipeline (C4 wiring)
+         Exposes POST/GET /rest/saiku/admin/schema-generator/* via Jersey auto-scan
+         (SaikuJerseyApplication registers any bean annotated with @Path).
+         Keep this block in sync with the smoke test in saiku-core/saiku-web:
+           src/test/resources/schemagen-wiring-test.xml
+         ========================================================================== -->
+
+    <bean id="schemaGenSessionStore"
+          class="org.saiku.service.schema.generate.session.SchemaGenSessionStore">
+        <constructor-arg>
+            <bean class="java.time.Duration" factory-method="ofMinutes">
+                <constructor-arg value="30"/>
+            </bean>
+        </constructor-arg>
+    </bean>
+
+    <bean id="jdbcIntrospectorOptions"
+          class="org.saiku.service.schema.generate.introspect.JdbcIntrospector$Options"/>
+
+    <bean id="jdbcIntrospector"
+          class="org.saiku.service.schema.generate.introspect.JdbcIntrospector">
+        <constructor-arg ref="jdbcIntrospectorOptions"/>
+    </bean>
+
+    <bean id="schemaInferrer"
+          class="org.saiku.service.schema.generate.infer.SchemaInferrer"/>
+
+    <!-- Default LLM provider is the no-op. Swap to AnthropicProvider via a separate
+         override config when API credentials are wired. -->
+    <bean id="noopProvider"
+          class="org.saiku.service.schema.generate.enrich.provider.NoopProvider"/>
+
+    <bean id="piiFilter"
+          class="org.saiku.service.schema.generate.enrich.PiiFilter"/>
+
+    <bean id="llmEnricher"
+          class="org.saiku.service.schema.generate.enrich.LlmEnricher">
+        <constructor-arg ref="noopProvider"/>
+        <constructor-arg ref="piiFilter"/>
+        <constructor-arg value="2"/>
+    </bean>
+
+    <bean id="schemaGenExecutor"
+          class="java.util.concurrent.Executors"
+          factory-method="newCachedThreadPool"
+          destroy-method="shutdownNow"/>
+
+    <bean id="schemaGenConnectionProvider"
+          class="org.saiku.web.rest.resources.schemagen.DatasourceJdbcConnectionProvider">
+        <constructor-arg ref="datasourceServiceBean"/>
+    </bean>
+
+    <bean id="schemaGenOrchestrator"
+          class="org.saiku.service.schema.generate.session.SchemaGenOrchestrator">
+        <constructor-arg ref="schemaGenSessionStore"/>
+        <constructor-arg ref="jdbcIntrospector"/>
+        <constructor-arg ref="schemaInferrer"/>
+        <constructor-arg ref="llmEnricher"/>
+        <constructor-arg ref="schemaGenExecutor"/>
+        <constructor-arg ref="schemaGenConnectionProvider"/>
+    </bean>
+
+    <bean id="mondrianSchemaWriter"
+          class="org.saiku.service.schema.generate.writer.MondrianSchemaWriter"/>
+
+    <bean id="opApplier"
+          class="org.saiku.service.schema.generate.apply.OpApplier"/>
+
+    <bean id="schemaSink"
+          class="org.saiku.web.rest.resources.schemagen.SchemaGeneratorResource"
+          factory-method="datasourceBackedSink">
+        <constructor-arg ref="datasourceServiceBean"/>
+    </bean>
+
+    <bean id="schemaGeneratorResource"
+          class="org.saiku.web.rest.resources.schemagen.SchemaGeneratorResource">
+        <constructor-arg ref="schemaGenSessionStore"/>
+        <constructor-arg ref="schemaGenOrchestrator"/>
+        <constructor-arg ref="opApplier"/>
+        <constructor-arg ref="mondrianSchemaWriter"/>
+        <constructor-arg ref="schemaSink"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
 
 </beans>
