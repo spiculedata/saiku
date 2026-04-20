@@ -12,8 +12,16 @@ import java.util.List;
  * <p>Pure value type.
  */
 public record DbTable(
-        String schema,
-        String name,
-        List<DbColumn> columns,
-        List<DbForeignKey> foreignKeys,
-        Long rowCountEstimate) {}
+        String schema, String name, List<DbColumn> columns, List<DbForeignKey> foreignKeys, Long rowCountEstimate) {
+
+    /**
+     * Defensive-copy compact constructor. Rejects {@code null} column and
+     * foreign-key lists with a clear {@link NullPointerException} and wraps
+     * them with {@link List#copyOf(java.util.Collection)} so the record is
+     * genuinely immutable after construction.
+     */
+    public DbTable {
+        columns = List.copyOf(columns);
+        foreignKeys = List.copyOf(foreignKeys);
+    }
+}

@@ -13,6 +13,16 @@ import java.util.Optional;
  */
 public record DbModel(List<DbTable> tables) {
 
+    /**
+     * Defensive-copy compact constructor. Rejects {@code null} tables with a
+     * clear {@link NullPointerException} and wraps the supplied list with
+     * {@link List#copyOf(java.util.Collection)} so the record is genuinely
+     * immutable after construction.
+     */
+    public DbModel {
+        tables = List.copyOf(tables);
+    }
+
     /** Factory mirror of the canonical constructor, for call-site readability. */
     public static DbModel of(List<DbTable> tables) {
         return new DbModel(tables);

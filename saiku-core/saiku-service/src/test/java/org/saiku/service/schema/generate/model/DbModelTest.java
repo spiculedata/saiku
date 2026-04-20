@@ -6,6 +6,7 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import java.sql.JDBCType;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -18,12 +19,7 @@ public class DbModelTest {
         DbColumn id = new DbColumn("id", JDBCType.INTEGER, false, true);
         DbColumn customerId = new DbColumn("customer_id", JDBCType.INTEGER, false, false);
         DbForeignKey fk = new DbForeignKey("customer_id", "customers", "id");
-        return new DbTable(
-                "public",
-                "orders",
-                Arrays.asList(id, customerId),
-                Collections.singletonList(fk),
-                1000L);
+        return new DbTable("public", "orders", Arrays.asList(id, customerId), Collections.singletonList(fk), 1000L);
     }
 
     @Test
@@ -80,6 +76,21 @@ public class DbModelTest {
         DbForeignKey fk1 = new DbForeignKey("customer_id", "customers", "id");
         DbForeignKey fk2 = new DbForeignKey("customer_id", "customers", "id");
         assertEquals(fk1, fk2);
+    }
+
+    @Test
+    public void mutatingInputListDoesNotAffectModel() {
+        List<DbTable> mutable = new ArrayList<>();
+        mutable.add(ordersTable());
+
+        DbModel model = DbModel.of(mutable);
+
+        // Mutate the original list after the model has been built.
+        mutable.clear();
+
+        // The model's view must remain unchanged (defensive copy).
+        assertEquals(1, model.tables().size());
+        assertTrue(model.tableByName("orders").isPresent());
     }
 
     @Test
