@@ -368,9 +368,21 @@
 
   function scrollFocusedIntoView(): void {
     if (!wrapperEl || !focused) return;
+    // When virtualising, the target row may not be in the DOM yet — compute
+    // the desired scrollTop directly based on the estimated row height so the
+    // focused row lands inside the viewport.
+    if (virtualize && rowH > 0) {
+      const targetTop = focused.r * rowH;
+      const vh = wrapperEl.clientHeight;
+      if (targetTop < wrapperEl.scrollTop) {
+        wrapperEl.scrollTop = Math.max(0, targetTop);
+      } else if (targetTop + rowH > wrapperEl.scrollTop + vh) {
+        wrapperEl.scrollTop = targetTop - vh + rowH;
+      }
+    }
     // Defer a tick so the DOM reflects the new focused class / row before we
-    // try to find the <td>. Svelte 5 reactive updates are sync enough that a
-    // queueMicrotask is usually sufficient.
+    // try to find the <td>. Then use scrollIntoView to handle horizontal
+    // scroll (and vertical when not virtualising).
     queueMicrotask(() => {
       if (!wrapperEl || !focused) return;
       const cell = wrapperEl.querySelector<HTMLTableCellElement>(
@@ -420,6 +432,62 @@
   function isFocused(r: number, c: number): boolean {
     return !!focused && focused.r === r && focused.c === c;
   }
+
+  // --- Row virtualization (windowing) ---
+  // Only kicks in for >500 rows; below that the DOM cost is negligible and
+  // not virtualizing keeps mouse-scroll smooth without the math overhead.
+  const VIRT_THRESHOLD = 500;
+  const OVERSCAN = 5;
+  const DEFAULT_ROW_H = 24; // tolerable estimate; replaced once we probe DOM.
+
+  let scrollTop = $state(0);
+  let viewportH = $state(0);
+  let rowH = $state(DEFAULT_ROW_H);
+
+  let virtualize = $derived(parsed.bodyRows.length > VIRT_THRESHOLD);
+
+  /** Compute the window of row indices to render. Includes an overscan on
+   *  each side and always includes the focused row even if off-window so
+   *  scrollIntoView from keyboard nav works. */
+  let renderWindow = $derived.by(() => {
+    const total = parsed.bodyRows.length;
+    if (!virtualize || total === 0 || rowH <= 0) {
+      return { first: 0, last: total - 1, topPad: 0, bottomPad: 0 };
+    }
+    const vh = viewportH || 400;
+    const rawFirst = Math.floor(scrollTop / rowH);
+    const visibleCount = Math.ceil(vh / rowH);
+    const first = Math.max(0, rawFirst - OVERSCAN);
+    const last = Math.min(total - 1, rawFirst + visibleCount + OVERSCAN);
+    const topPad = first * rowH;
+    const bottomPad = (total - 1 - last) * rowH;
+    return { first, last, topPad, bottomPad };
+  });
+
+  function onWrapperScroll(e: Event) {
+    const el = e.currentTarget as HTMLDivElement;
+    scrollTop = el.scrollTop;
+    viewportH = el.clientHeight;
+  }
+
+  /** Probe the first rendered body row to get its real height, once on mount
+   *  and whenever the cellset shape changes. Uniform-height assumption: we
+   *  treat every row as the same height as the first one — acceptable for
+   *  our grid, where only left-padding (depth-indent) varies. */
+  $effect(() => {
+    // re-run when the dataset changes shape
+    void parsed.bodyRows.length;
+    if (!wrapperEl) return;
+    queueMicrotask(() => {
+      if (!wrapperEl) return;
+      viewportH = wrapperEl.clientHeight;
+      const row = wrapperEl.querySelector<HTMLTableRowElement>("tbody tr.vrow");
+      if (row) {
+        const h = row.getBoundingClientRect().height;
+        if (h > 0) rowH = h;
+      }
+    });
+  });
 
   function selRect(): { r0: number; r1: number; c0: number; c1: number } | null {
     if (!sel.anchor || !sel.focus) return null;
@@ -522,6 +590,7 @@
     aria-rowcount={parsed.dataRows.length}
     aria-colcount={parsed.dataRows[0]?.length ?? 0}
     onkeydown={onGridKeydown}
+    onscroll={onWrapperScroll}
   >
     <table class="cellset">
       <thead>
@@ -550,8 +619,12 @@
         {/each}
       </thead>
       <tbody>
-        {#each parsed.bodyRows as rowCells, r}
-          <tr>
+        {#if renderWindow.topPad > 0}
+          <tr class="virt-spacer" aria-hidden="true"><td colspan={parsed.rowHeaderColCount + (parsed.dataRows[0]?.length ?? 0) + (spark !== "none" ? 1 : 0)} style="height: {renderWindow.topPad}px; padding: 0; border: 0;"></td></tr>
+        {/if}
+        {#each parsed.bodyRows.slice(renderWindow.first, renderWindow.last + 1) as rowCells, iOffset}
+          {@const r = renderWindow.first + iOffset}
+          <tr class="vrow">
             {#each rowCells as c, cIdx}
               {@const display = rowDisplay[r][cIdx]}
               {#if display.isNull}
@@ -598,6 +671,9 @@
             {/if}
           </tr>
         {/each}
+        {#if renderWindow.bottomPad > 0}
+          <tr class="virt-spacer" aria-hidden="true"><td colspan={parsed.rowHeaderColCount + (parsed.dataRows[0]?.length ?? 0) + (spark !== "none" ? 1 : 0)} style="height: {renderWindow.bottomPad}px; padding: 0; border: 0;"></td></tr>
+        {/if}
       </tbody>
     </table>
   </div>
@@ -749,6 +825,11 @@
   }
   .cellset td.data { cursor: cell; user-select: none; }
   .cellset td.data--selected { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+  .cellset tr.virt-spacer td {
+    background: transparent;
+    border: 0;
+    padding: 0;
+  }
   .cellset td.data--focused {
     box-shadow: inset 0 0 0 2px var(--accent);
     position: relative;
