@@ -359,6 +359,24 @@
     }
   }
 
+  let dragOverAxis = $state<AxisLocation | null>(null);
+  function onDragEnterAxis(axis: AxisLocation, e: DragEvent) {
+    if (e.dataTransfer?.types?.includes("application/x-saiku-level") ||
+        e.dataTransfer?.types?.includes("application/x-saiku-measure") ||
+        e.dataTransfer?.types?.includes("application/x-saiku-chip")) {
+      dragOverAxis = axis;
+    }
+  }
+  function onDragLeaveAxis(axis: AxisLocation, e: DragEvent) {
+    // Only clear if we truly left the dropzone (not just crossed into a child chip).
+    const related = e.relatedTarget as Node | null;
+    const zone = e.currentTarget as HTMLElement;
+    if (!related || !zone.contains(related)) {
+      if (dragOverAxis === axis) dragOverAxis = null;
+    }
+  }
+  function clearDragOver() { dragOverAxis = null; }
+
   function onDropAxis(axis: AxisLocation, e: DragEvent) {
     e.preventDefault();
     const chipPayload = e.dataTransfer?.getData("application/x-saiku-chip");
@@ -557,11 +575,13 @@
     <aside class="dropzones">
       {#each ["COLUMNS", "ROWS"] as const as axis}
         <div
-          class="dropzone"
+          class={dragOverAxis === axis ? "dropzone is-dragover" : "dropzone"}
           role="region"
           aria-label={axisLabels[axis]}
           ondragover={onDragOver}
-          ondrop={(e) => onDropAxis(axis, e)}
+          ondragenter={(e) => onDragEnterAxis(axis, e)}
+          ondragleave={(e) => onDragLeaveAxis(axis, e)}
+          ondrop={(e) => { clearDragOver(); onDropAxis(axis, e); }}
         >
           <header>
             <span>{axisLabels[axis]}</span>
@@ -624,11 +644,13 @@
         </div>
       {/each}
       <div
-        class="dropzone dropzone--filter"
+        class={dragOverAxis === "FILTER" ? "dropzone dropzone--filter is-dragover" : "dropzone dropzone--filter"}
         role="region"
         aria-label="Filter"
         ondragover={onDragOver}
-        ondrop={(e) => onDropAxis("FILTER", e)}
+        ondragenter={(e) => onDragEnterAxis("FILTER", e)}
+        ondragleave={(e) => onDragLeaveAxis("FILTER", e)}
+        ondrop={(e) => { clearDragOver(); onDropAxis("FILTER", e); }}
       >
         <header>
           <span>{axisLabels.FILTER}</span>
@@ -898,6 +920,13 @@
     background: var(--bg-muted);
   }
   .dropzone--filter { background: var(--bg-subtle); }
+  .dropzone.is-dragover {
+    border-style: solid;
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-muted));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .dropzone.is-dragover > * { pointer-events: none; }
   .dropzone header {
     display: flex;
     align-items: center;
