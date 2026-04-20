@@ -10,7 +10,6 @@ import {
   type ThinQuery,
 } from "$lib/api/query";
 import type { SaikuCube } from "$lib/api/discover";
-import { toasts } from "$lib/stores/toasts.svelte";
 import { registerPendingOp } from "$lib/api/http";
 import { DEFAULT_CHART_OPTIONS, type ChartOptions, type ChartType } from "$lib/views/chartTypes";
 
@@ -319,9 +318,11 @@ class QueryStore {
   async run(): Promise<void> {
     if (!this.current) return;
     if (!this.hasRunnableShape()) {
-      // Silently no-op with a gentle hint — old UI waited for the query to
-      // fill in rather than surfacing an ugly server error.
-      toasts.info("Add a measure to Columns first", "Drag a measure and a dimension onto the axes before running.");
+      // No measure + hierarchy yet — the canvas renders query.error inline,
+      // so we surface the hint there rather than as a toast (query-context
+      // problems belong in the result pane, not the notification corner).
+      this.error = "Add a measure to Columns and a level to Rows or Columns, then hit Run.";
+      this.result = null;
       return;
     }
     this.running = true;
@@ -367,8 +368,9 @@ class QueryStore {
           return this.run();
         });
       } else {
+        // Inline: the canvas renders `query.error` as a callout — no toast
+        // needed (would be redundant with the red banner on the result).
         this.result = { cellset: [], error: this.error } as QueryResult;
-        toasts.danger("Query failed", this.error);
       }
     } finally {
       this.running = false;
