@@ -186,10 +186,16 @@
         <property name="asyncQueryService" ref="asyncQueryServiceBean"/>
     </bean>
 
+    <!-- Tier-1 auth hardening: shared login rate-limiter.
+         5 failures per 15 minutes per client IP. Default: do NOT trust
+         X-Forwarded-For (set saiku.auth.trustForwardedFor=true only when
+         fronted by a proxy you control). -->
+    <bean id="loginRateLimiter" class="org.saiku.web.security.ratelimit.LoginRateLimiter"/>
+
     <bean id="sessionResource" class="org.saiku.web.rest.resources.SessionResource">
         <property name="sessionService" ref="sessionService"/>
         <property name="userService" ref="userServiceBean"/>
-
+        <property name="rateLimiter" ref="loginRateLimiter"/>
     </bean>
 
     <bean id="repository2bean" scope="request"

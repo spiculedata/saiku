@@ -26,6 +26,8 @@ import java.util.Map;
 import org.apache.commons.lang.StringUtils;
 import org.saiku.service.ISessionService;
 import org.saiku.service.user.UserService;
+import org.saiku.web.security.audit.AuditLogger;
+import org.saiku.web.security.ratelimit.LoginRateLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +41,7 @@ public class SessionResource {
 
     private ISessionService sessionService;
     private UserService userService;
+    private LoginRateLimiter rateLimiter = new LoginRateLimiter();
 
     public ISessionService getSessionService() {
         return sessionService;
@@ -50,6 +53,10 @@ public class SessionResource {
 
     public void setUserService(UserService us) {
         userService = us;
+    }
+
+    public void setRateLimiter(LoginRateLimiter rateLimiter) {
+        if (rateLimiter != null) this.rateLimiter = rateLimiter;
     }
 
     /**
@@ -66,13 +73,25 @@ public class SessionResource {
             @Context HttpServletRequest req,
             @FormParam("username") String username,
             @FormParam("password") String password) {
+        // Rate-limit BEFORE touching the auth manager so attackers can't hammer it.
+        if (rateLimiter.isBlocked(req)) {
+            AuditLogger.rateLimitTriggered(req, username);
+            return Response.status(429)
+                    .header("Retry-After", String.valueOf(rateLimiter.getWindowMs() / 1000))
+                    .entity("Too many failed login attempts. Try again later.")
+                    .build();
+        }
         try {
             sessionService.login(req, username, password);
+            rateLimiter.recordSuccess(req);
+            AuditLogger.loginSuccess(req, username);
             return Response.ok().build();
         } catch (Exception e) {
+            rateLimiter.recordFailure(req);
+            AuditLogger.loginFailure(req, username, e.getClass().getSimpleName());
             log.debug("Error logging in:" + username, e);
-            return Response.status(Status.INTERNAL_SERVER_ERROR)
-                    .entity(e.getLocalizedMessage())
+            return Response.status(Status.UNAUTHORIZED)
+                    .entity("Authentication failed")
                     .build();
         }
     }
@@ -152,7 +171,13 @@ public class SessionResource {
      */
     @DELETE
     public Response logout(@Context HttpServletRequest req) {
+        String username = null;
+        try {
+            Object u = sessionService.getSession().get("username");
+            if (u != null) username = u.toString();
+        } catch (Exception ignored) { /* no active session — fine */ }
         sessionService.logout(req);
+        AuditLogger.logout(req, username);
         //		NewCookie terminate = new NewCookie(TokenBasedRememberMeServices.SPRING_SECURITY_REMEMBER_ME_COOKIE_KEY,
         // null);
 
