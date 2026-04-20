@@ -360,6 +360,11 @@
   }
 
   let dragOverAxis = $state<AxisLocation | null>(null);
+  let dragOverChipKey = $state<string | null>(null);
+
+  function chipKey(axis: AxisLocation, kind: "hierarchy" | "measure", id: string): string {
+    return `${axis}::${kind}::${id}`;
+  }
   function onDragEnterAxis(axis: AxisLocation, e: DragEvent) {
     if (e.dataTransfer?.types?.includes("application/x-saiku-level") ||
         e.dataTransfer?.types?.includes("application/x-saiku-measure") ||
@@ -375,7 +380,15 @@
       if (dragOverAxis === axis) dragOverAxis = null;
     }
   }
-  function clearDragOver() { dragOverAxis = null; }
+  function clearDragOver() { dragOverAxis = null; dragOverChipKey = null; }
+
+  function onChipDragOver(e: DragEvent, axis: AxisLocation, kind: "hierarchy" | "measure", id: string) {
+    if (!e.dataTransfer?.types?.includes("application/x-saiku-chip")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragOverChipKey = chipKey(axis, kind, id);
+    dragOverAxis = null;
+  }
 
   function onDropAxis(axis: AxisLocation, e: DragEvent) {
     e.preventDefault();
@@ -623,10 +636,10 @@
             {#if axis === "COLUMNS" && query.current}
               {#each query.current.queryModel?.details.measures ?? [] as m}
                 <span
-                  class="chip chip--measure"
+                  class={dragOverChipKey === chipKey("COLUMNS", "measure", m.uniqueName) ? "chip chip--measure is-drop-before" : "chip chip--measure"}
                   draggable="true"
                   ondragstart={(e) => onMeasureChipDragStart(e, m)}
-                  ondragover={onDragOver}
+                  ondragover={(e) => onChipDragOver(e, "COLUMNS", "measure", m.uniqueName)}
                   ondrop={(e) => onChipDrop(e, "COLUMNS", { kind: "measure", uniqueName: m.uniqueName })}
                   oncontextmenu={(e) => openMeasureMenu(e, m)}
                 >
@@ -645,10 +658,10 @@
             {/if}
             {#each query.current?.queryModel?.axes[axis].hierarchies ?? [] as h}
               <span
-                class="chip chip--level"
+                class={dragOverChipKey === chipKey(axis, "hierarchy", h.name) ? "chip chip--level is-drop-before" : "chip chip--level"}
                 draggable="true"
                 ondragstart={(e) => onHierChipDragStart(e, axis, h)}
-                ondragover={onDragOver}
+                ondragover={(e) => onChipDragOver(e, axis, "hierarchy", h.name)}
                 ondrop={(e) => onChipDrop(e, axis, { kind: "hierarchy", name: h.name })}
                 oncontextmenu={(e) => openHierMenu(e, axis, h)}
               >
@@ -695,10 +708,10 @@
         <div class="chips">
           {#each query.current?.queryModel?.axes.FILTER.hierarchies ?? [] as h}
             <span
-              class="chip chip--level"
+              class={dragOverChipKey === chipKey("FILTER", "hierarchy", h.name) ? "chip chip--level is-drop-before" : "chip chip--level"}
               draggable="true"
               ondragstart={(e) => onHierChipDragStart(e, "FILTER", h)}
-              ondragover={onDragOver}
+              ondragover={(e) => onChipDragOver(e, "FILTER", "hierarchy", h.name)}
               ondrop={(e) => onChipDrop(e, "FILTER", { kind: "hierarchy", name: h.name })}
               oncontextmenu={(e) => openHierMenu(e, "FILTER", h)}
             >
@@ -1008,6 +1021,19 @@
   }
   .chip--measure { color: var(--accent); padding: 2px var(--space-2); cursor: pointer; }
   .chip:hover { background: var(--bg-subtle); }
+  .chip { position: relative; }
+  .chip.is-drop-before::before {
+    content: "";
+    position: absolute;
+    left: -5px;
+    top: -2px;
+    bottom: -2px;
+    width: 3px;
+    background: var(--accent);
+    border-radius: 2px;
+    box-shadow: 0 0 4px var(--accent);
+    pointer-events: none;
+  }
   .chip__label {
     background: transparent;
     color: inherit;

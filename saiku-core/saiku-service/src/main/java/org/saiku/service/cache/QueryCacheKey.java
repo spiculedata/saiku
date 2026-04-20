@@ -23,7 +23,6 @@ import org.saiku.olap.dto.SaikuCube;
 import org.saiku.olap.query2.ThinAxis;
 import org.saiku.olap.query2.ThinHierarchy;
 import org.saiku.olap.query2.ThinLevel;
-import org.saiku.olap.query2.ThinMeasure;
 import org.saiku.olap.query2.ThinMember;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.olap.query2.ThinQueryModel;
@@ -63,7 +62,11 @@ public final class QueryCacheKey {
             throw new IllegalArgumentException("query");
         }
         try {
-            sortInPlace(query);
+            // Deliberately do NOT sort measure or hierarchy lists: their order is
+            // part of the query (outer-to-inner axis nesting, measure column
+            // order). Member selection order is semantically a set — safe to
+            // sort, and we do that below inside sortMembersOnly().
+            sortMembersOnly(query);
             // Canonical JSON excludes client-only fields like `name` (random UUID),
             // `parameters` (resolved into MDX already), `plugins`, and `metadata`.
             CanonicalView view = new CanonicalView();
@@ -110,33 +113,28 @@ public final class QueryCacheKey {
         return s == null ? "" : s;
     }
 
-    private static void sortInPlace(ThinQuery q) {
+    /** Only sort member selections (semantically a set); leave measure and
+     *  hierarchy lists in their on-axis order. */
+    private static void sortMembersOnly(ThinQuery q) {
         ThinQueryModel model = q.getQueryModel();
         if (model == null) {
             return;
         }
-        if (model.getDetails() != null && model.getDetails().getMeasures() != null) {
-            List<ThinMeasure> measures = model.getDetails().getMeasures();
-            measures.sort(Comparator.comparing(m -> nullSafe(m.getUniqueName()).toLowerCase(Locale.ROOT)));
-        }
         Map<ThinQueryModel.AxisLocation, ThinAxis> axes = model.getAxes();
-        if (axes != null) {
-            for (ThinAxis axis : axes.values()) {
-                if (axis.getHierarchies() != null) {
-                    axis.getHierarchies().sort(Comparator.comparing(h -> nullSafe(h.getName())
-                            .toLowerCase(Locale.ROOT)));
-                    for (ThinHierarchy h : axis.getHierarchies()) {
-                        if (h.getLevels() != null) {
-                            for (ThinLevel level : h.getLevels().values()) {
-                                ThinSelection sel = level.getSelection();
-                                if (sel != null && sel.getMembers() != null) {
-                                    List<ThinMember> members = new ArrayList<>(sel.getMembers());
-                                    members.sort(Comparator.comparing(
-                                            mm -> nullSafe(mm.getUniqueName()).toLowerCase(Locale.ROOT)));
-                                    sel.setMembers(members);
-                                }
-                            }
-                        }
+        if (axes == null) {
+            return;
+        }
+        for (ThinAxis axis : axes.values()) {
+            if (axis.getHierarchies() == null) continue;
+            for (ThinHierarchy h : axis.getHierarchies()) {
+                if (h.getLevels() == null) continue;
+                for (ThinLevel level : h.getLevels().values()) {
+                    ThinSelection sel = level.getSelection();
+                    if (sel != null && sel.getMembers() != null) {
+                        List<ThinMember> members = new ArrayList<>(sel.getMembers());
+                        members.sort(Comparator.comparing(
+                                mm -> nullSafe(mm.getUniqueName()).toLowerCase(Locale.ROOT)));
+                        sel.setMembers(members);
                     }
                 }
             }
