@@ -62,9 +62,21 @@ public class MeasureBuilder {
                     new Provenance(Provenance.Source.RULE, "rule:measure-sum", 1.0)));
         }
 
+        // Fact Count. Mondrian 4 evaluates <Measure aggregator="count"/> with no column as a
+        // tuple-count (always 1 at the All level) rather than a SQL count(*), so we anchor the
+        // measure on the fact table's PK column when one exists. That makes the generated SQL
+        // "count(<pk>)" which is equivalent to count(*) for a non-null PK — this is also the
+        // convention used in the reference FoodMart schema (e.g. "Sales Count" on product_id).
+        String factCountColumn = null;
+        for (DbColumn c : factTable.columns()) {
+            if (c.primaryKey()) {
+                factCountColumn = c.name();
+                break;
+            }
+        }
         measures.add(new DraftMeasure(
                 "Fact Count",
-                null,
+                factCountColumn,
                 DraftMeasure.Aggregator.COUNT_STAR,
                 new Provenance(Provenance.Source.RULE, "rule:measure-fact-count", 1.0)));
 

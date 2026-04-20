@@ -85,6 +85,7 @@
       }
     }, {
       "aggregator" : "COUNT_STAR",
+      "column" : "id",
       "name" : "Fact Count",
       "provenance" : {
         "confidence" : 1.0,

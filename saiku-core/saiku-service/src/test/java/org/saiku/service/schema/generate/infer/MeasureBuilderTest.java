@@ -52,6 +52,8 @@ public class MeasureBuilderTest {
 
         DraftMeasure factCount = measures.get(1);
         assertEquals("Fact Count", factCount.name());
+        // Fact Count anchors on the fact PK when one exists; null when the fact has no PK.
+        // The "orders" fixture here has no declared PK → column is null.
         assertNull(factCount.column());
         assertEquals(DraftMeasure.Aggregator.COUNT_STAR, factCount.aggregator());
         assertNotNull(factCount.provenance());
@@ -74,7 +76,9 @@ public class MeasureBuilderTest {
         assertEquals(1, measures.size());
         DraftMeasure m = measures.get(0);
         assertEquals("Fact Count", m.name());
-        assertNull(m.column());
+        // Fact PK "id" becomes the anchor column for count — ensures Mondrian emits count(id)
+        // instead of evaluating at the tuple level.
+        assertEquals("id", m.column());
         assertEquals(DraftMeasure.Aggregator.COUNT_STAR, m.aggregator());
     }
 

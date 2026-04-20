@@ -150,9 +150,12 @@ public class MondrianSchemaWriter {
                 if (d.sourceTable() == null || d.foreignKey() == null) {
                     continue;
                 }
+                // Mondrian 4 Link semantics: source = table with the primary key (dim),
+                // target = table with the foreign key column (fact). Flipping these triggers
+                // "source table X of link has no key named 'primary'" at RolapSchemaLoader.
                 MondrianDef.Link link = new MondrianDef.Link();
-                link.source = cube.sourceFactTable();
-                link.target = d.sourceTable();
+                link.source = d.sourceTable();
+                link.target = cube.sourceFactTable();
                 MondrianDef.ForeignKey fk = new MondrianDef.ForeignKey();
                 fk.array = new MondrianDef.Column[] {new MondrianDef.Column(null, d.foreignKey())};
                 link.foreignKey = fk;
@@ -262,9 +265,20 @@ public class MondrianSchemaWriter {
         if (pk == null) {
             return null;
         }
-        // Build an attribute name from the column — capitalise so it reads like a member name.
-        char first = Character.toUpperCase(pk.charAt(0));
-        return first + pk.substring(1);
+        // Build an attribute name from the column. We need a name that is guaranteed not to
+        // collide with any level-derived attribute on the same dimension (levels use their
+        // level name as the attribute name). Mondrian's Dimension.findAttribute is
+        // case-insensitive, so "Id" vs "ID" still clashes — suffix deterministically.
+        String candidate = Character.toUpperCase(pk.charAt(0)) + pk.substring(1).toLowerCase();
+        String candidateLower = candidate.toLowerCase();
+        for (DraftHierarchy h : d.hierarchies()) {
+            for (DraftLevel l : h.levels()) {
+                if (l.name() != null && l.name().toLowerCase().equals(candidateLower)) {
+                    return candidate + "Key";
+                }
+            }
+        }
+        return candidate;
     }
 
     private String levelType(DraftLevel.Type t) {
@@ -317,7 +331,10 @@ public class MondrianSchemaWriter {
             MondrianDef.Measure mm = new MondrianDef.Measure();
             mm.name = m.name();
             mm.aggregator = aggregator(m.aggregator());
-            if (m.aggregator() != DraftMeasure.Aggregator.COUNT_STAR) {
+            // Always emit the column when we have one. For COUNT_STAR we prefer to anchor on the
+            // fact PK so Mondrian generates SQL "count(pk)" (≡ count(*) on a non-null PK) rather
+            // than evaluating at the tuple level — see MeasureBuilder.
+            if (m.column() != null) {
                 mm.column = m.column();
             }
             mList.add(mm);
