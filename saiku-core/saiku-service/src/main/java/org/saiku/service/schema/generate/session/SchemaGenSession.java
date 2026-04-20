@@ -50,6 +50,7 @@ public class SchemaGenSession {
     private SuggestionSet suggestions;
     private Stage stage;
     private Instant lastAccessedAt;
+    private String failureMessage;
 
     SchemaGenSession(String id, String dataSourceId, Clock clock) {
         this.id = Objects.requireNonNull(id, "id");
@@ -104,6 +105,18 @@ public class SchemaGenSession {
 
     public void setStage(Stage stage) {
         this.stage = Objects.requireNonNull(stage, "stage");
+    }
+
+    /**
+     * Human-readable error message set by the orchestrator when the pipeline transitions to
+     * {@link Stage#FAILED}. {@code null} in all non-failed states.
+     */
+    public String failureMessage() {
+        return failureMessage;
+    }
+
+    public void setFailureMessage(String failureMessage) {
+        this.failureMessage = failureMessage;
     }
 
     /** Mutable op log — applied suggestions + manual edits, in application order. */
