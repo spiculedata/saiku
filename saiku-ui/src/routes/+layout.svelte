@@ -32,9 +32,16 @@
         };
       }
     });
+    const onResumed = () => {
+      sessionError = { open: false, message: "" };
+    };
+    window.addEventListener("saiku-session-resumed", onResumed);
     session.bootstrap();
     platform.ping();
-    return () => unsub();
+    return () => {
+      unsub();
+      window.removeEventListener("saiku-session-resumed", onResumed);
+    };
   });
 
   $effect(() => {

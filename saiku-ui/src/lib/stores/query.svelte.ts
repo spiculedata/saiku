@@ -11,6 +11,7 @@ import {
 } from "$lib/api/query";
 import type { SaikuCube } from "$lib/api/discover";
 import { toasts } from "$lib/stores/toasts.svelte";
+import { registerPendingOp } from "$lib/api/http";
 import { DEFAULT_CHART_OPTIONS, type ChartOptions, type ChartType } from "$lib/views/chartTypes";
 
 export type ViewMode = "grid" | "chart" | "stats" | "sparkline" | "sparkbar";
@@ -55,6 +56,7 @@ class QueryStore {
 
   private abortController: AbortController | null = null;
   private elapsedTimer: ReturnType<typeof setInterval> | null = null;
+  private unregisterPendingOp: (() => void) | null = null;
 
   get async(): boolean {
     return this.#async;
@@ -353,8 +355,21 @@ class QueryStore {
       }
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
-      this.result = { cellset: [], error: this.error } as QueryResult;
-      toasts.danger("Query failed", this.error);
+      // If the failure was auth-related, register a replay thunk so the
+      // session modal can re-run this query after the user signs back in.
+      // We don't show the "Query failed" toast in that case — the modal
+      // already explains what happened.
+      if (isAuthError(this.error)) {
+        this.result = null;
+        this.unregisterPendingOp?.();
+        this.unregisterPendingOp = registerPendingOp(() => {
+          this.unregisterPendingOp = null;
+          return this.run();
+        });
+      } else {
+        this.result = { cellset: [], error: this.error } as QueryResult;
+        toasts.danger("Query failed", this.error);
+      }
     } finally {
       this.running = false;
       this.abortController = null;
@@ -377,6 +392,12 @@ class QueryStore {
     }
     this.abortController?.abort();
   }
+}
+
+/** Match the `execute 401:`, `execute-async 403:`, `status 401:`, `result 401:`
+ *  shapes thrown by the query API when credentials lapse. */
+function isAuthError(message: string): boolean {
+  return /\b(?:execute|execute-async|status|result)\s+40[13]\b/.test(message);
 }
 
 export const query = new QueryStore();
