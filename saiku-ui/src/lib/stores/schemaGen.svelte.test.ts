@@ -68,9 +68,7 @@ const DRAFT_A: DraftView = {
 };
 const DRAFT_B: DraftView = {
   schemaName: "Sales",
-  cubes: [
-    { name: "Orders", factTable: null, dimensions: [], measures: [] },
-  ],
+  cubes: [{ name: "Orders", factTable: null, dimensions: [], measures: [] }],
   sharedDimensions: [],
 };
 
@@ -94,7 +92,9 @@ function suggestionsWith(ops: SuggestionOp[]): SuggestionView {
   return { ops, degraded: false };
 }
 
-function startResp(stage: StatusResponse["stage"] = "INTROSPECTING"): StartResponse {
+function startResp(
+  stage: StatusResponse["stage"] = "INTROSPECTING",
+): StartResponse {
   return { sessionId: "sess-1", dataSourceId: "ds-1", stage };
 }
 
@@ -108,6 +108,8 @@ function statusResp(
     failureMessage: null,
     cubeCount: 0,
     suggestionCount: 0,
+    deltaNewCount: 0,
+    deltaRemovedCount: 0,
     ...extra,
   };
 }
@@ -240,6 +242,26 @@ describe("createSchemaGenStore", () => {
     store.rejectOp(OP_1);
     expect(store.suggestions?.ops).toEqual([OP_2]);
     expect(m.applyOp).not.toHaveBeenCalled();
+  });
+
+  it("surfaces delta counts from status polls (re-run mode)", async () => {
+    const m = mockClient();
+    m.start.mockResolvedValue(startResp("READY"));
+    m.status.mockResolvedValue(
+      statusResp("READY", { deltaNewCount: 2, deltaRemovedCount: 5 }),
+    );
+    m.draft.mockResolvedValue(DRAFT_A);
+    m.suggestions.mockResolvedValue(suggestionsWith([]));
+
+    const store = createSchemaGenStore(m.client, 500);
+    await store.start("ds-1");
+
+    expect(store.deltaNewCount).toBe(2);
+    expect(store.deltaRemovedCount).toBe(5);
+
+    store.stop();
+    expect(store.deltaNewCount).toBe(0);
+    expect(store.deltaRemovedCount).toBe(0);
   });
 
   it("stop() clears timers and resets state", async () => {

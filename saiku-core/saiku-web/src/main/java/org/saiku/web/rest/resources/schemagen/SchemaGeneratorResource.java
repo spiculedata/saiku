@@ -17,6 +17,7 @@ import jakarta.ws.rs.core.Response;
 import java.util.Optional;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.schema.generate.apply.OpApplier;
+import org.saiku.service.schema.generate.delta.DeltaReport;
 import org.saiku.service.schema.generate.draft.DraftSchema;
 import org.saiku.service.schema.generate.enrich.SuggestionSet;
 import org.saiku.service.schema.generate.session.SchemaGenOrchestrator;
@@ -136,7 +137,20 @@ public class SchemaGeneratorResource {
         int cubeCount = s.draft() == null ? 0 : s.draft().cubes().size();
         int suggestionCount =
                 s.suggestions() == null ? 0 : s.suggestions().ops().size();
-        return Response.ok(new StatusResponse(s.id(), s.stage().name(), s.failureMessage(), cubeCount, suggestionCount))
+        DeltaReport delta = s.deltaReport();
+        int deltaNewCount =
+                delta == null || delta.newPaths() == null ? 0 : delta.newPaths().size();
+        int deltaRemovedCount = delta == null || delta.removedUpstreamPaths() == null
+                ? 0
+                : delta.removedUpstreamPaths().size();
+        return Response.ok(new StatusResponse(
+                        s.id(),
+                        s.stage().name(),
+                        s.failureMessage(),
+                        cubeCount,
+                        suggestionCount,
+                        deltaNewCount,
+                        deltaRemovedCount))
                 .build();
     }
 

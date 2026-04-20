@@ -42,6 +42,10 @@ export interface SchemaGenStore {
   readonly failureMessage: string | null;
   readonly pendingOps: SuggestionOp[];
   readonly error: string | null;
+  /** Paths newly introduced upstream since the baseline sidecar. `0` on first-run. */
+  readonly deltaNewCount: number;
+  /** Paths present in baseline but absent from the fresh introspection. `0` on first-run. */
+  readonly deltaRemovedCount: number;
 
   start(dataSourceId: string): Promise<void>;
   applyOp(op: SuggestionOp): Promise<void>;
@@ -64,6 +68,8 @@ export function createSchemaGenStore(
     failureMessage = $state<string | null>(null);
     pendingOps = $state<SuggestionOp[]>([]);
     error = $state<string | null>(null);
+    deltaNewCount = $state<number>(0);
+    deltaRemovedCount = $state<number>(0);
   }
   const s = new State();
 
@@ -101,6 +107,8 @@ export function createSchemaGenStore(
       const previous = s.stage;
       s.stage = status.stage;
       s.failureMessage = status.failureMessage ?? null;
+      s.deltaNewCount = status.deltaNewCount ?? 0;
+      s.deltaRemovedCount = status.deltaRemovedCount ?? 0;
       if (status.stage !== previous) {
         await refreshViews(sessionId);
       }
@@ -130,6 +138,8 @@ export function createSchemaGenStore(
       const status = await client.status(sessionId);
       s.stage = status.stage;
       s.failureMessage = status.failureMessage ?? null;
+      s.deltaNewCount = status.deltaNewCount ?? 0;
+      s.deltaRemovedCount = status.deltaRemovedCount ?? 0;
     } catch (err) {
       s.error = errorMessage(err);
     }
@@ -204,6 +214,8 @@ export function createSchemaGenStore(
     s.failureMessage = null;
     s.pendingOps = [];
     s.error = null;
+    s.deltaNewCount = 0;
+    s.deltaRemovedCount = 0;
   }
 
   return {
@@ -227,6 +239,12 @@ export function createSchemaGenStore(
     },
     get error() {
       return s.error;
+    },
+    get deltaNewCount() {
+      return s.deltaNewCount;
+    },
+    get deltaRemovedCount() {
+      return s.deltaRemovedCount;
     },
     start,
     applyOp,

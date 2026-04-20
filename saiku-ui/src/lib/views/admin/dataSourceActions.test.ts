@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import {
   canGenerateSchema,
   generateSchemaHref,
+  generateSchemaLabel,
   type GenerateSchemaTarget,
 } from "./dataSourceActions";
 
@@ -34,6 +35,27 @@ describe("canGenerateSchema", () => {
   it("returns true when schemaName is an empty / whitespace string", () => {
     expect(canGenerateSchema({ id: "ds-1", schemaName: "" })).toBe(true);
     expect(canGenerateSchema({ id: "ds-1", schemaName: "   " })).toBe(true);
+  });
+});
+
+describe("generateSchemaLabel", () => {
+  it("returns 'Generate schema' when the data source has no schema", () => {
+    expect(generateSchemaLabel({ id: "ds-1" })).toBe("Generate schema");
+    expect(generateSchemaLabel({ id: "ds-1", schemaName: null })).toBe(
+      "Generate schema",
+    );
+    expect(generateSchemaLabel({ id: "ds-1", schemaName: "" })).toBe(
+      "Generate schema",
+    );
+    expect(generateSchemaLabel({ id: "ds-1", schemaName: "   " })).toBe(
+      "Generate schema",
+    );
+  });
+
+  it("returns 'Regenerate / check for drift' when a schema is attached", () => {
+    expect(generateSchemaLabel({ id: "ds-1", schemaName: "SteelWheels" })).toBe(
+      "Regenerate / check for drift",
+    );
   });
 });
 

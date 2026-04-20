@@ -32,6 +32,18 @@ export interface StatusResponse {
   failureMessage?: string | null;
   cubeCount: number;
   suggestionCount: number;
+  /**
+   * Number of paths the delta reconciler classified as newly introduced
+   * upstream (present in the fresh introspection, absent from the baseline
+   * sidecar). `0` on first-run or before reconciliation has completed.
+   */
+  deltaNewCount: number;
+  /**
+   * Number of paths present in the baseline sidecar but missing from the
+   * fresh introspection — i.e. upstream tables/columns that have been
+   * dropped since the last generation. `0` on first-run.
+   */
+  deltaRemovedCount: number;
 }
 
 /**
@@ -238,7 +250,9 @@ export function createSchemaGenClient(
       ) as Promise<StartResponse>;
     },
     status(sessionId) {
-      return getJson<StatusResponse>(`/${encodeURIComponent(sessionId)}/status`);
+      return getJson<StatusResponse>(
+        `/${encodeURIComponent(sessionId)}/status`,
+      );
     },
     draft(sessionId) {
       return getJson<DraftView>(`/${encodeURIComponent(sessionId)}/draft`);
@@ -249,10 +263,9 @@ export function createSchemaGenClient(
       );
     },
     applyOp(sessionId, op) {
-      return postJson<DraftView>(
-        `/${encodeURIComponent(sessionId)}/ops`,
-        { op },
-      ) as Promise<DraftView>;
+      return postJson<DraftView>(`/${encodeURIComponent(sessionId)}/ops`, {
+        op,
+      }) as Promise<DraftView>;
     },
     async save(sessionId, schemaName) {
       const body = schemaName !== undefined ? { schemaName } : {};

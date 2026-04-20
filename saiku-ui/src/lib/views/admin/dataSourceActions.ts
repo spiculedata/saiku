@@ -21,6 +21,22 @@ export function canGenerateSchema(ds: GenerateSchemaTarget): boolean {
   return name.trim().length === 0;
 }
 
-export function generateSchemaHref(ds: Pick<GenerateSchemaTarget, "id">): string {
+export function generateSchemaHref(
+  ds: Pick<GenerateSchemaTarget, "id">,
+): string {
   return `/admin/schema-generator/${encodeURIComponent(ds.id)}`;
+}
+
+/**
+ * Label for the schema-generator entry-point button.
+ *
+ * When the data source already has a Mondrian schema attached, the button
+ * enters re-run / drift-detection mode — the backend will reconcile the fresh
+ * introspection against the stored sidecar and the UI will surface any
+ * detected changes. Otherwise the button kicks off a first-run generation.
+ */
+export function generateSchemaLabel(ds: GenerateSchemaTarget): string {
+  return canGenerateSchema(ds)
+    ? "Generate schema"
+    : "Regenerate / check for drift";
 }

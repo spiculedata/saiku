@@ -59,6 +59,37 @@ export function stagePillColor(stage: Stage | null): PillColor {
   }
 }
 
+/**
+ * Shape the delta-banner helpers read. A structural subset of
+ * {@link import("$lib/api/schemaGen").StatusResponse} so callers can pass the
+ * store's counts directly or synthesise a value in tests.
+ */
+export interface DeltaCounts {
+  deltaNewCount: number;
+  deltaRemovedCount: number;
+}
+
+/**
+ * True when the delta reconciler detected any upstream changes — i.e. the UI
+ * should show the "Changes detected" banner. `null`/`undefined` means no
+ * delta info is available yet (first-run or still polling pre-READY).
+ */
+export function hasDeltaChanges(
+  status: DeltaCounts | null | undefined,
+): boolean {
+  if (status === null || status === undefined) return false;
+  return status.deltaNewCount > 0 || status.deltaRemovedCount > 0;
+}
+
+/**
+ * Format the delta banner copy. Callers should gate rendering on
+ * {@link hasDeltaChanges}; this helper returns the string unconditionally so
+ * the text is easy to snapshot.
+ */
+export function deltaBannerText(status: DeltaCounts): string {
+  return `Changes detected: ${status.deltaNewCount} new, ${status.deltaRemovedCount} removed upstream.`;
+}
+
 /** Human-readable label for the stage pill. */
 export function stageLabel(stage: Stage | null): string {
   if (stage === null) return "Idle";

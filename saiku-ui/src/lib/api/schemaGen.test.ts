@@ -82,7 +82,10 @@ describe("createSchemaGenClient", () => {
 
   it("start URL-encodes the data source id", async () => {
     fetcher.mockResolvedValueOnce(
-      jsonResponse({ sessionId: "s", dataSourceId: "a/b", stage: "PENDING" }, 202),
+      jsonResponse(
+        { sessionId: "s", dataSourceId: "a/b", stage: "PENDING" },
+        202,
+      ),
     );
     const client = createSchemaGenClient(fetcher as unknown as typeof fetch);
     await client.start("a/b");
@@ -96,6 +99,8 @@ describe("createSchemaGenClient", () => {
       failureMessage: null,
       cubeCount: 3,
       suggestionCount: 7,
+      deltaNewCount: 0,
+      deltaRemovedCount: 0,
     };
     fetcher.mockResolvedValueOnce(jsonResponse(expected));
 
@@ -185,7 +190,10 @@ describe("createSchemaGenClient", () => {
 
   it("throws a descriptive error on non-2xx responses", async () => {
     fetcher.mockResolvedValueOnce(
-      new Response("boom", { status: 500, statusText: "Internal Server Error" }),
+      new Response("boom", {
+        status: 500,
+        statusText: "Internal Server Error",
+      }),
     );
     const client = createSchemaGenClient(fetcher as unknown as typeof fetch);
     await expect(client.status("sess-1")).rejects.toThrow(/500/);
@@ -193,7 +201,10 @@ describe("createSchemaGenClient", () => {
 
   it("respects a custom baseUrl", async () => {
     fetcher.mockResolvedValueOnce(
-      jsonResponse({ sessionId: "s", dataSourceId: "d", stage: "PENDING" }, 202),
+      jsonResponse(
+        { sessionId: "s", dataSourceId: "d", stage: "PENDING" },
+        202,
+      ),
     );
     const client = createSchemaGenClient(
       fetcher as unknown as typeof fetch,

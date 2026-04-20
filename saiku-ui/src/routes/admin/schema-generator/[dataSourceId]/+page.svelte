@@ -34,6 +34,8 @@
     canCancel,
     canSave,
     canStart,
+    deltaBannerText,
+    hasDeltaChanges,
     stageLabel,
     stagePillColor,
   } from "./pageViewModel";
@@ -61,6 +63,15 @@
   const cancelVisible = $derived(canCancel(effectiveStage));
   const pillColor = $derived(stagePillColor(effectiveStage));
   const pillText = $derived(stageLabel(effectiveStage));
+
+  // Delta banner — shown in re-run mode when the reconciler found upstream
+  // changes since the baseline sidecar. Counts come through the store from
+  // the status poll.
+  const deltaCounts = $derived({
+    deltaNewCount: store.deltaNewCount,
+    deltaRemovedCount: store.deltaRemovedCount,
+  });
+  const showDeltaBanner = $derived(hasDeltaChanges(deltaCounts));
 
   async function handleStart() {
     await store.start(data.dataSourceId);
@@ -209,6 +220,13 @@
       <button type="button" onclick={dismissError} aria-label="Dismiss">
         ×
       </button>
+    </div>
+  {/if}
+
+  {#if showDeltaBanner}
+    <div class="schemagen__delta" role="status" data-testid="delta-banner">
+      <span class="schemagen__delta-icon" aria-hidden="true">ℹ</span>
+      <span>{deltaBannerText(deltaCounts)}</span>
     </div>
   {/if}
 
@@ -368,6 +386,20 @@
     background: var(--bg-muted);
     color: var(--fg);
   }
+  .schemagen__delta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-5);
+    background: var(--accent, #2b6cb0);
+    color: var(--accent-fg, #fff);
+    border-bottom: 1px solid var(--border);
+    font-size: var(--fs-sm);
+  }
+  .schemagen__delta-icon {
+    font-weight: 700;
+  }
+
   .schemagen__error button {
     background: transparent;
     border: 0;

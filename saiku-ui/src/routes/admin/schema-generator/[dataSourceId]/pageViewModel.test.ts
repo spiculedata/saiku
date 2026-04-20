@@ -13,6 +13,8 @@ import {
   canCancel,
   canSave,
   canStart,
+  deltaBannerText,
+  hasDeltaChanges,
   stageLabel,
   stagePillColor,
 } from "./pageViewModel";
@@ -89,6 +91,39 @@ describe("stagePillColor", () => {
 
   it("returns muted when no session is running", () => {
     expect(stagePillColor(null)).toBe("muted");
+  });
+});
+
+describe("hasDeltaChanges", () => {
+  it("is false when there is no delta info at all", () => {
+    expect(hasDeltaChanges(null)).toBe(false);
+    expect(hasDeltaChanges(undefined)).toBe(false);
+    expect(hasDeltaChanges({ deltaNewCount: 0, deltaRemovedCount: 0 })).toBe(
+      false,
+    );
+  });
+
+  it("is true when any delta count is non-zero", () => {
+    expect(hasDeltaChanges({ deltaNewCount: 1, deltaRemovedCount: 0 })).toBe(
+      true,
+    );
+    expect(hasDeltaChanges({ deltaNewCount: 0, deltaRemovedCount: 3 })).toBe(
+      true,
+    );
+    expect(hasDeltaChanges({ deltaNewCount: 2, deltaRemovedCount: 5 })).toBe(
+      true,
+    );
+  });
+});
+
+describe("deltaBannerText", () => {
+  it("summarises new and removed counts upstream", () => {
+    expect(deltaBannerText({ deltaNewCount: 2, deltaRemovedCount: 3 })).toBe(
+      "Changes detected: 2 new, 3 removed upstream.",
+    );
+    expect(deltaBannerText({ deltaNewCount: 1, deltaRemovedCount: 0 })).toBe(
+      "Changes detected: 1 new, 0 removed upstream.",
+    );
   });
 });
 
