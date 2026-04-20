@@ -962,7 +962,7 @@
     background: color-mix(in srgb, var(--accent) 12%, var(--bg-muted));
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
   }
-  .dropzone.is-dragover > * { pointer-events: none; }
+  /* Keep pointer events enabled on chips so chip-to-chip reorder drops still fire. */
   .dropzone header {
     display: flex;
     align-items: center;
