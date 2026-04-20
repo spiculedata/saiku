@@ -361,14 +361,26 @@
 
   let dragOverAxis = $state<AxisLocation | null>(null);
   let dragOverChipKey = $state<string | null>(null);
+  /** Where the chip being dragged came from. Null for sidebar-originated drags
+   *  (where any zone is a valid drop). Used to suppress no-op zone highlights
+   *  when a chip is dragged over its own axis's empty background. */
+  let dragSourceAxis = $state<AxisLocation | null>(null);
 
   function chipKey(axis: AxisLocation, kind: "hierarchy" | "measure", id: string): string {
     return `${axis}::${kind}::${id}`;
   }
   function onDragEnterAxis(axis: AxisLocation, e: DragEvent) {
-    if (e.dataTransfer?.types?.includes("application/x-saiku-level") ||
-        e.dataTransfer?.types?.includes("application/x-saiku-measure") ||
-        e.dataTransfer?.types?.includes("application/x-saiku-chip")) {
+    const types = e.dataTransfer?.types;
+    if (!types) return;
+    const isChipDrag = types.includes("application/x-saiku-chip");
+    if (isChipDrag && dragSourceAxis === axis) {
+      // Dragging a chip back onto its own axis's empty background is a no-op;
+      // don't light up the zone — only chip-to-chip reorder should show feedback.
+      return;
+    }
+    if (types.includes("application/x-saiku-level") ||
+        types.includes("application/x-saiku-measure") ||
+        isChipDrag) {
       dragOverAxis = axis;
     }
   }
@@ -380,7 +392,7 @@
       if (dragOverAxis === axis) dragOverAxis = null;
     }
   }
-  function clearDragOver() { dragOverAxis = null; dragOverChipKey = null; }
+  function clearDragOver() { dragOverAxis = null; dragOverChipKey = null; dragSourceAxis = null; }
 
   function onChipDragOver(e: DragEvent, axis: AxisLocation, kind: "hierarchy" | "measure", id: string) {
     if (!e.dataTransfer?.types?.includes("application/x-saiku-chip")) return;
@@ -430,12 +442,14 @@
     const payload = { kind: "hierarchy" as const, axis, name: h.name };
     e.dataTransfer?.setData("application/x-saiku-chip", JSON.stringify(payload));
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+    dragSourceAxis = axis;
   }
 
   function onMeasureChipDragStart(e: DragEvent, m: ThinMeasure) {
     const payload = { kind: "measure" as const, axis: "COLUMNS" as AxisLocation, uniqueName: m.uniqueName };
     e.dataTransfer?.setData("application/x-saiku-chip", JSON.stringify(payload));
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+    dragSourceAxis = "COLUMNS";
   }
 
   /** Drop a dragged chip onto a sibling chip — reorder within axis if same-kind,
@@ -613,6 +627,8 @@
     if (query.hasRunnableShape()) await query.run();
   }
 </script>
+
+<svelte:window ondragend={clearDragOver} />
 
 <div class="canvas">
   {#if !selection.cube}
