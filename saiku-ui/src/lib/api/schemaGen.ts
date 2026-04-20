@@ -35,15 +35,82 @@ export interface StatusResponse {
 }
 
 /**
- * Draft schema payload returned by the backend. The detailed shape is defined
- * by the Jackson-serialised `DraftView` record; we keep the TS surface
- * permissive so downstream UI code can narrow as features land (Task D2+).
+ * Draft schema payload returned by the backend. Mirrors the Jackson-serialised
+ * `DraftView` record in saiku-web.
+ *
+ * An optional `provenance` field is carried on each node so the UI can render
+ * a badge indicating where the node came from (rule / llm / user). The backend
+ * currently omits this field; the UI treats it as `null` by default.
  */
+export type ProvenanceSource = "RULE" | "LLM" | "USER";
+
+export interface Provenance {
+  source: ProvenanceSource;
+  ruleId?: string | null;
+}
+
+export interface LevelView {
+  name: string;
+  column: string | null;
+  type: string | null;
+  caption?: string | null;
+  description?: string | null;
+  provenance?: Provenance | null;
+}
+
+export interface HierarchyView {
+  name: string;
+  primaryKey: string | null;
+  levels: LevelView[];
+  caption?: string | null;
+  description?: string | null;
+  provenance?: Provenance | null;
+}
+
+export interface DimView {
+  name: string;
+  type: string | null;
+  sourceTable: string | null;
+  foreignKey: string | null;
+  hierarchies: HierarchyView[];
+  caption?: string | null;
+  description?: string | null;
+  provenance?: Provenance | null;
+}
+
+export interface MeasureView {
+  name: string;
+  column: string | null;
+  aggregator: string | null;
+  caption?: string | null;
+  description?: string | null;
+  provenance?: Provenance | null;
+}
+
+export interface CubeView {
+  name: string;
+  factTable: string | null;
+  dimensions: DimView[];
+  measures: MeasureView[];
+  caption?: string | null;
+  description?: string | null;
+  provenance?: Provenance | null;
+}
+
+export interface SharedDimView {
+  name: string;
+  type: string | null;
+  sourceTable: string | null;
+  hierarchies: HierarchyView[];
+  caption?: string | null;
+  description?: string | null;
+  provenance?: Provenance | null;
+}
+
 export interface DraftView {
   schemaName: string;
-  cubes: unknown[];
-  sharedDimensions: unknown[];
-  [k: string]: unknown;
+  cubes: CubeView[];
+  sharedDimensions: SharedDimView[];
 }
 
 export interface SuggestionView {

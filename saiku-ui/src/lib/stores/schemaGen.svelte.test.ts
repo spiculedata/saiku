@@ -68,7 +68,9 @@ const DRAFT_A: DraftView = {
 };
 const DRAFT_B: DraftView = {
   schemaName: "Sales",
-  cubes: [{ name: "Orders" }],
+  cubes: [
+    { name: "Orders", factTable: null, dimensions: [], measures: [] },
+  ],
   sharedDimensions: [],
 };
 
