@@ -588,31 +588,38 @@
     bind:this={wrapperEl}
     tabindex="0"
     role="grid"
-    aria-rowcount={parsed.dataRows.length}
-    aria-colcount={parsed.dataRows[0]?.length ?? 0}
+    aria-label={i18n.t("a11y.cellsetGrid")}
+    aria-rowcount={parsed.columnHeaderRows.length + parsed.dataRows.length}
+    aria-colcount={parsed.rowHeaderColCount + (parsed.dataRows[0]?.length ?? 0)}
     onkeydown={onGridKeydown}
     onscroll={onWrapperScroll}
   >
-    <table class="cellset">
+    <table class="cellset" role="presentation">
       <thead>
         {#each parsed.columnHeaderRows as hdrRow, rIdx}
-          <tr>
+          <tr role="row" aria-rowindex={rIdx + 1}>
             {#each hdrRow as c, cIdx}
               {#if cIdx < parsed.rowHeaderColCount}
-                <th class="all_null"></th>
+                <th class="all_null" role="columnheader" aria-colindex={cIdx + 1}></th>
               {:else if c.type === "COLUMN_HEADER"}
                 {@const isLastHeader = rIdx === parsed.columnHeaderRows.length - 1}
                 <th
                   class={isLastHeader ? "col col--last" : "col"}
+                  role="columnheader"
+                  aria-colindex={cIdx + 1}
                   title={c.value}
                   oncontextmenu={(e) => openMenu(e, c, "COLUMNS")}
                 >{c.value || "\u00A0"}</th>
               {:else}
-                <th class="col_null"></th>
+                <th class="col_null" role="columnheader" aria-colindex={cIdx + 1}></th>
               {/if}
             {/each}
             {#if spark !== "none"}
-              <th class={rIdx === parsed.columnHeaderRows.length - 1 ? "col col--last spark-col" : "col spark-col"}>
+              <th
+                class={rIdx === parsed.columnHeaderRows.length - 1 ? "col col--last spark-col" : "col spark-col"}
+                role="columnheader"
+                aria-colindex={hdrRow.length + 1}
+              >
                 {rIdx === parsed.columnHeaderRows.length - 1 ? (spark === "bar" ? "Sparkbar" : "Sparkline") : "\u00A0"}
               </th>
             {/if}
@@ -625,15 +632,17 @@
         {/if}
         {#each parsed.bodyRows.slice(renderWindow.first, renderWindow.last + 1) as rowCells, iOffset}
           {@const r = renderWindow.first + iOffset}
-          <tr class="vrow">
+          <tr class="vrow" role="row" aria-rowindex={parsed.columnHeaderRows.length + r + 1}>
             {#each rowCells as c, cIdx}
               {@const display = rowDisplay[r][cIdx]}
               {#if display.isNull}
-                <th class="row_null"></th>
+                <th class="row_null" role="rowheader" aria-colindex={cIdx + 1}></th>
               {:else}
                 {@const d = depthOf(c)}
                 <th
                   class={d > 0 ? "row row--nested" : "row"}
+                  role="rowheader"
+                  aria-colindex={cIdx + 1}
                   style={d > 0 ? `padding-left: calc(12px + ${d}em);` : ""}
                   title={c.value}
                   oncontextmenu={(e) => openMenu(e, c, "ROWS")}
@@ -648,6 +657,9 @@
                 class={(num ? "data data-num" : "data")
                   + (selected ? " data--selected" : "")
                   + (hasFocus ? " data--focused" : "")}
+                role="gridcell"
+                aria-colindex={parsed.rowHeaderColCount + cIdx + 1}
+                aria-selected={selected ? "true" : undefined}
                 data-r={r}
                 data-c={cIdx}
                 onmousedown={(e) => onCellMouseDown(e, r, cIdx)}
@@ -658,7 +670,7 @@
             {#if spark !== "none"}
               {@const range = sparkRange()}
               {@const vals = sparkValues(r)}
-              <td class="data spark-cell">
+              <td class="data spark-cell" role="gridcell" aria-colindex={parsed.rowHeaderColCount + (parsed.dataRows[r]?.length ?? 0) + 1}>
                 <svg viewBox={`0 0 ${SPARK_W} ${SPARK_H}`} width={SPARK_W} height={SPARK_H} aria-hidden="true">
                   {#if spark === "line"}
                     <path d={linePath(vals, range.min, range.max, SPARK_W, SPARK_H)} stroke="var(--accent)" stroke-width="1.5" fill="none" />

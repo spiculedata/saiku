@@ -283,10 +283,10 @@
       <header class="panel__header panel__header--row">
         <span>{i18n.t("panels.measures")}</span>
         <span class="panel__actions">
-          <button type="button" class="panel__action" title={i18n.t("panels.manageMeasures")} onclick={openMeasuresModal}>
+          <button type="button" class="panel__action" title={i18n.t("panels.manageMeasures")} aria-label={i18n.t("panels.manageMeasures")} onclick={openMeasuresModal}>
             <Settings2 size={14} />
           </button>
-          <button type="button" class="panel__action" title={i18n.t("panels.newCalcMeasure")} onclick={() => openCalculatedModal()}>
+          <button type="button" class="panel__action" title={i18n.t("panels.newCalcMeasure")} aria-label={i18n.t("panels.newCalcMeasure")} onclick={() => openCalculatedModal()}>
             <Plus size={14} />
           </button>
         </span>
@@ -366,6 +366,7 @@
                             type="button"
                             class="tree__gear"
                             title={i18n.t("panels.filterMembers")}
+                            aria-label={i18n.t("panels.filterMembers")}
                             onclick={() => openDimensionFilter(dim, hier, lvl)}
                           ><Filter size={11} /></button>
                         </span>
@@ -400,6 +401,7 @@
                                   type="button"
                                   class="tree__gear"
                                   title={i18n.t("panels.filterMembers")}
+                                  aria-label={i18n.t("panels.filterMembers")}
                                   onclick={() => openDimensionFilter(dim, hier, lvl)}
                                 ><Filter size={11} /></button>
                               </span>

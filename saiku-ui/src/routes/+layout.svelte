@@ -100,6 +100,9 @@
           title={platform.fullscreen
             ? i18n.t("topbar.fullscreen.exit")
             : i18n.t("topbar.fullscreen.enter")}
+          aria-label={platform.fullscreen
+            ? i18n.t("topbar.fullscreen.exit")
+            : i18n.t("topbar.fullscreen.enter")}
           onclick={() => platform.toggleFullscreen()}
         >{#if platform.fullscreen}<Minimize2 size={14} />{:else}<Maximize2 size={14} />{/if}</button>
         <span class="topbar__user">{session.current.username}</span>

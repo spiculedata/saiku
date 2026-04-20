@@ -644,7 +644,7 @@
         >
           <header>
             <span>{axisLabels[axis]}</span>
-            <button type="button" class="dropzone__menu" title={i18n.t("canvas.axisOptions")} onclick={(e) => openAxisMenu(e, axis)}>
+            <button type="button" class="dropzone__menu" title={i18n.t("canvas.axisOptions")} aria-label={i18n.t("canvas.axisOptions")} onclick={(e) => openAxisMenu(e, axis)}>
               <MoreHorizontal size={14} />
             </button>
           </header>
@@ -719,7 +719,7 @@
       >
         <header>
           <span>{axisLabels.FILTER}</span>
-          <button type="button" class="dropzone__menu" title="Axis options" onclick={(e) => openAxisMenu(e, "FILTER")}>
+          <button type="button" class="dropzone__menu" title={i18n.t("canvas.axisOptions")} aria-label={i18n.t("canvas.axisOptions")} onclick={(e) => openAxisMenu(e, "FILTER")}>
             <MoreHorizontal size={14} />
           </button>
         </header>
@@ -803,7 +803,7 @@
             {/each}
           </select>
         </label>
-        <button type="button" class="chart-edit" title={i18n.t("modal.chart.title")} onclick={() => (chartEditorOpen = true)}>⚙</button>
+        <button type="button" class="chart-edit" title={i18n.t("modal.chart.title")} aria-label={i18n.t("a11y.editChartOptions")} onclick={() => (chartEditorOpen = true)}>⚙</button>
       {/if}
     </div>
     {#if query.running}

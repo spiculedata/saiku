@@ -4,7 +4,11 @@
 
 <div class="toast-stack" role="status" aria-live="polite">
   {#each toasts.toasts as t (t.id)}
-    <div class="toast toast--{t.variant}">
+    <div
+      class="toast toast--{t.variant}"
+      role={t.variant === "danger" ? "alert" : "status"}
+      aria-live={t.variant === "danger" ? "assertive" : "polite"}
+    >
       <div class="toast__body">
         <strong class="toast__title">{t.title}</strong>
         {#if t.body}<span class="toast__text">{t.body}</span>{/if}

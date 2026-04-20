@@ -339,5 +339,10 @@
   "upgrade.available": "A newer version of Saiku is available",
   "upgrade.current": "current",
   "upgrade.releaseNotes": "Release notes",
-  "upgrade.dismiss": "Dismiss"
+  "upgrade.dismiss": "Dismiss",
+  "a11y.newTab": "New tab",
+  "a11y.viewOptions": "View options",
+  "a11y.axisOptions": "Axis options",
+  "a11y.editChartOptions": "Edit chart options",
+  "a11y.cellsetGrid": "Query result grid"
 }
