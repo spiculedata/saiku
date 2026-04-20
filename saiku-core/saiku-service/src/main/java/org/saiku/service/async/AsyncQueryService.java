@@ -6,6 +6,7 @@
  */
 package org.saiku.service.async;
 
+import jakarta.annotation.PreDestroy;
 import java.sql.SQLException;
 import java.util.Iterator;
 import java.util.Map;
@@ -301,8 +302,15 @@ public class AsyncQueryService {
         }
     }
 
-    /** Shut the executor down — call from webapp shutdown if desired. */
+    /**
+     * Shut the executor down. Invoked both by the Spring bean's
+     * {@code destroy-method="shutdown"} wiring and the {@link PreDestroy}
+     * annotation, so it also fires outside Spring-XML lifecycles
+     * (e.g. standalone tests, embedded Jetty runs).
+     */
+    @PreDestroy
     public void shutdown() {
+        log.info("AsyncQueryService shutting down — {} outstanding handles", handles.size());
         sweeper.shutdownNow();
         executor.shutdownNow();
         cancelExecutor.shutdownNow();

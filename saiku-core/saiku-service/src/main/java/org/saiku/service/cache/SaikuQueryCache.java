@@ -10,6 +10,7 @@ package org.saiku.service.cache;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
@@ -358,5 +359,17 @@ public class SaikuQueryCache {
 
     Path metaPath(String key) {
         return cacheDir.resolve(key + META_SUFFIX);
+    }
+
+    /**
+     * No executor or threadpool to tear down here — the cache is purely
+     * disk + Caffeine + ReentrantLock. This exists for symmetry with
+     * {@link org.saiku.service.async.AsyncQueryService#shutdown()} so the
+     * bean container (or a @PreDestroy-aware test) has a single, known
+     * point of shutdown.
+     */
+    @PreDestroy
+    public void shutdown() {
+        index.invalidateAll();
     }
 }
