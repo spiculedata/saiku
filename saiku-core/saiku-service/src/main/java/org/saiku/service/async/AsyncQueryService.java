@@ -15,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -133,29 +134,39 @@ public class AsyncQueryService {
         final AsyncQueryHandle handle = new AsyncQueryHandle(id, query);
         handles.put(id, handle);
 
-        CompletableFuture<CellSet> fut = CompletableFuture.supplyAsync(
-                () -> {
-                    RequestAttributes previous = RequestContextHolder.getRequestAttributes();
-                    if (requestAttributes != null) {
-                        RequestContextHolder.setRequestAttributes(requestAttributes, true);
-                    }
-                    try {
-                        handle.compareAndSetStatus(AsyncQueryHandle.Status.PENDING, AsyncQueryHandle.Status.RUNNING);
-                        thinQueryService.execute(query);
-                        // ThinQueryService.execute stashes the CellSet into its
-                        // per-query context keyed by the query name; fetch it.
-                        return thinQueryService.getContext(query.getName()).getOlapResult();
-                    } finally {
+        final CompletableFuture<CellSet> fut;
+        try {
+            fut = CompletableFuture.supplyAsync(
+                    () -> {
+                        RequestAttributes previous = RequestContextHolder.getRequestAttributes();
                         if (requestAttributes != null) {
-                            if (previous != null) {
-                                RequestContextHolder.setRequestAttributes(previous);
-                            } else {
-                                RequestContextHolder.resetRequestAttributes();
+                            RequestContextHolder.setRequestAttributes(requestAttributes, true);
+                        }
+                        try {
+                            handle.compareAndSetStatus(
+                                    AsyncQueryHandle.Status.PENDING, AsyncQueryHandle.Status.RUNNING);
+                            thinQueryService.execute(query);
+                            // ThinQueryService.execute stashes the CellSet into its
+                            // per-query context keyed by the query name; fetch it.
+                            return thinQueryService.getContext(query.getName()).getOlapResult();
+                        } finally {
+                            if (requestAttributes != null) {
+                                if (previous != null) {
+                                    RequestContextHolder.setRequestAttributes(previous);
+                                } else {
+                                    RequestContextHolder.resetRequestAttributes();
+                                }
                             }
                         }
-                    }
-                },
-                executor);
+                    },
+                    executor);
+        } catch (RejectedExecutionException rex) {
+            // Executor queue was full / already shut down — we put the handle in
+            // the map before submit, so drop it to avoid a leaked PENDING entry
+            // that would only be GC'd by the failsafe sweeper 30 min later.
+            handles.remove(id);
+            throw rex;
+        }
 
         fut.whenComplete((cellSet, err) -> {
             handle.touch();
