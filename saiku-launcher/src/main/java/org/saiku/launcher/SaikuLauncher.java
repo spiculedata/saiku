@@ -9,6 +9,7 @@ import java.util.concurrent.Callable;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import org.eclipse.jetty.ee10.webapp.WebAppContext;
+import org.eclipse.jetty.http.HttpCookie;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import picocli.CommandLine;
@@ -90,6 +91,25 @@ public class SaikuLauncher implements Callable<Integer> {
             webapp.setContextPath(contextPath);
             webapp.setWar(warPath.toString());
             webapp.setExtractWAR(true);
+
+            // Tier-1 auth hardening: JSESSIONID cookie attrs.
+            //   HttpOnly = true   (always — no JS needs to read it)
+            //   SameSite = Lax    (block CSRF via top-level nav from other origins,
+            //                      but still allow normal GET navigation)
+            //   Secure   = property-gated (default false, turn on when fronted by TLS)
+            boolean secureCookie = Boolean.parseBoolean(
+                    System.getProperty("saiku.session.cookie.secure", "false"));
+            var sessionHandler = webapp.getSessionHandler();
+            var cookieConfig = sessionHandler.getSessionCookieConfig();
+            cookieConfig.setHttpOnly(true);
+            cookieConfig.setSecure(secureCookie);
+            // SameSite support in Jetty 12 is exposed via an attribute, not a getter.
+            cookieConfig.setAttribute("SameSite", HttpCookie.SameSite.LAX.getAttributeValue());
+            // Also set it at the SessionHandler level so Jetty honours it in the
+            // Set-Cookie it builds (some paths read the attribute map, others
+            // read the handler property; belt-and-braces).
+            sessionHandler.setSameSite(HttpCookie.SameSite.LAX);
+
             server.setHandler(webapp);
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
