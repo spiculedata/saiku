@@ -1,0 +1,128 @@
+{
+  "cubes" : [ {
+    "dimensions" : [ {
+      "foreignKey" : "event_date",
+      "hierarchies" : [ ],
+      "name" : "event_date",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:time-usage",
+        "source" : "RULE"
+      },
+      "sourceTable" : "Time",
+      "type" : "TIME"
+    } ],
+    "measures" : [ {
+      "aggregator" : "SUM",
+      "column" : "duration_ms",
+      "name" : "duration_ms",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:measure-sum",
+        "source" : "RULE"
+      }
+    }, {
+      "aggregator" : "SUM",
+      "column" : "bytes_sent",
+      "name" : "bytes_sent",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:measure-sum",
+        "source" : "RULE"
+      }
+    }, {
+      "aggregator" : "SUM",
+      "column" : "bytes_received",
+      "name" : "bytes_received",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:measure-sum",
+        "source" : "RULE"
+      }
+    }, {
+      "aggregator" : "SUM",
+      "column" : "error_count",
+      "name" : "error_count",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:measure-sum",
+        "source" : "RULE"
+      }
+    }, {
+      "aggregator" : "SUM",
+      "column" : "retry_count",
+      "name" : "retry_count",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:measure-sum",
+        "source" : "RULE"
+      }
+    }, {
+      "aggregator" : "COUNT_STAR",
+      "name" : "Fact Count",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:measure-fact-count",
+        "source" : "RULE"
+      }
+    } ],
+    "name" : "events",
+    "provenance" : {
+      "confidence" : 1.0,
+      "ruleId" : "rule:cube-from-fact",
+      "source" : "RULE"
+    },
+    "sourceFactTable" : "events"
+  } ],
+  "name" : "GeneratedSchema",
+  "sharedDimensions" : [ {
+    "hierarchies" : [ {
+      "levels" : [ {
+        "name" : "Year",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:time-shared",
+          "source" : "RULE"
+        },
+        "type" : "YEARS"
+      }, {
+        "name" : "Quarter",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:time-shared",
+          "source" : "RULE"
+        },
+        "type" : "QUARTERS"
+      }, {
+        "name" : "Month",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:time-shared",
+          "source" : "RULE"
+        },
+        "type" : "MONTHS"
+      }, {
+        "name" : "Day",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:time-shared",
+          "source" : "RULE"
+        },
+        "type" : "DAYS"
+      } ],
+      "name" : "Time",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:time-shared",
+        "source" : "RULE"
+      }
+    } ],
+    "name" : "Time",
+    "provenance" : {
+      "confidence" : 1.0,
+      "ruleId" : "rule:time-shared",
+      "source" : "RULE"
+    },
+    "type" : "TIME"
+  } ]
+}

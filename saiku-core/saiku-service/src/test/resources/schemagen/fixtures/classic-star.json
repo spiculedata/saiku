@@ -1,0 +1,53 @@
+{
+  "tables": [
+    {
+      "schema": "public",
+      "name": "sales",
+      "rowCountEstimate": 1000000,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "customer_id", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "product_id", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "store_id", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "order_date", "type": "DATE", "nullable": false, "primaryKey": false},
+        {"name": "amount", "type": "DECIMAL", "nullable": false, "primaryKey": false},
+        {"name": "qty", "type": "INTEGER", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": [
+        {"fromColumn": "customer_id", "toTable": "customer", "toColumn": "id"},
+        {"fromColumn": "product_id", "toTable": "product", "toColumn": "id"},
+        {"fromColumn": "store_id", "toTable": "store", "toColumn": "id"}
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "customer",
+      "rowCountEstimate": 100,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "name", "type": "VARCHAR", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": []
+    },
+    {
+      "schema": "public",
+      "name": "product",
+      "rowCountEstimate": 100,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "name", "type": "VARCHAR", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": []
+    },
+    {
+      "schema": "public",
+      "name": "store",
+      "rowCountEstimate": 100,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "name", "type": "VARCHAR", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": []
+    }
+  ]
+}

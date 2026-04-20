@@ -1,0 +1,24 @@
+{
+  "tables": [
+    {
+      "schema": "public",
+      "name": "events",
+      "rowCountEstimate": 5000000,
+      "columns": [
+        {"name": "id", "type": "BIGINT", "nullable": false, "primaryKey": true},
+        {"name": "source_id", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "channel_id", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "event_date", "type": "DATE", "nullable": false, "primaryKey": false},
+        {"name": "duration_ms", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "bytes_sent", "type": "BIGINT", "nullable": false, "primaryKey": false},
+        {"name": "bytes_received", "type": "BIGINT", "nullable": false, "primaryKey": false},
+        {"name": "error_count", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "retry_count", "type": "INTEGER", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": [
+        {"fromColumn": "source_id", "toTable": "source_lookup", "toColumn": "id"},
+        {"fromColumn": "channel_id", "toTable": "channel_lookup", "toColumn": "id"}
+      ]
+    }
+  ]
+}

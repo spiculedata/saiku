@@ -1,0 +1,188 @@
+{
+  "cubes" : [ {
+    "dimensions" : [ {
+      "foreignKey" : "customer_id",
+      "hierarchies" : [ {
+        "levels" : [ {
+          "column" : "name",
+          "name" : "id",
+          "provenance" : {
+            "confidence" : 1.0,
+            "ruleId" : "rule:dim-flat",
+            "source" : "RULE"
+          },
+          "type" : "REGULAR"
+        } ],
+        "name" : "customer",
+        "primaryKey" : "id",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:dim-flat",
+          "source" : "RULE"
+        }
+      } ],
+      "name" : "customer",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:dim-flat",
+        "source" : "RULE"
+      },
+      "sourceTable" : "customer",
+      "type" : "STANDARD"
+    }, {
+      "foreignKey" : "product_id",
+      "hierarchies" : [ {
+        "levels" : [ {
+          "column" : "name",
+          "name" : "id",
+          "provenance" : {
+            "confidence" : 1.0,
+            "ruleId" : "rule:dim-flat",
+            "source" : "RULE"
+          },
+          "type" : "REGULAR"
+        } ],
+        "name" : "product",
+        "primaryKey" : "id",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:dim-flat",
+          "source" : "RULE"
+        }
+      } ],
+      "name" : "product",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:dim-flat",
+        "source" : "RULE"
+      },
+      "sourceTable" : "product",
+      "type" : "STANDARD"
+    }, {
+      "foreignKey" : "store_id",
+      "hierarchies" : [ {
+        "levels" : [ {
+          "column" : "name",
+          "name" : "id",
+          "provenance" : {
+            "confidence" : 1.0,
+            "ruleId" : "rule:dim-flat",
+            "source" : "RULE"
+          },
+          "type" : "REGULAR"
+        } ],
+        "name" : "store",
+        "primaryKey" : "id",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:dim-flat",
+          "source" : "RULE"
+        }
+      } ],
+      "name" : "store",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:dim-flat",
+        "source" : "RULE"
+      },
+      "sourceTable" : "store",
+      "type" : "STANDARD"
+    }, {
+      "foreignKey" : "order_date",
+      "hierarchies" : [ ],
+      "name" : "order_date",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:time-usage",
+        "source" : "RULE"
+      },
+      "sourceTable" : "Time",
+      "type" : "TIME"
+    } ],
+    "measures" : [ {
+      "aggregator" : "SUM",
+      "column" : "amount",
+      "name" : "amount",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:measure-sum",
+        "source" : "RULE"
+      }
+    }, {
+      "aggregator" : "SUM",
+      "column" : "qty",
+      "name" : "qty",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:measure-sum",
+        "source" : "RULE"
+      }
+    }, {
+      "aggregator" : "COUNT_STAR",
+      "name" : "Fact Count",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:measure-fact-count",
+        "source" : "RULE"
+      }
+    } ],
+    "name" : "sales",
+    "provenance" : {
+      "confidence" : 1.0,
+      "ruleId" : "rule:cube-from-fact",
+      "source" : "RULE"
+    },
+    "sourceFactTable" : "sales"
+  } ],
+  "name" : "GeneratedSchema",
+  "sharedDimensions" : [ {
+    "hierarchies" : [ {
+      "levels" : [ {
+        "name" : "Year",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:time-shared",
+          "source" : "RULE"
+        },
+        "type" : "YEARS"
+      }, {
+        "name" : "Quarter",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:time-shared",
+          "source" : "RULE"
+        },
+        "type" : "QUARTERS"
+      }, {
+        "name" : "Month",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:time-shared",
+          "source" : "RULE"
+        },
+        "type" : "MONTHS"
+      }, {
+        "name" : "Day",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:time-shared",
+          "source" : "RULE"
+        },
+        "type" : "DAYS"
+      } ],
+      "name" : "Time",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:time-shared",
+        "source" : "RULE"
+      }
+    } ],
+    "name" : "Time",
+    "provenance" : {
+      "confidence" : 1.0,
+      "ruleId" : "rule:time-shared",
+      "source" : "RULE"
+    },
+    "type" : "TIME"
+  } ]
+}
