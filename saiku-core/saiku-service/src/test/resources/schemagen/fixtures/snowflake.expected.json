@@ -26,6 +26,7 @@
             "ruleId" : "rule:snowflake-1hop",
             "source" : "RULE"
           },
+          "table" : "product_category",
           "type" : "REGULAR"
         } ],
         "name" : "product",

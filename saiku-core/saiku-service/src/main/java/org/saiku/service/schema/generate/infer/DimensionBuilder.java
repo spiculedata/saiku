@@ -77,6 +77,10 @@ public class DimensionBuilder {
                     dimTable.name(), snowflakeFk.fromColumn(), childTable.name(), snowflakeFk.toColumn()));
             String childPk = primaryKeyName(childTable);
             DraftLevel secondLevel = levelForTable(childTable, childPk, prov);
+            // Mark the snowflake-side level with its physical table so the writer can emit
+            // table="<lookup>" on the Mondrian Attribute — required for the PhysicalSchema
+            // Link to actually resolve the column.
+            secondLevel.setTable(childTable.name());
             h.levels().add(secondLevel);
         }
 

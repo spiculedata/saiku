@@ -24,6 +24,13 @@ public class DraftLevel {
     private String expression;
     private Type type;
     private Provenance provenance;
+    /**
+     * Optional physical table the {@link #column} lives on. {@code null} means the column belongs
+     * to the owning dimension's primary {@code sourceTable}; non-null indicates a snowflake
+     * lookup-side column and is emitted as the {@code table="..."} attribute on the Mondrian 4
+     * Attribute element. See {@link org.saiku.service.schema.generate.writer.MondrianSchemaWriter}.
+     */
+    private String table;
 
     public DraftLevel(String name, String column, Type type, Provenance provenance) {
         this.name = name;
@@ -70,5 +77,13 @@ public class DraftLevel {
 
     public void setProvenance(Provenance provenance) {
         this.provenance = provenance;
+    }
+
+    public String table() {
+        return table;
+    }
+
+    public void setTable(String table) {
+        this.table = table;
     }
 }

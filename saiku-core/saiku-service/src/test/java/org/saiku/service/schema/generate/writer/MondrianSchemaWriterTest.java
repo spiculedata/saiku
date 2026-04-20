@@ -16,6 +16,7 @@ import org.junit.Test;
 import org.saiku.service.schema.generate.draft.DraftCube;
 import org.saiku.service.schema.generate.draft.DraftDimension;
 import org.saiku.service.schema.generate.draft.DraftHierarchy;
+import org.saiku.service.schema.generate.draft.DraftJoin;
 import org.saiku.service.schema.generate.draft.DraftLevel;
 import org.saiku.service.schema.generate.draft.DraftMeasure;
 import org.saiku.service.schema.generate.draft.DraftSchema;
@@ -190,6 +191,132 @@ public class MondrianSchemaWriterTest {
         DOMWrapper dom = parser.parse(xml);
         MondrianDef.Schema mSchema = new MondrianDef.Schema(dom);
         assertEquals("Sales", mSchema.name);
+    }
+
+    /**
+     * Snowflake dims (one-hop) must emit both the dim source table AND the lookup table in the
+     * PhysicalSchema, plus a {@code <Link source='<lookup>' target='<dim>'>} with a ForeignKey
+     * column. The lookup-side level must carry {@code table='<lookup>'} on the Attribute so
+     * Mondrian routes the column through the link.
+     */
+    @Test
+    public void snowflakeDimRegistersLookupTableAndLink() throws Exception {
+        DraftSchema schema = new DraftSchema("Sales");
+        DraftCube cube = new DraftCube("Orders", "sales_fact", PROV);
+        schema.cubes().add(cube);
+
+        DraftDimension product = new DraftDimension("product", DraftDimension.Type.STANDARD, PROV);
+        product.setSourceTable("product");
+        product.setForeignKey("product_id");
+        cube.dimensions().add(product);
+
+        DraftHierarchy hier = new DraftHierarchy("product", "id", PROV);
+        hier.setJoin(new DraftJoin("product", "category_id", "product_category", "id"));
+        // Source-side level on "product" (no explicit table).
+        hier.levels().add(new DraftLevel("Name", "name", DraftLevel.Type.REGULAR, PROV));
+        // Lookup-side level: column "label" lives on "product_category".
+        DraftLevel categoryLevel = new DraftLevel("Category", "label", DraftLevel.Type.REGULAR, PROV);
+        categoryLevel.setTable("product_category");
+        hier.levels().add(categoryLevel);
+        product.hierarchies().add(hier);
+
+        cube.measures().add(new DraftMeasure("Fact Count", "id", DraftMeasure.Aggregator.COUNT_STAR, PROV));
+
+        String xml = new MondrianSchemaWriter().write(schema);
+
+        // 1. Both physical tables present.
+        assertTrue("missing primary dim table 'product'", xml.contains("<Table name=\"product\""));
+        assertTrue("missing lookup table 'product_category'", xml.contains("<Table name=\"product_category\""));
+
+        // 2. Link source=lookup target=dim.source with FK column.
+        assertTrue("missing snowflake Link", xml.contains("<Link source=\"product_category\" target=\"product\""));
+        assertTrue(
+                "missing snowflake ForeignKey Column name=\"category_id\"",
+                xml.contains("<Column name=\"category_id\""));
+
+        // 3. Lookup-side attribute carries table="product_category".
+        assertTrue(
+                "lookup-side attribute must carry table=\"product_category\"",
+                xml.matches("(?s).*<Attribute[^>]*name=\"Category\"[^>]*table=\"product_category\".*")
+                        || xml.matches("(?s).*<Attribute[^>]*table=\"product_category\"[^>]*name=\"Category\".*"));
+
+        // 4. Round-trip through Mondrian's parser.
+        Parser parser = XOMUtil.createDefaultParser();
+        DOMWrapper dom = parser.parse(xml);
+        MondrianDef.Schema mSchema = new MondrianDef.Schema(dom);
+        assertEquals("Sales", mSchema.name);
+
+        // 5. PhysicalSchema contains two Table elements + at least one Link (the snowflake one —
+        //    plus the fact→dim cube link).
+        MondrianDef.PhysicalSchema phys = null;
+        for (MondrianDef.SchemaElement el : mSchema.childArray) {
+            if (el instanceof MondrianDef.PhysicalSchema) {
+                phys = (MondrianDef.PhysicalSchema) el;
+                break;
+            }
+        }
+        assertNotNull("PhysicalSchema missing", phys);
+        int tables = 0;
+        int snowLinks = 0;
+        for (MondrianDef.PhysicalSchemaElement el : phys.childArray) {
+            if (el instanceof MondrianDef.Table) {
+                tables++;
+            } else if (el instanceof MondrianDef.Link) {
+                MondrianDef.Link l = (MondrianDef.Link) el;
+                if ("product_category".equals(l.source) && "product".equals(l.target)) {
+                    snowLinks++;
+                    assertNotNull("snowflake Link must have ForeignKey", l.foreignKey);
+                }
+            }
+        }
+        // sales_fact + product + product_category = 3 tables.
+        assertEquals("expected 3 physical tables", 3, tables);
+        assertEquals("expected one snowflake Link", 1, snowLinks);
+    }
+
+    /**
+     * Two snowflake dims pointing at the same lookup table must register the lookup
+     * {@code <Table>} exactly once and emit one {@code <Link>} per (lookup, dim) pair.
+     */
+    @Test
+    public void snowflakeDedupesSharedLookupTable() throws Exception {
+        DraftSchema schema = new DraftSchema("Sales");
+        DraftCube cube = new DraftCube("Orders", "sales_fact", PROV);
+        schema.cubes().add(cube);
+
+        cube.dimensions().add(snowflakeDim("product", "product_id", "cat_id", "taxonomy"));
+        cube.dimensions().add(snowflakeDim("service", "service_id", "cat_id", "taxonomy"));
+        cube.measures().add(new DraftMeasure("Fact Count", "id", DraftMeasure.Aggregator.COUNT_STAR, PROV));
+
+        String xml = new MondrianSchemaWriter().write(schema);
+
+        // The lookup table must appear exactly once.
+        int lookupCount = 0;
+        int idx = 0;
+        while ((idx = xml.indexOf("<Table name=\"taxonomy\"", idx)) >= 0) {
+            lookupCount++;
+            idx++;
+        }
+        assertEquals("lookup table should be emitted exactly once", 1, lookupCount);
+
+        // Two snowflake links (one per dim).
+        assertTrue(xml.contains("<Link source=\"taxonomy\" target=\"product\""));
+        assertTrue(xml.contains("<Link source=\"taxonomy\" target=\"service\""));
+    }
+
+    private static DraftDimension snowflakeDim(
+            String dimTable, String foreignKey, String joinColumn, String lookupTable) {
+        DraftDimension d = new DraftDimension(dimTable, DraftDimension.Type.STANDARD, PROV);
+        d.setSourceTable(dimTable);
+        d.setForeignKey(foreignKey);
+        DraftHierarchy h = new DraftHierarchy(dimTable, "id", PROV);
+        h.setJoin(new DraftJoin(dimTable, joinColumn, lookupTable, "id"));
+        h.levels().add(new DraftLevel("Name", "name", DraftLevel.Type.REGULAR, PROV));
+        DraftLevel cat = new DraftLevel("Category_" + dimTable, "label", DraftLevel.Type.REGULAR, PROV);
+        cat.setTable(lookupTable);
+        h.levels().add(cat);
+        d.hierarchies().add(h);
+        return d;
     }
 
     private static DraftLevel timeLevel(String name, DraftLevel.Type type, String column, String expression) {

@@ -121,6 +121,11 @@ public class DimensionBuilderTest {
         DraftLevel second = h.levels().get(1);
         assertEquals("label", second.column());
         assertEquals(DraftLevel.Type.REGULAR, second.type());
+        // Snowflake-side level must carry its physical table so the writer can emit
+        // table="<lookup>" on the Mondrian Attribute.
+        assertEquals("product_categories", second.table());
+        // Source-side level has no explicit table — it defaults to the dimension's sourceTable.
+        assertNull(first.table());
     }
 
     @Test

@@ -10,6 +10,7 @@ import mondrian.olap.MondrianDef;
 import org.saiku.service.schema.generate.draft.DraftCube;
 import org.saiku.service.schema.generate.draft.DraftDimension;
 import org.saiku.service.schema.generate.draft.DraftHierarchy;
+import org.saiku.service.schema.generate.draft.DraftJoin;
 import org.saiku.service.schema.generate.draft.DraftLevel;
 import org.saiku.service.schema.generate.draft.DraftMeasure;
 import org.saiku.service.schema.generate.draft.DraftSchema;
@@ -46,9 +47,9 @@ import org.saiku.service.schema.generate.enrich.ops.SuggestionOp;
  * <ul>
  *   <li>{@link DraftLevel} has no {@code nameColumn} field, so attributes only carry {@code
  *       keyColumn}.
- *   <li>Snowflake joins ({@link org.saiku.service.schema.generate.draft.DraftJoin}) are not yet
- *       emitted — the one-hop lookup table is not added to the PhysicalSchema. Dimensions with a
- *       join will still emit their primary source table but not the join table.
+ *   <li>Only one-hop snowflakes are emitted (the shape {@link
+ *       org.saiku.service.schema.generate.infer.DimensionBuilder} detects). Multi-hop lookups are
+ *       not recursed — each snowflake dim adds exactly one lookup {@code Table} + one {@code Link}.
  *   <li>Provenance is not emitted as comments; Mondrian 4's XOM writer does not preserve
  *       free-floating comments, so tracking this belongs in a later provenance-specific task.
  * </ul>
@@ -115,6 +116,10 @@ public class MondrianSchemaWriter {
         Map<String, String> dimTables = new LinkedHashMap<>();
         // factTable -> list of (calcColumnName, expressionSql) for degenerate TIME dims.
         Map<String, List<CalcCol>> factCalcCols = new LinkedHashMap<>();
+        // Snowflake lookup tables: lookupTable -> primaryKey column on the lookup side.
+        Map<String, String> snowflakeLookupTables = new LinkedHashMap<>();
+        // Snowflake links, keyed by (source=lookup, target=dim) to dedupe.
+        Map<String, DraftJoin> snowflakeLinks = new LinkedHashMap<>();
 
         for (DraftCube cube : draft.cubes()) {
             if (cube.sourceFactTable() != null) {
@@ -136,6 +141,7 @@ public class MondrianSchemaWriter {
                 }
                 String pk = primaryKeyOf(d);
                 dimTables.putIfAbsent(d.sourceTable(), pk);
+                collectSnowflake(d, snowflakeLookupTables, snowflakeLinks);
             }
         }
         // Shared dims (non-TIME).
@@ -150,6 +156,7 @@ public class MondrianSchemaWriter {
                 continue;
             }
             dimTables.putIfAbsent(d.sourceTable(), primaryKeyOf(d));
+            collectSnowflake(d, snowflakeLookupTables, snowflakeLinks);
         }
 
         List<MondrianDef.PhysicalSchemaElement> elements = new ArrayList<>();
@@ -159,6 +166,26 @@ public class MondrianSchemaWriter {
         }
         for (Map.Entry<String, String> e : dimTables.entrySet()) {
             elements.add(dimTable(e.getKey(), e.getValue()));
+        }
+        // Snowflake lookup tables. Skip any already registered as a primary dim sourceTable —
+        // one PhysicalSchema Table element per physical table, even if multiple dims use it.
+        for (Map.Entry<String, String> e : snowflakeLookupTables.entrySet()) {
+            if (dimTables.containsKey(e.getKey()) || factTables.contains(e.getKey())) {
+                continue;
+            }
+            elements.add(dimTable(e.getKey(), e.getValue()));
+        }
+
+        // Snowflake Links — source = lookup (PK-side), target = dim sourceTable (FK-side).
+        // Matches the cube-dim Link convention Mondrian expects.
+        for (DraftJoin join : snowflakeLinks.values()) {
+            MondrianDef.Link link = new MondrianDef.Link();
+            link.source = join.rightTable();
+            link.target = join.leftTable();
+            MondrianDef.ForeignKey fk = new MondrianDef.ForeignKey();
+            fk.array = new MondrianDef.Column[] {new MondrianDef.Column(null, join.leftKey())};
+            link.foreignKey = fk;
+            elements.add(link);
         }
 
         // Fact → dim Links (one per cube-scoped dimension with a foreign key).
@@ -245,6 +272,23 @@ public class MondrianSchemaWriter {
         return t;
     }
 
+    /**
+     * Scan a dimension's hierarchies for {@link DraftJoin} snowflake edges and register the lookup
+     * table + link with the given accumulators. Dedupes by lookup-table name (first hit wins for
+     * PK choice) and by (lookup, dim-source) pair for links.
+     */
+    private void collectSnowflake(DraftDimension d, Map<String, String> lookupTables, Map<String, DraftJoin> links) {
+        for (DraftHierarchy h : d.hierarchies()) {
+            DraftJoin join = h.join();
+            if (join == null || join.rightTable() == null) {
+                continue;
+            }
+            lookupTables.putIfAbsent(join.rightTable(), join.rightKey());
+            String linkKey = join.rightTable() + "->" + join.leftTable();
+            links.putIfAbsent(linkKey, join);
+        }
+    }
+
     private String primaryKeyOf(DraftDimension d) {
         if (d.hierarchies().isEmpty()) {
             return null;
@@ -294,6 +338,12 @@ public class MondrianSchemaWriter {
                 a.keyColumn = l.column();
                 a.levelType = levelType(l.type());
                 a.hasHierarchy = Boolean.FALSE;
+                // Snowflake-side levels carry an explicit physical table so Mondrian routes
+                // the column to the right table across the Link. Levels without a table fall
+                // back to the dimension's primary sourceTable (default behaviour).
+                if (l.table() != null) {
+                    a.table = l.table();
+                }
                 attrList.add(a);
             }
         }
