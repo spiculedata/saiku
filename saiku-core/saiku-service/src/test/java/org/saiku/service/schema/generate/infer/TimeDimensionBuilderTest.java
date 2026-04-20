@@ -2,6 +2,7 @@ package org.saiku.service.schema.generate.infer;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.sql.JDBCType;
@@ -28,29 +29,7 @@ public class TimeDimensionBuilderTest {
     }
 
     @Test
-    public void buildSharedTimeDimensionEmitsYQMDLevels() {
-        DraftDimension time = new TimeDimensionBuilder().buildSharedTimeDimension();
-
-        assertEquals("Time", time.name());
-        assertEquals(DraftDimension.Type.TIME, time.type());
-        assertEquals(Provenance.Source.RULE, time.provenance().source());
-        assertEquals("rule:time-shared", time.provenance().ruleId());
-
-        assertEquals(1, time.hierarchies().size());
-        DraftHierarchy h = time.hierarchies().get(0);
-        assertEquals(4, h.levels().size());
-        assertEquals(DraftLevel.Type.YEARS, h.levels().get(0).type());
-        assertEquals(DraftLevel.Type.QUARTERS, h.levels().get(1).type());
-        assertEquals(DraftLevel.Type.MONTHS, h.levels().get(2).type());
-        assertEquals(DraftLevel.Type.DAYS, h.levels().get(3).type());
-
-        for (DraftLevel l : h.levels()) {
-            assertEquals(Provenance.Source.RULE, l.provenance().source());
-        }
-    }
-
-    @Test
-    public void buildCubeUsagesForFactWithTwoDateColumns() {
+    public void factWithTwoDateColumnsYieldsTwoDegenerateDims() {
         DbTable fact = new DbTable(
                 "public",
                 "orders",
@@ -63,37 +42,50 @@ public class TimeDimensionBuilderTest {
                 Collections.singletonList(new DbForeignKey("customer_id", "customers", "id")),
                 1000L);
 
-        DraftDimension shared = new TimeDimensionBuilder().buildSharedTimeDimension();
-        List<DraftDimension> usages = new TimeDimensionBuilder().buildCubeUsages(fact, shared);
+        List<DraftDimension> dims = new TimeDimensionBuilder().buildCubeTimeDimensions(fact);
 
-        assertEquals(2, usages.size());
+        assertEquals(2, dims.size());
 
-        DraftDimension orderUsage = usages.get(0);
-        assertEquals("order_date", orderUsage.name());
-        assertEquals(DraftDimension.Type.TIME, orderUsage.type());
-        assertEquals("order_date", orderUsage.foreignKey());
-        assertEquals("Time", orderUsage.sourceTable());
-        assertTrue(orderUsage.hierarchies().isEmpty());
-        assertNotNull(orderUsage.provenance());
-        assertEquals("rule:time-usage", orderUsage.provenance().ruleId());
+        DraftDimension orderDim = dims.get(0);
+        assertEquals("order_date", orderDim.name());
+        assertEquals(DraftDimension.Type.TIME, orderDim.type());
+        // Degenerate dims colocate on the fact.
+        assertEquals("orders", orderDim.sourceTable());
+        assertNull("degenerate TIME dims must not carry a foreign key", orderDim.foreignKey());
+        assertNotNull(orderDim.provenance());
+        assertEquals("rule:time-degenerate", orderDim.provenance().ruleId());
 
-        DraftDimension shipUsage = usages.get(1);
-        assertEquals("ship_date", shipUsage.name());
-        assertEquals("ship_date", shipUsage.foreignKey());
-        assertEquals("Time", shipUsage.sourceTable());
+        assertEquals(1, orderDim.hierarchies().size());
+        DraftHierarchy h = orderDim.hierarchies().get(0);
+        assertEquals(4, h.levels().size());
+
+        assertLevel(h.levels().get(0), "Year", DraftLevel.Type.YEARS, "order_date", "YEAR(order_date)");
+        assertLevel(h.levels().get(1), "Quarter", DraftLevel.Type.QUARTERS, "order_date", "QUARTER(order_date)");
+        assertLevel(h.levels().get(2), "Month", DraftLevel.Type.MONTHS, "order_date", "MONTH(order_date)");
+        assertLevel(h.levels().get(3), "Day", DraftLevel.Type.DAYS, "order_date", "DAY(order_date)");
+
+        for (DraftLevel l : h.levels()) {
+            assertEquals(Provenance.Source.RULE, l.provenance().source());
+            assertEquals("rule:time-degenerate", l.provenance().ruleId());
+        }
+
+        // Second column → its own dim.
+        DraftDimension shipDim = dims.get(1);
+        assertEquals("ship_date", shipDim.name());
+        assertEquals("orders", shipDim.sourceTable());
+        assertEquals(
+                "YEAR(ship_date)", shipDim.hierarchies().get(0).levels().get(0).expression());
     }
 
     @Test
-    public void buildCubeUsagesFactWithNoDateColumnsYieldsEmpty() {
+    public void factWithNoDateColumnsYieldsEmpty() {
         DbTable fact = new DbTable(
                 "public",
                 "orders",
                 Arrays.asList(pk("id"), col("amount", JDBCType.DOUBLE), col("customer_id", JDBCType.INTEGER)),
                 Collections.<DbForeignKey>emptyList(),
                 100L);
-        DraftDimension shared = new TimeDimensionBuilder().buildSharedTimeDimension();
-        List<DraftDimension> usages = new TimeDimensionBuilder().buildCubeUsages(fact, shared);
-        assertTrue(usages.isEmpty());
+        assertTrue(new TimeDimensionBuilder().buildCubeTimeDimensions(fact).isEmpty());
     }
 
     @Test
@@ -104,9 +96,7 @@ public class TimeDimensionBuilderTest {
                 Arrays.asList(pk("id"), col("event_time", JDBCType.TIME), col("amount", JDBCType.DOUBLE)),
                 Collections.<DbForeignKey>emptyList(),
                 10L);
-        DraftDimension shared = new TimeDimensionBuilder().buildSharedTimeDimension();
-        List<DraftDimension> usages = new TimeDimensionBuilder().buildCubeUsages(fact, shared);
-        assertTrue(usages.isEmpty());
+        assertTrue(new TimeDimensionBuilder().buildCubeTimeDimensions(fact).isEmpty());
     }
 
     @Test
@@ -117,9 +107,16 @@ public class TimeDimensionBuilderTest {
                 Arrays.asList(pk("id"), col("at", JDBCType.TIMESTAMP_WITH_TIMEZONE), col("amount", JDBCType.DOUBLE)),
                 Collections.<DbForeignKey>emptyList(),
                 10L);
-        DraftDimension shared = new TimeDimensionBuilder().buildSharedTimeDimension();
-        List<DraftDimension> usages = new TimeDimensionBuilder().buildCubeUsages(fact, shared);
-        assertEquals(1, usages.size());
-        assertEquals("at", usages.get(0).name());
+        List<DraftDimension> dims = new TimeDimensionBuilder().buildCubeTimeDimensions(fact);
+        assertEquals(1, dims.size());
+        assertEquals("at", dims.get(0).name());
+        assertEquals("audits", dims.get(0).sourceTable());
+    }
+
+    private static void assertLevel(DraftLevel l, String name, DraftLevel.Type type, String col, String expression) {
+        assertEquals(name, l.name());
+        assertEquals(type, l.type());
+        assertEquals(col, l.column());
+        assertEquals(expression, l.expression());
     }
 }

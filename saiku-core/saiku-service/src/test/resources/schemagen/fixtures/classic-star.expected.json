@@ -88,15 +88,63 @@
       "sourceTable" : "store",
       "type" : "STANDARD"
     }, {
-      "foreignKey" : "order_date",
-      "hierarchies" : [ ],
+      "hierarchies" : [ {
+        "levels" : [ {
+          "column" : "order_date",
+          "expression" : "YEAR(order_date)",
+          "name" : "Year",
+          "provenance" : {
+            "confidence" : 1.0,
+            "ruleId" : "rule:time-degenerate",
+            "source" : "RULE"
+          },
+          "type" : "YEARS"
+        }, {
+          "column" : "order_date",
+          "expression" : "QUARTER(order_date)",
+          "name" : "Quarter",
+          "provenance" : {
+            "confidence" : 1.0,
+            "ruleId" : "rule:time-degenerate",
+            "source" : "RULE"
+          },
+          "type" : "QUARTERS"
+        }, {
+          "column" : "order_date",
+          "expression" : "MONTH(order_date)",
+          "name" : "Month",
+          "provenance" : {
+            "confidence" : 1.0,
+            "ruleId" : "rule:time-degenerate",
+            "source" : "RULE"
+          },
+          "type" : "MONTHS"
+        }, {
+          "column" : "order_date",
+          "expression" : "DAY(order_date)",
+          "name" : "Day",
+          "provenance" : {
+            "confidence" : 1.0,
+            "ruleId" : "rule:time-degenerate",
+            "source" : "RULE"
+          },
+          "type" : "DAYS"
+        } ],
+        "name" : "order_date",
+        "primaryKey" : "order_date",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:time-degenerate",
+          "source" : "RULE"
+        }
+      } ],
       "name" : "order_date",
       "provenance" : {
         "confidence" : 1.0,
-        "ruleId" : "rule:time-usage",
+        "ruleId" : "rule:time-degenerate",
         "source" : "RULE"
       },
-      "sourceTable" : "Time",
+      "sourceTable" : "sales",
       "type" : "TIME"
     } ],
     "measures" : [ {
@@ -136,54 +184,5 @@
     "sourceFactTable" : "sales"
   } ],
   "name" : "GeneratedSchema",
-  "sharedDimensions" : [ {
-    "hierarchies" : [ {
-      "levels" : [ {
-        "name" : "Year",
-        "provenance" : {
-          "confidence" : 1.0,
-          "ruleId" : "rule:time-shared",
-          "source" : "RULE"
-        },
-        "type" : "YEARS"
-      }, {
-        "name" : "Quarter",
-        "provenance" : {
-          "confidence" : 1.0,
-          "ruleId" : "rule:time-shared",
-          "source" : "RULE"
-        },
-        "type" : "QUARTERS"
-      }, {
-        "name" : "Month",
-        "provenance" : {
-          "confidence" : 1.0,
-          "ruleId" : "rule:time-shared",
-          "source" : "RULE"
-        },
-        "type" : "MONTHS"
-      }, {
-        "name" : "Day",
-        "provenance" : {
-          "confidence" : 1.0,
-          "ruleId" : "rule:time-shared",
-          "source" : "RULE"
-        },
-        "type" : "DAYS"
-      } ],
-      "name" : "Time",
-      "provenance" : {
-        "confidence" : 1.0,
-        "ruleId" : "rule:time-shared",
-        "source" : "RULE"
-      }
-    } ],
-    "name" : "Time",
-    "provenance" : {
-      "confidence" : 1.0,
-      "ruleId" : "rule:time-shared",
-      "source" : "RULE"
-    },
-    "type" : "TIME"
-  } ]
+  "sharedDimensions" : [ ]
 }

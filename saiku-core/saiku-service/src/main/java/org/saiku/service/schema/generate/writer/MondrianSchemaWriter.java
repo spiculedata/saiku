@@ -27,14 +27,18 @@ import org.saiku.service.schema.generate.enrich.ops.SuggestionOp;
  * <ul>
  *   <li>A {@code PhysicalSchema} block with a {@code Table} for each distinct fact / dimension
  *       table (dim tables carry a {@code Key} derived from {@link DraftHierarchy#primaryKey()})
- *       and a {@code Link} per cube-scoped dimension FK.
- *   <li>Shared dimensions as top-level {@code Dimension} elements ({@code type="TIME"} for {@link
- *       DraftDimension.Type#TIME}), each with an {@code Attributes} holder (one {@code Attribute}
- *       per level) and a {@code Hierarchies} holder (one {@code Hierarchy} per draft hierarchy
- *       with {@code Level} elements referencing the attributes).
+ *       and a {@code Link} per cube-scoped dimension FK. Fact tables that host a degenerate TIME
+ *       dimension also carry a {@code ColumnDefs} holder with a {@code CalculatedColumnDef} per
+ *       Y/Q/M/D level (e.g. {@code CalculatedColumnDef name="order_date_year"} whose expression
+ *       is {@code YEAR(order_date)}). Those calc columns become the {@code keyColumn} targets of
+ *       the TIME dim's attributes — Mondrian resolves the expression through its dialect layer.
+ *   <li>Shared dimensions as top-level {@code Dimension} elements, each with an {@code Attributes}
+ *       holder (one {@code Attribute} per level) and a {@code Hierarchies} holder (one {@code
+ *       Hierarchy} per draft hierarchy with {@code Level} elements referencing the attributes).
  *   <li>Each cube with its private dimensions in a {@code Dimensions} holder, a single {@code
  *       MeasureGroup} whose {@code Measures} holder contains one {@code Measure} per draft
- *       measure, and {@code DimensionLinks} containing a {@code ForeignKeyLink} per dimension.
+ *       measure, and {@code DimensionLinks} containing a {@code ForeignKeyLink} per non-TIME
+ *       dimension. Degenerate TIME dims emit no link — they colocate on the fact row.
  * </ul>
  *
  * <p>Known simplifications (tracked for future tasks, not blockers for A9):
@@ -109,44 +113,64 @@ public class MondrianSchemaWriter {
         Set<String> factTables = new LinkedHashSet<>();
         // dimTable -> primaryKey column (first seen wins)
         Map<String, String> dimTables = new LinkedHashMap<>();
+        // factTable -> list of (calcColumnName, expressionSql) for degenerate TIME dims.
+        Map<String, List<CalcCol>> factCalcCols = new LinkedHashMap<>();
 
-        // dimensions from cubes + shared
-        List<DraftDimension> allDims = new ArrayList<>();
-        allDims.addAll(draft.sharedDimensions());
         for (DraftCube cube : draft.cubes()) {
             if (cube.sourceFactTable() != null) {
                 factTables.add(cube.sourceFactTable());
             }
-            allDims.addAll(cube.dimensions());
+            for (DraftDimension d : cube.dimensions()) {
+                if (d.type() == DraftDimension.Type.TIME) {
+                    // Degenerate TIME dim: colocated on the fact. Collect calc columns; do NOT
+                    // add to dimTables (that would emit a duplicate <Table> and a bogus Key).
+                    String host = d.sourceTable() != null ? d.sourceTable() : cube.sourceFactTable();
+                    if (host != null) {
+                        List<CalcCol> list = factCalcCols.computeIfAbsent(host, k -> new ArrayList<>());
+                        addCalcCols(list, d);
+                    }
+                    continue;
+                }
+                if (d.sourceTable() == null) {
+                    continue;
+                }
+                String pk = primaryKeyOf(d);
+                dimTables.putIfAbsent(d.sourceTable(), pk);
+            }
         }
-
-        for (DraftDimension d : allDims) {
+        // Shared dims (non-TIME).
+        for (DraftDimension d : draft.sharedDimensions()) {
+            if (d.type() == DraftDimension.Type.TIME) {
+                // Schema-scope shared TIME dims are no longer emitted by the inferrer; if one
+                // arrives via an external draft, skip it from physical layout rather than emitting
+                // a phantom table.
+                continue;
+            }
             if (d.sourceTable() == null) {
                 continue;
             }
-            String pk = primaryKeyOf(d);
-            if (pk != null && !dimTables.containsKey(d.sourceTable())) {
-                dimTables.put(d.sourceTable(), pk);
-            } else {
-                dimTables.putIfAbsent(d.sourceTable(), pk);
-            }
+            dimTables.putIfAbsent(d.sourceTable(), primaryKeyOf(d));
         }
 
         List<MondrianDef.PhysicalSchemaElement> elements = new ArrayList<>();
 
         for (String fact : factTables) {
-            elements.add(simpleTable(fact, null));
+            elements.add(factTable(fact, factCalcCols.get(fact)));
         }
         for (Map.Entry<String, String> e : dimTables.entrySet()) {
-            elements.add(simpleTable(e.getKey(), e.getValue()));
+            elements.add(dimTable(e.getKey(), e.getValue()));
         }
 
         // Fact → dim Links (one per cube-scoped dimension with a foreign key).
+        // Degenerate TIME dims have no FK (they live on the fact) and are skipped here.
         for (DraftCube cube : draft.cubes()) {
             if (cube.sourceFactTable() == null) {
                 continue;
             }
             for (DraftDimension d : cube.dimensions()) {
+                if (d.type() == DraftDimension.Type.TIME) {
+                    continue;
+                }
                 if (d.sourceTable() == null || d.foreignKey() == null) {
                     continue;
                 }
@@ -167,7 +191,48 @@ public class MondrianSchemaWriter {
         return phys;
     }
 
-    private MondrianDef.Table simpleTable(String name, String keyColumn) {
+    /**
+     * Emit a fact table with optional {@code ColumnDefs} carrying the Y/Q/M/D
+     * {@link MondrianDef.CalculatedColumnDef}s for degenerate TIME dims. The fact has no Key
+     * attribute — cubes bind to it by name alone through {@code MeasureGroup.table}.
+     */
+    private MondrianDef.Table factTable(String name, List<CalcCol> calcCols) {
+        MondrianDef.Table t = new MondrianDef.Table();
+        t.name = name;
+        if (calcCols == null || calcCols.isEmpty()) {
+            t.childArray = new MondrianDef.TableElement[0];
+            return t;
+        }
+        MondrianDef.ColumnDefs defs = new MondrianDef.ColumnDefs();
+        List<MondrianDef.RealOrCalcColumnDef> list = new ArrayList<>();
+        // Deduplicate by calc-column name (multiple date columns → distinct prefixes, but guard
+        // in case of an exotic case).
+        Set<String> seen = new LinkedHashSet<>();
+        for (CalcCol cc : calcCols) {
+            if (!seen.add(cc.name)) {
+                continue;
+            }
+            list.add(calculatedColumnDef(cc.name, cc.expression));
+        }
+        defs.array = list.toArray(new MondrianDef.RealOrCalcColumnDef[0]);
+        t.childArray = new MondrianDef.TableElement[] {defs};
+        return t;
+    }
+
+    private MondrianDef.CalculatedColumnDef calculatedColumnDef(String name, String sqlExpr) {
+        MondrianDef.CalculatedColumnDef def = new MondrianDef.CalculatedColumnDef();
+        def.name = name;
+        def.type = "Integer";
+        MondrianDef.ExpressionView view = new MondrianDef.ExpressionView();
+        MondrianDef.SQL sql = new MondrianDef.SQL();
+        sql.dialect = "generic";
+        sql.setCData(sqlExpr);
+        view.expressions = new MondrianDef.SQL[] {sql};
+        def.expression = view;
+        return def;
+    }
+
+    private MondrianDef.Table dimTable(String name, String keyColumn) {
         MondrianDef.Table t = new MondrianDef.Table();
         t.name = name;
         if (keyColumn != null) {
@@ -189,11 +254,15 @@ public class MondrianSchemaWriter {
 
     /** Build a Mondrian Dimension from a draft dim. */
     private MondrianDef.Dimension buildDimension(DraftDimension d, boolean asSharedChildOfSchema) {
+        if (d.type() == DraftDimension.Type.TIME) {
+            return buildTimeDimension(d);
+        }
+        return buildStandardDimension(d);
+    }
+
+    private MondrianDef.Dimension buildStandardDimension(DraftDimension d) {
         MondrianDef.Dimension md = new MondrianDef.Dimension();
         md.name = d.name();
-        if (d.type() == DraftDimension.Type.TIME) {
-            md.type = "TIME";
-        }
         if (d.sourceTable() != null) {
             md.table = d.sourceTable();
         }
@@ -207,11 +276,9 @@ public class MondrianSchemaWriter {
 
         List<MondrianDef.DimensionElement> children = new ArrayList<>();
 
-        // Attributes holder: one per level across all hierarchies, plus a dedicated key attribute.
         MondrianDef.Attributes attrs = new MondrianDef.Attributes();
         List<MondrianDef.Attribute> attrList = new ArrayList<>();
 
-        // Key attribute (keyed on primary key column, no hierarchy of its own).
         if (keyAttrName != null) {
             MondrianDef.Attribute keyAttr = new MondrianDef.Attribute();
             keyAttr.name = keyAttrName;
@@ -233,31 +300,81 @@ public class MondrianSchemaWriter {
         attrs.array = attrList.toArray(new MondrianDef.Attribute[0]);
         children.add(attrs);
 
-        // Hierarchies holder.
-        if (!d.hierarchies().isEmpty()) {
-            MondrianDef.Hierarchies hiers = new MondrianDef.Hierarchies();
-            List<MondrianDef.Hierarchy> hList = new ArrayList<>();
-            for (DraftHierarchy h : d.hierarchies()) {
-                MondrianDef.Hierarchy mh = new MondrianDef.Hierarchy();
-                mh.name = h.name();
-                mh.hasAll = Boolean.TRUE;
-
-                List<MondrianDef.HierarchyElement> hChildren = new ArrayList<>();
-                for (DraftLevel l : h.levels()) {
-                    MondrianDef.Level ml = new MondrianDef.Level();
-                    ml.name = l.name();
-                    ml.attribute = l.name();
-                    hChildren.add(ml);
-                }
-                mh.childArray = hChildren.toArray(new MondrianDef.HierarchyElement[0]);
-                hList.add(mh);
-            }
-            hiers.array = hList.toArray(new MondrianDef.Hierarchy[0]);
-            children.add(hiers);
-        }
+        children.add(buildHierarchiesHolder(d));
 
         md.childArray = children.toArray(new MondrianDef.DimensionElement[0]);
         return md;
+    }
+
+    /**
+     * Build a degenerate TIME dimension that colocates on the fact table. Attributes key on
+     * synthetic calc columns (e.g. {@code order_date_year}) emitted into the fact's physical
+     * {@code ColumnDefs} by {@link #factTable(String, List)}. The finest-granularity attribute
+     * (Day) doubles as the dimension key.
+     */
+    private MondrianDef.Dimension buildTimeDimension(DraftDimension d) {
+        MondrianDef.Dimension md = new MondrianDef.Dimension();
+        md.name = d.name();
+        md.type = "TIME";
+        if (d.sourceTable() != null) {
+            md.table = d.sourceTable();
+        }
+
+        List<MondrianDef.DimensionElement> children = new ArrayList<>();
+
+        MondrianDef.Attributes attrs = new MondrianDef.Attributes();
+        List<MondrianDef.Attribute> attrList = new ArrayList<>();
+
+        String keyAttrName = null;
+        for (DraftHierarchy h : d.hierarchies()) {
+            for (DraftLevel l : h.levels()) {
+                MondrianDef.Attribute a = new MondrianDef.Attribute();
+                a.name = l.name();
+                a.keyColumn = calcColumnName(l);
+                a.levelType = levelType(l.type());
+                a.hasHierarchy = Boolean.FALSE;
+                attrList.add(a);
+                if (l.type() == DraftLevel.Type.DAYS) {
+                    keyAttrName = l.name();
+                }
+            }
+        }
+        // If no DAYS level (shouldn't happen for builder output, but guard anyway), fall back
+        // to the last level as key.
+        if (keyAttrName == null && !attrList.isEmpty()) {
+            keyAttrName = attrList.get(attrList.size() - 1).name;
+        }
+        md.key = keyAttrName;
+
+        attrs.array = attrList.toArray(new MondrianDef.Attribute[0]);
+        children.add(attrs);
+
+        children.add(buildHierarchiesHolder(d));
+
+        md.childArray = children.toArray(new MondrianDef.DimensionElement[0]);
+        return md;
+    }
+
+    private MondrianDef.Hierarchies buildHierarchiesHolder(DraftDimension d) {
+        MondrianDef.Hierarchies hiers = new MondrianDef.Hierarchies();
+        List<MondrianDef.Hierarchy> hList = new ArrayList<>();
+        for (DraftHierarchy h : d.hierarchies()) {
+            MondrianDef.Hierarchy mh = new MondrianDef.Hierarchy();
+            mh.name = h.name();
+            mh.hasAll = Boolean.TRUE;
+
+            List<MondrianDef.HierarchyElement> hChildren = new ArrayList<>();
+            for (DraftLevel l : h.levels()) {
+                MondrianDef.Level ml = new MondrianDef.Level();
+                ml.name = l.name();
+                ml.attribute = l.name();
+                hChildren.add(ml);
+            }
+            mh.childArray = hChildren.toArray(new MondrianDef.HierarchyElement[0]);
+            hList.add(mh);
+        }
+        hiers.array = hList.toArray(new MondrianDef.Hierarchy[0]);
+        return hiers;
     }
 
     private String keyAttributeName(DraftDimension d) {
@@ -342,11 +459,20 @@ public class MondrianSchemaWriter {
         measures.array = mList.toArray(new MondrianDef.MeasureOrRef[0]);
         mgChildren.add(measures);
 
-        // DimensionLinks — one ForeignKeyLink per cube dim with a FK.
+        // DimensionLinks — one link per cube dim. ForeignKeyLink for FK-joined dims,
+        // FactLink for degenerate TIME dims (which colocate on the fact and therefore have no
+        // join condition). Mondrian rejects the schema with "no link for dimension X in measure
+        // group Y" if any cube dim is missing a link.
         if (!cube.dimensions().isEmpty()) {
             MondrianDef.DimensionLinks dls = new MondrianDef.DimensionLinks();
             List<MondrianDef.DimensionLink> links = new ArrayList<>();
             for (DraftDimension d : cube.dimensions()) {
+                if (d.type() == DraftDimension.Type.TIME) {
+                    MondrianDef.FactLink fl = new MondrianDef.FactLink();
+                    fl.dimension = d.name();
+                    links.add(fl);
+                    continue;
+                }
                 if (d.foreignKey() != null) {
                     MondrianDef.ForeignKeyLink fkl = new MondrianDef.ForeignKeyLink();
                     fkl.dimension = d.name();
@@ -388,6 +514,60 @@ public class MondrianSchemaWriter {
                 return "max";
             default:
                 return "sum";
+        }
+    }
+
+    // --- degenerate time helpers ------------------------------------------
+
+    /** Synthetic calc-column name used for a TIME level (e.g. {@code order_date_year}). */
+    private static String calcColumnName(DraftLevel level) {
+        String col = level.column() != null ? level.column() : "time";
+        String suffix;
+        switch (level.type() == null ? DraftLevel.Type.REGULAR : level.type()) {
+            case YEARS:
+                suffix = "year";
+                break;
+            case QUARTERS:
+                suffix = "quarter";
+                break;
+            case MONTHS:
+                suffix = "month";
+                break;
+            case DAYS:
+                suffix = "day";
+                break;
+            default:
+                suffix = level.name() == null ? "level" : level.name().toLowerCase();
+        }
+        return col + "_" + suffix;
+    }
+
+    private static void addCalcCols(List<CalcCol> out, DraftDimension d) {
+        for (DraftHierarchy h : d.hierarchies()) {
+            for (DraftLevel l : h.levels()) {
+                String expr = l.expression();
+                if (expr == null || expr.isBlank()) {
+                    // If no expression present, fall back to the raw column — that reduces the
+                    // "calc" to an alias but keeps the schema valid.
+                    if (l.column() != null) {
+                        expr = l.column();
+                    } else {
+                        continue;
+                    }
+                }
+                out.add(new CalcCol(calcColumnName(l), expr));
+            }
+        }
+    }
+
+    /** Lightweight pair for the fact-table calc-column collection. */
+    private static final class CalcCol {
+        final String name;
+        final String expression;
+
+        CalcCol(String name, String expression) {
+            this.name = name;
+            this.expression = expression;
         }
     }
 }

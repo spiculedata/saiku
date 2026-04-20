@@ -13,62 +13,70 @@ import org.saiku.service.schema.generate.model.DbColumn;
 import org.saiku.service.schema.generate.model.DbTable;
 
 /**
- * Builds a shared Time {@link DraftDimension} and role-playing usages for fact-table date columns.
+ * Builds per-cube, degenerate Time {@link DraftDimension}s for each fact-table date column.
  *
- * <p>Two-step shape:
- * <ul>
- *   <li>{@link #buildSharedTimeDimension()} — one shared Time dimension with a single hierarchy of
- *       YEARS / QUARTERS / MONTHS / DAYS levels. Emitted once per schema, attached to
- *       {@code DraftSchema.sharedDimensions()}. Provenance {@code rule:time-shared}.</li>
- *   <li>{@link #buildCubeUsages(DbTable, DraftDimension)} — one role-playing usage per
- *       {@code DATE}/{@code TIMESTAMP}/{@code TIMESTAMP_WITH_TIMEZONE} column on the fact table.
- *       Each usage has {@code name = column}, {@code foreignKey = column},
- *       {@code sourceTable = shared.name()} and empty hierarchies (points at the shared dim).
- *       Provenance {@code rule:time-usage}.</li>
- * </ul>
+ * <p>Design notes: earlier iterations emitted a single schema-scope shared {@code Time} dimension
+ * backed by a {@code <Table name="Time"/>} reference, plus role-playing usages per date column.
+ * Because no such calendar table exists in the source database, Mondrian accepted the XML but
+ * couldn't query the dim. The writer bug is fixed by colocating the dim on the fact table and
+ * deriving Y/Q/M/D levels via SQL expressions ({@code YEAR}/{@code QUARTER}/{@code MONTH}/
+ * {@code DAY}) — see {@code docs/plans/2026-04-19-schema-autogeneration-design.md} "Time
+ * dimensions (degenerate)".
  *
- * <p>{@code TIME} (time-of-day without a date) is deliberately ignored — it is not a calendar
+ * <p>One {@link DraftDimension} per {@code DATE}/{@code TIMESTAMP}/{@code TIMESTAMP_WITH_TIMEZONE}
+ * column on the fact. Name is the source column name, {@code type = TIME},
+ * {@code sourceTable = factTable.name()}, {@code foreignKey = null} (degenerate — no FK link
+ * needed, the dim attributes evaluate over the fact row directly), one hierarchy with four levels
+ * whose {@code column} tracks the source date column and {@code expression} carries the scalar
+ * extraction SQL. Provenance {@code rule:time-degenerate}.
+ *
+ * <p>{@code JDBCType.TIME} (time-of-day without a date) is deliberately excluded — not a calendar
  * dimension.
  *
- * <p>Pure: does not mutate the input table or the shared dimension.
+ * <p>Pure: does not mutate the input table.
  */
 public class TimeDimensionBuilder {
 
     private static final Set<JDBCType> DATE_TYPES =
             EnumSet.of(JDBCType.DATE, JDBCType.TIMESTAMP, JDBCType.TIMESTAMP_WITH_TIMEZONE);
 
-    private static final String SHARED_NAME = "Time";
+    private static final String RULE_ID = "rule:time-degenerate";
 
-    /** Build the shared Time dimension (Y/Q/M/D). */
-    public DraftDimension buildSharedTimeDimension() {
-        Provenance prov = new Provenance(Provenance.Source.RULE, "rule:time-shared", 1.0);
-        DraftDimension dim = new DraftDimension(SHARED_NAME, DraftDimension.Type.TIME, prov);
+    /**
+     * Build one degenerate Time dimension per DATE/TIMESTAMP column on {@code factTable}.
+     * Returns an empty list if the fact has no such columns.
+     */
+    public List<DraftDimension> buildCubeTimeDimensions(DbTable factTable) {
+        Provenance prov = new Provenance(Provenance.Source.RULE, RULE_ID, 1.0);
+        List<DraftDimension> dims = new ArrayList<>();
+        for (DbColumn c : factTable.columns()) {
+            if (c.type() != null && DATE_TYPES.contains(c.type())) {
+                dims.add(buildOne(factTable.name(), c.name(), prov));
+            }
+        }
+        return dims;
+    }
 
-        DraftHierarchy h = new DraftHierarchy(SHARED_NAME, null, prov);
-        h.levels().add(new DraftLevel("Year", null, DraftLevel.Type.YEARS, prov));
-        h.levels().add(new DraftLevel("Quarter", null, DraftLevel.Type.QUARTERS, prov));
-        h.levels().add(new DraftLevel("Month", null, DraftLevel.Type.MONTHS, prov));
-        h.levels().add(new DraftLevel("Day", null, DraftLevel.Type.DAYS, prov));
+    private DraftDimension buildOne(String factTableName, String dateColumn, Provenance prov) {
+        DraftDimension dim = new DraftDimension(dateColumn, DraftDimension.Type.TIME, prov);
+        dim.setSourceTable(factTableName);
+        // Degenerate dim: attributes evaluate over the fact row. No foreignKey.
+
+        DraftHierarchy h = new DraftHierarchy(dateColumn, dateColumn, prov);
+
+        h.levels().add(level("Year", dateColumn, DraftLevel.Type.YEARS, "YEAR(" + dateColumn + ")", prov));
+        h.levels().add(level("Quarter", dateColumn, DraftLevel.Type.QUARTERS, "QUARTER(" + dateColumn + ")", prov));
+        h.levels().add(level("Month", dateColumn, DraftLevel.Type.MONTHS, "MONTH(" + dateColumn + ")", prov));
+        h.levels().add(level("Day", dateColumn, DraftLevel.Type.DAYS, "DAY(" + dateColumn + ")", prov));
 
         dim.hierarchies().add(h);
         return dim;
     }
 
-    /**
-     * Build the role-playing cube usages of {@code sharedTimeDim} for each DATE/TIMESTAMP column
-     * on {@code factTable}. Returns an empty list if the fact has no such columns.
-     */
-    public List<DraftDimension> buildCubeUsages(DbTable factTable, DraftDimension sharedTimeDim) {
-        Provenance prov = new Provenance(Provenance.Source.RULE, "rule:time-usage", 1.0);
-        List<DraftDimension> usages = new ArrayList<>();
-        for (DbColumn c : factTable.columns()) {
-            if (c.type() != null && DATE_TYPES.contains(c.type())) {
-                DraftDimension usage = new DraftDimension(c.name(), DraftDimension.Type.TIME, prov);
-                usage.setForeignKey(c.name());
-                usage.setSourceTable(sharedTimeDim.name());
-                usages.add(usage);
-            }
-        }
-        return usages;
+    private static DraftLevel level(
+            String name, String column, DraftLevel.Type type, String expression, Provenance prov) {
+        DraftLevel l = new DraftLevel(name, column, type, prov);
+        l.setExpression(expression);
+        return l;
     }
 }

@@ -1,15 +1,11 @@
 package org.saiku.service.schema.generate.infer;
 
-import java.sql.JDBCType;
-import java.util.EnumSet;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import org.saiku.service.schema.generate.draft.DraftCube;
 import org.saiku.service.schema.generate.draft.DraftDimension;
 import org.saiku.service.schema.generate.draft.DraftSchema;
 import org.saiku.service.schema.generate.draft.Provenance;
-import org.saiku.service.schema.generate.model.DbColumn;
 import org.saiku.service.schema.generate.model.DbForeignKey;
 import org.saiku.service.schema.generate.model.DbModel;
 import org.saiku.service.schema.generate.model.DbTable;
@@ -29,17 +25,15 @@ import org.saiku.service.schema.generate.model.DbTable;
  *   <li>For each FK on the fact whose target is a {@code DIMENSION}-classified table, a
  *       {@link DraftDimension} is built via {@link DimensionBuilder} with
  *       {@code foreignKey} bound to the FK's local column.</li>
- *   <li>If any fact has a DATE/TIMESTAMP column, a single shared "Time" dimension is
- *       attached at schema scope and one role-playing {@link DraftDimension} usage is
- *       attached to each cube per date column.</li>
+ *   <li>For each DATE/TIMESTAMP column on a fact, a degenerate Time dimension is attached
+ *       to the cube — Y/Q/M/D levels derived via {@code YEAR()/QUARTER()/MONTH()/DAY()}
+ *       expressions over the fact row. No shared/synthetic Time table is emitted; see
+ *       {@link TimeDimensionBuilder}.</li>
  *   <li>Measures come from {@link MeasureBuilder} — SUM over numeric non-PK, non-FK,
  *       non-date columns, plus an implicit {@code Fact Count} COUNT_STAR.</li>
  * </ul>
  */
 public class SchemaInferrer {
-
-    private static final Set<JDBCType> DATE_TYPES =
-            EnumSet.of(JDBCType.DATE, JDBCType.TIMESTAMP, JDBCType.TIMESTAMP_WITH_TIMEZONE);
 
     private static final String DEFAULT_SCHEMA_NAME = "GeneratedSchema";
 
@@ -72,17 +66,6 @@ public class SchemaInferrer {
         DraftSchema schema = new DraftSchema(DEFAULT_SCHEMA_NAME);
         Map<DbTable, TableClassification> classifications = classifier.classify(model);
 
-        // Build the shared Time dim once if any fact has a date-like column; otherwise skip
-        // entirely so downstream stages aren't burdened with an empty shared dimension.
-        DraftDimension sharedTime = null;
-        for (Map.Entry<DbTable, TableClassification> entry : classifications.entrySet()) {
-            if (entry.getValue().kind() == TableClassification.Kind.FACT && hasDateColumn(entry.getKey())) {
-                sharedTime = timeBuilder.buildSharedTimeDimension();
-                schema.sharedDimensions().add(sharedTime);
-                break;
-            }
-        }
-
         for (Map.Entry<DbTable, TableClassification> entry : classifications.entrySet()) {
             if (entry.getValue().kind() != TableClassification.Kind.FACT) {
                 continue;
@@ -102,23 +85,12 @@ public class SchemaInferrer {
                 });
             }
 
-            if (sharedTime != null) {
-                cube.dimensions().addAll(timeBuilder.buildCubeUsages(fact, sharedTime));
-            }
+            cube.dimensions().addAll(timeBuilder.buildCubeTimeDimensions(fact));
 
             cube.measures().addAll(measureBuilder.build(fact));
             schema.cubes().add(cube);
         }
 
         return schema;
-    }
-
-    private static boolean hasDateColumn(DbTable table) {
-        for (DbColumn c : table.columns()) {
-            if (c.type() != null && DATE_TYPES.contains(c.type())) {
-                return true;
-            }
-        }
-        return false;
     }
 }

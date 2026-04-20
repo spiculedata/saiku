@@ -73,15 +73,15 @@ public class FoodmartHappyPathIT {
             // qualifier — the writer emits bare table names.
             st.execute("CREATE TABLE customer (id INT PRIMARY KEY, name VARCHAR(64))");
             st.execute("CREATE TABLE product  (id INT PRIMARY KEY, name VARCHAR(64))");
-            // Deliberately NO date column — the inferrer's shared-Time dim emits a table named
-            // "Time" into PhysicalSchema that has no counterpart in the DB (known limitation of
-            // the current TimeDimensionBuilder → writer path). Keeping the minimum viable fact
-            // shape here avoids tripping that bug; a separate task will teach the writer to skip
-            // synthetic tables for role-playing shared dims.
+            // Sales fact includes an order_date column — the inferrer turns it into a degenerate
+            // TIME dim whose Y/Q/M/D attributes bind to CalculatedColumnDef entries on the fact
+            // (YEAR/QUARTER/MONTH/DAY expressions). This exercises the fix that retired the
+            // phantom shared-Time table.
             st.execute("CREATE TABLE sales ("
                     + " id INT PRIMARY KEY,"
                     + " customer_id INT,"
                     + " product_id INT,"
+                    + " order_date DATE,"
                     + " amount DECIMAL(10,2),"
                     + " qty INT,"
                     + " FOREIGN KEY (customer_id) REFERENCES customer(id),"
@@ -89,7 +89,9 @@ public class FoodmartHappyPathIT {
             st.execute("INSERT INTO customer VALUES (1, 'alice'), (2, 'bob')");
             st.execute("INSERT INTO product  VALUES (1, 'widget'), (2, 'sprocket')");
             st.execute("INSERT INTO sales"
-                    + " SELECT X, 1 + MOD(X,2), 1 + MOD(X,2), 9.99, 1"
+                    + " SELECT X, 1 + MOD(X,2), 1 + MOD(X,2),"
+                    + " DATEADD('DAY', MOD(X, 365), DATE '2024-01-01'),"
+                    + " 9.99, 1"
                     + " FROM SYSTEM_RANGE(1, " + EXPECTED_ROWS + ")");
         }
 

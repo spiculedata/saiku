@@ -149,6 +149,7 @@ public final class DraftSchemaJson {
     private static ObjectNode levelNode(DraftLevel l) {
         ObjectNode n = MAPPER.createObjectNode();
         putIfNotNull(n, "column", l.column());
+        putIfNotNull(n, "expression", l.expression());
         putIfNotNull(n, "name", l.name());
         n.set("provenance", provenanceNode(l.provenance()));
         if (l.type() != null) {
@@ -275,8 +276,10 @@ public final class DraftSchemaJson {
         if (typeNode != null && !typeNode.isNull()) {
             type = DraftLevel.Type.valueOf(typeNode.asText());
         }
-        return new DraftLevel(
+        DraftLevel level = new DraftLevel(
                 textOrNull(n, "name"), textOrNull(n, "column"), type, readProvenance(n.get("provenance")));
+        level.setExpression(textOrNull(n, "expression"));
+        return level;
     }
 
     private static DraftMeasure readMeasure(JsonNode n) {

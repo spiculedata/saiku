@@ -93,13 +93,12 @@ public class SchemaInferrerTest {
         assertEquals("sales_fact", cube.name());
         assertEquals("sales_fact", cube.sourceFactTable());
 
-        // 1 shared Time dim.
-        assertEquals(1, schema.sharedDimensions().size());
-        DraftDimension shared = schema.sharedDimensions().get(0);
-        assertEquals("Time", shared.name());
-        assertEquals(DraftDimension.Type.TIME, shared.type());
+        // No shared dims — degenerate time dims live on the cube.
+        assertTrue(
+                "no shared dims in degenerate-time model",
+                schema.sharedDimensions().isEmpty());
 
-        // 4 dimensions on the cube (customer, product, store, order_date Time usage).
+        // 4 dimensions on the cube (customer, product, store, degenerate order_date time dim).
         assertEquals(4, cube.dimensions().size());
         Map<String, DraftDimension> byName = new HashMap<>();
         for (DraftDimension d : cube.dimensions()) {
@@ -108,17 +107,19 @@ public class SchemaInferrerTest {
         assertTrue("customer dim", byName.containsKey("customer"));
         assertTrue("product dim", byName.containsKey("product"));
         assertTrue("store dim", byName.containsKey("store"));
-        assertTrue("order_date time usage", byName.containsKey("order_date"));
+        assertTrue("order_date time dim", byName.containsKey("order_date"));
 
-        // Foreign keys wired from the fact side.
+        // Foreign keys wired from the fact side for FK dims.
         assertEquals("customer_id", byName.get("customer").foreignKey());
         assertEquals("product_id", byName.get("product").foreignKey());
         assertEquals("store_id", byName.get("store").foreignKey());
-        assertEquals("order_date", byName.get("order_date").foreignKey());
-
-        // Time usage is a role-playing reference to the shared "Time" dim.
+        // Degenerate time dim has no FK and colocates on the fact.
         assertEquals(DraftDimension.Type.TIME, byName.get("order_date").type());
-        assertEquals("Time", byName.get("order_date").sourceTable());
+        assertEquals("sales_fact", byName.get("order_date").sourceTable());
+        assertEquals(
+                "Y/Q/M/D levels",
+                4,
+                byName.get("order_date").hierarchies().get(0).levels().size());
 
         // Standard dims point at their own source tables.
         assertEquals("customer", byName.get("customer").sourceTable());
@@ -132,9 +133,6 @@ public class SchemaInferrerTest {
 
         // Every element has RULE provenance.
         assertRuleProvenance(cube.provenance(), "cube");
-        for (DraftDimension d : schema.sharedDimensions()) {
-            assertDimensionRuleProvenance(d);
-        }
         for (DraftDimension d : cube.dimensions()) {
             assertDimensionRuleProvenance(d);
         }
