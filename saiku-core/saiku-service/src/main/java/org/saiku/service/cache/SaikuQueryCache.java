@@ -268,20 +268,51 @@ public class SaikuQueryCache {
         }
     }
 
+    /**
+     * Sum the bytes recorded in every {@code .meta.json} sidecar on disk.
+     * This is the source of truth for the disk budget — the Caffeine index
+     * is capped at 512 entries and silently evicts older ones, so trusting
+     * it would systematically under-report and let disk grow past
+     * {@link #maxSizeBytes}.
+     *
+     * <p>TODO: consider a rolling running total if this gets hot.
+     */
     public long totalBytesOnDisk() {
-        long total = 0L;
-        for (Entry e : index.asMap().values()) {
-            total += e.bytes;
+        return walkMetaEntries().stream().mapToLong(e -> e.bytes).sum();
+    }
+
+    /**
+     * Walk the cache dir and deserialise every {@code .meta.json} into an
+     * {@link Entry}. Malformed sidecars are skipped.
+     */
+    private List<Entry> walkMetaEntries() {
+        List<Entry> entries = new ArrayList<>();
+        if (!Files.isDirectory(cacheDir)) {
+            return entries;
         }
-        return total;
+        try (DirectoryStream<Path> ds = Files.newDirectoryStream(cacheDir, "*" + META_SUFFIX)) {
+            for (Path meta : ds) {
+                try {
+                    Entry e = mapper.readValue(meta.toFile(), Entry.class);
+                    if (e != null && e.key != null) {
+                        entries.add(e);
+                    }
+                } catch (Exception ex) {
+                    log.debug("Ignoring malformed meta sidecar {}: {}", meta, ex.toString());
+                }
+            }
+        } catch (IOException ioe) {
+            log.debug("Cache meta walk failed: {}", ioe.toString());
+        }
+        return entries;
     }
 
     private void evictIfOverBudget() {
-        long total = totalBytesOnDisk();
+        List<Entry> all = walkMetaEntries();
+        long total = all.stream().mapToLong(e -> e.bytes).sum();
         if (total <= maxSizeBytes) {
             return;
         }
-        List<Entry> all = new ArrayList<>(index.asMap().values());
         all.sort(Comparator.comparingLong(e -> e.createdAt)); // oldest first
         for (Entry victim : all) {
             if (total <= maxSizeBytes) {
