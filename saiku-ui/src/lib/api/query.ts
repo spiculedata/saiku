@@ -182,6 +182,74 @@ export function newQuery(cube: SaikuCube): ThinQuery {
   };
 }
 
+/* ------------------------------------------------------------------ */
+/* URL deep-link serialisation                                         */
+/* ------------------------------------------------------------------ */
+
+/** A lightweight view-state bag carried in the `?q=` deep-link alongside
+ *  the `ThinQuery`. Kept separate so we don't pollute the server-visible
+ *  query payload with client-only rendering preferences. */
+export interface DeepLinkView {
+  viewMode: string;
+  chartType?: string;
+  chartOptions?: unknown;
+}
+
+interface DeepLinkPayload {
+  v: 1;
+  q: ThinQuery;
+  view: DeepLinkView;
+}
+
+function base64UrlEncode(str: string): string {
+  // btoa works on binary strings only. Encode UTF-8 first so non-ASCII
+  // captions (Chinese dimensions, accented names) survive the round-trip.
+  const bytes = new TextEncoder().encode(str);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  const b64 = btoa(bin);
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function base64UrlDecode(token: string): string {
+  let b64 = token.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = b64.length % 4;
+  if (pad === 2) b64 += "==";
+  else if (pad === 3) b64 += "=";
+  else if (pad === 1) throw new Error("invalid base64url length");
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+/** Strip result/runtime junk that might have snuck into a ThinQuery via a
+ *  previous roundtrip, and drop the randomly-regenerated `name`. */
+function pruneQuery(q: ThinQuery): ThinQuery {
+  const { name: _name, ...rest } = q;
+  return { ...(rest as Omit<ThinQuery, "name">), name: "" } as ThinQuery;
+}
+
+export function serializeQueryToHash(q: ThinQuery, view: DeepLinkView): string {
+  const payload: DeepLinkPayload = { v: 1, q: pruneQuery(q), view };
+  return base64UrlEncode(JSON.stringify(payload));
+}
+
+export function deserializeQueryFromHash(
+  token: string,
+): { query: ThinQuery; view: DeepLinkView } | null {
+  try {
+    const raw = base64UrlDecode(token);
+    const parsed = JSON.parse(raw) as DeepLinkPayload;
+    if (!parsed || parsed.v !== 1 || !parsed.q || !parsed.view) return null;
+    return { query: parsed.q, view: parsed.view };
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn("saiku: failed to decode ?q= token", err);
+    return null;
+  }
+}
+
 export async function executeQuery(q: ThinQuery): Promise<QueryResult> {
   // Kill-switch: set localStorage.saiku_force_json=1 to fall back to the
   // legacy JSON path (e.g. for debugging an Arrow serialisation bug).
@@ -240,7 +308,7 @@ export async function executeQueryAsync(
 
   const handleAbort = async (): Promise<never> => {
     try {
-      await fetch(`${REST_BASE}/${encodedId}/cancel`, { method: "DELETE", credentials: "include" });
+      await fetch(`${REST_BASE}/async/${encodedId}/cancel`, { method: "DELETE", credentials: "include" });
     } catch {
       // swallow — the caller already knows this was cancelled
     }
@@ -261,7 +329,7 @@ export async function executeQueryAsync(
       throw err;
     });
 
-    const statusRes = await fetch(`${REST_BASE}/${encodedId}/status`, {
+    const statusRes = await fetch(`${REST_BASE}/async/${encodedId}/status`, {
       credentials: "include",
       headers: { Accept: "application/json" },
       signal: opts.signal,
@@ -281,7 +349,7 @@ export async function executeQueryAsync(
     delay = Math.min(Math.round(delay * 1.5), maxDelay);
   }
 
-  const resultRes = await fetch(`${REST_BASE}/${encodedId}/result`, {
+  const resultRes = await fetch(`${REST_BASE}/async/${encodedId}/result`, {
     credentials: "include",
     headers: { Accept: acceptHeader() },
     signal: opts.signal,

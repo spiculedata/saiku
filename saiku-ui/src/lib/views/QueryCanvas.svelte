@@ -6,7 +6,8 @@
   import CellsetTable from "$lib/views/CellsetTable.svelte";
   import ChartView from "$lib/views/ChartView.svelte";
   import StatsView from "$lib/views/StatsView.svelte";
-  import { CHART_TYPES, DEFAULT_CHART_OPTIONS, type ChartType, type ChartOptions } from "$lib/views/chartTypes";
+  import { CHART_TYPES } from "$lib/views/chartTypes";
+  import type { ViewMode } from "$lib/stores/query.svelte";
   import SelectionsModal from "$lib/modals/SelectionsModal.svelte";
   import DrillthroughModal from "$lib/modals/DrillthroughModal.svelte";
   import DrillthroughResultModal from "$lib/modals/DrillthroughResultModal.svelte";
@@ -24,10 +25,6 @@
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
-  type ViewMode = "grid" | "chart" | "stats" | "sparkline" | "sparkbar";
-  let viewMode = $state<ViewMode>("grid");
-  let chartType = $state<ChartType>("bar");
-  let chartOptions = $state<ChartOptions>({ ...DEFAULT_CHART_OPTIONS });
   let chartEditorOpen = $state(false);
   let moreViewOpen = $state(false);
   const moreViewModes: ViewMode[] = ["stats", "sparkline", "sparkbar"];
@@ -42,7 +39,7 @@
     return (moreViewModes as ViewMode[]).includes(m);
   }
   function pickMoreMode(m: ViewMode) {
-    viewMode = m;
+    query.viewMode = m;
     moreViewOpen = false;
   }
 
@@ -765,21 +762,21 @@
     </aside>
     <div class="canvas__result">
     <div class="view-toggle" role="tablist" aria-label="Result view">
-      <button type="button" role="tab" class:active={viewMode === "grid"} onclick={() => (viewMode = "grid")}>
+      <button type="button" role="tab" class:active={query.viewMode === "grid"} onclick={() => (query.viewMode = "grid")}>
         {i18n.t("canvas.view.grid")}
       </button>
-      <button type="button" role="tab" class:active={viewMode === "chart"} onclick={() => (viewMode = "chart")}>
+      <button type="button" role="tab" class:active={query.viewMode === "chart"} onclick={() => (query.viewMode = "chart")}>
         {i18n.t("canvas.view.chart")}
       </button>
       <div class="view-more">
         <button
           type="button"
           role="tab"
-          class:active={isMoreMode(viewMode)}
+          class:active={isMoreMode(query.viewMode)}
           onclick={() => (moreViewOpen = !moreViewOpen)}
           title="Other views"
         >
-          <span>{isMoreMode(viewMode) ? moreViewLabels[viewMode] : "More"}</span>
+          <span>{isMoreMode(query.viewMode) ? moreViewLabels[query.viewMode] : "More"}</span>
           <ChevronDown size={14} />
         </button>
         {#if moreViewOpen}
@@ -788,7 +785,7 @@
               <button
                 type="button"
                 role="menuitem"
-                class:active={viewMode === m}
+                class:active={query.viewMode === m}
                 onclick={() => pickMoreMode(m)}
               >
                 {moreViewLabels[m]}
@@ -797,10 +794,10 @@
           </div>
         {/if}
       </div>
-      {#if viewMode === "chart"}
+      {#if query.viewMode === "chart"}
         <label class="chart-pick">
           <span class="sr-only">Chart type</span>
-          <select bind:value={chartType}>
+          <select bind:value={query.chartType}>
             {#each chartGroups() as group}
               <optgroup label={group.name}>
                 {#each group.items as c}
@@ -829,13 +826,13 @@
       {:else if query.error}
         <p class="callout callout--danger">{query.error}</p>
       {:else if query.result}
-        {#if viewMode === "chart"}
-          <ChartView result={query.result} type={chartType} options={chartOptions} />
-        {:else if viewMode === "stats"}
+        {#if query.viewMode === "chart"}
+          <ChartView result={query.result} type={query.chartType} options={query.chartOptions} />
+        {:else if query.viewMode === "stats"}
           <StatsView result={query.result} />
-        {:else if viewMode === "sparkline"}
+        {:else if query.viewMode === "sparkline"}
           <CellsetTable result={query.result} spark="line" />
-        {:else if viewMode === "sparkbar"}
+        {:else if query.viewMode === "sparkbar"}
           <CellsetTable result={query.result} spark="bar" />
         {:else}
           <CellsetTable result={query.result} />
@@ -895,9 +892,9 @@
 />
 
 <ChartEditorModal
-  initial={chartOptions}
+  initial={query.chartOptions}
   open={chartEditorOpen}
-  onSave={(next) => { chartOptions = next; chartEditorOpen = false; }}
+  onSave={(next) => { query.chartOptions = next; chartEditorOpen = false; }}
   onCancel={() => (chartEditorOpen = false)}
 />
 

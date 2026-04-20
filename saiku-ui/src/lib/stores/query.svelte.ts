@@ -11,6 +11,9 @@ import {
 } from "$lib/api/query";
 import type { SaikuCube } from "$lib/api/discover";
 import { toasts } from "$lib/stores/toasts.svelte";
+import { DEFAULT_CHART_OPTIONS, type ChartOptions, type ChartType } from "$lib/views/chartTypes";
+
+export type ViewMode = "grid" | "chart" | "stats" | "sparkline" | "sparkbar";
 
 export interface LevelDrop {
   dimensionName: string;
@@ -40,8 +43,12 @@ class QueryStore {
   running = $state<boolean>(false);
   error = $state<string | null>(null);
   dirty = $state<boolean>(false);
+  dirtyCount = $state<number>(0);
   savedPath = $state<string | null>(null);
   autorun = $state<boolean>(true);
+  viewMode = $state<ViewMode>("grid");
+  chartType = $state<ChartType>("bar");
+  chartOptions = $state<ChartOptions>({ ...DEFAULT_CHART_OPTIONS });
   #async = $state<boolean>(readBoolLS("saiku_async", false));
   runningQueryId = $state<string | null>(null);
   runningElapsedMs = $state<number>(0);
@@ -59,6 +66,7 @@ class QueryStore {
 
   private markDirty(): void {
     this.dirty = true;
+    this.dirtyCount++;
     if (this.autorun && this.hasRunnableShape()) {
       void this.run();
     }
@@ -69,6 +77,7 @@ class QueryStore {
     this.result = null;
     this.error = null;
     this.dirty = false;
+    this.dirtyCount = 0;
     this.savedPath = null;
   }
 
@@ -78,12 +87,25 @@ class QueryStore {
     this.result = null;
     this.error = null;
     this.dirty = false;
+    this.dirtyCount = 0;
     this.savedPath = path;
+  }
+
+  /** Replace the current query wholesale (e.g. from a deep-link hydrate or an
+   *  opened saved query) without running it. Caller decides whether to run. */
+  hydrate(q: ThinQuery, savedPath: string | null = null): void {
+    this.current = q;
+    this.result = null;
+    this.error = null;
+    this.dirty = false;
+    this.dirtyCount = 0;
+    this.savedPath = savedPath;
   }
 
   markSaved(path: string): void {
     this.savedPath = path;
     this.dirty = false;
+    this.dirtyCount = 0;
     if (this.current) this.current.name = path;
   }
 
@@ -92,6 +114,7 @@ class QueryStore {
     this.result = null;
     this.error = null;
     this.dirty = false;
+    this.dirtyCount = 0;
     this.savedPath = null;
   }
 
