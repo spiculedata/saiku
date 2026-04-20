@@ -121,6 +121,19 @@
     align-items: center;
     gap: var(--space-3);
   }
+  .topbar__actions :global(.btn) {
+    height: 32px;
+    padding: 0 var(--space-3);
+    line-height: 1;
+    box-sizing: border-box;
+  }
+  .topbar__actions :global(.btn > *) { line-height: 1; }
+  .topbar__actions :global(.btn svg) { display: block; }
+  .topbar__actions :global(.locale select) {
+    height: 100%;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
   .topbar__user {
     color: var(--fg-muted);
     font-size: var(--fs-sm);
