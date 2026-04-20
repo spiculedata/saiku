@@ -104,12 +104,18 @@ public class LoginRateLimiter {
         return req.getRemoteAddr();
     }
 
-    public int getMaxAttempts() { return maxAttempts; }
-    public long getWindowMs() { return windowMs; }
+    public int getMaxAttempts() {
+        return maxAttempts;
+    }
+
+    public long getWindowMs() {
+        return windowMs;
+    }
 
     private static final class Bucket {
         final long windowStartMs;
         final AtomicInteger count;
+
         Bucket(long windowStartMs, AtomicInteger count) {
             this.windowStartMs = windowStartMs;
             this.count = count;

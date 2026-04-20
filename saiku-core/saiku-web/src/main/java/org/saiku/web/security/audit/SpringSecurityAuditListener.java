@@ -24,8 +24,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  * <p>We listen for the two shaped events — success + any failure subclass —
  * and skip the anonymous-authentication noise.
  */
-public class SpringSecurityAuditListener
-        implements ApplicationListener<org.springframework.context.ApplicationEvent> {
+public class SpringSecurityAuditListener implements ApplicationListener<org.springframework.context.ApplicationEvent> {
 
     @Override
     public void onApplicationEvent(org.springframework.context.ApplicationEvent event) {

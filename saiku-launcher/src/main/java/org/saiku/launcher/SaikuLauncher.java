@@ -97,8 +97,7 @@ public class SaikuLauncher implements Callable<Integer> {
             //   SameSite = Lax    (block CSRF via top-level nav from other origins,
             //                      but still allow normal GET navigation)
             //   Secure   = property-gated (default false, turn on when fronted by TLS)
-            boolean secureCookie = Boolean.parseBoolean(
-                    System.getProperty("saiku.session.cookie.secure", "false"));
+            boolean secureCookie = Boolean.parseBoolean(System.getProperty("saiku.session.cookie.secure", "false"));
             var sessionHandler = webapp.getSessionHandler();
             var cookieConfig = sessionHandler.getSessionCookieConfig();
             cookieConfig.setHttpOnly(true);

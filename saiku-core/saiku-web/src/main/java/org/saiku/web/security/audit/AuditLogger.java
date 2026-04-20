@@ -60,11 +60,7 @@ public final class AuditLogger {
     }
 
     private static void emit(
-            String event,
-            HttpServletRequest req,
-            String username,
-            String reason,
-            Map<String, Object> extra) {
+            String event, HttpServletRequest req, String username, String reason, Map<String, Object> extra) {
         Map<String, Object> line = new LinkedHashMap<>();
         line.put("ts", Instant.now().toString());
         line.put("event", event);

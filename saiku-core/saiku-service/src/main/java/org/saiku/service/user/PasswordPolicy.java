@@ -37,8 +37,13 @@ public final class PasswordPolicy {
         this.requiredClasses = Math.min(4, Math.max(1, requiredClasses));
     }
 
-    public int getMinLength() { return minLength; }
-    public int getRequiredClasses() { return requiredClasses; }
+    public int getMinLength() {
+        return minLength;
+    }
+
+    public int getRequiredClasses() {
+        return requiredClasses;
+    }
 
     /**
      * @throws IllegalArgumentException describing the first failing rule.
@@ -48,8 +53,7 @@ public final class PasswordPolicy {
             throw new IllegalArgumentException("Password must not be empty");
         }
         if (password.length() < minLength) {
-            throw new IllegalArgumentException(
-                    "Password must be at least " + minLength + " characters");
+            throw new IllegalArgumentException("Password must be at least " + minLength + " characters");
         }
         if (username != null && password.equalsIgnoreCase(username)) {
             throw new IllegalArgumentException("Password must not equal the username");
@@ -57,8 +61,7 @@ public final class PasswordPolicy {
         int classes = countCharClasses(password);
         if (classes < requiredClasses) {
             throw new IllegalArgumentException(
-                    "Password must contain at least " + requiredClasses
-                            + " of: lowercase, uppercase, digit, symbol");
+                    "Password must contain at least " + requiredClasses + " of: lowercase, uppercase, digit, symbol");
         }
     }
 

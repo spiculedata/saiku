@@ -175,7 +175,9 @@ public class SessionResource {
         try {
             Object u = sessionService.getSession().get("username");
             if (u != null) username = u.toString();
-        } catch (Exception ignored) { /* no active session — fine */ }
+        } catch (Exception ignored) {
+            /* no active session — fine */
+        }
         sessionService.logout(req);
         AuditLogger.logout(req, username);
         //		NewCookie terminate = new NewCookie(TokenBasedRememberMeServices.SPRING_SECURITY_REMEMBER_ME_COOKIE_KEY,
