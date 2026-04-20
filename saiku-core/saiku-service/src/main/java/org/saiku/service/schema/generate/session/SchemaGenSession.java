@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import org.saiku.service.schema.generate.delta.DeltaReport;
 import org.saiku.service.schema.generate.draft.DraftSchema;
 import org.saiku.service.schema.generate.enrich.SuggestionSet;
 import org.saiku.service.schema.generate.enrich.ops.SuggestionOp;
@@ -51,6 +52,7 @@ public class SchemaGenSession {
     private Stage stage;
     private Instant lastAccessedAt;
     private String failureMessage;
+    private DeltaReport deltaReport;
 
     SchemaGenSession(String id, String dataSourceId, Clock clock) {
         this.id = Objects.requireNonNull(id, "id");
@@ -117,6 +119,19 @@ public class SchemaGenSession {
 
     public void setFailureMessage(String failureMessage) {
         this.failureMessage = failureMessage;
+    }
+
+    /**
+     * Delta report produced during re-run mode: non-{@code null} when the orchestrator found a
+     * prior sidecar for the data source and reconciled it against the fresh introspection. {@code
+     * null} on first-run (no baseline available).
+     */
+    public DeltaReport deltaReport() {
+        return deltaReport;
+    }
+
+    public void setDeltaReport(DeltaReport deltaReport) {
+        this.deltaReport = deltaReport;
     }
 
     /** Mutable op log — applied suggestions + manual edits, in application order. */
