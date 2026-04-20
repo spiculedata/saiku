@@ -17,14 +17,15 @@
     Tags,
   } from "lucide-svelte";
   import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
-  import OpenDialogModal, { type RepoEntry } from "$lib/modals/OpenDialogModal.svelte";
+  import SavedQueriesModal from "$lib/modals/SavedQueriesModal.svelte";
+  import type { ThinQuery } from "$lib/api/query";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import WarningModal from "$lib/modals/WarningModal.svelte";
   import MDXModal from "$lib/modals/MDXModal.svelte";
   import DrillAcrossModal from "$lib/modals/DrillAcrossModal.svelte";
   import ReportTitlesModal, { type ReportTitles } from "$lib/modals/ReportTitlesModal.svelte";
   import { repository } from "$lib/stores/repository.svelte";
-  import { getResource, saveResource } from "$lib/api/repository";
+  import { saveResource } from "$lib/api/repository";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { query } from "$lib/stores/query.svelte";
   import { selection } from "$lib/stores/selection.svelte";
@@ -161,14 +162,15 @@
     }
   }
 
-  async function onOpenPick(entry: RepoEntry) {
+  async function onOpenQuery(path: string, q: ThinQuery) {
     openOpen = false;
-    if (entry.type !== "file") return;
     try {
-      const body = await getResource(entry.path);
-      query.loadFromJson(body, entry.path);
-      toasts.success("Opened", entry.path);
-      if (query.autorun) await query.run();
+      // Sync the selection store so the sidebar reflects the cube of the
+      // loaded query — otherwise DimensionList stays on the old cube.
+      if (q.cube) selection.select(q.cube);
+      query.hydrate(q, path);
+      toasts.success("Opened", path);
+      if (query.autorun && query.hasRunnableShape()) await query.run();
     } catch (e) {
       toasts.danger("Open failed", e instanceof Error ? e.message : String(e));
     }
@@ -261,8 +263,16 @@
     <button class="tb-btn" title={i18n.t("toolbar.open")} aria-label={i18n.t("toolbar.open")} onclick={onOpen}>
       <FolderOpen size={18} />
     </button>
-    <button class="tb-btn" title={i18n.t("toolbar.save")} aria-label={i18n.t("toolbar.save")} onclick={onSave}>
+    <button
+      class="tb-btn tb-btn--dirty"
+      title={query.dirty ? `${i18n.t("toolbar.save")} (unsaved changes)` : i18n.t("toolbar.save")}
+      aria-label={i18n.t("toolbar.save")}
+      onclick={onSave}
+    >
       <Save size={18} />
+      {#if query.dirty}
+        <span class="tb-btn__dot" aria-hidden="true"></span>
+      {/if}
     </button>
     <button class="tb-btn" title={i18n.t("toolbar.saveAs")} aria-label={i18n.t("toolbar.saveAs")} onclick={onSaveAs}>
       <Copy size={18} />
@@ -368,17 +378,10 @@
   onCancel={() => (mdxOpen = false)}
 />
 
-<OpenDialogModal
-  entries={repository.flat.map((n) => ({
-    path: n.path,
-    name: n.name,
-    type: n.type === "FOLDER" ? "folder" : "file",
-    fileType: n.fileType ?? undefined,
-  }))}
-  loading={repository.loading}
+<SavedQueriesModal
   open={openOpen}
-  onSelect={onOpenPick}
-  onCancel={() => (openOpen = false)}
+  onOpenQuery={onOpenQuery}
+  onClose={() => (openOpen = false)}
 />
 
 <DrillAcrossModal
@@ -500,6 +503,17 @@
     border-color: var(--accent);
   }
   .tb-btn--primary:hover { filter: brightness(1.1); background: var(--accent); color: var(--bg); }
+  .tb-btn--dirty { position: relative; }
+  .tb-btn__dot {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 7px;
+    height: 7px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--bg-muted);
+  }
 
   .split-btn {
     display: inline-flex;

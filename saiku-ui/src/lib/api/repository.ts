@@ -1,3 +1,5 @@
+import type { ThinQuery } from "$lib/api/query";
+
 const REST_BASE = "/rest/saiku";
 
 export interface RepositoryNode {
@@ -7,6 +9,14 @@ export interface RepositoryNode {
   fileType?: string | null;
   acl?: string | null;
   repoObjects?: RepositoryNode[];
+}
+
+/** A flattened descriptor for the saved-queries browser. */
+export interface SavedQueryFile {
+  path: string;
+  name: string;
+  modified?: string;
+  type: "saiku";
 }
 
 export async function listRepository(type: string[] = ["saiku"]): Promise<RepositoryNode[]> {
@@ -69,6 +79,35 @@ export function flatten(nodes: RepositoryNode[]): RepositoryNode[] {
   };
   walk(nodes);
   return out;
+}
+
+/* ------------------------------------------------------------------ */
+/* Saved-query helpers (thin wrappers around the generic repo calls)   */
+/* ------------------------------------------------------------------ */
+
+export async function listSavedQueries(): Promise<SavedQueryFile[]> {
+  const tree = await listRepository(["saiku"]);
+  const flat = flatten(tree);
+  return flat
+    .filter((n) => n.type === "FILE" && (n.fileType === "saiku" || n.path.endsWith(".saiku")))
+    .map((n) => ({ path: n.path, name: n.name, type: "saiku" as const }));
+}
+
+export async function readSavedQuery(path: string): Promise<ThinQuery> {
+  const body = await getResource(path);
+  return JSON.parse(body) as ThinQuery;
+}
+
+export async function writeSavedQuery(path: string, q: ThinQuery): Promise<void> {
+  await saveResource(path, JSON.stringify(q));
+}
+
+export async function deleteSavedQuery(path: string): Promise<void> {
+  await deleteResource(path);
+}
+
+export async function moveSavedQuery(from: string, to: string): Promise<void> {
+  await moveResource(from, to);
 }
 
 export function foldersOnly(nodes: RepositoryNode[]): string[] {
