@@ -56,15 +56,17 @@ public class NoopProviderTest {
         assertNotNull(set);
         assertFalse(set.degraded());
 
-        RenameOp cubeRename = firstRenameFor(set, "cubes/sales");
-        assertNotNull("expected rename op for cubes/sales", cubeRename);
+        // Stable-id path: cube segment is sourceFactTable ("orders"), not the cube name ("sales").
+        // Dim segments fall back to name() because these dims have no sourceTable set.
+        RenameOp cubeRename = firstRenameFor(set, "cubes/orders");
+        assertNotNull("expected rename op for cubes/orders", cubeRename);
         assertEquals("Sales", cubeRename.newCaption());
 
-        RenameOp orderDateRename = firstRenameFor(set, "cubes/sales/dimensions/OrderDate");
+        RenameOp orderDateRename = firstRenameFor(set, "cubes/orders/dimensions/OrderDate");
         assertNotNull("expected rename op for OrderDate dim (camelCase)", orderDateRename);
         assertEquals("Order Date", orderDateRename.newCaption());
 
-        RenameOp snakeRename = firstRenameFor(set, "cubes/sales/dimensions/order_date");
+        RenameOp snakeRename = firstRenameFor(set, "cubes/orders/dimensions/order_date");
         assertNotNull("expected rename op for order_date dim (snake_case)", snakeRename);
         assertEquals("Order Date", snakeRename.newCaption());
     }
@@ -88,7 +90,7 @@ public class NoopProviderTest {
         boolean found = false;
         for (SuggestionOp op : resp.suggestions().ops()) {
             if (op instanceof HierarchyOp h
-                    && "cubes/Sales/dimensions/customer".equals(h.targetPath())
+                    && "cubes/orders/dimensions/customer".equals(h.targetPath())
                     && h.levelColumns().contains("country_code")) {
                 assertTrue(h.levelColumns().contains("city"));
                 found = true;
@@ -107,7 +109,7 @@ public class NoopProviderTest {
         EnrichResponse resp = new NoopProvider().enrich(new EnrichRequest(schema, Map.of(), 50));
 
         for (SuggestionOp op : resp.suggestions().ops()) {
-            if (op instanceof RenameOp r && "cubes/Sales".equals(r.targetPath())) {
+            if (op instanceof RenameOp r && "cubes/orders".equals(r.targetPath())) {
                 throw new AssertionError("unexpected rename for already-titled cube: " + r.newCaption());
             }
         }
@@ -126,7 +128,8 @@ public class NoopProviderTest {
 
         AggregatorOp found = null;
         for (SuggestionOp op : resp.suggestions().ops()) {
-            if (op instanceof AggregatorOp a && "cubes/Sales/measures/avg_price".equals(a.targetPath())) {
+            // Stable-id path: measure segment is column ("price"), not name ("avg_price").
+            if (op instanceof AggregatorOp a && "cubes/orders/measures/price".equals(a.targetPath())) {
                 found = a;
                 break;
             }

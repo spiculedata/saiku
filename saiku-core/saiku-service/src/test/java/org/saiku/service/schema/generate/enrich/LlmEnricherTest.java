@@ -82,12 +82,14 @@ public class LlmEnricherTest {
         assertFalse("ops must not be empty", set.ops().isEmpty());
         assertFalse("set should not be degraded for a clean run", set.degraded());
 
+        // Stable-id paths: cube segment is the fact-table name ("orders", "stock"), not the
+        // cube's user-visible name.
         boolean sawSales = false;
         boolean sawInventory = false;
         for (SuggestionOp op : set.ops()) {
             String path = op.targetPath();
-            if (path.contains("cubes/sales")) sawSales = true;
-            if (path.contains("cubes/inventory")) sawInventory = true;
+            if (path.contains("cubes/orders")) sawSales = true;
+            if (path.contains("cubes/stock")) sawInventory = true;
         }
         assertTrue("ops from sales cube", sawSales);
         assertTrue("ops from inventory cube", sawInventory);

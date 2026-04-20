@@ -10,6 +10,7 @@ import org.saiku.service.schema.generate.draft.DraftHierarchy;
 import org.saiku.service.schema.generate.draft.DraftLevel;
 import org.saiku.service.schema.generate.draft.DraftMeasure;
 import org.saiku.service.schema.generate.draft.DraftSchema;
+import org.saiku.service.schema.generate.path.SchemaPathResolver;
 
 /**
  * Reconciles a freshly inferred {@link DraftSchema} against a baseline draft (typically loaded
@@ -17,18 +18,8 @@ import org.saiku.service.schema.generate.draft.DraftSchema;
  *
  * <p>Each element in either tree is assigned a {@link DeltaTag}, keyed by a <em>stable</em>
  * target path built from physical identifiers (column / table names), <strong>not</strong> from
- * user-visible captions. This way a user-renamed measure is still matched to its upstream
- * column when the DB model is re-introspected.
- *
- * <p>Stable-id rules:
- *
- * <ul>
- *   <li>Cube path segment: {@code sourceFactTable}
- *   <li>Dimension path segment: {@code sourceTable} (dim name may have been edited)
- *   <li>Hierarchy path segment: {@code primaryKey} (v1 assumes one hierarchy per dim)
- *   <li>Level path segment: {@code column}
- *   <li>Measure path segment: {@code column}, or "count_star" when aggregator is COUNT_STAR
- * </ul>
+ * user-visible captions. Path construction is delegated to {@link SchemaPathResolver} so the
+ * reconciler, {@code OpApplier}, and suggestion providers all share one grammar.
  */
 public class DeltaReconciler {
 
@@ -72,23 +63,23 @@ public class DeltaReconciler {
 
     private void walk(DraftSchema schema, PathSink sink) {
         for (DraftDimension shared : schema.sharedDimensions()) {
-            String path = "sharedDimensions/" + dimSegment(shared);
+            String path = SchemaPathResolver.pathForShared(shared);
             sink.accept(path, DeltaTag.EXISTING);
             walkDimensionChildren(path, shared, sink);
         }
 
         for (DraftCube cube : schema.cubes()) {
-            String cubePath = "cubes/" + cubeSegment(cube);
+            String cubePath = SchemaPathResolver.pathFor(cube);
             sink.accept(cubePath, DeltaTag.EXISTING);
 
             for (DraftDimension dim : cube.dimensions()) {
-                String dimPath = cubePath + "/dimensions/" + dimSegment(dim);
+                String dimPath = SchemaPathResolver.pathFor(dim, cube);
                 sink.accept(dimPath, DeltaTag.EXISTING);
                 walkDimensionChildren(dimPath, dim, sink);
             }
 
             for (DraftMeasure m : cube.measures()) {
-                String measurePath = cubePath + "/measures/" + measureSegment(m);
+                String measurePath = cubePath + "/measures/" + SchemaPathResolver.measureSegment(m);
                 sink.accept(measurePath, DeltaTag.EXISTING);
             }
         }
@@ -96,45 +87,15 @@ public class DeltaReconciler {
 
     private void walkDimensionChildren(String dimPath, DraftDimension dim, PathSink sink) {
         for (DraftHierarchy h : dim.hierarchies()) {
-            String hierPath = dimPath + "/hierarchies/" + hierarchySegment(h);
+            String hierPath = dimPath + "/hierarchies/" + SchemaPathResolver.hierarchySegment(h);
             // hierarchies aren't a first-class element in the tag map today (levels are what
             // matters for delta), but we record them so users could filter on the hierarchy
             // itself. Keep commented-out to avoid noise — uncomment if downstream needs them.
             // sink.accept(hierPath, DeltaTag.EXISTING);
             for (DraftLevel l : h.levels()) {
-                String levelPath = hierPath + "/levels/" + levelSegment(l);
+                String levelPath = hierPath + "/levels/" + SchemaPathResolver.levelSegment(l);
                 sink.accept(levelPath, DeltaTag.EXISTING);
             }
         }
-    }
-
-    private static String cubeSegment(DraftCube cube) {
-        return safe(cube.sourceFactTable(), cube.name());
-    }
-
-    private static String dimSegment(DraftDimension dim) {
-        return safe(dim.sourceTable(), dim.name());
-    }
-
-    private static String hierarchySegment(DraftHierarchy h) {
-        return safe(h.primaryKey(), h.name());
-    }
-
-    private static String levelSegment(DraftLevel l) {
-        return safe(l.column(), l.name());
-    }
-
-    private static String measureSegment(DraftMeasure m) {
-        if (m.aggregator() == DraftMeasure.Aggregator.COUNT_STAR) {
-            return "count_star";
-        }
-        return safe(m.column(), m.name());
-    }
-
-    private static String safe(String primary, String fallback) {
-        if (primary != null && !primary.isEmpty()) {
-            return primary;
-        }
-        return fallback == null ? "" : fallback;
     }
 }

@@ -122,15 +122,16 @@ public class SchemaGenSessionStoreTest {
         OpApplier applier = new OpApplier();
 
         // Apply ops to live draft + append to op log.
-        SuggestionOp op1 = new RenameOp("cubes/Sales/measures/amount", "amount", "Amount", null, 0.9, "caption");
+        SuggestionOp op1 =
+                new RenameOp("cubes/fact_sales/measures/amount_col", "amount", "Amount", null, 0.9, "caption");
         SuggestionOp op2 = new AggregatorOp(
-                "cubes/Sales/measures/qty",
+                "cubes/fact_sales/measures/qty_col",
                 DraftMeasure.Aggregator.SUM,
                 DraftMeasure.Aggregator.AVG,
                 0.85,
                 "avg better");
-        SuggestionOp op3 =
-                new RenameOp("cubes/Sales/dimensions/customer", "customer", "Customer", null, 0.95, "title case");
+        SuggestionOp op3 = new RenameOp(
+                "cubes/fact_sales/dimensions/dim_customer", "customer", "Customer", null, 0.95, "title case");
 
         applier.apply(s.draft(), op1);
         s.appendOp(op1);

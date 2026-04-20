@@ -1,8 +1,6 @@
 package org.saiku.service.schema.generate.apply;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Optional;
 import org.saiku.service.schema.generate.draft.DraftCube;
 import org.saiku.service.schema.generate.draft.DraftDimension;
 import org.saiku.service.schema.generate.draft.DraftHierarchy;
@@ -16,21 +14,15 @@ import org.saiku.service.schema.generate.enrich.ops.HierarchyOp;
 import org.saiku.service.schema.generate.enrich.ops.IgnoreOp;
 import org.saiku.service.schema.generate.enrich.ops.RenameOp;
 import org.saiku.service.schema.generate.enrich.ops.SuggestionOp;
+import org.saiku.service.schema.generate.path.SchemaPathResolver;
 
 /**
  * Applies a {@link SuggestionOp} to a {@link DraftSchema} in place.
  *
- * <p>Path resolution follows the grammar documented on
- * {@code org.saiku.service.schema.generate.enrich.provider.LlmProvider}:
- *
- * <pre>
- *   cubes/Sales
- *   cubes/Sales/dimensions/customer
- *   cubes/Sales/dimensions/customer/hierarchies/customer
- *   cubes/Sales/dimensions/customer/hierarchies/customer/levels/name
- *   cubes/Sales/measures/Amount
- *   sharedDimensions/Time
- * </pre>
+ * <p>Path resolution follows the stable-id grammar on
+ * {@link SchemaPathResolver} — segments are physical identifiers (column / table names), never
+ * user-visible captions. This way a {@link RenameOp} that mutates a measure's {@code name} does
+ * not invalidate the path of any subsequent op targeting the same element.
  *
  * <p>Every mutation stamps provenance to {@link Provenance.Source#USER}. Path lookup failures
  * raise {@link IllegalArgumentException} with the attempted path and the available siblings.
@@ -68,7 +60,7 @@ public class OpApplier {
     // -- per-op handlers ---------------------------------------------------
 
     private void applyRename(DraftSchema schema, RenameOp op) {
-        Object node = resolve(schema, op.targetPath());
+        Object node = resolveRequired(schema, op.targetPath());
         String newName = op.newCaption();
         if (node instanceof DraftCube c) {
             if (!c.name().equals(newName)) {
@@ -101,10 +93,10 @@ public class OpApplier {
     }
 
     private void applyAggregator(DraftSchema schema, AggregatorOp op) {
-        Object node = resolve(schema, op.targetPath());
+        Object node = resolveRequired(schema, op.targetPath());
         if (!(node instanceof DraftMeasure m)) {
             throw new IllegalArgumentException("AggregatorOp target must be a measure, got "
-                    + (node == null ? "null" : node.getClass().getSimpleName())
+                    + node.getClass().getSimpleName()
                     + " at "
                     + op.targetPath());
         }
@@ -113,15 +105,16 @@ public class OpApplier {
     }
 
     private void applyIgnore(DraftSchema schema, IgnoreOp op) {
-        Resolved r = resolveWithParent(schema, op.targetPath());
-        r.removeFromParent();
+        SchemaPathResolver.ParentRef ref = SchemaPathResolver.resolveWithParent(schema, op.targetPath())
+                .orElseThrow(() -> new IllegalArgumentException("No element at path " + op.targetPath()));
+        ref.removeFromParent();
     }
 
     private void applyHierarchy(DraftSchema schema, HierarchyOp op) {
-        Object node = resolve(schema, op.targetPath());
+        Object node = resolveRequired(schema, op.targetPath());
         if (!(node instanceof DraftDimension d)) {
             throw new IllegalArgumentException("HierarchyOp target must be a dimension, got "
-                    + (node == null ? "null" : node.getClass().getSimpleName())
+                    + node.getClass().getSimpleName()
                     + " at "
                     + op.targetPath());
         }
@@ -135,10 +128,10 @@ public class OpApplier {
     }
 
     private void applyDegenerateDim(DraftSchema schema, DegenerateDimOp op) {
-        Object node = resolve(schema, op.targetPath());
+        Object node = resolveRequired(schema, op.targetPath());
         if (!(node instanceof DraftCube cube)) {
             throw new IllegalArgumentException("DegenerateDimOp target must be a cube, got "
-                    + (node == null ? "null" : node.getClass().getSimpleName())
+                    + node.getClass().getSimpleName()
                     + " at "
                     + op.targetPath());
         }
@@ -150,152 +143,8 @@ public class OpApplier {
         cube.dimensions().add(dim);
     }
 
-    // -- path resolution ---------------------------------------------------
-
-    /** Result of path resolution: the node, plus a callback to remove it from its parent. */
-    private static final class Resolved {
-        final Object node;
-        final Runnable remover;
-
-        Resolved(Object node, Runnable remover) {
-            this.node = node;
-            this.remover = remover;
-        }
-
-        void removeFromParent() {
-            remover.run();
-        }
-    }
-
-    private Object resolve(DraftSchema schema, String path) {
-        return resolveWithParent(schema, path).node;
-    }
-
-    private Resolved resolveWithParent(DraftSchema schema, String path) {
-        if (path == null || path.isEmpty()) {
-            throw new IllegalArgumentException("targetPath must not be empty");
-        }
-        String[] segs = path.split("/");
-        int i = 0;
-        String root = segs[i++];
-        if ("cubes".equals(root)) {
-            return resolveCube(schema, segs, i, path);
-        } else if ("sharedDimensions".equals(root)) {
-            return resolveSharedDim(schema, segs, i, path);
-        }
-        throw new IllegalArgumentException(
-                "Unknown path root '" + root + "' in '" + path + "' — expected 'cubes' or 'sharedDimensions'");
-    }
-
-    private Resolved resolveCube(DraftSchema schema, String[] segs, int i, String fullPath) {
-        if (i >= segs.length) {
-            throw new IllegalArgumentException("Missing cube name in path: " + fullPath);
-        }
-        String cubeName = segs[i++];
-        DraftCube cube = findByName(schema.cubes(), DraftCube::name, cubeName);
-        if (cube == null) {
-            throw notFound(fullPath, "cube", cubeName, names(schema.cubes(), DraftCube::name));
-        }
-        if (i >= segs.length) {
-            return new Resolved(cube, () -> schema.cubes().remove(cube));
-        }
-        String kind = segs[i++];
-        if ("measures".equals(kind)) {
-            if (i >= segs.length) {
-                throw new IllegalArgumentException("Missing measure name in path: " + fullPath);
-            }
-            String mName = segs[i++];
-            DraftMeasure m = findByName(cube.measures(), DraftMeasure::name, mName);
-            if (m == null) {
-                throw notFound(fullPath, "measure", mName, names(cube.measures(), DraftMeasure::name));
-            }
-            if (i != segs.length) {
-                throw new IllegalArgumentException("Trailing segments after measure in path: " + fullPath);
-            }
-            return new Resolved(m, () -> cube.measures().remove(m));
-        } else if ("dimensions".equals(kind)) {
-            return resolveDim(cube.dimensions(), segs, i, fullPath);
-        }
-        throw new IllegalArgumentException(
-                "Unknown cube child '" + kind + "' in '" + fullPath + "' — expected 'measures' or 'dimensions'");
-    }
-
-    private Resolved resolveSharedDim(DraftSchema schema, String[] segs, int i, String fullPath) {
-        if (i >= segs.length) {
-            throw new IllegalArgumentException("Missing shared dimension name in path: " + fullPath);
-        }
-        return resolveDim(schema.sharedDimensions(), segs, i, fullPath);
-    }
-
-    private Resolved resolveDim(List<DraftDimension> parent, String[] segs, int i, String fullPath) {
-        String dimName = segs[i++];
-        DraftDimension dim = findByName(parent, DraftDimension::name, dimName);
-        if (dim == null) {
-            throw notFound(fullPath, "dimension", dimName, names(parent, DraftDimension::name));
-        }
-        if (i >= segs.length) {
-            return new Resolved(dim, () -> parent.remove(dim));
-        }
-        String kind = segs[i++];
-        if (!"hierarchies".equals(kind)) {
-            throw new IllegalArgumentException(
-                    "Unknown dimension child '" + kind + "' in '" + fullPath + "' — expected 'hierarchies'");
-        }
-        if (i >= segs.length) {
-            throw new IllegalArgumentException("Missing hierarchy name in path: " + fullPath);
-        }
-        String hName = segs[i++];
-        DraftHierarchy hier = findByName(dim.hierarchies(), DraftHierarchy::name, hName);
-        if (hier == null) {
-            throw notFound(fullPath, "hierarchy", hName, names(dim.hierarchies(), DraftHierarchy::name));
-        }
-        if (i >= segs.length) {
-            return new Resolved(hier, () -> dim.hierarchies().remove(hier));
-        }
-        String kind2 = segs[i++];
-        if (!"levels".equals(kind2)) {
-            throw new IllegalArgumentException(
-                    "Unknown hierarchy child '" + kind2 + "' in '" + fullPath + "' — expected 'levels'");
-        }
-        if (i >= segs.length) {
-            throw new IllegalArgumentException("Missing level name in path: " + fullPath);
-        }
-        String lName = segs[i++];
-        DraftLevel lvl = findByName(hier.levels(), DraftLevel::name, lName);
-        if (lvl == null) {
-            throw notFound(fullPath, "level", lName, names(hier.levels(), DraftLevel::name));
-        }
-        if (i != segs.length) {
-            throw new IllegalArgumentException("Trailing segments after level in path: " + fullPath);
-        }
-        return new Resolved(lvl, () -> hier.levels().remove(lvl));
-    }
-
-    private <T> T findByName(List<T> xs, java.util.function.Function<T, String> nameOf, String name) {
-        for (T x : xs) {
-            if (name.equals(nameOf.apply(x))) {
-                return x;
-            }
-        }
-        return null;
-    }
-
-    private <T> List<String> names(List<T> xs, java.util.function.Function<T, String> nameOf) {
-        List<String> out = new ArrayList<>(xs.size());
-        for (T x : xs) {
-            out.add(nameOf.apply(x));
-        }
-        return out;
-    }
-
-    private IllegalArgumentException notFound(String fullPath, String kind, String missing, List<String> available) {
-        return new IllegalArgumentException("No element at path "
-                + fullPath
-                + " — "
-                + kind
-                + " '"
-                + missing
-                + "' not found; available: "
-                + available.stream().collect(Collectors.joining(", ", "[", "]")));
+    private Object resolveRequired(DraftSchema schema, String path) {
+        Optional<Object> node = SchemaPathResolver.resolve(schema, path);
+        return node.orElseThrow(() -> new IllegalArgumentException("No element at path " + path));
     }
 }

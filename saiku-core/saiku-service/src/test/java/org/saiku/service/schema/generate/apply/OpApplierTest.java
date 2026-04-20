@@ -56,7 +56,8 @@ public class OpApplierTest {
 
     @Test
     public void renameMeasureChangesOnlyCaptionAndProvenance() {
-        RenameOp op = new RenameOp("cubes/Sales/measures/amount", "amount", "Amount", null, 0.9, "caption casing");
+        RenameOp op =
+                new RenameOp("cubes/fact_sales/measures/amount_col", "amount", "Amount", null, 0.9, "caption casing");
         new OpApplier().apply(schema, op);
 
         DraftMeasure m = sales.measures().get(0);
@@ -66,10 +67,60 @@ public class OpApplierTest {
         assertEquals(Provenance.Source.USER, m.provenance().source());
     }
 
+    /**
+     * Regression test: after a RenameOp changes the user-visible name of a measure, a subsequent
+     * op targeting the SAME stable-id path (column name) must still resolve. Previously, path
+     * resolution was by mutable name, so the second op would fail with "No element at path ...".
+     */
+    @Test
+    public void aggregatorOpAfterRenameStillResolvesByStableId() {
+        RenameOp rename = new RenameOp(
+                "cubes/fact_sales/measures/amount_col", "amount", "Total Sales", null, 0.9, "caption casing");
+        AggregatorOp agg = new AggregatorOp(
+                "cubes/fact_sales/measures/amount_col",
+                DraftMeasure.Aggregator.SUM,
+                DraftMeasure.Aggregator.AVG,
+                0.8,
+                "avg is better");
+        OpApplier applier = new OpApplier();
+        applier.apply(schema, rename);
+        applier.apply(schema, agg);
+
+        DraftMeasure m = sales.measures().get(0);
+        assertEquals("Total Sales", m.name());
+        assertEquals("amount_col", m.column());
+        assertEquals(DraftMeasure.Aggregator.AVG, m.aggregator());
+    }
+
+    /**
+     * Regression test: after a RenameOp on a dim, a subsequent RenameOp on one of its levels
+     * still resolves via stable-id segments.
+     */
+    @Test
+    public void levelRenameAfterDimRenameStillResolves() {
+        RenameOp dimRename =
+                new RenameOp("cubes/fact_sales/dimensions/dim_customer", "customer", "Customer", null, 0.9, "caption");
+        RenameOp levelRename = new RenameOp(
+                "cubes/fact_sales/dimensions/dim_customer/hierarchies/id/levels/name",
+                "name",
+                "Full Name",
+                null,
+                0.9,
+                "caption");
+        OpApplier applier = new OpApplier();
+        applier.apply(schema, dimRename);
+        applier.apply(schema, levelRename);
+
+        assertEquals("Customer", customer.name());
+        DraftLevel lvl = customer.hierarchies().get(0).levels().get(0);
+        assertEquals("Full Name", lvl.name());
+        assertEquals("name", lvl.column());
+    }
+
     @Test
     public void aggregatorOpChangesAggregatorAndProvenance() {
         AggregatorOp op = new AggregatorOp(
-                "cubes/Sales/measures/amount",
+                "cubes/fact_sales/measures/amount_col",
                 DraftMeasure.Aggregator.SUM,
                 DraftMeasure.Aggregator.AVG,
                 0.8,
@@ -84,7 +135,7 @@ public class OpApplierTest {
 
     @Test
     public void ignoreMeasureRemovesIt() {
-        IgnoreOp op = new IgnoreOp("cubes/Sales/measures/amount", 0.9, "not needed");
+        IgnoreOp op = new IgnoreOp("cubes/fact_sales/measures/amount_col", 0.9, "not needed");
         new OpApplier().apply(schema, op);
 
         assertEquals(1, sales.measures().size());
@@ -93,7 +144,7 @@ public class OpApplierTest {
 
     @Test
     public void ignoreCubeRemovesIt() {
-        IgnoreOp op = new IgnoreOp("cubes/Sales", 0.9, "drop");
+        IgnoreOp op = new IgnoreOp("cubes/fact_sales", 0.9, "drop");
         new OpApplier().apply(schema, op);
 
         assertTrue(schema.cubes().isEmpty());
@@ -101,8 +152,8 @@ public class OpApplierTest {
 
     @Test
     public void renameDimChangesNameNotHierarchies() {
-        RenameOp op =
-                new RenameOp("cubes/Sales/dimensions/customer", "customer", "Customer", null, 0.9, "caption casing");
+        RenameOp op = new RenameOp(
+                "cubes/fact_sales/dimensions/dim_customer", "customer", "Customer", null, 0.9, "caption casing");
         new OpApplier().apply(schema, op);
 
         assertEquals("Customer", customer.name());
@@ -113,23 +164,27 @@ public class OpApplierTest {
 
     @Test
     public void unknownPathThrowsHelpful() {
-        IgnoreOp op = new IgnoreOp("cubes/Sales/measures/Unknown", 1.0, "x");
+        IgnoreOp op = new IgnoreOp("cubes/fact_sales/measures/unknown_col", 1.0, "x");
         try {
             new OpApplier().apply(schema, op);
             fail("expected IllegalArgumentException");
         } catch (IllegalArgumentException expected) {
             String msg = expected.getMessage();
             assertNotNull(msg);
-            assertTrue("message should mention path: " + msg, msg.contains("cubes/Sales/measures/Unknown"));
-            assertTrue("message should list known children: " + msg, msg.contains("amount"));
-            assertTrue("message should list known children: " + msg, msg.contains("qty"));
+            assertTrue("message should mention path: " + msg, msg.contains("cubes/fact_sales/measures/unknown_col"));
+            assertTrue("message should list known children: " + msg, msg.contains("amount_col"));
+            assertTrue("message should list known children: " + msg, msg.contains("qty_col"));
         }
     }
 
     @Test
     public void hierarchyOpReplacesDimHierarchies() {
         HierarchyOp op = new HierarchyOp(
-                "cubes/Sales/dimensions/customer", "Geography", List.of("country", "city"), 0.9, "country then city");
+                "cubes/fact_sales/dimensions/dim_customer",
+                "Geography",
+                List.of("country", "city"),
+                0.9,
+                "country then city");
         new OpApplier().apply(schema, op);
 
         assertEquals(1, customer.hierarchies().size());
@@ -146,7 +201,7 @@ public class OpApplierTest {
     @Test
     public void degenerateDimAddsDimToCube() {
         int before = sales.dimensions().size();
-        DegenerateDimOp op = new DegenerateDimOp("cubes/Sales", "order_status", "OrderStatus", 0.85, "degenerate");
+        DegenerateDimOp op = new DegenerateDimOp("cubes/fact_sales", "order_status", "OrderStatus", 0.85, "degenerate");
         new OpApplier().apply(schema, op);
 
         assertEquals(before + 1, sales.dimensions().size());

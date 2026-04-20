@@ -14,6 +14,7 @@ import org.saiku.service.schema.generate.enrich.SuggestionSet;
 import org.saiku.service.schema.generate.enrich.ops.AggregatorOp;
 import org.saiku.service.schema.generate.enrich.ops.HierarchyOp;
 import org.saiku.service.schema.generate.enrich.ops.RenameOp;
+import org.saiku.service.schema.generate.path.SchemaPathResolver;
 
 /**
  * Offline rule-based {@link LlmProvider}.
@@ -62,23 +63,23 @@ public final class NoopProvider implements LlmProvider {
         List<AggregatorOp> aggregators = new ArrayList<>();
 
         for (DraftCube cube : draft.cubes()) {
-            String cubePath = "cubes/" + cube.name();
+            String cubePath = SchemaPathResolver.pathFor(cube);
             maybeRename(cubePath, cube.name(), renames);
 
             for (DraftDimension dim : cube.dimensions()) {
-                String dimPath = cubePath + "/dimensions/" + dim.name();
+                String dimPath = SchemaPathResolver.pathFor(dim, cube);
                 visitDimension(dim, dimPath, renames, hierarchies);
             }
 
             for (DraftMeasure m : cube.measures()) {
-                String mPath = cubePath + "/measures/" + m.name();
+                String mPath = SchemaPathResolver.pathFor(m, cube);
                 maybeRename(mPath, m.name(), renames);
                 maybeAggregator(mPath, m, aggregators);
             }
         }
 
         for (DraftDimension dim : draft.sharedDimensions()) {
-            String dimPath = "sharedDimensions/" + dim.name();
+            String dimPath = SchemaPathResolver.pathForShared(dim);
             visitDimension(dim, dimPath, renames, hierarchies);
         }
 
@@ -101,10 +102,10 @@ public final class NoopProvider implements LlmProvider {
 
         List<String> geoColumns = new ArrayList<>();
         for (DraftHierarchy h : dim.hierarchies()) {
-            String hPath = dimPath + "/hierarchies/" + h.name();
+            String hPath = dimPath + "/hierarchies/" + SchemaPathResolver.hierarchySegment(h);
             maybeRename(hPath, h.name(), renames);
             for (DraftLevel lvl : h.levels()) {
-                String lPath = hPath + "/levels/" + lvl.name();
+                String lPath = hPath + "/levels/" + SchemaPathResolver.levelSegment(lvl);
                 maybeRename(lPath, lvl.name(), renames);
                 if (isGeoColumn(lvl.column())) {
                     if (!geoColumns.contains(lvl.column())) {

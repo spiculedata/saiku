@@ -49,8 +49,14 @@ public final class AnthropicProvider implements LlmProvider {
             + "aggregator changes, degenerate-dimension promotions, or ignore ops using the "
             + "return_suggestions tool. Do not propose structural changes such as new cubes or "
             + "new joins — only refinements of what is already in the draft. Keep rationales "
-            + "short. Use the targetPath convention: cubes/{cube}, "
-            + "cubes/{cube}/dimensions/{dim}, cubes/{cube}/measures/{measure}, etc. "
+            + "short. Use the STABLE-ID targetPath convention (physical table/column names, NOT "
+            + "user-visible captions): cubes/{factTable}, "
+            + "cubes/{factTable}/dimensions/{dimTable}, "
+            + "cubes/{factTable}/dimensions/{dimTable}/hierarchies/{pkColumn}, "
+            + "cubes/{factTable}/dimensions/{dimTable}/hierarchies/{pkColumn}/levels/{levelColumn}, "
+            + "cubes/{factTable}/measures/{measureColumn} "
+            + "(use the literal 'count_star' for COUNT_STAR measures), "
+            + "sharedDimensions/{dimTable}. "
             + "Always call the return_suggestions tool; never answer in prose.";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();

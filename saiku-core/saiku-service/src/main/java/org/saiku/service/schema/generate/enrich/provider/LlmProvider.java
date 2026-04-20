@@ -14,20 +14,27 @@ package org.saiku.service.schema.generate.enrich.provider;
  * <h2>{@code targetPath} convention</h2>
  *
  * Every {@link org.saiku.service.schema.generate.enrich.ops.SuggestionOp} addresses a draft-schema
- * element via a slash-separated path. All providers and the op-applier MUST use this convention:
+ * element via a slash-separated path built from <em>stable identifiers</em> (physical
+ * table / column names), <strong>not</strong> user-visible captions. See
+ * {@link org.saiku.service.schema.generate.path.SchemaPathResolver} for the canonical grammar and
+ * segment rules. Using stable ids means a {@link
+ * org.saiku.service.schema.generate.enrich.ops.RenameOp} that mutates a measure's caption does
+ * not invalidate the path of any subsequent op targeting the same element.
  *
  * <pre>
- *   cubes/{cubeName}
- *   cubes/{cubeName}/dimensions/{dimName}
- *   cubes/{cubeName}/dimensions/{dimName}/hierarchies/{hierName}
- *   cubes/{cubeName}/dimensions/{dimName}/hierarchies/{hierName}/levels/{levelName}
- *   cubes/{cubeName}/measures/{measureName}
- *   sharedDimensions/{dimName}
- *   sharedDimensions/{dimName}/hierarchies/{hierName}
- *   sharedDimensions/{dimName}/hierarchies/{hierName}/levels/{levelName}
+ *   cubes/{factTable}
+ *   cubes/{factTable}/dimensions/{dimTable}
+ *   cubes/{factTable}/dimensions/{dimTable}/hierarchies/{pkCol}
+ *   cubes/{factTable}/dimensions/{dimTable}/hierarchies/{pkCol}/levels/{levelCol}
+ *   cubes/{factTable}/measures/{measureCol}       // "count_star" when aggregator is COUNT_STAR
+ *   sharedDimensions/{dimTable}
+ *   sharedDimensions/{dimTable}/hierarchies/{pkCol}
+ *   sharedDimensions/{dimTable}/hierarchies/{pkCol}/levels/{levelCol}
  * </pre>
  *
- * Names are the element's current {@code name()} — never the (possibly proposed) new caption.
+ * When a stable id is null/blank (e.g. a not-yet-bound shared-dim role-play), implementations
+ * fall back to the element's current {@code name()} so partially-built drafts remain
+ * addressable.
  */
 @FunctionalInterface
 public interface LlmProvider {
