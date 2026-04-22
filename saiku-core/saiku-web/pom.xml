@@ -52,6 +52,13 @@
                 <version>2.19.1</version>
                 <configuration>
                     <argLine>-Xmx512m --add-opens=java.base/java.nio=ALL-UNNAMED</argLine>
+                    <!-- Tests run against H2 (FoodMart fixtures). The Spicule Mondrian
+                         Calcite backend currently has SqlDialect mappings only for
+                         HSQLDB + PostgreSQL, so opt tests back to the legacy backend.
+                         Production runs with the default Calcite backend. -->
+                    <systemPropertyVariables>
+                        <mondrian.backend>legacy</mondrian.backend>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
             <plugin>
