@@ -28,11 +28,15 @@ default in the fork and therefore the default in Saiku.
 The legacy backend is still useful for databases where the Calcite dialect
 mapping is incomplete. Current Calcite dialects shipped by the fork:
 
+- H2
 - HSQLDB
+- Microsoft SQL Server
+- MySQL / MariaDB
+- Oracle
 - PostgreSQL
 
-Extending `mondrian.calcite.CalciteDialectMap` is the path for additional
-dialect coverage (e.g. H2, MySQL, Oracle).
+Extending `mondrian.calcite.CalciteDialectMap` is the path for further
+dialect coverage.
 
 ## Classpath impact
 
@@ -49,14 +53,16 @@ now carries:
   available in Maven Central (Calcite's declared 1.1.4 of eigenbase-properties
   is not published; mediation picks the older version but the descriptor POM
   still has to resolve).
+- `com.google.protobuf:protobuf-java:3.25.8` pinned. Avatica 1.27 needs
+  protobuf 3.x (for `GeneratedMessageV3`); a transitive chain via
+  `saiku-olap-util -> serenity-bdd -> operadriver` drags in 2.4.1, which
+  would otherwise win Maven's nearest-wins mediation.
 
 ## Tests
 
-Saiku's test suite uses an H2-backed FoodMart fixture. H2 isn't a supported
-Calcite dialect, so `saiku-web` surefire forces
-`-Dmondrian.backend=legacy` for the test JVM. Production still runs with the
-Calcite default. If you add a dialect to the fork, drop the opt-out from
-`saiku-core/saiku-web/pom.xml`.
+Saiku's test suite uses an H2-backed FoodMart fixture and now runs against
+the Calcite backend (H2 is mapped in `CalciteDialectMap`). No backend opt-out
+is required.
 
 ## Ops notes
 

@@ -712,6 +712,17 @@
                 <version>33.4.8-jre</version>
             </dependency>
 
+            <!-- Pin protobuf to the version Avatica 1.27 (pulled by Calcite 1.41) needs.
+                 A transitive chain (saiku-olap-util -> serenity-bdd -> operadriver) drags in
+                 protobuf-java 2.4.1, which wins Maven's "nearest" mediation and hides
+                 GeneratedMessageV3, causing NoClassDefFoundError at runtime under the
+                 Calcite backend. This pin keeps protobuf >= 3.x on the classpath. -->
+            <dependency>
+                <groupId>com.google.protobuf</groupId>
+                <artifactId>protobuf-java</artifactId>
+                <version>3.25.8</version>
+            </dependency>
+
             <!-- Pin eigenbase to the versions available in Maven Central.
                  The Spicule Mondrian fork (Calcite backend) pulls calcite-core 1.41.0,
                  which transitively requests eigenbase-properties 1.1.4 (not published).
