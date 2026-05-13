@@ -4,12 +4,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
-public record Dimension(
-        String name,
-        String table,
-        String foreignKey,
-        String primaryKey,
-        List<Level> levels) {
+public record Dimension(String name, String table, String foreignKey, String primaryKey, List<Level> levels) {
 
     @JsonCreator
     public Dimension(

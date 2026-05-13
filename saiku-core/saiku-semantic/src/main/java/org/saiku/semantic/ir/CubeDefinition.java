@@ -8,8 +8,7 @@ import java.util.List;
  * Top-level semantic layer IR. One {@code CubeDefinition} compiles to one
  * {@code <Schema><Cube>...</Cube></Schema>} Mondrian document.
  */
-public record CubeDefinition(
-        String name, FactTable fact, List<Dimension> dimensions, List<Measure> measures) {
+public record CubeDefinition(String name, FactTable fact, List<Dimension> dimensions, List<Measure> measures) {
 
     @JsonCreator
     public CubeDefinition(

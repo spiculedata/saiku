@@ -17,8 +17,7 @@ import org.saiku.semantic.yaml.CubeYamlParser;
 class SemanticLayerTest {
 
     private CubeDefinition parseSalesFixture() throws IOException {
-        try (Reader r = new InputStreamReader(
-                getClass().getResourceAsStream("/sales.yml"), StandardCharsets.UTF_8)) {
+        try (Reader r = new InputStreamReader(getClass().getResourceAsStream("/sales.yml"), StandardCharsets.UTF_8)) {
             return new CubeYamlParser().parse(r);
         }
     }
@@ -62,8 +61,7 @@ class SemanticLayerTest {
                 fact:
                   table: t
                 """;
-        assertThrows(
-                CubeYamlParser.SemanticValidationException.class, () -> new CubeYamlParser().parse(yaml));
+        assertThrows(CubeYamlParser.SemanticValidationException.class, () -> new CubeYamlParser().parse(yaml));
     }
 
     @Test
@@ -76,7 +74,6 @@ class SemanticLayerTest {
                 measures:
                   - name: Sales
                 """;
-        assertThrows(
-                CubeYamlParser.SemanticValidationException.class, () -> new CubeYamlParser().parse(yaml));
+        assertThrows(CubeYamlParser.SemanticValidationException.class, () -> new CubeYamlParser().parse(yaml));
     }
 }
