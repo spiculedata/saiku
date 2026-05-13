@@ -723,25 +723,24 @@
                 <version>3.25.8</version>
             </dependency>
 
-            <!-- Pin eigenbase to the versions available in Maven Central.
-                 The Spicule Mondrian fork (Calcite backend) pulls calcite-core 1.41.0,
-                 which transitively requests eigenbase-properties 1.1.4 (not published).
-                 Maven's descriptor resolution tries to fetch that POM even when the
-                 higher-preferred 1.1.0.10924 wins mediation, so we lock it here. -->
+            <!-- Pin eigenbase to the versions published from spiculedata/mondrian-saiku's
+                 GH Packages registry (publish-deps.yml). calcite-core 1.41.0 transitively
+                 requests eigenbase-properties 1.1.4 (not published anywhere); pinning
+                 keeps Maven from trying to fetch the 1.1.4 descriptor. -->
             <dependency>
                 <groupId>eigenbase</groupId>
                 <artifactId>eigenbase-properties</artifactId>
-                <version>1.1.0.10924</version>
+                <version>1.1.2</version>
             </dependency>
             <dependency>
                 <groupId>eigenbase</groupId>
                 <artifactId>eigenbase-xom</artifactId>
-                <version>1.3.0.11999</version>
+                <version>1.3.1</version>
             </dependency>
             <dependency>
                 <groupId>eigenbase</groupId>
                 <artifactId>eigenbase-resgen</artifactId>
-                <version>1.3.0.11873</version>
+                <version>1.3.1</version>
             </dependency>
 
             <dependency>

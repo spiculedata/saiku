@@ -24,20 +24,27 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
-          # Wire credentials for the spiculedata/mondrian-saiku Maven package.
-          # The server-id MUST match the <repository><id> declared in pom.xml.
-          # GH_PACKAGES_TOKEN is a repo secret holding a PAT with read:packages
-          # (auto-issued GITHUB_TOKEN can't read packages from a different org).
-          server-id: github-mondrian-saiku
-          server-username: GH_PACKAGES_USER
-          server-password: GH_PACKAGES_TOKEN
-      - name: mvn verify
+      # The Spicule deps live across three GH Packages registries (mondrian-saiku,
+      # olap4j, olap4j-xmlaserver). setup-java only wires one <server>, so we
+      # write the full settings.xml ourselves. One PAT (read:packages) covers
+      # all three. GH_PACKAGES_TOKEN is a repo secret — the auto-issued
+      # GITHUB_TOKEN can't read packages across orgs.
+      - name: Configure Maven settings.xml
         env:
           GH_PACKAGES_USER: ${{ github.actor }}
           GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<EOF
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+            <servers>
+              <server><id>github-mondrian-saiku</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j-xmlaserver</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+            </servers>
+          </settings>
+          EOF
+      - name: mvn verify
         run: mvn -B -ntp -DskipITs=false verify
       - name: spotless:check
-        env:
-          GH_PACKAGES_USER: ${{ github.actor }}
-          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: mvn -B -ntp spotless:check

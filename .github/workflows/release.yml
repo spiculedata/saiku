@@ -32,11 +32,25 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
-          # See ci.yml for the same wiring — needed so the launcher build
-          # can resolve pentaho:mondrian:4.8.1.0 from GitHub Packages.
-          server-id: github-mondrian-saiku
-          server-username: GH_PACKAGES_USER
-          server-password: GH_PACKAGES_TOKEN
+
+      # See ci.yml for the rationale — multi-server settings.xml so the build
+      # can resolve mondrian and the spiculedata olap4j / olap4j-xmlaserver
+      # artifacts from GitHub Packages.
+      - name: Configure Maven settings.xml
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<EOF
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+            <servers>
+              <server><id>github-mondrian-saiku</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j-xmlaserver</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+            </servers>
+          </settings>
+          EOF
 
       - name: Resolve version
         id: meta
@@ -51,9 +65,6 @@ jobs:
           echo "jar_name=saiku-${VERSION}.jar" >> "$GITHUB_OUTPUT"
 
       - name: mvn package (launcher)
-        env:
-          GH_PACKAGES_USER: ${{ github.actor }}
-          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: mvn -B -ntp -DskipTests -pl saiku-launcher -am package
 
       - name: Rename fat JAR

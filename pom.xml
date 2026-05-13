@@ -59,14 +59,29 @@
             </snapshots>
         </repository>
 
-        <!-- Spicule fork of Mondrian (pentaho:mondrian:4.8.1.0+). GitHub Packages
+        <!-- Spicule-published Maven artifacts on GitHub Packages. GH Packages
              requires authentication for downloads even when the package is public;
-             configure a <server id="github-mondrian-saiku"> entry in your
-             ~/.m2/settings.xml with a GitHub username + PAT (scope: read:packages). -->
+             each <id> below needs a matching <server> entry in ~/.m2/settings.xml
+             (GitHub username + PAT with read:packages). One PAT can authenticate
+             all three repos. -->
         <repository>
             <id>github-mondrian-saiku</id>
             <name>GitHub Packages - spiculedata/mondrian-saiku</name>
             <url>https://maven.pkg.github.com/spiculedata/mondrian-saiku</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+        <repository>
+            <id>github-olap4j</id>
+            <name>GitHub Packages - spiculedata/olap4j</name>
+            <url>https://maven.pkg.github.com/spiculedata/olap4j</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+        <repository>
+            <id>github-olap4j-xmlaserver</id>
+            <name>GitHub Packages - spiculedata/olap4j-xmlaserver</name>
+            <url>https://maven.pkg.github.com/spiculedata/olap4j-xmlaserver</url>
             <releases><enabled>true</enabled></releases>
             <snapshots><enabled>false</enabled></snapshots>
         </repository>
