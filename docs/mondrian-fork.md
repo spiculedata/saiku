@@ -6,19 +6,15 @@ default in the fork and therefore the default in Saiku.
 
 ## Source + install
 
-- Upstream: https://github.com/spiculedata/mondrian
-- Local checkout: `~/Projects/mondrian` (same pattern as `olap4j` and
-  `olap4j-xmlaserver`).
-- Install into the local Maven repo:
-
-  ```
-  cd ~/Projects/mondrian
-  mvn -DskipTests clean install
-  ```
-
-  This produces `pentaho:mondrian:4.8.1.0-SAIKU-jakarta`, which is the GAV Saiku
-  depends on. The artifact is not published to a remote repo, so the local
-  install is required before building Saiku.
+- Upstream: https://github.com/spiculedata/mondrian-saiku
+- Published artifact: `pentaho:mondrian:4.8.1.0` on GitHub Packages
+  (`https://maven.pkg.github.com/spiculedata/mondrian-saiku`). The Saiku root
+  pom registers this repo; you need a `<server id="github-mondrian-saiku">`
+  entry in `~/.m2/settings.xml` with a GitHub username + PAT
+  (scope: `read:packages`) for Maven to authenticate the download.
+- Local builds against an unreleased Mondrian change: clone the repo and
+  `mvn -DskipTests clean install` to populate `~/.m2`; Maven prefers the
+  local cache over remote resolution.
 
 ## Backend selection
 

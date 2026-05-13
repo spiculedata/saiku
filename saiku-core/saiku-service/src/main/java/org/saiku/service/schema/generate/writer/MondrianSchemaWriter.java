@@ -21,7 +21,7 @@ import org.saiku.service.schema.generate.enrich.ops.SuggestionOp;
  * delegating to {@link MondrianDef.Schema#toXML()}.
  *
  * <p>Target format is Mondrian 4.x ({@code metamodelVersion="4.0"}) because that is what Saiku
- * runs on (resolved {@code pentaho:mondrian:4.8.1.0-SAIKU-jakarta}). The 3.x shape described in
+ * runs on (resolved {@code pentaho:mondrian:4.8.1.0}). The 3.x shape described in
  * the original plan (Cube → Measure, DimensionUsage, inline Hierarchy) does not exist in the 4.x
  * API surface we depend on, so this writer emits:
  *
@@ -336,7 +336,7 @@ public class MondrianSchemaWriter {
                 a.keyColumn = l.column();
                 // nameColumn is the human-readable caption source. MondrianDef.Attribute
                 // exposes it as a plain String attribute (verified against
-                // mondrian-4.8.1.0-SAIKU-jakarta sources), so we emit it directly.
+                // mondrian-4.8.1.0 sources), so we emit it directly.
                 if (l.nameColumn() != null) {
                     a.nameColumn = l.nameColumn();
                 }

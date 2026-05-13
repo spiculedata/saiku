@@ -58,6 +58,18 @@
                 <enabled>true</enabled>
             </snapshots>
         </repository>
+
+        <!-- Spicule fork of Mondrian (pentaho:mondrian:4.8.1.0+). GitHub Packages
+             requires authentication for downloads even when the package is public;
+             configure a <server id="github-mondrian-saiku"> entry in your
+             ~/.m2/settings.xml with a GitHub username + PAT (scope: read:packages). -->
+        <repository>
+            <id>github-mondrian-saiku</id>
+            <name>GitHub Packages - spiculedata/mondrian-saiku</name>
+            <url>https://maven.pkg.github.com/spiculedata/mondrian-saiku</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
     </repositories>
     <build>
         <plugins>
