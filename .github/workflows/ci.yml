@@ -24,7 +24,20 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
+          # Wire credentials for the spiculedata/mondrian-saiku Maven package.
+          # The server-id MUST match the <repository><id> declared in pom.xml.
+          # GH_PACKAGES_TOKEN is a repo secret holding a PAT with read:packages
+          # (auto-issued GITHUB_TOKEN can't read packages from a different org).
+          server-id: github-mondrian-saiku
+          server-username: GH_PACKAGES_USER
+          server-password: GH_PACKAGES_TOKEN
       - name: mvn verify
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: mvn -B -ntp -DskipITs=false verify
       - name: spotless:check
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: mvn -B -ntp spotless:check

@@ -32,6 +32,11 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
+          # See ci.yml for the same wiring — needed so the launcher build
+          # can resolve pentaho:mondrian:4.8.1.0 from GitHub Packages.
+          server-id: github-mondrian-saiku
+          server-username: GH_PACKAGES_USER
+          server-password: GH_PACKAGES_TOKEN
 
       - name: Resolve version
         id: meta
@@ -46,6 +51,9 @@ jobs:
           echo "jar_name=saiku-${VERSION}.jar" >> "$GITHUB_OUTPUT"
 
       - name: mvn package (launcher)
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: mvn -B -ntp -DskipTests -pl saiku-launcher -am package
 
       - name: Rename fat JAR
