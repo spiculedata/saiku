@@ -85,6 +85,13 @@
             <releases><enabled>true</enabled></releases>
             <snapshots><enabled>false</enabled></snapshots>
         </repository>
+        <repository>
+            <id>github-saiku-query</id>
+            <name>GitHub Packages - spiculedata/saiku-query</name>
+            <url>https://maven.pkg.github.com/spiculedata/saiku-query</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>true</enabled></snapshots>
+        </repository>
     </repositories>
     <build>
         <plugins>
