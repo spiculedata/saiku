@@ -249,10 +249,11 @@
             <artifactId>xmlgraphics-commons</artifactId>
         </dependency>
 
+        <!-- Inherits version from saiku-bom (com.lowagie:itext:2.1.7,
+             Central-resolvable, same com.lowagie.text.* API). -->
         <dependency>
-            <groupId>iText</groupId>
-            <artifactId>iText</artifactId>
-            <version>4.2.0</version>
+            <groupId>com.lowagie</groupId>
+            <artifactId>itext</artifactId>
         </dependency>
         <dependency>
             <groupId>net.sourceforge.htmlcleaner</groupId>

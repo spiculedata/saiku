@@ -298,10 +298,15 @@
                 <artifactId>batik-ext</artifactId>
                 <version>1.8</version>
             </dependency>
+            <!-- iText 4.2.0 under the old "iText:iText" groupId was never on Maven
+                 Central and the original hosting is gone. com.lowagie:itext:2.1.7
+                 is the same artifact (last OSS release before AGPL) published on
+                 Central. Saiku's PDF export code imports com.lowagie.text.* so
+                 the API surface is unchanged — only the coords. -->
             <dependency>
-                <groupId>iText</groupId>
-                <artifactId>iText</artifactId>
-                <version>4.2.0</version>
+                <groupId>com.lowagie</groupId>
+                <artifactId>itext</artifactId>
+                <version>2.1.7</version>
             </dependency>
             <dependency>
                 <groupId>org.saikuanalytics</groupId>
