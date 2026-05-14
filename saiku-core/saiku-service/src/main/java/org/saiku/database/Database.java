@@ -111,20 +111,28 @@ public class Database {
                         + "set \"date_string\" = TO_CHAR(\"the_date\", 'yyyy/mm/dd');");
 
                 // If saiku-launcher's stageDefaultDatasource already seeded a
-                // 'foodmart' datasource into the repository, skip the schema +
+                // foodmart datasource into the repository, skip the schema +
                 // datasource registration below to avoid a duplicate entry in
-                // the discover output. The SQL bootstrap above still runs so
-                // the H2 file is populated; the staged datasource resolves
-                // against the now-loaded tables.
-                SaikuDatasource existing = null;
+                // discover. The repository tenant prefix (e.g. "unknown_") is
+                // applied after addDatasource(), so a getDatasource("foodmart")
+                // name check misses the staged copy. Instead, scan all
+                // registered datasources for the well-known foodmart UUID —
+                // robust against any tenant prefix.
+                boolean alreadySeeded = false;
                 try {
-                    existing = dsm.getDatasource("foodmart");
+                    for (SaikuDatasource ds : dsm.getDatasources(null).values()) {
+                        if (ds != null && ds.getProperties() != null
+                            && "4432dd20-fcae-11e3-a3ac-0800200c9a66"
+                                .equals(ds.getProperties().getProperty("id"))) {
+                            alreadySeeded = true;
+                            break;
+                        }
+                    }
                 } catch (Exception ignored) {
-                    // getDatasource may throw if the named datasource doesn't
-                    // exist — treat as "not present" and fall through to the
-                    // legacy registration path below.
+                    // dsm not ready / iteration failed — fall through to the
+                    // legacy registration path below (worst case: duplicate).
                 }
-                if (existing == null) {
+                if (!alreadySeeded) {
                     String schema = null;
                     try {
                         schema = readFile(dsm.getFoodmartschema(), StandardCharsets.UTF_8);
