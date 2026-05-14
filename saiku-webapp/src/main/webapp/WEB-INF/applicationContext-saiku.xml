@@ -63,7 +63,6 @@
       <security:csrf disabled="true"/>
       <security:intercept-url pattern="/serverdocs/**" access="isAnonymous()" />
 	    <security:intercept-url pattern="/rest/saiku/session*" access="isAnonymous() or isFullyAuthenticated()" />
-    	<security:intercept-url pattern="/rest/saiku/api/license/usercount" access="isAnonymous() or isFullyAuthenticated()" />
       <security:intercept-url pattern="/rest/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/json/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/WEB-INF/classes/legacy-schema" access="isAnonymous()" />
@@ -96,7 +95,6 @@
     <security:csrf disabled="true"/>
     <security:intercept-url pattern="/serverdocs/**" access="isAnonymous()" />
     <security:intercept-url pattern="/rest/saiku/session*" access="isAnonymous() or isFullyAuthenticated()" />
-    <security:intercept-url pattern="/rest/saiku/api/license/usercount" access="isAnonymous() or isFullyAuthenticated()" />
     <security:intercept-url pattern="/rest/**" access="isFullyAuthenticated()" />
     <security:intercept-url pattern="/json/**" access="isFullyAuthenticated()" />
     <security:intercept-url pattern="/WEB-INF/classes/legacy-schema" access="isAnonymous()" />

@@ -227,11 +227,6 @@
     </bean>
 
 
-    <bean id="licenseBean" class="org.saiku.web.rest.resources.License">
-        <property name="databaseManager" ref="h2database"/>
-        <property name="userService" ref="userServiceBean"/>
-    </bean>
-
     <bean id="statsBean" class="org.saiku.web.rest.resources.StatisticsResource"/>
 
     <bean id="startupBean" class="org.saiku.web.rest.util.StartupResource" init-method="init"/>
