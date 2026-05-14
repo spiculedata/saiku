@@ -268,31 +268,12 @@
 			<artifactId>log4j-core</artifactId>
 		</dependency>
 		<dependency>
-			<groupId>net.serenity-bdd</groupId>
-			<artifactId>serenity-jbehave</artifactId>
-		</dependency>
-<!--<dependency> <groupId>net.thucydides</groupId> <artifactId>thucydides-core</artifactId> 
-			</dependency> -->
-		<dependency>
-			<groupId>net.serenity-bdd</groupId>
-			<artifactId>serenity-core</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.jbehave</groupId>
-			<artifactId>jbehave-core</artifactId>
-		</dependency>
-<dependency>
 			<groupId>junit</groupId>
 			<artifactId>junit</artifactId>
 		</dependency>
 		<dependency>
-			<groupId>hsqldb</groupId>
+			<groupId>org.hsqldb</groupId>
 			<artifactId>hsqldb</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>com.cenqua.clover</groupId>
-			<artifactId>clover</artifactId>
-			<scope>compile</scope>
 		</dependency>
 
 		<dependency>
@@ -342,10 +323,6 @@
 		<dependency>
 			<groupId>commons-dbcp</groupId>
 			<artifactId>commons-dbcp</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>xml-apis</groupId>
-			<artifactId>xml-apis</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.felix</groupId>

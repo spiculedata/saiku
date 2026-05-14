@@ -43,7 +43,7 @@
         <jbehave.version>3.9.3</jbehave.version>
         <saiku-query.version>0.4-SNAPSHOT</saiku-query.version>
         <jackson.version>2.18.6</jackson.version>
-        <arrow.version>15.0.2</arrow.version>
+        <arrow.version>18.2.0</arrow.version>
         <caffeine.version>3.1.8</caffeine.version>
     </properties>
 
@@ -191,25 +191,14 @@
                 <artifactId>jdom</artifactId>
                 <version>1.1</version>
             </dependency>
-            <dependency>
-                <groupId>xml-apis</groupId>
-                <artifactId>xml-apis</artifactId>
-                <version>1.3.04</version>
-            </dependency>
+            <!-- xml-apis 1.3.04 (2008): built into JDK 21. Removed. -->
+
+            <!-- fop 2.10 no longer needs the avalon-framework-* exclusions
+                 (avalon was decoupled in 2.6+). -->
             <dependency>
                 <groupId>org.apache.xmlgraphics</groupId>
                 <artifactId>fop</artifactId>
-                <version>2.2</version>
-                <exclusions>
-                    <exclusion>
-                        <artifactId>avalon-framework-api</artifactId>
-                        <groupId>org.apache.avalon.framework</groupId>
-                    </exclusion>
-                    <exclusion>
-                        <artifactId>avalon-framework-impl</artifactId>
-                        <groupId>org.apache.avalon.framework</groupId>
-                    </exclusion>
-                </exclusions>
+                <version>2.10</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.xmlgraphics</groupId>
@@ -217,17 +206,9 @@
                 <version>2.9</version>
             </dependency>
 
-            <!-- these two are to correct issues in fop dependency -->
-            <dependency>
-                <groupId>avalon-framework</groupId>
-                <artifactId>avalon-framework-api</artifactId>
-                <version>4.2.0</version>
-            </dependency>
-            <dependency>
-                <groupId>avalon-framework</groupId>
-                <artifactId>avalon-framework-impl</artifactId>
-                <version>4.2.0</version>
-            </dependency>
+            <!-- avalon-framework-api / -impl 4.2.0 (2006!) were only needed to
+                 override fop 2.2's transitive avalon coords. fop 2.6+ no longer
+                 depends on avalon — removed. -->
             <!-- batik-js was folded into batik-bridge in 1.10+; the 1.8 standalone
                  artifact is what the legacy saiku-web pom still references. Keep
                  a managed coords here but pin batik-js to the last published 1.x
@@ -262,54 +243,10 @@
                 <artifactId>hamcrest-library</artifactId>
                 <version>2.2</version>
             </dependency>
-            <dependency>
-                <groupId>net.serenity-bdd</groupId>
-                <artifactId>serenity-jbehave</artifactId>
-                <version>1.0.23</version>
-                <exclusions>
-                    <!-- lambdaj 2.3.3 → hamcrest-all 1.1 (different artifactId
-                         to the unified hamcrest 2.2, so dependencyMgmt can't
-                         override it). Exclude entirely; jbehave/serenity don't
-                         actually need hamcrest-all on saiku's classpath. -->
-                    <exclusion>
-                        <groupId>org.hamcrest</groupId>
-                        <artifactId>hamcrest-all</artifactId>
-                    </exclusion>
-                </exclusions>
-            </dependency>
-            <dependency>
-                <groupId>net.serenity-bdd</groupId>
-                <artifactId>serenity-core</artifactId>
-                <version>1.0.58</version>
-                <exclusions>
-                    <exclusion>
-                        <!-- pdfbox-app ships it's own bcprov, causing cyclic dependencies errors -->
-                        <groupId>org.bouncycastle</groupId>
-                        <artifactId>bcprov-jdk15on</artifactId>
-                    </exclusion>
-                </exclusions>
-            </dependency>
-            <dependency>
-                <groupId>net.serenity-bdd</groupId>
-                <artifactId>serenity-jira-requirements-provider</artifactId>
-                <version>1.0.1</version>
-            </dependency>
-            <dependency>
-                <groupId>net.serenity-bdd</groupId>
-                <artifactId>serenity-junit</artifactId>
-                <version>1.0.58</version>
-            </dependency>
-            <dependency>
-                <groupId>net.serenity-bdd</groupId>
-                <artifactId>serenity-jira-plugin</artifactId>
-                <version>1.0.1</version>
-            </dependency>
+            <!-- serenity-bdd 1.0.x (2014) + jbehave-core 3.9.3 (2014): 0 java
+                 imports, 0 @Steps / @Given annotations across saiku source.
+                 Removed entirely. -->
 
-            <dependency>
-                <groupId>org.jbehave</groupId>
-                <artifactId>jbehave-core</artifactId>
-                <version>${jbehave.version}</version>
-            </dependency>
             <dependency>
                 <groupId>mondrian-data-foodmart-hsql</groupId>
                 <artifactId>mondrian-data-foodmart-hsql</artifactId>
@@ -494,11 +431,9 @@
                 <artifactId>jakarta.ws.rs-api</artifactId>
                 <version>3.1.0</version>
             </dependency>
-            <dependency>
-                <groupId>com.sun.grizzly</groupId>
-                <artifactId>grizzly-servlet-webserver</artifactId>
-                <version>1.9.18-i</version>
-            </dependency>
+            <!-- grizzly-servlet-webserver 1.9.18-i (Bintray-only artifact,
+                 dead 2021): 0 references — removed. -->
+
             <!-- mockito-all 1.8.5 (2010) had 0 java imports + ships a stale
                  org.hamcrest.CoreMatchers class that shadows the hamcrest 2.2
                  one and breaks JUnit 4.13.x's Assume.assumeNotNull. Removed. -->
@@ -518,10 +453,14 @@
                 <artifactId>jettison</artifactId>
                 <version>1.5.4</version>
             </dependency>
+            <!-- HSQLDB 1.8.0.10 (2010) had multiple CVEs and the legacy
+                 hsqldb:hsqldb coords. 2.x publishes under org.hsqldb:hsqldb
+                 and is API-compatible at the JDBC level for the test fixtures
+                 saiku-service uses. -->
             <dependency>
-                <groupId>hsqldb</groupId>
+                <groupId>org.hsqldb</groupId>
                 <artifactId>hsqldb</artifactId>
-                <version>1.8.0.10</version>
+                <version>2.7.4</version>
             </dependency>
             <dependency>
                 <groupId>mysql</groupId>
@@ -548,147 +487,11 @@
                 <artifactId>commons-collections</artifactId>
                 <version>3.2.2</version>
             </dependency>
-            <dependency>
-                <groupId>pentaho</groupId>
-                <artifactId>cpf-core</artifactId>
-                <version>7.1.0.0-12</version>
-                <exclusions>
-                    <exclusion>
-                        <groupId>janino</groupId>
-                        <artifactId>janino</artifactId>
-                    </exclusion>
-                </exclusions>
-            </dependency>
-            <dependency>
-                <groupId>pentaho</groupId>
-                <artifactId>cpf-pentaho</artifactId>
-                <version>7.1.0.0-12</version>
-                <exclusions>
-                    <exclusion>
-                        <groupId>pentaho</groupId>
-                        <artifactId>pentaho-user-console-package</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>janino</groupId>
-                        <artifactId>janino</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>pentaho-kettle</groupId>
-                        <artifactId>kettle-ui-swt</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>pentaho</groupId>
-                        <artifactId>pentaho-platform-extensions</artifactId>
-                    </exclusion>
-                </exclusions>
-            </dependency>
-            <dependency>
-                <groupId>pentaho</groupId>
-                <artifactId>pentaho-platform-api</artifactId>
-                <version>${pentaho.platform.version}</version>
-                <scope>provided</scope>
-            </dependency>
-            <dependency>
-                <groupId>pentaho</groupId>
-                <artifactId>pentaho-platform-repository</artifactId>
-                <version>5.2.0.2-84</version>
-            </dependency>
-            <dependency>
-                <groupId>pentaho</groupId>
-                <artifactId>pentaho-platform-core</artifactId>
-                <version>${pentaho.platform.version}</version>
-                <scope>provided</scope>
-                <exclusions>
-                    <exclusion>
-                        <groupId>gnujaxp</groupId>
-                        <artifactId>gnujaxp</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>xerces</groupId>
-                        <artifactId>xmlParserAPIs</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>javax.faces</groupId>
-                        <artifactId>jsf-api</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>org.apache.xbean</groupId>
-                        <artifactId>xbean</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>adaptx</groupId>
-                        <artifactId>adaptx</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>org.jvnet.staxex</groupId>
-                        <artifactId>stax-ex</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>net.sourceforge.nekohtml</groupId>
-                        <artifactId>nekohtml</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>janino</groupId>
-                        <artifactId>janino</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>xml-apis</groupId>
-                        <artifactId>xmlParserAPIs</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>xerces</groupId>
-                        <artifactId>xmlParserAPIs</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <artifactId>secondstring</artifactId>
-                        <groupId>secondstring</groupId>
-                    </exclusion>
-                </exclusions>
-            </dependency>
-            <dependency>
-                <groupId>pentaho</groupId>
-                <artifactId>pentaho-platform-extensions</artifactId>
-                <version>${pentaho.platform.version}</version>
-                <scope>provided</scope>
-                <exclusions>
-                    <exclusion>
-                        <groupId>javax.faces</groupId>
-                        <artifactId>jsf-api</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>org.apache.xbean</groupId>
-                        <artifactId>xbean</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>adaptx</groupId>
-                        <artifactId>adaptx</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>org.jvnet.staxex</groupId>
-                        <artifactId>stax-ex</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>net.sourceforge.nekohtml</groupId>
-                        <artifactId>nekohtml</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>janino</groupId>
-                        <artifactId>janino</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>xml-apis</groupId>
-                        <artifactId>xmlParserAPIs</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>xerces</groupId>
-                        <artifactId>xmlParserAPIs</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <artifactId>secondstring</artifactId>
-                        <groupId>secondstring</groupId>
-                    </exclusion>
-                </exclusions>
-            </dependency>
+            <!-- pentaho:cpf-core, cpf-pentaho (7.1.0.0-12, 2017) and the
+                 pentaho-platform-* stack (5.x, 2014) had 0 java imports
+                 across saiku + 0 Spring XML references. Removed entirely.
+                 The TRUNK-SNAPSHOT cda artifact was on the same dead path. -->
+
             <dependency>
                 <groupId>jakarta.servlet</groupId>
                 <artifactId>jakarta.servlet-api</artifactId>
@@ -700,11 +503,6 @@
                  Removed entirely (the fop dependency handles SVG-to-PDF
                  transcoding via its own batik+pdfbox path, transitively). -->
 
-            <dependency>
-                <groupId>pentaho</groupId>
-                <artifactId>cda</artifactId>
-                <version>TRUNK-SNAPSHOT</version>
-            </dependency>
             <dependency>
                 <groupId>org.springframework.security</groupId>
                 <artifactId>spring-security-core</artifactId>
@@ -720,11 +518,10 @@
                 <artifactId>spring-security-web</artifactId>
                 <version>${spring.security.version}</version>
             </dependency>
-            <dependency>
-                <groupId>javax.servlet</groupId>
-                <artifactId>jstl</artifactId>
-                <version>1.2</version>
-            </dependency>
+            <!-- javax.servlet:jstl 1.2 (2006): 0 references; saiku is on Jakarta
+                 EE 10 (jakarta.servlet) so this javax artifact would have caused
+                 a duplicate-namespace conflict anyway. Removed. -->
+
             <dependency>
                 <groupId>commons-lang</groupId>
                 <artifactId>commons-lang</artifactId>
@@ -745,26 +542,18 @@
                 <artifactId>jackson-core</artifactId>
                 <version>${jackson.version}</version>
             </dependency>
-            <dependency>
-                <groupId>javax.servlet.jsp</groupId>
-                <artifactId>jsp-api</artifactId>
-                <version>2.1</version>
-            </dependency>
+            <!-- javax.servlet.jsp:jsp-api 2.1 (javax) — replaced by jakarta.servlet
+                 stack. Removed. -->
+
             <dependency>
                 <groupId>com.h2database</groupId>
                 <artifactId>h2</artifactId>
                 <version>1.4.188</version>
             </dependency>
-            <dependency>
-                <groupId>org.apache.httpcomponents</groupId>
-                <artifactId>httpclient</artifactId>
-                <version>4.5.14</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.httpcomponents</groupId>
-                <artifactId>httpcore</artifactId>
-                <version>4.4.16</version>
-            </dependency>
+            <!-- httpclient + httpcore 4.x: 0 declarations across saiku modules
+                 and 0 java imports. Removed from BOM. Transitive consumers
+                 (calcite-avatica, etc.) pin their own. -->
+
             <!--dependency>
                 <groupId>org.apache.hive</groupId>
                 <artifactId>hive-jdbc</artifactId>
@@ -821,21 +610,11 @@
                 <version>1.3.1</version>
             </dependency>
 
-            <dependency>
-                <groupId>com.cenqua.clover</groupId>
-                <artifactId>clover</artifactId>
-                <version>3.3.0</version>
-            </dependency>
-            <dependency>
-                <groupId>com.atlassian.jira</groupId>
-                <artifactId>jira-rest-java-client-api</artifactId>
-                <version>2.0.0-m31</version>
-            </dependency>
-            <dependency>
-                <groupId>com.atlassian.jira</groupId>
-                <artifactId>jira-rest-java-client-core</artifactId>
-                <version>2.0.0-m31</version>
-            </dependency>
+            <!-- com.cenqua.clover 3.3.0 (Atlassian Clover, EOL 2017) and
+                 com.atlassian.jira:jira-rest-java-client-* 2.0.0-m31 (2012)
+                 had 0 java references — left over from the OSBI-era serenity
+                 BDD harness. Removed. -->
+
 
             <!-- Apache Arrow for IPC columnar transport -->
             <dependency>
