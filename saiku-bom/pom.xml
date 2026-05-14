@@ -21,7 +21,12 @@
              Closes CVE-2026-22732 (HTTP-headers-not-written) and CVE-2026-22746
              (user-attribute enumeration). Pairs with Spring Framework 6.2.x. -->
         <spring.security.version>6.5.1</spring.security.version>
-        <slf4j.version>1.7.36</slf4j.version>
+        <!-- slf4j 1.x reached EOL; 2.0.x is the maintained line. API
+             (org.slf4j.Logger / LoggerFactory) is binary-compatible for
+             the call surface saiku uses. Note: the slf4j → log4j-2 binding
+             changes name in 2.x — log4j-slf4j-impl (slf4j-1.x) becomes
+             log4j-slf4j2-impl (slf4j-2.x). -->
+        <slf4j.version>2.0.16</slf4j.version>
         <!-- log4j 1.x has 12 open CVEs and is EOL. Drop in the log4j-1.2-api
              compatibility bridge which preserves the org.apache.log4j.* package
              namespace (so existing imports keep working) but routes everything
@@ -91,10 +96,11 @@
                 <version>${project.version}</version>
                 <type>war</type>
             </dependency>
-            <!-- Replaces slf4j-log4j12: slf4j-1.x → log4j-core 2.x binding. -->
+            <!-- slf4j-2.x → log4j-core 2.x binding. (For slf4j-1.x, use
+                 log4j-slf4j-impl — we're now on slf4j 2.x.) -->
             <dependency>
                 <groupId>org.apache.logging.log4j</groupId>
-                <artifactId>log4j-slf4j-impl</artifactId>
+                <artifactId>log4j-slf4j2-impl</artifactId>
                 <version>${log4j2.version}</version>
             </dependency>
             <dependency>
@@ -156,15 +162,19 @@
                 <artifactId>junit-jupiter</artifactId>
                 <version>5.11.3</version>
             </dependency>
+            <!-- POI 3.17 (2017) is EOL. 5.x line is the maintained successor;
+                 5.4.0 is the current release. API surface for HSSF/XSSF
+                 usermodel + CellRangeAddress is stable; only XSSFColor's
+                 constructor signature changed (now needs IndexedColorMap). -->
             <dependency>
                 <groupId>org.apache.poi</groupId>
                 <artifactId>poi</artifactId>
-                <version>3.17</version>
+                <version>5.4.0</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.poi</groupId>
                 <artifactId>poi-ooxml</artifactId>
-                <version>3.17</version>
+                <version>5.4.0</version>
             </dependency>
             <dependency>
                 <groupId>org.olap4j</groupId>
@@ -489,11 +499,10 @@
                 <artifactId>grizzly-servlet-webserver</artifactId>
                 <version>1.9.18-i</version>
             </dependency>
-            <dependency>
-                <groupId>org.mockito</groupId>
-                <artifactId>mockito-all</artifactId>
-                <version>1.8.5</version>
-            </dependency>
+            <!-- mockito-all 1.8.5 (2010) had 0 java imports + ships a stale
+                 org.hamcrest.CoreMatchers class that shadows the hamcrest 2.2
+                 one and breaks JUnit 4.13.x's Assume.assumeNotNull. Removed. -->
+
             <dependency>
                 <groupId>junit</groupId>
                 <artifactId>junit</artifactId>
@@ -686,11 +695,11 @@
                 <version>6.0.0</version>
             </dependency>
 
-            <dependency>
-                <groupId>org.apache.pdfbox</groupId>
-                <artifactId>pdfbox-app</artifactId>
-                <version>2.0.0</version>
-            </dependency>
+            <!-- pdfbox-app 2.0.0 had 0 direct Java imports in saiku — was
+                 dragged in only by the saiku-web pom but never invoked.
+                 Removed entirely (the fop dependency handles SVG-to-PDF
+                 transcoding via its own batik+pdfbox path, transitively). -->
+
             <dependency>
                 <groupId>pentaho</groupId>
                 <artifactId>cda</artifactId>
