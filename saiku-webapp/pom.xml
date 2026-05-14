@@ -219,12 +219,15 @@
                 <version>1.15.1</version>
                 <configuration>
                     <workingDirectory>${project.basedir}/../saiku-ui</workingDirectory>
-                    <installDirectory>${project.build.directory}/../../saiku-ui/.node</installDirectory>
-                    <!-- v22.11.0 tarball trips frontend-maven-plugin's
-                         extraction code on Linux runners with a
-                         'share/doc/node' permission error. v20.18.0 (LTS)
-                         extracts cleanly and the saiku-ui build is
-                         version-agnostic above Node 18. -->
+                    <!-- Use saiku-webapp/target/node — local to this module,
+                         no '..' traversal across module boundaries. The
+                         '..'-based path (saiku-webapp/target/../../saiku-ui/.node)
+                         triggered "Could not get write permissions for
+                         share/doc/node" on CI Linux runners because the
+                         normalisation happens during generate-resources
+                         before target/ exists, which leaves the extractor
+                         resolving against a not-yet-created directory. -->
+                    <installDirectory>${project.build.directory}/node</installDirectory>
                     <nodeVersion>v20.18.0</nodeVersion>
                 </configuration>
                 <executions>
