@@ -21,7 +21,7 @@ import java.io.Serializable;
 import java.sql.Connection;
 import java.util.*;
 import mondrian.olap4j.SaikuMondrianHelper;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.olap4j.OlapConnection;
 import org.olap4j.OlapException;
 import org.saiku.datasources.connection.AbstractConnectionManager;

@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.saiku.olap.dto.SaikuCube;
 import org.saiku.olap.query2.util.ServiceUtil;
 import org.saiku.service.util.ISaikuQuery;

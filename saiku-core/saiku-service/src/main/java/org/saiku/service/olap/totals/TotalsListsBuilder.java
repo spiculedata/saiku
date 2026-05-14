@@ -2,7 +2,7 @@ package org.saiku.service.olap.totals;
 
 import java.util.*;
 import mondrian.util.Format;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.olap4j.*;
 import org.olap4j.metadata.Cube;
 import org.olap4j.metadata.Measure;
