@@ -23,10 +23,14 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <top.dir>${project.basedir}</top.dir>
-        <spring.version>4.3.30.RELEASE</spring.version>
-        <spring.security.version>4.2.20.RELEASE</spring.security.version>
+        <!-- These properties are shadowed at module level by saiku-bom's
+             dependencyManagement, but a child not importing the BOM would
+             otherwise inherit the stale 4.3.30/1.19 values — kept in sync
+             with saiku-bom/pom.xml to remove the footgun. -->
+        <spring.version>6.2.8</spring.version>
+        <spring.security.version>6.5.1</spring.security.version>
         <slf4j.version>1.7.36</slf4j.version>
-        <jersey.version>1.19.4</jersey.version>
+        <jersey.version>3.1.9</jersey.version>
         <tomcat.version>apache-tomcat-9.0.8</tomcat.version>
         <tomcat.source>target/stage/tomcat/</tomcat.source>
         <maven.build.timestamp.format>yyyyMMdd-HHmm</maven.build.timestamp.format>
@@ -36,7 +40,7 @@
         <serenity.version>1.0.58</serenity.version>
         <jbehave.version>3.9.3</jbehave.version>
         <saiku-query.version>0.4-SNAPSHOT</saiku-query.version>
-        <jackson.version>2.17.3</jackson.version>
+        <jackson.version>2.18.6</jackson.version>
     </properties>
     <repositories>
         <!-- In-tree Maven file-repo for vendored deps that aren't reachable on
@@ -298,7 +302,7 @@
                     <plugin>
                         <groupId>org.owasp</groupId>
                         <artifactId>dependency-check-maven</artifactId>
-                        <version>2.1.1</version>
+                        <version>10.0.4</version>
                         <executions>
                             <execution>
                                 <goals><goal>check</goal></goals>
@@ -313,7 +317,7 @@
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
-            <version>3.8.1</version>
+            <version>4.13.2</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

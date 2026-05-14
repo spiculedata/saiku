@@ -692,10 +692,15 @@ public class ExcelWorksheetBuilder {
 
                     numberCSClone.setFillPattern(FillPatternType.SOLID_FOREGROUND);
 
+                    // POI 5.x removed XSSFColor(java.awt.Color); the replacement
+                    // takes an IndexedColorMap. Passing null uses POI's default
+                    // palette, matching the previous 3.17 behaviour.
                     ((XSSFCellStyle) numberCSClone)
-                            .setFillForegroundColor(new XSSFColor(new java.awt.Color(redCode, greenCode, blueCode)));
+                            .setFillForegroundColor(
+                                    new XSSFColor(new java.awt.Color(redCode, greenCode, blueCode), null));
                     ((XSSFCellStyle) numberCSClone)
-                            .setFillBackgroundColor(new XSSFColor(new java.awt.Color(redCode, greenCode, blueCode)));
+                            .setFillBackgroundColor(
+                                    new XSSFColor(new java.awt.Color(redCode, greenCode, blueCode), null));
                 } catch (Exception e) {
                     // we tried to set the color, no luck, lets continue
                     // without

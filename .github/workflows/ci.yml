@@ -46,9 +46,11 @@ jobs:
           </settings>
           EOF
       - name: mvn verify
+        # spotless:check is bound to the verify phase by the root pom's
+        # <execution>, so `mvn verify` covers formatting too. A standalone
+        # `mvn spotless:check` would fail on saiku-bom (a pom-only module
+        # that doesn't have spotless plugin bound). Keep the single step.
         run: mvn -B -ntp -DskipITs=false verify
-      - name: spotless:check
-        run: mvn -B -ntp spotless:check
 
   dist:
     name: bundle (saiku-dist zip)

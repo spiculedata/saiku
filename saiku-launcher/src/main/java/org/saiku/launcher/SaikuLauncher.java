@@ -185,8 +185,11 @@ public class SaikuLauncher implements Callable<Integer> {
          * exists — preserves user customisations on re-launch.
          */
         private void stageDefaultDatasource(Path saikuHome) throws Exception {
-            Path dsDir = saikuHome.resolve("repository").resolve("data")
-                .resolve("unknown").resolve("datasources");
+            Path dsDir = saikuHome
+                    .resolve("repository")
+                    .resolve("data")
+                    .resolve("unknown")
+                    .resolve("datasources");
             Files.createDirectories(dsDir);
             Path target = dsDir.resolve("foodmart.sds");
             if (Files.exists(target)) {

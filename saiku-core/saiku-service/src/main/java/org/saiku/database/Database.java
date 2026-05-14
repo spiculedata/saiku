@@ -121,9 +121,10 @@ public class Database {
                 boolean alreadySeeded = false;
                 try {
                     for (SaikuDatasource ds : dsm.getDatasources(null).values()) {
-                        if (ds != null && ds.getProperties() != null
-                            && "4432dd20-fcae-11e3-a3ac-0800200c9a66"
-                                .equals(ds.getProperties().getProperty("id"))) {
+                        if (ds != null
+                                && ds.getProperties() != null
+                                && "4432dd20-fcae-11e3-a3ac-0800200c9a66"
+                                        .equals(ds.getProperties().getProperty("id"))) {
                             alreadySeeded = true;
                             break;
                         }
@@ -150,8 +151,8 @@ public class Database {
                     p.setProperty("driver", "mondrian.olap4j.MondrianOlap4jDriver");
                     p.setProperty(
                             "location",
-                            "jdbc:mondrian:Jdbc=jdbc:h2:" + dsm.getFoodmartdir() + "/foodmart;" + "Catalog=" + catalogUri
-                                    + ";JdbcDrivers=org.h2.Driver");
+                            "jdbc:mondrian:Jdbc=jdbc:h2:" + dsm.getFoodmartdir() + "/foodmart;" + "Catalog="
+                                    + catalogUri + ";JdbcDrivers=org.h2.Driver");
                     p.setProperty("username", "sa");
                     p.setProperty("password", "");
                     p.setProperty("id", "4432dd20-fcae-11e3-a3ac-0800200c9a66");
