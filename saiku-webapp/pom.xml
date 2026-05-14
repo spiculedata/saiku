@@ -94,7 +94,16 @@
                             <goal>war</goal>
                         </goals>
                         <configuration>
-                            <packagingExcludes>WEB-INF/lib/saiku-query-${saiku-query.version}.jar</packagingExcludes>
+                            <!-- xerces/xalan are dragged in transitively (mondrian +
+                                 hadoop via hive-jdbc) but their META-INF/services
+                                 javax.xml.parsers.* overrides hijack JAXP. Spring 6.2's
+                                 stricter namespace validation breaks against
+                                 xerces for applicationContext.xml's
+                                 <mvc:annotation-driven/>. JDK 21 has internal
+                                 xerces+xalan that respects JAXP's resolver chain
+                                 — strip the external copies from WEB-INF/lib so
+                                 the JDK's implementation wins. -->
+                            <packagingExcludes>WEB-INF/lib/saiku-query-${saiku-query.version}.jar,WEB-INF/lib/xercesImpl-*.jar,WEB-INF/lib/xalan-*.jar,WEB-INF/lib/serializer-*.jar</packagingExcludes>
                         </configuration>
                     </execution>
                 </executions>

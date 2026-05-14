@@ -103,6 +103,15 @@
             <groupId>org.springframework</groupId>
             <artifactId>spring-context</artifactId>
         </dependency>
+        <!-- Provides org.springframework.web.servlet.config.MvcNamespaceHandler
+             so the applicationContext.xml's <mvc:annotation-driven/> can be
+             parsed. Without this dep, spring-webmvc.jar isn't in WEB-INF/lib
+             and Spring fails at context init with
+             'Unable to locate Spring NamespaceHandler for ...schema/mvc'. -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-webmvc</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>jakarta.ws.rs</groupId>
