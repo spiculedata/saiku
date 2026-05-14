@@ -1,0 +1,43 @@
+/*
+ * Saiku operator branding overlay — sample.
+ *
+ * To activate, copy this file to `brand.css` in the same directory
+ * (`<saiku-home>/branding/brand.css`) and restart / hard-refresh the UI.
+ * When the file does not exist the UI silently falls back to the built-in
+ * theme, so leaving this .sample in place has no effect.
+ *
+ * The full list of themeable CSS custom properties is defined in
+ * saiku-ui/src/lib/styles/tokens.css. Anything declared on :root here
+ * overrides the built-in token values.
+ *
+ * Assets in this directory are served at /ui/branding/*, so relative
+ * url(./logo.png) references below resolve to <saiku-home>/branding/logo.png.
+ */
+
+:root {
+  /* Brand accent — buttons, focus rings, active states. */
+  /* --accent: #d2188b; */
+  /* --accent-hover: #b4126f; */
+  /* --accent-fg: #ffffff; */
+
+  /* Page background / surfaces. */
+  /* --bg: #ffffff; */
+  /* --bg-muted: #f4f4f6; */
+  /* --bg-subtle: #ebecef; */
+
+  /* Foreground text. */
+  /* --fg: #121212; */
+  /* --fg-muted: #4a4a55; */
+
+  /* Logo height in the topbar (default 24px). Set to something larger if
+     your logo has whitespace padding baked in. */
+  /* --brand-logo-height: 28px; */
+}
+
+/* Optional: tweak the topbar background to a brand colour. */
+/*
+.topbar {
+  background: #0f1e3d;
+  color: #ffffff;
+}
+*/

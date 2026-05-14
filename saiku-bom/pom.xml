@@ -6,17 +6,17 @@
 
     <groupId>org.saikuanalytics</groupId>
     <artifactId>saiku-bom</artifactId>
-    <version>3.17</version>
+    <version>4.0.0</version>
     <packaging>pom</packaging>
     <name>Saiku BOM</name>
     <description>Central dependency-version catalogue for Saiku modules.</description>
 
     <properties>
         <!-- Shared third-party versions. Child poms reference these via ${...}. -->
-        <spring.version>4.3.30.RELEASE</spring.version>
-        <spring.security.version>4.2.20.RELEASE</spring.security.version>
+        <spring.version>6.1.14</spring.version>
+        <spring.security.version>6.3.4</spring.security.version>
         <slf4j.version>1.7.36</slf4j.version>
-        <jersey.version>1.19.4</jersey.version>
+        <jersey.version>3.1.9</jersey.version>
         <calcite.version>0.9.2-incubating-SNAPSHOT</calcite.version>
         <pentaho.libs.version>TRUNK-SNAPSHOT</pentaho.libs.version>
         <pentaho.platform.version>5.0.0</pentaho.platform.version>
@@ -24,10 +24,18 @@
         <jbehave.version>3.9.3</jbehave.version>
         <saiku-query.version>0.4-SNAPSHOT</saiku-query.version>
         <jackson.version>2.17.3</jackson.version>
+        <arrow.version>15.0.2</arrow.version>
+        <caffeine.version>3.1.8</caffeine.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>org.glassfish.jersey.test-framework</groupId>
+                <artifactId>jersey-test-framework-core</artifactId>
+                <version>${jersey.version}</version>
+                <scope>test</scope>
+            </dependency>
             <dependency>
                 <groupId>net.sourceforge.jtds</groupId>
                 <artifactId>jtds</artifactId>
@@ -54,11 +62,6 @@
                 <version>1.7R5</version>
             </dependency>
             <dependency>
-                <groupId>org.apache.jackrabbit</groupId>
-                <artifactId>jackrabbit-jcr-commons</artifactId>
-                <version>2.22.0</version>
-            </dependency>
-            <dependency>
                 <groupId>org.jvnet.mimepull</groupId>
                 <artifactId>mimepull</artifactId>
                 <version>1.9.4</version>
@@ -71,7 +74,7 @@
             <dependency>
                 <groupId>org.saikuanalytics</groupId>
                 <artifactId>saiku-webapp</artifactId>
-                <version>3.1-SNAPSHOT</version>
+                <version>${project.version}</version>
                 <type>war</type>
             </dependency>
             <dependency>
@@ -110,9 +113,19 @@
                 <version>${jackson.version}</version>
             </dependency>
             <dependency>
+                <groupId>com.fasterxml.jackson.dataformat</groupId>
+                <artifactId>jackson-dataformat-yaml</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>com.fasterxml.jackson.jaxrs</groupId>
                 <artifactId>jackson-jaxrs-json-provider</artifactId>
                 <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>5.11.3</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.poi</groupId>
@@ -132,17 +145,12 @@
             <dependency>
                 <groupId>org.olap4j</groupId>
                 <artifactId>olap4j-xmlaserver</artifactId>
-                <version>1.2.0-spicule-1</version>
+                <version>1.3.0-spicule-jakarta</version>
             </dependency>
             <dependency>
                 <groupId>org.jdom</groupId>
                 <artifactId>jdom</artifactId>
                 <version>1.1</version>
-            </dependency>
-            <dependency>
-                <groupId>javax.jcr</groupId>
-                <artifactId>jcr</artifactId>
-                <version>2.0</version>
             </dependency>
             <dependency>
                 <groupId>xml-apis</groupId>
@@ -290,10 +298,15 @@
                 <artifactId>batik-ext</artifactId>
                 <version>1.8</version>
             </dependency>
+            <!-- iText 4.2.0 under the old "iText:iText" groupId was never on Maven
+                 Central and the original hosting is gone. com.lowagie:itext:2.1.7
+                 is the same artifact (last OSS release before AGPL) published on
+                 Central. Saiku's PDF export code imports com.lowagie.text.* so
+                 the API surface is unchanged — only the coords. -->
             <dependency>
-                <groupId>iText</groupId>
-                <artifactId>iText</artifactId>
-                <version>4.2.0</version>
+                <groupId>com.lowagie</groupId>
+                <artifactId>itext</artifactId>
+                <version>2.1.7</version>
             </dependency>
             <dependency>
                 <groupId>org.saikuanalytics</groupId>
@@ -314,7 +327,7 @@
             <dependency>
                 <groupId>pentaho</groupId>
                 <artifactId>mondrian</artifactId>
-                <version>4.8.0.0-SAIKU</version>
+                <version>4.8.1.2</version>
             </dependency>
             <!-- Spring modules -->
             <dependency>
@@ -367,6 +380,46 @@
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-orm</artifactId>
                 <version>${spring.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.glassfish.jersey.core</groupId>
+                <artifactId>jersey-server</artifactId>
+                <version>${jersey.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.glassfish.jersey.containers</groupId>
+                <artifactId>jersey-container-servlet</artifactId>
+                <version>${jersey.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.glassfish.jersey.containers</groupId>
+                <artifactId>jersey-container-servlet-core</artifactId>
+                <version>${jersey.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.glassfish.jersey.ext</groupId>
+                <artifactId>jersey-spring6</artifactId>
+                <version>${jersey.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.glassfish.jersey.media</groupId>
+                <artifactId>jersey-media-multipart</artifactId>
+                <version>${jersey.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.glassfish.jersey.media</groupId>
+                <artifactId>jersey-media-json-jackson</artifactId>
+                <version>${jersey.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.glassfish.jersey.inject</groupId>
+                <artifactId>jersey-hk2</artifactId>
+                <version>${jersey.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.ws.rs</groupId>
+                <artifactId>jakarta.ws.rs-api</artifactId>
+                <version>3.1.0</version>
             </dependency>
             <dependency>
                 <groupId>com.sun.grizzly</groupId>
@@ -565,9 +618,9 @@
                 </exclusions>
             </dependency>
             <dependency>
-                <groupId>javax.servlet</groupId>
-                <artifactId>javax.servlet-api</artifactId>
-                <version>3.1.0</version>
+                <groupId>jakarta.servlet</groupId>
+                <artifactId>jakarta.servlet-api</artifactId>
+                <version>6.0.0</version>
             </dependency>
 
             <dependency>
@@ -608,7 +661,7 @@
             <dependency>
                 <groupId>commons-io</groupId>
                 <artifactId>commons-io</artifactId>
-                <version>2.4</version>
+                <version>2.17.0</version>
             </dependency>
             <dependency>
                 <groupId>commons-httpclient</groupId>
@@ -632,8 +685,13 @@
             </dependency>
             <dependency>
                 <groupId>org.apache.httpcomponents</groupId>
+                <artifactId>httpclient</artifactId>
+                <version>4.5.14</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.httpcomponents</groupId>
                 <artifactId>httpcore</artifactId>
-                <version>4.3-alpha1</version>
+                <version>4.4.16</version>
             </dependency>
             <!--dependency>
                 <groupId>org.apache.hive</groupId>
@@ -650,6 +708,47 @@
                  directly, and the old 0.9.2-incubating-SNAPSHOT is no longer resolvable.
                  Any transitive consumer will pull its own declared version. -->
 
+            <!-- Pin Guava to a version Calcite 1.41 is happy with.
+                 Mondrian pulls Guava 18.0; Calcite calls Preconditions.checkArgument(boolean,String,Object)
+                 which doesn't exist on 18.0. Force the newer API-compatible version. -->
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>33.4.8-jre</version>
+            </dependency>
+
+            <!-- Pin protobuf to a 4.x version. Avatica 1.27 (Calcite 1.41) declares
+                 protobuf-java 3.25.8 in its pom but its generated proto classes call
+                 Descriptors$FileDescriptor.internalBuildGeneratedFileFrom(String[],
+                 FileDescriptor[]), an overload that only exists in protobuf 4.x.
+                 Pinning here also wins over the transitive 2.4.1 that operadriver
+                 (via serenity-bdd) would otherwise pull in. -->
+            <dependency>
+                <groupId>com.google.protobuf</groupId>
+                <artifactId>protobuf-java</artifactId>
+                <version>4.28.3</version>
+            </dependency>
+
+            <!-- Pin eigenbase to the versions published from spiculedata/mondrian-saiku's
+                 GH Packages registry (publish-deps.yml). calcite-core 1.41.0 transitively
+                 requests eigenbase-properties 1.1.4 (not published anywhere); pinning
+                 keeps Maven from trying to fetch the 1.1.4 descriptor. -->
+            <dependency>
+                <groupId>eigenbase</groupId>
+                <artifactId>eigenbase-properties</artifactId>
+                <version>1.1.2</version>
+            </dependency>
+            <dependency>
+                <groupId>eigenbase</groupId>
+                <artifactId>eigenbase-xom</artifactId>
+                <version>1.3.1</version>
+            </dependency>
+            <dependency>
+                <groupId>eigenbase</groupId>
+                <artifactId>eigenbase-resgen</artifactId>
+                <version>1.3.1</version>
+            </dependency>
+
             <dependency>
                 <groupId>com.cenqua.clover</groupId>
                 <artifactId>clover</artifactId>
@@ -664,6 +763,30 @@
                 <groupId>com.atlassian.jira</groupId>
                 <artifactId>jira-rest-java-client-core</artifactId>
                 <version>2.0.0-m31</version>
+            </dependency>
+
+            <!-- Apache Arrow for IPC columnar transport -->
+            <dependency>
+                <groupId>org.apache.arrow</groupId>
+                <artifactId>arrow-vector</artifactId>
+                <version>${arrow.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.arrow</groupId>
+                <artifactId>arrow-memory-netty</artifactId>
+                <version>${arrow.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.arrow</groupId>
+                <artifactId>arrow-format</artifactId>
+                <version>${arrow.version}</version>
+            </dependency>
+
+            <!-- Caffeine: in-memory LRU index for disk-backed Arrow query cache -->
+            <dependency>
+                <groupId>com.github.ben-manes.caffeine</groupId>
+                <artifactId>caffeine</artifactId>
+                <version>${caffeine.version}</version>
             </dependency>
         </dependencies>
 

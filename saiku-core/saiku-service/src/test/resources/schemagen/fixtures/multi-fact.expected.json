@@ -1,0 +1,181 @@
+{
+  "cubes" : [ {
+    "dimensions" : [ {
+      "foreignKey" : "customer_id",
+      "hierarchies" : [ {
+        "levels" : [ {
+          "column" : "id",
+          "name" : "id",
+          "nameColumn" : "name",
+          "provenance" : {
+            "confidence" : 1.0,
+            "ruleId" : "rule:dim-flat",
+            "source" : "RULE"
+          },
+          "type" : "REGULAR"
+        } ],
+        "name" : "customer",
+        "primaryKey" : "id",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:dim-flat",
+          "source" : "RULE"
+        }
+      } ],
+      "name" : "customer",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:dim-flat",
+        "source" : "RULE"
+      },
+      "sourceTable" : "customer",
+      "type" : "STANDARD"
+    }, {
+      "foreignKey" : "product_id",
+      "hierarchies" : [ {
+        "levels" : [ {
+          "column" : "id",
+          "name" : "id",
+          "nameColumn" : "name",
+          "provenance" : {
+            "confidence" : 1.0,
+            "ruleId" : "rule:dim-flat",
+            "source" : "RULE"
+          },
+          "type" : "REGULAR"
+        } ],
+        "name" : "product",
+        "primaryKey" : "id",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:dim-flat",
+          "source" : "RULE"
+        }
+      } ],
+      "name" : "product",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:dim-flat",
+        "source" : "RULE"
+      },
+      "sourceTable" : "product",
+      "type" : "STANDARD"
+    } ],
+    "measures" : [ {
+      "aggregator" : "SUM",
+      "column" : "amount",
+      "name" : "amount",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:measure-sum",
+        "source" : "RULE"
+      }
+    }, {
+      "aggregator" : "COUNT_STAR",
+      "column" : "id",
+      "name" : "Fact Count",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:measure-fact-count",
+        "source" : "RULE"
+      }
+    } ],
+    "name" : "orders",
+    "provenance" : {
+      "confidence" : 1.0,
+      "ruleId" : "rule:cube-from-fact",
+      "source" : "RULE"
+    },
+    "sourceFactTable" : "orders"
+  }, {
+    "dimensions" : [ {
+      "foreignKey" : "customer_id",
+      "hierarchies" : [ {
+        "levels" : [ {
+          "column" : "id",
+          "name" : "id",
+          "nameColumn" : "name",
+          "provenance" : {
+            "confidence" : 1.0,
+            "ruleId" : "rule:dim-flat",
+            "source" : "RULE"
+          },
+          "type" : "REGULAR"
+        } ],
+        "name" : "customer",
+        "primaryKey" : "id",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:dim-flat",
+          "source" : "RULE"
+        }
+      } ],
+      "name" : "customer",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:dim-flat",
+        "source" : "RULE"
+      },
+      "sourceTable" : "customer",
+      "type" : "STANDARD"
+    }, {
+      "foreignKey" : "carrier_id",
+      "hierarchies" : [ {
+        "levels" : [ {
+          "column" : "id",
+          "name" : "id",
+          "nameColumn" : "name",
+          "provenance" : {
+            "confidence" : 1.0,
+            "ruleId" : "rule:dim-flat",
+            "source" : "RULE"
+          },
+          "type" : "REGULAR"
+        } ],
+        "name" : "carrier",
+        "primaryKey" : "id",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:dim-flat",
+          "source" : "RULE"
+        }
+      } ],
+      "name" : "carrier",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:dim-flat",
+        "source" : "RULE"
+      },
+      "sourceTable" : "carrier",
+      "type" : "STANDARD"
+    } ],
+    "measures" : [ {
+      "aggregator" : "SUM",
+      "column" : "weight",
+      "name" : "weight",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:measure-sum",
+        "source" : "RULE"
+      }
+    }, {
+      "aggregator" : "COUNT_STAR",
+      "column" : "id",
+      "name" : "Fact Count",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:measure-fact-count",
+        "source" : "RULE"
+      }
+    } ],
+    "name" : "shipments",
+    "provenance" : {
+      "confidence" : 1.0,
+      "ruleId" : "rule:cube-from-fact",
+      "source" : "RULE"
+    },
+    "sourceFactTable" : "shipments"
+  } ],
+  "name" : "GeneratedSchema",
+  "sharedDimensions" : [ ]
+}

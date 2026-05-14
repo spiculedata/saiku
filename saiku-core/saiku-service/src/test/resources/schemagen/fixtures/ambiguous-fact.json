@@ -1,0 +1,74 @@
+{
+  "tables": [
+    {
+      "schema": "public",
+      "name": "transactions",
+      "rowCountEstimate": 1000000,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "account_id", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "merchant_id", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "category_id", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "amount", "type": "DECIMAL", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": [
+        {"fromColumn": "account_id", "toTable": "account", "toColumn": "id"},
+        {"fromColumn": "merchant_id", "toTable": "merchant", "toColumn": "id"},
+        {"fromColumn": "category_id", "toTable": "category", "toColumn": "id"}
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "audit_log",
+      "rowCountEstimate": 50000,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "user_id", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "action", "type": "VARCHAR", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": [
+        {"fromColumn": "user_id", "toTable": "user_account", "toColumn": "id"}
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "account",
+      "rowCountEstimate": 1000,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "name", "type": "VARCHAR", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": []
+    },
+    {
+      "schema": "public",
+      "name": "merchant",
+      "rowCountEstimate": 500,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "name", "type": "VARCHAR", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": []
+    },
+    {
+      "schema": "public",
+      "name": "category",
+      "rowCountEstimate": 50,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "name", "type": "VARCHAR", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": []
+    },
+    {
+      "schema": "public",
+      "name": "user_account",
+      "rowCountEstimate": 200,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "name", "type": "VARCHAR", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": []
+    }
+  ]
+}

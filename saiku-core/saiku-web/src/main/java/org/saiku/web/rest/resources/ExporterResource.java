@@ -15,41 +15,33 @@
  */
 package org.saiku.web.rest.resources;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
+import jakarta.xml.bind.annotation.XmlAccessType;
+import jakarta.xml.bind.annotation.XmlAccessorType;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import javax.servlet.http.HttpServletRequest;
-import javax.xml.bind.annotation.XmlAccessType;
-import javax.xml.bind.annotation.XmlAccessorType;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.saiku.olap.query2.ThinQuery;
-import org.saiku.web.rest.objects.resultset.QueryResult;
 import org.saiku.web.rest.util.ServletUtil;
 import org.saiku.web.svg.Converter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Component;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
 
 /**
  * QueryServlet contains all the methods required when manipulating an OLAP Query.
  * @author Paul Stoellberger
  *
  */
-@Component
-@RestController
-@RequestMapping("/saiku/{username}/export")
+@Path("/saiku/{username}/export")
 @XmlAccessorType(XmlAccessType.NONE)
 public class ExporterResource {
 
@@ -94,7 +86,7 @@ public class ExporterResource {
                     tq.getProperties().putAll(p);
                 }
             }
-            query2Resource.execute(tq);
+            query2Resource.execute(tq, null);
             return query2Resource.getQueryExcelExport(queryName, formatter, name);
         } catch (Exception e) {
             log.error("Error exporting XLS for file: " + file, e);
@@ -129,7 +121,7 @@ public class ExporterResource {
                     tq.getProperties().putAll(p);
                 }
             }
-            query2Resource.execute(tq);
+            query2Resource.execute(tq, null);
             return query2Resource.getQueryCsvExport(queryName);
         } catch (Exception e) {
             log.error("Error exporting CSV for file: " + file, e);
@@ -164,8 +156,7 @@ public class ExporterResource {
                     tq.getProperties().putAll(p);
                 }
             }
-            QueryResult qr = query2Resource.execute(tq);
-            return ResponseEntity.ok(qr);
+            return query2Resource.execute(tq, null);
         } catch (Exception e) {
             log.error("Error exporting JSON for file: " + file, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());

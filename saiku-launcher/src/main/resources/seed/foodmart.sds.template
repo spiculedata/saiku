@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+    Default H2 foodmart datasource staged by saiku-launcher on first start.
+    The @SAIKU_HOME@ token is replaced with the absolute saiku-home directory
+    so the JDBC URL is portable across machines. Re-running the launcher
+    against an existing saiku-home leaves this file alone (the stager only
+    writes it when missing).
+-->
+<dataSource>
+    <driver>mondrian.olap4j.MondrianOlap4jDriver</driver>
+    <id>4432dd20-fcae-11e3-a3ac-0800200c9a66</id>
+    <location>jdbc:mondrian:Jdbc=jdbc:h2:@SAIKU_HOME@/data/foodmart;MODE=MySQL;Catalog=file:@SAIKU_HOME@/data/FoodMart4.xml;JdbcDrivers=org.h2.Driver</location>
+    <name>foodmart</name>
+    <password></password>
+    <securityenabled>false</securityenabled>
+    <type>OLAP</type>
+    <username>sa</username>
+</dataSource>

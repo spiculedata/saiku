@@ -1,0 +1,10 @@
+**/target/
+**/node_modules/
+**/.idea/
+**/.vscode/
+**/*.iml
+.git/
+.github/
+saiku-home/
+data/
+*.log

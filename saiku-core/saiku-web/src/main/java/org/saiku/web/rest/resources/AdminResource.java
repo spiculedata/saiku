@@ -16,21 +16,22 @@
 package org.saiku.web.rest.resources;
 
 import com.qmino.miredot.annotations.ReturnType;
-import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.StreamingOutput;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
-import javax.jcr.RepositoryException;
 import org.apache.commons.io.IOUtils;
+import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
+import org.glassfish.jersey.media.multipart.FormDataParam;
 import org.saiku.database.dto.MondrianSchema;
 import org.saiku.database.dto.SaikuUser;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.log.LogExtractor;
+import org.saiku.repository.RepositoryException;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.datasource.IDatasourceManager;
 import org.saiku.service.importer.JujuSource;
@@ -41,28 +42,11 @@ import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.web.rest.objects.DataSourceMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Component;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 /**
  * AdminResource for the Saiku 3.0+ Admin console
  */
-@Component
-@RestController
-@RequestMapping("/saiku/admin")
+@Path("/saiku/admin")
 public class AdminResource {
 
     private DatasourceService datasourceService;
@@ -393,10 +377,21 @@ public class AdminResource {
         if (!userService.isAdmin()) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
-        if (jsonString.getPassword() == null || jsonString.getPassword().equals("")) {
-            return ResponseEntity.ok(userService.updateUser(jsonString, false));
-        } else {
-            return ResponseEntity.ok(userService.updateUser(jsonString, true));
+        try {
+            if (jsonString.getPassword() == null || jsonString.getPassword().equals("")) {
+                return Response.ok()
+                        .entity(userService.updateUser(jsonString, false))
+                        .build();
+            } else {
+                return Response.ok()
+                        .entity(userService.updateUser(jsonString, true))
+                        .build();
+            }
+        } catch (IllegalArgumentException policy) {
+            // Password-policy violation — surface as 400 so the UI can display.
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(policy.getMessage())
+                    .build();
         }
     }
 
@@ -410,7 +405,13 @@ public class AdminResource {
         if (!userService.isAdmin()) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
-        return ResponseEntity.ok(userService.addUser(jsonString));
+        try {
+            return Response.ok().entity(userService.addUser(jsonString)).build();
+        } catch (IllegalArgumentException policy) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(policy.getMessage())
+                    .build();
+        }
     }
 
     @DeleteMapping(path = "/users/{username}", produces = MediaType.APPLICATION_JSON_VALUE)

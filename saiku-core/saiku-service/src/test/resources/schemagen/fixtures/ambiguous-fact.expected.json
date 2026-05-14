@@ -1,0 +1,123 @@
+{
+  "cubes" : [ {
+    "dimensions" : [ {
+      "foreignKey" : "account_id",
+      "hierarchies" : [ {
+        "levels" : [ {
+          "column" : "id",
+          "name" : "id",
+          "nameColumn" : "name",
+          "provenance" : {
+            "confidence" : 1.0,
+            "ruleId" : "rule:dim-flat",
+            "source" : "RULE"
+          },
+          "type" : "REGULAR"
+        } ],
+        "name" : "account",
+        "primaryKey" : "id",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:dim-flat",
+          "source" : "RULE"
+        }
+      } ],
+      "name" : "account",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:dim-flat",
+        "source" : "RULE"
+      },
+      "sourceTable" : "account",
+      "type" : "STANDARD"
+    }, {
+      "foreignKey" : "merchant_id",
+      "hierarchies" : [ {
+        "levels" : [ {
+          "column" : "id",
+          "name" : "id",
+          "nameColumn" : "name",
+          "provenance" : {
+            "confidence" : 1.0,
+            "ruleId" : "rule:dim-flat",
+            "source" : "RULE"
+          },
+          "type" : "REGULAR"
+        } ],
+        "name" : "merchant",
+        "primaryKey" : "id",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:dim-flat",
+          "source" : "RULE"
+        }
+      } ],
+      "name" : "merchant",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:dim-flat",
+        "source" : "RULE"
+      },
+      "sourceTable" : "merchant",
+      "type" : "STANDARD"
+    }, {
+      "foreignKey" : "category_id",
+      "hierarchies" : [ {
+        "levels" : [ {
+          "column" : "id",
+          "name" : "id",
+          "nameColumn" : "name",
+          "provenance" : {
+            "confidence" : 1.0,
+            "ruleId" : "rule:dim-flat",
+            "source" : "RULE"
+          },
+          "type" : "REGULAR"
+        } ],
+        "name" : "category",
+        "primaryKey" : "id",
+        "provenance" : {
+          "confidence" : 1.0,
+          "ruleId" : "rule:dim-flat",
+          "source" : "RULE"
+        }
+      } ],
+      "name" : "category",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:dim-flat",
+        "source" : "RULE"
+      },
+      "sourceTable" : "category",
+      "type" : "STANDARD"
+    } ],
+    "measures" : [ {
+      "aggregator" : "SUM",
+      "column" : "amount",
+      "name" : "amount",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:measure-sum",
+        "source" : "RULE"
+      }
+    }, {
+      "aggregator" : "COUNT_STAR",
+      "column" : "id",
+      "name" : "Fact Count",
+      "provenance" : {
+        "confidence" : 1.0,
+        "ruleId" : "rule:measure-fact-count",
+        "source" : "RULE"
+      }
+    } ],
+    "name" : "transactions",
+    "provenance" : {
+      "confidence" : 1.0,
+      "ruleId" : "rule:cube-from-fact",
+      "source" : "RULE"
+    },
+    "sourceFactTable" : "transactions"
+  } ],
+  "name" : "GeneratedSchema",
+  "sharedDimensions" : [ ]
+}

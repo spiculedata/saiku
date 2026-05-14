@@ -1,0 +1,64 @@
+{
+  "tables": [
+    {
+      "schema": "public",
+      "name": "orders",
+      "rowCountEstimate": 1000000,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "customer_id", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "product_id", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "amount", "type": "DECIMAL", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": [
+        {"fromColumn": "customer_id", "toTable": "customer", "toColumn": "id"},
+        {"fromColumn": "product_id", "toTable": "product", "toColumn": "id"}
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "shipments",
+      "rowCountEstimate": 1000000,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "customer_id", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "carrier_id", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "weight", "type": "DECIMAL", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": [
+        {"fromColumn": "customer_id", "toTable": "customer", "toColumn": "id"},
+        {"fromColumn": "carrier_id", "toTable": "carrier", "toColumn": "id"}
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "customer",
+      "rowCountEstimate": 100,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "name", "type": "VARCHAR", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": []
+    },
+    {
+      "schema": "public",
+      "name": "product",
+      "rowCountEstimate": 100,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "name", "type": "VARCHAR", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": []
+    },
+    {
+      "schema": "public",
+      "name": "carrier",
+      "rowCountEstimate": 10,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "name", "type": "VARCHAR", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": []
+    }
+  ]
+}

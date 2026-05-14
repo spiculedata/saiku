@@ -1,13 +1,14 @@
-<%@ taglib prefix="authz" uri="http://www.springframework.org/security/tags" %>
-<%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<%@ page contentType="text/html; charset=UTF-8" %><!DOCTYPE html>
 <html>
-  <head>
-    
-    <title>Pentaho BI Platform</title>    
-    
-    <META HTTP-EQUIV="refresh" CONTENT="0;URL=./serverdocs">
-  </head>
-  <body>
-  </body>
+<head>
+  <title>Saiku</title>
+  <meta http-equiv="refresh" content="0;URL=ui/" />
+  <style>
+    body { background: #0b0d12; color: #e6e8ec; font-family: system-ui, sans-serif; margin: 0; display: grid; place-items: center; min-height: 100vh; }
+    a { color: #818cf8; }
+  </style>
+</head>
+<body>
+  <p>Opening Saiku <a href="ui/">workspace</a>…</p>
+</body>
 </html>

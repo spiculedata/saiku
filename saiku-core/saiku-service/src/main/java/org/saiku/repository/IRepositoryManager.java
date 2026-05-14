@@ -18,7 +18,6 @@ package org.saiku.repository;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
-import javax.jcr.RepositoryException;
 import org.saiku.datasources.connection.RepositoryFile;
 import org.saiku.service.user.UserService;
 

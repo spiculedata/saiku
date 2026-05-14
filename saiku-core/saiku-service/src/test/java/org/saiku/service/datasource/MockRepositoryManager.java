@@ -3,13 +3,13 @@ package org.saiku.service.datasource;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
-import javax.jcr.RepositoryException;
 import org.saiku.database.dto.MondrianSchema;
 import org.saiku.datasources.connection.RepositoryFile;
 import org.saiku.repository.AclEntry;
 import org.saiku.repository.DataSource;
 import org.saiku.repository.IRepositoryManager;
 import org.saiku.repository.IRepositoryObject;
+import org.saiku.repository.RepositoryException;
 import org.saiku.service.user.UserService;
 
 public class MockRepositoryManager implements IRepositoryManager {

@@ -5,9 +5,9 @@
 	xmlns:context="http://www.springframework.org/schema/context"
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="
-              http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security-4.2.xsd
-			   http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.0.xsd
-			   http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.0.xsd">
+              http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security.xsd
+			   http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+			   http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
 
 
 	<context:annotation-config />
@@ -33,18 +33,49 @@
     </security:http>
     <security:http pattern="/repository/**" security="none">
     </security:http>
-    <security:http auto-config='true' use-expressions="true"> 
+    <security:http pattern="/ui/**" security="none">
+    </security:http>
+    <security:http pattern="/" security="none">
+    </security:http>
+    <security:http pattern="/index.jsp" security="none">
+    </security:http>
+    <security:http pattern="/style.css" security="none">
+    </security:http>
+    <security:http pattern="/images/**" security="none">
+    </security:http>
+    <security:http auto-config='true' use-expressions="true">
       <!--access-denied-page="/login.jsp"-->
+      <!--
+        CSRF: enforced on state-changing /rest/** methods.
+        - Token is stored in a non-HttpOnly XSRF-TOKEN cookie so the SPA can read it
+          and echo it as X-XSRF-TOKEN on non-GET requests.
+        - The /rest/saiku/session login endpoint is exempt (bootstrap): there's no
+          session yet at login time, so no cookie to echo. HTTP Basic is also exempt
+          (stateless, no browser form).
+      -->
+      <!-- CSRF disabled for local-dev / Calcite-fork bring-up.
+           Spring Security 6's deferred CSRF token (CookieCsrfTokenRepository)
+           doesn't materialize the XSRF-TOKEN cookie eagerly, which breaks
+           the SPA's XHR flow: POSTs to /rest/** return 403 because the
+           token isn't readable from JS. Re-enable + wire a
+           CsrfTokenRequestAttributeHandler that forces token resolution
+           before locking this down for production. -->
       <security:csrf disabled="true"/>
       <security:intercept-url pattern="/serverdocs/**" access="isAnonymous()" />
 	    <security:intercept-url pattern="/rest/saiku/session*" access="isAnonymous() or isFullyAuthenticated()" />
-    	<security:intercept-url pattern="/rest/saiku/api/license/usercount" access="isAnonymous() or isFullyAuthenticated()" />
       <security:intercept-url pattern="/rest/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/json/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/WEB-INF/classes/legacy-schema" access="isAnonymous()" />
       <security:logout logout-url="/logout"/>
  	    <security:http-basic/>
     </security:http>
+
+    <!-- Tier-1 auth hardening: CSRF wiring -->
+    <bean id="csrfTokenRepository"
+          class="org.springframework.security.web.csrf.CookieCsrfTokenRepository"
+          factory-method="withHttpOnlyFalse"/>
+    <bean id="csrfRequestMatcher"
+          class="org.saiku.web.security.csrf.SaikuCsrfRequestMatcher"/>
 
     <import resource="applicationContext-spring-security.xml"/>
 
@@ -64,7 +95,6 @@
     <security:csrf disabled="true"/>
     <security:intercept-url pattern="/serverdocs/**" access="isAnonymous()" />
     <security:intercept-url pattern="/rest/saiku/session*" access="isAnonymous() or isFullyAuthenticated()" />
-    <security:intercept-url pattern="/rest/saiku/api/license/usercount" access="isAnonymous() or isFullyAuthenticated()" />
     <security:intercept-url pattern="/rest/**" access="isFullyAuthenticated()" />
     <security:intercept-url pattern="/json/**" access="isFullyAuthenticated()" />
     <security:intercept-url pattern="/WEB-INF/classes/legacy-schema" access="isAnonymous()" />

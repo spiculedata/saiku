@@ -15,6 +15,10 @@
  */
 package org.saiku.web.rest.resources;
 
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,16 +27,8 @@ import org.saiku.olap.dto.*;
 import org.saiku.service.olap.OlapDiscoverService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.MediaType;
-import org.springframework.stereotype.Component;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
 
-@Component
-@RestController
-@RequestMapping("/saiku/{username}/discover")
+@Path("/saiku/{username}/discover")
 public class OlapDiscoverResource implements Serializable {
 
     /**

@@ -1,5 +1,8 @@
 package org.saiku.web.rest.resources;
 
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
 import java.util.List;
 import mondrian.olap.MondrianServer;
 import mondrian.olap.MondrianServer.MondrianVersion;
@@ -7,18 +10,11 @@ import mondrian.server.monitor.ConnectionInfo;
 import mondrian.server.monitor.Monitor;
 import mondrian.server.monitor.ServerInfo;
 import mondrian.server.monitor.StatementInfo;
-import org.springframework.http.MediaType;
-import org.springframework.stereotype.Component;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Mondrian Server Info and Stats Endpoints.
  */
-@Component
-@RestController
-@RequestMapping("/saiku/statistics")
+@Path("/saiku/statistics")
 public class StatisticsResource {
 
     /**

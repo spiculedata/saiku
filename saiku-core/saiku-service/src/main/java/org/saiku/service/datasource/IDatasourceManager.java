@@ -18,12 +18,12 @@ package org.saiku.service.datasource;
 import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
-import javax.jcr.RepositoryException;
 import org.saiku.database.dto.MondrianSchema;
 import org.saiku.datasources.connection.RepositoryFile;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.repository.AclEntry;
 import org.saiku.repository.IRepositoryObject;
+import org.saiku.repository.RepositoryException;
 import org.saiku.service.importer.JujuSource;
 import org.saiku.service.user.UserService;
 

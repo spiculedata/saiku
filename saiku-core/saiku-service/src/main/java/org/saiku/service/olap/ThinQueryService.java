@@ -65,6 +65,7 @@ import org.saiku.olap.query2.*;
 import org.saiku.olap.query2.ThinQueryModel.AxisLocation;
 import org.saiku.olap.query2.util.Fat;
 import org.saiku.olap.query2.util.Thin;
+import org.saiku.olap.result.ArrowCellsetWriter;
 import org.saiku.olap.util.ObjectUtil;
 import org.saiku.olap.util.OlapResultSetUtil;
 import org.saiku.olap.util.QueryConverter;
@@ -78,6 +79,9 @@ import org.saiku.query.QueryDetails;
 import org.saiku.query.QueryHierarchy;
 import org.saiku.query.QueryLevel;
 import org.saiku.query.util.QueryUtil;
+import org.saiku.service.cache.QueryCacheKey;
+import org.saiku.service.cache.SaikuQueryCache;
+import org.saiku.service.cache.SaikuQueryCache.CachedQueryResult;
 import org.saiku.service.olap.drillthrough.DimensionResultInfo;
 import org.saiku.service.olap.drillthrough.DrillThroughResult;
 import org.saiku.service.olap.drillthrough.DrillthroughUtils;
@@ -114,12 +118,84 @@ public class ThinQueryService implements Serializable {
 
     private final Map<String, QueryContext> context = new HashMap<>();
 
+    /** Optional disk-backed Arrow cache. Null (or disabled) ⇒ always execute live. */
+    private SaikuQueryCache queryCache;
+
     public void setOlapDiscoverService(OlapDiscoverService os) {
         this.olapDiscoverService = os;
     }
 
     public void setCellSetFormatterFactory(CellSetFormatterFactory cff) {
         this.cff = cff;
+    }
+
+    public void setQueryCache(SaikuQueryCache queryCache) {
+        this.queryCache = queryCache;
+    }
+
+    public SaikuQueryCache getQueryCache() {
+        return queryCache;
+    }
+
+    /**
+     * Execute {@code tq}, returning raw Arrow IPC bytes. On cache hit the
+     * bytes are read from disk and the query is NOT re-executed (Mondrian is
+     * untouched). On miss, the query runs, the {@link CellSet} is written via
+     * {@link ArrowCellsetWriter}, the bytes are cached, and returned.
+     *
+     * <p>Failed queries are never cached. Drillthrough is out of scope — see
+     * Phase 5 Task 8 for its own cache story.
+     */
+    public CachedQueryResult executeCached(ThinQuery tq) {
+        final String cubeVersion = QueryCacheKey.cubeVersion(tq);
+        final String key = QueryCacheKey.of(tq, cubeVersion);
+
+        if (queryCache == null || !queryCache.isEnabled()) {
+            CachedQueryResult r = runAndMaterialise(tq);
+            log.info(
+                    "saiku.query.executed format=arrow cacheHit=false bytes={} runtimeMs={} rows={} queryName={}",
+                    r.arrowBytes == null ? 0 : r.arrowBytes.length,
+                    r.runtimeMs,
+                    r.rows,
+                    tq.getName());
+            return r;
+        }
+
+        CachedQueryResult result = queryCache.get(key, cubeVersion, () -> runAndMaterialise(tq));
+        log.info(
+                "saiku.query.executed format=arrow cacheHit={} bytes={} runtimeMs={} rows={} queryName={}",
+                result.cacheHit,
+                result.arrowBytes == null ? 0 : result.arrowBytes.length,
+                result.runtimeMs,
+                result.rows,
+                tq.getName());
+        return result;
+    }
+
+    /** Live-execute the query and encode the CellSet to Arrow IPC bytes. */
+    private CachedQueryResult runAndMaterialise(ThinQuery tq) {
+        long start = System.currentTimeMillis();
+        CellSet cellSet;
+        try {
+            cellSet = executeInternalQuery(tq);
+        } catch (Exception e) {
+            throw new SaikuServiceException("Can't execute query: " + tq.getName(), e);
+        }
+        // Fetch the post-update query (executeInternalQuery stores it).
+        ThinQuery tqAfter =
+                context.containsKey(tq.getName()) ? context.get(tq.getName()).getOlapQuery() : tq;
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        try {
+            new ArrowCellsetWriter().write(cellSet, tqAfter, baos);
+        } catch (java.io.IOException e) {
+            throw new SaikuServiceException("Failed to serialise CellSet to Arrow for " + tq.getName(), e);
+        }
+        long runtime = System.currentTimeMillis() - start;
+        int rows = 0;
+        if (cellSet != null && !cellSet.getAxes().isEmpty()) {
+            rows = cellSet.getAxes().get(0).getPositionCount();
+        }
+        return new CachedQueryResult(baos.toByteArray(), runtime, rows, false);
     }
 
     public ThinQuery createQuery(ThinQuery tq) {
@@ -254,6 +330,11 @@ public class ThinQueryService implements Serializable {
                     + (totals - start) + "ms");
 
             result.setRuntime(new Double(format - start).intValue());
+            log.info(
+                    "saiku.query.executed format=json cacheHit=false bytes=-1 runtimeMs={} rows={} queryName={}",
+                    (totals - start),
+                    result.getHeight(),
+                    tq.getName());
             return result;
         } catch (Exception | Error e) {
             throw new SaikuServiceException("Can't execute query: " + tq.getName(), e);

@@ -209,6 +209,9 @@ public class Fat {
     private static void convertAxis(Query query, ThinAxis thinAxis, ThinQuery tq) throws OlapException {
         Axis loc = getLocation(thinAxis.getLocation());
         QueryAxis qaxis = query.getAxis(loc);
+        if (qaxis == null) {
+            return;
+        }
         for (ThinHierarchy hierarchy : thinAxis.getHierarchies()) {
             QueryHierarchy qh = query.getHierarchy(hierarchy.getName());
             if (qh != null) {

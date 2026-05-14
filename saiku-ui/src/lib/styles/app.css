@@ -1,0 +1,233 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-muted);
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--duration-fast);
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg-subtle);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn--danger {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
+.field {
+  display: block;
+  margin-bottom: var(--space-4);
+}
+
+.field__label {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.field__input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.callout {
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  border-left: 3px solid var(--accent);
+}
+
+.callout--danger {
+  border-left-color: var(--danger);
+  color: var(--danger);
+}
+
+/* -------------------------------------------------------------------------
+ * Embed mode (?embed=1): chromeless layout for iframes. The topbar/sidebar/
+ * toolbar/tabs are hidden by component-level {#if !embed.active} guards; the
+ * rules below collapse the canvas body to a single column and tighten
+ * padding so the grid fills the viewport.
+ * ------------------------------------------------------------------------- */
+body.saiku-embed .canvas {
+  padding: 4px;
+}
+body.saiku-embed .canvas__body {
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+body.saiku-embed .dropzones {
+  display: none;
+}
+
+/* -------------------------------------------------------------------------
+ * Print styles — Cmd+P produces a chromeless, ink-friendly printout of the
+ * current query result. We hide every piece of UI chrome (topbar, sidebar,
+ * toolbar, chart/view toggles, selection stats) and let the cellset occupy
+ * the page. Dark-theme backgrounds cost litres of ink on a real printer so
+ * we force white paper + black ink across the board.
+ * ------------------------------------------------------------------------- */
+@media print {
+  @page { size: auto; margin: 14mm; }
+
+  html, body {
+    background: white !important;
+    color: black !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Kill chrome */
+  .topbar,
+  .workspace__sidebar,
+  .tabset,
+  .toolbar,
+  .dropzones,
+  .view-toggle,
+  .run-progress,
+  .sel-stats,
+  .workspace__sidebar-footer,
+  .toast-stack,
+  /* Any open modal or context menu shouldn't appear in the printout. */
+  .modal,
+  .cellset-ctx-menu {
+    display: none !important;
+  }
+
+  /* Let content cascade naturally across pages instead of being clipped. */
+  .app,
+  .app__main,
+  .workspace,
+  .workspace__main,
+  .canvas,
+  .canvas__body,
+  .canvas__result,
+  .result-host {
+    display: block !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Workspace grid → single column once sidebar is gone. */
+  .workspace { grid-template-columns: 1fr !important; gap: 0 !important; }
+
+  /* Cellset: let tables paginate cleanly across pages. */
+  .cellset-wrap {
+    overflow: visible !important;
+    border: 0 !important;
+    background: white !important;
+  }
+  .cellset {
+    break-inside: auto;
+    width: 100%;
+    background: white !important;
+    color: black !important;
+  }
+  .cellset thead {
+    /* Repeat column headers at the top of each printed page. */
+    display: table-header-group;
+  }
+  .cellset tr { break-inside: avoid; }
+  .cellset th,
+  .cellset td {
+    background: white !important;
+    color: black !important;
+    border-color: #888 !important;
+  }
+  .cellset td.data--selected,
+  .cellset td.data--focused {
+    box-shadow: none !important;
+    background: white !important;
+  }
+
+  /* Keep the runtime line — useful context when reviewing printouts. */
+  .runtime {
+    color: black !important;
+    font-size: 10pt;
+    margin-top: 6mm;
+  }
+
+  a { color: black !important; text-decoration: none !important; }
+}
+

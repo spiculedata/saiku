@@ -60,7 +60,12 @@
      <param-value>/WEB-INF/applicationContext.xml</param-value>
     </context-param>
 	<session-config>
-		<session-timeout>60</session-timeout>
+		<!-- Session inactivity timeout in minutes. Bumped from 60 to 10080
+		     (7 days) for local-dev UX: avoids the SPA's "Session ended" modal
+		     popping up on a refresh after an idle browser tab. SaikuLauncher
+		     wires a FileSessionDataStore (saiku-home/sessions/) so sessions
+		     also survive across server restarts. -->
+		<session-timeout>10080</session-timeout>
 	</session-config>
 
     <filter>
@@ -172,8 +177,6 @@
     </listener>
 
 
-    <!-- Phase 2: Jackrabbit WebDAV servlet removed. -->
-
     <!-- ====================================================================== -->
     <!-- J C R R E M O T I N G S E R V L E T -->
     <!-- ====================================================================== -->
@@ -220,47 +223,26 @@
         <url-pattern>/rmi</url-pattern>
     </servlet-mapping>-->
 
-    <servlet>
-        <servlet-name>H2Console</servlet-name>
-        <servlet-class>org.h2.server.web.WebServlet</servlet-class>
-        <!--
-        <init-param>
-            <param-name>webAllowOthers</param-name>
-            <param-value></param-value>
-        </init-param>
-        <init-param>
-            <param-name>trace</param-name>
-            <param-value></param-value>
-        </init-param>
-        -->
-        <load-on-startup>1</load-on-startup>
-    </servlet>
-    <servlet-mapping>
-        <servlet-name>H2Console</servlet-name>
-        <url-pattern>/console/*</url-pattern>
-    </servlet-mapping>
 
-    <servlet>
-        <servlet-name>rest</servlet-name>
-        <servlet-class>org.springframework.web.servlet.DispatcherServlet</servlet-class>
-        <!-- Empty contextConfigLocation: DispatcherServlet reuses the root WebApplicationContext,
-             so @RequestMapping resolves on controllers declared in saiku-beans.xml. -->
-        <init-param>
-            <param-name>contextConfigLocation</param-name>
-            <param-value></param-value>
-        </init-param>
-        <load-on-startup>2</load-on-startup>
-        <multipart-config>
-            <max-file-size>52428800</max-file-size>
-            <max-request-size>52428800</max-request-size>
-            <file-size-threshold>0</file-size-threshold>
-        </multipart-config>
-    </servlet>
-    <servlet-mapping>
-        <servlet-name>rest</servlet-name>
-        <url-pattern>/rest/*</url-pattern>
-    </servlet-mapping>
+	<servlet>
+    	<servlet-name>jersey2</servlet-name>
+    	<servlet-class>org.glassfish.jersey.servlet.ServletContainer</servlet-class>
+    	<init-param>
+      		<param-name>jakarta.ws.rs.Application</param-name>
+      		<param-value>org.saiku.web.rest.SaikuJerseyApplication</param-value>
+    	</init-param>
+    	<load-on-startup>1</load-on-startup>
+  	</servlet>
 
+	  <servlet-mapping>
+	    <servlet-name>jersey2</servlet-name>
+	    <url-pattern>/rest/*</url-pattern>
+	  </servlet-mapping>
+
+  <!--<servlet-mapping>
+    <servlet-name>jersey2</servlet-name>
+    <url-pattern>/rest/saiku/session</url-pattern>
+  </servlet-mapping>-->
     <servlet>
         <servlet-name>xmla</servlet-name>
         <servlet-class>org.saiku.olap.util.SaikuXmlaServlet</servlet-class>
@@ -377,6 +359,18 @@
     <servlet-mapping>
         <servlet-name>xmla</servlet-name>
         <url-pattern>/xmla/*</url-pattern>
+    </servlet-mapping>
+
+    <!-- Operator theming overlay: serves ${saiku.home}/branding/* at /ui/branding/*.
+         If the file does not exist, returns 404 so the UI falls back to defaults. -->
+    <servlet>
+        <servlet-name>branding</servlet-name>
+        <servlet-class>org.saiku.web.servlet.BrandingServlet</servlet-class>
+        <load-on-startup>2</load-on-startup>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>branding</servlet-name>
+        <url-pattern>/ui/branding/*</url-pattern>
     </servlet-mapping>
 
 </web-app>

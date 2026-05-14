@@ -1,0 +1,52 @@
+{
+  "tables": [
+    {
+      "schema": "public",
+      "name": "sales_fact",
+      "rowCountEstimate": 1000000,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "product_id", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "customer_id", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "amount", "type": "DECIMAL", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": [
+        {"fromColumn": "product_id", "toTable": "product", "toColumn": "id"},
+        {"fromColumn": "customer_id", "toTable": "customer", "toColumn": "id"}
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "product",
+      "rowCountEstimate": 100,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "category_id", "type": "INTEGER", "nullable": false, "primaryKey": false},
+        {"name": "name", "type": "VARCHAR", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": [
+        {"fromColumn": "category_id", "toTable": "product_category", "toColumn": "id"}
+      ]
+    },
+    {
+      "schema": "public",
+      "name": "product_category",
+      "rowCountEstimate": 20,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "label", "type": "VARCHAR", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": []
+    },
+    {
+      "schema": "public",
+      "name": "customer",
+      "rowCountEstimate": 100,
+      "columns": [
+        {"name": "id", "type": "INTEGER", "nullable": false, "primaryKey": true},
+        {"name": "name", "type": "VARCHAR", "nullable": false, "primaryKey": false}
+      ],
+      "foreignKeys": []
+    }
+  ]
+}

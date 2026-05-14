@@ -16,36 +16,32 @@
 package org.saiku.web.rest.resources;
 
 import com.qmino.miredot.annotations.ReturnType;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
 import java.util.Map;
-import javax.servlet.http.HttpServletRequest;
 import org.apache.commons.lang.StringUtils;
 import org.saiku.service.ISessionService;
 import org.saiku.service.user.UserService;
+import org.saiku.web.security.audit.AuditLogger;
+import org.saiku.web.security.ratelimit.LoginRateLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Component;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Saiku Session Endpoints
  */
-@Component
-@RestController
-@RequestMapping("/saiku/session")
+@Path("/saiku/session")
 public class SessionResource {
 
     private static final Logger log = LoggerFactory.getLogger(SessionResource.class);
 
     private ISessionService sessionService;
     private UserService userService;
+    private LoginRateLimiter rateLimiter = new LoginRateLimiter();
 
     public ISessionService getSessionService() {
         return sessionService;
@@ -59,20 +55,39 @@ public class SessionResource {
         userService = us;
     }
 
+    public void setRateLimiter(LoginRateLimiter rateLimiter) {
+        if (rateLimiter != null) this.rateLimiter = rateLimiter;
+    }
+
     /**
      * Login to Saiku
      */
-    @PostMapping(consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-    public ResponseEntity<?> login(
-            HttpServletRequest req,
-            @RequestParam(name = "username", required = false) String username,
-            @RequestParam(name = "password", required = false) String password) {
+    @POST
+    @Consumes("application/x-www-form-urlencoded")
+    public Response login(
+            @Context HttpServletRequest req,
+            @FormParam("username") String username,
+            @FormParam("password") String password) {
+        // Rate-limit BEFORE touching the auth manager so attackers can't hammer it.
+        if (rateLimiter.isBlocked(req)) {
+            AuditLogger.rateLimitTriggered(req, username);
+            return Response.status(429)
+                    .header("Retry-After", String.valueOf(rateLimiter.getWindowMs() / 1000))
+                    .entity("Too many failed login attempts. Try again later.")
+                    .build();
+        }
         try {
             sessionService.login(req, username, password);
-            return ResponseEntity.ok().build();
+            rateLimiter.recordSuccess(req);
+            AuditLogger.loginSuccess(req, username);
+            return Response.ok().build();
         } catch (Exception e) {
+            rateLimiter.recordFailure(req);
+            AuditLogger.loginFailure(req, username, e.getClass().getSimpleName());
             log.debug("Error logging in:" + username, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getLocalizedMessage());
+            return Response.status(Status.UNAUTHORIZED)
+                    .entity("Authentication failed")
+                    .build();
         }
     }
 
@@ -132,9 +147,20 @@ public class SessionResource {
     /**
      * Logout of the Session
      */
-    @DeleteMapping
-    public ResponseEntity<?> logout(HttpServletRequest req) {
+    @DELETE
+    public Response logout(@Context HttpServletRequest req) {
+        String username = null;
+        try {
+            Object u = sessionService.getSession().get("username");
+            if (u != null) username = u.toString();
+        } catch (Exception ignored) {
+            /* no active session — fine */
+        }
         sessionService.logout(req);
-        return ResponseEntity.ok().build();
+        AuditLogger.logout(req, username);
+        //		NewCookie terminate = new NewCookie(TokenBasedRememberMeServices.SPRING_SECURITY_REMEMBER_ME_COOKIE_KEY,
+        // null);
+
+        return Response.ok().build();
     }
 }

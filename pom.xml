@@ -5,7 +5,7 @@
     <groupId>org.saikuanalytics</groupId>
     <artifactId>saiku</artifactId>
     <packaging>pom</packaging>
-    <version>3.17</version>
+    <version>4.0.0</version>
     <name>Saiku Module Project</name>
     <scm>
         <developerConnection>
@@ -17,6 +17,7 @@
         <module>saiku-bom</module>
         <module>saiku-core</module>
         <module>saiku-webapp</module>
+        <module>saiku-launcher</module>
     </modules>
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
@@ -38,6 +39,20 @@
         <jackson.version>2.17.3</jackson.version>
     </properties>
     <repositories>
+        <!-- In-tree Maven file-repo for vendored deps that aren't reachable on
+             any public/private remote. Currently houses miredot-annotations
+             1.3.1 (Bintray-only, shut down 2021). Same pattern as
+             mondrian-saiku/lib/repo.
+             ${maven.multiModuleProjectDirectory} (NOT ${project.basedir}) so
+             child modules inherit a URL pointing at the reactor root, not at
+             their own pom dir. -->
+        <repository>
+            <id>project-lib</id>
+            <name>In-tree vendored deps</name>
+            <url>file://${maven.multiModuleProjectDirectory}/lib/repo</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
         <repository>
             <id>apache</id>
             <name>Apache repo</name>
@@ -56,6 +71,40 @@
             <snapshots>
                 <enabled>true</enabled>
             </snapshots>
+        </repository>
+
+        <!-- Spicule-published Maven artifacts on GitHub Packages. GH Packages
+             requires authentication for downloads even when the package is public;
+             each <id> below needs a matching <server> entry in ~/.m2/settings.xml
+             (GitHub username + PAT with read:packages). One PAT can authenticate
+             all three repos. -->
+        <repository>
+            <id>github-mondrian-saiku</id>
+            <name>GitHub Packages - spiculedata/mondrian-saiku</name>
+            <url>https://maven.pkg.github.com/spiculedata/mondrian-saiku</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+        <repository>
+            <id>github-olap4j</id>
+            <name>GitHub Packages - spiculedata/olap4j</name>
+            <url>https://maven.pkg.github.com/spiculedata/olap4j</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+        <repository>
+            <id>github-olap4j-xmlaserver</id>
+            <name>GitHub Packages - spiculedata/olap4j-xmlaserver</name>
+            <url>https://maven.pkg.github.com/spiculedata/olap4j-xmlaserver</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+        <repository>
+            <id>github-saiku-query</id>
+            <name>GitHub Packages - spiculedata/saiku-query</name>
+            <url>https://maven.pkg.github.com/spiculedata/saiku-query</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>true</enabled></snapshots>
         </repository>
     </repositories>
     <build>

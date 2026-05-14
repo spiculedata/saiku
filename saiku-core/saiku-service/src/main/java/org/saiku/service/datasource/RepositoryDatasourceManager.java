@@ -16,14 +16,12 @@
 
 package org.saiku.service.datasource;
 
+import jakarta.servlet.http.HttpSession;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
-import javax.jcr.PathNotFoundException;
-import javax.jcr.RepositoryException;
-import javax.servlet.http.HttpSession;
 import org.apache.commons.lang.StringUtils;
 import org.saiku.database.dto.MondrianSchema;
 import org.saiku.datasources.connection.IConnectionManager;
@@ -31,6 +29,8 @@ import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.connection.RepositoryFile;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.repository.*;
+import org.saiku.repository.PathNotFoundException;
+import org.saiku.repository.RepositoryException;
 import org.saiku.service.importer.JujuSource;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.security.authentication.PasswordProvider;
@@ -92,7 +92,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         // Phase 2: Jackrabbit content-repo backend deleted; only classpath remains.
         separator = "/";
         log.debug("init datadir= " + datadir);
-        irm = ClassPathRepositoryManager.getClassPathRepositoryManager(
+        irm = FilesystemRepositoryManager.getFilesystemRepositoryManager(
                 cleanse(datadir), defaultRole, sessionRegistry, workspaces);
         log.debug("2nd init datadir= " + datadir);
 
@@ -567,7 +567,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
 
     private String getCookieUsername() {
         String cookieUsername = null;
-        javax.servlet.http.HttpSession session =
+        jakarta.servlet.http.HttpSession session =
                 getSession(); // Use a variable instead of a method call for debugging purposes
 
         if (session != null && workspaces && session.getAttribute(SAIKU_AUTH_PRINCIPAL) != null) {

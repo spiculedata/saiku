@@ -223,6 +223,12 @@ public class SaikuProperties extends Properties {
     public static final Locale locale = getLocale();
     public static final Boolean olapConvertQuery = getPropBoolean("saiku.olap.convert.query", "false");
 
+    // Phase 5 — disk-backed Arrow query cache.
+    public static final Boolean cacheEnabled = getPropBoolean("saiku.cache.enabled", "true");
+    public static final Integer cacheTtlMinutes = Integer.parseInt(getPropString("saiku.cache.ttl.minutes", "30"));
+    public static final Long cacheMaxSizeBytes =
+            Long.parseLong(getPropString("saiku.cache.max.size.bytes", "268435456"));
+
     private static Locale getLocale() {
         String locale = null;
         try {

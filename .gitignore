@@ -451,4 +451,18 @@ nbdist/
 .nb-gradle/
 
 # End of https://www.gitignore.io/api/vim,git,node,java,linux,macos,maven,windows,webstorm,jetbrains,sublimetext,jetbrains+all,visualstudiocode,eclipse,netbeans
-data/
+
+# saiku-dist: tracked top-level packaging templates (README, run.sh, run.bat)
+# consumed by the `dist` job in ci.yml. The earlier `dist/` rule from
+# NetBeans defaults was matching this directory and blocking the workflow
+# from finding the bundle assets.
+!/dist/
+!/dist/**
+
+# lib/repo: in-tree Maven file-repo housing vendored deps that are no longer
+# reachable on any public remote (currently miredot-annotations 1.3.1 — the
+# Bintray-only artifact left orphaned when JFrog shut Bintray in 2021).
+# Same pattern mondrian-saiku uses. The default `*.jar` ignore would
+# otherwise swallow the vendored JARs.
+!/lib/repo/
+!/lib/repo/**

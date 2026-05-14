@@ -1,0 +1,195 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag/version for a manual release (e.g. v3.17.0)"
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  jar:
+    name: Build fat JAR + dist zip
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      jar_name: ${{ steps.meta.outputs.jar_name }}
+      dist_name: ${{ steps.meta.outputs.dist_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # See ci.yml for the rationale — multi-server settings.xml so the build
+      # can resolve mondrian and the spiculedata olap4j / olap4j-xmlaserver
+      # artifacts from GitHub Packages.
+      - name: Configure Maven settings.xml
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<EOF
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+            <servers>
+              <server><id>github-mondrian-saiku</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j-xmlaserver</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-saiku-query</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+            </servers>
+          </settings>
+          EOF
+
+      - name: Resolve version
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            REF_TAG="${{ github.event.inputs.tag }}"
+          else
+            REF_TAG="${GITHUB_REF_NAME}"
+          fi
+          VERSION="${REF_TAG#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "jar_name=saiku-${VERSION}.jar" >> "$GITHUB_OUTPUT"
+          echo "dist_name=saiku-dist-${VERSION}.zip" >> "$GITHUB_OUTPUT"
+
+      - name: mvn package (launcher)
+        run: mvn -B -ntp -DskipTests -pl saiku-launcher -am package
+
+      - name: Stage release assets
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          # 1) Bare fat JAR (versioned filename) — keeps the existing
+          #    "give me just the JAR" path for users who don't want the bundle.
+          cp "saiku-launcher/target/saiku-${VERSION}.jar" \
+             "release-assets/saiku-${VERSION}.jar"
+          # 2) Runnable dist bundle: JAR + README + run.sh + run.bat, zipped.
+          STAGE="saiku-dist-${VERSION}"
+          mkdir -p "$STAGE"
+          cp "saiku-launcher/target/saiku-${VERSION}.jar" "$STAGE/"
+          cp dist/README.md "$STAGE/"
+          cp dist/run.sh "$STAGE/"
+          cp dist/run.bat "$STAGE/"
+          chmod +x "$STAGE/run.sh"
+          # zip preserves +x so end users on Unix can ./run.sh post-extract.
+          zip -r "release-assets/${STAGE}.zip" "$STAGE"
+          ls -la release-assets/
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: saiku-jar
+          path: release-assets/${{ steps.meta.outputs.jar_name }}
+          retention-days: 7
+
+      - name: Upload dist zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: saiku-dist
+          path: release-assets/${{ steps.meta.outputs.dist_name }}
+          retention-days: 7
+
+  docker:
+    name: Build & push Docker image
+    runs-on: ubuntu-latest
+    needs: jar
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}},value=${{ needs.jar.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.jar.outputs.version }}
+            type=raw,value=latest
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    name: Publish GitHub release
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: [jar, docker]
+    steps:
+      # Pull both artifacts the jar job uploaded — the bare versioned JAR
+      # and the runnable saiku-dist zip. Both get attached to the release.
+      - name: Download saiku-jar
+        uses: actions/download-artifact@v4
+        with:
+          name: saiku-jar
+          path: release-assets
+      - name: Download saiku-dist
+        uses: actions/download-artifact@v4
+        with:
+          name: saiku-dist
+          path: release-assets
+      - name: Confirm release assets staged
+        run: ls -la release-assets/
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          # Both files in a multi-line list. softprops/action-gh-release@v2
+          # de-dupes by filename so we can list them explicitly.
+          files: |
+            release-assets/${{ needs.jar.outputs.jar_name }}
+            release-assets/${{ needs.jar.outputs.dist_name }}
+          name: Saiku ${{ needs.jar.outputs.version }}
+          body: |
+            ## Saiku ${{ needs.jar.outputs.version }}
+
+            Two downloads attached:
+
+            - `${{ needs.jar.outputs.dist_name }}` — **recommended.** Runnable bundle:
+              JAR + README + `run.sh`/`run.bat`. Unzip and `./run.sh`.
+            - `${{ needs.jar.outputs.jar_name }}` — bare fat JAR for users who want to
+              wire the launcher into their own startup script. `java -jar saiku-*.jar serve`.
+
+            Docker image (multi-arch): `ghcr.io/${{ github.repository }}:${{ needs.jar.outputs.version }}`
+
+            ### Auto-generated changelog
+          # generate_release_notes appends GitHub's auto-generated "What's
+          # Changed" + "Full Changelog" sections after the `body:` text.
+          generate_release_notes: true
+          draft: false
+          prerelease: false

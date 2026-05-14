@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Smoke-test Spring config mirroring the schema-generation bean graph from
+  saiku-webapp/WEB-INF/saiku-beans.xml. Keep these bean definitions in lockstep
+  with saiku-beans.xml: if a constructor-arg or property name drifts, this test
+  fails fast. A stub datasourceService / userService stand in for the webapp
+  beans so the context doesn't need the repository, security or H2 machinery.
+-->
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+       http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+    <!-- Stubs standing in for beans defined elsewhere in production. -->
+    <bean id="datasourceServiceBean"
+          class="org.saiku.web.rest.resources.schemagen.wiring.StubDatasourceService"/>
+
+    <!-- ==== schemagen beans (mirror of saiku-beans.xml) ==== -->
+
+    <bean id="schemaGenSessionStore"
+          class="org.saiku.service.schema.generate.session.SchemaGenSessionStore">
+        <constructor-arg>
+            <bean class="java.time.Duration" factory-method="ofMinutes">
+                <constructor-arg value="30"/>
+            </bean>
+        </constructor-arg>
+    </bean>
+
+    <bean id="jdbcIntrospectorOptions"
+          class="org.saiku.service.schema.generate.introspect.JdbcIntrospector$Options"/>
+
+    <bean id="jdbcIntrospector"
+          class="org.saiku.service.schema.generate.introspect.JdbcIntrospector">
+        <constructor-arg ref="jdbcIntrospectorOptions"/>
+    </bean>
+
+    <bean id="schemaInferrer"
+          class="org.saiku.service.schema.generate.infer.SchemaInferrer"/>
+
+    <!-- Default (no overrides) produces a NoopProvider — mirrors production. -->
+    <bean id="llmProviderFactory"
+          class="org.saiku.service.schema.generate.enrich.provider.LlmProviderFactory">
+        <constructor-arg><null/></constructor-arg>
+        <constructor-arg><null/></constructor-arg>
+        <constructor-arg><null/></constructor-arg>
+    </bean>
+
+    <bean id="llmProvider"
+          factory-bean="llmProviderFactory"
+          factory-method="build"/>
+
+    <bean id="piiFilter"
+          class="org.saiku.service.schema.generate.enrich.PiiFilter"/>
+
+    <bean id="llmEnricher"
+          class="org.saiku.service.schema.generate.enrich.LlmEnricher">
+        <constructor-arg ref="llmProvider"/>
+        <constructor-arg ref="piiFilter"/>
+        <constructor-arg value="2"/>
+    </bean>
+
+    <bean id="schemaGenExecutor"
+          class="java.util.concurrent.Executors"
+          factory-method="newCachedThreadPool"
+          destroy-method="shutdownNow"/>
+
+    <bean id="connectionProvider"
+          class="org.saiku.web.rest.resources.schemagen.DatasourceJdbcConnectionProvider">
+        <constructor-arg ref="datasourceServiceBean"/>
+    </bean>
+
+    <bean id="schemaGenOrchestrator"
+          class="org.saiku.service.schema.generate.session.SchemaGenOrchestrator">
+        <constructor-arg ref="schemaGenSessionStore"/>
+        <constructor-arg ref="jdbcIntrospector"/>
+        <constructor-arg ref="schemaInferrer"/>
+        <constructor-arg ref="llmEnricher"/>
+        <constructor-arg ref="schemaGenExecutor"/>
+        <constructor-arg ref="connectionProvider"/>
+    </bean>
+
+    <bean id="mondrianSchemaWriter"
+          class="org.saiku.service.schema.generate.writer.MondrianSchemaWriter"/>
+
+    <bean id="opApplier"
+          class="org.saiku.service.schema.generate.apply.OpApplier"/>
+
+    <bean id="schemaSink"
+          class="org.saiku.web.rest.resources.schemagen.SchemaGeneratorResource"
+          factory-method="datasourceBackedSink">
+        <constructor-arg ref="datasourceServiceBean"/>
+    </bean>
+
+    <bean id="schemaGeneratorResource"
+          class="org.saiku.web.rest.resources.schemagen.SchemaGeneratorResource">
+        <constructor-arg ref="schemaGenSessionStore"/>
+        <constructor-arg ref="schemaGenOrchestrator"/>
+        <constructor-arg ref="opApplier"/>
+        <constructor-arg ref="mondrianSchemaWriter"/>
+        <constructor-arg ref="schemaSink"/>
+    </bean>
+
+</beans>

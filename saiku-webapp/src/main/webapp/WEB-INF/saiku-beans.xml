@@ -5,16 +5,17 @@
        xmlns:context="http://www.springframework.org/schema/context"
        xmlns:aop="http://www.springframework.org/schema/aop"
        xsi:schemaLocation="http://www.springframework.org/schema/beans
-       http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+       http://www.springframework.org/schema/beans/spring-beans.xsd
        http://www.springframework.org/schema/context
        http://www.springframework.org/schema/context/spring-context.xsd
        http://www.springframework.org/schema/aop
-       http://www.springframework.org/schema/aop/spring-aop-3.0.xsd">
+       http://www.springframework.org/schema/aop/spring-aop.xsd">
 
     <context:property-placeholder
             location="/WEB-INF/saiku-beans.properties"
             ignore-resource-not-found="true"
             ignore-unresolvable="true"
+            system-properties-mode="OVERRIDE"
             order ="0" />
 
     <context:property-placeholder
@@ -24,13 +25,7 @@
             order ="-1" />
 
     <bean id="sessionRegistry"
-          class="org.springframework.security.core.session.SessionRegistryImpl" />
-
-    <!--	<bean id="classpathDsManager"
-            class="org.saiku.service.datasource.ClassPathResourceDatasourceManager">
-            <property name="path" value="res:saiku-datasources" />
-        </bean>-->
-    <bean id="repositoryDsManager" class="org.saiku.service.datasource.RepositoryDatasourceManager" init-method="load" destroy-method="unload">
+          class="org.springframework.security.core.session.SessionRegistryImpl" />    <bean id="repositoryDsManager" class="org.saiku.service.datasource.RepositoryDatasourceManager" init-method="load" destroy-method="unload">
         <!--aop:scoped-proxy/-->
 
         <property name="userService" ref="userServiceBean"/>
@@ -69,9 +64,7 @@
 
     <bean id="authorisationPredicate" class="org.saiku.service.util.security.authorisation.MustBeAuthenticatedAuthorisation"/>
 
-    <bean id="sessionRepo" class="org.saiku.repository.ScopedRepo" scope="session">
-        <aop:scoped-proxy/>
-    </bean>
+    <bean id="sessionRepo" class="org.saiku.repository.ScopedRepo"/>
 
     <bean id="sessionService" class="org.saiku.web.service.SessionService">
         <property name="sessionRepo" ref="sessionRepo"/>
@@ -132,6 +125,7 @@
     </bean>
 
     <bean id="olapQueryBean" scope="session" class="org.saiku.service.olap.OlapQueryService" destroy-method="destroy">
+        <aop:scoped-proxy/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
     </bean>
 
@@ -143,20 +137,31 @@
 
     <bean id="olapDiscoverBean" scope="session"
           class="org.saiku.web.rest.resources.OlapDiscoverResource">
+        <aop:scoped-proxy/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
     </bean>
 
 
     <bean id="queryResource" scope="request"
           class="org.saiku.web.rest.resources.QueryResource">
+        <aop:scoped-proxy/>
         <property name="olapQueryService" ref="olapQueryBean"/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
         <property name="repository" ref="repository2bean"/>
     </bean>
 
+    <!--
+      Disk-backed Arrow query cache. Shared singleton across sessions: the
+      cache key already encodes cube + query semantics, and per-session
+      scoping would defeat the point of caching.
+    -->
+    <bean id="saikuQueryCacheBean" class="org.saiku.service.cache.SaikuQueryCache"/>
+
     <bean id="thinQueryBean" scope="session"
           class="org.saiku.service.olap.ThinQueryService">
+        <aop:scoped-proxy/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <property name="queryCache" ref="saikuQueryCacheBean"/>
     </bean>
 
     <bean id="platformBean" class="org.saiku.service.PlatformUtilsService">
@@ -167,20 +172,40 @@
         <property name="platformUtilsService" ref="platformBean"/>
     </bean>
 
+    <bean id="asyncQueryServiceBean"
+          class="org.saiku.service.async.AsyncQueryService"
+          destroy-method="shutdown">
+        <property name="thinQueryService" ref="thinQueryBean"/>
+    </bean>
+
     <bean id="queryResource2" scope="request"
           class="org.saiku.web.rest.resources.Query2Resource">
+        <aop:scoped-proxy/>
         <property name="thinQueryService" ref="thinQueryBean"/>
         <property name="repository" ref="repository2bean"/>
+        <property name="asyncQueryService" ref="asyncQueryServiceBean"/>
     </bean>
+
+    <!-- Tier-1 auth hardening: shared login rate-limiter.
+         5 failures per 15 minutes per client IP. Default: do NOT trust
+         X-Forwarded-For (set saiku.auth.trustForwardedFor=true only when
+         fronted by a proxy you control). -->
+    <bean id="loginRateLimiter" class="org.saiku.web.security.ratelimit.LoginRateLimiter"/>
+
+    <!-- Tier-1 auth hardening: bridges Spring Security auth events onto the
+         structured audit log (org.saiku.audit). Captures the HTTP-Basic /
+         filter-chain path; SessionResource audits form-login directly. -->
+    <bean id="saikuAuditListener" class="org.saiku.web.security.audit.SpringSecurityAuditListener"/>
 
     <bean id="sessionResource" class="org.saiku.web.rest.resources.SessionResource">
         <property name="sessionService" ref="sessionService"/>
         <property name="userService" ref="userServiceBean"/>
-
+        <property name="rateLimiter" ref="loginRateLimiter"/>
     </bean>
 
     <bean id="repository2bean" scope="request"
           class="org.saiku.web.rest.resources.BasicRepositoryResource2">
+        <aop:scoped-proxy/>
         <property name="sessionService" ref="sessionService"/>
         <property name="datasourceService" ref="datasourceServiceBean"/>
     </bean>
@@ -188,6 +213,7 @@
 
     <bean id="filterRepositoryBean" scope="session"
           class="org.saiku.web.rest.resources.FilterRepositoryResource">
+        <aop:scoped-proxy/>
         <property name="olapQueryService" ref="olapQueryBean"/>
         <property name="sessionService" ref="sessionService"/>
     </bean>
@@ -195,19 +221,116 @@
 
     <bean id="exporterBean" scope="request"
           class="org.saiku.web.rest.resources.ExporterResource">
+        <aop:scoped-proxy/>
         <property name="repository" ref="repository2bean"/>
         <property name="query2Resource" ref="queryResource2"/>
     </bean>
 
 
-    <bean id="licenseBean" class="org.saiku.web.rest.resources.License">
-        <property name="databaseManager" ref="h2database"/>
-        <property name="userService" ref="userServiceBean"/>
-    </bean>
-
     <bean id="statsBean" class="org.saiku.web.rest.resources.StatisticsResource"/>
 
     <bean id="startupBean" class="org.saiku.web.rest.util.StartupResource" init-method="init"/>
 
+    <!-- ==========================================================================
+         Schema-generation pipeline (C4 wiring)
+         Exposes POST/GET /rest/saiku/admin/schema-generator/* via Jersey auto-scan
+         (SaikuJerseyApplication registers any bean annotated with @Path).
+         Keep this block in sync with the smoke test in saiku-core/saiku-web:
+           src/test/resources/schemagen-wiring-test.xml
+         ========================================================================== -->
+
+    <bean id="schemaGenSessionStore"
+          class="org.saiku.service.schema.generate.session.SchemaGenSessionStore">
+        <constructor-arg>
+            <bean class="java.time.Duration" factory-method="ofMinutes">
+                <constructor-arg value="30"/>
+            </bean>
+        </constructor-arg>
+    </bean>
+
+    <bean id="jdbcIntrospectorOptions"
+          class="org.saiku.service.schema.generate.introspect.JdbcIntrospector$Options"/>
+
+    <bean id="jdbcIntrospector"
+          class="org.saiku.service.schema.generate.introspect.JdbcIntrospector">
+        <constructor-arg ref="jdbcIntrospectorOptions"/>
+    </bean>
+
+    <bean id="schemaInferrer"
+          class="org.saiku.service.schema.generate.infer.SchemaInferrer"/>
+
+    <!-- Schema-gen LLM provider: config-driven (saiku.schemagen.llm.provider in
+         saiku-beans.properties). Defaults to 'noop' (offline rule-based).
+         Flip to 'anthropic' and supply saiku.schemagen.llm.anthropic.apiKey
+         (or set the ANTHROPIC_API_KEY env var) to enable live enrichment.
+         Missing/invalid config falls back to NoopProvider with a WARN log. -->
+    <bean id="llmProviderFactory"
+          class="org.saiku.service.schema.generate.enrich.provider.LlmProviderFactory">
+        <constructor-arg value="${saiku.schemagen.llm.provider:noop}"/>
+        <constructor-arg value="${saiku.schemagen.llm.anthropic.apiKey:}"/>
+        <constructor-arg value="${saiku.schemagen.llm.anthropic.model:}"/>
+    </bean>
+
+    <bean id="llmProvider"
+          factory-bean="llmProviderFactory"
+          factory-method="build"/>
+
+    <bean id="piiFilter"
+          class="org.saiku.service.schema.generate.enrich.PiiFilter"/>
+
+    <bean id="llmEnricher"
+          class="org.saiku.service.schema.generate.enrich.LlmEnricher">
+        <constructor-arg ref="llmProvider"/>
+        <constructor-arg ref="piiFilter"/>
+        <constructor-arg value="2"/>
+    </bean>
+
+    <bean id="schemaGenExecutor"
+          class="java.util.concurrent.Executors"
+          factory-method="newCachedThreadPool"
+          destroy-method="shutdownNow"/>
+
+    <bean id="schemaGenConnectionProvider"
+          class="org.saiku.web.rest.resources.schemagen.DatasourceJdbcConnectionProvider">
+        <constructor-arg ref="datasourceServiceBean"/>
+    </bean>
+
+    <bean id="sidecarStore"
+          class="org.saiku.service.schema.generate.session.RepositorySidecarStore">
+        <constructor-arg ref="datasourceServiceBean"/>
+    </bean>
+
+    <bean id="schemaGenOrchestrator"
+          class="org.saiku.service.schema.generate.session.SchemaGenOrchestrator">
+        <constructor-arg ref="schemaGenSessionStore"/>
+        <constructor-arg ref="jdbcIntrospector"/>
+        <constructor-arg ref="schemaInferrer"/>
+        <constructor-arg ref="llmEnricher"/>
+        <constructor-arg ref="schemaGenExecutor"/>
+        <constructor-arg ref="schemaGenConnectionProvider"/>
+        <constructor-arg ref="sidecarStore"/>
+    </bean>
+
+    <bean id="mondrianSchemaWriter"
+          class="org.saiku.service.schema.generate.writer.MondrianSchemaWriter"/>
+
+    <bean id="opApplier"
+          class="org.saiku.service.schema.generate.apply.OpApplier"/>
+
+    <bean id="schemaSink"
+          class="org.saiku.web.rest.resources.schemagen.SchemaGeneratorResource"
+          factory-method="datasourceBackedSink">
+        <constructor-arg ref="datasourceServiceBean"/>
+    </bean>
+
+    <bean id="schemaGeneratorResource"
+          class="org.saiku.web.rest.resources.schemagen.SchemaGeneratorResource">
+        <constructor-arg ref="schemaGenSessionStore"/>
+        <constructor-arg ref="schemaGenOrchestrator"/>
+        <constructor-arg ref="opApplier"/>
+        <constructor-arg ref="mondrianSchemaWriter"/>
+        <constructor-arg ref="schemaSink"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
 
 </beans>

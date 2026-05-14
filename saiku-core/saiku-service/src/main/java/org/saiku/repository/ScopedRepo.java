@@ -1,7 +1,7 @@
 package org.saiku.repository;
 
+import jakarta.servlet.http.HttpSession;
 import java.io.Serializable;
-import javax.servlet.http.HttpSession;
 import org.springframework.context.ApplicationListener;
 import org.springframework.security.web.session.HttpSessionCreatedEvent;
 

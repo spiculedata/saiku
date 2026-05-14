@@ -1,0 +1,134 @@
+<script lang="ts">
+  import { onMount } from "svelte";
+  import { adminSchemas, type AdminSchema } from "$lib/api/admin";
+  import { toasts } from "$lib/stores/toasts.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
+  import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
+  import Modal from "$lib/components/Modal.svelte";
+
+  let list = $state<AdminSchema[]>([]);
+  let loading = $state(true);
+  let error = $state<string | null>(null);
+  let uploading = $state(false);
+  let uploadName = $state("");
+  let uploadXml = $state("");
+  let deleting = $state<AdminSchema | null>(null);
+
+  async function refresh() {
+    loading = true;
+    error = null;
+    try {
+      list = await adminSchemas.list();
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    } finally {
+      loading = false;
+    }
+  }
+
+  onMount(refresh);
+
+  async function pickFile(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    uploadName = uploadName || file.name;
+    uploadXml = await file.text();
+  }
+
+  async function doUpload() {
+    if (!uploadName.trim() || !uploadXml.trim()) return;
+    try {
+      await adminSchemas.upload(uploadName.trim(), uploadXml);
+      toasts.success("Uploaded", uploadName);
+      uploading = false;
+      uploadName = "";
+      uploadXml = "";
+      await refresh();
+    } catch (e) {
+      toasts.danger("Upload failed", e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function doDelete() {
+    if (!deleting) return;
+    try {
+      await adminSchemas.remove(deleting.id ?? deleting.name);
+      toasts.success("Deleted", deleting.name);
+      deleting = null;
+      await refresh();
+    } catch (e) {
+      toasts.danger("Delete failed", e instanceof Error ? e.message : String(e));
+    }
+  }
+</script>
+
+<div class="pane">
+  <header class="pane__header">
+    <h2>{i18n.t("admin.tabs.schemas")}</h2>
+    <button type="button" class="btn btn--primary" onclick={() => (uploading = true)}>{i18n.t("admin.uploadSchema")}</button>
+  </header>
+  {#if error}<p class="callout callout--danger">{error}</p>{/if}
+  {#if loading}
+    <p>Loading…</p>
+  {:else}
+    <table class="grid">
+      <thead><tr><th>Name</th><th>Path</th><th>Type</th><th></th></tr></thead>
+      <tbody>
+        {#each list as s}
+          <tr>
+            <td>{s.name}</td>
+            <td>{s.path ?? ""}</td>
+            <td>{s.type ?? ""}</td>
+            <td class="row-actions">
+              <button class="btn btn--danger" onclick={() => (deleting = s)}>Delete</button>
+            </td>
+          </tr>
+        {/each}
+        {#if list.length === 0}
+          <tr><td colspan="4" class="empty">No schemas.</td></tr>
+        {/if}
+      </tbody>
+    </table>
+  {/if}
+</div>
+
+<Modal title="Upload schema" open={uploading} size="lg" onClose={() => (uploading = false)}>
+  <label class="field">
+    <span class="field__label">Name</span>
+    <input class="field__input" bind:value={uploadName} />
+  </label>
+  <label class="field">
+    <span class="field__label">XML file</span>
+    <input type="file" accept=".xml" onchange={pickFile} />
+  </label>
+  <label class="field">
+    <span class="field__label">XML content</span>
+    <textarea class="field__input xml" bind:value={uploadXml} rows="10" spellcheck="false"></textarea>
+  </label>
+  {#snippet footer()}
+    <button class="btn" onclick={() => (uploading = false)}>Cancel</button>
+    <button class="btn btn--primary" onclick={doUpload}>Upload</button>
+  {/snippet}
+</Modal>
+
+<ConfirmModal
+  title="Delete schema"
+  message={`Delete schema "${deleting?.name ?? ""}"? Cubes bound to it will stop loading.`}
+  confirmLabel="Delete"
+  variant="danger"
+  open={deleting !== null}
+  onConfirm={doDelete}
+  onCancel={() => (deleting = null)}
+/>
+
+<style>
+  .pane__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); }
+  h2 { margin: 0; }
+  .grid { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+  .grid th, .grid td { padding: var(--space-2); border-bottom: 1px solid var(--border); text-align: left; }
+  .grid th { background: var(--bg-muted); font-weight: 600; }
+  .row-actions { display: flex; gap: var(--space-1); justify-content: flex-end; }
+  .empty { text-align: center; color: var(--fg-muted); padding: var(--space-4); }
+  .xml { font-family: var(--font-mono); font-size: var(--fs-sm); resize: vertical; }
+</style>

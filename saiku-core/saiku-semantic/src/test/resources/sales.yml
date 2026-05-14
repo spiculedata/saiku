@@ -1,0 +1,26 @@
+name: Sales
+fact:
+  table: sales_fact
+dimensions:
+  - name: Time
+    table: time_by_day
+    foreignKey: time_id
+    primaryKey: time_id
+    levels:
+      - name: Year
+        column: the_year
+        type: Numeric
+      - name: Month
+        column: month_of_year
+        nameColumn: the_month
+measures:
+  - name: Unit Sales
+    column: unit_sales
+    aggregator: sum
+    datatype: Numeric
+    formatString: "#,###"
+  - name: Store Sales
+    column: store_sales
+    aggregator: sum
+    datatype: Numeric
+    formatString: "#,###.00"

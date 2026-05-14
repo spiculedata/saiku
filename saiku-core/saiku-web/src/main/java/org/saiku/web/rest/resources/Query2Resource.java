@@ -19,6 +19,17 @@ import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.type.CollectionType;
 import com.qmino.miredot.annotations.ReturnType;
+import jakarta.servlet.ServletException;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
+import jakarta.ws.rs.core.StreamingOutput;
+import jakarta.xml.bind.annotation.XmlAccessType;
+import jakarta.xml.bind.annotation.XmlAccessorType;
 import java.io.InputStream;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -27,16 +38,20 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import javax.servlet.ServletException;
-import javax.xml.bind.annotation.XmlAccessType;
-import javax.xml.bind.annotation.XmlAccessorType;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
+import org.olap4j.CellSet;
 import org.saiku.olap.dto.SimpleCubeElement;
+import org.saiku.olap.dto.resultset.AbstractBaseCell;
 import org.saiku.olap.dto.resultset.CellDataSet;
+import org.saiku.olap.dto.resultset.MemberCell;
 import org.saiku.olap.query2.ThinQuery;
+import org.saiku.olap.result.ArrowCellsetWriter;
+import org.saiku.olap.result.ArrowDrillthroughWriter;
 import org.saiku.olap.util.SaikuProperties;
+import org.saiku.service.async.AsyncQueryHandle;
+import org.saiku.service.async.AsyncQueryService;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.drillthrough.DrillThroughResult;
 import org.saiku.service.util.exception.SaikuServiceException;
@@ -46,25 +61,13 @@ import org.saiku.web.rest.objects.resultset.QueryResult;
 import org.saiku.web.rest.util.RestUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Component;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
 
 /**
  * Saiku Query Endpoints
  */
-@Component
-@RestController
-@RequestMapping("/saiku/api/query")
+@Path("/saiku/api/query")
 @XmlAccessorType(XmlAccessType.NONE)
 public class Query2Resource {
 
@@ -80,6 +83,16 @@ public class Query2Resource {
 
     public void setRepository(ISaikuRepository repository) {
         this.repository = repository;
+    }
+
+    private AsyncQueryService asyncQueryService;
+
+    public void setAsyncQueryService(AsyncQueryService asyncQueryService) {
+        this.asyncQueryService = asyncQueryService;
+    }
+
+    public AsyncQueryService getAsyncQueryService() {
+        return asyncQueryService;
     }
 
     /**
@@ -157,8 +170,13 @@ public class Query2Resource {
     /**
      * Execute a Saiku Query
      */
-    @PostMapping(path = "/execute", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public QueryResult execute(@RequestBody ThinQuery tq) {
+    public static final String ARROW_STREAM_MEDIA_TYPE = "application/vnd.apache.arrow.stream";
+
+    @POST
+    @Consumes({"application/json"})
+    @Produces({ARROW_STREAM_MEDIA_TYPE, "application/json"})
+    @Path("/execute")
+    public Response execute(ThinQuery tq, @Context HttpHeaders headers) {
         try {
             if (thinQueryService.isMdxDrillthrough(tq)) {
                 Long start = (new Date()).getTime();
@@ -167,18 +185,205 @@ public class Query2Resource {
                 rsc.setQuery(tq);
                 Long runtime = (new Date()).getTime() - start;
                 rsc.setRuntime(runtime.intValue());
-                return rsc;
+                return Response.ok(rsc).type(MediaType.APPLICATION_JSON).build();
+            }
+
+            if (clientPrefersArrow(headers)) {
+                return executeArrow(tq);
             }
 
             QueryResult qr = RestUtil.convert(thinQueryService.execute(tq));
             ThinQuery tqAfter = thinQueryService.getContext(tq.getName()).getOlapQuery();
             qr.setQuery(tqAfter);
-            return qr;
+            return Response.ok(qr).type(MediaType.APPLICATION_JSON).build();
         } catch (Exception e) {
             log.error("Cannot execute query (" + tq + ")", e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            return new QueryResult(error);
+            return Response.ok(new QueryResult(error))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
         }
+    }
+
+    private boolean clientPrefersArrow(HttpHeaders headers) {
+        if (headers == null) {
+            return false;
+        }
+        List<MediaType> accept = headers.getAcceptableMediaTypes();
+        if (accept == null || accept.isEmpty()) {
+            return false;
+        }
+        // Jersey returns Accept types sorted by q-value descending. Treat the first
+        // matching concrete type as the winner — if Arrow appears before JSON, the
+        // client asked for it.
+        for (MediaType mt : accept) {
+            String full = mt.getType() + "/" + mt.getSubtype();
+            if (ARROW_STREAM_MEDIA_TYPE.equalsIgnoreCase(full)) {
+                return true;
+            }
+            if (MediaType.APPLICATION_JSON.equalsIgnoreCase(full)) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private Response executeArrow(final ThinQuery tq) throws Exception {
+        // Cache-first path: on hit we stream the stored Arrow bytes straight
+        // back without touching Mondrian. On miss the service executes,
+        // encodes, caches, and returns the fresh bytes.
+        final org.saiku.service.cache.SaikuQueryCache.CachedQueryResult r = thinQueryService.executeCached(tq);
+        final byte[] bytes = r.arrowBytes;
+        StreamingOutput body = new StreamingOutput() {
+            @Override
+            public void write(java.io.OutputStream output) throws java.io.IOException {
+                output.write(bytes);
+            }
+        };
+        return Response.ok(body, ARROW_STREAM_MEDIA_TYPE)
+                .header("X-Saiku-Cache", r.cacheHit ? "hit" : "miss")
+                .header("X-Saiku-Runtime-Ms", String.valueOf(r.runtimeMs))
+                .build();
+    }
+
+    // ===== Async execute / status / result / cancel ==========================
+
+    /**
+     * Kick off an async query execution.
+     * @summary Submit a query for async execution.
+     * @param tq The thin query
+     * @return 202 Accepted + { queryId, status: "PENDING" }
+     */
+    @POST
+    @Consumes({"application/json"})
+    @Produces({"application/json"})
+    @Path("/execute-async")
+    public Response executeAsync(ThinQuery tq) {
+        if (asyncQueryService == null) {
+            return Response.serverError()
+                    .entity("AsyncQueryService not configured")
+                    .build();
+        }
+        try {
+            // Capture the caller's request attributes so the async worker
+            // thread can resolve session-scoped beans (e.g. thinQueryBean).
+            RequestAttributes requestAttributes = null;
+            try {
+                requestAttributes = RequestContextHolder.currentRequestAttributes();
+            } catch (IllegalStateException ignore) {
+                // No request bound — leave null; submit() falls back to legacy path.
+            }
+            AsyncQueryHandle h = asyncQueryService.submit(tq, requestAttributes);
+            Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put("queryId", h.getId());
+            body.put("status", h.getStatus().name());
+            return Response.status(Status.ACCEPTED)
+                    .entity(body)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        } catch (Exception e) {
+            log.error("Cannot submit async query", e);
+            return Response.serverError()
+                    .entity(ExceptionUtils.getRootCauseMessage(e))
+                    .build();
+        }
+    }
+
+    /**
+     * Poll async query status.
+     * @summary Async status.
+     * @param id The async handle id
+     * @return { id, status, errorMessage? }
+     */
+    @GET
+    @Produces({"application/json"})
+    @Path("/async/{id}/status")
+    public Response asyncStatus(@PathParam("id") String id) {
+        if (asyncQueryService == null) {
+            return Response.status(Status.NOT_FOUND).build();
+        }
+        AsyncQueryHandle h = asyncQueryService.get(id);
+        if (h == null) {
+            return Response.status(Status.NOT_FOUND).build();
+        }
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("id", h.getId());
+        body.put("status", h.getStatus().name());
+        if (h.getErrorMessage() != null) {
+            body.put("errorMessage", h.getErrorMessage());
+        }
+        return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
+     * Fetch a completed async result. Content-negotiates Arrow vs JSON. Only
+     * valid once status == DONE; otherwise 409 CONFLICT.
+     * @summary Async result.
+     * @param id The async handle id
+     * @return Arrow stream or JSON QueryResult
+     */
+    @GET
+    @Produces({ARROW_STREAM_MEDIA_TYPE, "application/json"})
+    @Path("/async/{id}/result")
+    public Response asyncResult(@PathParam("id") String id, @Context HttpHeaders headers) {
+        if (asyncQueryService == null) {
+            return Response.status(Status.NOT_FOUND).build();
+        }
+        AsyncQueryHandle h = asyncQueryService.get(id);
+        if (h == null) {
+            return Response.status(Status.NOT_FOUND).build();
+        }
+        if (h.getStatus() == AsyncQueryHandle.Status.FAILED) {
+            return Response.status(Status.INTERNAL_SERVER_ERROR)
+                    .entity(new QueryResult(h.getErrorMessage() == null ? "failed" : h.getErrorMessage()))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        if (h.getStatus() != AsyncQueryHandle.Status.DONE) {
+            // PENDING, RUNNING, CANCELLED — not ready.
+            return Response.status(Status.CONFLICT)
+                    .entity(h.getStatus().name())
+                    .type(MediaType.TEXT_PLAIN)
+                    .build();
+        }
+        final CellSet cellSet = asyncQueryService.result(id);
+        if (cellSet == null) {
+            return Response.status(Status.NOT_FOUND).build();
+        }
+        final ThinQuery tqAfter = h.getQuery();
+
+        if (clientPrefersArrow(headers)) {
+            StreamingOutput body = new StreamingOutput() {
+                @Override
+                public void write(java.io.OutputStream output) throws java.io.IOException {
+                    new ArrowCellsetWriter().write(cellSet, tqAfter, output);
+                }
+            };
+            return Response.ok(body, ARROW_STREAM_MEDIA_TYPE).build();
+        }
+        CellDataSet cds = org.saiku.olap.util.OlapResultSetUtil.cellSet2Matrix(cellSet);
+        QueryResult qr = RestUtil.convert(cds);
+        qr.setQuery(tqAfter);
+        return Response.ok(qr).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
+     * Cancel a running async query.
+     * @summary Async cancel.
+     * @param id The async handle id
+     * @return 204 No Content on success, 404 otherwise.
+     */
+    @DELETE
+    @Path("/async/{id}/cancel")
+    public Response asyncCancel(@PathParam("id") String id) {
+        if (asyncQueryService == null) {
+            return Response.status(Status.NOT_FOUND).build();
+        }
+        boolean cancelled = asyncQueryService.cancel(id);
+        if (!cancelled) {
+            return Response.status(Status.NOT_FOUND).build();
+        }
+        return Response.status(Status.NO_CONTENT).build();
     }
 
     /**
@@ -364,43 +569,65 @@ public class Query2Resource {
     /**
      * Drill through on the query result set.
      */
-    @GetMapping(path = "/{queryname}/drillthrough", produces = MediaType.APPLICATION_JSON_VALUE)
-    public QueryResult drillthrough(
-            @PathVariable("queryname") String queryName,
-            @RequestParam(name = "maxrows", defaultValue = "100") Integer maxrows,
-            @RequestParam(name = "position", required = false) String position,
-            @RequestParam(name = "returns", required = false) String returns) {
+    // TODO (phase 5): drillthrough intentionally does NOT go through the
+    // SaikuQueryCache (Task 5). The cache keys for execute are MDX+params;
+    // drillthrough also depends on cell position, maxrows, and returns list,
+    // and invalidation semantics differ. If/when we add caching here it
+    // needs its own key space and TTL policy.
+    @GET
+    @Produces({ARROW_STREAM_MEDIA_TYPE, "application/json"})
+    @Path("/{queryname}/drillthrough")
+    public Response drillthrough(
+            @PathParam("queryname") String queryName,
+            @QueryParam("maxrows") @DefaultValue("100") Integer maxrows,
+            @QueryParam("position") String position,
+            @QueryParam("returns") String returns,
+            @Context HttpHeaders headers) {
         if (log.isDebugEnabled()) {
             log.debug("TRACK\t" + "\t/query/" + queryName + "/drillthrough\tGET");
         }
-        QueryResult rsc;
+        boolean arrow = clientPrefersArrow(headers);
         ResultSet rs = null;
         try {
             Long start = (new Date()).getTime();
+            DrillThroughResult dtr = null;
             if (position == null) {
                 rs = thinQueryService.drillthrough(queryName, maxrows, returns);
-                rsc = RestUtil.convert(rs);
             } else {
                 String[] positions = position.split(":");
                 List<Integer> cellPosition = new ArrayList<>();
-
                 for (String p : positions) {
-                    Integer pInt = Integer.parseInt(p);
-                    cellPosition.add(pInt);
+                    cellPosition.add(Integer.parseInt(p));
                 }
-                DrillThroughResult drillthrough =
-                        thinQueryService.drillthroughWithCaptions(queryName, cellPosition, maxrows, returns);
-                rsc = RestUtil.convert(drillthrough);
+                dtr = thinQueryService.drillthroughWithCaptions(queryName, cellPosition, maxrows, returns);
+                rs = dtr.getResultSet();
+            }
+
+            if (arrow) {
+                return drillthroughArrow(rs, dtr, start);
+            }
+
+            QueryResult rsc;
+            if (dtr != null) {
+                rsc = RestUtil.convert(dtr);
+            } else {
+                rsc = RestUtil.convert(rs);
             }
             Long runtime = (new Date()).getTime() - start;
             rsc.setRuntime(runtime.intValue());
+            return Response.ok(rsc).type(MediaType.APPLICATION_JSON).build();
 
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ")", e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            rsc = new QueryResult(error);
+            return Response.ok(new QueryResult(error))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
 
         } finally {
+            // Arrow path materialises rows eagerly into the ByteArrayOutputStream
+            // before the response body is written, so it is safe to close the
+            // ResultSet here for both JSON and Arrow branches.
             if (rs != null) {
                 Statement statement = null;
                 try {
@@ -418,7 +645,56 @@ public class Query2Resource {
                 }
             }
         }
-        return rsc;
+    }
+
+    private Response drillthroughArrow(ResultSet rs, DrillThroughResult dtr, long startMs) throws Exception {
+        String[] captions = extractCaptions(rs, dtr);
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        ArrowDrillthroughWriter.WriteResult wr = new ArrowDrillthroughWriter().write(rs, captions, baos);
+        final byte[] bytes = baos.toByteArray();
+        long runtime = Math.max(0L, System.currentTimeMillis() - startMs);
+        StreamingOutput body = new StreamingOutput() {
+            @Override
+            public void write(java.io.OutputStream output) throws java.io.IOException {
+                output.write(bytes);
+            }
+        };
+        return Response.ok(body, ARROW_STREAM_MEDIA_TYPE)
+                .header("X-Saiku-Runtime-Ms", String.valueOf(runtime))
+                .header("X-Saiku-Row-Count", String.valueOf(wr.rowCount))
+                .build();
+    }
+
+    private static String[] extractCaptions(ResultSet rs, DrillThroughResult dtr) {
+        if (dtr == null) {
+            return null; // let the writer fall back to JDBC column labels
+        }
+        int width;
+        try {
+            width = rs.getMetaData().getColumnCount();
+        } catch (SQLException ex) {
+            return dtr.getSimpleHeaders();
+        }
+        // Prefer rich cellHeaders (last row = leaf captions) when present,
+        // else the flat simpleHeaders array populated from the "returns" list.
+        AbstractBaseCell[][] cellHeaders = dtr.getCellHeaders();
+        if (cellHeaders != null && cellHeaders.length > 0) {
+            AbstractBaseCell[] last = cellHeaders[cellHeaders.length - 1];
+            if (last != null && last.length >= width) {
+                String[] out = new String[width];
+                for (int i = 0; i < width; i++) {
+                    AbstractBaseCell c = last[i];
+                    if (c instanceof MemberCell) {
+                        String cap = ((MemberCell) c).getFormattedValue();
+                        out[i] = cap != null ? cap : "";
+                    } else {
+                        out[i] = "";
+                    }
+                }
+                return out;
+            }
+        }
+        return dtr.getSimpleHeaders();
     }
 
     /**

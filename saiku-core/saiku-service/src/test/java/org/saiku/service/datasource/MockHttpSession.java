@@ -1,10 +1,9 @@
 package org.saiku.service.datasource;
 
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.http.HttpSession;
 import java.util.*;
 import java.util.Enumeration;
-import javax.servlet.ServletContext;
-import javax.servlet.http.HttpSession;
-import javax.servlet.http.HttpSessionContext;
 
 public class MockHttpSession implements HttpSession {
     private Map<String, Object> attributes;
@@ -42,18 +41,8 @@ public class MockHttpSession implements HttpSession {
     }
 
     @Override
-    public HttpSessionContext getSessionContext() {
-        return null;
-    }
-
-    @Override
     public Object getAttribute(String name) {
         return this.attributes.get(name);
-    }
-
-    @Override
-    public Object getValue(String name) {
-        return null;
     }
 
     @Override
@@ -62,23 +51,12 @@ public class MockHttpSession implements HttpSession {
     }
 
     @Override
-    public String[] getValueNames() {
-        return new String[0];
-    }
-
-    @Override
     public void setAttribute(String name, Object value) {
         this.attributes.put(name, value);
     }
 
     @Override
-    public void putValue(String name, Object value) {}
-
-    @Override
     public void removeAttribute(String name) {}
-
-    @Override
-    public void removeValue(String name) {}
 
     @Override
     public void invalidate() {}
