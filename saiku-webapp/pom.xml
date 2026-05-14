@@ -366,6 +366,12 @@
                 <exclusion><groupId>org.mortbay.jetty</groupId><artifactId>*</artifactId></exclusion>
                 <exclusion><groupId>tomcat</groupId><artifactId>jasper-compiler</artifactId></exclusion>
                 <exclusion><groupId>tomcat</groupId><artifactId>jasper-runtime</artifactId></exclusion>
+                <!-- jdk.tools:jdk.tools is a system-scope ref to JDK 8's
+                     tools.jar, removed by the JDK 9 module system. On JDK 21
+                     it can't be resolved and breaks the build on a fresh
+                     Maven cache. Saiku doesn't use any javac-API surface from
+                     tools.jar, so excluding is safe. -->
+                <exclusion><groupId>jdk.tools</groupId><artifactId>jdk.tools</artifactId></exclusion>
             </exclusions>
         </dependency>
         <dependency>
