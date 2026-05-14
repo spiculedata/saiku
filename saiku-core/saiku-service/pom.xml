@@ -33,7 +33,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>2.19.1</version>
+                <version>3.5.2</version>
                 <configuration>
                     <argLine>-Xmx512m --add-opens=java.base/java.nio=ALL-UNNAMED</argLine>
                 </configuration>
@@ -78,7 +78,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
-                <version>1.2</version>
+                <version>3.1.0</version>
                 <executions>
                     <execution>
                         <id>test</id>
@@ -87,7 +87,10 @@
                             <goal>run</goal>
                         </goals>
                         <configuration>
-                            <tasks>
+                            <!-- antrun 3.x renamed <tasks> to <target>.
+                                 Also dropped the stray ">>>>>>> tag-3.16.1"
+                                 merge marker that lived here for years. -->
+                            <target>
                                 <echo message="Prepare Test. Unzipping foodmart" />
                                 <unzip dest="target/test-classes/">
                                     <fileset dir="target/">
@@ -105,43 +108,36 @@
                                         <include name="FoodMart.xml" />
                                     </fileset>
                                 </copy>
->>>>>>> tag-3.16.1
-
-								<copy todir="target/test-classes/org/saiku/" overwrite="true">
-									<fileset dir="target/test/">
-										<include name="foodmart_hsql.script" />
-									</fileset>
-								</copy>
-
-							</tasks>
-						</configuration>
-					</execution>
-				</executions>
-			</plugin>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.13.0</version>
-				<configuration>
-					<release>${maven.compiler.source}</release>
-					<encoding>UTF-8</encoding>
-				</configuration>
-			</plugin>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-resources-plugin</artifactId>
-				<version>2.4</version>
-				<!-- set encoding to something not platform dependent -->
-				<configuration>
-					<encoding>UTF-8</encoding>
-				</configuration>
-			</plugin>
-			<!--<plugin> <groupId>net.thucydides.maven.plugins</groupId> <artifactId>maven-thucydides-plugin</artifactId> 
-				<version>0.9.229</version> <executions> <execution> <id>thucydides-reports</id> 
-				<phase>post-integration-test</phase> <goals> <goal>aggregate</goal> </goals> 
-				</execution> </executions> </plugin> -->
-		</plugins>
-	</build>
+                                <copy todir="target/test-classes/org/saiku/" overwrite="true">
+                                    <fileset dir="target/test/">
+                                        <include name="foodmart_hsql.script" />
+                                    </fileset>
+                                </copy>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>${maven.compiler.source}</release>
+                    <encoding>UTF-8</encoding>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+                <!-- set encoding to something not platform dependent -->
+                <configuration>
+                    <encoding>UTF-8</encoding>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 	<dependencies>
 		<!-- @NotNull / @Nullable annotations used in ObjectUtil + Acl2.
 		     Was previously dragged in transitively (probably via a removed
