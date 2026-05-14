@@ -42,11 +42,14 @@
         <!-- In-tree Maven file-repo for vendored deps that aren't reachable on
              any public/private remote. Currently houses miredot-annotations
              1.3.1 (Bintray-only, shut down 2021). Same pattern as
-             mondrian-saiku/lib/repo. -->
+             mondrian-saiku/lib/repo.
+             ${maven.multiModuleProjectDirectory} (NOT ${project.basedir}) so
+             child modules inherit a URL pointing at the reactor root, not at
+             their own pom dir. -->
         <repository>
             <id>project-lib</id>
             <name>In-tree vendored deps</name>
-            <url>file://${project.basedir}/lib/repo</url>
+            <url>file://${maven.multiModuleProjectDirectory}/lib/repo</url>
             <releases><enabled>true</enabled></releases>
             <snapshots><enabled>false</enabled></snapshots>
         </repository>
