@@ -113,6 +113,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The Dockerfile no longer rebuilds saiku from sources (it can't
+      # auth against the spiculedata GH Packages registries from inside
+      # the Maven container). Instead it COPYs the pre-built JAR that the
+      # jar job produced. Download that artifact into ./build-context/.
+      - name: Download saiku-jar
+        uses: actions/download-artifact@v4
+        with:
+          name: saiku-jar
+          path: build-context
+      - name: Stage JAR for Docker build context
+        env:
+          JAR_NAME: ${{ needs.jar.outputs.jar_name }}
+        run: |
+          set -euo pipefail
+          # The Dockerfile expects build-context/saiku.jar regardless of the
+          # versioned filename, so rename for a stable COPY target.
+          mv "build-context/${JAR_NAME}" build-context/saiku.jar
+          ls -la build-context/
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
