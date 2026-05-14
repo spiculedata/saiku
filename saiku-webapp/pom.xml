@@ -220,7 +220,12 @@
                 <configuration>
                     <workingDirectory>${project.basedir}/../saiku-ui</workingDirectory>
                     <installDirectory>${project.build.directory}/../../saiku-ui/.node</installDirectory>
-                    <nodeVersion>v22.11.0</nodeVersion>
+                    <!-- v22.11.0 tarball trips frontend-maven-plugin's
+                         extraction code on Linux runners with a
+                         'share/doc/node' permission error. v20.18.0 (LTS)
+                         extracts cleanly and the saiku-ui build is
+                         version-agnostic above Node 18. -->
+                    <nodeVersion>v20.18.0</nodeVersion>
                 </configuration>
                 <executions>
                     <execution>
