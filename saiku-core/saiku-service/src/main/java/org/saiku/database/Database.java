@@ -99,7 +99,9 @@ public class Database {
             ResultSet tables = dbm.getTables(null, null, "account", null);
 
             if (!tables.next()) {
-                // Table exists
+                // First-time setup: the H2 file exists but the FoodMart tables
+                // haven't been loaded yet. Run the seed SQL regardless so the
+                // database actually has data.
                 Statement statement = c.createStatement();
 
                 statement.execute("RUNSCRIPT FROM '" + dsm.getFoodmartdir() + "/foodmart_h2.sql'");
@@ -107,34 +109,54 @@ public class Database {
                 statement.execute("alter table \"time_by_day\" add column \"date_string\" varchar(30);"
                         + "update \"time_by_day\" "
                         + "set \"date_string\" = TO_CHAR(\"the_date\", 'yyyy/mm/dd');");
-                String schema = null;
-                try {
-                    schema = readFile(dsm.getFoodmartschema(), StandardCharsets.UTF_8);
-                } catch (IOException e) {
-                    log.error("Can't read schema file", e);
-                }
-                try {
-                    dsm.addSchema(schema, "/datasources/foodmart4.xml", null);
-                } catch (Exception e) {
-                    log.error("Can't add schema file to repo", e);
-                }
-                String catalogUri =
-                        new java.io.File(dsm.getFoodmartschema()).toURI().toString();
-                Properties p = new Properties();
-                p.setProperty("driver", "mondrian.olap4j.MondrianOlap4jDriver");
-                p.setProperty(
-                        "location",
-                        "jdbc:mondrian:Jdbc=jdbc:h2:" + dsm.getFoodmartdir() + "/foodmart;" + "Catalog=" + catalogUri
-                                + ";JdbcDrivers=org.h2.Driver");
-                p.setProperty("username", "sa");
-                p.setProperty("password", "");
-                p.setProperty("id", "4432dd20-fcae-11e3-a3ac-0800200c9a66");
-                SaikuDatasource ds = new SaikuDatasource("foodmart", SaikuDatasource.Type.OLAP, p);
 
+                // If saiku-launcher's stageDefaultDatasource already seeded a
+                // 'foodmart' datasource into the repository, skip the schema +
+                // datasource registration below to avoid a duplicate entry in
+                // the discover output. The SQL bootstrap above still runs so
+                // the H2 file is populated; the staged datasource resolves
+                // against the now-loaded tables.
+                SaikuDatasource existing = null;
                 try {
-                    dsm.addDatasource(ds);
-                } catch (Exception e) {
-                    log.error("Can't add data source to repo", e);
+                    existing = dsm.getDatasource("foodmart");
+                } catch (Exception ignored) {
+                    // getDatasource may throw if the named datasource doesn't
+                    // exist — treat as "not present" and fall through to the
+                    // legacy registration path below.
+                }
+                if (existing == null) {
+                    String schema = null;
+                    try {
+                        schema = readFile(dsm.getFoodmartschema(), StandardCharsets.UTF_8);
+                    } catch (IOException e) {
+                        log.error("Can't read schema file", e);
+                    }
+                    try {
+                        dsm.addSchema(schema, "/datasources/foodmart4.xml", null);
+                    } catch (Exception e) {
+                        log.error("Can't add schema file to repo", e);
+                    }
+                    String catalogUri =
+                            new java.io.File(dsm.getFoodmartschema()).toURI().toString();
+                    Properties p = new Properties();
+                    p.setProperty("driver", "mondrian.olap4j.MondrianOlap4jDriver");
+                    p.setProperty(
+                            "location",
+                            "jdbc:mondrian:Jdbc=jdbc:h2:" + dsm.getFoodmartdir() + "/foodmart;" + "Catalog=" + catalogUri
+                                    + ";JdbcDrivers=org.h2.Driver");
+                    p.setProperty("username", "sa");
+                    p.setProperty("password", "");
+                    p.setProperty("id", "4432dd20-fcae-11e3-a3ac-0800200c9a66");
+                    SaikuDatasource ds = new SaikuDatasource("foodmart", SaikuDatasource.Type.OLAP, p);
+
+                    try {
+                        dsm.addDatasource(ds);
+                    } catch (Exception e) {
+                        log.error("Can't add data source to repo", e);
+                    }
+                } else {
+                    log.info("Foodmart datasource already present in repository "
+                            + "(seeded by saiku-launcher); skipping built-in registration.");
                 }
 
             } else {
