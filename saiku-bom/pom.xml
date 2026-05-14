@@ -231,17 +231,41 @@
 <!-- hamcrest 2.x unified all the split artifacts (hamcrest-core,
                  hamcrest-library, hamcrest-all) under org.hamcrest:hamcrest.
                  JUnit 4.13.x's Assume.assumeNotNull / assumeTrue calls
-                 CoreMatchers.everyItem(...) which only exists in hamcrest 2+,
-                 so 1.3 here triggers NoSuchMethodError at test time. -->
+                 CoreMatchers.everyItem(...) which only exists in hamcrest 2+.
+                 hamcrest-core / hamcrest-library 2.2 are published as
+                 backward-compat shims that delegate to hamcrest:2.2 — pin
+                 them here so transitives from serenity-bdd / jbehave-core
+                 (compile-scope) can't drag the 1.x classes onto the
+                 classpath ahead of the test-scope hamcrest:2.2. -->
             <dependency>
                 <groupId>org.hamcrest</groupId>
                 <artifactId>hamcrest</artifactId>
                 <version>2.2</version>
             </dependency>
             <dependency>
+                <groupId>org.hamcrest</groupId>
+                <artifactId>hamcrest-core</artifactId>
+                <version>2.2</version>
+            </dependency>
+            <dependency>
+                <groupId>org.hamcrest</groupId>
+                <artifactId>hamcrest-library</artifactId>
+                <version>2.2</version>
+            </dependency>
+            <dependency>
                 <groupId>net.serenity-bdd</groupId>
                 <artifactId>serenity-jbehave</artifactId>
                 <version>1.0.23</version>
+                <exclusions>
+                    <!-- lambdaj 2.3.3 → hamcrest-all 1.1 (different artifactId
+                         to the unified hamcrest 2.2, so dependencyMgmt can't
+                         override it). Exclude entirely; jbehave/serenity don't
+                         actually need hamcrest-all on saiku's classpath. -->
+                    <exclusion>
+                        <groupId>org.hamcrest</groupId>
+                        <artifactId>hamcrest-all</artifactId>
+                    </exclusion>
+                </exclusions>
             </dependency>
             <dependency>
                 <groupId>net.serenity-bdd</groupId>
