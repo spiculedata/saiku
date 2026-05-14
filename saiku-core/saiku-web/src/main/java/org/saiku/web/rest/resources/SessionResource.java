@@ -23,7 +23,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.Response.Status;
 import java.util.Map;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.saiku.service.ISessionService;
 import org.saiku.service.user.UserService;
 import org.saiku.web.security.audit.AuditLogger;

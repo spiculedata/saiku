@@ -14,7 +14,7 @@ import javax.naming.Context;
 import javax.naming.Name;
 import javax.naming.RefAddr;
 import javax.naming.Reference;
-import org.apache.commons.dbcp.BasicDataSourceFactory;
+import org.apache.commons.dbcp2.BasicDataSourceFactory;
 
 class SecureDataSourceFactory extends BasicDataSourceFactory {
 
@@ -88,8 +88,8 @@ class SecureDataSourceFactory extends BasicDataSourceFactory {
      * @param environment The possibly null environment that is used in creating this object
      * @exception Exception if an exception occurs creating the instance
      */
-    @SuppressWarnings("unchecked")
-    public Object getObjectInstance(Object obj, Name name, Context nameCtx, Hashtable environment) throws Exception {
+    @Override
+    public Object getObjectInstance(Object obj, Name name, Context nameCtx, Hashtable<?, ?> environment) {
 
         // We only know how to deal with <code>javax.naming.Reference</code>s
         // that specify a class name of "javax.sql.DataSource"
@@ -112,7 +112,14 @@ class SecureDataSourceFactory extends BasicDataSourceFactory {
 
         decryptPassword(properties);
 
-        return createDataSource(properties);
+        // dbcp2's BasicDataSourceFactory.createDataSource(Properties) is now
+        // static and throws Exception, but the parent getObjectInstance
+        // does not declare any checked exceptions — wrap and rethrow.
+        try {
+            return BasicDataSourceFactory.createDataSource(properties);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create encrypted-password BasicDataSource", e);
+        }
     }
 
     private void decryptPassword(Properties properties) {

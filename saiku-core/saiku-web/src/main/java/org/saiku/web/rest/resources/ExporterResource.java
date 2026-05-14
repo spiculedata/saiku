@@ -29,7 +29,7 @@ import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.web.rest.util.ServletUtil;
 import org.saiku.web.svg.Converter;

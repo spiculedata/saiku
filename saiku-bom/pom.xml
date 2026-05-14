@@ -131,11 +131,9 @@
                 <artifactId>olap4j</artifactId>
                 <version>1.2.0-spicule-1</version>
             </dependency>
-            <dependency>
-                <groupId>org.mongodb</groupId>
-                <artifactId>mongo-java-driver</artifactId>
-                <version>2.12.3</version>
-            </dependency>
+            <!-- mongo-java-driver 2.12.3 (2014) had 0 java imports across the
+                 saiku codebase — removed entirely. If MongoDB support is
+                 reintroduced later, use the modern com.mongodb:mongodb-driver-sync. -->
             <dependency>
                 <groupId>com.fasterxml.jackson.core</groupId>
                 <artifactId>jackson-databind</artifactId>
@@ -176,10 +174,13 @@
                 <artifactId>olap4j-xmlaserver</artifactId>
                 <version>1.3.0-spicule-jakarta</version>
             </dependency>
+            <!-- jdom 1.x is EOL with CVE-2021-33813 (XXE). jdom2 is the
+                 maintained successor — same class names, just under the
+                 org.jdom2.* package. -->
             <dependency>
                 <groupId>org.jdom</groupId>
-                <artifactId>jdom</artifactId>
-                <version>1.1</version>
+                <artifactId>jdom2</artifactId>
+                <version>2.0.6.1</version>
             </dependency>
             <dependency>
                 <groupId>xml-apis</groupId>
@@ -232,16 +233,41 @@
                  hamcrest-library, hamcrest-all) under org.hamcrest:hamcrest.
                  JUnit 4.13.x's Assume.assumeNotNull / assumeTrue calls
                  CoreMatchers.everyItem(...) which only exists in hamcrest 2+,
-                 so 1.3 here triggers NoSuchMethodError at test time. -->
+                 so 1.3 here triggers NoSuchMethodError at test time.
+                 hamcrest-core / hamcrest-library 2.2 are published as
+                 backward-compat shims that delegate to hamcrest:2.2 — pin
+                 them here so transitives from serenity-bdd / jbehave-core
+                 (compile-scope) can't drag the 1.x classes onto the
+                 classpath ahead of the test-scope hamcrest:2.2. -->
             <dependency>
                 <groupId>org.hamcrest</groupId>
                 <artifactId>hamcrest</artifactId>
                 <version>2.2</version>
             </dependency>
             <dependency>
+                <groupId>org.hamcrest</groupId>
+                <artifactId>hamcrest-core</artifactId>
+                <version>2.2</version>
+            </dependency>
+            <dependency>
+                <groupId>org.hamcrest</groupId>
+                <artifactId>hamcrest-library</artifactId>
+                <version>2.2</version>
+            </dependency>
+            <dependency>
                 <groupId>net.serenity-bdd</groupId>
                 <artifactId>serenity-jbehave</artifactId>
                 <version>1.0.23</version>
+                <exclusions>
+                    <!-- lambdaj 2.3.3 → hamcrest-all 1.1 (different artifactId
+                         to the unified hamcrest 2.2, so dependencyMgmt can't
+                         override it). Exclude entirely; jbehave/serenity don't
+                         actually need hamcrest-all on saiku's classpath. -->
+                    <exclusion>
+                        <groupId>org.hamcrest</groupId>
+                        <artifactId>hamcrest-all</artifactId>
+                    </exclusion>
+                </exclusions>
             </dependency>
             <dependency>
                 <groupId>net.serenity-bdd</groupId>
@@ -465,11 +491,8 @@
                 <artifactId>grizzly-servlet-webserver</artifactId>
                 <version>1.9.18-i</version>
             </dependency>
-            <dependency>
-                <groupId>org.mockito</groupId>
-                <artifactId>mockito-all</artifactId>
-                <version>1.8.5</version>
-            </dependency>
+            <!-- mockito-all 1.8.5 (2010) had 0 test imports — removed.
+                 If new tests want mockito, depend on org.mockito:mockito-core:5.x. -->
             <dependency>
                 <groupId>junit</groupId>
                 <artifactId>junit</artifactId>
@@ -495,21 +518,19 @@
                 <artifactId>mysql-connector-java</artifactId>
                 <version>5.1.17</version>
             </dependency>
+            <!-- commons-dbcp 1.x is EOL with multiple CVEs and depends on
+                 commons-pool 1.x. dbcp2 is the maintained successor and
+                 transitively pulls commons-pool2. API is identical for the
+                 BasicDataSourceFactory surface saiku uses, just relocated to
+                 org.apache.commons.dbcp2.*. -->
             <dependency>
-                <groupId>commons-dbcp</groupId>
-                <artifactId>commons-dbcp</artifactId>
-                <version>1.4</version>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-dbcp2</artifactId>
+                <version>2.13.0</version>
             </dependency>
-            <dependency>
-                <groupId>commons-pool</groupId>
-                <artifactId>commons-pool</artifactId>
-                <version>1.4</version>
-            </dependency>
-<dependency>
-                <groupId>commons-math</groupId>
-                <artifactId>commons-math</artifactId>
-                <version>1.2</version>
-            </dependency>
+            <!-- commons-pool 1.4 + commons-math 1.2 had 0 imports — removed.
+                 commons-pool 1.x is anyway transitive-only via commons-dbcp 1.x;
+                 the commons-dbcp2 bump pulls commons-pool2 instead. -->
             <dependency>
                 <groupId>commons-collections</groupId>
                 <artifactId>commons-collections</artifactId>
@@ -692,21 +713,24 @@
                 <artifactId>jstl</artifactId>
                 <version>1.2</version>
             </dependency>
+            <!-- commons-lang 2.x is EOL with CVE-2025-48924 (recursion DoS).
+                 commons-lang3 is the maintained successor, package-renamed
+                 to org.apache.commons.lang3.*. Saiku uses StringUtils (28x),
+                 ExceptionUtils (5x), LocaleUtils (1x), ToStringBuilder (1x)
+                 — all API-stable across 2 → 3. -->
             <dependency>
-                <groupId>commons-lang</groupId>
-                <artifactId>commons-lang</artifactId>
-                <version>2.4</version>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>3.18.0</version>
             </dependency>
             <dependency>
                 <groupId>commons-io</groupId>
                 <artifactId>commons-io</artifactId>
                 <version>2.17.0</version>
             </dependency>
-            <dependency>
-                <groupId>commons-httpclient</groupId>
-                <artifactId>commons-httpclient</artifactId>
-                <version>20020423</version>
-            </dependency>
+            <!-- commons-httpclient 20020423 (2002!) had 0 imports — removed.
+                 Modern replacement org.apache.httpcomponents:httpclient is
+                 already managed elsewhere in this BOM. -->
             <dependency>
                 <groupId>com.fasterxml.jackson.core</groupId>
                 <artifactId>jackson-core</artifactId>

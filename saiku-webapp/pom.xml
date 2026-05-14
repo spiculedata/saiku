@@ -344,10 +344,6 @@
             <artifactId>mysql-connector-java</artifactId>
         </dependency>
         <dependency>
-            <groupId>commons-math</groupId>
-            <artifactId>commons-math</artifactId>
-        </dependency>
-        <dependency>
             <groupId>net.sourceforge.jtds</groupId>
             <artifactId>jtds</artifactId>
         </dependency>
