@@ -123,6 +123,11 @@
                                     <mainClass>org.saiku.launcher.SaikuLauncher</mainClass>
                                     <manifestEntries>
                                         <Multi-Release>true</Multi-Release>
+                                        <!-- Apache Arrow (used by ArrowCellsetWriter) needs reflective
+                                             access to java.nio.DirectByteBuffer's "address" field on
+                                             Java 17+. Without this, MemoryUtil.<clinit> fails and the
+                                             very first MDX query returns 500. -->
+                                        <Add-Opens>java.base/java.nio</Add-Opens>
                                     </manifestEntries>
                                 </transformer>
                             </transformers>

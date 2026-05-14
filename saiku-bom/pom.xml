@@ -322,7 +322,7 @@
             <dependency>
                 <groupId>pentaho</groupId>
                 <artifactId>mondrian</artifactId>
-                <version>4.8.1.0</version>
+                <version>4.8.1.2</version>
             </dependency>
             <!-- Spring modules -->
             <dependency>
@@ -712,15 +712,16 @@
                 <version>33.4.8-jre</version>
             </dependency>
 
-            <!-- Pin protobuf to the version Avatica 1.27 (pulled by Calcite 1.41) needs.
-                 A transitive chain (saiku-olap-util -> serenity-bdd -> operadriver) drags in
-                 protobuf-java 2.4.1, which wins Maven's "nearest" mediation and hides
-                 GeneratedMessageV3, causing NoClassDefFoundError at runtime under the
-                 Calcite backend. This pin keeps protobuf >= 3.x on the classpath. -->
+            <!-- Pin protobuf to a 4.x version. Avatica 1.27 (Calcite 1.41) declares
+                 protobuf-java 3.25.8 in its pom but its generated proto classes call
+                 Descriptors$FileDescriptor.internalBuildGeneratedFileFrom(String[],
+                 FileDescriptor[]), an overload that only exists in protobuf 4.x.
+                 Pinning here also wins over the transitive 2.4.1 that operadriver
+                 (via serenity-bdd) would otherwise pull in. -->
             <dependency>
                 <groupId>com.google.protobuf</groupId>
                 <artifactId>protobuf-java</artifactId>
-                <version>3.25.8</version>
+                <version>4.28.3</version>
             </dependency>
 
             <!-- Pin eigenbase to the versions published from spiculedata/mondrian-saiku's

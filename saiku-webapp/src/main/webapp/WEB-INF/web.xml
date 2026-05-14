@@ -60,7 +60,12 @@
      <param-value>/WEB-INF/applicationContext.xml</param-value>
     </context-param>
 	<session-config>
-		<session-timeout>60</session-timeout>
+		<!-- Session inactivity timeout in minutes. Bumped from 60 to 10080
+		     (7 days) for local-dev UX: avoids the SPA's "Session ended" modal
+		     popping up on a refresh after an idle browser tab. SaikuLauncher
+		     wires a FileSessionDataStore (saiku-home/sessions/) so sessions
+		     also survive across server restarts. -->
+		<session-timeout>10080</session-timeout>
 	</session-config>
 
     <filter>

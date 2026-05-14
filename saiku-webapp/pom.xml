@@ -270,6 +270,11 @@
                 <exclusion><groupId>net.hydromatic</groupId><artifactId>quidem</artifactId></exclusion>
                 <exclusion><groupId>net.hydromatic</groupId><artifactId>linq4j</artifactId></exclusion>
                 <exclusion><groupId>org.pentaho</groupId><artifactId>pentaho-aggdesigner-algorithm</artifactId></exclusion>
+                <!-- hive-exec-0.13.1 ships a shaded protobuf 2.x that breaks
+                     Calcite Avatica's protobuf 4.x at class-load time
+                     (IncompatibleClassChangeError on GeneratedMessageV3
+                     vs GeneratedMessage). -->
+                <exclusion><groupId>org.apache.hive</groupId><artifactId>hive-exec</artifactId></exclusion>
             </exclusions>
         </dependency>
         <dependency>
@@ -279,6 +284,7 @@
                 <exclusion><groupId>net.hydromatic</groupId><artifactId>quidem</artifactId></exclusion>
                 <exclusion><groupId>net.hydromatic</groupId><artifactId>linq4j</artifactId></exclusion>
                 <exclusion><groupId>org.pentaho</groupId><artifactId>pentaho-aggdesigner-algorithm</artifactId></exclusion>
+                <exclusion><groupId>org.apache.hive</groupId><artifactId>hive-exec</artifactId></exclusion>
             </exclusions>
         </dependency>
         <dependency>
@@ -345,6 +351,7 @@
                 <exclusion><groupId>net.hydromatic</groupId><artifactId>quidem</artifactId></exclusion>
                 <exclusion><groupId>net.hydromatic</groupId><artifactId>linq4j</artifactId></exclusion>
                 <exclusion><groupId>org.pentaho</groupId><artifactId>pentaho-aggdesigner-algorithm</artifactId></exclusion>
+                <exclusion><groupId>org.apache.hive</groupId><artifactId>hive-exec</artifactId></exclusion>
             </exclusions>
         </dependency>
         <dependency>

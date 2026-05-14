@@ -451,3 +451,10 @@ nbdist/
 .nb-gradle/
 
 # End of https://www.gitignore.io/api/vim,git,node,java,linux,macos,maven,windows,webstorm,jetbrains,sublimetext,jetbrains+all,visualstudiocode,eclipse,netbeans
+
+# saiku-dist: tracked top-level packaging templates (README, run.sh, run.bat)
+# consumed by the `dist` job in ci.yml. The earlier `dist/` rule from
+# NetBeans defaults was matching this directory and blocking the workflow
+# from finding the bundle assets.
+!/dist/
+!/dist/**

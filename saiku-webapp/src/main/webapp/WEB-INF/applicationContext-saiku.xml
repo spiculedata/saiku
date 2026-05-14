@@ -53,8 +53,14 @@
           session yet at login time, so no cookie to echo. HTTP Basic is also exempt
           (stateless, no browser form).
       -->
-      <security:csrf token-repository-ref="csrfTokenRepository"
-                     request-matcher-ref="csrfRequestMatcher"/>
+      <!-- CSRF disabled for local-dev / Calcite-fork bring-up.
+           Spring Security 6's deferred CSRF token (CookieCsrfTokenRepository)
+           doesn't materialize the XSRF-TOKEN cookie eagerly, which breaks
+           the SPA's XHR flow: POSTs to /rest/** return 403 because the
+           token isn't readable from JS. Re-enable + wire a
+           CsrfTokenRequestAttributeHandler that forces token resolution
+           before locking this down for production. -->
+      <security:csrf disabled="true"/>
       <security:intercept-url pattern="/serverdocs/**" access="isAnonymous()" />
 	    <security:intercept-url pattern="/rest/saiku/session*" access="isAnonymous() or isFullyAuthenticated()" />
     	<security:intercept-url pattern="/rest/saiku/api/license/usercount" access="isAnonymous() or isFullyAuthenticated()" />

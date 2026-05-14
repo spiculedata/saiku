@@ -1,5 +1,6 @@
 package org.saiku.launcher;
 
+import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,6 +13,8 @@ import org.eclipse.jetty.ee10.webapp.WebAppContext;
 import org.eclipse.jetty.http.HttpCookie;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
+import org.eclipse.jetty.session.DefaultSessionCache;
+import org.eclipse.jetty.session.FileSessionDataStore;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -78,6 +81,7 @@ public class SaikuLauncher implements Callable<Integer> {
 
             stageSeedAssets(dataDir);
             stageBrandingSample(brandingDir);
+            stageDefaultDatasource(saikuHome);
 
             Path warPath = extractWar();
 
@@ -108,6 +112,21 @@ public class SaikuLauncher implements Callable<Integer> {
             // Set-Cookie it builds (some paths read the attribute map, others
             // read the handler property; belt-and-braces).
             sessionHandler.setSameSite(HttpCookie.SameSite.LAX);
+
+            // Persist sessions to disk so JSESSIONID + Spring SecurityContext
+            // survive saiku restarts. Without this, the in-memory session map
+            // is wiped on every server restart and the SPA's first /rest/**
+            // XHR returns 401, which the saiku-ui surfaces as the
+            // "Session ended" modal. Max-inactive bumped to 7 days so an
+            // idle browser tab doesn't get prompted to re-login every hour.
+            File sessionsDir = saikuHome.resolve("sessions").toFile();
+            sessionsDir.mkdirs();
+            FileSessionDataStore sessionStore = new FileSessionDataStore();
+            sessionStore.setStoreDir(sessionsDir);
+            DefaultSessionCache sessionCache = new DefaultSessionCache(sessionHandler);
+            sessionCache.setSessionDataStore(sessionStore);
+            sessionHandler.setSessionCache(sessionCache);
+            sessionHandler.setMaxInactiveInterval(7 * 24 * 60 * 60);
 
             server.setHandler(webapp);
 
@@ -155,6 +174,32 @@ public class SaikuLauncher implements Callable<Integer> {
                         }
                     }
                 }
+            }
+        }
+
+        /**
+         * Stages the default {@code foodmart} H2 datasource definition under
+         * {@code saiku-home/repository/data/unknown/datasources/foodmart.sds},
+         * substituting {@code @SAIKU_HOME@} with the absolute saiku-home so
+         * the JDBC URL is portable across machines. Skipped if the file already
+         * exists — preserves user customisations on re-launch.
+         */
+        private void stageDefaultDatasource(Path saikuHome) throws Exception {
+            Path dsDir = saikuHome.resolve("repository").resolve("data")
+                .resolve("unknown").resolve("datasources");
+            Files.createDirectories(dsDir);
+            Path target = dsDir.resolve("foodmart.sds");
+            if (Files.exists(target)) {
+                return;
+            }
+            try (InputStream in = SaikuLauncher.class.getResourceAsStream("/seed/foodmart.sds.template")) {
+                if (in == null) {
+                    return;
+                }
+                String body = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                String resolved = body.replace("@SAIKU_HOME@", saikuHome.toString());
+                Files.writeString(target, resolved, java.nio.charset.StandardCharsets.UTF_8);
+                System.out.println("Seeded: " + target);
             }
         }
 

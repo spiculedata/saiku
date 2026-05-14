@@ -49,3 +49,64 @@ jobs:
         run: mvn -B -ntp -DskipITs=false verify
       - name: spotless:check
         run: mvn -B -ntp spotless:check
+
+  dist:
+    name: bundle (saiku-dist zip)
+    runs-on: ubuntu-latest
+    # Independent of build — give people a downloadable bundle even if a slow
+    # integration test in `build` is still running. CI passing the bundle ⇔
+    # the launcher fat-JAR is reproducible from this commit.
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Configure Maven settings.xml
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<EOF
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+            <servers>
+              <server><id>github-mondrian-saiku</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j-xmlaserver</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-saiku-query</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+            </servers>
+          </settings>
+          EOF
+      - name: Resolve project version
+        id: ver
+        run: |
+          VERSION=$(mvn -B -ntp -q -DforceStdout help:evaluate -Dexpression=project.version)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Saiku version: $VERSION"
+      - name: Build launcher fat JAR
+        run: mvn -B -ntp -pl saiku-launcher -am -Dmaven.test.skip=true package
+      - name: Stage bundle
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          STAGE="saiku-dist-${VERSION}"
+          mkdir -p "$STAGE"
+          cp "saiku-launcher/target/saiku-${VERSION}.jar" "$STAGE/"
+          cp dist/README.md "$STAGE/"
+          cp dist/run.sh "$STAGE/"
+          cp dist/run.bat "$STAGE/"
+          chmod +x "$STAGE/run.sh"
+          # zip preserves the +x bit so end users on Unix can ./run.sh straight from extract.
+          zip -r "$STAGE.zip" "$STAGE"
+          ls -la "$STAGE.zip"
+      - name: Upload distribution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: saiku-dist-${{ steps.ver.outputs.version }}
+          path: saiku-dist-${{ steps.ver.outputs.version }}.zip
+          if-no-files-found: error
+          retention-days: 30
