@@ -144,6 +144,14 @@
 		</plugins>
 	</build>
 	<dependencies>
+		<!-- @NotNull / @Nullable annotations used in ObjectUtil + Acl2.
+		     Was previously dragged in transitively (probably via a removed
+		     pentaho-platform-* or serenity transitive); now explicit. -->
+		<dependency>
+			<groupId>org.jetbrains</groupId>
+			<artifactId>annotations</artifactId>
+			<version>24.1.0</version>
+		</dependency>
 		<dependency>
 			<groupId>jakarta.xml.bind</groupId>
 			<artifactId>jakarta.xml.bind-api</artifactId>
