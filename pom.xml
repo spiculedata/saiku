@@ -5,7 +5,7 @@
     <groupId>org.saikuanalytics</groupId>
     <artifactId>saiku</artifactId>
     <packaging>pom</packaging>
-    <version>3.17</version>
+    <version>4.0.0</version>
     <name>Saiku Module Project</name>
     <scm>
         <developerConnection>
