@@ -18,11 +18,12 @@ env:
 
 jobs:
   jar:
-    name: Build fat JAR
+    name: Build fat JAR + dist zip
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.meta.outputs.version }}
       jar_name: ${{ steps.meta.outputs.jar_name }}
+      dist_name: ${{ steps.meta.outputs.dist_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -64,20 +65,45 @@ jobs:
           VERSION="${REF_TAG#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "jar_name=saiku-${VERSION}.jar" >> "$GITHUB_OUTPUT"
+          echo "dist_name=saiku-dist-${VERSION}.zip" >> "$GITHUB_OUTPUT"
 
       - name: mvn package (launcher)
         run: mvn -B -ntp -DskipTests -pl saiku-launcher -am package
 
-      - name: Rename fat JAR
+      - name: Stage release assets
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          mkdir -p dist
-          cp saiku-launcher/target/saiku-*.jar "dist/${{ steps.meta.outputs.jar_name }}"
+          set -euo pipefail
+          mkdir -p release-assets
+          # 1) Bare fat JAR (versioned filename) — keeps the existing
+          #    "give me just the JAR" path for users who don't want the bundle.
+          cp "saiku-launcher/target/saiku-${VERSION}.jar" \
+             "release-assets/saiku-${VERSION}.jar"
+          # 2) Runnable dist bundle: JAR + README + run.sh + run.bat, zipped.
+          STAGE="saiku-dist-${VERSION}"
+          mkdir -p "$STAGE"
+          cp "saiku-launcher/target/saiku-${VERSION}.jar" "$STAGE/"
+          cp dist/README.md "$STAGE/"
+          cp dist/run.sh "$STAGE/"
+          cp dist/run.bat "$STAGE/"
+          chmod +x "$STAGE/run.sh"
+          # zip preserves +x so end users on Unix can ./run.sh post-extract.
+          zip -r "release-assets/${STAGE}.zip" "$STAGE"
+          ls -la release-assets/
 
       - name: Upload JAR artifact
         uses: actions/upload-artifact@v4
         with:
           name: saiku-jar
-          path: dist/${{ steps.meta.outputs.jar_name }}
+          path: release-assets/${{ steps.meta.outputs.jar_name }}
+          retention-days: 7
+
+      - name: Upload dist zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: saiku-dist
+          path: release-assets/${{ steps.meta.outputs.dist_name }}
           retention-days: 7
 
   docker:
@@ -125,15 +151,45 @@ jobs:
     runs-on: ubuntu-latest
     needs: [jar, docker]
     steps:
-      - uses: actions/download-artifact@v4
+      # Pull both artifacts the jar job uploaded — the bare versioned JAR
+      # and the runnable saiku-dist zip. Both get attached to the release.
+      - name: Download saiku-jar
+        uses: actions/download-artifact@v4
         with:
           name: saiku-jar
-          path: dist
+          path: release-assets
+      - name: Download saiku-dist
+        uses: actions/download-artifact@v4
+        with:
+          name: saiku-dist
+          path: release-assets
+      - name: Confirm release assets staged
+        run: ls -la release-assets/
 
-      - name: Create release
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/${{ needs.jar.outputs.jar_name }}
+          # Both files in a multi-line list. softprops/action-gh-release@v2
+          # de-dupes by filename so we can list them explicitly.
+          files: |
+            release-assets/${{ needs.jar.outputs.jar_name }}
+            release-assets/${{ needs.jar.outputs.dist_name }}
+          name: Saiku ${{ needs.jar.outputs.version }}
+          body: |
+            ## Saiku ${{ needs.jar.outputs.version }}
+
+            Two downloads attached:
+
+            - `${{ needs.jar.outputs.dist_name }}` — **recommended.** Runnable bundle:
+              JAR + README + `run.sh`/`run.bat`. Unzip and `./run.sh`.
+            - `${{ needs.jar.outputs.jar_name }}` — bare fat JAR for users who want to
+              wire the launcher into their own startup script. `java -jar saiku-*.jar serve`.
+
+            Docker image (multi-arch): `ghcr.io/${{ github.repository }}:${{ needs.jar.outputs.version }}`
+
+            ### Auto-generated changelog
+          # generate_release_notes appends GitHub's auto-generated "What's
+          # Changed" + "Full Changelog" sections after the `body:` text.
           generate_release_notes: true
           draft: false
           prerelease: false
