@@ -186,10 +186,13 @@
                 <artifactId>olap4j-xmlaserver</artifactId>
                 <version>1.3.0-spicule-jakarta</version>
             </dependency>
+            <!-- jdom 1.x is EOL with CVE-2021-33813 (XXE). jdom2 is the
+                 maintained successor — same class names, just under the
+                 org.jdom2.* package. -->
             <dependency>
                 <groupId>org.jdom</groupId>
-                <artifactId>jdom</artifactId>
-                <version>1.1</version>
+                <artifactId>jdom2</artifactId>
+                <version>2.0.6.1</version>
             </dependency>
             <!-- xml-apis 1.3.04 (2008): built into JDK 21. Removed. -->
 
@@ -467,10 +470,14 @@
                 <artifactId>mysql-connector-java</artifactId>
                 <version>5.1.17</version>
             </dependency>
+            <!-- commons-dbcp 1.x is EOL with multiple CVEs. dbcp2 is the
+                 maintained successor; transitively pulls commons-pool2.
+                 API is identical for BasicDataSourceFactory, just relocated
+                 to org.apache.commons.dbcp2.*. -->
             <dependency>
-                <groupId>commons-dbcp</groupId>
-                <artifactId>commons-dbcp</artifactId>
-                <version>1.4</version>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-dbcp2</artifactId>
+                <version>2.13.0</version>
             </dependency>
             <dependency>
                 <groupId>commons-pool</groupId>
@@ -522,10 +529,15 @@
                  EE 10 (jakarta.servlet) so this javax artifact would have caused
                  a duplicate-namespace conflict anyway. Removed. -->
 
+            <!-- commons-lang 2.x is EOL with CVE-2025-48924 (recursion DoS).
+                 commons-lang3 is the maintained successor, package-renamed
+                 to org.apache.commons.lang3.*. Saiku uses StringUtils,
+                 ExceptionUtils, LocaleUtils, ToStringBuilder — all API-stable
+                 across 2 → 3. -->
             <dependency>
-                <groupId>commons-lang</groupId>
-                <artifactId>commons-lang</artifactId>
-                <version>2.4</version>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>3.18.0</version>
             </dependency>
             <dependency>
                 <groupId>commons-io</groupId>

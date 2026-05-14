@@ -24,7 +24,7 @@ import mondrian.olap.Annotation;
 import mondrian.olap4j.Checker;
 import mondrian.olap4j.LevelInterface;
 import mondrian.olap4j.SaikuMondrianHelper;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.olap4j.Axis;
