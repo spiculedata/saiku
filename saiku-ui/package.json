@@ -20,13 +20,17 @@
     "svelte": "^5.2.7",
     "svelte-check": "^4.1.0",
     "typescript": "^5.7.2",
-    "vite": "^6.0.5",
-    "vitest": "^2.1.9"
+    "vite": "^6.4.2",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "apache-arrow": "^15.0.2",
     "echarts": "^6.0.0",
     "lucide-svelte": "^1.0.1",
     "monaco-editor": "^0.55.1"
+  },
+  "overrides": {
+    "dompurify": "^3.4.0",
+    "cookie": "^0.7.2"
   }
 }
