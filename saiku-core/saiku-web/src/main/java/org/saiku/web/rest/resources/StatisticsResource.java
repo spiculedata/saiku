@@ -17,12 +17,39 @@ import mondrian.server.monitor.StatementInfo;
 @Path("/saiku/statistics")
 public class StatisticsResource {
 
+    //	StringWriter sqlWriter = new StringWriter();
+    //	StringWriter mdxWriter = new StringWriter();
+    //	StringWriter profileWriter = new StringWriter();
+    //	StringWriter saikuWriter = new StringWriter();
+    //
+    //	public StatisticsResource() {
+    //		setupLog("mondrian.sql", "DEBUG", sqlWriter);
+    //		setupLog("mondrian.mdx", "DEBUG", mdxWriter);
+    //		setupLog("mondrian.profile", "DEBUG", profileWriter);
+    //		setupLog("org.saiku.service", "INFO", saikuWriter);
+    //		System.out.println("##########################SETUP LOG");
+    //
+    //
+    //	}
+
+    //	private void setupLog(String category, String level, StringWriter writer) {
+    //		Logger pkgLogger = Logger.getRootLogger().getLoggerRepository().getLogger(category);
+    //		pkgLogger.setLevel(Level.toLevel(level));
+    //		WriterAppender appender = new WriterAppender(new PatternLayout("%d{ISO8601} %p - %m%n"), writer);
+    //		appender.setName("CONSOLE_APPENDER");
+    //		appender.setThreshold(Level.ERROR);
+    //		pkgLogger.addAppender(appender);
+    //		Logger.getRootLogger().addAppender(appender);
+    //	}
+
     /**
      * Get Mondrian Stats
      * @summary Get Mondrian stats
      * @return A selection of Mondrian stats.
      */
-    @GetMapping(path = "/mondrian", produces = MediaType.APPLICATION_JSON_VALUE)
+    @GET
+    @Produces({"application/json"})
+    @Path("/mondrian")
     public MondrianStats getMondrianStats() {
 
         MondrianServer mondrianServer = MondrianServer.forId(null);
@@ -61,10 +88,14 @@ public class StatisticsResource {
      * @summary Get Mondrian Info
      * @return Server Info
      */
-    @GetMapping(path = "/mondrian/server", produces = MediaType.APPLICATION_JSON_VALUE)
+    @GET
+    @Produces({"application/json"})
+    @Path("/mondrian/server")
     public ServerInfo getMondrianServer() {
         MondrianServer mondrianServer = MondrianServer.forId(null);
         if (mondrianServer != null) {
+            MondrianVersion mv = mondrianServer.getVersion();
+
             final Monitor monitor = mondrianServer.getMonitor();
             return monitor.getServer();
         }
@@ -76,12 +107,43 @@ public class StatisticsResource {
      * @summary Get Mondrian Info
      * @return Server Info
      */
-    @GetMapping(path = "/mondrian/server/version", produces = MediaType.APPLICATION_JSON_VALUE)
+    @GET
+    @Produces({"application/json"})
+    @Path("/mondrian/server/version")
     public MondrianVersion getMondrianServerVersion() {
         MondrianServer mondrianServer = MondrianServer.forId(null);
         if (mondrianServer != null) {
+
             return mondrianServer.getVersion();
         }
         return null;
     }
+    //	@GET
+    //	@Produces({"text/plain" })
+    //	@Path("/log/sql")
+    //	public String getSqlLog() {
+    //		return sqlWriter.toString();
+    //	}
+    //
+    //	@GET
+    //	@Produces({"text/plain" })
+    //	@Path("/log/mdx")
+    //	public String getMdxLog() {
+    //		return mdxWriter.toString();
+    //	}
+    //
+    //	@GET
+    //	@Produces({"text/plain" })
+    //	@Path("/log/profile")
+    //	public String getProfileLog() {
+    //		return profileWriter.toString();
+    //	}
+    //
+    //	@GET
+    //	@Produces({"text/plain" })
+    //	@Path("/log/saiku")
+    //	public String getSaikuLog() {
+    //		return saikuWriter.toString();
+    //	}
+
 }

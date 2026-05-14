@@ -85,12 +85,18 @@ public class AdminResource {
     public void setRepositoryDatasourceManager(IDatasourceManager repositoryDatasourceManager) {
         this.repositoryDatasourceManager = repositoryDatasourceManager;
     }
-
-    @GetMapping(path = "/datasources", produces = MediaType.APPLICATION_JSON_VALUE)
+    /**
+     * Get all the available data sources on the platform.
+     * @return A response containing a list of datasources.
+     * @summary Get Saiku Datasources
+     */
+    @GET
+    @Produces({"application/json"})
+    @Path("/datasources")
     @ReturnType("java.lang.List<SaikuDatasource>")
-    public ResponseEntity<?> getAvailableDataSources() {
+    public Response getAvailableDataSources() {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
 
         List<DataSourceMapper> l = new ArrayList<>();
@@ -101,213 +107,297 @@ public class AdminResource {
                     .values()) {
                 l.add(new DataSourceMapper(d));
             }
-            return ResponseEntity.ok(l);
+            return Response.ok().entity(l).build();
         } catch (SaikuServiceException e) {
             log.error(this.getClass().getName(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .body(e.getLocalizedMessage());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
     }
 
-    @PutMapping(
-            path = "/datasources/{id}",
-            consumes = MediaType.APPLICATION_JSON_VALUE,
-            produces = MediaType.APPLICATION_JSON_VALUE)
+    /**
+     * Update a specific Saiku data source.
+     * @summary Update data source
+     * @param json The Json data source object
+     * @param id The datasource id.
+     * @return A response containing the datasource.
+     */
+    @PUT
+    @Produces({"application/json"})
+    @Consumes({"application/json"})
+    @Path("/datasources/{id}")
     @ReturnType("org.saiku.web.rest.objects.DataSourceMapper")
-    public ResponseEntity<?> updateDatasource(@RequestBody DataSourceMapper json, @PathVariable("id") String id) {
+    public Response updateDatasource(DataSourceMapper json, @PathParam("id") String id) {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
 
         try {
             datasourceService.addDatasource(json.toSaikuDataSource(), true, userService.getCurrentUserRoles());
-            return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(json);
+            return Response.ok().type("application/json").entity(json).build();
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .body(e.getLocalizedMessage());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
     }
 
-    @GetMapping(path = "/datasources/{id}/refresh", produces = MediaType.APPLICATION_JSON_VALUE)
+    /**
+     * Refresh a Saiku data source.
+     * @summary Refresh data source
+     * @param id The data source id.
+     * @return A response containing the data source definition.
+     */
+    @GET
+    @Produces({"application/json"})
+    @Path("/datasources/{id}/refresh")
     @ReturnType("java.util.List<SaikuConnection>")
-    public ResponseEntity<?> refreshDatasource(@PathVariable("id") String id) {
+    public Response refreshDatasource(@PathParam("id") String id) {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
 
         try {
             olapDiscoverService.refreshConnection(id);
-            return ResponseEntity.ok()
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(olapDiscoverService.getConnection(id));
+            return Response.ok()
+                    .entity(olapDiscoverService.getConnection(id))
+                    .type("application/json")
+                    .build();
         } catch (Exception e) {
             log.error(this.getClass().getName(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .body(e.getLocalizedMessage());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
     }
 
-    @PostMapping(
-            path = "/datasources",
-            consumes = MediaType.APPLICATION_JSON_VALUE,
-            produces = MediaType.APPLICATION_JSON_VALUE)
+    /**
+     * Create a data source on the Saiku server.
+     * @summary Create data source
+     * @param json The json data source object
+     * @return A response containing the data source object
+     */
+    @POST
+    @Produces({"application/json"})
+    @Consumes({"application/json"})
+    @Path("/datasources")
     @ReturnType("org.saiku.web.rest.objects.DataSourceMapper")
-    public ResponseEntity<?> createDatasource(@RequestBody DataSourceMapper json) {
+    public Response createDatasource(DataSourceMapper json) {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
 
         try {
             datasourceService.addDatasource(json.toSaikuDataSource(), false, userService.getCurrentUserRoles());
-            return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(json);
+            return Response.ok().entity(json).type("application/json").build();
         } catch (Exception e) {
             log.error("Error adding data source", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .body(e.getLocalizedMessage());
+            return Response.serverError()
+                    .status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
     }
 
-    @DeleteMapping("/datasources/{id}")
-    public ResponseEntity<?> deleteDatasource(@PathVariable("id") String id) {
+    /**
+     * Delete data source from the Saiku server
+     * @summary Delete data source
+     * @param id The data source ID
+     * @return A response containing a list of data sources remaining on the platform.
+     */
+    @DELETE
+    @Path("/datasources/{id}")
+    public Response deleteDatasource(@PathParam("id") String id) {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
 
         datasourceService.removeDatasource(id);
 
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(datasourceService.getDatasources(userService.getCurrentUserRoles()));
+        return Response.ok()
+                .type("application/json")
+                .entity(datasourceService.getDatasources(userService.getCurrentUserRoles()))
+                .build();
     }
 
-    @GetMapping(path = "/schema", produces = MediaType.APPLICATION_JSON_VALUE)
+    /**
+     * Get all the available schema.
+     * @summary Get Saiku schema.
+     * @return A list of schema
+     */
+    @GET
+    @Produces({"application/json"})
+    @Path("/schema")
     @ReturnType("java.util.List<MondrianSchema>")
-    public ResponseEntity<?> getAvailableSchema() {
+    public Response getAvailableSchema() {
 
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
-        return ResponseEntity.ok(datasourceService.getAvailableSchema());
+        return Response.ok().entity(datasourceService.getAvailableSchema()).build();
     }
 
-    @PutMapping(
-            path = "/schema/{id}",
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
-            produces = MediaType.APPLICATION_JSON_VALUE)
+    /**
+     * Upload a new schema to the Saiku server.
+     * @summary Upload schema
+     * @param is Input stream (file form data param)
+     * @param detail Detail (file form data param)
+     * @param name Schema name
+     * @param id Schema id
+     * @return A response containing a list of available schema.
+     */
+    @PUT
+    @Produces({"application/json"})
+    @Consumes("multipart/form-data")
+    @Path("/schema/{id}")
     @ReturnType("java.util.List<MondrianSchema>")
-    public ResponseEntity<?> uploadSchemaPut(
-            @RequestParam("file") MultipartFile file,
-            @RequestParam(name = "name") String name,
-            @PathVariable("id") String id) {
+    public Response uploadSchemaPut(
+            @FormDataParam("file") InputStream is,
+            @FormDataParam("file") FormDataContentDisposition detail,
+            @FormDataParam("name") String name,
+            @PathParam("id") String id) {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
         String path = "/datasources/" + name + ".xml";
-        String schema;
-        try {
-            schema = getStringFromInputStream(file.getInputStream());
-        } catch (IOException ioe) {
-            log.error("Error reading uploaded schema: " + name, ioe);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .body(ioe.getLocalizedMessage());
-        }
+        String schema = getStringFromInputStream(is);
         try {
             datasourceService.addSchema(schema, path, name);
-            return ResponseEntity.ok(datasourceService.getAvailableSchema());
+            return Response.ok().entity(datasourceService.getAvailableSchema()).build();
         } catch (Exception e) {
             log.error("Error uploading schema: " + name, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .body(e.getLocalizedMessage());
+            return Response.serverError()
+                    .status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
     }
 
-    @PostMapping(
-            path = "/schema/{id}",
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
-            produces = MediaType.APPLICATION_JSON_VALUE)
+    /**
+     * Upload new schema to the Saiku server
+     * @summary Upload new schema
+     * @summary Upload schema
+     * @param is Input stream (file form data param)
+     * @param detail Detail (file form data param)
+     * @param name Schema name
+     * @param id Schema id
+     * @return A response containing a list of available schema.
+     */
+    @POST
+    @Produces({"application/json"})
+    @Consumes("multipart/form-data")
+    @Path("/schema/{id}")
     @ReturnType("java.util.List<MondrianSchema>")
-    public ResponseEntity<?> uploadSchema(
-            @RequestParam("file") MultipartFile file,
-            @RequestParam(name = "name") String name,
-            @PathVariable("id") String id) {
+    public Response uploadSchema(
+            @FormDataParam("file") InputStream is,
+            @FormDataParam("file") FormDataContentDisposition detail,
+            @FormDataParam("name") String name,
+            @PathParam("id") String id) {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
         String path = "/datasources/" + name + ".xml";
-        String schema;
-        try {
-            schema = getStringFromInputStream(file.getInputStream());
-        } catch (IOException ioe) {
-            log.error("Error reading uploaded schema: " + name, ioe);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .body(ioe.getLocalizedMessage());
-        }
+        String schema = getStringFromInputStream(is);
         try {
             datasourceService.addSchema(schema, path, name);
-            return ResponseEntity.ok(datasourceService.getAvailableSchema());
+            return Response.ok().entity(datasourceService.getAvailableSchema()).build();
         } catch (Exception e) {
             log.error("Error uploading schema: " + name, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .body(e.getLocalizedMessage());
+            return Response.serverError()
+                    .status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
     }
 
-    @PutMapping(
-            path = "/datasources/{datasourceName}/locale",
-            consumes = MediaType.APPLICATION_JSON_VALUE,
-            produces = MediaType.APPLICATION_JSON_VALUE)
+    /**
+     * Updates the locale parameter of the datasource
+     * @param locale: the new locale for the data source
+     * @param datasourceName: ID of the data source whose locale should be changed
+     * @return: Response indicating success or fail
+     */
+    @PUT
+    @Produces({"application/json"})
+    @Consumes({"application/json"})
+    @Path("/datasources/{datasourceName}/locale")
     @ReturnType("org.saiku.web.rest.objects.DataSourceMapper")
-    public ResponseEntity<?> updateDatasourceLocale(
-            @RequestBody String locale, @PathVariable("datasourceName") String datasourceName) {
+    public Response updateDatasourceLocale(String locale, @PathParam("datasourceName") String datasourceName) {
         try {
             boolean overwrite = true;
             SaikuDatasource saikuDatasource = datasourceService.getDatasource(datasourceName);
             datasourceService.setLocaleOfDataSource(saikuDatasource, locale);
             datasourceService.addDatasource(saikuDatasource, overwrite, userService.getCurrentUserRoles());
-            return ResponseEntity.ok()
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(new DataSourceMapper(saikuDatasource));
+            return Response.ok()
+                    .type("application/json")
+                    .entity(new DataSourceMapper(saikuDatasource))
+                    .build();
         } catch (SaikuDataSourceException e) {
-            return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(e.getLocalizedMessage());
+            return Response.ok()
+                    .type("application/json")
+                    .entity(e.getLocalizedMessage())
+                    .build();
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .body(e.getLocalizedMessage());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
     }
 
-    @GetMapping(path = "/users", produces = MediaType.APPLICATION_JSON_VALUE)
+    /**
+     * Get existing Saiku users from the Saiku server.
+     * @summary Get Saiku users.
+     * @return A list of available users.
+     */
+    @GET
+    @Produces({"application/json"})
+    @Path("/users")
     @ReturnType("java.util.List<SaikuUser>")
-    public ResponseEntity<?> getExistingUsers() {
+    public Response getExistingUsers() {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
-        return ResponseEntity.ok(userService.getUsers());
+        return Response.ok().entity(userService.getUsers()).build();
     }
 
-    @DeleteMapping("/schema/{id}")
+    /**
+     * Delete a schema from the Saiku server.
+     * @summary Delete a schema.
+     * @param id The schema ID.
+     * @return A response containing available schema.
+     */
+    @DELETE
+    @Path("/schema/{id}")
     @ReturnType("java.util.List<MondrianSchema>")
-    public ResponseEntity<?> deleteSchema(@PathVariable("id") String id) {
+    public Response deleteSchema(@PathParam("id") String id) {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
         datasourceService.removeSchema(id);
-        return ResponseEntity.status(HttpStatus.NO_CONTENT).body(datasourceService.getAvailableSchema());
+        return Response.status(Response.Status.NO_CONTENT)
+                .entity(datasourceService.getAvailableSchema())
+                .build();
     }
 
-    @GetMapping(path = "/schema/{id}", produces = MediaType.APPLICATION_XML_VALUE)
+    /**
+     * Get Saved Schema By ID
+     * @param id
+     * @return a schema file.
+     */
+    @GET
+    @Path("/schema/{id}")
+    @Produces("application/xml")
     @ReturnType("MondrianSchema")
-    public ResponseEntity<?> getSavedSchema(@PathVariable("id") String id) {
+    public Response getSavedSchema(@PathParam("id") String id) {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
         String p = "";
         for (MondrianSchema s : datasourceService.getAvailableSchema()) {
@@ -316,66 +406,97 @@ public class AdminResource {
                 try {
                     p = repositoryDatasourceManager.getInternalFileData(s.getPath());
                 } catch (RepositoryException e) {
-                    // swallow; same semantics as previous code which built an unused response
+                    Response.serverError().entity(e.getLocalizedMessage()).build();
                 }
                 break;
             }
         }
 
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+        return Response.ok(p.getBytes(), MediaType.APPLICATION_OCTET_STREAM)
                 .header("content-disposition", "attachment; filename = " + id)
-                .body(p.getBytes());
+                .build();
     }
 
-    @GetMapping("/datasource/import")
-    public ResponseEntity<?> importLegacyDatasources() {
+    /**
+     * Import a legacy data source into the Saiku server.
+     * @summary Import legacy datasource.
+     * @return A status 200.
+     */
+    @GET
+    @Path("/datasource/import")
+    public Response importLegacyDatasources() {
 
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
         datasourceService.importLegacyDatasources();
-        return ResponseEntity.ok().build();
+        return Response.ok().build();
     }
 
-    @GetMapping("/schema/import")
-    public ResponseEntity<?> importLegacySchema() {
+    /**
+     * Import legacy schema.
+     * @summary Import legacy schema
+     * @return A status 200
+     */
+    @GET
+    @Path("/schema/import")
+    public Response importLegacySchema() {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
 
         datasourceService.importLegacySchema();
-        return ResponseEntity.ok().build();
+        return Response.ok().build();
     }
 
-    @GetMapping("/users/import")
-    public ResponseEntity<?> importLegacyUsers() {
+    /**
+     * Import legacy users into the Saiku server/
+     * @summary Import legacy users.
+     * @return A status 200.
+     */
+    @GET
+    @Path("/users/import")
+    public Response importLegacyUsers() {
 
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
         datasourceService.importLegacyUsers();
-        return ResponseEntity.ok().build();
+        return Response.ok().build();
     }
 
-    @GetMapping(path = "/users/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
+    /**
+     * Get user details for a user in the Saiku server.
+     * @summary Get user details.
+     * @param id The user ID.
+     * @return A response containing the user details object for the selected user.
+     */
+    @GET
+    @Produces({"application/json"})
+    @Path("/users/{id}")
     @ReturnType("org.saiku.database.dto.SaikuUser")
-    public ResponseEntity<?> getUserDetails(@PathVariable("id") int id) {
+    public Response getUserDetails(@PathParam("id") int id) {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
-        return ResponseEntity.ok(userService.getUser(id));
+        return Response.ok().entity(userService.getUser(id)).build();
     }
 
-    @PutMapping(
-            path = "/users/{username}",
-            consumes = MediaType.APPLICATION_JSON_VALUE,
-            produces = MediaType.APPLICATION_JSON_VALUE)
+    /**
+     * Update a users user details on the Saiku server.
+     * @summary Update user details
+     * @param jsonString SaikuUser object.
+     * @param userName The username for the user to be updated.
+     * @return A response containing a user object.
+     */
+    @PUT
+    @Produces({"application/json"})
+    @Consumes("application/json")
+    @Path("/users/{username}")
     @ReturnType("org.saiku.database.dto.SaikuUser")
-    public ResponseEntity<?> updateUserDetails(
-            @RequestBody SaikuUser jsonString, @PathVariable("username") String userName) {
+    public Response updateUserDetails(SaikuUser jsonString, @PathParam("username") String userName) {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
         try {
             if (jsonString.getPassword() == null || jsonString.getPassword().equals("")) {
@@ -395,15 +516,21 @@ public class AdminResource {
         }
     }
 
-    @PostMapping(
-            path = "/users",
-            consumes = MediaType.APPLICATION_JSON_VALUE,
-            produces = MediaType.APPLICATION_JSON_VALUE)
+    /**
+     * Create user details on the Saiku server.
+     * @summary Create user details
+     * @param jsonString SaikuUser object
+     * @return A response containing the user object.
+     */
+    @POST
+    @Produces({"application/json"})
+    @Consumes({"application/json"})
+    @Path("/users")
     @ReturnType("org.saiku.database.dto.SaikuUser")
-    public ResponseEntity<?> createUserDetails(@RequestBody SaikuUser jsonString) {
+    public Response createUserDetails(SaikuUser jsonString) {
 
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
         try {
             return Response.ok().entity(userService.addUser(jsonString)).build();
@@ -414,15 +541,28 @@ public class AdminResource {
         }
     }
 
-    @DeleteMapping(path = "/users/{username}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> removeUser(@PathVariable("username") String username) {
+    /**
+     * Delete a user from the Saiku server.
+     * @summary Delete user.
+     * @param username The username to remove
+     * @return A status 200.
+     */
+    @DELETE
+    @Produces({"application/json"})
+    @Path("/users/{username}")
+    public Response removeUser(@PathParam("username") String username) {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
         userService.removeUser(username);
-        return ResponseEntity.ok().build();
+        return Response.ok().build();
     }
 
+    /**
+     * Get string from an input stream object.
+     * @param is The input stream to convert.
+     * @return A string representation of the input stream.
+     */
     private static String getStringFromInputStream(InputStream is) {
 
         BufferedReader br = null;
@@ -451,104 +591,144 @@ public class AdminResource {
         return sb.toString();
     }
 
-    @GetMapping(path = "/version", produces = MediaType.TEXT_PLAIN_VALUE)
+    /**
+     * Get the Saiku server version.
+     * @summary Get Saiku version.
+     * @return A Response containing the Saiku server version.
+     */
+    @GET
+    @Produces("text/plain")
+    @Path("/version")
     @ReturnType("java.lang.String")
-    public ResponseEntity<?> getVersion() {
+    public Response getVersion() {
         Properties prop = new Properties();
         String version = "";
         ClassLoader classloader = Thread.currentThread().getContextClassLoader();
         InputStream is = classloader.getResourceAsStream("org/saiku/web/rest/resources/version.properties");
         try {
+            // load a properties file
             prop.load(is);
+
+            // get the property value and print it out
             version = prop.getProperty("VERSION");
         } catch (IOException ex) {
             log.error("IO Exception when reading input stream", ex);
         }
-        return ResponseEntity.ok().contentType(MediaType.TEXT_PLAIN).body(version);
+        return Response.ok().entity(version).type("text/plain").build();
     }
 
-    @GetMapping(path = "/backup", produces = "application/zip")
-    public ResponseEntity<StreamingResponseBody> getBackup() {
+    /**
+     * Backup the Saiku server repository.
+     * @summary Backup the repository.
+     * @return A Zip file containing the backup.
+     */
+    @GET
+    @Produces("application/zip")
+    @Path("/backup")
+    public StreamingOutput getBackup() {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return null;
         }
-        StreamingResponseBody body = new StreamingResponseBody() {
-            @Override
-            public void writeTo(OutputStream output) throws IOException {
+        return new StreamingOutput() {
+            public void write(OutputStream output) throws IOException, WebApplicationException {
                 BufferedOutputStream bus = new BufferedOutputStream(output);
                 bus.write(datasourceService.exportRepository());
-                bus.flush();
             }
         };
-        return ResponseEntity.ok().body(body);
     }
 
-    @PostMapping(
-            path = "/restore",
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
-            produces = MediaType.TEXT_PLAIN_VALUE)
-    public ResponseEntity<?> postRestore(@RequestParam("file") MultipartFile file) {
+    /**
+     * Restore the repository on a Saiku server.
+     * @summary Restore a backup
+     * @param is The input stream
+     * @param detail The file detail
+     * @return A status 200.
+     */
+    @POST
+    @Produces("text/plain")
+    @Consumes("multipart/form-data")
+    @Path("/restore")
+    public Response postRestore(
+            @FormDataParam("file") InputStream is, @FormDataParam("file") FormDataContentDisposition detail) {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
         try {
-            byte[] bytes = IOUtils.toByteArray(file.getInputStream());
+            byte[] bytes = IOUtils.toByteArray(is);
             datasourceService.restoreRepository(bytes);
-            return ResponseEntity.ok().contentType(MediaType.TEXT_PLAIN).body("Restore Ok");
+            return Response.ok().entity("Restore Ok").type("text/plain").build();
         } catch (IOException e) {
             log.error("Error reading restore file", e);
         }
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .contentType(MediaType.TEXT_PLAIN)
-                .body("Restore Ok");
+        return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity("Restore Ok")
+                .type("text/plain")
+                .build();
     }
 
-    @PostMapping(
-            path = "/legacyfiles",
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
-            produces = MediaType.TEXT_PLAIN_VALUE)
-    public ResponseEntity<?> postRestoreFiles(@RequestParam("file") MultipartFile file) {
+    /**
+     * Restore old legacy files on the Saiku server.
+     * @param is Input stream
+     * @param detail The file detail
+     * @return A status 200
+     */
+    @POST
+    @Produces("text/plain")
+    @Consumes("multipart/form-data")
+    @Path("/legacyfiles")
+    public Response postRestoreFiles(
+            @FormDataParam("file") InputStream is, @FormDataParam("file") FormDataContentDisposition detail) {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
         try {
-            byte[] bytes = IOUtils.toByteArray(file.getInputStream());
+            byte[] bytes = IOUtils.toByteArray(is);
             datasourceService.restoreLegacyFiles(bytes);
-            return ResponseEntity.ok().contentType(MediaType.TEXT_PLAIN).body("Restore Ok");
+            return Response.ok().entity("Restore Ok").type("text/plain").build();
         } catch (IOException e) {
             log.error("Error reading restore file", e);
         }
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .contentType(MediaType.TEXT_PLAIN)
-                .body("Restore Ok");
+        return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity("Restore Ok")
+                .type("text/plain")
+                .build();
     }
 
-    @GetMapping(path = "/log/{logname}", produces = MediaType.TEXT_PLAIN_VALUE)
-    public ResponseEntity<?> getLogFile(@PathVariable("logname") String logname) {
+    @GET
+    @Produces("text/plain")
+    @Path("/log/{logname}")
+    public Response getLogFile(@PathParam("logname") String logname) {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
         try {
-            return ResponseEntity.ok(logExtractor.readLog(logname));
+            return Response.status(Response.Status.OK)
+                    .entity(logExtractor.readLog(logname))
+                    .build();
         } catch (IOException e) {
             log.error("Could not read log file", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Could not read log file");
+            return Response.serverError().entity("Could not read log file").build();
         }
     }
 
-    @GetMapping(path = "/datakeys", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> getPropertiesKeys() {
-        return ResponseEntity.ok(repositoryDatasourceManager.getAvailablePropertiesKeys());
+    @GET
+    @Produces("application/json")
+    @Path("/datakeys")
+    public Response getPropertiesKeys() {
+        return Response.ok(repositoryDatasourceManager.getAvailablePropertiesKeys())
+                .build();
     }
 
-    @GetMapping(path = "/attacheddatasources", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> getDataSources() {
+    @GET
+    @Produces("application/json")
+    @Path("/attacheddatasources")
+    public Response getDataSources() {
         if (!userService.isAdmin()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Response.status(Response.Status.FORBIDDEN).build();
         }
 
         List<JujuSource> list = repositoryDatasourceManager.getJujuDatasources();
 
-        return ResponseEntity.ok(list);
+        return Response.ok(list).build();
     }
 }

@@ -75,12 +75,14 @@ public class Query2Resource {
 
     private ThinQueryService thinQueryService;
 
+    // @Autowired
     public void setThinQueryService(ThinQueryService tqs) {
         thinQueryService = tqs;
     }
 
     private ISaikuRepository repository;
 
+    // @Autowired
     public void setRepository(ISaikuRepository repository) {
         this.repository = repository;
     }
@@ -97,48 +99,57 @@ public class Query2Resource {
 
     /**
      * Delete query from the query pool.
+     * @summary Delete Query
+     * @param queryName The query name
+     * @return a HTTP 410(Works) or HTTP 500(Call failed).
      */
-    @DeleteMapping("/{queryname}")
-    public HttpStatus deleteQuery(@PathVariable("queryname") String queryName) {
+    @DELETE
+    @Path("/{queryname}")
+    public Status deleteQuery(@PathParam("queryname") String queryName) {
         if (log.isDebugEnabled()) {
             log.debug("TRACK\t" + "\t/query/" + queryName + "\tDELETE");
         }
         try {
             thinQueryService.deleteQuery(queryName);
-            return HttpStatus.GONE;
+            return (Status.GONE);
         } catch (Exception e) {
             log.error("Cannot delete query (" + queryName + ")", e);
-            throw new RuntimeException(e);
+            throw new WebApplicationException(e);
         }
     }
 
     /**
      * Create a new Saiku Query.
+     * @summary Create query.
+     * @param queryName The query name
+     * @param fileFormParam The file
+     * @param jsonFormParam The json
+     * @param formParams The form params
+     * @return a query model.
      *
-     * <p>The fourth argument preserves the original Jersey MultivaluedMap
-     * override capability as a plain {@link Map} so programmatic callers
-     * (e.g. {@link ExporterResource}) can still pass parameters.
      */
-    @PostMapping(path = "/{queryname}", produces = MediaType.APPLICATION_JSON_VALUE)
+    @POST
+    @Produces({"application/json"})
+    @Path("/{queryname}")
     public ThinQuery createQuery(
-            @PathVariable("queryname") String queryName,
-            @RequestParam(name = "json", required = false) String jsonFormParam,
-            @RequestParam(name = "file", required = false) String fileFormParam,
-            Map<String, String> formParams)
+            @PathParam("queryname") String queryName,
+            @FormParam("json") String jsonFormParam,
+            @FormParam("file") String fileFormParam,
+            MultivaluedMap<String, String> formParams)
             throws ServletException {
         try {
             ThinQuery tq;
             String file = fileFormParam, json = jsonFormParam;
             if (formParams != null) {
-                json = formParams.containsKey("json") ? formParams.get("json") : jsonFormParam;
-                file = formParams.containsKey("file") ? formParams.get("file") : fileFormParam;
+                json = formParams.containsKey("json") ? formParams.getFirst("json") : jsonFormParam;
+                file = formParams.containsKey("file") ? formParams.getFirst("file") : fileFormParam;
             }
             String filecontent = null;
             if (StringUtils.isNotBlank(json)) {
                 filecontent = json;
             } else if (StringUtils.isNotBlank(file)) {
-                ResponseEntity<?> f = repository.getResource(file);
-                filecontent = new String((byte[]) f.getBody());
+                Response f = repository.getResource(file);
+                filecontent = new String((byte[]) f.getEntity());
             }
             if (StringUtils.isBlank(filecontent)) {
                 throw new SaikuServiceException("Cannot create new query. Empty file content "
@@ -160,15 +171,24 @@ public class Query2Resource {
             }
             tq.setName(queryName);
 
+            //			SaikuCube cube = tq.getCube();
+            //			if (StringUtils.isNotBlank(xml)) {
+            //				String query = ServletUtil.replaceParameters(formParams, xml);
+            //				return thinQueryService.createNewOlapQuery(queryName, query);
+            //			}
             return thinQueryService.createQuery(tq);
         } catch (Exception e) {
             log.error("Error creating new query", e);
-            throw new RuntimeException(e);
+            throw new WebApplicationException(e);
         }
     }
 
     /**
+     *
      * Execute a Saiku Query
+     * @summary Execute Query
+     * @param tq Thin Query model
+     * @return A query result set.
      */
     public static final String ARROW_STREAM_MEDIA_TYPE = "application/vnd.apache.arrow.stream";
 
@@ -388,49 +408,68 @@ public class Query2Resource {
 
     /**
      * Cancel a running query.
+     * @summary Cancel Query.
+     * @param queryName The query name
+     * @return A 410 on success
      */
-    @DeleteMapping("/{queryname}/cancel")
-    public ResponseEntity<?> cancel(@PathVariable("queryname") String queryName) {
+    @DELETE
+    @Path("/{queryname}/cancel")
+    public Response cancel(@PathParam("queryname") String queryName) {
         if (log.isDebugEnabled()) {
             log.debug("TRACK\t" + "\t/query/" + queryName + "\tDELETE");
         }
         try {
             thinQueryService.cancel(queryName);
-            return ResponseEntity.ok(HttpStatus.GONE);
+            return Response.ok(Status.GONE).build();
         } catch (Exception e) {
             log.error("Cannot cancel query (" + queryName + ")", e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            throw new RuntimeException(error, e);
+            throw new WebApplicationException(
+                    Response.serverError().entity(error).build());
         }
     }
 
     /**
      * Enrich a thin query model
+     * @summary Enrich thin query.
+     * @param tq The thin query
+     * @return An updated thin query.
      */
-    @PostMapping(path = "/enrich", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ThinQuery enrich(@RequestBody ThinQuery tq) {
+    @POST
+    @Consumes({"application/json"})
+    @Path("/enrich")
+    public ThinQuery enrich(ThinQuery tq) {
         try {
             return thinQueryService.updateQuery(tq);
         } catch (Exception e) {
             log.error("Cannot enrich query (" + tq + ")", e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            throw new RuntimeException(error, e);
+            throw new WebApplicationException(
+                    Response.serverError().entity(error).build());
         }
     }
 
     /**
      * Get level members from a query.
+     * @summary Get level members.
+     * @param queryName The query name
+     * @param hierarchyName The hierarchy name
+     * @param levelName The level name
+     * @param result Use the current result
+     * @param searchString The search string
+     * @param searchLimit The search limit
+     * @return
      */
-    @GetMapping(
-            path = "/{queryname}/result/metadata/hierarchies/{hierarchy}/levels/{level}",
-            produces = MediaType.APPLICATION_JSON_VALUE)
+    @GET
+    @Produces({"application/json"})
+    @Path("/{queryname}/result/metadata/hierarchies/{hierarchy}/levels/{level}")
     public List<SimpleCubeElement> getLevelMembers(
-            @PathVariable("queryname") String queryName,
-            @PathVariable("hierarchy") String hierarchyName,
-            @PathVariable("level") String levelName,
-            @RequestParam(name = "result", defaultValue = "true") boolean result,
-            @RequestParam(name = "search", required = false) String searchString,
-            @RequestParam(name = "searchlimit", defaultValue = "-1") int searchLimit) {
+            @PathParam("queryname") String queryName,
+            @PathParam("hierarchy") String hierarchyName,
+            @PathParam("level") String levelName,
+            @QueryParam("result") @DefaultValue("true") boolean result,
+            @QueryParam("search") String searchString,
+            @QueryParam("searchlimit") @DefaultValue("-1") int searchLimit) {
         if (log.isDebugEnabled()) {
             log.debug("TRACK\t"
                     + "\t/query/" + queryName + "/result/metadata"
@@ -442,15 +481,21 @@ public class Query2Resource {
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ")", e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            throw new RuntimeException(error, e);
+            throw new WebApplicationException(
+                    Response.serverError().entity(error).build());
         }
     }
 
     /**
      * Query export to excel.
+     * @summary Excel export
+     * @param queryName The query name
+     * @return A response containing an excel spreadsheet.
      */
-    @GetMapping(path = "/{queryname}/export/xls", produces = "application/vnd.ms-excel")
-    public ResponseEntity<?> getQueryExcelExport(@PathVariable("queryname") String queryName) {
+    @GET
+    @Produces({"application/vnd.ms-excel"})
+    @Path("/{queryname}/export/xls")
+    public Response getQueryExcelExport(@PathParam("queryname") String queryName) {
         if (log.isDebugEnabled()) {
             log.debug("TRACK\t" + "\t/query/" + queryName + "/export/xls/\tGET");
         }
@@ -459,15 +504,19 @@ public class Query2Resource {
 
     /**
      * Query export to excel
+     * @summary Excel export
+     * @param queryName The query
+     * @param format The cellset format
+     * @param name The export name
+     * @return A response containing and excel spreadsheet.
      */
-    @GetMapping(path = "/{queryname}/export/xls/{format}", produces = "application/vnd.ms-excel")
-    public ResponseEntity<?> getQueryExcelExport(
-            @PathVariable("queryname") String queryName,
-            @PathVariable(name = "format") String format,
-            @RequestParam(name = "exportname", defaultValue = "") String name) {
-        if (format == null || format.isEmpty()) {
-            format = "flattened";
-        }
+    @GET
+    @Produces({"application/vnd.ms-excel"})
+    @Path("/{queryname}/export/xls/{format}")
+    public Response getQueryExcelExport(
+            @PathParam("queryname") String queryName,
+            @PathParam("format") @DefaultValue("flattened") String format,
+            @QueryParam("exportname") @DefaultValue("") String name) {
         if (log.isDebugEnabled()) {
             log.debug("TRACK\t" + "\t/query/" + queryName + "/export/xls/" + format + "\tGET");
         }
@@ -476,23 +525,28 @@ public class Query2Resource {
             if (name == null || name.equals("")) {
                 name = SaikuProperties.webExportExcelName + "." + SaikuProperties.webExportExcelFormat;
             }
-            return ResponseEntity.ok()
-                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+            return Response.ok(doc, MediaType.APPLICATION_OCTET_STREAM)
                     .header("content-disposition", "attachment; filename = " + name)
-                    .header("content-length", String.valueOf(doc.length))
-                    .body(doc);
+                    .header("content-length", doc.length)
+                    .build();
         } catch (Exception e) {
             log.error("Cannot get excel for query (" + queryName + ")", e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            throw new RuntimeException(error, e);
+            throw new WebApplicationException(
+                    Response.serverError().entity(error).build());
         }
     }
 
     /**
      * Get CSV export of a query.
+     * @summary CSV Export.
+     * @param queryName The query name
+     * @return A response containing a CSV file
      */
-    @GetMapping(path = "/{queryname}/export/csv", produces = "text/csv")
-    public ResponseEntity<?> getQueryCsvExport(@PathVariable("queryname") String queryName) {
+    @GET
+    @Produces({"text/csv"})
+    @Path("/{queryname}/export/csv")
+    public Response getQueryCsvExport(@PathParam("queryname") String queryName) {
         if (log.isDebugEnabled()) {
             log.debug("TRACK\t" + "\t/query/" + queryName + "/export/csv\tGET");
         }
@@ -501,12 +555,19 @@ public class Query2Resource {
 
     /**
      * Get CSV export of a query.
+     * @summary CSV Export.
+     * @param queryName The query name
+     * @param format The cell set format
+     * @param name The export name
+     * @return A response containing a CSV file
      */
-    @GetMapping(path = "/{queryname}/export/csv/{format}", produces = "text/csv")
-    public ResponseEntity<?> getQueryCsvExport(
-            @PathVariable("queryname") String queryName,
-            @PathVariable("format") String format,
-            @RequestParam(name = "exportname", defaultValue = "") String name) {
+    @GET
+    @Produces({"text/csv"})
+    @Path("/{queryname}/export/csv/{format}")
+    public Response getQueryCsvExport(
+            @PathParam("queryname") String queryName,
+            @PathParam("format") String format,
+            @QueryParam("exportname") @DefaultValue("") String name) {
         if (log.isDebugEnabled()) {
             log.debug("TRACK\t" + "\t/query/" + queryName + "/export/csv/" + format + "\tGET");
         }
@@ -516,25 +577,30 @@ public class Query2Resource {
                 name = SaikuProperties.webExportCsvName;
             }
 
-            return ResponseEntity.ok()
-                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+            return Response.ok(doc, MediaType.APPLICATION_OCTET_STREAM)
                     .header("content-disposition", "attachment; filename = " + name + ".csv")
-                    .header("content-length", String.valueOf(doc.length))
-                    .body(doc);
+                    .header("content-length", doc.length)
+                    .build();
         } catch (Exception e) {
             log.error("Cannot get csv for query (" + queryName + ")", e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            throw new RuntimeException(error, e);
+            throw new WebApplicationException(
+                    Response.serverError().entity(error).build());
         }
     }
 
     /**
      * Zoom into a query result table.
+     * @summary Zoom in.
+     * @param queryName The query name
+     * @param positionListString The zoom position
+     * @return A new thin query model with a reduced table.
      */
-    @PostMapping(path = "/{queryname}/zoomin", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    @POST
+    @Consumes("application/x-www-form-urlencoded")
+    @Path("/{queryname}/zoomin")
     public ThinQuery zoomIn(
-            @PathVariable("queryname") String queryName,
-            @RequestParam(name = "selections", required = false) String positionListString) {
+            @PathParam("queryname") String queryName, @FormParam("selections") String positionListString) {
         try {
 
             if (log.isDebugEnabled()) {
@@ -562,12 +628,18 @@ public class Query2Resource {
 
         } catch (Exception e) {
             log.error("Cannot zoom in on query (" + queryName + ")", e);
-            throw new RuntimeException(e);
+            throw new WebApplicationException(e);
         }
     }
 
     /**
      * Drill through on the query result set.
+     * @summary Drill through
+     * @param queryName The query name
+     * @param maxrows The max rows returned
+     * @param position The position
+     * @param returns The returned dimensions and levels
+     * @return A query result set.
      */
     // TODO (phase 5): drillthrough intentionally does NOT go through the
     // SaikuQueryCache (Task 5). The cache keys for execute are MDX+params;
@@ -699,13 +771,21 @@ public class Query2Resource {
 
     /**
      * Export the drill through to a CSV file for further analysis
+     * @summary Export to CSV
+     * @param queryName The query name
+     * @param maxrows The max rows
+     * @param position The position
+     * @param returns The returned dimensions and levels
+     * @return A response containing a CSV file
      */
-    @GetMapping(path = "/{queryname}/drillthrough/export/csv", produces = "text/csv")
-    public ResponseEntity<?> getDrillthroughExport(
-            @PathVariable("queryname") String queryName,
-            @RequestParam(name = "maxrows", defaultValue = "100") Integer maxrows,
-            @RequestParam(name = "position", required = false) String position,
-            @RequestParam(name = "returns", required = false) String returns) {
+    @GET
+    @Produces({"text/csv"})
+    @Path("/{queryname}/drillthrough/export/csv")
+    public Response getDrillthroughExport(
+            @PathParam("queryname") String queryName,
+            @QueryParam("maxrows") @DefaultValue("100") Integer maxrows,
+            @QueryParam("position") String position,
+            @QueryParam("returns") String returns) {
         if (log.isDebugEnabled()) {
             log.debug("TRACK\t" + "\t/query/" + queryName + "/drillthrough/export/csv (maxrows:" + maxrows + " position"
                     + position + ")\tGET");
@@ -728,15 +808,14 @@ public class Query2Resource {
             }
             byte[] doc = thinQueryService.exportResultSetCsv(rs);
             String name = SaikuProperties.webExportCsvName;
-            return ResponseEntity.ok()
-                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+            return Response.ok(doc, MediaType.APPLICATION_OCTET_STREAM)
                     .header("content-disposition", "attachment; filename = " + name + "-drillthrough.csv")
-                    .header("content-length", String.valueOf(doc.length))
-                    .body(doc);
+                    .header("content-length", doc.length)
+                    .build();
 
         } catch (Exception e) {
             log.error("Cannot export drillthrough query (" + queryName + ")", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            return Response.serverError().build();
         } finally {
             if (rs != null) {
                 try {
@@ -753,41 +832,67 @@ public class Query2Resource {
 
     /**
      * Export PDF with chart
+     * @summary Export PDF with Chart.
+     * @param queryName The query.
+     * @param svg The SVG string
+     * @return A response with a PDF file
      */
-    @PostMapping(path = "/{queryname}/export/pdf", produces = "application/pdf")
-    public ResponseEntity<?> exportPdfWithChart(
-            @PathVariable("queryname") String queryName, @RequestParam(name = "svg", defaultValue = "") String svg) {
+    @POST
+    @Produces({"application/pdf"})
+    @Path("/{queryname}/export/pdf")
+    public Response exportPdfWithChart(
+            @PathParam("queryname") String queryName, @PathParam("svg") @DefaultValue("") String svg) {
         return exportPdfWithChartAndFormat(queryName, null, svg, null);
     }
 
     /**
      * Export table to PDF.
+     * @summary Export to PDF.
+     * @param queryName The query name
+     * @return A response with a PDF export.
      */
-    @GetMapping(path = "/{queryname}/export/pdf", produces = "application/pdf")
-    public ResponseEntity<?> exportPdf(@PathVariable("queryname") String queryName) {
+    @GET
+    @Produces({"application/pdf"})
+    @Path("/{queryname}/export/pdf")
+    public Response exportPdf(@PathParam("queryname") String queryName) {
         return exportPdfWithChartAndFormat(queryName, null, null, null);
     }
 
     /**
      * Export to PDF with cellset format.
+     * @summary Export with format
+     * @param queryName The query
+     * @param format The cellset format
+     * @param name The name of the export.
+     * @return A response with a PDF
      */
-    @GetMapping(path = "/{queryname}/export/pdf/{format}", produces = "application/pdf")
-    public ResponseEntity<?> exportPdfWithFormat(
-            @PathVariable("queryname") String queryName,
-            @PathVariable("format") String format,
-            @RequestParam(name = "exportname", required = false) String name) {
+    @GET
+    @Produces({"application/pdf"})
+    @Path("/{queryname}/export/pdf/{format}")
+    public Response exportPdfWithFormat(
+            @PathParam("queryname") String queryName,
+            @PathParam("format") String format,
+            @QueryParam("exportname") String name) {
         return exportPdfWithChartAndFormat(queryName, format, null, name);
     }
 
     /**
      * Export PDF with chart and cellset format.
+     * @summary Export to PDF with chart and cellset format
+     * @param queryName The query name
+     * @param format The cell set format
+     * @param svg The SVG
+     * @param name The export name
+     * @return A response with a PDF contained.
      */
-    @PostMapping(path = "/{queryname}/export/pdf/{format}", produces = "application/pdf")
-    public ResponseEntity<?> exportPdfWithChartAndFormat(
-            @PathVariable("queryname") String queryName,
-            @PathVariable("format") String format,
-            @RequestParam(name = "svg", defaultValue = "") String svg,
-            @RequestParam(name = "name", required = false) String name) {
+    @POST
+    @Produces({"application/pdf"})
+    @Path("/{queryname}/export/pdf/{format}")
+    public Response exportPdfWithChartAndFormat(
+            @PathParam("queryname") String queryName,
+            @PathParam("format") String format,
+            @FormParam("svg") @DefaultValue("") String svg,
+            @QueryParam("name") String name) {
 
         try {
             CellDataSet cellData = thinQueryService.getFormattedResult(queryName, format);
@@ -797,43 +902,64 @@ public class Query2Resource {
             if (name == null || name.equals("")) {
                 name = "export";
             }
-            return ResponseEntity.ok()
-                    .header("Content-Type", "application/pdf")
+            return Response.ok(doc)
+                    .type("application/pdf")
                     .header("content-disposition", "attachment; filename = " + name + ".pdf")
-                    .header("content-length", String.valueOf(doc.length))
-                    .body(doc);
+                    .header("content-length", doc.length)
+                    .build();
         } catch (Exception e) {
             log.error("Error exporting query to  PDF", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+            return Response.serverError()
+                    .entity(e.getMessage())
+                    .status(Status.INTERNAL_SERVER_ERROR)
+                    .build();
         }
     }
 
     /**
      * Get HTML export
+     * @summary HTML export
+     * @param queryname The query name
+     * @param format The cellset format
+     * @param css The css stylesheet
+     * @param tableonly Export table only or chart as well
+     * @param wrapcontent Wrap content
+     * @return A response with a HTML export.
      */
-    @GetMapping(path = "/{queryname}/export/html", produces = MediaType.TEXT_HTML_VALUE)
+    @GET
+    @Produces({"text/html"})
+    @Path("/{queryname}/export/html")
     @ReturnType("java.lang.String")
-    public ResponseEntity<?> exportHtml(
-            @PathVariable("queryname") String queryname,
-            @RequestParam(name = "format", required = false) String format,
-            @RequestParam(name = "css", defaultValue = "false") Boolean css,
-            @RequestParam(name = "tableonly", defaultValue = "false") Boolean tableonly,
-            @RequestParam(name = "wrapcontent", defaultValue = "true") Boolean wrapcontent) {
+    public Response exportHtml(
+            @PathParam("queryname") String queryname,
+            @QueryParam("format") String format,
+            @QueryParam("css") @DefaultValue("false") Boolean css,
+            @QueryParam("tableonly") @DefaultValue("false") Boolean tableonly,
+            @QueryParam("wrapcontent") @DefaultValue("true") Boolean wrapcontent) {
         ThinQuery tq = thinQueryService.getContext(queryname).getOlapQuery();
         return exportHtml(tq, format, css, tableonly, wrapcontent);
     }
 
     /**
      * Get HTML export
+     * @summary HTML export
+     * @param tq The current thin query model
+     * @param format The cellset format
+     * @param css The css stylesheet
+     * @param tableonly Export table only or chart as well
+     * @param wrapcontent Wrap content
+     * @return A response with a HTML export.
      */
-    @PostMapping(path = "/export/html", produces = MediaType.TEXT_HTML_VALUE)
+    @POST
+    @Produces({"text/html"})
+    @Path("/export/html")
     @ReturnType("java.lang.String")
-    public ResponseEntity<?> exportHtml(
-            @RequestBody ThinQuery tq,
-            @RequestParam(name = "format", required = false) String format,
-            @RequestParam(name = "css", defaultValue = "false") Boolean css,
-            @RequestParam(name = "tableonly", defaultValue = "false") Boolean tableonly,
-            @RequestParam(name = "wrapcontent", defaultValue = "true") Boolean wrapcontent) {
+    public Response exportHtml(
+            ThinQuery tq,
+            @QueryParam("format") String format,
+            @QueryParam("css") @DefaultValue("false") Boolean css,
+            @QueryParam("tableonly") @DefaultValue("false") Boolean tableonly,
+            @QueryParam("wrapcontent") @DefaultValue("true") Boolean wrapcontent) {
 
         try {
             CellDataSet cs;
@@ -861,21 +987,31 @@ public class Query2Resource {
             if (!tableonly) {
                 html += "\n</div></body></html>";
             }
-            return ResponseEntity.ok(html);
+            return Response.ok(html).build();
         } catch (Exception e) {
             log.error("Error exporting query to  HTML", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+            return Response.serverError()
+                    .entity(e.getMessage())
+                    .status(Status.INTERNAL_SERVER_ERROR)
+                    .build();
         }
     }
 
     /**
      * Drill across on a result set
+     * @summary Drill across
+     * @param queryName The query name
+     * @param position The drill position
+     * @param returns The dimensions and levels returned
+     * @return The new thin query object.
      */
-    @PostMapping(path = "/{queryname}/drillacross", produces = MediaType.APPLICATION_JSON_VALUE)
+    @POST
+    @Produces({"application/json"})
+    @Path("/{queryname}/drillacross")
     public ThinQuery drillacross(
-            @PathVariable("queryname") String queryName,
-            @RequestParam("position") String position,
-            @RequestParam("drill") String returns) {
+            @PathParam("queryname") String queryName,
+            @FormParam("position") String position,
+            @FormParam("drill") String returns) {
         if (log.isDebugEnabled()) {
             log.debug("TRACK\t" + "\t/query/" + queryName + "/drillacross\tPOST");
         }
@@ -900,7 +1036,8 @@ public class Query2Resource {
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ")", e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            throw new RuntimeException(error, e);
+            throw new WebApplicationException(
+                    Response.serverError().entity(error).build());
         }
     }
 

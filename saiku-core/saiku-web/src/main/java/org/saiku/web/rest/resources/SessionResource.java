@@ -61,6 +61,11 @@ public class SessionResource {
 
     /**
      * Login to Saiku
+     * @summary Login
+     * @param req Servlet request
+     * @param username Username
+     * @param password Password
+     * @return A 200 response
      */
     @POST
     @Consumes("application/x-www-form-urlencoded")
@@ -93,33 +98,47 @@ public class SessionResource {
 
     /**
      * Clear logged in users session.
+     * @summary Login
+     * @param req Servlet request
+     * @param username Username
+     * @param password Password
+     * @return A 200 response
      */
-    @PostMapping(path = "/clear", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-    public ResponseEntity<?> clearSession(
-            HttpServletRequest req,
-            @RequestParam(name = "username", required = false) String username,
-            @RequestParam(name = "password", required = false) String password) {
+    @POST
+    @Path("/clear")
+    @Consumes("application/x-www-form-urlencoded")
+    public Response clearSession(
+            @Context HttpServletRequest req,
+            @FormParam("username") String username,
+            @FormParam("password") String password) {
         try {
             sessionService.clearSessions(req, username, password);
-            return ResponseEntity.ok("Session cleared");
+            return Response.ok("Session cleared").build();
         } catch (Exception e) {
             log.debug("Error clearing sessions for:" + username, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getLocalizedMessage());
+            return Response.status(Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .build();
         }
     }
 
     /**
      * Get the session in the request
+     * @summary Get session
+     * @param req The servlet request
+     * @return A reponse with a session map
      */
-    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+    @GET
+    @Consumes("application/x-www-form-urlencoded")
+    @Produces(MediaType.APPLICATION_JSON)
     @ReturnType("java.util.Map<String, Object>")
-    public ResponseEntity<?> getSession(HttpServletRequest req) {
+    public Response getSession(@Context HttpServletRequest req) {
 
         Map<String, Object> sess = null;
         try {
             sess = sessionService.getSession();
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getLocalizedMessage());
+            return Response.serverError().entity(e.getLocalizedMessage()).build();
         }
         try {
             String acceptLanguage = req.getLocale().getLanguage();
@@ -141,11 +160,14 @@ public class SessionResource {
             // TODO detect if plugin or not.
         }
 
-        return ResponseEntity.ok(sess);
+        return Response.ok().entity(sess).build();
     }
 
     /**
      * Logout of the Session
+     * @summary Logout
+     * @param req The servlet request
+     * @return A 200 response.
      */
     @DELETE
     public Response logout(@Context HttpServletRequest req) {

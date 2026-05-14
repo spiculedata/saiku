@@ -50,9 +50,12 @@ public class InfoResource {
      * @summary Get plugins
      * @return A response containing a list of plugins.
      */
-    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+    @GET
+    @Produces({"application/json"})
     @ReturnType("java.util.List<Plugin>")
-    public ResponseEntity<List<Plugin>> getAvailablePlugins() {
-        return ResponseEntity.ok(platformService.getAvailablePlugins());
+    public Response getAvailablePlugins() {
+
+        GenericEntity<List<Plugin>> entity = new GenericEntity<List<Plugin>>(platformService.getAvailablePlugins()) {};
+        return Response.ok(entity).build();
     }
 }

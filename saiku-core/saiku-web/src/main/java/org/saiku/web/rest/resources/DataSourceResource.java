@@ -46,9 +46,14 @@ public class DataSourceResource {
 
     /**
      * Get Data Sources available on the server.
+     *
+     * @return A Collection of SaikuDatasource's.
+     * @summary Get Data Sources
      */
-    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+    @GET
+    @Produces({"application/json"})
     public Collection<SaikuDatasource> getDatasources() {
+        // TODO: admin security?
         try {
             return datasourceService
                     .getDatasources(userService.getCurrentUserRoles())
@@ -61,19 +66,30 @@ public class DataSourceResource {
 
     /**
      * Delete available data source from the server.
+     *
+     * @param datasourceName - The name of the data source.
+     * @return A GONE Status.
+     * @summary Delete data source
      */
-    @DeleteMapping("/{datasource}")
-    public HttpStatus deleteDatasource(@PathVariable("datasource") String datasourceName) {
+    @DELETE
+    @Path("/{datasource}")
+    public Status deleteDatasource(@PathParam("datasource") String datasourceName) {
         datasourceService.removeDatasource(datasourceName);
-        return HttpStatus.GONE;
+        return (Status.GONE);
     }
 
     /**
      * Get a specific data source from the server by ID.
+     *
+     * @param id The data source id.
+     * @return A Saiku Datasource.
+     * @summary Get Data Source.
      */
-    @GetMapping(path = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
+    @GET
+    @Produces({"application/json"})
+    @Path("/{id}")
     @ReturnType("org.saiku.web.rest.objects.DataSourceMapper")
-    public ResponseEntity<?> getDatasourceById(@PathVariable("id") String id) {
+    public Response getDatasourceById(@PathParam("id") String id) {
         try {
             SaikuDatasource saikuDatasource = null;
             Map<String, SaikuDatasource> datasources =
@@ -84,22 +100,24 @@ public class DataSourceResource {
                     break;
                 }
             }
-            return ResponseEntity.ok()
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(new DataSourceMapper(saikuDatasource));
+            return Response.ok()
+                    .type("application/json")
+                    .entity(new DataSourceMapper(saikuDatasource))
+                    .build();
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .body(e.getLocalizedMessage());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
     }
 
-    @PutMapping(
-            path = "/{id}",
-            consumes = MediaType.APPLICATION_JSON_VALUE,
-            produces = MediaType.APPLICATION_JSON_VALUE)
+    @PUT
+    @Produces({"application/json"})
+    @Consumes({"application/json"})
+    @Path("/{id}")
     @ReturnType("org.saiku.web.rest.objects.DataSourceMapper")
-    public ResponseEntity<?> updateDatasourceLocale(@RequestBody String locale, @PathVariable("id") String id) {
+    public Response updateDatasourceLocale(String locale, @PathParam("id") String id) {
         boolean overwrite = true;
         try {
             SaikuDatasource saikuDatasource = null;
@@ -113,11 +131,15 @@ public class DataSourceResource {
                     break;
                 }
             }
-            return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(saikuDatasource);
+            return Response.ok()
+                    .type("application/json")
+                    .entity(saikuDatasource)
+                    .build();
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .contentType(MediaType.TEXT_PLAIN)
-                    .body(e.getLocalizedMessage());
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(e.getLocalizedMessage())
+                    .type("text/plain")
+                    .build();
         }
     }
 
@@ -132,6 +154,7 @@ public class DataSourceResource {
         String referenceText = "locale=";
         int start = location.toLowerCase().indexOf(referenceText);
         if (start == -1) {
+            // warn user
             return "no locale!";
         } else {
             start += referenceText.length();

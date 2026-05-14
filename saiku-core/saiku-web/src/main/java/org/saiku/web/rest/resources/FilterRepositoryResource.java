@@ -73,38 +73,50 @@ public class FilterRepositoryResource {
 
     private Map<String, SaikuFilter> getFiltersInternal(String query) {
         Map<String, SaikuFilter> allFilters = new HashMap<>();
+        // Map<String, SaikuFilter> filters = deserialize(getUserFile());
+        // allFilters.putAll(filters);
         if (StringUtils.isNotBlank(query)) {
             allFilters = olapQueryService.getValidFilters(query, allFilters);
         }
+
+        // return MapUtils.orderedMap(allFilters);
         return null;
     }
 
     /**
      * Get filternames as JSON.
+     * @param queryName The query name.
+     * @return A response containing the filter names.
      */
-    @GetMapping(path = "/names/", produces = MediaType.APPLICATION_JSON_VALUE)
+    @GET
+    @Produces({"application/json"})
+    @Path("/names/")
     @ReturnType("java.lang.List<String>")
-    public ResponseEntity<?> getSavedFilterNames(@RequestParam(name = "queryname", required = false) String queryName) {
+    public Response getSavedFilterNames(@QueryParam("queryname") String queryName) {
         try {
             Map<String, SaikuFilter> allFilters = getFiltersInternal(queryName);
             List<String> filternames = new ArrayList<>(allFilters.keySet());
             Collections.sort(filternames);
-            return ResponseEntity.ok(filternames);
+            return Response.ok(filternames).build();
 
         } catch (Exception e) {
             log.error("Cannot filter names", e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+            return Response.serverError().entity(error).build();
         }
     }
 
     /**
      * Get Saved Filters as JSON.
+     * @summary Get filters as JSON.
+     * @param queryName The query name.
+     * @param filterName The filter name.
+     * @return A response containing the JSON.
      */
-    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> getSavedFilters(
-            @RequestParam(name = "query", required = false) String queryName,
-            @RequestParam(name = "filtername", required = false) String filterName) {
+    @GET
+    @Produces({"application/json"})
+    public Response getSavedFilters(
+            @QueryParam("query") String queryName, @QueryParam("filtername") String filterName) {
         try {
             Map<String, SaikuFilter> allFilters = new HashMap<>();
             if (StringUtils.isNotBlank(queryName)) {
@@ -119,20 +131,25 @@ public class FilterRepositoryResource {
             } else {
                 allFilters = getFiltersInternal();
             }
-            return ResponseEntity.ok(allFilters);
+            return Response.ok(allFilters).build();
         } catch (Exception e) {
             log.error("Cannot get filter details", e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+            return Response.serverError().entity(error).build();
         }
     }
 
     /**
      * Save filter
+     * @summary Save Filter.
+     * @param filterJSON The Filter JSON object.
+     * @return A response containing the filter.
      */
-    @PostMapping(path = "/{filtername}", produces = MediaType.APPLICATION_JSON_VALUE)
+    @POST
+    @Produces({"application/json"})
+    @Path("/{filtername}")
     @ReturnType("org.saiku.olap.dto.filter.SaikuFilter")
-    public ResponseEntity<?> saveFilter(@RequestParam("filter") String filterJSON) {
+    public Response saveFilter(@FormParam("filter") String filterJSON) {
         try {
 
             ObjectMapper mapper = new ObjectMapper();
@@ -144,11 +161,11 @@ public class FilterRepositoryResource {
             filter.setOwner(username);
             Map<String, SaikuFilter> filters = getFiltersInternal();
             filters.put(filter.getName(), filter);
-            return ResponseEntity.ok(filter);
+            return Response.ok(filter).build();
         } catch (Exception e) {
             log.error("Cannot save filter (" + filterJSON + ")", e);
             String error = ExceptionUtils.getRootCauseMessage(e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+            return Response.serverError().entity(error).build();
         }
     }
 }

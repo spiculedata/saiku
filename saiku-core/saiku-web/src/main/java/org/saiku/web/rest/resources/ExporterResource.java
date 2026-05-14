@@ -61,17 +61,28 @@ public class ExporterResource {
 
     /**
      * Export query to excel file format.
+     * @summary Export to excel.
+     * @param file The file
+     * @param formatter The cellset formatter
+     * @param name The name
+     * @param servletRequest The servlet request.
+     * @return A response containing an excel file.
      */
-    @GetMapping(path = "/saiku/xls", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> exportExcel(
-            @RequestParam(name = "file", required = false) String file,
-            @RequestParam(name = "formatter", required = false) String formatter,
-            @RequestParam(name = "name", required = false) String name,
-            HttpServletRequest servletRequest) {
+    @GET
+    @Produces({"application/json"})
+    @Path("/saiku/xls")
+    public Response exportExcel(
+            @QueryParam("file") String file,
+            @QueryParam("formatter") String formatter,
+            @QueryParam("name") String name,
+            @Context HttpServletRequest servletRequest) {
         try {
-            ResponseEntity<?> f = repository.getResource(file);
-            String fileContent = new String((byte[]) f.getBody());
+            Response f = repository.getResource(file);
+            String fileContent = new String((byte[]) f.getEntity());
             String queryName = UUID.randomUUID().toString();
+            // fileContent = ServletUtil.replaceParameters(servletRequest, fileContent);
+            //			queryResource.createQuery(queryName,  null,  null, null, fileContent, queryName, null);
+            //			queryResource.execute(queryName, formatter, 0);
             Map<String, String> parameters = ServletUtil.getParameters(servletRequest);
             ThinQuery tq = query2Resource.createQuery(queryName, fileContent, null, null);
             if (parameters != null) {
@@ -90,22 +101,35 @@ public class ExporterResource {
             return query2Resource.getQueryExcelExport(queryName, formatter, name);
         } catch (Exception e) {
             log.error("Error exporting XLS for file: " + file, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+            return Response.serverError()
+                    .entity(e.getMessage())
+                    .status(Status.INTERNAL_SERVER_ERROR)
+                    .build();
         }
     }
 
     /**
      * Export the query to a CSV file format.
+     * @summary Export to CSV.
+     * @param file The file
+     * @param formatter The cellset formatter
+     * @param servletRequest The servlet request
+     * @return A response containing a CSV file.
      */
-    @GetMapping(path = "/saiku/csv", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> exportCsv(
-            @RequestParam(name = "file", required = false) String file,
-            @RequestParam(name = "formatter", required = false) String formatter,
-            HttpServletRequest servletRequest) {
+    @GET
+    @Produces({"application/json"})
+    @Path("/saiku/csv")
+    public Response exportCsv(
+            @QueryParam("file") String file,
+            @QueryParam("formatter") String formatter,
+            @Context HttpServletRequest servletRequest) {
         try {
-            ResponseEntity<?> f = repository.getResource(file);
-            String fileContent = new String((byte[]) f.getBody());
+            Response f = repository.getResource(file);
+            String fileContent = new String((byte[]) f.getEntity());
+            // fileContent = ServletUtil.replaceParameters(servletRequest, fileContent);
             String queryName = UUID.randomUUID().toString();
+            //			query2Resource.createQuery(null,  null,  null, null, fileContent, queryName, null);
+            //			query2Resource.execute(queryName,formatter, 0);
             Map<String, String> parameters = ServletUtil.getParameters(servletRequest);
             ThinQuery tq = query2Resource.createQuery(queryName, fileContent, null, null);
             if (parameters != null) {
@@ -125,23 +149,35 @@ public class ExporterResource {
             return query2Resource.getQueryCsvExport(queryName);
         } catch (Exception e) {
             log.error("Error exporting CSV for file: " + file, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+            return Response.serverError()
+                    .entity(e.getMessage())
+                    .status(Status.INTERNAL_SERVER_ERROR)
+                    .build();
         }
     }
 
     /**
      * Export the query response to JSON.
+     * @summary Export to JSON
+     * @param file The file
+     * @param formatter The cellset formatter
+     * @param servletRequest The servlet request
+     * @return A response containing a JSON query response.
      */
-    @GetMapping(path = "/saiku/json", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> exportJson(
-            @RequestParam(name = "file", required = false) String file,
-            @RequestParam(name = "formatter", required = false) String formatter,
-            HttpServletRequest servletRequest) {
+    @GET
+    @Produces({"application/json"})
+    @Path("/saiku/json")
+    public Response exportJson(
+            @QueryParam("file") String file,
+            @QueryParam("formatter") String formatter,
+            @Context HttpServletRequest servletRequest) {
         try {
-            ResponseEntity<?> f = repository.getResource(file);
-            String fileContent = new String((byte[]) f.getBody());
+            Response f = repository.getResource(file);
+            String fileContent = new String((byte[]) f.getEntity());
             fileContent = ServletUtil.replaceParameters(servletRequest, fileContent);
             String queryName = UUID.randomUUID().toString();
+            //			query2Resource.createQuery(null,  null,  null, null, fileContent, queryName, null);
+            //			QueryResult qr = query2Resource.execute(queryName, formatter, 0);
             Map<String, String> parameters = ServletUtil.getParameters(servletRequest);
             ThinQuery tq = query2Resource.createQuery(queryName, fileContent, null, null);
             if (parameters != null) {
@@ -159,43 +195,67 @@ public class ExporterResource {
             return query2Resource.execute(tq, null);
         } catch (Exception e) {
             log.error("Error exporting JSON for file: " + file, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+            return Response.serverError()
+                    .entity(e.getMessage())
+                    .status(Status.INTERNAL_SERVER_ERROR)
+                    .build();
         }
     }
 
     /**
      * Export the current resultset to an HTML file.
+     * @summary Export to HTML
+     * @param file The file
+     * @param formatter The formatter
+     * @param css The css
+     * @param tableonly Table only, or include chart
+     * @param wrapcontent Wrap content
+     * @param servletRequest The servlet reaquest.
+     * @return A reponse containing the HTML export.
      */
-    @GetMapping(path = "/saiku/html", produces = MediaType.TEXT_HTML_VALUE)
-    public ResponseEntity<?> exportHtml(
-            @RequestParam(name = "file", required = false) String file,
-            @RequestParam(name = "formatter", required = false) String formatter,
-            @RequestParam(name = "css", defaultValue = "false") Boolean css,
-            @RequestParam(name = "tableonly", defaultValue = "false") Boolean tableonly,
-            @RequestParam(name = "wrapcontent", defaultValue = "true") Boolean wrapcontent,
-            HttpServletRequest servletRequest) {
+    @GET
+    @Produces({"text/html"})
+    @Path("/saiku/html")
+    public Response exportHtml(
+            @QueryParam("file") String file,
+            @QueryParam("formatter") String formatter,
+            @QueryParam("css") @DefaultValue("false") Boolean css,
+            @QueryParam("tableonly") @DefaultValue("false") Boolean tableonly,
+            @QueryParam("wrapcontent") @DefaultValue("true") Boolean wrapcontent,
+            @Context HttpServletRequest servletRequest) {
         try {
-            ResponseEntity<?> f = repository.getResource(file);
-            String fileContent = new String((byte[]) f.getBody());
+            Response f = repository.getResource(file);
+            String fileContent = new String((byte[]) f.getEntity());
             fileContent = ServletUtil.replaceParameters(servletRequest, fileContent);
             String queryName = UUID.randomUUID().toString();
             query2Resource.createQuery(queryName, fileContent, null, null);
             return query2Resource.exportHtml(queryName, formatter, css, tableonly, wrapcontent);
         } catch (Exception e) {
             log.error("Error exporting JSON for file: " + file, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+            return Response.serverError()
+                    .entity(e.getMessage())
+                    .status(Status.INTERNAL_SERVER_ERROR)
+                    .build();
         }
     }
 
     /**
      * Export chart to a file.
+     * @summary Export Chart.
+     * @param type The export type (png, svg, jpeg)
+     * @param svg The SVG
+     * @param size The size
+     * @param name The name
+     * @return A reponse containing the chart export.
      */
-    @PostMapping(path = "/saiku/chart", produces = "image/*")
-    public ResponseEntity<?> exportChart(
-            @RequestParam(name = "type", defaultValue = "png") String type,
-            @RequestParam(name = "svg", required = false) String svg,
-            @RequestParam(name = "size", required = false) Integer size,
-            @RequestParam(name = "name", required = false) String name) {
+    @POST
+    @Produces({"image/*"})
+    @Path("/saiku/chart")
+    public Response exportChart(
+            @FormParam("type") @DefaultValue("png") String type,
+            @FormParam("svg") String svg,
+            @FormParam("size") Integer size,
+            @FormParam("name") String name) {
         try {
             if (StringUtils.isBlank(svg)) {
                 throw new Exception("Missing 'svg' parameter");
@@ -218,20 +278,25 @@ public class ExporterResource {
             if (name == null || name.equals("")) {
                 name = "chart-" + new SimpleDateFormat("yyyy-MM-dd-hhmmss").format(new Date());
             }
-            return ResponseEntity.ok()
-                    .header("Content-Type", converter.getContentType())
+            return Response.ok(b)
+                    .type(converter.getContentType())
                     .header("content-disposition", "attachment; filename = " + name + "." + converter.getExtension())
-                    .header("content-length", String.valueOf(b.length))
-                    .body(b);
+                    .header("content-length", b.length)
+                    .build();
 
         } catch (Exception e) {
             log.error("Error exporting Chart to  " + type, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+            return Response.serverError()
+                    .entity(e.getMessage())
+                    .status(Status.INTERNAL_SERVER_ERROR)
+                    .build();
         }
     }
 
     /**
      * Get the version.
+     * @summary Get the Saiku version.
+     * @return A String containing the current version.
      */
     private static String getVersion() {
         Properties prop = new Properties();
