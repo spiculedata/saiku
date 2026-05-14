@@ -320,7 +320,11 @@
 
     // bar / stackedBar / line / stackedLine / area / stackedArea
     const isStacked = t.startsWith("stacked");
-    const kind: "bar" | "line" = t.includes("bar") ? "bar" : "line";
+    // includes("bar") is case-sensitive — "stackedBar" has a capital B,
+    // so the naive check returned false and stacked-bar fell through to
+    // the line branch (i.e. was drawn as a stacked line).
+    const lower = t.toLowerCase();
+    const kind: "bar" | "line" = lower.includes("bar") ? "bar" : "line";
     const areaStyle = t === "area" || t === "stackedArea" ? {} : undefined;
     const base = cols.map((name, c) => ({
       type: kind as "bar" | "line",
@@ -346,10 +350,25 @@
 
   function render() {
     if (!chart) return;
-    const opt = buildOption(result, type, options);
+    let opt: echarts.EChartsCoreOption;
+    try {
+      opt = buildOption(result, type, options);
+    } catch (err) {
+      // If buildOption throws (e.g. cellset shape doesn't fit the requested
+      // chart type), clear the canvas instead of leaving the previous chart's
+      // series on screen. Without this, switching from a "broken" chart to a
+      // valid one would still render the broken state because the stale
+      // series would merge with the new option.
+      console.warn("[saiku] chart buildOption failed; clearing canvas:", err);
+      chart.clear();
+      return;
+    }
+    // Include "series" in replaceMerge — switching chart types must drop the
+    // previous series wholesale, otherwise a stacked-bar's series would merge
+    // with the next radar's etc., producing the "stale chart" symptom.
     chart.setOption(opt, {
       notMerge: false,
-      replaceMerge: ["xAxis", "yAxis", "legend", "tooltip", "title", "visualMap", "radar"],
+      replaceMerge: ["xAxis", "yAxis", "legend", "tooltip", "title", "visualMap", "radar", "series"],
     });
   }
 
