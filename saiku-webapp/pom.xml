@@ -340,8 +340,8 @@
             <artifactId>hsqldb</artifactId>
         </dependency>
         <dependency>
-            <groupId>mysql</groupId>
-            <artifactId>mysql-connector-java</artifactId>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
         </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>
@@ -355,6 +355,11 @@
                 <exclusion><groupId>net.hydromatic</groupId><artifactId>linq4j</artifactId></exclusion>
                 <exclusion><groupId>org.pentaho</groupId><artifactId>pentaho-aggdesigner-algorithm</artifactId></exclusion>
                 <exclusion><groupId>org.apache.hive</groupId><artifactId>hive-exec</artifactId></exclusion>
+                <!-- hive-jdbc 2.3 → hive-metastore → hbase-client → hbase-annotations
+                     → jdk.tools:1.7 (system-scope ref to JDK 8 tools.jar). Same
+                     gone-on-JDK-21 issue as hadoop-common's transitive. -->
+                <exclusion><groupId>jdk.tools</groupId><artifactId>jdk.tools</artifactId></exclusion>
+                <exclusion><groupId>org.apache.hbase</groupId><artifactId>*</artifactId></exclusion>
             </exclusions>
         </dependency>
         <dependency>
