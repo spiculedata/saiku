@@ -540,6 +540,10 @@ check "Customer City TopCount(5) — string-keyed level sorts strictly desc (con
   '{"cube":"'"$CUBE"'","measures":[{"name":"Customer Count"}],"rows":[{"dimension":"Customer","hierarchy":"Customers","level":"City"}],"order":[{"by":"Customer Count","direction":"desc"}],"limit":5}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and r['data'][0]['City']=='Lebanon' and r['data'][0]['Customer Count']['value']==108.0 and [d['Customer Count']['value'] for d in r['data']]==sorted([d['Customer Count']['value'] for d in r['data']], reverse=True)"
 
+check "mixed-op multi-filter: descendants_of + in → tuple slicer (iter 320)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Sales Count"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Store","hierarchy":"Stores","level":"Store Country","op":"descendants_of","members":["[Store].[Stores].[USA]"]},{"dimension":"Customer","hierarchy":"Gender","level":"Gender","op":"in","members":["[Customer].[Gender].[F]"]}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Sales Count']['value']==3953.0 and r['data'][1]['Sales Count']['value']==30848.0 and 'WHERE ([Store].[Stores].[USA], [Customer].[Gender].[F])' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
