@@ -373,18 +373,24 @@ public class AiSchemaConverter {
                                         + "Member refs need at least [Dim].[Member] or [Dim].[Hier].[Member].",
                                 null);
                     }
-                    String leaf = lastBracketSegmentLower(mref);
-                    Integer prev = seenLeaf.put(leaf, mi);
-                    if (prev != null) {
-                        throw new AiValidationException(
-                                fieldPath + ".members[" + mi + "]",
-                                "Member '" + mref + "' resolves to the same member as "
-                                        + fieldPath + ".members[" + prev
-                                        + "] ('" + members.get(prev) + "'). "
-                                        + "Mondrian aggregates duplicates without deduplication "
-                                        + "and would silently double-count. "
-                                        + "Use only one ref form per logical member.",
-                                null);
+                    // Skip dedupe for op=between — its members are [start, end]
+                    // positional pair, and a degenerate range [X]:[X] (same
+                    // start and end) is the legitimate way to express "a
+                    // single member range" (covered by iter 216).
+                    if (!"between".equals(op)) {
+                        String leaf = lastBracketSegmentLower(mref);
+                        Integer prev = seenLeaf.put(leaf, mi);
+                        if (prev != null) {
+                            throw new AiValidationException(
+                                    fieldPath + ".members[" + mi + "]",
+                                    "Member '" + mref + "' resolves to the same member as "
+                                            + fieldPath + ".members[" + prev
+                                            + "] ('" + members.get(prev) + "'). "
+                                            + "Mondrian aggregates duplicates without deduplication "
+                                            + "and would silently double-count. "
+                                            + "Use only one ref form per logical member.",
+                                    null);
+                        }
                     }
                     // Also assert the member's dim+hier prefix matches the
                     // declared filter dim+hier (saiku#798, saiku#799). The
