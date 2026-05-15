@@ -470,6 +470,9 @@ check "order.by targets named measure, not first measure (iter 305)" POST "/rest
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"},{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"order":[{"by":"Store Sales","direction":"asc"}],"limit":2}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and r['data'][0]['Product Family']=='Drink' and r['data'][0]['Store Sales']['value']==48836.21 and 'BottomCount(' in r['metadata']['generatedMdx'] and '[Measures].[Store Sales])' in r['metadata']['generatedMdx']"
 
+check "members search unknown level → 400 + 7-level available (iter 306)" GET "/rest/saiku/api/ai/members/search?cubeId=$CUBE&dimension=Product&hierarchy=Products&level=NotALevel&q=&limit=5" '' \
+  "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='level' and 'Unknown level' in r.get('error','') and 'Product Family' in r.get('available',[]) and 'Product Name' in r.get('available',[])"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
