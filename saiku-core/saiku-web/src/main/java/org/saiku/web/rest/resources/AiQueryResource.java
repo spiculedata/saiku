@@ -474,12 +474,39 @@ public class AiQueryResource {
             int totalWidth = body != null && body.length > 0 ? body[0].length : 0;
             int rowHeaderCount = countRowHeaderColumns(body);
 
-            // Column captions: last header row's data-cell section.
+            // Column captions: walk ALL header rows and join each column's
+            // segment with " | ", filling down spanning captions (olap4j leaves
+            // the cells beyond the first one of a span empty). The previous
+            // "last row only" path collapsed multi-axis columns (e.g.
+            // measures × quarters) into ambiguous "Q1 Q2 Q3 Q4 Q1 Q2 Q3 Q4" —
+            // colliding keys in records format silently dropped the first
+            // measure's cells (saiku#789).
             List<AiQueryMetadata.Caption> cols = new ArrayList<>();
             if (headers != null && headers.length > 0) {
-                AbstractBaseCell[] lastHeader = headers[headers.length - 1];
-                for (int c = rowHeaderCount; c < lastHeader.length; c++) {
-                    String caption = lastHeader[c] == null ? "" : safe(lastHeader[c].getFormattedValue());
+                int colCount = headers[headers.length - 1].length;
+                // Pre-compute fill-down per header row.
+                String[][] filled = new String[headers.length][colCount];
+                for (int hRow = 0; hRow < headers.length; hRow++) {
+                    String last = "";
+                    for (int c = 0; c < colCount; c++) {
+                        if (headers[hRow] == null || c >= headers[hRow].length) {
+                            filled[hRow][c] = "";
+                            continue;
+                        }
+                        String segment = headers[hRow][c] == null ? "" : safe(headers[hRow][c].getFormattedValue());
+                        if (!segment.isEmpty()) last = segment;
+                        filled[hRow][c] = last;
+                    }
+                }
+                for (int c = rowHeaderCount; c < colCount; c++) {
+                    StringBuilder cap = new StringBuilder();
+                    for (int hRow = 0; hRow < headers.length; hRow++) {
+                        String segment = filled[hRow][c];
+                        if (segment == null || segment.isEmpty()) continue;
+                        if (cap.length() > 0) cap.append(" | ");
+                        cap.append(segment);
+                    }
+                    String caption = cap.toString();
                     cols.add(new AiQueryMetadata.Caption(caption, caption));
                 }
             }

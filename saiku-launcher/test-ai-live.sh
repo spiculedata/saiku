@@ -107,7 +107,11 @@ check "explicit members on rows" POST "/rest/saiku/api/ai/query" \
 
 check "columns axis cross-join (Quarter × measures)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"columns":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}]}' \
-  "r.get('status')=='SUCCESS' and 'CROSSJOIN' in r['metadata']['generatedMdx'] and 'Q1' in [c['caption'] for c in r['metadata']['columns']]"
+  "r.get('status')=='SUCCESS' and 'CROSSJOIN' in r['metadata']['generatedMdx'] and any('Q1' in c['caption'] for c in r['metadata']['columns'])"
+
+check "multi-measure × dim crossjoin preserves all cells (saiku#789)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"},{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"columns":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}]}' \
+  "r.get('status')=='SUCCESS' and len(r['metadata']['columns'])==8 and 'Store Sales | Q1' in [c['caption'] for c in r['metadata']['columns']] and 'Unit Sales | Q1' in [c['caption'] for c in r['metadata']['columns']] and r['data'][0]['Store Sales | Q1']['value']!=r['data'][0]['Unit Sales | Q1']['value']"
 
 check "rows from same hierarchy → Hierarchize (Store State + Store Name)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Store","hierarchy":"Stores","level":"Store State"},{"dimension":"Store","hierarchy":"Stores","level":"Store Name"}],"limit":4,"nonEmpty":false}' \
