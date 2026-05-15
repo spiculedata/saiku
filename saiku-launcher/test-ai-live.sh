@@ -326,6 +326,10 @@ check "localised measure name resolves uniqueName + % unit sniff (iter 270)" POS
   '{"cube":"'"$CUBE"'","measures":[{"name":"Gewinn-Wachstum"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==4 and '[Measures].[Profit Growth]' in r['metadata']['generatedMdx'] and r['data'][0]['Gewinn-Wachstum']['unit']=='%'"
 
+check "rows-deep + columns + slicer combo: Product Subcategory × Quarter / USA (iter 271)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Subcategory"}],"columns":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}],"filters":[{"dimension":"Store","hierarchy":"Stores","level":"Store Country","op":"descendants_of","members":["[Store].[Stores].[USA]"]}],"limit":3}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and len(r['metadata']['columns'])==4 and 'HEAD(' in r['metadata']['generatedMdx'] and 'WHERE ([Store].[Stores].[USA])' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
