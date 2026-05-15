@@ -357,5 +357,12 @@
 			<groupId>com.github.ben-manes.caffeine</groupId>
 			<artifactId>caffeine</artifactId>
 		</dependency>
+		<!-- networknt json-schema-validator: enforces AiQueryRequest's
+		     shape (draft 2020-12) before the AiSchemaConverter's
+		     domain-resolution layer. Version managed by saiku-bom. -->
+		<dependency>
+			<groupId>com.networknt</groupId>
+			<artifactId>json-schema-validator</artifactId>
+		</dependency>
 	</dependencies>
 </project>
