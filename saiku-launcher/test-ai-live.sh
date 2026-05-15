@@ -693,9 +693,9 @@ check "lowercase catalog → 500 (same partial-resolution shape as cubeName — 
   '{"cube":{"connectionName":"unknown_foodmart","catalog":"foodmart","schema":"FoodMart","cubeName":"Sales"},"measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
   "http==500 and r.get('status')=='EXECUTION_ERROR' and 'Cannot get native cube' in r.get('error','') and '[FoodMart]' in r.get('error','')"
 
-check "same-dim different-hier rows+filter (saiku#784 scope) — Gender × Yearly Income (iter 352)" POST "/rest/saiku/api/ai/query" \
-  '{"cube":"'"$CUBE"'","measures":[{"name":"Customer Count"}],"rows":[{"dimension":"Customer","hierarchy":"Gender","level":"Gender"}],"filters":[{"dimension":"Customer","hierarchy":"Yearly Income","level":"Yearly Income","op":"in","members":["[Customer].[Yearly Income].[\$30K - \$50K]"]}]}' \
-  "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and r['data'][0]['Customer Count']['value']==852.0 and r['data'][1]['Customer Count']['value']==934.0 and 'WHERE ([Customer].[Yearly Income].[\$30K - \$50K])' in r['metadata']['generatedMdx']"
+check "same-dim different-hier rows+filter (saiku#784 scope) — Gender × Marital Status (iter 352)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Customer Count"}],"rows":[{"dimension":"Customer","hierarchy":"Gender","level":"Gender"}],"filters":[{"dimension":"Customer","hierarchy":"Marital Status","level":"Marital Status","op":"in","members":["[Customer].[Marital Status].[M]"]}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and r['data'][0]['Customer Count']['value']==1365.0 and r['data'][1]['Customer Count']['value']==1376.0 and 'WHERE ([Customer].[Marital Status].[M])' in r['metadata']['generatedMdx']"
 
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
