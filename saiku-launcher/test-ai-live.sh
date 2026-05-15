@@ -348,6 +348,10 @@ check "format=matrix uses positional keys, labels live in metadata (iter 274)" P
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"columns":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}]}' \
   "r.get('format')=='matrix' and len(r.get('data',[]))==0 and len(r['matrix'])==3 and list(r['matrix'][0].keys())==['0','1','2','3'] and r['matrix'][0]['0']['value']==11585.8 and r['metadata']['rows'][0]['caption']=='Drink'"
 
+check "explicit Year members on rows + nonEmpty=false in hasAll=false hier (saiku#807 — iter 275)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Year","members":["[Time].[Time].[1997]","[Time].[Time].[1998]"]}],"nonEmpty":false}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and r['data'][0]['Year']=='1997' and r['data'][0]['Store Sales']['value']==565238.13 and r['data'][1]['Year']=='1998' and r['data'][1]['Store Sales']['value'] is None"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \

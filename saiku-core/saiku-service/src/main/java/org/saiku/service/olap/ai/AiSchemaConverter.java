@@ -918,9 +918,14 @@ public class AiSchemaConverter {
         }
         int expectedDepth = levelDepth(declared, hier);
         if (expectedDepth < 0) return;
-        // member depth = segments - 2 (dim + hier prefix), with the (All)
-        // member at depth 0.
-        int actualDepth = segments - 2;
+        // member depth = segments - 2 (dim + hier prefix), with one extra
+        // adjustment if the hierarchy has no (All) level. Mondrian hierarchies
+        // declared with hasAll=false (e.g. FoodMart's [Time].[Time] with
+        // levels [Year, Quarter, Month]) put Year at depth 0, so a 3-segment
+        // [Time].[Time].[1997] ref must resolve to depth 0, not depth 1.
+        // See saiku#807.
+        int hasAllOffset = hierHasAllLevel(hier) ? 0 : 1;
+        int actualDepth = segments - 2 - hasAllOffset;
         if (actualDepth != expectedDepth) {
             String actualLevelName = levelNameAtDepth(hier, actualDepth);
             throw new AiValidationException(
@@ -1028,6 +1033,15 @@ public class AiSchemaConverter {
             i++;
         }
         return -1;
+    }
+
+    /** True when the hierarchy's first level is the (All) level. Used to
+     *  offset the segments→depth conversion for hierarchies declared with
+     *  hasAll=false (saiku#807). */
+    private static boolean hierHasAllLevel(AiSchema.Hierarchy hier) {
+        if (hier == null || hier.levels.isEmpty()) return false;
+        AiSchema.Level first = hier.levels.values().iterator().next();
+        return first != null && first.name != null && first.name.equalsIgnoreCase("(All)");
     }
 
     private static String levelNameAtDepth(AiSchema.Hierarchy hier, int depth) {
