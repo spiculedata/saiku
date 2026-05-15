@@ -64,14 +64,17 @@ public class ServletUtil {
         return queryParams;
     }
 
+    /** Delegates to the hardened {@link
+     *  org.saiku.service.util.MdxParameterSubstitutor#substitute} per
+     *  saiku#780 — the previous {@code replaceAll}-based impl was
+     *  vulnerable to regex injection in the parameter name and
+     *  replacement-string injection in the value, plus the raw MDX-
+     *  injection surface in both cases. The new impl rejects values
+     *  with MDX-meta characters; callers needing those characters
+     *  should switch to the typed olap4j Parameter API (planned
+     *  follow-up). */
     private static String replaceParameters(String query, Map<String, String> parameters) {
-        if (parameters != null) {
-            for (String parameter : parameters.keySet()) {
-                String value = parameters.get(parameter);
-                query = query.replaceAll("(?i)\\$\\{" + parameter + "\\}", value);
-            }
-        }
-        return query;
+        return org.saiku.service.util.MdxParameterSubstitutor.substitute(query, parameters);
     }
 
     public static String replaceParameters(HttpServletRequest req, String query) {
