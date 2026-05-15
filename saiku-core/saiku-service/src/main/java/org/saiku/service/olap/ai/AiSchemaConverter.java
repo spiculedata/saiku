@@ -478,7 +478,79 @@ public class AiSchemaConverter {
             s.append(expr);
         }
         s.append(")");
-        return s.toString();
+        String slicer = s.toString();
+        // If there are ≥2 filters AND any of them is a set, the bare
+        // tuple-of-sets form '({set1}, {set2})' is illegal — Mondrian
+        // returns "No function matches signature '(<Set>, <Set>)'"
+        // (saiku#801). Rewrite to a single-element slicer over the
+        // CROSSJOIN of the constituent sets, which Mondrian implicitly
+        // aggregates the same way a single set is implicitly aggregated.
+        // Single-filter sets keep the bare form to avoid the iter-1
+        // digit-only-leaves parser quirk.
+        if (filters.size() >= 2 && slicerHasSet(filters)) {
+            StringBuilder cj = new StringBuilder();
+            cj.append("CROSSJOIN(");
+            // The slicer we just built is '(e1, e2, ..., eN)'.
+            // Strip the outer parens and reassemble as
+            // CROSSJOIN(CROSSJOIN(e1, e2), e3, ...) — Mondrian's
+            // CROSSJOIN is binary, so left-nest for N≥3 (mirroring the
+            // rows-axis pattern). For N=2 the simple form works.
+            String inner = slicer.substring(1, slicer.length() - 1);
+            String[] parts = splitTopLevelCommas(inner);
+            if (parts.length == 1) {
+                return slicer;
+            }
+            StringBuilder ch = new StringBuilder(parts[0]);
+            for (int k = 1; k < parts.length; k++) {
+                ch.insert(0, "CROSSJOIN(");
+                ch.append(", ").append(parts[k]).append(")");
+            }
+            return "(" + ch.toString() + ")";
+        }
+        return slicer;
+    }
+
+    /** Returns true when any filter in the list will emit a set
+     *  expression. Mirrors the isSet decisions inside the switch. */
+    private static boolean slicerHasSet(List<AiFilterSelection> filters) {
+        for (AiFilterSelection f : filters) {
+            String op = f.getOp() == null ? "in" : f.getOp().toLowerCase();
+            List<String> members = f.getMembers() == null ? java.util.Collections.emptyList() : f.getMembers();
+            switch (op) {
+                case "in":
+                    if (members.size() > 1) return true;
+                    break;
+                case "not_in":
+                case "between":
+                    return true;
+                case "relative":
+                    if (isRelativeSet(f)) return true;
+                    break;
+                default:
+                    break;
+            }
+        }
+        return false;
+    }
+
+    /** Split a string like 'a, b, c' on top-level commas — commas inside
+     *  brackets or parentheses are preserved. Needed because slicer
+     *  elements can themselves contain commas (Aggregate({a, b})). */
+    private static String[] splitTopLevelCommas(String s) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        int depth = 0;
+        int start = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '(' || c == '{' || c == '[') depth++;
+            else if (c == ')' || c == '}' || c == ']') depth--;
+            else if (c == ',' && depth == 0) {
+                out.add(s.substring(start, i).trim());
+                start = i + 1;
+            }
+        }
+        out.add(s.substring(start).trim());
+        return out.toArray(new String[0]);
     }
 
     /**
