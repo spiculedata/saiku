@@ -37,28 +37,40 @@ public class AiSchemaEnricher {
         if (parts.length == 0) return;
 
         if (parts.length == 2 && "measures".equals(parts[0])) {
-            AiSchema.Measure m = schema.measures.get(AiSchema.key(parts[1]));
-            if (m != null) m.displayName = displayName;
+            String canonicalKey = AiSchema.key(parts[1]);
+            AiSchema.Measure m = schema.measures.get(canonicalKey);
+            if (m != null) {
+                m.displayName = displayName;
+                schema.measureAliases.put(AiSchema.key(displayName), canonicalKey);
+            }
             return;
         }
 
         if (parts.length >= 2 && "dimensions".equals(parts[0])) {
-            AiSchema.Dimension d = schema.dimensions.get(AiSchema.key(parts[1]));
+            String dimKey = AiSchema.key(parts[1]);
+            AiSchema.Dimension d = schema.dimensions.get(dimKey);
             if (d == null) return;
             if (parts.length == 2) {
                 d.displayName = displayName;
+                schema.dimensionAliases.put(AiSchema.key(displayName), dimKey);
                 return;
             }
             if (parts.length >= 4 && "hierarchies".equals(parts[2])) {
-                AiSchema.Hierarchy h = d.hierarchies.get(AiSchema.key(parts[3]));
+                String hierKey = AiSchema.key(parts[3]);
+                AiSchema.Hierarchy h = d.hierarchies.get(hierKey);
                 if (h == null) return;
                 if (parts.length == 4) {
                     h.displayName = displayName;
+                    d.hierarchyAliases.put(AiSchema.key(displayName), hierKey);
                     return;
                 }
                 if (parts.length == 6 && "levels".equals(parts[4])) {
-                    AiSchema.Level l = h.levels.get(AiSchema.key(parts[5]));
-                    if (l != null) l.displayName = displayName;
+                    String levelKey = AiSchema.key(parts[5]);
+                    AiSchema.Level l = h.levels.get(levelKey);
+                    if (l != null) {
+                        l.displayName = displayName;
+                        h.levelAliases.put(AiSchema.key(displayName), levelKey);
+                    }
                 }
             }
         }

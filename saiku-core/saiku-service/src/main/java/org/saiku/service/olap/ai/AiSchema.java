@@ -45,6 +45,11 @@ public class AiSchema {
         public final String uniqueName;
         public String displayName;
         public final Map<String, Level> levels = new LinkedHashMap<>();
+        /** Reverse lookup: lower-cased {@code displayName} → canonical level key.
+         *  Populated by {@link AiSchemaEnricher} so the converter can resolve
+         *  agent requests that use either the canonical name or the
+         *  display name. */
+        public final Map<String, String> levelAliases = new LinkedHashMap<>();
         public Hierarchy(String name, String uniqueName) {
             this.name = name;
             this.uniqueName = uniqueName;
@@ -56,6 +61,8 @@ public class AiSchema {
         public final String uniqueName;
         public String displayName;
         public final Map<String, Hierarchy> hierarchies = new LinkedHashMap<>();
+        /** display-name → canonical hierarchy key. */
+        public final Map<String, String> hierarchyAliases = new LinkedHashMap<>();
         public Dimension(String name, String uniqueName) {
             this.name = name;
             this.uniqueName = uniqueName;
@@ -67,6 +74,10 @@ public class AiSchema {
     private final String cubeUniqueName;
     public final Map<String, Measure> measures = new LinkedHashMap<>();
     public final Map<String, Dimension> dimensions = new LinkedHashMap<>();
+    /** display-name → canonical measure key (Phase 3 enrichment alias). */
+    public final Map<String, String> measureAliases = new LinkedHashMap<>();
+    /** display-name → canonical dimension key (Phase 3 enrichment alias). */
+    public final Map<String, String> dimensionAliases = new LinkedHashMap<>();
     /** Phase 3: LLM/schema-generator suggestions overlaid on the schema. */
     public java.util.List<AiSchemaSuggestion> suggestions = new java.util.ArrayList<>();
 

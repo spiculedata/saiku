@@ -177,28 +177,50 @@ public class AiSchemaConverter {
     private AiSchema.Measure lookupMeasure(String name, AiSchema schema) {
         if (name == null || name.isEmpty()) {
             throw new AiValidationException("measures[].name", "Measure name required",
-                    new ArrayList<>(canonicalNames(schema.measures.values())));
+                    availableMeasureNames(schema));
         }
-        AiSchema.Measure m = schema.measures.get(AiSchema.key(name));
+        String k = AiSchema.key(name);
+        AiSchema.Measure m = schema.measures.get(k);
+        if (m == null) {
+            // Phase 3: display-name alias fallback.
+            String aliasTarget = schema.measureAliases.get(k);
+            if (aliasTarget != null) m = schema.measures.get(aliasTarget);
+        }
         if (m == null) {
             throw new AiValidationException("measures[].name",
                     "Unknown measure '" + name + "'",
-                    new ArrayList<>(canonicalNames(schema.measures.values())));
+                    availableMeasureNames(schema));
         }
         return m;
+    }
+
+    /** Canonical names plus any display-name aliases — so error messages
+     *  list every string the agent could have used. */
+    private static List<String> availableMeasureNames(AiSchema schema) {
+        List<String> out = new ArrayList<>();
+        for (AiSchema.Measure m : schema.measures.values()) {
+            out.add(m.name);
+            if (m.displayName != null && !m.displayName.isEmpty()) out.add(m.displayName);
+        }
+        return out;
     }
 
     private AiSchema.Level lookupLevel(AiAxisSelection sel, AiSchema schema, String fieldPath) {
         if (sel.getDimension() == null || sel.getDimension().isEmpty()) {
             throw new AiValidationException(fieldPath + ".dimension",
                     "Dimension required",
-                    new ArrayList<>(canonicalNames(schema.dimensions.values())));
+                    availableDimensionNames(schema));
         }
-        AiSchema.Dimension dim = schema.dimensions.get(AiSchema.key(sel.getDimension()));
+        String dimK = AiSchema.key(sel.getDimension());
+        AiSchema.Dimension dim = schema.dimensions.get(dimK);
+        if (dim == null) {
+            String aliasTarget = schema.dimensionAliases.get(dimK);
+            if (aliasTarget != null) dim = schema.dimensions.get(aliasTarget);
+        }
         if (dim == null) {
             throw new AiValidationException(fieldPath + ".dimension",
                     "Unknown dimension '" + sel.getDimension() + "'",
-                    new ArrayList<>(canonicalNames(schema.dimensions.values())));
+                    availableDimensionNames(schema));
         }
         AiSchema.Hierarchy hier;
         if (sel.getHierarchy() == null || sel.getHierarchy().isEmpty()) {
@@ -208,28 +230,65 @@ public class AiSchemaConverter {
             } else {
                 throw new AiValidationException(fieldPath + ".hierarchy",
                         "Dimension '" + dim.name + "' has multiple hierarchies; specify one",
-                        new ArrayList<>(canonicalNames(dim.hierarchies.values())));
+                        availableHierarchyNames(dim));
             }
         } else {
-            hier = dim.hierarchies.get(AiSchema.key(sel.getHierarchy()));
+            String hierK = AiSchema.key(sel.getHierarchy());
+            hier = dim.hierarchies.get(hierK);
+            if (hier == null) {
+                String aliasTarget = dim.hierarchyAliases.get(hierK);
+                if (aliasTarget != null) hier = dim.hierarchies.get(aliasTarget);
+            }
             if (hier == null) {
                 throw new AiValidationException(fieldPath + ".hierarchy",
                         "Unknown hierarchy '" + sel.getHierarchy() + "' on dimension '" + dim.name + "'",
-                        new ArrayList<>(canonicalNames(dim.hierarchies.values())));
+                        availableHierarchyNames(dim));
             }
         }
         if (sel.getLevel() == null || sel.getLevel().isEmpty()) {
             throw new AiValidationException(fieldPath + ".level",
                     "Level required",
-                    new ArrayList<>(canonicalNames(hier.levels.values())));
+                    availableLevelNames(hier));
         }
-        AiSchema.Level level = hier.levels.get(AiSchema.key(sel.getLevel()));
+        String lvlK = AiSchema.key(sel.getLevel());
+        AiSchema.Level level = hier.levels.get(lvlK);
+        if (level == null) {
+            String aliasTarget = hier.levelAliases.get(lvlK);
+            if (aliasTarget != null) level = hier.levels.get(aliasTarget);
+        }
         if (level == null) {
             throw new AiValidationException(fieldPath + ".level",
                     "Unknown level '" + sel.getLevel() + "' on hierarchy '" + hier.name + "'",
-                    new ArrayList<>(canonicalNames(hier.levels.values())));
+                    availableLevelNames(hier));
         }
         return level;
+    }
+
+    private static List<String> availableDimensionNames(AiSchema schema) {
+        List<String> out = new ArrayList<>();
+        for (AiSchema.Dimension d : schema.dimensions.values()) {
+            out.add(d.name);
+            if (d.displayName != null && !d.displayName.isEmpty()) out.add(d.displayName);
+        }
+        return out;
+    }
+
+    private static List<String> availableHierarchyNames(AiSchema.Dimension d) {
+        List<String> out = new ArrayList<>();
+        for (AiSchema.Hierarchy h : d.hierarchies.values()) {
+            out.add(h.name);
+            if (h.displayName != null && !h.displayName.isEmpty()) out.add(h.displayName);
+        }
+        return out;
+    }
+
+    private static List<String> availableLevelNames(AiSchema.Hierarchy h) {
+        List<String> out = new ArrayList<>();
+        for (AiSchema.Level l : h.levels.values()) {
+            out.add(l.name);
+            if (l.displayName != null && !l.displayName.isEmpty()) out.add(l.displayName);
+        }
+        return out;
     }
 
     private static List<String> canonicalNames(java.util.Collection<?> items) {

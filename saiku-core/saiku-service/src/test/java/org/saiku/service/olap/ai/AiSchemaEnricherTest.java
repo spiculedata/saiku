@@ -130,10 +130,9 @@ public class AiSchemaEnricherTest {
     }
 
     @Test
-    public void renamingViaDisplayNameDoesNotBecomeAValidQueryName() {
-        // Even after renaming "Store Sales" -> "Revenue", a request using
-        // the new display name must NOT resolve — the agent must stick to
-        // the canonical names for validation.
+    public void displayNameIsAValidQueryName() {
+        // After renaming "Store Sales" -> "Revenue", the agent may use either
+        // the canonical name OR the display name. Phase 3 contract.
         AiSchemaEnrichment e = new AiSchemaEnrichment();
         e.getRenames().put("measures.Store Sales", "Revenue");
         enricher.apply(schema, e);
@@ -143,14 +142,53 @@ public class AiSchemaEnricherTest {
         req.setMeasures(Collections.singletonList(new AiMeasureSelection("Revenue")));
         req.setRows(Collections.singletonList(new AiAxisSelection("Time", "Time By", "Quarter")));
 
+        org.saiku.olap.query2.ThinQuery tq = new AiSchemaConverter().convert(req, schema);
+        assertNotNull(tq);
+        // The generated MDX still uses the canonical uniqueName, regardless of
+        // which alias the agent supplied.
+        assertTrue(tq.getMdx(), tq.getMdx().contains("[Measures].[Store Sales]"));
+    }
+
+    @Test
+    public void unknownNameStillFailsValidationWithBothAliasesListed() {
+        // Negative path: a totally bogus name still 400s, and the candidate
+        // list includes both canonical names AND display names.
+        AiSchemaEnrichment e = new AiSchemaEnrichment();
+        e.getRenames().put("measures.Store Sales", "Revenue");
+        enricher.apply(schema, e);
+
+        AiQueryRequest req = new AiQueryRequest();
+        req.setCube(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+        req.setMeasures(Collections.singletonList(new AiMeasureSelection("Bogus")));
+        req.setRows(Collections.singletonList(new AiAxisSelection("Time", "Time By", "Quarter")));
+
         try {
             new AiSchemaConverter().convert(req, schema);
-            org.junit.Assert.fail("expected validation error for display-name as query name");
+            org.junit.Assert.fail("expected validation error for unknown name");
         } catch (AiValidationException ex) {
             assertEquals("measures[].name", ex.getField());
-            assertTrue("error mentions canonical name", ex.getAvailable().contains("Store Sales"));
-            assertFalse("display name is NOT a valid query identifier", ex.getAvailable().contains("Revenue"));
+            assertTrue("candidates include canonical name", ex.getAvailable().contains("Store Sales"));
+            assertTrue("candidates include display name", ex.getAvailable().contains("Revenue"));
         }
+    }
+
+    @Test
+    public void displayNamesResolveAcrossDimHierLevel() {
+        // End-to-end: rename every axis path, verify a request using all
+        // display names resolves to the right canonical MDX.
+        AiSchemaEnrichment e = new AiSchemaEnrichment();
+        e.getRenames().put("dimensions.Time", "Period");
+        e.getRenames().put("dimensions.Time.hierarchies.Time By", "By Date");
+        e.getRenames().put("dimensions.Time.hierarchies.Time By.levels.Quarter", "Q");
+        enricher.apply(schema, e);
+
+        AiQueryRequest req = new AiQueryRequest();
+        req.setCube(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+        req.setMeasures(Collections.singletonList(new AiMeasureSelection("Store Sales")));
+        req.setRows(Collections.singletonList(new AiAxisSelection("Period", "By Date", "Q")));
+
+        org.saiku.olap.query2.ThinQuery tq = new AiSchemaConverter().convert(req, schema);
+        assertTrue(tq.getMdx(), tq.getMdx().contains("[Time].[Time By].[Quarter].Members"));
     }
 
     @Test
