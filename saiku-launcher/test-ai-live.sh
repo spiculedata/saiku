@@ -440,6 +440,9 @@ check "HR Employee/Gender — 4th path to 616 aggregate (iter 297)" POST "/rest/
   '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Number of Employees"},{"name":"Avg Salary"}],"rows":[{"dimension":"Employee","hierarchy":"Gender","level":"Gender"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and r['data'][0]['Gender']=='F' and r['data'][0]['Number of Employees']['value']==330.0 and r['data'][1]['Number of Employees']['value']==286.0 and sum(d['Number of Employees']['value'] for d in r['data'])==616.0"
 
+check "members search with no-match q returns empty list 200 (iter 298)" GET "/rest/saiku/api/ai/members/search?cubeId=$CUBE&dimension=Product&hierarchy=Products&level=Brand%20Name&q=ZZZZNothingMatches&limit=10" '' \
+  "http==200 and isinstance(r, list) and r==[]"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
