@@ -570,6 +570,19 @@ check "filter op=descendants_of on Time/1997 → compact ancestor slicer (iter 3
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","op":"descendants_of","members":["[Time].[Time].[1997]"]}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==24597.0 and r['data'][1]['Unit Sales']['value']==191940.0 and 'WHERE ([Time].[Time].[1997])' in r['metadata']['generatedMdx']"
 
+# Documented Mondrian quirk: same-hier 2-level Hierarchize'd set
+# fed into TopCount returns only leaf-level members, no parent
+# rollups. The MDX is constructed correctly:
+#   TopCount(Hierarchize({Family.Members, Category.Members}), 5, Store Sales)
+# but Mondrian's TopCount evaluation skips the Family rollups under
+# Hierarchize and returns only Category-level entries — reproduces
+# identically via legacy /query/execute, so it's Mondrian semantics
+# not the AI layer. limit=5 produces 2 rows (the genuine top 2
+# leaf categories).
+check "same-hier 2-level + TopCount returns leaf-only entries (Mondrian quirk — iter 328)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"},{"dimension":"Product","hierarchy":"Products","level":"Product Category"}],"order":[{"by":"Store Sales","direction":"desc"}],"limit":5}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and r['data'][0]['Product Family']=='Food' and r['data'][0]['Product Category']=='Snack Foods' and r['data'][0]['Store Sales']['value']==67609.82 and 'TopCount(Hierarchize(' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
