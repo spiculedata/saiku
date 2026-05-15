@@ -4,11 +4,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
+import org.saiku.service.util.MdxParameterSubstitutor;
 
 class TqUtil {
-
-    private static final String FORMULA_BEGIN = "${";
-    private static final String FORMULA_END = "}";
 
     public static List<String> splitParameterValues(String value) {
         List<String> values = new ArrayList<>();
@@ -22,33 +20,11 @@ class TqUtil {
         return values;
     }
 
+    /** Delegates to the hardened {@link MdxParameterSubstitutor} per
+     *  saiku#780 — the previous hand-rolled substring scan was
+     *  injection-vulnerable for the same reasons as the other two
+     *  duplicate impls. */
     public static String replaceParameters(String input, Map<String, String> parameters) throws RuntimeException {
-        if (StringUtils.isBlank(input)) return input;
-        if (!StringUtils.contains(input, FORMULA_BEGIN)) return input;
-
-        int startIdx = StringUtils.indexOf(input, FORMULA_BEGIN);
-        int contentStartIdx = startIdx + FORMULA_BEGIN.length();
-
-        if (startIdx > -1) {
-            int contentEndIdx = StringUtils.lastIndexOf(input, FORMULA_END);
-            int endIdx = contentEndIdx + FORMULA_END.length();
-            if (contentEndIdx >= contentStartIdx) {
-                String contents = StringUtils.substring(input, contentStartIdx, contentEndIdx);
-                if (parameters.containsKey(contents)) {
-                    StringBuilder result = new StringBuilder();
-                    result.append(StringUtils.substring(input, 0, startIdx));
-                    String value = parameters.get(contents);
-                    result.append(value);
-                    result.append(StringUtils.substring(input, endIdx, input.length()));
-
-                    return result.toString();
-
-                } else {
-                    throw new RuntimeException(
-                            "Cannot find value for paramter: " + contents + " in query parameter list!");
-                }
-            }
-        }
-        return input;
+        return MdxParameterSubstitutor.substitute(input, parameters);
     }
 }
