@@ -424,6 +424,10 @@ check "columns 2-dim crossjoin: Quarter × Gender — pipe-separated captions (i
   '{"cube":"'"$CUBE"'","measures":[{"name":"Sales Count"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"columns":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"},{"dimension":"Customer","hierarchy":"Gender","level":"Gender"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and len(r['metadata']['columns'])==8 and 'Sales Count | Q1 | F' in [c['caption'] for c in r['metadata']['columns']] and r['data'][0]['Sales Count | Q1 | F']['value']==953.0 and r['metadata']['generatedMdx'].count('CROSSJOIN')==2"
 
+check "HR Education Level × Avg Salary — education-salary correlation (iter 294)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Avg Salary"},{"name":"Number of Employees"}],"rows":[{"dimension":"Employee","hierarchy":"Education Level","level":"Education Level"}],"order":[{"by":"Avg Salary","direction":"desc"}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and r['data'][0]['Education Level']=='Graduate Degree' and r['data'][4]['Education Level']=='Partial High School' and sum(d['Number of Employees']['value'] for d in r['data'])==616.0"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
