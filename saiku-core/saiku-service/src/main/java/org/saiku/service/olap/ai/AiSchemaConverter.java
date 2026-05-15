@@ -630,7 +630,13 @@ public class AiSchemaConverter {
             case "last_n_months":
             case "last_n_quarters":
             case "last_n_years": {
-                int n = f.getN() <= 0 ? 1 : f.getN();
+                int n = f.getN();
+                if (n <= 0) {
+                    // Silently coercing n<=0 to 1 was masking agent typos.
+                    // The presets require a positive count.
+                    throw new AiValidationException(
+                            fieldPath + ".n", "'" + preset + "' requires n >= 1. Got " + n + ".", null);
+                }
                 return "Tail(" + level.uniqueName + ".Members, " + n + ")";
             }
             case "ytd":
