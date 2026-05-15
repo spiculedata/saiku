@@ -725,6 +725,19 @@ check "visualTotals=true with explicit member subset emits VISUALTOTALS({...}) (
   fi
 }
 
+# Drillthrough with maxrows=0 → no-cap behaviour (iter 356).
+# Mirrors the /query limit<=0 "no cap" contract on the drillthrough
+# side. Asserts rowCount > 100 (well past any default cap that
+# might be silently applied).
+DT3_QID=$(curl -sS -b "$COOKIES" -X POST "$URL/rest/saiku/api/ai/query" \
+  -H 'Content-Type: application/json' \
+  --data '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"limit":1}' \
+  | python3 -c "import json,sys;print(json.load(sys.stdin).get('queryId',''))")
+if [[ -n "$DT3_QID" ]]; then
+  check "drillthrough maxrows=0 → no-cap (iter 356)" GET "/rest/saiku/api/ai/query/$DT3_QID/drillthrough?maxrows=0" '' \
+    "http==200 and r.get('rowCount',0) > 100 and r.get('rowCount')==len(r['rows'])"
+fi
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
