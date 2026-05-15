@@ -432,6 +432,10 @@ check "Sales 2 cube: Profit is USD not EUR (per-cube format isolation, iter 295)
   '{"cube":"unknown_foodmart/FoodMart/FoodMart/Sales 2","measures":[{"name":"Sales Count"},{"name":"Profit"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"columns":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}],"filters":[{"dimension":"Gender","hierarchy":"Gender","level":"Gender","op":"in","members":["[Gender].[Gender].[F]"]}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and len(r['metadata']['columns'])==8 and r['data'][0]['Sales Count | Q1']['value']==953.0 and r['data'][0]['Profit | Q1']['unit']=='USD' and 'WHERE ([Gender].[Gender].[F])' in r['metadata']['generatedMdx']"
 
+check "Customer descendants_of slicer compacts to ancestor in WHERE (iter 296)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Customer Count"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Customer","hierarchy":"Customers","level":"State Province","op":"descendants_of","members":["[Customer].[Customers].[USA].[CA]"]}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Customer Count']['value']==1434.0 and r['data'][1]['Customer Count']['value']==2676.0 and 'WHERE ([Customer].[Customers].[USA].[CA])' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
