@@ -45,6 +45,11 @@
         <jackson.version>2.18.6</jackson.version>
         <arrow.version>18.2.0</arrow.version>
         <caffeine.version>3.1.8</caffeine.version>
+        <!-- JSON Schema (draft 2020-12) validator for the AiQueryRequest
+             body. Used by AiRequestSchemaValidator to enforce shape errors
+             before the converter's domain-resolution layer runs. Apache 2.0,
+             ~200KB, no heavy transitives. Pairs with Jackson 2.18.x. -->
+        <jsonSchemaValidator.version>1.5.8</jsonSchemaValidator.version>
     </properties>
 
     <dependencyManagement>
@@ -680,6 +685,15 @@
                 <groupId>com.github.ben-manes.caffeine</groupId>
                 <artifactId>caffeine</artifactId>
                 <version>${caffeine.version}</version>
+            </dependency>
+            <!-- networknt json-schema-validator: enforces AiQueryRequest's
+                 shape contract (draft 2020-12) before the converter's
+                 domain-resolution validation. The schema doc itself lives
+                 in AiRequestJsonSchema. -->
+            <dependency>
+                <groupId>com.networknt</groupId>
+                <artifactId>json-schema-validator</artifactId>
+                <version>${jsonSchemaValidator.version}</version>
             </dependency>
         </dependencies>
 

@@ -46,4 +46,19 @@ public class SaikuServiceException extends RuntimeException {
     public SaikuServiceException(String message, Throwable cause) {
         super(message, cause);
     }
+
+    /**
+     * Cause-first factory for use inside {@code catch} blocks. Always preserves
+     * the inner cause chain. Prefer this over {@code new SaikuServiceException(msg)}
+     * whenever a {@link Throwable} is in scope — dropping the cause turns a
+     * 500-with-diagnostic into a 500-with-UUID, which is the failure mode
+     * {@code AiQueryResource.describeDeepestCause} exists to work around.
+     *
+     * @param cause   the underlying throwable; must not be null
+     * @param message human-readable summary, included verbatim in the surface
+     * @return a new SaikuServiceException wrapping {@code cause}
+     */
+    public static SaikuServiceException wrap(Throwable cause, String message) {
+        return new SaikuServiceException(message, cause);
+    }
 }

@@ -1,0 +1,6 @@
+{
+  "measures": [{ "name": "Number of Employees" }],
+  "rows": [
+    { "dimension": "Employee", "hierarchy": "Salary", "level": "Salary" }
+  ]
+}

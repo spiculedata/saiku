@@ -836,13 +836,22 @@ public class AiSchemaConverter {
     }
 
     private static SaikuCube toSaikuCube(AiCubeRef ref, AiSchema schema) {
+        // saiku#811: prefer the canonical (matched) cube ref attached to the
+        // schema by OlapAiCubeMetadataService. The agent-supplied `ref` may
+        // carry mixed-case identifiers that the validator resolved
+        // case-insensitively but Mondrian's native-cube loader compares
+        // case-sensitively — building a SaikuCube from the canonical ref
+        // closes that asymmetry. Falls back to agent-supplied ref when
+        // canonicalCube isn't set (test fixtures using the 3-arg AiSchema
+        // constructor that don't go through the metadata service).
+        AiCubeRef src = schema.canonicalCube != null ? schema.canonicalCube : ref;
         return new SaikuCube(
-                ref.getConnectionName(),
+                src.getConnectionName(),
                 schema.getCubeUniqueName(),
-                ref.getCubeName(),
+                src.getCubeName(),
                 schema.getCubeName(),
-                ref.getCatalog(),
-                ref.getSchema());
+                src.getCatalog(),
+                src.getSchema());
     }
 
     private static boolean isBlank(String s) {

@@ -35,6 +35,17 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
     private final ConcurrentMap<String, AiSchema> schemaCache = new ConcurrentHashMap<>();
     private java.util.function.Function<AiCubeRef, AiSchemaEnrichment> enrichmentProvider;
     private final AiSchemaEnricher enricher = new AiSchemaEnricher();
+    /** saiku#810: when true, schema build probes each (dim, hier, level)
+     *  triple with a 1-row level-members query and drops any triple that
+     *  fails — catches "schema lies" cases where a hierarchy is enumerable
+     *  via cube metadata but unqueryable through the AI converter's MDX
+     *  shape (e.g. Mondrian parent-child closure synthetic hierarchies that
+     *  expose under a different name than the discover service reports).
+     *
+     *  <p>Off by default to keep first-cube-load latency unchanged. Flip to
+     *  true via Spring config or {@link #setProbeUnqueryable(boolean)} once
+     *  the per-deployment probe cost has been profiled and accepted. */
+    private boolean probeUnqueryable = false;
 
     public void setDiscoverService(OlapDiscoverService s) {
         this.discoverService = s;
@@ -52,6 +63,12 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
     /** Bump when downstream schema state changes (e.g. cube reload, draft enrichment update). */
     public void invalidateCache() {
         schemaCache.clear();
+    }
+
+    /** saiku#810: enable the schema-build-time roundtrip probe that prunes
+     *  unqueryable dim/hier/level triples. See {@link #probeUnqueryable}. */
+    public void setProbeUnqueryable(boolean b) {
+        this.probeUnqueryable = b;
     }
 
     public List<AiCubeSummary> listCubes() {
@@ -185,7 +202,15 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
 
     private AiSchema buildSchema(AiCubeRef ref) {
         SaikuCube cube = findCube(ref);
-        AiSchema schema = new AiSchema(cacheKey(ref), cube.getName(), cube.getUniqueName());
+        // saiku#811: build the canonical AiCubeRef from the matched cube's
+        // actual fields, not from the agent-supplied ref. The cacheKey and
+        // every downstream consumer (AiSchemaConverter.toSaikuCube,
+        // serialised cubeId in the response) reads from this canonical
+        // form, so a lowercase/mixed-case agent input doesn't produce
+        // "Cannot get native cube" 500s further down the pipeline.
+        AiCubeRef canonical = new AiCubeRef(cube.getConnection(), cube.getCatalog(), cube.getSchema(), cube.getName());
+        AiSchema schema = new AiSchema(cacheKey(canonical), cube.getName(), cube.getUniqueName());
+        schema.canonicalCube = canonical;
         if (cube.getCaption() != null && !cube.getCaption().equals(cube.getName())) {
             schema.description = cube.getCaption();
         }
@@ -255,7 +280,120 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         // and a breakdown pattern. The LLM can use these as templates.
         schema.examples.addAll(AiExampleBuilder.build(schema, ref));
 
+        // saiku#810: optional probe step. Runs after the full schema is
+        // built so the probe sees the same shape consumers do; pruning
+        // happens in-place on the AiSchema. Off by default — see
+        // probeUnqueryable field doc.
+        if (probeUnqueryable) {
+            pruneUnqueryable(cube, schema);
+        }
+
         return schema;
+    }
+
+    /**
+     * saiku#810: prune dim/hier/level triples that the AI converter's MDX
+     * shape can't actually query, even though they're enumerable via cube
+     * metadata. Catches Mondrian parent-child closure synthetics
+     * (e.g. {@code Employee$Manager Id$Parent}) and any future case where
+     * {@code [Dim].[Hier].[Level].Members} doesn't parse against the cube.
+     *
+     * <p>Probe = {@link OlapDiscoverService#getLevelMembers} with maxrows=1.
+     * If the call throws, the level is dropped. If a hierarchy ends up with
+     * no remaining non-(All) levels, the whole hierarchy is dropped. If a
+     * dimension ends up with no remaining hierarchies, the dimension is
+     * dropped.
+     *
+     * <p>Pruning logs at INFO so a deployment can audit what was removed.
+     * Test fixtures don't go through this path (it requires a live
+     * discoverService).
+     */
+    private void pruneUnqueryable(SaikuCube cube, AiSchema schema) {
+        int prunedLevels = 0;
+        int prunedHiers = 0;
+        int prunedDims = 0;
+        java.util.Iterator<java.util.Map.Entry<String, AiSchema.Dimension>> dimIt =
+                schema.dimensions.entrySet().iterator();
+        while (dimIt.hasNext()) {
+            java.util.Map.Entry<String, AiSchema.Dimension> de = dimIt.next();
+            AiSchema.Dimension dim = de.getValue();
+            java.util.Iterator<java.util.Map.Entry<String, AiSchema.Hierarchy>> hierIt =
+                    dim.hierarchies.entrySet().iterator();
+            while (hierIt.hasNext()) {
+                java.util.Map.Entry<String, AiSchema.Hierarchy> he = hierIt.next();
+                AiSchema.Hierarchy hier = he.getValue();
+                java.util.Iterator<java.util.Map.Entry<String, AiSchema.Level>> levelIt =
+                        hier.levels.entrySet().iterator();
+                while (levelIt.hasNext()) {
+                    java.util.Map.Entry<String, AiSchema.Level> le = levelIt.next();
+                    AiSchema.Level level = le.getValue();
+                    // Skip the (All) level — it has no .Members shape an
+                    // agent would query against, and it always exists when
+                    // a hier has hasAll=true.
+                    if (level.name != null && level.name.equalsIgnoreCase("(All)")) {
+                        continue;
+                    }
+                    if (!isLevelQueryable(cube, hier.name, level.name)) {
+                        log.info(
+                                "Pruning unqueryable level {}/{}/{} from {} schema (saiku#810)",
+                                dim.name,
+                                hier.name,
+                                level.name,
+                                schema.getCubeName());
+                        levelIt.remove();
+                        prunedLevels++;
+                    }
+                }
+                // If the only thing left is the (All) level (or nothing), the
+                // whole hierarchy is unqueryable from the AI surface.
+                boolean hierHasQueryableLevel = false;
+                for (AiSchema.Level l : hier.levels.values()) {
+                    if (l.name == null || !l.name.equalsIgnoreCase("(All)")) {
+                        hierHasQueryableLevel = true;
+                        break;
+                    }
+                }
+                if (!hierHasQueryableLevel) {
+                    log.info(
+                            "Pruning unqueryable hierarchy {}/{} from {} schema (saiku#810)",
+                            dim.name,
+                            hier.name,
+                            schema.getCubeName());
+                    hierIt.remove();
+                    prunedHiers++;
+                }
+            }
+            if (dim.hierarchies.isEmpty()) {
+                log.info("Pruning empty dimension {} from {} schema (saiku#810)", dim.name, schema.getCubeName());
+                dimIt.remove();
+                prunedDims++;
+            }
+        }
+        if (prunedLevels + prunedHiers + prunedDims > 0) {
+            log.info(
+                    "Schema probe pruned {} levels, {} hiers, {} dims from {} (saiku#810)",
+                    prunedLevels,
+                    prunedHiers,
+                    prunedDims,
+                    schema.getCubeName());
+        }
+    }
+
+    /** Probe one (hier, level) pair via the same path member-search uses.
+     *  Returns true if the discover service can enumerate at least one
+     *  member of the level without throwing — i.e. the level is reachable
+     *  from MDX. Any exception → unqueryable. */
+    private boolean isLevelQueryable(SaikuCube cube, String hierName, String levelName) {
+        try {
+            discoverService.getLevelMembers(cube, hierName, levelName, null, 1);
+            return true;
+        } catch (RuntimeException e) {
+            log.debug("Probe failed for {}/{}: {}", hierName, levelName, e.getMessage());
+            return false;
+        } catch (Exception e) {
+            log.debug("Probe failed for {}/{}: {}", hierName, levelName, e.getMessage());
+            return false;
+        }
     }
 
     private void populateSampleMembers(AiSchema.Level out, SaikuCube cube, String hierarchyName, String levelName) {

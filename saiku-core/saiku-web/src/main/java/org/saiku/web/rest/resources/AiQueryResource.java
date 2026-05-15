@@ -65,6 +65,13 @@ public class AiQueryResource {
     private AiCubeMetadataService cubeMetadataService;
     private AsyncQueryService asyncQueryService;
     private final AiSchemaConverter converter = new AiSchemaConverter();
+    /** Phase 2: JSON-Schema-driven shape validator. Runs first so an
+     *  agent gets one structured 400 per shape failure instead of a
+     *  cascading wall of converter-layer errors. Same schema doc embedded
+     *  in /schema/{cubeId}.requestSchema for client-side use, so the
+     *  server-side and client-side rules can't drift. */
+    private final org.saiku.service.olap.ai.AiRequestSchemaValidator schemaValidator =
+            new org.saiku.service.olap.ai.AiRequestSchemaValidator();
 
     public void setThinQueryService(ThinQueryService tqs) {
         this.thinQueryService = tqs;
@@ -87,7 +94,15 @@ public class AiQueryResource {
         AiSchema schema;
         ThinQuery tq;
         try {
-            if (req == null || req.getCube() == null) {
+            if (req == null) {
+                return badRequest("body", "request body required", null);
+            }
+            // Phase 2: JSON Schema shape check before any other validation.
+            // Catches missing required fields / shape errors with a
+            // structured envelope; the converter's domain-resolution layer
+            // still runs for resolved-name errors (missing measure, etc.).
+            schemaValidator.assertValid(MAPPER.valueToTree(req));
+            if (req.getCube() == null) {
                 return badRequest("cube", "cube ref required", null);
             }
             schema = cubeMetadataService.getSchema(req.getCube());
@@ -211,7 +226,12 @@ public class AiQueryResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response previewAi(AiQueryRequest req) {
         try {
-            if (req == null || req.getCube() == null) {
+            if (req == null) {
+                return badRequest("body", "request body required", null);
+            }
+            // Phase 2: shape validation first, same as executeAi.
+            schemaValidator.assertValid(MAPPER.valueToTree(req));
+            if (req.getCube() == null) {
                 return badRequest("cube", "cube ref required", null);
             }
             AiSchema schema = cubeMetadataService.getSchema(req.getCube());
