@@ -54,6 +54,12 @@ public class AiSchemaConverter {
             // but the agent almost always wants rows. Don't error — just emit.
         }
 
+        // Mondrian rejects MDX where the same hierarchy appears in both an
+        // axis and the slicer ("Hierarchy '...' appears in more than one
+        // independent axis"). Detect that here so the agent gets a 400 with
+        // field-level pointer + teaching message, not a 500 (saiku#784).
+        validateNoAxisFilterHierarchyOverlap(req, schema);
+
         // Resolve everything to canonical unique names + build MDX.
         StringBuilder mdx = new StringBuilder();
 
@@ -649,6 +655,47 @@ public class AiSchemaConverter {
                             + "(e.g. [Foo].[Bar] or [Foo].&[Bar]). "
                             + "Embedded MDX expressions are not allowed in members[].",
                     null);
+        }
+    }
+
+    /**
+     * Reject requests whose filters target a hierarchy already on rows or
+     * columns. Mondrian rejects such MDX at parse time with
+     * "Hierarchy '...' appears in more than one independent axis", which
+     * would otherwise leak as a 500 EXECUTION_ERROR (see saiku#784).
+     *
+     * <p>The agent's recovery is to either move the filter members onto the
+     * axis selection's {@code members[]}, or filter on a different
+     * hierarchy/dimension.
+     */
+    private void validateNoAxisFilterHierarchyOverlap(AiQueryRequest req, AiSchema schema) {
+        if (req.getFilters() == null || req.getFilters().isEmpty()) return;
+        java.util.Set<String> axisHierarchies = new java.util.LinkedHashSet<>();
+        collectAxisHierarchies(req.getRows(), schema, "rows", axisHierarchies);
+        collectAxisHierarchies(req.getColumns(), schema, "columns", axisHierarchies);
+        for (int i = 0; i < req.getFilters().size(); i++) {
+            AiFilterSelection f = req.getFilters().get(i);
+            String fieldPath = "filters[" + i + "]";
+            AiAxisSelection probe = new AiAxisSelection(f.getDimension(), f.getHierarchy(), f.getLevel());
+            AiSchema.Hierarchy h = lookupHierarchy(probe, schema, fieldPath);
+            if (axisHierarchies.contains(h.uniqueName)) {
+                throw new AiValidationException(
+                        fieldPath + ".hierarchy",
+                        "Hierarchy '" + h.name + "' is already on the rows/columns axis. "
+                                + "Mondrian rejects the same hierarchy on two independent axes. "
+                                + "Either move the filter members onto the axis selection's `members[]`, "
+                                + "or filter on a different hierarchy/dimension.",
+                        null);
+            }
+        }
+    }
+
+    private void collectAxisHierarchies(
+            List<AiAxisSelection> axes, AiSchema schema, String fieldPrefix, java.util.Set<String> out) {
+        if (axes == null) return;
+        for (int i = 0; i < axes.size(); i++) {
+            AiSchema.Hierarchy h = lookupHierarchy(axes.get(i), schema, fieldPrefix + "[" + i + "]");
+            out.add(h.uniqueName);
         }
     }
 }
