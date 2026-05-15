@@ -536,6 +536,10 @@ check "TopCount on numeric-keyed Salary level — top-by-membership not by order
   '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Number of Employees"}],"rows":[{"dimension":"Employee","hierarchy":"Salary","level":"Salary"}],"order":[{"by":"Number of Employees","direction":"desc"}],"limit":5}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and r['data'][0]['Salary']=='20.0' and r['data'][0]['Number of Employees']['value']==283.0 and set(d['Salary'] for d in r['data'])=={'20.0','7000.0','8200.0','4400.0','6700.0'}"
 
+check "Customer City TopCount(5) — string-keyed level sorts strictly desc (control for saiku#809 — iter 319)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Customer Count"}],"rows":[{"dimension":"Customer","hierarchy":"Customers","level":"City"}],"order":[{"by":"Customer Count","direction":"desc"}],"limit":5}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and r['data'][0]['City']=='Lebanon' and r['data'][0]['Customer Count']['value']==108.0 and [d['Customer Count']['value'] for d in r['data']]==sorted([d['Customer Count']['value'] for d in r['data']], reverse=True)"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
