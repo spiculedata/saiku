@@ -21,6 +21,9 @@ public class AiSchema {
     public static class Measure {
         public final String name;
         public final String uniqueName;
+        /** Optional LLM/operator-supplied display label. Validation always
+         *  uses {@link #name}; {@code displayName} is presentation-only. */
+        public String displayName;
         public Measure(String name, String uniqueName) {
             this.name = name;
             this.uniqueName = uniqueName;
@@ -30,6 +33,7 @@ public class AiSchema {
     public static class Level {
         public final String name;
         public final String uniqueName;
+        public String displayName;
         public Level(String name, String uniqueName) {
             this.name = name;
             this.uniqueName = uniqueName;
@@ -39,6 +43,7 @@ public class AiSchema {
     public static class Hierarchy {
         public final String name;
         public final String uniqueName;
+        public String displayName;
         public final Map<String, Level> levels = new LinkedHashMap<>();
         public Hierarchy(String name, String uniqueName) {
             this.name = name;
@@ -49,6 +54,7 @@ public class AiSchema {
     public static class Dimension {
         public final String name;
         public final String uniqueName;
+        public String displayName;
         public final Map<String, Hierarchy> hierarchies = new LinkedHashMap<>();
         public Dimension(String name, String uniqueName) {
             this.name = name;
@@ -61,6 +67,8 @@ public class AiSchema {
     private final String cubeUniqueName;
     public final Map<String, Measure> measures = new LinkedHashMap<>();
     public final Map<String, Dimension> dimensions = new LinkedHashMap<>();
+    /** Phase 3: LLM/schema-generator suggestions overlaid on the schema. */
+    public java.util.List<AiSchemaSuggestion> suggestions = new java.util.ArrayList<>();
 
     public AiSchema(String cubeId, String cubeName, String cubeUniqueName) {
         this.cubeId = cubeId;
