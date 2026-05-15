@@ -1,0 +1,3 @@
+SELECT NON EMPTY {[Measures].[Unit Sales]} ON COLUMNS,
+NON EMPTY CROSSJOIN([Customer].[Gender].[Gender].Members, [Customer].[Marital Status].[Marital Status].Members) ON ROWS
+FROM [Quirks]
