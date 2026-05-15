@@ -186,6 +186,35 @@
         <property name="asyncQueryService" ref="asyncQueryServiceBean"/>
     </bean>
 
+    <!-- ====================================================================
+         AI query API (org.saiku.web.rest.resources.AiQueryResource @ /saiku/api/ai)
+
+         The metadata service holds the typed-schema cache plus an optional
+         Phase-3 enrichment overlay sourced from the schema-generator
+         sidecar. Display-name renames from LLM enrichment become
+         queryable aliases on the agent-facing schema; un-applied
+         RenameOps surface as AiSchemaSuggestion entries the agent can
+         consider.
+         ==================================================================== -->
+    <bean id="aiEnrichmentProvider"
+          class="org.saiku.service.olap.ai.DraftSidecarEnrichmentProvider">
+        <constructor-arg ref="sidecarStore"/>
+    </bean>
+
+    <bean id="aiCubeMetadataServiceBean"
+          class="org.saiku.service.olap.ai.OlapAiCubeMetadataService">
+        <property name="discoverService" ref="olapDiscoverServiceBean"/>
+        <property name="enrichmentProvider" ref="aiEnrichmentProvider"/>
+    </bean>
+
+    <bean id="aiQueryResource" scope="request"
+          class="org.saiku.web.rest.resources.AiQueryResource">
+        <aop:scoped-proxy/>
+        <property name="thinQueryService" ref="thinQueryBean"/>
+        <property name="cubeMetadataService" ref="aiCubeMetadataServiceBean"/>
+        <property name="asyncQueryService" ref="asyncQueryServiceBean"/>
+    </bean>
+
     <!-- Tier-1 auth hardening: shared login rate-limiter.
          5 failures per 15 minutes per client IP. Default: do NOT trust
          X-Forwarded-For (set saiku.auth.trustForwardedFor=true only when
