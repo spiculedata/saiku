@@ -49,6 +49,23 @@ public class AiSchemaConverter {
         if (req.getMeasures() == null || req.getMeasures().isEmpty()) {
             throw new AiValidationException("measures", "At least one measure required", null);
         }
+        // Reject duplicate measures up-front. Without this guard the records
+        // renderer silently drops the duplicate's cell (same map-key collision
+        // as saiku#789's multi-axis crossjoin path) — agents have no signal
+        // that anything went wrong (saiku#796).
+        java.util.Set<String> seenMeasures = new java.util.LinkedHashSet<>();
+        for (AiMeasureSelection m : req.getMeasures()) {
+            String mn = m == null ? null : m.getName();
+            if (mn == null) continue;
+            String key = AiSchema.key(mn);
+            if (!seenMeasures.add(key)) {
+                throw new AiValidationException(
+                        "measures",
+                        "Measure '" + mn + "' appears more than once. "
+                                + "Each measure should appear at most once in `measures[]`.",
+                        null);
+            }
+        }
         if (req.getRows() == null || req.getRows().isEmpty()) {
             // We allow no rows (degenerate: SELECT measures ON COLUMNS FROM cube),
             // but the agent almost always wants rows. Don't error — just emit.
