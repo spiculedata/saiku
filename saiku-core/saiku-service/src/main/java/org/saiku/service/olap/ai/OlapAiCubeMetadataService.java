@@ -124,18 +124,14 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         }
         if (dim == null) {
             throw new AiValidationException(
-                    "dimension",
-                    "Unknown dimension '" + dimensionName + "'",
-                    new ArrayList<>(schema.dimensions.keySet()));
+                    "dimension", "Unknown dimension '" + dimensionName + "'", canonicalDimNames(schema));
         }
 
         AiSchema.Hierarchy hier;
         if (hierarchyName == null || hierarchyName.isEmpty()) {
             if (dim.hierarchies.size() != 1) {
                 throw new AiValidationException(
-                        "hierarchy",
-                        "Dimension has multiple hierarchies; specify one",
-                        new ArrayList<>(dim.hierarchies.keySet()));
+                        "hierarchy", "Dimension has multiple hierarchies; specify one", canonicalHierNames(dim));
             }
             hier = dim.hierarchies.values().iterator().next();
         } else {
@@ -147,9 +143,7 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
             }
             if (hier == null) {
                 throw new AiValidationException(
-                        "hierarchy",
-                        "Unknown hierarchy '" + hierarchyName + "'",
-                        new ArrayList<>(dim.hierarchies.keySet()));
+                        "hierarchy", "Unknown hierarchy '" + hierarchyName + "'", canonicalHierNames(dim));
             }
         }
 
@@ -160,8 +154,7 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
             if (aliasTarget != null) level = hier.levels.get(aliasTarget);
         }
         if (level == null) {
-            throw new AiValidationException(
-                    "level", "Unknown level '" + levelName + "'", new ArrayList<>(hier.levels.keySet()));
+            throw new AiValidationException("level", "Unknown level '" + levelName + "'", canonicalLevelNames(hier));
         }
 
         SaikuCube cube = findCube(ref);
@@ -320,5 +313,28 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
     private static boolean equalsCi(String a, String b) {
         if (a == null || b == null) return a == b;
         return a.equalsIgnoreCase(b);
+    }
+
+    /** Canonical (proper-case) names for an `available` validation list.
+     *  The schema's hierarchies/levels/dimensions are keyed by lower-cased
+     *  identifier, but the error message should echo the names an agent
+     *  recognises — matches what {@code AiSchemaConverter} emits on the
+     *  query-axis 400 paths. */
+    private static List<String> canonicalDimNames(AiSchema schema) {
+        List<String> out = new ArrayList<>();
+        for (AiSchema.Dimension d : schema.dimensions.values()) out.add(d.name);
+        return out;
+    }
+
+    private static List<String> canonicalHierNames(AiSchema.Dimension dim) {
+        List<String> out = new ArrayList<>();
+        for (AiSchema.Hierarchy h : dim.hierarchies.values()) out.add(h.name);
+        return out;
+    }
+
+    private static List<String> canonicalLevelNames(AiSchema.Hierarchy hier) {
+        List<String> out = new ArrayList<>();
+        for (AiSchema.Level l : hier.levels.values()) out.add(l.name);
+        return out;
     }
 }
