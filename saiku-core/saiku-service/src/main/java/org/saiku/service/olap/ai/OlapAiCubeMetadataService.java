@@ -222,6 +222,12 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
                 if (m.getDescription() != null && !m.getDescription().isEmpty()) {
                     measure.description = m.getDescription();
                 }
+                // saiku#778: surface the schema-level visible flag so admin
+                // tooling can see hidden helper measures while analyst clients
+                // filter them out. Null → assume visible (legacy fixtures).
+                if (m.isVisible() != null) {
+                    measure.visible = m.isVisible();
+                }
                 schema.measures.put(AiSchema.key(n), measure);
             }
         } catch (RuntimeException e) {
