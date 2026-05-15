@@ -400,6 +400,10 @@ check "mixed-format multi-measure: EUR + % unit sniffers independent per cell (i
   '{"cube":"'"$CUBE"'","measures":[{"name":"Profit"},{"name":"Gewinn-Wachstum"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==4 and r['data'][0]['Profit']['unit']=='EUR' and r['data'][0]['Gewinn-Wachstum']['unit']=='%' and r['data'][0]['Profit']['formatted']=='83,876.11 \u20ac' and r['data'][0]['Gewinn-Wachstum']['value']==0.0"
 
+check "Time/Date Only/Date String TopCount(5) — string-keyed date hier (iter 288)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Time","hierarchy":"Date Only","level":"Date String"}],"order":[{"by":"Unit Sales","direction":"desc"}],"limit":5}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and r['data'][0]['Date String']=='1997/07/27' and r['data'][0]['Unit Sales']['value']==3850.0 and '[Time].[Date Only].[Date String]' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
