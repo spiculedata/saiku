@@ -762,6 +762,32 @@ public class AiSchemaConverterTest {
         }
     }
 
+    /* ----------------------- saiku#777: VISUALTOTALS ----------------------- */
+
+    @Test
+    public void visualTotalsTrueWrapsRowsAxisInVisualtotals() {
+        AiQueryRequest req = baseReq();
+        AiAxisSelection axis = new AiAxisSelection("Product", "Product", "Department");
+        axis.setMembers(Arrays.asList("[Product].[Product].[Drink]", "[Product].[Product].[Food]"));
+        req.setRows(Collections.singletonList(axis));
+        req.setVisualTotals(true);
+
+        ThinQuery tq = converter.convert(req, schema);
+        String mdx = tq.getMdx();
+        assertTrue("rows axis wrapped in VISUALTOTALS — got: " + mdx, mdx.contains("VISUALTOTALS"));
+    }
+
+    @Test
+    public void visualTotalsFalseLeavesRowsAxisBare() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        req.setVisualTotals(false);
+
+        ThinQuery tq = converter.convert(req, schema);
+        String mdx = tq.getMdx();
+        assertTrue("no VISUALTOTALS when flag false — got: " + mdx, !mdx.contains("VISUALTOTALS"));
+    }
+
     /* ----------------------- saiku#775: named sets ----------------------- */
 
     @Test
