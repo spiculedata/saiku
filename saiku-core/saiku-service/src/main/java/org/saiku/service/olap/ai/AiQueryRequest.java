@@ -41,6 +41,11 @@ public class AiQueryRequest {
     private boolean visualTotals = false;
     /** Optional: drop entirely-empty rows from the result (NON EMPTY). */
     private boolean nonEmpty = true;
+    /** Optional MDX named sets — emitted as {@code WITH SET [name] AS (expr)}
+     *  before SELECT (saiku#775). Useful for reusable member collections
+     *  ("top 50 customers by revenue") referenced multiple times in the
+     *  same query. */
+    private List<AiNamedSet> namedSets = new ArrayList<>();
 
     /** Programmatic setter used from Java code paths (resource handlers, tests). */
     public void setCube(AiCubeRef v) {
@@ -152,5 +157,13 @@ public class AiQueryRequest {
 
     public void setNonEmpty(boolean v) {
         this.nonEmpty = v;
+    }
+
+    public List<AiNamedSet> getNamedSets() {
+        return namedSets;
+    }
+
+    public void setNamedSets(List<AiNamedSet> v) {
+        this.namedSets = v == null ? new ArrayList<>() : v;
     }
 }
