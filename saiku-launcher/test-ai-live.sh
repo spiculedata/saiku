@@ -607,6 +607,10 @@ check "3-dim columns crossjoin: Quarter × Gender × Marital Status — 16 cols 
   '{"cube":"'"$CUBE"'","measures":[{"name":"Sales Count"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"columns":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"},{"dimension":"Customer","hierarchy":"Gender","level":"Gender"},{"dimension":"Customer","hierarchy":"Marital Status","level":"Marital Status"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and len(r['metadata']['columns'])==16 and 'Sales Count | Q1 | F | M' in [c['caption'] for c in r['metadata']['columns']] and r['data'][0]['Sales Count | Q1 | F | M']['value']==501.0 and r['metadata']['generatedMdx'].count('CROSSJOIN')==3"
 
+check "filter op=between at Month level — MDX range slicer (iter 334)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Month","op":"between","members":["[Time].[Time].[1997].[Q1].[2]","[Time].[Time].[1997].[Q2].[5]"]}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==8053.0 and r['data'][1]['Unit Sales']['value']==61653.0 and 'WHERE ({[Time].[Time].[1997].[Q1].[2] : [Time].[Time].[1997].[Q2].[5]})' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
