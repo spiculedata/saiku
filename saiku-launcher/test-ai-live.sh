@@ -364,6 +364,10 @@ check "Performance Season Day dim — TopCount(5) Unit Sales (iter 278)" POST "/
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Performance Season Day","hierarchy":"Performance","level":"Performance Season Day"}],"order":[{"by":"Unit Sales","direction":"desc"}],"limit":5}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and r['data'][0]['Performance Season Day']=='0' and r['data'][0]['Unit Sales']['value']==195448.0 and 'TopCount(' in r['metadata']['generatedMdx']"
 
+check "order direction=asc + limit emits BottomCount (iter 279)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Store","hierarchy":"Stores","level":"Store Name"}],"order":[{"by":"Unit Sales","direction":"asc"}],"limit":3}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and 'BottomCount(' in r['metadata']['generatedMdx'] and r['data'][0]['Unit Sales']['value']==2117.0 and r['data'][2]['Unit Sales']['value']==2237.0"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
