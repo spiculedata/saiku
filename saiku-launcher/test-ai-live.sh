@@ -544,6 +544,10 @@ check "mixed-op multi-filter: descendants_of + in → tuple slicer (iter 320)" P
   '{"cube":"'"$CUBE"'","measures":[{"name":"Sales Count"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Store","hierarchy":"Stores","level":"Store Country","op":"descendants_of","members":["[Store].[Stores].[USA]"]},{"dimension":"Customer","hierarchy":"Gender","level":"Gender","op":"in","members":["[Customer].[Gender].[F]"]}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Sales Count']['value']==3953.0 and r['data'][1]['Sales Count']['value']==30848.0 and 'WHERE ([Store].[Stores].[USA], [Customer].[Gender].[F])' in r['metadata']['generatedMdx']"
 
+check "filter op=in 2-member set → set-literal slicer (iter 321)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Quarter","op":"in","members":["[Time].[Time].[1997].[Q1]","[Time].[Time].[1997].[Q3]"]}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==12041.0 and r['data'][1]['Unit Sales']['value']==95249.0 and 'WHERE ({[Time].[Time].[1997].[Q1], [Time].[Time].[1997].[Q3]})' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
