@@ -9,6 +9,13 @@ results.
 Companion to the spec at
 `saiku-core/saiku-web/src/main/java/org/saiku/web/rest/resources/AiQueryPlan.md`.
 
+> **Using this from Claude Desktop / Cursor / Cline?** The MCP wrapper
+> in [`saiku-mcp/`](../saiku-mcp/) exposes this API as 6 typed tools.
+> Build with `mvn -pl saiku-mcp -am -DskipTests package` and follow
+> [`saiku-mcp/README.md`](../saiku-mcp/README.md) for the Claude Desktop
+> config snippet. The MCP layer is a thin pass-through — every contract
+> below applies to the MCP tools too.
+
 ---
 
 ## Quick orientation

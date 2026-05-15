@@ -1,5 +1,15 @@
 # Saiku MCP Server — Tool Surface Spec
 
+> **This is the design spec. For the shipped implementation see
+> [`saiku-mcp/`](../saiku-mcp/) and [`saiku-mcp/README.md`](../saiku-mcp/README.md)
+> (build, run, Claude Desktop config). For the underlying REST contract
+> this spec maps to, see [`AI-QUERY-API.md`](AI-QUERY-API.md).**
+>
+> Order of precedence when the three diverge: **REST contract > shipped
+> implementation > spec**. The spec exists to record original intent —
+> the running code is what agents actually see, and the REST contract
+> is the gravity well.
+
 A standalone Model Context Protocol (MCP) server that wraps Saiku's
 `/saiku/api/ai/*` REST API as a tool surface for LLM agents. Claude Desktop,
 Cursor, Cline, and Continue users gain one-line access to Saiku cubes without
@@ -8,10 +18,10 @@ ever seeing the REST contract, MDX, or `cubeId` strings.
 This document specifies the **tool surface** — names, descriptions,
 input/output schemas, and few-shot examples — designed for LLM consumption.
 The implementation is intentionally thin: each tool is a typed wrapper around
-one REST call. Total LOC budget ~300, single Node.js or Python project.
-
-> See `docs/AI-QUERY-API.md` for the underlying REST contract this spec maps to.
-> If the two ever diverge, the REST doc wins.
+one REST call. Originally drafted as a Node/Python project (~300 LOC); the
+shipped version is Java/JDK-21 (~500 LOC including tests) so it lives in
+the saiku monorepo, builds via the same `mvn` invocation as the rest of
+the project, and avoids a Node toolchain dependency for ops.
 
 ---
 
