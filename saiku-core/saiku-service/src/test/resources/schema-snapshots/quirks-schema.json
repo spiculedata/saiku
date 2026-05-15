@@ -204,7 +204,8 @@
     "order" : [ ],
     "limit" : 0,
     "visualTotals" : false,
-    "nonEmpty" : true
+    "nonEmpty" : true,
+    "namedSets" : [ ]
   }, {
     "cube" : {
       "connectionName" : "quirks_conn",
@@ -231,7 +232,8 @@
     } ],
     "limit" : 10,
     "visualTotals" : false,
-    "nonEmpty" : true
+    "nonEmpty" : true,
+    "namedSets" : [ ]
   }, {
     "cube" : {
       "connectionName" : "quirks_conn",
@@ -254,7 +256,8 @@
     "order" : [ ],
     "limit" : 0,
     "visualTotals" : true,
-    "nonEmpty" : true
+    "nonEmpty" : true,
+    "namedSets" : [ ]
   } ],
   "requestSchema" : {
     "$schema" : "https://json-schema.org/draft/2020-12/schema",

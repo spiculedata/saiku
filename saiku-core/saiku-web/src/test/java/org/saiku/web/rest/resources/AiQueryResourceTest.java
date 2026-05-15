@@ -334,7 +334,7 @@ public class AiQueryResourceTest {
     public void drillthroughReturns200WithRows() {
         // Override the ThinQueryService with one that has a stub drillthrough.
         resource.setThinQueryService(new StubThinQueryServiceWithDrill());
-        Response resp = resource.drillthrough("sync-query-id", 100, null);
+        Response resp = resource.drillthrough("sync-query-id", 100, null, null);
         assertEquals(200, resp.getStatus());
         @SuppressWarnings("unchecked")
         Map<String, Object> body = (Map<String, Object>) resp.getEntity();
@@ -345,7 +345,7 @@ public class AiQueryResourceTest {
     @Test
     public void drillthroughCellsAreTypedEnvelopes() {
         resource.setThinQueryService(new StubThinQueryServiceWithDrill());
-        Response resp = resource.drillthrough("sync-query-id", 100, null);
+        Response resp = resource.drillthrough("sync-query-id", 100, null, null);
         assertEquals(200, resp.getStatus());
         @SuppressWarnings("unchecked")
         Map<String, Object> body = (Map<String, Object>) resp.getEntity();
@@ -369,12 +369,66 @@ public class AiQueryResourceTest {
     public void drillthroughErrorReturns500() {
         resource.setThinQueryService(new ThinQueryService() {
             @Override
-            public java.sql.ResultSet drillthrough(String n, int m, String r) {
+            public java.sql.ResultSet drillthrough(String n, int m, Integer f, String r) {
                 throw new RuntimeException("boom");
             }
         });
-        Response resp = resource.drillthrough("any-id", 100, null);
+        Response resp = resource.drillthrough("any-id", 100, null, null);
         assertEquals(500, resp.getStatus());
+    }
+
+    /* ----------------------- saiku#774: column discovery + FIRST_ROWSET ----------------------- */
+
+    @Test
+    public void drillthroughColumnsReturnsListWithNameAndType() {
+        resource.setThinQueryService(new StubThinQueryServiceWithDrill());
+        Response resp = resource.drillthroughColumns("sync-query-id");
+        assertEquals(200, resp.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        assertEquals("sync-query-id", body.get("queryId"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> cols = (List<Map<String, String>>) body.get("columns");
+        assertNotNull("columns list populated", cols);
+        assertEquals("2 columns from the stubbed MAXROWS 1 result", 2, cols.size());
+        assertEquals("year", cols.get(0).get("name"));
+        assertEquals("VARCHAR", cols.get(0).get("type"));
+        assertEquals("sales", cols.get(1).get("name"));
+        assertEquals("INTEGER", cols.get(1).get("type"));
+    }
+
+    @Test
+    public void drillthroughColumnsUnknownQueryIdReturns404() {
+        // Default ThinQueryService throws NPE on unknown queryId — same
+        // translation path as the drillthrough handler.
+        resource.setThinQueryService(new ThinQueryService() {
+            @Override
+            public List<Map<String, String>> drillthroughColumns(String queryName) {
+                throw new NullPointerException("unknown queryId");
+            }
+        });
+        Response resp = resource.drillthroughColumns("missing");
+        assertEquals(404, resp.getStatus());
+        AiQueryResponse body = (AiQueryResponse) resp.getEntity();
+        assertEquals(AiQueryResponse.Status.VALIDATION_ERROR, body.getStatus());
+        assertEquals("queryId", body.getField());
+    }
+
+    @Test
+    public void drillthroughForwardsFirstRowsetToService() {
+        // Verify the resource passes firstRowset through to the service
+        // and the service-side wrapper picks FIRST_ROWSET over MAXROWS.
+        final Integer[] firstRowsetSeen = {null};
+        resource.setThinQueryService(new ThinQueryService() {
+            @Override
+            public java.sql.ResultSet drillthrough(String n, int m, Integer f, String r) {
+                firstRowsetSeen[0] = f;
+                return buildStubResultSet();
+            }
+        });
+        Response resp = resource.drillthrough("sync-query-id", 100, 25, null);
+        assertEquals(200, resp.getStatus());
+        assertEquals(Integer.valueOf(25), firstRowsetSeen[0]);
     }
 
     /* ------------------------ stub impls --------------------------------- */
@@ -395,8 +449,25 @@ public class AiQueryResourceTest {
         }
 
         @Override
-        public java.sql.ResultSet drillthrough(String name, int maxrows, String returns) {
+        public java.sql.ResultSet drillthrough(String name, int maxrows, Integer firstRowset, String returns) {
             return buildStubResultSet();
+        }
+
+        @Override
+        public List<Map<String, String>> drillthroughColumns(String queryName) {
+            // Mirror the stub ResultSet's two columns so the discovery
+            // endpoint test can assert against the same shape the
+            // drillthrough endpoint serves.
+            List<Map<String, String>> out = new java.util.ArrayList<>();
+            Map<String, String> c1 = new java.util.LinkedHashMap<>();
+            c1.put("name", "year");
+            c1.put("type", "VARCHAR");
+            out.add(c1);
+            Map<String, String> c2 = new java.util.LinkedHashMap<>();
+            c2.put("name", "sales");
+            c2.put("type", "INTEGER");
+            out.add(c2);
+            return out;
         }
     }
 

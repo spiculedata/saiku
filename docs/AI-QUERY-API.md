@@ -38,7 +38,8 @@ Plus the long-tail:
 | `GET /saiku/api/ai/query/status/{queryId}` | Poll for `PENDING` / `RUNNING` / `DONE` / `FAILED` / `CANCELLED` |
 | `GET /saiku/api/ai/query/result/{queryId}` | Fetch the materialised result |
 | `DELETE /saiku/api/ai/query/{queryId}` | Cancel an in-flight query |
-| `GET /saiku/api/ai/query/{queryId}/drillthrough?maxrows=N` | Get the raw fact rows behind a result |
+| `GET /saiku/api/ai/query/{queryId}/drillthrough?maxrows=N` | Get the raw fact rows behind a result. Add `?firstRowset=N` for warehouse-side short-circuit; add `?returns=col1,col2` to project a subset. |
+| `GET /saiku/api/ai/query/{queryId}/drillthrough/columns` | List the drillthrough columns available for `returns=` (saiku#774) |
 
 All routes require an authenticated session (form login at `POST /login`
 on the launcher; same auth as the regular UI).
@@ -470,6 +471,41 @@ response — numeric warehouse columns get a typed `value`; string columns
 populate `formatted` only with `value: null`. The column set is determined
 by the cube's fact table; use `?returns=col1,col2,col3` to project a subset,
 or `?maxrows=N` to bound the payload.
+
+**Discover the drillthrough column list** before passing `?returns=`:
+
+```http
+GET /rest/saiku/api/ai/query/{queryId}/drillthrough/columns
+```
+
+```json
+{
+  "queryId": "49127ee9-0ee2-4337-8560-41df11c3d458",
+  "columns": [
+    { "name": "[Time].[Time].[Year]",                  "type": "VARCHAR" },
+    { "name": "[Time].[Time].[Quarter]",               "type": "VARCHAR" },
+    { "name": "[Product].[Products].[Product Family]", "type": "VARCHAR" },
+    { "name": "[Measures].[Store Sales]",              "type": "DECIMAL" }
+  ]
+}
+```
+
+The `name` values are the MDX-qualified labels the downstream `?returns=`
+parameter expects. Use this endpoint to populate a column picker (UI) or
+to know which columns are valid before issuing a constrained drillthrough
+(agents).
+
+**Two row-bounding options**, with different semantics:
+
+- `?maxrows=N` — emits `DRILLTHROUGH MAXROWS N`. Mondrian materialises
+  the full result internally then trims. Cheaper for small N against
+  cubes where the cellset is already small.
+- `?firstRowset=N` — emits `DRILLTHROUGH FIRST_ROWSET N`. The warehouse
+  short-circuits and only streams the first N rows. Cheaper for small
+  N against multi-million-row fact tables (Snowflake, BigQuery,
+  Postgres with appropriate planner hints).
+
+If both are supplied, `firstRowset` wins.
 
 ---
 

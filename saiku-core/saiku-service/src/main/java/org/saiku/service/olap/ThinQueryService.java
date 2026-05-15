@@ -574,15 +574,31 @@ public class ThinQueryService implements Serializable {
     }
 
     public ResultSet drillthrough(String queryName, int maxrows, String returns) {
+        return drillthrough(queryName, maxrows, null, returns);
+    }
+
+    /**
+     * Drillthrough with optional {@code FIRST_ROWSET} bound (saiku#774).
+     *
+     * <p>MDX precedence when both bounds are supplied: {@code FIRST_ROWSET}
+     * wins (MAXROWS is silently dropped). The two clauses have different
+     * semantics — MAXROWS caps the result-set Mondrian materializes;
+     * FIRST_ROWSET caps the rowset Mondrian streams back. Use FIRST_ROWSET
+     * when the underlying warehouse can short-circuit on rowset count
+     * (Snowflake, BigQuery), MAXROWS when you want Mondrian to do the
+     * cap.
+     */
+    public ResultSet drillthrough(String queryName, int maxrows, Integer firstRowset, String returns) {
         OlapStatement stmt = null;
         try {
-
             ThinQuery query = context.get(queryName).getOlapQuery();
             final OlapConnection con =
                     olapDiscoverService.getNativeConnection(query.getCube().getConnection());
             stmt = con.createStatement();
             String mdx = query.getMdx();
-            if (maxrows > 0) {
+            if (firstRowset != null && firstRowset > 0) {
+                mdx = "DRILLTHROUGH FIRST_ROWSET " + firstRowset + " " + mdx;
+            } else if (maxrows > 0) {
                 mdx = "DRILLTHROUGH MAXROWS " + maxrows + " " + mdx;
             } else {
                 mdx = "DRILLTHROUGH " + mdx;
@@ -594,6 +610,51 @@ public class ThinQueryService implements Serializable {
         } catch (SQLException e) {
             throw new SaikuServiceException("Error DRILLTHROUGH: " + queryName, e);
         } finally {
+            try {
+                if (stmt != null) stmt.close();
+            } catch (Exception e) {
+            }
+        }
+    }
+
+    /**
+     * Column-discovery for drillthrough (saiku#774). Runs a
+     * {@code DRILLTHROUGH MAXROWS 1} for the named query so the UI /
+     * agent can populate a column picker before issuing a full
+     * drillthrough with an explicit {@code RETURN} clause. Returns one
+     * entry per column with the MDX-qualified label and the JDBC
+     * type-name — the label is what {@code returns=} expects.
+     */
+    public List<Map<String, String>> drillthroughColumns(String queryName) {
+        OlapStatement stmt = null;
+        ResultSet rs = null;
+        try {
+            ThinQuery query = context.get(queryName).getOlapQuery();
+            final OlapConnection con =
+                    olapDiscoverService.getNativeConnection(query.getCube().getConnection());
+            stmt = con.createStatement();
+            // MAXROWS 1 is enough to populate the ResultSetMetaData;
+            // MAXROWS 0 raises "out of bounds (0,0)" on some Mondrian
+            // builds, so we deliberately fetch one row and discard.
+            String mdx = "DRILLTHROUGH MAXROWS 1 " + query.getMdx();
+            rs = stmt.executeQuery(mdx);
+            java.sql.ResultSetMetaData md = rs.getMetaData();
+            int n = md.getColumnCount();
+            List<Map<String, String>> out = new java.util.ArrayList<>(n);
+            for (int c = 1; c <= n; c++) {
+                Map<String, String> col = new java.util.LinkedHashMap<>();
+                col.put("name", md.getColumnLabel(c));
+                col.put("type", md.getColumnTypeName(c));
+                out.add(col);
+            }
+            return out;
+        } catch (SQLException e) {
+            throw new SaikuServiceException("Error discovering drillthrough columns: " + queryName, e);
+        } finally {
+            try {
+                if (rs != null) rs.close();
+            } catch (Exception e) {
+            }
             try {
                 if (stmt != null) stmt.close();
             } catch (Exception e) {
