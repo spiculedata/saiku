@@ -108,31 +108,31 @@ The response is dense — this is what makes the API self-describing:
       "name": "Time",
       "uniqueName": "[Time]",
       "hierarchies": {
-        "time": {
-          "name": "Time",
-          "uniqueName": "[Time].[Time]",
+        "time by": {
+          "name": "Time By",
+          "uniqueName": "[Time].[Time By]",
           "levels": {
             "year": {
-              "name": "Year", "uniqueName": "[Time].[Time].[Year]",
+              "name": "Year", "uniqueName": "[Time].[Time By].[Year]",
               "sampleMembers": [
-                { "caption": "1997", "uniqueName": "[Time].[Time].[Year].&[1997]" },
-                { "caption": "1998", "uniqueName": "[Time].[Time].[Year].&[1998]" }
+                { "caption": "1997", "uniqueName": "[Time].[Time By].[Year].&[1997]" },
+                { "caption": "1998", "uniqueName": "[Time].[Time By].[Year].&[1998]" }
               ]
             },
             "quarter": {
-              "name": "Quarter", "uniqueName": "[Time].[Time].[Quarter]",
+              "name": "Quarter", "uniqueName": "[Time].[Time By].[Quarter]",
               "sampleMembers": [
-                { "caption": "Q1", "uniqueName": "[Time].[Time].[Quarter].&[Q1]" },
-                { "caption": "Q2", "uniqueName": "[Time].[Time].[Quarter].&[Q2]" },
-                { "caption": "Q3", "uniqueName": "[Time].[Time].[Quarter].&[Q3]" },
-                { "caption": "Q4", "uniqueName": "[Time].[Time].[Quarter].&[Q4]" }
+                { "caption": "Q1", "uniqueName": "[Time].[Time By].[Quarter].&[Q1]" },
+                { "caption": "Q2", "uniqueName": "[Time].[Time By].[Quarter].&[Q2]" },
+                { "caption": "Q3", "uniqueName": "[Time].[Time By].[Quarter].&[Q3]" },
+                { "caption": "Q4", "uniqueName": "[Time].[Time By].[Quarter].&[Q4]" }
               ]
             },
             "month": {
-              "name": "Month", "uniqueName": "[Time].[Time].[Month]",
+              "name": "Month", "uniqueName": "[Time].[Time By].[Month]",
               "sampleMembers": [
-                { "caption": "1", "uniqueName": "[Time].[Time].[Month].&[1]" },
-                { "caption": "2", "uniqueName": "[Time].[Time].[Month].&[2]" }
+                { "caption": "1", "uniqueName": "[Time].[Time By].[Month].&[1]" },
+                { "caption": "2", "uniqueName": "[Time].[Time By].[Month].&[2]" }
                 // …deduped, so Q1 doesn't repeat across years
               ]
             }
@@ -384,9 +384,16 @@ Validation runs on:
 - `rows[].dimension`, `rows[].hierarchy`, `rows[].level` — same
 - `columns[].*` — same
 - `filters[].dimension`, `.hierarchy`, `.level` — same
-- `filters[].op` — one of `in` (default), `not_in`, `between`, `descendants_of`
-- `filters[].members` — must satisfy the op's arity (≥1 for in/not_in;
-  exactly 2 for between; exactly 1 for descendants_of)
+- `filters[].op` — one of `in` (default), `not_in`, `between`,
+  `descendants_of`, `relative`
+- `filters[].members` — must satisfy the op's arity:
+  - `in` / `not_in` — ≥ 1
+  - `between` — exactly 2 (start, end)
+  - `descendants_of` — exactly 1
+  - `relative` — `members` is not used; supply `value` (and `n` for
+    `last_n_*`) instead. `value` must be one of the relative-preset enum
+    (see "Relative-time filters"); `n` must be ≥ 1 when `value` starts
+    with `last_n_`.
 - `order[].by` — must be a measure on the cube
 
 ---
