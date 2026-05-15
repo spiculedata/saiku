@@ -624,6 +624,10 @@ check "schema example[0] executes to All-Customers Unit Sales total (iter 336)" 
 check "empty body POST → field=cube validation envelope (iter 337)" POST "/rest/saiku/api/ai/query" '{}' \
   "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='cube' and 'cube ref required' in r.get('error','')"
 
+check "cube without measures → field=measures cascade (iter 338)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"}}' \
+  "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='measures' and 'At least one measure required' in r.get('error','')"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
