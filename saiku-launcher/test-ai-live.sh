@@ -689,6 +689,10 @@ check "mixed-case connectionName → NPE surfaces as 500 (saiku#811 extension �
   '{"cube":{"connectionName":"Unknown_Foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
   "http==500 and r.get('status')=='EXECUTION_ERROR' and 'NullPointerException' in r.get('error','') and 'OlapConnection' in r.get('error','')"
 
+check "lowercase catalog → 500 (same partial-resolution shape as cubeName — saiku#811 — iter 351)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":{"connectionName":"unknown_foodmart","catalog":"foodmart","schema":"FoodMart","cubeName":"Sales"},"measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
+  "http==500 and r.get('status')=='EXECUTION_ERROR' and 'Cannot get native cube' in r.get('error','') and '[FoodMart]' in r.get('error','')"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
