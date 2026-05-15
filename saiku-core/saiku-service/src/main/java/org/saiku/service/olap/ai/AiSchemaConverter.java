@@ -31,6 +31,21 @@ public class AiSchemaConverter {
     public ThinQuery convert(AiQueryRequest req, AiSchema schema) {
         if (req == null) throw new AiValidationException("request", "Request body required", null);
         if (req.getCube() == null) throw new AiValidationException("cube", "cube ref required", null);
+        // All four cube-ref fields are required for downstream Mondrian
+        // resolution; a partial object ({"cubeName":"Sales"} alone) would
+        // crash with a connection NPE during execution. Reject up-front
+        // with a structured 400.
+        AiCubeRef ref = req.getCube();
+        if (isBlank(ref.getConnectionName())
+                || isBlank(ref.getCatalog())
+                || isBlank(ref.getSchema())
+                || isBlank(ref.getCubeName())) {
+            throw new AiValidationException(
+                    "cube",
+                    "cube ref must specify connectionName, catalog, schema, and cubeName "
+                            + "(or be a 'connection/catalog/schema/cubeName' string).",
+                    null);
+        }
         if (req.getMeasures() == null || req.getMeasures().isEmpty()) {
             throw new AiValidationException("measures", "At least one measure required", null);
         }
@@ -586,5 +601,9 @@ public class AiSchemaConverter {
                 schema.getCubeName(),
                 ref.getCatalog(),
                 ref.getSchema());
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.trim().isEmpty();
     }
 }
