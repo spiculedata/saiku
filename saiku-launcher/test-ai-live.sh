@@ -159,6 +159,10 @@ check "validation: nonexistent member ref translated to 400" POST "/rest/saiku/a
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family","members":["[Product].[Products].[Drink]","[Product].[Products].[Pizza]"]}]}' \
   "r.get('status')=='VALIDATION_ERROR' and r.get('field')=='members' and 'Pizza' in r.get('error','') and 'not found in cube' in r.get('error','')"
 
+check "validation: multi-key order rejected" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"},{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"order":[{"by":"Store Sales","direction":"desc"},{"by":"Unit Sales","direction":"asc"}],"limit":2}' \
+  "r.get('status')=='VALIDATION_ERROR' and r.get('field')=='order' and 'Only one sort key' in r.get('error','')"
+
 # ---- members search ----
 check "members search case-insensitive (q=Excellent)" GET "/rest/saiku/api/ai/members/search?cubeId=$CUBE&dimension=Product&hierarchy=Products&level=Brand%20Name&q=Excellent&limit=5" '' \
   "isinstance(r, list) and len(r) >= 1 and any(m['caption']=='Excellent' for m in r)"

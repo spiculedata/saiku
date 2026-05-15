@@ -206,6 +206,19 @@ public class AiSchemaConverter {
         //   limit alone   -> HEAD
         //   neither       -> raw set
         if (req.getOrder() != null && !req.getOrder().isEmpty()) {
+            if (req.getOrder().size() > 1) {
+                // MDX TopCount/Order take exactly one sort key. We won't
+                // silently ignore the extras — they're almost always an
+                // agent's misunderstanding of the API (e.g. "SQL-style
+                // multi-column ORDER BY"). Reject with a teaching error
+                // pointing at the right shape.
+                throw new AiValidationException(
+                        "order",
+                        "Only one sort key is supported. MDX TopCount/Order take a single measure. "
+                                + "If you need multi-key sorting, send the primary key in `order[0]` and "
+                                + "apply secondary tie-breaks client-side after the response.",
+                        null);
+            }
             AiOrderBy ob = req.getOrder().get(0);
             AiSchema.Measure m = lookupMeasure(ob.getBy(), schema);
             if (req.getLimit() > 0) {
