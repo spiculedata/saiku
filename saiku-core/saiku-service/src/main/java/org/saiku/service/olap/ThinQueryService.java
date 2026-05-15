@@ -453,7 +453,9 @@ public class ThinQueryService implements Serializable {
     }
 
     private ThinQuery removeDupSelections(ThinQuery old) {
-
+        // Pure-MDX queries (e.g. those built by AiSchemaConverter) carry no
+        // queryModel — there are no model-side selections to deduplicate.
+        if (old == null || old.getQueryModel() == null) return old;
         Map<AxisLocation, ThinAxis> map = old.getQueryModel().getAxes();
         for (Map.Entry<AxisLocation, ThinAxis> entry : map.entrySet()) {
             for (ThinHierarchy h : entry.getValue().getHierarchies()) {

@@ -42,6 +42,8 @@ import org.saiku.service.olap.ai.AiSchemaConverter;
 import org.saiku.service.olap.ai.AiValidationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
 
 /**
  * Phase-1 AI-friendly query endpoint. Agent posts a typed
@@ -127,7 +129,7 @@ public class AiQueryResource {
      * are decoded by JAX-RS before reaching this method.
      */
     @GET
-    @Path("/schema/{cubeId}")
+    @Path("/schema/{cubeId:.+}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getSchema(@PathParam("cubeId") String cubeId) {
         AiCubeRef ref = parseCubeId(cubeId);
@@ -186,7 +188,12 @@ public class AiQueryResource {
         }
         AsyncQueryHandle handle;
         try {
-            handle = asyncQueryService.submit(tq);
+            // Propagate the caller's RequestAttributes so the worker thread
+            // can resolve the session-scoped ThinQueryService proxy. Without
+            // this, "Scope 'session' is not active for the current thread"
+            // is thrown the moment the worker touches thinQueryService.
+            RequestAttributes attrs = RequestContextHolder.getRequestAttributes();
+            handle = asyncQueryService.submit(tq, attrs);
         } catch (RuntimeException e) {
             log.error("AI async submit failed", e);
             return error("submit failed: " + e.getMessage());

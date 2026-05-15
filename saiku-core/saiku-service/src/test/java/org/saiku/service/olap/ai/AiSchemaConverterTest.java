@@ -81,7 +81,7 @@ public class AiSchemaConverterTest {
         String mdx = tq.getMdx();
         assertTrue(mdx, mdx.contains("[Measures].[Store Sales]"));
         assertTrue(mdx, mdx.contains("[Time].[Time By].[Year].Members"));
-        assertTrue(mdx, mdx.contains("FROM [FoodMart].[Sales]"));
+        assertTrue(mdx, mdx.contains("FROM [Sales]"));
         assertTrue(mdx, mdx.contains("ON COLUMNS"));
         assertTrue(mdx, mdx.contains("ON ROWS"));
     }

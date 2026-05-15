@@ -60,7 +60,10 @@ public class AiSchemaConverter {
             mdx.append(" ON ROWS");
         }
 
-        mdx.append("\nFROM ").append(schema.getCubeUniqueName());
+        // Mondrian's MDX parser wants FROM [cubeName], not the
+        // connection-prefixed unique name that SaikuCube.getUniqueName()
+        // returns. The cube ref's own cube name is what we want.
+        mdx.append("\nFROM [").append(schema.getCubeName()).append("]");
 
         if (req.getFilters() != null && !req.getFilters().isEmpty()) {
             mdx.append("\nWHERE ").append(buildSlicer(req.getFilters(), schema));

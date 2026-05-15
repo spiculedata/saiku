@@ -76,7 +76,7 @@ public class AiQueryResourceTest {
         assertNotNull(body.getMetadata());
         assertNotNull("generated MDX should be echoed", body.getMetadata().getGeneratedMdx());
         assertTrue("MDX should reference the schema cube",
-                body.getMetadata().getGeneratedMdx().contains("[FoodMart].[Sales]"));
+                body.getMetadata().getGeneratedMdx().contains("FROM [Sales]"));
 
         List<Map<String, String>> matrix = body.getMatrix();
         assertEquals("2 rows in stubbed result", 2, matrix.size());
