@@ -318,6 +318,10 @@ check "rows from two hierarchies of same dim → CROSSJOIN not Hierarchize (iter
   '{"cube":"'"$CUBE"'","measures":[{"name":"Sales Count"}],"rows":[{"dimension":"Customer","hierarchy":"Marital Status","level":"Marital Status"},{"dimension":"Customer","hierarchy":"Education Level","level":"Education Level"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==10 and 'CROSSJOIN' in r['metadata']['generatedMdx'] and 'Hierarchize' not in r['metadata']['generatedMdx']"
 
+check "Profit calc measure by Media Type top 5 — currency sniff EUR (iter 269)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Profit"}],"rows":[{"dimension":"Promotion","hierarchy":"Media Type","level":"Media Type"}],"order":[{"by":"Profit","direction":"desc"}],"limit":5}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and r['data'][0]['Media Type']=='No Media' and r['data'][0]['Profit']['unit']=='EUR' and 'TopCount(' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
