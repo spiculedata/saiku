@@ -15,6 +15,28 @@ import { DEFAULT_CHART_OPTIONS, type ChartOptions, type ChartType } from "$lib/v
 
 export type ViewMode = "grid" | "chart" | "stats" | "sparkline" | "sparkbar";
 
+/** Ensure a hydrated/loaded ThinQuery has a name safe to embed in a REST URL
+ *  path segment. Saved-query files written by older builds stored the file
+ *  path as `name`, which contains `/`. Jetty 12's strict URI compliance
+ *  rejects %2F-encoded slashes in path segments with a 400, so any
+ *  /rest/saiku/api/query/{name}/... request would fail.
+ *  We regenerate to a fresh UUID when the stored name is empty or contains
+ *  a slash. The on-disk savedPath is tracked separately on the store. */
+function withSafeName(q: ThinQuery): ThinQuery {
+  if (!q.name || q.name.includes("/")) {
+    return { ...q, name: cryptoUuid() };
+  }
+  return q;
+}
+
+function cryptoUuid(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export interface LevelDrop {
   dimensionName: string;
   dimensionUniqueName: string;
@@ -84,7 +106,7 @@ class QueryStore {
 
   loadFromJson(raw: string, path: string): void {
     const parsed = JSON.parse(raw) as ThinQuery;
-    this.current = parsed;
+    this.current = withSafeName(parsed);
     this.result = null;
     this.error = null;
     this.dirty = false;
@@ -95,7 +117,7 @@ class QueryStore {
   /** Replace the current query wholesale (e.g. from a deep-link hydrate or an
    *  opened saved query) without running it. Caller decides whether to run. */
   hydrate(q: ThinQuery, savedPath: string | null = null): void {
-    this.current = q;
+    this.current = withSafeName(q);
     this.result = null;
     this.error = null;
     this.dirty = false;
@@ -104,10 +126,14 @@ class QueryStore {
   }
 
   markSaved(path: string): void {
+    // Track the saved path separately from the server-side query name. We
+    // used to overwrite `current.name` with the path, but Jetty 12's strict
+    // URI compliance rejects %2F-encoded slashes in path segments, so any
+    // request like /rest/saiku/api/query/{name}/drillthrough would 400 once
+    // the name turned into "folder/file.saiku".
     this.savedPath = path;
     this.dirty = false;
     this.dirtyCount = 0;
-    if (this.current) this.current.name = path;
   }
 
   reset(): void {

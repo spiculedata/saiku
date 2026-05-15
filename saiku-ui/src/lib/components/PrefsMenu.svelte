@@ -1,0 +1,86 @@
+<script lang="ts">
+  import { Settings, Moon, Sun, Monitor } from "lucide-svelte";
+  import { theme } from "$lib/stores/theme.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
+  import LocalePicker from "$lib/components/LocalePicker.svelte";
+
+  let open = $state(false);
+
+  function onDocumentClick(e: MouseEvent) {
+    if (!open) return;
+    const target = e.target as Node | null;
+    const host = document.querySelector(".prefs-menu");
+    if (host && target && host.contains(target)) return;
+    open = false;
+  }
+</script>
+
+<svelte:window onclick={onDocumentClick} />
+
+<div class="prefs-menu">
+  <button
+    type="button"
+    class="btn"
+    aria-haspopup="menu"
+    aria-expanded={open}
+    aria-label={i18n.t("topbar.preferences")}
+    title={i18n.t("topbar.preferences")}
+    onclick={(e) => { e.stopPropagation(); open = !open; }}
+  >
+    <Settings size={14} />
+  </button>
+  {#if open}
+    <div class="prefs-menu__panel" role="menu">
+      <div class="prefs-menu__row">
+        <span class="prefs-menu__label">{i18n.t("topbar.theme")}</span>
+        <button
+          type="button"
+          class="btn btn--sm"
+          onclick={() => theme.toggle()}
+          title={i18n.t("topbar.theme.cycle")}
+        >
+          {#if theme.theme === "dark"}
+            <Moon size={14} /><span>{i18n.t("topbar.theme.dark")}</span>
+          {:else if theme.theme === "light"}
+            <Sun size={14} /><span>{i18n.t("topbar.theme.light")}</span>
+          {:else}
+            <Monitor size={14} /><span>{i18n.t("topbar.theme.system")}</span>
+          {/if}
+        </button>
+      </div>
+      <div class="prefs-menu__row">
+        <span class="prefs-menu__label">{i18n.t("topbar.language")}</span>
+        <LocalePicker />
+      </div>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .prefs-menu { position: relative; }
+  .prefs-menu__panel {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    z-index: 30;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: var(--space-3);
+    min-width: 240px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .prefs-menu__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+  .prefs-menu__label {
+    font-size: var(--fs-sm);
+    color: var(--fg-muted);
+  }
+</style>

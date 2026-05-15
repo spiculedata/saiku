@@ -395,3 +395,21 @@ export async function cancelQuery(name: string): Promise<void> {
     credentials: "include",
   });
 }
+
+/** Fetch the current MDX for a registered query.
+ *  The server returns `{ mdx: "..." }` (MdxQueryObject).
+ *  Returns null if the query is not registered server-side or has no MDX. */
+export async function getQueryMdx(name: string): Promise<string | null> {
+  const res = await fetch(`${REST_BASE}/${encodeURIComponent(name)}/mdx`, {
+    method: "GET",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) return null;
+  try {
+    const body = (await res.json()) as { mdx?: string | null };
+    return body?.mdx ?? null;
+  } catch {
+    return null;
+  }
+}

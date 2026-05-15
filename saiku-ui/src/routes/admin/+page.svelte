@@ -5,9 +5,10 @@
   import DatasourcesAdmin from "$lib/views/admin/DatasourcesAdmin.svelte";
   import SchemasAdmin from "$lib/views/admin/SchemasAdmin.svelte";
   import LogsAdmin from "$lib/views/admin/LogsAdmin.svelte";
+  import StatsAdmin from "$lib/views/admin/StatsAdmin.svelte";
   import LoginForm from "$lib/views/LoginForm.svelte";
 
-  type Tab = "users" | "datasources" | "schemas" | "logs";
+  type Tab = "users" | "datasources" | "schemas" | "logs" | "stats";
   let tab = $state<Tab>("users");
 </script>
 
@@ -27,6 +28,7 @@
       <button type="button" role="tab" class:active={tab === "datasources"} onclick={() => (tab = "datasources")}>{i18n.t("admin.tabs.datasources")}</button>
       <button type="button" role="tab" class:active={tab === "schemas"} onclick={() => (tab = "schemas")}>{i18n.t("admin.tabs.schemas")}</button>
       <button type="button" role="tab" class:active={tab === "logs"} onclick={() => (tab = "logs")}>{i18n.t("admin.tabs.logs")}</button>
+      <button type="button" role="tab" class:active={tab === "stats"} onclick={() => (tab = "stats")}>{i18n.t("admin.tabs.stats")}</button>
     </nav>
     <section class="admin__body">
       {#if tab === "users"}
@@ -35,8 +37,10 @@
         <DatasourcesAdmin />
       {:else if tab === "schemas"}
         <SchemasAdmin />
-      {:else}
+      {:else if tab === "logs"}
         <LogsAdmin />
+      {:else}
+        <StatsAdmin />
       {/if}
     </section>
   </div>

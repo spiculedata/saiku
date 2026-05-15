@@ -15,10 +15,13 @@
     Braces,
     Sigma,
     Tags,
+    Search,
+    Maximize2,
+    Minimize2,
   } from "lucide-svelte";
   import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
   import SavedQueriesModal from "$lib/modals/SavedQueriesModal.svelte";
-  import type { ThinQuery } from "$lib/api/query";
+  import { getQueryMdx, type ThinQuery } from "$lib/api/query";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import WarningModal from "$lib/modals/WarningModal.svelte";
   import MDXModal from "$lib/modals/MDXModal.svelte";
@@ -33,6 +36,7 @@
   import { datasources } from "$lib/stores/datasources.svelte";
   import type { SaikuCube } from "$lib/api/discover";
   import { i18n } from "$lib/stores/i18n.svelte";
+  import { platform } from "$lib/stores/platform.svelte";
 
   let nonEmpty = $state(true);
 
@@ -50,6 +54,7 @@
   let warningOpen = $state(false);
   let warningMessage = $state("");
   let mdxOpen = $state(false);
+  let mdxBuffer = $state<string>("");
   let drillAcrossOpen = $state(false);
   let reportTitlesOpen = $state(false);
   let toolsMenuOpen = $state(false);
@@ -119,12 +124,36 @@
     saveOpen = true;
   }
 
-  function onShowMdx() {
-    if (!query.current?.mdx && !query.result) {
+  async function onShowMdx() {
+    const local = query.current?.mdx ?? query.result?.query?.mdx ?? "";
+    // Prefer fresh MDX from the server — it reflects whatever the engine
+    // generated for the latest run. Falls back to whatever the client
+    // already knows (works for unregistered / unrun queries that the
+    // user has manually typed in via this modal).
+    let fromServer: string | null = null;
+    if (query.current?.name) {
+      try {
+        fromServer = await getQueryMdx(query.current.name);
+      } catch {
+        fromServer = null;
+      }
+    }
+    const next = (fromServer ?? local ?? "").trim();
+    if (!next) {
       toasts.info(i18n.t("toast.noMdx"), i18n.t("toast.noMdx.body"));
       return;
     }
+    mdxBuffer = next;
     mdxOpen = true;
+  }
+
+  function openDrillthrough() {
+    toolsMenuOpen = false;
+    if (!query.current || !query.result) {
+      toasts.info(i18n.t("toast.noDrill"), i18n.t("toast.noDrill.body"));
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("saiku-open-drillthrough"));
   }
 
   async function onRun() {
@@ -325,11 +354,26 @@
         <button type="button" class="toolbar__item" onclick={onShowMdx}>
           <Braces size={16} /> <span>{i18n.t("toolbar.mdx")}…</span>
         </button>
+        <button type="button" class="toolbar__item" onclick={openDrillthrough}>
+          <Search size={16} /> <span>{i18n.t("toolbar.drillthrough")}…</span>
+        </button>
         <button type="button" class="toolbar__item" onclick={openDrillAcross}>
           <ArrowLeftRight size={16} /> <span>{i18n.t("toolbar.drillAcross")}…</span>
         </button>
         <button type="button" class="toolbar__item" onclick={openReportTitles}>
           <Tags size={16} /> <span>{i18n.t("toolbar.reportTitles")}…</span>
+        </button>
+        <button
+          type="button"
+          class="toolbar__item"
+          onclick={() => { toolsMenuOpen = false; platform.toggleFullscreen(); }}
+          aria-pressed={platform.fullscreen}
+        >
+          {#if platform.fullscreen}
+            <Minimize2 size={16} /> <span>{i18n.t("toolbar.fullscreen.exit")}</span>
+          {:else}
+            <Maximize2 size={16} /> <span>{i18n.t("toolbar.fullscreen.enter")}</span>
+          {/if}
         </button>
       </div>
     {/if}
@@ -372,7 +416,7 @@
 {/if}
 
 <MDXModal
-  mdx={query.current?.mdx ?? query.result?.query?.mdx ?? ""}
+  mdx={mdxBuffer}
   open={mdxOpen}
   onRun={onRunMdx}
   onCancel={() => (mdxOpen = false)}
