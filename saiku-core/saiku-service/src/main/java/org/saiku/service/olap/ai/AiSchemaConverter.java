@@ -129,6 +129,7 @@ public class AiSchemaConverter {
             return measuresSet.toString();
         }
 
+        rejectDuplicateAxisEntries(req.getColumns(), "columns");
         // Resolve each column axis and group consecutive entries by hierarchy
         // — same MDX shape rule as rows: same-hierarchy crossjoin is illegal,
         // so collapse into Hierarchize({set1, set2}). Across distinct
@@ -191,6 +192,7 @@ public class AiSchemaConverter {
         // Hierarchize({stateMembers, nameMembers}) instead — the canonical
         // way to mix levels of one hierarchy. Distinct hierarchies still
         // CROSSJOIN as before.
+        rejectDuplicateAxisEntries(req.getRows(), "rows");
         List<ResolvedAxis> resolved = new ArrayList<>();
         for (int i = 0; i < req.getRows().size(); i++) {
             AiAxisSelection r = req.getRows().get(i);
@@ -817,5 +819,44 @@ public class AiSchemaConverter {
             AiSchema.Hierarchy h = lookupHierarchy(axes.get(i), schema, fieldPrefix + "[" + i + "]");
             out.add(h.uniqueName);
         }
+    }
+
+    /**
+     * Reject exact-duplicate axis selections (same dimension + hierarchy +
+     * level + members[]). Mondrian doesn't dedupe them — the result has the
+     * row/column emitted twice, which is useless and confusing for the agent
+     * (saiku#797). Companion to the same-hierarchy-twice filter check and
+     * the duplicate-measures check.
+     */
+    private static void rejectDuplicateAxisEntries(List<AiAxisSelection> axes, String fieldPrefix) {
+        if (axes == null || axes.size() < 2) return;
+        java.util.Map<String, Integer> seen = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < axes.size(); i++) {
+            AiAxisSelection a = axes.get(i);
+            if (a == null) continue;
+            String sig = axisSignature(a);
+            Integer prev = seen.put(sig, i);
+            if (prev != null) {
+                throw new AiValidationException(
+                        fieldPrefix,
+                        "Duplicate axis selection at " + fieldPrefix + "[" + prev
+                                + "] and " + fieldPrefix + "[" + i + "]. "
+                                + "Each row/column axis entry should be unique.",
+                        null);
+            }
+        }
+    }
+
+    private static String axisSignature(AiAxisSelection a) {
+        StringBuilder s = new StringBuilder();
+        s.append(AiSchema.key(a.getDimension())).append('|');
+        s.append(AiSchema.key(a.getHierarchy())).append('|');
+        s.append(AiSchema.key(a.getLevel())).append('|');
+        if (a.getMembers() != null) {
+            for (String m : a.getMembers()) {
+                s.append(m == null ? "" : m).append(',');
+            }
+        }
+        return s.toString();
     }
 }
