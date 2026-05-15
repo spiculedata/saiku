@@ -611,6 +611,9 @@ check "filter op=between at Month level — MDX range slicer (iter 334)" POST "/
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Month","op":"between","members":["[Time].[Time].[1997].[Q1].[2]","[Time].[Time].[1997].[Q2].[5]"]}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==8053.0 and r['data'][1]['Unit Sales']['value']==61653.0 and 'WHERE ({[Time].[Time].[1997].[Q1].[2] : [Time].[Time].[1997].[Q2].[5]})' in r['metadata']['generatedMdx']"
 
+check "schema endpoint top-level shape: cubeId, cubeUniqueName, examples, requestSchema (iter 335)" GET "/rest/saiku/api/ai/schema/$CUBE" '' \
+  "r.get('cubeId')=='unknown_foodmart/FoodMart/FoodMart/Sales' and r.get('cubeName')=='Sales' and r.get('cubeUniqueName')=='[unknown_foodmart].[FoodMart].[FoodMart].[Sales]' and isinstance(r.get('examples'), list) and len(r['examples'])==3 and isinstance(r.get('requestSchema'), dict) and r['requestSchema'].get('\$schema') and 'properties' in r['requestSchema']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
