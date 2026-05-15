@@ -705,6 +705,26 @@ check "visualTotals=true with explicit member subset emits VISUALTOTALS({...}) (
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family","members":["[Product].[Products].[Drink]","[Product].[Products].[Food]"]}],"visualTotals":true}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and r['data'][0]['Product Family']=='Drink' and r['data'][0]['Store Sales']['value']==48836.21 and r['data'][1]['Product Family']=='Food' and 'VISUALTOTALS({[Product].[Products].[Drink], [Product].[Products].[Food]})' in r['metadata']['generatedMdx']"
 
+# Malformed JSON body returns Jackson plain-text error 400, not the
+# structured AiQueryResponse envelope (iter 355). The `check` helper
+# expects JSON output so this is a one-off inline check.
+{
+  out=$(mktemp)
+  code=$(curl -sS -b "$COOKIES" -X POST "$URL/rest/saiku/api/ai/query" \
+    -H 'Content-Type: application/json' --data 'not even json at all{}' \
+    -o "$out" -w '%{http_code}')
+  body=$(cat "$out"); rm -f "$out"
+  if [[ "$code" == "400" ]] && [[ "$body" == *"Unrecognized token 'not'"* ]]; then
+    PASS_COUNT=$((PASS_COUNT+1))
+    echo "pass  malformed JSON body → 400 Jackson plain-text error (iter 355)"
+  else
+    FAIL_COUNT=$((FAIL_COUNT+1))
+    FAILURES+=("malformed JSON body (iter 355)")
+    echo "FAIL  malformed JSON body → 400 Jackson plain-text error (iter 355)"
+    echo "      http=$code body=$body"
+  fi
+}
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
