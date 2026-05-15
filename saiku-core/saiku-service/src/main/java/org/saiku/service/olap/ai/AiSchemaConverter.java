@@ -324,7 +324,10 @@ public class AiSchemaConverter {
                                 "'between' filter requires exactly 2 members [start, end]",
                                 null);
                     }
-                    expr = members.get(0) + " : " + members.get(1);
+                    // Standard MDX range: m1 : m2 returns the set of
+                    // members from m1 to m2 inclusive at their common
+                    // level. Mondrian's slicer accepts the bare range.
+                    expr = "{" + members.get(0) + " : " + members.get(1) + "}";
                     isSet = true;
                     break;
                 }
@@ -355,11 +358,13 @@ public class AiSchemaConverter {
                             java.util.Arrays.asList("in", "not_in", "between", "descendants_of", "relative"));
             }
 
-            if (isSet) {
-                s.append("Aggregate(").append(expr).append(")");
-            } else {
-                s.append(expr);
-            }
+            // Mondrian's slicer accepts a bare set and applies implicit
+            // aggregation across its members. Wrapping with Aggregate()
+            // turns the slicer-element into a Numeric Expression and
+            // confuses the parser ("No function matches signature
+            // '{<Numeric Expression>}'") when the set is in the WHERE
+            // position. Emit the set form directly.
+            s.append(expr);
         }
         s.append(")");
         return s.toString();

@@ -638,7 +638,12 @@ public class AiSchemaConverterTest {
     }
 
     @Test
-    public void slicerMultipleInMembersWrappedInAggregate() {
+    public void slicerMultipleInMembersAsBareSet() {
+        // Mondrian's slicer accepts a bare set and applies implicit
+        // aggregation across its members. Wrapping with Aggregate()
+        // confuses the parser ("No function matches signature
+        // '{<Numeric Expression>}'") on the live engine when the leaf
+        // segment is digit-only — emit the bare set form.
         AiQueryRequest req = baseReq();
         req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
         AiFilterSelection f = new AiFilterSelection(
@@ -651,13 +656,14 @@ public class AiSchemaConverterTest {
         ThinQuery tq = converter.convert(req, schema);
         assertTrue(
                 tq.getMdx(),
-                tq.getMdx()
-                        .contains(
-                                "WHERE (Aggregate({[Time].[Time By].[Year].&[1997], [Time].[Time By].[Year].&[1998]}))"));
+                tq.getMdx().contains("WHERE ({[Time].[Time By].[Year].&[1997], [Time].[Time By].[Year].&[1998]})"));
+        assertTrue(
+                "multi-member 'in' must not be Aggregate-wrapped: " + tq.getMdx(),
+                !tq.getMdx().contains("Aggregate("));
     }
 
     @Test
-    public void slicerNotInWrappedInAggregate() {
+    public void slicerNotInAsBareExcept() {
         AiQueryRequest req = baseReq();
         req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
         AiFilterSelection f = new AiFilterSelection(
@@ -666,11 +672,14 @@ public class AiSchemaConverterTest {
         req.setFilters(Collections.singletonList(f));
 
         ThinQuery tq = converter.convert(req, schema);
-        assertTrue(tq.getMdx(), tq.getMdx().contains("Aggregate(Except("));
+        assertTrue(tq.getMdx(), tq.getMdx().contains("WHERE (Except("));
+        assertTrue(
+                "not_in slicer must not be Aggregate-wrapped: " + tq.getMdx(),
+                !tq.getMdx().contains("Aggregate("));
     }
 
     @Test
-    public void slicerBetweenWrappedInAggregate() {
+    public void slicerBetweenEmitsBareRange() {
         AiQueryRequest req = baseReq();
         req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
         AiFilterSelection f = new AiFilterSelection(
@@ -684,11 +693,14 @@ public class AiSchemaConverterTest {
         ThinQuery tq = converter.convert(req, schema);
         assertTrue(
                 tq.getMdx(),
-                tq.getMdx().contains("Aggregate([Time].[Time By].[Year].&[1997] : [Time].[Time By].[Year].&[1999])"));
+                tq.getMdx().contains("WHERE ({[Time].[Time By].[Year].&[1997] : [Time].[Time By].[Year].&[1999]})"));
+        assertTrue(
+                "between slicer must not be Aggregate-wrapped: " + tq.getMdx(),
+                !tq.getMdx().contains("Aggregate("));
     }
 
     @Test
-    public void slicerRelativeSetWrappedInAggregate() {
+    public void slicerRelativeSetEmitsBareSet() {
         AiQueryRequest req = baseReq();
         req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
         AiFilterSelection f = new AiFilterSelection();
@@ -701,7 +713,10 @@ public class AiSchemaConverterTest {
         req.setFilters(Collections.singletonList(f));
 
         ThinQuery tq = converter.convert(req, schema);
-        assertTrue(tq.getMdx(), tq.getMdx().contains("Aggregate(Tail([Time].[Time By].[Month].Members, 3))"));
+        assertTrue(tq.getMdx(), tq.getMdx().contains("WHERE (Tail([Time].[Time By].[Month].Members, 3))"));
+        assertTrue(
+                "relative slicer must not be Aggregate-wrapped: " + tq.getMdx(),
+                !tq.getMdx().contains("Aggregate("));
     }
 
     @Test
