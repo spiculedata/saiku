@@ -18,6 +18,7 @@
         <module>saiku-core</module>
         <module>saiku-webapp</module>
         <module>saiku-launcher</module>
+        <module>saiku-mcp</module>
     </modules>
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
