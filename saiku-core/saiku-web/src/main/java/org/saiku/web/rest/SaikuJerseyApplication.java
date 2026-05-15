@@ -11,6 +11,14 @@ import org.springframework.web.context.support.WebApplicationContextUtils;
 public class SaikuJerseyApplication extends ResourceConfig {
 
     public SaikuJerseyApplication(@Context ServletContext servletContext) {
+        // saiku#806: disable Jersey's auto-WADL OPTIONS response. The auto
+        // handler tries to marshal a com.sun.research.ws.wadl.Application
+        // document via JAXB, but those classes aren't on the JAXBContext
+        // we ship under Jakarta EE 10 — every OPTIONS request 500s out of
+        // the auto-WADL marshaller. With this off, Jersey falls back to a
+        // plain Allow-header response for OPTIONS, which is what every
+        // standard JAX-RS client (and CORS preflight) expects.
+        property("jersey.config.server.wadl.disableWadl", true);
         register(MultiPartFeature.class);
 
         ApplicationContext ctx = WebApplicationContextUtils.getRequiredWebApplicationContext(servletContext);
