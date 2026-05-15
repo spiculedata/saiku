@@ -390,15 +390,15 @@ public class AiQueryResource {
         }
         try {
             java.sql.ResultSet rs = thinQueryService.drillthrough(name, maxrows, returns);
-            List<Map<String, String>> rows = new ArrayList<>();
+            List<Map<String, AiCell>> rows = new ArrayList<>();
             if (rs != null) {
                 java.sql.ResultSetMetaData md = rs.getMetaData();
                 int colCount = md.getColumnCount();
                 while (rs.next()) {
-                    Map<String, String> row = new LinkedHashMap<>();
+                    Map<String, AiCell> row = new LinkedHashMap<>();
                     for (int c = 1; c <= colCount; c++) {
                         Object v = rs.getObject(c);
-                        row.put(md.getColumnLabel(c), v == null ? "" : v.toString());
+                        row.put(md.getColumnLabel(c), toCellFromObject(v));
                     }
                     rows.add(row);
                 }
@@ -508,6 +508,23 @@ public class AiQueryResource {
         }
         resp.setRuntimeMs(System.currentTimeMillis() - startedAt);
         return resp;
+    }
+
+    /**
+     * Convert a raw JDBC column value (from a drillthrough ResultSet) into
+     * an {@link AiCell}. Numeric column types come back as native Numbers;
+     * everything else (strings, dates) populates {@code formatted} only.
+     */
+    private static AiCell toCellFromObject(Object v) {
+        if (v == null) return new AiCell(null, "", null);
+        if (v instanceof Number) {
+            double d = ((Number) v).doubleValue();
+            return new AiCell(d, v.toString(), null);
+        }
+        String s = v.toString();
+        Double parsed = AiCell.parseValueFromFormatted(s);
+        String unit = AiCell.sniffUnit(s);
+        return new AiCell(parsed, s, unit);
     }
 
     /** Convert a raw {@link AbstractBaseCell} into an {@link AiCell}. */

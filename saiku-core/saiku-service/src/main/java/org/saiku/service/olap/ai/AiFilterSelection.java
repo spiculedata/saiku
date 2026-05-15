@@ -20,10 +20,16 @@ import java.util.List;
  *       {@link #members} must have exactly 2 entries [start, end].</li>
  *   <li>{@code "descendants_of"} — emit {@code Descendants(member, ALL)}.
  *       {@link #members} must have exactly 1 entry.</li>
+ *   <li>{@code "relative"} — emit a time-relative set driven by
+ *       {@link #value} (and {@link #n} for {@code last_n_*}). See
+ *       {@link AiSchemaConverter} for the supported {@code value} enum and
+ *       MDX translation. {@link #members} is unused.</li>
  * </ul>
  *
- * <p>Member entries are MDX unique names like
- * {@code [Time].[Time].[Year].&[2001]}.
+ * <p>Member entries (for ops other than {@code relative}) are MDX unique
+ * names like {@code [Time].[Time].[Year].&[2001]}. Build them by appending
+ * the member name to the level's {@code uniqueName}, or fetch ready-made
+ * unique names via {@code GET /ai/members/search}.
  */
 public class AiFilterSelection {
 
@@ -34,6 +40,11 @@ public class AiFilterSelection {
     private String op = "in";
 
     private List<String> members = new ArrayList<>();
+    /** Relative-op preset. One of {@code last_n_days|last_n_months|last_n_quarters|
+     *  last_n_years|ytd|mtd|qtd|previous_period|same_period_last_year}. */
+    private String value;
+    /** Count for {@code last_n_*} presets. Defaults to 1; ignored for other presets. */
+    private int n = 1;
 
     public AiFilterSelection() {}
 
@@ -82,5 +93,21 @@ public class AiFilterSelection {
 
     public void setMembers(List<String> v) {
         this.members = v == null ? new ArrayList<>() : v;
+    }
+
+    public String getValue() {
+        return value;
+    }
+
+    public void setValue(String v) {
+        this.value = v;
+    }
+
+    public int getN() {
+        return n;
+    }
+
+    public void setN(int v) {
+        this.n = v;
     }
 }

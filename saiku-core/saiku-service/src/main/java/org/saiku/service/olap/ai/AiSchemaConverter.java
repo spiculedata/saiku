@@ -221,15 +221,94 @@ public class AiSchemaConverter {
                     s.append("Descendants(").append(members.get(0)).append(")");
                     break;
                 }
+                case "relative": {
+                    s.append(relativeSet(f, level, fieldPath));
+                    break;
+                }
                 default:
                     throw new AiValidationException(
                             fieldPath + ".op",
                             "Unknown filter op '" + f.getOp() + "'",
-                            java.util.Arrays.asList("in", "not_in", "between", "descendants_of"));
+                            java.util.Arrays.asList("in", "not_in", "between", "descendants_of", "relative"));
             }
         }
         s.append(")");
         return s.toString();
+    }
+
+    /**
+     * Translate a {@code "relative"} filter into an MDX set expression
+     * over the given level. Presets:
+     *
+     * <ul>
+     *   <li>{@code last_n_days|last_n_months|last_n_quarters|last_n_years} —
+     *       {@code Tail(level.Members, n)}. Picks the most-recent N members
+     *       on the level. The agent picks the level matching the period
+     *       ({@code Day}/{@code Month}/{@code Quarter}/{@code Year}).</li>
+     *   <li>{@code ytd|mtd|qtd} — {@code Ytd()|Mtd()|Qtd()}. Relies on the
+     *       cube's time-dimension default member; if the cube author
+     *       didn't anchor it, the agent should switch to {@code last_n_*}.</li>
+     *   <li>{@code previous_period} — {@code Tail(level.Members, 2).Item(0)}.
+     *       The member immediately preceding the latest available.</li>
+     *   <li>{@code same_period_last_year} — for {@code Year} level only:
+     *       {@code Tail(level.Members, 2).Item(0)}. For finer levels
+     *       (Quarter/Month/Day) the year-shifted equivalent needs a
+     *       hierarchy-aware ParallelPeriod we don't yet introspect; the
+     *       converter raises a validation error pointing at v1 alternatives.</li>
+     * </ul>
+     */
+    private String relativeSet(AiFilterSelection f, AiSchema.Level level, String fieldPath) {
+        String preset = f.getValue() == null ? "" : f.getValue().toLowerCase();
+        if (preset.isEmpty()) {
+            throw new AiValidationException(
+                    fieldPath + ".value",
+                    "'relative' filter requires value=last_n_days|last_n_months|last_n_quarters|last_n_years|ytd|mtd|qtd|previous_period|same_period_last_year",
+                    null);
+        }
+        switch (preset) {
+            case "last_n_days":
+            case "last_n_months":
+            case "last_n_quarters":
+            case "last_n_years": {
+                int n = f.getN() <= 0 ? 1 : f.getN();
+                return "Tail(" + level.uniqueName + ".Members, " + n + ")";
+            }
+            case "ytd":
+                return "Ytd()";
+            case "mtd":
+                return "Mtd()";
+            case "qtd":
+                return "Qtd()";
+            case "previous_period":
+                return "Tail(" + level.uniqueName + ".Members, 2).Item(0)";
+            case "same_period_last_year":
+                // Defensible only when the level *is* the year. For sub-year
+                // levels the correct MDX is ParallelPeriod against a year-level
+                // ancestor — we don't yet introspect hierarchy shape, so we
+                // fail loudly rather than emit incorrect MDX.
+                if ("year".equalsIgnoreCase(level.name)) {
+                    return "Tail(" + level.uniqueName + ".Members, 2).Item(0)";
+                }
+                throw new AiValidationException(
+                        fieldPath + ".value",
+                        "'same_period_last_year' currently only supports level=Year. "
+                                + "For finer-grained periods use last_n_* with the appropriate n.",
+                        null);
+            default:
+                throw new AiValidationException(
+                        fieldPath + ".value",
+                        "Unknown relative preset '" + f.getValue() + "'",
+                        java.util.Arrays.asList(
+                                "last_n_days",
+                                "last_n_months",
+                                "last_n_quarters",
+                                "last_n_years",
+                                "ytd",
+                                "mtd",
+                                "qtd",
+                                "previous_period",
+                                "same_period_last_year"));
+        }
     }
 
     /* ------------------ name resolution ------------------------------- */

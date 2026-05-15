@@ -41,15 +41,23 @@ public class AiQueryMetadata {
         }
     }
 
-    /** When the result was computed + whether it came from cache. */
+    /**
+     * When the result was computed + whether it came from cache.
+     *
+     * <p>Both {@link #computedAtMillis} (Unix epoch) and {@link #computedAt}
+     * (ISO 8601 in UTC) are populated so code that wants math + agents that
+     * want to render "as of X minutes ago" don't need an extra conversion.
+     */
     public static class Freshness {
         private long computedAtMillis;
+        private String computedAt;
         private boolean cached;
 
         public Freshness() {}
 
         public Freshness(long computedAtMillis, boolean cached) {
             this.computedAtMillis = computedAtMillis;
+            this.computedAt = java.time.Instant.ofEpochMilli(computedAtMillis).toString();
             this.cached = cached;
         }
 
@@ -59,6 +67,15 @@ public class AiQueryMetadata {
 
         public void setComputedAtMillis(long v) {
             this.computedAtMillis = v;
+            this.computedAt = java.time.Instant.ofEpochMilli(v).toString();
+        }
+
+        public String getComputedAt() {
+            return computedAt;
+        }
+
+        public void setComputedAt(String v) {
+            this.computedAt = v;
         }
 
         public boolean isCached() {

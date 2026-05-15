@@ -228,7 +228,11 @@ path segment in `/ai/schema`.
     ],
     "measures": ["Store Sales", "Unit Sales"],
     "generatedMdx": "SELECT NON EMPTY {[Measures].[Store Sales], [Measures].[Unit Sales]} ON COLUMNS,\nNON EMPTY TopCount([Product].[Products].[Product Family].Members, 3, [Measures].[Store Sales]) ON ROWS\nFROM [Sales]",
-    "freshness": { "computedAtMillis": 1715798421042, "cached": false }
+    "freshness": {
+      "computedAt":       "2026-05-15T10:23:00Z",
+      "computedAtMillis": 1715798421042,
+      "cached": false
+    }
   },
   "data": [
     {
@@ -376,31 +380,27 @@ GET /rest/saiku/api/ai/query/{queryId}/drillthrough?maxrows=5
   "rowCount": 5,
   "rows": [
     {
-      "Year": "1997",
-      "Quarter": "Q4",
-      "Month": "12",
-      "Product Family": "Drink",
-      "Product Department": "Beverages",
-      "Product Category": "Drinks",
-      "Product Subcategory": "Flavored Drinks",
-      "Brand Name": "Excellent",
-      "Product Name": "322",
-      "Store Sales": "104.3000"
-    },
-    {
-      "Year": "1997", "Quarter": "Q2", "Month": "4",
-      "Product Family": "Drink", "Product Department": "Beverages",
-      "Product Category": "Hot Beverages", "Product Subcategory": "Coffee",
-      "Brand Name": "Plato", "Product Name": "1234", "Store Sales": "5.6000"
+      "Year":                { "value": 1997.0, "formatted": "1997", "unit": null },
+      "Quarter":             { "value": null,   "formatted": "Q4",   "unit": null },
+      "Month":               { "value": 12.0,   "formatted": "12",   "unit": null },
+      "Product Family":      { "value": null,   "formatted": "Drink",        "unit": null },
+      "Product Department":  { "value": null,   "formatted": "Beverages",    "unit": null },
+      "Product Category":    { "value": null,   "formatted": "Drinks",       "unit": null },
+      "Product Subcategory": { "value": null,   "formatted": "Flavored Drinks", "unit": null },
+      "Brand Name":          { "value": null,   "formatted": "Excellent",    "unit": null },
+      "Product Name":        { "value": 322.0,  "formatted": "322",          "unit": null },
+      "Store Sales":         { "value": 104.3,  "formatted": "104.3000",     "unit": null }
     }
     // …
   ]
 }
 ```
 
-The column set is determined by the cube's fact table — every drillable
-column comes back per row. Use `?returns=col1,col2,col3` to project a
-subset, or `?maxrows=N` to bound the payload.
+Each row cell is the same `{value, formatted, unit}` envelope as the query
+response — numeric warehouse columns get a typed `value`; string columns
+populate `formatted` only with `value: null`. The column set is determined
+by the cube's fact table; use `?returns=col1,col2,col3` to project a subset,
+or `?maxrows=N` to bound the payload.
 
 ---
 
@@ -460,10 +460,7 @@ on the live Mondrian statement, not just a soft flag.
     "cubeName": "Sales"
   },
   "measures": [                                    // Required. Goes on COLUMNS.
-    {
-      "name": "Store Sales",                       // Canonical or display name.
-      "aggregators": []                            // Optional override hints (Phase 3).
-    }
+    { "name": "Store Sales" }                      // Canonical or display name.
   ],
   "rows": [                                        // Optional. CROSSJOIN-ed when >1 entry.
     {
@@ -481,10 +478,12 @@ on the live Mondrian statement, not just a soft flag.
       "dimension": "Store",
       "hierarchy": "Stores",
       "level": "Store Country",
-      "op": "in",                                  // Optional. in | not_in | between | descendants_of. Default in.
-      "members": [                                 // Arity depends on op (see Step 4).
+      "op": "in",                                  // Optional. in | not_in | between | descendants_of | relative. Default in.
+      "members": [                                 // Unique names. Required for in/not_in/between/descendants_of.
         "[Store].[Stores].[Store Country].&[USA]"
-      ]
+      ],
+      "value": null,                               // Only for op=relative. See "Relative-time filters" below.
+      "n": 1                                       // Only for op=relative, last_n_* presets. Default 1.
     }
   ],
   "order": [                                       // Optional. Sort + top-N.
@@ -507,6 +506,64 @@ on the live Mondrian statement, not just a soft flag.
 | `not_in` | `Except(level.Members, {m1, m2, …})` | ≥1 |
 | `between` | `m1 : m2` (range) | exactly 2 (start, end) |
 | `descendants_of` | `Descendants(m1)` | exactly 1 |
+| `relative` | see "Relative-time filters" below | n/a (uses `value` + `n`) |
+
+### Member-name format
+
+Members in the `members` array are **MDX unique names**, not bare captions.
+The schema's `sampleMembers` returns captions (`"USA"`, `"1997"`); to build a
+unique name, join the level's `uniqueName` with `.&[<caption>]`:
+
+```
+level.uniqueName            "[Store].[Stores].[Store Country]"
+caption                     "USA"
+unique-name to send         "[Store].[Stores].[Store Country].&[USA]"
+```
+
+Or fetch ready-made unique names with `GET /ai/members/search?cubeId=…&level=…&q=USA`
+— each hit's `uniqueName` field is the value to drop into `members`. Submitting a
+bare caption to `members` produces an MDX-parse error at execution time.
+
+For `between` over a time dimension, both ends must be unique names at the
+same level:
+
+```json
+{ "op": "between",
+  "members": ["[Time].[Time By].[Year].&[2020]",
+              "[Time].[Time By].[Year].&[2025]"] }
+```
+
+### Relative-time filters
+
+When the agent thinks in terms of "last quarter" or "year to date" rather than
+explicit member names, use `op: "relative"`. No round-trip through
+`/ai/members/search` required; the engine resolves the set against the
+selected `level`.
+
+| `value` | Emitted MDX | Notes |
+| --- | --- | --- |
+| `last_n_days` / `_months` / `_quarters` / `_years` | `Tail(level.Members, n)` | Pick the level that matches the period; `n` defaults to 1. |
+| `ytd` / `mtd` / `qtd` | `Ytd()` / `Mtd()` / `Qtd()` | Depends on the cube's time-default member. |
+| `previous_period` | `Tail(level.Members, 2).Item(0)` | Member preceding the latest available. |
+| `same_period_last_year` | `Tail(level.Members, 2).Item(0)` | Currently only supported on a Year level; finer levels need a year-aware ParallelPeriod we don't yet introspect. |
+
+Example: "last 30 days of sales by product family":
+
+```json
+{
+  "cube": "unknown_foodmart/FoodMart/FoodMart/Sales",
+  "measures": [{ "name": "Store Sales" }],
+  "rows": [{ "dimension": "Product", "hierarchy": "Products", "level": "Product Family" }],
+  "filters": [{
+    "dimension": "Time",
+    "hierarchy": "Time By",
+    "level": "Day",
+    "op": "relative",
+    "value": "last_n_days",
+    "n": 30
+  }]
+}
+```
 
 ---
 
@@ -523,7 +580,8 @@ on the live Mondrian statement, not just a soft flag.
     "measures": ["…"],                             // Measure captions (same as columns for measure-only axes).
     "generatedMdx": "SELECT …",                    // Audit trail — agent can ignore.
     "freshness": {                                 // When + whether cached.
-      "computedAtMillis": 1715798421042,
+      "computedAt":       "2026-05-15T10:23:00Z",  // ISO 8601 in UTC — for "as of X minutes ago" UX.
+      "computedAtMillis": 1715798421042,           // Unix epoch in millis — same instant, code-friendly.
       "cached": false
     }
   },

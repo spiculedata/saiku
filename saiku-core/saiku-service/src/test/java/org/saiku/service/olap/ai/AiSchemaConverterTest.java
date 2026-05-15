@@ -330,7 +330,7 @@ public class AiSchemaConverterTest {
         req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
         AiFilterSelection f = new AiFilterSelection(
                 "Time", "Time By", "Year", Collections.singletonList("[Time].[Time By].[Year].&[1997]"));
-        f.setOp("relative"); // not yet supported
+        f.setOp("nonsensical_op");
         req.setFilters(Collections.singletonList(f));
 
         try {
@@ -339,6 +339,141 @@ public class AiSchemaConverterTest {
         } catch (AiValidationException e) {
             assertTrue(e.getField(), e.getField().endsWith(".op"));
             assertTrue(e.getAvailable().contains("between"));
+            assertTrue(e.getAvailable().contains("relative"));
+        }
+    }
+
+    /* ----------------------- v3: relative time filters ----------------------- */
+
+    @Test
+    public void filterRelativeLastNDaysEmitsTail() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection();
+        f.setDimension("Time");
+        f.setHierarchy("Time By");
+        f.setLevel("Month");
+        f.setOp("relative");
+        f.setValue("last_n_months");
+        f.setN(3);
+        req.setFilters(Collections.singletonList(f));
+
+        ThinQuery tq = converter.convert(req, schema);
+
+        assertTrue(tq.getMdx(), tq.getMdx().contains("Tail([Time].[Time By].[Month].Members, 3)"));
+    }
+
+    @Test
+    public void filterRelativeLastNDefaultsToOne() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection();
+        f.setDimension("Time");
+        f.setHierarchy("Time By");
+        f.setLevel("Year");
+        f.setOp("relative");
+        f.setValue("last_n_years");
+        // n unset → defaults to 1
+        req.setFilters(Collections.singletonList(f));
+
+        ThinQuery tq = converter.convert(req, schema);
+
+        assertTrue(tq.getMdx(), tq.getMdx().contains("Tail([Time].[Time By].[Year].Members, 1)"));
+    }
+
+    @Test
+    public void filterRelativeYtdEmitsYtdFunction() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection();
+        f.setDimension("Time");
+        f.setHierarchy("Time By");
+        f.setLevel("Month");
+        f.setOp("relative");
+        f.setValue("ytd");
+        req.setFilters(Collections.singletonList(f));
+
+        ThinQuery tq = converter.convert(req, schema);
+
+        assertTrue(tq.getMdx(), tq.getMdx().contains("Ytd()"));
+    }
+
+    @Test
+    public void filterRelativePreviousPeriodEmitsTailItem() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection();
+        f.setDimension("Time");
+        f.setHierarchy("Time By");
+        f.setLevel("Year");
+        f.setOp("relative");
+        f.setValue("previous_period");
+        req.setFilters(Collections.singletonList(f));
+
+        ThinQuery tq = converter.convert(req, schema);
+
+        assertTrue(tq.getMdx(), tq.getMdx().contains("Tail([Time].[Time By].[Year].Members, 2).Item(0)"));
+    }
+
+    @Test
+    public void filterRelativeSamePeriodLastYearOnlyOnYearLevel() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection();
+        f.setDimension("Time");
+        f.setHierarchy("Time By");
+        f.setLevel("Month");
+        f.setOp("relative");
+        f.setValue("same_period_last_year");
+        req.setFilters(Collections.singletonList(f));
+
+        try {
+            converter.convert(req, schema);
+            fail("expected validation error — same_period_last_year only supported on Year");
+        } catch (AiValidationException e) {
+            assertTrue(e.getField(), e.getField().endsWith(".value"));
+        }
+    }
+
+    @Test
+    public void filterRelativeUnknownValueThrows() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection();
+        f.setDimension("Time");
+        f.setHierarchy("Time By");
+        f.setLevel("Year");
+        f.setOp("relative");
+        f.setValue("invented_preset");
+        req.setFilters(Collections.singletonList(f));
+
+        try {
+            converter.convert(req, schema);
+            fail("expected validation error");
+        } catch (AiValidationException e) {
+            assertTrue(e.getField(), e.getField().endsWith(".value"));
+            assertTrue(e.getAvailable().contains("last_n_days"));
+            assertTrue(e.getAvailable().contains("ytd"));
+        }
+    }
+
+    @Test
+    public void filterRelativeMissingValueThrows() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection();
+        f.setDimension("Time");
+        f.setHierarchy("Time By");
+        f.setLevel("Year");
+        f.setOp("relative");
+        // value unset
+        req.setFilters(Collections.singletonList(f));
+
+        try {
+            converter.convert(req, schema);
+            fail("expected validation error");
+        } catch (AiValidationException e) {
+            assertTrue(e.getField(), e.getField().endsWith(".value"));
         }
     }
 

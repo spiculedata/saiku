@@ -97,9 +97,6 @@ public final class AiRequestJsonSchema {
     private static Map<String, Object> measureSelection() {
         Map<String, Object> props = new LinkedHashMap<>();
         props.put("name", stringField("Measure name (canonical or display)."));
-        props.put(
-                "aggregators",
-                arrayOf(stringField(null), "Optional aggregator overrides (e.g. SUM, AVG). Phase 3 hint."));
         Map<String, Object> o = obj("Measure on the COLUMNS axis.", props);
         o.put("required", List.of("name"));
         return o;
@@ -128,17 +125,42 @@ public final class AiRequestJsonSchema {
         Map<String, Object> op = stringField("Operator. 'in' (default) — emit the explicit member set. "
                 + "'not_in' — emit Except(level.Members, {members}). "
                 + "'between' — emit Range(start, end); members must have 2 entries. "
-                + "'descendants_of' — emit Descendants(member, ALL); members must have 1 entry.");
-        op.put("enum", List.of("in", "not_in", "between", "descendants_of"));
+                + "'descendants_of' — emit Descendants(member, ALL); members must have 1 entry. "
+                + "'relative' — emit a time-relative set; uses 'value' (and 'n' for last_n_*). 'members' is unused.");
+        op.put("enum", List.of("in", "not_in", "between", "descendants_of", "relative"));
         op.put("default", "in");
         props.put("op", op);
         props.put(
                 "members",
                 arrayOf(
                         stringField(null),
-                        "MDX unique-name members. Required for in/not_in (>=1), between (exactly 2), descendants_of (exactly 1)."));
+                        "MDX unique-name members. Required for in/not_in (>=1), between (exactly 2), descendants_of (exactly 1). "
+                                + "Build them by joining the level's uniqueName with the member name "
+                                + "(e.g. [Time].[Time By].[Year].&[1997]), or fetch ready-made via GET /ai/members/search."));
+        Map<String, Object> value = stringField("Relative preset (only when op=relative). "
+                + "last_n_days/months/quarters/years pick the most-recent N members on the level. "
+                + "ytd/mtd/qtd use Mondrian's Ytd()/Mtd()/Qtd() against the time dimension's default member. "
+                + "previous_period picks the member preceding the latest available. "
+                + "same_period_last_year is currently only supported on a Year level.");
+        value.put(
+                "enum",
+                List.of(
+                        "last_n_days",
+                        "last_n_months",
+                        "last_n_quarters",
+                        "last_n_years",
+                        "ytd",
+                        "mtd",
+                        "qtd",
+                        "previous_period",
+                        "same_period_last_year"));
+        props.put("value", value);
+        props.put("n", intField(1, "Count for the last_n_* presets. Defaults to 1; ignored for other presets."));
         Map<String, Object> o = obj("Slicer filter — lands in the WHERE clause.", props);
-        o.put("required", List.of("dimension", "level", "members"));
+        // members is only required when op∈{in, not_in, between, descendants_of}; relative ops
+        // use value+n. Marking "members" required at the schema level would over-constrain
+        // the relative case, so the document-level required list is dimension+level only.
+        o.put("required", List.of("dimension", "level"));
         return o;
     }
 

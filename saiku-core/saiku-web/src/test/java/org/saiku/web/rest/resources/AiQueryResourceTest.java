@@ -343,6 +343,29 @@ public class AiQueryResourceTest {
     }
 
     @Test
+    public void drillthroughCellsAreTypedEnvelopes() {
+        resource.setThinQueryService(new StubThinQueryServiceWithDrill());
+        Response resp = resource.drillthrough("sync-query-id", 100, null);
+        assertEquals(200, resp.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        @SuppressWarnings("unchecked")
+        List<Map<String, AiCell>> rows = (List<Map<String, AiCell>>) body.get("rows");
+        assertNotNull(rows);
+        assertEquals(2, rows.size());
+
+        AiCell year0 = rows.get(0).get("year");
+        assertNotNull(year0);
+        assertEquals("1997", year0.getFormatted()); // String column → formatted only
+        assertEquals(Double.valueOf(1997.0), year0.getValue()); // parsed from formatted
+
+        AiCell sales0 = rows.get(0).get("sales");
+        assertNotNull(sales0);
+        assertEquals(Double.valueOf(100.0), sales0.getValue()); // numeric column → typed value
+        assertEquals("100", sales0.getFormatted());
+    }
+
+    @Test
     public void drillthroughErrorReturns500() {
         resource.setThinQueryService(new ThinQueryService() {
             @Override
