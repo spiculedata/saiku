@@ -563,6 +563,9 @@ check "Warehouse and Sales virtual cube — Store2 aliased dim resolves (iter 32
   '{"cube":"unknown_foodmart/FoodMart/FoodMart/Warehouse and Sales","measures":[{"name":"Sales Count"}],"rows":[{"dimension":"Store2","hierarchy":"Store Type","level":"Store Type"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and any(d['Store Type']=='Supermarket' and d['Sales Count']['value']==47795.0 for d in r['data']) and sum(d['Sales Count']['value'] for d in r['data'])==86837.0"
 
+check "schema endpoint exposes sampleMembers per level — anti-hallucination contract (iter 326)" GET "/rest/saiku/api/ai/schema/$CUBE" '' \
+  "isinstance(r['dimensions']['product']['hierarchies']['products']['levels']['product family']['sampleMembers'], list) and len(r['dimensions']['product']['hierarchies']['products']['levels']['product family']['sampleMembers'])==3 and any(s['caption']=='Drink' and s['uniqueName']=='[Product].[Products].[Drink]' for s in r['dimensions']['product']['hierarchies']['products']['levels']['product family']['sampleMembers'])"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
