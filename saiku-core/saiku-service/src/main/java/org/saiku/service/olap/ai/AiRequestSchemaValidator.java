@@ -74,9 +74,26 @@ public final class AiRequestSchemaValidator {
         // faster. The remaining errors (if any) get reported on the
         // next round-trip.
         ValidationMessage first = errors.iterator().next();
-        String field = jsonPointerToField(first.getInstanceLocation().toString());
+        String field = fieldFor(first);
         String message = first.getMessage();
         throw new AiValidationException(field, message, null);
+    }
+
+    /** Compute the agent-facing field pointer for a single validation
+     *  error. For {@code required} violations, prefer the missing
+     *  property name (so the agent sees "field=cube", not "field=body").
+     *  For everything else, fall back to the JSON-Pointer→dotted-array
+     *  conversion on the instance location. */
+    static String fieldFor(ValidationMessage msg) {
+        // Required-violations: the instance location is the parent object;
+        // the missing field is in the type-specific property accessor.
+        // networknt 1.5.x exposes this via getProperty() — null on other
+        // error types.
+        String property = msg.getProperty();
+        if ("required".equals(msg.getType()) && property != null && !property.isEmpty()) {
+            return property;
+        }
+        return jsonPointerToField(msg.getInstanceLocation().toString());
     }
 
     /**
