@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Convenience wrapper so `docker exec -i <name> saiku-mcp` works
+# without the caller needing to know the JAR path. Forwards stdin /
+# stdout / argv to /app/saiku-mcp.jar verbatim.
+exec java -jar /app/saiku-mcp.jar "$@"

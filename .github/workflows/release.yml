@@ -67,8 +67,11 @@ jobs:
           echo "jar_name=saiku-${VERSION}.jar" >> "$GITHUB_OUTPUT"
           echo "dist_name=saiku-dist-${VERSION}.zip" >> "$GITHUB_OUTPUT"
 
-      - name: mvn package (launcher)
-        run: mvn -B -ntp -DskipTests -pl saiku-launcher -am package
+      - name: mvn package (launcher + mcp)
+        # Both fat JARs ship in the demo image. saiku-launcher provides
+        # the REST + UI on :8080; saiku-mcp provides the stdio MCP
+        # wrapper Claude Desktop / Cursor consume.
+        run: mvn -B -ntp -DskipTests -pl saiku-launcher,saiku-mcp -am package
 
       - name: Stage release assets
         env:
@@ -76,14 +79,21 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          # 1) Bare fat JAR (versioned filename) — keeps the existing
-          #    "give me just the JAR" path for users who don't want the bundle.
+          # 1) Bare launcher fat JAR (versioned filename) — keeps the
+          #    "give me just the JAR" path for users who don't want the
+          #    bundle.
           cp "saiku-launcher/target/saiku-${VERSION}.jar" \
              "release-assets/saiku-${VERSION}.jar"
-          # 2) Runnable dist bundle: JAR + README + run.sh + run.bat, zipped.
+          # 2) MCP JAR — its own asset so users can wire Claude Desktop
+          #    without pulling the full Docker image.
+          cp "saiku-mcp/target/saiku-mcp-${VERSION}.jar" \
+             "release-assets/saiku-mcp-${VERSION}.jar"
+          # 3) Runnable dist bundle: launcher JAR + MCP JAR + README +
+          #    run scripts, zipped.
           STAGE="saiku-dist-${VERSION}"
           mkdir -p "$STAGE"
           cp "saiku-launcher/target/saiku-${VERSION}.jar" "$STAGE/"
+          cp "saiku-mcp/target/saiku-mcp-${VERSION}.jar" "$STAGE/"
           cp dist/README.md "$STAGE/"
           cp dist/run.sh "$STAGE/"
           cp dist/run.bat "$STAGE/"
@@ -97,6 +107,13 @@ jobs:
         with:
           name: saiku-jar
           path: release-assets/${{ steps.meta.outputs.jar_name }}
+          retention-days: 7
+
+      - name: Upload MCP JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: saiku-mcp-jar
+          path: release-assets/saiku-mcp-${{ steps.meta.outputs.version }}.jar
           retention-days: 7
 
       - name: Upload dist zip artifact
@@ -115,21 +132,29 @@ jobs:
 
       # The Dockerfile no longer rebuilds saiku from sources (it can't
       # auth against the spiculedata GH Packages registries from inside
-      # the Maven container). Instead it COPYs the pre-built JAR that the
-      # jar job produced. Download that artifact into ./build-context/.
+      # the Maven container). Instead it COPYs the pre-built JARs that
+      # the jar job produced. Download both artifacts into ./build-context/.
       - name: Download saiku-jar
         uses: actions/download-artifact@v4
         with:
           name: saiku-jar
           path: build-context
-      - name: Stage JAR for Docker build context
+      - name: Download saiku-mcp-jar
+        uses: actions/download-artifact@v4
+        with:
+          name: saiku-mcp-jar
+          path: build-context
+      - name: Stage JARs for Docker build context
         env:
           JAR_NAME: ${{ needs.jar.outputs.jar_name }}
+          VERSION: ${{ needs.jar.outputs.version }}
         run: |
           set -euo pipefail
-          # The Dockerfile expects build-context/saiku.jar regardless of the
-          # versioned filename, so rename for a stable COPY target.
+          # The Dockerfile expects build-context/saiku.jar +
+          # saiku-mcp.jar regardless of the versioned filenames — rename
+          # for stable COPY targets.
           mv "build-context/${JAR_NAME}" build-context/saiku.jar
+          mv "build-context/saiku-mcp-${VERSION}.jar" build-context/saiku-mcp.jar
           ls -la build-context/
 
       - name: Set up Docker Buildx
