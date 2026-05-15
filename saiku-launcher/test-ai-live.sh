@@ -591,9 +591,9 @@ check "same-hier 2-level COLUMNS axis: CROSSJOIN(measure, Hierarchize(set, set))
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}],"columns":[{"dimension":"Product","hierarchy":"Products","level":"Product Family","members":["[Product].[Products].[Drink]"]},{"dimension":"Product","hierarchy":"Products","level":"Product Department","members":["[Product].[Products].[Drink].[Alcoholic Beverages]","[Product].[Products].[Drink].[Beverages]"]}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==4 and len(r['metadata']['columns'])==2 and 'Store Sales | Drink | Alcoholic Beverages' in [c['caption'] for c in r['metadata']['columns']] and r['data'][0]['Store Sales | Drink | Alcoholic Beverages']['value']==3082.0 and 'CROSSJOIN({[Measures].[Store Sales]}, Hierarchize(' in r['metadata']['generatedMdx']"
 
-check "HR parent-child closure hier produces clean 400 not 500 (saiku#810 — iter 331)" POST "/rest/saiku/api/ai/query" \
+check "HR parent-child closure hier dropped by schema-time probe (saiku#810 — iter 331)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Number of Employees"}],"rows":[{"dimension":"Employee","hierarchy":"Employee$Manager Id$Parent","level":"Item"}],"limit":5}' \
-  "http==400 and r.get('status')=='VALIDATION_ERROR' and 'not found in cube' in r.get('error','') and 'members/search' in r.get('error','')"
+  "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='rows[0].hierarchy' and 'Unknown hierarchy' in r.get('error','') and 'Employee\$Manager Id\$Parent' in r.get('error','') and 'Employees' in r.get('available',[]) and 'Employee\$Manager Id\$Parent' not in r.get('available',[])"
 
 # Order-without-limit on HR/Employee/Store Id returns the full
 # 14-store breakdown in correct desc order (control vs saiku#809
