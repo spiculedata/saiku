@@ -388,6 +388,10 @@ check "Promotion Name × Promotion Sales (saiku#805 CASE-expr × deep promo leve
   '{"cube":"'"$CUBE"'","measures":[{"name":"Promotion Sales"}],"rows":[{"dimension":"Promotion","hierarchy":"Promotions","level":"Promotion Name"}],"order":[{"by":"Promotion Sales","direction":"desc"}],"limit":3}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Promotion Name']=='Cash Register Lottery' and r['data'][0]['Promotion Sales']['value']==9821.71"
 
+check "maximally-shaped query: 2 measures × Quarter cols × Family rows + Gender slicer + TopCount (iter 285)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"},{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"columns":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}],"filters":[{"dimension":"Customer","hierarchy":"Gender","level":"Gender","op":"in","members":["[Customer].[Gender].[M]"]}],"order":[{"by":"Unit Sales","direction":"desc"}],"limit":3}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and len(r['metadata']['columns'])==8 and r['data'][0]['Product Family']=='Food' and r['data'][0]['Unit Sales | Q1']['value']==23977.0 and 'TopCount(' in r['metadata']['generatedMdx'] and 'WHERE ([Customer].[Gender].[M])' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
