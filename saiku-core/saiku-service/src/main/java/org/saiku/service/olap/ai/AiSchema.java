@@ -117,6 +117,21 @@ public class AiSchema {
     private final String cubeId;
     private final String cubeName;
     private final String cubeUniqueName;
+    /** Canonical (resolver-matched) cube reference. Populated by
+     *  {@link OlapAiCubeMetadataService#buildSchema} from the actual
+     *  {@link org.saiku.olap.dto.SaikuCube} returned by the discover service,
+     *  so connectionName/catalog/schema/cubeName all reflect Mondrian's
+     *  canonical case even when the agent posted lowercase or mixed-case
+     *  values. Used by {@link AiSchemaConverter#toSaikuCube} as the
+     *  authoritative source for downstream cube lookup — closes saiku#811
+     *  by removing the agent-case leak that produced "Cannot get native
+     *  cube" 500s on case-mismatched cube refs.
+     *
+     *  <p>Nullable for test fixtures that construct AiSchema directly via
+     *  the 3-arg constructor (they don't go through the metadata service).
+     */
+    public AiCubeRef canonicalCube;
+
     public final Map<String, Measure> measures = new LinkedHashMap<>();
     public final Map<String, Dimension> dimensions = new LinkedHashMap<>();
     /** display-name → canonical measure key (Phase 3 enrichment alias). */

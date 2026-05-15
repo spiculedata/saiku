@@ -185,7 +185,15 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
 
     private AiSchema buildSchema(AiCubeRef ref) {
         SaikuCube cube = findCube(ref);
-        AiSchema schema = new AiSchema(cacheKey(ref), cube.getName(), cube.getUniqueName());
+        // saiku#811: build the canonical AiCubeRef from the matched cube's
+        // actual fields, not from the agent-supplied ref. The cacheKey and
+        // every downstream consumer (AiSchemaConverter.toSaikuCube,
+        // serialised cubeId in the response) reads from this canonical
+        // form, so a lowercase/mixed-case agent input doesn't produce
+        // "Cannot get native cube" 500s further down the pipeline.
+        AiCubeRef canonical = new AiCubeRef(cube.getConnection(), cube.getCatalog(), cube.getSchema(), cube.getName());
+        AiSchema schema = new AiSchema(cacheKey(canonical), cube.getName(), cube.getUniqueName());
+        schema.canonicalCube = canonical;
         if (cube.getCaption() != null && !cube.getCaption().equals(cube.getName())) {
             schema.description = cube.getCaption();
         }
