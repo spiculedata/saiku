@@ -490,6 +490,10 @@ if [[ -n "$DT2_QID" ]]; then
     "http==200 and r.get('rowCount')==1 and len(r['rows'])==1 and list(r['rows'][0].keys())==['Unit Sales'] and r['rows'][0]['Unit Sales']['value']==24597.0"
 fi
 
+check "filter op=relative last_n_months n=3 emits Tail (iter 310)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Month","op":"relative","value":"last_n_months","n":3}],"nonEmpty":false}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and 'Tail([Time].[Time].[Month].Members, 3)' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
