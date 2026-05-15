@@ -352,9 +352,29 @@ public class AiSchemaConverter {
             // op=relative, which doesn't read members[].
             if (!"relative".equals(op)) {
                 AiSchema.Hierarchy filterHier = lookupHierarchy(probe, schema, fieldPath);
+                // Detect duplicate-by-leaf-segment within this filter's
+                // members[] — catches the same-logical-member-two-ref-forms
+                // pattern that silently double-counts in Mondrian's bare-set
+                // slicer (saiku#804). Within a single filter all members are
+                // at the same declared level, so two refs sharing the same
+                // leaf-segment caption resolve to the same member.
+                java.util.Map<String, Integer> seenLeaf = new java.util.LinkedHashMap<>();
                 for (int mi = 0; mi < members.size(); mi++) {
                     String mref = members.get(mi);
                     validateMemberRef(mref, fieldPath + ".members[" + mi + "]");
+                    String leaf = lastBracketSegmentLower(mref);
+                    Integer prev = seenLeaf.put(leaf, mi);
+                    if (prev != null) {
+                        throw new AiValidationException(
+                                fieldPath + ".members[" + mi + "]",
+                                "Member '" + mref + "' resolves to the same member as "
+                                        + fieldPath + ".members[" + prev
+                                        + "] ('" + members.get(prev) + "'). "
+                                        + "Mondrian aggregates duplicates without deduplication "
+                                        + "and would silently double-count. "
+                                        + "Use only one ref form per logical member.",
+                                null);
+                    }
                     // Also assert the member's dim+hier prefix matches the
                     // declared filter dim+hier (saiku#798, saiku#799). The
                     // level depth check is skipped because slicer members can
@@ -895,6 +915,26 @@ public class AiSchemaConverter {
                             + "at the declared level.",
                     null);
         }
+    }
+
+    /** Return the content of the LAST bracketed segment of a member ref,
+     *  lowercased, with the leading {@code &} stripped if present.
+     *  Used by the filter dedupe (saiku#804): two refs that share the same
+     *  leaf segment within one filter's members[] resolve to the same
+     *  member (because filter members are constrained to a single level).
+     *
+     *  Examples:
+     *    [Time].[Time].[1997]               → "1997"
+     *    [Time].[Time].[Year].&[1997]       → "1997"
+     *    [Promotion].[Media Type].[No Media] → "no media"
+     */
+    private static String lastBracketSegmentLower(String ref) {
+        if (ref == null) return "";
+        int close = ref.lastIndexOf(']');
+        if (close < 0) return ref.toLowerCase(java.util.Locale.ROOT);
+        int open = ref.lastIndexOf('[', close - 1);
+        if (open < 0) return ref.toLowerCase(java.util.Locale.ROOT);
+        return ref.substring(open + 1, close).toLowerCase(java.util.Locale.ROOT);
     }
 
     private static String firstBracketedSegment(String ref) {
