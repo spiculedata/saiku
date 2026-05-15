@@ -587,6 +587,10 @@ check "same-hier 2-level rows with explicit members per level (iter 329)" POST "
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Year","members":["[Time].[Time].[1997]"]},{"dimension":"Time","hierarchy":"Time","level":"Quarter","members":["[Time].[Time].[1997].[Q1]","[Time].[Time].[1997].[Q2]"]}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and r['data'][0]['Quarter']=='Q1' and r['data'][0]['Unit Sales']['value']==66291.0 and r['data'][1]['Quarter']=='Q2' and r['data'][1]['Unit Sales']['value']==62610.0 and 'Hierarchize({{[Time].[Time].[1997]}, {[Time].[Time].[1997].[Q1], [Time].[Time].[1997].[Q2]}})' in r['metadata']['generatedMdx']"
 
+check "same-hier 2-level COLUMNS axis: CROSSJOIN(measure, Hierarchize(set, set)) (iter 330)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}],"columns":[{"dimension":"Product","hierarchy":"Products","level":"Product Family","members":["[Product].[Products].[Drink]"]},{"dimension":"Product","hierarchy":"Products","level":"Product Department","members":["[Product].[Products].[Drink].[Alcoholic Beverages]","[Product].[Products].[Drink].[Beverages]"]}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==4 and len(r['metadata']['columns'])==2 and 'Store Sales | Drink | Alcoholic Beverages' in [c['caption'] for c in r['metadata']['columns']] and r['data'][0]['Store Sales | Drink | Alcoholic Beverages']['value']==3082.0 and 'CROSSJOIN({[Measures].[Store Sales]}, Hierarchize(' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
