@@ -50,9 +50,10 @@ public class AiQueryDocsExamplesTest {
             + "  \"limit\": 3\n"
             + "}";
 
-    private static final String STEP3_EXPECTED_MDX = "SELECT NON EMPTY {[Measures].[Store Sales], [Measures].[Unit Sales]} ON COLUMNS,\n"
-            + "NON EMPTY TopCount([Product].[Products].[Product Family].Members, 3, [Measures].[Store Sales]) ON ROWS\n"
-            + "FROM [Sales]";
+    private static final String STEP3_EXPECTED_MDX =
+            "SELECT NON EMPTY {[Measures].[Store Sales], [Measures].[Unit Sales]} ON COLUMNS,\n"
+                    + "NON EMPTY TopCount([Product].[Products].[Product Family].Members, 3, [Measures].[Store Sales]) ON ROWS\n"
+                    + "FROM [Sales]";
 
     @Test
     public void step3_topNByMeasure_convertsToDocumentedMdx() throws Exception {
@@ -70,7 +71,7 @@ public class AiQueryDocsExamplesTest {
 
     /* ---------- AI-QUERY-API.md § "Relative-time filters" (line ~602) ---------- */
     /* The doc body has no paired generatedMdx claim — we pin the converter's
-       current emit so a future change forces an explicit doc update. */
+    current emit so a future change forces an explicit doc update. */
 
     private static final String RELATIVE_TIME_BODY = "{\n"
             + "  \"measures\": [{ \"name\": \"Store Sales\" }],\n"

@@ -75,8 +75,11 @@ public class MdxEchoGoldenTest {
             AiQueryRequest req;
             try (InputStream in = MdxEchoGoldenTest.class.getClassLoader().getResourceAsStream(requestResource)) {
                 if (in == null) {
-                    failures.append("[").append(fixture).append("] missing request.json: ")
-                            .append(requestResource).append('\n');
+                    failures.append("[")
+                            .append(fixture)
+                            .append("] missing request.json: ")
+                            .append(requestResource)
+                            .append('\n');
                     continue;
                 }
                 req = MAPPER.readValue(in, AiQueryRequest.class);
@@ -95,23 +98,30 @@ public class MdxEchoGoldenTest {
                 Files.createDirectories(target.getParent());
                 Files.writeString(target, actual, StandardCharsets.UTF_8);
                 regenerated = true;
-                failures.append("[").append(fixture).append("] wrote expected file: ")
-                        .append(target).append('\n');
+                failures.append("[")
+                        .append(fixture)
+                        .append("] wrote expected file: ")
+                        .append(target)
+                        .append('\n');
                 continue;
             }
 
             if (!expected.equals(actual)) {
-                failures.append("[").append(fixture).append("] MDX differs from ")
+                failures.append("[")
+                        .append(fixture)
+                        .append("] MDX differs from ")
                         .append(expectedResource)
-                        .append("\n--- expected ---\n").append(expected)
-                        .append("\n--- actual ---\n").append(actual).append('\n');
+                        .append("\n--- expected ---\n")
+                        .append(expected)
+                        .append("\n--- actual ---\n")
+                        .append(actual)
+                        .append('\n');
             }
         }
 
         if (failures.length() > 0) {
             if (regenerated) {
-                fail("regenerated goldens — inspect diff and re-run without -D" + UPDATE_PROPERTY + ":\n"
-                        + failures);
+                fail("regenerated goldens — inspect diff and re-run without -D" + UPDATE_PROPERTY + ":\n" + failures);
             }
             fail(failures.toString());
         }
@@ -130,8 +140,7 @@ public class MdxEchoGoldenTest {
      * test} and IDE runs without hard-coding {@code src/test/resources}.
      */
     private static Path resolveExpectedPath(String fixture) {
-        URL fixtureUrl =
-                MdxEchoGoldenTest.class.getClassLoader().getResource(FIXTURE_DIR + fixture + "/request.json");
+        URL fixtureUrl = MdxEchoGoldenTest.class.getClassLoader().getResource(FIXTURE_DIR + fixture + "/request.json");
         if (fixtureUrl == null) {
             throw new IllegalStateException("cannot locate fixture on classpath: " + fixture);
         }
