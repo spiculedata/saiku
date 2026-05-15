@@ -502,6 +502,10 @@ check "filter op=relative qtd emits Qtd() (iter 312)" POST "/rest/saiku/api/ai/q
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Month","op":"relative","value":"qtd"}]}' \
   "r.get('status')=='SUCCESS' and 'WHERE (Qtd())' in r['metadata']['generatedMdx']"
 
+check "filter op=relative mtd emits Mtd() (iter 313)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Month","op":"relative","value":"mtd"}]}' \
+  "r.get('status')=='SUCCESS' and 'WHERE (Mtd())' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
