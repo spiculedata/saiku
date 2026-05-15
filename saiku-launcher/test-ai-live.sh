@@ -396,6 +396,10 @@ check "Customer State Province + Order(desc, no limit) emits Order BDESC (iter 2
   '{"cube":"'"$CUBE"'","measures":[{"name":"Customer Count"}],"rows":[{"dimension":"Customer","hierarchy":"Customers","level":"State Province"}],"order":[{"by":"Customer Count","direction":"desc"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and [d['State Province'] for d in r['data']]==['CA','WA','OR'] and r['data'][0]['Customer Count']['value']==2716.0 and sum(d['Customer Count']['value'] for d in r['data'])==5581.0 and 'Order(' in r['metadata']['generatedMdx'] and 'BDESC' in r['metadata']['generatedMdx']"
 
+check "mixed-format multi-measure: EUR + % unit sniffers independent per cell (iter 287)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Profit"},{"name":"Gewinn-Wachstum"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==4 and r['data'][0]['Profit']['unit']=='EUR' and r['data'][0]['Gewinn-Wachstum']['unit']=='%' and r['data'][0]['Profit']['value']==83876.11 and r['data'][0]['Gewinn-Wachstum']['value']==0.0"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
