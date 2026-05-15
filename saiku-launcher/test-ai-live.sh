@@ -559,6 +559,10 @@ check "filter op=not_in with 2 members → Except set slicer (iter 323)" POST "/
 check "/cubes shape: 6 cubes, each has the 7-field summary (iter 324)" GET "/rest/saiku/api/ai/cubes" '' \
   "isinstance(r, list) and len(r)==6 and set(r[0].keys())=={'connectionName','catalog','schema','cubeName','cubeCaption','defaultMeasure','measureCount'} and set(c['cubeName'] for c in r)=={'HR','Sales','Sales 2','Store','Warehouse','Warehouse and Sales'} and any(c['cubeName']=='HR' and c['defaultMeasure']=='Org Salary' and c['measureCount']==5 for c in r)"
 
+check "Warehouse and Sales virtual cube — Store2 aliased dim resolves (iter 325)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"unknown_foodmart/FoodMart/FoodMart/Warehouse and Sales","measures":[{"name":"Sales Count"}],"rows":[{"dimension":"Store2","hierarchy":"Store Type","level":"Store Type"}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and any(d['Store Type']=='Supermarket' and d['Sales Count']['value']==47795.0 for d in r['data']) and sum(d['Sales Count']['value'] for d in r['data'])==86837.0"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
