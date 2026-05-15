@@ -147,6 +147,25 @@ public class ThinQueryService implements Serializable {
      * Phase 5 Task 8 for its own cache story.
      */
     public CachedQueryResult executeCached(ThinQuery tq) {
+        // Always register the per-session QueryContext for this name BEFORE
+        // consulting the cache. A cache hit returns the stored arrow bytes
+        // without going through executeInternalQuery, leaving
+        // context.get(name) == null — and downstream consumers like
+        // drillthrough() then NPE on context.get(queryName).getOlapQuery().
+        // For QUERYMODEL queries we also need to populate the MDX (which
+        // is what updateQuery does inside executeInternalQuery) so that
+        // post-execute consumers can read tq.getMdx().
+        if (ThinQuery.Type.QUERYMODEL.equals(tq.getType())
+                && StringUtils.isBlank(tq.getMdx())) {
+            try {
+                updateQuery(tq);
+            } catch (Exception e) {
+                throw new SaikuServiceException(
+                        "Failed to materialise MDX for cached query: " + tq.getName(), e);
+            }
+        }
+        createQuery(tq);
+
         final String cubeVersion = QueryCacheKey.cubeVersion(tq);
         final String key = QueryCacheKey.of(tq, cubeVersion);
 
