@@ -372,6 +372,10 @@ check "empty result set under nonEmpty=true returns 200 SUCCESS / 0 rows (iter 2
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","op":"in","members":["[Time].[Time].[1998]"]}],"nonEmpty":true}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==0 and r.get('data')==[] and 'WHERE ([Time].[Time].[1998])' in r['metadata']['generatedMdx']"
 
+check "deepest level (Product Name, depth 6) — TopCount(5) Store Sales (iter 281)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Name"}],"order":[{"by":"Store Sales","direction":"desc"}],"limit":5}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and r['data'][0]['Product Name']=='Hermanos Green Pepper' and r['data'][0]['Store Sales']['value']==922.54 and 'TopCount(' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
