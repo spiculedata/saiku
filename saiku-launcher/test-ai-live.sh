@@ -356,6 +356,10 @@ check "explicit Quarter members in hasAll=false hier — cross-validates saiku#8
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Quarter","members":["[Time].[Time].[1997].[Q1]","[Time].[Time].[1997].[Q3]"]}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and r['data'][0]['Quarter']=='Q1' and r['data'][0]['Store Sales']['value']==139628.35 and r['data'][1]['Quarter']=='Q3' and r['data'][1]['Store Sales']['value']==140271.89"
 
+check "Customer/Gender single-member slicer — F-only (iter 277)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Sales Count"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Customer","hierarchy":"Gender","level":"Gender","op":"in","members":["[Customer].[Gender].[F]"]}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Sales Count']['value']==3953.0 and r['data'][1]['Sales Count']['value']==30848.0 and 'WHERE ([Customer].[Gender].[F])' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
