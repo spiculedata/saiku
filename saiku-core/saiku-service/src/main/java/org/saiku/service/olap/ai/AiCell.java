@@ -78,16 +78,22 @@ public class AiCell {
         }
     }
 
-    /** Best-effort unit sniff from a formatted string. {@code "$48,836.21"} →
-     *  {@code "USD"}; {@code "£500.00"} → {@code "GBP"}; percent cells → "%". */
+    /** Best-effort unit sniff from a formatted string. Handles both
+     *  prefix-currency conventions ({@code "$48,836.21"} → {@code "USD"},
+     *  {@code "£500.00"} → {@code "GBP"}) and trailing-currency conventions
+     *  used by some locales / cube formatters ({@code "29,358.98 €"} →
+     *  {@code "EUR"}). Percent cells return {@code "%"}. Sign prefixes
+     *  ({@code -}/{@code +}) are stripped before the symbol check. */
     public static String sniffUnit(String formatted) {
         if (formatted == null || formatted.isEmpty()) return null;
         String s = formatted.trim();
         if (s.endsWith("%")) return "%";
-        if (s.startsWith("$")) return "USD";
-        if (s.startsWith("£")) return "GBP";
-        if (s.startsWith("€")) return "EUR";
-        if (s.startsWith("¥")) return "JPY";
+        // Strip a sign prefix so "-$10" still sniffs.
+        String body = (s.startsWith("-") || s.startsWith("+")) ? s.substring(1).trim() : s;
+        if (body.startsWith("$") || body.endsWith("$")) return "USD";
+        if (body.startsWith("£") || body.endsWith("£")) return "GBP";
+        if (body.startsWith("€") || body.endsWith("€")) return "EUR";
+        if (body.startsWith("¥") || body.endsWith("¥")) return "JPY";
         return null;
     }
 
