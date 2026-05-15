@@ -344,6 +344,10 @@ if [[ -n "$DT_QID" ]]; then
     "http==200 and r.get('rowCount')==5 and len(r['rows'])==5 and 'Year' in r['rows'][0] and 'Product Family' in r['rows'][0] and 'Unit Sales' in r['rows'][0] and r['rows'][0]['Product Family']['formatted']=='Drink'"
 fi
 
+check "format=matrix uses positional keys, labels live in metadata (iter 274)" POST "/rest/saiku/api/ai/query?format=matrix" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"columns":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}]}' \
+  "r.get('format')=='matrix' and len(r.get('data',[]))==0 and len(r['matrix'])==3 and list(r['matrix'][0].keys())==['0','1','2','3'] and r['matrix'][0]['0']['value']==11585.8 and r['metadata']['rows'][0]['caption']=='Drink'"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
