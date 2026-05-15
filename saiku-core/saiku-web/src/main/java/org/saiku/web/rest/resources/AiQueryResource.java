@@ -444,6 +444,22 @@ public class AiQueryResource {
             body.put("rowCount", rows.size());
             body.put("rows", rows);
             return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+        } catch (NullPointerException e) {
+            // ThinQueryService.drillthrough dereferences the internal
+            // QueryContext map without a present-check; an unknown queryId
+            // leaks an NPE with internal class names. Catch and translate to
+            // a clean 404 with the typed AiQueryResponse envelope (saiku#783).
+            log.warn("AI drillthrough on unknown queryId {} — translated to 404", queryId);
+            AiQueryResponse resp = new AiQueryResponse();
+            resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
+            resp.setError("Unknown queryId '" + queryId
+                    + "'. The queryId must come from a previous /query or "
+                    + "/query/execute-async response and must not have been evicted.");
+            resp.setField("queryId");
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(resp)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
         } catch (Exception e) {
             log.error("AI drillthrough failed for {}", queryId, e);
             return error("drillthrough failed: " + e.getMessage());

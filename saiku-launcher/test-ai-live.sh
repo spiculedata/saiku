@@ -175,6 +175,9 @@ check "validation: order direction must be asc/desc" POST "/rest/saiku/api/ai/qu
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"order":[{"by":"Store Sales","direction":"invalid"}],"limit":2}' \
   "r.get('status')=='VALIDATION_ERROR' and r.get('field')=='order[0].direction' and 'asc' in r.get('error','') and 'desc' in r.get('error','')"
 
+check "drillthrough on bogus queryId returns 404 (saiku#783)" GET "/rest/saiku/api/ai/query/bogus-uuid-1234/drillthrough?maxrows=5" '' \
+  "http==404 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='queryId' and 'Unknown queryId' in r.get('error','')"
+
 # ---- members search ----
 check "members search case-insensitive (q=Excellent)" GET "/rest/saiku/api/ai/members/search?cubeId=$CUBE&dimension=Product&hierarchy=Products&level=Brand%20Name&q=Excellent&limit=5" '' \
   "isinstance(r, list) and len(r) >= 1 and any(m['caption']=='Excellent' for m in r)"
