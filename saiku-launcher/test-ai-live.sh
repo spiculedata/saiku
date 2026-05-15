@@ -178,6 +178,17 @@ check "validation: order direction must be asc/desc" POST "/rest/saiku/api/ai/qu
 check "drillthrough on bogus queryId returns 404 (saiku#783)" GET "/rest/saiku/api/ai/query/bogus-uuid-1234/drillthrough?maxrows=5" '' \
   "http==404 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='queryId' and 'Unknown queryId' in r.get('error','')"
 
+# Drillthrough with an unknown `returns` member should be 400, not 500
+# leaking Mondrian's "unknown member ... in RETURN clause" text (saiku#795).
+RET_QID=$(curl -sS -b "$COOKIES" -X POST "$URL/rest/saiku/api/ai/query" \
+  -H 'Content-Type: application/json' \
+  --data '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
+  | python3 -c "import json,sys;print(json.load(sys.stdin).get('queryId',''))")
+if [[ -n "$RET_QID" ]]; then
+  check "drillthrough with unknown returns member is 400 (saiku#795)" GET "/rest/saiku/api/ai/query/$RET_QID/drillthrough?maxrows=3&returns=%5BMeasures%5D.%5BFake%5D" '' \
+    "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='returns' and 'RETURN' in r.get('error','')"
+fi
+
 # Drillthrough on a 0-row query (Foodmart has no 1998 data) should be a clean
 # 200 with rowCount=0 — not a 500 leaking Mondrian's "Cell coordinates fall
 # outside CellSet bounds" internal message (saiku#794).

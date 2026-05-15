@@ -474,6 +474,21 @@ public class AiQueryResource {
                 body.put("rows", new ArrayList<>());
                 return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
             }
+            // A bad `returns=` query param surfaces as
+            // "Can't perform drillthrough operation on unknown member
+            // '<ref>' in RETURN clause" — Mondrian-friendly text. Lift to a
+            // 400 with the typed envelope pointing at the offending param
+            // (saiku#795).
+            if (m != null && m.contains("in RETURN clause")) {
+                AiQueryResponse resp = new AiQueryResponse();
+                resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
+                resp.setError(m.replaceFirst("^.*Mondrian Error:", "").trim());
+                resp.setField("returns");
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(resp)
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            }
             log.error("AI drillthrough failed for {}", queryId, e);
             return error("drillthrough failed: " + e.getMessage());
         }
