@@ -761,4 +761,94 @@ public class AiSchemaConverterTest {
             assertTrue(e.getMessage(), e.getMessage().contains("Multiple filters target hierarchy"));
         }
     }
+
+    /* ----------------------- saiku#775: named sets ----------------------- */
+
+    @Test
+    public void singleNamedSetEmittedAsWithClause() {
+        AiQueryRequest req = baseReq();
+        req.setNamedSets(Collections.singletonList(new AiNamedSet(
+                "Top Products",
+                "TopCount([Product].[Product].[Product Family].Members, 3, [Measures].[Store Sales])")));
+
+        ThinQuery tq = converter.convert(req, schema);
+        String mdx = tq.getMdx();
+        assertNotNull(mdx);
+        assertTrue("MDX begins with the WITH clause — got: " + mdx, mdx.startsWith("WITH"));
+        assertTrue("named-set name appears bracketed — got: " + mdx, mdx.contains("SET [Top Products] AS (TopCount("));
+        assertTrue("SELECT still emitted after WITH", mdx.contains("\nSELECT "));
+    }
+
+    @Test
+    public void twoNamedSetsShareOneWithClause() {
+        AiQueryRequest req = baseReq();
+        req.setNamedSets(Arrays.asList(
+                new AiNamedSet("First", "{[Product].[Product].[Drink]}"),
+                new AiNamedSet("Second", "{[Product].[Product].[Food]}")));
+        ThinQuery tq = converter.convert(req, schema);
+        String mdx = tq.getMdx();
+        assertEquals("only one WITH keyword for multiple SETs", 1, countOccurrences(mdx, "WITH"));
+        assertTrue("first SET emitted", mdx.contains("SET [First] AS"));
+        assertTrue("second SET emitted", mdx.contains("SET [Second] AS"));
+    }
+
+    @Test
+    public void preBracketedNameLeftIntact() {
+        AiQueryRequest req = baseReq();
+        req.setNamedSets(Collections.singletonList(new AiNamedSet("[Premium]", "{[Product].[Product].[Drink]}")));
+        ThinQuery tq = converter.convert(req, schema);
+        // Agent passes [Premium] already bracketed; converter doesn't
+        // double-bracket.
+        assertTrue("name not re-bracketed — got: " + tq.getMdx(), tq.getMdx().contains("SET [Premium] AS"));
+        assertTrue("no double-bracket [[", !tq.getMdx().contains("[[Premium]"));
+    }
+
+    @Test
+    public void duplicateNamedSetNameRejected() {
+        AiQueryRequest req = baseReq();
+        req.setNamedSets(Arrays.asList(
+                new AiNamedSet("dup", "{[Product].[Product].[Drink]}"),
+                new AiNamedSet("dup", "{[Product].[Product].[Food]}")));
+        try {
+            converter.convert(req, schema);
+            fail("expected AiValidationException for duplicate named-set name");
+        } catch (AiValidationException e) {
+            assertEquals("namedSets[1].name", e.getField());
+            assertTrue(e.getMessage(), e.getMessage().contains("Duplicate named-set name"));
+        }
+    }
+
+    @Test
+    public void blankNamedSetNameRejected() {
+        AiQueryRequest req = baseReq();
+        req.setNamedSets(Collections.singletonList(new AiNamedSet("", "{[Product].[Product].[Drink]}")));
+        try {
+            converter.convert(req, schema);
+            fail("expected validation error for blank name");
+        } catch (AiValidationException e) {
+            assertEquals("namedSets[0].name", e.getField());
+        }
+    }
+
+    @Test
+    public void blankNamedSetExpressionRejected() {
+        AiQueryRequest req = baseReq();
+        req.setNamedSets(Collections.singletonList(new AiNamedSet("Foo", "")));
+        try {
+            converter.convert(req, schema);
+            fail("expected validation error for blank expression");
+        } catch (AiValidationException e) {
+            assertEquals("namedSets[0].expression", e.getField());
+        }
+    }
+
+    private static int countOccurrences(String s, String token) {
+        int n = 0;
+        int from = 0;
+        while ((from = s.indexOf(token, from)) != -1) {
+            n++;
+            from += token.length();
+        }
+        return n;
+    }
 }

@@ -14,6 +14,11 @@ public class ThinQueryModel {
     private ThinDetails details;
     private List<ThinCalculatedMeasure> calculatedMeasures = new ArrayList<>();
     private List<ThinCalculatedMember> calculatedMembers = new ArrayList<>();
+    /** Reusable MDX named sets (saiku#775). Persisted on the model and
+     *  carried through MDX emission as {@code WITH SET [name] AS (expr)}
+     *  ahead of the SELECT. See {@link ThinNamedSet} for the per-entry
+     *  shape and the MDX-mode-vs-QUERYMODEL-mode status note. */
+    private List<ThinNamedSet> namedSets = new ArrayList<>();
 
     public enum AxisLocation {
         FILTER,
@@ -95,6 +100,14 @@ public class ThinQueryModel {
 
     public void setCalculatedMembers(List<ThinCalculatedMember> calculatedMembers) {
         this.calculatedMembers = calculatedMembers;
+    }
+
+    public List<ThinNamedSet> getNamedSets() {
+        return namedSets;
+    }
+
+    public void setNamedSets(List<ThinNamedSet> namedSets) {
+        this.namedSets = namedSets == null ? new ArrayList<>() : namedSets;
     }
 
     public ThinDetails getDetails() {
