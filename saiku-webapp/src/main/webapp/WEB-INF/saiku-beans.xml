@@ -205,6 +205,14 @@
           class="org.saiku.service.olap.ai.OlapAiCubeMetadataService">
         <property name="discoverService" ref="olapDiscoverServiceBean"/>
         <property name="enrichmentProvider" ref="aiEnrichmentProvider"/>
+        <!-- Phase 1.C: cascade-drop levels that return zero members at
+             schema-build time (saiku#810 trap — closure-dim levels
+             that the converter accepts shape-wise but Mondrian rejects
+             at MDX-execute time). Probe cost is a one-member fetch per
+             level on the first describe_cube call per cube; the result
+             is cached alongside the schema. Override per-deployment by
+             setting -Dsaiku.ai.probeUnqueryable=false on the JVM. -->
+        <property name="probeUnqueryable" value="#{systemProperties['saiku.ai.probeUnqueryable'] ?: 'true'}"/>
     </bean>
 
     <bean id="aiQueryResource" scope="request"
