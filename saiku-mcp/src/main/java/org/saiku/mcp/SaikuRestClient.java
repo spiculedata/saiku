@@ -7,14 +7,18 @@ package org.saiku.mcp;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
+import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
 
@@ -175,8 +179,22 @@ final class SaikuRestClient {
         loggedIn = true;
     }
 
+    /** Send with one short retry on transient transport errors
+     *  (connection refused, connect timeout). Saiku launchers are
+     *  occasionally bouncing on dev machines; a single ~250 ms retry
+     *  smooths over the restart window without masking real outages. */
     private HttpResponse<String> send(HttpRequest req) throws IOException, InterruptedException {
-        return http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        try {
+            return http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        } catch (ConnectException | HttpConnectTimeoutException transient_) {
+            try {
+                Thread.sleep(250);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw ie;
+            }
+            return http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        }
     }
 
     private URI uri(String path) {
@@ -188,11 +206,33 @@ final class SaikuRestClient {
     }
 
     /** Read SAIKU_URL / SAIKU_USER / SAIKU_PASS from the supplied env
-     *  map, falling back to sensible defaults for a local launcher. */
+     *  map, falling back to sensible defaults for a local launcher.
+     *
+     *  <p>{@code SAIKU_PASS_FILE} (path to a file containing the
+     *  password, trailing whitespace trimmed) takes precedence over
+     *  {@code SAIKU_PASS}. Useful for keeping the secret out of
+     *  {@code claude_desktop_config.json} or shell history. */
     static SaikuRestClient fromEnv(Map<String, String> env) {
         String url = env.getOrDefault("SAIKU_URL", "http://localhost:8080");
         String user = env.getOrDefault("SAIKU_USER", "admin");
-        String pass = env.getOrDefault("SAIKU_PASS", "admin");
+        String pass = readPassword(env);
         return new SaikuRestClient(url, user, pass);
+    }
+
+    static String readPassword(Map<String, String> env) {
+        String passFile = env.get("SAIKU_PASS_FILE");
+        if (passFile != null && !passFile.isBlank()) {
+            try {
+                // Trim trailing newline that text editors / `echo` add
+                // by default. Leading whitespace is preserved in case
+                // the password legitimately starts with a space (rare
+                // but legal).
+                return Files.readString(Path.of(passFile), StandardCharsets.UTF_8)
+                        .replaceAll("\\R+$", "");
+            } catch (IOException e) {
+                throw new IllegalStateException("Failed to read SAIKU_PASS_FILE=" + passFile + ": " + e.getMessage(), e);
+            }
+        }
+        return env.getOrDefault("SAIKU_PASS", "admin");
     }
 }

@@ -228,34 +228,68 @@ public final class SaikuMcpServer {
 
     /* ----------------------- helpers ----------------------- */
 
-    private interface JsonSupplier {
+    /** Package-private so tests can drive {@link #jsonResult} with synthetic suppliers. */
+    interface JsonSupplier {
         JsonNode get() throws Exception;
     }
 
     /** Wrap a REST call so any exception becomes a structured tool-error
-     *  body (the agent prefers a JSON error to an MCP-protocol error —
-     *  it can self-correct from a parsed envelope). */
-    private static CallToolResult jsonResult(JsonSupplier supplier) {
+     *  body. Successful responses are surfaced as both:
+     *  <ul>
+     *    <li>{@code content[0]}: stringified JSON (for clients that read
+     *        text content only)</li>
+     *    <li>{@code structuredContent}: parsed JsonNode so agents skip
+     *        the string→JSON shim</li>
+     *  </ul>
+     *
+     *  <p>Errors get an {@code errorKind} tag to differentiate:
+     *  <ul>
+     *    <li>{@code transport} — network failure, saiku down, can't
+     *        reach the server. Agent shouldn't retry the same call
+     *        immediately.</li>
+     *    <li>{@code internal} — unexpected runtime exception inside
+     *        the MCP layer. Likely a bug, not the agent's fault.</li>
+     *  </ul>
+     *  Validation errors from saiku (HTTP 400 + parsable body) come
+     *  back as a normal result with {@code isError=false} — the body's
+     *  {@code status: "VALIDATION_ERROR"} field is the contract agents
+     *  use to self-correct, and {@code isError=true} would discard the
+     *  helpful {@code available[]} list. */
+    static CallToolResult jsonResult(JsonSupplier supplier) {
         try {
             JsonNode body = supplier.get();
             return CallToolResult.builder()
                     .content(List.of(new TextContent(MAPPER.writeValueAsString(body))))
+                    .structuredContent((Object) body)
                     .build();
+        } catch (java.io.IOException | InterruptedException e) {
+            // Connection refused, DNS failure, socket reset, login timeout.
+            // Restoring the interrupt flag preserves cooperative cancellation.
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            return errorResult("transport", e);
         } catch (Exception e) {
-            ObjectNode err = MAPPER.createObjectNode();
-            err.put("status", "ERROR");
-            err.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
-            try {
-                return CallToolResult.builder()
-                        .content(List.of(new TextContent(MAPPER.writeValueAsString(err))))
-                        .isError(true)
-                        .build();
-            } catch (Exception inner) {
-                return CallToolResult.builder()
-                        .content(List.of(new TextContent("error: " + e.getMessage())))
-                        .isError(true)
-                        .build();
-            }
+            return errorResult("internal", e);
+        }
+    }
+
+    private static CallToolResult errorResult(String kind, Throwable e) {
+        ObjectNode err = MAPPER.createObjectNode();
+        err.put("status", "ERROR");
+        err.put("errorKind", kind);
+        err.put("error", e.getClass().getSimpleName() + ": " + e.getMessage());
+        try {
+            return CallToolResult.builder()
+                    .content(List.of(new TextContent(MAPPER.writeValueAsString(err))))
+                    .structuredContent((Object) err)
+                    .isError(true)
+                    .build();
+        } catch (Exception inner) {
+            // Jackson serialisation failure — vanishingly unlikely, but
+            // surface SOMETHING rather than swallowing.
+            return CallToolResult.builder()
+                    .content(List.of(new TextContent(kind + ": " + e.getMessage())))
+                    .isError(true)
+                    .build();
         }
     }
 
