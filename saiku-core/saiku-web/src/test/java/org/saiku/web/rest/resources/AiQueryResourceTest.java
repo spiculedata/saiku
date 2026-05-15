@@ -5,6 +5,7 @@
 package org.saiku.web.rest.resources;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -308,6 +309,46 @@ public class AiQueryResourceTest {
         }
     }
 
+    /** saiku#803: measures-only query (no rows) must flatten to a single
+     *  record keyed by measure caption with typed AiCell values, not the
+     *  awkward row0/row1 two-record header-+-data shape. */
+    @Test
+    public void measuresOnlyQueryFlattensToSingleRecordWithTypedCells() {
+        // Extend the fixture schema with Unit Sales for this test only.
+        schema.measures.put(AiSchema.key("Unit Sales"), new AiSchema.Measure("Unit Sales", "[Measures].[Unit Sales]"));
+        resource.setThinQueryService(new ThinQueryService() {
+            @Override
+            public CellDataSet execute(ThinQuery tq) {
+                return buildMeasuresOnlyCellDataSet();
+            }
+        });
+        AiQueryRequest req = new AiQueryRequest();
+        req.setCube(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+        req.setMeasures(
+                java.util.Arrays.asList(new AiMeasureSelection("Unit Sales"), new AiMeasureSelection("Store Sales")));
+        // No rows — measures-only.
+
+        Response resp = resource.executeAi(req, "records");
+        // Surface the error message if anything ahead of the renderer bounced it.
+        if (resp.getStatus() != 200) {
+            AiQueryResponse bad = (AiQueryResponse) resp.getEntity();
+            throw new AssertionError(
+                    "expected 200, got " + resp.getStatus() + " field=" + bad.getField() + " error=" + bad.getError());
+        }
+
+        AiQueryResponse body = (AiQueryResponse) resp.getEntity();
+        assertEquals("single record (not 2)", 1, body.getData().size());
+        Map<String, Object> rec = body.getData().get(0);
+        assertTrue("Unit Sales keyed by caption", rec.containsKey("Unit Sales"));
+        assertTrue("Store Sales keyed by caption", rec.containsKey("Store Sales"));
+        AiCell us = (AiCell) rec.get("Unit Sales");
+        assertEquals("typed AiCell with formatted", "266,773", us.getFormatted());
+        AiCell ss = (AiCell) rec.get("Store Sales");
+        assertEquals("typed AiCell with formatted", "565,238.13", ss.getFormatted());
+        assertFalse("no row0/row1 keys leaked", rec.containsKey("row0"));
+        assertFalse("no row0/row1 keys leaked", rec.containsKey("row1"));
+    }
+
     @Test
     public void asyncCancelReturns404OnUnknownId() {
         org.saiku.service.async.AsyncQueryService async = new org.saiku.service.async.AsyncQueryService();
@@ -316,6 +357,72 @@ public class AiQueryResourceTest {
             resource.setAsyncQueryService(async);
             Response resp = resource.asyncCancel("does-not-exist");
             assertEquals(404, resp.getStatus());
+        } finally {
+            async.shutdown();
+        }
+    }
+
+    /** saiku#792: cancel on a DONE handle must report ALREADY_COMPLETED, not
+     *  the misleading CANCELLED the legacy path used to return. */
+    @Test
+    public void asyncCancelReturnsAlreadyCompletedForFinishedQuery() {
+        org.saiku.service.async.AsyncQueryService async = new org.saiku.service.async.AsyncQueryService();
+        async.setThinQueryService(new StubThinQueryService());
+        try {
+            resource.setAsyncQueryService(async);
+            org.saiku.olap.query2.ThinQuery tq = new org.saiku.olap.query2.ThinQuery();
+            tq.setName("done-query");
+            org.saiku.service.async.AsyncQueryHandle h = new org.saiku.service.async.AsyncQueryHandle("done-id", tq);
+            h.setStatus(org.saiku.service.async.AsyncQueryHandle.Status.DONE);
+            async.register(h);
+            Response resp = resource.asyncCancel("done-id");
+            assertEquals(200, resp.getStatus());
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+            assertEquals("ALREADY_COMPLETED", body.get("status"));
+        } finally {
+            async.shutdown();
+        }
+    }
+
+    @Test
+    public void asyncCancelReturnsAlreadyFailedForFailedQuery() {
+        org.saiku.service.async.AsyncQueryService async = new org.saiku.service.async.AsyncQueryService();
+        async.setThinQueryService(new StubThinQueryService());
+        try {
+            resource.setAsyncQueryService(async);
+            org.saiku.olap.query2.ThinQuery tq = new org.saiku.olap.query2.ThinQuery();
+            tq.setName("failed-query");
+            org.saiku.service.async.AsyncQueryHandle h = new org.saiku.service.async.AsyncQueryHandle("failed-id", tq);
+            h.setStatus(org.saiku.service.async.AsyncQueryHandle.Status.FAILED);
+            async.register(h);
+            Response resp = resource.asyncCancel("failed-id");
+            assertEquals(200, resp.getStatus());
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+            assertEquals("ALREADY_FAILED", body.get("status"));
+        } finally {
+            async.shutdown();
+        }
+    }
+
+    @Test
+    public void asyncCancelIsIdempotentForCancelledQuery() {
+        org.saiku.service.async.AsyncQueryService async = new org.saiku.service.async.AsyncQueryService();
+        async.setThinQueryService(new StubThinQueryService());
+        try {
+            resource.setAsyncQueryService(async);
+            org.saiku.olap.query2.ThinQuery tq = new org.saiku.olap.query2.ThinQuery();
+            tq.setName("cancelled-query");
+            org.saiku.service.async.AsyncQueryHandle h =
+                    new org.saiku.service.async.AsyncQueryHandle("cancelled-id", tq);
+            h.setStatus(org.saiku.service.async.AsyncQueryHandle.Status.CANCELLED);
+            async.register(h);
+            Response resp = resource.asyncCancel("cancelled-id");
+            assertEquals(200, resp.getStatus());
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+            assertEquals("CANCELLED", body.get("status"));
         } finally {
             async.shutdown();
         }
@@ -334,7 +441,7 @@ public class AiQueryResourceTest {
     public void drillthroughReturns200WithRows() {
         // Override the ThinQueryService with one that has a stub drillthrough.
         resource.setThinQueryService(new StubThinQueryServiceWithDrill());
-        Response resp = resource.drillthrough("sync-query-id", 100, null);
+        Response resp = resource.drillthrough("sync-query-id", 100, null, null);
         assertEquals(200, resp.getStatus());
         @SuppressWarnings("unchecked")
         Map<String, Object> body = (Map<String, Object>) resp.getEntity();
@@ -345,7 +452,7 @@ public class AiQueryResourceTest {
     @Test
     public void drillthroughCellsAreTypedEnvelopes() {
         resource.setThinQueryService(new StubThinQueryServiceWithDrill());
-        Response resp = resource.drillthrough("sync-query-id", 100, null);
+        Response resp = resource.drillthrough("sync-query-id", 100, null, null);
         assertEquals(200, resp.getStatus());
         @SuppressWarnings("unchecked")
         Map<String, Object> body = (Map<String, Object>) resp.getEntity();
@@ -369,12 +476,66 @@ public class AiQueryResourceTest {
     public void drillthroughErrorReturns500() {
         resource.setThinQueryService(new ThinQueryService() {
             @Override
-            public java.sql.ResultSet drillthrough(String n, int m, String r) {
+            public java.sql.ResultSet drillthrough(String n, int m, Integer f, String r) {
                 throw new RuntimeException("boom");
             }
         });
-        Response resp = resource.drillthrough("any-id", 100, null);
+        Response resp = resource.drillthrough("any-id", 100, null, null);
         assertEquals(500, resp.getStatus());
+    }
+
+    /* ----------------------- saiku#774: column discovery + FIRST_ROWSET ----------------------- */
+
+    @Test
+    public void drillthroughColumnsReturnsListWithNameAndType() {
+        resource.setThinQueryService(new StubThinQueryServiceWithDrill());
+        Response resp = resource.drillthroughColumns("sync-query-id");
+        assertEquals(200, resp.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        assertEquals("sync-query-id", body.get("queryId"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> cols = (List<Map<String, String>>) body.get("columns");
+        assertNotNull("columns list populated", cols);
+        assertEquals("2 columns from the stubbed MAXROWS 1 result", 2, cols.size());
+        assertEquals("year", cols.get(0).get("name"));
+        assertEquals("VARCHAR", cols.get(0).get("type"));
+        assertEquals("sales", cols.get(1).get("name"));
+        assertEquals("INTEGER", cols.get(1).get("type"));
+    }
+
+    @Test
+    public void drillthroughColumnsUnknownQueryIdReturns404() {
+        // Default ThinQueryService throws NPE on unknown queryId — same
+        // translation path as the drillthrough handler.
+        resource.setThinQueryService(new ThinQueryService() {
+            @Override
+            public List<Map<String, String>> drillthroughColumns(String queryName) {
+                throw new NullPointerException("unknown queryId");
+            }
+        });
+        Response resp = resource.drillthroughColumns("missing");
+        assertEquals(404, resp.getStatus());
+        AiQueryResponse body = (AiQueryResponse) resp.getEntity();
+        assertEquals(AiQueryResponse.Status.VALIDATION_ERROR, body.getStatus());
+        assertEquals("queryId", body.getField());
+    }
+
+    @Test
+    public void drillthroughForwardsFirstRowsetToService() {
+        // Verify the resource passes firstRowset through to the service
+        // and the service-side wrapper picks FIRST_ROWSET over MAXROWS.
+        final Integer[] firstRowsetSeen = {null};
+        resource.setThinQueryService(new ThinQueryService() {
+            @Override
+            public java.sql.ResultSet drillthrough(String n, int m, Integer f, String r) {
+                firstRowsetSeen[0] = f;
+                return buildStubResultSet();
+            }
+        });
+        Response resp = resource.drillthrough("sync-query-id", 100, 25, null);
+        assertEquals(200, resp.getStatus());
+        assertEquals(Integer.valueOf(25), firstRowsetSeen[0]);
     }
 
     /* ------------------------ stub impls --------------------------------- */
@@ -395,8 +556,25 @@ public class AiQueryResourceTest {
         }
 
         @Override
-        public java.sql.ResultSet drillthrough(String name, int maxrows, String returns) {
+        public java.sql.ResultSet drillthrough(String name, int maxrows, Integer firstRowset, String returns) {
             return buildStubResultSet();
+        }
+
+        @Override
+        public List<Map<String, String>> drillthroughColumns(String queryName) {
+            // Mirror the stub ResultSet's two columns so the discovery
+            // endpoint test can assert against the same shape the
+            // drillthrough endpoint serves.
+            List<Map<String, String>> out = new java.util.ArrayList<>();
+            Map<String, String> c1 = new java.util.LinkedHashMap<>();
+            c1.put("name", "year");
+            c1.put("type", "VARCHAR");
+            out.add(c1);
+            Map<String, String> c2 = new java.util.LinkedHashMap<>();
+            c2.put("name", "sales");
+            c2.put("type", "INTEGER");
+            out.add(c2);
+            return out;
         }
     }
 
@@ -464,6 +642,27 @@ public class AiQueryResourceTest {
         if (rt == double.class) return 0.0;
         if (rt == void.class) return null;
         return null;
+    }
+
+    /** saiku#803: measures-only body shape — body[0] is all MemberCells
+     *  (measure captions), body[1] is all DataCells (the values). */
+    static CellDataSet buildMeasuresOnlyCellDataSet() {
+        CellDataSet cds = new CellDataSet(2, 2);
+        cds.setCellSetHeaders(new AbstractBaseCell[][] {});
+        AbstractBaseCell h0 = new MemberCell(false, false);
+        h0.setFormattedValue("Unit Sales");
+        AbstractBaseCell h1 = new MemberCell(false, false);
+        h1.setFormattedValue("Store Sales");
+        AbstractBaseCell d0 = new DataCell(true, false, null);
+        d0.setFormattedValue("266,773");
+        d0.setRawValue("266773");
+        AbstractBaseCell d1 = new DataCell(true, false, null);
+        d1.setFormattedValue("565,238.13");
+        d1.setRawValue("565238.13");
+        cds.setCellSetBody(new AbstractBaseCell[][] {
+            new AbstractBaseCell[] {h0, h1}, new AbstractBaseCell[] {d0, d1},
+        });
+        return cds;
     }
 
     static CellDataSet buildStubCellDataSet() {

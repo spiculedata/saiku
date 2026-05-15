@@ -15,10 +15,12 @@
  */
 package org.saiku.web.rest.resources;
 
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
@@ -380,13 +382,29 @@ public class OlapDiscoverResource implements Serializable {
             @PathParam("connection") String connectionName,
             @PathParam("catalog") String catalogName,
             @PathParam("schema") String schemaName,
-            @PathParam("cube") String cubeName) {
+            @PathParam("cube") String cubeName,
+            @QueryParam("includeHidden") @DefaultValue("false") boolean includeHidden) {
         if ("null".equals(schemaName)) {
             schemaName = "";
         }
         SaikuCube cube = new SaikuCube(connectionName, cubeName, cubeName, cubeName, catalogName, schemaName);
         try {
-            return olapDiscoverService.getMeasures(cube);
+            List<SaikuMember> measures = olapDiscoverService.getMeasures(cube);
+            // saiku#778: analyst UIs get visible-only by default; admin tooling
+            // passes includeHidden=true to inspect helper measures the schema
+            // author marked visible="false". Server-side filtering so a
+            // misconfigured client can't accidentally show what it shouldn't.
+            if (!includeHidden && measures != null) {
+                List<SaikuMember> filtered = new ArrayList<>(measures.size());
+                for (SaikuMember m : measures) {
+                    // Null → treat as visible (legacy fixtures / pre-#778 data).
+                    if (m.isVisible() == null || m.isVisible()) {
+                        filtered.add(m);
+                    }
+                }
+                return filtered;
+            }
+            return measures;
         } catch (Exception e) {
             log.error(this.getClass().getName(), e);
         }

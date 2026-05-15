@@ -4,6 +4,9 @@
  */
 package org.saiku.service.olap.ai;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import java.util.Map;
+
 /**
  * Typed cell envelope. Replaces the v1 "pre-formatted string" cell shape
  * so an LLM can compute on {@link #value} without re-parsing locale-
@@ -18,6 +21,14 @@ public class AiCell {
     private String formatted;
     /** Optional unit / currency hint sniffed from the format string. */
     private String unit;
+    /** olap4j {@code StandardCellProperty} values surfaced from the
+     *  cellset — formatString, foreColor, backColor, fontFlags, actionType,
+     *  error, etc. (saiku#773). Map keys are camelCase per the extractor
+     *  contract; the field is {@link JsonInclude.Include#NON_EMPTY} so
+     *  cells with no Mondrian-set properties stay lean in the wire
+     *  representation. */
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private Map<String, String> properties;
 
     public AiCell() {}
 
@@ -25,6 +36,13 @@ public class AiCell {
         this.value = value;
         this.formatted = formatted;
         this.unit = unit;
+    }
+
+    public AiCell(Double value, String formatted, String unit, Map<String, String> properties) {
+        this.value = value;
+        this.formatted = formatted;
+        this.unit = unit;
+        this.properties = properties;
     }
 
     public Double getValue() {
@@ -49,6 +67,14 @@ public class AiCell {
 
     public void setUnit(String v) {
         this.unit = v;
+    }
+
+    public Map<String, String> getProperties() {
+        return properties;
+    }
+
+    public void setProperties(Map<String, String> v) {
+        this.properties = v;
     }
 
     /** Best-effort: parse a Mondrian-formatted string back into a Double,
