@@ -76,42 +76,99 @@ public class AiSchemaConverter {
     /* ------------------------------------------------------------------ */
 
     private String buildColumnsAxis(AiQueryRequest req, AiSchema schema) {
-        // Measures set.
-        StringBuilder s = new StringBuilder();
-        s.append("{");
+        // Measures set lives on the [Measures] hierarchy.
+        StringBuilder measuresSet = new StringBuilder("{");
         boolean first = true;
         for (AiMeasureSelection m : req.getMeasures()) {
             AiSchema.Measure resolved = lookupMeasure(m.getName(), schema);
-            if (!first) s.append(", ");
-            s.append(resolved.uniqueName);
+            if (!first) measuresSet.append(", ");
+            measuresSet.append(resolved.uniqueName);
             first = false;
         }
-        s.append("}");
+        measuresSet.append("}");
 
-        // Optional columns-axes — crossjoin onto measures.
-        if (req.getColumns() != null && !req.getColumns().isEmpty()) {
-            for (AiAxisSelection col : req.getColumns()) {
-                s.insert(0, "CROSSJOIN(");
-                s.append(", ").append(axisSet(col, schema, "columns")).append(")");
-            }
+        if (req.getColumns() == null || req.getColumns().isEmpty()) {
+            return measuresSet.toString();
+        }
+
+        // Resolve each column axis and group consecutive entries by hierarchy
+        // — same MDX shape rule as rows: same-hierarchy crossjoin is illegal,
+        // so collapse into Hierarchize({set1, set2}). Across distinct
+        // hierarchies (and against measures), keep CROSSJOIN.
+        List<ResolvedAxis> resolved = new ArrayList<>();
+        for (int i = 0; i < req.getColumns().size(); i++) {
+            resolved.add(resolveAxis(req.getColumns().get(i), schema, "columns[" + i + "]"));
+        }
+        List<String> groupExprs = groupSetExpressionsByHierarchy(resolved);
+
+        // Cross-join: measures × each distinct-hierarchy column group.
+        StringBuilder s = new StringBuilder(measuresSet);
+        for (String groupExpr : groupExprs) {
+            s.insert(0, "CROSSJOIN(");
+            s.append(", ").append(groupExpr).append(")");
         }
         return s.toString();
     }
 
-    private String buildRowsAxis(AiQueryRequest req, AiSchema schema) {
-        // CROSSJOIN of each rows-axis entry.
-        StringBuilder s = new StringBuilder();
-        List<String> sets = new ArrayList<>();
-        for (AiAxisSelection r : req.getRows()) {
-            sets.add(axisSet(r, schema, "rows"));
+    /** Group consecutive same-hierarchy axes into {@code Hierarchize({...})}
+     *  set expressions. Distinct hierarchies stay as standalone set
+     *  expressions and are CROSSJOIN-ed by the caller. */
+    private static List<String> groupSetExpressionsByHierarchy(List<ResolvedAxis> resolved) {
+        List<List<ResolvedAxis>> groups = new ArrayList<>();
+        for (ResolvedAxis ra : resolved) {
+            if (!groups.isEmpty()) {
+                List<ResolvedAxis> last = groups.get(groups.size() - 1);
+                if (last.get(0).hierarchy.uniqueName.equals(ra.hierarchy.uniqueName)) {
+                    last.add(ra);
+                    continue;
+                }
+            }
+            List<ResolvedAxis> g = new ArrayList<>();
+            g.add(ra);
+            groups.add(g);
         }
-        if (sets.size() == 1) {
-            s.append(sets.get(0));
+        List<String> out = new ArrayList<>();
+        for (List<ResolvedAxis> group : groups) {
+            if (group.size() == 1) {
+                out.add(group.get(0).setExpr);
+            } else {
+                StringBuilder hier = new StringBuilder("Hierarchize({");
+                for (int i = 0; i < group.size(); i++) {
+                    if (i > 0) hier.append(", ");
+                    hier.append(group.get(i).setExpr);
+                }
+                hier.append("})");
+                out.add(hier.toString());
+            }
+        }
+        return out;
+    }
+
+    private String buildRowsAxis(AiQueryRequest req, AiSchema schema) {
+        // Resolve each axis to (hierarchy, set-expression) so we can group
+        // entries that share a hierarchy. MDX rejects CROSSJOIN of two sets
+        // from the same hierarchy ("Tuple contains more than one member of
+        // hierarchy"). When the agent asks for, e.g. Store State + Store
+        // Name (both under [Store].[Stores]), we emit
+        // Hierarchize({stateMembers, nameMembers}) instead — the canonical
+        // way to mix levels of one hierarchy. Distinct hierarchies still
+        // CROSSJOIN as before.
+        List<ResolvedAxis> resolved = new ArrayList<>();
+        for (int i = 0; i < req.getRows().size(); i++) {
+            AiAxisSelection r = req.getRows().get(i);
+            resolved.add(resolveAxis(r, schema, "rows[" + i + "]"));
+        }
+
+        List<String> groupExprs = groupSetExpressionsByHierarchy(resolved);
+
+        StringBuilder s = new StringBuilder();
+        if (groupExprs.size() == 1) {
+            s.append(groupExprs.get(0));
         } else {
             s.append("CROSSJOIN(");
-            for (int i = 0; i < sets.size(); i++) {
+            for (int i = 0; i < groupExprs.size(); i++) {
                 if (i > 0) s.append(", ");
-                s.append(sets.get(i));
+                s.append(groupExprs.get(i));
             }
             s.append(")");
         }
@@ -143,23 +200,72 @@ public class AiSchemaConverter {
     }
 
     private String axisSet(AiAxisSelection sel, AiSchema schema, String fieldPath) {
-        AiSchema.Level level = lookupLevel(sel, schema, fieldPath);
+        return resolveAxis(sel, schema, fieldPath).setExpr;
+    }
+
+    /** Pairs an axis's resolved hierarchy with its emitted set expression. */
+    private static final class ResolvedAxis {
+        final AiSchema.Hierarchy hierarchy;
+        final AiSchema.Level level;
+        final String setExpr;
+
+        ResolvedAxis(AiSchema.Hierarchy hierarchy, AiSchema.Level level, String setExpr) {
+            this.hierarchy = hierarchy;
+            this.level = level;
+            this.setExpr = setExpr;
+        }
+    }
+
+    private ResolvedAxis resolveAxis(AiAxisSelection sel, AiSchema schema, String fieldPath) {
+        AiSchema.Hierarchy hierarchy = lookupHierarchy(sel, schema, fieldPath);
+        AiSchema.Level level = lookupLevelOnHierarchy(hierarchy, sel.getLevel(), fieldPath);
+
+        String setExpr;
         if (sel.getMembers() != null && !sel.getMembers().isEmpty()) {
-            // Explicit member set.
             StringBuilder s = new StringBuilder("{");
             for (int i = 0; i < sel.getMembers().size(); i++) {
                 if (i > 0) s.append(", ");
                 s.append(sel.getMembers().get(i));
             }
             s.append("}");
-            return s.toString();
+            setExpr = s.toString();
+        } else {
+            setExpr = level.uniqueName + ".Members";
         }
-        return level.uniqueName + ".Members";
+        return new ResolvedAxis(hierarchy, level, setExpr);
     }
 
     private String buildSlicer(List<AiFilterSelection> filters, AiSchema schema) {
         // Each filter becomes a slicer tuple-element. Multiple filters
         // cross-join into a tuple: (slicer1, slicer2, ...).
+        //
+        // Mondrian's WHERE clause expects a tuple of *single* members
+        // (or expressions that resolve to one). A bare set like
+        // {m1, m2} or Descendants(...) raises "Descendants() expects a
+        // tuple, got a set". So whenever a filter produces a set we wrap
+        // it in Aggregate(...) — which collapses the set to a single
+        // implicit-aggregation point on that dimension.
+        //
+        // Two filters on the same hierarchy would also produce a tuple
+        // with two members of one hierarchy, which Mondrian rejects.
+        // Reject up-front with a teaching error so the agent merges them
+        // into one filter with op:"in" + combined members instead.
+        java.util.Set<String> seenHierarchies = new java.util.LinkedHashSet<>();
+        for (int i = 0; i < filters.size(); i++) {
+            AiFilterSelection f = filters.get(i);
+            String fieldPath = "filters[" + i + "]";
+            AiAxisSelection probe = new AiAxisSelection(f.getDimension(), f.getHierarchy(), f.getLevel());
+            AiSchema.Hierarchy h = lookupHierarchy(probe, schema, fieldPath);
+            if (!seenHierarchies.add(h.uniqueName)) {
+                throw new AiValidationException(
+                        fieldPath + ".hierarchy",
+                        "Multiple filters target hierarchy '" + h.name
+                                + "'. Mondrian's WHERE clause is a tuple — combine them into one filter "
+                                + "with op:'in' and all the members in `members[]` (or op:'between' for a range).",
+                        null);
+            }
+        }
+
         StringBuilder s = new StringBuilder("(");
         for (int i = 0; i < filters.size(); i++) {
             AiFilterSelection f = filters.get(i);
@@ -172,6 +278,8 @@ public class AiSchemaConverter {
 
             if (i > 0) s.append(", ");
 
+            String expr;
+            boolean isSet;
             switch (op) {
                 case "in": {
                     if (members.isEmpty()) {
@@ -179,14 +287,17 @@ public class AiSchemaConverter {
                                 fieldPath + ".members", "'in' filter must specify at least one member", null);
                     }
                     if (members.size() == 1) {
-                        s.append(members.get(0));
+                        expr = members.get(0);
+                        isSet = false;
                     } else {
-                        s.append("{");
+                        StringBuilder set = new StringBuilder("{");
                         for (int j = 0; j < members.size(); j++) {
-                            if (j > 0) s.append(", ");
-                            s.append(members.get(j));
+                            if (j > 0) set.append(", ");
+                            set.append(members.get(j));
                         }
-                        s.append("}");
+                        set.append("}");
+                        expr = set.toString();
+                        isSet = true;
                     }
                     break;
                 }
@@ -195,12 +306,15 @@ public class AiSchemaConverter {
                         throw new AiValidationException(
                                 fieldPath + ".members", "'not_in' filter must specify at least one member", null);
                     }
-                    s.append("Except(").append(level.uniqueName).append(".Members, {");
+                    StringBuilder set = new StringBuilder();
+                    set.append("Except(").append(level.uniqueName).append(".Members, {");
                     for (int j = 0; j < members.size(); j++) {
-                        if (j > 0) s.append(", ");
-                        s.append(members.get(j));
+                        if (j > 0) set.append(", ");
+                        set.append(members.get(j));
                     }
-                    s.append("})");
+                    set.append("})");
+                    expr = set.toString();
+                    isSet = true;
                     break;
                 }
                 case "between": {
@@ -210,7 +324,8 @@ public class AiSchemaConverter {
                                 "'between' filter requires exactly 2 members [start, end]",
                                 null);
                     }
-                    s.append(members.get(0)).append(" : ").append(members.get(1));
+                    expr = members.get(0) + " : " + members.get(1);
+                    isSet = true;
                     break;
                 }
                 case "descendants_of": {
@@ -218,11 +333,19 @@ public class AiSchemaConverter {
                         throw new AiValidationException(
                                 fieldPath + ".members", "'descendants_of' filter requires exactly 1 member", null);
                     }
-                    s.append("Descendants(").append(members.get(0)).append(")");
+                    // In WHERE position, a non-leaf member is already the
+                    // aggregate of all its descendants — that's how
+                    // Mondrian's natural roll-up works. Emitting the
+                    // member alone (instead of Descendants(member)) gives
+                    // the same numeric answer with MDX that parses
+                    // reliably across Mondrian's function-overload rules.
+                    expr = members.get(0);
+                    isSet = false;
                     break;
                 }
                 case "relative": {
-                    s.append(relativeSet(f, level, fieldPath));
+                    expr = relativeSet(f, level, fieldPath);
+                    isSet = isRelativeSet(f);
                     break;
                 }
                 default:
@@ -231,9 +354,24 @@ public class AiSchemaConverter {
                             "Unknown filter op '" + f.getOp() + "'",
                             java.util.Arrays.asList("in", "not_in", "between", "descendants_of", "relative"));
             }
+
+            if (isSet) {
+                s.append("Aggregate(").append(expr).append(")");
+            } else {
+                s.append(expr);
+            }
         }
         s.append(")");
         return s.toString();
+    }
+
+    /**
+     * Of the relative presets, {@code previous_period} is the only one
+     * that resolves to a single member ({@code Tail(...).Item(0)}). The
+     * rest are sets and must be Aggregate-wrapped in the slicer.
+     */
+    private static boolean isRelativeSet(AiFilterSelection f) {
+        return !"previous_period".equalsIgnoreCase(f.getValue());
     }
 
     /**
@@ -332,6 +470,11 @@ public class AiSchemaConverter {
     }
 
     private AiSchema.Level lookupLevel(AiAxisSelection sel, AiSchema schema, String fieldPath) {
+        AiSchema.Hierarchy hier = lookupHierarchy(sel, schema, fieldPath);
+        return lookupLevelOnHierarchy(hier, sel.getLevel(), fieldPath);
+    }
+
+    private AiSchema.Hierarchy lookupHierarchy(AiAxisSelection sel, AiSchema schema, String fieldPath) {
         if (sel.getDimension() == null || sel.getDimension().isEmpty()) {
             throw new AiValidationException(
                     fieldPath + ".dimension", "Dimension required", availableDimensionNames(schema));
@@ -348,35 +491,36 @@ public class AiSchemaConverter {
                     "Unknown dimension '" + sel.getDimension() + "'",
                     availableDimensionNames(schema));
         }
-        AiSchema.Hierarchy hier;
         if (sel.getHierarchy() == null || sel.getHierarchy().isEmpty()) {
             // Pick the single hierarchy if there's only one; otherwise demand explicit.
             if (dim.hierarchies.size() == 1) {
-                hier = dim.hierarchies.values().iterator().next();
-            } else {
-                throw new AiValidationException(
-                        fieldPath + ".hierarchy",
-                        "Dimension '" + dim.name + "' has multiple hierarchies; specify one",
-                        availableHierarchyNames(dim));
+                return dim.hierarchies.values().iterator().next();
             }
-        } else {
-            String hierK = AiSchema.key(sel.getHierarchy());
-            hier = dim.hierarchies.get(hierK);
-            if (hier == null) {
-                String aliasTarget = dim.hierarchyAliases.get(hierK);
-                if (aliasTarget != null) hier = dim.hierarchies.get(aliasTarget);
-            }
-            if (hier == null) {
-                throw new AiValidationException(
-                        fieldPath + ".hierarchy",
-                        "Unknown hierarchy '" + sel.getHierarchy() + "' on dimension '" + dim.name + "'",
-                        availableHierarchyNames(dim));
-            }
+            throw new AiValidationException(
+                    fieldPath + ".hierarchy",
+                    "Dimension '" + dim.name + "' has multiple hierarchies; specify one",
+                    availableHierarchyNames(dim));
         }
-        if (sel.getLevel() == null || sel.getLevel().isEmpty()) {
+        String hierK = AiSchema.key(sel.getHierarchy());
+        AiSchema.Hierarchy hier = dim.hierarchies.get(hierK);
+        if (hier == null) {
+            String aliasTarget = dim.hierarchyAliases.get(hierK);
+            if (aliasTarget != null) hier = dim.hierarchies.get(aliasTarget);
+        }
+        if (hier == null) {
+            throw new AiValidationException(
+                    fieldPath + ".hierarchy",
+                    "Unknown hierarchy '" + sel.getHierarchy() + "' on dimension '" + dim.name + "'",
+                    availableHierarchyNames(dim));
+        }
+        return hier;
+    }
+
+    private AiSchema.Level lookupLevelOnHierarchy(AiSchema.Hierarchy hier, String levelName, String fieldPath) {
+        if (levelName == null || levelName.isEmpty()) {
             throw new AiValidationException(fieldPath + ".level", "Level required", availableLevelNames(hier));
         }
-        String lvlK = AiSchema.key(sel.getLevel());
+        String lvlK = AiSchema.key(levelName);
         AiSchema.Level level = hier.levels.get(lvlK);
         if (level == null) {
             String aliasTarget = hier.levelAliases.get(lvlK);
@@ -385,7 +529,7 @@ public class AiSchemaConverter {
         if (level == null) {
             throw new AiValidationException(
                     fieldPath + ".level",
-                    "Unknown level '" + sel.getLevel() + "' on hierarchy '" + hier.name + "'",
+                    "Unknown level '" + levelName + "' on hierarchy '" + hier.name + "'",
                     availableLevelNames(hier));
         }
         return level;

@@ -311,7 +311,11 @@ public class AiSchemaConverterTest {
     }
 
     @Test
-    public void filterDescendantsOfEmitsDescendants() {
+    public void filterDescendantsOfInSlicerEmitsMemberOnly() {
+        // In WHERE position, a non-leaf member is already the aggregate of
+        // all its descendants — Mondrian's natural roll-up does the work.
+        // Emitting Descendants(member) here hits function-overload parsing
+        // edge cases on the live engine, so we collapse to just the member.
         AiQueryRequest req = baseReq();
         req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
         AiFilterSelection f = new AiFilterSelection(
@@ -321,7 +325,10 @@ public class AiSchemaConverterTest {
 
         ThinQuery tq = converter.convert(req, schema);
 
-        assertTrue(tq.getMdx(), tq.getMdx().contains("Descendants([Time].[Time By].[Year].&[1997])"));
+        assertTrue(tq.getMdx(), tq.getMdx().contains("WHERE ([Time].[Time By].[Year].&[1997])"));
+        assertTrue(
+                "descendants_of in slicer must NOT emit Descendants() or Aggregate(): " + tq.getMdx(),
+                !tq.getMdx().contains("Descendants(") && !tq.getMdx().contains("Aggregate("));
     }
 
     @Test
@@ -553,6 +560,190 @@ public class AiSchemaConverterTest {
             fail("expected validation error");
         } catch (AiValidationException e) {
             assertEquals("measures[].name", e.getField());
+        }
+    }
+
+    /* ---------------- v3.1: same-hierarchy axis shape rules ----------------- */
+
+    @Test
+    public void sameHierarchyRowsEmitHierarchizeNotCrossjoin() {
+        // Two row axes on the same hierarchy ([Time].[Time By] at Year + Quarter)
+        // must NOT crossjoin — Mondrian rejects "Tuple contains more than one
+        // member of hierarchy". Emit Hierarchize({set1, set2}) instead.
+        AiQueryRequest req = baseReq();
+        req.setRows(Arrays.asList(
+                new AiAxisSelection("Time", "Time By", "Year"), new AiAxisSelection("Time", "Time By", "Quarter")));
+
+        ThinQuery tq = converter.convert(req, schema);
+
+        String mdx = tq.getMdx();
+        assertTrue("should emit Hierarchize for same-hierarchy rows: " + mdx, mdx.contains("Hierarchize({"));
+        assertTrue("Year members present: " + mdx, mdx.contains("[Time].[Time By].[Year].Members"));
+        assertTrue("Quarter members present: " + mdx, mdx.contains("[Time].[Time By].[Quarter].Members"));
+        assertTrue("should NOT crossjoin two sets from the same hierarchy: " + mdx, !mdx.contains("CROSSJOIN([Time]"));
+    }
+
+    @Test
+    public void mixedSameHierarchyAndDistinctHierarchyRowsGroup() {
+        // Time-Year + Time-Quarter (same hierarchy) + Product-Department
+        // (distinct hierarchy) → Hierarchize on the Time group, then
+        // CROSSJOIN that group with the Product set.
+        AiQueryRequest req = baseReq();
+        req.setRows(Arrays.asList(
+                new AiAxisSelection("Time", "Time By", "Year"),
+                new AiAxisSelection("Time", "Time By", "Quarter"),
+                new AiAxisSelection("Product", "Product", "Department")));
+
+        ThinQuery tq = converter.convert(req, schema);
+
+        String mdx = tq.getMdx();
+        assertTrue(mdx, mdx.contains("Hierarchize({"));
+        assertTrue(mdx, mdx.contains("CROSSJOIN("));
+        assertTrue(mdx, mdx.contains("[Product].[Product].[Department].Members"));
+    }
+
+    @Test
+    public void sameHierarchyColumnsEmitHierarchize() {
+        // Same fix has to apply on the columns axis — agents mixing levels
+        // there hit the identical Mondrian error.
+        AiQueryRequest req = baseReq();
+        req.setColumns(Arrays.asList(
+                new AiAxisSelection("Time", "Time By", "Year"), new AiAxisSelection("Time", "Time By", "Quarter")));
+
+        ThinQuery tq = converter.convert(req, schema);
+
+        String mdx = tq.getMdx();
+        assertTrue("columns should emit Hierarchize for same-hierarchy entries: " + mdx, mdx.contains("Hierarchize({"));
+        assertTrue(
+                "should NOT crossjoin same-hierarchy columns: " + mdx,
+                !mdx.contains("CROSSJOIN(CROSSJOIN(")); // measures × col1 × col2 would double-CROSSJOIN
+    }
+
+    /* ---------------- v3.1: slicer Aggregate wrapping --------------------- */
+
+    @Test
+    public void slicerSingleInMemberNotWrapped() {
+        // Single-member 'in' is a bare member — Aggregate wrap is wasted.
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection(
+                "Time", "Time By", "Year", Collections.singletonList("[Time].[Time By].[Year].&[1997]"));
+        req.setFilters(Collections.singletonList(f));
+
+        ThinQuery tq = converter.convert(req, schema);
+        assertTrue(tq.getMdx(), tq.getMdx().contains("WHERE ([Time].[Time By].[Year].&[1997])"));
+        assertTrue(
+                "single 'in' member must not be Aggregate-wrapped: " + tq.getMdx(),
+                !tq.getMdx().contains("Aggregate("));
+    }
+
+    @Test
+    public void slicerMultipleInMembersWrappedInAggregate() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection(
+                "Time",
+                "Time By",
+                "Year",
+                Arrays.asList("[Time].[Time By].[Year].&[1997]", "[Time].[Time By].[Year].&[1998]"));
+        req.setFilters(Collections.singletonList(f));
+
+        ThinQuery tq = converter.convert(req, schema);
+        assertTrue(
+                tq.getMdx(),
+                tq.getMdx()
+                        .contains(
+                                "WHERE (Aggregate({[Time].[Time By].[Year].&[1997], [Time].[Time By].[Year].&[1998]}))"));
+    }
+
+    @Test
+    public void slicerNotInWrappedInAggregate() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection(
+                "Time", "Time By", "Year", Collections.singletonList("[Time].[Time By].[Year].&[1997]"));
+        f.setOp("not_in");
+        req.setFilters(Collections.singletonList(f));
+
+        ThinQuery tq = converter.convert(req, schema);
+        assertTrue(tq.getMdx(), tq.getMdx().contains("Aggregate(Except("));
+    }
+
+    @Test
+    public void slicerBetweenWrappedInAggregate() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection(
+                "Time",
+                "Time By",
+                "Year",
+                Arrays.asList("[Time].[Time By].[Year].&[1997]", "[Time].[Time By].[Year].&[1999]"));
+        f.setOp("between");
+        req.setFilters(Collections.singletonList(f));
+
+        ThinQuery tq = converter.convert(req, schema);
+        assertTrue(
+                tq.getMdx(),
+                tq.getMdx().contains("Aggregate([Time].[Time By].[Year].&[1997] : [Time].[Time By].[Year].&[1999])"));
+    }
+
+    @Test
+    public void slicerRelativeSetWrappedInAggregate() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection();
+        f.setDimension("Time");
+        f.setHierarchy("Time By");
+        f.setLevel("Month");
+        f.setOp("relative");
+        f.setValue("last_n_months");
+        f.setN(3);
+        req.setFilters(Collections.singletonList(f));
+
+        ThinQuery tq = converter.convert(req, schema);
+        assertTrue(tq.getMdx(), tq.getMdx().contains("Aggregate(Tail([Time].[Time By].[Month].Members, 3))"));
+    }
+
+    @Test
+    public void slicerRelativePreviousPeriodNotWrapped() {
+        // previous_period resolves to a single member via .Item(0);
+        // Aggregate wrap is unnecessary.
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection();
+        f.setDimension("Time");
+        f.setHierarchy("Time By");
+        f.setLevel("Year");
+        f.setOp("relative");
+        f.setValue("previous_period");
+        req.setFilters(Collections.singletonList(f));
+
+        ThinQuery tq = converter.convert(req, schema);
+        assertTrue(tq.getMdx(), tq.getMdx().contains("WHERE (Tail([Time].[Time By].[Year].Members, 2).Item(0))"));
+        assertTrue(
+                "previous_period must not be Aggregate-wrapped: " + tq.getMdx(),
+                !tq.getMdx().contains("Aggregate("));
+    }
+
+    @Test
+    public void multipleFiltersOnSameHierarchyRejected() {
+        // Two filters targeting one hierarchy would produce
+        // WHERE (m1, m2) — Mondrian's "tuple has more than one member of
+        // hierarchy". Reject up-front with a teaching error.
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        req.setFilters(Arrays.asList(
+                new AiFilterSelection(
+                        "Time", "Time By", "Year", Collections.singletonList("[Time].[Time By].[Year].&[1997]")),
+                new AiFilterSelection(
+                        "Time", "Time By", "Quarter", Collections.singletonList("[Time].[Time By].[Quarter].&[Q1]"))));
+
+        try {
+            converter.convert(req, schema);
+            fail("expected validation error — same-hierarchy filters illegal in slicer");
+        } catch (AiValidationException e) {
+            assertTrue(e.getField(), e.getField().endsWith(".hierarchy"));
+            assertTrue(e.getMessage(), e.getMessage().contains("Multiple filters target hierarchy"));
         }
     }
 }
