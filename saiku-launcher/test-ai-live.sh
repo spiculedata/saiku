@@ -322,6 +322,10 @@ check "Profit calc measure by Media Type top 5 — currency sniff EUR (iter 269)
   '{"cube":"'"$CUBE"'","measures":[{"name":"Profit"}],"rows":[{"dimension":"Promotion","hierarchy":"Media Type","level":"Media Type"}],"order":[{"by":"Profit","direction":"desc"}],"limit":5}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and r['data'][0]['Media Type']=='No Media' and r['data'][0]['Profit']['unit']=='EUR' and 'TopCount(' in r['metadata']['generatedMdx']"
 
+check "localised measure name resolves uniqueName + % unit sniff (iter 270)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Gewinn-Wachstum"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==4 and '[Measures].[Profit Growth]' in r['metadata']['generatedMdx'] and r['data'][0]['Gewinn-Wachstum']['unit']=='%'"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
