@@ -420,6 +420,10 @@ check "3-dim rows crossjoin: Family × Quarter × Gender + HEAD (iter 292)" POST
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"},{"dimension":"Time","hierarchy":"Time","level":"Quarter"},{"dimension":"Customer","hierarchy":"Gender","level":"Gender"}],"limit":6}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==6 and r['data'][0]['Product Family']=='Drink' and r['data'][0]['Quarter']=='Q1' and r['data'][0]['Gender']=='F' and r['data'][0]['Unit Sales']['value']==2934.0 and r['metadata']['generatedMdx'].count('CROSSJOIN')==2"
 
+check "columns 2-dim crossjoin: Quarter × Gender — pipe-separated captions (iter 293)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Sales Count"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"columns":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"},{"dimension":"Customer","hierarchy":"Gender","level":"Gender"}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and len(r['metadata']['columns'])==8 and 'Sales Count | Q1 | F' in [c['caption'] for c in r['metadata']['columns']] and r['data'][0]['Sales Count | Q1 | F']['value']==953.0 and r['metadata']['generatedMdx'].count('CROSSJOIN')==2"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
