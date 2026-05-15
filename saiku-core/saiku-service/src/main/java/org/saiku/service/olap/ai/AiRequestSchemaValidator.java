@@ -10,6 +10,9 @@ import com.networknt.schema.JsonSchema;
 import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.SpecVersion;
 import com.networknt.schema.ValidationMessage;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -76,7 +79,28 @@ public final class AiRequestSchemaValidator {
         ValidationMessage first = errors.iterator().next();
         String field = fieldFor(first);
         String message = first.getMessage();
-        throw new AiValidationException(field, message, null);
+        throw new AiValidationException(field, message, availableFor(first));
+    }
+
+    /** Extract the legal values from a validation message when the schema
+     *  has an {@code enum} constraint at the failing location. Agents
+     *  rely on the {@code available[]} list to self-correct without
+     *  needing to parse the error string. Returns null for non-enum
+     *  violations — the exception's constructor coerces null to empty.
+     *
+     *  <p>networknt's {@code getSchemaNode()} for enum violations
+     *  points <i>at</i> the enum array, not the wrapping schema object —
+     *  so we iterate it directly. */
+    static List<String> availableFor(ValidationMessage msg) {
+        if (!"enum".equals(msg.getType())) return null;
+        JsonNode schemaNode = msg.getSchemaNode();
+        if (schemaNode == null || !schemaNode.isArray() || schemaNode.isEmpty()) return null;
+        List<String> out = new ArrayList<>(schemaNode.size());
+        for (JsonNode v : schemaNode) {
+            // asText() handles strings, numbers, and booleans uniformly.
+            out.add(v.asText());
+        }
+        return Collections.unmodifiableList(out);
     }
 
     /** Compute the agent-facing field pointer for a single validation
@@ -97,29 +121,16 @@ public final class AiRequestSchemaValidator {
     }
 
     /**
-     * Convert a JSON Pointer (e.g. {@code /measures/0/name}) or networknt
-     * instance-location (e.g. {@code $.measures[0].name}) to the dotted-array
-     * notation the rest of the AI surface uses (e.g. {@code measures[].name}).
-     * Keeps the {@code field} contract consistent across schema-validator-
-     * driven errors and AiSchemaConverter-emitted errors — agents only ever
-     * see one naming convention.
-     *
-     * <p>The notable simplification: array indices become {@code []}
-     * regardless of the numeric index. Field-pointer consumers care about
-     * "which array element" only insofar as it points to a specific node;
-     * the human reading the error treats {@code measures[].name} as "the
-     * name field of a measures entry" which is enough.
+     * Convert a networknt instance-location (e.g. {@code $.filters[0].op})
+     * to the dotted-array notation the AI surface uses (e.g.
+     * {@code filters[0].op}). Numeric indices are preserved so an agent
+     * sees exactly which array element failed — saves a follow-up
+     * round-trip when multiple entries are wrong.
      */
     static String jsonPointerToField(String pointer) {
         if (pointer == null || pointer.isEmpty() || pointer.equals("$")) return "body";
-        String s;
-        if (pointer.startsWith("$.")) {
-            s = pointer.substring(2);
-        } else if (pointer.startsWith("$")) {
-            s = pointer.substring(1);
-        } else {
-            s = pointer;
-        }
-        return s.replaceAll("\\[\\d+\\]", "[]");
+        if (pointer.startsWith("$.")) return pointer.substring(2);
+        if (pointer.startsWith("$")) return pointer.substring(1);
+        return pointer;
     }
 }

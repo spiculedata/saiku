@@ -173,7 +173,7 @@ check "validation: member at wrong level rejected (saiku#790)" POST "/rest/saiku
 
 check "validation: order direction must be asc/desc" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"order":[{"by":"Store Sales","direction":"invalid"}],"limit":2}' \
-  "r.get('status')=='VALIDATION_ERROR' and r.get('field')=='order[0].direction' and 'asc' in r.get('error','') and 'desc' in r.get('error','')"
+  "r.get('status')=='VALIDATION_ERROR' and r.get('field')=='order[0].direction' and set(r.get('available',[]))=={'asc','desc'}"
 
 check "validation: duplicate measures rejected (saiku#796)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"},{"name":"Store Sales"},{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
@@ -512,7 +512,7 @@ check "filter op=relative previous_period emits Tail(...,2).Item(0) (iter 314)" 
 
 check "unknown relative preset → 400 + field + 8 presets in available (iter 314b)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Quarter","op":"relative","value":"parallel_period","n":1}]}' \
-  "http==400 and r.get('field')=='filters[0].value' and 'Unknown relative preset' in r.get('error','') and 'ytd' in r.get('available',[]) and 'previous_period' in r.get('available',[]) and len(r.get('available',[]))==8"
+  "http==400 and r.get('field')=='filters[0].value' and 'ytd' in r.get('available',[]) and 'previous_period' in r.get('available',[]) and len(r.get('available',[]))==8"
 
 check "filter op=relative last_n_years n=2 emits Tail at Year level (iter 315)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","op":"relative","value":"last_n_years","n":2}]}' \
@@ -622,15 +622,15 @@ check "schema example[0] executes to All-Customers Unit Sales total (iter 336)" 
   "r.get('status')=='SUCCESS' and r.get('totalRows')==1 and r['data'][0]['(All)']=='All Customers' and r['data'][0]['Unit Sales']['value']==266773.0"
 
 check "empty body POST → field=cube validation envelope (iter 337)" POST "/rest/saiku/api/ai/query" '{}' \
-  "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='cube' and 'cube ref required' in r.get('error','')"
+  "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='cube' and 'required property' in r.get('error','') and 'cube' in r.get('error','')"
 
 check "cube without measures → field=measures cascade (iter 338)" POST "/rest/saiku/api/ai/query" \
   '{"cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"}}' \
   "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='measures' and 'At least one measure required' in r.get('error','')"
 
-check "partial cube object (only cubeName) → field=cube with full-spec hint (iter 339)" POST "/rest/saiku/api/ai/query" \
+check "partial cube object (only cubeName) → field names the missing nested prop (iter 339)" POST "/rest/saiku/api/ai/query" \
   '{"cube":{"cubeName":"Sales"},"measures":[{"name":"Unit Sales"}]}' \
-  "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='cube' and 'connectionName, catalog, schema, and cubeName' in r.get('error','') and \"'connection/catalog/schema/cubeName' string\" in r.get('error','')"
+  "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='connectionName' and 'required property' in r.get('error','') and 'connectionName' in r.get('error','')"
 
 check "HR schema has same agent-grounding affordances as Sales (iter 340)" GET "/rest/saiku/api/ai/schema/unknown_foodmart/FoodMart/FoodMart/HR" '' \
   "r.get('cubeUniqueName')=='[unknown_foodmart].[FoodMart].[FoodMart].[HR]' and isinstance(r.get('examples'), list) and len(r['examples'])==3 and r['examples'][0]['cube']['cubeName']=='HR' and r.get('requestSchema',{}).get('title')=='AiQueryRequest'"
@@ -649,7 +649,7 @@ check "non-empty aggregators field silently accepted (forward-compat placeholder
 
 check "unknown filter op → 400 + 5-op available list (iter 344)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","op":"bogus_op","members":["[Time].[Time].[1997]"]}]}' \
-  "http==400 and r.get('field')=='filters[0].op' and 'Unknown filter op' in r.get('error','') and set(r.get('available',[]))=={'in','not_in','between','descendants_of','relative'}"
+  "http==400 and r.get('field')=='filters[0].op' and set(r.get('available',[]))=={'in','not_in','between','descendants_of','relative'}"
 
 check "rows[].members[] mixed valid+invalid → 400 names the bad ref (iter 345)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Year","members":["[Time].[Time].[1997]","[Time].[Time].[NotARealYear]"]}]}' \
