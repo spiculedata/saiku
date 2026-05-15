@@ -466,10 +466,30 @@ public class AiQueryResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response asyncCancel(@PathParam("queryId") String queryId) {
         if (asyncQueryService == null) return error("Async service not configured");
-        boolean ok = asyncQueryService.cancel(queryId);
-        if (!ok) return Response.status(Response.Status.NOT_FOUND).build();
+        // saiku#792: probe the current state BEFORE attempting cancel so an
+        // already-finished query reports ALREADY_COMPLETED / ALREADY_FAILED
+        // instead of a misleading CANCELLED. Idempotent retries on an
+        // already-cancelled handle still return CANCELLED (so the response
+        // shape stays stable for "I asked twice").
+        AsyncQueryHandle h = asyncQueryService.get(queryId);
+        if (h == null) return Response.status(Response.Status.NOT_FOUND).build();
+        AsyncQueryHandle.Status before = h.getStatus();
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("queryId", queryId);
+        if (before == AsyncQueryHandle.Status.DONE) {
+            body.put("status", "ALREADY_COMPLETED");
+            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+        }
+        if (before == AsyncQueryHandle.Status.FAILED) {
+            body.put("status", "ALREADY_FAILED");
+            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+        }
+        if (before == AsyncQueryHandle.Status.CANCELLED) {
+            body.put("status", "CANCELLED");
+            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+        }
+        boolean ok = asyncQueryService.cancel(queryId);
+        if (!ok) return Response.status(Response.Status.NOT_FOUND).build();
         body.put("status", "CANCELLED");
         return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
     }
@@ -489,6 +509,7 @@ public class AiQueryResource {
     public Response drillthrough(
             @PathParam("queryId") String queryId,
             @QueryParam("maxrows") @DefaultValue("100") int maxrows,
+            @QueryParam("firstRowset") Integer firstRowset,
             @QueryParam("returns") String returns) {
         if (thinQueryService == null) return error("Query service not configured");
         // For async queries the handle id != the underlying ThinQuery name.
@@ -534,16 +555,28 @@ public class AiQueryResource {
             }
         }
         try {
-            java.sql.ResultSet rs = thinQueryService.drillthrough(name, maxrows, resolvedReturns);
+            java.sql.ResultSet rs = thinQueryService.drillthrough(name, maxrows, firstRowset, resolvedReturns);
             List<Map<String, AiCell>> rows = new ArrayList<>();
+            List<String> columnLabels = new ArrayList<>();
             if (rs != null) {
                 java.sql.ResultSetMetaData md = rs.getMetaData();
                 int colCount = md.getColumnCount();
+                // saiku#800: Mondrian's drillthrough sometimes returns the same
+                // getColumnLabel() for multiple columns within a hierarchy
+                // (e.g. Year + Quarter + Month all labelled "Quarter"). Pre-
+                // compute disambiguated keys ONCE before the row loop so:
+                //   * the first occurrence keeps its raw label (back-compat)
+                //   * subsequent duplicates fall back to getColumnName(c) when
+                //     that differs, else to a positional suffix _2, _3, ...
+                // Without this, every row's Map.put silently overwrote the
+                // earlier column, leaving the first column labelled with the
+                // LAST column's value — silent data corruption.
+                columnLabels = disambiguateColumnLabels(md);
                 while (rs.next()) {
                     Map<String, AiCell> row = new LinkedHashMap<>();
                     for (int c = 1; c <= colCount; c++) {
                         Object v = rs.getObject(c);
-                        row.put(md.getColumnLabel(c), toCellFromObject(v));
+                        row.put(columnLabels.get(c - 1), toCellFromObject(v));
                     }
                     rows.add(row);
                 }
@@ -552,6 +585,9 @@ public class AiQueryResource {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("queryId", queryId);
             body.put("rowCount", rows.size());
+            // saiku#800: explicit columns[] so agents can read by position
+            // when the label heuristic still leaves ambiguity.
+            body.put("columns", columnLabels);
             body.put("rows", rows);
             return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
         } catch (NullPointerException e) {
@@ -601,6 +637,65 @@ public class AiQueryResource {
             }
             log.error("AI drillthrough failed for {}", queryId, e);
             return error("drillthrough failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Column discovery for drillthrough (saiku#774). Returns the list of
+     * drillthrough columns available for a previously-executed query so
+     * the agent / UI can populate a {@code returns=} clause without
+     * trial-and-error.
+     *
+     * <p>Response shape:
+     * <pre>{@code
+     *   { "queryId": "...", "columns": [ { "name": "[Time].[Time].[Year]", "type": "VARCHAR" }, ... ] }
+     * }</pre>
+     *
+     * <p>The {@code name} values are the MDX-qualified labels the
+     * downstream {@code DRILLTHROUGH ... RETURN ...} clause accepts.
+     */
+    @GET
+    @Path("/query/{queryId}/drillthrough/columns")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response drillthroughColumns(@PathParam("queryId") String queryId) {
+        if (thinQueryService == null) return error("Query service not configured");
+        String name = queryId;
+        if (asyncQueryService != null) {
+            AsyncQueryHandle h = asyncQueryService.get(queryId);
+            if (h != null) name = h.getQuery().getName();
+        }
+        try {
+            List<Map<String, String>> cols = thinQueryService.drillthroughColumns(name);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("queryId", queryId);
+            body.put("columns", cols);
+            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+        } catch (NullPointerException e) {
+            // Same translation path as drillthrough above — unknown queryId
+            // leaks an NPE on the internal QueryContext lookup.
+            log.warn("AI drillthrough column discovery on unknown queryId {} — translated to 404", queryId);
+            AiQueryResponse resp = new AiQueryResponse();
+            resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
+            resp.setError("Unknown queryId '" + queryId
+                    + "'. The queryId must come from a previous /query or "
+                    + "/query/execute-async response and must not have been evicted.");
+            resp.setField("queryId");
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(resp)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        } catch (Exception e) {
+            String m = e.getMessage();
+            if (m != null && m.contains("fall outside CellSet bounds")) {
+                // Empty source cellset — no columns to discover. Return an
+                // empty list so the agent can decide whether to proceed.
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("queryId", queryId);
+                body.put("columns", new ArrayList<>());
+                return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+            }
+            log.error("AI drillthrough column discovery failed for {}", queryId, e);
+            return error("drillthrough column discovery failed: " + e.getMessage());
         }
     }
 
@@ -684,7 +779,41 @@ public class AiQueryResource {
                 }
             }
 
-            if (body != null) {
+            // saiku#803: measures-only queries (no rows axis on the request)
+            // render with the measure captions as a header row that lands in
+            // body[0] and the values in body[1]. The standard renderer below
+            // treats both as row-headers, producing the awkward
+            // {row0:"Unit Sales", row1:"Store Sales"} / {row0:"266,773"}
+            // shape. Detect that case and flatten to a single record keyed by
+            // measure caption with typed AiCell values — matching every other
+            // query shape on the API.
+            boolean measuresOnly = body != null
+                    && body.length == 2
+                    && rowHeaderCount == totalWidth
+                    && totalWidth > 0
+                    && body[0] != null
+                    && body[1] != null
+                    && allMemberCells(body[0])
+                    && allDataCells(body[1]);
+            if (measuresOnly) {
+                if (useMatrix) {
+                    Map<String, AiCell> cells = new LinkedHashMap<>();
+                    for (int c = 0; c < totalWidth; c++) {
+                        cells.put(String.valueOf(c), toCell(body[1][c]));
+                    }
+                    matrix.add(cells);
+                    rows.add(new AiQueryMetadata.Caption("", ""));
+                } else {
+                    Map<String, Object> record = new LinkedHashMap<>();
+                    for (int c = 0; c < totalWidth; c++) {
+                        String key = body[0][c] == null ? ("col" + c) : safe(body[0][c].getFormattedValue());
+                        if (key.isEmpty()) key = "col" + c;
+                        record.put(key, toCell(body[1][c]));
+                    }
+                    records.add(record);
+                    rows.add(new AiQueryMetadata.Caption("", ""));
+                }
+            } else if (body != null) {
                 for (AbstractBaseCell[] row : body) {
                     rows.add(
                             new AiQueryMetadata.Caption(rowName(row, rowHeaderCount), rowCaption(row, rowHeaderCount)));
@@ -743,19 +872,68 @@ public class AiQueryResource {
         return new AiCell(parsed, s, unit);
     }
 
+    /**
+     * saiku#800: build a per-column key list that survives Mondrian's habit
+     * of returning the same {@code getColumnLabel(c)} for multiple drill-
+     * through columns within a hierarchy (e.g. Year/Quarter/Month all
+     * labelled "Quarter"). First occurrence keeps its raw label; subsequent
+     * collisions try {@code getColumnName(c)} as a tiebreaker and finally
+     * fall back to a {@code _N} positional suffix. Order-preserving so the
+     * returned list aligns with column indexes 1..colCount.
+     */
+    static List<String> disambiguateColumnLabels(java.sql.ResultSetMetaData md) throws java.sql.SQLException {
+        int colCount = md.getColumnCount();
+        List<String> out = new ArrayList<>(colCount);
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        for (int c = 1; c <= colCount; c++) {
+            String label = md.getColumnLabel(c);
+            if (label == null || label.isEmpty()) label = "col_" + c;
+            String chosen = label;
+            if (seen.contains(chosen)) {
+                String alt = null;
+                try {
+                    alt = md.getColumnName(c);
+                } catch (java.sql.SQLException ignore) {
+                    // Some drivers don't implement getColumnName — fall through.
+                }
+                if (alt != null && !alt.isEmpty() && !seen.contains(alt) && !alt.equals(label)) {
+                    chosen = alt;
+                } else {
+                    int n = 2;
+                    String candidate;
+                    do {
+                        candidate = label + "_" + n;
+                        n++;
+                    } while (seen.contains(candidate));
+                    chosen = candidate;
+                }
+            }
+            seen.add(chosen);
+            out.add(chosen);
+        }
+        return out;
+    }
+
     /** Convert a raw {@link AbstractBaseCell} into an {@link AiCell}. */
     private static AiCell toCell(AbstractBaseCell c) {
         if (c == null) return new AiCell(null, "", null);
         String formatted = safe(c.getFormattedValue());
         // Prefer the engine's raw numeric when DataCell carries one.
         Double value = null;
+        java.util.Map<String, String> props = null;
         if (c instanceof org.saiku.olap.dto.resultset.DataCell) {
-            Number raw = ((org.saiku.olap.dto.resultset.DataCell) c).getRawNumber();
+            org.saiku.olap.dto.resultset.DataCell dc = (org.saiku.olap.dto.resultset.DataCell) c;
+            Number raw = dc.getRawNumber();
             if (raw != null) value = raw.doubleValue();
+            // saiku#773: thread the cellset's olap4j StandardCellProperty
+            // values out to the agent. Empty -> stays null and Jackson
+            // drops the field per AiCell's NON_EMPTY include policy.
+            java.util.Map<String, String> p = dc.getProperties();
+            if (p != null && !p.isEmpty()) props = p;
         }
         if (value == null) value = AiCell.parseValueFromFormatted(formatted);
         String unit = AiCell.sniffUnit(formatted);
-        return new AiCell(value, formatted, unit);
+        return new AiCell(value, formatted, unit, props);
     }
 
     /**
@@ -769,6 +947,26 @@ public class AiQueryResource {
         int n = 0;
         while (n < first.length && first[n] instanceof MemberCell) n++;
         return n;
+    }
+
+    /** saiku#803: every cell in the row is a MemberCell (caption). Used to
+     *  detect the measures-only header-leaked-into-body shape. */
+    private static boolean allMemberCells(AbstractBaseCell[] row) {
+        if (row == null || row.length == 0) return false;
+        for (AbstractBaseCell c : row) {
+            if (!(c instanceof MemberCell)) return false;
+        }
+        return true;
+    }
+
+    /** saiku#803: every cell in the row is a DataCell. Paired with
+     *  {@link #allMemberCells} to identify the measures-only flatten case. */
+    private static boolean allDataCells(AbstractBaseCell[] row) {
+        if (row == null || row.length == 0) return false;
+        for (AbstractBaseCell c : row) {
+            if (!(c instanceof org.saiku.olap.dto.resultset.DataCell)) return false;
+        }
+        return true;
     }
 
     private static String rowName(AbstractBaseCell[] row, int rowHeaderCount) {

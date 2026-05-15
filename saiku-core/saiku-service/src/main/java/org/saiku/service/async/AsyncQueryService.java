@@ -211,6 +211,15 @@ public class AsyncQueryService {
         return h;
     }
 
+    /** Register a pre-built handle. Used by tests that need to exercise
+     *  resource-layer logic against a known {@link AsyncQueryHandle.Status}
+     *  without driving a real executor — production submission flows through
+     *  {@link #submit(ThinQuery)}, never this. */
+    public void register(AsyncQueryHandle h) {
+        if (h == null) return;
+        handles.put(h.getId(), h);
+    }
+
     /**
      * Fetch the completed CellSet for {@code id}. Marks the handle as
      * result-fetched so the sweeper can evict it after the idle window.

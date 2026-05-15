@@ -169,6 +169,58 @@ public class OlapAiCubeMetadataServiceTest {
         assertTrue("Product dim survives", schema.dimensions.containsKey(AiSchema.key("Product")));
     }
 
+    /* ----- saiku#778 visible flag ----- */
+
+    /**
+     * AI schema must surface the {@code visible} flag from
+     * {@link SaikuMember#isVisible()} so admin tooling can see hidden helper
+     * measures (e.g. ratios that exist only to support visible measures).
+     * Defaults remain {@code true} for unset legacy fixtures.
+     */
+    @Test
+    public void buildSchemaSurfacesVisibleFlagFromDiscoverMember() {
+        OlapAiCubeMetadataService visSvc = new OlapAiCubeMetadataService();
+        visSvc.setDiscoverService(new StubDiscover() {
+            @Override
+            public List<SaikuMember> getMeasures(SaikuCube cube) {
+                if ("HR".equals(cube.getName())) {
+                    return super.getMeasures(cube);
+                }
+                // Sales: Store Sales visible, helper "Hidden Helper" invisible.
+                return Arrays.asList(
+                        new org.saiku.olap.dto.SaikuMeasure(
+                                "Store Sales",
+                                "[Measures].[Store Sales]",
+                                "Store Sales",
+                                "",
+                                "[Measures]",
+                                "[Measures].[MeasuresLevel]",
+                                "[Measures].[MeasuresLevel]",
+                                true, // visible
+                                false, // calculated
+                                null), // measureGroup
+                        new org.saiku.olap.dto.SaikuMeasure(
+                                "Hidden Helper",
+                                "[Measures].[Hidden Helper]",
+                                "Hidden Helper",
+                                "",
+                                "[Measures]",
+                                "[Measures].[MeasuresLevel]",
+                                "[Measures].[MeasuresLevel]",
+                                false, // visible
+                                true, // calculated
+                                null));
+            }
+        });
+        AiSchema schema = visSvc.getSchema(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+        AiSchema.Measure storeSales = schema.measures.get(AiSchema.key("Store Sales"));
+        AiSchema.Measure hidden = schema.measures.get(AiSchema.key("Hidden Helper"));
+        assertNotNull(storeSales);
+        assertNotNull(hidden);
+        assertTrue("visible measure carries visible=true", Boolean.TRUE.equals(storeSales.visible));
+        assertFalse("hidden measure carries visible=false", Boolean.TRUE.equals(hidden.visible));
+    }
+
     /** Stub that fails getLevelMembers for Quarter only. */
     private static class ProbeStubDiscover extends StubDiscover {
         @Override

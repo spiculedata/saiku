@@ -25,7 +25,8 @@ public class SaikuMeasure extends SaikuMember {
                 dimensionUniqueName,
                 hierarchyUniqueName,
                 levelUniqueName,
-                calculated);
+                calculated,
+                visible);
         this.measureGroup = measuregroup;
     }
 

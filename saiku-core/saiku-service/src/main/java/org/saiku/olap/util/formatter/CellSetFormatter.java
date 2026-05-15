@@ -283,6 +283,11 @@ public class CellSetFormatter implements ICellSetFormatter {
             if (coordList.size() > 1) y += coordList.get(1);
             final DataCell cellInfo = new DataCell(true, false, coordList);
             cellInfo.setCoordinates(cell.getCoordinateList());
+            // saiku#773: surface the full set of olap4j StandardCellProperty
+            // values (format string, fore/back colour, font flags, action
+            // type, error text, etc.) Mondrian computes for this cell so
+            // the REST/Arrow consumers can read them.
+            cellInfo.setProperties(CellPropertyExtractor.extract(cell));
 
             if (cell.getValue() != null) {
                 try {
