@@ -603,6 +603,10 @@ check "HR Store Id desc — 7th path to 616 (saiku#809 affects ordering — iter
   '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Number of Employees"}],"rows":[{"dimension":"Employee","hierarchy":"Store Id","level":"Store Id"}],"order":[{"by":"Number of Employees","direction":"desc"}],"limit":30}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==14 and r['data'][0]['Number of Employees']['value']==74.0 and sum(d['Number of Employees']['value'] for d in r['data'])==616.0"
 
+check "3-dim columns crossjoin: Quarter × Gender × Marital Status — 16 cols (iter 333)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Sales Count"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"columns":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"},{"dimension":"Customer","hierarchy":"Gender","level":"Gender"},{"dimension":"Customer","hierarchy":"Marital Status","level":"Marital Status"}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and len(r['metadata']['columns'])==16 and 'Sales Count | Q1 | F | M' in [c['caption'] for c in r['metadata']['columns']] and r['data'][0]['Sales Count | Q1 | F | M']['value']==501.0 and r['metadata']['generatedMdx'].count('CROSSJOIN')==3"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
