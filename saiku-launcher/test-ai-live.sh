@@ -643,6 +643,10 @@ check "negative limit treated as no cap — no HEAD/TopCount emitted (iter 342)"
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"limit":-1}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and 'HEAD(' not in r['metadata']['generatedMdx'] and 'TopCount(' not in r['metadata']['generatedMdx'] and 'BottomCount(' not in r['metadata']['generatedMdx']"
 
+check "non-empty aggregators field silently accepted (forward-compat placeholder, iter 343)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales","aggregators":["sum","avg","max"]}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==24597.0 and r['metadata']['generatedMdx']=='SELECT NON EMPTY {[Measures].[Unit Sales]} ON COLUMNS,\nNON EMPTY [Product].[Products].[Product Family].Members ON ROWS\nFROM [Sales]'"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
