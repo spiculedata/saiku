@@ -446,6 +446,10 @@ check "members search with no-match q returns empty list 200 (iter 298)" GET "/r
 check "members search unknown dim → 400 + field + available list (iter 299)" GET "/rest/saiku/api/ai/members/search?cubeId=$CUBE&dimension=NotARealDim&hierarchy=Products&level=Product%20Family&q=&limit=10" '' \
   "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='dimension' and 'Unknown dimension' in r.get('error','') and 'Product' in r.get('available',[]) and 'Customer' in r.get('available',[])"
 
+check "preview emits the same MDX /query would execute, status=PREVIEW (iter 300)" POST "/rest/saiku/api/ai/query/preview" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"},{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"columns":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}],"filters":[{"dimension":"Customer","hierarchy":"Gender","level":"Gender","op":"in","members":["[Customer].[Gender].[M]"]}],"order":[{"by":"Unit Sales","direction":"desc"}],"limit":3}' \
+  "r.get('status')=='PREVIEW' and r.get('queryId') and 'TopCount' in r.get('generatedMdx','') and 'WHERE ([Customer].[Gender].[M])' in r.get('generatedMdx','') and 'CROSSJOIN' in r.get('generatedMdx','')"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
