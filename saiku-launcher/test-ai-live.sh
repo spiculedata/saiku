@@ -278,6 +278,10 @@ check "Store cube — Store Type level" POST "/rest/saiku/api/ai/query" \
   '{"cube":"unknown_foodmart/FoodMart/FoodMart/Store","measures":[{"name":"Store Sqft"}],"rows":[{"dimension":"Store Type","level":"Store Type"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==5"
 
+check "validation: relative + members[] combo rejected" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Quarter","op":"relative","value":"ytd","members":["[Time].[Time].[1997].[Q1]"]}]}' \
+  "r.get('status')=='VALIDATION_ERROR' and r.get('field')=='filters[0].members' and 'doesn' in r.get('error','')"
+
 check "two multi-member slicer filters (saiku#801 — CROSSJOIN tuple slicer)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Quarter","op":"in","members":["[Time].[Time].[1997].[Q1]","[Time].[Time].[1997].[Q4]"]},{"dimension":"Promotion","hierarchy":"Media Type","level":"Media Type","members":["[Promotion].[Media Type].[No Media]","[Promotion].[Media Type].[Daily Paper]"]}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and 'CROSSJOIN' in r['metadata']['generatedMdx']"

@@ -458,6 +458,18 @@ public class AiSchemaConverter {
                     break;
                 }
                 case "relative": {
+                    // Reject `members[]` being populated alongside a
+                    // relative preset — it's silently dropped otherwise,
+                    // and an agent that supplied both is almost certainly
+                    // confused about which one will take effect.
+                    if (!members.isEmpty()) {
+                        throw new AiValidationException(
+                                fieldPath + ".members",
+                                "'relative' filter doesn't read `members[]`. "
+                                        + "Either drop the relative preset and use op=in with the members, "
+                                        + "or drop the members and rely on the preset (value + n).",
+                                null);
+                    }
                     expr = relativeSet(f, level, fieldPath);
                     isSet = isRelativeSet(f);
                     break;
