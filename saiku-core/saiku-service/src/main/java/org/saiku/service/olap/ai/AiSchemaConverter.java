@@ -362,6 +362,17 @@ public class AiSchemaConverter {
                 for (int mi = 0; mi < members.size(); mi++) {
                     String mref = members.get(mi);
                     validateMemberRef(mref, fieldPath + ".members[" + mi + "]");
+                    // Slicer members must be at least [Dim].[Member] —
+                    // a single-segment ref is the dim itself, not a member.
+                    // Mirrors the iter 141 axis-side check; without this,
+                    // the slicer splices `WHERE ([Dim])` and Mondrian 500s.
+                    if (countBracketedSegments(mref) < 2) {
+                        throw new AiValidationException(
+                                fieldPath + ".members[" + mi + "]",
+                                "Member '" + mref + "' is the dimension itself, not a member. "
+                                        + "Member refs need at least [Dim].[Member] or [Dim].[Hier].[Member].",
+                                null);
+                    }
                     String leaf = lastBracketSegmentLower(mref);
                     Integer prev = seenLeaf.put(leaf, mi);
                     if (prev != null) {
