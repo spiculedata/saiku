@@ -366,6 +366,35 @@ The agent sees exactly what went wrong (`field`), what the legal values
 are (`available`), and can immediately retry with a corrected name. No
 prompt engineering required.
 
+**Two layers of validation.** A request is checked twice and either layer
+can return a `VALIDATION_ERROR`:
+
+1. **Shape validator (JSON Schema, runs first).** Catches structural
+   problems before the request reaches the cube — missing required
+   fields, wrong types, values outside an enum. Field paths preserve
+   array indices so the agent knows exactly which entry is wrong
+   (`filters[0].op`, `order[0].direction`, `rows[2].dimension`). For
+   enum violations (`op`, `direction`, relative-preset `value`),
+   `available[]` is populated with the legal values directly from the
+   schema.
+
+   ```json
+   { "status": "VALIDATION_ERROR",
+     "error": "$.filters[0].op: does not have a value in the enumeration [\"in\", \"not_in\", \"between\", \"descendants_of\", \"relative\"]",
+     "field": "filters[0].op",
+     "available": ["in", "not_in", "between", "descendants_of", "relative"] }
+   ```
+
+2. **Semantic validator (cube-resolution, runs after).** Catches names
+   that are shape-valid but don't exist in the cube — unknown measure
+   names, unresolvable dimensions, members from the wrong hierarchy.
+   Field paths use `[]` for generic name-resolution errors that aren't
+   tied to a specific array element (`measures[].name`), and indexed
+   paths for per-element issues (`filters[0]` for an offending filter).
+
+The contract for the agent is the same either way: read `field`, read
+`available[]`, fix and retry.
+
 **Error taxonomy.** Statuses use a strict enum:
 
 - `VALIDATION_ERROR` — bad name, bad shape, bad operator

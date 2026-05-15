@@ -4,6 +4,7 @@
  */
 package org.saiku.service.olap.ai;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
 
@@ -16,8 +17,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
-import java.util.List;
+import java.util.Collection;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 import org.saiku.olap.query2.ThinQuery;
 
 /**
@@ -37,6 +40,11 @@ import org.saiku.olap.query2.ThinQuery;
  * shape, not cube identification (which is covered by canonical-cube
  * tests).
  *
+ * <p>Runs as a JUnit 4 {@code @Parameterized} suite so each fixture
+ * shows up as its own surefire test row — a deletion of one fixture
+ * shows up in CI logs and counts as a distinct failure, instead of
+ * being lumped into a single "all goldens" verdict.
+ *
  * <p><b>Regenerating goldens.</b> When a converter change is intentional:
  * <pre>{@code
  *   mvn -pl saiku-core/saiku-service test \
@@ -45,86 +53,64 @@ import org.saiku.olap.query2.ThinQuery;
  * Then review the diff in git before committing — golden tests only
  * earn their keep if a human owned the "is this what we want?" question.
  */
+@RunWith(Parameterized.class)
 public class MdxEchoGoldenTest {
 
     private static final String UPDATE_PROPERTY = "saiku.goldens.update";
     private static final String FIXTURE_DIR = "mdx-goldens/";
 
-    private static final List<String> FIXTURES = Arrays.asList(
-            "01-single-measure-no-rows",
-            "02-measure-with-row",
-            "03-two-measures",
-            "04-cross-hier-rows",
-            "05-non-empty",
-            "06-numeric-level-salary");
+    @Parameterized.Parameters(name = "{0}")
+    public static Collection<Object[]> fixtures() {
+        return Arrays.asList(new Object[][] {
+            {"01-single-measure-no-rows"},
+            {"02-measure-with-row"},
+            {"03-two-measures"},
+            {"04-cross-hier-rows"},
+            {"05-non-empty"},
+            {"06-numeric-level-salary"}
+        });
+    }
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private final AiSchemaConverter converter = new AiSchemaConverter();
     private final AiSchema schema = QuirksTestFixture.directSchema();
+    private final String fixture;
+
+    public MdxEchoGoldenTest(String fixture) {
+        this.fixture = fixture;
+    }
 
     @Test
-    public void goldenFixturesMatchConverterOutput() throws IOException {
+    public void goldenMatchesConverterOutput() throws IOException {
         boolean updateGolden = Boolean.getBoolean(UPDATE_PROPERTY);
-        StringBuilder failures = new StringBuilder();
-        boolean regenerated = false;
+        String requestResource = FIXTURE_DIR + fixture + "/request.json";
+        String expectedResource = FIXTURE_DIR + fixture + "/expected.mdx";
 
-        for (String fixture : FIXTURES) {
-            String requestResource = FIXTURE_DIR + fixture + "/request.json";
-            String expectedResource = FIXTURE_DIR + fixture + "/expected.mdx";
+        AiQueryRequest req;
+        try (InputStream in = MdxEchoGoldenTest.class.getClassLoader().getResourceAsStream(requestResource)) {
+            assertNotNull("missing fixture request.json on classpath: " + requestResource, in);
+            req = MAPPER.readValue(in, AiQueryRequest.class);
+        }
+        req.setCube(QuirksTestFixture.cubeRef());
 
-            AiQueryRequest req;
-            try (InputStream in = MdxEchoGoldenTest.class.getClassLoader().getResourceAsStream(requestResource)) {
-                if (in == null) {
-                    failures.append("[")
-                            .append(fixture)
-                            .append("] missing request.json: ")
-                            .append(requestResource)
-                            .append('\n');
-                    continue;
-                }
-                req = MAPPER.readValue(in, AiQueryRequest.class);
-            }
-            // Cube ref injected here so request.json fixtures stay focused on shape.
-            req.setCube(QuirksTestFixture.cubeRef());
+        ThinQuery tq = converter.convert(req, schema);
+        assertNotNull("converter must produce a ThinQuery", tq);
+        String actual = tq.getMdx();
+        assertNotNull("ThinQuery.mdx must be non-null", actual);
 
-            ThinQuery tq = converter.convert(req, schema);
-            assertNotNull("converter must produce a ThinQuery for fixture " + fixture, tq);
-            String actual = tq.getMdx();
-            assertNotNull("ThinQuery.mdx must be non-null for fixture " + fixture, actual);
-
-            String expected = readResource(expectedResource);
-            if (updateGolden || expected == null) {
-                Path target = resolveExpectedPath(fixture);
-                Files.createDirectories(target.getParent());
-                Files.writeString(target, actual, StandardCharsets.UTF_8);
-                regenerated = true;
-                failures.append("[")
-                        .append(fixture)
-                        .append("] wrote expected file: ")
-                        .append(target)
-                        .append('\n');
-                continue;
-            }
-
-            if (!expected.equals(actual)) {
-                failures.append("[")
-                        .append(fixture)
-                        .append("] MDX differs from ")
-                        .append(expectedResource)
-                        .append("\n--- expected ---\n")
-                        .append(expected)
-                        .append("\n--- actual ---\n")
-                        .append(actual)
-                        .append('\n');
-            }
+        String expected = readResource(expectedResource);
+        if (updateGolden || expected == null) {
+            Path target = resolveExpectedPath(fixture);
+            Files.createDirectories(target.getParent());
+            Files.writeString(target, actual, StandardCharsets.UTF_8);
+            // Update-mode always fails so the developer sees the diff and
+            // re-runs without the flag — golden tests only earn their
+            // keep if a human owns the "is this what we want?" question.
+            fail("wrote " + target + " — inspect diff and re-run without -D" + UPDATE_PROPERTY);
         }
 
-        if (failures.length() > 0) {
-            if (regenerated) {
-                fail("regenerated goldens — inspect diff and re-run without -D" + UPDATE_PROPERTY + ":\n" + failures);
-            }
-            fail(failures.toString());
-        }
+        assertEquals("MDX differs from " + expectedResource, expected, actual);
     }
 
     private static String readResource(String resource) throws IOException {

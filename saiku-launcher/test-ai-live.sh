@@ -173,7 +173,7 @@ check "validation: member at wrong level rejected (saiku#790)" POST "/rest/saiku
 
 check "validation: order direction must be asc/desc" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"order":[{"by":"Store Sales","direction":"invalid"}],"limit":2}' \
-  "r.get('status')=='VALIDATION_ERROR' and r.get('field')=='order[0].direction' and 'asc' in r.get('error','') and 'desc' in r.get('error','')"
+  "r.get('status')=='VALIDATION_ERROR' and r.get('field')=='order[0].direction' and 'Unknown order direction' in r.get('error','') and set(r.get('available',[]))=={'asc','desc'}"
 
 check "validation: duplicate measures rejected (saiku#796)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"},{"name":"Store Sales"},{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
@@ -512,7 +512,7 @@ check "filter op=relative previous_period emits Tail(...,2).Item(0) (iter 314)" 
 
 check "unknown relative preset → 400 + field + 8 presets in available (iter 314b)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Quarter","op":"relative","value":"parallel_period","n":1}]}' \
-  "http==400 and r.get('field')=='filters[0].value' and 'Unknown relative preset' in r.get('error','') and 'ytd' in r.get('available',[]) and 'previous_period' in r.get('available',[]) and len(r.get('available',[]))==8"
+  "http==400 and r.get('field')=='filters[0].value' and 'Unknown relative preset' in r.get('error','') and 'parallel_period' in r.get('error','') and 'ytd' in r.get('available',[]) and 'previous_period' in r.get('available',[]) and len(r.get('available',[]))==8"
 
 check "filter op=relative last_n_years n=2 emits Tail at Year level (iter 315)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","op":"relative","value":"last_n_years","n":2}]}' \
@@ -591,9 +591,9 @@ check "same-hier 2-level COLUMNS axis: CROSSJOIN(measure, Hierarchize(set, set))
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}],"columns":[{"dimension":"Product","hierarchy":"Products","level":"Product Family","members":["[Product].[Products].[Drink]"]},{"dimension":"Product","hierarchy":"Products","level":"Product Department","members":["[Product].[Products].[Drink].[Alcoholic Beverages]","[Product].[Products].[Drink].[Beverages]"]}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==4 and len(r['metadata']['columns'])==2 and 'Store Sales | Drink | Alcoholic Beverages' in [c['caption'] for c in r['metadata']['columns']] and r['data'][0]['Store Sales | Drink | Alcoholic Beverages']['value']==3082.0 and 'CROSSJOIN({[Measures].[Store Sales]}, Hierarchize(' in r['metadata']['generatedMdx']"
 
-check "HR parent-child closure hier produces clean 400 not 500 (saiku#810 — iter 331)" POST "/rest/saiku/api/ai/query" \
+check "HR parent-child closure hier dropped by schema-time probe (saiku#810 — iter 331)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Number of Employees"}],"rows":[{"dimension":"Employee","hierarchy":"Employee$Manager Id$Parent","level":"Item"}],"limit":5}' \
-  "http==400 and r.get('status')=='VALIDATION_ERROR' and 'not found in cube' in r.get('error','') and 'members/search' in r.get('error','')"
+  "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='rows[0].hierarchy' and 'Unknown hierarchy' in r.get('error','') and 'Employee\$Manager Id\$Parent' in r.get('error','') and 'Employees' in r.get('available',[]) and 'Employee\$Manager Id\$Parent' not in r.get('available',[])"
 
 # Order-without-limit on HR/Employee/Store Id returns the full
 # 14-store breakdown in correct desc order (control vs saiku#809
@@ -621,16 +621,16 @@ check "schema example[0] executes to All-Customers Unit Sales total (iter 336)" 
   '{"cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"measures":[{"name":"Unit Sales","aggregators":[]}],"rows":[{"dimension":"Customer","hierarchy":"Customers","level":"(All)","members":[]}],"columns":[],"filters":[],"order":[],"limit":0,"visualTotals":false,"nonEmpty":true}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==1 and r['data'][0]['(All)']=='All Customers' and r['data'][0]['Unit Sales']['value']==266773.0"
 
-check "empty body POST → field=cube validation envelope (iter 337)" POST "/rest/saiku/api/ai/query" '{}' \
-  "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='cube' and 'cube ref required' in r.get('error','')"
+check "empty body POST → field=cube + lists required top-level fields (iter 337)" POST "/rest/saiku/api/ai/query" '{}' \
+  "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='cube' and 'Missing required field' in r.get('error','') and set(r.get('available',[]))=={'cube','measures'}"
 
 check "cube without measures → field=measures cascade (iter 338)" POST "/rest/saiku/api/ai/query" \
   '{"cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"}}' \
   "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='measures' and 'At least one measure required' in r.get('error','')"
 
-check "partial cube object (only cubeName) → field=cube with full-spec hint (iter 339)" POST "/rest/saiku/api/ai/query" \
+check "partial cube object (only cubeName) → field names missing prop + lists all required (iter 339)" POST "/rest/saiku/api/ai/query" \
   '{"cube":{"cubeName":"Sales"},"measures":[{"name":"Unit Sales"}]}' \
-  "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='cube' and 'connectionName, catalog, schema, and cubeName' in r.get('error','') and \"'connection/catalog/schema/cubeName' string\" in r.get('error','')"
+  "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='connectionName' and 'Missing required field' in r.get('error','') and 'connectionName' in r.get('available',[]) and 'catalog' in r.get('available',[]) and 'schema' in r.get('available',[]) and 'cubeName' in r.get('available',[])"
 
 check "HR schema has same agent-grounding affordances as Sales (iter 340)" GET "/rest/saiku/api/ai/schema/unknown_foodmart/FoodMart/FoodMart/HR" '' \
   "r.get('cubeUniqueName')=='[unknown_foodmart].[FoodMart].[FoodMart].[HR]' and isinstance(r.get('examples'), list) and len(r['examples'])==3 and r['examples'][0]['cube']['cubeName']=='HR' and r.get('requestSchema',{}).get('title')=='AiQueryRequest'"
@@ -649,7 +649,7 @@ check "non-empty aggregators field silently accepted (forward-compat placeholder
 
 check "unknown filter op → 400 + 5-op available list (iter 344)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","op":"bogus_op","members":["[Time].[Time].[1997]"]}]}' \
-  "http==400 and r.get('field')=='filters[0].op' and 'Unknown filter op' in r.get('error','') and set(r.get('available',[]))=={'in','not_in','between','descendants_of','relative'}"
+  "http==400 and r.get('field')=='filters[0].op' and 'Unknown filter op' in r.get('error','') and 'bogus_op' in r.get('error','') and set(r.get('available',[]))=={'in','not_in','between','descendants_of','relative'}"
 
 check "rows[].members[] mixed valid+invalid → 400 names the bad ref (iter 345)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Year","members":["[Time].[Time].[1997]","[Time].[Time].[NotARealYear]"]}]}' \
@@ -659,18 +659,16 @@ check "/preview honours relative-time DSL (Ytd) (iter 346)" POST "/rest/saiku/ap
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Quarter","op":"relative","value":"ytd"}]}' \
   "r.get('status')=='PREVIEW' and 'WHERE (Ytd())' in r.get('generatedMdx','')"
 
-# Pins saiku#811: lowercase cubeName partially resolves through
-# the schema validator (which is case-insensitive) but fails at the
-# downstream native-cube lookup (which is case-sensitive). The
-# current observed shape is HTTP 500 EXECUTION_ERROR — the
-# describeDeepestCause path surfaces "SaikuOlapException: Cannot
-# get native cube". When saiku#811 is fixed (preferred path: make
-# validation case-sensitive), this test will need to flip to
-# expect HTTP 400 + field=cube + available list, like the
-# "NoSuchCube" case in iter 324.
-check "lowercase cubeName partially resolves → 500 with deepest-cause surface (saiku#811 — iter 347)" POST "/rest/saiku/api/ai/query" \
+# saiku#811 (FIXED in Phase 1.B of feat/platform-improvements):
+# lowercase cubeName is resolved case-insensitively at schema-match
+# time, and the canonical SaikuCube ref (from the matched cube) is
+# threaded through AiSchemaConverter to Mondrian's native cube
+# lookup. Result: 200 / SUCCESS with same row totals as the
+# canonical-case query. Pre-fix this was 500 / EXECUTION_ERROR
+# "Cannot get native cube [Sales]".
+check "lowercase cubeName resolves to canonical ref end-to-end (saiku#811 — iter 347, fixed)" POST "/rest/saiku/api/ai/query" \
   '{"cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"sales"},"measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
-  "http==500 and r.get('status')=='EXECUTION_ERROR' and 'Cannot get native cube' in r.get('error','') and '[Sales]' in r.get('error','')"
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Product Family']=='Drink' and r['data'][0]['Unit Sales']['value']==24597.0 and 'FROM [Sales]' in r['metadata']['generatedMdx']"
 
 check "lowercase dim/hier/level all resolve case-insensitively end-to-end (control for saiku#811, iter 348)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"product","hierarchy":"products","level":"product family"}]}' \
@@ -680,18 +678,22 @@ check "lowercase measure name resolves and rountrips with proper case (iter 349)
   '{"cube":"'"$CUBE"'","measures":[{"name":"unit sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==24597.0 and '[Measures].[Unit Sales]' in r['metadata']['generatedMdx']"
 
-# saiku#811 extends to connectionName too — mixed-case "Unknown_Foodmart"
-# fails with raw NPE because the connection lookup returns null.
-# Worse surface than cubeName's "Cannot get native cube" — the
-# describeDeepestCause helper still gives a useful message but the
-# 500 status is the agent-facing surface that should be a clean 400.
-check "mixed-case connectionName → 500 EXECUTION_ERROR (saiku#811 extension — iter 350)" POST "/rest/saiku/api/ai/query" \
+# saiku#811 fix also covers connectionName — mixed-case
+# "Unknown_Foodmart" resolves case-insensitively at schema-match
+# time and is replaced with the canonical "unknown_foodmart" in
+# the SaikuCube produced by AiSchemaConverter.toSaikuCube(). Pre-
+# fix this was 500 EXECUTION_ERROR (raw NPE from null connection
+# lookup); post-fix it's 200 SUCCESS like any canonical-cube query.
+check "mixed-case connectionName resolves to canonical ref (saiku#811 — iter 350, fixed)" POST "/rest/saiku/api/ai/query" \
   '{"cube":{"connectionName":"Unknown_Foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
-  "http==500 and r.get('status')=='EXECUTION_ERROR' and r.get('error','').startswith('execute failed')"
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==24597.0"
 
-check "lowercase catalog → 500 (same partial-resolution shape as cubeName — saiku#811 — iter 351)" POST "/rest/saiku/api/ai/query" \
+# Same shape as iter 347 — lowercase catalog is replaced with the
+# canonical "FoodMart" via the matched SaikuCube. Pre-fix this was
+# 500; post-fix it's 200.
+check "lowercase catalog resolves to canonical ref (saiku#811 — iter 351, fixed)" POST "/rest/saiku/api/ai/query" \
   '{"cube":{"connectionName":"unknown_foodmart","catalog":"foodmart","schema":"FoodMart","cubeName":"Sales"},"measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
-  "http==500 and r.get('status')=='EXECUTION_ERROR' and 'Cannot get native cube' in r.get('error','') and '[FoodMart]' in r.get('error','')"
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==24597.0 and 'FROM [Sales]' in r['metadata']['generatedMdx']"
 
 check "same-dim different-hier rows+filter (saiku#784 scope) — Gender × Marital Status (iter 352)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Customer Count"}],"rows":[{"dimension":"Customer","hierarchy":"Gender","level":"Gender"}],"filters":[{"dimension":"Customer","hierarchy":"Marital Status","level":"Marital Status","op":"in","members":["[Customer].[Marital Status].[M]"]}]}' \

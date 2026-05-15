@@ -102,6 +102,85 @@ public class AiRequestSchemaValidatorTest {
         }
     }
 
+    /** Enum violations must populate {@code available[]} so agents can
+     *  self-correct without parsing the error string. Pins iter 314b /
+     *  iter 344 / order-direction live-fuzz cases. */
+    @Test
+    public void enumViolationPopulatesAvailableList() throws Exception {
+        JsonNode body = parse("{"
+                + "\"cube\": {"
+                + "  \"connectionName\": \"foodmart\","
+                + "  \"catalog\": \"FoodMart\","
+                + "  \"schema\": \"FoodMart\","
+                + "  \"cubeName\": \"Sales\""
+                + "},"
+                + "\"measures\": [{\"name\": \"Unit Sales\"}],"
+                + "\"order\": [{\"by\": \"Unit Sales\", \"direction\": \"bogus\"}]"
+                + "}");
+        try {
+            validator.assertValid(body);
+            fail("expected AiValidationException for invalid order direction");
+        } catch (AiValidationException e) {
+            assertEquals("order[0].direction", e.getField());
+            assertTrue(
+                    "available[] must contain the enum values — got: " + e.getAvailable(),
+                    e.getAvailable().contains("asc") && e.getAvailable().contains("desc"));
+            assertEquals("only 2 legal directions", 2, e.getAvailable().size());
+        }
+    }
+
+    /** Enum violations get a Saiku-voice message that quotes the bad
+     *  value back. Pre-fix the message was networknt's default
+     *  "does not have a value in the enumeration [...]" — useful for
+     *  humans, harder for agents to grep on. */
+    @Test
+    public void enumViolationProducesFriendlyMessage() throws Exception {
+        JsonNode body = parse("{"
+                + "\"cube\": {"
+                + "  \"connectionName\": \"foodmart\","
+                + "  \"catalog\": \"FoodMart\","
+                + "  \"schema\": \"FoodMart\","
+                + "  \"cubeName\": \"Sales\""
+                + "},"
+                + "\"measures\": [{\"name\": \"Unit Sales\"}],"
+                + "\"rows\": [{\"dimension\": \"Time\", \"hierarchy\": \"Time\", \"level\": \"Year\"}],"
+                + "\"filters\": [{\"dimension\": \"Time\", \"hierarchy\": \"Time\", \"level\": \"Year\","
+                + "  \"op\": \"bogus_op\", \"members\": [\"[Time].[Time].[1997]\"]}]"
+                + "}");
+        try {
+            validator.assertValid(body);
+            fail("expected AiValidationException for unknown filter op");
+        } catch (AiValidationException e) {
+            assertTrue(
+                    "error names the role and the bad value — got: " + e.getMessage(),
+                    e.getMessage().contains("Unknown filter op")
+                            && e.getMessage().contains("bogus_op"));
+            assertTrue(
+                    "error lists the legal ops — got: " + e.getMessage(),
+                    e.getMessage().contains("in"));
+        }
+    }
+
+    /** Required-property violations must populate {@code available[]}
+     *  with the parent's required-fields list so an agent that posted
+     *  a partial body can see every missing field in one round, not
+     *  one at a time. */
+    @Test
+    public void requiredViolationPopulatesAvailableList() throws Exception {
+        JsonNode body = parse("{}");
+        try {
+            validator.assertValid(body);
+            fail("expected AiValidationException for empty body");
+        } catch (AiValidationException e) {
+            // First missing field surfaces as the field; the available
+            // list shows the whole required set so the agent can fix
+            // everything before retrying.
+            assertTrue(
+                    "available[] must list required top-level fields — got: " + e.getAvailable(),
+                    e.getAvailable().contains("cube") && e.getAvailable().contains("measures"));
+        }
+    }
+
     @Test
     public void wrongTypeOnLimitTripsTypeError() throws Exception {
         JsonNode body = parse("{"
@@ -126,20 +205,20 @@ public class AiRequestSchemaValidatorTest {
     }
 
     /**
-     * Verifies the JSON Pointer → dotted-array transformation. The AI
-     * surface's other error envelopes use {@code measures[].name},
-     * {@code filters[0].op}, {@code rows[].members[]} style — schema
-     * validator errors must use the same convention so agents have one
-     * recovery shape.
+     * Verifies the instance-location → field-pointer transformation.
+     * Numeric indices are preserved (matches the AiSchemaConverter
+     * convention: {@code filters[0].op}, {@code rows[1].members[3]}) so
+     * agents can identify exactly which array element failed without a
+     * follow-up round-trip.
      */
     @Test
-    public void jsonPointerCollapsesArrayIndices() {
+    public void jsonPointerPreservesArrayIndices() {
         assertEquals("body", AiRequestSchemaValidator.jsonPointerToField(null));
         assertEquals("body", AiRequestSchemaValidator.jsonPointerToField(""));
         assertEquals("body", AiRequestSchemaValidator.jsonPointerToField("$"));
         assertEquals("cube", AiRequestSchemaValidator.jsonPointerToField("$.cube"));
-        assertEquals("measures[].name", AiRequestSchemaValidator.jsonPointerToField("$.measures[0].name"));
-        assertEquals("filters[].members[]", AiRequestSchemaValidator.jsonPointerToField("$.filters[2].members[7]"));
+        assertEquals("measures[0].name", AiRequestSchemaValidator.jsonPointerToField("$.measures[0].name"));
+        assertEquals("filters[2].members[7]", AiRequestSchemaValidator.jsonPointerToField("$.filters[2].members[7]"));
         assertEquals("limit", AiRequestSchemaValidator.jsonPointerToField("$.limit"));
     }
 }
