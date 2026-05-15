@@ -176,19 +176,23 @@ public class AiSchemaConverter {
 
         List<String> groupExprs = groupSetExpressionsByHierarchy(resolved);
 
-        StringBuilder s = new StringBuilder();
+        // Mondrian's CROSSJOIN is binary — N-ary CROSSJOIN(a,b,c,d) raises
+        // "No function matches signature 'CROSSJOIN(<Set>, <Set>, <Set>,
+        // <Set>)'". For 3+ distinct-hierarchy groups, nest left-associatively:
+        // CROSSJOIN(CROSSJOIN(CROSSJOIN(a, b), c), d). Mirrors the existing
+        // columns-axis pattern that inserts "CROSSJOIN(" at the head and
+        // appends ", set)" per additional group.
+        String rowExpr;
         if (groupExprs.size() == 1) {
-            s.append(groupExprs.get(0));
+            rowExpr = groupExprs.get(0);
         } else {
-            s.append("CROSSJOIN(");
-            for (int i = 0; i < groupExprs.size(); i++) {
-                if (i > 0) s.append(", ");
-                s.append(groupExprs.get(i));
+            StringBuilder s = new StringBuilder(groupExprs.get(0));
+            for (int i = 1; i < groupExprs.size(); i++) {
+                s.insert(0, "CROSSJOIN(");
+                s.append(", ").append(groupExprs.get(i)).append(")");
             }
-            s.append(")");
+            rowExpr = s.toString();
         }
-
-        String rowExpr = s.toString();
 
         // Apply ordering / top-N. Precedence:
         //   order + limit -> TopCount/BottomCount
