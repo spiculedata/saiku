@@ -458,6 +458,10 @@ check "2-axis nonEmpty=false preserves empty cells across both axes (iter 302)" 
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Year","members":["[Time].[Time].[1997]","[Time].[Time].[1998]"]}],"columns":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"nonEmpty":false}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and len(r['metadata']['columns'])==3 and r['data'][0]['Unit Sales | Drink']['value']==24597.0 and r['data'][1]['Unit Sales | Drink']['value'] is None and r['data'][1]['Unit Sales | Drink']['formatted']=='' and 'NON EMPTY' not in r['metadata']['generatedMdx']"
 
+check "filter via parallel Time/Weekly hier — slicer agrees with Time/Time totals (iter 303)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Weekly","level":"Year","op":"in","members":["[Time].[Weekly].[1997]"]}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==24597.0 and r['data'][1]['Unit Sales']['value']==191940.0 and r['data'][2]['Unit Sales']['value']==50236.0 and 'WHERE ([Time].[Weekly].[1997])' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
