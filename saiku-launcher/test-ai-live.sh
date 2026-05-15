@@ -428,6 +428,10 @@ check "HR Education Level × Avg Salary — education-salary correlation (iter 2
   '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Avg Salary"},{"name":"Number of Employees"}],"rows":[{"dimension":"Employee","hierarchy":"Education Level","level":"Education Level"}],"order":[{"by":"Avg Salary","direction":"desc"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and r['data'][0]['Education Level']=='Graduate Degree' and r['data'][4]['Education Level']=='Partial High School' and sum(d['Number of Employees']['value'] for d in r['data'])==616.0"
 
+check "Sales 2 cube: Profit is USD not EUR (per-cube format isolation, iter 295)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"unknown_foodmart/FoodMart/FoodMart/Sales 2","measures":[{"name":"Sales Count"},{"name":"Profit"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"columns":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}],"filters":[{"dimension":"Gender","hierarchy":"Gender","level":"Gender","op":"in","members":["[Gender].[Gender].[F]"]}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and len(r['metadata']['columns'])==8 and r['data'][0]['Sales Count | Q1']['value']==953.0 and r['data'][0]['Profit | Q1']['unit']=='USD' and 'WHERE ([Gender].[Gender].[F])' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
