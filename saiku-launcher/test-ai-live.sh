@@ -352,6 +352,10 @@ check "explicit Year members on rows + nonEmpty=false in hasAll=false hier (saik
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Year","members":["[Time].[Time].[1997]","[Time].[Time].[1998]"]}],"nonEmpty":false}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and r['data'][0]['Year']=='1997' and r['data'][0]['Store Sales']['value']==565238.13 and r['data'][1]['Year']=='1998' and r['data'][1]['Store Sales']['value'] is None"
 
+check "explicit Quarter members in hasAll=false hier — cross-validates saiku#807 at depth>0 (iter 276)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Quarter","members":["[Time].[Time].[1997].[Q1]","[Time].[Time].[1997].[Q3]"]}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and r['data'][0]['Quarter']=='Q1' and r['data'][0]['Store Sales']['value']==139628.35 and r['data'][1]['Quarter']=='Q3' and r['data'][1]['Store Sales']['value']==140271.89"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
