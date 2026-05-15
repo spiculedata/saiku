@@ -526,6 +526,16 @@ check "HR Employee/Store Type — 6th path to 616, HQ-salary anomaly (iter 317)"
   '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Number of Employees"},{"name":"Avg Salary"}],"rows":[{"dimension":"Employee","hierarchy":"Store Type","level":"Store Type"}],"order":[{"by":"Number of Employees","direction":"desc"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==6 and r['data'][0]['Store Type']=='Supermarket' and r['data'][0]['Number of Employees']['value']==372.0 and sum(d['Number of Employees']['value'] for d in r['data'])==616.0 and any(d['Store Type']=='HeadQuarters' and d['Avg Salary']['value']>200 for d in r['data'])"
 
+# Pins saiku#809: TopCount on HR/Employee/Salary (numeric-keyed level)
+# returns the right *members* but in natural ordinal order, not
+# descending order of the sort criterion. Top member (Salary=20.0
+# with 283 employees) is correct; the rest are the right 4 but
+# shuffled. Asserting top + membership only, not the in-order
+# ranking.
+check "TopCount on numeric-keyed Salary level — top-by-membership not by ordering (saiku#809 — iter 318)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Number of Employees"}],"rows":[{"dimension":"Employee","hierarchy":"Salary","level":"Salary"}],"order":[{"by":"Number of Employees","direction":"desc"}],"limit":5}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and r['data'][0]['Salary']=='20.0' and r['data'][0]['Number of Employees']['value']==283.0 and set(d['Salary'] for d in r['data'])=={'20.0','7000.0','8200.0','4400.0','6700.0'}"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
