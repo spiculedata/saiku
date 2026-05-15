@@ -436,6 +436,10 @@ check "Customer descendants_of slicer compacts to ancestor in WHERE (iter 296)" 
   '{"cube":"'"$CUBE"'","measures":[{"name":"Customer Count"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Customer","hierarchy":"Customers","level":"State Province","op":"descendants_of","members":["[Customer].[Customers].[USA].[CA]"]}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Customer Count']['value']==1434.0 and r['data'][1]['Customer Count']['value']==2676.0 and 'WHERE ([Customer].[Customers].[USA].[CA])' in r['metadata']['generatedMdx']"
 
+check "HR Employee/Gender — 4th path to 616 aggregate (iter 297)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Number of Employees"},{"name":"Avg Salary"}],"rows":[{"dimension":"Employee","hierarchy":"Gender","level":"Gender"}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and r['data'][0]['Gender']=='F' and r['data'][0]['Number of Employees']['value']==330.0 and r['data'][1]['Number of Employees']['value']==286.0 and sum(d['Number of Employees']['value'] for d in r['data'])==616.0"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
