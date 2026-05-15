@@ -556,6 +556,9 @@ check "filter op=not_in with 2 members → Except set slicer (iter 323)" POST "/
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Store","hierarchy":"Stores","level":"Store Country","op":"not_in","members":["[Store].[Stores].[Canada]","[Store].[Stores].[Mexico]"]}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Store Sales']['value']==48836.21 and 'WHERE (Except([Store].[Stores].[Store Country].Members, {[Store].[Stores].[Canada], [Store].[Stores].[Mexico]}))' in r['metadata']['generatedMdx']"
 
+check "/cubes shape: 6 cubes, each has the 7-field summary (iter 324)" GET "/rest/saiku/api/ai/cubes" '' \
+  "isinstance(r, list) and len(r)==6 and set(r[0].keys())=={'connectionName','catalog','schema','cubeName','cubeCaption','defaultMeasure','measureCount'} and set(c['cubeName'] for c in r)=={'HR','Sales','Sales 2','Store','Warehouse','Warehouse and Sales'} and any(c['cubeName']=='HR' and c['defaultMeasure']=='Org Salary' and c['measureCount']==5 for c in r)"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
