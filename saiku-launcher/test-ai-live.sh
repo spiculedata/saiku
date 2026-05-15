@@ -742,6 +742,10 @@ check "3-hier same-dim CROSSJOIN on rows: Gender × Education × Marital (iter 3
   '{"cube":"'"$CUBE"'","measures":[{"name":"Customer Count"}],"rows":[{"dimension":"Customer","hierarchy":"Gender","level":"Gender"},{"dimension":"Customer","hierarchy":"Education Level","level":"Education Level"},{"dimension":"Customer","hierarchy":"Marital Status","level":"Marital Status"}],"limit":6}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==6 and r['data'][0]['Gender']=='F' and r['data'][0]['Education Level']=='Bachelors Degree' and r['data'][0]['Marital Status']=='M' and r['data'][0]['Customer Count']['value']==359.0 and r['metadata']['generatedMdx'].count('CROSSJOIN')==2"
 
+check "filter op=in with empty members[] → 400 with helpful message (iter 358)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","op":"in","members":[]}]}' \
+  "http==400 and r.get('field')=='filters[0].members' and 'in' in r.get('error','') and 'at least one member' in r.get('error','')"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
