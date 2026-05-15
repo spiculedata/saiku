@@ -21,7 +21,7 @@ import org.saiku.olap.dto.resultset.MemberCell;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.ai.AiAxisSelection;
-import org.saiku.service.olap.ai.AiCubeMetadataService;
+import org.saiku.service.olap.ai.AiCell;
 import org.saiku.service.olap.ai.AiCubeRef;
 import org.saiku.service.olap.ai.AiMeasureSelection;
 import org.saiku.service.olap.ai.AiQueryRequest;
@@ -42,13 +42,12 @@ public class AiQueryResourceTest {
     @Before
     public void setUp() {
         schema = new AiSchema("foodmart/FoodMart/FoodMart/Sales", "Sales", "[FoodMart].[Sales]");
-        schema.measures.put(AiSchema.key("Store Sales"),
-                new AiSchema.Measure("Store Sales", "[Measures].[Store Sales]"));
+        schema.measures.put(
+                AiSchema.key("Store Sales"), new AiSchema.Measure("Store Sales", "[Measures].[Store Sales]"));
 
         AiSchema.Dimension time = new AiSchema.Dimension("Time", "[Time]");
         AiSchema.Hierarchy timeBy = new AiSchema.Hierarchy("Time By", "[Time].[Time By]");
-        timeBy.levels.put(AiSchema.key("Year"),
-                new AiSchema.Level("Year", "[Time].[Time By].[Year]"));
+        timeBy.levels.put(AiSchema.key("Year"), new AiSchema.Level("Year", "[Time].[Time By].[Year]"));
         time.hierarchies.put(AiSchema.key("Time By"), timeBy);
         schema.dimensions.put(AiSchema.key("Time"), time);
 
@@ -66,25 +65,62 @@ public class AiQueryResourceTest {
     }
 
     @Test
-    public void happyPathReturns200WithMatrix() {
-        Response resp = resource.executeAi(baseRequest());
+    public void happyPathReturns200WithRecords() {
+        Response resp = resource.executeAi(baseRequest(), "records");
         assertEquals(200, resp.getStatus());
 
         AiQueryResponse body = (AiQueryResponse) resp.getEntity();
         assertEquals(AiQueryResponse.Status.SUCCESS, body.getStatus());
+        assertEquals("records", body.getFormat());
         assertNotNull(body.getQueryId());
         assertNotNull(body.getMetadata());
         assertNotNull("generated MDX should be echoed", body.getMetadata().getGeneratedMdx());
-        assertTrue("MDX should reference the schema cube",
+        assertTrue(
+                "MDX should reference the schema cube",
                 body.getMetadata().getGeneratedMdx().contains("FROM [Sales]"));
+        assertNotNull("freshness metadata is populated", body.getMetadata().getFreshness());
 
-        List<Map<String, String>> matrix = body.getMatrix();
+        List<Map<String, Object>> data = body.getData();
+        assertEquals("2 row records in stubbed result", 2, data.size());
+
+        Map<String, Object> row0 = data.get(0);
+        assertEquals("1997", row0.get("Year"));
+        AiCell cell0 = (AiCell) row0.get("Store Sales");
+        assertNotNull("Store Sales cell present", cell0);
+        assertEquals(Double.valueOf(100.0), cell0.getValue());
+        assertEquals("100", cell0.getFormatted());
+
+        Map<String, Object> row1 = data.get(1);
+        assertEquals("1998", row1.get("Year"));
+        AiCell cell1 = (AiCell) row1.get("Store Sales");
+        assertEquals(Double.valueOf(200.0), cell1.getValue());
+
+        assertEquals("matrix is empty in records mode", 0, body.getMatrix().size());
+        assertEquals(
+                "row caption from MemberCell",
+                "1997",
+                body.getMetadata().getRows().get(0).getCaption());
+        assertEquals(
+                "column caption from header",
+                "Store Sales",
+                body.getMetadata().getColumns().get(0).getCaption());
+    }
+
+    @Test
+    public void matrixFormatReturnsTypedCells() {
+        Response resp = resource.executeAi(baseRequest(), "matrix");
+        assertEquals(200, resp.getStatus());
+
+        AiQueryResponse body = (AiQueryResponse) resp.getEntity();
+        assertEquals("matrix", body.getFormat());
+
+        List<Map<String, AiCell>> matrix = body.getMatrix();
         assertEquals("2 rows in stubbed result", 2, matrix.size());
-        assertEquals("100", matrix.get(0).get("0"));
-        assertEquals("200", matrix.get(1).get("0"));
-
-        assertEquals("row caption from MemberCell", "1997", body.getMetadata().getRows().get(0).getCaption());
-        assertEquals("column caption from header", "Store Sales", body.getMetadata().getColumns().get(0).getCaption());
+        AiCell c0 = matrix.get(0).get("0");
+        assertNotNull(c0);
+        assertEquals(Double.valueOf(100.0), c0.getValue());
+        assertEquals("100", c0.getFormatted());
+        assertEquals("data is empty in matrix mode", 0, body.getData().size());
     }
 
     @Test
@@ -92,7 +128,7 @@ public class AiQueryResourceTest {
         AiQueryRequest req = baseRequest();
         req.setMeasures(Collections.singletonList(new AiMeasureSelection("Bogus")));
 
-        Response resp = resource.executeAi(req);
+        Response resp = resource.executeAi(req, "records");
         assertEquals(400, resp.getStatus());
 
         AiQueryResponse body = (AiQueryResponse) resp.getEntity();
@@ -106,10 +142,21 @@ public class AiQueryResourceTest {
         AiQueryRequest req = new AiQueryRequest();
         req.setMeasures(Collections.singletonList(new AiMeasureSelection("Store Sales")));
 
-        Response resp = resource.executeAi(req);
+        Response resp = resource.executeAi(req, "records");
         assertEquals(400, resp.getStatus());
         AiQueryResponse body = (AiQueryResponse) resp.getEntity();
         assertEquals("cube", body.getField());
+    }
+
+    @Test
+    public void cubeStringFormAcceptedInRequest() throws Exception {
+        // The Jackson @JsonAnySetter path: cube as "conn/cat/schema/cube" string.
+        String json = "{\"cube\":\"foodmart/FoodMart/FoodMart/Sales\"," + "\"measures\":[{\"name\":\"Store Sales\"}]}";
+        com.fasterxml.jackson.databind.ObjectMapper om = new com.fasterxml.jackson.databind.ObjectMapper();
+        AiQueryRequest parsed = om.readValue(json, AiQueryRequest.class);
+        assertNotNull(parsed.getCube());
+        assertEquals("foodmart", parsed.getCube().getConnectionName());
+        assertEquals("Sales", parsed.getCube().getCubeName());
     }
 
     @Test
@@ -118,7 +165,7 @@ public class AiQueryResourceTest {
             throw new AiValidationException("cube", "Unknown cube " + ref, Collections.singletonList("Sales"));
         });
 
-        Response resp = resource.executeAi(baseRequest());
+        Response resp = resource.executeAi(baseRequest(), "records");
         assertEquals(400, resp.getStatus());
         AiQueryResponse body = (AiQueryResponse) resp.getEntity();
         assertEquals("cube", body.getField());
@@ -157,9 +204,7 @@ public class AiQueryResourceTest {
     @Test
     public void getSchemaWithUnknownCubeReturns400WithCandidates() {
         resource.setCubeMetadataService(ref -> {
-            throw new AiValidationException("cube",
-                    "Unknown cube",
-                    java.util.Arrays.asList("Sales", "HR"));
+            throw new AiValidationException("cube", "Unknown cube", java.util.Arrays.asList("Sales", "HR"));
         });
         Response resp = resource.getSchema("foodmart/FoodMart/FoodMart/Nonsense");
         assertEquals(400, resp.getStatus());
@@ -186,8 +231,11 @@ public class AiQueryResourceTest {
                         s.setMeasureCount(2);
                         return java.util.Collections.singletonList(s);
                     }
+
                     @Override
-                    public AiSchema getSchema(org.saiku.service.olap.ai.AiCubeRef ref) { return schema; }
+                    public AiSchema getSchema(org.saiku.service.olap.ai.AiCubeRef ref) {
+                        return schema;
+                    }
                 };
         resource.setCubeMetadataService(svc);
         Response resp = resource.listCubes();
@@ -212,7 +260,8 @@ public class AiQueryResourceTest {
             assertEquals(202, resp.getStatus());
             AiQueryResponse body = (AiQueryResponse) resp.getEntity();
             assertNotNull("async submit returns a queryId", body.getQueryId());
-            assertNotNull("generated MDX echoed for diagnostics", body.getMetadata().getGeneratedMdx());
+            assertNotNull(
+                    "generated MDX echoed for diagnostics", body.getMetadata().getGeneratedMdx());
         } finally {
             async.shutdown();
         }
@@ -321,6 +370,7 @@ public class AiQueryResourceTest {
         public CellDataSet execute(ThinQuery tq) {
             return buildStubCellDataSet();
         }
+
         @Override
         public java.sql.ResultSet drillthrough(String name, int maxrows, String returns) {
             return buildStubResultSet();
@@ -342,34 +392,43 @@ public class AiQueryResourceTest {
 
         final java.sql.ResultSetMetaData md = (java.sql.ResultSetMetaData) java.lang.reflect.Proxy.newProxyInstance(
                 AiQueryResourceTest.class.getClassLoader(),
-                new Class<?>[] { java.sql.ResultSetMetaData.class },
+                new Class<?>[] {java.sql.ResultSetMetaData.class},
                 (proxy, method, args) -> {
                     switch (method.getName()) {
-                        case "getColumnCount": return columnNames.length;
+                        case "getColumnCount":
+                            return columnNames.length;
                         case "getColumnLabel":
-                        case "getColumnName": return columnNames[((Integer) args[0]) - 1];
-                        case "toString": return "StubMetaData";
-                        default: return defaultForReturn(method.getReturnType());
+                        case "getColumnName":
+                            return columnNames[((Integer) args[0]) - 1];
+                        case "toString":
+                            return "StubMetaData";
+                        default:
+                            return defaultForReturn(method.getReturnType());
                     }
                 });
 
-        final int[] cursor = { -1 };
+        final int[] cursor = {-1};
         return (java.sql.ResultSet) java.lang.reflect.Proxy.newProxyInstance(
                 AiQueryResourceTest.class.getClassLoader(),
-                new Class<?>[] { java.sql.ResultSet.class },
+                new Class<?>[] {java.sql.ResultSet.class},
                 (proxy, method, args) -> {
                     switch (method.getName()) {
-                        case "next": return ++cursor[0] < rows.size();
-                        case "close": return null;
-                        case "getMetaData": return md;
+                        case "next":
+                            return ++cursor[0] < rows.size();
+                        case "close":
+                            return null;
+                        case "getMetaData":
+                            return md;
                         case "getObject":
                             if (args != null && args.length >= 1 && args[0] instanceof Integer) {
                                 int col1 = (Integer) args[0];
                                 return rows.get(cursor[0]).get(columnNames[col1 - 1]);
                             }
                             return null;
-                        case "toString": return "StubResultSet";
-                        default: return defaultForReturn(method.getReturnType());
+                        case "toString":
+                            return "StubResultSet";
+                        default:
+                            return defaultForReturn(method.getReturnType());
                     }
                 });
     }
@@ -384,16 +443,15 @@ public class AiQueryResourceTest {
         return null;
     }
 
-
     static CellDataSet buildStubCellDataSet() {
         CellDataSet cds = new CellDataSet(2, 1);
-        // Header rows: column header containing the measure caption.
-        // Shape: [emptyRowHeader][measureCaption]
+        // Header rows: row-header column caption + measure caption.
+        // Shape: [rowHeaderCaption("Year")][measureCaption("Store Sales")]
         AbstractBaseCell hdrA = new MemberCell(false, false);
-        hdrA.setFormattedValue("");
+        hdrA.setFormattedValue("Year");
         AbstractBaseCell hdrB = new MemberCell(false, false);
         hdrB.setFormattedValue("Store Sales");
-        cds.setCellSetHeaders(new AbstractBaseCell[][] { new AbstractBaseCell[] { hdrA, hdrB } });
+        cds.setCellSetHeaders(new AbstractBaseCell[][] {new AbstractBaseCell[] {hdrA, hdrB}});
 
         // Body: [yearMemberCell][dataCell]
         AbstractBaseCell r1m = new MemberCell(false, false);
@@ -409,8 +467,8 @@ public class AiQueryResourceTest {
         r2d.setRawValue("200");
 
         cds.setCellSetBody(new AbstractBaseCell[][] {
-                new AbstractBaseCell[] { r1m, r1d },
-                new AbstractBaseCell[] { r2m, r2d },
+            new AbstractBaseCell[] {r1m, r1d},
+            new AbstractBaseCell[] {r2m, r2d},
         });
         return cds;
     }

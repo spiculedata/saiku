@@ -155,13 +155,11 @@ public class ThinQueryService implements Serializable {
         // For QUERYMODEL queries we also need to populate the MDX (which
         // is what updateQuery does inside executeInternalQuery) so that
         // post-execute consumers can read tq.getMdx().
-        if (ThinQuery.Type.QUERYMODEL.equals(tq.getType())
-                && StringUtils.isBlank(tq.getMdx())) {
+        if (ThinQuery.Type.QUERYMODEL.equals(tq.getType()) && StringUtils.isBlank(tq.getMdx())) {
             try {
                 updateQuery(tq);
             } catch (Exception e) {
-                throw new SaikuServiceException(
-                        "Failed to materialise MDX for cached query: " + tq.getName(), e);
+                throw new SaikuServiceException("Failed to materialise MDX for cached query: " + tq.getName(), e);
             }
         }
         createQuery(tq);

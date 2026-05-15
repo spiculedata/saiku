@@ -27,6 +27,7 @@ public class AiSchema {
         /** Optional free-text description (from olap4j Member.getDescription()
          *  or the schema-gen sidecar). Helps the LLM ground its choices. */
         public String description;
+
         public Measure(String name, String uniqueName) {
             this.name = name;
             this.uniqueName = uniqueName;
@@ -42,6 +43,7 @@ public class AiSchema {
          *  the LLM: stops it hallucinating member names like
          *  {@code "[Time].[2099]"} that don't exist. */
         public java.util.List<String> sampleMembers = new java.util.ArrayList<>();
+
         public Level(String name, String uniqueName) {
             this.name = name;
             this.uniqueName = uniqueName;
@@ -59,6 +61,7 @@ public class AiSchema {
          *  agent requests that use either the canonical name or the
          *  display name. */
         public final Map<String, String> levelAliases = new LinkedHashMap<>();
+
         public Hierarchy(String name, String uniqueName) {
             this.name = name;
             this.uniqueName = uniqueName;
@@ -73,6 +76,7 @@ public class AiSchema {
         public final Map<String, Hierarchy> hierarchies = new LinkedHashMap<>();
         /** display-name → canonical hierarchy key. */
         public final Map<String, String> hierarchyAliases = new LinkedHashMap<>();
+
         public Dimension(String name, String uniqueName) {
             this.name = name;
             this.uniqueName = uniqueName;
@@ -107,9 +111,17 @@ public class AiSchema {
         this.cubeUniqueName = cubeUniqueName;
     }
 
-    public String getCubeId() { return cubeId; }
-    public String getCubeName() { return cubeName; }
-    public String getCubeUniqueName() { return cubeUniqueName; }
+    public String getCubeId() {
+        return cubeId;
+    }
+
+    public String getCubeName() {
+        return cubeName;
+    }
+
+    public String getCubeUniqueName() {
+        return cubeUniqueName;
+    }
 
     public static String key(String name) {
         return name == null ? "" : name.toLowerCase(java.util.Locale.ROOT);

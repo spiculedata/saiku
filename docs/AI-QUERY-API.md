@@ -19,12 +19,14 @@ Three endpoints cover ~90% of agent use:
 | --- | --- |
 | `GET /saiku/api/ai/cubes` | List of available cubes |
 | `GET /saiku/api/ai/schema/{cubeId}` | **Self-describing** typed schema for one cube (with sample members + ready-made example requests + JSON Schema of the request body) |
-| `POST /saiku/api/ai/query` | Execute a typed request, return matrix + metadata |
+| `POST /saiku/api/ai/query` | Execute a typed request, return **records** (default) or matrix + metadata |
 
-Plus four for the long-tail:
+Plus the long-tail:
 
 | Endpoint | Purpose |
 | --- | --- |
+| `POST /saiku/api/ai/query/preview` | Validate + compile to MDX **without executing**. Returns `{queryId, status:PREVIEW, generatedMdx}`. Useful for audit logs / cost estimation. |
+| `GET /saiku/api/ai/members/search` | Substring member search: `?cubeId=...&dimension=...&hierarchy=...&level=...&q=...&limit=20` |
 | `POST /saiku/api/ai/query/execute-async` | Submit, return a queryId immediately |
 | `GET /saiku/api/ai/query/status/{queryId}` | Poll for `PENDING` / `RUNNING` / `DONE` / `FAILED` / `CANCELLED` |
 | `GET /saiku/api/ai/query/result/{queryId}` | Fetch the materialised result |
@@ -181,7 +183,7 @@ The response is dense — this is what makes the API self-describing:
 
 ## Step 3 — execute a query
 
-**Question:** "Show me Store Sales and Unit Sales by Product Family, top 3."
+**Question:** "Show me Store Sales and Unit Sales by Product Family, top 3 by Store Sales."
 
 ```http
 POST /rest/saiku/api/ai/query
@@ -190,12 +192,7 @@ Content-Type: application/json
 
 ```json
 {
-  "cube": {
-    "connectionName": "unknown_foodmart",
-    "catalog": "FoodMart",
-    "schema": "FoodMart",
-    "cubeName": "Sales"
-  },
+  "cube": "unknown_foodmart/FoodMart/FoodMart/Sales",
   "measures": [
     { "name": "Store Sales" },
     { "name": "Unit Sales" }
@@ -203,9 +200,14 @@ Content-Type: application/json
   "rows": [
     { "dimension": "Product", "hierarchy": "Products", "level": "Product Family" }
   ],
+  "order": [{ "by": "Store Sales", "direction": "desc" }],
   "limit": 3
 }
 ```
+
+`cube` accepts either the 4-segment object form or this compact
+`"connection/catalog/schema/cube"` string — same value as the `cubeId`
+path segment in `/ai/schema`.
 
 **Response (200):**
 
@@ -213,41 +215,89 @@ Content-Type: application/json
 {
   "queryId": "49127ee9-0ee2-4337-8560-41df11c3d458",
   "status": "SUCCESS",
+  "format": "records",
   "metadata": {
     "rows": [
-      { "name": "Drink", "caption": "Drink" },
-      { "name": "Food", "caption": "Food" },
-      { "name": "Non-Consumable", "caption": "Non-Consumable" }
+      { "name": "Food",           "caption": "Food" },
+      { "name": "Non-Consumable", "caption": "Non-Consumable" },
+      { "name": "Drink",          "caption": "Drink" }
     ],
     "columns": [
       { "name": "Store Sales", "caption": "Store Sales" },
       { "name": "Unit Sales", "caption": "Unit Sales" }
     ],
     "measures": ["Store Sales", "Unit Sales"],
-    "generatedMdx": "SELECT NON EMPTY {[Measures].[Store Sales], [Measures].[Unit Sales]} ON COLUMNS,\nNON EMPTY HEAD([Product].[Products].[Product Family].Members, 3) ON ROWS\nFROM [Sales]"
+    "generatedMdx": "SELECT NON EMPTY {[Measures].[Store Sales], [Measures].[Unit Sales]} ON COLUMNS,\nNON EMPTY TopCount([Product].[Products].[Product Family].Members, 3, [Measures].[Store Sales]) ON ROWS\nFROM [Sales]",
+    "freshness": { "computedAtMillis": 1715798421042, "cached": false }
   },
-  "matrix": [
-    { "0": "48,836.21",   "1": "24,597"  },
-    { "0": "409,035.59",  "1": "191,940" },
-    { "0": "107,366.33",  "1": "50,236"  }
+  "data": [
+    {
+      "Product Family": "Food",
+      "Store Sales":    { "value": 409035.59, "formatted": "409,035.59", "unit": null },
+      "Unit Sales":     { "value": 191940.0,  "formatted": "191,940",    "unit": null }
+    },
+    {
+      "Product Family": "Non-Consumable",
+      "Store Sales":    { "value": 107366.33, "formatted": "107,366.33", "unit": null },
+      "Unit Sales":     { "value": 50236.0,   "formatted": "50,236",     "unit": null }
+    },
+    {
+      "Product Family": "Drink",
+      "Store Sales":    { "value": 48836.21,  "formatted": "48,836.21",  "unit": null },
+      "Unit Sales":     { "value": 24597.0,   "formatted": "24,597",     "unit": null }
+    }
   ],
   "totalRows": 3,
   "runtimeMs": 421
 }
 ```
 
-**How to read the matrix:** row-major. Row index `i` maps to
-`metadata.rows[i]`. Cell key `"0"` → `metadata.columns[0]` (Store Sales),
-`"1"` → `metadata.columns[1]` (Unit Sales). So:
+**Why records?** Each row is a self-describing object keyed by the human
+column captions — no separate header lookup, no positional rendering, no
+locale-dependent string parsing. Each numeric cell is a typed envelope:
+
+- `value` — parsed `Double` (use for math / sorting / charting)
+- `formatted` — Mondrian's pre-formatted display string (use for UI)
+- `unit` — sniffed from the formatted string when present (`USD`, `GBP`,
+  `EUR`, `JPY`, or `%`); `null` otherwise
+
+The above table at a glance:
 
 | Product Family | Store Sales | Unit Sales |
 | --- | --- | --- |
-| Drink | 48,836.21 | 24,597 |
 | Food | 409,035.59 | 191,940 |
 | Non-Consumable | 107,366.33 | 50,236 |
+| Drink | 48,836.21 | 24,597 |
+
+### Matrix format (back-compat)
+
+Position-indexed clients can opt out of records with `?format=matrix`:
+
+```http
+POST /rest/saiku/api/ai/query?format=matrix
+```
+
+The same query then returns `matrix` instead of `data`, with each row
+keyed by the column index as a string — but cells are still the typed
+`{value, formatted, unit}` envelope, not bare strings:
+
+```json
+{
+  "format": "matrix",
+  "matrix": [
+    { "0": { "value": 409035.59, "formatted": "409,035.59", "unit": null },
+      "1": { "value": 191940.0,  "formatted": "191,940",    "unit": null } },
+    { "0": { "value": 107366.33, "formatted": "107,366.33", "unit": null },
+      "1": { "value": 50236.0,   "formatted": "50,236",     "unit": null } },
+    { "0": { "value": 48836.21,  "formatted": "48,836.21",  "unit": null },
+      "1": { "value": 24597.0,   "formatted": "24,597",     "unit": null } }
+  ]
+}
+```
 
 `generatedMdx` is echoed for human/debugging consumption. Agents
-typically ignore it.
+typically ignore it. `freshness.computedAtMillis` is when the engine
+finished the query; `cached` indicates a cache-hit response.
 
 ---
 
@@ -286,6 +336,16 @@ The agent sees exactly what went wrong (`field`), what the legal values
 are (`available`), and can immediately retry with a corrected name. No
 prompt engineering required.
 
+**Error taxonomy.** Statuses use a strict enum:
+
+- `VALIDATION_ERROR` — bad name, bad shape, bad operator
+- `EXECUTION_ERROR` — generic Mondrian/server-side failure
+- `WAREHOUSE_ERROR` — underlying SQL warehouse refused the query
+- `PERMISSION_DENIED` — auth/ACL failure
+- `RATE_LIMITED` — too many requests
+- `TIMEOUT` — server-side hard cap exceeded
+- `CUBE_NOT_FOUND` — cube reference resolved to nothing
+
 Validation runs on:
 
 - `cube` — must resolve to a real cube
@@ -294,7 +354,10 @@ Validation runs on:
 - `rows[].dimension`, `rows[].hierarchy`, `rows[].level` — same
 - `columns[].*` — same
 - `filters[].dimension`, `.hierarchy`, `.level` — same
-- `filters[].members` — must be non-empty
+- `filters[].op` — one of `in` (default), `not_in`, `between`, `descendants_of`
+- `filters[].members` — must satisfy the op's arity (≥1 for in/not_in;
+  exactly 2 for between; exactly 1 for descendants_of)
+- `order[].by` — must be a measure on the cube
 
 ---
 
@@ -418,16 +481,32 @@ on the live Mondrian statement, not just a soft flag.
       "dimension": "Store",
       "hierarchy": "Stores",
       "level": "Store Country",
-      "members": [                                 // Required and non-empty.
+      "op": "in",                                  // Optional. in | not_in | between | descendants_of. Default in.
+      "members": [                                 // Arity depends on op (see Step 4).
         "[Store].[Stores].[Store Country].&[USA]"
       ]
     }
   ],
-  "limit": 0,                                      // Optional. 0 = no cap; >0 → HEAD(rows, N).
+  "order": [                                       // Optional. Sort + top-N.
+    {
+      "by": "Store Sales",                         // Measure name. With limit > 0: emits TopCount/BottomCount.
+      "direction": "desc"                          // asc | desc. Default desc.
+    }
+  ],
+  "limit": 0,                                      // Optional. With order > 0 → TopCount/BottomCount; without order → HEAD(rows, N).
   "visualTotals": false,                           // Optional. Wraps rows in VISUALTOTALS().
   "nonEmpty": true                                 // Optional. Default true.
 }
 ```
+
+### Filter operator reference
+
+| `op` | Emitted MDX | `members` arity |
+| --- | --- | --- |
+| `in` (default) | `{m1, m2, …}` (or just `m1` for a single member) | ≥1 |
+| `not_in` | `Except(level.Members, {m1, m2, …})` | ≥1 |
+| `between` | `m1 : m2` (range) | exactly 2 (start, end) |
+| `descendants_of` | `Descendants(m1)` | exactly 1 |
 
 ---
 
@@ -436,15 +515,30 @@ on the live Mondrian statement, not just a soft flag.
 ```jsonc
 {
   "queryId": "uuid",                               // Use for drillthrough or async polling.
-  "status": "SUCCESS",                             // SUCCESS | VALIDATION_ERROR | EXECUTION_ERROR.
+  "status": "SUCCESS",                             // See "Error taxonomy" above for full list.
+  "format": "records",                             // "records" (default) or "matrix".
   "metadata": {
-    "rows": [{ "name": "…", "caption": "…" }],     // Row captions in matrix order.
-    "columns": [{ "name": "…", "caption": "…" }],  // Column captions in matrix order.
+    "rows":    [{ "name": "…", "caption": "…" }],  // Row captions in row order.
+    "columns": [{ "name": "…", "caption": "…" }],  // Column captions in column order.
     "measures": ["…"],                             // Measure captions (same as columns for measure-only axes).
-    "generatedMdx": "SELECT …"                     // Audit trail — agent can ignore.
+    "generatedMdx": "SELECT …",                    // Audit trail — agent can ignore.
+    "freshness": {                                 // When + whether cached.
+      "computedAtMillis": 1715798421042,
+      "cached": false
+    }
   },
-  "matrix": [                                      // Row-major. Empty when status != SUCCESS.
-    { "0": "value", "1": "value" }                 // Key = column index as string.
+  "data": [                                        // records format. Populated when format=records.
+    {
+      "<row-header caption>": "<member caption>",  // String key per row-axis level.
+      "<column caption>": {                        // Typed cell per measure/column.
+        "value": 123.45,                           // Parsed number (Double) or null.
+        "formatted": "123.45",                     // Mondrian's display string.
+        "unit": "USD"                              // Sniffed currency/% or null.
+      }
+    }
+  ],
+  "matrix": [                                      // matrix format. Populated when format=matrix.
+    { "0": { "value": 123.45, "formatted": "123.45", "unit": null } }
   ],
   "totalRows": 3,
   "runtimeMs": 421,
@@ -455,6 +549,9 @@ on the live Mondrian statement, not just a soft flag.
   "available": ["…", "…"]                          // Candidate values for that field.
 }
 ```
+
+Only one of `data` / `matrix` is populated per response; the other is
+the empty list.
 
 ---
 

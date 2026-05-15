@@ -85,11 +85,7 @@ public class DraftSidecarEnrichmentProvider implements Function<AiCubeRef, AiSch
         for (SuggestionOp op : sidecar.opLog()) {
             if (op instanceof RenameOp rename) {
                 AiSchemaSuggestion s = new AiSchemaSuggestion(
-                        "rename",
-                        rename.targetPath(),
-                        rename.confidence(),
-                        rename.rationale(),
-                        rename.newCaption());
+                        "rename", rename.targetPath(), rename.confidence(), rename.rationale(), rename.newCaption());
                 overlay.getSuggestions().add(s);
             }
         }
@@ -101,16 +97,15 @@ public class DraftSidecarEnrichmentProvider implements Function<AiCubeRef, AiSch
         // operator hasn't renamed anything).
         for (DraftDimension dim : cube.dimensions()) {
             if (looksRenamed(dim)) {
-                overlay.getRenames().put(
-                        "dimensions." + dim.name(),
-                        dim.name());
+                overlay.getRenames().put("dimensions." + dim.name(), dim.name());
             }
             for (DraftHierarchy h : dim.hierarchies()) {
                 for (DraftLevel l : h.levels()) {
                     if (looksRenamed(l)) {
-                        overlay.getRenames().put(
-                                "dimensions." + dim.name() + ".hierarchies." + h.name() + ".levels." + l.name(),
-                                l.name());
+                        overlay.getRenames()
+                                .put(
+                                        "dimensions." + dim.name() + ".hierarchies." + h.name() + ".levels." + l.name(),
+                                        l.name());
                     }
                 }
             }

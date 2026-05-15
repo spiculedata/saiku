@@ -48,7 +48,8 @@ public class AiAutodocTest {
     @Test
     public void requestSchemaCubeRefHasRequiredFields() {
         @SuppressWarnings("unchecked")
-        Map<String, Object> properties = (Map<String, Object>) AiRequestJsonSchema.forRequest().get("properties");
+        Map<String, Object> properties =
+                (Map<String, Object>) AiRequestJsonSchema.forRequest().get("properties");
         @SuppressWarnings("unchecked")
         Map<String, Object> cube = (Map<String, Object>) properties.get("cube");
         @SuppressWarnings("unchecked")
@@ -62,12 +63,11 @@ public class AiAutodocTest {
     @Test
     public void exampleBuilderProducesShapesForCubeWithDimensions() {
         AiSchema schema = new AiSchema("foodmart/FoodMart/FoodMart/Sales", "Sales", "[FoodMart].[Sales]");
-        schema.measures.put(AiSchema.key("Store Sales"),
-                new AiSchema.Measure("Store Sales", "[Measures].[Store Sales]"));
+        schema.measures.put(
+                AiSchema.key("Store Sales"), new AiSchema.Measure("Store Sales", "[Measures].[Store Sales]"));
         AiSchema.Dimension time = new AiSchema.Dimension("Time", "[Time]");
         AiSchema.Hierarchy timeBy = new AiSchema.Hierarchy("Time By", "[Time].[Time By]");
-        timeBy.levels.put(AiSchema.key("Year"),
-                new AiSchema.Level("Year", "[Time].[Time By].[Year]"));
+        timeBy.levels.put(AiSchema.key("Year"), new AiSchema.Level("Year", "[Time].[Time By].[Year]"));
         time.hierarchies.put(AiSchema.key("Time By"), timeBy);
         schema.dimensions.put(AiSchema.key("Time"), time);
 
@@ -89,8 +89,7 @@ public class AiAutodocTest {
     @Test
     public void exampleBuilderHandlesCubeWithNoDimensions() {
         AiSchema schema = new AiSchema("a/b/c/d", "d", "[d]");
-        schema.measures.put(AiSchema.key("M"),
-                new AiSchema.Measure("M", "[Measures].[M]"));
+        schema.measures.put(AiSchema.key("M"), new AiSchema.Measure("M", "[Measures].[M]"));
         AiCubeRef ref = new AiCubeRef("a", "b", "c", "d");
         List<AiQueryRequest> examples = AiExampleBuilder.build(schema, ref);
         assertEquals(1, examples.size());

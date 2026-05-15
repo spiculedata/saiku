@@ -9,11 +9,6 @@ import java.util.List;
 import java.util.UUID;
 import org.saiku.olap.dto.SaikuCube;
 import org.saiku.olap.query2.ThinQuery;
-import org.saiku.service.olap.ai.AiAxisSelection;
-import org.saiku.service.olap.ai.AiCubeRef;
-import org.saiku.service.olap.ai.AiFilterSelection;
-import org.saiku.service.olap.ai.AiMeasureSelection;
-import org.saiku.service.olap.ai.AiQueryRequest;
 
 /**
  * Validates an {@link AiQueryRequest} against a live {@link AiSchema} and
@@ -121,13 +116,30 @@ public class AiSchemaConverter {
             s.append(")");
         }
 
+        String rowExpr = s.toString();
+
+        // Apply ordering / top-N. Precedence:
+        //   order + limit -> TopCount/BottomCount
+        //   order alone   -> Order
+        //   limit alone   -> HEAD
+        //   neither       -> raw set
+        if (req.getOrder() != null && !req.getOrder().isEmpty()) {
+            AiOrderBy ob = req.getOrder().get(0);
+            AiSchema.Measure m = lookupMeasure(ob.getBy(), schema);
+            if (req.getLimit() > 0) {
+                rowExpr = (ob.isAscending() ? "BottomCount(" : "TopCount(") + rowExpr + ", " + req.getLimit() + ", "
+                        + m.uniqueName + ")";
+            } else {
+                rowExpr = "Order(" + rowExpr + ", " + m.uniqueName + ", " + (ob.isAscending() ? "BASC" : "BDESC") + ")";
+            }
+        } else if (req.getLimit() > 0) {
+            rowExpr = "HEAD(" + rowExpr + ", " + req.getLimit() + ")";
+        }
+
         if (req.isVisualTotals()) {
-            return "VISUALTOTALS(" + s + ")";
+            return "VISUALTOTALS(" + rowExpr + ")";
         }
-        if (req.getLimit() > 0) {
-            return "HEAD(" + s + ", " + req.getLimit() + ")";
-        }
-        return s.toString();
+        return rowExpr;
     }
 
     private String axisSet(AiAxisSelection sel, AiSchema schema, String fieldPath) {
@@ -146,29 +158,74 @@ public class AiSchemaConverter {
     }
 
     private String buildSlicer(List<AiFilterSelection> filters, AiSchema schema) {
-        // Each filter becomes a tuple slice; multiple filters cross-join into a tuple.
-        // For Phase 1 we keep this simple: ({m1, m2}, {n1}, ...).
+        // Each filter becomes a slicer tuple-element. Multiple filters
+        // cross-join into a tuple: (slicer1, slicer2, ...).
         StringBuilder s = new StringBuilder("(");
         for (int i = 0; i < filters.size(); i++) {
             AiFilterSelection f = filters.get(i);
             String fieldPath = "filters[" + i + "]";
-            // Validate level path exists.
             AiAxisSelection probe = new AiAxisSelection(f.getDimension(), f.getHierarchy(), f.getLevel());
-            lookupLevel(probe, schema, fieldPath);
-            if (f.getMembers() == null || f.getMembers().isEmpty()) {
-                throw new AiValidationException(fieldPath + ".members",
-                        "Filter must specify at least one member", null);
-            }
+            AiSchema.Level level = lookupLevel(probe, schema, fieldPath);
+
+            String op = f.getOp() == null ? "in" : f.getOp().toLowerCase();
+            List<String> members = f.getMembers() == null ? java.util.Collections.emptyList() : f.getMembers();
+
             if (i > 0) s.append(", ");
-            if (f.getMembers().size() == 1) {
-                s.append(f.getMembers().get(0));
-            } else {
-                s.append("{");
-                for (int j = 0; j < f.getMembers().size(); j++) {
-                    if (j > 0) s.append(", ");
-                    s.append(f.getMembers().get(j));
+
+            switch (op) {
+                case "in": {
+                    if (members.isEmpty()) {
+                        throw new AiValidationException(
+                                fieldPath + ".members", "'in' filter must specify at least one member", null);
+                    }
+                    if (members.size() == 1) {
+                        s.append(members.get(0));
+                    } else {
+                        s.append("{");
+                        for (int j = 0; j < members.size(); j++) {
+                            if (j > 0) s.append(", ");
+                            s.append(members.get(j));
+                        }
+                        s.append("}");
+                    }
+                    break;
                 }
-                s.append("}");
+                case "not_in": {
+                    if (members.isEmpty()) {
+                        throw new AiValidationException(
+                                fieldPath + ".members", "'not_in' filter must specify at least one member", null);
+                    }
+                    s.append("Except(").append(level.uniqueName).append(".Members, {");
+                    for (int j = 0; j < members.size(); j++) {
+                        if (j > 0) s.append(", ");
+                        s.append(members.get(j));
+                    }
+                    s.append("})");
+                    break;
+                }
+                case "between": {
+                    if (members.size() != 2) {
+                        throw new AiValidationException(
+                                fieldPath + ".members",
+                                "'between' filter requires exactly 2 members [start, end]",
+                                null);
+                    }
+                    s.append(members.get(0)).append(" : ").append(members.get(1));
+                    break;
+                }
+                case "descendants_of": {
+                    if (members.size() != 1) {
+                        throw new AiValidationException(
+                                fieldPath + ".members", "'descendants_of' filter requires exactly 1 member", null);
+                    }
+                    s.append("Descendants(").append(members.get(0)).append(")");
+                    break;
+                }
+                default:
+                    throw new AiValidationException(
+                            fieldPath + ".op",
+                            "Unknown filter op '" + f.getOp() + "'",
+                            java.util.Arrays.asList("in", "not_in", "between", "descendants_of"));
             }
         }
         s.append(")");
@@ -179,8 +236,7 @@ public class AiSchemaConverter {
 
     private AiSchema.Measure lookupMeasure(String name, AiSchema schema) {
         if (name == null || name.isEmpty()) {
-            throw new AiValidationException("measures[].name", "Measure name required",
-                    availableMeasureNames(schema));
+            throw new AiValidationException("measures[].name", "Measure name required", availableMeasureNames(schema));
         }
         String k = AiSchema.key(name);
         AiSchema.Measure m = schema.measures.get(k);
@@ -190,9 +246,8 @@ public class AiSchemaConverter {
             if (aliasTarget != null) m = schema.measures.get(aliasTarget);
         }
         if (m == null) {
-            throw new AiValidationException("measures[].name",
-                    "Unknown measure '" + name + "'",
-                    availableMeasureNames(schema));
+            throw new AiValidationException(
+                    "measures[].name", "Unknown measure '" + name + "'", availableMeasureNames(schema));
         }
         return m;
     }
@@ -210,9 +265,8 @@ public class AiSchemaConverter {
 
     private AiSchema.Level lookupLevel(AiAxisSelection sel, AiSchema schema, String fieldPath) {
         if (sel.getDimension() == null || sel.getDimension().isEmpty()) {
-            throw new AiValidationException(fieldPath + ".dimension",
-                    "Dimension required",
-                    availableDimensionNames(schema));
+            throw new AiValidationException(
+                    fieldPath + ".dimension", "Dimension required", availableDimensionNames(schema));
         }
         String dimK = AiSchema.key(sel.getDimension());
         AiSchema.Dimension dim = schema.dimensions.get(dimK);
@@ -221,7 +275,8 @@ public class AiSchemaConverter {
             if (aliasTarget != null) dim = schema.dimensions.get(aliasTarget);
         }
         if (dim == null) {
-            throw new AiValidationException(fieldPath + ".dimension",
+            throw new AiValidationException(
+                    fieldPath + ".dimension",
                     "Unknown dimension '" + sel.getDimension() + "'",
                     availableDimensionNames(schema));
         }
@@ -231,7 +286,8 @@ public class AiSchemaConverter {
             if (dim.hierarchies.size() == 1) {
                 hier = dim.hierarchies.values().iterator().next();
             } else {
-                throw new AiValidationException(fieldPath + ".hierarchy",
+                throw new AiValidationException(
+                        fieldPath + ".hierarchy",
                         "Dimension '" + dim.name + "' has multiple hierarchies; specify one",
                         availableHierarchyNames(dim));
             }
@@ -243,15 +299,14 @@ public class AiSchemaConverter {
                 if (aliasTarget != null) hier = dim.hierarchies.get(aliasTarget);
             }
             if (hier == null) {
-                throw new AiValidationException(fieldPath + ".hierarchy",
+                throw new AiValidationException(
+                        fieldPath + ".hierarchy",
                         "Unknown hierarchy '" + sel.getHierarchy() + "' on dimension '" + dim.name + "'",
                         availableHierarchyNames(dim));
             }
         }
         if (sel.getLevel() == null || sel.getLevel().isEmpty()) {
-            throw new AiValidationException(fieldPath + ".level",
-                    "Level required",
-                    availableLevelNames(hier));
+            throw new AiValidationException(fieldPath + ".level", "Level required", availableLevelNames(hier));
         }
         String lvlK = AiSchema.key(sel.getLevel());
         AiSchema.Level level = hier.levels.get(lvlK);
@@ -260,7 +315,8 @@ public class AiSchemaConverter {
             if (aliasTarget != null) level = hier.levels.get(aliasTarget);
         }
         if (level == null) {
-            throw new AiValidationException(fieldPath + ".level",
+            throw new AiValidationException(
+                    fieldPath + ".level",
                     "Unknown level '" + sel.getLevel() + "' on hierarchy '" + hier.name + "'",
                     availableLevelNames(hier));
         }

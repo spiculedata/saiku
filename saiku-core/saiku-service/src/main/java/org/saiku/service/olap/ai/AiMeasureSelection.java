@@ -29,9 +29,19 @@ public class AiMeasureSelection {
         this.name = name;
     }
 
-    public String getName() { return name; }
-    public void setName(String v) { this.name = v; }
+    public String getName() {
+        return name;
+    }
 
-    public List<String> getAggregators() { return aggregators; }
-    public void setAggregators(List<String> v) { this.aggregators = v == null ? new ArrayList<>() : v; }
+    public void setName(String v) {
+        this.name = v;
+    }
+
+    public List<String> getAggregators() {
+        return aggregators;
+    }
+
+    public void setAggregators(List<String> v) {
+        this.aggregators = v == null ? new ArrayList<>() : v;
+    }
 }

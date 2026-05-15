@@ -26,42 +26,58 @@ public final class AiRequestJsonSchema {
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("$schema", "https://json-schema.org/draft/2020-12/schema");
         root.put("title", "AiQueryRequest");
-        root.put("description",
+        root.put(
+                "description",
                 "Typed body for POST /saiku/api/ai/query. Every name field must "
-                + "resolve against the AiSchema returned by /ai/schema/{cubeId}. "
-                + "Display names from the enrichment overlay are also valid.");
+                        + "resolve against the AiSchema returned by /ai/schema/{cubeId}. "
+                        + "Display names from the enrichment overlay are also valid.");
         root.put("type", "object");
         root.put("required", List.of("cube", "measures"));
 
         Map<String, Object> properties = new LinkedHashMap<>();
         properties.put("cube", cubeRef());
-        properties.put("measures", arrayOf(measureSelection(),
-                "At least one measure required. Goes on the COLUMNS axis."));
-        properties.put("rows", arrayOf(axisSelection(),
-                "Axis entries that go on ROWS. Multiple entries are CROSSJOIN-ed."));
-        properties.put("columns", arrayOf(axisSelection(),
-                "Additional dimensions on the COLUMNS axis, cross-joined with measures."));
-        properties.put("filters", arrayOf(filterSelection(),
-                "Slicer filters — applied in the MDX WHERE clause."));
-        properties.put("limit", intField(0,
-                "Optional row cap. Translated into HEAD(rows, N). 0 or absent = no cap."));
-        properties.put("visualTotals", boolField(false,
-                "If true, wrap the rows axis in VISUALTOTALS so parent totals reflect only the visible members."));
-        properties.put("nonEmpty", boolField(true,
-                "If true (default), strip rows/columns whose every cell is empty."));
+        properties.put(
+                "measures", arrayOf(measureSelection(), "At least one measure required. Goes on the COLUMNS axis."));
+        properties.put(
+                "rows", arrayOf(axisSelection(), "Axis entries that go on ROWS. Multiple entries are CROSSJOIN-ed."));
+        properties.put(
+                "columns",
+                arrayOf(axisSelection(), "Additional dimensions on the COLUMNS axis, cross-joined with measures."));
+        properties.put("filters", arrayOf(filterSelection(), "Slicer filters — applied in the MDX WHERE clause."));
+        properties.put(
+                "order",
+                arrayOf(
+                        orderBy(),
+                        "Optional sort. Each entry is {by: measureName, direction: asc|desc}. "
+                                + "Combined with limit, emits TopCount/BottomCount; alone, emits Order."));
+        properties.put(
+                "limit",
+                intField(
+                        0,
+                        "Optional row cap. With order, emits TopCount/BottomCount; without order, emits HEAD(rows, N). 0 or absent = no cap."));
+        properties.put(
+                "visualTotals",
+                boolField(
+                        false,
+                        "If true, wrap the rows axis in VISUALTOTALS so parent totals reflect only the visible members."));
+        properties.put("nonEmpty", boolField(true, "If true (default), strip rows/columns whose every cell is empty."));
         root.put("properties", properties);
 
         Map<String, Object> exampleRoot = new LinkedHashMap<>();
-        exampleRoot.put("cube", Map.of(
-                "connectionName", "foodmart",
-                "catalog", "FoodMart",
-                "schema", "FoodMart",
-                "cubeName", "Sales"));
+        exampleRoot.put(
+                "cube",
+                Map.of(
+                        "connectionName", "foodmart",
+                        "catalog", "FoodMart",
+                        "schema", "FoodMart",
+                        "cubeName", "Sales"));
         exampleRoot.put("measures", List.of(Map.of("name", "Store Sales")));
-        exampleRoot.put("rows", List.of(Map.of(
-                "dimension", "Time",
-                "hierarchy", "Time By",
-                "level", "Year")));
+        exampleRoot.put(
+                "rows",
+                List.of(Map.of(
+                        "dimension", "Time",
+                        "hierarchy", "Time By",
+                        "level", "Year")));
         root.put("example", exampleRoot);
 
         return root;
@@ -81,8 +97,9 @@ public final class AiRequestJsonSchema {
     private static Map<String, Object> measureSelection() {
         Map<String, Object> props = new LinkedHashMap<>();
         props.put("name", stringField("Measure name (canonical or display)."));
-        props.put("aggregators", arrayOf(stringField(null),
-                "Optional aggregator overrides (e.g. SUM, AVG). Phase 3 hint."));
+        props.put(
+                "aggregators",
+                arrayOf(stringField(null), "Optional aggregator overrides (e.g. SUM, AVG). Phase 3 hint."));
         Map<String, Object> o = obj("Measure on the COLUMNS axis.", props);
         o.put("required", List.of("name"));
         return o;
@@ -93,8 +110,11 @@ public final class AiRequestJsonSchema {
         props.put("dimension", stringField("Dimension name (canonical or display)."));
         props.put("hierarchy", stringField("Hierarchy name. Optional when the dimension has only one hierarchy."));
         props.put("level", stringField("Level name within the hierarchy."));
-        props.put("members", arrayOf(stringField(null),
-                "Optional explicit MDX unique-name list. If absent, all members at the level are included."));
+        props.put(
+                "members",
+                arrayOf(
+                        stringField(null),
+                        "Optional explicit MDX unique-name list. If absent, all members at the level are included."));
         Map<String, Object> o = obj("A row or column axis entry.", props);
         o.put("required", List.of("dimension", "level"));
         return o;
@@ -105,10 +125,32 @@ public final class AiRequestJsonSchema {
         props.put("dimension", stringField("Dimension name."));
         props.put("hierarchy", stringField("Hierarchy name. Optional when dim has one hierarchy."));
         props.put("level", stringField("Level name."));
-        props.put("members", arrayOf(stringField(null),
-                "Required: at least one MDX unique-name member to slice by."));
+        Map<String, Object> op = stringField("Operator. 'in' (default) — emit the explicit member set. "
+                + "'not_in' — emit Except(level.Members, {members}). "
+                + "'between' — emit Range(start, end); members must have 2 entries. "
+                + "'descendants_of' — emit Descendants(member, ALL); members must have 1 entry.");
+        op.put("enum", List.of("in", "not_in", "between", "descendants_of"));
+        op.put("default", "in");
+        props.put("op", op);
+        props.put(
+                "members",
+                arrayOf(
+                        stringField(null),
+                        "MDX unique-name members. Required for in/not_in (>=1), between (exactly 2), descendants_of (exactly 1)."));
         Map<String, Object> o = obj("Slicer filter — lands in the WHERE clause.", props);
         o.put("required", List.of("dimension", "level", "members"));
+        return o;
+    }
+
+    private static Map<String, Object> orderBy() {
+        Map<String, Object> props = new LinkedHashMap<>();
+        props.put("by", stringField("Measure name to sort by. Must match one of the request's measures."));
+        Map<String, Object> dir = stringField("Sort direction. Default desc.");
+        dir.put("enum", List.of("asc", "desc"));
+        dir.put("default", "desc");
+        props.put("direction", dir);
+        Map<String, Object> o = obj("Sort entry. With a non-zero limit, emits TopCount/BottomCount.", props);
+        o.put("required", List.of("by"));
         return o;
     }
 

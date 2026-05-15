@@ -29,9 +29,19 @@ public class AiSchemaEnrichment {
     private Map<String, String> renames = new LinkedHashMap<>();
     private List<AiSchemaSuggestion> suggestions = new ArrayList<>();
 
-    public Map<String, String> getRenames() { return renames; }
-    public void setRenames(Map<String, String> v) { this.renames = v == null ? new LinkedHashMap<>() : v; }
+    public Map<String, String> getRenames() {
+        return renames;
+    }
 
-    public List<AiSchemaSuggestion> getSuggestions() { return suggestions; }
-    public void setSuggestions(List<AiSchemaSuggestion> v) { this.suggestions = v == null ? new ArrayList<>() : v; }
+    public void setRenames(Map<String, String> v) {
+        this.renames = v == null ? new LinkedHashMap<>() : v;
+    }
+
+    public List<AiSchemaSuggestion> getSuggestions() {
+        return suggestions;
+    }
+
+    public void setSuggestions(List<AiSchemaSuggestion> v) {
+        this.suggestions = v == null ? new ArrayList<>() : v;
+    }
 }

@@ -5,6 +5,7 @@
 package org.saiku.service.olap.ai;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -13,6 +14,7 @@ import org.saiku.olap.dto.SaikuDimension;
 import org.saiku.olap.dto.SaikuHierarchy;
 import org.saiku.olap.dto.SaikuLevel;
 import org.saiku.olap.dto.SaikuMember;
+import org.saiku.olap.dto.SimpleCubeElement;
 import org.saiku.service.olap.OlapDiscoverService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,7 +36,9 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
     private java.util.function.Function<AiCubeRef, AiSchemaEnrichment> enrichmentProvider;
     private final AiSchemaEnricher enricher = new AiSchemaEnricher();
 
-    public void setDiscoverService(OlapDiscoverService s) { this.discoverService = s; }
+    public void setDiscoverService(OlapDiscoverService s) {
+        this.discoverService = s;
+    }
 
     /**
      * Phase 3: install a provider that produces an enrichment overlay
@@ -46,7 +50,9 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
     }
 
     /** Bump when downstream schema state changes (e.g. cube reload, draft enrichment update). */
-    public void invalidateCache() { schemaCache.clear(); }
+    public void invalidateCache() {
+        schemaCache.clear();
+    }
 
     public List<AiCubeSummary> listCubes() {
         List<AiCubeSummary> out = new ArrayList<>();
@@ -99,6 +105,76 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         return fresh;
     }
 
+    /**
+     * Member search for a level. Resolves dimension/hierarchy/level by name
+     * (canonical or display alias) against the cached schema, then delegates
+     * to {@link OlapDiscoverService#getLevelMembers}. Returns up to {@code limit}
+     * hits (default 20 when {@code limit <= 0}).
+     */
+    public List<SimpleCubeElement> searchMembers(
+            AiCubeRef ref, String dimensionName, String hierarchyName, String levelName, String q, int limit) {
+        if (limit <= 0) limit = 20;
+        AiSchema schema = getSchema(ref);
+
+        String dimK = AiSchema.key(dimensionName);
+        AiSchema.Dimension dim = schema.dimensions.get(dimK);
+        if (dim == null) {
+            String aliasTarget = schema.dimensionAliases.get(dimK);
+            if (aliasTarget != null) dim = schema.dimensions.get(aliasTarget);
+        }
+        if (dim == null) {
+            throw new AiValidationException(
+                    "dimension",
+                    "Unknown dimension '" + dimensionName + "'",
+                    new ArrayList<>(schema.dimensions.keySet()));
+        }
+
+        AiSchema.Hierarchy hier;
+        if (hierarchyName == null || hierarchyName.isEmpty()) {
+            if (dim.hierarchies.size() != 1) {
+                throw new AiValidationException(
+                        "hierarchy",
+                        "Dimension has multiple hierarchies; specify one",
+                        new ArrayList<>(dim.hierarchies.keySet()));
+            }
+            hier = dim.hierarchies.values().iterator().next();
+        } else {
+            String hierK = AiSchema.key(hierarchyName);
+            hier = dim.hierarchies.get(hierK);
+            if (hier == null) {
+                String aliasTarget = dim.hierarchyAliases.get(hierK);
+                if (aliasTarget != null) hier = dim.hierarchies.get(aliasTarget);
+            }
+            if (hier == null) {
+                throw new AiValidationException(
+                        "hierarchy",
+                        "Unknown hierarchy '" + hierarchyName + "'",
+                        new ArrayList<>(dim.hierarchies.keySet()));
+            }
+        }
+
+        String lvlK = AiSchema.key(levelName);
+        AiSchema.Level level = hier.levels.get(lvlK);
+        if (level == null) {
+            String aliasTarget = hier.levelAliases.get(lvlK);
+            if (aliasTarget != null) level = hier.levels.get(aliasTarget);
+        }
+        if (level == null) {
+            throw new AiValidationException(
+                    "level", "Unknown level '" + levelName + "'", new ArrayList<>(hier.levels.keySet()));
+        }
+
+        SaikuCube cube = findCube(ref);
+        try {
+            List<SimpleCubeElement> hits = discoverService.getLevelMembers(
+                    cube, hier.name, level.name, q == null || q.isEmpty() ? null : q, limit);
+            return hits == null ? Collections.emptyList() : hits;
+        } catch (RuntimeException e) {
+            log.warn("member search failed for {}/{}/{} q={}", dim.name, hier.name, level.name, q, e);
+            return Collections.emptyList();
+        }
+    }
+
     /* ----------------------------- impl ------------------------------- */
 
     private String cacheKey(AiCubeRef ref) {
@@ -110,7 +186,9 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
      *  member-fetch cost for huge dimensions. Configurable for tests. */
     private int sampleMembersPerLevel = 5;
 
-    public void setSampleMembersPerLevel(int n) { this.sampleMembersPerLevel = n; }
+    public void setSampleMembersPerLevel(int n) {
+        this.sampleMembersPerLevel = n;
+    }
 
     private AiSchema buildSchema(AiCubeRef ref) {
         SaikuCube cube = findCube(ref);
@@ -157,7 +235,8 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
                         if (levels != null) {
                             for (SaikuLevel lvl : levels) {
                                 AiSchema.Level l = new AiSchema.Level(lvl.getName(), lvl.getUniqueName());
-                                if (lvl.getDescription() != null && !lvl.getDescription().isEmpty()) {
+                                if (lvl.getDescription() != null
+                                        && !lvl.getDescription().isEmpty()) {
                                     l.description = lvl.getDescription();
                                 }
                                 populateSampleMembers(l, cube, h.getName(), lvl.getName());
@@ -186,8 +265,7 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         return schema;
     }
 
-    private void populateSampleMembers(AiSchema.Level out, SaikuCube cube,
-                                       String hierarchyName, String levelName) {
+    private void populateSampleMembers(AiSchema.Level out, SaikuCube cube, String hierarchyName, String levelName) {
         if (sampleMembersPerLevel <= 0) return;
         try {
             List<org.saiku.olap.dto.SimpleCubeElement> members =
@@ -213,8 +291,7 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
                 available.add(c.getName());
                 if (matchesRef(c, ref)) return c;
             }
-            throw new AiValidationException("cube",
-                    "Unknown cube '" + ref + "'", available);
+            throw new AiValidationException("cube", "Unknown cube '" + ref + "'", available);
         } catch (AiValidationException e) {
             throw e;
         } catch (Exception e) {

@@ -30,16 +30,17 @@ import org.saiku.olap.util.OlapResultSetUtil;
 import org.saiku.service.async.AsyncQueryHandle;
 import org.saiku.service.async.AsyncQueryService;
 import org.saiku.service.olap.ThinQueryService;
+import org.saiku.service.olap.ai.AiCell;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiCubeRef;
 import org.saiku.service.olap.ai.AiCubeSummary;
-import org.saiku.service.olap.ai.OlapAiCubeMetadataService;
 import org.saiku.service.olap.ai.AiQueryMetadata;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiQueryResponse;
 import org.saiku.service.olap.ai.AiSchema;
 import org.saiku.service.olap.ai.AiSchemaConverter;
 import org.saiku.service.olap.ai.AiValidationException;
+import org.saiku.service.olap.ai.OlapAiCubeMetadataService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.context.request.RequestAttributes;
@@ -65,15 +66,23 @@ public class AiQueryResource {
     private AsyncQueryService asyncQueryService;
     private final AiSchemaConverter converter = new AiSchemaConverter();
 
-    public void setThinQueryService(ThinQueryService tqs) { this.thinQueryService = tqs; }
-    public void setCubeMetadataService(AiCubeMetadataService svc) { this.cubeMetadataService = svc; }
-    public void setAsyncQueryService(AsyncQueryService a) { this.asyncQueryService = a; }
+    public void setThinQueryService(ThinQueryService tqs) {
+        this.thinQueryService = tqs;
+    }
+
+    public void setCubeMetadataService(AiCubeMetadataService svc) {
+        this.cubeMetadataService = svc;
+    }
+
+    public void setAsyncQueryService(AsyncQueryService a) {
+        this.asyncQueryService = a;
+    }
 
     @POST
     @Path("/query")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response executeAi(AiQueryRequest req) {
+    public Response executeAi(AiQueryRequest req, @QueryParam("format") @DefaultValue("records") String format) {
         long start = System.currentTimeMillis();
         AiSchema schema;
         ThinQuery tq;
@@ -98,8 +107,37 @@ public class AiQueryResource {
             return error("execute failed: " + e.getMessage());
         }
 
-        AiQueryResponse resp = buildResponse(tq, cds, start);
+        AiQueryResponse resp = buildResponse(tq, cds, start, format);
         return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
+     * Preview-only: run the converter to produce MDX without executing.
+     * Useful for cost estimation, audit logs, and "show the user what's
+     * about to run" UX.
+     */
+    @POST
+    @Path("/query/preview")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response previewAi(AiQueryRequest req) {
+        try {
+            if (req == null || req.getCube() == null) {
+                return badRequest("cube", "cube ref required", null);
+            }
+            AiSchema schema = cubeMetadataService.getSchema(req.getCube());
+            ThinQuery tq = converter.convert(req, schema);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("queryId", tq.getName());
+            body.put("status", "PREVIEW");
+            body.put("generatedMdx", tq.getMdx());
+            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+        } catch (AiValidationException e) {
+            return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+        } catch (RuntimeException e) {
+            log.error("AI query preview failed", e);
+            return error("preview failed: " + e.getMessage());
+        }
     }
 
     /**
@@ -134,8 +172,7 @@ public class AiQueryResource {
     public Response getSchema(@PathParam("cubeId") String cubeId) {
         AiCubeRef ref = parseCubeId(cubeId);
         if (ref == null) {
-            return badRequest("cubeId",
-                    "cubeId must be connection/catalog/schema/cube", null);
+            return badRequest("cubeId", "cubeId must be connection/catalog/schema/cube", null);
         }
         try {
             AiSchema schema = cubeMetadataService.getSchema(ref);
@@ -145,6 +182,45 @@ public class AiQueryResource {
         } catch (RuntimeException e) {
             log.error("AI schema fetch failed for {}", cubeId, e);
             return error("schema fetch failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Member search for a level — case-insensitive substring match by
+     * default (delegates to the discover service's olap4j search). The
+     * {@code cubeId} format matches {@link #getSchema} —
+     * {@code connection/catalog/schema/cube}. Returns up to {@code limit}
+     * hits (default 20).
+     */
+    @GET
+    @Path("/members/search")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response searchMembers(
+            @QueryParam("cubeId") String cubeId,
+            @QueryParam("dimension") String dimension,
+            @QueryParam("hierarchy") String hierarchy,
+            @QueryParam("level") String level,
+            @QueryParam("q") String q,
+            @QueryParam("limit") @DefaultValue("20") int limit) {
+        AiCubeRef ref = parseCubeId(cubeId);
+        if (ref == null) {
+            return badRequest("cubeId", "cubeId must be connection/catalog/schema/cube", null);
+        }
+        if (dimension == null || dimension.isEmpty() || level == null || level.isEmpty()) {
+            return badRequest("dimension/level", "dimension and level query params required", null);
+        }
+        if (!(cubeMetadataService instanceof OlapAiCubeMetadataService)) {
+            return error("Member search requires an olap4j-backed metadata service");
+        }
+        try {
+            List<?> hits = ((OlapAiCubeMetadataService) cubeMetadataService)
+                    .searchMembers(ref, dimension, hierarchy, level, q, limit);
+            return Response.ok(hits).type(MediaType.APPLICATION_JSON).build();
+        } catch (AiValidationException e) {
+            return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+        } catch (RuntimeException e) {
+            log.error("AI member search failed for {}/{}/{} q={}", dimension, hierarchy, level, q, e);
+            return error("member search failed: " + e.getMessage());
         }
     }
 
@@ -342,24 +418,28 @@ public class AiQueryResource {
     /* ------------------------------------------------------------------ */
 
     private AiQueryResponse buildResponse(ThinQuery tq, CellDataSet cds, long startedAt) {
+        return buildResponse(tq, cds, startedAt, "records");
+    }
+
+    private AiQueryResponse buildResponse(ThinQuery tq, CellDataSet cds, long startedAt, String format) {
+        boolean useMatrix = "matrix".equalsIgnoreCase(format);
         AiQueryResponse resp = new AiQueryResponse();
         resp.setQueryId(tq.getName());
         resp.setStatus(AiQueryResponse.Status.SUCCESS);
+        resp.setFormat(useMatrix ? "matrix" : "records");
+
         AiQueryMetadata meta = new AiQueryMetadata();
         meta.setGeneratedMdx(tq.getMdx());
+        meta.setFreshness(new AiQueryMetadata.Freshness(System.currentTimeMillis(), false));
         resp.setMetadata(meta);
 
         if (cds != null) {
-            // CellDataSet carries two parallel matrices: headers (column
-            // captions) at the top and body (row headers + data cells).
-            // We split each body row into its leading MemberCell run
-            // (= row caption) and trailing DataCell run (= matrix entry).
             AbstractBaseCell[][] headers = cds.getCellSetHeaders();
             AbstractBaseCell[][] body = cds.getCellSetBody();
             int totalWidth = body != null && body.length > 0 ? body[0].length : 0;
             int rowHeaderCount = countRowHeaderColumns(body);
 
-            // Column captions: take the last header row's data-cell section.
+            // Column captions: last header row's data-cell section.
             List<AiQueryMetadata.Caption> cols = new ArrayList<>();
             if (headers != null && headers.length > 0) {
                 AbstractBaseCell[] lastHeader = headers[headers.length - 1];
@@ -370,32 +450,79 @@ public class AiQueryResource {
             }
             meta.setColumns(cols);
 
-            // Row captions + matrix.
+            // Walk body building both row captions + the per-row payload.
             List<AiQueryMetadata.Caption> rows = new ArrayList<>();
-            List<Map<String, String>> matrix = new ArrayList<>();
+            List<Map<String, AiCell>> matrix = new ArrayList<>();
+            List<Map<String, Object>> records = new ArrayList<>();
+
+            // Row-header column captions (e.g. ["Product Family"] or
+            // ["Product Family", "Year"] for multi-axis rows). We pull
+            // them from the last header row's row-header section.
+            List<String> rowHeaderCaptions = new ArrayList<>();
+            if (headers != null && headers.length > 0) {
+                AbstractBaseCell[] lastHeader = headers[headers.length - 1];
+                for (int c = 0; c < rowHeaderCount && c < lastHeader.length; c++) {
+                    String cap = lastHeader[c] == null ? "" : safe(lastHeader[c].getFormattedValue());
+                    if (cap.isEmpty()) cap = "row" + c;
+                    rowHeaderCaptions.add(cap);
+                }
+            }
+
             if (body != null) {
                 for (AbstractBaseCell[] row : body) {
-                    rows.add(new AiQueryMetadata.Caption(rowName(row, rowHeaderCount), rowCaption(row, rowHeaderCount)));
-                    Map<String, String> cells = new LinkedHashMap<>();
-                    for (int c = rowHeaderCount; c < totalWidth; c++) {
-                        cells.put(String.valueOf(c - rowHeaderCount),
-                                row[c] == null ? "" : safe(row[c].getFormattedValue()));
+                    rows.add(
+                            new AiQueryMetadata.Caption(rowName(row, rowHeaderCount), rowCaption(row, rowHeaderCount)));
+
+                    if (useMatrix) {
+                        Map<String, AiCell> cells = new LinkedHashMap<>();
+                        for (int c = rowHeaderCount; c < totalWidth; c++) {
+                            cells.put(String.valueOf(c - rowHeaderCount), toCell(row[c]));
+                        }
+                        matrix.add(cells);
+                    } else {
+                        Map<String, Object> record = new LinkedHashMap<>();
+                        // Row-header columns first, named by their captions.
+                        for (int c = 0; c < rowHeaderCount && c < row.length; c++) {
+                            String key = c < rowHeaderCaptions.size() ? rowHeaderCaptions.get(c) : ("row" + c);
+                            record.put(key, row[c] == null ? "" : safe(row[c].getFormattedValue()));
+                        }
+                        // Data cells next, named by column caption.
+                        for (int c = rowHeaderCount; c < totalWidth; c++) {
+                            int colIdx = c - rowHeaderCount;
+                            String colKey =
+                                    colIdx < cols.size() ? cols.get(colIdx).getCaption() : ("col" + colIdx);
+                            record.put(colKey, toCell(row[c]));
+                        }
+                        records.add(record);
                     }
-                    matrix.add(cells);
                 }
             }
             meta.setRows(rows);
-            resp.setMatrix(matrix);
+            if (useMatrix) resp.setMatrix(matrix);
+            else resp.setData(records);
             resp.setTotalRows(rows.size());
 
-            // Measures section: just echo the measure-name caption from
-            // the last header row (the data-cell section captions).
             List<String> measureNames = new ArrayList<>();
             for (AiQueryMetadata.Caption c : cols) measureNames.add(c.getCaption());
             meta.setMeasures(measureNames);
         }
         resp.setRuntimeMs(System.currentTimeMillis() - startedAt);
         return resp;
+    }
+
+    /** Convert a raw {@link AbstractBaseCell} into an {@link AiCell}. */
+    private static AiCell toCell(AbstractBaseCell c) {
+        if (c == null) return new AiCell(null, "", null);
+        String formatted = safe(c.getFormattedValue());
+        // Prefer the engine's raw numeric when DataCell carries one.
+        Double value = null;
+        if (c instanceof org.saiku.olap.dto.resultset.DataCell) {
+            Number raw = ((org.saiku.olap.dto.resultset.DataCell) c).getRawNumber();
+            if (raw != null) value = raw.doubleValue();
+        }
+        if (value == null) value = AiCell.parseValueFromFormatted(formatted);
+        String unit = AiCell.sniffUnit(formatted);
+        return new AiCell(value, formatted, unit);
     }
 
     /**
@@ -426,7 +553,9 @@ public class AiQueryResource {
         return rowName(row, rowHeaderCount);
     }
 
-    private static String safe(String s) { return s == null ? "" : s; }
+    private static String safe(String s) {
+        return s == null ? "" : s;
+    }
 
     private Response badRequest(String field, String message, List<String> available) {
         AiQueryResponse resp = new AiQueryResponse();
@@ -434,15 +563,19 @@ public class AiQueryResource {
         resp.setError(message);
         resp.setField(field);
         if (available != null) resp.setAvailable(available);
-        return Response.status(Response.Status.BAD_REQUEST).entity(resp)
-                .type(MediaType.APPLICATION_JSON).build();
+        return Response.status(Response.Status.BAD_REQUEST)
+                .entity(resp)
+                .type(MediaType.APPLICATION_JSON)
+                .build();
     }
 
     private Response error(String message) {
         AiQueryResponse resp = new AiQueryResponse();
         resp.setStatus(AiQueryResponse.Status.EXECUTION_ERROR);
         resp.setError(message);
-        return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(resp)
-                .type(MediaType.APPLICATION_JSON).build();
+        return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity(resp)
+                .type(MediaType.APPLICATION_JSON)
+                .build();
     }
 }

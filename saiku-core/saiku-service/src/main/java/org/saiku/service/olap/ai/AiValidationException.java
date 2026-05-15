@@ -27,6 +27,11 @@ public class AiValidationException extends RuntimeException {
         this.available = available == null ? Collections.emptyList() : List.copyOf(available);
     }
 
-    public String getField() { return field; }
-    public List<String> getAvailable() { return available; }
+    public String getField() {
+        return field;
+    }
+
+    public List<String> getAvailable() {
+        return available;
+    }
 }

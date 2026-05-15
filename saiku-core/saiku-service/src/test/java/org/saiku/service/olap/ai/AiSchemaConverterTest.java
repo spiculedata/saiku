@@ -29,30 +29,23 @@ public class AiSchemaConverterTest {
     public void setUp() {
         // FoodMart Sales-ish: two measures, two dims (Time -> [Time By] -> Year/Quarter/Month,
         // Product -> single hierarchy -> Department).
-        schema = new AiSchema(
-                "foodmart/FoodMart/FoodMart/Sales",
-                "Sales",
-                "[FoodMart].[Sales]");
-        schema.measures.put(AiSchema.key("Store Sales"),
-                new AiSchema.Measure("Store Sales", "[Measures].[Store Sales]"));
-        schema.measures.put(AiSchema.key("Unit Sales"),
-                new AiSchema.Measure("Unit Sales", "[Measures].[Unit Sales]"));
+        schema = new AiSchema("foodmart/FoodMart/FoodMart/Sales", "Sales", "[FoodMart].[Sales]");
+        schema.measures.put(
+                AiSchema.key("Store Sales"), new AiSchema.Measure("Store Sales", "[Measures].[Store Sales]"));
+        schema.measures.put(AiSchema.key("Unit Sales"), new AiSchema.Measure("Unit Sales", "[Measures].[Unit Sales]"));
 
         AiSchema.Dimension time = new AiSchema.Dimension("Time", "[Time]");
         AiSchema.Hierarchy timeBy = new AiSchema.Hierarchy("Time By", "[Time].[Time By]");
-        timeBy.levels.put(AiSchema.key("Year"),
-                new AiSchema.Level("Year", "[Time].[Time By].[Year]"));
-        timeBy.levels.put(AiSchema.key("Quarter"),
-                new AiSchema.Level("Quarter", "[Time].[Time By].[Quarter]"));
-        timeBy.levels.put(AiSchema.key("Month"),
-                new AiSchema.Level("Month", "[Time].[Time By].[Month]"));
+        timeBy.levels.put(AiSchema.key("Year"), new AiSchema.Level("Year", "[Time].[Time By].[Year]"));
+        timeBy.levels.put(AiSchema.key("Quarter"), new AiSchema.Level("Quarter", "[Time].[Time By].[Quarter]"));
+        timeBy.levels.put(AiSchema.key("Month"), new AiSchema.Level("Month", "[Time].[Time By].[Month]"));
         time.hierarchies.put(AiSchema.key("Time By"), timeBy);
         schema.dimensions.put(AiSchema.key("Time"), time);
 
         AiSchema.Dimension product = new AiSchema.Dimension("Product", "[Product]");
         AiSchema.Hierarchy productH = new AiSchema.Hierarchy("Product", "[Product].[Product]");
-        productH.levels.put(AiSchema.key("Department"),
-                new AiSchema.Level("Department", "[Product].[Product].[Department]"));
+        productH.levels.put(
+                AiSchema.key("Department"), new AiSchema.Level("Department", "[Product].[Product].[Department]"));
         product.hierarchies.put(AiSchema.key("Product"), productH);
         schema.dimensions.put(AiSchema.key("Product"), product);
 
@@ -103,14 +96,14 @@ public class AiSchemaConverterTest {
     public void explicitMembersOverrideAllMembers() {
         AiQueryRequest req = baseReq();
         AiAxisSelection axis = new AiAxisSelection("Time", "Time By", "Year");
-        axis.setMembers(Arrays.asList(
-                "[Time].[Time By].[Year].&[1997]",
-                "[Time].[Time By].[Year].&[1998]"));
+        axis.setMembers(Arrays.asList("[Time].[Time By].[Year].&[1997]", "[Time].[Time By].[Year].&[1998]"));
         req.setRows(Collections.singletonList(axis));
 
         ThinQuery tq = converter.convert(req, schema);
 
-        assertTrue(tq.getMdx(), tq.getMdx().contains("{[Time].[Time By].[Year].&[1997], [Time].[Time By].[Year].&[1998]}"));
+        assertTrue(
+                tq.getMdx(),
+                tq.getMdx().contains("{[Time].[Time By].[Year].&[1997], [Time].[Time By].[Year].&[1998]}"));
     }
 
     @Test
@@ -132,8 +125,8 @@ public class AiSchemaConverterTest {
     public void filterBecomesWhereSlicer() {
         AiQueryRequest req = baseReq();
         req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
-        AiFilterSelection f = new AiFilterSelection("Time", "Time By", "Year",
-                Collections.singletonList("[Time].[Time By].[Year].&[1997]"));
+        AiFilterSelection f = new AiFilterSelection(
+                "Time", "Time By", "Year", Collections.singletonList("[Time].[Time By].[Year].&[1997]"));
         req.setFilters(Collections.singletonList(f));
 
         ThinQuery tq = converter.convert(req, schema);
@@ -161,7 +154,8 @@ public class AiSchemaConverterTest {
 
         ThinQuery tq = converter.convert(req, schema);
 
-        assertTrue("MDX should NOT contain NON EMPTY when nonEmpty=false: " + tq.getMdx(),
+        assertTrue(
+                "MDX should NOT contain NON EMPTY when nonEmpty=false: " + tq.getMdx(),
                 !tq.getMdx().contains("NON EMPTY"));
     }
 
@@ -178,9 +172,11 @@ public class AiSchemaConverterTest {
             fail("expected validation error");
         } catch (AiValidationException e) {
             assertEquals("measures[].name", e.getField());
-            assertTrue("error names available measures: " + e.getAvailable(),
+            assertTrue(
+                    "error names available measures: " + e.getAvailable(),
                     e.getAvailable().contains("Store Sales"));
-            assertTrue("error names available measures: " + e.getAvailable(),
+            assertTrue(
+                    "error names available measures: " + e.getAvailable(),
                     e.getAvailable().contains("Unit Sales"));
         }
     }
@@ -258,6 +254,162 @@ public class AiSchemaConverterTest {
             fail("expected validation error");
         } catch (AiValidationException e) {
             assertTrue(e.getField(), e.getField().endsWith(".members"));
+        }
+    }
+
+    /* ----------------------- v2: filter operators ---------------------------- */
+
+    @Test
+    public void filterNotInEmitsExcept() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f =
+                new AiFilterSelection("Time", "Time By", "Year", Arrays.asList("[Time].[Time By].[Year].&[1997]"));
+        f.setOp("not_in");
+        req.setFilters(Collections.singletonList(f));
+
+        ThinQuery tq = converter.convert(req, schema);
+
+        assertTrue(
+                tq.getMdx(),
+                tq.getMdx().contains("Except([Time].[Time By].[Year].Members, {[Time].[Time By].[Year].&[1997]})"));
+    }
+
+    @Test
+    public void filterBetweenEmitsRange() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection(
+                "Time",
+                "Time By",
+                "Year",
+                Arrays.asList("[Time].[Time By].[Year].&[1997]", "[Time].[Time By].[Year].&[1999]"));
+        f.setOp("between");
+        req.setFilters(Collections.singletonList(f));
+
+        ThinQuery tq = converter.convert(req, schema);
+
+        assertTrue(
+                tq.getMdx(), tq.getMdx().contains("[Time].[Time By].[Year].&[1997] : [Time].[Time By].[Year].&[1999]"));
+    }
+
+    @Test
+    public void filterBetweenWithWrongMemberCountThrows() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection(
+                "Time", "Time By", "Year", Collections.singletonList("[Time].[Time By].[Year].&[1997]"));
+        f.setOp("between");
+        req.setFilters(Collections.singletonList(f));
+
+        try {
+            converter.convert(req, schema);
+            fail("expected validation error");
+        } catch (AiValidationException e) {
+            assertTrue(e.getField(), e.getField().endsWith(".members"));
+        }
+    }
+
+    @Test
+    public void filterDescendantsOfEmitsDescendants() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection(
+                "Time", "Time By", "Year", Collections.singletonList("[Time].[Time By].[Year].&[1997]"));
+        f.setOp("descendants_of");
+        req.setFilters(Collections.singletonList(f));
+
+        ThinQuery tq = converter.convert(req, schema);
+
+        assertTrue(tq.getMdx(), tq.getMdx().contains("Descendants([Time].[Time By].[Year].&[1997])"));
+    }
+
+    @Test
+    public void filterUnknownOpThrows() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection(
+                "Time", "Time By", "Year", Collections.singletonList("[Time].[Time By].[Year].&[1997]"));
+        f.setOp("relative"); // not yet supported
+        req.setFilters(Collections.singletonList(f));
+
+        try {
+            converter.convert(req, schema);
+            fail("expected validation error");
+        } catch (AiValidationException e) {
+            assertTrue(e.getField(), e.getField().endsWith(".op"));
+            assertTrue(e.getAvailable().contains("between"));
+        }
+    }
+
+    /* ---------------------- v2: order + TopCount ----------------------------- */
+
+    @Test
+    public void orderWithLimitDescEmitsTopCount() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Time", "Time By", "Year")));
+        AiOrderBy ob = new AiOrderBy();
+        ob.setBy("Store Sales");
+        ob.setDirection("desc");
+        req.setOrder(Collections.singletonList(ob));
+        req.setLimit(5);
+
+        ThinQuery tq = converter.convert(req, schema);
+
+        assertTrue(
+                tq.getMdx(),
+                tq.getMdx().contains("TopCount([Time].[Time By].[Year].Members, 5, [Measures].[Store Sales])"));
+        assertTrue("should not also wrap in HEAD: " + tq.getMdx(), !tq.getMdx().contains("HEAD("));
+    }
+
+    @Test
+    public void orderWithLimitAscEmitsBottomCount() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Time", "Time By", "Year")));
+        AiOrderBy ob = new AiOrderBy();
+        ob.setBy("Store Sales");
+        ob.setDirection("asc");
+        req.setOrder(Collections.singletonList(ob));
+        req.setLimit(5);
+
+        ThinQuery tq = converter.convert(req, schema);
+
+        assertTrue(
+                tq.getMdx(),
+                tq.getMdx().contains("BottomCount([Time].[Time By].[Year].Members, 5, [Measures].[Store Sales])"));
+    }
+
+    @Test
+    public void orderAloneEmitsOrder() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Time", "Time By", "Year")));
+        AiOrderBy ob = new AiOrderBy();
+        ob.setBy("Store Sales");
+        ob.setDirection("desc");
+        req.setOrder(Collections.singletonList(ob));
+        // no limit
+
+        ThinQuery tq = converter.convert(req, schema);
+
+        assertTrue(
+                tq.getMdx(),
+                tq.getMdx().contains("Order([Time].[Time By].[Year].Members, [Measures].[Store Sales], BDESC)"));
+    }
+
+    @Test
+    public void orderByUnknownMeasureThrows() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Time", "Time By", "Year")));
+        AiOrderBy ob = new AiOrderBy();
+        ob.setBy("Bogus Measure");
+        req.setOrder(Collections.singletonList(ob));
+        req.setLimit(5);
+
+        try {
+            converter.convert(req, schema);
+            fail("expected validation error");
+        } catch (AiValidationException e) {
+            assertEquals("measures[].name", e.getField());
         }
     }
 }

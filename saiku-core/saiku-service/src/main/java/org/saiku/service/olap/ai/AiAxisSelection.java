@@ -36,15 +36,35 @@ public class AiAxisSelection {
         this.level = level;
     }
 
-    public String getDimension() { return dimension; }
-    public void setDimension(String v) { this.dimension = v; }
+    public String getDimension() {
+        return dimension;
+    }
 
-    public String getHierarchy() { return hierarchy; }
-    public void setHierarchy(String v) { this.hierarchy = v; }
+    public void setDimension(String v) {
+        this.dimension = v;
+    }
 
-    public String getLevel() { return level; }
-    public void setLevel(String v) { this.level = v; }
+    public String getHierarchy() {
+        return hierarchy;
+    }
 
-    public List<String> getMembers() { return members; }
-    public void setMembers(List<String> v) { this.members = v == null ? new ArrayList<>() : v; }
+    public void setHierarchy(String v) {
+        this.hierarchy = v;
+    }
+
+    public String getLevel() {
+        return level;
+    }
+
+    public void setLevel(String v) {
+        this.level = v;
+    }
+
+    public List<String> getMembers() {
+        return members;
+    }
+
+    public void setMembers(List<String> v) {
+        this.members = v == null ? new ArrayList<>() : v;
+    }
 }

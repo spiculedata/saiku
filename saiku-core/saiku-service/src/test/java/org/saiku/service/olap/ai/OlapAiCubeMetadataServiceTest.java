@@ -20,9 +20,8 @@ import org.saiku.olap.dto.SaikuDimension;
 import org.saiku.olap.dto.SaikuHierarchy;
 import org.saiku.olap.dto.SaikuLevel;
 import org.saiku.olap.dto.SaikuMember;
-import org.saiku.olap.dto.SimpleCubeElement;
-import org.saiku.service.olap.OlapDiscoverService;
 import org.saiku.olap.util.exception.SaikuOlapException;
+import org.saiku.service.olap.OlapDiscoverService;
 import org.saiku.service.util.exception.SaikuServiceException;
 
 /**
@@ -55,8 +54,7 @@ public class OlapAiCubeMetadataServiceTest {
 
     @Test
     public void getSchemaResolvesByName() {
-        AiSchema schema = svc.getSchema(
-                new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+        AiSchema schema = svc.getSchema(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
         assertNotNull(schema);
         assertEquals("Sales", schema.getCubeName());
         // SaikuCube.getUniqueName() returns [conn].[cat].[schema].[name]
@@ -72,7 +70,8 @@ public class OlapAiCubeMetadataServiceTest {
         assertTrue(timeBy.levels.containsKey(AiSchema.key("Year")));
         assertTrue(timeBy.levels.containsKey(AiSchema.key("Quarter")));
 
-        assertFalse("Measures dimension should NOT appear as a regular dim",
+        assertFalse(
+                "Measures dimension should NOT appear as a regular dim",
                 schema.dimensions.containsKey(AiSchema.key("Measures")));
     }
 
@@ -106,8 +105,7 @@ public class OlapAiCubeMetadataServiceTest {
 
     @Test
     public void cubeMatchIsCaseInsensitive() {
-        AiSchema schema = svc.getSchema(
-                new AiCubeRef("FOODMART", "FOODMART", "FOODMART", "sALeS"));
+        AiSchema schema = svc.getSchema(new AiCubeRef("FOODMART", "FOODMART", "FOODMART", "sALeS"));
         assertEquals("Sales", schema.getCubeName());
     }
 
@@ -138,45 +136,85 @@ public class OlapAiCubeMetadataServiceTest {
         public List<SaikuMember> getMeasures(SaikuCube cube) {
             // SaikuMember(name, uniqueName, caption, description, dimUniq, hierUniq, levelUniq)
             if ("HR".equals(cube.getName())) {
-                return Arrays.asList(
-                        new SaikuMember("Headcount", "[Measures].[Headcount]", "Headcount", "",
-                                "[Measures]", "[Measures].[MeasuresLevel]", "[Measures].[MeasuresLevel]"));
+                return Arrays.asList(new SaikuMember(
+                        "Headcount",
+                        "[Measures].[Headcount]",
+                        "Headcount",
+                        "",
+                        "[Measures]",
+                        "[Measures].[MeasuresLevel]",
+                        "[Measures].[MeasuresLevel]"));
             }
             return Arrays.asList(
-                    new SaikuMember("Store Sales", "[Measures].[Store Sales]", "Store Sales", "",
-                            "[Measures]", "[Measures].[MeasuresLevel]", "[Measures].[MeasuresLevel]"),
-                    new SaikuMember("Unit Sales", "[Measures].[Unit Sales]", "Unit Sales", "",
-                            "[Measures]", "[Measures].[MeasuresLevel]", "[Measures].[MeasuresLevel]"));
+                    new SaikuMember(
+                            "Store Sales",
+                            "[Measures].[Store Sales]",
+                            "Store Sales",
+                            "",
+                            "[Measures]",
+                            "[Measures].[MeasuresLevel]",
+                            "[Measures].[MeasuresLevel]"),
+                    new SaikuMember(
+                            "Unit Sales",
+                            "[Measures].[Unit Sales]",
+                            "Unit Sales",
+                            "",
+                            "[Measures]",
+                            "[Measures].[MeasuresLevel]",
+                            "[Measures].[MeasuresLevel]"));
         }
 
         @Override
         public List<SaikuDimension> getAllDimensions(SaikuCube cube) throws SaikuServiceException {
             // SaikuDimension(name, uniqueName, caption, description, visible, hierarchies)
-            SaikuDimension measures = new SaikuDimension(
-                    "Measures", "[Measures]", "Measures", "", true, new ArrayList<>());
-            SaikuDimension time = new SaikuDimension(
-                    "Time", "[Time]", "Time", "", true, Arrays.asList(timeByHierarchy()));
-            SaikuDimension product = new SaikuDimension(
-                    "Product", "[Product]", "Product", "", true, Arrays.asList(productHierarchy()));
+            SaikuDimension measures =
+                    new SaikuDimension("Measures", "[Measures]", "Measures", "", true, new ArrayList<>());
+            SaikuDimension time =
+                    new SaikuDimension("Time", "[Time]", "Time", "", true, Arrays.asList(timeByHierarchy()));
+            SaikuDimension product =
+                    new SaikuDimension("Product", "[Product]", "Product", "", true, Arrays.asList(productHierarchy()));
             return Arrays.asList(measures, time, product);
         }
 
         private SaikuHierarchy timeByHierarchy() {
             // SaikuLevel(name, uniqueName, caption, description, dimUniq, hierUniq, visible, levelType, annotations)
             List<SaikuLevel> levels = Arrays.asList(
-                    new SaikuLevel("Year", "[Time].[Time By].[Year]", "Year", "",
-                            "[Time]", "[Time].[Time By]", true, "Regular", new java.util.HashMap<>()),
-                    new SaikuLevel("Quarter", "[Time].[Time By].[Quarter]", "Quarter", "",
-                            "[Time]", "[Time].[Time By]", true, "Regular", new java.util.HashMap<>()));
+                    new SaikuLevel(
+                            "Year",
+                            "[Time].[Time By].[Year]",
+                            "Year",
+                            "",
+                            "[Time]",
+                            "[Time].[Time By]",
+                            true,
+                            "Regular",
+                            new java.util.HashMap<>()),
+                    new SaikuLevel(
+                            "Quarter",
+                            "[Time].[Time By].[Quarter]",
+                            "Quarter",
+                            "",
+                            "[Time]",
+                            "[Time].[Time By]",
+                            true,
+                            "Regular",
+                            new java.util.HashMap<>()));
             // SaikuHierarchy(name, uniqueName, caption, description, dimUniq, visible, levels, rootmembers)
             return new SaikuHierarchy(
                     "Time By", "[Time].[Time By]", "Time By", "", "[Time]", true, levels, new ArrayList<>());
         }
 
         private SaikuHierarchy productHierarchy() {
-            List<SaikuLevel> levels = Arrays.asList(
-                    new SaikuLevel("Department", "[Product].[Product].[Department]", "Department", "",
-                            "[Product]", "[Product].[Product]", true, "Regular", new java.util.HashMap<>()));
+            List<SaikuLevel> levels = Arrays.asList(new SaikuLevel(
+                    "Department",
+                    "[Product].[Product].[Department]",
+                    "Department",
+                    "",
+                    "[Product]",
+                    "[Product].[Product]",
+                    true,
+                    "Regular",
+                    new java.util.HashMap<>()));
             return new SaikuHierarchy(
                     "Product", "[Product].[Product]", "Product", "", "[Product]", true, levels, new ArrayList<>());
         }

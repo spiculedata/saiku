@@ -5,7 +5,6 @@
 package org.saiku.service.olap.ai;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -33,13 +32,12 @@ public class AiSchemaEnricherTest {
     @Before
     public void setUp() {
         schema = new AiSchema("foodmart/FoodMart/FoodMart/Sales", "Sales", "[FoodMart].[Sales]");
-        schema.measures.put(AiSchema.key("Store Sales"),
-                new AiSchema.Measure("Store Sales", "[Measures].[Store Sales]"));
+        schema.measures.put(
+                AiSchema.key("Store Sales"), new AiSchema.Measure("Store Sales", "[Measures].[Store Sales]"));
 
         AiSchema.Dimension time = new AiSchema.Dimension("Time", "[Time]");
         AiSchema.Hierarchy timeBy = new AiSchema.Hierarchy("Time By", "[Time].[Time By]");
-        timeBy.levels.put(AiSchema.key("Quarter"),
-                new AiSchema.Level("Quarter", "[Time].[Time By].[Quarter]"));
+        timeBy.levels.put(AiSchema.key("Quarter"), new AiSchema.Level("Quarter", "[Time].[Time By].[Quarter]"));
         time.hierarchies.put(AiSchema.key("Time By"), timeBy);
         schema.dimensions.put(AiSchema.key("Time"), time);
 
@@ -52,10 +50,8 @@ public class AiSchemaEnricherTest {
         e.getRenames().put("measures.Store Sales", "Revenue");
         enricher.apply(schema, e);
 
-        assertEquals("display label updated", "Revenue",
-                schema.measures.get(AiSchema.key("Store Sales")).displayName);
-        assertEquals("canonical name preserved", "Store Sales",
-                schema.measures.get(AiSchema.key("Store Sales")).name);
+        assertEquals("display label updated", "Revenue", schema.measures.get(AiSchema.key("Store Sales")).displayName);
+        assertEquals("canonical name preserved", "Store Sales", schema.measures.get(AiSchema.key("Store Sales")).name);
     }
 
     @Test
@@ -94,8 +90,7 @@ public class AiSchemaEnricherTest {
     @Test
     public void suggestionsAreAppended() {
         AiSchemaSuggestion s = new AiSchemaSuggestion(
-                "rename", "measures.Store Sales", 0.92,
-                "matches common analyst vocabulary", "Revenue");
+                "rename", "measures.Store Sales", 0.92, "matches common analyst vocabulary", "Revenue");
         AiSchemaEnrichment e = new AiSchemaEnrichment();
         e.setSuggestions(Collections.singletonList(s));
         enricher.apply(schema, e);
@@ -123,8 +118,7 @@ public class AiSchemaEnricherTest {
         req.setMeasures(Collections.singletonList(new AiMeasureSelection("Store Sales")));
         req.setRows(Collections.singletonList(new AiAxisSelection("Time", "Time By", "Quarter")));
 
-        org.saiku.olap.query2.ThinQuery tq =
-                new AiSchemaConverter().convert(req, schema);
+        org.saiku.olap.query2.ThinQuery tq = new AiSchemaConverter().convert(req, schema);
         assertNotNull(tq);
         assertTrue(tq.getMdx(), tq.getMdx().contains("[Time].[Time By].[Quarter].Members"));
     }
@@ -199,10 +193,9 @@ public class AiSchemaEnricherTest {
             @Override
             public AiSchema getSchema(AiCubeRef ref) {
                 // Skip the discover-service call by short-circuiting to our test schema.
-                AiSchema base = new AiSchema(
-                        "foodmart/FoodMart/FoodMart/Sales", "Sales", "[FoodMart].[Sales]");
-                base.measures.put(AiSchema.key("Store Sales"),
-                        new AiSchema.Measure("Store Sales", "[Measures].[Store Sales]"));
+                AiSchema base = new AiSchema("foodmart/FoodMart/FoodMart/Sales", "Sales", "[FoodMart].[Sales]");
+                base.measures.put(
+                        AiSchema.key("Store Sales"), new AiSchema.Measure("Store Sales", "[Measures].[Store Sales]"));
                 AiSchemaEnrichment overlay = new AiSchemaEnrichment();
                 overlay.getRenames().put("measures.Store Sales", "Revenue");
                 new AiSchemaEnricher().apply(base, overlay);

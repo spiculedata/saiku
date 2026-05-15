@@ -41,13 +41,17 @@ public final class AiExampleBuilder {
         breakdown.getRows().add(new AiAxisSelection(dim.name, hier.name, level.name));
         examples.add(breakdown);
 
-        // Example 2: top-N — same shape with a limit applied.
+        // Example 2: top-N by measure — order + limit emits TopCount.
         AiQueryRequest topN = base(cubeRef, firstMeasure.name);
         topN.getRows().add(new AiAxisSelection(dim.name, hier.name, level.name));
+        AiOrderBy order = new AiOrderBy();
+        order.setBy(firstMeasure.name);
+        order.setDirection("desc");
+        topN.getOrder().add(order);
         topN.setLimit(10);
         examples.add(topN);
 
-        // Example 3: with VISUALTOTALS — same shape with parent totals reflecting only visible members.
+        // Example 3: with VISUALTOTALS — parent totals reflect only visible members.
         AiQueryRequest withTotals = base(cubeRef, firstMeasure.name);
         withTotals.getRows().add(new AiAxisSelection(dim.name, hier.name, level.name));
         withTotals.setVisualTotals(true);

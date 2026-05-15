@@ -30,17 +30,37 @@ public class AiCubeRef {
         this.cubeName = cubeName;
     }
 
-    public String getConnectionName() { return connectionName; }
-    public void setConnectionName(String v) { this.connectionName = v; }
+    public String getConnectionName() {
+        return connectionName;
+    }
 
-    public String getCatalog() { return catalog; }
-    public void setCatalog(String v) { this.catalog = v; }
+    public void setConnectionName(String v) {
+        this.connectionName = v;
+    }
 
-    public String getSchema() { return schema; }
-    public void setSchema(String v) { this.schema = v; }
+    public String getCatalog() {
+        return catalog;
+    }
 
-    public String getCubeName() { return cubeName; }
-    public void setCubeName(String v) { this.cubeName = v; }
+    public void setCatalog(String v) {
+        this.catalog = v;
+    }
+
+    public String getSchema() {
+        return schema;
+    }
+
+    public void setSchema(String v) {
+        this.schema = v;
+    }
+
+    public String getCubeName() {
+        return cubeName;
+    }
+
+    public void setCubeName(String v) {
+        this.cubeName = v;
+    }
 
     @Override
     public String toString() {
