@@ -346,7 +346,7 @@
             <dependency>
                 <groupId>pentaho</groupId>
                 <artifactId>mondrian</artifactId>
-                <version>4.8.1.4</version>
+                <version>4.8.1.6</version>
                 <!-- xerces 2.12.2 + xalan 2.7.2 are transitively pulled by
                      mondrian but hijack the JDK's built-in JAXP via
                      META-INF/services overrides. Spring 6.2's tightened
