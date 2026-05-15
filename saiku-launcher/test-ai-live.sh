@@ -651,6 +651,10 @@ check "unknown filter op → 400 + 5-op available list (iter 344)" POST "/rest/s
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","op":"bogus_op","members":["[Time].[Time].[1997]"]}]}' \
   "http==400 and r.get('field')=='filters[0].op' and 'Unknown filter op' in r.get('error','') and set(r.get('available',[]))=={'in','not_in','between','descendants_of','relative'}"
 
+check "rows[].members[] mixed valid+invalid → 400 names the bad ref (iter 345)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Year","members":["[Time].[Time].[1997]","[Time].[Time].[NotARealYear]"]}]}' \
+  "http==400 and r.get('field')=='members' and '[Time].[Time].[NotARealYear]' in r.get('error','') and 'members/search' in r.get('error','')"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
