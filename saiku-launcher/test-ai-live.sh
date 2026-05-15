@@ -697,6 +697,10 @@ check "same-dim different-hier rows+filter (saiku#784 scope) — Gender × Marit
   '{"cube":"'"$CUBE"'","measures":[{"name":"Customer Count"}],"rows":[{"dimension":"Customer","hierarchy":"Gender","level":"Gender"}],"filters":[{"dimension":"Customer","hierarchy":"Marital Status","level":"Marital Status","op":"in","members":["[Customer].[Marital Status].[M]"]}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and r['data'][0]['Customer Count']['value']==1365.0 and r['data'][1]['Customer Count']['value']==1376.0 and 'WHERE ([Customer].[Marital Status].[M])' in r['metadata']['generatedMdx']"
 
+check "saiku#784 catches same-hier cross-level conflict — Country rows + State filter (iter 353)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Customer Count"}],"rows":[{"dimension":"Customer","hierarchy":"Customers","level":"Country"}],"filters":[{"dimension":"Customer","hierarchy":"Customers","level":"State Province","op":"in","members":["[Customer].[Customers].[USA].[CA]"]}]}' \
+  "http==400 and r.get('field')=='filters[0].hierarchy' and 'already on the rows/columns axis' in r.get('error','') and 'move the filter members onto the axis' in r.get('error','')"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
