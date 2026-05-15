@@ -469,7 +469,14 @@ public class FlattenedCellSetFormatter implements ICellSetFormatter {
             final Position position = axis.getPositions().get(i);
             int yOffset = 0;
             final List<Member> memberList = position.getMembers();
-            boolean stop = false;
+
+            // saiku#788: members[] is reused across iterations, so a shallow
+            // position that only fills slot 0 would otherwise inherit slots
+            // 1..N from the previous (deeper) position — producing the
+            // silent-data-loss mixed-depth bug. Clear before each position so
+            // each row's shallow slots render as empty rather than the wrong
+            // member's caption.
+            java.util.Arrays.fill(members, null);
 
             // For each position's member
             for (int j = 0; j < memberList.size(); j++) {
@@ -478,18 +485,13 @@ public class FlattenedCellSetFormatter implements ICellSetFormatter {
                 List<Integer> depths = ordinalInfo.depths;
                 Collections.sort(depths);
 
-                // If it is not the last member (the one with the highest depth)
-                if (member.getDepth() < Collections.max(depths)) {
-                    stop = true;
-
-                    if (isColumns) {
-                        ignorex.add(i);
-                    } else {
-                        ignorey.add(i);
-                    }
-
-                    break;
-                }
+                // saiku#788: previously this branch unconditionally dropped any
+                // position whose member sat above the max observed depth —
+                // silently collapsing mixed-depth row sets (e.g. parent +
+                // descendants on the same axis) to just the deepest member.
+                // Now we keep the position: members[] is filled at the slot
+                // matching the member's depth, and deeper slots stay null (so
+                // populateAxis below renders them as empty MemberCells).
 
                 if (ordinalInfo.getDepths().size() > 0
                         && member.getDepth() < ordinalInfo.getDepths().get(0)) {
@@ -500,11 +502,6 @@ public class FlattenedCellSetFormatter implements ICellSetFormatter {
                 final int y = yOffset + ordinalInfo.depths.indexOf(member.getDepth());
                 members[y] = member;
                 yOffset += ordinalInfo.getWidth();
-            }
-
-            if (stop) {
-                offset--;
-                continue;
             }
 
             boolean expanded = false;
