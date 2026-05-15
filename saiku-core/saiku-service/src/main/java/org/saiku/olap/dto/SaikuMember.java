@@ -23,6 +23,13 @@ public class SaikuMember extends AbstractSaikuObject {
     private String levelUniqueName;
     private String hierarchyUniqueName;
     private Boolean calculated;
+    /** Whether the member should appear in analyst-facing UIs. Defaults to
+     *  true so legacy callers that don't pass the flag get the safe
+     *  (always-show) behaviour. saiku#778 surfaces this from the
+     *  schema-level {@code visible="false"} attribute on
+     *  {@code <CalculatedMember>} so cubes that ship helper measures can
+     *  hide them from the member tree. */
+    private Boolean visible = true;
 
     SaikuMember() {}
 
@@ -35,6 +42,28 @@ public class SaikuMember extends AbstractSaikuObject {
             String hierarchyUniqueName,
             String levelUniqueName,
             boolean calculated) {
+        this(
+                name,
+                uniqueName,
+                caption,
+                description,
+                dimensionUniqueName,
+                hierarchyUniqueName,
+                levelUniqueName,
+                calculated,
+                true);
+    }
+
+    public SaikuMember(
+            String name,
+            String uniqueName,
+            String caption,
+            String description,
+            String dimensionUniqueName,
+            String hierarchyUniqueName,
+            String levelUniqueName,
+            boolean calculated,
+            boolean visible) {
         super(uniqueName, name);
         this.caption = caption;
         this.description = description;
@@ -42,6 +71,7 @@ public class SaikuMember extends AbstractSaikuObject {
         this.levelUniqueName = levelUniqueName;
         this.hierarchyUniqueName = hierarchyUniqueName;
         this.calculated = calculated;
+        this.visible = visible;
     }
 
     public SaikuMember(
@@ -59,6 +89,7 @@ public class SaikuMember extends AbstractSaikuObject {
         this.levelUniqueName = levelUniqueName;
         this.hierarchyUniqueName = hierarchyUniqueName;
         this.calculated = false;
+        this.visible = true;
     }
 
     public String getCaption() {
@@ -87,5 +118,14 @@ public class SaikuMember extends AbstractSaikuObject {
 
     public void setCalculated(Boolean calculated) {
         this.calculated = calculated;
+    }
+
+    /** @see #visible */
+    public Boolean isVisible() {
+        return visible;
+    }
+
+    public void setVisible(Boolean visible) {
+        this.visible = visible;
     }
 }

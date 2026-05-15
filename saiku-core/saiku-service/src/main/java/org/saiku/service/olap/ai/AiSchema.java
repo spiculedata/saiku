@@ -27,6 +27,12 @@ public class AiSchema {
         /** Optional free-text description (from olap4j Member.getDescription()
          *  or the schema-gen sidecar). Helps the LLM ground its choices. */
         public String description;
+        /** Whether the measure should appear in analyst-facing UIs. Mirrors
+         *  the schema-level {@code visible="false"} attribute on
+         *  {@code <CalculatedMember>} (saiku#778). Defaults to true so
+         *  existing snapshots and tests don't shift; hidden measures are
+         *  surfaced on the wire so admin clients can opt in to seeing them. */
+        public Boolean visible = true;
 
         public Measure(String name, String uniqueName) {
             this.name = name;

@@ -11,11 +11,13 @@
   "measures" : {
     "number of employees" : {
       "name" : "Number of Employees",
-      "uniqueName" : "[Measures].[Number of Employees]"
+      "uniqueName" : "[Measures].[Number of Employees]",
+      "visible" : true
     },
     "unit sales" : {
       "name" : "Unit Sales",
-      "uniqueName" : "[Measures].[Unit Sales]"
+      "uniqueName" : "[Measures].[Unit Sales]",
+      "visible" : true
     }
   },
   "dimensions" : {
