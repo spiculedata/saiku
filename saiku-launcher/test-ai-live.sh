@@ -701,6 +701,10 @@ check "saiku#784 catches same-hier cross-level conflict — Country rows + State
   '{"cube":"'"$CUBE"'","measures":[{"name":"Customer Count"}],"rows":[{"dimension":"Customer","hierarchy":"Customers","level":"Country"}],"filters":[{"dimension":"Customer","hierarchy":"Customers","level":"State Province","op":"in","members":["[Customer].[Customers].[USA].[CA]"]}]}' \
   "http==400 and r.get('field')=='filters[0].hierarchy' and 'already on the rows/columns axis' in r.get('error','') and 'move the filter members onto the axis' in r.get('error','')"
 
+check "visualTotals=true with explicit member subset emits VISUALTOTALS({...}) (iter 354)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family","members":["[Product].[Products].[Drink]","[Product].[Products].[Food]"]}],"visualTotals":true}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and r['data'][0]['Product Family']=='Drink' and r['data'][0]['Store Sales']['value']==48836.21 and r['data'][1]['Product Family']=='Food' and 'VISUALTOTALS({[Product].[Products].[Drink], [Product].[Products].[Food]})' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
