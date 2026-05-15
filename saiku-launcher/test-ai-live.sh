@@ -647,6 +647,10 @@ check "non-empty aggregators field silently accepted (forward-compat placeholder
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales","aggregators":["sum","avg","max"]}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==24597.0 and r['metadata']['generatedMdx']=='SELECT NON EMPTY {[Measures].[Unit Sales]} ON COLUMNS,\nNON EMPTY [Product].[Products].[Product Family].Members ON ROWS\nFROM [Sales]'"
 
+check "unknown filter op → 400 + 5-op available list (iter 344)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","op":"bogus_op","members":["[Time].[Time].[1997]"]}]}' \
+  "http==400 and r.get('field')=='filters[0].op' and 'Unknown filter op' in r.get('error','') and set(r.get('available',[]))=={'in','not_in','between','descendants_of','relative'}"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
