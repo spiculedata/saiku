@@ -334,6 +334,16 @@ check "parallel Time hierarchy: Time/Weekly/Year (iter 272)" POST "/rest/saiku/a
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Time","hierarchy":"Weekly","level":"Year"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==1 and r['data'][0]['Year']=='1997' and r['data'][0]['Unit Sales']['value']==266773.0 and '[Time].[Weekly].[Year]' in r['metadata']['generatedMdx']"
 
+# Drillthrough on a real successfully-executed query (iter 273).
+DT_QID=$(curl -sS -b "$COOKIES" -X POST "$URL/rest/saiku/api/ai/query" \
+  -H 'Content-Type: application/json' \
+  --data '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"limit":1}' \
+  | python3 -c "import json,sys;print(json.load(sys.stdin).get('queryId',''))")
+if [[ -n "$DT_QID" ]]; then
+  check "drillthrough on real queryId returns fact rows (iter 273)" GET "/rest/saiku/api/ai/query/$DT_QID/drillthrough?maxrows=5" '' \
+    "http==200 and r.get('rowCount')==5 and len(r['rows'])==5 and 'Year' in r['rows'][0] and 'Product Family' in r['rows'][0] and 'Unit Sales' in r['rows'][0] and r['rows'][0]['Product Family']['formatted']=='Drink'"
+fi
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
