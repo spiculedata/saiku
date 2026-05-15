@@ -408,6 +408,10 @@ check "HR cube: Pay Type × Org Salary + Number of Employees — GBP unit sniff 
   '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Org Salary"},{"name":"Number of Employees"}],"rows":[{"dimension":"Employee","hierarchy":"Pay Type","level":"Pay Type"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and r['data'][0]['Pay Type']=='Hourly' and r['data'][0]['Org Salary']['unit']=='GBP' and r['data'][0]['Number of Employees']['value']==283.0 and r['data'][1]['Number of Employees']['value']==333.0"
 
+check "HR Management Role + Avg Salary — org-pyramid shape (iter 290)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Number of Employees"},{"name":"Avg Salary"}],"rows":[{"dimension":"Employee","hierarchy":"Position","level":"Management Role"}],"order":[{"by":"Number of Employees","direction":"desc"}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and r['data'][0]['Management Role']=='Store Full Time Staff' and r['data'][0]['Number of Employees']['value']==405.0 and r['data'][4]['Management Role']=='Senior Management' and r['data'][4]['Number of Employees']['value']==8.0 and r['data'][4]['Avg Salary']['unit']=='GBP'"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
