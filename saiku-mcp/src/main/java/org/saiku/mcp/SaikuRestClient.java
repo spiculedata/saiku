@@ -94,7 +94,9 @@ final class SaikuRestClient {
 
     /** GET {@code /rest/saiku/api/ai/query/{queryId}/drillthrough}. */
     JsonNode drillthrough(String queryId, Integer maxrows, String returns) throws IOException, InterruptedException {
-        StringBuilder p = new StringBuilder("/rest/saiku/api/ai/query/").append(enc(queryId)).append("/drillthrough");
+        StringBuilder p = new StringBuilder("/rest/saiku/api/ai/query/")
+                .append(enc(queryId))
+                .append("/drillthrough");
         boolean first = true;
         if (maxrows != null) {
             p.append(first ? '?' : '&').append("maxrows=").append(maxrows);
@@ -230,7 +232,8 @@ final class SaikuRestClient {
                 return Files.readString(Path.of(passFile), StandardCharsets.UTF_8)
                         .replaceAll("\\R+$", "");
             } catch (IOException e) {
-                throw new IllegalStateException("Failed to read SAIKU_PASS_FILE=" + passFile + ": " + e.getMessage(), e);
+                throw new IllegalStateException(
+                        "Failed to read SAIKU_PASS_FILE=" + passFile + ": " + e.getMessage(), e);
             }
         }
         return env.getOrDefault("SAIKU_PASS", "admin");

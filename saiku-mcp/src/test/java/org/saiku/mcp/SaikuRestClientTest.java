@@ -89,12 +89,7 @@ public class SaikuRestClientTest {
         server.createContext("/rest/saiku/api/ai/members/search", ex -> {
             // Echo the query string so the test can verify URL building.
             String qs = ex.getRequestURI().getRawQuery();
-            respondJson(
-                    ex,
-                    200,
-                    "{\"hits\":[],\"_query\":\""
-                            + (qs == null ? "" : qs.replace("\"", "\\\""))
-                            + "\"}");
+            respondJson(ex, 200, "{\"hits\":[],\"_query\":\"" + (qs == null ? "" : qs.replace("\"", "\\\"")) + "\"}");
         });
 
         server.start();
@@ -172,7 +167,9 @@ public class SaikuRestClientTest {
             bad.listCubes();
             fail("expected IOException from failed login");
         } catch (IOException e) {
-            assertTrue("error names the HTTP status — got: " + e.getMessage(), e.getMessage().contains("HTTP 401"));
+            assertTrue(
+                    "error names the HTTP status — got: " + e.getMessage(),
+                    e.getMessage().contains("HTTP 401"));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             fail("unexpected InterruptedException");

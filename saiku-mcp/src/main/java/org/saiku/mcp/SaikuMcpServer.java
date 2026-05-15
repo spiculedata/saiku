@@ -221,8 +221,8 @@ public final class SaikuMcpServer {
                 .build();
         return spec(tool, (exchange, request) -> {
             Map<String, Object> a = request.arguments();
-            return jsonResult(() -> client.drillthrough(
-                    stringArg(a, "queryId"), optInt(a, "maxrows"), optString(a, "returns")));
+            return jsonResult(
+                    () -> client.drillthrough(stringArg(a, "queryId"), optInt(a, "maxrows"), optString(a, "returns")));
         });
     }
 
@@ -294,8 +294,7 @@ public final class SaikuMcpServer {
     }
 
     private static SyncToolSpecification spec(
-            Tool tool,
-            BiFunction<McpSyncServerExchange, McpSchema.CallToolRequest, CallToolResult> handler) {
+            Tool tool, BiFunction<McpSyncServerExchange, McpSchema.CallToolRequest, CallToolResult> handler) {
         return SyncToolSpecification.builder().tool(tool).callHandler(handler).build();
     }
 
