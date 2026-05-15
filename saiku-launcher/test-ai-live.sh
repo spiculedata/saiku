@@ -621,6 +621,9 @@ check "schema example[0] executes to All-Customers Unit Sales total (iter 336)" 
   '{"cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"measures":[{"name":"Unit Sales","aggregators":[]}],"rows":[{"dimension":"Customer","hierarchy":"Customers","level":"(All)","members":[]}],"columns":[],"filters":[],"order":[],"limit":0,"visualTotals":false,"nonEmpty":true}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==1 and r['data'][0]['(All)']=='All Customers' and r['data'][0]['Unit Sales']['value']==266773.0"
 
+check "empty body POST → field=cube validation envelope (iter 337)" POST "/rest/saiku/api/ai/query" '{}' \
+  "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='cube' and 'cube ref required' in r.get('error','')"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
