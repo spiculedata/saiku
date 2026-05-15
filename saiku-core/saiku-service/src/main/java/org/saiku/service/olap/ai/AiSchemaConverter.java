@@ -264,6 +264,7 @@ public class AiSchemaConverter {
             for (int i = 0; i < sel.getMembers().size(); i++) {
                 String m = sel.getMembers().get(i);
                 validateMemberRef(m, fieldPath + ".members[" + i + "]");
+                validateMemberLevelMatch(m, level, hierarchy, fieldPath + ".members[" + i + "]");
                 if (i > 0) s.append(", ");
                 s.append(m);
             }
@@ -640,6 +641,85 @@ public class AiSchemaConverter {
 
     private static boolean isBlank(String s) {
         return s == null || s.trim().isEmpty();
+    }
+
+    /**
+     * Reject member refs whose depth doesn't match the declared level's
+     * position in the hierarchy. Without this, agents that supply a member
+     * at the wrong level (e.g. {@code level: "Product Family"} but
+     * {@code members: ["[Product].[Products].[Drink].[Beverages]"]} which is
+     * at Product Department) get a SUCCESS response with the value present
+     * but the corresponding row-header column rendered as {@code null} —
+     * silent inconsistency the agent can't easily detect (saiku#790).
+     *
+     * <p>The check is purely segment counting (cheap, no extra olap4j roundtrip):
+     * a Mondrian unique name has the shape
+     * {@code [Dim].[Hier].[Level1Member].[Level2Member]...[LeafMember]}, so the
+     * member's depth equals (segments - 2). The declared level's depth is its
+     * 0-based index in the hierarchy's levels map; the "(All)" pseudo-level at
+     * index 0 has depth 0, the first real level has depth 1, etc.
+     */
+    private static void validateMemberLevelMatch(
+            String memberRef, AiSchema.Level declared, AiSchema.Hierarchy hier, String fieldPath) {
+        // Skip key-form refs ([Lvl].&[Key]) — their depth is set by the
+        // level-name segments, which require a richer parser than we have
+        // here. Name-form refs are the agent-friendly default and are the
+        // ones LLMs typically emit, so the validator covers the practical
+        // failure mode while staying conservative.
+        if (memberRef != null && memberRef.indexOf("&[") >= 0) return;
+        int segments = countBracketedSegments(memberRef);
+        int expectedDepth = levelDepth(declared, hier);
+        if (expectedDepth < 0) return;
+        // member depth = segments - 2 (dim + hier prefix), with the (All)
+        // member at depth 0.
+        int actualDepth = segments - 2;
+        if (actualDepth != expectedDepth) {
+            String actualLevelName = levelNameAtDepth(hier, actualDepth);
+            throw new AiValidationException(
+                    fieldPath,
+                    "Member '" + memberRef + "' is at level '"
+                            + (actualLevelName == null ? "depth " + actualDepth : actualLevelName)
+                            + "', but the axis declares level '" + declared.name + "'. "
+                            + "Either change the declared level to match the member, or supply a member "
+                            + "at the declared level.",
+                    null);
+        }
+    }
+
+    private static int countBracketedSegments(String ref) {
+        if (ref == null) return 0;
+        int n = 0;
+        int depth = 0;
+        for (int i = 0; i < ref.length(); i++) {
+            char c = ref.charAt(i);
+            if (c == '[') {
+                if (depth == 0) n++;
+                depth++;
+            } else if (c == ']') {
+                depth--;
+            }
+        }
+        return n;
+    }
+
+    private static int levelDepth(AiSchema.Level target, AiSchema.Hierarchy hier) {
+        if (hier == null || target == null) return -1;
+        int i = 0;
+        for (AiSchema.Level l : hier.levels.values()) {
+            if (l == target) return i;
+            i++;
+        }
+        return -1;
+    }
+
+    private static String levelNameAtDepth(AiSchema.Hierarchy hier, int depth) {
+        if (hier == null || depth < 0) return null;
+        int i = 0;
+        for (AiSchema.Level l : hier.levels.values()) {
+            if (i == depth) return l.name;
+            i++;
+        }
+        return null;
     }
 
     /** Strict member-reference syntax: one or more bracketed identifiers
