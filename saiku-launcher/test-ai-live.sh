@@ -443,6 +443,9 @@ check "HR Employee/Gender — 4th path to 616 aggregate (iter 297)" POST "/rest/
 check "members search with no-match q returns empty list 200 (iter 298)" GET "/rest/saiku/api/ai/members/search?cubeId=$CUBE&dimension=Product&hierarchy=Products&level=Brand%20Name&q=ZZZZNothingMatches&limit=10" '' \
   "http==200 and isinstance(r, list) and r==[]"
 
+check "members search unknown dim → 400 + field + available list (iter 299)" GET "/rest/saiku/api/ai/members/search?cubeId=$CUBE&dimension=NotARealDim&hierarchy=Products&level=Product%20Family&q=&limit=10" '' \
+  "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='dimension' and 'Unknown dimension' in r.get('error','') and 'Product' in r.get('available',[]) and 'Customer' in r.get('available',[])"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
