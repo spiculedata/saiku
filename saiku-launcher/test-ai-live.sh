@@ -384,6 +384,10 @@ check "Store Size in SQFT — numeric-keyed hier with #null member (iter 283)" P
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Store","hierarchy":"Store Size in SQFT","level":"Store Sqft"}],"order":[{"by":"Store Sales","direction":"desc"}],"limit":5}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and r['data'][0]['Store Sqft']=='27694' and r['data'][1]['Store Sqft']=='#null' and r['data'][0]['Store Sales']['value']==87218.28"
 
+check "Promotion Name × Promotion Sales (saiku#805 CASE-expr × deep promo level — iter 284)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Promotion Sales"}],"rows":[{"dimension":"Promotion","hierarchy":"Promotions","level":"Promotion Name"}],"order":[{"by":"Promotion Sales","direction":"desc"}],"limit":3}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Promotion Name']=='Cash Register Lottery' and r['data'][0]['Promotion Sales']['value']==9821.71"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
