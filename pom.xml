@@ -189,7 +189,16 @@
                 <executions>
                     <execution>
                         <id>attach-sources</id>
-                        <phase>verify</phase>
+                        <!-- Bound to `package` (not `verify`) so reactor
+                             invocations that stop at package — like the
+                             release.yml bundle job's
+                             `mvn -pl saiku-launcher -am package` — still
+                             see the source jars. saiku-webapp's
+                             dependency-plugin:copy step references
+                             {sibling}:jar:sources at process-resources,
+                             which is downstream of package within a
+                             reactor build. -->
+                        <phase>package</phase>
                         <goals>
                             <goal>jar-no-fork</goal>
                             <goal>test-jar-no-fork</goal>
