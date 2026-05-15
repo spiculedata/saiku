@@ -147,6 +147,10 @@ check "validation: two filters on one hierarchy" POST "/rest/saiku/api/ai/query"
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","members":["[Time].[Time].[1997]"]},{"dimension":"Time","hierarchy":"Time","level":"Quarter","members":["[Time].[Time].[1997].[Q1]"]}]}' \
   "r.get('status')=='VALIDATION_ERROR' and r.get('field').endswith('.hierarchy') and 'Multiple filters' in r.get('error','')"
 
+check "validation: MDX injection in members[] rejected" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family","members":["[Product].[Products].[Drink], Crossjoin([Time].[1997])"]}]}' \
+  "r.get('status')=='VALIDATION_ERROR' and r.get('field')=='rows[0].members[0]' and 'Embedded MDX' in r.get('error','')"
+
 # ---- members search ----
 check "members search case-insensitive (q=Excellent)" GET "/rest/saiku/api/ai/members/search?cubeId=$CUBE&dimension=Product&hierarchy=Products&level=Brand%20Name&q=Excellent&limit=5" '' \
   "isinstance(r, list) and len(r) >= 1 and any(m['caption']=='Excellent' for m in r)"

@@ -243,8 +243,10 @@ public class AiSchemaConverter {
         if (sel.getMembers() != null && !sel.getMembers().isEmpty()) {
             StringBuilder s = new StringBuilder("{");
             for (int i = 0; i < sel.getMembers().size(); i++) {
+                String m = sel.getMembers().get(i);
+                validateMemberRef(m, fieldPath + ".members[" + i + "]");
                 if (i > 0) s.append(", ");
-                s.append(sel.getMembers().get(i));
+                s.append(m);
             }
             s.append("}");
             setExpr = s.toString();
@@ -294,6 +296,16 @@ public class AiSchemaConverter {
 
             String op = f.getOp() == null ? "in" : f.getOp().toLowerCase();
             List<String> members = f.getMembers() == null ? java.util.Collections.emptyList() : f.getMembers();
+            // Reject anything in `members[]` that isn't a strict member-reference
+            // form before it gets spliced into the MDX. saiku#786: arbitrary
+            // strings (containing comma + function call) used to inline into the
+            // {...} set literal and reach Mondrian's parser. Doesn't apply to
+            // op=relative, which doesn't read members[].
+            if (!"relative".equals(op)) {
+                for (int mi = 0; mi < members.size(); mi++) {
+                    validateMemberRef(members.get(mi), fieldPath + ".members[" + mi + "]");
+                }
+            }
 
             if (i > 0) s.append(", ");
 
@@ -609,5 +621,34 @@ public class AiSchemaConverter {
 
     private static boolean isBlank(String s) {
         return s == null || s.trim().isEmpty();
+    }
+
+    /** Strict member-reference syntax: one or more bracketed identifiers
+     *  separated by dots, optional {@code &} key prefix on any segment.
+     *  Examples that match:
+     *    {@code [Foo]}
+     *    {@code [Foo].[Bar]}
+     *    {@code [Time].[Time].[Year].&[1997]}
+     *  Examples that do NOT (and are rejected as MDX-injection attempts):
+     *    {@code [Foo], Crossjoin(...)} — embeds a function call
+     *    {@code [Foo] + [Bar]} — embeds an operator
+     *    {@code Foo} — bare identifier (must be bracketed) */
+    private static final java.util.regex.Pattern MEMBER_REF_PATTERN =
+            java.util.regex.Pattern.compile("^\\s*\\[[^\\[\\]]*\\](\\s*\\.\\s*&?\\[[^\\[\\]]*\\])*\\s*$");
+
+    /**
+     * Reject anything that isn't a strict member-reference shape. Prevents
+     * agent-supplied strings from injecting arbitrary MDX through {@code
+     * members[]} entries (see saiku#786).
+     */
+    static void validateMemberRef(String memberRef, String fieldPath) {
+        if (memberRef == null || !MEMBER_REF_PATTERN.matcher(memberRef).matches()) {
+            throw new AiValidationException(
+                    fieldPath,
+                    "Member references must be bracketed-dot-separated identifiers "
+                            + "(e.g. [Foo].[Bar] or [Foo].&[Bar]). "
+                            + "Embedded MDX expressions are not allowed in members[].",
+                    null);
+        }
     }
 }
