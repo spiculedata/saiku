@@ -738,6 +738,10 @@ if [[ -n "$DT3_QID" ]]; then
     "http==200 and r.get('rowCount',0) > 100 and r.get('rowCount')==len(r['rows'])"
 fi
 
+check "3-hier same-dim CROSSJOIN on rows: Gender × Education × Marital (iter 357)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Customer Count"}],"rows":[{"dimension":"Customer","hierarchy":"Gender","level":"Gender"},{"dimension":"Customer","hierarchy":"Education Level","level":"Education Level"},{"dimension":"Customer","hierarchy":"Marital Status","level":"Marital Status"}],"limit":6}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==6 and r['data'][0]['Gender']=='F' and r['data'][0]['Education Level']=='Bachelors Degree' and r['data'][0]['Marital Status']=='M' and r['data'][0]['Customer Count']['value']==359.0 and r['metadata']['generatedMdx'].count('CROSSJOIN')==2"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
