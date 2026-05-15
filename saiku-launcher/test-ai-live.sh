@@ -566,6 +566,10 @@ check "Warehouse and Sales virtual cube — Store2 aliased dim resolves (iter 32
 check "schema endpoint exposes sampleMembers per level — anti-hallucination contract (iter 326)" GET "/rest/saiku/api/ai/schema/$CUBE" '' \
   "isinstance(r['dimensions']['product']['hierarchies']['products']['levels']['product family']['sampleMembers'], list) and len(r['dimensions']['product']['hierarchies']['products']['levels']['product family']['sampleMembers'])==3 and any(s['caption']=='Drink' and s['uniqueName']=='[Product].[Products].[Drink]' for s in r['dimensions']['product']['hierarchies']['products']['levels']['product family']['sampleMembers'])"
 
+check "filter op=descendants_of on Time/1997 → compact ancestor slicer (iter 327)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","op":"descendants_of","members":["[Time].[Time].[1997]"]}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==24597.0 and r['data'][1]['Unit Sales']['value']==191940.0 and 'WHERE ([Time].[Time].[1997])' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
