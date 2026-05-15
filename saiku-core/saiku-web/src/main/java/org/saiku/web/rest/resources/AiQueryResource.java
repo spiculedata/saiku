@@ -103,12 +103,47 @@ public class AiQueryResource {
         try {
             cds = thinQueryService.execute(tq);
         } catch (RuntimeException e) {
+            // Translate well-known Mondrian "MDX object not found" errors into
+            // a clean 400 VALIDATION_ERROR pointing at the offending member.
+            // Without this, agents that supply a member ref the schema accepts
+            // shape-wise but Mondrian can't resolve (typo, removed product,
+            // wrong hierarchy depth) get an opaque 500 with no actionable field.
+            Response translated = translateMondrianLookupError(e);
+            if (translated != null) return translated;
             log.error("AI query execution failed", e);
             return error("execute failed: " + e.getMessage());
         }
 
         AiQueryResponse resp = buildResponse(tq, cds, start, format);
         return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /** Mondrian's parser raises "MDX object '<ref>' not found in cube '<name>'"
+     *  whenever an axis or slicer references a member that doesn't exist. We
+     *  scan the exception chain for that message and lift it to a 400 with the
+     *  offending ref in the {@code error} body. Returns null if the throwable
+     *  isn't a lookup failure. */
+    private static final java.util.regex.Pattern MDX_NOT_FOUND_PATTERN =
+            java.util.regex.Pattern.compile("MDX object '([^']+)' not found in cube '([^']+)'");
+
+    private Response translateMondrianLookupError(Throwable t) {
+        for (Throwable cur = t; cur != null; cur = cur.getCause()) {
+            String msg = cur.getMessage();
+            if (msg == null) continue;
+            java.util.regex.Matcher m = MDX_NOT_FOUND_PATTERN.matcher(msg);
+            if (m.find()) {
+                AiQueryResponse resp = new AiQueryResponse();
+                resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
+                resp.setError("Member '" + m.group(1) + "' not found in cube '" + m.group(2)
+                        + "'. Check the member ref or call /members/search to discover valid members.");
+                resp.setField("members");
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(resp)
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            }
+        }
+        return null;
     }
 
     /**

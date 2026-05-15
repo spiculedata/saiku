@@ -155,6 +155,10 @@ check "validation: axis hierarchy reused in filter rejected (saiku#784)" POST "/
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Customer","hierarchy":"Customers","level":"City"}],"filters":[{"dimension":"Customer","hierarchy":"Customers","level":"State Province","op":"descendants_of","members":["[Customer].[Customers].[USA].[CA]"]}]}' \
   "r.get('status')=='VALIDATION_ERROR' and r.get('field')=='filters[0].hierarchy' and 'already on the rows/columns axis' in r.get('error','')"
 
+check "validation: nonexistent member ref translated to 400" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family","members":["[Product].[Products].[Drink]","[Product].[Products].[Pizza]"]}]}' \
+  "r.get('status')=='VALIDATION_ERROR' and r.get('field')=='members' and 'Pizza' in r.get('error','') and 'not found in cube' in r.get('error','')"
+
 # ---- members search ----
 check "members search case-insensitive (q=Excellent)" GET "/rest/saiku/api/ai/members/search?cubeId=$CUBE&dimension=Product&hierarchy=Products&level=Brand%20Name&q=Excellent&limit=5" '' \
   "isinstance(r, list) and len(r) >= 1 and any(m['caption']=='Excellent' for m in r)"
