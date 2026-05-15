@@ -187,6 +187,10 @@ check "validation: cross-dim member ref in filter rejected (saiku#798)" POST "/r
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","members":["[Customer].[Customers].[USA]"]}]}' \
   "r.get('status')=='VALIDATION_ERROR' and r.get('field')=='filters[0].members[0]' and 'Customer' in r.get('error','') and 'Time' in r.get('error','')"
 
+check "validation: cross-hier member ref in filter rejected (saiku#799)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Promotion","hierarchy":"Media Type","level":"Media Type","members":["[Promotion].[Promotions].[Bag Stuffers]"]}]}' \
+  "r.get('status')=='VALIDATION_ERROR' and r.get('field')=='filters[0].members[0]' and 'Promotions' in r.get('error','') and 'Media Type' in r.get('error','')"
+
 check "drillthrough on bogus queryId returns 404 (saiku#783)" GET "/rest/saiku/api/ai/query/bogus-uuid-1234/drillthrough?maxrows=5" '' \
   "http==404 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='queryId' and 'Unknown queryId' in r.get('error','')"
 
