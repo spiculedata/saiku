@@ -639,6 +639,10 @@ check "/preview accepts cube as path string (polymorphic deserialiser parity, it
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
   "r.get('status')=='PREVIEW' and 'NON EMPTY [Product].[Products].[Product Family].Members ON ROWS' in r.get('generatedMdx','') and 'FROM [Sales]' in r.get('generatedMdx','')"
 
+check "negative limit treated as no cap — no HEAD/TopCount emitted (iter 342)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"limit":-1}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and 'HEAD(' not in r['metadata']['generatedMdx'] and 'TopCount(' not in r['metadata']['generatedMdx'] and 'BottomCount(' not in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
