@@ -321,6 +321,72 @@ public class AiQueryResourceTest {
         }
     }
 
+    /** saiku#792: cancel on a DONE handle must report ALREADY_COMPLETED, not
+     *  the misleading CANCELLED the legacy path used to return. */
+    @Test
+    public void asyncCancelReturnsAlreadyCompletedForFinishedQuery() {
+        org.saiku.service.async.AsyncQueryService async = new org.saiku.service.async.AsyncQueryService();
+        async.setThinQueryService(new StubThinQueryService());
+        try {
+            resource.setAsyncQueryService(async);
+            org.saiku.olap.query2.ThinQuery tq = new org.saiku.olap.query2.ThinQuery();
+            tq.setName("done-query");
+            org.saiku.service.async.AsyncQueryHandle h = new org.saiku.service.async.AsyncQueryHandle("done-id", tq);
+            h.setStatus(org.saiku.service.async.AsyncQueryHandle.Status.DONE);
+            async.register(h);
+            Response resp = resource.asyncCancel("done-id");
+            assertEquals(200, resp.getStatus());
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+            assertEquals("ALREADY_COMPLETED", body.get("status"));
+        } finally {
+            async.shutdown();
+        }
+    }
+
+    @Test
+    public void asyncCancelReturnsAlreadyFailedForFailedQuery() {
+        org.saiku.service.async.AsyncQueryService async = new org.saiku.service.async.AsyncQueryService();
+        async.setThinQueryService(new StubThinQueryService());
+        try {
+            resource.setAsyncQueryService(async);
+            org.saiku.olap.query2.ThinQuery tq = new org.saiku.olap.query2.ThinQuery();
+            tq.setName("failed-query");
+            org.saiku.service.async.AsyncQueryHandle h = new org.saiku.service.async.AsyncQueryHandle("failed-id", tq);
+            h.setStatus(org.saiku.service.async.AsyncQueryHandle.Status.FAILED);
+            async.register(h);
+            Response resp = resource.asyncCancel("failed-id");
+            assertEquals(200, resp.getStatus());
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+            assertEquals("ALREADY_FAILED", body.get("status"));
+        } finally {
+            async.shutdown();
+        }
+    }
+
+    @Test
+    public void asyncCancelIsIdempotentForCancelledQuery() {
+        org.saiku.service.async.AsyncQueryService async = new org.saiku.service.async.AsyncQueryService();
+        async.setThinQueryService(new StubThinQueryService());
+        try {
+            resource.setAsyncQueryService(async);
+            org.saiku.olap.query2.ThinQuery tq = new org.saiku.olap.query2.ThinQuery();
+            tq.setName("cancelled-query");
+            org.saiku.service.async.AsyncQueryHandle h =
+                    new org.saiku.service.async.AsyncQueryHandle("cancelled-id", tq);
+            h.setStatus(org.saiku.service.async.AsyncQueryHandle.Status.CANCELLED);
+            async.register(h);
+            Response resp = resource.asyncCancel("cancelled-id");
+            assertEquals(200, resp.getStatus());
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+            assertEquals("CANCELLED", body.get("status"));
+        } finally {
+            async.shutdown();
+        }
+    }
+
     @Test
     public void executeAiAsyncReturns500WithoutAsyncService() {
         resource.setAsyncQueryService(null);

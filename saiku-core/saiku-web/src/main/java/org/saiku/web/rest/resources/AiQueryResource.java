@@ -465,10 +465,30 @@ public class AiQueryResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response asyncCancel(@PathParam("queryId") String queryId) {
         if (asyncQueryService == null) return error("Async service not configured");
-        boolean ok = asyncQueryService.cancel(queryId);
-        if (!ok) return Response.status(Response.Status.NOT_FOUND).build();
+        // saiku#792: probe the current state BEFORE attempting cancel so an
+        // already-finished query reports ALREADY_COMPLETED / ALREADY_FAILED
+        // instead of a misleading CANCELLED. Idempotent retries on an
+        // already-cancelled handle still return CANCELLED (so the response
+        // shape stays stable for "I asked twice").
+        AsyncQueryHandle h = asyncQueryService.get(queryId);
+        if (h == null) return Response.status(Response.Status.NOT_FOUND).build();
+        AsyncQueryHandle.Status before = h.getStatus();
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("queryId", queryId);
+        if (before == AsyncQueryHandle.Status.DONE) {
+            body.put("status", "ALREADY_COMPLETED");
+            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+        }
+        if (before == AsyncQueryHandle.Status.FAILED) {
+            body.put("status", "ALREADY_FAILED");
+            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+        }
+        if (before == AsyncQueryHandle.Status.CANCELLED) {
+            body.put("status", "CANCELLED");
+            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+        }
+        boolean ok = asyncQueryService.cancel(queryId);
+        if (!ok) return Response.status(Response.Status.NOT_FOUND).build();
         body.put("status", "CANCELLED");
         return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
     }
