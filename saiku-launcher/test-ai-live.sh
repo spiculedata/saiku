@@ -330,6 +330,10 @@ check "rows-deep + columns + slicer combo: Product Subcategory × Quarter / USA 
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Subcategory"}],"columns":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}],"filters":[{"dimension":"Store","hierarchy":"Stores","level":"Store Country","op":"descendants_of","members":["[Store].[Stores].[USA]"]}],"limit":3}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and len(r['metadata']['columns'])==4 and 'HEAD(' in r['metadata']['generatedMdx'] and 'WHERE ([Store].[Stores].[USA])' in r['metadata']['generatedMdx']"
 
+check "parallel Time hierarchy: Time/Weekly/Year (iter 272)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Time","hierarchy":"Weekly","level":"Year"}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==1 and r['data'][0]['Year']=='1997' and r['data'][0]['Unit Sales']['value']==266773.0 and '[Time].[Weekly].[Year]' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
