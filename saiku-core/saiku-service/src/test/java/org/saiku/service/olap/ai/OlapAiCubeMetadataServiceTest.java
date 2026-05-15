@@ -109,6 +109,78 @@ public class OlapAiCubeMetadataServiceTest {
         assertEquals("Sales", schema.getCubeName());
     }
 
+    /* ----- saiku#810 probe / prune ----- */
+
+    /**
+     * Probe off (default) — Quarter survives even when getLevelMembers
+     * would have thrown for it. Confirms the probe path is fully opt-in.
+     */
+    @Test
+    public void probeOffKeepsUnqueryableLevels() {
+        OlapAiCubeMetadataService probeSvc = new OlapAiCubeMetadataService();
+        probeSvc.setDiscoverService(new ProbeStubDiscover());
+        AiSchema schema = probeSvc.getSchema(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+        AiSchema.Hierarchy timeBy =
+                schema.dimensions.get(AiSchema.key("Time")).hierarchies.get(AiSchema.key("Time By"));
+        assertTrue("Quarter present when probe off", timeBy.levels.containsKey(AiSchema.key("Quarter")));
+    }
+
+    /**
+     * Probe on — the Quarter level (which {@link ProbeStubDiscover} marks
+     * unqueryable) gets pruned, Year survives. The remaining
+     * {@code Time/Time By} hierarchy still has Year so it isn't dropped.
+     */
+    @Test
+    public void probeOnPrunesUnqueryableLevel() {
+        OlapAiCubeMetadataService probeSvc = new OlapAiCubeMetadataService();
+        probeSvc.setDiscoverService(new ProbeStubDiscover());
+        probeSvc.setProbeUnqueryable(true);
+        AiSchema schema = probeSvc.getSchema(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+        AiSchema.Hierarchy timeBy =
+                schema.dimensions.get(AiSchema.key("Time")).hierarchies.get(AiSchema.key("Time By"));
+        assertNotNull(timeBy);
+        assertTrue("Year survives", timeBy.levels.containsKey(AiSchema.key("Year")));
+        assertFalse("Quarter pruned", timeBy.levels.containsKey(AiSchema.key("Quarter")));
+    }
+
+    /**
+     * Probe on — if every non-(All) level in a hierarchy fails the probe,
+     * the whole hierarchy is dropped. If that was the dim's only hier, the
+     * dim is dropped too.
+     */
+    @Test
+    public void probeOnPrunesEntirelyUnqueryableHierarchyAndDim() {
+        OlapAiCubeMetadataService probeSvc = new OlapAiCubeMetadataService();
+        probeSvc.setDiscoverService(new ProbeStubDiscover() {
+            @Override
+            public List<org.saiku.olap.dto.SimpleCubeElement> getLevelMembers(
+                    SaikuCube cube, String hierarchyName, String levelName, String q, int limit) {
+                // Time By is fully unqueryable; Product is fine.
+                if ("Time By".equals(hierarchyName)) {
+                    throw new RuntimeException("synthetic: Time By unqueryable");
+                }
+                return new ArrayList<>();
+            }
+        });
+        probeSvc.setProbeUnqueryable(true);
+        AiSchema schema = probeSvc.getSchema(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+        assertFalse(
+                "Time dim pruned (its only hier was unqueryable)", schema.dimensions.containsKey(AiSchema.key("Time")));
+        assertTrue("Product dim survives", schema.dimensions.containsKey(AiSchema.key("Product")));
+    }
+
+    /** Stub that fails getLevelMembers for Quarter only. */
+    private static class ProbeStubDiscover extends StubDiscover {
+        @Override
+        public List<org.saiku.olap.dto.SimpleCubeElement> getLevelMembers(
+                SaikuCube cube, String hierarchyName, String levelName, String q, int limit) {
+            if ("Quarter".equals(levelName)) {
+                throw new RuntimeException("synthetic: Quarter unqueryable for saiku#810 test");
+            }
+            return new ArrayList<>();
+        }
+    }
+
     /* ----------------------------- helpers ---------------------------------- */
 
     private static AiCubeSummary findCube(List<AiCubeSummary> all, String name) {
