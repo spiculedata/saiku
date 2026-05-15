@@ -155,6 +155,11 @@ public class AiSchema {
     }
 
     public static String key(String name) {
-        return name == null ? "" : name.toLowerCase(java.util.Locale.ROOT);
+        // Trim + lower-case the lookup key. Trim makes whitespace-padded
+        // names ("  Product  ") match their canonical form — agents that
+        // accidentally include trailing/leading whitespace shouldn't hit a
+        // 400 when the name is otherwise correct. Map keys are populated
+        // via this same method on insert, so both sides stay symmetric.
+        return name == null ? "" : name.trim().toLowerCase(java.util.Locale.ROOT);
     }
 }
