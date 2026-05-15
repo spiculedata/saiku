@@ -314,6 +314,10 @@ check "Customer Count by Yearly Income desc (untested hier — iter 267)" POST "
   '{"cube":"'"$CUBE"'","measures":[{"name":"Customer Count"}],"rows":[{"dimension":"Customer","hierarchy":"Yearly Income","level":"Yearly Income"}],"order":[{"by":"Customer Count","direction":"desc"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==8 and r['data'][0]['Yearly Income']=='\$30K - \$50K' and r['data'][0]['Customer Count']['value']==1786.0 and 'Order(' in r['metadata']['generatedMdx']"
 
+check "rows from two hierarchies of same dim → CROSSJOIN not Hierarchize (iter 268)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Sales Count"}],"rows":[{"dimension":"Customer","hierarchy":"Marital Status","level":"Marital Status"},{"dimension":"Customer","hierarchy":"Education Level","level":"Education Level"}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==10 and 'CROSSJOIN' in r['metadata']['generatedMdx'] and 'Hierarchize' not in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
