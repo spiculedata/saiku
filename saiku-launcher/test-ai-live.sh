@@ -462,6 +462,10 @@ check "filter via parallel Time/Weekly hier — slicer agrees with Time/Time tot
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Weekly","level":"Year","op":"in","members":["[Time].[Weekly].[1997]"]}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==24597.0 and r['data'][1]['Unit Sales']['value']==191940.0 and r['data'][2]['Unit Sales']['value']==50236.0 and 'WHERE ([Time].[Weekly].[1997])' in r['metadata']['generatedMdx']"
 
+check "HR Marital Status — 5th path to 616 aggregate (iter 304)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Number of Employees"},{"name":"Avg Salary"}],"rows":[{"dimension":"Employee","hierarchy":"Marital Status","level":"Marital Status"}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and r['data'][0]['Marital Status']=='M' and r['data'][0]['Number of Employees']['value']==311.0 and r['data'][1]['Number of Employees']['value']==305.0 and sum(d['Number of Employees']['value'] for d in r['data'])==616.0"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
