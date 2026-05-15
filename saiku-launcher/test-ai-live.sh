@@ -614,6 +614,13 @@ check "filter op=between at Month level — MDX range slicer (iter 334)" POST "/
 check "schema endpoint top-level shape: cubeId, cubeUniqueName, examples, requestSchema (iter 335)" GET "/rest/saiku/api/ai/schema/$CUBE" '' \
   "r.get('cubeId')=='unknown_foodmart/FoodMart/FoodMart/Sales' and r.get('cubeName')=='Sales' and r.get('cubeUniqueName')=='[unknown_foodmart].[FoodMart].[FoodMart].[Sales]' and isinstance(r.get('examples'), list) and len(r['examples'])==3 and isinstance(r.get('requestSchema'), dict) and r['requestSchema'].get('\$schema') and 'properties' in r['requestSchema']"
 
+# Self-consistency: the schema's prefab example[0] should actually
+# execute. Captured once at write-time as a hardcoded body to avoid
+# cross-query chaining gymnastics.
+check "schema example[0] executes to All-Customers Unit Sales total (iter 336)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"measures":[{"name":"Unit Sales","aggregators":[]}],"rows":[{"dimension":"Customer","hierarchy":"Customers","level":"(All)","members":[]}],"columns":[],"filters":[],"order":[],"limit":0,"visualTotals":false,"nonEmpty":true}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==1 and r['data'][0]['(All)']=='All Customers' and r['data'][0]['Unit Sales']['value']==266773.0"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
