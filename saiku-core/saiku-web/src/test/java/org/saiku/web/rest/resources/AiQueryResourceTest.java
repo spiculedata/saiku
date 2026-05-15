@@ -5,6 +5,7 @@
 package org.saiku.web.rest.resources;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -308,6 +309,46 @@ public class AiQueryResourceTest {
         }
     }
 
+    /** saiku#803: measures-only query (no rows) must flatten to a single
+     *  record keyed by measure caption with typed AiCell values, not the
+     *  awkward row0/row1 two-record header-+-data shape. */
+    @Test
+    public void measuresOnlyQueryFlattensToSingleRecordWithTypedCells() {
+        // Extend the fixture schema with Unit Sales for this test only.
+        schema.measures.put(AiSchema.key("Unit Sales"), new AiSchema.Measure("Unit Sales", "[Measures].[Unit Sales]"));
+        resource.setThinQueryService(new ThinQueryService() {
+            @Override
+            public CellDataSet execute(ThinQuery tq) {
+                return buildMeasuresOnlyCellDataSet();
+            }
+        });
+        AiQueryRequest req = new AiQueryRequest();
+        req.setCube(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+        req.setMeasures(
+                java.util.Arrays.asList(new AiMeasureSelection("Unit Sales"), new AiMeasureSelection("Store Sales")));
+        // No rows — measures-only.
+
+        Response resp = resource.executeAi(req, "records");
+        // Surface the error message if anything ahead of the renderer bounced it.
+        if (resp.getStatus() != 200) {
+            AiQueryResponse bad = (AiQueryResponse) resp.getEntity();
+            throw new AssertionError(
+                    "expected 200, got " + resp.getStatus() + " field=" + bad.getField() + " error=" + bad.getError());
+        }
+
+        AiQueryResponse body = (AiQueryResponse) resp.getEntity();
+        assertEquals("single record (not 2)", 1, body.getData().size());
+        Map<String, Object> rec = body.getData().get(0);
+        assertTrue("Unit Sales keyed by caption", rec.containsKey("Unit Sales"));
+        assertTrue("Store Sales keyed by caption", rec.containsKey("Store Sales"));
+        AiCell us = (AiCell) rec.get("Unit Sales");
+        assertEquals("typed AiCell with formatted", "266,773", us.getFormatted());
+        AiCell ss = (AiCell) rec.get("Store Sales");
+        assertEquals("typed AiCell with formatted", "565,238.13", ss.getFormatted());
+        assertFalse("no row0/row1 keys leaked", rec.containsKey("row0"));
+        assertFalse("no row0/row1 keys leaked", rec.containsKey("row1"));
+    }
+
     @Test
     public void asyncCancelReturns404OnUnknownId() {
         org.saiku.service.async.AsyncQueryService async = new org.saiku.service.async.AsyncQueryService();
@@ -601,6 +642,27 @@ public class AiQueryResourceTest {
         if (rt == double.class) return 0.0;
         if (rt == void.class) return null;
         return null;
+    }
+
+    /** saiku#803: measures-only body shape — body[0] is all MemberCells
+     *  (measure captions), body[1] is all DataCells (the values). */
+    static CellDataSet buildMeasuresOnlyCellDataSet() {
+        CellDataSet cds = new CellDataSet(2, 2);
+        cds.setCellSetHeaders(new AbstractBaseCell[][] {});
+        AbstractBaseCell h0 = new MemberCell(false, false);
+        h0.setFormattedValue("Unit Sales");
+        AbstractBaseCell h1 = new MemberCell(false, false);
+        h1.setFormattedValue("Store Sales");
+        AbstractBaseCell d0 = new DataCell(true, false, null);
+        d0.setFormattedValue("266,773");
+        d0.setRawValue("266773");
+        AbstractBaseCell d1 = new DataCell(true, false, null);
+        d1.setFormattedValue("565,238.13");
+        d1.setRawValue("565238.13");
+        cds.setCellSetBody(new AbstractBaseCell[][] {
+            new AbstractBaseCell[] {h0, h1}, new AbstractBaseCell[] {d0, d1},
+        });
+        return cds;
     }
 
     static CellDataSet buildStubCellDataSet() {

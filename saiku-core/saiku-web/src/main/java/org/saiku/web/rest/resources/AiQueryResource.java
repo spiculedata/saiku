@@ -743,7 +743,41 @@ public class AiQueryResource {
                 }
             }
 
-            if (body != null) {
+            // saiku#803: measures-only queries (no rows axis on the request)
+            // render with the measure captions as a header row that lands in
+            // body[0] and the values in body[1]. The standard renderer below
+            // treats both as row-headers, producing the awkward
+            // {row0:"Unit Sales", row1:"Store Sales"} / {row0:"266,773"}
+            // shape. Detect that case and flatten to a single record keyed by
+            // measure caption with typed AiCell values — matching every other
+            // query shape on the API.
+            boolean measuresOnly = body != null
+                    && body.length == 2
+                    && rowHeaderCount == totalWidth
+                    && totalWidth > 0
+                    && body[0] != null
+                    && body[1] != null
+                    && allMemberCells(body[0])
+                    && allDataCells(body[1]);
+            if (measuresOnly) {
+                if (useMatrix) {
+                    Map<String, AiCell> cells = new LinkedHashMap<>();
+                    for (int c = 0; c < totalWidth; c++) {
+                        cells.put(String.valueOf(c), toCell(body[1][c]));
+                    }
+                    matrix.add(cells);
+                    rows.add(new AiQueryMetadata.Caption("", ""));
+                } else {
+                    Map<String, Object> record = new LinkedHashMap<>();
+                    for (int c = 0; c < totalWidth; c++) {
+                        String key = body[0][c] == null ? ("col" + c) : safe(body[0][c].getFormattedValue());
+                        if (key.isEmpty()) key = "col" + c;
+                        record.put(key, toCell(body[1][c]));
+                    }
+                    records.add(record);
+                    rows.add(new AiQueryMetadata.Caption("", ""));
+                }
+            } else if (body != null) {
                 for (AbstractBaseCell[] row : body) {
                     rows.add(
                             new AiQueryMetadata.Caption(rowName(row, rowHeaderCount), rowCaption(row, rowHeaderCount)));
@@ -877,6 +911,26 @@ public class AiQueryResource {
         int n = 0;
         while (n < first.length && first[n] instanceof MemberCell) n++;
         return n;
+    }
+
+    /** saiku#803: every cell in the row is a MemberCell (caption). Used to
+     *  detect the measures-only header-leaked-into-body shape. */
+    private static boolean allMemberCells(AbstractBaseCell[] row) {
+        if (row == null || row.length == 0) return false;
+        for (AbstractBaseCell c : row) {
+            if (!(c instanceof MemberCell)) return false;
+        }
+        return true;
+    }
+
+    /** saiku#803: every cell in the row is a DataCell. Paired with
+     *  {@link #allMemberCells} to identify the measures-only flatten case. */
+    private static boolean allDataCells(AbstractBaseCell[] row) {
+        if (row == null || row.length == 0) return false;
+        for (AbstractBaseCell c : row) {
+            if (!(c instanceof org.saiku.olap.dto.resultset.DataCell)) return false;
+        }
+        return true;
     }
 
     private static String rowName(AbstractBaseCell[] row, int rowHeaderCount) {
