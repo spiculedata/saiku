@@ -116,6 +116,39 @@
                                         <exclude>META-INF/*.RSA</exclude>
                                     </excludes>
                                 </filter>
+                                <!-- xerces/xalan are transitively pulled by
+                                     mondrian + hadoop (via hive-jdbc) and
+                                     hijack JAXP via META-INF/services
+                                     overrides. With Spring 6.2's stricter
+                                     XML namespace validation, the
+                                     applicationContext.xml's
+                                     <mvc:annotation-driven/> element fails
+                                     XSD lookup against the xerces parser
+                                     because Spring's classpath EntityResolver
+                                     isn't consulted by xerces's external
+                                     entity resolution. JDK 21 has internal
+                                     xerces+xalan that respects JAXP's
+                                     standard resolver chain — drop the
+                                     external ones from the fat JAR so the
+                                     JDK's implementation wins. -->
+                                <filter>
+                                    <artifact>xerces:xercesImpl</artifact>
+                                    <excludes>
+                                        <exclude>**</exclude>
+                                    </excludes>
+                                </filter>
+                                <filter>
+                                    <artifact>xalan:xalan</artifact>
+                                    <excludes>
+                                        <exclude>**</exclude>
+                                    </excludes>
+                                </filter>
+                                <filter>
+                                    <artifact>xalan:serializer</artifact>
+                                    <excludes>
+                                        <exclude>**</exclude>
+                                    </excludes>
+                                </filter>
                             </filters>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>

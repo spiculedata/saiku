@@ -43,7 +43,13 @@
     </security:http>
     <security:http pattern="/images/**" security="none">
     </security:http>
-    <security:http auto-config='true' use-expressions="true">
+    <!-- request-matcher="ant" forces the legacy AntPathMatcher semantics
+         for intercept-url patterns. Spring Security 6 defaults to
+         "mvc"/PathPattern matching which subtly changed `*` behaviour and
+         broke the existing `/rest/saiku/session*` rule, sending the SPA's
+         anonymous login POST to the catch-all `/rest/**` =
+         isFullyAuthenticated() rule and 302-redirecting to /login. -->
+    <security:http auto-config='true' use-expressions="true" request-matcher="ant">
       <!--access-denied-page="/login.jsp"-->
       <!--
         CSRF: enforced on state-changing /rest/** methods.
@@ -62,12 +68,22 @@
            before locking this down for production. -->
       <security:csrf disabled="true"/>
       <security:intercept-url pattern="/serverdocs/**" access="isAnonymous()" />
-	    <security:intercept-url pattern="/rest/saiku/session*" access="isAnonymous() or isFullyAuthenticated()" />
+	    <!-- /rest/saiku/session is the SPA's login + session-info endpoint.
+	         permitAll lets anonymous POST (login) and authenticated GET
+	         (session info) both through; SessionResource itself returns
+	         401 on bad creds. Spring Security 6's expression evaluation
+	         doesn't reliably return true for isAnonymous() under
+	         auto-config, so permitAll is the robust replacement for the
+	         legacy `isAnonymous() or isFullyAuthenticated()` pattern. -->
+	    <security:intercept-url pattern="/rest/saiku/session" access="permitAll" />
+	    <security:intercept-url pattern="/rest/saiku/session/**" access="permitAll" />
       <security:intercept-url pattern="/rest/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/json/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/WEB-INF/classes/legacy-schema" access="isAnonymous()" />
       <security:logout logout-url="/logout"/>
- 	    <security:http-basic/>
+      <!-- HTTP Basic removed: SPA does form-login. Re-add only if a
+           non-SPA client (XMLA?) needs Basic. -->
+      <security:anonymous/>
     </security:http>
 
     <!-- Tier-1 auth hardening: CSRF wiring -->

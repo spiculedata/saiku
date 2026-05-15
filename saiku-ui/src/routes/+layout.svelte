@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { base } from "$app/paths";
+  import { page } from "$app/state";
   import { session } from "$lib/stores/session.svelte";
   import { theme } from "$lib/stores/theme.svelte";
   import { platform } from "$lib/stores/platform.svelte";
   import { embed } from "$lib/stores/embed.svelte";
   import ToastStack from "$lib/components/ToastStack.svelte";
   import UpgradeBanner from "$lib/components/UpgradeBanner.svelte";
-  import LocalePicker from "$lib/components/LocalePicker.svelte";
-  import { Moon, Sun, Monitor, Maximize2, Minimize2, LogOut, Shield, Home } from "lucide-svelte";
+  import { LogOut, Shield, Home } from "lucide-svelte";
   import Tour from "$lib/components/Tour.svelte";
   import SessionErrorModal from "$lib/modals/SessionErrorModal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -20,12 +20,14 @@
 
   let sessionError = $state<{ open: boolean; message: string }>({ open: false, message: "" });
 
-  // Operator branding: try SVG, then PNG logo from <saiku.home>/branding/.
-  // Fall back to the text brand if neither exists.
+  // Operator branding: try SVG, then PNG logo from <saiku.home>/branding/,
+  // then the bundled default at ${base}/logo.png. Text brand is the last resort.
   let brandLogo = $state<string | null>("/ui/branding/logo.svg");
   function onBrandLogoError() {
     if (brandLogo === "/ui/branding/logo.svg") {
       brandLogo = "/ui/branding/logo.png";
+    } else if (brandLogo === "/ui/branding/logo.png") {
+      brandLogo = `${base}/logo.svg`;
     } else {
       brandLogo = null;
     }
@@ -83,34 +85,14 @@
       {/if}
     </div>
     <div class="topbar__actions">
-      <LocalePicker />
-      <button type="button" class="btn" onclick={() => theme.toggle()}>
-        {#if theme.theme === "dark"}
-          <Moon size={14} /><span>{i18n.t("topbar.theme.dark")}</span>
-        {:else if theme.theme === "light"}
-          <Sun size={14} /><span>{i18n.t("topbar.theme.light")}</span>
-        {:else}
-          <Monitor size={14} /><span>{i18n.t("topbar.theme.system")}</span>
-        {/if}
-      </button>
       {#if session.current}
-        {#if session.isAdmin}
+        <span class="topbar__user">{session.current.username}</span>
+        {#if session.isAdmin && !page.url.pathname.startsWith(`${base}/admin`)}
           <a class="btn" href="{base}/admin"><Shield size={14} /><span>{i18n.t("topbar.admin")}</span></a>
         {/if}
-        <a class="btn" href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
-        <button
-          type="button"
-          class="btn"
-          aria-pressed={platform.fullscreen}
-          title={platform.fullscreen
-            ? i18n.t("topbar.fullscreen.exit")
-            : i18n.t("topbar.fullscreen.enter")}
-          aria-label={platform.fullscreen
-            ? i18n.t("topbar.fullscreen.exit")
-            : i18n.t("topbar.fullscreen.enter")}
-          onclick={() => platform.toggleFullscreen()}
-        >{#if platform.fullscreen}<Minimize2 size={14} />{:else}<Maximize2 size={14} />{/if}</button>
-        <span class="topbar__user">{session.current.username}</span>
+        {#if page.url.pathname.startsWith(`${base}/admin`)}
+          <a class="btn" href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
+        {/if}
         <button type="button" class="btn" onclick={() => session.logout()}>
           <LogOut size={14} /><span>{i18n.t("topbar.signOut")}</span>
         </button>

@@ -100,3 +100,76 @@ export async function getVersion(): Promise<string> {
   if (!res.ok) throw new Error(`version -> ${res.status}`);
   return res.text();
 }
+
+/* ---------------- Mondrian statistics ---------------- */
+
+export interface MondrianVersion {
+  productName?: string;
+  versionString?: string;
+  majorVersion?: number;
+  minorVersion?: number;
+}
+
+export interface MondrianServerInfo {
+  cellCount?: number;
+  cellCoordinateCount?: number;
+  cellSize?: number;
+  segmentCount?: number;
+  segmentCreateCount?: number;
+  cellCacheRequestCount?: number;
+  cellCacheHitCount?: number;
+  cellCacheMissCount?: number;
+  sqlStatementExecuteCount?: number;
+  sqlStatementCellRequestCount?: number;
+  startTimeMillis?: number;
+  [k: string]: unknown;
+}
+
+export interface MondrianConnectionInfo {
+  connectionId?: number;
+  serverId?: number;
+  startTimeMillis?: number;
+  endTimeMillis?: number;
+  catalogName?: string;
+  [k: string]: unknown;
+}
+
+export interface MondrianStatementInfo {
+  statementId?: number;
+  serverId?: number;
+  connectionId?: number;
+  state?: string;
+  mdx?: string;
+  startTimeMillis?: number;
+  endTimeMillis?: number;
+  cellCacheHitCount?: number;
+  cellCacheMissCount?: number;
+  cellCacheRequestCount?: number;
+  [k: string]: unknown;
+}
+
+export interface MondrianStats {
+  server: MondrianServerInfo;
+  version: MondrianVersion;
+  openConnectionCount: number;
+  openMdxStatementCount: number;
+  openSqlStatementCount: number;
+  executingMdxStatementCount: number;
+  avgCellDimensionality: number;
+  connections: MondrianConnectionInfo[];
+  statements: MondrianStatementInfo[];
+}
+
+const STATS_BASE = "/rest/saiku/statistics";
+
+export const adminStats = {
+  mondrian: async (): Promise<MondrianStats | null> => {
+    const res = await fetch(`${STATS_BASE}/mondrian`, {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) throw new Error(`stats/mondrian -> ${res.status}`);
+    const text = await res.text();
+    return text ? (JSON.parse(text) as MondrianStats) : null;
+  },
+};

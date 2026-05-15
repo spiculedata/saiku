@@ -20,7 +20,7 @@
   import { looksLikeTimeHierarchy } from "$lib/modals/dateFilterMdx";
   import ContextMenu from "$lib/components/ContextMenu.svelte";
   type ContextMenuItem = { id: string; label: string; disabled?: boolean; danger?: boolean; sep?: boolean };
-  import { MoreHorizontal, Loader2, XCircle, ChevronDown } from "lucide-svelte";
+  import { MoreHorizontal, Loader2, XCircle, ChevronDown, Settings } from "lucide-svelte";
   import { listLevelMembers, listRootMembers, type SaikuMember } from "$lib/api/discover";
   import { datasources } from "$lib/stores/datasources.svelte";
   import { drillthrough as fetchDrillthrough, type QueryResult } from "$lib/api/query";
@@ -595,9 +595,16 @@
     };
     el.addEventListener("saiku-drillthrough", drillHandler);
 
+    const openDrillFromToolbar = () => {
+      drillPosition = null;
+      drillModalOpen = true;
+    };
+    window.addEventListener("saiku-open-drillthrough", openDrillFromToolbar);
+
     return () => {
       el.removeEventListener("saiku-filter-level", handler);
       el.removeEventListener("saiku-drillthrough", drillHandler);
+      window.removeEventListener("saiku-open-drillthrough", openDrillFromToolbar);
     };
   });
 
@@ -828,7 +835,9 @@
             {/each}
           </select>
         </label>
-        <button type="button" class="chart-edit" title={i18n.t("modal.chart.title")} aria-label={i18n.t("a11y.editChartOptions")} onclick={() => (chartEditorOpen = true)}>⚙</button>
+        <button type="button" class="tb-btn tb-btn--ghost" title={i18n.t("modal.chart.title")} aria-label={i18n.t("a11y.editChartOptions")} onclick={() => (chartEditorOpen = true)}>
+          <Settings size={18} />
+        </button>
       {/if}
     </div>
     {#if query.running}
@@ -1157,16 +1166,6 @@
   }
   .view-more__menu button:hover { background: var(--bg-subtle); }
   .view-more__menu button.active { background: var(--accent); color: var(--accent-fg); }
-  .chart-edit {
-    margin-left: auto;
-    background: transparent;
-    color: var(--fg-muted);
-    border: 1px solid transparent;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    padding: 2px 8px;
-  }
-  .chart-edit:hover { background: var(--bg-subtle); color: var(--fg); }
   .chart-pick select {
     padding: var(--space-1) var(--space-2);
     background: var(--bg);

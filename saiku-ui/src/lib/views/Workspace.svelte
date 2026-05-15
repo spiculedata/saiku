@@ -7,6 +7,7 @@
   import DimensionList from "$lib/views/DimensionList.svelte";
   import WorkspaceToolbar from "$lib/views/WorkspaceToolbar.svelte";
   import QueryCanvas from "$lib/views/QueryCanvas.svelte";
+  import PrefsMenu from "$lib/components/PrefsMenu.svelte";
   import { query } from "$lib/stores/query.svelte";
   import { selection } from "$lib/stores/selection.svelte";
   import { embed } from "$lib/stores/embed.svelte";
@@ -95,6 +96,7 @@
         <DimensionList username={session.username} />
       </div>
       <div class="workspace__sidebar-footer">
+        <PrefsMenu />
         <button type="button" class="btn" onclick={() => (aboutOpen = true)}>{i18n.t("modal.about.title")}</button>
       </div>
     </aside>
@@ -159,6 +161,9 @@
     padding: var(--space-3) var(--space-4);
     border-top: 1px solid var(--border);
     background: var(--bg-muted);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
   }
   .workspace__main {
     display: flex;

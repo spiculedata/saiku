@@ -180,6 +180,15 @@ export async function parseArrowExecute(buffer: ArrayBuffer): Promise<QueryResul
     height,
     runtime: meta.runtimeMs,
   };
+  // Surface the MDX (and the server-side query name) the engine emitted.
+  // The "Tools → MDX…" entry reads result.query?.mdx as a fallback when no
+  // fresh server fetch is possible.
+  if (meta.mdx || meta.queryName) {
+    result.query = {
+      name: meta.queryName ?? "",
+      mdx: meta.mdx ?? undefined,
+    } as unknown as QueryResult["query"];
+  }
   return result;
 }
 

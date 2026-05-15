@@ -57,7 +57,11 @@ class ThemeStore {
   }
 
   toggle(): void {
-    this.theme = this.theme === "dark" ? "light" : "dark";
+    this.theme = this.theme === "light"
+      ? "dark"
+      : this.theme === "dark"
+        ? "system"
+        : "light";
   }
 
   set(t: Theme): void {
