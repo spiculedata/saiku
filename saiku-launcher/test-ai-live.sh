@@ -450,6 +450,10 @@ check "preview emits the same MDX /query would execute, status=PREVIEW (iter 300
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"},{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"columns":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}],"filters":[{"dimension":"Customer","hierarchy":"Gender","level":"Gender","op":"in","members":["[Customer].[Gender].[M]"]}],"order":[{"by":"Unit Sales","direction":"desc"}],"limit":3}' \
   "r.get('status')=='PREVIEW' and r.get('queryId') and 'TopCount' in r.get('generatedMdx','') and 'WHERE ([Customer].[Gender].[M])' in r.get('generatedMdx','') and 'CROSSJOIN' in r.get('generatedMdx','')"
 
+check "preview with bogus measure uses same validation envelope as /query (iter 301)" POST "/rest/saiku/api/ai/query/preview" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Made-Up Measure"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
+  "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='measures[].name' and 'Unknown measure' in r.get('error','') and 'Store Sales' in r.get('available',[]) and 'Profit' in r.get('available',[])"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
