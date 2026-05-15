@@ -112,12 +112,30 @@ The response is dense — this is what makes the API self-describing:
           "name": "Time",
           "uniqueName": "[Time].[Time]",
           "levels": {
-            "year":    { "name": "Year",    "uniqueName": "[Time].[Time].[Year]",
-                         "sampleMembers": ["1997", "1998"] },
-            "quarter": { "name": "Quarter", "uniqueName": "[Time].[Time].[Quarter]",
-                         "sampleMembers": ["Q1", "Q2", "Q3", "Q4", "Q1"] },
-            "month":   { "name": "Month",   "uniqueName": "[Time].[Time].[Month]",
-                         "sampleMembers": ["1", "2", "3", "4", "5"] }
+            "year": {
+              "name": "Year", "uniqueName": "[Time].[Time].[Year]",
+              "sampleMembers": [
+                { "caption": "1997", "uniqueName": "[Time].[Time].[Year].&[1997]" },
+                { "caption": "1998", "uniqueName": "[Time].[Time].[Year].&[1998]" }
+              ]
+            },
+            "quarter": {
+              "name": "Quarter", "uniqueName": "[Time].[Time].[Quarter]",
+              "sampleMembers": [
+                { "caption": "Q1", "uniqueName": "[Time].[Time].[Quarter].&[Q1]" },
+                { "caption": "Q2", "uniqueName": "[Time].[Time].[Quarter].&[Q2]" },
+                { "caption": "Q3", "uniqueName": "[Time].[Time].[Quarter].&[Q3]" },
+                { "caption": "Q4", "uniqueName": "[Time].[Time].[Quarter].&[Q4]" }
+              ]
+            },
+            "month": {
+              "name": "Month", "uniqueName": "[Time].[Time].[Month]",
+              "sampleMembers": [
+                { "caption": "1", "uniqueName": "[Time].[Time].[Month].&[1]" },
+                { "caption": "2", "uniqueName": "[Time].[Time].[Month].&[2]" }
+                // …deduped, so Q1 doesn't repeat across years
+              ]
+            }
           }
         }
       }
@@ -130,11 +148,19 @@ The response is dense — this is what makes the API self-describing:
           "levels": {
             "product family": {
               "name": "Product Family",
-              "sampleMembers": ["Drink", "Food", "Non-Consumable"]
+              "sampleMembers": [
+                { "caption": "Drink",          "uniqueName": "[Product].[Products].[Product Family].&[Drink]" },
+                { "caption": "Food",           "uniqueName": "[Product].[Products].[Product Family].&[Food]" },
+                { "caption": "Non-Consumable", "uniqueName": "[Product].[Products].[Product Family].&[Non-Consumable]" }
+              ]
             },
             "product department": {
               "name": "Product Department",
-              "sampleMembers": ["Alcoholic Beverages", "Beverages", "Dairy"]
+              "sampleMembers": [
+                { "caption": "Alcoholic Beverages", "uniqueName": "[Product].[Products].[Product Department].&[Alcoholic Beverages]" },
+                { "caption": "Beverages",           "uniqueName": "[Product].[Products].[Product Department].&[Beverages]" },
+                { "caption": "Dairy",               "uniqueName": "[Product].[Products].[Product Department].&[Dairy]" }
+              ]
             }
             // …Brand Name, Product Name, etc.…
           }
@@ -511,8 +537,21 @@ on the live Mondrian statement, not just a soft flag.
 ### Member-name format
 
 Members in the `members` array are **MDX unique names**, not bare captions.
-The schema's `sampleMembers` returns captions (`"USA"`, `"1997"`); to build a
-unique name, join the level's `uniqueName` with `.&[<caption>]`:
+The schema's `sampleMembers` ships them ready-made:
+
+```json
+"sampleMembers": [
+  { "caption": "USA", "uniqueName": "[Store].[Stores].[Store Country].&[USA]" }
+]
+```
+
+Copy the `uniqueName` directly into `members`. For dimensions where sample
+coverage is insufficient (large dimensions, fuzzy lookup), fetch more via
+`GET /ai/members/search?cubeId=…&level=…&q=USA` — each hit's `uniqueName`
+field is the value to drop into `members`.
+
+If you ever need to assemble a unique name by hand, the pattern is
+`level.uniqueName + ".&[" + caption + "]"`:
 
 ```
 level.uniqueName            "[Store].[Stores].[Store Country]"
@@ -520,9 +559,8 @@ caption                     "USA"
 unique-name to send         "[Store].[Stores].[Store Country].&[USA]"
 ```
 
-Or fetch ready-made unique names with `GET /ai/members/search?cubeId=…&level=…&q=USA`
-— each hit's `uniqueName` field is the value to drop into `members`. Submitting a
-bare caption to `members` produces an MDX-parse error at execution time.
+Submitting a bare caption to `members` produces an MDX-parse error at
+execution time.
 
 For `between` over a time dimension, both ends must be unique names at the
 same level:
@@ -544,8 +582,13 @@ selected `level`.
 | --- | --- | --- |
 | `last_n_days` / `_months` / `_quarters` / `_years` | `Tail(level.Members, n)` | Pick the level that matches the period; `n` defaults to 1. |
 | `ytd` / `mtd` / `qtd` | `Ytd()` / `Mtd()` / `Qtd()` | Depends on the cube's time-default member. |
-| `previous_period` | `Tail(level.Members, 2).Item(0)` | Member preceding the latest available. |
-| `same_period_last_year` | `Tail(level.Members, 2).Item(0)` | Currently only supported on a Year level; finer levels need a year-aware ParallelPeriod we don't yet introspect. |
+| `previous_period` | `Tail(level.Members, 2).Item(0)` | Member preceding the **latest member that has data in the cube** — not "yesterday" relative to wall-clock time. If the warehouse last loaded on Tuesday, this returns Monday on Friday too. |
+
+**Year-over-year comparison is not yet supported** as a relative preset. At
+Year level it would collapse to `previous_period`; at Month/Quarter level
+the year-aware MDX needs a hierarchy-aware `ParallelPeriod` the converter
+doesn't yet introspect. For now, pass two explicit year unique-names via
+`op: "in"` instead.
 
 Example: "last 30 days of sales by product family":
 
@@ -660,12 +703,14 @@ both canonical and display names so the agent sees every legal string.
 
 ```
 1. GET /ai/cubes                                     → discover available cubes
-2. GET /ai/schema/{cubeId}                           → typed schema + sample members + examples + JSON Schema
+2. GET /ai/schema/{cubeId}                           → typed schema + sample members
+                                                       (with unique names) + examples + JSON Schema
 3. Construct an AiQueryRequest using only the names in the schema response
 4. POST /ai/query                                    → results
    ↳ 400 VALIDATION_ERROR? Read `field` + `available`, fix, retry
-   ↳ 200 SUCCESS? Render the matrix using metadata.rows/columns
-5. (Optional) GET /ai/query/{id}/drillthrough        → raw fact rows for any cell of interest
+   ↳ 200 SUCCESS? Render `data` (records — default), or `matrix` when format=matrix.
+                  metadata.rows/columns name the row/column captions either way.
+5. (Optional) GET /ai/query/{id}/drillthrough        → raw fact rows (typed cells) for any cell of interest
 ```
 
 A correctly-grounded agent never sees MDX, never invents names, and gets

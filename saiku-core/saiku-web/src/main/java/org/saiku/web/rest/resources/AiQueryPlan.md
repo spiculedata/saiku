@@ -1,4 +1,38 @@
-# AI-Friendly Query API — Spec
+# AI-Friendly Query API — Original Phase-1 Spec (historical)
+
+> **This document is a frozen Phase-1 design snapshot.** The shipped contract
+> has diverged from it across the v2 (records + typed cells + ops + sort)
+> and v3 (relative-time filters, typed sample members) reshapes. **Always
+> treat `docs/AI-QUERY-API.md` as the authoritative current contract.**
+>
+> ### Major drifts from this plan
+>
+> | Area | Plan said | Actually shipped |
+> | --- | --- | --- |
+> | Schema container | `dimensions[]` / `levels[]` arrays | Maps keyed by lower-cased name |
+> | Measure `aggregators` | Listed on measures + advertised in request | Dropped from v1 contract entirely |
+> | Sample members | (not in plan) | `sampleMembers: [{caption, uniqueName}]`, deduped |
+> | Request — `columns[].unique` | Field present | Field never shipped; columns use same axis shape as rows |
+> | Request — `order[]` | (not in plan) | Sort + TopCount/BottomCount; supersedes limit→HEAD when present |
+> | Filter `op` | (not in plan; implicit "in") | Enum: in / not_in / between / descendants_of / relative |
+> | Relative-time filters | (not in plan) | `op:"relative"` with last_n_* / ytd / mtd / qtd / previous_period |
+> | Response `status` | `"success"` (lowercase string) | Enum: SUCCESS / VALIDATION_ERROR / EXECUTION_ERROR / PERMISSION_DENIED / RATE_LIMITED / TIMEOUT / WAREHOUSE_ERROR / CUBE_NOT_FOUND |
+> | Response payload | `matrix` only, with formatted strings | `data` (records, default) or `matrix`, both with `{value, formatted, unit}` typed cells |
+> | `format` query param | (not in plan) | `?format=records\|matrix` on POST /ai/query |
+> | Freshness metadata | (not in plan) | `freshness: {computedAt, computedAtMillis, cached}` |
+> | Preview endpoint | (not in plan) | `POST /ai/query/preview` — validate + emit MDX without executing |
+> | Member-search endpoint | (not in plan) | `GET /ai/members/search` |
+> | Drillthrough payload | "raw row detail" (unspecified) | Rows of `{column → AiCell{value, formatted, unit}}` |
+> | Error envelope | Bespoke `{ error: "validation", field, message }` | Same `AiQueryResponse` shape with `status:VALIDATION_ERROR`, `field`, `available` |
+> | File locations | `saiku-web/.../rest/objects/ai/` | `saiku-service/.../service/olap/ai/` (request types live with the converter, not the resource) |
+> | Phase-3 enrichment | Separate `enrichedDimensions` field | Overlay merged in-place onto each level/dimension; `displayName` alongside `name` |
+>
+> The rest of this file is preserved as-is for design-history purposes only.
+> Don't write new client code against it.
+
+---
+
+# AI-Friendly Query API — Spec (original Phase-1 design)
 
 ## Problem
 

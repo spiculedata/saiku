@@ -416,22 +416,30 @@ public class AiSchemaConverterTest {
     }
 
     @Test
-    public void filterRelativeSamePeriodLastYearOnlyOnYearLevel() {
+    public void filterRelativeSamePeriodLastYearRejected() {
+        // same_period_last_year was intentionally dropped from v1 — at Year level
+        // it's identical to previous_period; at finer levels honest semantics
+        // require a year-aware ParallelPeriod we don't yet introspect. Confirm
+        // the converter refuses it rather than silently aliasing.
         AiQueryRequest req = baseReq();
         req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
         AiFilterSelection f = new AiFilterSelection();
         f.setDimension("Time");
         f.setHierarchy("Time By");
-        f.setLevel("Month");
+        f.setLevel("Year");
         f.setOp("relative");
         f.setValue("same_period_last_year");
         req.setFilters(Collections.singletonList(f));
 
         try {
             converter.convert(req, schema);
-            fail("expected validation error — same_period_last_year only supported on Year");
+            fail("expected validation error — same_period_last_year is not a v1 preset");
         } catch (AiValidationException e) {
             assertTrue(e.getField(), e.getField().endsWith(".value"));
+            assertTrue(
+                    "error should not list same_period_last_year",
+                    !e.getAvailable().contains("same_period_last_year"));
+            assertTrue(e.getAvailable().contains("previous_period"));
         }
     }
 

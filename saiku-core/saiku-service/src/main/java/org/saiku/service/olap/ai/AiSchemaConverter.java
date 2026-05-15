@@ -249,20 +249,23 @@ public class AiSchemaConverter {
      *       cube's time-dimension default member; if the cube author
      *       didn't anchor it, the agent should switch to {@code last_n_*}.</li>
      *   <li>{@code previous_period} — {@code Tail(level.Members, 2).Item(0)}.
-     *       The member immediately preceding the latest available.</li>
-     *   <li>{@code same_period_last_year} — for {@code Year} level only:
-     *       {@code Tail(level.Members, 2).Item(0)}. For finer levels
-     *       (Quarter/Month/Day) the year-shifted equivalent needs a
-     *       hierarchy-aware ParallelPeriod we don't yet introspect; the
-     *       converter raises a validation error pointing at v1 alternatives.</li>
+     *       The member immediately preceding the latest member that has
+     *       data in the cube — NOT "yesterday" relative to wall-clock time.
+     *       If the warehouse is stale, this is stale too.</li>
      * </ul>
+     *
+     * <p>{@code same_period_last_year} is intentionally NOT supported in v1.
+     * At Year level it would be identical to {@code previous_period}; at
+     * Month/Quarter level the year-aware equivalent requires a hierarchy-
+     * aware ParallelPeriod we don't yet introspect, and shipping it as a
+     * silent fall-through to "second-most-recent" would be a footgun.
      */
     private String relativeSet(AiFilterSelection f, AiSchema.Level level, String fieldPath) {
         String preset = f.getValue() == null ? "" : f.getValue().toLowerCase();
         if (preset.isEmpty()) {
             throw new AiValidationException(
                     fieldPath + ".value",
-                    "'relative' filter requires value=last_n_days|last_n_months|last_n_quarters|last_n_years|ytd|mtd|qtd|previous_period|same_period_last_year",
+                    "'relative' filter requires value=last_n_days|last_n_months|last_n_quarters|last_n_years|ytd|mtd|qtd|previous_period",
                     null);
         }
         switch (preset) {
@@ -281,19 +284,6 @@ public class AiSchemaConverter {
                 return "Qtd()";
             case "previous_period":
                 return "Tail(" + level.uniqueName + ".Members, 2).Item(0)";
-            case "same_period_last_year":
-                // Defensible only when the level *is* the year. For sub-year
-                // levels the correct MDX is ParallelPeriod against a year-level
-                // ancestor — we don't yet introspect hierarchy shape, so we
-                // fail loudly rather than emit incorrect MDX.
-                if ("year".equalsIgnoreCase(level.name)) {
-                    return "Tail(" + level.uniqueName + ".Members, 2).Item(0)";
-                }
-                throw new AiValidationException(
-                        fieldPath + ".value",
-                        "'same_period_last_year' currently only supports level=Year. "
-                                + "For finer-grained periods use last_n_* with the appropriate n.",
-                        null);
             default:
                 throw new AiValidationException(
                         fieldPath + ".value",
@@ -306,8 +296,7 @@ public class AiSchemaConverter {
                                 "ytd",
                                 "mtd",
                                 "qtd",
-                                "previous_period",
-                                "same_period_last_year"));
+                                "previous_period"));
         }
     }
 

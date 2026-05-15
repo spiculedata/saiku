@@ -268,14 +268,22 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
     private void populateSampleMembers(AiSchema.Level out, SaikuCube cube, String hierarchyName, String levelName) {
         if (sampleMembersPerLevel <= 0) return;
         try {
+            // Over-fetch so post-dedupe we still get a useful sample —
+            // levels like Quarter repeat captions ("Q1") across years and
+            // would otherwise collapse to fewer distinct entries than asked
+            // for. The discover service has its own internal cap so 4x is
+            // a safe ceiling.
+            int overfetch = Math.max(sampleMembersPerLevel * 4, sampleMembersPerLevel);
             List<org.saiku.olap.dto.SimpleCubeElement> members =
-                    discoverService.getLevelMembers(cube, hierarchyName, levelName, sampleMembersPerLevel);
+                    discoverService.getLevelMembers(cube, hierarchyName, levelName, overfetch);
             if (members == null) return;
-            int n = Math.min(members.size(), sampleMembersPerLevel);
-            for (int i = 0; i < n; i++) {
-                org.saiku.olap.dto.SimpleCubeElement m = members.get(i);
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            for (org.saiku.olap.dto.SimpleCubeElement m : members) {
+                if (out.sampleMembers.size() >= sampleMembersPerLevel) break;
                 String caption = m.getCaption() != null && !m.getCaption().isEmpty() ? m.getCaption() : m.getName();
-                if (caption != null) out.sampleMembers.add(caption);
+                if (caption == null || caption.isEmpty()) continue;
+                if (!seen.add(caption)) continue; // skip caption duplicates (rolled-up levels)
+                out.sampleMembers.add(new AiSchema.MemberSample(caption, m.getUniqueName()));
             }
         } catch (RuntimeException e) {
             // sample-member fetch failure must never break the schema response.

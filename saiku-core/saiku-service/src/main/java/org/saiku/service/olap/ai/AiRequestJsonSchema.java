@@ -140,8 +140,8 @@ public final class AiRequestJsonSchema {
         Map<String, Object> value = stringField("Relative preset (only when op=relative). "
                 + "last_n_days/months/quarters/years pick the most-recent N members on the level. "
                 + "ytd/mtd/qtd use Mondrian's Ytd()/Mtd()/Qtd() against the time dimension's default member. "
-                + "previous_period picks the member preceding the latest available. "
-                + "same_period_last_year is currently only supported on a Year level.");
+                + "previous_period picks the member preceding the latest available member in the cube "
+                + "(NOT relative to wall-clock time — if the warehouse is stale, this is stale).");
         value.put(
                 "enum",
                 List.of(
@@ -152,8 +152,7 @@ public final class AiRequestJsonSchema {
                         "ytd",
                         "mtd",
                         "qtd",
-                        "previous_period",
-                        "same_period_last_year"));
+                        "previous_period"));
         props.put("value", value);
         props.put("n", intField(1, "Count for the last_n_* presets. Defaults to 1; ignored for other presets."));
         Map<String, Object> o = obj("Slicer filter — lands in the WHERE clause.", props);

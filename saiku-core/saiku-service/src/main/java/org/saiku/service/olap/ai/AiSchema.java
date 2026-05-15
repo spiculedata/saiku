@@ -34,15 +34,46 @@ public class AiSchema {
         }
     }
 
+    /**
+     * Caption + MDX unique-name pair for a single member sample. Pre-built
+     * so an agent can copy {@link #uniqueName} straight into the
+     * {@code filters[].members} array without having to assemble
+     * {@code level.uniqueName + ".&[" + caption + "]"} itself.
+     */
+    public static class MemberSample {
+        public final String caption;
+        public final String uniqueName;
+
+        public MemberSample() {
+            this.caption = null;
+            this.uniqueName = null;
+        }
+
+        public MemberSample(String caption, String uniqueName) {
+            this.caption = caption;
+            this.uniqueName = uniqueName;
+        }
+
+        public String getCaption() {
+            return caption;
+        }
+
+        public String getUniqueName() {
+            return uniqueName;
+        }
+    }
+
     public static class Level {
         public final String name;
         public final String uniqueName;
         public String displayName;
         public String description;
-        /** Up to ~5 actual member captions at this level. Massive help for
-         *  the LLM: stops it hallucinating member names like
-         *  {@code "[Time].[2099]"} that don't exist. */
-        public java.util.List<String> sampleMembers = new java.util.ArrayList<>();
+        /** Up to ~5 actual members at this level — caption + unique name,
+         *  deduped by caption. Massive help for the LLM: stops it
+         *  hallucinating member names like {@code "[Time].[2099]"} that
+         *  don't exist, and lets it copy-paste the unique name directly
+         *  into a filter rather than constructing it. */
+        public java.util.List<MemberSample> sampleMembers = new java.util.ArrayList<>();
 
         public Level(String name, String uniqueName) {
             this.name = name;

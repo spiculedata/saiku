@@ -120,16 +120,17 @@ public class AiAutodocTest {
         h.description = "Calendar-year hierarchy.";
         AiSchema.Level l = new AiSchema.Level("Year", "[Time].[Time By].[Year]");
         l.description = "Calendar year.";
-        l.sampleMembers.add("1997");
-        l.sampleMembers.add("1998");
-        l.sampleMembers.add("1999");
+        l.sampleMembers.add(new AiSchema.MemberSample("1997", "[Time].[Time By].[Year].&[1997]"));
+        l.sampleMembers.add(new AiSchema.MemberSample("1998", "[Time].[Time By].[Year].&[1998]"));
+        l.sampleMembers.add(new AiSchema.MemberSample("1999", "[Time].[Time By].[Year].&[1999]"));
         h.levels.put(AiSchema.key("Year"), l);
         d.hierarchies.put(AiSchema.key("Time By"), h);
         schema.dimensions.put(AiSchema.key("Time"), d);
 
         assertEquals("Cube describing FoodMart sales facts.", schema.description);
         assertEquals(3, l.sampleMembers.size());
-        assertEquals("1997", l.sampleMembers.get(0));
+        assertEquals("1997", l.sampleMembers.get(0).getCaption());
+        assertEquals("[Time].[Time By].[Year].&[1997]", l.sampleMembers.get(0).getUniqueName());
     }
 
     @Test
