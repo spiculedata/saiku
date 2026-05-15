@@ -659,6 +659,19 @@ check "/preview honours relative-time DSL (Ytd) (iter 346)" POST "/rest/saiku/ap
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Quarter","op":"relative","value":"ytd"}]}' \
   "r.get('status')=='PREVIEW' and 'WHERE (Ytd())' in r.get('generatedMdx','')"
 
+# Pins saiku#811: lowercase cubeName partially resolves through
+# the schema validator (which is case-insensitive) but fails at the
+# downstream native-cube lookup (which is case-sensitive). The
+# current observed shape is HTTP 500 EXECUTION_ERROR — the
+# describeDeepestCause path surfaces "SaikuOlapException: Cannot
+# get native cube". When saiku#811 is fixed (preferred path: make
+# validation case-sensitive), this test will need to flip to
+# expect HTTP 400 + field=cube + available list, like the
+# "NoSuchCube" case in iter 324.
+check "lowercase cubeName partially resolves → 500 with deepest-cause surface (saiku#811 — iter 347)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"sales"},"measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
+  "http==500 and r.get('status')=='EXECUTION_ERROR' and 'Cannot get native cube' in r.get('error','') and '[Sales]' in r.get('error','')"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
