@@ -278,6 +278,10 @@ check "Store cube — Store Type level" POST "/rest/saiku/api/ai/query" \
   '{"cube":"unknown_foodmart/FoodMart/FoodMart/Store","measures":[{"name":"Store Sqft"}],"rows":[{"dimension":"Store Type","level":"Store Type"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==5"
 
+check "Warehouse cube — Country level (saiku#781 — Calcite cardinality probe fallback)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"unknown_foodmart/FoodMart/FoodMart/Warehouse","measures":[{"name":"Warehouse Sales"}],"rows":[{"dimension":"Warehouse","hierarchy":"Warehouses","level":"Country"}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')>=1 and r['data'][0]['Warehouse Sales']['value']>0"
+
 check "Sales 2 cube — Quarter × Sales+Customer Count" POST "/rest/saiku/api/ai/query" \
   '{"cube":"unknown_foodmart/FoodMart/FoodMart/Sales 2","measures":[{"name":"Sales Count"},{"name":"Customer Count"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==4"
