@@ -676,6 +676,10 @@ check "lowercase dim/hier/level all resolve case-insensitively end-to-end (contr
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"product","hierarchy":"products","level":"product family"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Product Family']=='Drink' and r['data'][0]['Unit Sales']['value']==24597.0 and '[Product].[Products].[Product Family].Members' in r['metadata']['generatedMdx']"
 
+check "lowercase measure name resolves and rountrips with proper case (iter 349)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"unit sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==24597.0 and '[Measures].[Unit Sales]' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
