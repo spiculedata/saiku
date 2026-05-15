@@ -454,6 +454,10 @@ check "preview with bogus measure uses same validation envelope as /query (iter 
   '{"cube":"'"$CUBE"'","measures":[{"name":"Made-Up Measure"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
   "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='measures[].name' and 'Unknown measure' in r.get('error','') and 'Store Sales' in r.get('available',[]) and 'Profit' in r.get('available',[])"
 
+check "2-axis nonEmpty=false preserves empty cells across both axes (iter 302)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Year","members":["[Time].[Time].[1997]","[Time].[Time].[1998]"]}],"columns":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"nonEmpty":false}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and len(r['metadata']['columns'])==3 and r['data'][0]['Unit Sales | Drink']['value']==24597.0 and r['data'][1]['Unit Sales | Drink']['value'] is None and r['data'][1]['Unit Sales | Drink']['formatted']=='' and 'NON EMPTY' not in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
