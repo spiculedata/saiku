@@ -398,7 +398,7 @@ check "Customer State Province + Order(desc, no limit) emits Order BDESC (iter 2
 
 check "mixed-format multi-measure: EUR + % unit sniffers independent per cell (iter 287)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Profit"},{"name":"Gewinn-Wachstum"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}]}' \
-  "r.get('status')=='SUCCESS' and r.get('totalRows')==4 and r['data'][0]['Profit']['unit']=='EUR' and r['data'][0]['Gewinn-Wachstum']['unit']=='%' and r['data'][0]['Profit']['value']==83876.11 and r['data'][0]['Gewinn-Wachstum']['value']==0.0"
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==4 and r['data'][0]['Profit']['unit']=='EUR' and r['data'][0]['Gewinn-Wachstum']['unit']=='%' and r['data'][0]['Profit']['formatted']=='83,876.11 \u20ac' and r['data'][0]['Gewinn-Wachstum']['value']==0.0"
 
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
