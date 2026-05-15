@@ -404,6 +404,10 @@ check "Time/Date Only/Date String TopCount(5) — string-keyed date hier (iter 2
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Time","hierarchy":"Date Only","level":"Date String"}],"order":[{"by":"Unit Sales","direction":"desc"}],"limit":5}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and r['data'][0]['Date String']=='1997/07/27' and r['data'][0]['Unit Sales']['value']==3850.0 and '[Time].[Date Only].[Date String]' in r['metadata']['generatedMdx']"
 
+check "HR cube: Pay Type × Org Salary + Number of Employees — GBP unit sniff (iter 289)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Org Salary"},{"name":"Number of Employees"}],"rows":[{"dimension":"Employee","hierarchy":"Pay Type","level":"Pay Type"}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==2 and r['data'][0]['Pay Type']=='Hourly' and r['data'][0]['Org Salary']['unit']=='GBP' and r['data'][0]['Number of Employees']['value']==283.0 and r['data'][1]['Number of Employees']['value']==333.0"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
