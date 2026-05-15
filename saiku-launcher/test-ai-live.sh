@@ -680,6 +680,15 @@ check "lowercase measure name resolves and rountrips with proper case (iter 349)
   '{"cube":"'"$CUBE"'","measures":[{"name":"unit sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==24597.0 and '[Measures].[Unit Sales]' in r['metadata']['generatedMdx']"
 
+# saiku#811 extends to connectionName too — mixed-case "Unknown_Foodmart"
+# fails with raw NPE because the connection lookup returns null.
+# Worse surface than cubeName's "Cannot get native cube" — the
+# describeDeepestCause helper still gives a useful message but the
+# 500 status is the agent-facing surface that should be a clean 400.
+check "mixed-case connectionName → NPE surfaces as 500 (saiku#811 extension — iter 350)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":{"connectionName":"Unknown_Foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
+  "http==500 and r.get('status')=='EXECUTION_ERROR' and 'NullPointerException' in r.get('error','') and 'OlapConnection' in r.get('error','')"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
