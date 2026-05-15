@@ -514,6 +514,10 @@ check "unknown relative preset → 400 + field + 8 presets in available (iter 31
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Quarter","op":"relative","value":"parallel_period","n":1}]}' \
   "http==400 and r.get('field')=='filters[0].value' and 'Unknown relative preset' in r.get('error','') and 'ytd' in r.get('available',[]) and 'previous_period' in r.get('available',[]) and len(r.get('available',[]))==8"
 
+check "filter op=relative last_n_years n=2 emits Tail at Year level (iter 315)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","op":"relative","value":"last_n_years","n":2}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==24597.0 and 'Tail([Time].[Time].[Year].Members, 2)' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
