@@ -501,14 +501,26 @@ public class AiQueryResource {
         try {
             java.sql.ResultSet rs = thinQueryService.drillthrough(name, maxrows, firstRowset, returns);
             List<Map<String, AiCell>> rows = new ArrayList<>();
+            List<String> columnLabels = new ArrayList<>();
             if (rs != null) {
                 java.sql.ResultSetMetaData md = rs.getMetaData();
                 int colCount = md.getColumnCount();
+                // saiku#800: Mondrian's drillthrough sometimes returns the same
+                // getColumnLabel() for multiple columns within a hierarchy
+                // (e.g. Year + Quarter + Month all labelled "Quarter"). Pre-
+                // compute disambiguated keys ONCE before the row loop so:
+                //   * the first occurrence keeps its raw label (back-compat)
+                //   * subsequent duplicates fall back to getColumnName(c) when
+                //     that differs, else to a positional suffix _2, _3, ...
+                // Without this, every row's Map.put silently overwrote the
+                // earlier column, leaving the first column labelled with the
+                // LAST column's value — silent data corruption.
+                columnLabels = disambiguateColumnLabels(md);
                 while (rs.next()) {
                     Map<String, AiCell> row = new LinkedHashMap<>();
                     for (int c = 1; c <= colCount; c++) {
                         Object v = rs.getObject(c);
-                        row.put(md.getColumnLabel(c), toCellFromObject(v));
+                        row.put(columnLabels.get(c - 1), toCellFromObject(v));
                     }
                     rows.add(row);
                 }
@@ -517,6 +529,9 @@ public class AiQueryResource {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("queryId", queryId);
             body.put("rowCount", rows.size());
+            // saiku#800: explicit columns[] so agents can read by position
+            // when the label heuristic still leaves ambiguity.
+            body.put("columns", columnLabels);
             body.put("rows", rows);
             return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
         } catch (NullPointerException e) {
@@ -765,6 +780,48 @@ public class AiQueryResource {
         Double parsed = AiCell.parseValueFromFormatted(s);
         String unit = AiCell.sniffUnit(s);
         return new AiCell(parsed, s, unit);
+    }
+
+    /**
+     * saiku#800: build a per-column key list that survives Mondrian's habit
+     * of returning the same {@code getColumnLabel(c)} for multiple drill-
+     * through columns within a hierarchy (e.g. Year/Quarter/Month all
+     * labelled "Quarter"). First occurrence keeps its raw label; subsequent
+     * collisions try {@code getColumnName(c)} as a tiebreaker and finally
+     * fall back to a {@code _N} positional suffix. Order-preserving so the
+     * returned list aligns with column indexes 1..colCount.
+     */
+    static List<String> disambiguateColumnLabels(java.sql.ResultSetMetaData md) throws java.sql.SQLException {
+        int colCount = md.getColumnCount();
+        List<String> out = new ArrayList<>(colCount);
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        for (int c = 1; c <= colCount; c++) {
+            String label = md.getColumnLabel(c);
+            if (label == null || label.isEmpty()) label = "col_" + c;
+            String chosen = label;
+            if (seen.contains(chosen)) {
+                String alt = null;
+                try {
+                    alt = md.getColumnName(c);
+                } catch (java.sql.SQLException ignore) {
+                    // Some drivers don't implement getColumnName — fall through.
+                }
+                if (alt != null && !alt.isEmpty() && !seen.contains(alt) && !alt.equals(label)) {
+                    chosen = alt;
+                } else {
+                    int n = 2;
+                    String candidate;
+                    do {
+                        candidate = label + "_" + n;
+                        n++;
+                    } while (seen.contains(candidate));
+                    chosen = candidate;
+                }
+            }
+            seen.add(chosen);
+            out.add(chosen);
+        }
+        return out;
     }
 
     /** Convert a raw {@link AbstractBaseCell} into an {@link AiCell}. */
