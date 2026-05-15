@@ -380,6 +380,10 @@ check "Customer/Customers/Country geo level — single-country data (iter 282)" 
   '{"cube":"'"$CUBE"'","measures":[{"name":"Customer Count"}],"rows":[{"dimension":"Customer","hierarchy":"Customers","level":"Country"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==1 and r['data'][0]['Country']=='USA' and r['data'][0]['Customer Count']['value']==5581.0"
 
+check "Store Size in SQFT — numeric-keyed hier with #null member (iter 283)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Store","hierarchy":"Store Size in SQFT","level":"Store Sqft"}],"order":[{"by":"Store Sales","direction":"desc"}],"limit":5}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and r['data'][0]['Store Sqft']=='27694' and r['data'][1]['Store Sqft']=='#null' and r['data'][0]['Store Sales']['value']==87218.28"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
