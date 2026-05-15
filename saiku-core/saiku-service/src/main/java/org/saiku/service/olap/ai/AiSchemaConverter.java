@@ -220,6 +220,16 @@ public class AiSchemaConverter {
                         null);
             }
             AiOrderBy ob = req.getOrder().get(0);
+            // direction must be exactly "asc" or "desc" (case-insensitive).
+            // Without this guard, anything that doesn't start with "asc"
+            // falls through to descending — silent garbage acceptance.
+            String dir = ob.getDirection();
+            if (dir != null && !dir.equalsIgnoreCase("asc") && !dir.equalsIgnoreCase("desc")) {
+                throw new AiValidationException(
+                        "order[0].direction",
+                        "direction must be 'asc' or 'desc' (case-insensitive). Got '" + dir + "'.",
+                        null);
+            }
             AiSchema.Measure m = lookupMeasure(ob.getBy(), schema);
             if (req.getLimit() > 0) {
                 rowExpr = (ob.isAscending() ? "BottomCount(" : "TopCount(") + rowExpr + ", " + req.getLimit() + ", "
