@@ -392,6 +392,10 @@ check "maximally-shaped query: 2 measures × Quarter cols × Family rows + Gende
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"},{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"columns":[{"dimension":"Time","hierarchy":"Time","level":"Quarter"}],"filters":[{"dimension":"Customer","hierarchy":"Gender","level":"Gender","op":"in","members":["[Customer].[Gender].[M]"]}],"order":[{"by":"Unit Sales","direction":"desc"}],"limit":3}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and len(r['metadata']['columns'])==8 and r['data'][0]['Product Family']=='Food' and r['data'][0]['Unit Sales | Q1']['value']==23977.0 and 'TopCount(' in r['metadata']['generatedMdx'] and 'WHERE ([Customer].[Gender].[M])' in r['metadata']['generatedMdx']"
 
+check "Customer State Province + Order(desc, no limit) emits Order BDESC (iter 286)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Customer Count"}],"rows":[{"dimension":"Customer","hierarchy":"Customers","level":"State Province"}],"order":[{"by":"Customer Count","direction":"desc"}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and [d['State Province'] for d in r['data']]==['CA','WA','OR'] and r['data'][0]['Customer Count']['value']==2716.0 and sum(d['Customer Count']['value'] for d in r['data'])==5581.0 and 'Order(' in r['metadata']['generatedMdx'] and 'BDESC' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
