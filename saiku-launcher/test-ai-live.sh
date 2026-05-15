@@ -750,6 +750,10 @@ check "reversed between range {Q3:Q1} passes through to Mondrian (covers Q1-Q3 â
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Quarter","op":"between","members":["[Time].[Time].[1997].[Q3]","[Time].[Time].[1997].[Q1]"]}],"nonEmpty":false}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and sum(d['Unit Sales']['value'] for d in r['data'])==194749.0 and 'WHERE ({[Time].[Time].[1997].[Q3] : [Time].[Time].[1997].[Q1]})' in r['metadata']['generatedMdx']"
 
+check "/preview emits TopCount when order+limit supplied (iter 360)" POST "/rest/saiku/api/ai/query/preview" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"order":[{"by":"Store Sales","direction":"desc"}],"limit":2}' \
+  "r.get('status')=='PREVIEW' and 'TopCount([Product].[Products].[Product Family].Members, 2, [Measures].[Store Sales])' in r.get('generatedMdx','')"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
