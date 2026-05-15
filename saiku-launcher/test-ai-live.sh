@@ -183,6 +183,10 @@ check "validation: duplicate rows[] axis rejected (saiku#797)" POST "/rest/saiku
   '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"},{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
   "r.get('status')=='VALIDATION_ERROR' and r.get('field')=='rows' and 'Duplicate axis selection' in r.get('error','')"
 
+check "validation: cross-dim member ref in filter rejected (saiku#798)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","members":["[Customer].[Customers].[USA]"]}]}' \
+  "r.get('status')=='VALIDATION_ERROR' and r.get('field')=='filters[0].members[0]' and 'Customer' in r.get('error','') and 'Time' in r.get('error','')"
+
 check "drillthrough on bogus queryId returns 404 (saiku#783)" GET "/rest/saiku/api/ai/query/bogus-uuid-1234/drillthrough?maxrows=5" '' \
   "http==404 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='queryId' and 'Unknown queryId' in r.get('error','')"
 

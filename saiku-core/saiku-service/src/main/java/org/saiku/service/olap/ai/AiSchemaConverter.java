@@ -351,8 +351,29 @@ public class AiSchemaConverter {
             // {...} set literal and reach Mondrian's parser. Doesn't apply to
             // op=relative, which doesn't read members[].
             if (!"relative".equals(op)) {
+                AiSchema.Hierarchy filterHier = lookupHierarchy(probe, schema, fieldPath);
                 for (int mi = 0; mi < members.size(); mi++) {
-                    validateMemberRef(members.get(mi), fieldPath + ".members[" + mi + "]");
+                    String mref = members.get(mi);
+                    validateMemberRef(mref, fieldPath + ".members[" + mi + "]");
+                    // Also assert the member's dim prefix matches the declared
+                    // filter dimension (saiku#798). The level depth check is
+                    // skipped because slicer members can sit at any depth in
+                    // their dim (op=in with a Year member while level=Quarter
+                    // is a valid pattern). The dim check is the only one safe
+                    // to apply uniformly to slicers.
+                    String firstSeg = firstBracketedSegment(mref);
+                    if (filterHier != null && firstSeg != null) {
+                        String expectedDim = extractDimFromHierarchyUniqueName(filterHier.uniqueName);
+                        if (expectedDim != null && !expectedDim.equalsIgnoreCase(firstSeg)) {
+                            throw new AiValidationException(
+                                    fieldPath + ".members[" + mi + "]",
+                                    "Member '" + mref + "' belongs to dimension '" + firstSeg
+                                            + "', but the filter declares dimension '" + expectedDim
+                                            + "'. Move the member into a filter on its own dimension, "
+                                            + "or supply a member from '" + expectedDim + "'.",
+                                    null);
+                        }
+                    }
                 }
             }
 
@@ -696,6 +717,31 @@ public class AiSchemaConverter {
         // ones LLMs typically emit, so the validator covers the practical
         // failure mode while staying conservative.
         if (memberRef != null && memberRef.indexOf("&[") >= 0) return;
+
+        // First segment of the ref must be the declared hierarchy's dimension
+        // (saiku#798). Without this, an agent declaring `dimension: Time` but
+        // supplying a `[Customer].[Customers].[USA]` member gets the Customer
+        // member spliced silently into the MDX — wrong dim, wrong filter,
+        // SUCCESS response.
+        String firstSeg = firstBracketedSegment(memberRef);
+        if (hier != null && firstSeg != null) {
+            // hier.uniqueName looks like "[DimName].[HierName]" — pull the
+            // dim part for comparison. If the hier name equals the dim name
+            // (Mondrian convention for "default" hierarchies) the unique
+            // name is "[DimName]" alone, so handle that too.
+            String expectedDim = extractDimFromHierarchyUniqueName(hier.uniqueName);
+            if (expectedDim != null && !expectedDim.equalsIgnoreCase(firstSeg)) {
+                throw new AiValidationException(
+                        fieldPath,
+                        "Member '" + memberRef + "' belongs to dimension '"
+                                + firstSeg + "', but the axis declares dimension '"
+                                + expectedDim + "'. Move the member into a filter "
+                                + "on its own dimension, or supply a member from '"
+                                + expectedDim + "'.",
+                        null);
+            }
+        }
+
         int segments = countBracketedSegments(memberRef);
         int expectedDepth = levelDepth(declared, hier);
         if (expectedDepth < 0) return;
@@ -713,6 +759,25 @@ public class AiSchemaConverter {
                             + "at the declared level.",
                     null);
         }
+    }
+
+    private static String firstBracketedSegment(String ref) {
+        if (ref == null) return null;
+        int open = ref.indexOf('[');
+        if (open < 0) return null;
+        int close = ref.indexOf(']', open + 1);
+        if (close < 0) return null;
+        return ref.substring(open + 1, close);
+    }
+
+    private static String extractDimFromHierarchyUniqueName(String hierUniqueName) {
+        if (hierUniqueName == null) return null;
+        // Pattern: [Dim].[Hier]  OR  [Dim] when hier name == dim name.
+        int open = hierUniqueName.indexOf('[');
+        if (open < 0) return null;
+        int close = hierUniqueName.indexOf(']', open + 1);
+        if (close < 0) return null;
+        return hierUniqueName.substring(open + 1, close);
     }
 
     private static int countBracketedSegments(String ref) {
