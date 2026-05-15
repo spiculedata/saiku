@@ -37,6 +37,7 @@ import org.saiku.service.olap.ai.AiCubeSummary;
 import org.saiku.service.olap.ai.AiQueryMetadata;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiQueryResponse;
+import org.saiku.service.olap.ai.AiReturnsResolver;
 import org.saiku.service.olap.ai.AiSchema;
 import org.saiku.service.olap.ai.AiSchemaConverter;
 import org.saiku.service.olap.ai.AiValidationException;
@@ -497,8 +498,43 @@ public class AiQueryResource {
             AsyncQueryHandle h = asyncQueryService.get(queryId);
             if (h != null) name = h.getQuery().getName();
         }
+        // saiku#782: agents only have bare captions (the keys of each row in
+        // a drillthrough response) — accept those and rewrite to the fully
+        // qualified MDX form Mondrian's RETURN clause expects. Tokens that
+        // are already bracketed pass through unchanged, so callers that
+        // already speak MDX aren't surprised. Validation errors from the
+        // resolver carry the candidate list so the agent can self-correct
+        // without scraping /schema.
+        String resolvedReturns = returns;
+        if (returns != null && !returns.trim().isEmpty() && cubeMetadataService != null) {
+            try {
+                org.saiku.service.util.QueryContext qc = thinQueryService.getContext(name);
+                if (qc != null && qc.getOlapQuery() != null && qc.getOlapQuery().getCube() != null) {
+                    org.saiku.olap.dto.SaikuCube cube = qc.getOlapQuery().getCube();
+                    AiCubeRef ref =
+                            new AiCubeRef(cube.getConnection(), cube.getCatalog(), cube.getSchema(), cube.getName());
+                    AiSchema schema = cubeMetadataService.getSchema(ref);
+                    resolvedReturns = AiReturnsResolver.resolve(returns, schema);
+                }
+            } catch (AiValidationException ve) {
+                AiQueryResponse resp = new AiQueryResponse();
+                resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
+                resp.setError(ve.getMessage());
+                resp.setField(ve.getField());
+                if (ve.getAvailable() != null) resp.setAvailable(ve.getAvailable());
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(resp)
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            } catch (RuntimeException ignored) {
+                // Schema lookup failure shouldn't poison the drillthrough —
+                // fall through with the raw returns value and let Mondrian
+                // report whatever it reports. The 400-translation block
+                // below handles the typical "in RETURN clause" message.
+            }
+        }
         try {
-            java.sql.ResultSet rs = thinQueryService.drillthrough(name, maxrows, returns);
+            java.sql.ResultSet rs = thinQueryService.drillthrough(name, maxrows, resolvedReturns);
             List<Map<String, AiCell>> rows = new ArrayList<>();
             if (rs != null) {
                 java.sql.ResultSetMetaData md = rs.getMetaData();
