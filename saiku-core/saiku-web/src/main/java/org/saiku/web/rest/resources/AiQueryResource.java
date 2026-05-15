@@ -488,6 +488,7 @@ public class AiQueryResource {
     public Response drillthrough(
             @PathParam("queryId") String queryId,
             @QueryParam("maxrows") @DefaultValue("100") int maxrows,
+            @QueryParam("firstRowset") Integer firstRowset,
             @QueryParam("returns") String returns) {
         if (thinQueryService == null) return error("Query service not configured");
         // For async queries the handle id != the underlying ThinQuery name.
@@ -498,16 +499,28 @@ public class AiQueryResource {
             if (h != null) name = h.getQuery().getName();
         }
         try {
-            java.sql.ResultSet rs = thinQueryService.drillthrough(name, maxrows, returns);
+            java.sql.ResultSet rs = thinQueryService.drillthrough(name, maxrows, firstRowset, returns);
             List<Map<String, AiCell>> rows = new ArrayList<>();
+            List<String> columnLabels = new ArrayList<>();
             if (rs != null) {
                 java.sql.ResultSetMetaData md = rs.getMetaData();
                 int colCount = md.getColumnCount();
+                // saiku#800: Mondrian's drillthrough sometimes returns the same
+                // getColumnLabel() for multiple columns within a hierarchy
+                // (e.g. Year + Quarter + Month all labelled "Quarter"). Pre-
+                // compute disambiguated keys ONCE before the row loop so:
+                //   * the first occurrence keeps its raw label (back-compat)
+                //   * subsequent duplicates fall back to getColumnName(c) when
+                //     that differs, else to a positional suffix _2, _3, ...
+                // Without this, every row's Map.put silently overwrote the
+                // earlier column, leaving the first column labelled with the
+                // LAST column's value — silent data corruption.
+                columnLabels = disambiguateColumnLabels(md);
                 while (rs.next()) {
                     Map<String, AiCell> row = new LinkedHashMap<>();
                     for (int c = 1; c <= colCount; c++) {
                         Object v = rs.getObject(c);
-                        row.put(md.getColumnLabel(c), toCellFromObject(v));
+                        row.put(columnLabels.get(c - 1), toCellFromObject(v));
                     }
                     rows.add(row);
                 }
@@ -516,6 +529,9 @@ public class AiQueryResource {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("queryId", queryId);
             body.put("rowCount", rows.size());
+            // saiku#800: explicit columns[] so agents can read by position
+            // when the label heuristic still leaves ambiguity.
+            body.put("columns", columnLabels);
             body.put("rows", rows);
             return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
         } catch (NullPointerException e) {
@@ -565,6 +581,65 @@ public class AiQueryResource {
             }
             log.error("AI drillthrough failed for {}", queryId, e);
             return error("drillthrough failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Column discovery for drillthrough (saiku#774). Returns the list of
+     * drillthrough columns available for a previously-executed query so
+     * the agent / UI can populate a {@code returns=} clause without
+     * trial-and-error.
+     *
+     * <p>Response shape:
+     * <pre>{@code
+     *   { "queryId": "...", "columns": [ { "name": "[Time].[Time].[Year]", "type": "VARCHAR" }, ... ] }
+     * }</pre>
+     *
+     * <p>The {@code name} values are the MDX-qualified labels the
+     * downstream {@code DRILLTHROUGH ... RETURN ...} clause accepts.
+     */
+    @GET
+    @Path("/query/{queryId}/drillthrough/columns")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response drillthroughColumns(@PathParam("queryId") String queryId) {
+        if (thinQueryService == null) return error("Query service not configured");
+        String name = queryId;
+        if (asyncQueryService != null) {
+            AsyncQueryHandle h = asyncQueryService.get(queryId);
+            if (h != null) name = h.getQuery().getName();
+        }
+        try {
+            List<Map<String, String>> cols = thinQueryService.drillthroughColumns(name);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("queryId", queryId);
+            body.put("columns", cols);
+            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+        } catch (NullPointerException e) {
+            // Same translation path as drillthrough above — unknown queryId
+            // leaks an NPE on the internal QueryContext lookup.
+            log.warn("AI drillthrough column discovery on unknown queryId {} — translated to 404", queryId);
+            AiQueryResponse resp = new AiQueryResponse();
+            resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
+            resp.setError("Unknown queryId '" + queryId
+                    + "'. The queryId must come from a previous /query or "
+                    + "/query/execute-async response and must not have been evicted.");
+            resp.setField("queryId");
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(resp)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        } catch (Exception e) {
+            String m = e.getMessage();
+            if (m != null && m.contains("fall outside CellSet bounds")) {
+                // Empty source cellset — no columns to discover. Return an
+                // empty list so the agent can decide whether to proceed.
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("queryId", queryId);
+                body.put("columns", new ArrayList<>());
+                return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+            }
+            log.error("AI drillthrough column discovery failed for {}", queryId, e);
+            return error("drillthrough column discovery failed: " + e.getMessage());
         }
     }
 
@@ -705,6 +780,48 @@ public class AiQueryResource {
         Double parsed = AiCell.parseValueFromFormatted(s);
         String unit = AiCell.sniffUnit(s);
         return new AiCell(parsed, s, unit);
+    }
+
+    /**
+     * saiku#800: build a per-column key list that survives Mondrian's habit
+     * of returning the same {@code getColumnLabel(c)} for multiple drill-
+     * through columns within a hierarchy (e.g. Year/Quarter/Month all
+     * labelled "Quarter"). First occurrence keeps its raw label; subsequent
+     * collisions try {@code getColumnName(c)} as a tiebreaker and finally
+     * fall back to a {@code _N} positional suffix. Order-preserving so the
+     * returned list aligns with column indexes 1..colCount.
+     */
+    static List<String> disambiguateColumnLabels(java.sql.ResultSetMetaData md) throws java.sql.SQLException {
+        int colCount = md.getColumnCount();
+        List<String> out = new ArrayList<>(colCount);
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        for (int c = 1; c <= colCount; c++) {
+            String label = md.getColumnLabel(c);
+            if (label == null || label.isEmpty()) label = "col_" + c;
+            String chosen = label;
+            if (seen.contains(chosen)) {
+                String alt = null;
+                try {
+                    alt = md.getColumnName(c);
+                } catch (java.sql.SQLException ignore) {
+                    // Some drivers don't implement getColumnName — fall through.
+                }
+                if (alt != null && !alt.isEmpty() && !seen.contains(alt) && !alt.equals(label)) {
+                    chosen = alt;
+                } else {
+                    int n = 2;
+                    String candidate;
+                    do {
+                        candidate = label + "_" + n;
+                        n++;
+                    } while (seen.contains(candidate));
+                    chosen = candidate;
+                }
+            }
+            seen.add(chosen);
+            out.add(chosen);
+        }
+        return out;
     }
 
     /** Convert a raw {@link AbstractBaseCell} into an {@link AiCell}. */
