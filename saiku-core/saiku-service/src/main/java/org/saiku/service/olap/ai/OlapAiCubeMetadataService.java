@@ -105,14 +105,28 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         return ref.getConnectionName() + "/" + ref.getCatalog() + "/" + ref.getSchema() + "/" + ref.getCubeName();
     }
 
+    /** How many sample members to inline per level. Five is enough for an
+     *  LLM to ground its query; bigger numbers risk paying a per-level
+     *  member-fetch cost for huge dimensions. Configurable for tests. */
+    private int sampleMembersPerLevel = 5;
+
+    public void setSampleMembersPerLevel(int n) { this.sampleMembersPerLevel = n; }
+
     private AiSchema buildSchema(AiCubeRef ref) {
         SaikuCube cube = findCube(ref);
         AiSchema schema = new AiSchema(cacheKey(ref), cube.getName(), cube.getUniqueName());
+        if (cube.getCaption() != null && !cube.getCaption().equals(cube.getName())) {
+            schema.description = cube.getCaption();
+        }
 
         try {
             for (SaikuMember m : discoverService.getMeasures(cube)) {
                 String n = m.getCaption() != null && !m.getCaption().isEmpty() ? m.getCaption() : m.getName();
-                schema.measures.put(AiSchema.key(n), new AiSchema.Measure(n, m.getUniqueName()));
+                AiSchema.Measure measure = new AiSchema.Measure(n, m.getUniqueName());
+                if (m.getDescription() != null && !m.getDescription().isEmpty()) {
+                    measure.description = m.getDescription();
+                }
+                schema.measures.put(AiSchema.key(n), measure);
             }
         } catch (RuntimeException e) {
             log.warn("getMeasures failed for {}", cube.getUniqueName(), e);
@@ -123,6 +137,9 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
                 // Skip the Measures dimension — already covered by measures map.
                 if ("Measures".equalsIgnoreCase(dim.getName())) continue;
                 AiSchema.Dimension d = new AiSchema.Dimension(dim.getName(), dim.getUniqueName());
+                if (dim.getDescription() != null && !dim.getDescription().isEmpty()) {
+                    d.description = dim.getDescription();
+                }
                 List<SaikuHierarchy> hiers = dim.getHierarchies();
                 if (hiers == null || hiers.isEmpty()) {
                     hiers = discoverService.getAllDimensionHierarchies(cube, dim.getName());
@@ -130,14 +147,21 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
                 if (hiers != null) {
                     for (SaikuHierarchy h : hiers) {
                         AiSchema.Hierarchy hh = new AiSchema.Hierarchy(h.getName(), h.getUniqueName());
+                        if (h.getDescription() != null && !h.getDescription().isEmpty()) {
+                            hh.description = h.getDescription();
+                        }
                         List<SaikuLevel> levels = h.getLevels();
                         if (levels == null || levels.isEmpty()) {
                             levels = discoverService.getAllHierarchyLevels(cube, dim.getName(), h.getName());
                         }
                         if (levels != null) {
                             for (SaikuLevel lvl : levels) {
-                                hh.levels.put(AiSchema.key(lvl.getName()),
-                                        new AiSchema.Level(lvl.getName(), lvl.getUniqueName()));
+                                AiSchema.Level l = new AiSchema.Level(lvl.getName(), lvl.getUniqueName());
+                                if (lvl.getDescription() != null && !lvl.getDescription().isEmpty()) {
+                                    l.description = lvl.getDescription();
+                                }
+                                populateSampleMembers(l, cube, h.getName(), lvl.getName());
+                                hh.levels.put(AiSchema.key(lvl.getName()), l);
                             }
                         }
                         d.hierarchies.put(AiSchema.key(h.getName()), hh);
@@ -148,7 +172,37 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         } catch (RuntimeException e) {
             log.warn("getAllDimensions failed for {}", cube.getUniqueName(), e);
         }
+
+        // Embed a hand-rolled JSON Schema of AiQueryRequest so an LLM can
+        // self-validate its request shape. We don't generate this at runtime
+        // (would need a swagger/jackson schema generator dependency); it's
+        // static — the AiQueryRequest fields are public API.
+        schema.requestSchema = AiRequestJsonSchema.forRequest();
+
+        // Auto-generate 2–3 example requests for the cube — a top-N pattern
+        // and a breakdown pattern. The LLM can use these as templates.
+        schema.examples.addAll(AiExampleBuilder.build(schema, ref));
+
         return schema;
+    }
+
+    private void populateSampleMembers(AiSchema.Level out, SaikuCube cube,
+                                       String hierarchyName, String levelName) {
+        if (sampleMembersPerLevel <= 0) return;
+        try {
+            List<org.saiku.olap.dto.SimpleCubeElement> members =
+                    discoverService.getLevelMembers(cube, hierarchyName, levelName, sampleMembersPerLevel);
+            if (members == null) return;
+            int n = Math.min(members.size(), sampleMembersPerLevel);
+            for (int i = 0; i < n; i++) {
+                org.saiku.olap.dto.SimpleCubeElement m = members.get(i);
+                String caption = m.getCaption() != null && !m.getCaption().isEmpty() ? m.getCaption() : m.getName();
+                if (caption != null) out.sampleMembers.add(caption);
+            }
+        } catch (RuntimeException e) {
+            // sample-member fetch failure must never break the schema response.
+            log.debug("sample-member fetch failed for {}/{}: {}", hierarchyName, levelName, e.getMessage());
+        }
     }
 
     private SaikuCube findCube(AiCubeRef ref) {
