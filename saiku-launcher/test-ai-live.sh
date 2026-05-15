@@ -416,6 +416,10 @@ check "HR cube + unwirable Store dim returns structured 400 not opaque 500 (saik
   '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Org Salary"}],"rows":[{"dimension":"Store","hierarchy":"Stores","level":"Store Country"}]}' \
   "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='rows' and 'PhysPath' in r.get('error','') and 'wired' in r.get('error','')"
 
+check "3-dim rows crossjoin: Family × Quarter × Gender + HEAD (iter 292)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"},{"dimension":"Time","hierarchy":"Time","level":"Quarter"},{"dimension":"Customer","hierarchy":"Gender","level":"Gender"}],"limit":6}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==6 and r['data'][0]['Product Family']=='Drink' and r['data'][0]['Quarter']=='Q1' and r['data'][0]['Gender']=='F' and r['data'][0]['Unit Sales']['value']==2934.0 and r['metadata']['generatedMdx'].count('CROSSJOIN')==2"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
