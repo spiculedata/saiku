@@ -126,8 +126,7 @@ public class MdxEchoGoldenTest {
      * test} and IDE runs without hard-coding {@code src/test/resources}.
      */
     private static Path resolveExpectedPath(String fixture) {
-        URL fixtureUrl =
-                MdxEchoGoldenTest.class.getClassLoader().getResource(FIXTURE_DIR + fixture + "/request.json");
+        URL fixtureUrl = MdxEchoGoldenTest.class.getClassLoader().getResource(FIXTURE_DIR + fixture + "/request.json");
         if (fixtureUrl == null) {
             throw new IllegalStateException("cannot locate fixture on classpath: " + fixture);
         }

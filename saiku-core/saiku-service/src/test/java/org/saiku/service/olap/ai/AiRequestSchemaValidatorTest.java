@@ -153,9 +153,11 @@ public class AiRequestSchemaValidatorTest {
         } catch (AiValidationException e) {
             assertTrue(
                     "error names the role and the bad value — got: " + e.getMessage(),
-                    e.getMessage().contains("Unknown filter op") && e.getMessage().contains("bogus_op"));
+                    e.getMessage().contains("Unknown filter op")
+                            && e.getMessage().contains("bogus_op"));
             assertTrue(
-                    "error lists the legal ops — got: " + e.getMessage(), e.getMessage().contains("in"));
+                    "error lists the legal ops — got: " + e.getMessage(),
+                    e.getMessage().contains("in"));
         }
     }
 
@@ -216,8 +218,7 @@ public class AiRequestSchemaValidatorTest {
         assertEquals("body", AiRequestSchemaValidator.jsonPointerToField("$"));
         assertEquals("cube", AiRequestSchemaValidator.jsonPointerToField("$.cube"));
         assertEquals("measures[0].name", AiRequestSchemaValidator.jsonPointerToField("$.measures[0].name"));
-        assertEquals(
-                "filters[2].members[7]", AiRequestSchemaValidator.jsonPointerToField("$.filters[2].members[7]"));
+        assertEquals("filters[2].members[7]", AiRequestSchemaValidator.jsonPointerToField("$.filters[2].members[7]"));
         assertEquals("limit", AiRequestSchemaValidator.jsonPointerToField("$.limit"));
     }
 }
