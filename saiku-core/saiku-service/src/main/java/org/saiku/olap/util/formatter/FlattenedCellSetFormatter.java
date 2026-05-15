@@ -376,6 +376,8 @@ public class FlattenedCellSetFormatter implements ICellSetFormatter {
 
             final DataCell cellInfo = new DataCell(true, false, coordList);
             cellInfo.setCoordinates(cell.getCoordinateList());
+            // saiku#773: surface olap4j StandardCellProperty values.
+            cellInfo.setProperties(CellPropertyExtractor.extract(cell));
 
             if (cell.getValue() != null) {
                 try {

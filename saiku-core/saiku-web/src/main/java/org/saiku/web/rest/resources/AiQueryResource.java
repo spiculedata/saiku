@@ -713,13 +713,20 @@ public class AiQueryResource {
         String formatted = safe(c.getFormattedValue());
         // Prefer the engine's raw numeric when DataCell carries one.
         Double value = null;
+        java.util.Map<String, String> props = null;
         if (c instanceof org.saiku.olap.dto.resultset.DataCell) {
-            Number raw = ((org.saiku.olap.dto.resultset.DataCell) c).getRawNumber();
+            org.saiku.olap.dto.resultset.DataCell dc = (org.saiku.olap.dto.resultset.DataCell) c;
+            Number raw = dc.getRawNumber();
             if (raw != null) value = raw.doubleValue();
+            // saiku#773: thread the cellset's olap4j StandardCellProperty
+            // values out to the agent. Empty -> stays null and Jackson
+            // drops the field per AiCell's NON_EMPTY include policy.
+            java.util.Map<String, String> p = dc.getProperties();
+            if (p != null && !p.isEmpty()) props = p;
         }
         if (value == null) value = AiCell.parseValueFromFormatted(formatted);
         String unit = AiCell.sniffUnit(formatted);
-        return new AiCell(value, formatted, unit);
+        return new AiCell(value, formatted, unit, props);
     }
 
     /**

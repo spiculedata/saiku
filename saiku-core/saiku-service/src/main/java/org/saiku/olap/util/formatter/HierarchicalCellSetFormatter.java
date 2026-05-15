@@ -282,6 +282,8 @@ public class HierarchicalCellSetFormatter implements ICellSetFormatter {
             if (coordList.size() > 1) y += coordList.get(1);
             final DataCell cellInfo = new DataCell(true, false, coordList);
             cellInfo.setCoordinates(cell.getCoordinateList());
+            // saiku#773: surface olap4j StandardCellProperty values.
+            cellInfo.setProperties(CellPropertyExtractor.extract(cell));
 
             if (cell.getValue() != null) {
                 try {
