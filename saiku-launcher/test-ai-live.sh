@@ -412,6 +412,10 @@ check "HR Management Role + Avg Salary — org-pyramid shape (iter 290)" POST "/
   '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Number of Employees"},{"name":"Avg Salary"}],"rows":[{"dimension":"Employee","hierarchy":"Position","level":"Management Role"}],"order":[{"by":"Number of Employees","direction":"desc"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==5 and r['data'][0]['Management Role']=='Store Full Time Staff' and r['data'][0]['Number of Employees']['value']==405.0 and r['data'][4]['Management Role']=='Senior Management' and r['data'][4]['Number of Employees']['value']==8.0 and r['data'][4]['Avg Salary']['unit']=='GBP'"
 
+check "HR cube + unwirable Store dim returns structured 400 not opaque 500 (saiku#808 — iter 291)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Org Salary"}],"rows":[{"dimension":"Store","hierarchy":"Stores","level":"Store Country"}]}' \
+  "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='rows' and 'PhysPath' in r.get('error','') and 'wired' in r.get('error','')"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \

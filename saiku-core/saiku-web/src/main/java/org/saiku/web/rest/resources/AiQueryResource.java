@@ -110,8 +110,15 @@ public class AiQueryResource {
             // wrong hierarchy depth) get an opaque 500 with no actionable field.
             Response translated = translateMondrianLookupError(e);
             if (translated != null) return translated;
+            // Detect the "dimension has no resolvable physical path to the
+            // cube's fact table" NPE pattern (saiku#808). Walk the cause
+            // chain — the wrapper ThinQueryService throws is opaque
+            // ("Can't execute query: <uuid>") and the deepest cause is the
+            // useful one.
+            Response pathErr = translatePhysPathNpe(e);
+            if (pathErr != null) return pathErr;
             log.error("AI query execution failed", e);
-            return error("execute failed: " + e.getMessage());
+            return error("execute failed: " + describeDeepestCause(e));
         }
 
         AiQueryResponse resp = buildResponse(tq, cds, start, format);
@@ -144,6 +151,53 @@ public class AiQueryResource {
             }
         }
         return null;
+    }
+
+    /** saiku#808: Mondrian's RolapSchema$PhysPath.getLinks() NPEs when an
+     *  axis dim/hier has no resolvable join path to the cube's fact table.
+     *  The wrapper exception is opaque, so we walk the cause chain to find
+     *  the underlying NPE and translate it to a structured 400 telling the
+     *  agent which dimension is unwirable in this cube. */
+    private Response translatePhysPathNpe(Throwable t) {
+        for (Throwable cur = t; cur != null; cur = cur.getCause()) {
+            String msg = cur.getMessage();
+            if (msg == null) continue;
+            if (cur instanceof NullPointerException
+                    && msg.contains("RolapSchema$PhysPath.getLinks()")
+                    && msg.contains("path")
+                    && msg.contains("is null")) {
+                AiQueryResponse resp = new AiQueryResponse();
+                resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
+                resp.setError("This cube's schema has no resolvable join path "
+                        + "between the fact table and one of the dimensions on "
+                        + "the request axis. Mondrian raised "
+                        + "RolapSchema$PhysPath.getLinks() NPE. Pick a different "
+                        + "dimension that is wired into this cube — call "
+                        + "/schema/{cubeId} to see which dimensions are wired.");
+                resp.setField("rows");
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(resp)
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            }
+        }
+        return null;
+    }
+
+    /** Walk the cause chain to the deepest exception with a non-null
+     *  message; return "ClassName: message". The Spring/JAX-RS wrappers
+     *  ({@code SaikuServiceException}, {@code OlapException},
+     *  {@code MondrianException}) all flatten to the same useless "Can't
+     *  execute query: <uuid>" surface; the real signal is at the leaf. */
+    private static String describeDeepestCause(Throwable t) {
+        Throwable deepest = t;
+        for (Throwable cur = t; cur != null; cur = cur.getCause()) {
+            if (cur.getMessage() != null && !cur.getMessage().isEmpty()) {
+                deepest = cur;
+            }
+        }
+        if (deepest == t) return t.getMessage();
+        return deepest.getClass().getSimpleName() + ": " + deepest.getMessage();
     }
 
     /**
