@@ -632,6 +632,9 @@ check "partial cube object (only cubeName) → field=cube with full-spec hint (i
   '{"cube":{"cubeName":"Sales"},"measures":[{"name":"Unit Sales"}]}' \
   "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='cube' and 'connectionName, catalog, schema, and cubeName' in r.get('error','') and \"'connection/catalog/schema/cubeName' string\" in r.get('error','')"
 
+check "HR schema has same agent-grounding affordances as Sales (iter 340)" GET "/rest/saiku/api/ai/schema/unknown_foodmart/FoodMart/FoodMart/HR" '' \
+  "r.get('cubeUniqueName')=='[unknown_foodmart].[FoodMart].[FoodMart].[HR]' and isinstance(r.get('examples'), list) and len(r['examples'])==3 and r['examples'][0]['cube']['cubeName']=='HR' and r.get('requestSchema',{}).get('title')=='AiQueryRequest'"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
