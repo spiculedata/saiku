@@ -461,6 +461,19 @@ public class AiQueryResource {
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         } catch (Exception e) {
+            // Drillthrough defaults to the (0,0) cell — when the source
+            // cellset is empty (e.g. NON EMPTY filtered everything out),
+            // Mondrian throws "Cell coordinates (0, 0) fall outside CellSet
+            // bounds (0, 0)". Surface that as an empty drillthrough (200 +
+            // rowCount=0) rather than a generic 500 (saiku#794).
+            String m = e.getMessage();
+            if (m != null && m.contains("fall outside CellSet bounds")) {
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("queryId", queryId);
+                body.put("rowCount", 0);
+                body.put("rows", new ArrayList<>());
+                return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+            }
             log.error("AI drillthrough failed for {}", queryId, e);
             return error("drillthrough failed: " + e.getMessage());
         }

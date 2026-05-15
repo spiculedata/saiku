@@ -178,6 +178,20 @@ check "validation: order direction must be asc/desc" POST "/rest/saiku/api/ai/qu
 check "drillthrough on bogus queryId returns 404 (saiku#783)" GET "/rest/saiku/api/ai/query/bogus-uuid-1234/drillthrough?maxrows=5" '' \
   "http==404 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='queryId' and 'Unknown queryId' in r.get('error','')"
 
+# Drillthrough on a 0-row query (Foodmart has no 1998 data) should be a clean
+# 200 with rowCount=0 — not a 500 leaking Mondrian's "Cell coordinates fall
+# outside CellSet bounds" internal message (saiku#794).
+EMPTY_OUT=$(mktemp)
+EMPTY_QID=$(curl -sS -b "$COOKIES" -X POST "$URL/rest/saiku/api/ai/query" \
+  -H 'Content-Type: application/json' \
+  --data '{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","members":["[Time].[Time].[1998]"]}],"nonEmpty":true}' \
+  | python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('queryId',''))")
+if [[ -n "$EMPTY_QID" ]]; then
+  check "drillthrough on 0-row query returns 200 + empty rows (saiku#794)" GET "/rest/saiku/api/ai/query/$EMPTY_QID/drillthrough?maxrows=5" '' \
+    "http==200 and r.get('rowCount')==0 and r.get('rows')==[]"
+fi
+rm -f "$EMPTY_OUT"
+
 # ---- members search ----
 check "members search case-insensitive (q=Excellent)" GET "/rest/saiku/api/ai/members/search?cubeId=$CUBE&dimension=Product&hierarchy=Products&level=Brand%20Name&q=Excellent&limit=5" '' \
   "isinstance(r, list) and len(r) >= 1 and any(m['caption']=='Excellent' for m in r)"
