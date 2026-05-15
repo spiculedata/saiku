@@ -435,10 +435,29 @@ public class AiSchemaConverter {
                                 "'between' filter requires exactly 2 members [start, end]",
                                 null);
                     }
+                    // Mondrian's `:` range operator requires both endpoints
+                    // at the same level. Heterogeneous depths (Year :
+                    // Quarter) make Mondrian crash with "Internal error"
+                    // (saiku#802). Skip key-form refs (same caveat as
+                    // saiku#790's level-depth check).
+                    String mA = members.get(0);
+                    String mB = members.get(1);
+                    if (mA != null && mB != null && mA.indexOf("&[") < 0 && mB.indexOf("&[") < 0) {
+                        int depthA = countBracketedSegments(mA);
+                        int depthB = countBracketedSegments(mB);
+                        if (depthA != depthB) {
+                            throw new AiValidationException(
+                                    fieldPath + ".members",
+                                    "'between' endpoints must be at the same level. "
+                                            + "Member 0 has " + depthA + " bracketed segments, member 1 has "
+                                            + depthB + ".",
+                                    null);
+                        }
+                    }
                     // Standard MDX range: m1 : m2 returns the set of
                     // members from m1 to m2 inclusive at their common
                     // level. Mondrian's slicer accepts the bare range.
-                    expr = "{" + members.get(0) + " : " + members.get(1) + "}";
+                    expr = "{" + mA + " : " + mB + "}";
                     isSet = true;
                     break;
                 }

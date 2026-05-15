@@ -278,6 +278,10 @@ check "Store cube — Store Type level" POST "/rest/saiku/api/ai/query" \
   '{"cube":"unknown_foodmart/FoodMart/FoodMart/Store","measures":[{"name":"Store Sqft"}],"rows":[{"dimension":"Store Type","level":"Store Type"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==5"
 
+check "validation: between with heterogeneous-level endpoints rejected (saiku#802)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Quarter","op":"between","members":["[Time].[Time].[1997]","[Time].[Time].[1997].[Q3]"]}]}' \
+  "r.get('status')=='VALIDATION_ERROR' and r.get('field')=='filters[0].members' and 'same level' in r.get('error','')"
+
 check "validation: relative + members[] combo rejected" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Quarter","op":"relative","value":"ytd","members":["[Time].[Time].[1997].[Q1]"]}]}' \
   "r.get('status')=='VALIDATION_ERROR' and r.get('field')=='filters[0].members' and 'doesn' in r.get('error','')"
