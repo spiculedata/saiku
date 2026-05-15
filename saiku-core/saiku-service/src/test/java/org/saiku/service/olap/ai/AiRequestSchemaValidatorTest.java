@@ -129,6 +129,56 @@ public class AiRequestSchemaValidatorTest {
         }
     }
 
+    /** Enum violations get a Saiku-voice message that quotes the bad
+     *  value back. Pre-fix the message was networknt's default
+     *  "does not have a value in the enumeration [...]" — useful for
+     *  humans, harder for agents to grep on. */
+    @Test
+    public void enumViolationProducesFriendlyMessage() throws Exception {
+        JsonNode body = parse("{"
+                + "\"cube\": {"
+                + "  \"connectionName\": \"foodmart\","
+                + "  \"catalog\": \"FoodMart\","
+                + "  \"schema\": \"FoodMart\","
+                + "  \"cubeName\": \"Sales\""
+                + "},"
+                + "\"measures\": [{\"name\": \"Unit Sales\"}],"
+                + "\"rows\": [{\"dimension\": \"Time\", \"hierarchy\": \"Time\", \"level\": \"Year\"}],"
+                + "\"filters\": [{\"dimension\": \"Time\", \"hierarchy\": \"Time\", \"level\": \"Year\","
+                + "  \"op\": \"bogus_op\", \"members\": [\"[Time].[Time].[1997]\"]}]"
+                + "}");
+        try {
+            validator.assertValid(body);
+            fail("expected AiValidationException for unknown filter op");
+        } catch (AiValidationException e) {
+            assertTrue(
+                    "error names the role and the bad value — got: " + e.getMessage(),
+                    e.getMessage().contains("Unknown filter op") && e.getMessage().contains("bogus_op"));
+            assertTrue(
+                    "error lists the legal ops — got: " + e.getMessage(), e.getMessage().contains("in"));
+        }
+    }
+
+    /** Required-property violations must populate {@code available[]}
+     *  with the parent's required-fields list so an agent that posted
+     *  a partial body can see every missing field in one round, not
+     *  one at a time. */
+    @Test
+    public void requiredViolationPopulatesAvailableList() throws Exception {
+        JsonNode body = parse("{}");
+        try {
+            validator.assertValid(body);
+            fail("expected AiValidationException for empty body");
+        } catch (AiValidationException e) {
+            // First missing field surfaces as the field; the available
+            // list shows the whole required set so the agent can fix
+            // everything before retrying.
+            assertTrue(
+                    "available[] must list required top-level fields — got: " + e.getAvailable(),
+                    e.getAvailable().contains("cube") && e.getAvailable().contains("measures"));
+        }
+    }
+
     @Test
     public void wrongTypeOnLimitTripsTypeError() throws Exception {
         JsonNode body = parse("{"
