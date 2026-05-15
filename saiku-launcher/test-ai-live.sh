@@ -746,6 +746,10 @@ check "filter op=in with empty members[] → 400 with helpful message (iter 358)
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","op":"in","members":[]}]}' \
   "http==400 and r.get('field')=='filters[0].members' and 'in' in r.get('error','') and 'at least one member' in r.get('error','')"
 
+check "reversed between range {Q3:Q1} passes through to Mondrian (covers Q1-Q3 — iter 359)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Quarter","op":"between","members":["[Time].[Time].[1997].[Q3]","[Time].[Time].[1997].[Q1]"]}],"nonEmpty":false}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and sum(d['Unit Sales']['value'] for d in r['data'])==194749.0 and 'WHERE ({[Time].[Time].[1997].[Q3] : [Time].[Time].[1997].[Q1]})' in r['metadata']['generatedMdx']"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
