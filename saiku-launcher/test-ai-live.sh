@@ -659,18 +659,16 @@ check "/preview honours relative-time DSL (Ytd) (iter 346)" POST "/rest/saiku/ap
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Quarter","op":"relative","value":"ytd"}]}' \
   "r.get('status')=='PREVIEW' and 'WHERE (Ytd())' in r.get('generatedMdx','')"
 
-# Pins saiku#811: lowercase cubeName partially resolves through
-# the schema validator (which is case-insensitive) but fails at the
-# downstream native-cube lookup (which is case-sensitive). The
-# current observed shape is HTTP 500 EXECUTION_ERROR — the
-# describeDeepestCause path surfaces "SaikuOlapException: Cannot
-# get native cube". When saiku#811 is fixed (preferred path: make
-# validation case-sensitive), this test will need to flip to
-# expect HTTP 400 + field=cube + available list, like the
-# "NoSuchCube" case in iter 324.
-check "lowercase cubeName partially resolves → 500 with deepest-cause surface (saiku#811 — iter 347)" POST "/rest/saiku/api/ai/query" \
+# saiku#811 (FIXED in Phase 1.B of feat/platform-improvements):
+# lowercase cubeName is resolved case-insensitively at schema-match
+# time, and the canonical SaikuCube ref (from the matched cube) is
+# threaded through AiSchemaConverter to Mondrian's native cube
+# lookup. Result: 200 / SUCCESS with same row totals as the
+# canonical-case query. Pre-fix this was 500 / EXECUTION_ERROR
+# "Cannot get native cube [Sales]".
+check "lowercase cubeName resolves to canonical ref end-to-end (saiku#811 — iter 347, fixed)" POST "/rest/saiku/api/ai/query" \
   '{"cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"sales"},"measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
-  "http==500 and r.get('status')=='EXECUTION_ERROR' and 'Cannot get native cube' in r.get('error','') and '[Sales]' in r.get('error','')"
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Product Family']=='Drink' and r['data'][0]['Unit Sales']['value']==24597.0 and 'FROM [Sales]' in r['metadata']['generatedMdx']"
 
 check "lowercase dim/hier/level all resolve case-insensitively end-to-end (control for saiku#811, iter 348)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"product","hierarchy":"products","level":"product family"}]}' \
@@ -680,18 +678,22 @@ check "lowercase measure name resolves and rountrips with proper case (iter 349)
   '{"cube":"'"$CUBE"'","measures":[{"name":"unit sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
   "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==24597.0 and '[Measures].[Unit Sales]' in r['metadata']['generatedMdx']"
 
-# saiku#811 extends to connectionName too — mixed-case "Unknown_Foodmart"
-# fails with raw NPE because the connection lookup returns null.
-# Worse surface than cubeName's "Cannot get native cube" — the
-# describeDeepestCause helper still gives a useful message but the
-# 500 status is the agent-facing surface that should be a clean 400.
-check "mixed-case connectionName → 500 EXECUTION_ERROR (saiku#811 extension — iter 350)" POST "/rest/saiku/api/ai/query" \
+# saiku#811 fix also covers connectionName — mixed-case
+# "Unknown_Foodmart" resolves case-insensitively at schema-match
+# time and is replaced with the canonical "unknown_foodmart" in
+# the SaikuCube produced by AiSchemaConverter.toSaikuCube(). Pre-
+# fix this was 500 EXECUTION_ERROR (raw NPE from null connection
+# lookup); post-fix it's 200 SUCCESS like any canonical-cube query.
+check "mixed-case connectionName resolves to canonical ref (saiku#811 — iter 350, fixed)" POST "/rest/saiku/api/ai/query" \
   '{"cube":{"connectionName":"Unknown_Foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
-  "http==500 and r.get('status')=='EXECUTION_ERROR' and r.get('error','').startswith('execute failed')"
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==24597.0"
 
-check "lowercase catalog → 500 (same partial-resolution shape as cubeName — saiku#811 — iter 351)" POST "/rest/saiku/api/ai/query" \
+# Same shape as iter 347 — lowercase catalog is replaced with the
+# canonical "FoodMart" via the matched SaikuCube. Pre-fix this was
+# 500; post-fix it's 200.
+check "lowercase catalog resolves to canonical ref (saiku#811 — iter 351, fixed)" POST "/rest/saiku/api/ai/query" \
   '{"cube":{"connectionName":"unknown_foodmart","catalog":"foodmart","schema":"FoodMart","cubeName":"Sales"},"measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
-  "http==500 and r.get('status')=='EXECUTION_ERROR' and 'Cannot get native cube' in r.get('error','') and '[FoodMart]' in r.get('error','')"
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==3 and r['data'][0]['Unit Sales']['value']==24597.0 and 'FROM [Sales]' in r['metadata']['generatedMdx']"
 
 check "same-dim different-hier rows+filter (saiku#784 scope) — Gender × Marital Status (iter 352)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"'"$CUBE"'","measures":[{"name":"Customer Count"}],"rows":[{"dimension":"Customer","hierarchy":"Gender","level":"Gender"}],"filters":[{"dimension":"Customer","hierarchy":"Marital Status","level":"Marital Status","op":"in","members":["[Customer].[Marital Status].[M]"]}]}' \
