@@ -476,6 +476,10 @@ check "members search unknown level → 400 + 7-level available (iter 306)" GET 
 check "members search unknown hier → 400 + 5-hier available — completes the leg trifecta (iter 307)" GET "/rest/saiku/api/ai/members/search?cubeId=$CUBE&dimension=Customer&hierarchy=NotAHier&level=Country&q=&limit=5" '' \
   "http==400 and r.get('status')=='VALIDATION_ERROR' and r.get('field')=='hierarchy' and 'Unknown hierarchy' in r.get('error','') and 'Customers' in r.get('available',[]) and 'Yearly Income' in r.get('available',[])"
 
+check "legacy /query/execute with bad MDX → 200 + error field (legacy envelope) (iter 308)" POST "/rest/saiku/api/query/execute" \
+  '{"name":"bad-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT [NotAMeasure] ON COLUMNS FROM [Sales]"}' \
+  "http==200 and r.get('error') is not None and 'not found in cube' in r.get('error','') and r.get('cellset') is None and r.get('height') is None"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
