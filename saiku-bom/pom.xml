@@ -16,7 +16,7 @@
         <!-- Spring Framework 6.2.x is the latest 6.x GA line (6.2.8 as of 2025-06).
              6.2.x closes CVE-2025-41242 (path traversal) and CVE-2025-41249
              (annotation-detection authorization). 7.x is still in milestones. -->
-        <spring.version>6.2.8</spring.version>
+        <spring.version>6.2.11</spring.version>
         <!-- Spring Security 6.5.x is the latest GA line (6.5.1 as of 2025-06).
              Closes CVE-2026-22732 (HTTP-headers-not-written) and CVE-2026-22746
              (user-attribute enumeration). Pairs with Spring Framework 6.2.x. -->
