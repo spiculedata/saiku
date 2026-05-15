@@ -80,6 +80,26 @@ public class AiSchemaConverter {
         // Resolve everything to canonical unique names + build MDX.
         StringBuilder mdx = new StringBuilder();
 
+        // saiku#775: named sets prepended as a WITH clause. MDX syntax is
+        //   WITH SET [name1] AS (expr1)
+        //        SET [name2] AS (expr2)
+        //   SELECT ...
+        // Multiple SET clauses share a single WITH keyword. Duplicate
+        // names are caught here so the agent gets a clean 400 instead of
+        // Mondrian's opaque "name already defined" error.
+        validateNamedSets(req);
+        if (req.getNamedSets() != null && !req.getNamedSets().isEmpty()) {
+            mdx.append("WITH");
+            for (AiNamedSet ns : req.getNamedSets()) {
+                mdx.append("\nSET ")
+                        .append(bracketName(ns.getName()))
+                        .append(" AS (")
+                        .append(ns.getExpression())
+                        .append(")");
+            }
+            mdx.append("\n");
+        }
+
         // COLUMNS axis: { measures }  CROSSJOIN  columns-axes
         mdx.append("SELECT ");
         if (req.isNonEmpty()) mdx.append("NON EMPTY ");
@@ -1170,5 +1190,50 @@ public class AiSchemaConverter {
             }
         }
         return s.toString();
+    }
+
+    /** saiku#775: validate the named-sets shape before MDX emission.
+     *  Catches missing fields and duplicate names up-front so the agent
+     *  gets a clean 400 instead of Mondrian's "name already defined" or
+     *  syntax-error surface. Expression bodies are passed to Mondrian
+     *  unmodified — the trust model matches calculated-member formulas. */
+    private static void validateNamedSets(AiQueryRequest req) {
+        List<AiNamedSet> sets = req.getNamedSets();
+        if (sets == null || sets.isEmpty()) return;
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        for (int i = 0; i < sets.size(); i++) {
+            AiNamedSet ns = sets.get(i);
+            if (ns == null) {
+                throw new AiValidationException("namedSets[" + i + "]", "namedSets entry must not be null", null);
+            }
+            String n = ns.getName();
+            if (n == null || n.isBlank()) {
+                throw new AiValidationException(
+                        "namedSets[" + i + "].name", "namedSets entry requires a non-blank 'name'.", null);
+            }
+            String e = ns.getExpression();
+            if (e == null || e.isBlank()) {
+                throw new AiValidationException(
+                        "namedSets[" + i + "].expression",
+                        "namedSets entry '" + n + "' requires a non-blank 'expression' (raw MDX set).",
+                        null);
+            }
+            if (!seen.add(n)) {
+                throw new AiValidationException(
+                        "namedSets[" + i + "].name",
+                        "Duplicate named-set name '" + n + "'. Each entry in namedSets[] must use a unique name.",
+                        null);
+            }
+        }
+    }
+
+    /** Wrap a named-set name in brackets if the caller didn't already.
+     *  Names with embedded ']' get escaped per Mondrian's MDX-identifier
+     *  rules (double the bracket). Defensive — agents that supply the
+     *  already-bracketed form keep working. */
+    private static String bracketName(String n) {
+        if (n == null) return "[]";
+        if (n.startsWith("[") && n.endsWith("]")) return n;
+        return "[" + n.replace("]", "]]") + "]";
     }
 }
