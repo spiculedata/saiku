@@ -480,6 +480,16 @@ check "legacy /query/execute with bad MDX → 200 + error field (legacy envelope
   '{"name":"bad-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT [NotAMeasure] ON COLUMNS FROM [Sales]"}' \
   "http==200 and r.get('error') is not None and 'not found in cube' in r.get('error','') and r.get('cellset') is None and r.get('height') is None"
 
+# Drillthrough with returns=[Measures].[Unit Sales] (iter 309) — chained from a fresh queryId.
+DT2_QID=$(curl -sS -b "$COOKIES" -X POST "$URL/rest/saiku/api/ai/query" \
+  -H 'Content-Type: application/json' \
+  --data '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"limit":1}' \
+  | python3 -c "import json,sys;print(json.load(sys.stdin).get('queryId',''))")
+if [[ -n "$DT2_QID" ]]; then
+  check "drillthrough with custom returns yields aggregate, not fact rows (iter 309)" GET "/rest/saiku/api/ai/query/$DT2_QID/drillthrough?maxrows=3&returns=%5BMeasures%5D.%5BUnit%20Sales%5D" '' \
+    "http==200 and r.get('rowCount')==1 and len(r['rows'])==1 and list(r['rows'][0].keys())==['Unit Sales'] and r['rows'][0]['Unit Sales']['value']==24597.0"
+fi
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
