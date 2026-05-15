@@ -488,6 +488,7 @@ public class AiQueryResource {
     public Response drillthrough(
             @PathParam("queryId") String queryId,
             @QueryParam("maxrows") @DefaultValue("100") int maxrows,
+            @QueryParam("firstRowset") Integer firstRowset,
             @QueryParam("returns") String returns) {
         if (thinQueryService == null) return error("Query service not configured");
         // For async queries the handle id != the underlying ThinQuery name.
@@ -498,7 +499,7 @@ public class AiQueryResource {
             if (h != null) name = h.getQuery().getName();
         }
         try {
-            java.sql.ResultSet rs = thinQueryService.drillthrough(name, maxrows, returns);
+            java.sql.ResultSet rs = thinQueryService.drillthrough(name, maxrows, firstRowset, returns);
             List<Map<String, AiCell>> rows = new ArrayList<>();
             if (rs != null) {
                 java.sql.ResultSetMetaData md = rs.getMetaData();
@@ -565,6 +566,65 @@ public class AiQueryResource {
             }
             log.error("AI drillthrough failed for {}", queryId, e);
             return error("drillthrough failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Column discovery for drillthrough (saiku#774). Returns the list of
+     * drillthrough columns available for a previously-executed query so
+     * the agent / UI can populate a {@code returns=} clause without
+     * trial-and-error.
+     *
+     * <p>Response shape:
+     * <pre>{@code
+     *   { "queryId": "...", "columns": [ { "name": "[Time].[Time].[Year]", "type": "VARCHAR" }, ... ] }
+     * }</pre>
+     *
+     * <p>The {@code name} values are the MDX-qualified labels the
+     * downstream {@code DRILLTHROUGH ... RETURN ...} clause accepts.
+     */
+    @GET
+    @Path("/query/{queryId}/drillthrough/columns")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response drillthroughColumns(@PathParam("queryId") String queryId) {
+        if (thinQueryService == null) return error("Query service not configured");
+        String name = queryId;
+        if (asyncQueryService != null) {
+            AsyncQueryHandle h = asyncQueryService.get(queryId);
+            if (h != null) name = h.getQuery().getName();
+        }
+        try {
+            List<Map<String, String>> cols = thinQueryService.drillthroughColumns(name);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("queryId", queryId);
+            body.put("columns", cols);
+            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+        } catch (NullPointerException e) {
+            // Same translation path as drillthrough above — unknown queryId
+            // leaks an NPE on the internal QueryContext lookup.
+            log.warn("AI drillthrough column discovery on unknown queryId {} — translated to 404", queryId);
+            AiQueryResponse resp = new AiQueryResponse();
+            resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
+            resp.setError("Unknown queryId '" + queryId
+                    + "'. The queryId must come from a previous /query or "
+                    + "/query/execute-async response and must not have been evicted.");
+            resp.setField("queryId");
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(resp)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        } catch (Exception e) {
+            String m = e.getMessage();
+            if (m != null && m.contains("fall outside CellSet bounds")) {
+                // Empty source cellset — no columns to discover. Return an
+                // empty list so the agent can decide whether to proceed.
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("queryId", queryId);
+                body.put("columns", new ArrayList<>());
+                return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+            }
+            log.error("AI drillthrough column discovery failed for {}", queryId, e);
+            return error("drillthrough column discovery failed: " + e.getMessage());
         }
     }
 
