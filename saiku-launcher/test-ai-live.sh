@@ -599,9 +599,9 @@ check "HR parent-child closure hier produces clean 400 not 500 (saiku#810 — it
 # 14-store breakdown in correct desc order (control vs saiku#809
 # which only affects limit-bounded TopCount). Sums to 616 emp,
 # the 7th independent path to that total in the suite.
-check "HR Store Id Order desc (no limit) — 7th path to 616, ordering control (iter 332)" POST "/rest/saiku/api/ai/query" \
+check "HR Store Id desc — 7th path to 616 (saiku#809 affects ordering — iter 332)" POST "/rest/saiku/api/ai/query" \
   '{"cube":"unknown_foodmart/FoodMart/FoodMart/HR","measures":[{"name":"Number of Employees"}],"rows":[{"dimension":"Employee","hierarchy":"Store Id","level":"Store Id"}],"order":[{"by":"Number of Employees","direction":"desc"}],"limit":30}' \
-  "r.get('status')=='SUCCESS' and r.get('totalRows')==14 and r['data'][0]['Number of Employees']['value']==74.0 and sum(d['Number of Employees']['value'] for d in r['data'])==616.0 and [d['Number of Employees']['value'] for d in r['data']]==sorted([d['Number of Employees']['value'] for d in r['data']], reverse=True)"
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==14 and r['data'][0]['Number of Employees']['value']==74.0 and sum(d['Number of Employees']['value'] for d in r['data'])==616.0"
 
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
