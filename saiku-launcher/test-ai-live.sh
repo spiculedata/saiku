@@ -506,6 +506,14 @@ check "filter op=relative mtd emits Mtd() (iter 313)" POST "/rest/saiku/api/ai/q
   '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Month","op":"relative","value":"mtd"}]}' \
   "r.get('status')=='SUCCESS' and 'WHERE (Mtd())' in r['metadata']['generatedMdx']"
 
+check "filter op=relative previous_period emits Tail(...,2).Item(0) (iter 314)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Quarter","op":"relative","value":"previous_period","n":1}]}' \
+  "r.get('status')=='SUCCESS' and 'Tail([Time].[Time].[Quarter].Members, 2).Item(0)' in r['metadata']['generatedMdx']"
+
+check "unknown relative preset → 400 + field + 8 presets in available (iter 314b)" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}],"filters":[{"dimension":"Time","hierarchy":"Time","level":"Quarter","op":"relative","value":"parallel_period","n":1}]}' \
+  "http==400 and r.get('field')=='filters[0].value' and 'Unknown relative preset' in r.get('error','') and 'ytd' in r.get('available',[]) and 'previous_period' in r.get('available',[]) and len(r.get('available',[]))==8"
+
 # ---- legacy /query/execute coverage ----
 check "legacy /query/execute raw MDX" POST "/rest/saiku/api/query/execute" \
   '{"name":"live-mdx","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY [Product].[Products].[Product Family].Members ON ROWS FROM [Sales]"}' \
