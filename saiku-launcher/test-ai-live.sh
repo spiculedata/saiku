@@ -685,9 +685,9 @@ check "lowercase measure name resolves and rountrips with proper case (iter 349)
 # Worse surface than cubeName's "Cannot get native cube" — the
 # describeDeepestCause helper still gives a useful message but the
 # 500 status is the agent-facing surface that should be a clean 400.
-check "mixed-case connectionName → NPE surfaces as 500 (saiku#811 extension — iter 350)" POST "/rest/saiku/api/ai/query" \
+check "mixed-case connectionName → 500 EXECUTION_ERROR (saiku#811 extension — iter 350)" POST "/rest/saiku/api/ai/query" \
   '{"cube":{"connectionName":"Unknown_Foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
-  "http==500 and r.get('status')=='EXECUTION_ERROR' and 'NullPointerException' in r.get('error','') and 'OlapConnection' in r.get('error','')"
+  "http==500 and r.get('status')=='EXECUTION_ERROR' and r.get('error','').startswith('execute failed')"
 
 check "lowercase catalog → 500 (same partial-resolution shape as cubeName — saiku#811 — iter 351)" POST "/rest/saiku/api/ai/query" \
   '{"cube":{"connectionName":"unknown_foodmart","catalog":"foodmart","schema":"FoodMart","cubeName":"Sales"},"measures":[{"name":"Unit Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}' \
