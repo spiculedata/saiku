@@ -758,6 +758,18 @@ public class AiSchemaConverter {
         }
 
         int segments = countBracketedSegments(memberRef);
+        if (segments < 2) {
+            // A bracketed ref needs at least [Dim].[Member] or
+            // [Dim].[Hier].[Member]; a single-segment ref ([Product]) is the
+            // dimension itself, not a member. Reject with a clearer message
+            // than the depth-mismatch path would emit (depth -1 is mechanically
+            // correct but cryptic).
+            throw new AiValidationException(
+                    fieldPath,
+                    "Member '" + memberRef + "' is the dimension itself, not a member. "
+                            + "Member refs need at least [Dim].[Member] or [Dim].[Hier].[Member].",
+                    null);
+        }
         int expectedDepth = levelDepth(declared, hier);
         if (expectedDepth < 0) return;
         // member depth = segments - 2 (dim + hier prefix), with the (All)
