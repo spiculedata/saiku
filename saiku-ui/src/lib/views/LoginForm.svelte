@@ -76,7 +76,13 @@
 
 <style>
   .login-stack {
-    margin: auto;
+    /* .app__main wraps us in overflow:hidden + flex:1 (right for the
+     * post-login workspace, wrong for our tall connection-info panel).
+     * Take the available height and manage our own y-scroll so users
+     * can reach the DXT download / accordion below the fold. */
+    flex: 1;
+    align-self: stretch;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -84,6 +90,7 @@
     padding: var(--space-4);
     width: 100%;
     max-width: 80rem;
+    margin-inline: auto;
   }
   .login {
     padding: var(--space-6);
