@@ -66,7 +66,7 @@ public class InfoResourceTest {
     }
 
     @Test
-    public void mcpDxt_returnsZipWithManifestJsonWhenMcpConfigured() throws Exception {
+    public void mcpDxt_returnsValidNodeDxtBundle() throws Exception {
         System.setProperty("saiku.mcp.url", "https://demo.saiku.bi/mcp");
         System.setProperty("saiku.version", "4.2.0");
 
@@ -76,28 +76,48 @@ public class InfoResourceTest {
         byte[] zip = (byte[]) resp.getEntity();
         assertTrue("zip body must be non-empty", zip.length > 0);
 
-        // The bundle must contain a single manifest.json entry.
+        // The bundle must contain manifest.json + server.js — DXT schema
+        // rejects type=remote, so we ship a Node shim that proxies stdio MCP
+        // to the remote HTTP URL via mcp-remote.
+        JsonNode manifest = null;
+        String shim = null;
         try (ZipInputStream zin = new ZipInputStream(new ByteArrayInputStream(zip))) {
-            ZipEntry entry = zin.getNextEntry();
-            assertNotNull("zip must have at least one entry", entry);
-            assertEquals("manifest.json", entry.getName());
-
-            byte[] body = zin.readAllBytes();
-            JsonNode manifest = new ObjectMapper().readTree(body);
-
-            assertEquals("0.1", manifest.path("dxt_version").asText());
-            assertEquals("saiku", manifest.path("name").asText());
-            assertEquals("4.2.0", manifest.path("version").asText());
-            assertEquals(
-                    "https://demo.saiku.bi/mcp",
-                    manifest.path("server").path("transport").path("url").asText());
-            assertEquals(
-                    "streamable-http",
-                    manifest.path("server").path("transport").path("type").asText());
-
-            // No further entries — keep the bundle minimal.
-            assertNull("only one entry expected", zin.getNextEntry());
+            ZipEntry e;
+            while ((e = zin.getNextEntry()) != null) {
+                byte[] body = zin.readAllBytes();
+                if (e.getName().equals("manifest.json")) {
+                    manifest = new ObjectMapper().readTree(body);
+                } else if (e.getName().equals("server.js")) {
+                    shim = new String(body, java.nio.charset.StandardCharsets.UTF_8);
+                }
+            }
         }
+        assertNotNull("manifest.json present", manifest);
+        assertNotNull("server.js shim present", shim);
+
+        assertEquals("0.1", manifest.path("dxt_version").asText());
+        assertEquals("saiku", manifest.path("name").asText());
+        assertEquals("4.2.0", manifest.path("version").asText());
+
+        // server block must follow the DXT schema: type in
+        // {python,node,binary}; transport keys are NOT valid here.
+        JsonNode server = manifest.path("server");
+        assertEquals("node", server.path("type").asText());
+        assertEquals("server.js", server.path("entry_point").asText());
+        assertTrue(
+                "transport must not be in server block (DXT rejects it)",
+                server.path("transport").isMissingNode());
+
+        // mcp_config tells Claude Desktop how to spawn the shim.
+        JsonNode mcp = server.path("mcp_config");
+        assertEquals("npx", mcp.path("command").asText());
+        List<String> args = new ArrayList<>();
+        for (JsonNode a : mcp.path("args")) args.add(a.asText());
+        assertEquals(List.of("-y", "mcp-remote@latest", "https://demo.saiku.bi/mcp"), args);
+
+        // Shim references the URL and shells out to mcp-remote.
+        assertTrue("shim must reference mcp-remote", shim.contains("mcp-remote"));
+        assertTrue("shim must embed the URL", shim.contains("https://demo.saiku.bi/mcp"));
     }
 
     @Test
@@ -111,17 +131,22 @@ public class InfoResourceTest {
     }
 
     @Test
-    public void zipManifest_isAValidZipArchive() throws Exception {
+    public void zipDxt_isAValidZipArchive() throws Exception {
         Map<String, Object> manifest = new LinkedHashMap<>();
         manifest.put("dxt_version", "0.1");
         manifest.put("name", "saiku");
-        byte[] zip = InfoResource.zipManifest(manifest);
+        byte[] zip = InfoResource.zipDxt(manifest, "// shim\n");
+        boolean sawManifest = false;
+        boolean sawShim = false;
         try (ZipInputStream zin = new ZipInputStream(new ByteArrayInputStream(zip))) {
-            ZipEntry e = zin.getNextEntry();
-            assertNotNull(e);
-            JsonNode body = new ObjectMapper().readTree(zin.readAllBytes());
-            assertEquals("saiku", body.path("name").asText());
+            ZipEntry e;
+            while ((e = zin.getNextEntry()) != null) {
+                if ("manifest.json".equals(e.getName())) sawManifest = true;
+                if ("server.js".equals(e.getName())) sawShim = true;
+            }
         }
+        assertTrue("manifest.json present", sawManifest);
+        assertTrue("server.js present", sawShim);
     }
 
     @Test
