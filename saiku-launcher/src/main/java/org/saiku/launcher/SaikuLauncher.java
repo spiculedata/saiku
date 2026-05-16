@@ -68,6 +68,30 @@ public class SaikuLauncher implements Callable<Integer> {
 
         @Override
         public Integer call() throws Exception {
+            Server server = bootServer(port, host, contextPath, home);
+            int actualPort = ((ServerConnector) server.getConnectors()[0]).getLocalPort();
+            String base = "http://" + host + ":" + actualPort + contextPath;
+            if (!base.endsWith("/")) base = base + "/";
+            System.out.println("Saiku ready:");
+            System.out.println("  Workspace : " + base + "ui/");
+            System.out.println("  Admin     : " + base + "ui/admin");
+            System.out.println("  REST API  : " + base + "rest/saiku/");
+            printDefaultCredentialWarning();
+            server.join();
+            return 0;
+        }
+
+        /**
+         * Boot the embedded Jetty server with a fully wired Saiku WAR. Returns
+         * the running {@link Server} so callers can introspect the bound port
+         * via {@code server.getConnectors()[0].getLocalPort()} and orchestrate
+         * shutdown. Used by the integration test harness so it can hit a real
+         * webapp without spawning a separate JVM.
+         *
+         * <p>The supplied port may be {@code 0} for an OS-assigned ephemeral
+         * port — discoverable post-start via the connector.
+         */
+        public static Server bootServer(int port, String host, String contextPath, Path home) throws Exception {
             Path saikuHome = (home != null ? home : Paths.get("saiku-home")).toAbsolutePath();
             Path dataDir = saikuHome.resolve("data");
             Path brandingDir = saikuHome.resolve("branding");
@@ -138,15 +162,7 @@ public class SaikuLauncher implements Callable<Integer> {
             }));
 
             server.start();
-            String base = "http://" + host + ":" + port + contextPath;
-            if (!base.endsWith("/")) base = base + "/";
-            System.out.println("Saiku ready:");
-            System.out.println("  Workspace : " + base + "ui/");
-            System.out.println("  Admin     : " + base + "ui/admin");
-            System.out.println("  REST API  : " + base + "rest/saiku/");
-            printDefaultCredentialWarning();
-            server.join();
-            return 0;
+            return server;
         }
 
         /**
@@ -178,7 +194,7 @@ public class SaikuLauncher implements Callable<Integer> {
             System.out.println();
         }
 
-        private void stageSeedAssets(Path dataDir) throws Exception {
+        private static void stageSeedAssets(Path dataDir) throws Exception {
             Path schema = dataDir.resolve("FoodMart4.xml");
             if (!Files.exists(schema)) {
                 try (InputStream in = SaikuLauncher.class.getResourceAsStream("/seed/FoodMart4.xml")) {
@@ -214,7 +230,7 @@ public class SaikuLauncher implements Callable<Integer> {
          * the JDBC URL is portable across machines. Skipped if the file already
          * exists — preserves user customisations on re-launch.
          */
-        private void stageDefaultDatasource(Path saikuHome) throws Exception {
+        private static void stageDefaultDatasource(Path saikuHome) throws Exception {
             Path dsDir = saikuHome
                     .resolve("repository")
                     .resolve("data")
@@ -236,7 +252,7 @@ public class SaikuLauncher implements Callable<Integer> {
             }
         }
 
-        private void stageBrandingSample(Path brandingDir) throws Exception {
+        private static void stageBrandingSample(Path brandingDir) throws Exception {
             Path sample = brandingDir.resolve("brand.css.sample");
             if (!Files.exists(sample)) {
                 try (InputStream in = SaikuLauncher.class.getResourceAsStream("/seed/brand.css.sample")) {
@@ -248,7 +264,7 @@ public class SaikuLauncher implements Callable<Integer> {
             }
         }
 
-        private Path extractWar() throws Exception {
+        private static Path extractWar() throws Exception {
             Path tmp = Files.createTempFile("saiku-", ".war");
             tmp.toFile().deleteOnExit();
             try (InputStream in = SaikuLauncher.class.getResourceAsStream("/webapp/saiku.war")) {

@@ -21,8 +21,12 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.saiku.olap.dto.*;
@@ -71,10 +75,21 @@ public class OlapDiscoverResource implements Serializable {
     @Path("/{connection}")
     public List<SaikuConnection> getConnections(@PathParam("connection") String connectionName) {
         try {
-            return olapDiscoverService.getConnection(connectionName);
+            List<SaikuConnection> conns = olapDiscoverService.getConnection(connectionName);
+            // saiku#867: empty result here means the underlying service
+            // swallowed a SaikuOlapException ("Cannot find connection: ...")
+            // — the SPA / agents can't tell "no connection by this name"
+            // from "connection has no schemas" when both return []. Surface
+            // the missing-name case as a typed 404 envelope.
+            if (conns == null || conns.isEmpty()) {
+                throw notFound("connection", connectionName, "Cannot find connection: '" + connectionName + "'", null);
+            }
+            return conns;
+        } catch (WebApplicationException pass) {
+            throw pass;
         } catch (Exception e) {
             log.error(this.getClass().getName(), e);
-            return new ArrayList<>();
+            throw notFound("connection", connectionName, "Cannot find connection: '" + connectionName + "'", e);
         }
     }
 
@@ -139,11 +154,43 @@ public class OlapDiscoverResource implements Serializable {
             List<SaikuDimension> dimensions = olapDiscoverService.getAllDimensions(cube);
             List<SaikuMember> measures = olapDiscoverService.getMeasures(cube);
             Map<String, Object> properties = olapDiscoverService.getProperties(cube);
+            // saiku#867: empty dimensions+measures indicates the cube isn't
+            // resolvable (the service swallows the lookup and returns []s).
+            // Surface as 404 rather than {dimensions:null, measures:null}.
+            if ((dimensions == null || dimensions.isEmpty()) && (measures == null || measures.isEmpty())) {
+                throw notFound(
+                        "cube",
+                        cubeName,
+                        "Cube '" + cubeName + "' not found in " + connectionName + "/" + catalogName + "/" + schemaName,
+                        null);
+            }
             return new SaikuCubeMetadata(dimensions, measures, properties);
+        } catch (WebApplicationException pass) {
+            throw pass;
         } catch (Exception e) {
             log.error(this.getClass().getName(), e);
+            throw notFound("cube", cubeName, "Cube metadata lookup failed: " + e.getMessage(), e);
         }
-        return new SaikuCubeMetadata(null, null, null);
+    }
+
+    /**
+     * Build a {@link WebApplicationException} carrying the standard JSON
+     * not-found envelope: {@code {error,field,available}}. saiku#867: replaces
+     * silent 200-with-null-body / 204 No Content returns so clients can
+     * distinguish "doesn't exist" from "exists but empty".
+     */
+    private static WebApplicationException notFound(String field, String value, String message, Throwable cause) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("status", "NOT_FOUND");
+        body.put("field", field);
+        body.put("value", value);
+        body.put("error", message);
+        return new WebApplicationException(
+                cause,
+                Response.status(Response.Status.NOT_FOUND)
+                        .type(MediaType.APPLICATION_JSON)
+                        .entity(body)
+                        .build());
     }
 
     /**
@@ -199,11 +246,24 @@ public class OlapDiscoverResource implements Serializable {
         }
         SaikuCube cube = new SaikuCube(connectionName, cubeName, cubeName, cubeName, catalogName, schemaName);
         try {
-            return olapDiscoverService.getDimension(cube, dimensionName);
+            SaikuDimension dim = olapDiscoverService.getDimension(cube, dimensionName);
+            // saiku#867: null return from the service means the dimension
+            // isn't on the cube. Surface as 404 rather than the 204 the
+            // JAX-RS null-mapper otherwise emits.
+            if (dim == null) {
+                throw notFound(
+                        "dimension",
+                        dimensionName,
+                        "Dimension '" + dimensionName + "' not found on cube '" + cubeName + "'",
+                        null);
+            }
+            return dim;
+        } catch (WebApplicationException pass) {
+            throw pass;
         } catch (Exception e) {
             log.error(this.getClass().getName(), e);
+            throw notFound("dimension", dimensionName, "Dimension lookup failed: " + e.getMessage(), e);
         }
-        return null;
     }
 
     /**

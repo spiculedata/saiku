@@ -17,6 +17,7 @@ package org.saiku.web.rest.resources;
 
 import com.qmino.miredot.annotations.ReturnType;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HEAD;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.GenericEntity;
@@ -57,5 +58,21 @@ public class InfoResource {
 
         GenericEntity<List<Plugin>> entity = new GenericEntity<List<Plugin>>(platformService.getAvailablePlugins()) {};
         return Response.ok(entity).build();
+    }
+
+    /**
+     * Cheap HEAD for monitors / health checks.
+     *
+     * <p>saiku#866: without this, Jersey's auto-HEAD handler runs the
+     * full GET (including the plugin directory walk in
+     * {@link org.saiku.service.PlatformUtilsService#getAvailablePlugins()}),
+     * then tries to strip the body. On the launcher the plugin dir is
+     * often unset and {@code File.list} returns null, leaving the
+     * response writer stalled on a Content-Length that never matches.
+     * HEAD callers see a 30-second hang followed by a connection reset.
+     */
+    @HEAD
+    public Response head() {
+        return Response.ok().build();
     }
 }

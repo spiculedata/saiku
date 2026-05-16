@@ -236,6 +236,32 @@ public class ThinQueryService implements Serializable {
         return this.context.get(name);
     }
 
+    /**
+     * saiku#862: import an externally-built ThinQuery + CellSet into this
+     * session's context. Lets the AI Query API's async-drillthrough path
+     * re-attach a previously-executed async query to the current request
+     * session so {@link #drillthrough(String, java.util.List, Integer, String)}
+     * can resolve the QueryContext by name.
+     *
+     * <p>Without this hook, a drillthrough request that lands on a different
+     * session than the one that submitted the async query hits an empty
+     * context map and the resource layer surfaces a "Unknown queryId" 404
+     * even though the underlying AsyncQueryHandle still has the cellset
+     * loaded.
+     */
+    public void registerExternalContext(ThinQuery query, CellSet cellSet) {
+        if (query == null || query.getName() == null) return;
+        QueryContext qc = context.get(query.getName());
+        if (qc == null) {
+            qc = new QueryContext(Type.OLAP, query);
+            context.put(query.getName(), qc);
+        }
+        qc.store(ObjectKey.QUERY, query);
+        if (cellSet != null) {
+            qc.store(ObjectKey.RESULT, cellSet);
+        }
+    }
+
     @Deprecated
     public ThinQuery createEmpty(String name, SaikuCube cube) {
         try {
@@ -658,10 +684,20 @@ public class ThinQueryService implements Serializable {
 
     public boolean isMdxDrillthrough(ThinQuery query) {
         try {
-            if (ThinQuery.Type.MDX.equals(query.getType())) {
+            // saiku#861: detect DRILLTHROUGH MDX even when ThinQuery.type is
+            // null (the JSON body /api/query/execute often omits it, and the
+            // default constructor leaves the field null). Without this guard
+            // the falls-through path hits Mondrian's
+            // MondrianOlap4jStatement.parseQuery() which casts to (Query) →
+            // ClassCastException because DRILLTHROUGH parses to a different
+            // class.
+            String mdx = query.getMdx();
+            boolean isMdxMode = ThinQuery.Type.MDX.equals(query.getType())
+                    || (query.getType() == null && mdx != null && !mdx.isBlank());
+            if (isMdxMode) {
                 SaikuCube cube = query.getCube();
                 final OlapConnection con = olapDiscoverService.getNativeConnection(cube.getConnection());
-                return SaikuMondrianHelper.isMondrianDrillthrough(con, query.getMdx());
+                return SaikuMondrianHelper.isMondrianDrillthrough(con, mdx);
             }
         } catch (Exception | Error e) {
             log.warn("Error checking for DRILLTHROUGH: " + query.getName() + " DRILLTHROUGH MDX:" + query.getMdx(), e);

@@ -31,6 +31,11 @@ public class SaikuJerseyApplication extends ResourceConfig {
         // typed AiQueryResponse 400 envelope instead of the raw text/plain
         // Jackson message that leaked class names and source location.
         register(org.saiku.web.rest.exception.JacksonValidationExceptionMapper.class);
+        // saiku#865: catch-all mapper that prevents Jetty's HTML error page
+        // (with its `Powered by Jetty:// 12.0.32` server banner) from ever
+        // reaching a JSON client. Turns unguarded NPEs / missing-param
+        // failures into a typed JSON envelope.
+        register(org.saiku.web.rest.exception.GenericFailureExceptionMapper.class);
 
         ApplicationContext ctx = WebApplicationContextUtils.getRequiredWebApplicationContext(servletContext);
         for (String name : ctx.getBeanNamesForAnnotation(Path.class)) {
