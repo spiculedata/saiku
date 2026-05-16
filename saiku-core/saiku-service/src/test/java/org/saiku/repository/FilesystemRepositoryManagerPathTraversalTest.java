@@ -108,6 +108,41 @@ public class FilesystemRepositoryManagerPathTraversalTest {
     }
 
     @Test
+    public void saveBinaryInternalFile_writes_inside_datadir_not_jvm_cwd() throws Exception {
+        // Pre-fix bug: saveBinaryInternalFile used `new FileOutputStream(new File("./" + basename))`,
+        // landing the bytes in the JVM's working directory instead of the repo root. The intended
+        // target (resNode from createNode()) was constructed but never written to.
+        byte[] payload = "hello".getBytes(StandardCharsets.UTF_8);
+        String repoPath = "/etc/test-binary-write.bin";
+
+        manager.saveBinaryInternalFile(new java.io.ByteArrayInputStream(payload), repoPath, "application/octet-stream");
+
+        // Expected: file lands at <datadir>/unknown/etc/test-binary-write.bin (getDatadir() resolves
+        // to <datadir>/unknown/ when there's no workspace session).
+        File expected = new File(datadir, "unknown/etc/test-binary-write.bin");
+        if (!expected.exists()) {
+            fail("saveBinaryInternalFile must write inside the repo. Expected at "
+                    + expected.getAbsolutePath()
+                    + " but the file is missing.");
+        }
+        byte[] readBack = Files.readAllBytes(expected.toPath());
+        if (!new String(readBack, StandardCharsets.UTF_8).equals("hello")) {
+            fail("saveBinaryInternalFile wrote unexpected bytes to " + expected.getAbsolutePath());
+        }
+
+        // Also assert the bug-vector file does NOT exist at CWD.
+        File cwdLeak = new File("test-binary-write.bin");
+        if (cwdLeak.exists()) {
+            try {
+                cwdLeak.delete();
+            } catch (Exception ignored) {
+            }
+            fail("saveBinaryInternalFile leaked bytes into the JVM working directory (" + cwdLeak.getAbsolutePath()
+                    + ")");
+        }
+    }
+
+    @Test
     public void getInternalFile_absolute_path_outside_datadir_is_rejected() throws Exception {
         // An absolute path that doesn't start with the datadir must not be readable either.
         String absoluteOutside = outsideSecret.getAbsolutePath();
