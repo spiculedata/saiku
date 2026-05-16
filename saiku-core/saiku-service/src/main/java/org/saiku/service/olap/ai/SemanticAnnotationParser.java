@@ -52,6 +52,14 @@ public final class SemanticAnnotationParser {
 
     private SemanticAnnotationParser() {}
 
+    /** Parsed dimension-level annotations. saiku#818 follow-up: dimensions accept
+     *  {@code description} + {@code synonyms} only (no aggregation-kind / cardinality —
+     *  those live on measures and levels). */
+    public static final class DimensionAnnotations {
+        public String description;
+        public List<String> synonyms = new ArrayList<>();
+    }
+
     /** Parsed measure-level annotations. Fields default to {@code null} / empty list. */
     public static final class MeasureAnnotations {
         public String description;
@@ -68,6 +76,16 @@ public final class SemanticAnnotationParser {
         public String cardinality;
         public String grain;
         public List<AiSchema.RequiredFilter> requiredFilters = new ArrayList<>();
+    }
+
+    public static DimensionAnnotations parseDimension(Map<String, String> annotations) {
+        DimensionAnnotations out = new DimensionAnnotations();
+        if (annotations == null) {
+            return out;
+        }
+        out.description = trimToNull(annotations.get(KEY_DESCRIPTION));
+        out.synonyms = parseCsvList(annotations.get(KEY_SYNONYMS));
+        return out;
     }
 
     public static MeasureAnnotations parseMeasure(Map<String, String> annotations) {

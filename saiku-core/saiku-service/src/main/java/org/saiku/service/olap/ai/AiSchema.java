@@ -174,6 +174,12 @@ public class AiSchema {
         public final String uniqueName;
         public String displayName;
         public String description;
+        /** saiku#818 follow-up: alternate names the agent can use in any
+         *  {@code AiQueryRequest} field that names a dimension. Registered into
+         *  {@link AiSchema#dimensionAliases} for input resolution and also
+         *  surfaced as a distinct list on the {@code /ai/schema} response. */
+        public java.util.List<String> synonyms = new java.util.ArrayList<>();
+
         public final Map<String, Hierarchy> hierarchies = new LinkedHashMap<>();
         /** display-name → canonical hierarchy key. */
         public final Map<String, String> hierarchyAliases = new LinkedHashMap<>();

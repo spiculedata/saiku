@@ -251,6 +251,11 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
                 if (dim.getDescription() != null && !dim.getDescription().isEmpty()) {
                     d.description = dim.getDescription();
                 }
+                // saiku#818 follow-up: project dimension-level annotations.
+                SemanticAnnotationParser.DimensionAnnotations dann =
+                        SemanticAnnotationParser.parseDimension(dim.getAnnotations());
+                if (dann.description != null) d.description = dann.description;
+                if (!dann.synonyms.isEmpty()) d.synonyms = dann.synonyms;
                 List<SaikuHierarchy> hiers = dim.getHierarchies();
                 if (hiers == null || hiers.isEmpty()) {
                     hiers = discoverService.getAllDimensionHierarchies(cube, dim.getName());

@@ -63,6 +63,15 @@ public class AiSchemaEnricher {
             return;
         }
 
+        if (parts.length == 2 && "dimensions".equals(parts[0])) {
+            AiSchema.Dimension d = schema.dimensions.get(AiSchema.key(parts[1]));
+            if (d == null) return;
+            SemanticAnnotationParser.DimensionAnnotations ann = SemanticAnnotationParser.parseDimension(raw);
+            if (ann.description != null) d.description = ann.description;
+            if (!ann.synonyms.isEmpty()) d.synonyms = ann.synonyms;
+            return;
+        }
+
         if (parts.length == 6
                 && "dimensions".equals(parts[0])
                 && "hierarchies".equals(parts[2])
@@ -98,7 +107,13 @@ public class AiSchemaEnricher {
                 schema.measureAliases.putIfAbsent(synKey, canonical);
             }
         }
-        for (AiSchema.Dimension d : schema.dimensions.values()) {
+        for (Map.Entry<String, AiSchema.Dimension> de : schema.dimensions.entrySet()) {
+            String dimCanonical = de.getKey();
+            AiSchema.Dimension d = de.getValue();
+            // saiku#818 follow-up: register dim synonyms too.
+            for (String syn : d.synonyms) {
+                schema.dimensionAliases.putIfAbsent(AiSchema.key(syn), dimCanonical);
+            }
             for (AiSchema.Hierarchy h : d.hierarchies.values()) {
                 for (Map.Entry<String, AiSchema.Level> le : h.levels.entrySet()) {
                     String canonical = le.getKey();

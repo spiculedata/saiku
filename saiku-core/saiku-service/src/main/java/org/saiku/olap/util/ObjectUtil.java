@@ -58,13 +58,17 @@ public class ObjectUtil {
 
     @NotNull
     public static SaikuDimension convert(@NotNull Dimension dim) {
-        return new SaikuDimension(
+        SaikuDimension sd = new SaikuDimension(
                 dim.getName(),
                 dim.getUniqueName(),
                 dim.getCaption(),
                 dim.getDescription(),
                 dim.isVisible(),
                 convertHierarchies(dim.getHierarchies()));
+        // saiku#818 follow-up: surface dimension-level annotations so
+        // OlapAiCubeMetadataService can apply saiku.semantic.* to AiSchema.Dimension.
+        sd.setAnnotations(annotationsAsStringMap(dim));
+        return sd;
     }
 
     @NotNull

@@ -238,6 +238,12 @@
     </Dimension>
 
     <Dimension name='Time' table='time_by_day' type='TIME' key='Time Id'>
+        <Annotations>
+            <!-- saiku#818 follow-up: dimension-level synonyms — agent posting
+                 {"dimension":"date"} routes to Time via dimensionAliases. -->
+            <Annotation name='saiku.semantic.description'>Calendar-based time dimension. Use the Time/Time hierarchy for Year→Quarter→Month rollups, Time/Weekly for ISO weeks, Time/Date Only for raw dates.</Annotation>
+            <Annotation name='saiku.semantic.synonyms'>date, datetime, period, when</Annotation>
+        </Annotations>
         <Attributes>
             <Attribute name='Year'
                        caption='Year' keyColumn='the_year' levelType='TimeYears' hasHierarchy='false'>
@@ -493,6 +499,11 @@
             </Dimension>
 
             <Dimension name='Customer' table='customer' key='Name'>
+                <Annotations>
+                    <!-- saiku#818 follow-up — dim synonyms exercised live. -->
+                    <Annotation name='saiku.semantic.description'>Retail customer dimension. Use Customers hierarchy for geo rollups (Country → State → City → Name).</Annotation>
+                    <Annotation name='saiku.semantic.synonyms'>shopper, buyer, account, customers</Annotation>
+                </Annotations>
                 <Attributes>
                     <Attribute name='Country' keyColumn='country' hasHierarchy='false'/>
                     <Attribute name='State Province' hasHierarchy='false'>
@@ -549,6 +560,10 @@
                                 <Annotation name="saiku.semantic.description">Individual customer name. Crossjoining at this level can return tens of thousands of rows — pre-filter by Country/State.</Annotation>
                                 <Annotation name="saiku.semantic.synonyms">customer name, person</Annotation>
                                 <Annotation name="saiku.semantic.cardinality">high</Annotation>
+                                <!-- saiku#818 follow-up: exercise required_filters live — queries at the
+                                     individual-customer leaf must scope by Country first or they'd return
+                                     ~10k rows. -->
+                                <Annotation name="saiku.semantic.required_filters">Customers/Country</Annotation>
                             </Annotations>
                         </Level>
                     </Hierarchy>
