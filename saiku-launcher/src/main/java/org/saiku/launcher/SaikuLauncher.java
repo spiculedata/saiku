@@ -101,6 +101,15 @@ public class SaikuLauncher implements Callable<Integer> {
             Files.createDirectories(saikuHome.resolve("plugins"));
             Files.createDirectories(brandingDir);
             System.setProperty("saiku.home", saikuHome.toString());
+            // Expose the running fat-JAR's version so InfoResource can stamp
+            // it into the DXT manifest + the eventual /info/version endpoint.
+            // Implementation-Version comes from the shade-plugin manifest
+            // transformer (see saiku-launcher/pom.xml). Null in IDE / unit
+            // runs — fine, the resource falls back to "0.0.0".
+            String pkgVersion = SaikuLauncher.class.getPackage().getImplementationVersion();
+            if (pkgVersion != null && !pkgVersion.isBlank()) {
+                System.setProperty("saiku.version", pkgVersion);
+            }
             System.out.println("Saiku home: " + saikuHome);
 
             stageSeedAssets(dataDir);

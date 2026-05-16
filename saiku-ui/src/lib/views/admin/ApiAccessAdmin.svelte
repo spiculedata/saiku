@@ -216,4 +216,17 @@
     border-radius: 0.25rem;
     cursor: pointer;
   }
+  .install-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: var(--space-3) 0;
+    padding: var(--space-3);
+    background: var(--accent-soft, #ecfdf5);
+    border-radius: var(--radius-sm, 0.25rem);
+  }
+  .install-row .btn {
+    align-self: flex-start;
+    text-decoration: none;
+  }
 </style>
