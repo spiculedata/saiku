@@ -76,4 +76,171 @@ class SemanticLayerTest {
                 """;
         assertThrows(CubeYamlParser.SemanticValidationException.class, () -> new CubeYamlParser().parse(yaml));
     }
+
+    @Test
+    void rejectsBlankCubeName() {
+        String yaml =
+                """
+                name: ""
+                fact:
+                  table: t
+                measures:
+                  - name: a
+                    column: c
+                """;
+        assertThrows(CubeYamlParser.SemanticValidationException.class, () -> new CubeYamlParser().parse(yaml));
+    }
+
+    @Test
+    void rejectsMissingFactTable() {
+        String yaml =
+                """
+                name: Broken
+                fact:
+                  table: ""
+                measures:
+                  - name: a
+                    column: c
+                """;
+        assertThrows(CubeYamlParser.SemanticValidationException.class, () -> new CubeYamlParser().parse(yaml));
+    }
+
+    @Test
+    void rejectsDimensionWithoutLevels() {
+        String yaml =
+                """
+                name: Sales
+                fact:
+                  table: t
+                measures:
+                  - name: a
+                    column: c
+                dimensions:
+                  - name: Empty
+                """;
+        assertThrows(CubeYamlParser.SemanticValidationException.class, () -> new CubeYamlParser().parse(yaml));
+    }
+
+    @Test
+    void rejectsLevelMissingColumn() {
+        String yaml =
+                """
+                name: Sales
+                fact:
+                  table: t
+                measures:
+                  - name: a
+                    column: c
+                dimensions:
+                  - name: D
+                    levels:
+                      - name: L
+                """;
+        assertThrows(CubeYamlParser.SemanticValidationException.class, () -> new CubeYamlParser().parse(yaml));
+    }
+
+    @Test
+    void rejectsLevelMissingName() {
+        String yaml =
+                """
+                name: Sales
+                fact:
+                  table: t
+                measures:
+                  - name: a
+                    column: c
+                dimensions:
+                  - name: D
+                    levels:
+                      - column: lc
+                """;
+        assertThrows(CubeYamlParser.SemanticValidationException.class, () -> new CubeYamlParser().parse(yaml));
+    }
+
+    @Test
+    void compilerEmitsMultipleDimensionsInOrder() throws IOException {
+        String yaml =
+                """
+                name: Multi
+                fact:
+                  table: f
+                measures:
+                  - name: m1
+                    column: c1
+                dimensions:
+                  - name: Time
+                    levels: [{ name: Year, column: y }]
+                  - name: Geo
+                    levels: [{ name: Country, column: g }]
+                """;
+        CubeDefinition cube = new CubeYamlParser().parse(yaml);
+        String xml = new MondrianCompiler().compile(cube);
+        int timeAt = xml.indexOf("<Dimension name=\"Time\"");
+        int geoAt = xml.indexOf("<Dimension name=\"Geo\"");
+        assertTrue(timeAt > 0, "Time dim must be emitted");
+        assertTrue(geoAt > timeAt, "Geo dim must follow Time in declaration order, got " + xml);
+    }
+
+    @Test
+    void compilerEmitsFactSchemaAttributeWhenPresent() throws IOException {
+        String yaml =
+                """
+                name: WithSchema
+                fact:
+                  schema: analytics
+                  table: f
+                measures:
+                  - name: m
+                    column: c
+                """;
+        String xml = new MondrianCompiler().compile(new CubeYamlParser().parse(yaml));
+        assertTrue(xml.contains("schema=\"analytics\""), xml);
+    }
+
+    @Test
+    void compilerOmitsFactSchemaAttributeWhenBlank() throws IOException {
+        String yaml =
+                """
+                name: NoSchema
+                fact:
+                  schema: ""
+                  table: f
+                measures:
+                  - name: m
+                    column: c
+                """;
+        String xml = new MondrianCompiler().compile(new CubeYamlParser().parse(yaml));
+        assertTrue(!xml.contains("schema=\"\""), "blank schema must not be emitted, got: " + xml);
+    }
+
+    @Test
+    void compilerEmitsLevelTypeAndOptionalColumnsWhenPresent() throws IOException {
+        String yaml =
+                """
+                name: Sales
+                fact:
+                  table: f
+                measures:
+                  - name: m
+                    column: c
+                dimensions:
+                  - name: Geo
+                    foreignKey: geo_id
+                    primaryKey: id
+                    table: geo_dim
+                    levels:
+                      - name: Country
+                        column: country_id
+                        type: Numeric
+                        nameColumn: country_name
+                        ordinalColumn: country_ord
+                """;
+        String xml = new MondrianCompiler().compile(new CubeYamlParser().parse(yaml));
+        assertTrue(xml.contains("foreignKey=\"geo_id\""), xml);
+        assertTrue(xml.contains("primaryKey=\"id\""), xml);
+        assertTrue(xml.contains("<Table name=\"geo_dim\""), xml);
+        assertTrue(xml.contains("nameColumn=\"country_name\""), xml);
+        assertTrue(xml.contains("ordinalColumn=\"country_ord\""), xml);
+        assertTrue(xml.contains("type=\"Numeric\""), xml);
+    }
 }
