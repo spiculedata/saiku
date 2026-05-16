@@ -868,6 +868,64 @@ public class AiSchemaConverterTest {
         }
     }
 
+    /* ------------------------ saiku#864 limit guards ------------------------ */
+
+    @Test
+    public void negativeLimitRejected() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Time", "Time By", "Year")));
+        req.setLimit(-5);
+        try {
+            converter.convert(req, schema);
+            fail("expected validation error for negative limit");
+        } catch (AiValidationException e) {
+            assertEquals("limit", e.getField());
+            assertTrue(
+                    "error must mention >= 0: " + e.getMessage(), e.getMessage().contains(">= 0"));
+        }
+    }
+
+    @Test
+    public void limitAboveCeilingRejected() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Time", "Time By", "Year")));
+        req.setLimit(AiSchemaConverter.AI_QUERY_LIMIT_MAX + 1);
+        try {
+            converter.convert(req, schema);
+            fail("expected validation error for limit > max");
+        } catch (AiValidationException e) {
+            assertEquals("limit", e.getField());
+            assertTrue(
+                    "error must cite the maximum: " + e.getMessage(),
+                    e.getMessage().contains(String.valueOf(AiSchemaConverter.AI_QUERY_LIMIT_MAX)));
+        }
+    }
+
+    @Test
+    public void limitAtCeilingAccepted() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Time", "Time By", "Year")));
+        req.setLimit(AiSchemaConverter.AI_QUERY_LIMIT_MAX);
+        ThinQuery tq = converter.convert(req, schema);
+        assertTrue(
+                "limit at ceiling must emit HEAD(..., N)",
+                tq.getMdx().contains("HEAD(")
+                        && tq.getMdx().contains(String.valueOf(AiSchemaConverter.AI_QUERY_LIMIT_MAX)));
+    }
+
+    @Test
+    public void limitZeroAccepted_asDocumentedNoCap() {
+        // The schema description documents "0 or absent = no cap." Pin that
+        // 0 is accepted and the MDX has no HEAD wrapper.
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Time", "Time By", "Year")));
+        req.setLimit(0);
+        ThinQuery tq = converter.convert(req, schema);
+        assertTrue(
+                "limit=0 must not emit a HEAD wrapper: " + tq.getMdx(),
+                !tq.getMdx().contains("HEAD("));
+    }
+
     private static int countOccurrences(String s, String token) {
         int n = 0;
         int from = 0;

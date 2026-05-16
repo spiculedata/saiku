@@ -51,11 +51,15 @@ public class RepositoryIT {
                 + "&content="
                 + URLEncoder.encode(content, StandardCharsets.UTF_8);
         HttpResponse<String> save = harness.postAuthForm(BASE + "/resource", form);
-        // 200 on success; if the in-memory session shape doesn't expose
-        // username/roles the endpoint NPEs with 500 — pin both cases.
+        // 200 on success; under stateless Basic auth the in-memory session
+        // shape doesn't expose username/roles and the endpoint NPEs.
+        // saiku#865 fix: the NPE is now translated by the
+        // GenericFailureExceptionMapper into a 400 BAD_REQUEST envelope
+        // ("Required parameter missing or null") instead of a 500 HTML
+        // page. Pin both the happy 200 and the 400-envelope cases.
         assertTrue(
-                "save should be 200 or 500 (session-dependent), got " + save.statusCode() + " body=" + save.body(),
-                save.statusCode() == 200 || save.statusCode() == 500);
+                "save should be 200 or 400 (session-dependent), got " + save.statusCode() + " body=" + save.body(),
+                save.statusCode() == 200 || save.statusCode() == 400);
 
         if (save.statusCode() != 200) {
             // Session-bound endpoint can't run under stateless Basic auth in

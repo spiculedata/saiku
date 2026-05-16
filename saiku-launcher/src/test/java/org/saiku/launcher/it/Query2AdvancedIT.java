@@ -38,13 +38,18 @@ public class Query2AdvancedIT {
     }
 
     @Test
-    public void levelMembers_resolveRoute_pinned204() throws Exception {
-        // FINDING (pinned): the level-members metadata route resolves but
-        // returns 204 (No Content) instead of the expected JSON array. The
-        // SPA relies on this for the slicer dropdown — a 204 means the
-        // dropdown stays empty. Likely a name-encoding mismatch between the
-        // path param shape and ThinQueryService.getResultMetadataMembers.
-        // Pinned so a fix is testable.
+    public void levelMembers_returns404WithTypedEnvelopeWhenSessionDiscontinuous() throws Exception {
+        // saiku#863 fix: the level-members metadata endpoint now returns
+        // a typed 404 envelope when the query name isn't in the current
+        // session's ThinQueryService context, instead of the previous
+        // silent 204 No Content. The 204 was indistinguishable from
+        // "level has no members" — the typed envelope tells clients
+        // exactly what went wrong and how to recover.
+        //
+        // Under Basic auth with no shared cookie jar (this harness's
+        // setup), every request creates a new session, so the query
+        // posted in the helper above isn't in *this* request's context.
+        // The 404 envelope is the documented correct response.
         String name = "q2-meta-" + System.nanoTime();
         executeProductFamilyQuery(name);
 
@@ -54,7 +59,11 @@ public class Query2AdvancedIT {
                 + "/levels/"
                 + URLEncoder.encode("[Product].[Products].[Product Family]", StandardCharsets.UTF_8);
         HttpResponse<String> resp = harness.getAuth(url);
-        assertEquals("current observed: 204 No Content", 204, resp.statusCode());
+        assertEquals(404, resp.statusCode());
+        JsonNode body = harness.parse(resp);
+        assertEquals("NOT_FOUND", body.path("status").asText());
+        assertEquals("queryname", body.path("field").asText());
+        assertEquals(name, body.path("value").asText());
     }
 
     @Test

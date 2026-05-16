@@ -54,7 +54,9 @@ public final class AiRequestJsonSchema {
                 "limit",
                 intField(
                         0,
-                        "Optional row cap. With order, emits TopCount/BottomCount; without order, emits HEAD(rows, N). 0 or absent = no cap."));
+                        "Optional row cap. With order, emits TopCount/BottomCount; without order, emits HEAD(rows, N). "
+                                + "0 or absent = no cap. Must be >= 0 and <= 10000 — larger values are rejected with "
+                                + "VALIDATION_ERROR. Page client-side for larger result sets."));
         properties.put(
                 "visualTotals",
                 boolField(

@@ -31,16 +31,12 @@ public class DrillthroughIT {
     }
 
     @Test
-    public void mdxDrillthrough_classCastException_pinnedBug() throws Exception {
-        // FINDING (real bug, pinned): Submitting raw DRILLTHROUGH MDX to
-        // /api/query/execute throws
-        //   ClassCastException: mondrian.olap.DrillThrough cannot be cast to mondrian.olap.Query
-        // The endpoint's isMdxDrillthrough() branch is supposed to route
-        // around this with thinQueryService.drillthrough(ThinQuery), but
-        // some path still hits a Query-typed cast on the underlying
-        // QueryPart. Pinned so a fix in ThinQueryService.execute/drillthrough
-        // is a deliberate testable change. SPA users of the drillthrough
-        // MDX path will see an inline error envelope until this is fixed.
+    public void mdxDrillthrough_returnsCellSetWithoutClassCastException() throws Exception {
+        // saiku#861 fix: raw DRILLTHROUGH MDX now routes through
+        // thinQueryService.drillthrough(ThinQuery) — the type-defaulting
+        // guard in Query2Resource.execute lets isMdxDrillthrough() detect
+        // the statement even when the JSON body omits the explicit
+        // {"type": "MDX"} field.
         String body =
                 """
                 {
@@ -59,21 +55,21 @@ public class DrillthroughIT {
         assertEquals(200, resp.statusCode());
         JsonNode r = harness.parse(resp);
         assertTrue(
-                "error envelope must carry the ClassCastException — pinning until fix",
-                r.path("error").asText().contains("ClassCastException")
-                        && r.path("error").asText().contains("DrillThrough"));
+                "drillthrough body must NOT carry an error: "
+                        + resp.body().substring(0, Math.min(300, resp.body().length())),
+                r.path("error").isMissingNode() || r.path("error").isNull());
+        // The cellset surface for drillthrough carries the row tuples.
+        assertTrue("drillthrough body should include a cellset/runtime field", r.has("cellset") || r.has("runtime"));
     }
 
     @Test
-    public void asyncDrillthrough_currentlyRejectsAsyncQueryIds_pinned() throws Exception {
-        // FINDING (pinned, not asserted as desired): AI Query drillthrough
-        // doesn't accept queryIds from /execute-async. The underlying handle
-        // resolves to a ThinQuery name that ThinQueryService no longer has
-        // a live context for, so the resource returns 404 with an
-        // "Unknown queryId" envelope. The SPA workflow expects to drillthrough
-        // INTO an async result — this gap means a chart-cell drill on a
-        // long-running query falls through to a re-execute. Pinned so a fix
-        // is testable.
+    public void asyncDrillthrough_resolvesAcrossSessions_saiku862() throws Exception {
+        // saiku#862 fix: drillthrough on an async queryId now re-attaches
+        // the handle's ThinQuery + CellSet to the current session's
+        // ThinQueryService context before invoking drillthrough(name, …).
+        // Previously a cross-session call (e.g. Basic auth without a shared
+        // cookie jar) returned 404 "Unknown queryId" even though the handle
+        // was live.
         String body =
                 """
                 {
@@ -93,14 +89,15 @@ public class DrillthroughIT {
             Thread.sleep(100);
         }
         HttpResponse<String> drill = harness.getAuth(AI + "/query/" + queryId + "/drillthrough?maxrows=5");
-        assertEquals("current observed status — drillthrough rejects async queryIds", 404, drill.statusCode());
-        JsonNode body2 = harness.parse(drill);
-        assertEquals("VALIDATION_ERROR", body2.path("status").asText());
-        assertEquals("queryId", body2.path("field").asText());
+        assertEquals(
+                "drillthrough should succeed after re-attachment, got " + drill.statusCode() + " body=" + drill.body(),
+                200,
+                drill.statusCode());
     }
 
     @Test
-    public void asyncDrillthroughColumns_alsoRejects_pinned() throws Exception {
+    public void asyncDrillthroughColumns_resolvesAcrossSessions() throws Exception {
+        // Same saiku#862 fix applied to the columns-discovery endpoint.
         String body =
                 """
                 {
@@ -120,8 +117,11 @@ public class DrillthroughIT {
             Thread.sleep(100);
         }
         HttpResponse<String> cols = harness.getAuth(AI + "/query/" + queryId + "/drillthrough/columns");
-        // Same root cause; pin the observed behaviour.
-        assertNotEquals("auth reaches the endpoint (no 401)", 401, cols.statusCode());
+        assertEquals(
+                "drillthrough columns should be 200 after re-attachment, got " + cols.statusCode() + " body="
+                        + cols.body(),
+                200,
+                cols.statusCode());
     }
 
     @Test
