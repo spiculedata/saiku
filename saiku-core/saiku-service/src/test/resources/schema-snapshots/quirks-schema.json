@@ -219,6 +219,7 @@
   },
   "measureAliases" : { },
   "dimensionAliases" : { },
+  "levelAliases" : { },
   "suggestions" : [ ],
   "examples" : [ {
     "cube" : {

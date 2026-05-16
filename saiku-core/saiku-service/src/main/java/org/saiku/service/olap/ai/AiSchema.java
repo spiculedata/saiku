@@ -208,12 +208,43 @@ public class AiSchema {
      */
     public AiCubeRef canonicalCube;
 
+    /**
+     * Triple identifying one level in the cube. Used as a value in
+     * {@link #levelAliases} so a single synonym can resolve to multiple levels
+     * across hierarchies (saiku#818 follow-up — Quarter exists in both
+     * {@code Time/Time} and {@code Time/Fiscal}, "quarterly" resolves to both).
+     * All three fields are canonical (lower-cased) keys, suitable for direct
+     * map lookup against {@link #dimensions} / hierarchies / levels.
+     */
+    public static class LevelAliasTarget {
+        public String dimension;
+        public String hierarchy;
+        public String level;
+
+        public LevelAliasTarget() {}
+
+        public LevelAliasTarget(String dimension, String hierarchy, String level) {
+            this.dimension = dimension;
+            this.hierarchy = hierarchy;
+            this.level = level;
+        }
+    }
+
     public final Map<String, Measure> measures = new LinkedHashMap<>();
     public final Map<String, Dimension> dimensions = new LinkedHashMap<>();
     /** display-name → canonical measure key (Phase 3 enrichment alias). */
     public final Map<String, String> measureAliases = new LinkedHashMap<>();
     /** display-name → canonical dimension key (Phase 3 enrichment alias). */
     public final Map<String, String> dimensionAliases = new LinkedHashMap<>();
+    /** saiku#818 follow-up: flat top-level view of level synonyms.
+     *  Maps each synonym → list of every level it resolves to. The list lets a
+     *  single synonym ("quarterly") cover same-named levels across multiple
+     *  hierarchies (Time/Time/Quarter + Time/Fiscal/Quarter); the agent
+     *  disambiguates using {@code dimension}/{@code hierarchy} on each target.
+     *  Resolution itself still happens against
+     *  {@code Hierarchy.levelAliases} (per-hierarchy scope) — this map is
+     *  purely a read-side overview for the {@code /ai/schema} response. */
+    public final Map<String, java.util.List<LevelAliasTarget>> levelAliases = new LinkedHashMap<>();
     /** Phase 3: LLM/schema-generator suggestions overlaid on the schema. */
     public java.util.List<AiSchemaSuggestion> suggestions = new java.util.ArrayList<>();
     /** Optional free-text cube-level description. */

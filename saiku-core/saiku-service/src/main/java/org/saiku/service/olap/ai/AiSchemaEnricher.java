@@ -114,11 +114,35 @@ public class AiSchemaEnricher {
             for (String syn : d.synonyms) {
                 schema.dimensionAliases.putIfAbsent(AiSchema.key(syn), dimCanonical);
             }
-            for (AiSchema.Hierarchy h : d.hierarchies.values()) {
+            for (Map.Entry<String, AiSchema.Hierarchy> he : d.hierarchies.entrySet()) {
+                String hierCanonical = he.getKey();
+                AiSchema.Hierarchy h = he.getValue();
                 for (Map.Entry<String, AiSchema.Level> le : h.levels.entrySet()) {
-                    String canonical = le.getKey();
+                    String levelCanonical = le.getKey();
                     for (String syn : le.getValue().synonyms) {
-                        h.levelAliases.putIfAbsent(AiSchema.key(syn), canonical);
+                        String synKey = AiSchema.key(syn);
+                        h.levelAliases.putIfAbsent(synKey, levelCanonical);
+                        // saiku#818 follow-up: also surface a flat top-level view
+                        // so an agent gets the same overview for levels that
+                        // measureAliases/dimensionAliases already give. Same-named
+                        // levels across hierarchies (Time/Time/Quarter +
+                        // Time/Fiscal/Quarter) append rather than silently dropping.
+                        java.util.List<AiSchema.LevelAliasTarget> targets =
+                                schema.levelAliases.computeIfAbsent(synKey, k -> new java.util.ArrayList<>());
+                        // De-dupe — if the same synonym→target tuple appears via
+                        // both XML annotation and overlay, only register once.
+                        boolean exists = false;
+                        for (AiSchema.LevelAliasTarget t : targets) {
+                            if (dimCanonical.equals(t.dimension)
+                                    && hierCanonical.equals(t.hierarchy)
+                                    && levelCanonical.equals(t.level)) {
+                                exists = true;
+                                break;
+                            }
+                        }
+                        if (!exists) {
+                            targets.add(new AiSchema.LevelAliasTarget(dimCanonical, hierCanonical, levelCanonical));
+                        }
                     }
                 }
             }
