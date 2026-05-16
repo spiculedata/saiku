@@ -16,25 +16,62 @@
 
 package org.saiku.log;
 
-import java.io.File;
 import java.io.IOException;
-import org.apache.commons.io.FileUtils;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Read and return log files.
+ * Read and return log files for the admin "Logs" panel.
+ *
+ * <p>The SPA passes a log name like {@code saiku} or {@code mondrian_sql}; the
+ * {@code .log} suffix is appended here so the front-end stays consistent with
+ * how it labels files in the dropdown. Path-traversal attempts are rejected
+ * up-front (saiku#780-style containment).
+ *
+ * <p>Returns {@code null} when the resolved path does not exist so the resource
+ * layer can surface a clean 404 envelope rather than the opaque 500 the
+ * previous {@code FileUtils.readFileToString} call produced on missing files.
  */
 public class LogExtractor {
 
-    private String logdirectory;
     private static final Logger log = LoggerFactory.getLogger(LogExtractor.class);
 
-    public String readLog(String path) throws IOException {
-        if (path.contains("..")) {
-            throw new IOException("Cannot display file outside of log folder");
+    private String logdirectory;
+
+    /**
+     * @param name log name without extension (e.g. {@code saiku},
+     *             {@code mondrian_sql}). {@code .log} is appended if not
+     *             already present.
+     * @return file contents as a UTF-8 string, or {@code null} when the file
+     *         does not exist.
+     * @throws IOException for genuine I/O failures (permissions, FS errors);
+     *                     missing files are NOT errors.
+     */
+    public String readLog(String name) throws IOException {
+        if (name == null || name.isBlank()) {
+            return null;
         }
-        return FileUtils.readFileToString(new File(logdirectory + File.separator + path));
+        if (name.contains("..") || name.contains("/") || name.contains("\\")) {
+            throw new IOException("Cannot display file outside of log folder: " + name);
+        }
+        String filename = name.endsWith(".log") ? name : name + ".log";
+        Path base = Paths.get(logdirectory == null ? "logs" : logdirectory)
+                .toAbsolutePath()
+                .normalize();
+        Path target = base.resolve(filename).normalize();
+        // Defence-in-depth: ensure the resolved path is still under base.
+        if (!target.startsWith(base)) {
+            throw new IOException("Cannot display file outside of log folder: " + name);
+        }
+        if (!Files.isRegularFile(target)) {
+            log.debug("Log file does not exist: {}", target);
+            return null;
+        }
+        return Files.readString(target, StandardCharsets.UTF_8);
     }
 
     public String getLogdirectory() {

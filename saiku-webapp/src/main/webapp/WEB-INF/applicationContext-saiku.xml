@@ -77,6 +77,12 @@
 	         legacy `isAnonymous() or isFullyAuthenticated()` pattern. -->
 	    <security:intercept-url pattern="/rest/saiku/session" access="permitAll" />
 	    <security:intercept-url pattern="/rest/saiku/session/**" access="permitAll" />
+	    <!-- /rest/saiku/info and its sub-paths are anonymous-accessible.
+	         The SPA's login page reads /info/capabilities pre-auth to decide
+	         whether to surface the demo-mode connection panel (saiku#871).
+	         /info itself is the plugin-list endpoint the SPA pings on boot. -->
+	    <security:intercept-url pattern="/rest/saiku/info" access="permitAll" />
+	    <security:intercept-url pattern="/rest/saiku/info/**" access="permitAll" />
       <security:intercept-url pattern="/rest/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/json/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/WEB-INF/classes/legacy-schema" access="isAnonymous()" />
