@@ -123,17 +123,24 @@ public final class SaikuItHarness {
                 HttpResponse.BodyHandlers.ofString());
     }
 
-    /** Issue a POST against {@code path} with admin Basic auth + JSON body. */
+    /** Issue a POST against {@code path} with admin Basic auth + JSON body.
+     *  Retries once on the JDK HttpClient's transient
+     *  "HTTP/1.1 header parser received no bytes" — observed sporadically
+     *  when many tests share the same client across a short window. */
     public HttpResponse<String> postAuthJson(String path, String body) throws Exception {
-        return http.send(
-                HttpRequest.newBuilder(URI.create(baseUrl + path))
-                        .timeout(HTTP_TIMEOUT)
-                        .header("Authorization", adminBasicAuth)
-                        .header("Accept", "application/json")
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
+        HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl + path))
+                .timeout(HTTP_TIMEOUT)
+                .header("Authorization", adminBasicAuth)
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+        try {
+            return http.send(req, HttpResponse.BodyHandlers.ofString());
+        } catch (java.io.IOException ioe) {
+            Thread.sleep(100);
+            return http.send(req, HttpResponse.BodyHandlers.ofString());
+        }
     }
 
     /** Issue a GET against {@code path} without auth — used for testing the 401 path. */
