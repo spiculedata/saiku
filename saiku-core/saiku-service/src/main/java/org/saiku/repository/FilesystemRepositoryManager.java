@@ -364,51 +364,33 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
     public Object saveBinaryInternalFile(InputStream file, String path, String type) throws RepositoryException {
         if (file == null) {
-            // Create new folder
-            String parent = path.substring(0, path.lastIndexOf(sep));
-
-            int pos = path.lastIndexOf(sep);
-            String filename = "." + sep + path.substring(pos + 1, path.length());
-            return this.createNode(filename);
-
-        } else {
-            int pos = path.lastIndexOf(sep);
-            String filename = "." + sep + path.substring(pos + 1, path.length());
-
-            log.debug("Saving:" + filename);
-            File check = this.getNode(filename);
-            if (check.exists()) {
-                check.delete();
-            }
-
-            File resNode = this.createNode(filename);
-
-            FileOutputStream outputStream = null;
-            try {
-                outputStream = new FileOutputStream(new File(filename));
-            } catch (FileNotFoundException e) {
-                log.error("Cannot open output stream for {}", filename, e);
-            }
-
-            int read;
-            byte[] bytes = new byte[1024];
-
-            try {
-                while ((read = file.read(bytes)) != -1) {
-                    try {
-                        if (outputStream != null) {
-                            outputStream.write(bytes, 0, read);
-                        }
-                    } catch (IOException e) {
-                        log.error("Failed to write byte block to {}", filename, e);
-                    }
-                }
-            } catch (IOException e) {
-                log.error("Failed reading input stream while saving {}", filename, e);
-            }
-
-            return resNode;
+            // No content: create the directory node at the user-supplied path
+            // (createNode resolves the path inside the datadir for us).
+            return this.createNode(path);
         }
+        // Resolve the target inside the repo *first* and write to it. The legacy
+        // code used `"./" + basename` and `new FileOutputStream(filename)` which
+        // wrote the bytes to the JVM working directory and silently lost the
+        // intended directory structure (saiku#780 follow-up MEDIUM-1).
+        File resNode = this.createNode(path);
+        if (resNode.getParentFile() != null && !resNode.getParentFile().exists()) {
+            resNode.getParentFile().mkdirs();
+        }
+        if (resNode.exists()) {
+            resNode.delete();
+        }
+        log.debug("Saving binary file to {}", resNode);
+
+        byte[] bytes = new byte[1024];
+        try (FileOutputStream outputStream = new FileOutputStream(resNode)) {
+            int read;
+            while ((read = file.read(bytes)) != -1) {
+                outputStream.write(bytes, 0, read);
+            }
+        } catch (IOException e) {
+            log.error("Failed to write binary file to {}", resNode, e);
+        }
+        return resNode;
     }
 
     public String getFile(String s, String username, List<String> roles) throws RepositoryException {
@@ -911,9 +893,22 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         }
         Path base = Paths.get(getDatadir()).toAbsolutePath().normalize();
         Path candidate = Paths.get(userPath);
-        Path resolved = candidate.isAbsolute()
-                ? candidate.normalize()
-                : base.resolve(userPath).normalize();
+        Path resolved;
+        if (candidate.isAbsolute() && userPath.startsWith(getDatadir())) {
+            // Truly filesystem-absolute path already inside the datadir — keep as-is.
+            resolved = candidate.normalize();
+        } else {
+            // Saiku treats leading-{slash} paths like {@code "/etc/foo"} as REPO-relative
+            // (i.e. {@code <datadir>/etc/foo}), not as filesystem-absolute. The legacy
+            // implementation got this for free via string concat ({@code datadir + path});
+            // we have to strip the leading separator so {@link Path#resolve} keeps the
+            // segment relative on Unix.
+            String stripped = userPath;
+            while (stripped.startsWith("/") || stripped.startsWith("\\")) {
+                stripped = stripped.substring(1);
+            }
+            resolved = base.resolve(stripped).normalize();
+        }
         if (!resolved.startsWith(base)) {
             throw new RepositoryException("Path traversal attempt rejected: " + userPath);
         }
