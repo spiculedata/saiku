@@ -159,6 +159,28 @@ public class InfoResourceTest {
     }
 
     @Test
+    public void dxtShim_recoversFromMidSessionServerCycle() {
+        String shim = InfoResource.dxtShim("https://demo.saiku.bi/mcp");
+        // Survives operator-side restarts of mcp-proxy / saiku-demo: the
+        // shim must detect a dropped streamable-http session, re-handshake
+        // transparently, and replay the in-flight request so the client
+        // never sees the stale-session error.
+        assertTrue("shim should detect session loss", shim.contains("isSessionLoss"));
+        assertTrue(
+                "shim should re-handshake on session loss",
+                shim.contains("rehandshake") && shim.contains("notifications/initialized"));
+        assertTrue(
+                "shim must drop cached session id when client re-initializes",
+                shim.contains("if (method === 'initialize') sessionId = null"));
+        // The reissued mcp-session-id header from the remote must be
+        // honoured, not just the first one.
+        assertFalse(
+                "shim should not gate session-id updates on a one-shot if",
+                shim.contains("if (sid && !sessionId) sessionId = sid"));
+        assertTrue("shim should accept any reissued session id", shim.contains("if (sid) sessionId = sid"));
+    }
+
+    @Test
     public void mcpDxt_versionFallsBackTo000WhenUnset() throws Exception {
         System.setProperty("saiku.mcp.url", "https://demo.saiku.bi/mcp");
         // Deliberately no saiku.version.
