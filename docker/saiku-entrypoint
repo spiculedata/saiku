@@ -18,7 +18,19 @@ set -euo pipefail
 case "${1:-serve}" in
   serve)
     shift || true
-    exec java -jar /app/saiku.jar serve \
+    # Capability props surfaced by GET /rest/saiku/info/capabilities so
+    # the SPA's admin panel + (when on) demo-mode login screen can show
+    # accurate connection instructions. Empty values are passed through
+    # as empty strings so the resource code's blank-check treats them
+    # as "not configured".
+    JAVA_OPTS=()
+    if [[ -n "${SAIKU_DEMO:-}" ]]; then
+      JAVA_OPTS+=("-Dsaiku.demo=${SAIKU_DEMO}")
+    fi
+    if [[ -n "${SAIKU_MCP_URL:-}" ]]; then
+      JAVA_OPTS+=("-Dsaiku.mcp.url=${SAIKU_MCP_URL}")
+    fi
+    exec java "${JAVA_OPTS[@]}" -jar /app/saiku.jar serve \
       --host 0.0.0.0 \
       --port 8080 \
       --home "${SAIKU_HOME:-/app/saiku-home}" \
