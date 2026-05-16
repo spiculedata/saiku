@@ -15,9 +15,17 @@
   // API or wire the MCP server before they ever sign in. On a normal
   // (non-demo) deployment this panel stays hidden — Saiku admins see it
   // only after auth via the /admin "API access" tab.
-  onMount(() => {
+  onMount(async () => {
     if (!platform.capabilities) {
-      platform.loadCapabilities();
+      await platform.loadCapabilities();
+    }
+    // Prefill the demo password the moment the capabilities probe confirms
+    // demo mode. Username already defaults to "admin"; pre-filling the
+    // password lets a visitor click Sign in without first having to dig
+    // the credentials out of the connection-info panel. On a real
+    // deployment demoMode is false and this stays a no-op.
+    if (platform.capabilities?.demoMode && !password) {
+      password = "admin";
     }
   });
 
