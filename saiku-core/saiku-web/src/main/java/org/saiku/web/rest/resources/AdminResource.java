@@ -16,6 +16,7 @@
 package org.saiku.web.rest.resources;
 
 import com.qmino.miredot.annotations.ReturnType;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -47,6 +48,10 @@ import org.slf4j.LoggerFactory;
  * AdminResource for the Saiku 3.0+ Admin console
  */
 @Path("/saiku/admin")
+// saiku#780 defence-in-depth: every endpoint under /saiku/admin requires the
+// ADMIN role at the JAX-RS layer, not just the Spring URL filter. The
+// RolesAllowedDynamicFeature in SaikuJerseyApplication is what wires this up.
+@RolesAllowed("ROLE_ADMIN")
 public class AdminResource {
 
     private DatasourceService datasourceService;

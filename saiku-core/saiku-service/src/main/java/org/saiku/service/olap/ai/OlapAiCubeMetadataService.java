@@ -339,6 +339,12 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
                     if (level.name != null && level.name.equalsIgnoreCase("(All)")) {
                         continue;
                     }
+                    // If the sample-member fetch already returned ≥1 row the
+                    // level is provably queryable — don't re-probe (the old
+                    // path made ~2× Mondrian round-trips per level on cold load).
+                    if (level.queryableProven) {
+                        continue;
+                    }
                     if (!isLevelQueryable(cube, hier.name, level.name)) {
                         log.info(
                                 "Pruning unqueryable level {}/{}/{} from {} schema (saiku#810)",
@@ -414,6 +420,11 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
             List<org.saiku.olap.dto.SimpleCubeElement> members =
                     discoverService.getLevelMembers(cube, hierarchyName, levelName, overfetch);
             if (members == null) return;
+            // Sample fetch returning ≥1 row is proof the level is queryable —
+            // pruneUnqueryable can skip its redundant probe call (saiku#780 perf).
+            if (!members.isEmpty()) {
+                out.queryableProven = true;
+            }
             java.util.Set<String> seen = new java.util.HashSet<>();
             for (org.saiku.olap.dto.SimpleCubeElement m : members) {
                 if (out.sampleMembers.size() >= sampleMembersPerLevel) break;

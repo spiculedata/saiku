@@ -33,6 +33,8 @@ import org.olap4j.impl.Olap4jUtil;
 import org.olap4j.metadata.Database;
 import org.saiku.datasources.connection.IConnectionManager;
 import org.saiku.olap.util.exception.SaikuOlapException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
 
@@ -41,6 +43,7 @@ import org.springframework.web.context.support.WebApplicationContextUtils;
  */
 public class SaikuXmlaServlet extends Olap4jXmlaServlet {
 
+    private static final Logger log = LoggerFactory.getLogger(SaikuXmlaServlet.class);
     private static IConnectionManager connections;
 
     public SaikuXmlaServlet() {
@@ -82,7 +85,7 @@ public class SaikuXmlaServlet extends Olap4jXmlaServlet {
                     }
 
                 } catch (SaikuOlapException e) {
-                    e.printStackTrace();
+                    log.error("XMLA discover failed", e);
                 }
                 return null;
             }
@@ -155,7 +158,7 @@ public class SaikuXmlaServlet extends Olap4jXmlaServlet {
 
                 return lret;
             } catch (SaikuOlapException e) {
-                e.printStackTrace();
+                log.error("XMLA datasource enumeration failed", e);
             }
 
             return null;

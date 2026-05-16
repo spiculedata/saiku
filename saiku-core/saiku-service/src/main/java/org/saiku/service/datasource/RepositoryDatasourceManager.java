@@ -22,6 +22,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import org.apache.commons.lang3.StringUtils;
 import org.saiku.database.dto.MondrianSchema;
 import org.saiku.datasources.connection.IConnectionManager;
@@ -46,8 +47,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     public static final String ORBIS_WORKSPACE_DIR = "workspace";
     public static final String SAIKU_AUTH_PRINCIPAL = "SAIKU_AUTH_PRINCIPAL";
 
-    private final Map<String, SaikuDatasource> datasources =
-            Collections.synchronizedMap(new HashMap<String, SaikuDatasource>());
+    private final Map<String, SaikuDatasource> datasources = new ConcurrentHashMap<>();
     public IConnectionManager connectionManager;
     private ScopedRepo sessionRegistry;
     private boolean workspaces;
@@ -404,7 +404,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
             irm.saveInternalFile(content, path, type);
             return "Save Okay";
         } catch (RepositoryException e) {
-            e.printStackTrace();
+            log.error("saveInternalFile failed for {}", path, e);
             return "Save Failed: " + e.getLocalizedMessage();
         }
     }
@@ -414,7 +414,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
             irm.saveBinaryInternalFile(content, path, type);
             return "Save Okay";
         } catch (RepositoryException e) {
-            e.printStackTrace();
+            log.error("saveBinaryInternalFile failed for {}", path, e);
             return "Save Failed: " + e.getLocalizedMessage();
         }
     }
@@ -423,8 +423,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         try {
             irm.removeInternalFile(filePath);
         } catch (RepositoryException e) {
-            log.error("Remove file failed: " + filePath);
-            e.printStackTrace();
+            log.error("Remove file failed: {}", filePath, e);
         }
     }
 

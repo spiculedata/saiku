@@ -43,8 +43,12 @@ import org.saiku.query.mdx.NameFilter;
 import org.saiku.query.mdx.NameLikeFilter;
 import org.saiku.query.metadata.CalculatedMeasure;
 import org.saiku.query.metadata.CalculatedMember;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class Fat {
+
+    private static final Logger log = LoggerFactory.getLogger(Fat.class);
 
     public static Query convert(ThinQuery tq, Cube cube) throws SQLException {
 
@@ -95,7 +99,7 @@ public class Fat {
                     try {
                         parent = q.getCube().lookupMember(IdentifierParser.parseIdentifier(qcm.getParentMember()));
                     } catch (OlapException e) {
-                        e.printStackTrace();
+                        log.error("Failed to look up parent member {}", qcm.getParentMember(), e);
                     }
                 }
 

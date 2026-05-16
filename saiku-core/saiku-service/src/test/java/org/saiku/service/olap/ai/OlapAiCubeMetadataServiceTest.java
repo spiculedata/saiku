@@ -221,6 +221,51 @@ public class OlapAiCubeMetadataServiceTest {
         assertFalse("hidden measure carries visible=false", Boolean.TRUE.equals(hidden.visible));
     }
 
+    /**
+     * Probe on, but {@code populateSampleMembers} has already proven the level
+     * is queryable by fetching ≥1 member. {@code pruneUnqueryable} must not
+     * re-fetch members for those levels — that is the N+1 we're hardening.
+     */
+    @Test
+    public void probeOn_skips_redundant_fetch_when_sample_already_proves_queryable() {
+        java.util.Map<String, Integer> calls = new java.util.HashMap<>();
+        OlapAiCubeMetadataService probeSvc = new OlapAiCubeMetadataService();
+        probeSvc.setDiscoverService(new StubDiscover() {
+            @Override
+            public List<org.saiku.olap.dto.SimpleCubeElement> getLevelMembers(
+                    SaikuCube cube, String hierarchyName, String levelName, int searchLimit) {
+                String k = hierarchyName + "/" + levelName;
+                calls.merge(k, 1, Integer::sum);
+                return Arrays.asList(new org.saiku.olap.dto.SimpleCubeElement(
+                        "S" + k, "[" + k + "].&[S]", "[" + hierarchyName + "].[" + levelName + "]"));
+            }
+
+            @Override
+            public List<org.saiku.olap.dto.SimpleCubeElement> getLevelMembers(
+                    SaikuCube cube, String hierarchyName, String levelName, String q, int limit) {
+                String k = hierarchyName + "/" + levelName;
+                calls.merge(k, 1, Integer::sum);
+                return Arrays.asList(new org.saiku.olap.dto.SimpleCubeElement(
+                        "S" + k, "[" + k + "].&[S]", "[" + hierarchyName + "].[" + levelName + "]"));
+            }
+        });
+        probeSvc.setProbeUnqueryable(true);
+
+        probeSvc.getSchema(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+
+        // Time By has Year + Quarter; Product/Product has Department.
+        // Before the fix the probe re-fetched each level: count was 2 per (hier, level).
+        // After the fix the sample fetch proves queryability and the probe is skipped.
+        for (java.util.Map.Entry<String, Integer> e : calls.entrySet()) {
+            assertTrue(
+                    "getLevelMembers must not be called more than once per level when sample fetch already returned a member; got "
+                            + e.getValue()
+                            + " for "
+                            + e.getKey(),
+                    e.getValue() <= 1);
+        }
+    }
+
     /** Stub that fails getLevelMembers for Quarter only. */
     private static class ProbeStubDiscover extends StubDiscover {
         @Override
