@@ -72,19 +72,40 @@ public class SaikuMcpServerTest {
 
         assertFalse("success path leaves isError unset/false", Boolean.TRUE.equals(r.isError()));
         assertNotNull("structuredContent present on success", r.structuredContent());
-        // Round-trip the structuredContent through Jackson and verify it
-        // reflects the upstream body (most clients consume this field
-        // directly rather than parsing the text content).
+        // MCP spec: structuredContent MUST be a JSON object. Array
+        // bodies (list_cubes, search_members) get wrapped under
+        // "items" so strict hosts (mcp-proxy's pydantic, Claude
+        // Desktop) don't reject the envelope with a dict_type error.
         JsonNode parsed = MAPPER.valueToTree(r.structuredContent());
-        assertTrue("structuredContent is the cubes array", parsed.isArray());
-        assertEquals("Sales", parsed.get(0).get("cubeName").asText());
+        assertTrue("structuredContent is an object", parsed.isObject());
+        assertTrue("array body is exposed under .items", parsed.path("items").isArray());
+        assertEquals("Sales", parsed.path("items").get(0).get("cubeName").asText());
 
-        // Text content also present for legacy MCP clients.
+        // Text content keeps the original (unwrapped) shape so agents
+        // that read content[0] still see the array directly.
         assertEquals(1, r.content().size());
         McpSchema.Content c = r.content().get(0);
         assertTrue("text content is the JSON string form", c instanceof TextContent);
         JsonNode reparsed = MAPPER.readTree(((TextContent) c).text());
+        assertTrue("text content stays unwrapped", reparsed.isArray());
         assertEquals("Sales", reparsed.get(0).get("cubeName").asText());
+    }
+
+    @Test
+    public void jsonResultPassesObjectBodiesThroughUnwrapped() throws Exception {
+        // Cube-shaped (object) responses — describe_cube, run_query,
+        // preview_query, drillthrough — must NOT get the items wrapper,
+        // otherwise existing agents break.
+        com.fasterxml.jackson.databind.node.ObjectNode obj = MAPPER.createObjectNode();
+        obj.put("cubeName", "Sales");
+        obj.putArray("measures").add("Store Sales");
+
+        CallToolResult r = SaikuMcpServer.jsonResult(() -> obj);
+
+        JsonNode parsed = MAPPER.valueToTree(r.structuredContent());
+        assertTrue("object body stays object", parsed.isObject());
+        assertEquals("Sales", parsed.get("cubeName").asText());
+        assertFalse("no spurious items wrapper on object bodies", parsed.has("items"));
     }
 
     @Test
