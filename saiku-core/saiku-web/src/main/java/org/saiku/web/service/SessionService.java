@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import org.apache.commons.lang3.StringUtils;
 import org.saiku.repository.ScopedRepo;
 import org.saiku.service.ISessionService;
@@ -51,7 +52,7 @@ public class SessionService implements ISessionService {
     private AuthorisationPredicate authorisationPredicate;
     private final SecurityContextRepository securityContextRepository = new HttpSessionSecurityContextRepository();
 
-    private final Map<Object, Map<String, Object>> sessionHolder = new HashMap<>();
+    private final Map<Object, Map<String, Object>> sessionHolder = new ConcurrentHashMap<>();
 
     private Boolean anonymous = false;
     private ScopedRepo sessionRepo;

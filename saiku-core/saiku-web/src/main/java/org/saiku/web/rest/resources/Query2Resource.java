@@ -33,7 +33,6 @@ import jakarta.xml.bind.annotation.XmlAccessorType;
 import java.io.InputStream;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -59,6 +58,7 @@ import org.saiku.web.export.JSConverter;
 import org.saiku.web.export.PdfReport;
 import org.saiku.web.rest.objects.resultset.QueryResult;
 import org.saiku.web.rest.util.RestUtil;
+import org.saiku.web.util.JdbcCleanup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.context.request.RequestAttributes;
@@ -72,6 +72,10 @@ import org.springframework.web.context.request.RequestContextHolder;
 public class Query2Resource {
 
     private static final Logger log = LoggerFactory.getLogger(Query2Resource.class);
+
+    /** Shared, thread-safe ObjectMapper. Per-request instantiation churned through
+     *  Jackson's reflection cache on every call; mirror the AiQueryResource pattern. */
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private ThinQueryService thinQueryService;
 
@@ -158,8 +162,7 @@ public class Query2Resource {
             if (thinQueryService.isOldQuery(filecontent)) {
                 tq = thinQueryService.convertQuery(filecontent);
             } else {
-                ObjectMapper om = new ObjectMapper();
-                tq = om.readValue(filecontent, ThinQuery.class);
+                tq = MAPPER.readValue(filecontent, ThinQuery.class);
             }
 
             if (log.isDebugEnabled()) {
@@ -608,9 +611,8 @@ public class Query2Resource {
             }
             List<List<Integer>> realPositions = new ArrayList<>();
             if (StringUtils.isNotBlank(positionListString)) {
-                ObjectMapper mapper = new ObjectMapper();
-                String[] positions = mapper.readValue(
-                        positionListString, mapper.getTypeFactory().constructArrayType(String.class));
+                String[] positions = MAPPER.readValue(
+                        positionListString, MAPPER.getTypeFactory().constructArrayType(String.class));
                 if (positions != null && positions.length > 0) {
                     for (String position : positions) {
                         String[] rPos = position.split(":");
@@ -700,22 +702,7 @@ public class Query2Resource {
             // Arrow path materialises rows eagerly into the ByteArrayOutputStream
             // before the response body is written, so it is safe to close the
             // ResultSet here for both JSON and Arrow branches.
-            if (rs != null) {
-                Statement statement = null;
-                try {
-                    statement = rs.getStatement();
-                } catch (Exception e) {
-                    throw new SaikuServiceException(e);
-                } finally {
-                    try {
-                        rs.close();
-                        if (statement != null) {
-                            statement.close();
-                        }
-                    } catch (Exception ee) {
-                    }
-                }
-            }
+            JdbcCleanup.closeQuietly(rs);
         }
     }
 
@@ -817,16 +804,7 @@ public class Query2Resource {
             log.error("Cannot export drillthrough query (" + queryName + ")", e);
             return Response.serverError().build();
         } finally {
-            if (rs != null) {
-                try {
-                    Statement statement = rs.getStatement();
-                    statement.close();
-                    rs.close();
-                } catch (SQLException e) {
-                    throw new SaikuServiceException(e);
-                } finally {
-                }
-            }
+            JdbcCleanup.closeQuietly(rs);
         }
     }
 
@@ -1023,14 +1001,11 @@ public class Query2Resource {
                 Integer pInt = Integer.parseInt(p);
                 cellPosition.add(pInt);
             }
-            ObjectMapper mapper = new ObjectMapper();
-
-            CollectionType ct = mapper.getTypeFactory().constructCollectionType(ArrayList.class, String.class);
-
-            JavaType st = mapper.getTypeFactory().uncheckedSimpleType(String.class);
+            CollectionType ct = MAPPER.getTypeFactory().constructCollectionType(ArrayList.class, String.class);
+            JavaType st = MAPPER.getTypeFactory().uncheckedSimpleType(String.class);
 
             Map<String, List<String>> levels =
-                    mapper.readValue(returns, mapper.getTypeFactory().constructMapType(Map.class, st, ct));
+                    MAPPER.readValue(returns, MAPPER.getTypeFactory().constructMapType(Map.class, st, ct));
             return thinQueryService.drillacross(queryName, cellPosition, levels);
 
         } catch (Exception e) {

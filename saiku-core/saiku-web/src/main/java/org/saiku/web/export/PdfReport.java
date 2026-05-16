@@ -14,7 +14,6 @@ import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.transform.Result;
 import javax.xml.transform.Source;
@@ -31,6 +30,7 @@ import org.apache.fop.apps.FopFactoryBuilder;
 import org.apache.fop.apps.MimeConstants;
 import org.saiku.service.util.exception.SaikuServiceException;
 import org.saiku.service.util.export.PdfPerformanceLogger;
+import org.saiku.service.util.xml.SecureXml;
 import org.saiku.web.rest.objects.resultset.QueryResult;
 import org.xml.sax.SAXException;
 
@@ -223,11 +223,12 @@ public class PdfReport {
         try {
             TransformerFactory tFactory = TransformerFactory.newInstance();
 
-            DocumentBuilderFactory dFactory = DocumentBuilderFactory.newInstance();
-            dFactory.setNamespaceAware(true);
+            // XXE-hardened parser (DOCTYPE + external entities disabled). Even though the
+            // XSL we're parsing here is a packaged classpath resource, keep the secure path
+            // so future callers can't accidentally point this at user-controlled XML.
+            DocumentBuilder dBuilder = SecureXml.secureDocumentBuilder();
 
             InputStream is = this.getClass().getResourceAsStream("xhtml2fo.xsl");
-            DocumentBuilder dBuilder = dFactory.newDocumentBuilder();
             org.w3c.dom.Document xslDoc = dBuilder.parse(is);
             DOMSource xslDomSource = new DOMSource(xslDoc);
 

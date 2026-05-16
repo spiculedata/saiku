@@ -39,9 +39,8 @@ public class AiQueryResourceColumnDisambiguationTest {
         // (a different metadata field) differs and isn't itself a duplicate
         // of the label, so the tiebreaker uses it. First col keeps the raw
         // label so we don't yank back-compat from existing consumers.
-        List<String> out = AiQueryResource.disambiguateColumnLabels(md(
-                new String[] {"Quarter", "Quarter", "Quarter"},
-                new String[] {"yearCol", "quarterCol", "monthCol"}));
+        List<String> out = AiQueryResource.disambiguateColumnLabels(
+                md(new String[] {"Quarter", "Quarter", "Quarter"}, new String[] {"yearCol", "quarterCol", "monthCol"}));
         assertEquals(Arrays.asList("Quarter", "quarterCol", "monthCol"), out);
     }
 

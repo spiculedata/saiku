@@ -81,6 +81,12 @@ public class AiSchema {
          *  into a filter rather than constructing it. */
         public java.util.List<MemberSample> sampleMembers = new java.util.ArrayList<>();
 
+        /** Transient build-time signal: the sample-member fetch returned at least
+         *  one row without throwing, so the level is already proven queryable
+         *  and {@code pruneUnqueryable} can skip the redundant probe call.
+         *  Not serialised — recomputed per buildSchema. */
+        public transient boolean queryableProven;
+
         public Level(String name, String uniqueName) {
             this.name = name;
             this.uniqueName = uniqueName;

@@ -5,6 +5,7 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.core.Context;
 import org.glassfish.jersey.media.multipart.MultiPartFeature;
 import org.glassfish.jersey.server.ResourceConfig;
+import org.glassfish.jersey.server.filter.RolesAllowedDynamicFeature;
 import org.springframework.context.ApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
 
@@ -20,6 +21,12 @@ public class SaikuJerseyApplication extends ResourceConfig {
         // standard JAX-RS client (and CORS preflight) expects.
         property("jersey.config.server.wadl.disableWadl", true);
         register(MultiPartFeature.class);
+        // saiku#780 defence-in-depth: enable @RolesAllowed on JAX-RS resource
+        // methods so admin-only mutations (e.g. DataSourceResource.deleteDatasource)
+        // are blocked at the framework layer even if the Spring filter chain
+        // is misconfigured. Without this dynamic feature Jersey silently
+        // ignores @RolesAllowed annotations.
+        register(RolesAllowedDynamicFeature.class);
         // saiku#791: translate Jackson deserialisation failures into the
         // typed AiQueryResponse 400 envelope instead of the raw text/plain
         // Jackson message that leaked class names and source location.
