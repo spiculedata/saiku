@@ -15,18 +15,25 @@
  */
 package org.saiku.web.rest.resources;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qmino.miredot.annotations.ReturnType;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HEAD;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.GenericEntity;
+import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.xml.bind.annotation.XmlAccessType;
 import jakarta.xml.bind.annotation.XmlAccessorType;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import org.saiku.service.PlatformUtilsService;
 import org.saiku.service.util.dto.Plugin;
 import org.slf4j.Logger;
@@ -130,5 +137,119 @@ public class InfoResource {
         body.put("mcp", mcp);
         body.put("demoMode", Boolean.parseBoolean(System.getProperty("saiku.demo", "false")));
         return Response.ok(body).build();
+    }
+
+    /**
+     * Build and stream a Claude Desktop / Cursor DXT bundle for the running
+     * MCP endpoint so the SPA can offer a "Download .dxt" button on the
+     * connection-info panel. The bundle is generated on the fly so the
+     * embedded {@code url} matches whatever the operator configured via
+     * {@code -Dsaiku.mcp.url=...}; no static asset to keep in sync.
+     *
+     * <p>A DXT file is a ZIP archive with a {@code manifest.json} at the
+     * root describing how the agent host should connect. For a remote /
+     * streamable-http MCP server like Saiku's, the manifest carries the
+     * URL plus a small amount of human-readable metadata for the install
+     * dialog.
+     *
+     * <p>Returns 404 when MCP isn't enabled (i.e. {@code saiku.mcp.url}
+     * is unset or blank). Vanilla launcher deployments ship saiku-mcp
+     * as stdio only — no URL means no bundle to hand out.
+     */
+    @GET
+    @Path("/mcp.dxt")
+    @Produces("application/octet-stream")
+    public Response getMcpDxt() {
+        String mcpUrl = System.getProperty("saiku.mcp.url", "");
+        if (mcpUrl == null || mcpUrl.isBlank()) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(Map.of(
+                            "status",
+                            "NOT_FOUND",
+                            "error",
+                            "MCP server is not exposed over HTTP on this deployment. "
+                                    + "Set -Dsaiku.mcp.url to an HTTPS URL to enable the DXT download."))
+                    .build();
+        }
+
+        // Derive a friendly origin host for the display_name (e.g. "demo.saiku.bi")
+        // so the install dialog tells the user which Saiku they're wiring up.
+        String host = mcpUrl;
+        try {
+            host = URI.create(mcpUrl).getHost();
+            if (host == null || host.isBlank()) host = mcpUrl;
+        } catch (Exception ignored) {
+            // mcpUrl isn't a URI — fall through and let the raw string render.
+        }
+
+        Map<String, Object> manifest = buildDxtManifest(mcpUrl, host);
+        byte[] zipBytes;
+        try {
+            zipBytes = zipManifest(manifest);
+        } catch (IOException e) {
+            log.error("Failed to assemble MCP DXT bundle", e);
+            return Response.serverError()
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(Map.of("status", "ERROR", "error", "Failed to build DXT bundle"))
+                    .build();
+        }
+
+        return Response.ok(zipBytes)
+                .header("Content-Disposition", "attachment; filename=\"saiku.dxt\"")
+                .header("Content-Length", String.valueOf(zipBytes.length))
+                .type("application/octet-stream")
+                .build();
+    }
+
+    /** Build the DXT manifest payload. Package-visible for unit tests. */
+    Map<String, Object> buildDxtManifest(String mcpUrl, String host) {
+        Map<String, Object> manifest = new LinkedHashMap<>();
+        manifest.put("dxt_version", "0.1");
+        manifest.put("name", "saiku");
+        manifest.put("display_name", "Saiku OLAP — " + host);
+        manifest.put("version", saikuVersion());
+        manifest.put(
+                "description",
+                "Query Saiku OLAP cubes through MCP. Backed by the AI Query API at "
+                        + host
+                        + " — typed schema discovery, validated MDX generation, and structured cell results.");
+        manifest.put("author", Map.of("name", "Saiku Analytics", "url", "https://saiku.bi"));
+        manifest.put("homepage", "https://github.com/spiculedata/saiku");
+        manifest.put("license", "Apache-2.0");
+        Map<String, Object> server = new LinkedHashMap<>();
+        server.put("type", "remote");
+        Map<String, Object> transport = new LinkedHashMap<>();
+        transport.put("type", "streamable-http");
+        transport.put("url", mcpUrl);
+        server.put("transport", transport);
+        manifest.put("server", server);
+        return manifest;
+    }
+
+    /** Zip a manifest map into a single-entry {@code manifest.json} archive.
+     *  Package-visible for unit tests. */
+    static byte[] zipManifest(Map<String, Object> manifest) throws IOException {
+        byte[] json = new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsBytes(manifest);
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        try (ZipOutputStream zip = new ZipOutputStream(buf)) {
+            ZipEntry entry = new ZipEntry("manifest.json");
+            zip.putNextEntry(entry);
+            zip.write(json);
+            zip.closeEntry();
+        }
+        return buf.toByteArray();
+    }
+
+    /**
+     * Best-effort Saiku version for the DXT manifest. Reads
+     * {@code -Dsaiku.version=...} (the launcher can set this from the
+     * shaded JAR's Implementation-Version) and falls back to {@code 0.0.0}
+     * so the manifest stays a valid semver string.
+     */
+    private static String saikuVersion() {
+        String v = System.getProperty("saiku.version", "");
+        if (v == null || v.isBlank()) return "0.0.0";
+        return v;
     }
 }
