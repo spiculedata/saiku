@@ -15,6 +15,9 @@
  */
 package org.saiku.olap.dto;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public class SaikuMember extends AbstractSaikuObject {
 
     private String caption;
@@ -23,6 +26,11 @@ public class SaikuMember extends AbstractSaikuObject {
     private String levelUniqueName;
     private String hierarchyUniqueName;
     private Boolean calculated;
+    /** Raw schema-level annotations (e.g. {@code <Annotation name="saiku.semantic.unit">USD</Annotation>}).
+     *  Populated by {@code ObjectUtil.convertMeasure} from olap4j's
+     *  {@code MetadataElement.getAnnotations()} so downstream consumers (AI schema
+     *  projection, saiku#818) can read them without reaching back to olap4j. */
+    private Map<String, String> annotations;
     /** Whether the member should appear in analyst-facing UIs. Defaults to
      *  true so legacy callers that don't pass the flag get the safe
      *  (always-show) behaviour. saiku#778 surfaces this from the
@@ -127,5 +135,14 @@ public class SaikuMember extends AbstractSaikuObject {
 
     public void setVisible(Boolean visible) {
         this.visible = visible;
+    }
+
+    /** Returns a defensive copy, or {@code null} if no annotations were attached. */
+    public Map<String, String> getAnnotations() {
+        return annotations == null ? null : new HashMap<>(annotations);
+    }
+
+    public void setAnnotations(Map<String, String> annotations) {
+        this.annotations = annotations == null ? null : new HashMap<>(annotations);
     }
 }

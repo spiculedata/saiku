@@ -77,6 +77,12 @@ public class AiSchemaConverter {
         // field-level pointer + teaching message, not a 500 (saiku#784).
         validateNoAxisFilterHierarchyOverlap(req, schema);
 
+        // saiku#818: levels with declared requiredFilters get pre-flight checked.
+        // If the agent touches such a level (rows / columns / filters) and the
+        // request's filters[] don't satisfy each requirement, refuse to emit
+        // the query rather than waiting for a warehouse-timeout 500.
+        validateRequiredFilters(req, schema);
+
         // Resolve everything to canonical unique names + build MDX.
         StringBuilder mdx = new StringBuilder();
 
@@ -1235,5 +1241,105 @@ public class AiSchemaConverter {
         if (n == null) return "[]";
         if (n.startsWith("[") && n.endsWith("]")) return n;
         return "[" + n.replace("]", "]]") + "]";
+    }
+
+    /**
+     * saiku#818: pre-flight check that every level the request touches has its declared
+     * {@code requiredFilters} satisfied by an entry in {@code req.getFilters()} with
+     * matching hierarchy/level and a non-empty {@code members[]} list. Throws
+     * {@link AiValidationException} ({@code field="filters"}) with the cube-wide
+     * required-filter set as {@code available[]} so the agent can fix the query in
+     * one retry without a {@code /ai/schema} round-trip.
+     */
+    private static void validateRequiredFilters(AiQueryRequest req, AiSchema schema) {
+        java.util.List<AiSchema.RequiredFilter> touched = new java.util.ArrayList<>();
+        java.util.List<AiAxisSelection> all = new java.util.ArrayList<>();
+        if (req.getRows() != null) all.addAll(req.getRows());
+        if (req.getColumns() != null) all.addAll(req.getColumns());
+        for (AiAxisSelection axis : all) {
+            AiSchema.Level lvl = resolveLevel(axis.getDimension(), axis.getHierarchy(), axis.getLevel(), schema);
+            if (lvl != null && lvl.requiredFilters != null) {
+                touched.addAll(lvl.requiredFilters);
+            }
+        }
+        if (req.getFilters() != null) {
+            for (AiFilterSelection f : req.getFilters()) {
+                AiSchema.Level lvl = resolveLevel(f.getDimension(), f.getHierarchy(), f.getLevel(), schema);
+                if (lvl != null && lvl.requiredFilters != null) {
+                    touched.addAll(lvl.requiredFilters);
+                }
+            }
+        }
+        if (touched.isEmpty()) return;
+        for (AiSchema.RequiredFilter rf : touched) {
+            if (!isFilterSatisfied(req, rf)) {
+                throw new AiValidationException(
+                        "filters",
+                        "Level requires a filter on " + rf.hierarchy + "/" + rf.level + " with non-empty members.",
+                        allCubeRequiredFilters(schema));
+            }
+        }
+    }
+
+    private static AiSchema.Level resolveLevel(String dimName, String hierName, String levelName, AiSchema schema) {
+        if (dimName == null || levelName == null) return null;
+        String dimK = AiSchema.key(dimName);
+        AiSchema.Dimension d = schema.dimensions.get(dimK);
+        if (d == null) {
+            String alias = schema.dimensionAliases.get(dimK);
+            if (alias != null) d = schema.dimensions.get(alias);
+        }
+        if (d == null) return null;
+        AiSchema.Hierarchy h;
+        if (hierName == null || hierName.isEmpty()) {
+            if (d.hierarchies.size() != 1) return null;
+            h = d.hierarchies.values().iterator().next();
+        } else {
+            String hierK = AiSchema.key(hierName);
+            h = d.hierarchies.get(hierK);
+            if (h == null) {
+                String alias = d.hierarchyAliases.get(hierK);
+                if (alias != null) h = d.hierarchies.get(alias);
+            }
+        }
+        if (h == null) return null;
+        String lvlK = AiSchema.key(levelName);
+        AiSchema.Level l = h.levels.get(lvlK);
+        if (l == null) {
+            String alias = h.levelAliases.get(lvlK);
+            if (alias != null) l = h.levels.get(alias);
+        }
+        return l;
+    }
+
+    private static boolean isFilterSatisfied(AiQueryRequest req, AiSchema.RequiredFilter rf) {
+        if (req.getFilters() == null) return false;
+        String rfHierKey = AiSchema.key(rf.hierarchy);
+        String rfLevelKey = AiSchema.key(rf.level);
+        for (AiFilterSelection f : req.getFilters()) {
+            String fHier = f.getHierarchy();
+            String fLevel = f.getLevel();
+            if (fHier == null || fLevel == null) continue;
+            if (!AiSchema.key(fHier).equals(rfHierKey)) continue;
+            if (!AiSchema.key(fLevel).equals(rfLevelKey)) continue;
+            if (f.getMembers() == null || f.getMembers().isEmpty()) continue;
+            return true;
+        }
+        return false;
+    }
+
+    private static java.util.List<String> allCubeRequiredFilters(AiSchema schema) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        for (AiSchema.Dimension d : schema.dimensions.values()) {
+            for (AiSchema.Hierarchy h : d.hierarchies.values()) {
+                for (AiSchema.Level l : h.levels.values()) {
+                    if (l.requiredFilters == null) continue;
+                    for (AiSchema.RequiredFilter rf : l.requiredFilters) {
+                        out.add(rf.hierarchy + "/" + rf.level);
+                    }
+                }
+            }
+        }
+        return new java.util.ArrayList<>(out);
     }
 }

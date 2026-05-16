@@ -228,6 +228,15 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
                 if (m.isVisible() != null) {
                     measure.visible = m.isVisible();
                 }
+                // saiku#818: project saiku.semantic.* annotations onto the typed fields.
+                // Annotation-supplied description wins over Member.getDescription().
+                SemanticAnnotationParser.MeasureAnnotations ann =
+                        SemanticAnnotationParser.parseMeasure(m.getAnnotations());
+                if (ann.description != null) measure.description = ann.description;
+                if (!ann.synonyms.isEmpty()) measure.synonyms = ann.synonyms;
+                if (ann.unit != null) measure.unit = ann.unit;
+                if (ann.currency != null) measure.currency = ann.currency;
+                if (ann.aggregationKind != null) measure.aggregationKind = ann.aggregationKind;
                 schema.measures.put(AiSchema.key(n), measure);
             }
         } catch (RuntimeException e) {
@@ -263,6 +272,14 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
                                         && !lvl.getDescription().isEmpty()) {
                                     l.description = lvl.getDescription();
                                 }
+                                // saiku#818: project saiku.semantic.* annotations onto the typed fields.
+                                SemanticAnnotationParser.LevelAnnotations lann =
+                                        SemanticAnnotationParser.parseLevel(lvl.getAnnotations());
+                                if (lann.description != null) l.description = lann.description;
+                                if (!lann.synonyms.isEmpty()) l.synonyms = lann.synonyms;
+                                if (lann.cardinality != null) l.cardinality = lann.cardinality;
+                                if (lann.grain != null) l.grain = lann.grain;
+                                if (!lann.requiredFilters.isEmpty()) l.requiredFilters = lann.requiredFilters;
                                 populateSampleMembers(l, cube, h.getName(), lvl.getName());
                                 hh.levels.put(AiSchema.key(lvl.getName()), l);
                             }
@@ -275,6 +292,11 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         } catch (RuntimeException e) {
             log.warn("getAllDimensions failed for {}", cube.getUniqueName(), e);
         }
+
+        // saiku#818: register synonyms from XML annotations into the alias maps so
+        // input resolution (AiSchemaConverter) sees them even when no overlay runs.
+        // The enricher repeats this idempotently after overlay merge.
+        AiSchemaEnricher.registerSynonymAliases(schema);
 
         // Embed a hand-rolled JSON Schema of AiQueryRequest so an LLM can
         // self-validate its request shape. We don't generate this at runtime

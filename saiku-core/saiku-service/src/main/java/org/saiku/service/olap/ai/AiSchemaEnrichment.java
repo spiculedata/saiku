@@ -28,6 +28,11 @@ public class AiSchemaEnrichment {
 
     private Map<String, String> renames = new LinkedHashMap<>();
     private List<AiSchemaSuggestion> suggestions = new ArrayList<>();
+    /** saiku#818: per-element {@code saiku.semantic.*} annotation overrides keyed by the same
+     *  slash-paths as {@link #renames}. The inner map is parsed by
+     *  {@link SemanticAnnotationParser} and merged onto the typed
+     *  {@code AiSchema.Measure} / {@link AiSchema.Level} fields. Overlay wins on conflict. */
+    private Map<String, Map<String, String>> annotations = new LinkedHashMap<>();
 
     public Map<String, String> getRenames() {
         return renames;
@@ -43,5 +48,13 @@ public class AiSchemaEnrichment {
 
     public void setSuggestions(List<AiSchemaSuggestion> v) {
         this.suggestions = v == null ? new ArrayList<>() : v;
+    }
+
+    public Map<String, Map<String, String>> getAnnotations() {
+        return annotations;
+    }
+
+    public void setAnnotations(Map<String, Map<String, String>> v) {
+        this.annotations = v == null ? new LinkedHashMap<>() : v;
     }
 }

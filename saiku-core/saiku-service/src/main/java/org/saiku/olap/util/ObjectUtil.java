@@ -282,7 +282,7 @@ public class ObjectUtil {
         // String f = m.getPropertyValue(Property.);
         String f = SaikuMondrianHelper.getMeasureGroup(m);
 
-        return new SaikuMeasure(
+        SaikuMeasure sm = new SaikuMeasure(
                 m.getName(),
                 m.getUniqueName(),
                 m.getCaption(),
@@ -293,6 +293,48 @@ public class ObjectUtil {
                 m.isVisible(),
                 m.isCalculated() | m.isCalculatedInQuery(),
                 f);
+        // saiku#818: surface the schema-level <Annotation> bag so AI schema
+        // projection can read semantic hints (description, unit, synonyms, ...)
+        // without reaching back into olap4j.
+        sm.setAnnotations(annotationsAsStringMap(m));
+        return sm;
+    }
+
+    /**
+     * Pull a schema-level annotation bag off any olap4j metadata wrapper that
+     * exposes a {@code mondrian.olap.Annotated} underneath. We can't depend on
+     * an olap4j-API getAnnotations() — olap4j 1.2 doesn't define one — so we
+     * reflect onto Mondrian's own {@code Annotated} interface via the wrapper's
+     * {@code getOlapElement()} bridge. Driver-side failures (non-Mondrian olap4j
+     * implementations, classloader weirdness) silently return {@code null}.
+     */
+    private static Map<String, String> annotationsAsStringMap(Object wrapper) {
+        if (wrapper == null) return null;
+        try {
+            // MondrianOlap4jMember / Measure / Level all expose getOlapElement()
+            // that returns the underlying mondrian.olap.Annotated. Some wrappers
+            // implement Annotated directly — try that first.
+            Object annotated = wrapper instanceof mondrian.olap.Annotated ? wrapper : null;
+            if (annotated == null) {
+                try {
+                    java.lang.reflect.Method m = wrapper.getClass().getMethod("getOlapElement");
+                    annotated = m.invoke(wrapper);
+                } catch (NoSuchMethodException nsme) {
+                    return null;
+                }
+            }
+            if (!(annotated instanceof mondrian.olap.Annotated)) return null;
+            Map<String, mondrian.olap.Annotation> raw = ((mondrian.olap.Annotated) annotated).getAnnotationMap();
+            if (raw == null || raw.isEmpty()) return null;
+            Map<String, String> out = new HashMap<>();
+            for (Map.Entry<String, mondrian.olap.Annotation> e : raw.entrySet()) {
+                Object v = e.getValue() == null ? null : e.getValue().getValue();
+                out.put(e.getKey(), v == null ? null : v.toString());
+            }
+            return out;
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     @NotNull

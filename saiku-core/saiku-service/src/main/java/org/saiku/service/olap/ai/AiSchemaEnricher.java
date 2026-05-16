@@ -24,8 +24,89 @@ public class AiSchemaEnricher {
             }
         }
 
+        if (overlay.getAnnotations() != null) {
+            for (Map.Entry<String, Map<String, String>> e :
+                    overlay.getAnnotations().entrySet()) {
+                applyAnnotations(schema, e.getKey(), e.getValue());
+            }
+        }
+
+        // After all measure/level synonyms have been merged onto typed fields,
+        // register them into the existing alias maps so AiSchemaConverter resolves
+        // synonyms identically to displayName aliases.
+        registerSynonymAliases(schema);
+
         if (overlay.getSuggestions() != null && !overlay.getSuggestions().isEmpty()) {
             schema.suggestions.addAll(overlay.getSuggestions());
+        }
+    }
+
+    /**
+     * Apply parsed {@code saiku.semantic.*} values from the overlay onto the matching
+     * measure or level identified by the slash-path. Overlay always wins on conflict —
+     * a present value replaces the XML-projected one; an absent key leaves the existing
+     * field untouched.
+     */
+    private static void applyAnnotations(AiSchema schema, String path, Map<String, String> raw) {
+        if (path == null || raw == null || raw.isEmpty()) return;
+        String[] parts = path.split("\\.");
+
+        if (parts.length == 2 && "measures".equals(parts[0])) {
+            AiSchema.Measure m = schema.measures.get(AiSchema.key(parts[1]));
+            if (m == null) return;
+            SemanticAnnotationParser.MeasureAnnotations ann = SemanticAnnotationParser.parseMeasure(raw);
+            if (ann.description != null) m.description = ann.description;
+            if (!ann.synonyms.isEmpty()) m.synonyms = ann.synonyms;
+            if (ann.unit != null) m.unit = ann.unit;
+            if (ann.currency != null) m.currency = ann.currency;
+            if (ann.aggregationKind != null) m.aggregationKind = ann.aggregationKind;
+            return;
+        }
+
+        if (parts.length == 6
+                && "dimensions".equals(parts[0])
+                && "hierarchies".equals(parts[2])
+                && "levels".equals(parts[4])) {
+            AiSchema.Dimension d = schema.dimensions.get(AiSchema.key(parts[1]));
+            if (d == null) return;
+            AiSchema.Hierarchy h = d.hierarchies.get(AiSchema.key(parts[3]));
+            if (h == null) return;
+            AiSchema.Level l = h.levels.get(AiSchema.key(parts[5]));
+            if (l == null) return;
+            SemanticAnnotationParser.LevelAnnotations ann = SemanticAnnotationParser.parseLevel(raw);
+            if (ann.description != null) l.description = ann.description;
+            if (!ann.synonyms.isEmpty()) l.synonyms = ann.synonyms;
+            if (ann.cardinality != null) l.cardinality = ann.cardinality;
+            if (ann.grain != null) l.grain = ann.grain;
+            if (!ann.requiredFilters.isEmpty()) l.requiredFilters = ann.requiredFilters;
+        }
+    }
+
+    /**
+     * Register every synonym on every measure / level into the appropriate alias map.
+     * Idempotent: re-registering the same (synonym → canonical) is a no-op. First write
+     * wins on cross-measure collisions — the second registration is logged downstream
+     * by callers that care.
+     */
+    /** Package-visible so {@code OlapAiCubeMetadataService.buildSchema} can register
+     *  XML-sourced synonyms even when no Phase-3 overlay is configured (saiku#818). */
+    static void registerSynonymAliases(AiSchema schema) {
+        for (Map.Entry<String, AiSchema.Measure> me : schema.measures.entrySet()) {
+            String canonical = me.getKey();
+            for (String syn : me.getValue().synonyms) {
+                String synKey = AiSchema.key(syn);
+                schema.measureAliases.putIfAbsent(synKey, canonical);
+            }
+        }
+        for (AiSchema.Dimension d : schema.dimensions.values()) {
+            for (AiSchema.Hierarchy h : d.hierarchies.values()) {
+                for (Map.Entry<String, AiSchema.Level> le : h.levels.entrySet()) {
+                    String canonical = le.getKey();
+                    for (String syn : le.getValue().synonyms) {
+                        h.levelAliases.putIfAbsent(AiSchema.key(syn), canonical);
+                    }
+                }
+            }
         }
     }
 

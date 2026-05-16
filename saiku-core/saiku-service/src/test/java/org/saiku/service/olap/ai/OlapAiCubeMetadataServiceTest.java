@@ -221,6 +221,140 @@ public class OlapAiCubeMetadataServiceTest {
         assertFalse("hidden measure carries visible=false", Boolean.TRUE.equals(hidden.visible));
     }
 
+    /* ----- saiku#818 semantic annotations ----- */
+
+    /**
+     * XML-sourced synonyms must register into the alias maps even when no
+     * Phase-3 overlay is configured — otherwise an agent posting
+     * {@code measures.name = "revenue"} would 400 with VALIDATION_ERROR.
+     * The acceptance test in the issue text ("revenue → Store Sales") lives
+     * here at the service-build boundary.
+     */
+    @Test
+    public void xmlSourcedSynonymsAreRegisteredIntoAliasMapsWithoutOverlay() {
+        OlapAiCubeMetadataService svc = new OlapAiCubeMetadataService();
+        svc.setDiscoverService(new SemanticStubDiscover());
+        AiSchema schema = svc.getSchema(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+
+        // Store Sales declares synonyms=["revenue","turnover"] via XML annotation.
+        // The alias map must route "revenue" to the canonical key.
+        assertEquals(AiSchema.key("Store Sales"), schema.measureAliases.get(AiSchema.key("revenue")));
+        assertEquals(AiSchema.key("Store Sales"), schema.measureAliases.get(AiSchema.key("turnover")));
+
+        // Same for the Quarter level synonyms.
+        AiSchema.Hierarchy timeBy =
+                schema.dimensions.get(AiSchema.key("Time")).hierarchies.get(AiSchema.key("Time By"));
+        assertEquals(AiSchema.key("Quarter"), timeBy.levelAliases.get(AiSchema.key("quarterly")));
+        assertEquals(AiSchema.key("Quarter"), timeBy.levelAliases.get(AiSchema.key("fiscal Q")));
+    }
+
+    /**
+     * buildSchema must project {@code saiku.semantic.*} annotations on measures
+     * and levels into the typed {@code AiSchema.Measure}/{@link AiSchema.Level}
+     * fields. Non-{@code saiku.semantic.*} annotations are ignored.
+     */
+    @Test
+    public void buildSchemaProjectsSemanticAnnotationsFromMeasuresAndLevels() {
+        OlapAiCubeMetadataService svc = new OlapAiCubeMetadataService();
+        svc.setDiscoverService(new SemanticStubDiscover());
+        AiSchema schema = svc.getSchema(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+
+        AiSchema.Measure storeSales = schema.measures.get(AiSchema.key("Store Sales"));
+        assertNotNull(storeSales);
+        assertEquals("Net retail revenue.", storeSales.description);
+        assertTrue(storeSales.synonyms.contains("revenue"));
+        assertEquals("USD", storeSales.unit);
+        assertEquals("USD", storeSales.currency);
+        assertEquals("sum", storeSales.aggregationKind);
+
+        AiSchema.Hierarchy timeBy =
+                schema.dimensions.get(AiSchema.key("Time")).hierarchies.get(AiSchema.key("Time By"));
+        AiSchema.Level quarter = timeBy.levels.get(AiSchema.key("Quarter"));
+        assertNotNull(quarter);
+        assertEquals("Calendar quarter.", quarter.description);
+        assertEquals("low", quarter.cardinality);
+        assertEquals("quarter", quarter.grain);
+        assertTrue(quarter.synonyms.contains("quarterly"));
+    }
+
+    /** Stub that supplies saiku.semantic.* annotations on Store Sales + Quarter. */
+    private static class SemanticStubDiscover extends StubDiscover {
+        @Override
+        public List<SaikuMember> getMeasures(SaikuCube cube) {
+            List<SaikuMember> base = super.getMeasures(cube);
+            if (!"Sales".equals(cube.getName())) return base;
+            // Decorate the Store Sales SaikuMember with annotations.
+            for (SaikuMember m : base) {
+                if ("Store Sales".equals(m.getName())) {
+                    java.util.Map<String, String> a = new java.util.HashMap<>();
+                    a.put("saiku.semantic.description", "Net retail revenue.");
+                    a.put("saiku.semantic.synonyms", "revenue, turnover");
+                    a.put("saiku.semantic.unit", "USD");
+                    a.put("saiku.semantic.currency", "USD");
+                    a.put("saiku.semantic.aggregation_kind", "sum");
+                    // Future namespace must be ignored by the parser.
+                    a.put("saiku.governance.owner", "team-x");
+                    m.setAnnotations(a);
+                }
+            }
+            return base;
+        }
+
+        @Override
+        public List<SaikuDimension> getAllDimensions(SaikuCube cube) throws SaikuServiceException {
+            // Rebuild dims so the annotated Quarter level is baked in. The base
+            // stub puts hierarchies directly into the SaikuDimension, so
+            // buildSchema reads levels from dim.getHierarchies() and never falls
+            // back to getAllDimensionHierarchies.
+            SaikuDimension measures =
+                    new SaikuDimension("Measures", "[Measures]", "Measures", "", true, new ArrayList<>());
+            java.util.Map<String, String> quarterAnn = new java.util.HashMap<>();
+            quarterAnn.put("saiku.semantic.description", "Calendar quarter.");
+            quarterAnn.put("saiku.semantic.cardinality", "low");
+            quarterAnn.put("saiku.semantic.grain", "quarter");
+            quarterAnn.put("saiku.semantic.synonyms", "quarterly, fiscal Q");
+            List<SaikuLevel> timeLevels = Arrays.asList(
+                    new SaikuLevel(
+                            "Year",
+                            "[Time].[Time By].[Year]",
+                            "Year",
+                            "",
+                            "[Time]",
+                            "[Time].[Time By]",
+                            true,
+                            "Regular",
+                            new java.util.HashMap<>()),
+                    new SaikuLevel(
+                            "Quarter",
+                            "[Time].[Time By].[Quarter]",
+                            "Quarter",
+                            "",
+                            "[Time]",
+                            "[Time].[Time By]",
+                            true,
+                            "Regular",
+                            quarterAnn));
+            SaikuHierarchy timeBy = new SaikuHierarchy(
+                    "Time By", "[Time].[Time By]", "Time By", "", "[Time]", true, timeLevels, new ArrayList<>());
+            SaikuDimension time = new SaikuDimension("Time", "[Time]", "Time", "", true, Arrays.asList(timeBy));
+            List<SaikuLevel> prodLevels = Arrays.asList(new SaikuLevel(
+                    "Department",
+                    "[Product].[Product].[Department]",
+                    "Department",
+                    "",
+                    "[Product]",
+                    "[Product].[Product]",
+                    true,
+                    "Regular",
+                    new java.util.HashMap<>()));
+            SaikuHierarchy prodHier = new SaikuHierarchy(
+                    "Product", "[Product].[Product]", "Product", "", "[Product]", true, prodLevels, new ArrayList<>());
+            SaikuDimension product =
+                    new SaikuDimension("Product", "[Product]", "Product", "", true, Arrays.asList(prodHier));
+            return Arrays.asList(measures, time, product);
+        }
+    }
+
     /** Stub that fails getLevelMembers for Quarter only. */
     private static class ProbeStubDiscover extends StubDiscover {
         @Override
