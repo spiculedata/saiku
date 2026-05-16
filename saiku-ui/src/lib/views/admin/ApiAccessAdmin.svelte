@@ -2,6 +2,12 @@
   import { onMount } from "svelte";
   import { platform } from "$lib/stores/platform.svelte";
 
+  // Collapsed by default on the login page (where space is tight and a
+  // first-time visitor shouldn't have to scroll past two big cards to
+  // sign in); admin opens them so the operator sees connection info at
+  // a glance.
+  let { defaultOpen = false } = $props();
+
   onMount(() => {
     if (!platform.capabilities) {
       platform.loadCapabilities();
@@ -54,11 +60,13 @@
   {#if !platform.capabilities}
     <p class="muted">Probing capabilities…</p>
   {:else}
-    <section class="card">
-      <h3>
-        AI Query API
-        <span class="badge badge--ok">enabled</span>
-      </h3>
+    <details class="card" open={defaultOpen}>
+      <summary>
+        <h3>
+          AI Query API
+          <span class="badge badge--ok">enabled</span>
+        </h3>
+      </summary>
       <p class="muted">
         Typed REST surface designed for agents. Hierarchies, levels and measures are
         discoverable; a single <code>POST /ai/query</code> translates a JSON description
@@ -95,17 +103,19 @@
       <p class="muted small">
         Full reference: <code>docs/AI-QUERY-API.md</code> in the repo.
       </p>
-    </section>
+    </details>
 
-    <section class="card">
-      <h3>
-        Model Context Protocol (MCP)
-        {#if platform.capabilities.mcp.enabled}
-          <span class="badge badge--ok">enabled</span>
-        {:else}
-          <span class="badge badge--off">not exposed</span>
-        {/if}
-      </h3>
+    <details class="card" open={defaultOpen}>
+      <summary>
+        <h3>
+          Model Context Protocol (MCP)
+          {#if platform.capabilities.mcp.enabled}
+            <span class="badge badge--ok">enabled</span>
+          {:else}
+            <span class="badge badge--off">not exposed</span>
+          {/if}
+        </h3>
+      </summary>
       <p class="muted">
         <code>saiku-mcp</code> wraps the AI Query API as an MCP server so Claude Desktop,
         Cursor, Cline and other agent hosts can wire to Saiku natively.
@@ -124,7 +134,18 @@
           </div>
         </div>
 
-        <details class="recipe" open>
+        <div class="install-row">
+          <strong>One-click install for Claude Desktop / Cursor</strong>
+          <span class="muted small">
+            Downloads a <code>.dxt</code> bundle wired to this server's MCP URL.
+            Drag it into Claude Desktop (or open with Cursor) to register the agent.
+          </span>
+          <a class="btn btn--primary" href="/rest/saiku/info/mcp.dxt" download="saiku.dxt">
+            Download saiku.dxt
+          </a>
+        </div>
+
+        <details class="recipe">
           <summary>Client config (Claude Desktop, Cursor, Cline)</summary>
           <pre><code>{mcpClientConfig}</code></pre>
           <button class="copy" onclick={() => copy(mcpClientConfig)}>Copy</button>
@@ -138,7 +159,7 @@
           <code>-Dsaiku.mcp.url=https://your-host/mcp</code> so this panel surfaces the URL.
         </p>
       {/if}
-    </section>
+    </details>
   {/if}
 </div>
 
@@ -157,12 +178,30 @@
     border-radius: var(--radius-md, 0.5rem);
     padding: var(--space-4);
   }
-  .card h3 {
-    margin: 0 0 var(--space-2);
-    display: flex;
+  .card > summary {
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+  }
+  .card > summary::-webkit-details-marker { display: none; }
+  .card > summary::before {
+    content: "▸";
+    display: inline-block;
+    margin-right: var(--space-2);
+    transition: transform 120ms ease;
+    color: var(--fg-muted);
+  }
+  .card[open] > summary::before { transform: rotate(90deg); }
+  /* The summary owns the click target; the heading itself stays inline
+   * with the badge but loses its bottom margin when collapsed so the
+   * card hugs the title. */
+  .card > summary h3 {
+    display: inline-flex;
     align-items: center;
     gap: var(--space-2);
+    margin: 0;
   }
+  .card[open] > summary { margin-bottom: var(--space-3); }
   .badge {
     font-size: 0.7rem;
     padding: 0.15rem 0.5rem;

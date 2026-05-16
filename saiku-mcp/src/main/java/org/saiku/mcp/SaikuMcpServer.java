@@ -267,9 +267,20 @@ public final class SaikuMcpServer {
     static CallToolResult jsonResult(JsonSupplier supplier) {
         try {
             JsonNode body = supplier.get();
+            // MCP requires CallToolResult.structuredContent to be a JSON
+            // object — strict hosts (mcp-proxy's pydantic validator,
+            // Claude Desktop) reject bare arrays with a "should be a
+            // valid dictionary" error. Two of our tools (list_cubes,
+            // search_members) return arrays, so wrap any non-object
+            // body under {"items": ...}. The text content keeps the
+            // original shape so agents reading content[0] still see the
+            // array directly.
+            Object structured = body != null && body.isObject()
+                    ? (Object) body
+                    : (Object) MAPPER.createObjectNode().set("items", body);
             return CallToolResult.builder()
                     .content(List.of(new TextContent(MAPPER.writeValueAsString(body))))
-                    .structuredContent((Object) body)
+                    .structuredContent(structured)
                     .build();
         } catch (java.io.IOException | InterruptedException e) {
             // Connection refused, DNS failure, socket reset, login timeout.

@@ -24,7 +24,12 @@ import mondrian.server.Locus;
 import mondrian.server.monitor.*;
 import mondrian.server.monitor.SqlStatementEvent.Purpose;
 import mondrian.util.*;
-import org.apache.log4j.Logger;
+// mondrian-saiku 4.8.1.9 retyped RolapUtil.SQL_LOGGER / .LOGGER from
+// org.apache.log4j.Logger to org.slf4j.Logger as part of its log4j-1.x
+// drop. This override sits in the same package so it accesses both
+// fields directly — keep the import in lock-step with upstream.
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * SqlStatement contains a SQL statement and associated resources throughout
@@ -56,7 +61,7 @@ import org.apache.log4j.Logger;
  * @since 2.3
  */
 public class SqlStatement implements DBStatement {
-    private static final Logger LOG = Logger.getLogger(SqlStatement.class);
+    private static final Logger LOG = LoggerFactory.getLogger(SqlStatement.class);
     private static final String TIMING_NAME = "SqlStatement-";
 
     // used for SQL logging, allows for a SQL Statement UID

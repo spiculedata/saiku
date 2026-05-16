@@ -44,7 +44,7 @@
       {:else if tab === "stats"}
         <StatsAdmin />
       {:else}
-        <ApiAccessAdmin />
+        <ApiAccessAdmin defaultOpen={true} />
       {/if}
     </section>
   </div>

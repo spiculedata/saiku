@@ -66,7 +66,7 @@ public class InfoResourceTest {
     }
 
     @Test
-    public void mcpDxt_returnsZipWithManifestJsonWhenMcpConfigured() throws Exception {
+    public void mcpDxt_returnsZipWithManifestAndShimWhenMcpConfigured() throws Exception {
         System.setProperty("saiku.mcp.url", "https://demo.saiku.bi/mcp");
         System.setProperty("saiku.version", "4.2.0");
 
@@ -76,28 +76,40 @@ public class InfoResourceTest {
         byte[] zip = (byte[]) resp.getEntity();
         assertTrue("zip body must be non-empty", zip.length > 0);
 
-        // The bundle must contain a single manifest.json entry.
+        // Drain the zip into a name→bytes map so assertions don't depend
+        // on entry order.
+        Map<String, byte[]> entries = new LinkedHashMap<>();
         try (ZipInputStream zin = new ZipInputStream(new ByteArrayInputStream(zip))) {
-            ZipEntry entry = zin.getNextEntry();
-            assertNotNull("zip must have at least one entry", entry);
-            assertEquals("manifest.json", entry.getName());
-
-            byte[] body = zin.readAllBytes();
-            JsonNode manifest = new ObjectMapper().readTree(body);
-
-            assertEquals("0.1", manifest.path("dxt_version").asText());
-            assertEquals("saiku", manifest.path("name").asText());
-            assertEquals("4.2.0", manifest.path("version").asText());
-            assertEquals(
-                    "https://demo.saiku.bi/mcp",
-                    manifest.path("server").path("transport").path("url").asText());
-            assertEquals(
-                    "streamable-http",
-                    manifest.path("server").path("transport").path("type").asText());
-
-            // No further entries — keep the bundle minimal.
-            assertNull("only one entry expected", zin.getNextEntry());
+            ZipEntry entry;
+            while ((entry = zin.getNextEntry()) != null) {
+                entries.put(entry.getName(), zin.readAllBytes());
+            }
         }
+        assertTrue("manifest.json must be present", entries.containsKey("manifest.json"));
+        assertTrue("server.js shim must be present", entries.containsKey("server.js"));
+        assertEquals("bundle should contain exactly manifest + shim", 2, entries.size());
+
+        JsonNode manifest = new ObjectMapper().readTree(entries.get("manifest.json"));
+        assertEquals("0.1", manifest.path("dxt_version").asText());
+        assertEquals("saiku", manifest.path("name").asText());
+        assertEquals("4.2.0", manifest.path("version").asText());
+
+        // Node-shim shape: Claude Desktop's validator only accepts
+        // python|node|binary for server.type. The shim runs via
+        // node ${__dirname}/server.js and spawns mcp-remote internally.
+        assertEquals("node", manifest.path("server").path("type").asText());
+        assertEquals("server.js", manifest.path("server").path("entry_point").asText());
+        assertEquals(
+                "node",
+                manifest.path("server").path("mcp_config").path("command").asText());
+        JsonNode args = manifest.path("server").path("mcp_config").path("args");
+        assertTrue("args must include a ${__dirname}/server.js entry", args.isArray() && args.size() >= 1);
+        assertEquals("${__dirname}/server.js", args.get(0).asText());
+
+        String shim = new String(entries.get("server.js"), java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue("shim should reference the configured MCP URL", shim.contains("https://demo.saiku.bi/mcp"));
+        assertTrue("shim should be a self-contained bridge using node stdlib", shim.contains("require('https')"));
+        assertTrue("shim should propagate the streamable-http session id", shim.contains("mcp-session-id"));
     }
 
     @Test
@@ -111,17 +123,61 @@ public class InfoResourceTest {
     }
 
     @Test
-    public void zipManifest_isAValidZipArchive() throws Exception {
+    public void zipBundle_isAValidZipArchive() throws Exception {
         Map<String, Object> manifest = new LinkedHashMap<>();
         manifest.put("dxt_version", "0.1");
         manifest.put("name", "saiku");
-        byte[] zip = InfoResource.zipManifest(manifest);
+        String shim = "console.log('shim');";
+        byte[] zip = InfoResource.zipBundle(manifest, shim);
+
+        Map<String, byte[]> entries = new LinkedHashMap<>();
         try (ZipInputStream zin = new ZipInputStream(new ByteArrayInputStream(zip))) {
-            ZipEntry e = zin.getNextEntry();
-            assertNotNull(e);
-            JsonNode body = new ObjectMapper().readTree(zin.readAllBytes());
-            assertEquals("saiku", body.path("name").asText());
+            ZipEntry e;
+            while ((e = zin.getNextEntry()) != null) {
+                entries.put(e.getName(), zin.readAllBytes());
+            }
         }
+        JsonNode body = new ObjectMapper().readTree(entries.get("manifest.json"));
+        assertEquals("saiku", body.path("name").asText());
+        assertEquals("console.log('shim');", new String(entries.get("server.js")));
+    }
+
+    @Test
+    public void dxtShim_jsonEncodesUrlAndBridgesStdioToHttp() {
+        String shim = InfoResource.dxtShim("https://demo.saiku.bi/mcp?token=ab\"cd");
+        // URL must be safely JSON-encoded so the embedded quote doesn't
+        // break out of the JS string literal that gets passed to new URL().
+        assertTrue(
+                "shim should embed the JSON-encoded URL",
+                shim.contains("\"https://demo.saiku.bi/mcp?token=ab\\\"cd\""));
+        // Self-contained bridge contract: reads stdin, POSTs to /mcp,
+        // threads the mcp-session-id header on subsequent requests.
+        assertTrue("shim should read from stdin", shim.contains("process.stdin"));
+        assertTrue("shim should write to stdout", shim.contains("process.stdout"));
+        assertTrue("shim should use the streamable-http session header", shim.contains("mcp-session-id"));
+        assertTrue("shim should propagate exit code", shim.contains("process.exit"));
+    }
+
+    @Test
+    public void dxtShim_recoversFromMidSessionServerCycle() {
+        String shim = InfoResource.dxtShim("https://demo.saiku.bi/mcp");
+        // Survives operator-side restarts of mcp-proxy / saiku-demo: the
+        // shim must detect a dropped streamable-http session, re-handshake
+        // transparently, and replay the in-flight request so the client
+        // never sees the stale-session error.
+        assertTrue("shim should detect session loss", shim.contains("isSessionLoss"));
+        assertTrue(
+                "shim should re-handshake on session loss",
+                shim.contains("rehandshake") && shim.contains("notifications/initialized"));
+        assertTrue(
+                "shim must drop cached session id when client re-initializes",
+                shim.contains("if (method === 'initialize') sessionId = null"));
+        // The reissued mcp-session-id header from the remote must be
+        // honoured, not just the first one.
+        assertFalse(
+                "shim should not gate session-id updates on a one-shot if",
+                shim.contains("if (sid && !sessionId) sessionId = sid"));
+        assertTrue("shim should accept any reissued session id", shim.contains("if (sid) sessionId = sid"));
     }
 
     @Test
@@ -131,9 +187,15 @@ public class InfoResourceTest {
         Response resp = new InfoResource().getMcpDxt();
         byte[] zip = (byte[]) resp.getEntity();
         try (ZipInputStream zin = new ZipInputStream(new ByteArrayInputStream(zip))) {
-            zin.getNextEntry();
-            JsonNode m = new ObjectMapper().readTree(zin.readAllBytes());
-            assertEquals("0.0.0", m.path("version").asText());
+            ZipEntry e;
+            while ((e = zin.getNextEntry()) != null) {
+                if ("manifest.json".equals(e.getName())) {
+                    JsonNode m = new ObjectMapper().readTree(zin.readAllBytes());
+                    assertEquals("0.0.0", m.path("version").asText());
+                    return;
+                }
+            }
+            throw new AssertionError("manifest.json not found in bundle");
         }
     }
 
