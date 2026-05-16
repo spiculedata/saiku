@@ -15,14 +15,10 @@
  */
 package org.saiku.olap.util;
 
-import java.lang.reflect.Constructor;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.*;
-import mondrian.olap.Annotation;
-import mondrian.olap4j.Checker;
-import mondrian.olap4j.LevelInterface;
 import mondrian.olap4j.SaikuMondrianHelper;
 import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
@@ -131,60 +127,31 @@ public class ObjectUtil {
 
     @NotNull
     private static SaikuLevel convert(@NotNull Level level) {
-        Checker c = new Checker();
         try {
+            // The historical {@code MondrianOlap4jLevelExtend} reflection bridge is
+            // not present in current Spicule/mondrian-saiku builds — fell through to
+            // a null-annotation SaikuLevel. saiku#818 routes through the same
+            // {@link #annotationsAsStringMap} helper used by the measure path so
+            // level annotations actually populate.
+            Map<String, String> ann = annotationsAsStringMap(level);
+            String levelType = null;
             try {
-                Class.forName("mondrian.olap4j.MondrianOlap4jLevelExtend");
-                // Class.forName("bi.meteorite.CheckClass");
-                Class<LevelInterface> _tempClass =
-                        (Class<LevelInterface>) Class.forName("mondrian.olap4j.MondrianOlap4jLevelExtend");
-                if (c.checker(level)) {
-                    Constructor<LevelInterface> ctor =
-                            _tempClass.getDeclaredConstructor(org.olap4j.metadata.Level.class);
-                    LevelInterface test = ctor.newInstance(level);
-                    HashMap<String, String> m = null;
-                    if (test.getAnnotations() != null) {
-                        m = new HashMap<>();
-                        for (Map.Entry<String, Annotation> entry :
-                                test.getAnnotations().entrySet()) {
-                            m.put(entry.getKey(), (String) entry.getValue().getValue());
-                        }
-                    }
-                    return new SaikuLevel(
-                            test.getName(),
-                            test.getUniqueName(),
-                            test.getCaption(),
-                            test.getDescription(),
-                            test.getDimension().getUniqueName(),
-                            test.getHierarchy().getUniqueName(),
-                            test.isVisible(),
-                            test.getLevelType().toString(),
-                            m);
-                } else {
-                    return new SaikuLevel(
-                            level.getName(),
-                            level.getUniqueName(),
-                            level.getCaption(),
-                            level.getDescription(),
-                            level.getDimension().getUniqueName(),
-                            level.getHierarchy().getUniqueName(),
-                            level.isVisible(),
-                            null,
-                            null);
-                }
-            } catch (ClassNotFoundException e) {
-                return new SaikuLevel(
-                        level.getName(),
-                        level.getUniqueName(),
-                        level.getCaption(),
-                        level.getDescription(),
-                        level.getDimension().getUniqueName(),
-                        level.getHierarchy().getUniqueName(),
-                        level.isVisible(),
-                        null,
-                        null);
+                levelType = level.getLevelType() == null
+                        ? null
+                        : level.getLevelType().toString();
+            } catch (Throwable ignored) {
+                // Some drivers throw on getLevelType — leave null.
             }
-
+            return new SaikuLevel(
+                    level.getName(),
+                    level.getUniqueName(),
+                    level.getCaption(),
+                    level.getDescription(),
+                    level.getDimension().getUniqueName(),
+                    level.getHierarchy().getUniqueName(),
+                    level.isVisible(),
+                    levelType,
+                    ann);
         } catch (Exception e) {
             throw new SaikuServiceException("Cannot convert level: " + level, e);
         }
@@ -302,26 +269,33 @@ public class ObjectUtil {
 
     /**
      * Pull a schema-level annotation bag off any olap4j metadata wrapper that
-     * exposes a {@code mondrian.olap.Annotated} underneath. We can't depend on
-     * an olap4j-API getAnnotations() — olap4j 1.2 doesn't define one — so we
-     * reflect onto Mondrian's own {@code Annotated} interface via the wrapper's
-     * {@code getOlapElement()} bridge. Driver-side failures (non-Mondrian olap4j
-     * implementations, classloader weirdness) silently return {@code null}.
+     * exposes a {@code mondrian.olap.Annotated} underneath. olap4j 1.2 doesn't
+     * define a metadata-level annotations API, so we have to dig into Mondrian's
+     * {@code mondrian.olap.Annotated} interface either:
+     * <ol>
+     *   <li>direct cast if the wrapper happens to implement it;</li>
+     *   <li>reflected {@code getOlapElement()} call (some wrappers expose this);</li>
+     *   <li>reflected {@code member} / {@code element} field access on
+     *       {@code MondrianOlap4jMember} where the underlying mondrian
+     *       {@code Member} is the package-private wrapped instance.</li>
+     * </ol>
+     * Non-Mondrian olap4j drivers (XMLA, etc.) silently return {@code null}.
      */
     private static Map<String, String> annotationsAsStringMap(Object wrapper) {
         if (wrapper == null) return null;
         try {
-            // MondrianOlap4jMember / Measure / Level all expose getOlapElement()
-            // that returns the underlying mondrian.olap.Annotated. Some wrappers
-            // implement Annotated directly — try that first.
             Object annotated = wrapper instanceof mondrian.olap.Annotated ? wrapper : null;
             if (annotated == null) {
-                try {
-                    java.lang.reflect.Method m = wrapper.getClass().getMethod("getOlapElement");
-                    annotated = m.invoke(wrapper);
-                } catch (NoSuchMethodException nsme) {
-                    return null;
-                }
+                annotated = tryInvoke(wrapper, "getOlapElement");
+            }
+            if (annotated == null || !(annotated instanceof mondrian.olap.Annotated)) {
+                // MondrianOlap4jMember/Level/Hierarchy each store the underlying
+                // mondrian.olap.* in a package-private field — name varies by
+                // wrapper ({@code member}, {@code level}, {@code hierarchy},
+                // {@code olapElement}, {@code element}, ...). Search any
+                // declared field on the wrapper (and its superclass chain)
+                // for one whose value implements {@code mondrian.olap.Annotated}.
+                annotated = findAnnotatedField(wrapper);
             }
             if (!(annotated instanceof mondrian.olap.Annotated)) return null;
             Map<String, mondrian.olap.Annotation> raw = ((mondrian.olap.Annotated) annotated).getAnnotationMap();
@@ -335,6 +309,40 @@ public class ObjectUtil {
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    private static Object tryInvoke(Object target, String methodName) {
+        try {
+            java.lang.reflect.Method m = target.getClass().getMethod(methodName);
+            return m.invoke(target);
+        } catch (NoSuchMethodException nsme) {
+            return null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Walk the declared fields of {@code target} (and its superclasses) and
+     *  return the first one whose value implements {@code mondrian.olap.Annotated}.
+     *  Cheaper than maintaining a name list because Mondrian wrapper field
+     *  names ({@code member}, {@code level}, {@code hierarchy}, etc.) drift
+     *  across forks. */
+    private static Object findAnnotatedField(Object target) {
+        Class<?> c = target.getClass();
+        while (c != null && c != Object.class) {
+            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                try {
+                    f.setAccessible(true);
+                    Object v = f.get(target);
+                    if (v instanceof mondrian.olap.Annotated) return v;
+                } catch (Throwable ignore) {
+                    // keep scanning
+                }
+            }
+            c = c.getSuperclass();
+        }
+        return null;
     }
 
     @NotNull
