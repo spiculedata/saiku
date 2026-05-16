@@ -144,8 +144,38 @@ public class SaikuLauncher implements Callable<Integer> {
             System.out.println("  Workspace : " + base + "ui/");
             System.out.println("  Admin     : " + base + "ui/admin");
             System.out.println("  REST API  : " + base + "rest/saiku/");
+            printDefaultCredentialWarning();
             server.join();
             return 0;
+        }
+
+        /**
+         * The bundled WAR ships with the in-memory Spring Security config
+         * (applicationContext-spring-security-memory.xml) backed by an
+         * admin/admin seed entry in users.properties. Suitable for a
+         * single-host demo, not for any deployment exposed to the network.
+         *
+         * <p>Emit a loud, ASCII-bordered warning every launch so it's visible
+         * in log aggregation and screen sessions. Suppressable for CI / demo
+         * by setting {@code -Dsaiku.security.acknowledged=true} — at which
+         * point you take responsibility for whatever auth posture you've put
+         * in front of Saiku (reverse proxy, SSO, replaced security XML, etc.).
+         */
+        private void printDefaultCredentialWarning() {
+            if (Boolean.parseBoolean(System.getProperty("saiku.security.acknowledged", "false"))) {
+                return;
+            }
+            String bar = "============================================================";
+            System.out.println();
+            System.out.println(bar);
+            System.out.println("  SECURITY: default credentials (admin/admin) are active.");
+            System.out.println("  Change them in saiku-webapp's users.properties before");
+            System.out.println("  exposing this instance, or replace the in-memory auth");
+            System.out.println("  config (applicationContext-spring-security-memory.xml)");
+            System.out.println("  with LDAP / OAuth / SAML.");
+            System.out.println("  Suppress this warning with -Dsaiku.security.acknowledged=true");
+            System.out.println(bar);
+            System.out.println();
         }
 
         private void stageSeedAssets(Path dataDir) throws Exception {

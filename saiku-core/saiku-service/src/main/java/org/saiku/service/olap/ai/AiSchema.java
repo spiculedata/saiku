@@ -119,6 +119,12 @@ public class AiSchema {
          *  Empty list = no requirement (the default for unannotated cubes). */
         public java.util.List<RequiredFilter> requiredFilters = new java.util.ArrayList<>();
 
+        /** Transient build-time signal: the sample-member fetch returned at least
+         *  one row without throwing, so the level is already proven queryable
+         *  and {@code pruneUnqueryable} can skip the redundant probe call.
+         *  Not serialised — recomputed per buildSchema. */
+        public transient boolean queryableProven;
+
         public Level(String name, String uniqueName) {
             this.name = name;
             this.uniqueName = uniqueName;

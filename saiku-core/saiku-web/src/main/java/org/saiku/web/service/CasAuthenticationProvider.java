@@ -1,7 +1,7 @@
 package org.saiku.web.service;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -14,7 +14,7 @@ public class CasAuthenticationProvider implements AuthenticationProvider {
     private static final String ROLE_USER = "ROLE_USER";
     private static final String ROLE_ADMIN = "ROLE_ADMIN";
 
-    private static Map<String, UserDetails> userCache = new HashMap<>();
+    private static final Map<String, UserDetails> userCache = new ConcurrentHashMap<>();
 
     @Override
     public Authentication authenticate(Authentication authentication) throws AuthenticationException {

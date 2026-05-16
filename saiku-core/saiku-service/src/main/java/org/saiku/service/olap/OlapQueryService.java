@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import mondrian.olap4j.SaikuMondrianHelper;
 import mondrian.rolap.RolapConnection;
@@ -72,7 +73,7 @@ public class OlapQueryService implements Serializable {
 
     private OlapDiscoverService olapDiscoverService;
 
-    private transient Map<String, IQuery> queries = new HashMap<>();
+    private transient Map<String, IQuery> queries = new ConcurrentHashMap<>();
     private Map<String, String> serializableQueries = null;
 
     private static final AtomicLong ID_GENERATOR = new AtomicLong();
@@ -1479,7 +1480,7 @@ public class OlapQueryService implements Serializable {
     private void readObject(ObjectInputStream stream) throws IOException, ClassNotFoundException {
 
         stream.defaultReadObject();
-        queries = new HashMap<>();
+        queries = new ConcurrentHashMap<>();
         for (Map.Entry<String, String> entry : serializableQueries.entrySet()) {
             createNewOlapQuery(entry.getKey(), entry.getValue());
         }

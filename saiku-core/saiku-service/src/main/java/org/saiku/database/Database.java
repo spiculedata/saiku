@@ -243,7 +243,7 @@ public class Database {
                     }
 
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    log.warn("Failed to seed sample report file", e);
                 }
 
             } else {

@@ -20,7 +20,6 @@ import jakarta.servlet.http.HttpSession;
 import jakarta.xml.bind.JAXBContext;
 import jakarta.xml.bind.JAXBException;
 import jakarta.xml.bind.Marshaller;
-import jakarta.xml.bind.Unmarshaller;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -40,6 +39,7 @@ import org.saiku.database.dto.MondrianSchema;
 import org.saiku.datasources.connection.RepositoryFile;
 import org.saiku.service.user.UserService;
 import org.saiku.service.util.exception.SaikuServiceException;
+import org.saiku.service.util.xml.SecureXml;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -299,7 +299,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
                 fileWriter.flush();
                 fileWriter.close();
             } catch (IOException e) {
-                e.printStackTrace();
+                log.error("Failed to write file to {}", path, e);
             }
 
             return resNode;
@@ -355,7 +355,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
                 fileWriter.flush();
                 fileWriter.close();
             } catch (IOException e) {
-                e.printStackTrace();
+                log.error("Failed to write internal file {}", path, e);
             }
 
             return f;
@@ -364,51 +364,33 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
     public Object saveBinaryInternalFile(InputStream file, String path, String type) throws RepositoryException {
         if (file == null) {
-            // Create new folder
-            String parent = path.substring(0, path.lastIndexOf(sep));
-
-            int pos = path.lastIndexOf(sep);
-            String filename = "." + sep + path.substring(pos + 1, path.length());
-            return this.createNode(filename);
-
-        } else {
-            int pos = path.lastIndexOf(sep);
-            String filename = "." + sep + path.substring(pos + 1, path.length());
-
-            log.debug("Saving:" + filename);
-            File check = this.getNode(filename);
-            if (check.exists()) {
-                check.delete();
-            }
-
-            File resNode = this.createNode(filename);
-
-            FileOutputStream outputStream = null;
-            try {
-                outputStream = new FileOutputStream(new File(filename));
-            } catch (FileNotFoundException e) {
-                e.printStackTrace();
-            }
-
-            int read;
-            byte[] bytes = new byte[1024];
-
-            try {
-                while ((read = file.read(bytes)) != -1) {
-                    try {
-                        if (outputStream != null) {
-                            outputStream.write(bytes, 0, read);
-                        }
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-
-            return resNode;
+            // No content: create the directory node at the user-supplied path
+            // (createNode resolves the path inside the datadir for us).
+            return this.createNode(path);
         }
+        // Resolve the target inside the repo *first* and write to it. The legacy
+        // code used `"./" + basename` and `new FileOutputStream(filename)` which
+        // wrote the bytes to the JVM working directory and silently lost the
+        // intended directory structure (saiku#780 follow-up MEDIUM-1).
+        File resNode = this.createNode(path);
+        if (resNode.getParentFile() != null && !resNode.getParentFile().exists()) {
+            resNode.getParentFile().mkdirs();
+        }
+        if (resNode.exists()) {
+            resNode.delete();
+        }
+        log.debug("Saving binary file to {}", resNode);
+
+        byte[] bytes = new byte[1024];
+        try (FileOutputStream outputStream = new FileOutputStream(resNode)) {
+            int read;
+            while ((read = file.read(bytes)) != -1) {
+                outputStream.write(bytes, 0, read);
+            }
+        } catch (IOException e) {
+            log.error("Failed to write binary file to {}", resNode, e);
+        }
+        return resNode;
     }
 
     public String getFile(String s, String username, List<String> roles) throws RepositoryException {
@@ -420,22 +402,18 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             throw new RepositoryException();
         }
 
+        Path resolved = resolveWithinDatadir(s);
         byte[] encoded = new byte[0];
-
         try {
-            if (Paths.get(s).isAbsolute() && s.startsWith(this.getDatadir())) {
-                encoded = Files.readAllBytes(Paths.get(s));
-            } else {
-                encoded = Files.readAllBytes(Paths.get(getDatadir() + sep + s));
-            }
+            encoded = Files.readAllBytes(resolved);
         } catch (IOException e) {
-            e.printStackTrace();
+            log.debug("Missing file", e);
         }
 
         try {
             return new String(encoded, "UTF-8");
         } catch (UnsupportedEncodingException e) {
-            e.printStackTrace();
+            log.debug("Couldn't convert file", e);
         }
         return null;
     }
@@ -443,12 +421,9 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     public String getInternalFile(String s) throws RepositoryException {
         byte[] encoded = new byte[0];
         if (!s.equals("/etc/license.lic")) {
+            Path resolved = resolveWithinDatadir(s);
             try {
-                if (Paths.get(s).isAbsolute() && s.startsWith(this.getDatadir())) {
-                    encoded = Files.readAllBytes(Paths.get(s));
-                } else {
-                    encoded = Files.readAllBytes(Paths.get(getDatadir() + s));
-                }
+                encoded = Files.readAllBytes(resolved);
             } catch (IOException e) {
                 log.debug("Missing file", e);
             }
@@ -462,25 +437,18 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         try {
             return new String(encoded, "UTF-8");
         } catch (UnsupportedEncodingException e) {
-            log.debug("Couldn't conert file", e);
+            log.debug("Couldn't convert file", e);
         }
         return null;
     }
 
     public InputStream getBinaryInternalFile(String s) throws RepositoryException {
-        Path path = null;
-
-        if (Paths.get(s).isAbsolute() && s.startsWith(this.getDatadir())) {
-            path = Paths.get(s);
-        } else {
-            path = Paths.get(getDatadir() + s);
-        }
-
+        Path path = resolveWithinDatadir(s);
         try {
             byte[] f = Files.readAllBytes(path);
             return new ByteArrayInputStream(f);
         } catch (IOException e) {
-            e.printStackTrace();
+            log.debug("Missing binary file", e);
         }
         return null;
     }
@@ -534,7 +502,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         try {
             return getRepoObjects(this.getFolder("/"), type, username, roles, false);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Failed to list repo objects at root", e);
         }
         return null;
     }
@@ -547,7 +515,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             try {
                 return getRepoObjects(this.getFolder(path), type, username, roles, true);
             } catch (Exception e) {
-                e.printStackTrace();
+                log.error("Failed to list repo objects under {}", path, e);
             }
         }
 
@@ -660,28 +628,20 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
         for (File file : files) {
             JAXBContext jaxbContext = null;
-            Unmarshaller jaxbMarshaller = null;
             try {
                 jaxbContext = JAXBContext.newInstance(DataSource.class);
             } catch (JAXBException e) {
                 log.error("Could not read XML", e);
             }
-            try {
-                jaxbMarshaller = jaxbContext != null ? jaxbContext.createUnmarshaller() : null;
-            } catch (JAXBException e) {
-                log.error("Could not read XML", e);
-            }
-            InputStream stream = null;
-            try {
-                stream = (FileUtils.openInputStream(file));
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
             DataSource d = null;
-            try {
-                d = (DataSource) (jaxbMarshaller != null ? jaxbMarshaller.unmarshal(stream) : null);
-            } catch (JAXBException e) {
-                log.error("Could not read XML", e);
+            if (jaxbContext != null) {
+                try (InputStream stream = FileUtils.openInputStream(file)) {
+                    // XXE-hardened: route the InputStream through a SAX parser with DOCTYPE
+                    // declarations and external entities disabled (see SecureXml).
+                    d = (DataSource) SecureXml.secureUnmarshal(jaxbContext, stream);
+                } catch (Exception e) {
+                    log.error("Could not read XML from {}", file, e);
+                }
             }
 
             if (d != null) {
@@ -731,7 +691,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             fileWriter.flush();
             fileWriter.close();
         } catch (IOException e) {
-            e.printStackTrace();
+            log.error("Failed to save datasource file", e);
         }
     }
 
@@ -748,7 +708,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         try {
             n = getFolder(fileUrl);
         } catch (RepositoryException e) {
-            e.printStackTrace();
+            log.error("Failed to resolve folder {}", fileUrl, e);
         }
 
         return new RepositoryFile(n != null ? n.getName() : null, null, null, fileUrl);
@@ -826,7 +786,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
                 }
             } catch (Exception ex) {
                 // If a problem happens when handling one file, it will still return the repoObjects list
-                ex.printStackTrace();
+                log.warn("Skipping unreadable repo entry", ex);
             }
         }
 
@@ -895,14 +855,13 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
     private void delete(String folder) {
         folder = fixPath(folder);
-        File file = null;
-
-        if (Paths.get(folder).isAbsolute() && folder.startsWith(this.getDatadir())) {
-            file = new File(folder);
-        } else {
-            file = new File(getDatadir() + folder);
+        File file;
+        try {
+            file = resolveWithinDatadir(folder).toFile();
+        } catch (RepositoryException e) {
+            log.warn("Refusing to delete path that escapes datadir: {}", folder);
+            return;
         }
-
         file.delete();
     }
 
@@ -911,16 +870,49 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     }
 
     private File getNode(String path) {
-
         path = fixPath(path);
-        File f = new File(path);
-
-        if (f.isAbsolute() && path.startsWith(this.getDatadir())) { // Check if the provided path is a full path already
-            return f; // If so, return the respective file
+        try {
+            return resolveWithinDatadir(path).toFile();
+        } catch (RepositoryException e) {
+            // Preserve historical signature (no checked exception) by throwing unchecked.
+            // Path-traversal attempts are programmer / attacker errors, not flow control.
+            throw new SaikuServiceException("Path traversal attempt rejected: " + path, e);
         }
+    }
 
-        // Otherwise, compose the path with the datadir basepath
-        return new File(getDatadir() + path);
+    /**
+     * Resolve {@code userPath} against {@link #getDatadir()} and refuse anything that
+     * escapes the resolved data directory (defends against {@code ../} traversal and
+     * absolute paths pointing outside the repo root). Symlink-based escapes are not
+     * covered here — they need {@link Path#toRealPath} which only works for existing
+     * paths, so handle separately if/when relevant.
+     */
+    private Path resolveWithinDatadir(String userPath) throws RepositoryException {
+        if (userPath == null) {
+            throw new RepositoryException("Path must not be null");
+        }
+        Path base = Paths.get(getDatadir()).toAbsolutePath().normalize();
+        Path candidate = Paths.get(userPath);
+        Path resolved;
+        if (candidate.isAbsolute() && userPath.startsWith(getDatadir())) {
+            // Truly filesystem-absolute path already inside the datadir — keep as-is.
+            resolved = candidate.normalize();
+        } else {
+            // Saiku treats leading-{slash} paths like {@code "/etc/foo"} as REPO-relative
+            // (i.e. {@code <datadir>/etc/foo}), not as filesystem-absolute. The legacy
+            // implementation got this for free via string concat ({@code datadir + path});
+            // we have to strip the leading separator so {@link Path#resolve} keeps the
+            // segment relative on Unix.
+            String stripped = userPath;
+            while (stripped.startsWith("/") || stripped.startsWith("\\")) {
+                stripped = stripped.substring(1);
+            }
+            resolved = base.resolve(stripped).normalize();
+        }
+        if (!resolved.startsWith(base)) {
+            throw new RepositoryException("Path traversal attempt rejected: " + userPath);
+        }
+        return resolved;
     }
 
     private File createNode(String filename) {
