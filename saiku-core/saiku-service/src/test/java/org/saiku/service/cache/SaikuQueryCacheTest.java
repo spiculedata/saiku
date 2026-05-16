@@ -209,4 +209,159 @@ public class SaikuQueryCacheTest {
         assertEquals(2, calls.get());
         assertFalse(r.cacheHit);
     }
+
+    @Test
+    public void invalidateAll_clearsIndexAndDeletesAllCacheFiles() throws IOException {
+        AtomicInteger calls = new AtomicInteger();
+        cache.get("k1", "v", supplierProducing("a".getBytes(), 1, 1, calls));
+        cache.get("k2", "v", supplierProducing("b".getBytes(), 1, 1, calls));
+
+        // Sanity: both keys on disk.
+        assertTrue(Files.exists(cacheDir.resolve("k1.arrow")));
+        assertTrue(Files.exists(cacheDir.resolve("k2.arrow")));
+
+        cache.invalidateAll();
+
+        assertFalse(Files.exists(cacheDir.resolve("k1.arrow")));
+        assertFalse(Files.exists(cacheDir.resolve("k1.meta.json")));
+        assertFalse(Files.exists(cacheDir.resolve("k2.arrow")));
+        assertFalse(Files.exists(cacheDir.resolve("k2.meta.json")));
+    }
+
+    @Test
+    public void invalidateAll_doesNotTouchUnrelatedFiles() throws IOException {
+        AtomicInteger calls = new AtomicInteger();
+        cache.get("k1", "v", supplierProducing("a".getBytes(), 1, 1, calls));
+        // Drop a stranger file alongside cache files.
+        Path stranger = cacheDir.resolve("README.txt");
+        Files.writeString(stranger, "do not delete me");
+
+        cache.invalidateAll();
+
+        assertTrue("non-saiku files must survive invalidateAll", Files.exists(stranger));
+    }
+
+    @Test
+    public void totalBytesOnDisk_sumsMetadataBytes() {
+        AtomicInteger calls = new AtomicInteger();
+        cache.get("k1", "v", supplierProducing(new byte[100], 1, 1, calls));
+        cache.get("k2", "v", supplierProducing(new byte[250], 1, 1, calls));
+
+        assertEquals(350L, cache.totalBytesOnDisk());
+    }
+
+    @Test
+    public void totalBytesOnDisk_zeroForEmptyCache() {
+        assertEquals(0L, cache.totalBytesOnDisk());
+    }
+
+    @Test
+    public void put_ignoresNullBytes() {
+        AtomicInteger calls = new AtomicInteger();
+        cache.get("k-null", "v", () -> {
+            calls.incrementAndGet();
+            return new CachedQueryResult(null, 1L, 1, false);
+        });
+        assertFalse(
+                "supplier with null bytes must not write a cache file", Files.exists(cacheDir.resolve("k-null.arrow")));
+        assertFalse(Files.exists(cacheDir.resolve("k-null.meta.json")));
+    }
+
+    @Test
+    public void put_ignoresNullResult() {
+        AtomicInteger calls = new AtomicInteger();
+        cache.get("k-null-result", "v", () -> {
+            calls.incrementAndGet();
+            return null;
+        });
+        assertFalse(Files.exists(cacheDir.resolve("k-null-result.arrow")));
+    }
+
+    @Test
+    public void reindex_warmsIndexFromExistingMetaFiles() throws Exception {
+        // Populate the first cache, then construct a fresh one over the same
+        // directory — its index should be warmed from the existing meta files.
+        AtomicInteger calls = new AtomicInteger();
+        cache.get("warmed", "v", supplierProducing("payload".getBytes(), 5, 2, calls));
+        cache.shutdown();
+
+        SaikuQueryCache reopened = new SaikuQueryCache(cacheDir, TimeUnit.MINUTES.toMillis(30), 268_435_456L, true);
+        try {
+            // A get with a brand-new supplier should hit on the reopened cache —
+            // proving the index was warmed from disk.
+            CachedQueryResult r = reopened.get("warmed", "v", supplierProducing("FRESH".getBytes(), 99, 99, calls));
+            assertTrue("reopened cache should serve warmed entry as a hit", r.cacheHit);
+            assertArrayEquals("payload".getBytes(), r.arrowBytes);
+        } finally {
+            reopened.shutdown();
+        }
+    }
+
+    @Test
+    public void reindex_deletesOrphanArrowFilesWithoutSidecar() throws Exception {
+        // Crash simulation: arrow file present but sidecar missing.
+        Files.createDirectories(cacheDir);
+        Path orphan = cacheDir.resolve("orphan.arrow");
+        Files.write(orphan, "leak".getBytes());
+
+        // New cache instance reindexes — orphan should be reaped.
+        SaikuQueryCache reopened = new SaikuQueryCache(cacheDir, TimeUnit.MINUTES.toMillis(30), 268_435_456L, true);
+        try {
+            assertFalse("orphan arrow file without sidecar must be deleted on reindex", Files.exists(orphan));
+        } finally {
+            reopened.shutdown();
+        }
+    }
+
+    @Test
+    public void getOnMissingArrowFile_invalidatesEntryAndRefetches() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        cache.get("k-tampered", "v", supplierProducing("orig".getBytes(), 1, 1, calls));
+
+        // Out-of-band delete only the arrow file. Next get() should detect the
+        // miss, invalidate the index entry, and call the supplier again.
+        Files.delete(cacheDir.resolve("k-tampered.arrow"));
+
+        CachedQueryResult r = cache.get("k-tampered", "v", supplierProducing("refetched".getBytes(), 2, 2, calls));
+        assertEquals(2, calls.get());
+        assertFalse(r.cacheHit);
+        assertArrayEquals("refetched".getBytes(), r.arrowBytes);
+    }
+
+    @Test
+    public void isEnabledReportsConstructorFlag() {
+        SaikuQueryCache off = new SaikuQueryCache(cacheDir, 1L, 1L, false);
+        try {
+            assertFalse(off.isEnabled());
+            assertTrue(cache.isEnabled());
+        } finally {
+            off.shutdown();
+        }
+    }
+
+    @Test
+    public void getCacheDirReturnsConstructorPath() {
+        assertEquals(cacheDir, cache.getCacheDir());
+    }
+
+    @Test
+    public void shutdown_isIdempotent() {
+        // Two shutdowns in a row must not throw — sweeper / eviction executor
+        // both use shutdownNow() which tolerates already-terminated state.
+        cache.shutdown();
+        cache.shutdown();
+    }
+
+    @Test
+    public void lookupSkipsCubeVersionMismatchOnlyWhenBothNonNull() throws Exception {
+        // When the request's cubeVersion is null, an entry's stored cubeVersion
+        // does NOT cause a miss — the caller opted out of versioning.
+        AtomicInteger calls = new AtomicInteger();
+        cache.get("k-cv", "stored", supplierProducing("first".getBytes(), 1, 1, calls));
+
+        CachedQueryResult nullVer = cache.get("k-cv", null, supplierProducing("ignored".getBytes(), 9, 9, calls));
+        assertEquals(1, calls.get());
+        assertTrue("null cubeVersion should hit regardless of stored version", nullVer.cacheHit);
+        assertArrayEquals("first".getBytes(), nullVer.arrowBytes);
+    }
 }
