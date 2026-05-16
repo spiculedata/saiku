@@ -92,14 +92,27 @@ final class SaikuRestClient {
         return postJson("/rest/saiku/api/ai/query/preview", body);
     }
 
-    /** GET {@code /rest/saiku/api/ai/query/{queryId}/drillthrough}. */
-    JsonNode drillthrough(String queryId, Integer maxrows, String returns) throws IOException, InterruptedException {
+    /**
+     * GET {@code /rest/saiku/api/ai/query/{queryId}/drillthrough}.
+     *
+     * <p>{@code firstRowset} is the warehouse-side cap (Snowflake, BigQuery, MSAS XMLA);
+     * {@code maxrows} is the Mondrian-side cap. The REST endpoint accepts both and
+     * since the saiku#818 follow-ups falls back to MAXROWS on Mondrian connections when
+     * FIRST_ROWSET would be unsupported, so callers can supply firstRowset
+     * unconditionally without worrying about the backend.
+     */
+    JsonNode drillthrough(String queryId, Integer maxrows, Integer firstRowset, String returns)
+            throws IOException, InterruptedException {
         StringBuilder p = new StringBuilder("/rest/saiku/api/ai/query/")
                 .append(enc(queryId))
                 .append("/drillthrough");
         boolean first = true;
         if (maxrows != null) {
             p.append(first ? '?' : '&').append("maxrows=").append(maxrows);
+            first = false;
+        }
+        if (firstRowset != null) {
+            p.append(first ? '?' : '&').append("firstRowset=").append(firstRowset);
             first = false;
         }
         if (returns != null && !returns.isBlank()) {
