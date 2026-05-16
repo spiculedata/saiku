@@ -108,7 +108,8 @@ public class InfoResourceTest {
 
         String shim = new String(entries.get("server.js"), java.nio.charset.StandardCharsets.UTF_8);
         assertTrue("shim should reference the configured MCP URL", shim.contains("https://demo.saiku.bi/mcp"));
-        assertTrue("shim should spawn npx mcp-remote", shim.contains("mcp-remote"));
+        assertTrue("shim should be a self-contained bridge using node stdlib", shim.contains("require('https')"));
+        assertTrue("shim should propagate the streamable-http session id", shim.contains("mcp-session-id"));
     }
 
     @Test
@@ -142,14 +143,18 @@ public class InfoResourceTest {
     }
 
     @Test
-    public void dxtShim_jsonEncodesUrlAndSpawnsMcpRemote() {
+    public void dxtShim_jsonEncodesUrlAndBridgesStdioToHttp() {
         String shim = InfoResource.dxtShim("https://demo.saiku.bi/mcp?token=ab\"cd");
         // URL must be safely JSON-encoded so the embedded quote doesn't
-        // break out of the JS string literal.
+        // break out of the JS string literal that gets passed to new URL().
         assertTrue(
                 "shim should embed the JSON-encoded URL",
                 shim.contains("\"https://demo.saiku.bi/mcp?token=ab\\\"cd\""));
-        assertTrue("shim should reference mcp-remote", shim.contains("mcp-remote"));
+        // Self-contained bridge contract: reads stdin, POSTs to /mcp,
+        // threads the mcp-session-id header on subsequent requests.
+        assertTrue("shim should read from stdin", shim.contains("process.stdin"));
+        assertTrue("shim should write to stdout", shim.contains("process.stdout"));
+        assertTrue("shim should use the streamable-http session header", shim.contains("mcp-session-id"));
         assertTrue("shim should propagate exit code", shim.contains("process.exit"));
     }
 
