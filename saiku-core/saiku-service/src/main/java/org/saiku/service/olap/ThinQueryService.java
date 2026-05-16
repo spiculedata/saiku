@@ -595,17 +595,11 @@ public class ThinQueryService implements Serializable {
             final OlapConnection con =
                     olapDiscoverService.getNativeConnection(query.getCube().getConnection());
             stmt = con.createStatement();
-            String mdx = query.getMdx();
-            if (firstRowset != null && firstRowset > 0) {
-                mdx = "DRILLTHROUGH FIRST_ROWSET " + firstRowset + " " + mdx;
-            } else if (maxrows > 0) {
-                mdx = "DRILLTHROUGH MAXROWS " + maxrows + " " + mdx;
-            } else {
-                mdx = "DRILLTHROUGH " + mdx;
-            }
-            if (StringUtils.isNotBlank(returns)) {
-                mdx += "\r\n RETURN " + returns;
-            }
+            // saiku#818 follow-up: Mondrian's MDX parser doesn't define FIRST_ROWSET,
+            // so emitting it produced a 500 with an opaque "Error DRILLTHROUGH" message.
+            // Route through DrillthroughMdxBuilder which falls back to MAXROWS on Mondrian.
+            boolean isMondrian = SaikuMondrianHelper.isMondrianConnection(con);
+            String mdx = DrillthroughMdxBuilder.build(query.getMdx(), maxrows, firstRowset, returns, isMondrian);
             return stmt.executeQuery(mdx);
         } catch (SQLException e) {
             throw new SaikuServiceException("Error DRILLTHROUGH: " + queryName, e);

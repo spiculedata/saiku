@@ -26,6 +26,7 @@
     "customer" : {
       "name" : "Customer",
       "uniqueName" : "[Customer]",
+      "synonyms" : [ ],
       "hierarchies" : {
         "customers" : {
           "name" : "Customers",
@@ -103,6 +104,7 @@
     "employee" : {
       "name" : "Employee",
       "uniqueName" : "[Employee]",
+      "synonyms" : [ ],
       "hierarchies" : {
         "employee$manager id$parent" : {
           "name" : "Employee$Manager Id$Parent",
@@ -159,6 +161,7 @@
     "store2" : {
       "name" : "Store2",
       "uniqueName" : "[Store2]",
+      "synonyms" : [ ],
       "hierarchies" : {
         "store type" : {
           "name" : "Store Type",
@@ -187,6 +190,7 @@
     "time" : {
       "name" : "Time",
       "uniqueName" : "[Time]",
+      "synonyms" : [ ],
       "hierarchies" : {
         "time" : {
           "name" : "Time",
@@ -215,6 +219,7 @@
   },
   "measureAliases" : { },
   "dimensionAliases" : { },
+  "levelAliases" : { },
   "suggestions" : [ ],
   "examples" : [ {
     "cube" : {

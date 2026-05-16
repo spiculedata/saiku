@@ -15,7 +15,9 @@
  */
 package org.saiku.olap.dto;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class SaikuDimension extends AbstractSaikuObject {
 
@@ -23,6 +25,12 @@ public class SaikuDimension extends AbstractSaikuObject {
     private String description;
     private boolean visible;
     private List<SaikuHierarchy> hierarchies;
+    /** saiku#818 follow-up: raw schema-level annotations (e.g.
+     *  {@code <Annotation name="saiku.semantic.synonyms">time, date</Annotation>}).
+     *  Populated by {@code ObjectUtil.convert(Dimension)} via the same
+     *  {@code mondrian.olap.Annotated} reflection seam used for measures and
+     *  levels. */
+    private Map<String, String> annotations;
 
     public SaikuDimension() {
         super(null, null);
@@ -57,5 +65,14 @@ public class SaikuDimension extends AbstractSaikuObject {
 
     public List<SaikuHierarchy> getHierarchies() {
         return hierarchies;
+    }
+
+    /** Returns a defensive copy, or {@code null} if no annotations were attached. */
+    public Map<String, String> getAnnotations() {
+        return annotations == null ? null : new HashMap<>(annotations);
+    }
+
+    public void setAnnotations(Map<String, String> annotations) {
+        this.annotations = annotations == null ? null : new HashMap<>(annotations);
     }
 }

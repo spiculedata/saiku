@@ -5,6 +5,7 @@
 package org.saiku.mcp;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -92,6 +93,22 @@ public class SaikuRestClientTest {
             respondJson(ex, 200, "{\"hits\":[],\"_query\":\"" + (qs == null ? "" : qs.replace("\"", "\\\"")) + "\"}");
         });
 
+        // saiku#818 follow-up: drillthrough endpoint echoes the query string so
+        // the test can assert maxrows / firstRowset / returns made it through.
+        server.createContext("/rest/saiku/api/ai/query/", ex -> {
+            String path = ex.getRequestURI().getPath();
+            String qs = ex.getRequestURI().getRawQuery();
+            if (path.endsWith("/drillthrough")) {
+                respondJson(
+                        ex,
+                        200,
+                        "{\"rowCount\":0,\"_path\":\"" + path + "\",\"_query\":\""
+                                + (qs == null ? "" : qs.replace("\"", "\\\"")) + "\"}");
+            } else {
+                respondJson(ex, 404, "{}");
+            }
+        });
+
         server.start();
         baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
         client = new SaikuRestClient(baseUrl, "admin", "secret");
@@ -158,6 +175,39 @@ public class SaikuRestClientTest {
                 "space-bearing q propagated and URL-encoded — got: " + echoed,
                 echoed.contains("q=U+S+A") || echoed.contains("q=U%20S%20A"));
         assertTrue("limit propagated — got: " + echoed, echoed.contains("limit=5"));
+    }
+
+    @Test
+    public void drillthroughForwardsFirstRowsetParameter() throws Exception {
+        // saiku#818 follow-up: the MCP drillthrough tool now exposes firstRowset
+        // (the REST endpoint accepts it and post-saiku#818 follow-ups falls
+        // back to MAXROWS safely on Mondrian). The client must include it in
+        // the query string when supplied.
+        JsonNode body = client.drillthrough("query-42", /*maxrows*/ null, /*firstRowset*/ 5, /*returns*/ null);
+        String echoed = body.get("_query").asText();
+        assertTrue("firstRowset propagated — got: " + echoed, echoed.contains("firstRowset=5"));
+        assertEquals(
+                "/rest/saiku/api/ai/query/query-42/drillthrough",
+                body.get("_path").asText());
+    }
+
+    @Test
+    public void drillthroughOmitsFirstRowsetWhenNull() throws Exception {
+        JsonNode body = client.drillthrough("q1", 25, null, null);
+        String echoed = body.get("_query").asText();
+        assertTrue("maxrows propagated", echoed.contains("maxrows=25"));
+        assertFalse("firstRowset not present", echoed.contains("firstRowset"));
+    }
+
+    @Test
+    public void drillthroughForwardsAllFourParams() throws Exception {
+        JsonNode body = client.drillthrough("q2", 100, 10, "Country,Year");
+        String echoed = body.get("_query").asText();
+        assertTrue(echoed, echoed.contains("maxrows=100"));
+        assertTrue(echoed, echoed.contains("firstRowset=10"));
+        assertTrue(
+                "returns URL-encoded",
+                echoed.contains("returns=Country%2CYear") || echoed.contains("returns=Country,Year"));
     }
 
     @Test

@@ -191,9 +191,34 @@
 
         <Hierarchies>
             <Hierarchy name='Stores' allMemberName='All Stores'>
-                <Level attribute='Store Country'/>
-                <Level attribute='Store State'/>
-                <Level attribute='Store City'/>
+                <!-- saiku#818 follow-up: annotate Store geo with the same synonyms
+                     Customer geo carries so the flat levelAliases map surfaces a
+                     2-target entry for "state" / "country" / "city". An agent
+                     reading the schema cannot silently pick one — it must
+                     reason from context ("store by state" → store target;
+                     "customer by state" → customer target). Multi-target makes
+                     ambiguity visible instead of hidden. -->
+                <Level attribute='Store Country'>
+                    <Annotations>
+                        <Annotation name="saiku.semantic.description">Store's country.</Annotation>
+                        <Annotation name="saiku.semantic.synonyms">nation, country code</Annotation>
+                        <Annotation name="saiku.semantic.cardinality">low</Annotation>
+                    </Annotations>
+                </Level>
+                <Level attribute='Store State'>
+                    <Annotations>
+                        <Annotation name="saiku.semantic.description">Store's state or province.</Annotation>
+                        <Annotation name="saiku.semantic.synonyms">state, province, region</Annotation>
+                        <Annotation name="saiku.semantic.cardinality">low</Annotation>
+                    </Annotations>
+                </Level>
+                <Level attribute='Store City'>
+                    <Annotations>
+                        <Annotation name="saiku.semantic.description">Store's city.</Annotation>
+                        <Annotation name="saiku.semantic.synonyms">town, locality</Annotation>
+                        <Annotation name="saiku.semantic.cardinality">medium</Annotation>
+                    </Annotations>
+                </Level>
                 <Level attribute='Store Name'/>
             </Hierarchy>
             <Hierarchy name='Store Size in SQFT'>
@@ -238,6 +263,12 @@
     </Dimension>
 
     <Dimension name='Time' table='time_by_day' type='TIME' key='Time Id'>
+        <Annotations>
+            <!-- saiku#818 follow-up: dimension-level synonyms — agent posting
+                 {"dimension":"date"} routes to Time via dimensionAliases. -->
+            <Annotation name='saiku.semantic.description'>Calendar-based time dimension. Use the Time/Time hierarchy for Year→Quarter→Month rollups, Time/Weekly for ISO weeks, Time/Date Only for raw dates.</Annotation>
+            <Annotation name='saiku.semantic.synonyms'>date, datetime, period, when</Annotation>
+        </Annotations>
         <Attributes>
             <Attribute name='Year'
                        caption='Year' keyColumn='the_year' levelType='TimeYears' hasHierarchy='false'>
@@ -493,6 +524,11 @@
             </Dimension>
 
             <Dimension name='Customer' table='customer' key='Name'>
+                <Annotations>
+                    <!-- saiku#818 follow-up — dim synonyms exercised live. -->
+                    <Annotation name='saiku.semantic.description'>Retail customer dimension. Use Customers hierarchy for geo rollups (Country → State → City → Name).</Annotation>
+                    <Annotation name='saiku.semantic.synonyms'>shopper, buyer, account, customers</Annotation>
+                </Annotations>
                 <Attributes>
                     <Attribute name='Country' keyColumn='country' hasHierarchy='false'/>
                     <Attribute name='State Province' hasHierarchy='false'>
@@ -549,6 +585,10 @@
                                 <Annotation name="saiku.semantic.description">Individual customer name. Crossjoining at this level can return tens of thousands of rows — pre-filter by Country/State.</Annotation>
                                 <Annotation name="saiku.semantic.synonyms">customer name, person</Annotation>
                                 <Annotation name="saiku.semantic.cardinality">high</Annotation>
+                                <!-- saiku#818 follow-up: exercise required_filters live — queries at the
+                                     individual-customer leaf must scope by Country first or they'd return
+                                     ~10k rows. -->
+                                <Annotation name="saiku.semantic.required_filters">Customers/Country</Annotation>
                             </Annotations>
                         </Level>
                     </Hierarchy>

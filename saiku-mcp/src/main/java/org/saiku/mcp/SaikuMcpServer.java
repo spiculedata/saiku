@@ -101,7 +101,13 @@ public final class SaikuMcpServer {
                         + "levels, and sample members with their MDX unique names. Always call this before run_query "
                         + "if you haven't seen the cube structure yet — it tells you exactly which names are valid "
                         + "and includes ready-made example query bodies. Sample members include both the human "
-                        + "caption and the MDX unique name, so you can copy the unique name directly into a filter.")
+                        + "caption and the MDX unique name, so you can copy the unique name directly into a filter. "
+                        + "Annotated cubes (saiku#818) also surface per-measure synonyms / unit / currency / "
+                        + "aggregationKind, per-level synonyms / cardinality / grain / requiredFilters, and three "
+                        + "flat alias maps (measureAliases, dimensionAliases, levelAliases) so user-vocab terms "
+                        + "like \"revenue\" or \"quarterly\" route to the canonical name without a round-trip. "
+                        + "levelAliases is multi-target: a synonym like \"state\" carries every (dimension, "
+                        + "hierarchy, level) it resolves to — disambiguate via the dimension on your axis selection.")
                 .inputSchema(jm, schema)
                 .build();
         return spec(tool, (exchange, request) -> {
@@ -208,7 +214,10 @@ public final class SaikuMcpServer {
         String schema = "{\"type\":\"object\",\"required\":[\"queryId\"],"
                 + "\"properties\":{"
                 + "\"queryId\":{\"type\":\"string\",\"description\":\"queryId returned by a prior run_query call.\"},"
-                + "\"maxrows\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":10000,\"default\":100},"
+                + "\"maxrows\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":10000,\"default\":100,"
+                + "\"description\":\"Mondrian-side row cap. Use this for the FoodMart sample cube.\"},"
+                + "\"firstRowset\":{\"type\":\"integer\",\"minimum\":1,"
+                + "\"description\":\"Warehouse-side rowset cap (Snowflake/BigQuery/XMLA). Safe to supply on Mondrian — server falls back to MAXROWS automatically.\"},"
                 + "\"returns\":{\"type\":\"string\",\"description\":\"Optional comma-separated column list to project a subset.\"}"
                 + "},\"additionalProperties\":false}";
         Tool tool = Tool.builder()
@@ -221,8 +230,8 @@ public final class SaikuMcpServer {
                 .build();
         return spec(tool, (exchange, request) -> {
             Map<String, Object> a = request.arguments();
-            return jsonResult(
-                    () -> client.drillthrough(stringArg(a, "queryId"), optInt(a, "maxrows"), optString(a, "returns")));
+            return jsonResult(() -> client.drillthrough(
+                    stringArg(a, "queryId"), optInt(a, "maxrows"), optInt(a, "firstRowset"), optString(a, "returns")));
         });
     }
 

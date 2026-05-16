@@ -63,6 +63,15 @@ public class AiSchemaEnricher {
             return;
         }
 
+        if (parts.length == 2 && "dimensions".equals(parts[0])) {
+            AiSchema.Dimension d = schema.dimensions.get(AiSchema.key(parts[1]));
+            if (d == null) return;
+            SemanticAnnotationParser.DimensionAnnotations ann = SemanticAnnotationParser.parseDimension(raw);
+            if (ann.description != null) d.description = ann.description;
+            if (!ann.synonyms.isEmpty()) d.synonyms = ann.synonyms;
+            return;
+        }
+
         if (parts.length == 6
                 && "dimensions".equals(parts[0])
                 && "hierarchies".equals(parts[2])
@@ -98,12 +107,42 @@ public class AiSchemaEnricher {
                 schema.measureAliases.putIfAbsent(synKey, canonical);
             }
         }
-        for (AiSchema.Dimension d : schema.dimensions.values()) {
-            for (AiSchema.Hierarchy h : d.hierarchies.values()) {
+        for (Map.Entry<String, AiSchema.Dimension> de : schema.dimensions.entrySet()) {
+            String dimCanonical = de.getKey();
+            AiSchema.Dimension d = de.getValue();
+            // saiku#818 follow-up: register dim synonyms too.
+            for (String syn : d.synonyms) {
+                schema.dimensionAliases.putIfAbsent(AiSchema.key(syn), dimCanonical);
+            }
+            for (Map.Entry<String, AiSchema.Hierarchy> he : d.hierarchies.entrySet()) {
+                String hierCanonical = he.getKey();
+                AiSchema.Hierarchy h = he.getValue();
                 for (Map.Entry<String, AiSchema.Level> le : h.levels.entrySet()) {
-                    String canonical = le.getKey();
+                    String levelCanonical = le.getKey();
                     for (String syn : le.getValue().synonyms) {
-                        h.levelAliases.putIfAbsent(AiSchema.key(syn), canonical);
+                        String synKey = AiSchema.key(syn);
+                        h.levelAliases.putIfAbsent(synKey, levelCanonical);
+                        // saiku#818 follow-up: also surface a flat top-level view
+                        // so an agent gets the same overview for levels that
+                        // measureAliases/dimensionAliases already give. Same-named
+                        // levels across hierarchies (Time/Time/Quarter +
+                        // Time/Fiscal/Quarter) append rather than silently dropping.
+                        java.util.List<AiSchema.LevelAliasTarget> targets =
+                                schema.levelAliases.computeIfAbsent(synKey, k -> new java.util.ArrayList<>());
+                        // De-dupe — if the same synonym→target tuple appears via
+                        // both XML annotation and overlay, only register once.
+                        boolean exists = false;
+                        for (AiSchema.LevelAliasTarget t : targets) {
+                            if (dimCanonical.equals(t.dimension)
+                                    && hierCanonical.equals(t.hierarchy)
+                                    && levelCanonical.equals(t.level)) {
+                                exists = true;
+                                break;
+                            }
+                        }
+                        if (!exists) {
+                            targets.add(new AiSchema.LevelAliasTarget(dimCanonical, hierCanonical, levelCanonical));
+                        }
                     }
                 }
             }
