@@ -126,6 +126,23 @@ The response is dense — this is what makes the API self-describing:
     // …also picks up any Phase-3 displayName aliases…
   },
 
+  "dimensionAliases": {                                       // saiku#818 follow-up
+    "shopper":  "customer",
+    "buyer":    "customer",
+    "date":     "time"
+    // single canonical-key value per synonym — dimensions don't collide in a cube
+  },
+
+  "levelAliases": {                                           // saiku#818 follow-up
+    "quarterly": [{ "dimension": "time", "hierarchy": "time", "level": "quarter" }],
+    "qtr":       [{ "dimension": "time", "hierarchy": "time", "level": "quarter" }],
+    "nation":    [{ "dimension": "customer", "hierarchy": "customers", "level": "country" }]
+    // list-valued because the same level name can live in multiple hierarchies
+    // (e.g. Quarter in both Time/Time and Time/Fiscal). Each target carries
+    // canonical (dimension, hierarchy, level) keys so the agent can drill
+    // straight back into the schema maps without re-walking.
+  },
+
   "dimensions": {
     "time": {
       "name": "Time",
@@ -238,12 +255,20 @@ The response is dense — this is what makes the API self-describing:
    Every annotated level carries `cardinality` and (for time) `grain` so the
    agent maps "quarterly" / "by month" straight to the right level instead of
    guessing.
-7. **Input synonyms** — `measures[].name` and `rows[].level` / `columns[].level`
-   accept any entry from `measureAliases` / `levelAliases`. The agent can post
-   `{"measures": [{"name": "revenue"}]}` and the server resolves to
-   `[Measures].[Store Sales]` with no /schema round-trip. See "Display names +
-   semantic annotations" below for how XML annotations and the Phase-3 overlay
-   contribute aliases.
+7. **Input synonyms** — `measures[].name`, `rows[].dimension|level` /
+   `columns[].dimension|level` and `filters[].dimension|level` all accept any
+   entry from `measureAliases` / `dimensionAliases` / per-hierarchy
+   `levelAliases`. The agent can post `{"measures": [{"name": "revenue"}]}`
+   and the server resolves to `[Measures].[Store Sales]` with no /schema
+   round-trip. See "Display names + semantic annotations" below for how XML
+   annotations and the Phase-3 overlay contribute aliases.
+8. **Flat alias overview** — top-level `measureAliases`,
+   `dimensionAliases`, and `levelAliases` give an agent the whole synonym
+   set in one read, the same way the schema body gives it the whole name
+   set in one read. Resolution still happens against the per-hierarchy
+   `Hierarchy.levelAliases` map (the converter knows which hierarchy the
+   request named, so per-hierarchy is correct), but the top-level
+   overview is what an agent inspects when constructing the query.
 
 ---
 
@@ -434,6 +459,24 @@ can return a `VALIDATION_ERROR`:
 
 The contract for the agent is the same either way: read `field`, read
 `available[]`, fix and retry.
+
+**Self-correcting error messages.** Semantic-validator errors carry the
+literal fix in the `error` string when there is one. For example,
+putting the same hierarchy on both an axis AND a filter — Mondrian
+rejects that — produces:
+
+```json
+{
+  "status": "VALIDATION_ERROR",
+  "error":  "Hierarchy 'Time' is already on the rows/columns axis. Mondrian rejects the same hierarchy on two independent axes. Either move the filter members onto the axis selection's `members[]`, or filter on a different hierarchy/dimension.",
+  "field":  "filters[0].hierarchy",
+  "available": []
+}
+```
+
+The message names the conflict, explains *why*, and tells the agent the
+two ways out. `available[]` is empty here because the fix isn't a
+choice from a list — it's a structural change to the request shape.
 
 **Missing required filter (saiku#818 — opt-in per level).** When a level
 in the schema declares `requiredFilters`, the converter rejects any query
@@ -765,12 +808,19 @@ Example: "last 30 days of sales by product family":
       "<column caption>": {                        // Typed cell per measure/column.
         "value": 123.45,                           // Parsed number (Double) or null.
         "formatted": "123.45",                     // Mondrian's display string.
-        "unit": "USD"                              // Sniffed currency/% or null.
+        "unit": "USD",                             // Sniffed currency/% or null.
+        "properties": {                            // Raw Mondrian cell properties — client can re-format
+          "formatString":  "#,###.00",             //   locale-aware rather than relying on `formatted`.
+          "datatype":      "Numeric",              //   "Numeric" | "String" | "Boolean" | "DateTime" …
+          "actionType":    "256",                  //   Bitmap of MDSCHEMA action types (drillthrough etc.).
+          "fontFlags":     "0",                    //   Cell-formatting font hints (bold/italic bits).
+          "solveOrder":    "0"                     //   Calc-member solve order; 0 for plain measures.
+        }
       }
     }
   ],
   "matrix": [                                      // matrix format. Populated when format=matrix.
-    { "0": { "value": 123.45, "formatted": "123.45", "unit": null } }
+    { "0": { "value": 123.45, "formatted": "123.45", "unit": null, "properties": { /* … */ } } }
   ],
   "totalRows": 3,
   "runtimeMs": 421,
