@@ -123,17 +123,24 @@ public final class SaikuItHarness {
                 HttpResponse.BodyHandlers.ofString());
     }
 
-    /** Issue a POST against {@code path} with admin Basic auth + JSON body. */
+    /** Issue a POST against {@code path} with admin Basic auth + JSON body.
+     *  Retries once on the JDK HttpClient's transient
+     *  "HTTP/1.1 header parser received no bytes" — observed sporadically
+     *  when many tests share the same client across a short window. */
     public HttpResponse<String> postAuthJson(String path, String body) throws Exception {
-        return http.send(
-                HttpRequest.newBuilder(URI.create(baseUrl + path))
-                        .timeout(HTTP_TIMEOUT)
-                        .header("Authorization", adminBasicAuth)
-                        .header("Accept", "application/json")
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
+        HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl + path))
+                .timeout(HTTP_TIMEOUT)
+                .header("Authorization", adminBasicAuth)
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+        try {
+            return http.send(req, HttpResponse.BodyHandlers.ofString());
+        } catch (java.io.IOException ioe) {
+            Thread.sleep(100);
+            return http.send(req, HttpResponse.BodyHandlers.ofString());
+        }
     }
 
     /** Issue a GET against {@code path} without auth — used for testing the 401 path. */
@@ -147,8 +154,53 @@ public final class SaikuItHarness {
                 HttpResponse.BodyHandlers.ofString());
     }
 
+    /** Issue a DELETE against {@code path} with admin Basic auth. */
+    public HttpResponse<String> deleteAuth(String path) throws Exception {
+        return http.send(
+                HttpRequest.newBuilder(URI.create(baseUrl + path))
+                        .timeout(HTTP_TIMEOUT)
+                        .header("Authorization", adminBasicAuth)
+                        .DELETE()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** Issue a PUT against {@code path} with admin Basic auth + JSON body. */
+    public HttpResponse<String> putAuthJson(String path, String body) throws Exception {
+        return http.send(
+                HttpRequest.newBuilder(URI.create(baseUrl + path))
+                        .timeout(HTTP_TIMEOUT)
+                        .header("Authorization", adminBasicAuth)
+                        .header("Accept", "application/json")
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** Issue a POST against {@code path} with admin Basic auth + form-encoded body. */
+    public HttpResponse<String> postAuthForm(String path, String formBody) throws Exception {
+        return http.send(
+                HttpRequest.newBuilder(URI.create(baseUrl + path))
+                        .timeout(HTTP_TIMEOUT)
+                        .header("Authorization", adminBasicAuth)
+                        .header("Content-Type", "application/x-www-form-urlencoded")
+                        .POST(HttpRequest.BodyPublishers.ofString(formBody, StandardCharsets.UTF_8))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** Generic send escape hatch — for tests that need to roll their own request. */
+    public HttpResponse<String> send(HttpRequest req) throws Exception {
+        return http.send(req, HttpResponse.BodyHandlers.ofString());
+    }
+
     public JsonNode parse(HttpResponse<String> resp) throws Exception {
         return MAPPER.readTree(resp.body());
+    }
+
+    public String adminBasicAuth() {
+        return adminBasicAuth;
     }
 
     private void stopQuietly() {
