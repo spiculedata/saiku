@@ -56,6 +56,21 @@
             <version>1.7.36</version>
             <scope>runtime</scope>
         </dependency>
+
+        <!-- Integration test dependencies. JUnit + Jackson for JSON shape
+             assertions. JDK's java.net.http handles the wire calls. -->
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.18.6</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -93,6 +108,38 @@
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+            <!--
+              Integration tests boot the launcher's Jetty in-process via
+              SaikuLauncher.ServeCommand.bootServer(...). Bound to the
+              integration-test phase so they run AFTER prepare-package
+              stages target/classes/webapp/saiku.war via the copy-war
+              execution below. Gated by the {@code integration} profile
+              (see below) so `mvn verify` keeps the inner dev loop fast.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.5.2</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <includes>
+                        <include>**/*IT.java</include>
+                    </includes>
+                    <!-- Real OLAP queries are heavyweight; ITs run serially. -->
+                    <forkCount>1</forkCount>
+                    <reuseForks>true</reuseForks>
+                    <argLine>--add-opens=java.base/java.nio=ALL-UNNAMED</argLine>
+                    <!-- Default skip; the {@code integration} profile flips this on. -->
+                    <skipITs>true</skipITs>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -170,4 +217,24 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- Activate with `mvn verify -P integration` to actually run the
+             whole-API integration tests. The default reactor (CI's
+             `mvn verify`) leaves them skipped so day-to-day builds stay fast. -->
+        <profile>
+            <id>integration</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <skipITs>false</skipITs>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
