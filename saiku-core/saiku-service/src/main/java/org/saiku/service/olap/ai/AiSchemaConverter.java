@@ -23,6 +23,14 @@ import org.saiku.olap.query2.ThinQuery;
 public class AiSchemaConverter {
 
     /**
+     * Upper bound for {@link AiQueryRequest#getLimit()}. Anything above this
+     * is rejected with a {@code VALIDATION_ERROR} envelope so a bad agent
+     * request can't HEAD() a 100M-row set out of Mondrian. 10k matches the
+     * SPA's pager default; tune via patch if the deployment needs more.
+     */
+    public static final int AI_QUERY_LIMIT_MAX = 10_000;
+
+    /**
      * Convert + validate.
      *
      * @throws AiValidationException with field/available populated if any
@@ -48,6 +56,27 @@ public class AiSchemaConverter {
         }
         if (req.getMeasures() == null || req.getMeasures().isEmpty()) {
             throw new AiValidationException("measures", "At least one measure required", null);
+        }
+        // saiku#864: reject negative limit and clamp the upper bound. Limit
+        // semantics are "0 or absent = no cap" by design (documented in the
+        // schema field description), so 0 is fine — but a negative value
+        // silently routed to the no-cap path before this guard, and a
+        // 99,999,999-row HEAD() against a large cube is a memory bomb.
+        int limit = req.getLimit();
+        if (limit < 0) {
+            throw new AiValidationException(
+                    "limit",
+                    "limit must be >= 0. Use 0 (or omit) for no cap, or a positive integer up to " + AI_QUERY_LIMIT_MAX
+                            + ". Got " + limit + ".",
+                    null);
+        }
+        if (limit > AI_QUERY_LIMIT_MAX) {
+            throw new AiValidationException(
+                    "limit",
+                    "limit must be <= " + AI_QUERY_LIMIT_MAX
+                            + " to prevent unbounded result-set generation. Got " + limit
+                            + ". For larger result sets, page client-side or refine the query.",
+                    null);
         }
         // Reject duplicate measures up-front. Without this guard the records
         // renderer silently drops the duplicate's cell (same map-key collision

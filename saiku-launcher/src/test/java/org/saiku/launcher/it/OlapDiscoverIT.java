@@ -148,13 +148,16 @@ public class OlapDiscoverIT {
     }
 
     @Test
-    public void unknownConnection_returnsEmptyArray() throws Exception {
-        // OlapDiscoverResource swallows lookup exceptions and returns []
-        // rather than 404 — that's the documented contract.
+    public void unknownConnection_returns404WithTypedEnvelope() throws Exception {
+        // saiku#867 fix: unknown connection now surfaces as 404 with
+        // {status,field,value,error} envelope rather than a silent empty
+        // array — clients can tell "no connection by this name" apart
+        // from "connection has no schemas".
         HttpResponse<String> resp = harness.getAuth(BASE + "/no-such-conn");
-        assertEquals(200, resp.statusCode());
+        assertEquals(404, resp.statusCode());
         JsonNode body = harness.parse(resp);
-        assertTrue(body.isArray());
-        assertEquals(0, body.size());
+        assertEquals("NOT_FOUND", body.path("status").asText());
+        assertEquals("connection", body.path("field").asText());
+        assertEquals("no-such-conn", body.path("value").asText());
     }
 }

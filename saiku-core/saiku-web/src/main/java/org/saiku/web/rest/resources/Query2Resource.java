@@ -201,6 +201,20 @@ public class Query2Resource {
     @Path("/execute")
     public Response execute(ThinQuery tq, @Context HttpHeaders headers) {
         try {
+            // saiku#861: default ThinQuery.type when the client posts a body
+            // with mdx but no explicit type field. The Jackson-deserialized
+            // ThinQuery() default ctor leaves type=null; ThinQueryService
+            // helpers gate on Type.MDX.equals(type) which silently falls
+            // through to the QUERYMODEL path (or worse, the Mondrian
+            // executeOlapQuery cast-to-Query that ClassCastExceptions on
+            // DRILLTHROUGH).
+            if (tq != null && tq.getType() == null) {
+                if (tq.getMdx() != null && !tq.getMdx().isBlank()) {
+                    tq.setType(ThinQuery.Type.MDX);
+                } else if (tq.getQueryModel() != null) {
+                    tq.setType(ThinQuery.Type.QUERYMODEL);
+                }
+            }
             if (thinQueryService.isMdxDrillthrough(tq)) {
                 Long start = (new Date()).getTime();
                 ResultSet rs = thinQueryService.drillthrough(tq);
@@ -466,7 +480,7 @@ public class Query2Resource {
     @GET
     @Produces({"application/json"})
     @Path("/{queryname}/result/metadata/hierarchies/{hierarchy}/levels/{level}")
-    public List<SimpleCubeElement> getLevelMembers(
+    public Response getLevelMembers(
             @PathParam("queryname") String queryName,
             @PathParam("hierarchy") String hierarchyName,
             @PathParam("level") String levelName,
@@ -479,8 +493,29 @@ public class Query2Resource {
                     + "/hierarchies/" + hierarchyName + "/levels/" + levelName + "\tGET");
         }
         try {
-            return thinQueryService.getResultMetadataMembers(
+            List<SimpleCubeElement> members = thinQueryService.getResultMetadataMembers(
                     queryName, result, hierarchyName, levelName, searchString, searchLimit);
+            // saiku#863: null means the query name isn't in this session's
+            // per-user ThinQueryService context — either no /execute happened
+            // for this query yet, or the request lost session continuity
+            // (e.g. Basic auth with no shared cookie jar). Surface a typed
+            // 404 envelope rather than the JAX-RS default 204 No Content
+            // (which the SPA can't distinguish from "level has no members").
+            if (members == null) {
+                Map<String, Object> body = new java.util.LinkedHashMap<>();
+                body.put("status", "NOT_FOUND");
+                body.put("field", "queryname");
+                body.put("value", queryName);
+                body.put(
+                        "error",
+                        "No live query named '" + queryName
+                                + "' in this session. Re-issue POST /api/query/execute with this name to seed the per-session context, or check the session cookie is being sent.");
+                return Response.status(Response.Status.NOT_FOUND)
+                        .type(MediaType.APPLICATION_JSON)
+                        .entity(body)
+                        .build();
+            }
+            return Response.ok(members).type(MediaType.APPLICATION_JSON).build();
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ")", e);
             String error = ExceptionUtils.getRootCauseMessage(e);

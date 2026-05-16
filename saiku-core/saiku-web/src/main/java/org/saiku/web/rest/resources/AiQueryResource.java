@@ -517,7 +517,20 @@ public class AiQueryResource {
         String name = queryId;
         if (asyncQueryService != null) {
             AsyncQueryHandle h = asyncQueryService.get(queryId);
-            if (h != null) name = h.getQuery().getName();
+            if (h != null) {
+                name = h.getQuery().getName();
+                // saiku#862: re-attach the async query's ThinQuery + CellSet
+                // to THIS request's session-scoped ThinQueryService context.
+                // Without this, a drillthrough request that lands on a
+                // different session than the async submit (e.g. Basic-auth
+                // clients without a shared cookie jar; some load-balanced
+                // setups) hits an empty context map and the NPE-catch path
+                // surfaces "Unknown queryId" even though the handle is live.
+                if (thinQueryService.getContext(name) == null) {
+                    org.olap4j.CellSet cs = asyncQueryService.result(queryId);
+                    thinQueryService.registerExternalContext(h.getQuery(), cs);
+                }
+            }
         }
         // saiku#782: agents only have bare captions (the keys of each row in
         // a drillthrough response) — accept those and rewrite to the fully
@@ -662,7 +675,16 @@ public class AiQueryResource {
         String name = queryId;
         if (asyncQueryService != null) {
             AsyncQueryHandle h = asyncQueryService.get(queryId);
-            if (h != null) name = h.getQuery().getName();
+            if (h != null) {
+                name = h.getQuery().getName();
+                // saiku#862: re-attach the async result's cellset to this
+                // request's session-scoped ThinQueryService context so
+                // column discovery can resolve. See drillthrough() above.
+                if (thinQueryService.getContext(name) == null) {
+                    org.olap4j.CellSet cs = asyncQueryService.result(queryId);
+                    thinQueryService.registerExternalContext(h.getQuery(), cs);
+                }
+            }
         }
         try {
             List<Map<String, String>> cols = thinQueryService.drillthroughColumns(name);
