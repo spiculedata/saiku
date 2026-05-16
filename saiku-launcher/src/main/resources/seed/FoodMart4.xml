@@ -191,9 +191,34 @@
 
         <Hierarchies>
             <Hierarchy name='Stores' allMemberName='All Stores'>
-                <Level attribute='Store Country'/>
-                <Level attribute='Store State'/>
-                <Level attribute='Store City'/>
+                <!-- saiku#818 follow-up: annotate Store geo with the same synonyms
+                     Customer geo carries so the flat levelAliases map surfaces a
+                     2-target entry for "state" / "country" / "city". An agent
+                     reading the schema cannot silently pick one — it must
+                     reason from context ("store by state" → store target;
+                     "customer by state" → customer target). Multi-target makes
+                     ambiguity visible instead of hidden. -->
+                <Level attribute='Store Country'>
+                    <Annotations>
+                        <Annotation name="saiku.semantic.description">Store's country.</Annotation>
+                        <Annotation name="saiku.semantic.synonyms">nation, country code</Annotation>
+                        <Annotation name="saiku.semantic.cardinality">low</Annotation>
+                    </Annotations>
+                </Level>
+                <Level attribute='Store State'>
+                    <Annotations>
+                        <Annotation name="saiku.semantic.description">Store's state or province.</Annotation>
+                        <Annotation name="saiku.semantic.synonyms">state, province, region</Annotation>
+                        <Annotation name="saiku.semantic.cardinality">low</Annotation>
+                    </Annotations>
+                </Level>
+                <Level attribute='Store City'>
+                    <Annotations>
+                        <Annotation name="saiku.semantic.description">Store's city.</Annotation>
+                        <Annotation name="saiku.semantic.synonyms">town, locality</Annotation>
+                        <Annotation name="saiku.semantic.cardinality">medium</Annotation>
+                    </Annotations>
+                </Level>
                 <Level attribute='Store Name'/>
             </Hierarchy>
             <Hierarchy name='Store Size in SQFT'>
