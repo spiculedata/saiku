@@ -16,8 +16,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import java.util.Arrays;
-import java.util.LinkedHashSet;
 import org.junit.Test;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiQueryResponse;
