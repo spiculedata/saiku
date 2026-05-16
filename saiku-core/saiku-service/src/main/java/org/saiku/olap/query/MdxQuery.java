@@ -210,7 +210,7 @@ public class MdxQuery implements IQuery {
                 }
             }
         } catch (OlapException e) {
-            e.printStackTrace();
+            log.error("Failed to look up cube", e);
         }
 
         return null;

@@ -311,6 +311,12 @@ public class OlapMetaExplorer {
             Hierarchy h = findHierarchy(hierarchy, nativeCube);
 
             boolean search = StringUtils.isNotBlank(searchString);
+            // Pre-lowercase the search string once. The contains() check
+            // below lower-cases both the member name and caption, but the
+            // raw `searchString` was being compared as-is — so any query
+            // with mixed case (e.g. q="Excellent") returned zero hits
+            // because it was matched against the all-lower-case member.
+            String searchLower = search ? searchString.toLowerCase() : null;
             int found = 0;
             List<SimpleCubeElement> simpleMembers;
             if (h != null) {
@@ -354,8 +360,8 @@ public class OlapMetaExplorer {
                     }
                     for (Member m : lokuplist) {
                         if (search) {
-                            if (m.getName().toLowerCase().contains(searchString)
-                                    || m.getCaption().toLowerCase().contains(searchString)) {
+                            if (m.getName().toLowerCase().contains(searchLower)
+                                    || m.getCaption().toLowerCase().contains(searchLower)) {
                                 foundMembers.add(m);
                                 found++;
                             }

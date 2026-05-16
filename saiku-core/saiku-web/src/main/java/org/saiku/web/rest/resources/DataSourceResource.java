@@ -16,6 +16,7 @@
 package org.saiku.web.rest.resources;
 
 import com.qmino.miredot.annotations.ReturnType;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.Response.Status;
@@ -73,6 +74,7 @@ public class DataSourceResource {
      */
     @DELETE
     @Path("/{datasource}")
+    @RolesAllowed("ROLE_ADMIN")
     public Status deleteDatasource(@PathParam("datasource") String datasourceName) {
         datasourceService.removeDatasource(datasourceName);
         return (Status.GONE);
@@ -117,6 +119,7 @@ public class DataSourceResource {
     @Consumes({"application/json"})
     @Path("/{id}")
     @ReturnType("org.saiku.web.rest.objects.DataSourceMapper")
+    @RolesAllowed("ROLE_ADMIN")
     public Response updateDatasourceLocale(String locale, @PathParam("id") String id) {
         boolean overwrite = true;
         try {

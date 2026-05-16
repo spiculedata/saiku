@@ -46,4 +46,17 @@ public class SaikuOlapException extends Exception {
     public SaikuOlapException(String message, Throwable cause) {
         super(message, cause);
     }
+
+    /**
+     * Cause-first factory for use inside {@code catch} blocks. Always preserves
+     * the inner cause chain. Prefer this over {@code new SaikuOlapException(msg)}
+     * whenever a {@link Throwable} is in scope.
+     *
+     * @param cause   the underlying throwable; must not be null
+     * @param message human-readable summary, included verbatim in the surface
+     * @return a new SaikuOlapException wrapping {@code cause}
+     */
+    public static SaikuOlapException wrap(Throwable cause, String message) {
+        return new SaikuOlapException(message, cause);
+    }
 }

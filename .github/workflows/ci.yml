@@ -52,6 +52,31 @@ jobs:
         # that doesn't have spotless plugin bound). Keep the single step.
         run: mvn -B -ntp -DskipITs=false verify
 
+      - name: Verify test floors (saiku#8)
+        # Fails if any module's surefire test count drops below the floor
+        # declared in .github/test-floors.json. Catches accidental deletions
+        # of AI-query tests. Bump the floor explicitly when adding tests.
+        run: |
+          set -euo pipefail
+          FLOORS=.github/test-floors.json
+          fail=0
+          while IFS=$'\t' read -r module floor; do
+            reports="${module}/target/surefire-reports"
+            if [[ ! -d "$reports" ]]; then
+              echo "::error::No surefire-reports for ${module} — module did not run tests"
+              fail=1
+              continue
+            fi
+            total=$(grep -hoE 'tests="[0-9]+"' "${reports}"/TEST-*.xml \
+                      | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
+            echo "  ${module}: ${total} tests (floor ${floor})"
+            if (( total < floor )); then
+              echo "::error::${module} test count ${total} below floor ${floor} — did you delete a test?"
+              fail=1
+            fi
+          done < <(jq -r '.modules | to_entries[] | "\(.key)\t\(.value)"' "$FLOORS")
+          exit "$fail"
+
   dist:
     name: bundle (saiku-dist zip)
     runs-on: ubuntu-latest

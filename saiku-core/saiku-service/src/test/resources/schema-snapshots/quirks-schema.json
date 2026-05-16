@@ -1,0 +1,506 @@
+{
+  "cubeId" : "quirks_conn/QuirksCatalog/QuirksSchema/Quirks",
+  "cubeName" : "Quirks",
+  "cubeUniqueName" : "[quirks_conn].[QuirksCatalog].[QuirksSchema].[Quirks]",
+  "canonicalCube" : {
+    "connectionName" : "quirks_conn",
+    "catalog" : "QuirksCatalog",
+    "schema" : "QuirksSchema",
+    "cubeName" : "Quirks"
+  },
+  "measures" : {
+    "number of employees" : {
+      "name" : "Number of Employees",
+      "uniqueName" : "[Measures].[Number of Employees]",
+      "visible" : true,
+      "synonyms" : [ ]
+    },
+    "unit sales" : {
+      "name" : "Unit Sales",
+      "uniqueName" : "[Measures].[Unit Sales]",
+      "visible" : true,
+      "synonyms" : [ ]
+    }
+  },
+  "dimensions" : {
+    "customer" : {
+      "name" : "Customer",
+      "uniqueName" : "[Customer]",
+      "synonyms" : [ ],
+      "hierarchies" : {
+        "customers" : {
+          "name" : "Customers",
+          "uniqueName" : "[Customer].[Customers]",
+          "levels" : {
+            "(all)" : {
+              "name" : "(All)",
+              "uniqueName" : "[Customer].[Customers].[(All)]",
+              "sampleMembers" : [ ],
+              "synonyms" : [ ],
+              "requiredFilters" : [ ]
+            },
+            "country" : {
+              "name" : "Country",
+              "uniqueName" : "[Customer].[Customers].[Country]",
+              "sampleMembers" : [ ],
+              "synonyms" : [ ],
+              "requiredFilters" : [ ]
+            },
+            "state" : {
+              "name" : "State",
+              "uniqueName" : "[Customer].[Customers].[State]",
+              "sampleMembers" : [ ],
+              "synonyms" : [ ],
+              "requiredFilters" : [ ]
+            }
+          },
+          "levelAliases" : { }
+        },
+        "gender" : {
+          "name" : "Gender",
+          "uniqueName" : "[Customer].[Gender]",
+          "levels" : {
+            "(all)" : {
+              "name" : "(All)",
+              "uniqueName" : "[Customer].[Gender].[(All)]",
+              "sampleMembers" : [ ],
+              "synonyms" : [ ],
+              "requiredFilters" : [ ]
+            },
+            "gender" : {
+              "name" : "Gender",
+              "uniqueName" : "[Customer].[Gender].[Gender]",
+              "sampleMembers" : [ ],
+              "synonyms" : [ ],
+              "requiredFilters" : [ ]
+            }
+          },
+          "levelAliases" : { }
+        },
+        "marital status" : {
+          "name" : "Marital Status",
+          "uniqueName" : "[Customer].[Marital Status]",
+          "levels" : {
+            "(all)" : {
+              "name" : "(All)",
+              "uniqueName" : "[Customer].[Marital Status].[(All)]",
+              "sampleMembers" : [ ],
+              "synonyms" : [ ],
+              "requiredFilters" : [ ]
+            },
+            "marital status" : {
+              "name" : "Marital Status",
+              "uniqueName" : "[Customer].[Marital Status].[Marital Status]",
+              "sampleMembers" : [ ],
+              "synonyms" : [ ],
+              "requiredFilters" : [ ]
+            }
+          },
+          "levelAliases" : { }
+        }
+      },
+      "hierarchyAliases" : { }
+    },
+    "employee" : {
+      "name" : "Employee",
+      "uniqueName" : "[Employee]",
+      "synonyms" : [ ],
+      "hierarchies" : {
+        "employee$manager id$parent" : {
+          "name" : "Employee$Manager Id$Parent",
+          "uniqueName" : "[Employee].[Employee$Manager Id$Parent]",
+          "levels" : {
+            "(all)" : {
+              "name" : "(All)",
+              "uniqueName" : "[Employee].[Employee$Manager Id$Parent].[(All)]",
+              "sampleMembers" : [ ],
+              "synonyms" : [ ],
+              "requiredFilters" : [ ]
+            },
+            "closure" : {
+              "name" : "Closure",
+              "uniqueName" : "[Employee].[Employee$Manager Id$Parent].[Closure]",
+              "sampleMembers" : [ ],
+              "synonyms" : [ ],
+              "requiredFilters" : [ ]
+            },
+            "item" : {
+              "name" : "Item",
+              "uniqueName" : "[Employee].[Employee$Manager Id$Parent].[Item]",
+              "sampleMembers" : [ ],
+              "synonyms" : [ ],
+              "requiredFilters" : [ ]
+            }
+          },
+          "levelAliases" : { }
+        },
+        "salary" : {
+          "name" : "Salary",
+          "uniqueName" : "[Employee].[Salary]",
+          "levels" : {
+            "(all)" : {
+              "name" : "(All)",
+              "uniqueName" : "[Employee].[Salary].[(All)]",
+              "sampleMembers" : [ ],
+              "synonyms" : [ ],
+              "requiredFilters" : [ ]
+            },
+            "salary" : {
+              "name" : "Salary",
+              "uniqueName" : "[Employee].[Salary].[Salary]",
+              "sampleMembers" : [ ],
+              "synonyms" : [ ],
+              "requiredFilters" : [ ]
+            }
+          },
+          "levelAliases" : { }
+        }
+      },
+      "hierarchyAliases" : { }
+    },
+    "store2" : {
+      "name" : "Store2",
+      "uniqueName" : "[Store2]",
+      "synonyms" : [ ],
+      "hierarchies" : {
+        "store type" : {
+          "name" : "Store Type",
+          "uniqueName" : "[Store2].[Store Type]",
+          "levels" : {
+            "(all)" : {
+              "name" : "(All)",
+              "uniqueName" : "[Store2].[Store Type].[(All)]",
+              "sampleMembers" : [ ],
+              "synonyms" : [ ],
+              "requiredFilters" : [ ]
+            },
+            "store type" : {
+              "name" : "Store Type",
+              "uniqueName" : "[Store2].[Store Type].[Store Type]",
+              "sampleMembers" : [ ],
+              "synonyms" : [ ],
+              "requiredFilters" : [ ]
+            }
+          },
+          "levelAliases" : { }
+        }
+      },
+      "hierarchyAliases" : { }
+    },
+    "time" : {
+      "name" : "Time",
+      "uniqueName" : "[Time]",
+      "synonyms" : [ ],
+      "hierarchies" : {
+        "time" : {
+          "name" : "Time",
+          "uniqueName" : "[Time].[Time]",
+          "levels" : {
+            "quarter" : {
+              "name" : "Quarter",
+              "uniqueName" : "[Time].[Time].[Quarter]",
+              "sampleMembers" : [ ],
+              "synonyms" : [ ],
+              "requiredFilters" : [ ]
+            },
+            "year" : {
+              "name" : "Year",
+              "uniqueName" : "[Time].[Time].[Year]",
+              "sampleMembers" : [ ],
+              "synonyms" : [ ],
+              "requiredFilters" : [ ]
+            }
+          },
+          "levelAliases" : { }
+        }
+      },
+      "hierarchyAliases" : { }
+    }
+  },
+  "measureAliases" : { },
+  "dimensionAliases" : { },
+  "levelAliases" : { },
+  "suggestions" : [ ],
+  "examples" : [ {
+    "cube" : {
+      "connectionName" : "quirks_conn",
+      "catalog" : "QuirksCatalog",
+      "schema" : "QuirksSchema",
+      "cubeName" : "Quirks"
+    },
+    "measures" : [ {
+      "name" : "Unit Sales",
+      "aggregators" : [ ]
+    } ],
+    "rows" : [ {
+      "dimension" : "Time",
+      "hierarchy" : "Time",
+      "level" : "Year",
+      "members" : [ ]
+    } ],
+    "columns" : [ ],
+    "filters" : [ ],
+    "order" : [ ],
+    "limit" : 0,
+    "visualTotals" : false,
+    "nonEmpty" : true,
+    "namedSets" : [ ]
+  }, {
+    "cube" : {
+      "connectionName" : "quirks_conn",
+      "catalog" : "QuirksCatalog",
+      "schema" : "QuirksSchema",
+      "cubeName" : "Quirks"
+    },
+    "measures" : [ {
+      "name" : "Unit Sales",
+      "aggregators" : [ ]
+    } ],
+    "rows" : [ {
+      "dimension" : "Time",
+      "hierarchy" : "Time",
+      "level" : "Year",
+      "members" : [ ]
+    } ],
+    "columns" : [ ],
+    "filters" : [ ],
+    "order" : [ {
+      "by" : "Unit Sales",
+      "direction" : "desc",
+      "ascending" : false
+    } ],
+    "limit" : 10,
+    "visualTotals" : false,
+    "nonEmpty" : true,
+    "namedSets" : [ ]
+  }, {
+    "cube" : {
+      "connectionName" : "quirks_conn",
+      "catalog" : "QuirksCatalog",
+      "schema" : "QuirksSchema",
+      "cubeName" : "Quirks"
+    },
+    "measures" : [ {
+      "name" : "Unit Sales",
+      "aggregators" : [ ]
+    } ],
+    "rows" : [ {
+      "dimension" : "Time",
+      "hierarchy" : "Time",
+      "level" : "Year",
+      "members" : [ ]
+    } ],
+    "columns" : [ ],
+    "filters" : [ ],
+    "order" : [ ],
+    "limit" : 0,
+    "visualTotals" : true,
+    "nonEmpty" : true,
+    "namedSets" : [ ]
+  } ],
+  "requestSchema" : {
+    "$schema" : "https://json-schema.org/draft/2020-12/schema",
+    "description" : "Typed body for POST /saiku/api/ai/query. Every name field must resolve against the AiSchema returned by /ai/schema/{cubeId}. Display names from the enrichment overlay are also valid.",
+    "example" : {
+      "cube" : {
+        "catalog" : "FoodMart",
+        "connectionName" : "foodmart",
+        "cubeName" : "Sales",
+        "schema" : "FoodMart"
+      },
+      "measures" : [ {
+        "name" : "Store Sales"
+      } ],
+      "rows" : [ {
+        "dimension" : "Time",
+        "hierarchy" : "Time By",
+        "level" : "Year"
+      } ]
+    },
+    "properties" : {
+      "columns" : {
+        "description" : "Additional dimensions on the COLUMNS axis, cross-joined with measures.",
+        "items" : {
+          "description" : "A row or column axis entry.",
+          "properties" : {
+            "dimension" : {
+              "description" : "Dimension name (canonical or display).",
+              "type" : "string"
+            },
+            "hierarchy" : {
+              "description" : "Hierarchy name. Optional when the dimension has only one hierarchy.",
+              "type" : "string"
+            },
+            "level" : {
+              "description" : "Level name within the hierarchy.",
+              "type" : "string"
+            },
+            "members" : {
+              "description" : "Optional explicit MDX unique-name list. If absent, all members at the level are included.",
+              "items" : {
+                "type" : "string"
+              },
+              "type" : "array"
+            }
+          },
+          "required" : [ "dimension", "level" ],
+          "type" : "object"
+        },
+        "type" : "array"
+      },
+      "cube" : {
+        "description" : "Cube reference. All four fields required.",
+        "properties" : {
+          "catalog" : {
+            "description" : "Catalog name.",
+            "type" : "string"
+          },
+          "connectionName" : {
+            "description" : "Connection name from /ai/cubes.",
+            "type" : "string"
+          },
+          "cubeName" : {
+            "description" : "Cube name.",
+            "type" : "string"
+          },
+          "schema" : {
+            "description" : "Schema name.",
+            "type" : "string"
+          }
+        },
+        "required" : [ "connectionName", "catalog", "schema", "cubeName" ],
+        "type" : "object"
+      },
+      "filters" : {
+        "description" : "Slicer filters — applied in the MDX WHERE clause.",
+        "items" : {
+          "description" : "Slicer filter — lands in the WHERE clause.",
+          "properties" : {
+            "dimension" : {
+              "description" : "Dimension name.",
+              "type" : "string"
+            },
+            "hierarchy" : {
+              "description" : "Hierarchy name. Optional when dim has one hierarchy.",
+              "type" : "string"
+            },
+            "level" : {
+              "description" : "Level name.",
+              "type" : "string"
+            },
+            "members" : {
+              "description" : "MDX unique-name members. Required for in/not_in (>=1), between (exactly 2), descendants_of (exactly 1). Build them by joining the level's uniqueName with the member name (e.g. [Time].[Time By].[Year].&[1997]), or fetch ready-made via GET /ai/members/search.",
+              "items" : {
+                "type" : "string"
+              },
+              "type" : "array"
+            },
+            "n" : {
+              "default" : 1,
+              "description" : "Count for the last_n_* presets. Defaults to 1; ignored for other presets.",
+              "type" : "integer"
+            },
+            "op" : {
+              "default" : "in",
+              "description" : "Operator. 'in' (default) — emit the explicit member set. 'not_in' — emit Except(level.Members, {members}). 'between' — emit Range(start, end); members must have 2 entries. 'descendants_of' — emit Descendants(member, ALL); members must have 1 entry. 'relative' — emit a time-relative set; uses 'value' (and 'n' for last_n_*). 'members' is unused.",
+              "enum" : [ "in", "not_in", "between", "descendants_of", "relative" ],
+              "type" : "string"
+            },
+            "value" : {
+              "description" : "Relative preset (only when op=relative). last_n_days/months/quarters/years pick the most-recent N members on the level. ytd/mtd/qtd use Mondrian's Ytd()/Mtd()/Qtd() against the time dimension's default member. previous_period picks the member preceding the latest available member in the cube (NOT relative to wall-clock time — if the warehouse is stale, this is stale).",
+              "enum" : [ "last_n_days", "last_n_months", "last_n_quarters", "last_n_years", "ytd", "mtd", "qtd", "previous_period" ],
+              "type" : "string"
+            }
+          },
+          "required" : [ "dimension", "level" ],
+          "type" : "object"
+        },
+        "type" : "array"
+      },
+      "limit" : {
+        "default" : 0,
+        "description" : "Optional row cap. With order, emits TopCount/BottomCount; without order, emits HEAD(rows, N). 0 or absent = no cap.",
+        "type" : "integer"
+      },
+      "measures" : {
+        "description" : "At least one measure required. Goes on the COLUMNS axis.",
+        "items" : {
+          "description" : "Measure on the COLUMNS axis.",
+          "properties" : {
+            "name" : {
+              "description" : "Measure name (canonical or display).",
+              "type" : "string"
+            }
+          },
+          "required" : [ "name" ],
+          "type" : "object"
+        },
+        "type" : "array"
+      },
+      "nonEmpty" : {
+        "default" : true,
+        "description" : "If true (default), strip rows/columns whose every cell is empty.",
+        "type" : "boolean"
+      },
+      "order" : {
+        "description" : "Optional sort. Each entry is {by: measureName, direction: asc|desc}. Combined with limit, emits TopCount/BottomCount; alone, emits Order.",
+        "items" : {
+          "description" : "Sort entry. With a non-zero limit, emits TopCount/BottomCount.",
+          "properties" : {
+            "by" : {
+              "description" : "Measure name to sort by. Must match one of the request's measures.",
+              "type" : "string"
+            },
+            "direction" : {
+              "default" : "desc",
+              "description" : "Sort direction. Default desc.",
+              "enum" : [ "asc", "desc" ],
+              "type" : "string"
+            }
+          },
+          "required" : [ "by" ],
+          "type" : "object"
+        },
+        "type" : "array"
+      },
+      "rows" : {
+        "description" : "Axis entries that go on ROWS. Multiple entries are CROSSJOIN-ed.",
+        "items" : {
+          "description" : "A row or column axis entry.",
+          "properties" : {
+            "dimension" : {
+              "description" : "Dimension name (canonical or display).",
+              "type" : "string"
+            },
+            "hierarchy" : {
+              "description" : "Hierarchy name. Optional when the dimension has only one hierarchy.",
+              "type" : "string"
+            },
+            "level" : {
+              "description" : "Level name within the hierarchy.",
+              "type" : "string"
+            },
+            "members" : {
+              "description" : "Optional explicit MDX unique-name list. If absent, all members at the level are included.",
+              "items" : {
+                "type" : "string"
+              },
+              "type" : "array"
+            }
+          },
+          "required" : [ "dimension", "level" ],
+          "type" : "object"
+        },
+        "type" : "array"
+      },
+      "visualTotals" : {
+        "default" : false,
+        "description" : "If true, wrap the rows axis in VISUALTOTALS so parent totals reflect only the visible members.",
+        "type" : "boolean"
+      }
+    },
+    "required" : [ "cube", "measures" ],
+    "title" : "AiQueryRequest",
+    "type" : "object"
+  }
+}

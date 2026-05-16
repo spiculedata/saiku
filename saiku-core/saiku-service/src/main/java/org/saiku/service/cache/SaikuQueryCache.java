@@ -20,6 +20,10 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
@@ -68,6 +72,12 @@ public class SaikuQueryCache {
     private final Cache<String, Entry> index;
     private final ObjectMapper mapper = new ObjectMapper();
     private final ReentrantLock writeLock = new ReentrantLock();
+    /** Single-thread daemon executor that runs evictIfOverBudget() off the
+     *  put() write path. The previous implementation called eviction
+     *  synchronously while holding writeLock — eviction walks every meta
+     *  sidecar on disk so under load it could stall concurrent queries for
+     *  hundreds of ms. FIFO ordering keeps eviction deterministic. */
+    private final ExecutorService evictionExecutor;
 
     /** Metadata sidecar record. Public for Jackson. */
     public static final class Entry {
@@ -119,6 +129,12 @@ public class SaikuQueryCache {
         this.maxSizeBytes = maxSizeBytes;
         this.enabled = enabled;
         this.index = Caffeine.newBuilder().maximumSize(512).build();
+        ThreadFactory tf = r -> {
+            Thread t = new Thread(r, "SaikuQueryCache-eviction");
+            t.setDaemon(true);
+            return t;
+        };
+        this.evictionExecutor = Executors.newSingleThreadExecutor(tf);
         try {
             Files.createDirectories(cacheDir);
             // Warm the in-memory index from disk so eviction sees existing entries.
@@ -249,13 +265,16 @@ public class SaikuQueryCache {
             mapper.writerWithDefaultPrettyPrinter().writeValue(metaTmp.toFile(), e);
             Files.move(metaTmp, meta, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             index.put(key, e);
-
-            evictIfOverBudget();
         } catch (IOException ex) {
             log.warn("SaikuQueryCache.put({}) failed: {}", key, ex.toString());
         } finally {
             writeLock.unlock();
         }
+        // Eviction walks every .meta.json on disk + invalidates victims, which
+        // re-acquires writeLock — running it inline blocks the next put()/get()
+        // until the walk finishes. Run on the daemon executor instead so
+        // requests aren't stalled by the budget check.
+        evictionExecutor.submit(this::evictIfOverBudget);
     }
 
     public void invalidate(String key) {
@@ -362,14 +381,31 @@ public class SaikuQueryCache {
     }
 
     /**
-     * No executor or threadpool to tear down here — the cache is purely
-     * disk + Caffeine + ReentrantLock. This exists for symmetry with
-     * {@link org.saiku.service.async.AsyncQueryService#shutdown()} so the
-     * bean container (or a @PreDestroy-aware test) has a single, known
-     * point of shutdown.
+     * Drain any queued eviction tasks. Intended for tests that need to assert
+     * post-eviction state — production callers should never need to flush.
      */
+    public void flushEvictions() {
+        try {
+            Future<?> drained = evictionExecutor.submit(() -> {});
+            drained.get(30, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.debug("flushEvictions interrupted: {}", e.toString());
+        }
+    }
+
+    /**
+     * Test hook: submit an arbitrary task to the eviction executor. Lets tests
+     * verify that put() does not block on the executor by parking a sentinel
+     * task. Package-visible by design — public so the test in another package
+     * can call it without reflection.
+     */
+    public Future<?> submitEvictionTask(Runnable task) {
+        return evictionExecutor.submit(task);
+    }
+
     @PreDestroy
     public void shutdown() {
         index.invalidateAll();
+        evictionExecutor.shutdownNow();
     }
 }

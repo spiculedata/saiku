@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Saiku demo container entrypoint.
+#
+# Dispatches the container's argv to one of the bundled JARs:
+#
+#   serve            -> saiku launcher (REST + UI on :8080)
+#                       Forwards any extra args to the launcher's
+#                       Picocli `serve` subcommand.
+#   mcp              -> saiku-mcp stdio server, talking to the
+#                       launcher at $SAIKU_URL (default
+#                       http://localhost:8080).
+#   <anything else>  -> exec'd verbatim, useful for `docker run --rm
+#                       saiku java -version` style introspection.
+#
+# Default CMD is `serve` (see Dockerfile).
+set -euo pipefail
+
+case "${1:-serve}" in
+  serve)
+    shift || true
+    exec java -jar /app/saiku.jar serve \
+      --host 0.0.0.0 \
+      --port 8080 \
+      --home "${SAIKU_HOME:-/app/saiku-home}" \
+      "$@"
+    ;;
+  mcp)
+    shift || true
+    # MCP is a stdio JSON-RPC loop; the launcher should already be
+    # running (either in this container, or in a separate one if you
+    # set SAIKU_URL to point at it). Logging goes to stderr so it
+    # doesn't collide with the JSON-RPC framing on stdout.
+    exec java -jar /app/saiku-mcp.jar "$@"
+    ;;
+  *)
+    exec "$@"
+    ;;
+esac

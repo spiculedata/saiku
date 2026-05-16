@@ -21,6 +21,12 @@ public class ThinCalculatedMember {
     private String formula;
     private String hierarchyName;
     private String assignedLevel;
+    /** Whether the calculated member should appear in analyst-facing UIs.
+     *  Mirrors the schema-level {@code visible="false"} attribute on
+     *  {@code <CalculatedMember>} (saiku#778). Defaults to true so legacy
+     *  WITH-MEMBER bodies that don't set it keep the existing
+     *  always-show behaviour. */
+    private Boolean visible = true;
 
     public ThinCalculatedMember() {}
 
@@ -157,5 +163,14 @@ public class ThinCalculatedMember {
 
     public void setAssignedLevel(String assignedLevel) {
         this.assignedLevel = assignedLevel;
+    }
+
+    /** @see #visible */
+    public Boolean isVisible() {
+        return visible;
+    }
+
+    public void setVisible(Boolean visible) {
+        this.visible = visible;
     }
 }

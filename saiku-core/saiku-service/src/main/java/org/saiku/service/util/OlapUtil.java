@@ -15,13 +15,13 @@
  */
 package org.saiku.service.util;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.olap4j.CellSet;
 
 class OlapUtil {
 
-    private static final Map<String, CellSet> cellSetMap = new HashMap<>();
+    private static final Map<String, CellSet> cellSetMap = new ConcurrentHashMap<>();
 
     /**
      * storeCellSet stores a cellset generated from a query so we can manipulate it at a later date.
@@ -30,9 +30,6 @@ class OlapUtil {
      * @param queryId
      */
     public static void storeCellSet(final String queryId, final CellSet cellSet) {
-        if (cellSetMap.containsKey(queryId)) {
-            cellSetMap.remove(queryId);
-        }
         cellSetMap.put(queryId, cellSet);
     }
 

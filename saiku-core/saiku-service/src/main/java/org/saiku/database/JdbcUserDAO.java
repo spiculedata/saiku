@@ -13,6 +13,8 @@ import java.util.Properties;
 import org.apache.commons.lang3.ArrayUtils;
 import org.saiku.UserDAO;
 import org.saiku.database.dto.SaikuUser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.support.JdbcDaoSupport;
@@ -20,6 +22,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
+
+    private static final Logger log = LoggerFactory.getLogger(JdbcUserDAO.class);
 
     private final Properties prop = new Properties();
     private final ClassLoader loader = Thread.currentThread().getContextClassLoader();
@@ -37,7 +41,7 @@ public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
             try (InputStream in = stream) {
                 prop.load(in);
             } catch (IOException e) {
-                e.printStackTrace();
+                log.error("Failed to load database-queries.properties", e);
             }
         }
     }

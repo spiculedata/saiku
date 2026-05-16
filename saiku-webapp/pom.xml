@@ -2,11 +2,11 @@
     <parent>
         <artifactId>saiku</artifactId>
         <groupId>org.saikuanalytics</groupId>
-        <version>4.0.1</version>
+        <version>4.1.0</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
     <artifactId>saiku-webapp</artifactId>
-    <version>4.0.1</version>
+    <version>4.1.0</version>
     <name>saiku - webapp</name>
     <packaging>war</packaging>
     <build>
@@ -14,7 +14,7 @@
             <plugin>
                 <groupId>org.apache.felix</groupId>
                 <artifactId>maven-bundle-plugin</artifactId>
-                <version>2.3.7</version>
+                <version>5.1.9</version>
                 <extensions>true</extensions>
 
                 <configuration>
@@ -126,7 +126,7 @@
             </plugin>
             <plugin>
                 <artifactId>maven-resources-plugin</artifactId>
-                <version>2.7</version>
+                <version>3.3.1</version>
                 <executions>
                     <execution>
                         <id>copy-resources</id>
@@ -410,7 +410,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jxr-plugin</artifactId>
-                <version>2.1</version>
+                <version>3.4.0</version>
                 <configuration>
                     <aggregate>true</aggregate>
                 </configuration>

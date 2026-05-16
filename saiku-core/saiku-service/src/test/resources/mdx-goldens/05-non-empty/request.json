@@ -1,0 +1,7 @@
+{
+  "measures": [{ "name": "Unit Sales" }],
+  "rows": [
+    { "dimension": "Customer", "hierarchy": "Gender", "level": "Gender" }
+  ],
+  "nonEmpty": false
+}

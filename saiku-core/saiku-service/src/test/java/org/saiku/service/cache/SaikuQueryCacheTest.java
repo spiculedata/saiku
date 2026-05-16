@@ -142,9 +142,46 @@ public class SaikuQueryCacheTest {
         Thread.sleep(10);
         tiny.get("new", "v", supplierProducing(newPayload, 1L, 1, calls));
 
+        // Eviction runs off the write path (saiku#780 perf). Drain pending
+        // eviction tasks before asserting on-disk state.
+        tiny.flushEvictions();
+
         assertFalse("oldest arrow should have been evicted", Files.exists(cacheDir.resolve("old.arrow")));
         assertFalse("oldest meta should have been evicted", Files.exists(cacheDir.resolve("old.meta.json")));
         assertTrue("newest arrow should be present", Files.exists(cacheDir.resolve("new.arrow")));
+    }
+
+    @Test
+    public void put_does_not_block_on_eviction_walk() throws Exception {
+        // Verifies the eviction scan happens on a background thread rather than
+        // inside put()'s writeLock. We force the eviction executor to block on
+        // a latch and then time how long put() takes — it must return promptly
+        // even though the background eviction is still pending.
+        SaikuQueryCache tiny = new SaikuQueryCache(cacheDir, TimeUnit.MINUTES.toMillis(30), 150L, true);
+        java.util.concurrent.CountDownLatch hold = new java.util.concurrent.CountDownLatch(1);
+        AtomicInteger calls = new AtomicInteger(0);
+
+        // Park a long-running task on the eviction executor so any
+        // synchronous "wait for eviction" code path would block.
+        tiny.submitEvictionTask(() -> {
+            try {
+                hold.await();
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+        });
+
+        byte[] payload = new byte[100];
+        long t0 = System.nanoTime();
+        tiny.get("a", "v", supplierProducing(payload, 1L, 1, calls));
+        long elapsedMs = (System.nanoTime() - t0) / 1_000_000L;
+
+        // Release the parked task so the executor can shut down cleanly.
+        hold.countDown();
+
+        // Even with a blocked executor, put() must return without waiting on it.
+        // 250ms is generous — a synchronous wait on the latch would never return.
+        assertTrue("put() must not block on eviction executor; took " + elapsedMs + "ms", elapsedMs < 250L);
     }
 
     @Test

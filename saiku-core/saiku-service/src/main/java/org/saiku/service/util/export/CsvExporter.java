@@ -220,7 +220,7 @@ public class CsvExporter {
                 return output.getBytes(SaikuProperties.webExportCsvTextEncoding); // $NON-NLS-1$
             }
         } catch (Throwable e) {
-            throw new SaikuServiceException("Error creating csv export for query"); // $NON-NLS-1$
+            throw new SaikuServiceException("Error creating csv export for query", e); // $NON-NLS-1$
         }
         return new byte[0];
     }

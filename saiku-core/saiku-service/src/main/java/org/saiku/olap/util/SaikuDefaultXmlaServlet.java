@@ -28,6 +28,8 @@ import mondrian.xmla.impl.DefaultXmlaServlet;
 import org.olap4j.OlapConnection;
 import org.saiku.datasources.connection.IConnectionManager;
 import org.saiku.olap.util.exception.SaikuOlapException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.web.context.support.WebApplicationContextUtils;
 
@@ -36,6 +38,7 @@ import org.springframework.web.context.support.WebApplicationContextUtils;
  */
 public class SaikuDefaultXmlaServlet extends DefaultXmlaServlet {
 
+    private static final Logger log = LoggerFactory.getLogger(SaikuDefaultXmlaServlet.class);
     private static IConnectionManager connections;
 
     public SaikuDefaultXmlaServlet() {
@@ -64,7 +67,7 @@ public class SaikuDefaultXmlaServlet extends DefaultXmlaServlet {
                     connections.refreshAllConnections();
                     return connections.getOlapConnection(System.getProperty("xmla_datasource"));
                 } catch (SaikuOlapException e) {
-                    e.printStackTrace();
+                    log.error("XMLA connection refresh failed", e);
                 }
                 return null;
             }

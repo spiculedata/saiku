@@ -153,8 +153,8 @@ public abstract class AbstractConnectionManager implements IConnectionManager, S
             try {
                 refreshConnection(name);
             } catch (Exception ex) {
-                // Display the exception but continue to load the connections
-                ex.printStackTrace();
+                // Log but continue so one broken datasource doesn't sink the rest
+                log.error("Failed to refresh connection {}", name, ex);
             }
         }
     }
