@@ -169,6 +169,62 @@ public class OlapAiCubeMetadataServiceTest {
         assertTrue("Product dim survives", schema.dimensions.containsKey(AiSchema.key("Product")));
     }
 
+    /* ----- saiku#877 per-loop defensive catches ----- */
+
+    /**
+     * If one dimension's hierarchy/level walk throws (e.g. Calcite-H2
+     * introspection failing under mondrian-saiku#30), the dimensions
+     * that come AFTER it in the iteration must still be registered.
+     * Before the fix the outer dim-loop catch swallowed the throw and
+     * ended iteration — every dimension after the broken one was
+     * silently dropped from {@code schema.dimensions}.
+     */
+    @Test
+    public void buildSchema_brokenDimensionDoesNotAbortRemainingDimensions() {
+        OlapAiCubeMetadataService brokenSvc = new OlapAiCubeMetadataService();
+        brokenSvc.setDiscoverService(new BrokenMiddleDimDiscover());
+        AiSchema schema = brokenSvc.getSchema(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+
+        assertTrue("Time dim survives", schema.dimensions.containsKey(AiSchema.key("Time")));
+        assertTrue(
+                "Product dim survives even though Broken was in between",
+                schema.dimensions.containsKey(AiSchema.key("Product")));
+    }
+
+    /**
+     * If one hierarchy's level walk throws, the dimension itself should
+     * still register with whatever other hierarchies did succeed. The
+     * partial hierarchy may be missing or empty — that's fine — but the
+     * dimension's other hierarchies must not be lost.
+     */
+    @Test
+    public void buildSchema_brokenHierarchyDoesNotAbortRemainingHierarchies() {
+        OlapAiCubeMetadataService brokenSvc = new OlapAiCubeMetadataService();
+        brokenSvc.setDiscoverService(new BrokenHierarchyDiscover());
+        AiSchema schema = brokenSvc.getSchema(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+
+        AiSchema.Dimension time = schema.dimensions.get(AiSchema.key("Time"));
+        assertNotNull("Time dim itself still registered", time);
+        assertTrue("good hierarchy survives", time.hierarchies.containsKey(AiSchema.key("Time By")));
+    }
+
+    /**
+     * A single broken level (the failure mode reported on demo.saiku.bi)
+     * must not prevent the OTHER levels in the same hierarchy from
+     * being registered, and the hierarchy + dimension must still appear.
+     */
+    @Test
+    public void buildSchema_brokenLevelDoesNotAbortRemainingLevels() {
+        OlapAiCubeMetadataService brokenSvc = new OlapAiCubeMetadataService();
+        brokenSvc.setDiscoverService(new BrokenLevelDiscover());
+        AiSchema schema = brokenSvc.getSchema(new AiCubeRef("foodmart", "FoodMart", "FoodMart", "Sales"));
+
+        AiSchema.Hierarchy timeBy =
+                schema.dimensions.get(AiSchema.key("Time")).hierarchies.get(AiSchema.key("Time By"));
+        assertNotNull("hierarchy still registered when one level fails", timeBy);
+        assertTrue("good level (Year) survives", timeBy.levels.containsKey(AiSchema.key("Year")));
+    }
+
     /* ----- saiku#778 visible flag ----- */
 
     /**
@@ -409,6 +465,149 @@ public class OlapAiCubeMetadataServiceTest {
                 throw new RuntimeException("synthetic: Quarter unqueryable for saiku#810 test");
             }
             return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Inserts a "Broken" dimension between Time and Product whose
+     * hierarchy fetch throws. Simulates the mondrian-saiku#30 failure
+     * mode where Calcite blows up inside the dimension walk.
+     */
+    private static class BrokenMiddleDimDiscover extends StubDiscover {
+        @Override
+        public List<SaikuDimension> getAllDimensions(SaikuCube cube) throws SaikuServiceException {
+            List<SaikuDimension> base = new ArrayList<>(super.getAllDimensions(cube));
+            // Broken dim: empty hierarchies → triggers fallback to
+            // getAllDimensionHierarchies, which throws below.
+            SaikuDimension broken = new SaikuDimension("Broken", "[Broken]", "Broken", "", true, new ArrayList<>());
+            // Insert AFTER Time, BEFORE Product so we can assert Product survives.
+            base.add(2, broken);
+            return base;
+        }
+
+        @Override
+        public List<SaikuHierarchy> getAllDimensionHierarchies(SaikuCube cube, String dimensionName) {
+            if ("Broken".equals(dimensionName)) {
+                throw new RuntimeException("synthetic: Calcite introspection failed for Broken");
+            }
+            return super.getAllDimensionHierarchies(cube, dimensionName);
+        }
+    }
+
+    /**
+     * Time dimension declares two hierarchies — Time By (the good one
+     * from the base stub) and Broken Hier (which has no levels and
+     * triggers a throwing fallback). Used to verify per-hierarchy
+     * isolation so Time By isn't lost when Broken Hier blows up.
+     */
+    private static class BrokenHierarchyDiscover extends StubDiscover {
+        @Override
+        public List<SaikuDimension> getAllDimensions(SaikuCube cube) throws SaikuServiceException {
+            // Rebuild Time with TWO hierarchies — Time By (good) + Broken (bad).
+            // Use the base stub's hierarchies as the source of truth.
+            List<SaikuDimension> base = new ArrayList<>(super.getAllDimensions(cube));
+            for (int i = 0; i < base.size(); i++) {
+                SaikuDimension dim = base.get(i);
+                if (!"Time".equals(dim.getName())) continue;
+                List<SaikuHierarchy> hiers = new ArrayList<>(dim.getHierarchies());
+                hiers.add(new SaikuHierarchy(
+                        "Broken Hier",
+                        "[Time].[Broken Hier]",
+                        "Broken Hier",
+                        "",
+                        "[Time]",
+                        true,
+                        new ArrayList<>(),
+                        new ArrayList<>()));
+                base.set(
+                        i,
+                        new SaikuDimension(
+                                dim.getName(),
+                                dim.getUniqueName(),
+                                dim.getCaption(),
+                                dim.getDescription(),
+                                true,
+                                hiers));
+            }
+            return base;
+        }
+
+        @Override
+        public List<SaikuLevel> getAllHierarchyLevels(SaikuCube cube, String dimensionName, String hierarchyName) {
+            if ("Broken Hier".equals(hierarchyName)) {
+                throw new RuntimeException("synthetic: Calcite introspection failed for Broken Hier");
+            }
+            return super.getAllHierarchyLevels(cube, dimensionName, hierarchyName);
+        }
+    }
+
+    /**
+     * Throws when fetching annotations on a specific level — exercises
+     * the per-level catch. Year + Quarter both exist on Time By; one
+     * blows up, the other must still register.
+     */
+    private static class BrokenLevelDiscover extends StubDiscover {
+        @Override
+        public List<SaikuDimension> getAllDimensions(SaikuCube cube) throws SaikuServiceException {
+            List<SaikuDimension> base = new ArrayList<>(super.getAllDimensions(cube));
+            // Replace Quarter level with one whose annotations getter throws.
+            for (int i = 0; i < base.size(); i++) {
+                SaikuDimension dim = base.get(i);
+                if (!"Time".equals(dim.getName())) continue;
+                List<SaikuHierarchy> newHiers = new ArrayList<>();
+                for (SaikuHierarchy h : dim.getHierarchies()) {
+                    List<SaikuLevel> newLevels = new ArrayList<>();
+                    for (SaikuLevel l : h.getLevels()) {
+                        if ("Quarter".equals(l.getName())) {
+                            // SaikuLevel constructor takes an annotations map; substitute a
+                            // map that throws on any access to simulate a discover-time blowup.
+                            newLevels.add(new SaikuLevel(
+                                    l.getName(),
+                                    l.getUniqueName(),
+                                    l.getCaption(),
+                                    l.getDescription(),
+                                    l.getDimensionUniqueName(),
+                                    l.getHierarchyUniqueName(),
+                                    true,
+                                    l.getLevelType(),
+                                    new java.util.HashMap<>() {
+                                        @Override
+                                        public String get(Object key) {
+                                            throw new RuntimeException(
+                                                    "synthetic: annotations fetch failed for Quarter");
+                                        }
+
+                                        @Override
+                                        public java.util.Set<java.util.Map.Entry<String, String>> entrySet() {
+                                            throw new RuntimeException(
+                                                    "synthetic: annotations fetch failed for Quarter");
+                                        }
+                                    }));
+                        } else {
+                            newLevels.add(l);
+                        }
+                    }
+                    newHiers.add(new SaikuHierarchy(
+                            h.getName(),
+                            h.getUniqueName(),
+                            h.getCaption(),
+                            h.getDescription(),
+                            h.getDimensionUniqueName(),
+                            true,
+                            newLevels,
+                            new ArrayList<>()));
+                }
+                base.set(
+                        i,
+                        new SaikuDimension(
+                                dim.getName(),
+                                dim.getUniqueName(),
+                                dim.getCaption(),
+                                dim.getDescription(),
+                                true,
+                                newHiers));
+            }
+            return base;
         }
     }
 

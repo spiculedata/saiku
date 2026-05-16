@@ -243,59 +243,30 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
             log.warn("getMeasures failed for {}", cube.getUniqueName(), e);
         }
 
+        // saiku#877: per-loop try/catch so one bad dim/hier/level doesn't
+        // truncate the rest. Pre-fix, the single outer catch ended dim
+        // iteration on the first throw inside any hierarchy/level walk —
+        // e.g. mondrian-saiku#30's Calcite-H2 introspection blowup made
+        // every dimension after the broken one silently vanish, leaving
+        // dimensionAliases pointing at dimensions that were absent.
+        List<SaikuDimension> dims;
         try {
-            for (SaikuDimension dim : discoverService.getAllDimensions(cube)) {
-                // Skip the Measures dimension — already covered by measures map.
-                if ("Measures".equalsIgnoreCase(dim.getName())) continue;
-                AiSchema.Dimension d = new AiSchema.Dimension(dim.getName(), dim.getUniqueName());
-                if (dim.getDescription() != null && !dim.getDescription().isEmpty()) {
-                    d.description = dim.getDescription();
-                }
-                // saiku#818 follow-up: project dimension-level annotations.
-                SemanticAnnotationParser.DimensionAnnotations dann =
-                        SemanticAnnotationParser.parseDimension(dim.getAnnotations());
-                if (dann.description != null) d.description = dann.description;
-                if (!dann.synonyms.isEmpty()) d.synonyms = dann.synonyms;
-                List<SaikuHierarchy> hiers = dim.getHierarchies();
-                if (hiers == null || hiers.isEmpty()) {
-                    hiers = discoverService.getAllDimensionHierarchies(cube, dim.getName());
-                }
-                if (hiers != null) {
-                    for (SaikuHierarchy h : hiers) {
-                        AiSchema.Hierarchy hh = new AiSchema.Hierarchy(h.getName(), h.getUniqueName());
-                        if (h.getDescription() != null && !h.getDescription().isEmpty()) {
-                            hh.description = h.getDescription();
-                        }
-                        List<SaikuLevel> levels = h.getLevels();
-                        if (levels == null || levels.isEmpty()) {
-                            levels = discoverService.getAllHierarchyLevels(cube, dim.getName(), h.getName());
-                        }
-                        if (levels != null) {
-                            for (SaikuLevel lvl : levels) {
-                                AiSchema.Level l = new AiSchema.Level(lvl.getName(), lvl.getUniqueName());
-                                if (lvl.getDescription() != null
-                                        && !lvl.getDescription().isEmpty()) {
-                                    l.description = lvl.getDescription();
-                                }
-                                // saiku#818: project saiku.semantic.* annotations onto the typed fields.
-                                SemanticAnnotationParser.LevelAnnotations lann =
-                                        SemanticAnnotationParser.parseLevel(lvl.getAnnotations());
-                                if (lann.description != null) l.description = lann.description;
-                                if (!lann.synonyms.isEmpty()) l.synonyms = lann.synonyms;
-                                if (lann.cardinality != null) l.cardinality = lann.cardinality;
-                                if (lann.grain != null) l.grain = lann.grain;
-                                if (!lann.requiredFilters.isEmpty()) l.requiredFilters = lann.requiredFilters;
-                                populateSampleMembers(l, cube, h.getName(), lvl.getName());
-                                hh.levels.put(AiSchema.key(lvl.getName()), l);
-                            }
-                        }
-                        d.hierarchies.put(AiSchema.key(h.getName()), hh);
-                    }
-                }
-                schema.dimensions.put(AiSchema.key(dim.getName()), d);
-            }
+            dims = discoverService.getAllDimensions(cube);
         } catch (RuntimeException e) {
             log.warn("getAllDimensions failed for {}", cube.getUniqueName(), e);
+            dims = null;
+        }
+        if (dims != null) {
+            for (SaikuDimension dim : dims) {
+                // Skip the Measures dimension — already covered by measures map.
+                if ("Measures".equalsIgnoreCase(dim.getName())) continue;
+                try {
+                    AiSchema.Dimension d = buildDimension(cube, dim);
+                    schema.dimensions.put(AiSchema.key(dim.getName()), d);
+                } catch (RuntimeException e) {
+                    log.warn("Skipping dimension {} of {} — discover failed", dim.getName(), cube.getUniqueName(), e);
+                }
+            }
         }
 
         // saiku#818: register synonyms from XML annotations into the alias maps so
@@ -322,6 +293,118 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         }
 
         return schema;
+    }
+
+    /**
+     * Build a single {@link AiSchema.Dimension} from its Saiku metadata,
+     * with per-hierarchy and per-level try/catch. Each scope's failure
+     * stays scoped: a broken level skips just that level, a broken
+     * hierarchy skips just that hierarchy, and the caller wraps a broken
+     * dimension. See saiku#877.
+     */
+    private AiSchema.Dimension buildDimension(SaikuCube cube, SaikuDimension dim) {
+        AiSchema.Dimension d = new AiSchema.Dimension(dim.getName(), dim.getUniqueName());
+        if (dim.getDescription() != null && !dim.getDescription().isEmpty()) {
+            d.description = dim.getDescription();
+        }
+        // saiku#818 follow-up: project dimension-level annotations.
+        try {
+            SemanticAnnotationParser.DimensionAnnotations dann =
+                    SemanticAnnotationParser.parseDimension(dim.getAnnotations());
+            if (dann.description != null) d.description = dann.description;
+            if (!dann.synonyms.isEmpty()) d.synonyms = dann.synonyms;
+        } catch (RuntimeException e) {
+            log.debug("dimension annotations unreadable for {}: {}", dim.getName(), e.getMessage());
+        }
+        List<SaikuHierarchy> hiers;
+        try {
+            hiers = dim.getHierarchies();
+            if (hiers == null || hiers.isEmpty()) {
+                hiers = discoverService.getAllDimensionHierarchies(cube, dim.getName());
+            }
+        } catch (RuntimeException e) {
+            log.warn(
+                    "Hierarchy fetch failed for {}.{} — keeping dim with empty hierarchies",
+                    cube.getUniqueName(),
+                    dim.getName(),
+                    e);
+            hiers = null;
+        }
+        if (hiers != null) {
+            for (SaikuHierarchy h : hiers) {
+                try {
+                    AiSchema.Hierarchy hh = buildHierarchy(cube, dim, h);
+                    d.hierarchies.put(AiSchema.key(h.getName()), hh);
+                } catch (RuntimeException e) {
+                    log.warn(
+                            "Skipping hierarchy {}.{}.{} — discover failed",
+                            cube.getUniqueName(),
+                            dim.getName(),
+                            h.getName(),
+                            e);
+                }
+            }
+        }
+        return d;
+    }
+
+    private AiSchema.Hierarchy buildHierarchy(SaikuCube cube, SaikuDimension dim, SaikuHierarchy h) {
+        AiSchema.Hierarchy hh = new AiSchema.Hierarchy(h.getName(), h.getUniqueName());
+        if (h.getDescription() != null && !h.getDescription().isEmpty()) {
+            hh.description = h.getDescription();
+        }
+        List<SaikuLevel> levels;
+        try {
+            levels = h.getLevels();
+            if (levels == null || levels.isEmpty()) {
+                levels = discoverService.getAllHierarchyLevels(cube, dim.getName(), h.getName());
+            }
+        } catch (RuntimeException e) {
+            log.warn(
+                    "Level fetch failed for {}.{}.{} — keeping hierarchy with empty levels",
+                    cube.getUniqueName(),
+                    dim.getName(),
+                    h.getName(),
+                    e);
+            levels = null;
+        }
+        if (levels != null) {
+            for (SaikuLevel lvl : levels) {
+                try {
+                    AiSchema.Level l = buildLevel(cube, h, lvl);
+                    hh.levels.put(AiSchema.key(lvl.getName()), l);
+                } catch (RuntimeException e) {
+                    log.warn(
+                            "Skipping level {}.{}.{}.{} — discover failed",
+                            cube.getUniqueName(),
+                            dim.getName(),
+                            h.getName(),
+                            lvl.getName(),
+                            e);
+                }
+            }
+        }
+        return hh;
+    }
+
+    private AiSchema.Level buildLevel(SaikuCube cube, SaikuHierarchy h, SaikuLevel lvl) {
+        AiSchema.Level l = new AiSchema.Level(lvl.getName(), lvl.getUniqueName());
+        if (lvl.getDescription() != null && !lvl.getDescription().isEmpty()) {
+            l.description = lvl.getDescription();
+        }
+        // saiku#818: project saiku.semantic.* annotations onto the typed fields.
+        try {
+            SemanticAnnotationParser.LevelAnnotations lann = SemanticAnnotationParser.parseLevel(lvl.getAnnotations());
+            if (lann.description != null) l.description = lann.description;
+            if (!lann.synonyms.isEmpty()) l.synonyms = lann.synonyms;
+            if (lann.cardinality != null) l.cardinality = lann.cardinality;
+            if (lann.grain != null) l.grain = lann.grain;
+            if (!lann.requiredFilters.isEmpty()) l.requiredFilters = lann.requiredFilters;
+        } catch (RuntimeException e) {
+            log.debug("level annotations unreadable for {}/{}: {}", h.getName(), lvl.getName(), e.getMessage());
+        }
+        populateSampleMembers(l, cube, h.getName(), lvl.getName());
+        return l;
     }
 
     /**
