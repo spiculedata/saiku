@@ -104,11 +104,26 @@ The response is dense — this is what makes the API self-describing:
       "name": "Store Sales",
       "uniqueName": "[Measures].[Store Sales]",
       "displayName": null,                                   // Phase-3 alias if enrichment overlays one
-      "description": "Total store revenue"                    // from olap4j Member.getDescription()
+      "description": "Net retail revenue in USD across all transactions.",
+      "synonyms": ["revenue", "turnover", "top-line", "sales"], // saiku#818 — accepted as `name` on input
+      "unit": "USD",                                          // saiku#818 — free text: USD, hours, count, percent
+      "currency": "USD",                                      // saiku#818 — ISO 4217 when monetary
+      "aggregationKind": "sum",                               // saiku#818 — sum | count | distinct-count | non-additive
+      "visible": true
     },
     "unit sales": { "name": "Unit Sales", "uniqueName": "[Measures].[Unit Sales]" },
     "profit":     { "name": "Profit",     "uniqueName": "[Measures].[Profit]" }
     // …8 measures total…
+  },
+
+  "measureAliases": {                                         // saiku#818 — every synonym → canonical key
+    "revenue":   "store sales",
+    "turnover":  "store sales",
+    "top-line":  "store sales",
+    "sales":     "store sales",
+    "cogs":      "store cost",
+    "unique customers": "customer count"
+    // …also picks up any Phase-3 displayName aliases…
   },
 
   "dimensions": {
@@ -129,6 +144,11 @@ The response is dense — this is what makes the API self-describing:
             },
             "quarter": {
               "name": "Quarter", "uniqueName": "[Time].[Time By].[Quarter]",
+              "description": "Calendar quarter; aggregates 3 months.", // saiku#818
+              "synonyms": ["quarterly", "qtr", "q"],                   // saiku#818 — accepted as `level` on input
+              "cardinality": "low",                                    // saiku#818 — low | medium | high
+              "grain": "quarter",                                      // saiku#818 — year | quarter | month | week | day | hour | minute
+              "requiredFilters": [],                                   // saiku#818 — see "required_filters" below
               "sampleMembers": [
                 { "caption": "Q1", "uniqueName": "[Time].[Time By].[Quarter].&[Q1]" },
                 { "caption": "Q2", "uniqueName": "[Time].[Time By].[Quarter].&[Q2]" },
@@ -212,6 +232,18 @@ The response is dense — this is what makes the API self-describing:
 3. **Descriptions** from the cube author / LLM enrichment overlay.
 4. **Three working example request bodies** the LLM can copy and adapt.
 5. **The full JSON Schema** of the request contract — the LLM can self-validate.
+6. **Semantic annotations (saiku#818)** — every annotated measure carries `unit` /
+   `currency` / `aggregationKind` so the agent knows whether `Store Sales` is in
+   dollars or units, and whether `Customer Count` can be aggregated further.
+   Every annotated level carries `cardinality` and (for time) `grain` so the
+   agent maps "quarterly" / "by month" straight to the right level instead of
+   guessing.
+7. **Input synonyms** — `measures[].name` and `rows[].level` / `columns[].level`
+   accept any entry from `measureAliases` / `levelAliases`. The agent can post
+   `{"measures": [{"name": "revenue"}]}` and the server resolves to
+   `[Measures].[Store Sales]` with no /schema round-trip. See "Display names +
+   semantic annotations" below for how XML annotations and the Phase-3 overlay
+   contribute aliases.
 
 ---
 
@@ -402,6 +434,26 @@ can return a `VALIDATION_ERROR`:
 
 The contract for the agent is the same either way: read `field`, read
 `available[]`, fix and retry.
+
+**Missing required filter (saiku#818 — opt-in per level).** When a level
+in the schema declares `requiredFilters`, the converter rejects any query
+that touches the level without satisfying every entry. Empty `members[]`
+on the satisfying filter does **not** count — the agent must actually
+pick a member.
+
+```json
+{
+  "status": "VALIDATION_ERROR",
+  "error": "Level [Time].[Time].[Quarter] requires a filter on Time By/Year with non-empty members.",
+  "field": "filters",
+  "available": ["Time By/Year", "Customer/Country"]
+}
+```
+
+The `available[]` lists every required filter declared anywhere on the
+cube — the agent can construct a complete query in one retry without
+fetching the schema again. Cubes without `requiredFilters` annotations
+are unaffected (zero impact on existing deployments).
 
 **Error taxonomy.** Statuses use a strict enum:
 
@@ -735,11 +787,46 @@ the empty list.
 
 ---
 
-## Display names + LLM enrichment (Phase 3)
+## Display names + semantic annotations
 
-If your deployment has a schema-generator sidecar (`<datasource>.generated.json`
-in the saiku repository), `/ai/schema/{cubeId}` overlays its renames and
-suggestions onto the canonical schema:
+Saiku schemas have two complementary ways to enrich the canonical
+measures and levels for an LLM:
+
+1. **XML annotations** (`saiku.semantic.*`) — permanent metadata coupled to
+   the cube. Lives on `<Measure>` and `<Level>` elements in the Mondrian
+   schema XML. Authoring reference: [`docs/schema-annotations.md`](schema-annotations.md).
+2. **Phase-3 `.generated.json` overlay** — runtime curation by operators
+   or the schema-gen tooling, applied on top of the XML. **Overlay wins
+   on conflict.**
+
+Both routes feed the same typed fields on `AiSchema.Measure` /
+`AiSchema.Level` and the same alias maps, so the API surface is identical
+regardless of where the metadata came from.
+
+### XML annotation example
+
+```xml
+<Measure name='Store Sales' column='store_sales' aggregator='sum' formatString='#,###.00'>
+    <Annotations>
+        <Annotation name='saiku.semantic.description'>Net retail revenue in USD across all transactions.</Annotation>
+        <Annotation name='saiku.semantic.synonyms'>revenue, turnover, top-line, sales</Annotation>
+        <Annotation name='saiku.semantic.unit'>USD</Annotation>
+        <Annotation name='saiku.semantic.currency'>USD</Annotation>
+        <Annotation name='saiku.semantic.aggregation_kind'>sum</Annotation>
+    </Annotations>
+</Measure>
+```
+
+After this, `/ai/schema` surfaces the typed fields (see Step 2) and
+`measureAliases` carries every synonym → canonical mapping. The agent
+posts `{"measures": [{"name": "revenue"}]}` and the converter resolves
+to `[Measures].[Store Sales]` automatically.
+
+### Phase-3 overlay (`<datasource>.generated.json`)
+
+If your deployment has a schema-generator sidecar in the saiku
+repository, `/ai/schema/{cubeId}` overlays its renames, suggestions, and
+**annotations block** (saiku#818) onto the canonical schema:
 
 ```jsonc
 {
@@ -759,22 +846,35 @@ suggestions onto the canonical schema:
       "rationale": "matches common analyst vocabulary",
       "suggestedValue": "Revenue"
     }
-  ]
+  ],
+  "annotations": {                                       // saiku#818 — overlay > XML on conflict
+    "measures.Store Sales": {
+      "saiku.semantic.synonyms": "revenue, turnover, top-line"
+    },
+    "dimensions.Time.hierarchies.Time By.levels.Quarter": {
+      "saiku.semantic.cardinality": "low",
+      "saiku.semantic.grain": "quarter"
+    }
+  }
 }
 ```
 
-**The contract:** display names are **first-class query identifiers**. The
-agent can use either the canonical name or the display name in any field
-of `AiQueryRequest`:
+**The contract:** display names AND `saiku.semantic.synonyms` entries
+are both **first-class query identifiers**. The agent can use the
+canonical name, the display name, or any synonym in any name field of
+`AiQueryRequest`:
 
 ```json
 { "measures": [{ "name": "Store Sales" }] }   // canonical — always works
-{ "measures": [{ "name": "Revenue" }] }       // display name — also works after enrichment
+{ "measures": [{ "name": "Revenue" }] }       // Phase-3 display name — works after enrichment
+{ "measures": [{ "name": "revenue" }] }       // saiku#818 synonym — works after XML annotation OR overlay
 ```
 
 The generated MDX always emits the canonical `uniqueName`, so the engine
 sees the same query either way. Validation error candidate lists include
-both canonical and display names so the agent sees every legal string.
+canonical names so the agent always sees a stable retry target — synonyms
+are advisory and live in `measureAliases` / `levelAliases` on the schema
+response for the agent to inspect directly.
 
 ---
 
@@ -784,9 +884,13 @@ both canonical and display names so the agent sees every legal string.
 1. GET /ai/cubes                                     → discover available cubes
 2. GET /ai/schema/{cubeId}                           → typed schema + sample members
                                                        (with unique names) + examples + JSON Schema
-3. Construct an AiQueryRequest using only the names in the schema response
+3. Construct an AiQueryRequest using names from `measures`/`dimensions`
+   (canonical), or any entry from `measureAliases`/`levelAliases`
+   (display names + saiku#818 synonyms) — all three resolve identically.
 4. POST /ai/query                                    → results
-   ↳ 400 VALIDATION_ERROR? Read `field` + `available`, fix, retry
+   ↳ 400 VALIDATION_ERROR? Read `field` + `available`, fix, retry.
+     Missing `filters` (saiku#818 required_filters)? `available[]` lists
+     the exact `Hier/Level` pairs the cube needs.
    ↳ 200 SUCCESS? Render `data` (records — default), or `matrix` when format=matrix.
                   metadata.rows/columns name the row/column captions either way.
 5. (Optional) GET /ai/query/{id}/drillthrough        → raw fact rows (typed cells) for any cell of interest
