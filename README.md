@@ -1,127 +1,159 @@
 <a href="#readme"></a>
 
-<!-- [![Codacy Badge](https://api.codacy.com/project/badge/Grade/a5a3157a6798401e980a5aabe37f3ede)](https://www.codacy.com/app/Spicule/saiku?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=OSBI/saiku&amp;utm_campaign=Badge_Grade) -->
+<h1 align="center"><a href="https://saiku.bi">Saiku Analytics</a></h1>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/OSBI/saiku/assets/L.png" align="left">
-  <img src="https://raw.githubusercontent.com/OSBI/saiku/assets/R.png" align="right">
-  <b>
-    When something doesn't work as expected, then please subscribe to the
-    <a href="https://groups.google.com/a/saiku.meteorite.bi/forum/#!forum/user">Saiku User Group list</a>
-    and send your doubt. If that doesn't solve your problem, then please ask for help on
-    <a href="https://groups.google.com/a/saiku.meteorite.bi/forum/#!forum/dev">Saiku Dev Group</a>.
-  </b>
+  Open-source OLAP analytics for cubes — drag-and-drop in the browser,
+  SQL through Mondrian + Calcite, and a typed REST surface so AI agents
+  can query without ever seeing MDX.
 </p>
 
-***
-
-<h1 align="center"><a href="https://www.meteorite.bi/products/saiku">Saiku Analytics</a></h1>
-<h2 align="center">The world's greatest open source OLAP browser</h2>
-<p align="center"><a href="https://www.meteorite.bi/products/saiku"><img src="https://raw.githubusercontent.com/OSBI/saiku/assets/saiku-demo-1.jpg"/></a></p>
-<hr />
 <p align="center">
-  <a href="https://www.meteorite.bi"><b>Homepage</b></a> |
-  <a href="https://licensing.meteorite.bi"><b>Saiku License</b></a> |
-  <a href="https://saiku-documentation.readthedocs.io/en/latest/"><b>Wiki</b></a> |
-  <a href="https://community.meteorite.bi/"><b>Community</b></a> |
-  <a href="https://groups.google.com/a/saiku.meteorite.bi/forum/#!forum/dev"><b>Mailing List</b></a> |
-  <a href="https://webchat.freenode.net/?randomnick=1&channels=%23%23saiku"><b>Chat</b></a> |
-  <a href="https://twitter.com/SaikuAnalytics"><b>News</b></a>
+  <a href="https://saiku.bi"><b>saiku.bi</b></a> ·
+  <a href="https://demo.saiku.bi"><b>Live demo</b></a> ·
+  <a href="https://github.com/spiculedata/saiku/issues"><b>Issues</b></a> ·
+  <a href="https://github.com/spiculedata/saiku/discussions"><b>Discussions</b></a>
 </p>
 
 ***
 
-<p align="justify">
-  Saiku allows business users to explore complex data sources,
-  using a familiar drag and drop interface and easy to understand
-  business terminology, all within a browser. Select the data you
-  are interested in, look at it from different perspectives,
-  drill into the detail. Once you have your answer, save your results,
-  share them, export them to Excel or PDF, all straight from the browser.
-  <a href="https://www.meteorite.bi">(more)</a>
-</p>
-
-***
-
-## Setup
-
-### Build Instructions
+## Try it in 30 seconds
 
 ```sh
-mvn clean install -DskipTests
-
-mvn clean clover2:setup test clover2:aggregate clover2:clover
+docker run -d -p 8080:8080 --name saiku ghcr.io/spiculedata/saiku
 ```
 
-### Update project version
+Then open <http://localhost:8080/ui/> and log in with `admin` / `admin`. The
+container ships with a self-contained H2 + FoodMart demo cube — drag fields
+onto rows, columns, or filters and the SPA writes MDX for you.
 
-To update the pom versions run:
+A hosted instance is always live at <https://demo.saiku.bi> (auto-reset
+nightly).
+
+## What is Saiku
+
+Saiku started in 2010 as an open-source OLAP browser for Mondrian. In 2026
+it was rebuilt on top of:
+
+- **Mondrian 4.8.1.x (Spicule fork)** — with a Calcite-based SQL planner
+  alongside the legacy `SqlQuery` builder. Calcite is the default; force
+  legacy with `-Dmondrian.backend=legacy`.
+- **Apache Arrow** wire format for cellsets, so the browser and any
+  programmatic consumer share a zero-copy result envelope.
+- **Jetty 12 EE10 + Jersey 3.1 + Spring 6 + Spring Security 6.5** in a
+  single-JAR Picocli launcher.
+- **SvelteKit 5 + Vite** for the SPA (separate repo, served from inside
+  the same JAR at `/ui/`).
+
+## AI Query API + MCP
+
+Saiku 4.x exposes a typed REST surface — `/rest/saiku/api/ai/*` — designed
+for LLM agents. Hierarchies, levels, measures and synonyms are discoverable
+via `/ai/cubes` and `/ai/schema`, and a single `POST /ai/query` translates
+a JSON description of a question into validated MDX, runs it, and returns
+typed `{value, formatted, unit}` cells. Every validation failure carries
+a `{status, field, available}` envelope so an agent can self-correct
+without scraping logs.
+
+The container also bundles **`saiku-mcp`**, a stdio
+[Model Context Protocol](https://modelcontextprotocol.io) wrapper so Claude
+Desktop / Cursor / Cline can wire to a running Saiku with one line of
+config:
+
+```json
+{
+  "command": "docker",
+  "args":    ["exec", "-i", "saiku", "saiku-mcp"]
+}
+```
+
+See [`docs/AI-QUERY-API.md`](docs/AI-QUERY-API.md) and
+[`docs/schema-annotations.md`](docs/schema-annotations.md) for the typed
+contract and the `saiku.semantic.*` annotation namespace cubes use to
+describe themselves to agents.
+
+## Build from source
+
+JDK 21 + Maven 3.9+ required.
 
 ```sh
-mvn versions:set -DnewVersion=3.x.x
+# Compile, unit tests, Spotless format check (CI gate):
+mvn verify
+
+# Build the runnable fat-JAR:
+mvn -pl saiku-launcher -am -Dmaven.test.skip=true package
+
+# Run:
+java -jar saiku-launcher/target/saiku-*.jar serve --port 8080 --home ./saiku-home
 ```
 
-Then remove the backups with:
+Whole-API integration tests (boots Jetty + the launcher's WAR in-process
+against the seeded FoodMart H2 datasource):
 
 ```sh
-find . -name "*.versionsBackup" -type f -delete
+mvn verify -P integration
 ```
 
-## Get Saiku License
+See [`CLAUDE.md`](CLAUDE.md) for the full layout, the dependency catalog
+(`saiku-bom`), and the GitHub Packages auth gotcha for local builds.
 
-Saiku is open source and free to use. Our default server does ship with a license server installed. To get a license you can visit https://licensing.meteorite.bi and get a FREE license which is pinned to the major release of the server. This helps us with a more accurate picture of installation numbers and deployments.
+## Repository layout
 
-## Wiki
+```
+saiku-bom/             # central dependency-version catalogue
+saiku-core/
+  saiku-olap-util/     # olap4j helpers
+  saiku-service/       # OLAP service, AI Query, schema gen, async, cache
+  saiku-semantic/      # YAML semantic layer
+  saiku-web/           # JAX-RS REST resources
+saiku-webapp/          # Servlet webapp (Spring XML wiring)
+saiku-launcher/        # Picocli CLI + embedded Jetty serving the WAR
+saiku-mcp/             # stdio JSON-RPC MCP wrapper
+saiku-ui/              # SvelteKit SPA (independent versioning)
+```
 
-* [Saiku Wiki](https://saiku-documentation.readthedocs.io/en/latest/)
+The SvelteKit SPA lives in `saiku-ui/` and is built independently; the
+launcher serves the static `dist/` under `/ui/`.
 
-## Community
+## Getting help
 
-* [Saiku Community](https://community.meteorite.bi/)
+- **Bugs and feature requests**:
+  [open an issue](https://github.com/spiculedata/saiku/issues/new/choose).
+- **Questions, ideas, walkthroughs**:
+  [GitHub Discussions](https://github.com/spiculedata/saiku/discussions).
+- **Stack Overflow tag**:
+  [`saiku`](https://stackoverflow.com/questions/tagged/saiku).
+- **Commercial support, hosted, training**: <hello@saiku.bi>.
 
-## Bugs and Feature Requests
-
-* [GitHub Issues](https://github.com/OSBI/saiku/issues/new)
-
-## Discussion List
-
-* [Saiku Dev Group](https://groups.google.com/a/saiku.meteorite.bi/forum/#!forum/dev)
-* [Saiku User Group](https://groups.google.com/a/saiku.meteorite.bi/forum/#!forum/user)
-* [Stack Overflow](https://stackoverflow.com/questions/tagged/saiku)
-* [Freenode IRC - Channel: ##saiku](https://webchat.freenode.net/?randomnick=1&channels=%23%23saiku)
-
-## Browser Support
-
-We do care about it.
-
-| ![Edge](https://raw.githubusercontent.com/alrra/browser-logos/master/src/edge/edge_48x48.png) | ![Chrome](https://raw.github.com/alrra/browser-logos/master/src/chrome/chrome_48x48.png) | ![Firefox](https://raw.github.com/alrra/browser-logos/master/src/firefox/firefox_48x48.png) | ![Opera](https://raw.github.com/alrra/browser-logos/master/src/opera/opera_48x48.png) | ![Safari](https://raw.github.com/alrra/browser-logos/master/src/safari/safari_48x48.png) |
-| --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Latest ✔                                                                                      | Latest ✔                                                                                 | Latest ✔                                                                                    | Latest ✔                                                                              | Latest ✔                                                                                 |
-
-## Team
-
-[Saiku](https://www.meteorite.bi) is maintained by these people and a bunch of awesome [contributors](https://github.com/OSBI/saiku/graphs/contributors).
-
-| [![Breno Polanski](https://avatars7.githubusercontent.com/u/1894191?v=4&s=70)](https://github.com/brenopolanski) | [![Bruno Catão](https://avatars4.githubusercontent.com/u/785116?v=4&s=70)](https://github.com/brunogamacatao) | [![Mark Cahill](https://avatars5.githubusercontent.com/u/200365?v=4&s=70)](https://github.com/thinkjson) | [![Paul Stoellberger](https://avatars5.githubusercontent.com/u/454645?v=4&s=70)](https://github.com/pstoellberger) | [![Tom Barber](https://avatars6.githubusercontent.com/u/103544?v=4&s=70)](https://github.com/buggtb) |
-| ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| [Breno Polanski](https://github.com/brenopolanski)                                                               | [Bruno Catão](https://github.com/brunogamacatao)                                                              | [Mark Cahill](https://github.com/thinkjson)                                                              | [Paul Stoellberger](https://github.com/pstoellberger)                                                              | [Tom Barber](https://github.com/buggtb)                                                              |
+The old `groups.google.com/a/saiku.meteorite.bi` lists and `##saiku` IRC
+channel are no longer monitored.
 
 ## Contributing
 
-Check [CONTRIBUTING.md](./CONTRIBUTING.md) for more details. Some important information:
+See [CONTRIBUTING.md](./CONTRIBUTING.md). Short version:
 
-* To get started, [sign the Contributor License Agreement](https://www.clahub.com/agreements/OSBI/saiku).
-
-* If you find a bug then please create an issue [here](https://github.com/OSBI/saiku/issues/new).
-
-* If you have a feature request, then please get in touch. We'd love to hear from you! Send a email for: [info@meteorite.bi](mailto:info@meteorite.bi)
-
-## History
-
-For detailed changelog, check [Releases](https://github.com/OSBI/saiku/releases).
+- `feature/<name>` branch off `development` — see the Gitflow note in
+  [CLAUDE.md](CLAUDE.md).
+- Run `mvn spotless:apply` before committing (a pre-commit hook is
+  available via `./scripts/install-hooks.sh`).
+- Tests live in `**/src/test/java/`; integration tests in
+  `saiku-launcher/src/test/java/org/saiku/launcher/it/`.
+- Open the PR against `development`, not `main`. `main` is the release
+  branch — only release/* and hotfix/* PRs go there.
 
 ## License
 
-Saiku and the Saiku UI are free software. The UI, contained in this repository, is available under the terms of the Apache License Version 2. A copy is attached for your convenience.
+Saiku is dual-licensed under **Apache 2.0** and **EPL 1.0**. See
+[`LICENSE.txt`](LICENSE.txt). A summary lives at
+<https://saiku.bi/#license>.
+
+## History
+
+The original Saiku project was started by Tom Barber and Paul Stoellberger
+in 2010 at Meteorite BI and now lives at [Spicule](https://spicule.co.uk).
+Contributors are listed on the
+[GitHub contributors page](https://github.com/spiculedata/saiku/graphs/contributors).
+
+For release notes see [Releases](https://github.com/spiculedata/saiku/releases).
 
 **[⬆ back to top](#readme)**
