@@ -765,6 +765,24 @@ check "legacy /query/execute TopCount(Order(...)) MDX" POST "/rest/saiku/api/que
   '{"name":"live-top5","cube":{"connection":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","name":"Sales","uniqueName":"[Sales]","caption":"Sales"},"type":"MDX","mdx":"SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY TopCount(Order([Product].[Products].[Product Category].Members, [Measures].[Store Sales], BDESC), 5, [Measures].[Store Sales]) ON ROWS FROM [Sales]"}' \
   "r.get('error') is None and r.get('height')==6"
 
+# ---- saiku#818 semantic annotations ----
+check "schema surfaces saiku.semantic fields on annotated measure (Store Sales)" GET "/rest/saiku/api/ai/schema/$CUBE" '' \
+  "r['measures']['store sales'].get('unit')=='USD' and r['measures']['store sales'].get('currency')=='USD' and r['measures']['store sales'].get('aggregationKind')=='sum' and 'revenue' in r['measures']['store sales'].get('synonyms',[])"
+
+check "schema surfaces saiku.semantic fields on annotated level (Quarter)" GET "/rest/saiku/api/ai/schema/$CUBE" '' \
+  "r['dimensions']['time']['hierarchies']['time']['levels']['quarter'].get('grain')=='quarter' and r['dimensions']['time']['hierarchies']['time']['levels']['quarter'].get('cardinality')=='low' and 'quarterly' in r['dimensions']['time']['hierarchies']['time']['levels']['quarter'].get('synonyms',[])"
+
+check "measureAliases register every synonym → canonical (revenue → store sales)" GET "/rest/saiku/api/ai/schema/$CUBE" '' \
+  "r.get('measureAliases',{}).get('revenue')=='store sales' and r.get('measureAliases',{}).get('cogs')=='store cost' and r.get('measureAliases',{}).get('unique customers')=='customer count'"
+
+check "input resolution: measure synonym 'revenue' routes to Store Sales" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"revenue"}],"rows":[{"dimension":"Customer","hierarchy":"Customers","level":"Country"}]}' \
+  "r.get('status')=='SUCCESS' and r['metadata']['measures']==['Store Sales'] and '[Measures].[Store Sales]' in r['metadata']['generatedMdx']"
+
+check "input resolution: level synonym 'quarterly' routes to Quarter" POST "/rest/saiku/api/ai/query" \
+  '{"cube":"'"$CUBE"'","measures":[{"name":"revenue"}],"rows":[{"dimension":"Time","hierarchy":"Time","level":"quarterly"}]}' \
+  "r.get('status')=='SUCCESS' and r.get('totalRows')==4 and '[Time].[Time].[Quarter]' in r['metadata']['generatedMdx']"
+
 # ---- info / version ----
 check "info endpoint 200" GET "/rest/saiku/info" '' "isinstance(r, list)"
 check "mondrian server version" GET "/rest/saiku/statistics/mondrian/server/version" '' \

@@ -33,6 +33,21 @@ public class AiSchema {
          *  existing snapshots and tests don't shift; hidden measures are
          *  surfaced on the wire so admin clients can opt in to seeing them. */
         public Boolean visible = true;
+        /** saiku#818: alternate human-friendly names the agent can use in
+         *  {@code AiQueryRequest.measures[].name}. Registered into
+         *  {@link AiSchema#measureAliases} for input resolution, and also
+         *  surfaced as a distinct list on the {@code /ai/schema} response. */
+        public java.util.List<String> synonyms = new java.util.ArrayList<>();
+        /** saiku#818: free-text unit ({@code "USD"}, {@code "hours"},
+         *  {@code "count"}, {@code "percent"}). Disambiguates "is this
+         *  dollars or units?" without inferring from the format string. */
+        public String unit;
+        /** saiku#818: ISO 4217 currency code when {@link #unit} is monetary. */
+        public String currency;
+        /** saiku#818: how the measure aggregates — {@code sum | count |
+         *  distinct-count | non-additive}. Tells the agent whether
+         *  TopCount-style ranking makes sense at the requested grain. */
+        public String aggregationKind;
 
         public Measure(String name, String uniqueName) {
             this.name = name;
@@ -49,6 +64,10 @@ public class AiSchema {
     public static class MemberSample {
         public final String caption;
         public final String uniqueName;
+        /** saiku#818: optional free-text description for the opaque-code case
+         *  (e.g. {@code "M"} → {@code "Married"}). Null when no description
+         *  is available — most members have self-explanatory captions. */
+        public String description;
 
         public MemberSample() {
             this.caption = null;
@@ -67,6 +86,10 @@ public class AiSchema {
         public String getUniqueName() {
             return uniqueName;
         }
+
+        public String getDescription() {
+            return description;
+        }
     }
 
     public static class Level {
@@ -80,6 +103,21 @@ public class AiSchema {
          *  don't exist, and lets it copy-paste the unique name directly
          *  into a filter rather than constructing it. */
         public java.util.List<MemberSample> sampleMembers = new java.util.ArrayList<>();
+        /** saiku#818: alternate names accepted by the converter for this level. */
+        public java.util.List<String> synonyms = new java.util.ArrayList<>();
+        /** saiku#818: cardinality hint — {@code low | medium | high}. Drives
+         *  whether the agent should pre-filter before crossjoining. */
+        public String cardinality;
+        /** saiku#818: time-grain tag for time levels — {@code year |
+         *  quarter | month | week | day | hour | minute}. Lets the agent map
+         *  user utterances like "quarterly" directly to a level. */
+        public String grain;
+        /** saiku#818: pre-flight filter requirements. If any of these
+         *  (hierarchy, level) pairs are missing from {@code AiQueryRequest.filters}
+         *  when this level is touched, {@code AiSchemaConverter} returns a
+         *  {@code VALIDATION_ERROR} 400 with the full list as {@code available}.
+         *  Empty list = no requirement (the default for unannotated cubes). */
+        public java.util.List<RequiredFilter> requiredFilters = new java.util.ArrayList<>();
 
         /** Transient build-time signal: the sample-member fetch returned at least
          *  one row without throwing, so the level is already proven queryable
@@ -90,6 +128,26 @@ public class AiSchema {
         public Level(String name, String uniqueName) {
             this.name = name;
             this.uniqueName = uniqueName;
+        }
+    }
+
+    /**
+     * Declares a (hierarchy, level) filter that must be present in any
+     * {@code AiQueryRequest} which touches a level carrying this requirement.
+     * Surfaces in the typed {@code AiSchema.Level.requiredFilters} list and
+     * is enforced by {@code AiSchemaConverter.toMdx} (saiku#818). The shape
+     * mirrors {@code AiAxisSelection.hierarchy} + {@code .level} so the
+     * validation error envelope can point at the exact filter to add.
+     */
+    public static class RequiredFilter {
+        public String hierarchy;
+        public String level;
+
+        public RequiredFilter() {}
+
+        public RequiredFilter(String hierarchy, String level) {
+            this.hierarchy = hierarchy;
+            this.level = level;
         }
     }
 
