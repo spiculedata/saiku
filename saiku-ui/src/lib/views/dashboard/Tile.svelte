@@ -4,8 +4,9 @@
    * the body to the matching sub-tile component by `tile.type`.
    *
    * Edit / remove buttons live in this shell so every tile type gets
-   * them for free. Actions defer to the dashboardStore via callbacks so
-   * the store stays the single source of truth.
+   * them for free. The edit modal is co-located here — keeping the
+   * open/closed state per-tile-instance avoids prop-drilling up to the
+   * grid and back.
    */
 
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
@@ -15,17 +16,20 @@
   import TableTile from "$lib/views/dashboard/tiles/TableTile.svelte";
   import TextTile from "$lib/views/dashboard/tiles/TextTile.svelte";
   import FilterTile from "$lib/views/dashboard/tiles/FilterTile.svelte";
+  import TileEditorModal from "$lib/views/dashboard/TileEditorModal.svelte";
 
   interface Props {
     tile: DashboardTile;
     readOnly?: boolean;
-    onEdit?: (id: string) => void;
   }
 
-  let { tile, readOnly = false, onEdit }: Props = $props();
+  let { tile, readOnly = false }: Props = $props();
+
+  let editorOpen = $state(false);
 
   function handleEdit(): void {
-    onEdit?.(tile.id);
+    if (readOnly) return;
+    editorOpen = true;
   }
 
   function handleRemove(): void {
@@ -47,19 +51,8 @@
     <span class="title">{tile.title ?? defaultTitle(tile)}</span>
     {#if !readOnly}
       <div class="tile-actions">
-        <button
-          type="button"
-          class="icon-btn"
-          aria-label="Edit tile"
-          onclick={handleEdit}
-          disabled={!onEdit}
-        >⚙</button>
-        <button
-          type="button"
-          class="icon-btn"
-          aria-label="Remove tile"
-          onclick={handleRemove}
-        >×</button>
+        <button type="button" class="icon-btn" aria-label="Edit tile" onclick={handleEdit}>⚙</button>
+        <button type="button" class="icon-btn" aria-label="Remove tile" onclick={handleRemove}>×</button>
       </div>
     {/if}
   </header>
@@ -78,6 +71,10 @@
   </div>
 </div>
 
+{#if editorOpen}
+  <TileEditorModal {tile} onClose={() => (editorOpen = false)} />
+{/if}
+
 <script module lang="ts">
   import type { DashboardTile as DT } from "$lib/api/dashboards";
 
@@ -85,11 +82,16 @@
    *  populated so the tile isn't a mystery rectangle. */
   function defaultTitle(tile: DT): string {
     switch (tile.type) {
-      case "chart": return tile.chartType ? `${tile.chartType} chart` : "Chart";
-      case "table": return "Table";
-      case "text": return "Note";
-      case "filter": return tile.target?.level ? `Filter: ${tile.target.level}` : "Filter";
-      default: return tile.type;
+      case "chart":
+        return tile.chartType ? `${tile.chartType} chart` : "Chart";
+      case "table":
+        return "Table";
+      case "text":
+        return "Note";
+      case "filter":
+        return tile.target?.level ? `Filter: ${tile.target.level}` : "Filter";
+      default:
+        return tile.type;
     }
   }
 </script>
