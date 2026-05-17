@@ -104,3 +104,26 @@ export async function executeAiQuery(
 export function isAiCell(v: unknown): v is AiCell {
   return typeof v === "object" && v !== null && "formatted" in (v as object);
 }
+
+/** POST /rest/saiku/api/ai/query/saved — resolver for reference-bound
+ *  tiles. The server loads the .saiku file from the JCR, runs the
+ *  ThinQuery, and returns the same AiQueryResponse shape inline tiles
+ *  already render. */
+export async function executeSavedQuery(path: string): Promise<AiQueryResponse> {
+  const res = await fetch(`${REST_BASE}/query/saved`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ path }),
+  });
+  const text = await res.text();
+  if (!text) throw new Error(`executeSavedQuery -> ${res.status}: empty body`);
+  try {
+    return JSON.parse(text) as AiQueryResponse;
+  } catch (e) {
+    throw new Error(`executeSavedQuery -> ${res.status}: non-JSON response (${(e as Error).message})`);
+  }
+}

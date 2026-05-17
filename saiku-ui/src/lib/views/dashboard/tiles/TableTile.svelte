@@ -20,6 +20,7 @@
   import type { DashboardTile, DashboardFilter } from "$lib/api/dashboards";
   import {
     executeAiQuery,
+    executeSavedQuery,
     isAiCell,
     type AiQueryResponse,
     type AiCell,
@@ -76,8 +77,36 @@
     const active = activeFilters.all;
     const s = schema;
     void s;
-    if (!tileQuery || tileQuery.kind !== "inline") return;
+    if (!tileQuery) return;
 
+    if (tileQuery.kind === "reference") {
+      // Reference tiles bypass the effective-query merge — the server
+      // loads the saved ThinQuery + runs it. Filter-merge applies once
+      // the saved query is converted to an AiQueryRequest server-side
+      // (future enhancement); for now click-filters + widget filters
+      // on reference tiles are a no-op.
+      const key = `ref:${tileQuery.path}`;
+      if (key === lastQueryJson) return;
+      lastQueryJson = key;
+      loading = true;
+      error = null;
+      void (async () => {
+        try {
+          const r = await executeSavedQuery(tileQuery.path);
+          response = r;
+          if (r.status !== "SUCCESS") error = r.error ?? `Query failed: ${r.status}`;
+        } catch (e: unknown) {
+          error = e instanceof Error ? e.message : String(e);
+          response = null;
+        } finally {
+          loading = false;
+        }
+      })();
+      return;
+    }
+
+    // Inline tile: merge active filters into the base body via the
+    // effective-query builder, then POST to /ai/query.
     const effective = effectiveQueryFor(tile, active, schema);
     if (!effective) return;
     const json = JSON.stringify(effective);
@@ -169,13 +198,8 @@
   }
 </script>
 
-{#if tile.query?.kind === "reference"}
-  <div class="placeholder">
-    <p>Reference-bound table tile.</p>
-    <p class="hint">Resolving {tile.query.path} → AiQueryRequest is a follow-up.</p>
-  </div>
-{:else if !tile.query || !tile.cube}
-  <div class="placeholder">Tile missing cube or query binding.</div>
+{#if !tile.query}
+  <div class="placeholder">Tile has no query binding — open ⚙ to set one.</div>
 {:else}
   <div class="table-tile" role="region" aria-label="Table tile">
     {#if loading && !response}
@@ -238,8 +262,6 @@
     color: var(--fg-muted);
     font-size: 0.8125rem;
   }
-  .placeholder p { margin: 0.125rem 0; }
-  .placeholder .hint { font-size: 0.75rem; font-style: italic; }
   .state {
     padding: 0.5rem;
     color: var(--fg-muted);

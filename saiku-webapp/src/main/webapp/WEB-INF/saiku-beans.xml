@@ -221,6 +221,11 @@
         <property name="thinQueryService" ref="thinQueryBean"/>
         <property name="cubeMetadataService" ref="aiCubeMetadataServiceBean"/>
         <property name="asyncQueryService" ref="asyncQueryServiceBean"/>
+        <!-- Saved-query resolver (POST /query/saved) loads a .saiku
+             file from the JCR + runs it as a ThinQuery. Powers the
+             dashboard reference-tile binding. -->
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
     </bean>
 
     <!-- Tier-1 auth hardening: shared login rate-limiter.

@@ -65,6 +65,13 @@ public class AiQueryResource {
     private ThinQueryService thinQueryService;
     private AiCubeMetadataService cubeMetadataService;
     private AsyncQueryService asyncQueryService;
+    /** Wired for the saved-query resolver (POST /query/saved). The
+     *  resolver loads a .saiku file from the JCR, deserialises it to a
+     *  ThinQuery, executes it, and returns the same AiQueryResponse
+     *  shape inline tiles already render. */
+    private org.saiku.service.datasource.DatasourceService datasourceService;
+
+    private org.saiku.web.service.SessionService sessionService;
     private final AiSchemaConverter converter = new AiSchemaConverter();
     /** Phase 2: JSON-Schema-driven shape validator. Runs first so an
      *  agent gets one structured 400 per shape failure instead of a
@@ -84,6 +91,84 @@ public class AiQueryResource {
 
     public void setAsyncQueryService(AsyncQueryService a) {
         this.asyncQueryService = a;
+    }
+
+    public void setDatasourceService(org.saiku.service.datasource.DatasourceService s) {
+        this.datasourceService = s;
+    }
+
+    public void setSessionService(org.saiku.web.service.SessionService s) {
+        this.sessionService = s;
+    }
+
+    /**
+     * Resolve a saved-query reference (a {@code .saiku} file in the JCR
+     * repository) to a runnable {@link ThinQuery}, execute it, and
+     * return the result in the same {@link AiQueryResponse} shape
+     * inline-query tiles already render.
+     *
+     * <p>Body: {@code {"path": "homes/smith/foo.saiku"}}. The path
+     * matches the storage key {@code BasicRepositoryResource2} uses;
+     * permissions inherit from the JCR.
+     *
+     * <p>Used by the dashboard layer to support
+     * {@code TileQuery.kind == "reference"} — see
+     * {@code docs/plans/2026-05-16-dashboards-design.md}. Saved
+     * queries are stored as serialised {@link ThinQuery} JSON; this
+     * endpoint is the bridge to the AI response surface.
+     */
+    @POST
+    @Path("/query/saved")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response executeSaved(java.util.Map<String, Object> body) {
+        if (datasourceService == null || sessionService == null) {
+            return error("saved-query resolver requires repository wiring");
+        }
+        String path = body == null ? null : (String) body.get("path");
+        if (path == null || path.isBlank()) {
+            return badRequest("path", "path required (repository location of the .saiku file)", null);
+        }
+        long start = System.currentTimeMillis();
+        String username =
+                java.util.Objects.toString(sessionService.getAllSessionObjects().get("username"), null);
+        @SuppressWarnings("unchecked")
+        java.util.List<String> roles =
+                (java.util.List<String>) sessionService.getAllSessionObjects().get("roles");
+        String raw;
+        try {
+            raw = datasourceService.getFileData(path, username, roles);
+        } catch (RuntimeException e) {
+            log.warn("saved-query load failed for {} (user={})", path, username, e);
+            return badRequest("path", "Saved query not found or not readable: " + path, null);
+        }
+        if (raw == null || raw.isEmpty()) {
+            return badRequest("path", "Saved query is empty or missing: " + path, null);
+        }
+        ThinQuery tq;
+        try {
+            tq = MAPPER.readValue(raw, ThinQuery.class);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            log.error("saved-query {} is not a valid ThinQuery JSON", path, e);
+            return badRequest("path", "Saved query is not valid ThinQuery JSON: " + e.getMessage(), null);
+        }
+        // Saved queries written by older builds stored the file path in
+        // tq.name, which contains slashes. Jetty 12's strict URI rules
+        // reject %2F in path segments — clobber any unsafe name with a
+        // fresh UUID before handing the query to the executor (mirrors
+        // saiku-ui's withSafeName helper).
+        if (tq.getName() == null || tq.getName().contains("/")) {
+            tq.setName(java.util.UUID.randomUUID().toString());
+        }
+        CellDataSet cds;
+        try {
+            cds = thinQueryService.execute(tq);
+        } catch (RuntimeException e) {
+            log.error("saved-query execution failed for {}", path, e);
+            return error("execute failed: " + describeDeepestCause(e));
+        }
+        AiQueryResponse resp = buildResponse(tq, cds, start, "records");
+        return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
     }
 
     @POST
