@@ -59,17 +59,16 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "saiku version: $VERSION"
 
-      - name: Build launcher + MCP fat JARs
-        run: mvn -B -ntp -DskipTests -pl saiku-launcher,saiku-mcp -am package
+      - name: Build launcher fat JAR
+        run: mvn -B -ntp -DskipTests -pl saiku-launcher -am package
 
-      - name: Stage JARs for Docker build context
+      - name: Stage JAR for Docker build context
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
           mkdir -p build-context
           cp "saiku-launcher/target/saiku-${VERSION}.jar" build-context/saiku.jar
-          cp "saiku-mcp/target/saiku-mcp-${VERSION}.jar" build-context/saiku-mcp.jar
           ls -la build-context/
 
       - name: Set up Docker Buildx
