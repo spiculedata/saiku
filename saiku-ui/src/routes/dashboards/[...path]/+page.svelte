@@ -2,18 +2,30 @@
   /*
    * Dashboards route.
    *
-   * Opens DashboardEditor at the JCR path supplied via the rest segment.
-   * The editor handles loading, error display, save, and the inner
-   * toolbar/grid/filter-bar composition. This route is the thin shell.
-   *
-   * Anonymous / unauthenticated users will hit the same 401 path as the
-   * rest of the app — covered by the session listener wired in the root
-   * layout.
+   * Gates on the session store the same way the root workspace does —
+   * unauthenticated visitors get LoginForm, not a broken-fetch tile
+   * full of "NetworkError" messages. After login the session store
+   * re-resolves and the editor mounts with a live cookie.
    */
 
+  import { session } from "$lib/stores/session.svelte";
+  import LoginForm from "$lib/views/LoginForm.svelte";
   import DashboardEditor from "$lib/views/dashboard/DashboardEditor.svelte";
 
   let { data } = $props();
 </script>
 
-<DashboardEditor dashboardPath={data.dashboardPath} />
+{#if session.loading}
+  <div class="loading">Loading…</div>
+{:else if session.current}
+  <DashboardEditor dashboardPath={data.dashboardPath} />
+{:else}
+  <LoginForm />
+{/if}
+
+<style>
+  .loading {
+    margin: auto;
+    color: var(--fg-muted);
+  }
+</style>
