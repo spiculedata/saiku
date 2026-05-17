@@ -192,7 +192,12 @@ public class McpResource {
         }
         switch (name) {
             case "list_cubes": {
-                return unwrap(aiQueryResource.listCubes());
+                // saiku#878 follow-up: the MCP spec requires structuredContent
+                // to be a JSON object, not an array. AiQueryResource returns
+                // List<AiCubeSummary>; wrap under "cubes" so claude.ai's
+                // ClaudeAiToolResultRequest validator stops rejecting the
+                // result shape.
+                return wrapList("cubes", unwrap(aiQueryResource.listCubes()));
             }
             case "describe_cube": {
                 String cube = requiredString(args, "cube");
@@ -205,7 +210,11 @@ public class McpResource {
                 String level = requiredString(args, "level");
                 String q = optionalString(args, "q");
                 int limit = optionalInt(args, "limit", 20);
-                return unwrap(aiQueryResource.searchMembers(cube, dimension, hierarchy, level, q, limit));
+                // Same array-wrap as list_cubes — AiQueryResource returns a
+                // List<SimpleCubeElement>; MCP structuredContent must be an
+                // object so the host's validator accepts it.
+                return wrapList(
+                        "members", unwrap(aiQueryResource.searchMembers(cube, dimension, hierarchy, level, q, limit)));
             }
             case "run_query": {
                 String format = optionalString(args, "format");
@@ -226,6 +235,17 @@ public class McpResource {
             default:
                 throw new UnknownToolException("Unknown tool: " + name);
         }
+    }
+
+    /** Wrap a top-level array in a single-property object so the response
+     *  satisfies MCP's structuredContent contract (must be a JSON object).
+     *  No-op when the node is already an object — defensive in case the
+     *  underlying resource ever changes shape. */
+    private JsonNode wrapList(String key, JsonNode body) {
+        if (body == null || body.isObject()) return body == null ? MAPPER.createObjectNode() : body;
+        ObjectNode wrapped = MAPPER.createObjectNode();
+        wrapped.set(key, body);
+        return wrapped;
     }
 
     /** Read the JAX-RS Response entity as a JsonNode. AiQueryResource

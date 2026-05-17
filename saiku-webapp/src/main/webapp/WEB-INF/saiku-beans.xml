@@ -251,6 +251,16 @@
          fronted by a proxy you control). -->
     <bean id="loginRateLimiter" class="org.saiku.web.security.ratelimit.LoginRateLimiter"/>
 
+    <!-- saiku#878 follow-up: replace BasicAuthenticationEntryPoint with
+         an entry point that returns 401 without WWW-Authenticate. The
+         SPA's XHRs hit 401s during normal "is the user signed in?"
+         probes; the default Basic challenge header was making the
+         browser pop up a native auth dialog over /ui/. -->
+    <bean id="basicAuth401NoChallenge"
+          class="org.springframework.security.web.authentication.HttpStatusEntryPoint">
+        <constructor-arg value="UNAUTHORIZED"/>
+    </bean>
+
     <!-- saiku#878: short-circuit Basic / form auth attempts from blocked IPs
          with a 429 before the AuthenticationProvider runs. Wired into the
          main Spring Security chain via <custom-filter> in

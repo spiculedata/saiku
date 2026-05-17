@@ -92,8 +92,16 @@
            with Authorization: Basic. Coexists with the SPA form-login
            chain — Spring Security tries Basic first on requests carrying
            an Authorization header, falling through to the session cookie
-           otherwise. -->
-      <security:http-basic/>
+           otherwise.
+
+           entry-point-ref points at a no-challenge 401 entry point
+           (saiku#878 follow-up): the default BasicAuthenticationEntryPoint
+           stamps `WWW-Authenticate: Basic realm="..."` on every 401,
+           which makes the browser pop up a native auth dialog on the
+           SPA's XHR 401s. The SPA already has its own session-resume
+           modal — we never want the browser's default. The
+           HttpStatusEntryPoint just sets status 401 with no header. -->
+      <security:http-basic entry-point-ref="basicAuth401NoChallenge"/>
       <!-- Rate-limit auth attempts before BASIC_AUTH_FILTER so a blocked
            IP gets a clean 429 without ever waking the AuthenticationProvider.
            LoginRateLimiter is shared with SessionResource (form-login)
