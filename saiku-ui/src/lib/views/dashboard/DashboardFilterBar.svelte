@@ -73,18 +73,18 @@
     align-items: center;
     gap: 0.25rem;
     padding: 0.25rem 0.5rem;
-    background: var(--bg-chip, #f3f4f6);
+    background: var(--bg-subtle);
     border-radius: 999px;
     font-size: 0.8125rem;
-    color: var(--fg, inherit);
+    color: var(--fg);
   }
   /* Subtle source affordance — click filters look slightly bolder so users
      see which chips came from their interaction vs the dashboard's defaults. */
   .chip[data-source="click"] {
-    background: var(--bg-chip-click, #dbeafe);
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
   }
   .chip[data-source="widget"] {
-    background: var(--bg-chip-widget, #ecfeff);
+    background: var(--bg-subtle);
   }
   .chip-x {
     border: none;

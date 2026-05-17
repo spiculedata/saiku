@@ -246,8 +246,8 @@
     font-size: 0.875rem;
   }
   .state.error {
-    background: #fef2f2;
-    color: #991b1b;
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
+    color: var(--danger);
     border-radius: 4px;
   }
   .state.empty {
@@ -261,10 +261,10 @@
   th, td {
     padding: 0.25rem 0.5rem;
     text-align: right;
-    border-bottom: 1px solid var(--border, #f3f4f6);
+    border-bottom: 1px solid var(--border);
   }
   th {
-    background: var(--bg-thead, #f9fafb);
+    background: var(--bg-muted);
     font-weight: 600;
     position: sticky;
     top: 0;
@@ -277,10 +277,10 @@
     cursor: pointer;
   }
   td.clickable:hover {
-    background: var(--bg-row-hover, #f3f4f6);
+    background: var(--bg-subtle);
   }
   td.clickable:focus {
-    outline: 2px solid var(--accent, #2563eb);
+    outline: 2px solid var(--accent);
     outline-offset: -2px;
   }
 </style>

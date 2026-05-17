@@ -73,7 +73,7 @@
     padding: 3rem 1rem;
     text-align: center;
     color: var(--fg-muted);
-    border: 2px dashed var(--border, #e5e7eb);
+    border: 2px dashed var(--border);
     border-radius: 8px;
   }
   .empty p { margin: 0.25rem 0; }

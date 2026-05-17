@@ -94,8 +94,8 @@
   }
   .btn {
     padding: 0.375rem 0.75rem;
-    border: 1px solid var(--border, #d1d5db);
-    background: var(--bg-button, #fff);
+    border: 1px solid var(--border-strong);
+    background: var(--bg);
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.875rem;
@@ -105,8 +105,8 @@
     position: absolute;
     top: calc(100% + 4px);
     right: 0;
-    background: var(--bg-menu, #fff);
-    border: 1px solid var(--border, #e5e7eb);
+    background: var(--bg);
+    border: 1px solid var(--border);
     border-radius: 6px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
     padding: 0.25rem;
@@ -127,7 +127,7 @@
     font-size: 0.875rem;
   }
   .menu-item:hover, .menu-item:focus {
-    background: var(--bg-menu-hover, #f3f4f6);
+    background: var(--bg-subtle);
     outline: none;
   }
   .icon {

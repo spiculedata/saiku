@@ -102,15 +102,15 @@
   }
   .notice {
     padding: 0.5rem 0.75rem;
-    background: var(--bg-muted, #f3f4f6);
+    background: var(--bg-muted);
     border-radius: 4px;
     color: var(--fg-muted);
     font-size: 0.875rem;
   }
   .error {
     padding: 0.5rem 0.75rem;
-    background: #fee2e2;
-    color: #991b1b;
+    background: color-mix(in srgb, var(--danger) 14%, transparent);
+    color: var(--danger);
     border-radius: 4px;
     font-size: 0.875rem;
   }

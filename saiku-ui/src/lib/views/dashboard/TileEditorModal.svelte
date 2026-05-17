@@ -27,6 +27,7 @@
     type FilterWidget,
     type TileQuery,
   } from "$lib/api/dashboards";
+  import { flatten, listRepository, type RepositoryNode } from "$lib/api/repository";
 
   interface Props {
     tile: DashboardTile;
@@ -62,21 +63,53 @@
     untrack(() => (tile.query?.kind === "inline" ? JSON.stringify(tile.query.body, null, 2) : "")),
   );
   let bodyError = $state<string | null>(null);
+  // Query source — "reference" picks a saved .saiku from the repo,
+  // "inline" pastes an AiQueryRequest body. Default to "reference" so
+  // non-technical authors aren't dropped into a JSON textarea on a
+  // fresh tile.
+  let queryMode = $state<"reference" | "inline">(
+    untrack(() => (tile.query?.kind === "inline" ? "inline" : "reference")),
+  );
+  let referencePath = $state<string>(untrack(() => (tile.query?.kind === "reference" ? tile.query.path : "")));
 
-  // Cube catalogue, fetched once on open.
+  // Cube catalogue + saved-query catalogue, fetched once on open.
   let cubes = $state<AiCubeSummary[]>([]);
   let cubesError = $state<string | null>(null);
   let cubesLoading = $state(false);
+  let savedQueries = $state<RepositoryNode[]>([]);
+  let savedQueriesError = $state<string | null>(null);
+  let savedQueriesLoading = $state(false);
 
   onMount(async () => {
     if (tile.type === "text") return; // text tiles don't need the catalogue
     cubesLoading = true;
+    const needSavedQueries = tile.type === "chart" || tile.type === "table";
+    if (needSavedQueries) savedQueriesLoading = true;
     try {
-      cubes = await listAiCubes();
-    } catch (e: unknown) {
-      cubesError = e instanceof Error ? e.message : String(e);
+      const tasks: Array<Promise<void>> = [
+        listAiCubes()
+          .then((c) => {
+            cubes = c;
+          })
+          .catch((e: unknown) => {
+            cubesError = e instanceof Error ? e.message : String(e);
+          }),
+      ];
+      if (needSavedQueries) {
+        tasks.push(
+          listRepository(["saiku"])
+            .then((tree) => {
+              savedQueries = flatten(tree).filter((n) => n.type === "FILE");
+            })
+            .catch((e: unknown) => {
+              savedQueriesError = e instanceof Error ? e.message : String(e);
+            }),
+        );
+      }
+      await Promise.all(tasks);
     } finally {
       cubesLoading = false;
+      savedQueriesLoading = false;
     }
   });
 
@@ -180,7 +213,12 @@
     }
 
     if (tile.type === "chart" || tile.type === "table") {
-      if (inlineBodyJson.trim()) {
+      if (queryMode === "reference") {
+        if (referencePath) {
+          const q: TileQuery = { kind: "reference", path: referencePath };
+          patch.query = q;
+        }
+      } else if (inlineBodyJson.trim()) {
         try {
           const parsed = JSON.parse(inlineBodyJson);
           const q: TileQuery = { kind: "inline", body: parsed };
@@ -290,27 +328,67 @@
       {/if}
 
       {#if tile.type === "chart" || tile.type === "table"}
-        <label class="field">
-          <span>Inline query body (AiQueryRequest JSON)</span>
-          <textarea
-            bind:value={inlineBodyJson}
-            rows="10"
-            spellcheck="false"
-            class="json"
-            placeholder={JSON.stringify(
-              { cube: cube ?? null, measures: [{ name: "..." }], rows: [] },
-              null,
-              2,
-            )}
-          ></textarea>
-          {#if bodyError}
-            <span class="hint error">{bodyError}</span>
-          {:else}
-            <span class="hint">
-              Paste an AiQueryRequest. A no-code editor lands in a later slice.
-            </span>
-          {/if}
-        </label>
+        <fieldset class="mode">
+          <legend>Query source</legend>
+          <label class="radio">
+            <input type="radio" bind:group={queryMode} value="reference" />
+            <span>Saved query</span>
+          </label>
+          <label class="radio">
+            <input type="radio" bind:group={queryMode} value="inline" />
+            <span>Inline JSON</span>
+          </label>
+        </fieldset>
+
+        {#if queryMode === "reference"}
+          <label class="field">
+            <span>Saved query (.saiku file)</span>
+            {#if savedQueriesLoading}
+              <span class="hint">Loading…</span>
+            {:else if savedQueriesError}
+              <span class="hint error">{savedQueriesError}</span>
+            {:else if savedQueries.length === 0}
+              <span class="hint">
+                No saved queries in the repository yet — switch to Inline JSON, or
+                save a query from the main workspace first.
+              </span>
+            {:else}
+              <select bind:value={referencePath}>
+                <option value="">— pick a saved query —</option>
+                {#each savedQueries as q (q.path)}
+                  <option value={q.path}>{q.path}</option>
+                {/each}
+              </select>
+              <span class="hint">
+                Runtime fetch of saved queries lands in a follow-up — the
+                reference is persisted, the tile renderer will pick it up
+                once the resolver endpoint is wired.
+              </span>
+            {/if}
+          </label>
+        {:else}
+          <label class="field">
+            <span>Inline query body (AiQueryRequest JSON)</span>
+            <textarea
+              bind:value={inlineBodyJson}
+              rows="10"
+              spellcheck="false"
+              class="json"
+              placeholder={JSON.stringify(
+                { cube: cube ?? null, measures: [{ name: "..." }], rows: [] },
+                null,
+                2,
+              )}
+            ></textarea>
+            {#if bodyError}
+              <span class="hint error">{bodyError}</span>
+            {:else}
+              <span class="hint">
+                Paste an AiQueryRequest. A no-code editor lands in a later slice.
+              </span>
+            {/if}
+          </label>
+        {/if}
       {/if}
 
       {#if tile.type === "filter"}
@@ -369,7 +447,7 @@
     z-index: 50;
   }
   .modal {
-    background: var(--bg-modal, #fff);
+    background: var(--bg);
     border-radius: 8px;
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
     width: min(560px, 92vw);
@@ -381,7 +459,7 @@
     display: flex;
     align-items: center;
     padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--border, #e5e7eb);
+    border-bottom: 1px solid var(--border);
   }
   .modal-header h2 {
     margin: 0;
@@ -418,7 +496,7 @@
     display: flex;
     gap: 0.5rem;
     align-items: flex-end;
-    border: 1px solid var(--border, #e5e7eb);
+    border: 1px solid var(--border);
     border-radius: 4px;
     padding: 0.5rem 0.75rem;
     margin: 0;
@@ -434,12 +512,35 @@
     flex: 1;
     min-width: 4rem;
   }
+  .mode {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    margin: 0;
+  }
+  .mode legend {
+    font-size: 0.75rem;
+    color: var(--fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0 0.25rem;
+  }
+  .radio {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
   .field.inline input {
     width: 100%;
   }
   input, select, textarea {
     padding: 0.375rem 0.5rem;
-    border: 1px solid var(--border, #d1d5db);
+    border: 1px solid var(--border-strong);
     border-radius: 4px;
     font-size: 0.875rem;
     font-family: inherit;
@@ -453,25 +554,25 @@
     font-size: 0.75rem;
     color: var(--fg-muted);
   }
-  .hint.error { color: #991b1b; }
+  .hint.error { color: var(--danger); }
   .modal-footer {
     display: flex;
     justify-content: flex-end;
     gap: 0.5rem;
     padding: 0.75rem 1rem;
-    border-top: 1px solid var(--border, #e5e7eb);
+    border-top: 1px solid var(--border);
   }
   .btn {
     padding: 0.375rem 0.75rem;
-    border: 1px solid var(--border, #d1d5db);
-    background: var(--bg-button, #fff);
+    border: 1px solid var(--border-strong);
+    background: var(--bg);
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.875rem;
   }
   .btn.primary {
-    background: var(--accent, #2563eb);
+    background: var(--accent);
     color: white;
-    border-color: var(--accent, #2563eb);
+    border-color: var(--accent);
   }
 </style>

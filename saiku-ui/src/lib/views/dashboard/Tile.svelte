@@ -101,17 +101,17 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    border: 1px solid var(--border, #e5e7eb);
+    border: 1px solid var(--border);
     border-radius: 6px;
-    background: var(--bg-tile, #fff);
+    background: var(--bg);
     overflow: hidden;
   }
   .tile-header {
     display: flex;
     align-items: center;
     padding: 0.375rem 0.5rem;
-    border-bottom: 1px solid var(--border, #e5e7eb);
-    background: var(--bg-tile-header, #fafafa);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-muted);
     font-size: 0.8125rem;
   }
   .title {
@@ -140,7 +140,7 @@
   }
   .unknown {
     padding: 0.5rem;
-    color: #991b1b;
+    color: var(--danger);
     font-size: 0.8125rem;
   }
 </style>

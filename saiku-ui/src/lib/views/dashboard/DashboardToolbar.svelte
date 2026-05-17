@@ -88,7 +88,7 @@
     align-items: center;
     gap: 0.75rem;
     padding: 0.5rem 0.25rem;
-    border-bottom: 1px solid var(--border, #e5e7eb);
+    border-bottom: 1px solid var(--border);
   }
   .name {
     font-size: 1.125rem;
@@ -100,8 +100,8 @@
     min-width: 18rem;
   }
   .name:hover, .name:focus {
-    border-color: var(--border, #d1d5db);
-    background: var(--bg-input, #fff);
+    border-color: var(--border-strong);
+    background: var(--bg);
     outline: none;
   }
   .name-readonly {
@@ -117,17 +117,17 @@
   }
   .btn {
     padding: 0.375rem 0.75rem;
-    border: 1px solid var(--border, #d1d5db);
-    background: var(--bg-button, #fff);
+    border: 1px solid var(--border-strong);
+    background: var(--bg);
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.875rem;
   }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn.primary {
-    background: var(--accent, #2563eb);
+    background: var(--accent);
     color: white;
-    border-color: var(--accent, #2563eb);
+    border-color: var(--accent);
   }
   .btn.primary:disabled {
     /* Saved state — keep it visually distinct from a destructive disable. */

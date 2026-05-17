@@ -193,9 +193,9 @@
   }
   .select {
     padding: 0.25rem 0.375rem;
-    border: 1px solid var(--border, #d1d5db);
+    border: 1px solid var(--border-strong);
     border-radius: 4px;
-    background: var(--bg-input, #fff);
+    background: var(--bg);
     font-size: 0.875rem;
   }
   .multi {
@@ -216,7 +216,7 @@
   .load-btn {
     align-self: flex-start;
     padding: 0.25rem 0.5rem;
-    border: 1px solid var(--border, #d1d5db);
+    border: 1px solid var(--border-strong);
     background: transparent;
     border-radius: 4px;
     cursor: pointer;
@@ -230,7 +230,7 @@
   .date-range input {
     flex: 1;
     padding: 0.25rem;
-    border: 1px solid var(--border, #d1d5db);
+    border: 1px solid var(--border-strong);
     border-radius: 4px;
     font-size: 0.8125rem;
   }
@@ -242,7 +242,7 @@
     color: var(--fg-muted);
   }
   .hint.error {
-    color: #991b1b;
+    color: var(--danger);
   }
   .placeholder {
     padding: 0.5rem;

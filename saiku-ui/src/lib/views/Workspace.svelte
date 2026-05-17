@@ -26,6 +26,37 @@
   let { session }: Props = $props();
   let aboutOpen = $state(false);
 
+  // Tab label tracks the saved file's basename (without `.saiku`) so the
+  // user sees what they actually saved. Unsaved queries fall back to a
+  // localised "Untitled" / "Unsaved query" string. The • dirty marker
+  // shows in the template when query.dirty is true.
+  let tabLabel = $derived(deriveTabLabel(query.savedPath));
+  let tabTitle = $derived(query.savedPath ?? i18n.t("workspace.unsavedQuery"));
+
+  function deriveTabLabel(path: string | null): string {
+    if (!path) return i18n.t("workspace.unsavedQuery");
+    const base = path.split("/").pop() ?? path;
+    return base.endsWith(".saiku") ? base.slice(0, -".saiku".length) : base;
+  }
+
+  /** New-tab handler. Confirms via the browser dialog if the current
+   *  query is dirty — same defensive prompt the toolbar's onNew uses,
+   *  inlined here so we don't have to plumb the modal up. */
+  function handleNewTab(): void {
+    if (query.dirty) {
+      // eslint-disable-next-line no-alert
+      const ok = window.confirm(i18n.t("confirm.discardUnsaved") ?? "Discard unsaved changes?");
+      if (!ok) return;
+    }
+    const cube = query.current?.cube ?? null;
+    query.reset();
+    if (cube) {
+      query.initFor(cube);
+    } else {
+      selection.clear();
+    }
+  }
+
   // Guard so we don't immediately overwrite the URL before (or during) hydrate.
   let hydrated = $state(false);
 
@@ -104,8 +135,16 @@
   <section class="workspace__main">
     {#if !embed.active}
       <div class="tabset">
-        <div class="tab tab--active">{i18n.t("workspace.unsavedQuery")}</div>
-        <button type="button" class="tab tab--new" aria-label={i18n.t("toast.newQuery")}>+</button>
+        <div class="tab tab--active" title={tabTitle}>
+          {tabLabel}{#if query.dirty}<span class="tab__dirty" aria-label="unsaved changes">•</span>{/if}
+        </div>
+        <button
+          type="button"
+          class="tab tab--new"
+          aria-label={i18n.t("toast.newQuery")}
+          title={i18n.t("toast.newQuery")}
+          onclick={handleNewTab}
+        >+</button>
       </div>
       <WorkspaceToolbar />
     {/if}

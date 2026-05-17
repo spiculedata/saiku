@@ -204,7 +204,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(255, 255, 255, 0.75);
+    background: color-mix(in srgb, var(--bg) 75%, transparent);
     color: var(--fg-muted);
     font-size: 0.875rem;
     z-index: 1;
@@ -213,8 +213,8 @@
     padding: 0.5rem;
   }
   .overlay.error {
-    color: #991b1b;
-    background: rgba(254, 242, 242, 0.92);
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 18%, var(--bg));
   }
   .placeholder {
     padding: 1rem;
@@ -224,7 +224,7 @@
   .placeholder p { margin: 0.125rem 0; }
   .placeholder .hint { font-size: 0.75rem; font-style: italic; }
   code {
-    background: var(--bg-code, #f3f4f6);
+    background: var(--bg-subtle);
     padding: 0.0625em 0.25em;
     border-radius: 3px;
     font-size: 0.85em;

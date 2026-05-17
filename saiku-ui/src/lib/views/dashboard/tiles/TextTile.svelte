@@ -48,7 +48,7 @@
     padding: 0.25rem 0.5rem;
     font-size: 0.875rem;
     line-height: 1.5;
-    color: var(--fg, inherit);
+    color: var(--fg);
   }
   /* Heading / paragraph / list resets so analyst-written text doesn't
      inherit weird vertical rhythm from the surrounding tile chrome. */
@@ -67,13 +67,13 @@
     padding-left: 1.25rem;
   }
   .text-tile :global(code) {
-    background: var(--bg-code, #f3f4f6);
+    background: var(--bg-subtle);
     padding: 0.0625em 0.25em;
     border-radius: 3px;
     font-size: 0.85em;
   }
   .text-tile :global(a) {
-    color: var(--accent, #2563eb);
+    color: var(--accent);
     text-decoration: underline;
   }
 </style>
