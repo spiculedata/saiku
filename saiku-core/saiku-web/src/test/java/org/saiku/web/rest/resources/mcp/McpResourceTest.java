@@ -135,8 +135,13 @@ public class McpResourceTest {
         JsonNode body = MAPPER.valueToTree(resp.getEntity());
 
         JsonNode structured = body.path("result").path("structuredContent");
-        assertTrue("body should be the array AiQueryResource returned", structured.isArray());
-        assertEquals("Sales", structured.get(0).path("cubeCaption").asText());
+        // saiku#878 follow-up: MCP spec requires structuredContent to be a
+        // JSON object — list responses get wrapped under "cubes" so
+        // claude.ai's ClaudeAiToolResultRequest validator accepts them.
+        assertTrue("structuredContent must be a JSON object", structured.isObject());
+        JsonNode cubes = structured.path("cubes");
+        assertTrue("cubes[] survives the wrap", cubes.isArray());
+        assertEquals("Sales", cubes.get(0).path("cubeCaption").asText());
         assertEquals(false, body.path("result").path("isError").asBoolean());
     }
 
