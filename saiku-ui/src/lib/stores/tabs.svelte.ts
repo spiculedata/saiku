@@ -122,23 +122,6 @@ class TabsStore {
     this.activeIndex = remaining.findIndex((t) => t.id === target.id);
   }
 
-  /** Sync any in-memory changes from the live stores back to the active
-   *  tab's slot. Used by the URL writer so the tab's snapshot stays
-   *  current for code that reads {@link list} without going through the
-   *  live stores (e.g. label derivation). Cheap — just one assignment. */
-  syncFromLive(): void {
-    const idx = this.activeIndex;
-    if (idx < 0 || idx >= this.list.length) return;
-    this.list = this.list.map((t, i) =>
-      i === idx
-        ? {
-            ...t,
-            query: query.snapshot(),
-            cube: selection.snapshot(),
-          }
-        : t,
-    );
-  }
 }
 
 export const tabs = new TabsStore();

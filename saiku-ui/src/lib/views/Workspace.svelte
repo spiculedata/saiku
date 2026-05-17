@@ -146,11 +146,12 @@
     // `_*` are reactive reads; silence unused-var lint.
     void _c; void _d; void _v; void _t; void _o; void _s;
     if (!hydrated) return;
-    // Keep the active tab's snapshot in sync with the live store so
-    // tab labels reflect savedPath / dirty changes immediately. Cheap
-    // — single array map. The deeper snapshot copy only fires on the
-    // active tab; switching captures-and-restores explicitly.
-    tabs.syncFromLive();
+    // Active-tab label is derived from live query.savedPath directly
+    // in tabLabelFor(); inactive-tab labels read each tab's snapshot,
+    // which is captured at switch/close time via captureActive().
+    // No need to write tabs.list from this effect — doing so caused
+    // an effect_update_depth_exceeded loop because the write re-fires
+    // every $effect that read tabs.list during the same tick.
     if (urlTimer) clearTimeout(urlTimer);
     urlTimer = setTimeout(writeUrl, 300);
   });
