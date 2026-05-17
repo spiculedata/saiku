@@ -1,90 +1,232 @@
 <script lang="ts">
   /*
-   * Chart tile. Renders the tile's effective query as a chart using
-   * ECharts. The effective-query builder (which merges active filters
-   * into the base query) lands in task #12 — this component currently
-   * shows a typed placeholder describing what will render once the
-   * builder is wired in, so the polymorphic Tile.svelte dispatch is
-   * verifiable end-to-end.
+   * Chart tile. Same fetch pattern as TableTile — effective query
+   * computed from base + active filters + schema, posted to /ai/query
+   * in records format. The response is projected through
+   * buildChartOption() and handed to an ECharts instance.
+   *
+   * Click capture: ECharts emits `click` events on data points; for a
+   * category-axis click we map back to the tile's first row-axis
+   * level and emit an onClickFilter with the clicked category as the
+   * member. Pie slice clicks use the slice name as the member.
    */
 
+  import { onMount, onDestroy } from "svelte";
+  import * as echarts from "echarts";
   import type { DashboardTile, DashboardFilter } from "$lib/api/dashboards";
+  import {
+    executeAiQuery,
+    type AiQueryResponse,
+  } from "$lib/api/aiQuery";
+  import { activeFilters } from "$lib/stores/activeFilters.svelte";
+  import { schemaCache } from "$lib/stores/schemaCache.svelte";
+  import {
+    effectiveQueryFor,
+    type SchemaLike,
+  } from "$lib/dashboard/effectiveQuery";
+  import { buildChartOption, isSupportedChartKind } from "$lib/dashboard/chartOptions";
 
   interface Props {
     tile: DashboardTile;
-    /** Click-filter callback — kept on the props surface so Tile.svelte
-     *  can wire it uniformly across tile types; the placeholder doesn't
-     *  fire it until the real ECharts renderer lands in a follow-up. */
     onClickFilter?: (filter: DashboardFilter) => void;
   }
 
-  // onClickFilter is declared on Props for API consistency with TableTile;
-  // it gets wired when the ECharts renderer lands in a follow-up.
-  let { tile }: Props = $props();
+  let { tile, onClickFilter }: Props = $props();
 
-  let summary = $derived({
-    chartType: tile.chartType ?? "bar",
-    cube: tile.cube ? `${tile.cube.connectionName}/${tile.cube.cubeName}` : "(no cube)",
-    queryKind: tile.query?.kind ?? "(no query)",
-    queryRef: tile.query?.kind === "reference" ? tile.query.path : "(inline)",
+  let host = $state<HTMLDivElement | null>(null);
+  let chart: echarts.ECharts | null = null;
+  let resizeObserver: ResizeObserver | null = null;
+
+  let loading = $state(false);
+  let error = $state<string | null>(null);
+  let response = $state<AiQueryResponse | null>(null);
+  let schema = $state<SchemaLike | null>(null);
+  let unsupported = $state(false);
+
+  /* ----------------------------- lifecycle --------------------------- */
+
+  onMount(() => {
+    if (!host) return;
+    chart = echarts.init(host);
+    chart.on("click", handleEChartsClick);
+
+    resizeObserver = new ResizeObserver(() => chart?.resize());
+    resizeObserver.observe(host);
   });
+
+  onDestroy(() => {
+    resizeObserver?.disconnect();
+    chart?.dispose();
+    chart = null;
+  });
+
+  /* ----------------------------- schema cache ------------------------- */
+
+  $effect(() => {
+    const v = schemaCache.version;
+    void v;
+    if (!tile.cube) {
+      schema = null;
+      return;
+    }
+    const cached = schemaCache.peek(tile.cube) as SchemaLike | null;
+    if (cached) {
+      schema = cached;
+    } else {
+      void schemaCache.get(tile.cube).catch(() => {});
+    }
+  });
+
+  /* ----------------------------- fetch effect ------------------------- */
+
+  let lastQueryJson = $state<string>("");
+
+  $effect(() => {
+    const tileQuery = tile.query;
+    const active = activeFilters.all;
+    const s = schema;
+    void s;
+    if (!tileQuery || tileQuery.kind !== "inline") return;
+
+    const effective = effectiveQueryFor(tile, active, schema);
+    if (!effective) return;
+    const json = JSON.stringify(effective);
+    if (json === lastQueryJson) return;
+    lastQueryJson = json;
+
+    loading = true;
+    error = null;
+    void (async () => {
+      try {
+        const r = await executeAiQuery(effective, "records");
+        response = r;
+        if (r.status !== "SUCCESS") {
+          error = r.error ?? `Query failed: ${r.status}`;
+        }
+      } catch (e: unknown) {
+        error = e instanceof Error ? e.message : String(e);
+        response = null;
+      } finally {
+        loading = false;
+      }
+    })();
+  });
+
+  /* ----------------------------- render effect ------------------------ */
+
+  $effect(() => {
+    const r = response;
+    const kind = tile.chartType ?? "bar";
+    void r;
+    if (!chart) return;
+    unsupported = !isSupportedChartKind(kind);
+    if (!r || r.status !== "SUCCESS") {
+      chart.clear();
+      return;
+    }
+    if (unsupported) {
+      chart.clear();
+      return;
+    }
+    const option = buildChartOption(r, kind);
+    if (option) {
+      // notMerge=true so axis category changes don't leave stale ticks.
+      chart.setOption(option, true);
+    } else {
+      chart.clear();
+    }
+  });
+
+  /* ----------------------------- click capture ------------------------ */
+
+  function handleEChartsClick(params: echarts.ECElementEvent): void {
+    if (!onClickFilter) return;
+    if (!tile.query || tile.query.kind !== "inline") return;
+    const body = tile.query.body as {
+      rows?: Array<{ dimension: string; hierarchy: string; level: string }>;
+    };
+    const rowAxis = body.rows?.[0];
+    if (!rowAxis) return;
+
+    // ECharts click events carry different shapes per series type. For
+    // bar/line/area: params.name is the category. For pie: params.name
+    // is the slice name. In both cases that's the dashboard.click
+    // "member" value.
+    const name = typeof params.name === "string" ? params.name : null;
+    if (!name) return;
+    const filter: DashboardFilter = {
+      dimension: rowAxis.dimension,
+      hierarchy: rowAxis.hierarchy,
+      level: rowAxis.level,
+      members: [name],
+    };
+    onClickFilter(filter);
+  }
 </script>
 
-<div class="chart-tile" data-chart-type={summary.chartType}>
+{#if tile.query?.kind === "reference"}
   <div class="placeholder">
-    <div class="badge">CHART</div>
-    <div class="info">
-      <span class="key">type</span><span class="value">{summary.chartType}</span>
-      <span class="key">cube</span><span class="value">{summary.cube}</span>
-      <span class="key">query</span><span class="value">{summary.queryKind}: {summary.queryRef}</span>
-    </div>
-    <div class="hint">Data binding lands with task #12 — effective-query builder + filter merge.</div>
+    <p>Reference-bound chart tile.</p>
+    <p class="hint">Resolving {tile.query.path} → AiQueryRequest is a follow-up.</p>
   </div>
-</div>
+{:else if !tile.query || !tile.cube}
+  <div class="placeholder">Tile missing cube or query binding.</div>
+{:else}
+  <div class="chart-tile">
+    {#if loading && !response}
+      <div class="overlay">Loading…</div>
+    {/if}
+    {#if error}
+      <div class="overlay error">{error}</div>
+    {/if}
+    {#if unsupported}
+      <div class="overlay">
+        Chart type <code>{tile.chartType}</code> not yet supported in dashboards.
+      </div>
+    {/if}
+    <div class="canvas" bind:this={host}></div>
+  </div>
+{/if}
 
 <style>
   .chart-tile {
-    display: flex;
+    position: relative;
     height: 100%;
+    width: 100%;
+  }
+  .canvas {
+    height: 100%;
+    width: 100%;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
     align-items: center;
     justify-content: center;
+    background: rgba(255, 255, 255, 0.75);
+    color: var(--fg-muted);
+    font-size: 0.875rem;
+    z-index: 1;
+    pointer-events: none;
+    text-align: center;
     padding: 0.5rem;
   }
+  .overlay.error {
+    color: #991b1b;
+    background: rgba(254, 242, 242, 0.92);
+  }
   .placeholder {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    text-align: center;
+    padding: 1rem;
     color: var(--fg-muted);
+    font-size: 0.8125rem;
   }
-  .badge {
-    font-size: 0.6875rem;
-    letter-spacing: 0.08em;
-    font-weight: 600;
-    padding: 0.125rem 0.5rem;
-    border-radius: 999px;
-    background: var(--bg-muted, #f3f4f6);
-    color: var(--fg-muted);
-  }
-  .info {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 0.125rem 0.5rem;
-    font-size: 0.75rem;
-    font-family: monospace;
-  }
-  .key {
-    color: var(--fg-muted);
-    text-align: right;
-  }
-  .value {
-    text-align: left;
-    word-break: break-all;
-  }
-  .hint {
-    font-size: 0.6875rem;
-    font-style: italic;
-    color: var(--fg-muted);
+  .placeholder p { margin: 0.125rem 0; }
+  .placeholder .hint { font-size: 0.75rem; font-style: italic; }
+  code {
+    background: var(--bg-code, #f3f4f6);
+    padding: 0.0625em 0.25em;
+    border-radius: 3px;
+    font-size: 0.85em;
   }
 </style>
