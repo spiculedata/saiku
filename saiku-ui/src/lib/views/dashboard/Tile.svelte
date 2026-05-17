@@ -9,7 +9,8 @@
    */
 
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
-  import type { DashboardTile } from "$lib/api/dashboards";
+  import { activeFilters } from "$lib/stores/activeFilters.svelte";
+  import type { DashboardTile, DashboardFilter } from "$lib/api/dashboards";
   import ChartTile from "$lib/views/dashboard/tiles/ChartTile.svelte";
   import TableTile from "$lib/views/dashboard/tiles/TableTile.svelte";
   import TextTile from "$lib/views/dashboard/tiles/TextTile.svelte";
@@ -30,6 +31,14 @@
   function handleRemove(): void {
     if (readOnly) return;
     dashboardStore.removeTile(tile.id);
+  }
+
+  /** Click-filter capture from chart / table sub-tiles. Push onto the
+   *  active-filter set tagged with this tile's id; the chip bar shows
+   *  the new filter and every compatible tile recomputes its effective
+   *  query on the activeFilters store's tick. */
+  function handleClickFilter(filter: DashboardFilter): void {
+    activeFilters.pushClick(filter, tile.id);
   }
 </script>
 
@@ -56,9 +65,9 @@
   </header>
   <div class="tile-body">
     {#if tile.type === "chart"}
-      <ChartTile {tile} />
+      <ChartTile {tile} onClickFilter={readOnly ? undefined : handleClickFilter} />
     {:else if tile.type === "table"}
-      <TableTile {tile} />
+      <TableTile {tile} onClickFilter={readOnly ? undefined : handleClickFilter} />
     {:else if tile.type === "text"}
       <TextTile {tile} />
     {:else if tile.type === "filter"}

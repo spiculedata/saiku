@@ -8,12 +8,18 @@
    * verifiable end-to-end.
    */
 
-  import type { DashboardTile } from "$lib/api/dashboards";
+  import type { DashboardTile, DashboardFilter } from "$lib/api/dashboards";
 
   interface Props {
     tile: DashboardTile;
+    /** Click-filter callback — kept on the props surface so Tile.svelte
+     *  can wire it uniformly across tile types; the placeholder doesn't
+     *  fire it until the real ECharts renderer lands in a follow-up. */
+    onClickFilter?: (filter: DashboardFilter) => void;
   }
 
+  // onClickFilter is declared on Props for API consistency with TableTile;
+  // it gets wired when the ECharts renderer lands in a follow-up.
   let { tile }: Props = $props();
 
   let summary = $derived({
