@@ -99,14 +99,14 @@ jobs:
           ls -la release-assets/
 
       - name: Upload JAR artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: saiku-jar
           path: release-assets/${{ steps.meta.outputs.jar_name }}
           retention-days: 7
 
       - name: Upload dist zip artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: saiku-dist
           path: release-assets/${{ steps.meta.outputs.dist_name }}
