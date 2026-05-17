@@ -13,6 +13,7 @@
    */
 
   import AddTileMenu from "$lib/views/dashboard/AddTileMenu.svelte";
+  import FilterSuggestionsModal from "$lib/views/dashboard/FilterSuggestionsModal.svelte";
   import type { TileType } from "$lib/api/dashboards";
 
   interface Props {
@@ -34,6 +35,8 @@
     onSave,
     onAddTile,
   }: Props = $props();
+
+  let suggestOpen = $state(false);
 
   // The input is controlled by the `name` prop directly — the store is
   // the source of truth. onNameChange propagates user edits upstream and
@@ -61,6 +64,16 @@
 
   {#if !readOnly}
     <div class="actions">
+      <button
+        type="button"
+        class="btn"
+        onclick={() => (suggestOpen = true)}
+        aria-haspopup="dialog"
+        title="Suggest filter widgets from dimensions your tiles already use"
+      >
+        🔍 Suggest filters
+      </button>
+
       <AddTileMenu onPick={(t) => onAddTile?.(t)} disabled={!onAddTile} />
 
       <button
@@ -81,6 +94,8 @@
     </div>
   {/if}
 </header>
+
+<FilterSuggestionsModal open={suggestOpen} onClose={() => (suggestOpen = false)} />
 
 <style>
   .toolbar {

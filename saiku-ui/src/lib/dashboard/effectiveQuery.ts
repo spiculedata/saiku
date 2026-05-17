@@ -110,10 +110,10 @@ export function appliesToSchema(filter: FilterSelection | ActiveFilter["filter"]
   return resolveTarget(schema, filter.dimension, filter.hierarchy, filter.level) !== null;
 }
 
-/** Is the filter's hierarchy ALREADY on the tile's rows/columns axis?
- *  saiku#784 — same hierarchy on axis + filter is a server-side validation
- *  error; we surface it as "silently skip" client-side to avoid the
- *  agent-facing 400. */
+/** Is the filter's hierarchy already on the tile's rows/columns axis?
+ *  Kept as a public predicate for callers that want to short-circuit
+ *  before invoking the full merge; the merge itself no longer DROPS on
+ *  this case — see {@link mergeFilters} for the axis-rewrite semantics. */
 export function conflictsWithAxis(filter: FilterSelection, base: AiQueryRequestLike): boolean {
   const axes = [...(base.rows ?? []), ...(base.columns ?? [])];
   const fkey = `${k(filter.dimension)}/${k(filter.hierarchy)}`;
@@ -122,17 +122,26 @@ export function conflictsWithAxis(filter: FilterSelection, base: AiQueryRequestL
 
 /* ------------------------------- merge ------------------------------- */
 
-/** Merge the active filter set into a base query, returning a new
- *  query — never mutates the input. Replace-by-hierarchy semantics:
+/** Merge the active filter set into a base query, returning a new query
+ *  — never mutates the input. Semantics mirror the server-side
+ *  ThinQueryFilterMerge for reference tiles:
  *
  *   - For each applicable active filter:
- *       - if base.filters already has one for the same (dim, hier),
- *         replace it.
- *       - else append.
+ *       - if the filter's hierarchy is ALREADY on rows / columns of the
+ *         tile, REWRITE that axis selection in place: collapse all
+ *         entries for the matching hierarchy down to a single entry at
+ *         the filter's level + members. The dashboard filter's level
+ *         wins (so a chart showing Country+State drilldown narrowed by
+ *         a State chip will render at the State grain).
+ *       - else replace-or-append into `filters[]` keyed by hierarchy.
  *   - Filters whose dim/hier/level doesn't resolve in the schema are
  *     dropped silently (per design decision 5 — multi-cube auto-skip).
- *   - Filters whose hierarchy is already on base.rows/columns are
- *     dropped silently (saiku#784).
+ *
+ *  Previously this dropped axis-overlap filters silently (the old saiku#784
+ *  guard). That was wrong: dashboard chips should narrow the existing
+ *  axis, not be a no-op. Mondrian's hierarchy-on-both-axis rejection is
+ *  still respected because we never produce a query with the same
+ *  hierarchy on an axis AND in filters[] — only one wins per filter.
  *
  *  `activeFilters` is the merged set from $lib/stores/activeFilters —
  *  callers should pass `.all`, not the source-tagged sub-arrays. */
@@ -141,23 +150,69 @@ export function mergeFilters(
   activeFilters: ActiveFilter[],
   schema: SchemaLike,
 ): AiQueryRequestLike {
+  // Mutable shallow copies — the merge rewrites entries in place when
+  // an active filter shares a hierarchy with an axis selection.
+  let rows: AxisSelection[] = (base.rows ?? []).map((a) => ({ ...a }));
+  let columns: AxisSelection[] = (base.columns ?? []).map((a) => ({ ...a }));
   const merged: FilterSelection[] = (base.filters ?? []).map((f) => ({ ...f }));
+
+  function collapseAxisOnHierarchy(
+    axis: AxisSelection[],
+    hkey: string,
+    replacement: AxisSelection,
+  ): AxisSelection[] {
+    let inserted = false;
+    const next: AxisSelection[] = [];
+    for (const a of axis) {
+      const akey = `${k(a.dimension)}/${k(a.hierarchy)}`;
+      if (akey !== hkey) {
+        next.push(a);
+        continue;
+      }
+      if (!inserted) {
+        next.push(replacement);
+        inserted = true;
+      }
+      // subsequent matches on the same hierarchy are dropped — the
+      // dashboard filter collapses the hierarchical drilldown into a
+      // single axis entry at the filter's level.
+    }
+    return next;
+  }
 
   for (const af of activeFilters) {
     const f = af.filter;
-    // 1. applicability against schema
     const resolved = resolveTarget(schema, f.dimension, f.hierarchy, f.level);
     if (!resolved) continue;
-    // 2. axis-reuse conflict
+
     const candidate: FilterSelection = {
       dimension: resolved.dimension,
       hierarchy: resolved.hierarchy,
       level: resolved.level,
       members: f.members.slice(),
     };
-    if (conflictsWithAxis(candidate, base)) continue;
-    // 3. replace-by-hierarchy or append
     const hkey = `${k(candidate.dimension)}/${k(candidate.hierarchy)}`;
+
+    const onRows = rows.some((a) => `${k(a.dimension)}/${k(a.hierarchy)}` === hkey);
+    const onCols = !onRows && columns.some((a) => `${k(a.dimension)}/${k(a.hierarchy)}` === hkey);
+
+    if (onRows || onCols) {
+      const axisReplacement: AxisSelection = {
+        dimension: candidate.dimension,
+        hierarchy: candidate.hierarchy,
+        level: candidate.level,
+        members: (candidate.members ?? []).slice(),
+      };
+      if (onRows) {
+        rows = collapseAxisOnHierarchy(rows, hkey, axisReplacement);
+      } else {
+        columns = collapseAxisOnHierarchy(columns, hkey, axisReplacement);
+      }
+      continue;
+    }
+
+    // Hierarchy isn't on either axis — replace-by-hierarchy in filters[]
+    // or append.
     const idx = merged.findIndex((existing) => `${k(existing.dimension)}/${k(existing.hierarchy)}` === hkey);
     if (idx >= 0) {
       merged[idx] = candidate;
@@ -166,7 +221,7 @@ export function mergeFilters(
     }
   }
 
-  return { ...base, filters: merged };
+  return { ...base, rows, columns, filters: merged };
 }
 
 /* --------------------------- effective query ------------------------- */

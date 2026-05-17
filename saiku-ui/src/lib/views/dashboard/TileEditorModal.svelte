@@ -183,7 +183,20 @@
 
   function handleCubeChange(e: Event): void {
     const v = (e.target as HTMLSelectElement).value;
-    cube = cubes.find((c) => cubeKey(c) === v) ?? null;
+    const picked = cubes.find((c) => cubeKey(c) === v);
+    // Project the AiCubeSummary down to the four CubeRef fields the
+    // server's AiCubeRef accepts. Extra summary fields (cubeCaption,
+    // defaultMeasure, measureCount) get serialised onto the dashboard
+    // JSON otherwise, and Jackson rejects them with
+    // "Unknown field 'cubeCaption' on AiCubeRef" on save.
+    cube = picked
+      ? {
+          connectionName: picked.connectionName,
+          catalog: picked.catalog,
+          schema: picked.schema,
+          cubeName: picked.cubeName,
+        }
+      : null;
     // Clear stale filter target when the cube changes — the level
     // names won't apply to the new cube's schema.
     if (tile.type === "filter") {

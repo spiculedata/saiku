@@ -3,7 +3,7 @@
  *   - applicability resolution + alias matching
  *   - replace-by-hierarchy vs append
  *   - silent drop on missing schema target
- *   - silent drop on axis-reuse conflict (saiku#784)
+ *   - axis-rewrite when the filter hierarchy is already on rows/columns
  *   - immutability: source tile + active filters never mutated
  */
 
@@ -185,16 +185,71 @@ describe("mergeFilters", () => {
     expect(result.filters?.[0].dimension).toBe("Time");
   });
 
-  test("drops a filter whose hierarchy is already on an axis (saiku#784)", () => {
-    // Product is on rows; trying to filter on Product/Products/Product Family
-    // would re-use the axis hierarchy. Silently skipped.
+  test("rewrites the rows axis selection when filter hierarchy is on rows", () => {
+    // Product/Products is on rows at Product Family; dashboard filter
+    // narrows it to [Drink]. The rows entry's members must be updated in
+    // place and the filter should NOT also appear in filters[] (Mondrian
+    // rejects same-hierarchy on axis + slicer).
     const result = mergeFilters(
       baseQuery(),
       [active("Product", "Products", "Product Family", ["[Product].[Products].[Drink]"])],
       sampleSchema(),
     );
+    // filters[] only carries the baked-in Time filter still.
     expect(result.filters).toHaveLength(1);
     expect(result.filters?.[0].dimension).toBe("Time");
+    // rows axis selection now narrowed.
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows?.[0]).toEqual({
+      dimension: "Product",
+      hierarchy: "Products",
+      level: "Product Family",
+      members: ["[Product].[Products].[Drink]"],
+    });
+  });
+
+  test("collapses multi-level rows on the same hierarchy into a single narrowed entry", () => {
+    // A query showing Country+State drilldown on rows narrowed by a
+    // State filter should collapse to a single State entry. Models the
+    // common "filter widget narrows the hierarchical drill" case.
+    const base: AiQueryRequestLike = {
+      cube: { connectionName: "foodmart", cubeName: "Sales" },
+      measures: [{ name: "Unit Sales" }],
+      rows: [
+        { dimension: "Product", hierarchy: "Products", level: "Product Family" },
+        { dimension: "Product", hierarchy: "Products", level: "Product Department" },
+      ],
+      filters: [],
+    };
+    const schemaWithDept: SchemaLike = {
+      ...sampleSchema(),
+      dimensions: {
+        ...sampleSchema().dimensions,
+        product: {
+          name: "Product",
+          hierarchies: {
+            products: {
+              name: "Products",
+              levels: {
+                "product family": { name: "Product Family" },
+                "product department": { name: "Product Department" },
+              },
+            },
+          },
+        },
+      },
+    };
+    const result = mergeFilters(
+      base,
+      [active("Product", "Products", "Product Family", ["[Product].[Products].[Drink]"])],
+      schemaWithDept,
+    );
+    // One axis entry survives (Product Family slot replaced); the
+    // Department duplicate-hierarchy entry is dropped.
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows?.[0].level).toBe("Product Family");
+    expect(result.rows?.[0].members).toEqual(["[Product].[Products].[Drink]"]);
+    expect(result.filters).toEqual([]);
   });
 
   test("never mutates the source query", () => {

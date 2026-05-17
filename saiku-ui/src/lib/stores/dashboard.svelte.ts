@@ -85,7 +85,14 @@ class DashboardStore {
     this.saving = true;
     this.saveError = null;
     try {
-      await saveDashboard(this.savedPath, this.current);
+      // Strip any extras off tile.cube before serialising — earlier
+      // builds stored the full AiCubeSummary on the tile (cubeCaption,
+      // defaultMeasure, measureCount), and the server's AiCubeRef
+      // Jackson model rejects unknown fields with a 400. New tile
+      // edits already project down, but loaded dashboards from older
+      // saves carry the extras through round-trip.
+      const sanitised = sanitiseForSave(this.current);
+      await saveDashboard(this.savedPath, sanitised);
       this.dirty = false;
       this.dirtyCount = 0;
       return true;
@@ -181,3 +188,27 @@ class DashboardStore {
 }
 
 export const dashboardStore = new DashboardStore();
+
+/** Project every tile's {@code cube} down to the 4 fields the server's
+ *  AiCubeRef accepts. Defensive — new edits already project on assignment,
+ *  but legacy dashboards round-tripped through `loadDashboard` keep
+ *  whatever extras were saved in earlier builds. */
+function sanitiseForSave(d: Dashboard): Dashboard {
+  return {
+    ...d,
+    layout: {
+      ...d.layout,
+      tiles: d.layout.tiles.map((t) => (t.cube ? { ...t, cube: pickCubeRef(t.cube) } : t)),
+    },
+  };
+}
+
+function pickCubeRef(c: DashboardTile["cube"]): DashboardTile["cube"] {
+  if (!c) return c;
+  return {
+    connectionName: c.connectionName,
+    catalog: c.catalog,
+    schema: c.schema,
+    cubeName: c.cubeName,
+  };
+}
