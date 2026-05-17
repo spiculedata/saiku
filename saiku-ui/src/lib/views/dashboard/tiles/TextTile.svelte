@@ -5,10 +5,10 @@
    * subscriptions — purely declarative.
    *
    * Threat model: a malicious analyst with write access to the JCR
-   * repository injects <script> or javascript: URLs. DOMPurify strips
-   * scripts, event handlers, and dangerous URL schemes by default;
-   * a sanity test in the project's vitest harness asserts the
-   * common XSS payloads don't survive (task #14).
+   * repository injects script tags or javascript: URLs. DOMPurify
+   * strips scripts, event handlers, and dangerous URL schemes by
+   * default; a sanity test in the project's vitest harness asserts
+   * the common XSS payloads don't survive (task #14).
    */
 
   import DOMPurify from "dompurify";
@@ -21,19 +21,19 @@
   let { tile }: Props = $props();
 
   // Stricter than DOMPurify's html-profile defaults — also forbid
-  // <style>, <embed>, <object>, <iframe>, <form> so analysts can't
+  // style / embed / object / iframe / form tags so analysts can't
   // smuggle CSS-based exfil, inline plugins, or hidden form posts
   // through a TextTile. Script tags, event handlers, and
   // javascript:/data: URLs are stripped by DOMPurify's defaults.
   //
   // Note: USE_PROFILES has an additive effect that re-allows some of
-  // these tags (notably <embed> when SVG appears in the input),
+  // these tags (notably embed when SVG appears in the input),
   // overriding FORBID_TAGS. Drop the profile and use DOMPurify's
   // default-strict mode — it covers the OWASP vectors we care about
   // and respects our forbid list cleanly.
   const SANITISE_CONFIG = {
     FORBID_TAGS: ["style", "embed", "object", "iframe", "form"],
-  } as const;
+  };
 
   let safeHtml = $derived(DOMPurify.sanitize(tile.text ?? "", SANITISE_CONFIG));
 </script>

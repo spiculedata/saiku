@@ -43,6 +43,13 @@
   let cube = $state<CubeRef | null>(untrack(() => tile.cube ?? null));
   let chartType = $state(untrack(() => tile.chartType ?? "bar"));
   let text = $state(untrack(() => tile.text ?? ""));
+  // Position + size — numeric controls per the design's "no drag-resize"
+  // call. Users rearrange via these fields; the grid auto-places tiles
+  // on add and re-renders to the new (x, y, w, h) on save.
+  let tileX = $state<number>(untrack(() => tile.x));
+  let tileY = $state<number>(untrack(() => tile.y));
+  let tileW = $state<number>(untrack(() => tile.w));
+  let tileH = $state<number>(untrack(() => tile.h));
   let widget = $state<FilterWidget>(untrack(() => tile.widget ?? "single-select"));
   let filterTarget = $state<{ dimension: string; hierarchy: string; level: string }>(
     untrack(() => ({
@@ -151,7 +158,16 @@
 
   function handleSave(): void {
     bodyError = null;
-    const patch: Partial<DashboardTile> = { title: title || undefined };
+    const patch: Partial<DashboardTile> = {
+      title: title || undefined,
+      // Clamp size to the 12-col grid; refuse w <= 0 / h <= 0. The grid
+      // tolerates arbitrary y values (rows extend to fit), so y only
+      // needs a non-negative floor.
+      x: Math.max(0, Math.min(11, Math.floor(tileX))),
+      y: Math.max(0, Math.floor(tileY)),
+      w: Math.max(1, Math.min(12, Math.floor(tileW))),
+      h: Math.max(1, Math.floor(tileH)),
+    };
 
     if (tile.type === "text") {
       patch.text = text;
@@ -214,6 +230,26 @@
         <span>Title</span>
         <input type="text" bind:value={title} placeholder={`Untitled ${tile.type}`} />
       </label>
+
+      <fieldset class="size">
+        <legend>Position &amp; size (12-col grid)</legend>
+        <label class="field inline">
+          <span>x</span>
+          <input type="number" min="0" max="11" bind:value={tileX} />
+        </label>
+        <label class="field inline">
+          <span>y</span>
+          <input type="number" min="0" bind:value={tileY} />
+        </label>
+        <label class="field inline">
+          <span>w</span>
+          <input type="number" min="1" max="12" bind:value={tileW} />
+        </label>
+        <label class="field inline">
+          <span>h</span>
+          <input type="number" min="1" bind:value={tileH} />
+        </label>
+      </fieldset>
 
       {#if tile.type === "text"}
         <label class="field">
@@ -377,6 +413,29 @@
     color: var(--fg-muted);
     text-transform: uppercase;
     letter-spacing: 0.04em;
+  }
+  .size {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-end;
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    margin: 0;
+  }
+  .size legend {
+    font-size: 0.75rem;
+    color: var(--fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0 0.25rem;
+  }
+  .field.inline {
+    flex: 1;
+    min-width: 4rem;
+  }
+  .field.inline input {
+    width: 100%;
   }
   input, select, textarea {
     padding: 0.375rem 0.5rem;
