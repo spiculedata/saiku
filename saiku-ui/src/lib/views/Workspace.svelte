@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { base } from "$app/paths";
   import type { SaikuSession } from "$lib/api/session";
   import Modal from "$lib/components/Modal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -39,22 +40,19 @@
     return base.endsWith(".saiku") ? base.slice(0, -".saiku".length) : base;
   }
 
-  /** New-tab handler. Confirms via the browser dialog if the current
-   *  query is dirty — same defensive prompt the toolbar's onNew uses,
-   *  inlined here so we don't have to plumb the modal up. */
+  /** New-tab handler. Opens a fresh workspace in a new browser tab so
+   *  the current query (with any in-progress edits) stays intact. v1 is
+   *  single-tab in-app; opening a new browser window is the pragmatic
+   *  way to work with multiple queries side-by-side without a full
+   *  per-tab store refactor. */
   function handleNewTab(): void {
-    if (query.dirty) {
-      // eslint-disable-next-line no-alert
-      const ok = window.confirm(i18n.t("confirm.discardUnsaved") ?? "Discard unsaved changes?");
-      if (!ok) return;
-    }
-    const cube = query.current?.cube ?? null;
-    query.reset();
-    if (cube) {
-      query.initFor(cube);
-    } else {
-      selection.clear();
-    }
+    if (typeof window === "undefined") return;
+    // base is the SvelteKit base path (typically "/ui"); strip any
+    // ?q= so the new window starts on a blank query, then open.
+    const url = new URL(window.location.href);
+    url.search = "";
+    url.pathname = base + "/";
+    window.open(url.toString(), "_blank", "noopener");
   }
 
   // Guard so we don't immediately overwrite the URL before (or during) hydrate.
@@ -142,7 +140,7 @@
           type="button"
           class="tab tab--new"
           aria-label={i18n.t("toast.newQuery")}
-          title={i18n.t("toast.newQuery")}
+          title="Open a new query in a new browser tab"
           onclick={handleNewTab}
         >+</button>
       </div>

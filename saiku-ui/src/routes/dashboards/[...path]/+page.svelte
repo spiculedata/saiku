@@ -11,6 +11,7 @@
   import { session } from "$lib/stores/session.svelte";
   import LoginForm from "$lib/views/LoginForm.svelte";
   import DashboardEditor from "$lib/views/dashboard/DashboardEditor.svelte";
+  import DashboardIndex from "$lib/views/dashboard/DashboardIndex.svelte";
 
   let { data } = $props();
 </script>
@@ -18,7 +19,11 @@
 {#if session.loading}
   <div class="loading">Loading…</div>
 {:else if session.current}
-  <DashboardEditor dashboardPath={data.dashboardPath} />
+  {#if !data.dashboardPath}
+    <DashboardIndex />
+  {:else}
+    <DashboardEditor dashboardPath={data.dashboardPath} />
+  {/if}
 {:else}
   <LoginForm />
 {/if}
