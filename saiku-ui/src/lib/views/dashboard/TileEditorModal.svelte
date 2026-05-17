@@ -28,6 +28,7 @@
     type TileQuery,
   } from "$lib/api/dashboards";
   import { flatten, listRepository, type RepositoryNode } from "$lib/api/repository";
+  import { repositionTile } from "$lib/dashboard/tilePlacement";
 
   interface Props {
     tile: DashboardTile;
@@ -189,17 +190,35 @@
     }
   }
 
+  let positionError = $state<string | null>(null);
+
   function handleSave(): void {
     bodyError = null;
+    positionError = null;
+
+    // Resolve the new position via the layout-aware helper: validates
+    // x+w <= cols, refuses sub-1 sizes, and cascade-pushes siblings if
+    // the new rectangle overlaps them. Returns either a full new tiles
+    // array or an inline error to surface in the modal.
+    const layout = dashboardStore.current?.layout;
+    if (!layout) return;
+    const reposition = repositionTile(layout, tile.id, {
+      x: Math.floor(tileX),
+      y: Math.floor(tileY),
+      w: Math.floor(tileW),
+      h: Math.floor(tileH),
+    });
+    if (!reposition.ok) {
+      positionError = reposition.error ?? "Invalid position or size.";
+      return;
+    }
+
+    // Build the non-position patch (title, content, cube, query, etc.)
+    // and apply it on top of the repositioned source tile, then commit
+    // the whole tiles array in one go via replaceTiles so dirty bumps
+    // once for the entire change.
     const patch: Partial<DashboardTile> = {
       title: title || undefined,
-      // Clamp size to the 12-col grid; refuse w <= 0 / h <= 0. The grid
-      // tolerates arbitrary y values (rows extend to fit), so y only
-      // needs a non-negative floor.
-      x: Math.max(0, Math.min(11, Math.floor(tileX))),
-      y: Math.max(0, Math.floor(tileY)),
-      w: Math.max(1, Math.min(12, Math.floor(tileW))),
-      h: Math.max(1, Math.floor(tileH)),
     };
 
     if (tile.type === "text") {
@@ -243,7 +262,10 @@
       }
     }
 
-    dashboardStore.updateTile(tile.id, patch);
+    // Merge the patch into the repositioned source tile, then commit
+    // the whole cascade in one go.
+    const tiles = reposition.tiles!.map((t) => (t.id === tile.id ? { ...t, ...patch } : t));
+    dashboardStore.replaceTiles(tiles);
     onClose();
   }
 </script>
@@ -288,6 +310,9 @@
           <input type="number" min="1" bind:value={tileH} />
         </label>
       </fieldset>
+      {#if positionError}
+        <div class="position-error" role="alert">{positionError}</div>
+      {/if}
 
       {#if tile.type === "text"}
         <label class="field">
@@ -534,6 +559,13 @@
     gap: 0.375rem;
     font-size: 0.875rem;
     cursor: pointer;
+  }
+  .position-error {
+    padding: 0.5rem 0.75rem;
+    background: color-mix(in srgb, var(--danger) 14%, transparent);
+    color: var(--danger);
+    border-radius: 4px;
+    font-size: 0.8125rem;
   }
   .field.inline input {
     width: 100%;

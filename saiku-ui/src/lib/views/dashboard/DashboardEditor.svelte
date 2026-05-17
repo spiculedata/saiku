@@ -93,6 +93,11 @@
     flex-direction: column;
     gap: 0.75rem;
     padding: 1rem;
+    /* Fill .app__main (display:flex, default row direction) so the
+       12-col grid spans the full viewport width — without flex:1 a
+       flex-row child sizes to content. */
+    flex: 1;
+    min-width: 0;
     height: 100%;
     box-sizing: border-box;
   }

@@ -96,3 +96,84 @@ export function buildTile(layout: DashboardLayout, type: TileType, id: string): 
     type,
   };
 }
+
+/** Reposition / resize a tile within the layout. Validates the new
+ *  rectangle stays inside the grid; if it does, returns a new tiles
+ *  array with overlapping siblings pushed downward to make room.
+ *
+ *  The cascade rule:
+ *    1. Apply the user-supplied (x, y, w, h) to the source tile.
+ *    2. Find any other tile that now overlaps the source — push that
+ *       tile DOWN (increase y) by exactly enough to clear:
+ *          new_y = source.y + source.h
+ *    3. Pushed tiles may overlap further siblings; repeat (2) until
+ *       no overlaps remain.
+ *
+ *  Pure + immutable: never mutates the input layout. Returns null
+ *  when the user's input is invalid (x+w > cols, y/h/w out of range).
+ */
+export interface RepositionResult {
+  ok: boolean;
+  /** Populated when `ok`; the new tiles array to commit. */
+  tiles?: DashboardTile[];
+  /** Populated when `!ok`; a sentence the modal can render. */
+  error?: string;
+}
+
+export function repositionTile(
+  layout: DashboardLayout,
+  tileId: string,
+  next: { x: number; y: number; w: number; h: number },
+): RepositionResult {
+  const cols = layout.cols || 12;
+  if (next.w < 1) return { ok: false, error: "Width must be at least 1 column." };
+  if (next.h < 1) return { ok: false, error: "Height must be at least 1 row." };
+  if (next.x < 0) return { ok: false, error: "x must be ≥ 0." };
+  if (next.y < 0) return { ok: false, error: "y must be ≥ 0." };
+  if (next.w > cols) {
+    return { ok: false, error: `Width ${next.w} exceeds the ${cols}-column grid.` };
+  }
+  if (next.x + next.w > cols) {
+    return {
+      ok: false,
+      error: `Tile would extend past the right edge (x=${next.x}, w=${next.w}, max=${cols}). Reduce width or move left.`,
+    };
+  }
+
+  // Apply the user's change to a copy of the layout.
+  const idx = layout.tiles.findIndex((t) => t.id === tileId);
+  if (idx === -1) {
+    return { ok: false, error: "Tile id not found in layout." };
+  }
+  const updated: DashboardTile[] = layout.tiles.map((t, i) =>
+    i === idx ? { ...t, x: next.x, y: next.y, w: next.w, h: next.h } : { ...t },
+  );
+
+  // Cascade: walk tiles in y-then-x order. If any sibling overlaps a
+  // higher-priority tile, push it down. Repeat until stable. The loop
+  // terminates because every push increases at least one tile's y by
+  // a positive integer, and grid coords are bounded.
+  const safety = 1000; // catastrophic-bug ceiling, in case the math wedges
+  for (let iter = 0; iter < safety; iter++) {
+    let pushed = false;
+    // Sort indices by (y, x) so we resolve top-to-bottom, left-to-right.
+    const order = updated
+      .map((_, i) => i)
+      .sort((a, b) => updated[a].y - updated[b].y || updated[a].x - updated[b].x);
+    for (let i = 0; i < order.length; i++) {
+      const ai = order[i];
+      const a = updated[ai];
+      for (let j = i + 1; j < order.length; j++) {
+        const bi = order[j];
+        const b = updated[bi];
+        if (rectsOverlap(a.x, a.y, a.w, a.h, b.x, b.y, b.w, b.h)) {
+          updated[bi] = { ...b, y: a.y + a.h };
+          pushed = true;
+        }
+      }
+    }
+    if (!pushed) break;
+  }
+
+  return { ok: true, tiles: updated };
+}

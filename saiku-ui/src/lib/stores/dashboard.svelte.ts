@@ -114,6 +114,18 @@ class DashboardStore {
     this.markDirty();
   }
 
+  /** Replace the entire tiles array. Used by repositionTile callers
+   *  (the edit modal) that need to commit a tile move AND any cascaded
+   *  shifts on neighbours in a single dirty bump. */
+  replaceTiles(tiles: DashboardTile[]): void {
+    if (!this.current) return;
+    this.current = {
+      ...this.current,
+      layout: { ...this.current.layout, tiles },
+    };
+    this.markDirty();
+  }
+
   /** Append a tile. Tile id must be set by the caller (we never invent
    *  ids in a mutator — keeps the dirty-tracking honest). */
   addTile(tile: DashboardTile): void {

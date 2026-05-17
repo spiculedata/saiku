@@ -8,7 +8,7 @@
  */
 
 import { describe, test, expect } from "vitest";
-import { buildTile, defaultSizeFor, firstFreeSlot } from "$lib/dashboard/tilePlacement";
+import { buildTile, defaultSizeFor, firstFreeSlot, repositionTile } from "$lib/dashboard/tilePlacement";
 import type { DashboardLayout } from "$lib/api/dashboards";
 
 function emptyLayout(cols = 12): DashboardLayout {
@@ -75,6 +75,105 @@ describe("firstFreeSlot", () => {
     // A 6×2 should land in the gap (x=4, y=0), not below b.
     const slot = firstFreeSlot(layout, 6, 2);
     expect(slot).toEqual({ x: 4, y: 0 });
+  });
+});
+
+describe("repositionTile — validation", () => {
+  function layout(): DashboardLayout {
+    return {
+      cols: 12,
+      tiles: [
+        { id: "a", x: 0, y: 0, w: 6, h: 4, type: "chart" },
+        { id: "b", x: 6, y: 0, w: 6, h: 4, type: "table" },
+      ],
+    };
+  }
+
+  test("rejects x + w > cols", () => {
+    const r = repositionTile(layout(), "a", { x: 8, y: 0, w: 6, h: 4 });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/right edge/i);
+  });
+
+  test("rejects negative x", () => {
+    expect(repositionTile(layout(), "a", { x: -1, y: 0, w: 4, h: 2 }).ok).toBe(false);
+  });
+
+  test("rejects w < 1", () => {
+    expect(repositionTile(layout(), "a", { x: 0, y: 0, w: 0, h: 2 }).ok).toBe(false);
+  });
+
+  test("rejects unknown id", () => {
+    const r = repositionTile(layout(), "nope", { x: 0, y: 0, w: 4, h: 2 });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/not found/i);
+  });
+});
+
+describe("repositionTile — cascade", () => {
+  test("no-op move returns identical positions", () => {
+    const before: DashboardLayout = {
+      cols: 12,
+      tiles: [
+        { id: "a", x: 0, y: 0, w: 6, h: 4, type: "chart" },
+        { id: "b", x: 6, y: 0, w: 6, h: 4, type: "table" },
+      ],
+    };
+    const r = repositionTile(before, "a", { x: 0, y: 0, w: 6, h: 4 });
+    expect(r.ok).toBe(true);
+    expect(r.tiles).toEqual(before.tiles);
+  });
+
+  test("widening A so it overlaps B pushes B down", () => {
+    const before: DashboardLayout = {
+      cols: 12,
+      tiles: [
+        { id: "a", x: 0, y: 0, w: 6, h: 4, type: "chart" },
+        { id: "b", x: 6, y: 0, w: 6, h: 4, type: "table" },
+      ],
+    };
+    // Widen A to span the whole row — B now overlaps A.
+    const r = repositionTile(before, "a", { x: 0, y: 0, w: 12, h: 4 });
+    expect(r.ok).toBe(true);
+    const b = r.tiles!.find((t) => t.id === "b")!;
+    // B's top should be pushed to A.y + A.h = 4.
+    expect(b.y).toBe(4);
+    expect(b.x).toBe(6); // x preserved
+  });
+
+  test("cascade — moved tile pushes B which pushes C", () => {
+    const before: DashboardLayout = {
+      cols: 12,
+      tiles: [
+        { id: "a", x: 0, y: 0, w: 6, h: 2, type: "chart" },
+        { id: "b", x: 0, y: 2, w: 6, h: 2, type: "table" },
+        { id: "c", x: 0, y: 4, w: 6, h: 2, type: "text" },
+      ],
+    };
+    // Make A tall enough to swallow B's slot.
+    const r = repositionTile(before, "a", { x: 0, y: 0, w: 6, h: 4 });
+    expect(r.ok).toBe(true);
+    const tiles = r.tiles!;
+    const b = tiles.find((t) => t.id === "b")!;
+    const c = tiles.find((t) => t.id === "c")!;
+    // B should land at y=4 (below the resized A).
+    expect(b.y).toBe(4);
+    // C should be pushed below B (was overlapping after B moved).
+    expect(c.y).toBeGreaterThanOrEqual(b.y + b.h);
+  });
+
+  test("moving down into empty space doesn't disturb anyone", () => {
+    const before: DashboardLayout = {
+      cols: 12,
+      tiles: [
+        { id: "a", x: 0, y: 0, w: 4, h: 2, type: "chart" },
+        { id: "b", x: 8, y: 0, w: 4, h: 2, type: "table" },
+      ],
+    };
+    const r = repositionTile(before, "a", { x: 0, y: 5, w: 4, h: 2 });
+    expect(r.ok).toBe(true);
+    const b = r.tiles!.find((t) => t.id === "b")!;
+    expect(b.y).toBe(0); // unchanged
   });
 });
 
