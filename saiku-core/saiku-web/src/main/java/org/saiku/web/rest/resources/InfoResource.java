@@ -21,9 +21,11 @@ import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HEAD;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.GenericEntity;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriInfo;
 import jakarta.xml.bind.annotation.XmlAccessType;
 import jakarta.xml.bind.annotation.XmlAccessorType;
 import java.io.ByteArrayOutputStream;
@@ -97,11 +99,10 @@ public class InfoResource {
      *   <li>{@code saiku.demo=true} — flips the {@code demoMode} flag on,
      *       which the SPA reads to expose the same info on the login page.</li>
      *   <li>{@code saiku.mcp.url=https://.../mcp} — public URL of the MCP
-     *       endpoint (StreamableHTTP). Absent / blank means MCP is not
-     *       exposed (default for vanilla launcher deployments). The
-     *       container ships {@code saiku-mcp} but it's stdio-only by
-     *       default; setting this property tells the UI an HTTP front-end
-     *       is in place (e.g. demo.saiku.bi runs mcp-proxy in front).</li>
+     *       endpoint (StreamableHTTP). Overrides the auto-derived URL when
+     *       set; the auto-derived form points at this launcher's own
+     *       {@code /rest/saiku/api/mcp} so demo + dev work without
+     *       per-env config (saiku#878).</li>
      * </ul>
      *
      * <p>The AI Query API is always present in the codebase, so
@@ -111,7 +112,7 @@ public class InfoResource {
     @GET
     @Path("/capabilities")
     @Produces({"application/json"})
-    public Response getCapabilities() {
+    public Response getCapabilities(@Context UriInfo uriInfo) {
         Map<String, Object> ai = new LinkedHashMap<>();
         ai.put("enabled", true);
         ai.put("basePath", "/rest/saiku/api/ai");
@@ -123,7 +124,7 @@ public class InfoResource {
                         "query", "/rest/saiku/api/ai/query"));
 
         Map<String, Object> mcp = new LinkedHashMap<>();
-        String mcpUrl = System.getProperty("saiku.mcp.url", "");
+        String mcpUrl = resolveMcpUrl(uriInfo);
         if (mcpUrl != null && !mcpUrl.isBlank()) {
             mcp.put("enabled", true);
             mcp.put("url", mcpUrl);
@@ -144,23 +145,21 @@ public class InfoResource {
      * MCP endpoint so the SPA can offer a "Download .dxt" button on the
      * connection-info panel. The bundle is generated on the fly so the
      * embedded {@code url} matches whatever the operator configured via
-     * {@code -Dsaiku.mcp.url=...}; no static asset to keep in sync.
+     * {@code -Dsaiku.mcp.url=...} (or, since saiku#878, the request's
+     * own scheme + host when the property is unset).
      *
      * <p>A DXT file is a ZIP archive with a {@code manifest.json} at the
-     * root describing how the agent host should connect. For a remote /
-     * streamable-http MCP server like Saiku's, the manifest carries the
-     * URL plus a small amount of human-readable metadata for the install
-     * dialog.
-     *
-     * <p>Returns 404 when MCP isn't enabled (i.e. {@code saiku.mcp.url}
-     * is unset or blank). Vanilla launcher deployments ship saiku-mcp
-     * as stdio only — no URL means no bundle to hand out.
+     * root describing how the agent host should connect, plus a
+     * {@code server.js} stdio shim that forwards MCP frames to the
+     * remote streamable-http endpoint with Basic-auth credentials the
+     * user supplied at install time (saiku#878 — per-user creds → per-user
+     * Mondrian roles).
      */
     @GET
     @Path("/mcp.dxt")
     @Produces("application/octet-stream")
-    public Response getMcpDxt() {
-        String mcpUrl = System.getProperty("saiku.mcp.url", "");
+    public Response getMcpDxt(@Context UriInfo uriInfo) {
+        String mcpUrl = resolveMcpUrl(uriInfo);
         if (mcpUrl == null || mcpUrl.isBlank()) {
             return Response.status(Response.Status.NOT_FOUND)
                     .type(MediaType.APPLICATION_JSON)
@@ -203,16 +202,56 @@ public class InfoResource {
     }
 
     /**
+     * Resolve the MCP URL for this launcher. Operator-supplied
+     * {@code -Dsaiku.mcp.url} wins (useful when the public URL goes through
+     * a reverse proxy with a different hostname); otherwise we derive
+     * {@code <scheme>://<host>:<port>/rest/saiku/api/mcp} from the inbound
+     * request so demo + dev work without per-env config (saiku#878).
+     * Package-visible for unit tests.
+     */
+    static String resolveMcpUrl(UriInfo uriInfo) {
+        String override = System.getProperty("saiku.mcp.url", "");
+        if (override != null && !override.isBlank()) return override;
+        if (uriInfo == null) return null;
+        try {
+            URI base = uriInfo.getBaseUri();
+            // baseUri is like http://host:port/rest/ — strip everything
+            // from /rest onward and rebuild against /rest/saiku/api/mcp.
+            String scheme = base.getScheme();
+            String host = base.getHost();
+            int port = base.getPort();
+            StringBuilder sb = new StringBuilder();
+            sb.append(scheme).append("://").append(host);
+            if (port > 0 && !isDefaultPort(scheme, port)) {
+                sb.append(":").append(port);
+            }
+            sb.append("/rest/saiku/api/mcp");
+            return sb.toString();
+        } catch (RuntimeException e) {
+            log.debug("Failed to derive MCP URL from request — caller can set -Dsaiku.mcp.url to override", e);
+            return null;
+        }
+    }
+
+    private static boolean isDefaultPort(String scheme, int port) {
+        return ("http".equalsIgnoreCase(scheme) && port == 80) || ("https".equalsIgnoreCase(scheme) && port == 443);
+    }
+
+    /**
      * Build the DXT manifest payload. Package-visible for unit tests.
      *
      * <p>Uses the node-shim form rather than the newer {@code type: "remote"}
      * shape: Claude Desktop's manifest validator (as of the 2026-05 release
-     * train Tom tested against) only accepts {@code type} in
-     * {@code python | node | binary}, and rejects {@code remote} outright
-     * even though the spec documents it. The shim is a one-line Node
-     * script (see {@link #dxtShim}) that spawns {@code npx mcp-remote}
-     * pointed at this Saiku's URL — gives us a streamable-http bridge
-     * without forcing a real Node MCP server into the bundle.
+     * train) only accepts {@code type} in {@code python | node | binary},
+     * and rejects {@code remote} outright even though the spec documents it.
+     * The shim is a Node stdio↔streamable-http bridge (see {@link #dxtShim}).
+     *
+     * <p>saiku#878: {@code user_config} prompts the user for Saiku
+     * credentials at install time. Claude Desktop substitutes the values
+     * into the {@code mcp_config.env} block, which the shim reads to
+     * compute {@code Authorization: Basic} on every request — giving each
+     * user their own Mondrian role propagation without any deployment-side
+     * secrets.
      */
     Map<String, Object> buildDxtManifest(String mcpUrl, String host) {
         Map<String, Object> manifest = new LinkedHashMap<>();
@@ -228,12 +267,33 @@ public class InfoResource {
         manifest.put("author", Map.of("name", "Saiku Analytics", "url", "https://saiku.bi"));
         manifest.put("homepage", "https://github.com/spiculedata/saiku");
         manifest.put("license", "Apache-2.0");
+
+        Map<String, Object> userConfig = new LinkedHashMap<>();
+        Map<String, Object> usernameField = new LinkedHashMap<>();
+        usernameField.put("type", "string");
+        usernameField.put("title", "Saiku username");
+        usernameField.put("description", "The Saiku account this DXT will run queries as.");
+        usernameField.put("required", true);
+        userConfig.put("username", usernameField);
+        Map<String, Object> passwordField = new LinkedHashMap<>();
+        passwordField.put("type", "string");
+        passwordField.put("title", "Saiku password");
+        passwordField.put("description", "Stored in the host's secret store, not on disk.");
+        passwordField.put("sensitive", true);
+        passwordField.put("required", true);
+        userConfig.put("password", passwordField);
+        manifest.put("user_config", userConfig);
+
         Map<String, Object> server = new LinkedHashMap<>();
         server.put("type", "node");
         server.put("entry_point", "server.js");
         Map<String, Object> mcpConfig = new LinkedHashMap<>();
         mcpConfig.put("command", "node");
         mcpConfig.put("args", List.of("${__dirname}/server.js"));
+        Map<String, Object> env = new LinkedHashMap<>();
+        env.put("SAIKU_USER", "${user_config.username}");
+        env.put("SAIKU_PASS", "${user_config.password}");
+        mcpConfig.put("env", env);
         server.put("mcp_config", mcpConfig);
         manifest.put("server", server);
         return manifest;
@@ -243,12 +303,20 @@ public class InfoResource {
      * Node shim shipped inside the DXT zip as {@code server.js}: a
      * self-contained stdio↔streamable-http MCP bridge that uses only
      * Node stdlib (no npm deps). Runs under Claude Desktop's built-in
-     * Node. Earlier revisions delegated to {@code npx mcp-remote}, but
-     * Claude Desktop's node sandbox doesn't have {@code npx} on the
-     * PATH — the spawn failed silently and the host reported only
-     * "server disconnected". The URL is JSON-encoded so embedded quotes
-     * or unicode survive the round-trip into JavaScript source.
-     * Package-visible for unit tests.
+     * Node. The URL is JSON-encoded so embedded quotes or unicode survive
+     * the round-trip into JavaScript source.
+     *
+     * <p>saiku#878: the shim reads {@code SAIKU_USER} / {@code SAIKU_PASS}
+     * from its environment (populated by the host from the user_config
+     * the user supplied at install time) and attaches
+     * {@code Authorization: Basic <base64(user:pass)>} to every request,
+     * so per-user Mondrian roles flow end-to-end.
+     *
+     * <p>The shim also survives mid-session server cycles — when the
+     * remote loses our streamable-http session we transparently
+     * re-handshake and replay the in-flight request.
+     *
+     * <p>Package-visible for unit tests.
      */
     static String dxtShim(String mcpUrl) {
         String urlLiteral;
@@ -263,11 +331,14 @@ public class InfoResource {
         return "#!/usr/bin/env node\n"
                 + "// Saiku DXT shim — generated by /rest/saiku/info/mcp.dxt.\n"
                 + "// Self-contained stdio↔streamable-http MCP bridge. No npm deps.\n"
+                + "// Reads SAIKU_USER / SAIKU_PASS from env (populated by the\n"
+                + "// host from user_config at install time) and threads\n"
+                + "// Authorization: Basic on every request so the launcher's\n"
+                + "// Spring Security chain sees per-user credentials (#878).\n"
                 + "// Survives mid-session server cycles: when the remote loses\n"
-                + "// our streamable-http session (operator restarted mcp-proxy,\n"
-                + "// container recreated, etc.) we transparently re-handshake\n"
-                + "// and replay the in-flight request so the client never sees\n"
-                + "// the dropped session.\n"
+                + "// our streamable-http session (operator restarted the\n"
+                + "// launcher, container recreated, etc.) we transparently\n"
+                + "// re-handshake and replay the in-flight request.\n"
                 + "const https = require('https');\n"
                 + "const http = require('http');\n"
                 + "const { URL } = require('url');\n"
@@ -275,6 +346,11 @@ public class InfoResource {
                 + urlLiteral
                 + ");\n"
                 + "const lib = url.protocol === 'https:' ? https : http;\n"
+                + "const SAIKU_USER = process.env.SAIKU_USER || '';\n"
+                + "const SAIKU_PASS = process.env.SAIKU_PASS || '';\n"
+                + "const basicAuth = SAIKU_USER\n"
+                + "  ? 'Basic ' + Buffer.from(SAIKU_USER + ':' + SAIKU_PASS).toString('base64')\n"
+                + "  : null;\n"
                 + "let sessionId = null;\n"
                 + "function post(body) {\n"
                 + "  return new Promise((resolve, reject) => {\n"
@@ -282,6 +358,7 @@ public class InfoResource {
                 + "      'Content-Type': 'application/json',\n"
                 + "      'Accept': 'application/json, text/event-stream'\n"
                 + "    };\n"
+                + "    if (basicAuth) headers['Authorization'] = basicAuth;\n"
                 + "    if (sessionId) headers['mcp-session-id'] = sessionId;\n"
                 + "    const req = lib.request({\n"
                 + "      hostname: url.hostname,\n"

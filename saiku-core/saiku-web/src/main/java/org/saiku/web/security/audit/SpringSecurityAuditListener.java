@@ -7,6 +7,7 @@
 package org.saiku.web.security.audit;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.saiku.web.security.ratelimit.LoginRateLimiter;
 import org.springframework.context.ApplicationListener;
 import org.springframework.security.authentication.event.AbstractAuthenticationFailureEvent;
 import org.springframework.security.authentication.event.AuthenticationSuccessEvent;
@@ -18,13 +19,24 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
  * Bridges Spring Security authentication events onto the Saiku structured
- * audit log. Covers the HTTP-Basic / filter-chain auth path that doesn't go
- * through {@code SessionResource.login} (which audits directly).
+ * audit log AND the {@link LoginRateLimiter}. Covers the HTTP-Basic /
+ * filter-chain auth path that doesn't go through {@code SessionResource.login}
+ * (which audits + rate-limits directly).
  *
- * <p>We listen for the two shaped events — success + any failure subclass —
- * and skip the anonymous-authentication noise.
+ * <p>Listens for both event subclasses — success + any failure — and skips
+ * the anonymous-authentication noise. Success clears the limiter so a
+ * recovered user isn't kept locked out; failure increments it.
+ *
+ * <p>The limiter is optional: if no bean is wired, only audit logging fires.
+ * Issue #878 wires it for both Basic and form-login paths.
  */
 public class SpringSecurityAuditListener implements ApplicationListener<org.springframework.context.ApplicationEvent> {
+
+    private LoginRateLimiter rateLimiter;
+
+    public void setRateLimiter(LoginRateLimiter rateLimiter) {
+        this.rateLimiter = rateLimiter;
+    }
 
     @Override
     public void onApplicationEvent(org.springframework.context.ApplicationEvent event) {
@@ -33,14 +45,18 @@ public class SpringSecurityAuditListener implements ApplicationListener<org.spri
             if (auth == null || auth.getPrincipal() == null) return;
             String principal = auth.getName();
             if ("anonymousUser".equals(principal)) return;
-            AuditLogger.loginSuccess(currentRequest(auth), principal);
+            HttpServletRequest req = currentRequest(auth);
+            AuditLogger.loginSuccess(req, principal);
+            if (rateLimiter != null && req != null) rateLimiter.recordSuccess(req);
         } else if (event instanceof AbstractAuthenticationFailureEvent failure) {
             Authentication auth = failure.getAuthentication();
             String principal = auth != null ? auth.getName() : null;
             String reason = failure.getException() != null
                     ? failure.getException().getClass().getSimpleName()
                     : "unknown";
-            AuditLogger.loginFailure(currentRequest(auth), principal, reason);
+            HttpServletRequest req = currentRequest(auth);
+            AuditLogger.loginFailure(req, principal, reason);
+            if (rateLimiter != null && req != null) rateLimiter.recordFailure(req);
         }
     }
 
