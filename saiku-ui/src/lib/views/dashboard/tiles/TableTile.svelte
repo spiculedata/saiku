@@ -29,6 +29,7 @@
   import { schemaCache } from "$lib/stores/schemaCache.svelte";
   import {
     effectiveQueryFor,
+    applicableSavedFilters,
     type SchemaLike,
   } from "$lib/dashboard/effectiveQuery";
 
@@ -80,19 +81,28 @@
     if (!tileQuery) return;
 
     if (tileQuery.kind === "reference") {
-      // Reference tiles bypass the effective-query merge — the server
-      // loads the saved ThinQuery + runs it. Filter-merge applies once
-      // the saved query is converted to an AiQueryRequest server-side
-      // (future enhancement); for now click-filters + widget filters
-      // on reference tiles are a no-op.
-      const key = `ref:${tileQuery.path}`;
+      // Reference tile: server loads the saved ThinQuery, merges any
+      // applicable dashboard filters onto it via ThinQueryFilterMerge,
+      // then runs it. Filter applicability is checked client-side first
+      // against the tile's cube schema so we don't ship filters the
+      // server would have to drop anyway.
+      const refFilters = applicableSavedFilters(schema, active);
+      const key = `ref:${tileQuery.path}|${JSON.stringify(refFilters)}`;
       if (key === lastQueryJson) return;
       lastQueryJson = key;
       loading = true;
       error = null;
       void (async () => {
         try {
-          const r = await executeSavedQuery(tileQuery.path);
+          const r = await executeSavedQuery(
+            tileQuery.path,
+            refFilters.map((f) => ({
+              dimension: f.dimension,
+              hierarchy: f.hierarchy,
+              level: f.level,
+              members: f.members ?? [],
+            })),
+          );
           response = r;
           if (r.status !== "SUCCESS") error = r.error ?? `Query failed: ${r.status}`;
         } catch (e: unknown) {

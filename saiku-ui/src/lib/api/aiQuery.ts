@@ -105,11 +105,27 @@ export function isAiCell(v: unknown): v is AiCell {
   return typeof v === "object" && v !== null && "formatted" in (v as object);
 }
 
+/** Slicer-style filter shape that /ai/query/saved accepts to merge
+ *  dashboard-level filters onto the loaded ThinQuery. Mirrors the
+ *  server-side AiFilterSelection: dim/hier/level + canonical MDX member
+ *  unique names. */
+export interface SavedQueryFilter {
+  dimension: string;
+  hierarchy: string;
+  level: string;
+  members: string[];
+}
+
 /** POST /rest/saiku/api/ai/query/saved — resolver for reference-bound
- *  tiles. The server loads the .saiku file from the JCR, runs the
- *  ThinQuery, and returns the same AiQueryResponse shape inline tiles
+ *  tiles. The server loads the .saiku file from the JCR, applies any
+ *  supplied filters (axis-rewrite when the hierarchy is already on an
+ *  axis, otherwise slicer; see server-side ThinQueryFilterMerge), runs
+ *  the ThinQuery, and returns the same AiQueryResponse shape inline tiles
  *  already render. */
-export async function executeSavedQuery(path: string): Promise<AiQueryResponse> {
+export async function executeSavedQuery(
+  path: string,
+  filters: SavedQueryFilter[] = [],
+): Promise<AiQueryResponse> {
   const res = await fetch(`${REST_BASE}/query/saved`, {
     method: "POST",
     credentials: "include",
@@ -117,7 +133,7 @@ export async function executeSavedQuery(path: string): Promise<AiQueryResponse> 
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: JSON.stringify({ path }),
+    body: JSON.stringify({ path, filters }),
   });
   const text = await res.text();
   if (!text) throw new Error(`executeSavedQuery -> ${res.status}: empty body`);

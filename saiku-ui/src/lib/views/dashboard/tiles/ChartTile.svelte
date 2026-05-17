@@ -23,6 +23,7 @@
   import { schemaCache } from "$lib/stores/schemaCache.svelte";
   import {
     effectiveQueryFor,
+    applicableSavedFilters,
     type SchemaLike,
   } from "$lib/dashboard/effectiveQuery";
   import { buildChartOption, isSupportedChartKind } from "$lib/dashboard/chartOptions";
@@ -90,14 +91,23 @@
     if (!tileQuery) return;
 
     if (tileQuery.kind === "reference") {
-      const key = `ref:${tileQuery.path}`;
+      const refFilters = applicableSavedFilters(schema, active);
+      const key = `ref:${tileQuery.path}|${JSON.stringify(refFilters)}`;
       if (key === lastQueryJson) return;
       lastQueryJson = key;
       loading = true;
       error = null;
       void (async () => {
         try {
-          const r = await executeSavedQuery(tileQuery.path);
+          const r = await executeSavedQuery(
+            tileQuery.path,
+            refFilters.map((f) => ({
+              dimension: f.dimension,
+              hierarchy: f.hierarchy,
+              level: f.level,
+              members: f.members ?? [],
+            })),
+          );
           response = r;
           if (r.status !== "SUCCESS") error = r.error ?? `Query failed: ${r.status}`;
         } catch (e: unknown) {

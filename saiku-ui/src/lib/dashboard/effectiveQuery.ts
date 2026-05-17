@@ -171,6 +171,32 @@ export function mergeFilters(
 
 /* --------------------------- effective query ------------------------- */
 
+/** Project the active filters into the SavedQueryFilter shape the
+ *  /ai/query/saved endpoint expects. Drops filters whose dim/hier/level
+ *  doesn't resolve in the tile's cube schema (multi-cube auto-skip).
+ *  Returns canonical names so the server-side AiSchema lookup hits the
+ *  same key whether the client supplied a canonical or display-name
+ *  variant. */
+export function applicableSavedFilters(
+  schema: SchemaLike | null,
+  activeFilters: ActiveFilter[],
+): FilterSelection[] {
+  if (!schema) return [];
+  const out: FilterSelection[] = [];
+  for (const af of activeFilters) {
+    const f = af.filter;
+    const resolved = resolveTarget(schema, f.dimension, f.hierarchy, f.level);
+    if (!resolved) continue;
+    out.push({
+      dimension: resolved.dimension,
+      hierarchy: resolved.hierarchy,
+      level: resolved.level,
+      members: f.members.slice(),
+    });
+  }
+  return out;
+}
+
 /** Compute the AiQueryRequest a tile should send to /ai/query right now.
  *  Returns null for tiles that have no inline body (reference tiles
  *  require fetching the saved query first — handled by the caller). */

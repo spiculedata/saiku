@@ -121,11 +121,11 @@ public class AiQueryResource {
     @Path("/query/saved")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response executeSaved(java.util.Map<String, Object> body) {
+    public Response executeSaved(org.saiku.service.olap.ai.AiSavedQueryRequest body) {
         if (datasourceService == null || sessionService == null) {
             return error("saved-query resolver requires repository wiring");
         }
-        String path = body == null ? null : (String) body.get("path");
+        String path = body == null ? null : body.getPath();
         if (path == null || path.isBlank()) {
             return badRequest("path", "path required (repository location of the .saiku file)", null);
         }
@@ -160,6 +160,31 @@ public class AiQueryResource {
         if (tq.getName() == null || tq.getName().contains("/")) {
             tq.setName(java.util.UUID.randomUUID().toString());
         }
+
+        // Merge dashboard runtime filters onto the loaded ThinQuery before
+        // execution. Skipped silently when the request carries no filters
+        // (the historical path), when the query is MDX-mode (can't splice
+        // safely), or when the cube schema can't be loaded. See
+        // ThinQueryFilterMerge for the precedence + axis-rewrite rules.
+        if (body.getFilters() != null
+                && !body.getFilters().isEmpty()
+                && tq.getType() == ThinQuery.Type.QUERYMODEL
+                && tq.getCube() != null
+                && cubeMetadataService != null) {
+            try {
+                org.saiku.olap.dto.SaikuCube cube = tq.getCube();
+                AiCubeRef ref =
+                        new AiCubeRef(cube.getConnection(), cube.getCatalog(), cube.getSchema(), cube.getName());
+                AiSchema schema = cubeMetadataService.getSchema(ref);
+                org.saiku.service.olap.ai.ThinQueryFilterMerge.apply(tq, body.getFilters(), schema);
+            } catch (RuntimeException ve) {
+                // Schema lookup failures shouldn't poison the saved-query
+                // execution path — fall through with the un-merged query
+                // and let it run as-authored.
+                log.warn("Dashboard filter merge skipped for saved query {}: {}", path, ve.getMessage());
+            }
+        }
+
         CellDataSet cds;
         try {
             cds = thinQueryService.execute(tq);

@@ -86,8 +86,7 @@ public class DashboardResource {
         } catch (JsonProcessingException e) {
             log.error("dashboard {} is unparseable as Dashboard JSON", path, e);
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity(Map.of(
-                            "status", "ERROR", "error", "Stored dashboard is not valid JSON: " + e.getMessage()))
+                    .entity(Map.of("status", "ERROR", "error", "Stored dashboard is not valid JSON: " + e.getMessage()))
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         }

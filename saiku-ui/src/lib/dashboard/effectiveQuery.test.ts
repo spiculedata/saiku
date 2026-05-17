@@ -9,6 +9,7 @@
 
 import { describe, test, expect } from "vitest";
 import {
+  applicableSavedFilters,
   appliesToSchema,
   conflictsWithAxis,
   effectiveQueryFor,
@@ -273,5 +274,41 @@ describe("effectiveQueryFor", () => {
     );
     expect(result?.filters).toHaveLength(1);
     expect(result?.filters?.[0].members).toEqual(["[Time].[Time].[1998]"]);
+  });
+});
+
+/* ----------------------- applicableSavedFilters --------------------- */
+
+describe("applicableSavedFilters (reference-tile projection)", () => {
+  test("returns canonical-named filters for schema-resolvable inputs", () => {
+    const result = applicableSavedFilters(sampleSchema(), [
+      active("timeframe", "TIME", "year", ["[Time].[Time].[1998]"]),
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0].dimension).toBe("Time");
+    expect(result[0].hierarchy).toBe("Time");
+    expect(result[0].level).toBe("Year");
+    expect(result[0].members).toEqual(["[Time].[Time].[1998]"]);
+  });
+
+  test("drops filters that don't resolve against the schema", () => {
+    const result = applicableSavedFilters(sampleSchema(), [
+      active("Time", "Time", "Year", ["[Time].[Time].[1998]"]),
+      active("Made Up", "X", "Y", ["[Whatever]"]),
+    ]);
+    expect(result).toHaveLength(1);
+    expect(result[0].dimension).toBe("Time");
+  });
+
+  test("returns empty list when schema is null", () => {
+    const result = applicableSavedFilters(null, [active("Time", "Time", "Year", ["[Time].[Time].[1998]"])]);
+    expect(result).toEqual([]);
+  });
+
+  test("copies members defensively (no shared reference with the input)", () => {
+    const af = active("Time", "Time", "Year", ["[a]", "[b]"]);
+    const [out] = applicableSavedFilters(sampleSchema(), [af]);
+    out.members?.push("[c]");
+    expect(af.filter.members).toEqual(["[a]", "[b]"]);
   });
 });

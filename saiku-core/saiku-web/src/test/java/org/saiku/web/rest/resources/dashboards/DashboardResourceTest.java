@@ -61,9 +61,7 @@ public class DashboardResourceTest {
         assertEquals("/queries/foo.saiku", parsed.layout.tiles.get(0).query.path);
         assertEquals("inline", parsed.layout.tiles.get(1).query.kind);
         assertNotNull(parsed.layout.tiles.get(1).query.body);
-        assertEquals(
-                "Sales",
-                parsed.layout.tiles.get(1).query.body.getCube().getCubeName());
+        assertEquals("Sales", parsed.layout.tiles.get(1).query.body.getCube().getCubeName());
     }
 
     @Test
