@@ -4,25 +4,40 @@
    * In Viewer mode (readOnly) the name is read-only text and the action
    * buttons are hidden.
    *
+   * The name input is driven by a callback rather than $bindable so the
+   * store stays the single source of truth — bypassing the store would
+   * leave `dirty` out of sync.
+   *
    * Add-tile menu is a scaffold — the chart / table / text / filter sub-
-   * pickers land in a follow-up commit (task #13 in the build plan).
+   * pickers land in task #13.
    */
 
   interface Props {
     name: string;
+    onNameChange?: (next: string) => void;
     readOnly?: boolean;
     saving?: boolean;
+    dirty?: boolean;
     onSave?: () => void;
     onAddTile?: (type: "chart" | "table" | "text" | "filter") => void;
   }
 
   let {
-    name = $bindable(""),
+    name,
+    onNameChange,
     readOnly = false,
     saving = false,
+    dirty = false,
     onSave,
     onAddTile,
   }: Props = $props();
+
+  // The input is controlled by the `name` prop directly — the store is
+  // the source of truth. onNameChange propagates user edits upstream and
+  // the prop refreshes on the next render.
+  function handleNameInput(e: Event): void {
+    onNameChange?.((e.target as HTMLInputElement).value);
+  }
 </script>
 
 <header class="toolbar" role="toolbar" aria-label="Dashboard toolbar">
@@ -32,7 +47,8 @@
     <input
       class="name"
       type="text"
-      bind:value={name}
+      value={name}
+      oninput={handleNameInput}
       placeholder="Untitled dashboard"
       aria-label="Dashboard name"
     />
@@ -53,9 +69,16 @@
         type="button"
         class="btn primary"
         onclick={() => onSave?.()}
-        disabled={saving}
+        disabled={saving || !dirty}
+        aria-disabled={saving || !dirty}
       >
-        {saving ? "Saving…" : "Save"}
+        {#if saving}
+          Saving…
+        {:else if dirty}
+          Save
+        {:else}
+          Saved
+        {/if}
       </button>
     </div>
   {/if}
@@ -107,6 +130,10 @@
     background: var(--accent, #2563eb);
     color: white;
     border-color: var(--accent, #2563eb);
+  }
+  .btn.primary:disabled {
+    /* Saved state — keep it visually distinct from a destructive disable. */
+    opacity: 0.7;
   }
   .hint {
     font-size: 0.75rem;

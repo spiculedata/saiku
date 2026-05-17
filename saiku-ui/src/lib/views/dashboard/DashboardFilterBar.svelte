@@ -1,36 +1,60 @@
 <script lang="ts">
   /*
-   * Renders the active filter chips above the grid. Scaffold for task #12 —
-   * the substance (chip-X clear, click-filter source tagging, hierarchy
-   * precedence) lands when the activeFiltersStore and filter merge logic
-   * arrive. For now the bar just surfaces dashboard.filters[] as static
-   * chips so the layout is wired up.
+   * Active filter chip bar. Reads from $lib/stores/activeFilters and
+   * renders one chip per entry in `activeFilters.all`. Click-the-X clears
+   * widget + click chips via `clearChip(id)`; defaults are managed via
+   * the dashboardStore (their chips are non-removable here so users
+   * don't accidentally lose a baked-in default).
+   *
+   * The filter chip semantics (precedence indicator, hierarchy collision
+   * warning) land alongside the merge logic in task #12; v0 just shows
+   * the target label.
    */
 
-  import type { Dashboard } from "$lib/api/dashboards";
+  import { activeFilters, type ActiveFilter } from "$lib/stores/activeFilters.svelte";
 
   interface Props {
-    dashboard: Dashboard;
     readOnly?: boolean;
   }
 
-  let { dashboard, readOnly = false }: Props = $props();
+  let { readOnly = false }: Props = $props();
 
-  let chips = $derived(
-    dashboard.filters.map((f, i) => ({
-      key: `${f.dimension}/${f.hierarchy}/${f.level}-${i}`,
-      label: `${f.level}: ${f.members.length ? f.members.join(", ") : "(any)"}`,
-    })),
-  );
+  function chipLabel(af: ActiveFilter): string {
+    const f = af.filter;
+    const members = f.members.length === 0 ? "(any)" : f.members.join(", ");
+    return `${f.level}: ${members}`;
+  }
+
+  function chipSourceTag(af: ActiveFilter): string {
+    switch (af.source.kind) {
+      case "default": return "default";
+      case "widget": return "widget";
+      case "click": return "click";
+    }
+  }
+
+  function isClearable(af: ActiveFilter): boolean {
+    return af.source.kind !== "default";
+  }
+
+  function handleClear(af: ActiveFilter): void {
+    if (!isClearable(af)) return;
+    activeFilters.clearChip(af.id);
+  }
 </script>
 
-{#if chips.length > 0}
+{#if activeFilters.all.length > 0}
   <div class="filter-bar" role="region" aria-label="Active filters">
-    {#each chips as chip (chip.key)}
-      <span class="chip">
-        {chip.label}
-        {#if !readOnly}
-          <button type="button" class="chip-x" aria-label="Remove filter" disabled>×</button>
+    {#each activeFilters.all as af (af.id)}
+      <span class="chip" data-source={chipSourceTag(af)}>
+        {chipLabel(af)}
+        {#if !readOnly && isClearable(af)}
+          <button
+            type="button"
+            class="chip-x"
+            aria-label="Remove filter"
+            onclick={() => handleClear(af)}
+          >×</button>
         {/if}
       </span>
     {/each}
@@ -54,6 +78,14 @@
     font-size: 0.8125rem;
     color: var(--fg, inherit);
   }
+  /* Subtle source affordance — click filters look slightly bolder so users
+     see which chips came from their interaction vs the dashboard's defaults. */
+  .chip[data-source="click"] {
+    background: var(--bg-chip-click, #dbeafe);
+  }
+  .chip[data-source="widget"] {
+    background: var(--bg-chip-widget, #ecfeff);
+  }
   .chip-x {
     border: none;
     background: transparent;
@@ -63,5 +95,4 @@
     padding: 0 0.125rem;
     color: var(--fg-muted);
   }
-  .chip-x:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>

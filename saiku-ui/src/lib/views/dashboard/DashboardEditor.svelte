@@ -1,22 +1,17 @@
 <script lang="ts">
   /*
-   * Top-level dashboard editor. Loads the dashboard at `dashboardPath` and
-   * orchestrates the toolbar / filter bar / grid composition. Doubles as
-   * the Viewer when `readOnly={true}` — the toolbar hides edit affordances,
-   * the grid hides the drag-resize handles.
+   * Top-level dashboard editor. Owns the route-level lifecycle (load on
+   * mount, reset on path change) and orchestrates the toolbar / filter
+   * bar / grid composition. Doubles as the Viewer when `readOnly={true}`.
    *
-   * Loading state lives here, not in the route, so missing dashboards can
-   * surface inside the editor frame ("create new at this path?") rather
-   * than breaking the route.
+   * Reactive state lives in the singleton stores ($lib/stores/dashboard,
+   * activeFilters, schemaCache) so tile components can subscribe directly
+   * without prop-drilling.
    */
 
-  import { onMount } from "svelte";
-  import {
-    loadDashboard,
-    newDashboard,
-    saveDashboard,
-    type Dashboard,
-  } from "$lib/api/dashboards";
+  import { onMount, untrack } from "svelte";
+  import { dashboardStore } from "$lib/stores/dashboard.svelte";
+  import { activeFilters } from "$lib/stores/activeFilters.svelte";
   import DashboardToolbar from "$lib/views/dashboard/DashboardToolbar.svelte";
   import DashboardFilterBar from "$lib/views/dashboard/DashboardFilterBar.svelte";
   import DashboardGrid from "$lib/views/dashboard/DashboardGrid.svelte";
@@ -28,70 +23,57 @@
 
   let { dashboardPath, readOnly = false }: Props = $props();
 
-  let loading = $state(true);
-  let loadError = $state<string | null>(null);
-  let dashboard = $state<Dashboard | null>(null);
-  let saving = $state(false);
-  let saveError = $state<string | null>(null);
+  onMount(() => {
+    // Untracked so we don't re-fire on store mutations the load itself triggers.
+    untrack(() => {
+      activeFilters.resetTransient();
+      void dashboardStore.load(dashboardPath);
+    });
+  });
 
-  onMount(async () => {
-    if (!dashboardPath) {
-      // No path supplied — start a fresh empty dashboard. The save flow
-      // will prompt for a target path.
-      dashboard = newDashboard();
-      loading = false;
-      return;
-    }
-    try {
-      dashboard = await loadDashboard(dashboardPath);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      // Distinguish 404 (offer create-new) from other failures (show error).
-      if (msg.includes("-> 404")) {
-        dashboard = newDashboard();
-        loadError = `No dashboard at ${dashboardPath} — creating a new one. Save to persist.`;
-      } else {
-        loadError = msg;
+  // Path can change without remounting (SvelteKit reuses the route component
+  // when only the rest segment changes). Reload on every distinct path.
+  $effect(() => {
+    const path = dashboardPath;
+    untrack(() => {
+      if (dashboardStore.savedPath !== path) {
+        activeFilters.resetTransient();
+        void dashboardStore.load(path);
       }
-    } finally {
-      loading = false;
-    }
+    });
   });
 
   async function handleSave(): Promise<void> {
-    if (!dashboard || !dashboardPath || readOnly) return;
-    saving = true;
-    saveError = null;
-    try {
-      await saveDashboard(dashboardPath, dashboard);
-    } catch (e: unknown) {
-      saveError = e instanceof Error ? e.message : String(e);
-    } finally {
-      saving = false;
-    }
+    await dashboardStore.save();
+  }
+
+  function handleNameChange(name: string): void {
+    dashboardStore.updateName(name);
   }
 </script>
 
 <div class="dashboard-editor">
-  {#if loading}
+  {#if dashboardStore.loading}
     <div class="loading">Loading dashboard…</div>
-  {:else if dashboard}
+  {:else if dashboardStore.current}
     <DashboardToolbar
-      bind:name={dashboard.name}
+      name={dashboardStore.current.name}
+      onNameChange={handleNameChange}
       {readOnly}
-      {saving}
+      saving={dashboardStore.saving}
+      dirty={dashboardStore.dirty}
       onSave={handleSave}
     />
-    {#if loadError}
-      <div class="notice">{loadError}</div>
+    {#if dashboardStore.loadError}
+      <div class="notice">{dashboardStore.loadError}</div>
     {/if}
-    {#if saveError}
-      <div class="error">Save failed: {saveError}</div>
+    {#if dashboardStore.saveError}
+      <div class="error">Save failed: {dashboardStore.saveError}</div>
     {/if}
-    <DashboardFilterBar dashboard={dashboard} {readOnly} />
-    <DashboardGrid bind:dashboard {readOnly} />
+    <DashboardFilterBar {readOnly} />
+    <DashboardGrid {readOnly} />
   {:else}
-    <div class="error">{loadError ?? "Unable to load dashboard."}</div>
+    <div class="error">{dashboardStore.loadError ?? "Unable to load dashboard."}</div>
   {/if}
 </div>
 
