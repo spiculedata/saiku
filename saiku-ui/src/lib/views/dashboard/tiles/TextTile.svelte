@@ -20,15 +20,22 @@
 
   let { tile }: Props = $props();
 
-  let safeHtml = $derived(
-    DOMPurify.sanitize(tile.text ?? "", {
-      // No raw HTML script tags; no event-handler attributes; no
-      // javascript: / data: URLs in href/src. The DOMPurify defaults
-      // already cover the OWASP top XSS vectors; we pin RETURN_DOM_FRAGMENT
-      // off so we still get a string we can {@html}.
-      USE_PROFILES: { html: true },
-    }),
-  );
+  // Stricter than DOMPurify's html-profile defaults — also forbid
+  // <style>, <embed>, <object>, <iframe>, <form> so analysts can't
+  // smuggle CSS-based exfil, inline plugins, or hidden form posts
+  // through a TextTile. Script tags, event handlers, and
+  // javascript:/data: URLs are stripped by DOMPurify's defaults.
+  //
+  // Note: USE_PROFILES has an additive effect that re-allows some of
+  // these tags (notably <embed> when SVG appears in the input),
+  // overriding FORBID_TAGS. Drop the profile and use DOMPurify's
+  // default-strict mode — it covers the OWASP vectors we care about
+  // and respects our forbid list cleanly.
+  const SANITISE_CONFIG = {
+    FORBID_TAGS: ["style", "embed", "object", "iframe", "form"],
+  } as const;
+
+  let safeHtml = $derived(DOMPurify.sanitize(tile.text ?? "", SANITISE_CONFIG));
 </script>
 
 <div class="text-tile">

@@ -788,6 +788,40 @@ check "info endpoint 200" GET "/rest/saiku/info" '' "isinstance(r, list)"
 check "mondrian server version" GET "/rest/saiku/statistics/mondrian/server/version" '' \
   "r.get('majorVersion')==4 and r.get('productName')=='mondrian'"
 
+# ---- dashboards (v1 CRUD) ----
+#
+# Exercises /rest/saiku/api/dashboards against the JCR repo. Uses a
+# uniquely-named test dashboard so reruns don't trip on stale state.
+
+DASH_PATH="/dashboards/test-ai-live-$(date +%s).saikudash"
+DASH_BODY='{"id":"test-1","name":"test-ai-live dashboard","version":1,"layout":{"cols":12,"tiles":[{"id":"tile-a","x":0,"y":0,"w":6,"h":4,"type":"chart","chartType":"bar","cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"query":{"kind":"inline","body":{"cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}}}]},"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","members":["[Time].[Time].[1997]"]}]}'
+
+check "dashboards: POST saves a fresh dashboard" POST "/rest/saiku/api/dashboards${DASH_PATH}" \
+  "$DASH_BODY" \
+  "r.get('status')=='OK' and r.get('path')=='${DASH_PATH}'"
+
+check "dashboards: GET round-trips the body verbatim" GET "/rest/saiku/api/dashboards${DASH_PATH}" '' \
+  "r.get('name')=='test-ai-live dashboard' and len(r['layout']['tiles'])==1 and r['layout']['tiles'][0]['query']['kind']=='inline' and r['filters'][0]['level']=='Year'"
+
+check "dashboards: GET nonexistent path returns 404" GET "/rest/saiku/api/dashboards/no/such/path.saikudash" '' \
+  "http==404 and r.get('status')=='NOT_FOUND'"
+
+# Add a second tile (filter widget) and re-save.
+UPDATED_BODY='{"id":"test-1","name":"test-ai-live dashboard","version":1,"layout":{"cols":12,"tiles":[{"id":"tile-a","x":0,"y":0,"w":6,"h":4,"type":"chart","chartType":"bar","cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"query":{"kind":"inline","body":{"cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}}},{"id":"tile-b","x":0,"y":4,"w":12,"h":1,"type":"filter","widget":"multi-select","cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"target":{"dimension":"Time","hierarchy":"Time","level":"Year","members":[]}}]},"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","members":["[Time].[Time].[1997]"]}]}'
+
+check "dashboards: POST updates an existing dashboard" POST "/rest/saiku/api/dashboards${DASH_PATH}" \
+  "$UPDATED_BODY" \
+  "r.get('status')=='OK'"
+
+check "dashboards: updated tile count survives the round-trip" GET "/rest/saiku/api/dashboards${DASH_PATH}" '' \
+  "len(r['layout']['tiles'])==2 and r['layout']['tiles'][1]['type']=='filter' and r['layout']['tiles'][1]['target']['level']=='Year'"
+
+check "dashboards: DELETE removes the file" DELETE "/rest/saiku/api/dashboards${DASH_PATH}" '' \
+  "r.get('status')=='OK'"
+
+check "dashboards: GET after delete is 404" GET "/rest/saiku/api/dashboards${DASH_PATH}" '' \
+  "http==404"
+
 # ---- summary ----
 echo ""
 echo "---"
