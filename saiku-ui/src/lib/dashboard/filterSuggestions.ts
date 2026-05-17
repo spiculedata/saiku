@@ -23,6 +23,27 @@
 import { getResource } from "$lib/api/repository";
 import type { CubeRef, DashboardTile } from "$lib/api/dashboards";
 
+/** Fetch a saved .saiku ThinQuery and extract its cube ref. Used by the
+ *  tile renderers when a reference tile was authored without an explicit
+ *  cube pick — early v1 authoring left tile.cube undefined for reference
+ *  binds, which broke the schema-driven filter applicability check. */
+export async function inferCubeFromReference(path: string): Promise<CubeRef | null> {
+  try {
+    const raw = await getResource(path);
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const cube = parsed.cube as Record<string, unknown> | undefined;
+    if (!cube) return null;
+    const connectionName = asString(cube.connection);
+    const catalog = asString(cube.catalog);
+    const schema = asString(cube.schema);
+    const cubeName = asString(cube.name);
+    if (!connectionName || !catalog || !schema || !cubeName) return null;
+    return { connectionName, catalog, schema, cubeName };
+  } catch {
+    return null;
+  }
+}
+
 export interface FilterSuggestion {
   /** Stable id keyed off the cube+target so the UI can use it for
    *  checkboxes / animations. */

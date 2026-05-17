@@ -26,7 +26,9 @@
     applicableSavedFilters,
     type SchemaLike,
   } from "$lib/dashboard/effectiveQuery";
+  import { inferCubeFromReference } from "$lib/dashboard/filterSuggestions";
   import { buildChartOption, isSupportedChartKind } from "$lib/dashboard/chartOptions";
+  import type { CubeRef } from "$lib/api/dashboards";
 
   interface Props {
     tile: DashboardTile;
@@ -64,18 +66,38 @@
 
   /* ----------------------------- schema cache ------------------------- */
 
+  // Resolved cube — usually tile.cube directly, but for reference tiles
+  // authored before saiku#878 (where the modal only set tile.cube on an
+  // explicit pick), we lazy-infer it from the saved .saiku ThinQuery so
+  // the schema lookup + filter applicability check still works.
+  let resolvedCube = $state<CubeRef | null>(null);
+  let inferenceAttempted = $state(false);
+
+  $effect(() => {
+    if (tile.cube) {
+      resolvedCube = tile.cube;
+      return;
+    }
+    if (tile.query?.kind !== "reference" || inferenceAttempted) return;
+    inferenceAttempted = true;
+    const refPath = tile.query.path;
+    void inferCubeFromReference(refPath).then((inferred) => {
+      if (inferred) resolvedCube = inferred;
+    });
+  });
+
   $effect(() => {
     const v = schemaCache.version;
     void v;
-    if (!tile.cube) {
+    if (!resolvedCube) {
       schema = null;
       return;
     }
-    const cached = schemaCache.peek(tile.cube) as SchemaLike | null;
+    const cached = schemaCache.peek(resolvedCube) as SchemaLike | null;
     if (cached) {
       schema = cached;
     } else {
-      void schemaCache.get(tile.cube).catch(() => {});
+      void schemaCache.get(resolvedCube).catch(() => {});
     }
   });
 

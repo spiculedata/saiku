@@ -32,6 +32,8 @@
     applicableSavedFilters,
     type SchemaLike,
   } from "$lib/dashboard/effectiveQuery";
+  import { inferCubeFromReference } from "$lib/dashboard/filterSuggestions";
+  import type { CubeRef } from "$lib/api/dashboards";
 
   interface Props {
     tile: DashboardTile;
@@ -48,24 +50,38 @@
   let response = $state<AiQueryResponse | null>(null);
   let schema = $state<SchemaLike | null>(null);
 
-  // Resolve the cube's schema once on mount; the effect below picks it
-  // up via the version sentinel. We keep a local copy so the tile
-  // doesn't churn through the cache map on every reactive tick.
+  // Resolved cube — usually tile.cube directly, but reference tiles
+  // authored before saiku#878 left tile.cube undefined. Lazy-infer from
+  // the saved ThinQuery so the schema-driven filter applicability still
+  // works on existing dashboards.
+  let resolvedCube = $state<CubeRef | null>(null);
+  let inferenceAttempted = $state(false);
+
+  $effect(() => {
+    if (tile.cube) {
+      resolvedCube = tile.cube;
+      return;
+    }
+    if (tile.query?.kind !== "reference" || inferenceAttempted) return;
+    inferenceAttempted = true;
+    const refPath = tile.query.path;
+    void inferCubeFromReference(refPath).then((inferred) => {
+      if (inferred) resolvedCube = inferred;
+    });
+  });
+
   $effect(() => {
     const v = schemaCache.version; // dep
     void v;
-    if (!tile.cube) {
+    if (!resolvedCube) {
       schema = null;
       return;
     }
-    const cached = schemaCache.peek(tile.cube) as SchemaLike | null;
+    const cached = schemaCache.peek(resolvedCube) as SchemaLike | null;
     if (cached) {
       schema = cached;
     } else {
-      // Fire the fetch; effect re-runs when version bumps.
-      void schemaCache.get(tile.cube).catch(() => {
-        // Failure surfaces in error banner of the next fetch attempt.
-      });
+      void schemaCache.get(resolvedCube).catch(() => {});
     }
   });
 
