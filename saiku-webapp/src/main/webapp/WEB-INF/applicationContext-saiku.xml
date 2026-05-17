@@ -87,8 +87,18 @@
       <security:intercept-url pattern="/json/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/WEB-INF/classes/legacy-schema" access="isAnonymous()" />
       <security:logout logout-url="/logout"/>
-      <!-- HTTP Basic removed: SPA does form-login. Re-add only if a
-           non-SPA client (XMLA?) needs Basic. -->
+      <!-- HTTP Basic re-enabled (saiku#878) so the native MCP endpoint
+           and any other stateless agent / DXT-shim client can authenticate
+           with Authorization: Basic. Coexists with the SPA form-login
+           chain — Spring Security tries Basic first on requests carrying
+           an Authorization header, falling through to the session cookie
+           otherwise. -->
+      <security:http-basic/>
+      <!-- Rate-limit auth attempts before BASIC_AUTH_FILTER so a blocked
+           IP gets a clean 429 without ever waking the AuthenticationProvider.
+           LoginRateLimiter is shared with SessionResource (form-login)
+           and is fed success / failure events via SpringSecurityAuditListener. -->
+      <security:custom-filter ref="loginRateLimitFilter" before="BASIC_AUTH_FILTER"/>
       <security:anonymous/>
     </security:http>
 
