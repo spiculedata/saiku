@@ -10,6 +10,7 @@
   import PrefsMenu from "$lib/components/PrefsMenu.svelte";
   import { query } from "$lib/stores/query.svelte";
   import { selection } from "$lib/stores/selection.svelte";
+  import { tabs } from "$lib/stores/tabs.svelte";
   import { embed } from "$lib/stores/embed.svelte";
   import {
     deserializeQueryFromHash,
@@ -25,6 +26,67 @@
 
   let { session }: Props = $props();
   let aboutOpen = $state(false);
+
+  // Tab labels derived from each tab's saved-path snapshot. The active
+  // tab reads the live query store, others read their captured
+  // savedPath. Dirty marker on the active tab driven by live query.dirty;
+  // other tabs read their snapshotted dirty flag.
+  function deriveTabLabel(path: string | null): string {
+    if (!path) return i18n.t("workspace.unsavedQuery");
+    const base = path.split("/").pop() ?? path;
+    return base.endsWith(".saiku") ? base.slice(0, -".saiku".length) : base;
+  }
+
+  function tabLabelFor(i: number): string {
+    if (i === tabs.activeIndex) return deriveTabLabel(query.savedPath);
+    return deriveTabLabel(tabs.list[i].query.savedPath);
+  }
+
+  function tabTitleFor(i: number): string {
+    if (i === tabs.activeIndex) {
+      return query.savedPath ?? i18n.t("workspace.unsavedQuery");
+    }
+    return tabs.list[i].query.savedPath ?? i18n.t("workspace.unsavedQuery");
+  }
+
+  function tabDirtyFor(i: number): boolean {
+    if (i === tabs.activeIndex) return query.dirty;
+    return tabs.list[i].query.dirty;
+  }
+
+  /** Add a new in-app tab. The outgoing tab's state is snapshotted by
+   *  the tabs store so we can come back to it; the new one starts
+   *  blank (no cube, no query). */
+  function handleNewTab(): void {
+    tabs.newTab();
+    // After newTab() the live stores reflect the blank snapshot —
+    // clear the URL ?q= param so it doesn't immediately re-hydrate
+    // from the previous tab.
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has("q")) {
+        url.searchParams.delete("q");
+        window.history.replaceState(null, "", url.toString());
+      }
+    }
+  }
+
+  function handleSwitchTab(i: number): void {
+    tabs.switchTo(i);
+  }
+
+  function handleCloseTab(i: number, e: MouseEvent): void {
+    e.stopPropagation();
+    if (tabs.list.length <= 1) return;
+    // If the tab is dirty, confirm before closing.
+    const dirty = tabDirtyFor(i);
+    if (dirty) {
+      // eslint-disable-next-line no-alert
+      const ok = window.confirm(i18n.t("confirm.discardUnsaved") ?? "Discard unsaved changes?");
+      if (!ok) return;
+    }
+    tabs.closeTab(i);
+  }
 
   // Guard so we don't immediately overwrite the URL before (or during) hydrate.
   let hydrated = $state(false);
@@ -80,9 +142,16 @@
     const _v = query.viewMode;
     const _t = query.chartType;
     const _o = query.chartOptions;
+    const _s = query.savedPath;
     // `_*` are reactive reads; silence unused-var lint.
-    void _c; void _d; void _v; void _t; void _o;
+    void _c; void _d; void _v; void _t; void _o; void _s;
     if (!hydrated) return;
+    // Active-tab label is derived from live query.savedPath directly
+    // in tabLabelFor(); inactive-tab labels read each tab's snapshot,
+    // which is captured at switch/close time via captureActive().
+    // No need to write tabs.list from this effect — doing so caused
+    // an effect_update_depth_exceeded loop because the write re-fires
+    // every $effect that read tabs.list during the same tick.
     if (urlTimer) clearTimeout(urlTimer);
     urlTimer = setTimeout(writeUrl, 300);
   });
@@ -103,9 +172,40 @@
   {/if}
   <section class="workspace__main">
     {#if !embed.active}
-      <div class="tabset">
-        <div class="tab tab--active">{i18n.t("workspace.unsavedQuery")}</div>
-        <button type="button" class="tab tab--new" aria-label={i18n.t("toast.newQuery")}>+</button>
+      <div class="tabset" role="tablist">
+        {#each tabs.list as t, i (t.id)}
+          <button
+            type="button"
+            class="tab"
+            class:tab--active={i === tabs.activeIndex}
+            role="tab"
+            aria-selected={i === tabs.activeIndex}
+            title={tabTitleFor(i)}
+            onclick={() => handleSwitchTab(i)}
+          >
+            <span class="tab__label">{tabLabelFor(i)}</span>
+            {#if tabDirtyFor(i)}<span class="tab__dirty" aria-label="unsaved changes">•</span>{/if}
+            {#if tabs.list.length > 1}
+              <span
+                class="tab__close"
+                role="button"
+                tabindex="0"
+                aria-label="Close tab"
+                onclick={(e) => handleCloseTab(i, e)}
+                onkeydown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") handleCloseTab(i, e as unknown as MouseEvent);
+                }}
+              >×</span>
+            {/if}
+          </button>
+        {/each}
+        <button
+          type="button"
+          class="tab tab--new"
+          aria-label={i18n.t("toast.newQuery")}
+          title={i18n.t("toast.newQuery")}
+          onclick={handleNewTab}
+        >+</button>
       </div>
       <WorkspaceToolbar />
     {/if}
@@ -177,7 +277,10 @@
     background: var(--bg-muted);
   }
   .tab {
-    padding: var(--space-3) var(--space-4);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
     color: var(--fg-muted);
     border-bottom: 2px solid transparent;
     background: transparent;
@@ -186,10 +289,40 @@
     border-right: 0;
     font: inherit;
     cursor: pointer;
+    max-width: 18rem;
+  }
+  .tab:hover:not(.tab--active) {
+    color: var(--fg);
+    background: color-mix(in srgb, var(--bg) 60%, transparent);
   }
   .tab--active {
     color: var(--fg);
     border-bottom-color: var(--accent);
+  }
+  .tab__label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 12rem;
+  }
+  .tab__dirty {
+    color: var(--accent);
+  }
+  .tab__close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 50%;
+    color: var(--fg-muted);
+    font-size: 1rem;
+    line-height: 1;
+    user-select: none;
+  }
+  .tab__close:hover {
+    background: color-mix(in srgb, var(--danger) 18%, transparent);
+    color: var(--danger);
   }
   .tab--new {
     color: var(--fg-subtle);

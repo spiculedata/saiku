@@ -8,7 +8,7 @@
   import { embed } from "$lib/stores/embed.svelte";
   import ToastStack from "$lib/components/ToastStack.svelte";
   import UpgradeBanner from "$lib/components/UpgradeBanner.svelte";
-  import { LogOut, Shield, Home } from "lucide-svelte";
+  import { LogOut, Shield, Home, LayoutDashboard } from "lucide-svelte";
   import Tour from "$lib/components/Tour.svelte";
   import SessionErrorModal from "$lib/modals/SessionErrorModal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -87,6 +87,12 @@
     <div class="topbar__actions">
       {#if session.current}
         <span class="topbar__user">{session.current.username}</span>
+        {#if !page.url.pathname.startsWith(`${base}/dashboards`) && !page.url.pathname.startsWith(`${base}/admin`)}
+          <a class="btn" href="{base}/dashboards"><LayoutDashboard size={14} /><span>Dashboards</span></a>
+        {/if}
+        {#if page.url.pathname.startsWith(`${base}/dashboards`)}
+          <a class="btn" href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
+        {/if}
         {#if session.isAdmin && !page.url.pathname.startsWith(`${base}/admin`)}
           <a class="btn" href="{base}/admin"><Shield size={14} /><span>{i18n.t("topbar.admin")}</span></a>
         {/if}

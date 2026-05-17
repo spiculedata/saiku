@@ -221,6 +221,11 @@
         <property name="thinQueryService" ref="thinQueryBean"/>
         <property name="cubeMetadataService" ref="aiCubeMetadataServiceBean"/>
         <property name="asyncQueryService" ref="asyncQueryServiceBean"/>
+        <!-- Saved-query resolver (POST /query/saved) loads a .saiku
+             file from the JCR + runs it as a ThinQuery. Powers the
+             dashboard reference-tile binding. -->
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
     </bean>
 
     <!-- ====================================================================
@@ -289,6 +294,18 @@
         <aop:scoped-proxy/>
         <property name="sessionService" ref="sessionService"/>
         <property name="datasourceService" ref="datasourceServiceBean"/>
+    </bean>
+
+    <!-- Dashboards CRUD (org.saiku.web.rest.resources.dashboards.DashboardResource
+         @ /saiku/api/dashboards). Backed by the same JCR file primitives that
+         .saiku query files use — dashboards persist as .saikudash JSON blobs
+         under the existing repo, inheriting the permission model + path
+         conventions. Query execution stays on /rest/saiku/api/ai/query; this
+         resource is layout-only. See docs/plans/2026-05-16-dashboards-design.md. -->
+    <bean id="dashboardResource"
+          class="org.saiku.web.rest.resources.dashboards.DashboardResource">
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
     </bean>
 
 

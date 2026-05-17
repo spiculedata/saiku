@@ -410,21 +410,74 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
     /**
      * saiku#810: prune dim/hier/level triples that the AI converter's MDX
      * shape can't actually query, even though they're enumerable via cube
-     * metadata. Catches Mondrian parent-child closure synthetics
-     * (e.g. {@code Employee$Manager Id$Parent}) and any future case where
-     * {@code [Dim].[Hier].[Level].Members} doesn't parse against the cube.
+     * metadata. Originally aimed at Mondrian parent-child closure
+     * synthetics ({@code Employee$Closure.[Employee$Manager Id$Parent]})
+     * where {@code [Hier].[Level].Members} doesn't parse.
      *
-     * <p>Probe = {@link OlapDiscoverService#getLevelMembers} with maxrows=1.
-     * If the call throws, the level is dropped. If a hierarchy ends up with
-     * no remaining non-(All) levels, the whole hierarchy is dropped. If a
-     * dimension ends up with no remaining hierarchies, the dimension is
-     * dropped.
+     * <p>Two-pass design — gather probe results first, then decide:
+     *
+     * <ol>
+     *   <li>For each non-(All) level under each dim/hier, run
+     *       {@link OlapDiscoverService#getLevelMembers} with maxrows=1.
+     *       Record which levels passed.</li>
+     *   <li>Per-dimension rollback (saiku#878 follow-up — HR cube fix):
+     *       if EVERY non-(All) level in a dimension failed the probe,
+     *       treat it as probe-infrastructure failure rather than a real
+     *       unqueryable dimension. Mondrian's {@code AddCalculatedMembers}
+     *       expansion (used by the discover service) blows up on HR's
+     *       Employee + Department hierarchies because of key
+     *       configurations, but the dims are still filterable + queryable
+     *       at the converter layer. Dropping them would hide whole-cube
+     *       capability from agents. Keep them all.</li>
+     *   <li>Otherwise: drop the failed levels, then empty hierarchies, then
+     *       empty dimensions (the original cascade).</li>
+     * </ol>
      *
      * <p>Pruning logs at INFO so a deployment can audit what was removed.
-     * Test fixtures don't go through this path (it requires a live
-     * discoverService).
      */
     private void pruneUnqueryable(SaikuCube cube, AiSchema schema) {
+        // Pass 1: probe every non-(All) level, record the failures keyed
+        // by (dimName, hierName, levelName).
+        java.util.Set<String> failed = new java.util.HashSet<>();
+        java.util.Map<String, Integer> levelCountPerDim = new java.util.HashMap<>();
+        java.util.Map<String, Integer> failedCountPerDim = new java.util.HashMap<>();
+        for (AiSchema.Dimension dim : schema.dimensions.values()) {
+            for (AiSchema.Hierarchy hier : dim.hierarchies.values()) {
+                for (AiSchema.Level level : hier.levels.values()) {
+                    if (level.name == null || level.name.equalsIgnoreCase("(All)")) continue;
+                    levelCountPerDim.merge(dim.name, 1, Integer::sum);
+                    if (level.queryableProven) continue;
+                    if (!isLevelQueryable(cube, hier.name, level.name)) {
+                        failed.add(probeKey(dim.name, hier.name, level.name));
+                        failedCountPerDim.merge(dim.name, 1, Integer::sum);
+                    }
+                }
+            }
+        }
+
+        // Pass 2: per-dimension rollback. If every non-(All) level under
+        // the dimension failed, suspect probe infrastructure (e.g.
+        // Mondrian AddCalculatedMembers expansion on parent-child
+        // hierarchies) rather than a wholesale-unqueryable dimension.
+        // Drop those dimensions' failures from the active set so the
+        // cascade below leaves them intact.
+        java.util.Set<String> protectedDims = new java.util.HashSet<>();
+        for (java.util.Map.Entry<String, Integer> e : levelCountPerDim.entrySet()) {
+            int total = e.getValue();
+            int fails = failedCountPerDim.getOrDefault(e.getKey(), 0);
+            if (total > 0 && fails == total) {
+                protectedDims.add(e.getKey());
+                log.info(
+                        "Probe rolled back for dimension {} on {} schema — all {} non-(All) levels"
+                                + " failed enumeration; keeping the dimension intact (probe infra signal,"
+                                + " not real unqueryable). saiku#878 follow-up.",
+                        e.getKey(),
+                        schema.getCubeName(),
+                        total);
+            }
+        }
+
+        // Pass 3: apply the cascade for the levels NOT protected by pass 2.
         int prunedLevels = 0;
         int prunedHiers = 0;
         int prunedDims = 0;
@@ -433,6 +486,7 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
         while (dimIt.hasNext()) {
             java.util.Map.Entry<String, AiSchema.Dimension> de = dimIt.next();
             AiSchema.Dimension dim = de.getValue();
+            if (protectedDims.contains(dim.name)) continue;
             java.util.Iterator<java.util.Map.Entry<String, AiSchema.Hierarchy>> hierIt =
                     dim.hierarchies.entrySet().iterator();
             while (hierIt.hasNext()) {
@@ -443,19 +497,9 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
                 while (levelIt.hasNext()) {
                     java.util.Map.Entry<String, AiSchema.Level> le = levelIt.next();
                     AiSchema.Level level = le.getValue();
-                    // Skip the (All) level — it has no .Members shape an
-                    // agent would query against, and it always exists when
-                    // a hier has hasAll=true.
-                    if (level.name != null && level.name.equalsIgnoreCase("(All)")) {
-                        continue;
-                    }
-                    // If the sample-member fetch already returned ≥1 row the
-                    // level is provably queryable — don't re-probe (the old
-                    // path made ~2× Mondrian round-trips per level on cold load).
-                    if (level.queryableProven) {
-                        continue;
-                    }
-                    if (!isLevelQueryable(cube, hier.name, level.name)) {
+                    if (level.name == null || level.name.equalsIgnoreCase("(All)")) continue;
+                    if (level.queryableProven) continue;
+                    if (failed.contains(probeKey(dim.name, hier.name, level.name))) {
                         log.info(
                                 "Pruning unqueryable level {}/{}/{} from {} schema (saiku#810)",
                                 dim.name,
@@ -466,8 +510,6 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
                         prunedLevels++;
                     }
                 }
-                // If the only thing left is the (All) level (or nothing), the
-                // whole hierarchy is unqueryable from the AI surface.
                 boolean hierHasQueryableLevel = false;
                 for (AiSchema.Level l : hier.levels.values()) {
                     if (l.name == null || !l.name.equalsIgnoreCase("(All)")) {
@@ -499,6 +541,10 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
                     prunedDims,
                     schema.getCubeName());
         }
+    }
+
+    private static String probeKey(String dim, String hier, String level) {
+        return dim + "\u0000" + hier + "\u0000" + level;
     }
 
     /** Probe one (hier, level) pair via the same path member-search uses.
