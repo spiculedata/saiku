@@ -2,10 +2,11 @@
  * Unit tests for the filter-suggestion scanner.
  */
 
-import { describe, test, expect } from "vitest";
+import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   pruneAlreadyExposed,
   suggestFiltersForTiles,
+  suggestFiltersForTilesAsync,
 } from "$lib/dashboard/filterSuggestions";
 import type { DashboardTile, CubeRef } from "$lib/api/dashboards";
 
@@ -114,6 +115,90 @@ describe("suggestFiltersForTiles", () => {
       ],
     });
     expect(suggestFiltersForTiles([tile])).toEqual([]);
+  });
+});
+
+describe("suggestFiltersForTilesAsync — reference tiles", () => {
+  beforeEach(() => {
+    // Stub the global fetch so getResource() returns canned ThinQuery JSON.
+    const tq = {
+      name: "saved",
+      cube: {
+        uniqueName: "[unknown_foodmart].[FoodMart].[FoodMart].[Sales]",
+        name: "Sales",
+        connection: "unknown_foodmart",
+        catalog: "FoodMart",
+        schema: "FoodMart",
+        caption: "Sales",
+        visible: true,
+      },
+      queryType: "OLAP",
+      type: "QUERYMODEL",
+      queryModel: {
+        axes: {
+          ROWS: {
+            hierarchies: [
+              {
+                name: "[Store].[Stores]",
+                caption: "Stores",
+                dimension: "Store",
+                levels: {
+                  "Store Country": { name: "Store Country" },
+                  "Store State": { name: "Store State" },
+                },
+              },
+            ],
+          },
+          COLUMNS: { hierarchies: [] },
+          FILTER: { hierarchies: [] },
+        },
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify(tq), { status: 200, headers: { "content-type": "application/json" } }),
+      ),
+    );
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("extracts dim/hier/level from a saved ThinQuery", async () => {
+    const refTile: DashboardTile = {
+      id: "r",
+      x: 0,
+      y: 0,
+      w: 6,
+      h: 4,
+      type: "chart",
+      cube: { connectionName: "unknown_foodmart", catalog: "FoodMart", schema: "FoodMart", cubeName: "Sales" },
+      query: { kind: "reference", path: "/homes/admin/test.saiku" },
+    };
+    const out = await suggestFiltersForTilesAsync([refTile]);
+    expect(out).toHaveLength(2);
+    const labels = out.map((s) => `${s.dimension}/${s.hierarchy}/${s.level}`).sort();
+    expect(labels).toEqual(["Store/Stores/Store Country", "Store/Stores/Store State"]);
+  });
+
+  test("falls back gracefully on a failed fetch", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("", { status: 404, statusText: "Not Found" })),
+    );
+    const refTile: DashboardTile = {
+      id: "r",
+      x: 0,
+      y: 0,
+      w: 6,
+      h: 4,
+      type: "chart",
+      cube: { connectionName: "unknown_foodmart", catalog: "FoodMart", schema: "FoodMart", cubeName: "Sales" },
+      query: { kind: "reference", path: "/missing.saiku" },
+    };
+    const out = await suggestFiltersForTilesAsync([refTile]);
+    expect(out).toEqual([]);
   });
 });
 

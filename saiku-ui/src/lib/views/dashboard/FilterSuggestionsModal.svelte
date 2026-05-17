@@ -11,11 +11,12 @@
    * they don't want to expose."
    */
 
+  import { untrack } from "svelte";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import { newTileId, type DashboardTile } from "$lib/api/dashboards";
   import { buildTile } from "$lib/dashboard/tilePlacement";
   import {
-    suggestFiltersForTiles,
+    suggestFiltersForTilesAsync,
     pruneAlreadyExposed,
     type FilterSuggestion,
   } from "$lib/dashboard/filterSuggestions";
@@ -27,14 +28,11 @@
 
   let { open, onClose }: Props = $props();
 
-  let suggestions = $derived<FilterSuggestion[]>(
-    open && dashboardStore.current
-      ? pruneAlreadyExposed(
-          suggestFiltersForTiles(dashboardStore.current.layout.tiles),
-          dashboardStore.current.layout.tiles,
-        )
-      : [],
-  );
+  // Async scan — reference tiles need their saved .saiku fetched + parsed
+  // before we can see what dims they touch.
+  let suggestions = $state<FilterSuggestion[]>([]);
+  let loading = $state(false);
+  let scanError = $state<string | null>(null);
 
   // Track which suggestions the user wants to add. Default ON — Tom's
   // ask was "user could then delete filters they don't want to expose",
@@ -42,11 +40,31 @@
   let selected = $state<Map<string, boolean>>(new Map());
 
   $effect(() => {
-    // Reset selection when the suggestion list changes (e.g. modal
-    // reopens with a different dashboard). All-checked by default.
-    const next = new Map<string, boolean>();
-    for (const s of suggestions) next.set(s.id, true);
-    selected = next;
+    // Refire whenever the modal transitions to open. Untrack the
+    // dashboard tiles read so a re-fetch only happens on open, not on
+    // every tile mutation while the modal is shown.
+    if (!open) {
+      suggestions = [];
+      scanError = null;
+      return;
+    }
+    const tiles = untrack(() => dashboardStore.current?.layout.tiles ?? []);
+    loading = true;
+    scanError = null;
+    void (async () => {
+      try {
+        const raw = await suggestFiltersForTilesAsync(tiles);
+        const pruned = pruneAlreadyExposed(raw, tiles);
+        suggestions = pruned;
+        const next = new Map<string, boolean>();
+        for (const s of pruned) next.set(s.id, true);
+        selected = next;
+      } catch (e: unknown) {
+        scanError = e instanceof Error ? e.message : String(e);
+      } finally {
+        loading = false;
+      }
+    })();
   });
 
   function toggle(id: string): void {
@@ -115,7 +133,11 @@
       <button type="button" class="close" aria-label="Close" onclick={onClose}>×</button>
     </header>
 
-    {#if suggestions.length === 0}
+    {#if loading}
+      <p class="hint">Scanning tiles…</p>
+    {:else if scanError}
+      <p class="empty">Scan failed: {scanError}</p>
+    {:else if suggestions.length === 0}
       <p class="empty">
         Nothing to suggest — your tiles don't use any dimensions yet, or every
         candidate already has a filter widget on the dashboard.
