@@ -230,10 +230,10 @@
             <plugin>
                 <groupId>com.github.eirslett</groupId>
                 <artifactId>frontend-maven-plugin</artifactId>
-                <!-- 1.15.1 fixes Node 22 tarball extraction permission errors
+                <!-- 2.0.0 fixes Node 22 tarball extraction permission errors
                      on Linux CI runners that bit the dist job (1.15.0 chokes
                      on share/doc/node/* permission bits during extraction). -->
-                <version>1.15.1</version>
+                <version>2.0.0</version>
                 <configuration>
                     <workingDirectory>${project.basedir}/../saiku-ui</workingDirectory>
                     <!-- Use saiku-webapp/target/node — local to this module,
