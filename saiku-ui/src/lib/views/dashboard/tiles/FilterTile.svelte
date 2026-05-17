@@ -17,6 +17,11 @@
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
   import { schemaCache } from "$lib/stores/schemaCache.svelte";
   import type { DashboardTile, DashboardFilter } from "$lib/api/dashboards";
+  import {
+    ancestorSelections,
+    memberDescendsFromAny,
+  } from "$lib/dashboard/cascadingFilters";
+  import type { SchemaLike } from "$lib/dashboard/effectiveQuery";
 
   interface Props {
     tile: DashboardTile;
@@ -37,6 +42,32 @@
   let members = $state<{ uniqueName: string; caption: string }[]>([]);
   let membersLoading = $state(false);
   let membersError = $state<string | null>(null);
+
+  // Cascading-filter restriction: if any active filter targets an
+  // ancestor level on this widget's hierarchy, prefix-restrict the
+  // displayed members to descendants of that selection.
+  let displayedMembers = $derived((() => {
+    const _v = schemaCache.version;
+    void _v;
+    const schema = tile.cube ? (schemaCache.peek(tile.cube) as SchemaLike | null) : null;
+    const parents = ancestorSelections(activeFilters.all, schema, tile.cube ?? null, target);
+    if (parents.length === 0) return members;
+    return members.filter((m) => memberDescendsFromAny(m.uniqueName, parents));
+  })());
+
+  // When the ancestor selection changes such that a previously-picked
+  // member is no longer a descendant of any parent, drop it from the
+  // local selection + commit so the chip bar stays honest.
+  $effect(() => {
+    const visible = displayedMembers;
+    if (selectedMembers.length === 0) return;
+    const visibleKeys = new Set(visible.map((m) => m.uniqueName));
+    const filtered = selectedMembers.filter((m) => visibleKeys.has(m));
+    if (filtered.length !== selectedMembers.length) {
+      selectedMembers = filtered;
+      commitSelection(filtered);
+    }
+  });
 
   async function loadMembers(): Promise<void> {
     if (members.length > 0 || membersLoading || !tile.cube || !target) return;
@@ -128,7 +159,7 @@
         aria-label="Filter by {target.level}"
       >
         <option value="">— any —</option>
-        {#each members as m (m.uniqueName)}
+        {#each displayedMembers as m (m.uniqueName)}
           <option value={m.uniqueName} selected={selectedMembers.includes(m.uniqueName)}>{m.caption}</option>
         {/each}
       </select>
@@ -137,7 +168,7 @@
         {#if members.length === 0 && !membersLoading}
           <button type="button" class="load-btn" onclick={loadMembers} disabled={readOnly}>Load members…</button>
         {:else}
-          {#each members as m (m.uniqueName)}
+          {#each displayedMembers as m (m.uniqueName)}
             <label class="multi-item">
               <input
                 type="checkbox"
