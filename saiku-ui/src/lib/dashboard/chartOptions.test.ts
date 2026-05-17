@@ -34,13 +34,29 @@ function sampleResponse(): AiQueryResponse {
 }
 
 describe("isSupportedChartKind", () => {
-  test("accepts the v1 set", () => {
-    for (const k of ["bar", "stackedBar", "line", "stackedLine", "area", "stackedArea", "pie", "donut"]) {
+  test("accepts the full chart palette (parity with workspace chartTypes.ts)", () => {
+    for (const k of [
+      "bar",
+      "stackedBar",
+      "line",
+      "stackedLine",
+      "area",
+      "stackedArea",
+      "pie",
+      "donut",
+      "heatmap",
+      "radar",
+      "scatter",
+      "bubble",
+      "treemap",
+      "sunburst",
+      "waterfall",
+    ]) {
       expect(isSupportedChartKind(k)).toBe(true);
     }
   });
-  test("rejects unsupported types", () => {
-    for (const k of ["heatmap", "radar", "scatter", "treemap", "totally-made-up"]) {
+  test("rejects unknown types", () => {
+    for (const k of ["totally-made-up", "gauge", "boxplot", ""]) {
       expect(isSupportedChartKind(k)).toBe(false);
     }
   });
@@ -84,7 +100,7 @@ describe("buildChartOption — line / area", () => {
 });
 
 describe("buildChartOption — pie / donut", () => {
-  test("pie has one slice per row using the first measure", () => {
+  test("pie has one slice per measure (matches workspace ChartView semantics)", () => {
     const opt = buildChartOption(sampleResponse(), "pie") as Record<string, unknown>;
     const series = opt.series as Array<{
       type: string;
@@ -92,10 +108,10 @@ describe("buildChartOption — pie / donut", () => {
       data: { name: string; value: number }[];
     }>;
     expect(series[0].type).toBe("pie");
-    expect(series[0].data).toEqual([
-      { name: "1997", value: 565238.13 },
-      { name: "1998", value: 612482.65 },
-    ]);
+    // One slice per measure column; value is the column total across all rows.
+    expect(series[0].data.map((d) => d.name)).toEqual(["Store Sales", "Unit Sales"]);
+    expect(series[0].data[0].value).toBeCloseTo(565238.13 + 612482.65, 2);
+    expect(series[0].data[1].value).toBeCloseTo(266773 + 282417, 2);
   });
 
   test("donut uses a ring radius", () => {
@@ -105,10 +121,45 @@ describe("buildChartOption — pie / donut", () => {
   });
 });
 
+describe("buildChartOption — extended types", () => {
+  test("treemap projects per-row aggregates", () => {
+    const opt = buildChartOption(sampleResponse(), "treemap") as Record<string, unknown>;
+    const series = opt.series as Array<{ type: string; data: { name: string; value: number }[] }>;
+    expect(series[0].type).toBe("treemap");
+    // Each row aggregates Store Sales + Unit Sales (sum of both measures).
+    expect(series[0].data[0].name).toBe("1997");
+    expect(series[0].data[0].value).toBeCloseTo(565238.13 + 266773, 2);
+  });
+
+  test("heatmap emits [col, row, value] tuples with a visualMap", () => {
+    const opt = buildChartOption(sampleResponse(), "heatmap") as Record<string, unknown>;
+    const series = opt.series as Array<{ type: string; data: [number, number, number][] }>;
+    expect(series[0].type).toBe("heatmap");
+    // 2 rows × 2 cols = 4 cells.
+    expect(series[0].data).toHaveLength(4);
+    expect(opt.visualMap).toBeDefined();
+  });
+
+  test("radar uses cols as indicators + rows as series entries", () => {
+    const opt = buildChartOption(sampleResponse(), "radar") as Record<string, unknown>;
+    const radar = opt.radar as { indicator: { name: string }[] };
+    expect(radar.indicator.map((i) => i.name)).toEqual(["Store Sales", "Unit Sales"]);
+    const series = opt.series as Array<{ data: { name: string; value: number[] }[] }>;
+    expect(series[0].data).toHaveLength(2);
+  });
+
+  test("waterfall emits three stacked series (spacer + pos + neg)", () => {
+    const opt = buildChartOption(sampleResponse(), "waterfall") as Record<string, unknown>;
+    const series = opt.series as Array<{ stack: string }>;
+    expect(series).toHaveLength(3);
+    expect(series.every((s) => s.stack === "waterfall")).toBe(true);
+  });
+});
+
 describe("buildChartOption — rejection", () => {
-  test("returns null for unsupported chart kinds", () => {
-    expect(buildChartOption(sampleResponse(), "treemap")).toBeNull();
+  test("returns null for unknown chart kinds", () => {
     expect(buildChartOption(sampleResponse(), "made-up-kind")).toBeNull();
+    expect(buildChartOption(sampleResponse(), "")).toBeNull();
   });
 
   test("returns null when there's no data", () => {

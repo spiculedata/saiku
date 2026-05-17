@@ -29,6 +29,7 @@
   } from "$lib/api/dashboards";
   import { flatten, listRepository, type RepositoryNode } from "$lib/api/repository";
   import { repositionTile } from "$lib/dashboard/tilePlacement";
+  import { CHART_TYPES } from "$lib/views/chartTypes";
 
   interface Props {
     tile: DashboardTile;
@@ -345,8 +346,8 @@
         <label class="field">
           <span>Chart type</span>
           <select bind:value={chartType}>
-            {#each ["bar", "stackedBar", "line", "stackedLine", "area", "stackedArea", "pie", "donut"] as ct (ct)}
-              <option value={ct}>{ct}</option>
+            {#each CHART_TYPES as ct (ct.id)}
+              <option value={ct.id}>{ct.label} ({ct.group})</option>
             {/each}
           </select>
         </label>
