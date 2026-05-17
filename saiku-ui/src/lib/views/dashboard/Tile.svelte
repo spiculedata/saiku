@@ -1,39 +1,89 @@
 <script lang="ts">
   /*
-   * Polymorphic tile shell. Renders a frame with a title bar and dispatches
-   * the body to the matching sub-tile component (Chart / Table / Text /
-   * Filter). Sub-tiles land in task #11; this scaffold prints the tile
-   * metadata so the grid layout is verifiable end-to-end before the
-   * substance arrives.
+   * Polymorphic tile shell. Renders the title-bar frame and dispatches
+   * the body to the matching sub-tile component by `tile.type`.
+   *
+   * Edit / remove buttons live in this shell so every tile type gets
+   * them for free. Actions defer to the dashboardStore via callbacks so
+   * the store stays the single source of truth.
    */
 
+  import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import type { DashboardTile } from "$lib/api/dashboards";
+  import ChartTile from "$lib/views/dashboard/tiles/ChartTile.svelte";
+  import TableTile from "$lib/views/dashboard/tiles/TableTile.svelte";
+  import TextTile from "$lib/views/dashboard/tiles/TextTile.svelte";
+  import FilterTile from "$lib/views/dashboard/tiles/FilterTile.svelte";
 
   interface Props {
     tile: DashboardTile;
     readOnly?: boolean;
+    onEdit?: (id: string) => void;
   }
 
-  let { tile, readOnly = false }: Props = $props();
+  let { tile, readOnly = false, onEdit }: Props = $props();
+
+  function handleEdit(): void {
+    onEdit?.(tile.id);
+  }
+
+  function handleRemove(): void {
+    if (readOnly) return;
+    dashboardStore.removeTile(tile.id);
+  }
 </script>
 
 <div class="tile" data-tile-type={tile.type}>
   <header class="tile-header">
-    <span class="title">{tile.title ?? tile.type}</span>
+    <span class="title">{tile.title ?? defaultTitle(tile)}</span>
     {#if !readOnly}
       <div class="tile-actions">
-        <button type="button" class="icon-btn" aria-label="Edit tile" disabled>⚙</button>
-        <button type="button" class="icon-btn" aria-label="Remove tile" disabled>×</button>
+        <button
+          type="button"
+          class="icon-btn"
+          aria-label="Edit tile"
+          onclick={handleEdit}
+          disabled={!onEdit}
+        >⚙</button>
+        <button
+          type="button"
+          class="icon-btn"
+          aria-label="Remove tile"
+          onclick={handleRemove}
+        >×</button>
       </div>
     {/if}
   </header>
   <div class="tile-body">
-    <!-- Scaffold: real sub-tile components land in task #11. -->
-    <pre class="placeholder">type: {tile.type}
-id: {tile.id}
-position: ({tile.x}, {tile.y}) {tile.w}×{tile.h}</pre>
+    {#if tile.type === "chart"}
+      <ChartTile {tile} />
+    {:else if tile.type === "table"}
+      <TableTile {tile} />
+    {:else if tile.type === "text"}
+      <TextTile {tile} />
+    {:else if tile.type === "filter"}
+      <FilterTile {tile} {readOnly} />
+    {:else}
+      <div class="unknown">Unknown tile type: {tile.type}</div>
+    {/if}
   </div>
 </div>
+
+<script module lang="ts">
+  import type { DashboardTile as DT } from "$lib/api/dashboards";
+
+  /** Fallback title when the analyst hasn't set one — keeps the chrome
+   *  populated so the tile isn't a mystery rectangle. */
+  function defaultTitle(tile: DT): string {
+    switch (tile.type) {
+      case "chart": return tile.chartType ? `${tile.chartType} chart` : "Chart";
+      case "table": return "Table";
+      case "text": return "Note";
+      case "filter": return tile.target?.level ? `Filter: ${tile.target.level}` : "Filter";
+      default: return tile.type;
+    }
+  }
+</script>
 
 <style>
   .tile {
@@ -74,14 +124,12 @@ position: ({tile.x}, {tile.y}) {tile.w}×{tile.h}</pre>
   .icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .tile-body {
     flex: 1;
-    padding: 0.5rem;
+    min-height: 0;
     overflow: auto;
   }
-  .placeholder {
-    font-family: monospace;
-    font-size: 0.75rem;
-    color: var(--fg-muted);
-    margin: 0;
-    white-space: pre-wrap;
+  .unknown {
+    padding: 0.5rem;
+    color: #991b1b;
+    font-size: 0.8125rem;
   }
 </style>
