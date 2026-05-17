@@ -15,6 +15,36 @@ import { DEFAULT_CHART_OPTIONS, type ChartOptions, type ChartType } from "$lib/v
 
 export type ViewMode = "grid" | "chart" | "stats" | "sparkline" | "sparkbar";
 
+/** Per-tab snapshot of the user-visible query state. Tabs store hands
+ *  one of these around when switching tabs to preserve work in flight.
+ *  Transient flags (running, error, abortController) deliberately
+ *  excluded — we cancel any in-flight query on snapshot rather than try
+ *  to carry async state across the swap. */
+export interface QueryStateSnapshot {
+  current: ThinQuery | null;
+  result: QueryResult | null;
+  savedPath: string | null;
+  viewMode: ViewMode;
+  chartType: ChartType;
+  chartOptions: ChartOptions;
+  dirty: boolean;
+  dirtyCount: number;
+}
+
+/** Build a fresh empty snapshot — what a brand-new tab starts with. */
+export function blankSnapshot(): QueryStateSnapshot {
+  return {
+    current: null,
+    result: null,
+    savedPath: null,
+    viewMode: "grid",
+    chartType: "bar",
+    chartOptions: { ...DEFAULT_CHART_OPTIONS },
+    dirty: false,
+    dirtyCount: 0,
+  };
+}
+
 /** Ensure a hydrated/loaded ThinQuery has a name safe to embed in a REST URL
  *  path segment. Saved-query files written by older builds stored the file
  *  path as `name`, which contains `/`. Jetty 12's strict URI compliance
@@ -143,6 +173,50 @@ class QueryStore {
     this.dirty = false;
     this.dirtyCount = 0;
     this.savedPath = null;
+  }
+
+  /** Capture a serialisable snapshot of all per-tab user-visible state so
+   *  the tabs store can stash it before switching to a different tab.
+   *  Excludes transient flags (running, error, runningQueryId, elapsed)
+   *  — those don't survive tab switches; we cancel any in-flight query
+   *  in {@link snapshotAndReset} before restoring. */
+  snapshot(): QueryStateSnapshot {
+    return {
+      current: this.current,
+      result: this.result,
+      savedPath: this.savedPath,
+      viewMode: this.viewMode,
+      chartType: this.chartType,
+      chartOptions: this.chartOptions,
+      dirty: this.dirty,
+      dirtyCount: this.dirtyCount,
+    };
+  }
+
+  /** Cancel any in-flight query (so its response can't land on the wrong
+   *  tab), capture state, then return it. Used by the tabs store right
+   *  before {@link restore} swaps in another tab. */
+  snapshotAndReset(): QueryStateSnapshot {
+    if (this.running) this.cancel();
+    return this.snapshot();
+  }
+
+  /** Hydrate this store from a previously-captured snapshot. Used by the
+   *  tabs store on tab switch. */
+  restore(s: QueryStateSnapshot): void {
+    if (this.running) this.cancel();
+    this.current = s.current;
+    this.result = s.result;
+    this.savedPath = s.savedPath;
+    this.viewMode = s.viewMode;
+    this.chartType = s.chartType;
+    this.chartOptions = s.chartOptions;
+    this.dirty = s.dirty;
+    this.dirtyCount = s.dirtyCount;
+    this.error = null;
+    this.running = false;
+    this.runningQueryId = null;
+    this.runningElapsedMs = 0;
   }
 
   private findAxisForHierarchy(uniqueName: string): AxisLocation | null {
