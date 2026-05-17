@@ -12,6 +12,8 @@
   import { onMount, untrack } from "svelte";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
+  import { newTileId, type TileType } from "$lib/api/dashboards";
+  import { buildTile } from "$lib/dashboard/tilePlacement";
   import DashboardToolbar from "$lib/views/dashboard/DashboardToolbar.svelte";
   import DashboardFilterBar from "$lib/views/dashboard/DashboardFilterBar.svelte";
   import DashboardGrid from "$lib/views/dashboard/DashboardGrid.svelte";
@@ -50,6 +52,13 @@
   function handleNameChange(name: string): void {
     dashboardStore.updateName(name);
   }
+
+  function handleAddTile(type: TileType): void {
+    const layout = dashboardStore.current?.layout;
+    if (!layout) return;
+    const tile = buildTile(layout, type, newTileId());
+    dashboardStore.addTile(tile);
+  }
 </script>
 
 <div class="dashboard-editor">
@@ -63,6 +72,7 @@
       saving={dashboardStore.saving}
       dirty={dashboardStore.dirty}
       onSave={handleSave}
+      onAddTile={readOnly ? undefined : handleAddTile}
     />
     {#if dashboardStore.loadError}
       <div class="notice">{dashboardStore.loadError}</div>

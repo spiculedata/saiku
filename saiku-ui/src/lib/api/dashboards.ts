@@ -146,6 +146,35 @@ export function newDashboard(name = "Untitled dashboard"): Dashboard {
   };
 }
 
+/** AI Query API cube summary — what /ai/cubes returns. Used by the
+ *  add-tile flow's cube picker. */
+export interface AiCubeSummary {
+  connectionName: string;
+  catalog: string;
+  schema: string;
+  cubeName: string;
+  cubeCaption?: string;
+  defaultMeasure?: string;
+  measureCount?: number;
+}
+
+/** GET /rest/saiku/api/ai/cubes — list of cubes the current user can
+ *  query. Same endpoint MCP's list_cubes wraps. */
+export async function listAiCubes(): Promise<AiCubeSummary[]> {
+  const res = await fetch("/rest/saiku/api/ai/cubes", {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`listAiCubes -> ${res.status}`);
+  return (await res.json()) as AiCubeSummary[];
+}
+
+/** Mint a fresh tile id for the add-tile flow. Exposed so the modal
+ *  can do it inline rather than reaching into the internals. */
+export function newTileId(): string {
+  return cryptoUuid();
+}
+
 /* ---------------------------- internals ---------------------------- */
 
 /** URL-encode each path segment but leave slashes as-is — DashboardResource

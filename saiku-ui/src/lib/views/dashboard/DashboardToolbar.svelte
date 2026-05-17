@@ -12,6 +12,9 @@
    * pickers land in task #13.
    */
 
+  import AddTileMenu from "$lib/views/dashboard/AddTileMenu.svelte";
+  import type { TileType } from "$lib/api/dashboards";
+
   interface Props {
     name: string;
     onNameChange?: (next: string) => void;
@@ -19,7 +22,7 @@
     saving?: boolean;
     dirty?: boolean;
     onSave?: () => void;
-    onAddTile?: (type: "chart" | "table" | "text" | "filter") => void;
+    onAddTile?: (type: TileType) => void;
   }
 
   let {
@@ -58,12 +61,7 @@
 
   {#if !readOnly}
     <div class="actions">
-      <div class="add-tile">
-        <button type="button" class="btn" disabled aria-disabled="true">
-          + Add tile
-          <span class="hint">(coming next)</span>
-        </button>
-      </div>
+      <AddTileMenu onPick={(t) => onAddTile?.(t)} disabled={!onAddTile} />
 
       <button
         type="button"
@@ -134,10 +132,5 @@
   .btn.primary:disabled {
     /* Saved state — keep it visually distinct from a destructive disable. */
     opacity: 0.7;
-  }
-  .hint {
-    font-size: 0.75rem;
-    color: var(--fg-muted);
-    margin-left: 0.25rem;
   }
 </style>
