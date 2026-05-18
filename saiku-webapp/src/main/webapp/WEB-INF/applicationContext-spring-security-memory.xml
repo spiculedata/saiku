@@ -6,18 +6,38 @@
        		   http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
 
 
-<!--+
-	| Application context containing "in memory" AuthenticationProvider
-	| implementation.
-	+-->
+  <!--+
+      | In-memory AuthenticationProvider for the bundled WAR.
+      |
+      | Production posture (default profile): only users.properties is
+      | loaded → ships with admin/admin which the launcher warns about
+      | and operators are expected to rotate or replace before exposure.
+      |
+      | Demo posture: when the "demo" Spring profile is active, the
+      | additional users-demo.properties file is also loaded, enabling
+      | the pre-seeded bob/krishna/smith accounts whose home folders
+      | contain example saved queries. The saiku-launcher activates
+      | this profile automatically when the SAIKU_DEMO=true env var is
+      | set (or via -Dspring.profiles.active=demo). See saiku#897.
+      +-->
 
-  	<security:authentication-manager alias="authenticationManager">
+  <beans profile="!demo">
+    <security:authentication-manager alias="authenticationManager">
+      <security:authentication-provider>
+        <security:user-service id="uds" properties="/WEB-INF/users.properties"/>
+      </security:authentication-provider>
+    </security:authentication-manager>
+  </beans>
 
-		<security:authentication-provider>
-			<security:user-service id="uds" properties="/WEB-INF/users.properties">
-
-			</security:user-service>
-		</security:authentication-provider>
-	</security:authentication-manager>
+  <beans profile="demo">
+    <security:authentication-manager alias="authenticationManager">
+      <security:authentication-provider>
+        <security:user-service id="uds" properties="/WEB-INF/users.properties"/>
+      </security:authentication-provider>
+      <security:authentication-provider>
+        <security:user-service id="udsDemo" properties="/WEB-INF/users-demo.properties"/>
+      </security:authentication-provider>
+    </security:authentication-manager>
+  </beans>
 
 </beans>
