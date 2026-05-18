@@ -39,7 +39,28 @@ class Acl2 {
 
     private List<String> adminRoles;
 
-    private AclMethod rootMethod = AclMethod.WRITE;
+    /**
+     * Default method granted on un-ACL'd nodes whose parent chain runs out
+     * before hitting an {@code acl.json}. Flipped from {@link AclMethod#WRITE}
+     * to {@link AclMethod#READ} for saiku#951.
+     *
+     * <p>Note: this value is currently <b>not reached at runtime</b> for any
+     * real filesystem path. The fallback branch in {@link #getMethods} that
+     * consults {@code rootMethod} guards on
+     * {@code file.getParentFile().getName().equals("/")}, but the Java
+     * {@link File} model returns the empty string ({@code ""}) for the
+     * filesystem root on Unix (and {@code "C:"}-style names on Windows) —
+     * never the literal {@code "/"}. Every un-ACL'd path therefore walks the
+     * parent chain up to a null parent and resolves to {@link AclMethod#NONE}.
+     *
+     * <p>Flipping the default is defensive: if a future change repairs the
+     * parent-detection guard to actually trigger this branch, the inherited
+     * default is least-privilege (READ, not WRITE) so the fix doesn't
+     * accidentally widen access. The previous value of {@link AclMethod#WRITE}
+     * was a Jackrabbit-era artifact carried over verbatim during the
+     * filesystem port.
+     */
+    private AclMethod rootMethod = AclMethod.READ;
 
     @NotNull
     private final Map<String, AclEntry> acl = new TreeMap<>();
