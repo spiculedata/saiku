@@ -7,7 +7,7 @@
     <parent>
         <artifactId>saiku-core</artifactId>
         <groupId>org.saikuanalytics</groupId>
-        <version>4.0.1</version>
+        <version>4.2.1</version>
     </parent>
 
     <artifactId>saiku-semantic</artifactId>
