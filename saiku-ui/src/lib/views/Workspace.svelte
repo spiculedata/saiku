@@ -259,8 +259,8 @@
   }
   .workspace__sidebar-footer {
     padding: var(--space-3) var(--space-4);
-    border-top: 1px solid var(--border);
-    background: var(--bg-muted);
+    border-top: 1px solid var(--border-strong);
+    background: var(--bg-subtle);
     display: flex;
     align-items: center;
     gap: var(--space-2);

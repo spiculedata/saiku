@@ -558,10 +558,10 @@
   .tree__row:hover { background: var(--bg-subtle); }
   .tree__row--group { font-weight: var(--weight-semibold); }
   .tree__row--measure {
-    color: var(--danger);
+    color: var(--accent);
     cursor: grab;
   }
-  .tree__row--measure .tree__icon--measure { color: var(--danger); }
+  .tree__row--measure .tree__icon--measure { color: var(--accent); }
   .tree__row--dim { color: var(--fg); }
   .tree__row--level { color: var(--fg-muted); }
   .tree__row--level .tree__drag { cursor: grab; }

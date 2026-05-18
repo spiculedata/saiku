@@ -8,7 +8,7 @@
   import { embed } from "$lib/stores/embed.svelte";
   import ToastStack from "$lib/components/ToastStack.svelte";
   import UpgradeBanner from "$lib/components/UpgradeBanner.svelte";
-  import { LogOut, Shield, Home, LayoutDashboard } from "lucide-svelte";
+  import { LogOut, Shield, Home, LayoutDashboard, UserRound } from "lucide-svelte";
   import Tour from "$lib/components/Tour.svelte";
   import SessionErrorModal from "$lib/modals/SessionErrorModal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -86,7 +86,10 @@
     </a>
     <div class="topbar__actions">
       {#if session.current}
-        <span class="topbar__user">{session.current.username}</span>
+        <span class="topbar__user" title="Signed in as {session.current.username}">
+          <UserRound size={14} />
+          {session.current.username}
+        </span>
         {#if !page.url.pathname.startsWith(`${base}/dashboards`) && !page.url.pathname.startsWith(`${base}/admin`)}
           <a class="btn" href="{base}/dashboards"><LayoutDashboard size={14} /><span>Dashboards</span></a>
         {/if}
@@ -147,9 +150,11 @@
   }
   .topbar__brand:hover { text-decoration: none; }
   .topbar__brand-logo {
-    height: var(--brand-logo-height, 24px);
+    height: 28px;
+    max-height: 28px;
     width: auto;
     display: block;
+    object-fit: contain;
   }
   /* Wordmark — typeset Saiku next to the symbol. Falls back to text-only
      brand when no logo file ships with the deployment. Hidden on narrow
@@ -182,9 +187,17 @@
     padding-bottom: 0;
   }
   .topbar__user {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 4px var(--space-2);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 999px;
     color: var(--fg-muted);
     font-size: var(--fs-sm);
   }
+  .topbar__user :global(svg) { color: var(--fg-subtle); }
   .app__main {
     flex: 1;
     min-height: 0;

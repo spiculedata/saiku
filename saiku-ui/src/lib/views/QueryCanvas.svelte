@@ -1075,7 +1075,15 @@
     flex-wrap: wrap;
     gap: var(--space-1);
   }
-  .chips__empty { color: var(--fg-subtle); font-size: var(--fs-sm); }
+  .chips__empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    color: var(--fg-subtle);
+    font-size: var(--fs-sm);
+    font-style: italic;
+  }
   .chip {
     display: inline-flex;
     align-items: center;
