@@ -53,4 +53,8 @@ public class DashboardTile {
     /** Widget sub-type for filter tiles:
      *  {@code single-select | multi-select | date-range}. */
     public String widget;
+
+    /** KPI tile config — measure, format, comparison, sparkline,
+     *  thresholds, slice filters. Null for non-KPI tiles. */
+    public KpiConfig kpi;
 }
