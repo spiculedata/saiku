@@ -4,6 +4,7 @@
   import { i18n } from "$lib/stores/i18n.svelte";
   import { platform } from "$lib/stores/platform.svelte";
   import ApiAccessAdmin from "$lib/views/admin/ApiAccessAdmin.svelte";
+  import { Info } from "lucide-svelte";
 
   let username = $state("admin");
   let password = $state("");
@@ -35,15 +36,37 @@
       busy = false;
     }
   }
+
+  async function loginAsDemo() {
+    username = "admin";
+    password = "admin";
+    error = null;
+    busy = true;
+    try {
+      await session.login("admin", "admin");
+    } catch (err) {
+      error = err instanceof Error ? err.message : i18n.t("login.failed");
+    } finally {
+      busy = false;
+    }
+  }
 </script>
 
 <div class="login-stack">
   <form class="login" onsubmit={onSubmit}>
     <h1>{i18n.t("login.title")}</h1>
+    <p class="login__tagline">Semantic Layer analytics for cubes — drag, drop, drill.</p>
     {#if showDemoPanel}
-      <p class="demo-creds">
-        Demo credentials: <code>admin</code> / <code>admin</code>. Data resets nightly.
-      </p>
+      <div class="demo-creds">
+        <Info size={16} class="demo-creds__icon" />
+        <div class="demo-creds__body">
+          <strong>Try the demo</strong>
+          <span>
+            Sign in with <code>admin</code> / <code>admin</code>, or use the
+            shortcut below. Data resets nightly.
+          </span>
+        </div>
+      </div>
     {/if}
     {#if error}
       <p class="callout callout--danger" role="alert">{error}</p>
@@ -65,6 +88,16 @@
     <button type="submit" class="btn btn--primary btn--wide" disabled={busy}>
       {busy ? i18n.t("login.submitting") : i18n.t("login.submit")}
     </button>
+    {#if showDemoPanel}
+      <button
+        type="button"
+        class="btn btn--wide login__demo-button"
+        onclick={loginAsDemo}
+        disabled={busy}
+      >
+        Sign in as demo user
+      </button>
+    {/if}
   </form>
 
   {#if showDemoPanel}
@@ -102,16 +135,39 @@
     box-shadow: var(--shadow-md);
   }
   .login h1 {
-    margin: 0 0 var(--space-4);
+    margin: 0 0 var(--space-1);
     font-size: var(--fs-xl);
   }
+  .login__tagline {
+    margin: 0 0 var(--space-4);
+    color: var(--fg-muted);
+    font-size: var(--fs-sm);
+    line-height: var(--lh-normal);
+  }
   .demo-creds {
+    display: flex;
+    gap: var(--space-2);
+    align-items: flex-start;
     margin: 0 0 var(--space-3);
-    padding: var(--space-2) var(--space-3);
+    padding: var(--space-3);
     background: var(--success-soft);
     color: var(--success-strong);
     border-left: 3px solid var(--success);
+    border-radius: var(--radius-sm);
     font-size: var(--fs-sm);
+    line-height: var(--lh-normal);
+  }
+  .demo-creds__body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .demo-creds :global(.demo-creds__icon) {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .login__demo-button {
+    margin-top: var(--space-2);
   }
   .login-stack__demo {
     width: 100%;

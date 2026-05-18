@@ -72,7 +72,7 @@
   {/if}
   {#if !embed.active}
   <header class="topbar">
-    <div class="topbar__brand">
+    <a class="topbar__brand" href="{base}/" aria-label={i18n.t("brand")}>
       {#if brandLogo}
         <img
           class="topbar__brand-logo"
@@ -81,9 +81,9 @@
           onerror={onBrandLogoError}
         />
       {:else}
-        {i18n.t("brand")}
+        <span class="topbar__brand-wordmark">{i18n.t("brand")}</span>
       {/if}
-    </div>
+    </a>
     <div class="topbar__actions">
       {#if session.current}
         <span class="topbar__user">{session.current.username}</span>
@@ -139,15 +139,29 @@
     border-bottom: 1px solid var(--border);
   }
   .topbar__brand {
-    font-weight: var(--weight-bold);
-    letter-spacing: 0.02em;
     display: flex;
     align-items: center;
+    gap: var(--space-2);
+    color: var(--fg);
+    text-decoration: none;
   }
+  .topbar__brand:hover { text-decoration: none; }
   .topbar__brand-logo {
     height: var(--brand-logo-height, 24px);
     width: auto;
     display: block;
+  }
+  /* Wordmark — typeset Saiku next to the symbol. Falls back to text-only
+     brand when no logo file ships with the deployment. Hidden on narrow
+     viewports so the topbar doesn't crowd on mobile. */
+  .topbar__brand-wordmark {
+    font-weight: var(--weight-bold);
+    font-size: var(--fs-lg);
+    letter-spacing: -0.01em;
+    line-height: 1;
+  }
+  @media (max-width: 640px) {
+    .topbar__brand-wordmark { display: none; }
   }
   .topbar__actions {
     display: flex;
