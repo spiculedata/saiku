@@ -26,6 +26,7 @@
     deleteDashboard,
     newDashboard,
     normaliseDashboardPath,
+    toRepoRelative,
     saveDashboard,
   } from "$lib/api/dashboards";
   import { session } from "$lib/stores/session.svelte";
@@ -192,24 +193,25 @@
   {:else}
     <ul class="list">
       {#each entries as e (e.path)}
+        {@const relPath = toRepoRelative(e.path)}
         <li class="row">
-          <a class="link" href="{base}/dashboards/{e.path}" title={e.path}>
-            <span class="name">{basename(e.path)}</span>
-            <span class="path">{e.path}</span>
+          <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
+            <span class="name">{basename(relPath)}</span>
+            <span class="path">{relPath}</span>
           </a>
           {#if session.isAdmin}
             <button
               type="button"
               class="btn"
               disabled={aclLoading}
-              onclick={() => void openAcl(e.path)}
+              onclick={() => void openAcl(relPath)}
               title={i18n.t("saved.permissions")}
               aria-label={i18n.t("saved.permissions")}
             >
               <ShieldCheck size={14} />
             </button>
           {/if}
-          <button type="button" class="btn danger" onclick={() => handleDelete(e.path)} title="Delete">
+          <button type="button" class="btn danger" onclick={() => handleDelete(relPath)} title="Delete">
             Delete
           </button>
         </li>
