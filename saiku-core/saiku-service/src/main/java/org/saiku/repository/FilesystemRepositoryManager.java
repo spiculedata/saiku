@@ -96,69 +96,87 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
                 f.mkdir();
             }
 
-            File n = this.createFolder(sep + "homes");
-
-            HashMap<String, List<AclMethod>> m = new HashMap<>();
-            ArrayList<AclMethod> l = new ArrayList<>();
-            l.add(AclMethod.READ);
-            m.put(defaultRole, l);
-            AclEntry e = new AclEntry("admin", AclType.SECURED, m, null);
-
-            Acl2 acl2 = new Acl2(n);
-            acl2.addEntry(n.getPath(), e);
-            acl2.serialize(n);
-
-            this.createFolder(sep + "datasources");
-
-            m = new HashMap<>();
-            l = new ArrayList<>();
-            l.add(AclMethod.WRITE);
-            l.add(AclMethod.READ);
-            l.add(AclMethod.GRANT);
-            m.put("ROLE_ADMIN", l);
-            e = new AclEntry("admin", AclType.PUBLIC, m, null);
-
-            acl2 = new Acl2(n);
-            acl2.addEntry(n.getPath(), e);
-            acl2.serialize(n);
-
-            this.createFolder(sep + "legacyreports");
-
-            acl2 = new Acl2(n);
-            acl2.addEntry(n.getPath(), e);
-            acl2.serialize(n);
+            seedSkeleton();
 
             log.info("node added");
             this.session = "init";
         } else {
-            File n = this.createFolder(sep + "homes");
-
-            HashMap<String, List<AclMethod>> m = new HashMap<>();
-            ArrayList<AclMethod> l = new ArrayList<>();
-            l.add(AclMethod.READ);
-            m.put(defaultRole, l);
-            AclEntry e = new AclEntry("admin", AclType.SECURED, m, null);
-
-            Acl2 acl2 = new Acl2(n);
-            acl2.addEntry(n.getPath(), e);
-            acl2.serialize(n);
-
-            this.createFolder(sep + "datasources");
-
-            m = new HashMap<>();
-            l = new ArrayList<>();
-            l.add(AclMethod.WRITE);
-            l.add(AclMethod.READ);
-            l.add(AclMethod.GRANT);
-            m.put("ROLE_ADMIN", l);
-            e = new AclEntry("admin", AclType.PUBLIC, m, null);
-
-            acl2 = new Acl2(n);
-            acl2.addEntry(n.getPath(), e);
-            acl2.serialize(n);
+            seedSkeleton();
         }
 
         return true;
+    }
+
+    /**
+     * Seed the standard repository skeleton with sensible default ACLs.
+     *
+     * <p>Idempotent — re-running {@code start()} (e.g. on workspace bootstrap)
+     * re-applies these grants but does not destroy user content. Owner of every
+     * seeded ACL is {@code admin}.
+     *
+     * <ul>
+     *   <li><b>/homes/</b> — SECURED, defaultRole READ. Per-user PRIVATE folders
+     *       are added on first login via {@link #createUser(String)}.</li>
+     *   <li><b>/datasources/</b> — PUBLIC, ROLE_ADMIN WRITE/READ/GRANT. Authenticated
+     *       users can READ (rootMethod fallback); only admins mutate.</li>
+     *   <li><b>/dashboards/</b> — SECURED, ROLE_ADMIN WRITE/READ/GRANT. User-saved
+     *       dashboards live under {@code /homes/<user>/} where the home ACL applies;
+     *       the top-level folder is admin-only-write to prevent cross-user clobber
+     *       (closes saiku#948).</li>
+     *   <li><b>/queries/</b> — SECURED, ROLE_ADMIN WRITE/READ/GRANT. Same rationale
+     *       as {@code /dashboards/}.</li>
+     *   <li><b>/legacyreports/</b> — PUBLIC, ROLE_ADMIN WRITE/READ/GRANT. Mirrors
+     *       historical behaviour.</li>
+     * </ul>
+     *
+     * <p>Historical bug fixed inline: prior code captured one {@code File n} for
+     * {@code /homes/} and then re-serialised every subsequent folder's ACL onto
+     * that same reference — so the supposed {@code /datasources/} and
+     * {@code /legacyreports/} ACLs were silently overwriting {@code /homes/}'s
+     * {@code acl.json}. Each {@link #seedAcl} call now operates on its own folder.
+     */
+    private void seedSkeleton() throws RepositoryException {
+        seedAcl(this.createFolder(sep + "homes"), homesGrant());
+        seedAcl(this.createFolder(sep + "datasources"), publicAdminGrant());
+        seedAcl(this.createFolder(sep + "dashboards"), securedAdminGrant());
+        seedAcl(this.createFolder(sep + "queries"), securedAdminGrant());
+        seedAcl(this.createFolder(sep + "legacyreports"), publicAdminGrant());
+    }
+
+    /** Write an {@link AclEntry} to {@code folder/acl.json}. */
+    private void seedAcl(File folder, AclEntry entry) {
+        Acl2 acl2 = new Acl2(folder);
+        acl2.addEntry(folder.getPath(), entry);
+        acl2.serialize(folder);
+    }
+
+    /** {@code defaultRole} → READ; SECURED; admin owner. The {@code /homes/} default. */
+    private AclEntry homesGrant() {
+        HashMap<String, List<AclMethod>> roles = new HashMap<>();
+        ArrayList<AclMethod> grants = new ArrayList<>();
+        grants.add(AclMethod.READ);
+        roles.put(defaultRole, grants);
+        return new AclEntry("admin", AclType.SECURED, roles, null);
+    }
+
+    /** {@code ROLE_ADMIN} → WRITE/READ/GRANT; PUBLIC; admin owner. */
+    private AclEntry publicAdminGrant() {
+        return new AclEntry("admin", AclType.PUBLIC, adminGrants(), null);
+    }
+
+    /** {@code ROLE_ADMIN} → WRITE/READ/GRANT; SECURED; admin owner. */
+    private AclEntry securedAdminGrant() {
+        return new AclEntry("admin", AclType.SECURED, adminGrants(), null);
+    }
+
+    private Map<String, List<AclMethod>> adminGrants() {
+        HashMap<String, List<AclMethod>> roles = new HashMap<>();
+        ArrayList<AclMethod> grants = new ArrayList<>();
+        grants.add(AclMethod.WRITE);
+        grants.add(AclMethod.READ);
+        grants.add(AclMethod.GRANT);
+        roles.put("ROLE_ADMIN", grants);
+        return roles;
     }
 
     public void createUser(String u) throws RepositoryException {
@@ -794,13 +812,25 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         }
     }
 
+    /**
+     * Create {@code <datadir>/<path>} (mkdirs) and return the resolved
+     * filesystem {@link File} pointing at it.
+     *
+     * <p>Historically returned {@code new File(fixPath(path))} — i.e. the
+     * unresolved repo-relative path like {@code "/homes"} — which on Unix
+     * was interpreted as a filesystem-absolute path under the root
+     * directory. Downstream {@link Acl2#serialize} calls then tried to
+     * write {@code /homes/acl.json} (the OS root) and failed silently via
+     * Jackson's catch block, leaving the supposed default ACLs absent on
+     * disk. The new return value is the actual data-dir-relative File so
+     * ACLs land where the caller expects (closes the latent bug behind
+     * saiku#948).
+     */
     private File createFolder(String path) {
         String appended = fixPath(getDatadir() + path);
-        boolean success = (new File(appended)).mkdirs();
-        if (!success) {
-            // Directory creation failed
-        }
-        return new File(fixPath(path));
+        File resolved = new File(appended);
+        resolved.mkdirs();
+        return resolved;
     }
 
     private File[] getAllFoldersInCurrentDirectory(String path) {
