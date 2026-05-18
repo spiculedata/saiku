@@ -1,18 +1,20 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import MonacoEditor from "$lib/components/MonacoEditor.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import type { SaikuMeasure } from "$lib/api/discover";
 
   /*
-   * Structured "Top N / Bottom N by measure" picker.
+   * "Top N / Bottom N" picker — two modes.
    *
-   * Replaces the generic Monaco MDX editor for TopCount / BottomCount
-   * axis-filter types. The user picks N and a measure; we hand back
-   * "N, [Measure].[uniqueName]" — the exact string the legacy generic
-   * modal required the user to type. QueryCanvas wraps that into
-   * TOPCOUNT(...) or BOTTOMCOUNT(...) MDX.
+   * - "simple": count + measure dropdown. Emits "N, [Measure]" string.
+   * - "mdx":    Monaco editor for the full "N, <expression>" pair so
+   *   power users can use calculated members, tuples, or expressions
+   *   the simple form can't author. Same downstream MDX wrapping
+   *   (TOPCOUNT / BOTTOMCOUNT) in QueryCanvas.
    */
   type Variant = "top" | "bottom";
+  type Mode = "simple" | "mdx";
 
   interface Props {
     axis: string;
@@ -36,20 +38,42 @@
     onCancel,
   }: Props = $props();
 
+  let mode = $state<Mode>("simple");
   let count = $state<number>(initialCount);
   let selected = $state<string>(initialMeasure);
+  let mdxBuffer = $state<string>("");
 
   $effect(() => {
     if (open) {
+      mode = "simple";
       count = initialCount || 10;
       selected = initialMeasure || measures[0]?.uniqueName || "";
+      mdxBuffer = `${Math.floor(count)}, ${selected}`;
     }
   });
 
-  function commit() {
-    if (!selected || !Number.isFinite(count) || count < 1) return;
-    onSave(`${Math.floor(count)}, ${selected}`);
+  function switchMode(next: Mode) {
+    if (next === mode) return;
+    if (next === "mdx") mdxBuffer = `${Math.floor(count)}, ${selected}`;
+    mode = next;
   }
+
+  function commit() {
+    if (mode === "simple") {
+      if (!selected || !Number.isFinite(count) || count < 1) return;
+      onSave(`${Math.floor(count)}, ${selected}`);
+    } else {
+      const expr = mdxBuffer.trim();
+      if (!expr) return;
+      onSave(expr);
+    }
+  }
+
+  const valid = $derived(
+    mode === "simple"
+      ? !!selected && count >= 1
+      : mdxBuffer.trim().length > 0,
+  );
 
   const titleKey = $derived(variant === "top" ? "modal.filter.topCount" : "modal.filter.bottomCount");
 </script>
@@ -57,37 +81,100 @@
 <Modal
   title={`${i18n.t(titleKey)} ${axis}`}
   {open}
-  size="md"
+  size={mode === "mdx" ? "lg" : "md"}
   onClose={onCancel}
 >
-  <label class="field">
-    <span class="field__label">{i18n.t("modal.filter.count")}</span>
-    <input
-      class="field__input"
-      type="number"
-      min="1"
-      step="1"
-      bind:value={count}
-    />
-  </label>
-  <label class="field">
-    <span class="field__label">{i18n.t("modal.filter.byMeasure")}</span>
-    <select class="field__input" bind:value={selected}>
-      {#if !initialMeasure && measures.length > 0}
-        <option value="" disabled>{i18n.t("modal.filter.pickMeasure")}</option>
+  <div class="mode-switch" role="tablist" aria-label={i18n.t("modal.filter.mode")}>
+    <button
+      type="button"
+      role="tab"
+      class="mode-switch__btn"
+      class:active={mode === "simple"}
+      aria-selected={mode === "simple"}
+      onclick={() => switchMode("simple")}
+    >{i18n.t("modal.filter.modeSimple")}</button>
+    <button
+      type="button"
+      role="tab"
+      class="mode-switch__btn"
+      class:active={mode === "mdx"}
+      aria-selected={mode === "mdx"}
+      onclick={() => switchMode("mdx")}
+    >{i18n.t("modal.filter.modeMdx")}</button>
+  </div>
+
+  {#if mode === "simple"}
+    <label class="field">
+      <span class="field__label">{i18n.t("modal.filter.count")}</span>
+      <input
+        class="field__input"
+        type="number"
+        min="1"
+        step="1"
+        bind:value={count}
+      />
+    </label>
+    <label class="field">
+      <span class="field__label">{i18n.t("modal.filter.byMeasure")}</span>
+      <select class="field__input" bind:value={selected}>
+        {#if !initialMeasure && measures.length > 0}
+          <option value="" disabled>{i18n.t("modal.filter.pickMeasure")}</option>
+        {/if}
+        {#each measures as m}
+          <option value={m.uniqueName}>{m.caption || m.name}</option>
+        {/each}
+      </select>
+    </label>
+  {:else}
+    <div class="field">
+      <span class="field__label">{i18n.t(titleKey)} {i18n.t("modal.filter.mdxExpression")}</span>
+      {#if open}
+        <MonacoEditor value={mdxBuffer} language="mdx" minHeight="200px" onChange={(v) => (mdxBuffer = v)} />
       {/if}
-      {#each measures as m}
-        <option value={m.uniqueName}>{m.caption || m.name}</option>
-      {/each}
-    </select>
-  </label>
+      <p class="field__hint">N, &lt;measure-or-expression&gt;</p>
+    </div>
+  {/if}
+
   {#snippet footer()}
     <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
     <button
       type="button"
       class="btn btn--primary"
-      disabled={!selected || !(count >= 1)}
+      disabled={!valid}
       onclick={commit}
     >{i18n.t("modal.ok")}</button>
   {/snippet}
 </Modal>
+
+<style>
+  .mode-switch {
+    display: inline-flex;
+    margin-bottom: var(--space-3);
+    background: var(--bg-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 2px;
+  }
+  .mode-switch__btn {
+    padding: 4px var(--space-3);
+    background: transparent;
+    border: 0;
+    border-radius: 3px;
+    color: var(--fg-muted);
+    font: inherit;
+    font-size: var(--fs-sm);
+    cursor: pointer;
+  }
+  .mode-switch__btn:hover { color: var(--fg); }
+  .mode-switch__btn.active {
+    background: var(--bg);
+    color: var(--fg);
+    font-weight: var(--weight-medium);
+    box-shadow: var(--shadow-sm);
+  }
+  .field__hint {
+    margin: var(--space-1) 0 0;
+    color: var(--fg-subtle);
+    font-size: var(--fs-xs);
+  }
+</style>
