@@ -85,16 +85,60 @@ a:hover {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background var(--duration-fast);
+  transition:
+    background var(--duration-fast),
+    border-color var(--duration-fast),
+    color var(--duration-fast);
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--bg-subtle);
+  background: var(--bg-hover);
 }
 
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* ----------------------------------------------------------------- *
+ * Icon button — small square affordance for inline icon-only actions
+ * (list-row actions, toolbar quick-actions, modal close, etc).
+ *
+ * One canonical shape so SavedQueriesModal / Tile / Toast / Modal all
+ * render their X / pencil / trash icons the same way. Per-component
+ * .icon-btn declarations should be removed in favor of this class.
+ * ----------------------------------------------------------------- */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast),
+    border-color var(--duration-fast),
+    color var(--duration-fast);
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--fg);
+}
+
+.icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.icon-btn--danger:hover:not(:disabled) {
+  color: var(--danger);
 }
 
 .btn--primary {

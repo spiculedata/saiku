@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { tick } from "svelte";
+  import { X } from "lucide-svelte";
 
   interface Props {
     title: string;
@@ -102,7 +103,9 @@
     >
       <header class="modal__header">
         <h2 class="modal__title" id={titleId}>{title}</h2>
-        <button type="button" class="modal__close" aria-label="Close" onclick={onClose}>×</button>
+        <button type="button" class="icon-btn modal__close" aria-label="Close" onclick={onClose}>
+          <X size={16} />
+        </button>
       </header>
       <div class="modal__body">
         {@render children?.()}
@@ -162,16 +165,8 @@
     font-size: var(--fs-lg);
     font-weight: var(--weight-semibold);
   }
-  .modal__close {
-    background: transparent;
-    border: 0;
-    color: var(--fg-muted);
-    font-size: var(--fs-xl);
-    line-height: 1;
-    cursor: pointer;
-    padding: 0 var(--space-1);
-  }
-  .modal__close:hover { color: var(--fg); }
+  /* .modal__close inherits its shape from the global .icon-btn class;
+     this rule remains as a placeholder for modal-specific tweaks. */
   .modal__body {
     padding: var(--space-5);
     overflow: auto;
