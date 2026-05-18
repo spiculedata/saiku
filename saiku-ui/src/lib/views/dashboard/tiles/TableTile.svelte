@@ -32,7 +32,11 @@
     applicableSavedFilters,
     type SchemaLike,
   } from "$lib/dashboard/effectiveQuery";
-  import { inferCubeFromReference } from "$lib/dashboard/filterSuggestions";
+  import {
+    inferCubeFromReference,
+    inferRowAxesFromReference,
+    type RowAxisRef,
+  } from "$lib/dashboard/filterSuggestions";
   import type { CubeRef } from "$lib/api/dashboards";
 
   interface Props {
@@ -56,6 +60,9 @@
   // works on existing dashboards.
   let resolvedCube = $state<CubeRef | null>(null);
   let inferenceAttempted = $state(false);
+  // Row axes lazy-inferred from the saved ThinQuery on reference tiles.
+  // clickFilterForCell uses them in place of `tile.query.body.rows`.
+  let referenceRowAxes = $state<RowAxisRef[] | null>(null);
 
   $effect(() => {
     if (tile.cube) {
@@ -67,6 +74,9 @@
     const refPath = tile.query.path;
     void inferCubeFromReference(refPath).then((inferred) => {
       if (inferred) resolvedCube = inferred;
+    });
+    void inferRowAxesFromReference(refPath).then((axes) => {
+      referenceRowAxes = axes;
     });
   });
 
@@ -190,11 +200,21 @@
     // click capture (cross-join measures × time) will be served when
     // task #14's live test pins the contract. For row-axis levels the
     // header caption equals the level caption.
-    if (!tile.query || tile.query.kind !== "inline") return null;
-    const body = tile.query.body as {
-      rows?: Array<{ dimension: string; hierarchy: string; level: string }>;
-    };
-    const match = (body.rows ?? []).find((ax) => ax.level === column);
+    if (!tile.query) return null;
+    // Pick the row-axis set off the inline body or the lazy-inferred
+    // axes from the saved ThinQuery for reference tiles. If inference
+    // hasn't completed yet, the click is a no-op.
+    let rows: Array<{ dimension: string; hierarchy: string; level: string }> | null = null;
+    if (tile.query.kind === "inline") {
+      const body = tile.query.body as {
+        rows?: Array<{ dimension: string; hierarchy: string; level: string }>;
+      };
+      rows = body.rows ?? null;
+    } else if (tile.query.kind === "reference") {
+      rows = referenceRowAxes;
+    }
+    if (!rows) return null;
+    const match = rows.find((ax) => ax.level === column);
     if (!match) return null;
     // The cell value is the formatted caption — we don't have the MDX
     // unique name here. The server's filter applicability check will
