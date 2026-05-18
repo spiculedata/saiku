@@ -92,14 +92,8 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
         if (session == null) {
             File f = new File(this.append, "unknown");
-            File f2 = new File(this.append, "etc");
-
             if (!f.exists()) {
                 f.mkdir();
-            }
-
-            if (!f2.exists()) {
-                f2.mkdir();
             }
 
             File n = this.createFolder(sep + "homes");
@@ -128,28 +122,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             acl2.addEntry(n.getPath(), e);
             acl2.serialize(n);
 
-            this.createFolder(sep + "etc");
-            if (new File(append, "etc/license.lic").exists()) {
-                try {
-                    FileUtils.copyFile(new File(append, "etc/license.lic"), this.createNode("/etc/license.lic"));
-                } catch (IOException e1) {
-                    log.debug("Failed to find license 1");
-                    try {
-                        FileUtils.copyFile(
-                                new File(append, "unknown/etc/license.lic"), this.createNode("/etc/license.lic"));
-                    } catch (IOException e2) {
-                        log.debug("failed to find any licenses. Giving up");
-                    }
-                }
-            }
-
             this.createFolder(sep + "legacyreports");
-
-            acl2 = new Acl2(n);
-            acl2.addEntry(n.getPath(), e);
-            acl2.serialize(n);
-
-            this.createFolder(sep + "etc" + sep + "theme");
 
             acl2 = new Acl2(n);
             acl2.addEntry(n.getPath(), e);
@@ -179,14 +152,6 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             l.add(AclMethod.GRANT);
             m.put("ROLE_ADMIN", l);
             e = new AclEntry("admin", AclType.PUBLIC, m, null);
-
-            acl2 = new Acl2(n);
-            acl2.addEntry(n.getPath(), e);
-            acl2.serialize(n);
-
-            this.createFolder(sep + "etc");
-
-            this.createFolder(sep + "etc" + sep + "theme");
 
             acl2 = new Acl2(n);
             acl2.addEntry(n.getPath(), e);
@@ -351,20 +316,12 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
             String filename = path;
 
-            if (filename.equals("/etc/license.lic")) {
-                File check = new File(append + filename);
-                if (check.exists()) {
-                    check.delete();
-                }
-                f = new File(append + filename);
-            } else {
-                File check = this.getNode(filename);
-                if (check.exists()) {
-                    check.delete();
-                }
-
-                f = this.createNode(filename);
+            File check = this.getNode(filename);
+            if (check.exists()) {
+                check.delete();
             }
+
+            f = this.createNode(filename);
             FileWriter fileWriter;
             try {
                 fileWriter = new FileWriter(f);
@@ -438,19 +395,11 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
     public String getInternalFile(String s) throws RepositoryException {
         byte[] encoded = new byte[0];
-        if (!s.equals("/etc/license.lic")) {
-            Path resolved = resolveWithinDatadir(s);
-            try {
-                encoded = Files.readAllBytes(resolved);
-            } catch (IOException e) {
-                log.debug("Missing file", e);
-            }
-        } else {
-            try {
-                encoded = Files.readAllBytes(Paths.get(append + s));
-            } catch (IOException e) {
-                log.debug("Missing file", e);
-            }
+        Path resolved = resolveWithinDatadir(s);
+        try {
+            encoded = Files.readAllBytes(resolved);
+        } catch (IOException e) {
+            log.debug("Missing file", e);
         }
         try {
             return new String(encoded, "UTF-8");
@@ -854,29 +803,6 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         return new File(fixPath(path));
     }
 
-    private void bootstrap(String ap) {
-
-        log.debug("creating: " + ap + "/etc");
-        new File(ap + "/etc").mkdirs();
-        boolean found = false;
-        if (new File(append + "/etc/license.lic").exists()) {
-            try {
-                FileUtils.copyFile(new File(append + "/etc/license.lic"), this.createNode("/etc/license.lic"));
-                found = true;
-            } catch (IOException e1) {
-                log.debug("Failed to find license 1");
-            }
-        }
-
-        if (!found) {
-            try {
-                FileUtils.copyFile(new File(append + "/unknown/etc/license.lic"), this.createNode("/etc/license.lic"));
-            } catch (IOException e2) {
-                log.debug("failed to find any licenses. Giving up");
-            }
-        }
-    }
-
     private File[] getAllFoldersInCurrentDirectory(String path) {
         return null;
     }
@@ -979,7 +905,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
                     if (!new File(append + "/" + workspace + "/").exists()) {
                         bootstrapping = true;
                         try {
-                            this.bootstrap(append + "/" + workspace);
+                            new File(append + "/" + workspace).mkdirs();
                             this.start(userService);
                         } finally {
                             bootstrapping = false;
@@ -990,10 +916,10 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
                     return fixPath(append + "/" + workspace + "/");
                 } else {
                     log.debug("Workspace directory set to: unknown/");
-                    if (!new File(append + "/unknown/etc").exists()) {
+                    if (!new File(append + "/unknown/homes").exists()) {
                         bootstrapping = true;
                         try {
-                            this.bootstrap(append + "/unknown");
+                            new File(append + "/unknown").mkdirs();
                             this.start(userService);
                         } finally {
                             bootstrapping = false;
@@ -1009,10 +935,10 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
         String basePath = fixPath(append + "/unknown");
 
-        if (!bootstrapping && !new File(fixPath(basePath + "/etc")).exists()) {
+        if (!bootstrapping && !new File(fixPath(basePath + "/homes")).exists()) {
             bootstrapping = true;
             try {
-                this.bootstrap(basePath);
+                new File(basePath).mkdirs();
                 this.start(userService);
             } catch (RepositoryException e) {
                 log.error("Error while starting the repository manager", e);
