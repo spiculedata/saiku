@@ -183,6 +183,21 @@ function encodePath(path: string): string {
   return path.split("/").map(encodeURIComponent).join("/");
 }
 
+/** Normalise a user- or URL-supplied dashboard path into a save-safe repo
+ *  path. Paths that start with `/` are treated as explicit ("save as" to an
+ *  absolute repo location) and pass through unchanged (less the leading
+ *  slash, which the JCR layer doesn't expect). Paths that already live under
+ *  `homes/...` pass through. Everything else gets the user's home prefixed
+ *  so non-admins don't trip the saveFile ACL gate from saiku#895. */
+export function normaliseDashboardPath(rawPath: string, username: string): string {
+  const p = rawPath.trim();
+  if (!p) throw new Error("Dashboard path is required");
+  if (p.startsWith("/")) return p.slice(1);
+  if (p.startsWith("homes/")) return p;
+  if (!username) throw new Error("Cannot resolve home: no current user");
+  return `homes/${username}/${p}`;
+}
+
 async function readError(res: Response): Promise<string> {
   try {
     const body = (await res.json()) as DashboardErrorResponse;

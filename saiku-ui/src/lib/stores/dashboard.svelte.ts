@@ -15,10 +15,12 @@
 import {
   loadDashboard,
   newDashboard,
+  normaliseDashboardPath,
   saveDashboard,
   type Dashboard,
   type DashboardTile,
 } from "$lib/api/dashboards";
+import { session } from "$lib/stores/session.svelte";
 
 class DashboardStore {
   /** The active dashboard. `null` before the first hydrate / load. */
@@ -82,6 +84,16 @@ class DashboardStore {
       this.saveError = "Cannot save: dashboard has no repository path. Prompt the user first.";
       return false;
     }
+    // Re-resolve the save path so URL-driven entry (e.g. typing
+    // /ui/dashboards/oops.saikudash directly) can't bypass the user-home
+    // default and land the file at repo root (issue #945).
+    let path: string;
+    try {
+      path = normaliseDashboardPath(this.savedPath, session.current?.username ?? "");
+    } catch (e: unknown) {
+      this.saveError = e instanceof Error ? e.message : String(e);
+      return false;
+    }
     this.saving = true;
     this.saveError = null;
     try {
@@ -92,7 +104,8 @@ class DashboardStore {
       // edits already project down, but loaded dashboards from older
       // saves carry the extras through round-trip.
       const sanitised = sanitiseForSave(this.current);
-      await saveDashboard(this.savedPath, sanitised);
+      await saveDashboard(path, sanitised);
+      this.savedPath = path;
       this.dirty = false;
       this.dirtyCount = 0;
       return true;

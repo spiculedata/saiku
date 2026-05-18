@@ -84,9 +84,11 @@
         defaultHomePath() + "/" + slugify(name) + ".saikudash",
       );
       if (rawPath == null) return;
-      const path = rawPath.trim();
-      if (!path) {
-        createError = "Path required.";
+      let path: string;
+      try {
+        path = normaliseDashboardPath(rawPath, session.current?.username ?? "");
+      } catch (e: unknown) {
+        createError = e instanceof Error ? e.message : String(e);
         return;
       }
       if (!path.endsWith(".saikudash")) {

@@ -102,6 +102,9 @@ public class DashboardResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response save(@PathParam("path") String path, Dashboard dashboard) {
+        if (path == null || path.isBlank()) {
+            return badRequest("path", "path required");
+        }
         if (dashboard == null) {
             return badRequest("body", "dashboard body required");
         }
