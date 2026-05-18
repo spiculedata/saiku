@@ -1,16 +1,19 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import RepositoryBrowser from "$lib/components/RepositoryBrowser.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
   /*
    * Save-query dialog.
    *
-   * The Folder field is a combo input — text + datalist of existing
-   * folders. Users can pick from the autocomplete or type a new
-   * sub-folder path (e.g. "homes/admin/dashboards") and the backend's
-   * saveFile flow mkdirs the parent dirs at write time. The previous
-   * <select>-only version forced every save into an existing folder
-   * with no way to create new structure from the UI.
+   * Uses the shared RepositoryBrowser in "save" mode — user navigates
+   * folders, optionally creates a new one inline, and the selected
+   * folder becomes the target. A separate "Name" input below collects
+   * the filename. The save endpoint mkdirs missing parent folders at
+   * write time so any path the browser shows can be written into.
+   *
+   * Replaces the previous combo-input that didn't give users a real
+   * sense of where their saved queries lived.
    */
   interface Props {
     defaultName: string;
@@ -21,7 +24,8 @@
     onCancel: () => void;
   }
 
-  let { defaultName, defaultFolder, folders, open, onSave, onCancel }: Props = $props();
+  let { defaultName, defaultFolder, open, onSave, onCancel }: Props = $props();
+
   let name = $state<string>(defaultName);
   let folder = $state<string>(defaultFolder);
 
@@ -32,42 +36,29 @@
     }
   });
 
-  /** Trim leading/trailing slashes and collapse repeated separators
-   *  before passing the path on to onSave. The backend tolerates either
-   *  form but storing the canonical version keeps repository listings
-   *  consistent. */
   function normalizeFolder(raw: string): string {
     return raw.replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
   }
 
   const valid = $derived(name.trim().length > 0);
-
-  const datalistId = `save-query-folders-${Math.random().toString(36).slice(2, 9)}`;
 </script>
 
-<Modal title={i18n.t("modal.save.title")} {open} size="md" onClose={onCancel}>
-  <label class="field">
-    <span class="field__label">{i18n.t("modal.save.folder")}</span>
-    <input
-      class="field__input"
-      type="text"
-      list={datalistId}
-      bind:value={folder}
-      placeholder="homes/your-name"
-      autocomplete="off"
-      spellcheck="false"
-    />
-    <datalist id={datalistId}>
-      {#each folders as f}
-        <option value={f}>{f || "/"}</option>
-      {/each}
-    </datalist>
-    <p class="field__hint">{i18n.t("modal.save.folderHint")}</p>
-  </label>
-  <label class="field">
+<Modal title={i18n.t("modal.save.title")} {open} size="lg" onClose={onCancel}>
+  <p class="save-modal__intro">
+    {i18n.t("modal.save.intro").replace("{folder}", folder || i18n.t("repo.root"))}
+  </p>
+
+  <RepositoryBrowser
+    mode="save"
+    selectedPath={folder}
+    onSelect={(p) => (folder = p)}
+  />
+
+  <label class="field save-modal__name">
     <span class="field__label">{i18n.t("modal.save.name")}</span>
     <input class="field__input" bind:value={name} autocomplete="off" required />
   </label>
+
   {#snippet footer()}
     <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
     <button
@@ -80,9 +71,12 @@
 </Modal>
 
 <style>
-  .field__hint {
-    margin: var(--space-1) 0 0;
-    color: var(--fg-subtle);
-    font-size: var(--fs-xs);
+  .save-modal__intro {
+    margin: 0 0 var(--space-3);
+    color: var(--fg-muted);
+    font-size: var(--fs-sm);
+  }
+  .save-modal__name {
+    margin-top: var(--space-3);
   }
 </style>
