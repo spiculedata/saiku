@@ -58,6 +58,22 @@ export const users = {
   remove: (username: string) => json<null>("DELETE", `/users/${encodeURIComponent(username)}`),
 };
 
+/**
+ * Derive the set of distinct roles from the admin user listing. The server
+ * does not expose a dedicated `/admin/roles` endpoint; the role universe is
+ * the union of every user's role grants. Includes ROLE_ADMIN even when no
+ * user has it (it's the privileged role and the ACL editor always wants to
+ * show it as an option).
+ */
+export async function listAllRoles(): Promise<string[]> {
+  const all = await users.list();
+  const set = new Set<string>(["ROLE_ADMIN", "ROLE_USER"]);
+  for (const u of all) {
+    for (const r of u.roles) set.add(r);
+  }
+  return Array.from(set).sort();
+}
+
 export const adminDatasources = {
   list: () => get<AdminDatasource[]>("/datasources"),
   refresh: (id: string) => json<AdminDatasource>("PUT", `/datasources/${encodeURIComponent(id)}/refresh`),
