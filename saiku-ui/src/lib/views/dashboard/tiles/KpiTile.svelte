@@ -22,7 +22,7 @@
 
   import { onDestroy, onMount } from "svelte";
   import * as echarts from "echarts";
-  import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-svelte";
+  import { ArrowDownRight, ArrowUpRight, Minus, Settings2 } from "lucide-svelte";
   import type { CubeRef, DashboardTile, KpiConfig } from "$lib/api/dashboards";
   import {
     executeAiQuery,
@@ -225,7 +225,11 @@
 </script>
 
 {#if !tile.cube || !kpi.measure}
-  <div class="placeholder">KPI tile has no measure — open ⚙ to pick a cube + measure.</div>
+  <div class="placeholder">
+    KPI tile has no measure — open
+    <Settings2 size={14} class="placeholder__icon" aria-label="tile settings" />
+    to pick a cube + measure.
+  </div>
 {:else}
   <div class="kpi-tile" data-tone={delta?.tone ?? "flat"}>
     {#if loading && response == null}
@@ -312,6 +316,11 @@
     color: var(--fg-muted);
     font-size: 0.8125rem;
     text-align: center;
+  }
+  .placeholder :global(.placeholder__icon) {
+    display: inline-block;
+    vertical-align: -2px;
+    color: var(--fg-subtle);
   }
   .error {
     color: var(--danger);
