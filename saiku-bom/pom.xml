@@ -694,4 +694,21 @@
 
     </dependencyManagement>
 
+    <!-- saiku-bom is a sibling-root POM (no <parent>) so it doesn't
+         inherit the root pom's <distributionManagement>. Duplicated
+         here so `mvn deploy` from the reactor knows where to publish
+         this artifact. Keep in lockstep with pom.xml. -->
+    <distributionManagement>
+        <repository>
+            <id>github-saiku-self</id>
+            <name>GitHub Packages - spiculedata/saiku</name>
+            <url>https://maven.pkg.github.com/spiculedata/saiku</url>
+        </repository>
+        <snapshotRepository>
+            <id>github-saiku-self</id>
+            <name>GitHub Packages - spiculedata/saiku (snapshots)</name>
+            <url>https://maven.pkg.github.com/spiculedata/saiku</url>
+        </snapshotRepository>
+    </distributionManagement>
+
 </project>
