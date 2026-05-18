@@ -63,11 +63,20 @@
 
   let reportTitles = $state<ReportTitles>({ title: "", subtitle: "", notes: "" });
 
+  function defaultHomeFolder(): string {
+    // Anchor first-time saves to the user's home so they don't accidentally
+    // pick repository-root (saiku#878 follow-up known issue) or whichever
+    // folder happens to be first alphabetically in the dropdown. Falls back
+    // to plain "homes" if we somehow don't have a session yet.
+    const u = session.current?.username;
+    return u ? `homes/${u}` : "homes";
+  }
+
   function deriveDefaults(): { folder: string; name: string } {
     const path = query.savedPath ?? "";
-    if (!path) return { folder: "", name: "Untitled.saiku" };
+    if (!path) return { folder: defaultHomeFolder(), name: "Untitled.saiku" };
     const idx = path.lastIndexOf("/");
-    const folder = idx > 0 ? path.slice(0, idx) : "";
+    const folder = idx > 0 ? path.slice(0, idx) : defaultHomeFolder();
     const name = idx >= 0 ? path.slice(idx + 1) : path;
     return { folder, name };
   }
