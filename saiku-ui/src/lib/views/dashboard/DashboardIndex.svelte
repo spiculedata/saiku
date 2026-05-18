@@ -32,6 +32,8 @@
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import PermissionsModal from "$lib/modals/PermissionsModal.svelte";
+  import NewDashboardModal from "$lib/modals/NewDashboardModal.svelte";
+  import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import { ShieldCheck, LayoutDashboard } from "lucide-svelte";
@@ -45,6 +47,9 @@
   let aclInitial = $state<AclEntry | null>(null);
   let aclRoles = $state<string[]>([]);
   let aclLoading = $state<boolean>(false);
+
+  let newModalOpen = $state<boolean>(false);
+  let deletingPath = $state<string | null>(null);
 
   async function refresh(): Promise<void> {
     loading = true;
@@ -74,38 +79,24 @@
     return u ? `homes/${u}` : "homes";
   }
 
-  async function handleNew(): Promise<void> {
+  function handleNew(): void {
+    createError = null;
+    newModalOpen = true;
+  }
+
+  async function onNewModalCreate(path: string, name: string): Promise<void> {
+    newModalOpen = false;
     creating = true;
     createError = null;
     try {
-      // eslint-disable-next-line no-alert
-      const rawName = window.prompt(
-        "Dashboard name (e.g. \"Sales overview\")",
-        "Untitled dashboard",
-      );
-      if (rawName == null) return; // cancelled
-      const name = rawName.trim() || "Untitled dashboard";
-      // eslint-disable-next-line no-alert
-      const rawPath = window.prompt(
-        "Repository path (e.g. " + defaultHomePath() + "/my-dashboard.saikudash)",
-        defaultHomePath() + "/" + slugify(name) + ".saikudash",
-      );
-      if (rawPath == null) return;
-      let path: string;
-      try {
-        path = normaliseDashboardPath(rawPath, session.current?.username ?? "");
-      } catch (e: unknown) {
-        createError = e instanceof Error ? e.message : String(e);
-        return;
-      }
-      if (!path.endsWith(".saikudash")) {
+      const finalPath = normaliseDashboardPath(path, session.current?.username ?? "");
+      if (!finalPath.endsWith(".saikudash")) {
         createError = "Path must end with .saikudash.";
         return;
       }
       const fresh = newDashboard(name);
-      await saveDashboard(path, fresh);
-      // Hand off to the editor at the new path.
-      await goto(`${base}/dashboards/${path}`);
+      await saveDashboard(finalPath, fresh);
+      await goto(`${base}/dashboards/${finalPath}`);
     } catch (e: unknown) {
       createError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -113,15 +104,23 @@
     }
   }
 
-  async function handleDelete(path: string): Promise<void> {
-    // eslint-disable-next-line no-alert
-    if (!window.confirm(`Delete ${path}? This can't be undone.`)) return;
+  function handleDelete(path: string): void {
+    deletingPath = path;
+  }
+
+  async function confirmDelete(): Promise<void> {
+    const path = deletingPath;
+    if (!path) return;
+    deletingPath = null;
     try {
       await deleteDashboard(path);
       await refresh();
+      toasts.success(i18n.t("toast.deleted"), path);
     } catch (e: unknown) {
-      // eslint-disable-next-line no-alert
-      window.alert(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
+      toasts.danger(
+        i18n.t("toast.deleteFailed"),
+        e instanceof Error ? e.message : String(e),
+      );
     }
   }
 
@@ -232,6 +231,24 @@
     }}
   />
 {/if}
+
+<NewDashboardModal
+  defaultName="Untitled dashboard"
+  defaultFolder={defaultHomePath()}
+  open={newModalOpen}
+  onCreate={onNewModalCreate}
+  onCancel={() => (newModalOpen = false)}
+/>
+
+<ConfirmModal
+  title="Delete dashboard"
+  message={deletingPath ? `Delete "${deletingPath}"? This cannot be undone.` : ""}
+  confirmLabel="Delete"
+  variant="danger"
+  open={deletingPath !== null}
+  onConfirm={confirmDelete}
+  onCancel={() => (deletingPath = null)}
+/>
 
 <style>
   .page {
