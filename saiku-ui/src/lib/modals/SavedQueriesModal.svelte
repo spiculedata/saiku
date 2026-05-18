@@ -15,9 +15,11 @@
   import { listAllRoles } from "$lib/api/admin";
   import { session } from "$lib/stores/session.svelte";
   import PermissionsModal from "$lib/modals/PermissionsModal.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
+  import EmptyState from "$lib/components/EmptyState.svelte";
   import type { ThinQuery } from "$lib/api/query";
   import { toasts } from "$lib/stores/toasts.svelte";
-  import { FolderOpen, Copy, Pencil, ShieldCheck, Trash2, Search } from "lucide-svelte";
+  import { FolderOpen, Copy, Pencil, ShieldCheck, Trash2, Search, Inbox } from "lucide-svelte";
 
   interface Props {
     open: boolean;
@@ -185,9 +187,18 @@
     <p class="callout callout--danger">{error}</p>
   {/if}
   {#if loading}
-    <p class="hint">{i18n.t("modal.open.loading")}</p>
+    <Skeleton rows={5} variant="list" />
   {:else if filtered.length === 0}
-    <p class="hint">{search ? i18n.t("saved.noMatches") : i18n.t("modal.open.empty")}</p>
+    {#if search}
+      <p class="hint">{i18n.t("saved.noMatches")}</p>
+    {:else}
+      <EmptyState
+        icon={Inbox}
+        title={i18n.t("modal.open.empty")}
+        description={i18n.t("modal.open.emptyHint")}
+        compact
+      />
+    {/if}
   {:else}
     <ul class="saved__list">
       {#each filtered as entry (entry.path)}
