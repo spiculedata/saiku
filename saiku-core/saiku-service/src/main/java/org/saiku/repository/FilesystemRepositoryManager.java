@@ -624,7 +624,17 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
         String[] extensions = new String[1];
         extensions[0] = "sds";
-        Collection<File> files = FileUtils.listFiles(new File(append), extensions, true);
+        // Workspace scoping: getDatadir() resolves to the current request's
+        // workspace subdir (e.g. <append>/<workspace>/) when workspaces=true
+        // and a session.workspace attribute is set; otherwise it falls back
+        // to <append>/unknown/ — the legacy single-tenant behaviour.
+        //
+        // Previously this listed `new File(append)` which is the ROOT of
+        // all workspaces, recursively. That made `workspaces=true` cosmetic
+        // for datasource discovery — every tenant saw every other tenant's
+        // SDS files. The fix is a one-line swap to the same path resolver
+        // every other read/write method on this class already uses.
+        Collection<File> files = FileUtils.listFiles(new File(getDatadir()), extensions, true);
 
         for (File file : files) {
             JAXBContext jaxbContext = null;

@@ -455,26 +455,44 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
             }
         }
 
-        // Pass 2: per-dimension rollback. If every non-(All) level under
-        // the dimension failed, suspect probe infrastructure (e.g.
-        // Mondrian AddCalculatedMembers expansion on parent-child
-        // hierarchies) rather than a wholesale-unqueryable dimension.
-        // Drop those dimensions' failures from the active set so the
-        // cascade below leaves them intact.
-        java.util.Set<String> protectedDims = new java.util.HashSet<>();
+        // Pass 2: per-dimension rollback. The probe can produce false
+        // positives when the probe infrastructure itself is wonky (e.g.
+        // Mondrian's AddCalculatedMembers expansion on parent-child
+        // hierarchies — saiku#878). The pattern we want to recognise:
+        // MULTIPLE dimensions show 100% failure simultaneously. That's
+        // the "infra is broken globally" signal — roll those back to
+        // keep the schema usable while the operator investigates.
+        //
+        // If only ONE dimension has 100% failure but other dims succeed,
+        // that dimension is genuinely unqueryable (the saiku#810 case)
+        // and should be pruned. Protecting it here would shadow real
+        // bad-data problems behind a probe-infra excuse.
+        java.util.Set<String> fullyFailedDims = new java.util.HashSet<>();
         for (java.util.Map.Entry<String, Integer> e : levelCountPerDim.entrySet()) {
             int total = e.getValue();
             int fails = failedCountPerDim.getOrDefault(e.getKey(), 0);
             if (total > 0 && fails == total) {
-                protectedDims.add(e.getKey());
-                log.info(
-                        "Probe rolled back for dimension {} on {} schema — all {} non-(All) levels"
-                                + " failed enumeration; keeping the dimension intact (probe infra signal,"
-                                + " not real unqueryable). saiku#878 follow-up.",
-                        e.getKey(),
-                        schema.getCubeName(),
-                        total);
+                fullyFailedDims.add(e.getKey());
             }
+        }
+        java.util.Set<String> protectedDims = new java.util.HashSet<>();
+        if (fullyFailedDims.size() >= 2) {
+            // ≥2 dims with 100% failure → looks global → protect them all.
+            protectedDims.addAll(fullyFailedDims);
+            for (String d : fullyFailedDims) {
+                log.info(
+                        "Probe rolled back for dimension {} on {} schema —"
+                                + " {} dimensions show 100% level-enumeration failure; treating as probe-infra"
+                                + " signal (not real unqueryable). saiku#878.",
+                        d, schema.getCubeName(), fullyFailedDims.size());
+            }
+        } else if (fullyFailedDims.size() == 1) {
+            String d = fullyFailedDims.iterator().next();
+            log.info(
+                    "Dimension {} on {} schema shows 100% level-enumeration failure"
+                            + " while other dimensions succeed — treating as genuinely unqueryable"
+                            + " and pruning (saiku#810).",
+                    d, schema.getCubeName());
         }
 
         // Pass 3: apply the cascade for the levels NOT protected by pass 2.
