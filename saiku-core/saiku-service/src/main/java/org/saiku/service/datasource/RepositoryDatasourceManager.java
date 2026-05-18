@@ -136,15 +136,23 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
 
     public Properties checkForExternalDataSourceProperties() {
         Properties p = new Properties();
+        if (externalparameters == null || externalparameters.isEmpty()) {
+            // No external-params file configured — return empty. The
+            // legacy implementation hit `new FileInputStream(null)` here
+            // which throws NPE, NOT IOException. The catch below would
+            // miss it and the NPE would escape. The pre-refactor flow
+            // happened to call load() once at boot with externalparameters
+            // always set; the lazy datasource cache can hit this earlier
+            // in the bean-graph init (saiku-cloud tenant scoping uses it).
+            return p;
+        }
         InputStream input;
-
         try {
             input = new FileInputStream(externalparameters);
             p.load(input);
         } catch (IOException e) {
             log.debug("file did not exist");
         }
-
         return p;
     }
 
