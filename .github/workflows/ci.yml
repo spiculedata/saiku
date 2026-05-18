@@ -24,9 +24,10 @@ jobs:
       - uses: dorny/paths-filter@v3
         id: filter
         with:
-          # Force-true on push so the merge commit to development always
-          # exercises everything regardless of which file moved last.
-          predicate-quantifier: every
+          # Default predicate-quantifier ("some") matches when ANY changed
+          # file hits ANY pattern in the filter — the semantics we want.
+          # The downstream jobs ALSO have `|| github.event_name == 'push'`
+          # so the merge commit to development always exercises everything.
           filters: |
             java:
               - 'saiku-bom/**'
