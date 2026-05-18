@@ -129,6 +129,7 @@
   "modal.about.tagline": "Saiku — modernised stack.",
   "modal.save.title": "Save query",
   "modal.save.folder": "Folder",
+  "modal.save.folderHint": "Pick an existing folder or type a new path. Missing parent folders are created automatically.",
   "modal.save.name": "Name",
   "modal.open.title": "Open query",
   "modal.open.filter": "Filter",
