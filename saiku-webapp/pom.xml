@@ -11,6 +11,20 @@
     <packaging>war</packaging>
     <build>
         <plugins>
+            <!-- The webapp's artifact is a ~100MB war that bundles every
+                 transitive dep. Nobody needs to <dependency> it from
+                 Maven — consumers either run the launcher fat-jar or
+                 build their own webapp. Skip mvn deploy so GH Packages
+                 doesn't fill up with multi-hundred-meg blobs per release.
+                 The saiku-core/* JARs are the actual consumable surface. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <version>3.1.3</version>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.felix</groupId>
                 <artifactId>maven-bundle-plugin</artifactId>

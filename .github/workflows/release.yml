@@ -41,6 +41,12 @@ jobs:
         env:
           GH_PACKAGES_USER: ${{ github.actor }}
           GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+          # GH_PACKAGES_TOKEN is a PAT scoped to read+write packages and
+          # used for resolving inbound deps (mondrian-saiku etc). For
+          # deploying THIS repo's own artifacts we use the workflow's
+          # ephemeral GITHUB_TOKEN under server id github-saiku-self —
+          # 'packages: write' is granted at the top of this workflow.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p ~/.m2
           cat > ~/.m2/settings.xml <<EOF
@@ -50,6 +56,7 @@ jobs:
               <server><id>github-olap4j</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
               <server><id>github-olap4j-xmlaserver</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
               <server><id>github-saiku-query</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-saiku-self</id><username>${GITHUB_ACTOR}</username><password>${GITHUB_TOKEN}</password></server>
             </servers>
           </settings>
           EOF
@@ -73,6 +80,22 @@ jobs:
         # saiku-mcp stdio binary is gone — MCP hosts now hit the launcher
         # directly with per-user Basic auth.
         run: mvn -B -ntp -DskipTests -pl saiku-launcher -am package
+
+      - name: mvn deploy (module jars to GH Packages)
+        # Publishes saiku-bom + saiku-core/* to maven.pkg.github.com/spiculedata/saiku
+        # so downstream consumers (saiku-cloud's IRepositoryManager
+        # adapter, embedders) can `<dependency>` saiku-service the
+        # normal way. saiku-launcher (fat jar) and saiku-webapp (raw
+        # war) opt out via maven-deploy-plugin <skip>true</skip> in
+        # their own poms — they ride to the GitHub Releases page only.
+        #
+        # `mvn deploy` from the reactor root walks every module in
+        # <modules>; the two opt-outs above keep GH Packages free of
+        # multi-hundred-meg blobs. Tests already ran in ci.yml on PR
+        # merge — re-running them here would be wasted runner minutes.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mvn -B -ntp -DskipTests deploy
 
       - name: Stage release assets
         env:
