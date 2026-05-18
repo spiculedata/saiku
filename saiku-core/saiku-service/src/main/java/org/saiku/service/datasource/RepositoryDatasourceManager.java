@@ -114,8 +114,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         // Phase 2: Jackrabbit content-repo backend deleted; only classpath remains.
         separator = "/";
         log.debug("init datadir= " + datadir);
-        irm = FilesystemRepositoryManager.getFilesystemRepositoryManager(
-                cleanse(datadir), defaultRole, sessionRegistry, workspaces);
+        irm = createRepositoryManager();
         log.debug("2nd init datadir= " + datadir);
 
         // Perform the repository manager startup routines
@@ -128,6 +127,27 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
 
         // Load the datasources
         loadDatasources(ext);
+    }
+
+    /**
+     * Factory hook for the underlying {@link IRepositoryManager}. The default
+     * implementation returns a {@link FilesystemRepositoryManager} configured
+     * from this service's properties — the long-standing OSS behaviour.
+     *
+     * <p>Downstream distributions (e.g. Saiku Cloud) override this method to
+     * substitute a wrapping implementation that, say, routes specific path
+     * prefixes through a Postgres-backed store while leaving everything else
+     * on the filesystem. Subclasses typically call {@code super.createRepositoryManager()}
+     * to obtain the filesystem instance and wrap it.
+     *
+     * <p>Kept {@code protected} so the hook is invisible to bean consumers but
+     * available to subclasses; private state read here ({@code datadir},
+     * {@code defaultRole}, {@code sessionRegistry}, {@code workspaces}) stays
+     * encapsulated.
+     */
+    protected IRepositoryManager createRepositoryManager() {
+        return FilesystemRepositoryManager.getFilesystemRepositoryManager(
+                cleanse(datadir), defaultRole, sessionRegistry, workspaces);
     }
 
     public void setRepositoryManager(IRepositoryManager irm) {
