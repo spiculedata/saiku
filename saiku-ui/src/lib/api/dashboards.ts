@@ -36,7 +36,7 @@ export interface InlineQuery {
 
 export type TileQuery = ReferenceQuery | InlineQuery;
 
-export type TileType = "chart" | "table" | "text" | "filter";
+export type TileType = "chart" | "table" | "text" | "filter" | "kpi";
 
 export type FilterWidget = "single-select" | "multi-select" | "date-range";
 
@@ -47,6 +47,58 @@ export interface DashboardFilter {
   hierarchy: string;
   level: string;
   members: string[]; // MDX unique names; empty = "any"
+}
+
+/** Display format for the KPI tile's main number. "custom" enables the
+ *  {@link KpiConfig.customFormat} pattern. */
+export type KpiFormat = "number" | "currency" | "percent" | "custom";
+
+/** Reference to a time level on a cube — used by KPI comparison and
+ *  sparkline. Same shape as DashboardFilter without members. */
+export interface TimeLevelRef {
+  dimension: string;
+  hierarchy: string;
+  level: string;
+}
+
+/** Comparison mode for the KPI tile's secondary callout. */
+export type KpiComparison = "none" | "prior-period" | "target";
+
+/** Direction: "higher" means a bigger number is better (drives both the
+ *  prior-period arrow colour and threshold green/red mapping). */
+export type KpiDirection = "higher-is-better" | "lower-is-better";
+
+/** Threshold breakpoints for colour-banding the main number. Optional
+ *  per band — leave a band undefined to skip it. The bands are
+ *  interpreted with respect to {@link KpiConfig.direction}. */
+export interface KpiThresholds {
+  red?: number;
+  yellow?: number;
+  green?: number;
+}
+
+/** Per-tile KPI config. All fields optional so an unfinished tile saves
+ *  cleanly; the renderer falls back to a placeholder until the analyst
+ *  picks a measure. */
+export interface KpiConfig {
+  /** Measure unique name, e.g. {@code [Measures].[Unit Sales]}. */
+  measure?: string;
+  /** Optional cube-side caption to render under the number when no
+   *  comparison is configured. Mirrors the AiQueryMetadata measure
+   *  caption — set by the editor on pick. */
+  measureCaption?: string;
+  format?: KpiFormat;
+  /** When {@link format} is "custom", the d3-style or printf-style
+   *  pattern to apply. Loose-typed; the formatter handles the parse. */
+  customFormat?: string;
+  comparison?: KpiComparison;
+  /** Target value when {@link comparison} is "target". */
+  target?: number;
+  /** Time level used for prior-period delta and / or sparkline. */
+  timeLevel?: TimeLevelRef;
+  sparkline?: boolean;
+  thresholds?: KpiThresholds;
+  direction?: KpiDirection;
 }
 
 export interface DashboardTile {
@@ -63,6 +115,8 @@ export interface DashboardTile {
   text?: string;
   target?: DashboardFilter;
   widget?: FilterWidget;
+  /** KPI-tile config. Only consulted when {@code type === "kpi"}. */
+  kpi?: KpiConfig;
 }
 
 export interface DashboardLayout {
