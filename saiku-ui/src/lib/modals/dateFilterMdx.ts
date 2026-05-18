@@ -12,7 +12,7 @@
  * `<Level>.CurrentMember`. Absolute ranges use the `:` range operator so the
  * caller gets an inclusive set back from whatever pair of members we emit.
  *
- * TODO: `levelType` (from the OLAP metadata) would tell us unambiguously
+ * TODO: `levelType` (from the Semantic Layer metadata) would tell us unambiguously
  * whether a level is a Time-Day / Time-Month etc. Until `discover.ts` exposes
  * that, callers fall back to caption heuristics.
  */

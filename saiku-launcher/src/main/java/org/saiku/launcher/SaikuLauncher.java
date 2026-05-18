@@ -23,7 +23,7 @@ import picocli.CommandLine.Option;
         name = "saiku",
         mixinStandardHelpOptions = true,
         version = "saiku 3.17",
-        description = "Saiku OLAP server.",
+        description = "Saiku Semantic Layer server.",
         subcommands = {SaikuLauncher.ServeCommand.class})
 public class SaikuLauncher implements Callable<Integer> {
 

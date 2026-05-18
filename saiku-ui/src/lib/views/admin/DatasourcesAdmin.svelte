@@ -139,7 +139,7 @@
     <label class="field">
       <span class="field__label">Type</span>
       <select class="field__input" bind:value={editing.type}>
-        <option value="OLAP">OLAP (Mondrian)</option>
+        <option value="OLAP">Semantic Layer (Mondrian)</option>
         <option value="RELATIONAL">Relational</option>
       </select>
     </label>
