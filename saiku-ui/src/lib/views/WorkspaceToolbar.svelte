@@ -504,7 +504,7 @@
     font: inherit;
     cursor: pointer;
   }
-  .toolbar__item:hover { background: var(--bg-subtle); }
+  .toolbar__item:hover { background: var(--bg-hover); }
   .toolbar__sep {
     width: 1px;
     height: 22px;
@@ -538,7 +538,8 @@
     cursor: pointer;
     font: inherit;
   }
-  .tb-btn:hover { background: var(--bg-subtle); color: var(--fg); }
+  .tb-btn { transition: background var(--duration-fast), color var(--duration-fast); }
+  .tb-btn:hover { background: var(--bg-hover); color: var(--fg); }
   .tb-btn:active { transform: translateY(1px); }
   .tb-btn__label { font-size: var(--fs-sm); }
   .tb-btn--primary {

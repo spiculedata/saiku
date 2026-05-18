@@ -534,7 +534,12 @@
     padding-left: 0;
   }
   .tree .tree {
-    padding-left: var(--space-4);
+    /* Tighter per-level indent + a vertical guide line, file-browser
+       style. Helps deep cubes (Stores → Country → State → City → ...)
+       stay readable without consuming the whole sidebar width. */
+    padding-left: var(--space-3);
+    margin-left: var(--space-2);
+    border-left: 1px solid var(--border);
   }
   .tree__empty {
     color: var(--fg-subtle);
@@ -558,10 +563,10 @@
   .tree__row:hover { background: var(--bg-subtle); }
   .tree__row--group { font-weight: var(--weight-semibold); }
   .tree__row--measure {
-    color: var(--danger);
+    color: var(--accent);
     cursor: grab;
   }
-  .tree__row--measure .tree__icon--measure { color: var(--danger); }
+  .tree__row--measure .tree__icon--measure { color: var(--accent); }
   .tree__row--dim { color: var(--fg); }
   .tree__row--level { color: var(--fg-muted); }
   .tree__row--level .tree__drag { cursor: grab; }
