@@ -2,14 +2,14 @@
     <parent>
         <artifactId>saiku</artifactId>
         <groupId>org.saikuanalytics</groupId>
-        <version>4.2.1</version>
+        <version>4.2.2</version>
     </parent>
 
     <modelVersion>4.0.0</modelVersion>
     <artifactId>saiku-core</artifactId>
     <packaging>pom</packaging>
     <name>saiku - core libraries</name>
-    <version>4.2.1</version>
+    <version>4.2.2</version>
 
     <modules>
         <module>saiku-olap-util</module>
