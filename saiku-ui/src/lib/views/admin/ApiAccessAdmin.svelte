@@ -210,8 +210,8 @@
     letter-spacing: 0.04em;
   }
   .badge--ok {
-    background: var(--accent-soft, #d1fae5);
-    color: var(--accent-strong, #047857);
+    background: var(--success-soft);
+    color: var(--success-strong);
   }
   .badge--off {
     background: var(--bg-muted);
@@ -261,8 +261,8 @@
     gap: var(--space-2);
     margin: var(--space-3) 0;
     padding: var(--space-3);
-    background: var(--accent-soft, #ecfdf5);
-    border-radius: var(--radius-sm, 0.25rem);
+    background: var(--accent-soft);
+    border-radius: var(--radius-sm);
   }
   .install-row .btn {
     align-self: flex-start;

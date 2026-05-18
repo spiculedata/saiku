@@ -23,7 +23,7 @@ import picocli.CommandLine.Option;
         name = "saiku",
         mixinStandardHelpOptions = true,
         version = "saiku 3.17",
-        description = "Saiku OLAP server.",
+        description = "Saiku Semantic Layer server.",
         subcommands = {SaikuLauncher.ServeCommand.class})
 public class SaikuLauncher implements Callable<Integer> {
 
@@ -110,6 +110,16 @@ public class SaikuLauncher implements Callable<Integer> {
             if (pkgVersion != null && !pkgVersion.isBlank()) {
                 System.setProperty("saiku.version", pkgVersion);
             }
+            // saiku#897: enable the "demo" Spring profile when the
+            // SAIKU_DEMO=true env var is set. The profile gates loading of
+            // users-demo.properties (bob / krishna / smith) — production
+            // deployments leave SAIKU_DEMO unset and only get admin/admin.
+            // An explicit -Dspring.profiles.active=demo also works for
+            // operators who don't want to rely on env vars; if BOTH are
+            // set, the explicit -D wins (don't clobber it here).
+            if (isDemoModeRequested() && System.getProperty("spring.profiles.active") == null) {
+                System.setProperty("spring.profiles.active", "demo");
+            }
             System.out.println("Saiku home: " + saikuHome);
 
             stageSeedAssets(dataDir);
@@ -193,14 +203,54 @@ public class SaikuLauncher implements Callable<Integer> {
             String bar = "============================================================";
             System.out.println();
             System.out.println(bar);
-            System.out.println("  SECURITY: default credentials (admin/admin) are active.");
-            System.out.println("  Change them in saiku-webapp's users.properties before");
+            if (isDemoModeActive()) {
+                System.out.println("  SECURITY: 4 default credentials are active (DEMO MODE):");
+                System.out.println("    admin/admin                (ROLE_USER, ROLE_ADMIN)");
+                System.out.println("    bob/dylan                  (ROLE_USER)");
+                System.out.println("    krishna/krish2341          (ROLE_USER)");
+                System.out.println("    smith/pravah@001           (ROLE_USER)");
+                System.out.println("  Demo accounts own pre-seeded saved queries in");
+                System.out.println("  /homes/<user>/ — useful for tutorials, NOT for production.");
+                System.out.println("  Drop demo mode by unsetting SAIKU_DEMO and removing");
+                System.out.println("  -Dspring.profiles.active=demo. See saiku#897.");
+            } else {
+                System.out.println("  SECURITY: default credentials (admin/admin) are active.");
+            }
+            System.out.println("  Rotate them in saiku-webapp's users.properties before");
             System.out.println("  exposing this instance, or replace the in-memory auth");
             System.out.println("  config (applicationContext-spring-security-memory.xml)");
             System.out.println("  with LDAP / OAuth / SAML.");
             System.out.println("  Suppress this warning with -Dsaiku.security.acknowledged=true");
             System.out.println(bar);
             System.out.println();
+        }
+
+        /**
+         * True when the operator asked for demo mode either by env var
+         * ({@code SAIKU_DEMO=true}) or explicit Spring profile activation
+         * ({@code -Dspring.profiles.active=demo}). The two are honoured
+         * symmetrically — the env var is the friendly switch the bundled
+         * Docker image already sets; the {@code -D} is the override path
+         * for operators who don't want the env-based affordance.
+         */
+        private static boolean isDemoModeRequested() {
+            String env = System.getenv("SAIKU_DEMO");
+            if (env != null && Boolean.parseBoolean(env.trim())) {
+                return true;
+            }
+            String profiles = System.getProperty("spring.profiles.active", "");
+            for (String p : profiles.split(",")) {
+                if ("demo".equalsIgnoreCase(p.trim())) return true;
+            }
+            return false;
+        }
+
+        /** True when demo mode is currently in effect (post-bootstrap), which
+         *  is equivalent to {@link #isDemoModeRequested()} once
+         *  {@code bootServer} has run. Kept as a separate method so the
+         *  intent at each call site is unambiguous. */
+        private static boolean isDemoModeActive() {
+            return isDemoModeRequested();
         }
 
         private static void stageSeedAssets(Path dataDir) throws Exception {

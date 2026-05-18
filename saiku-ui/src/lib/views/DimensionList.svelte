@@ -557,16 +557,16 @@
     border-radius: var(--radius-sm);
   }
   .tree__row:hover { background: var(--bg-subtle); }
-  .tree__row--group { font-weight: 600; }
+  .tree__row--group { font-weight: var(--weight-semibold); }
   .tree__row--measure {
-    color: #e06c75;
+    color: var(--danger);
     cursor: grab;
   }
-  .tree__row--measure .tree__icon--measure { color: #e06c75; }
+  .tree__row--measure .tree__icon--measure { color: var(--danger); }
   .tree__row--dim { color: var(--fg); }
   .tree__row--level { color: var(--fg-muted); }
   .tree__row--level .tree__drag { cursor: grab; }
-  .tree__row--hier { color: #9aa8bc; }
+  .tree__row--hier { color: var(--fg-subtle); }
   .tree__twisty {
     display: inline-flex;
     align-items: center;

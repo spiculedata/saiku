@@ -13,20 +13,31 @@
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import { base } from "$app/paths";
-  import { listRepository, flatten, type RepositoryNode } from "$lib/api/repository";
   import {
-    deleteDashboard,
-    newDashboard,
-    normaliseDashboardPath,
-    saveDashboard,
-  } from "$lib/api/dashboards";
+    flatten,
+    getResourceAcl,
+    listRepository,
+    setResourceAcl,
+    type AclEntry,
+    type RepositoryNode,
+  } from "$lib/api/repository";
+  import { listAllRoles } from "$lib/api/admin";
+  import { deleteDashboard, newDashboard, saveDashboard } from "$lib/api/dashboards";
   import { session } from "$lib/stores/session.svelte";
+  import { toasts } from "$lib/stores/toasts.svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
+  import PermissionsModal from "$lib/modals/PermissionsModal.svelte";
+  import { ShieldCheck } from "lucide-svelte";
 
   let entries = $state<RepositoryNode[]>([]);
   let loading = $state<boolean>(true);
   let loadError = $state<string | null>(null);
   let creating = $state<boolean>(false);
   let createError = $state<string | null>(null);
+  let aclEditingPath = $state<string | null>(null);
+  let aclInitial = $state<AclEntry | null>(null);
+  let aclRoles = $state<string[]>([]);
+  let aclLoading = $state<boolean>(false);
 
   async function refresh(): Promise<void> {
     loading = true;
@@ -116,6 +127,33 @@
       .slice(0, 60) || "dashboard";
   }
 
+  async function openAcl(path: string): Promise<void> {
+    aclLoading = true;
+    try {
+      const [acl, roles] = await Promise.all([getResourceAcl(path), listAllRoles()]);
+      aclInitial = acl;
+      aclRoles = roles;
+      aclEditingPath = path;
+    } catch (e: unknown) {
+      toasts.danger(i18n.t("toast.aclLoadFailed"), e instanceof Error ? e.message : String(e));
+    } finally {
+      aclLoading = false;
+    }
+  }
+
+  async function saveAcl(acl: AclEntry): Promise<void> {
+    const path = aclEditingPath;
+    if (!path) return;
+    try {
+      await setResourceAcl(path, acl);
+      toasts.success(i18n.t("toast.aclSaved"), path);
+      aclEditingPath = null;
+      aclInitial = null;
+    } catch (e: unknown) {
+      toasts.danger(i18n.t("toast.aclSaveFailed"), e instanceof Error ? e.message : String(e));
+    }
+  }
+
   function basename(path: string): string {
     const p = path.split("/").pop() ?? path;
     return p.endsWith(".saikudash") ? p.slice(0, -".saikudash".length) : p;
@@ -150,6 +188,18 @@
             <span class="name">{basename(e.path)}</span>
             <span class="path">{e.path}</span>
           </a>
+          {#if session.isAdmin}
+            <button
+              type="button"
+              class="btn"
+              disabled={aclLoading}
+              onclick={() => void openAcl(e.path)}
+              title={i18n.t("saved.permissions")}
+              aria-label={i18n.t("saved.permissions")}
+            >
+              <ShieldCheck size={14} />
+            </button>
+          {/if}
           <button type="button" class="btn danger" onclick={() => handleDelete(e.path)} title="Delete">
             Delete
           </button>
@@ -158,6 +208,20 @@
     </ul>
   {/if}
 </div>
+
+{#if aclEditingPath && aclInitial}
+  <PermissionsModal
+    open={true}
+    path={aclEditingPath}
+    allRoles={aclRoles}
+    initial={aclInitial}
+    onSave={saveAcl}
+    onCancel={() => {
+      aclEditingPath = null;
+      aclInitial = null;
+    }}
+  />
+{/if}
 
 <style>
   .page {

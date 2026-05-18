@@ -27,6 +27,23 @@
   --lh-tight: 1.25;
   --lh-normal: 1.5;
 
+  /* Font weight scale. Keep usage to these four steps so weight choices
+     stay deliberate instead of drifting across components. */
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Icon sizes for lucide-svelte components. Keep usage to these four steps.
+     - xs (12px): tree twisties, inline cues
+     - sm (14px): list-row actions, form-field affordances
+     - md (16px): button content, modal close
+     - lg (20px): topbar primary actions, KPI accents */
+  --icon-xs: 12px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 20px;
+
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.16);
@@ -49,9 +66,17 @@
   --accent: #4f46e5;
   --accent-hover: #4338ca;
   --accent-fg: #ffffff;
+  --accent-soft: #eef2ff;
+  --accent-strong: #3730a3;
   --danger: #dc2626;
+  --danger-soft: #fef2f2;
+  --danger-strong: #991b1b;
   --success: #16a34a;
+  --success-soft: #ecfdf5;
+  --success-strong: #047857;
   --warning: #d97706;
+  --warning-soft: #fffbeb;
+  --warning-strong: #b45309;
 
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
 }
@@ -73,9 +98,17 @@
     --accent: #818cf8;
     --accent-hover: #a5b4fc;
     --accent-fg: #0b0d12;
+    --accent-soft: #1e1b4b;
+    --accent-strong: #c7d2fe;
     --danger: #ef4444;
+    --danger-soft: #2a1212;
+    --danger-strong: #fca5a5;
     --success: #22c55e;
+    --success-soft: #0d2a1a;
+    --success-strong: #86efac;
     --warning: #f59e0b;
+    --warning-soft: #2b1d09;
+    --warning-strong: #fcd34d;
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
     --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.6);
@@ -99,9 +132,17 @@
   --accent: #818cf8;
   --accent-hover: #a5b4fc;
   --accent-fg: #0b0d12;
+  --accent-soft: #1e1b4b;
+  --accent-strong: #c7d2fe;
   --danger: #ef4444;
+  --danger-soft: #2a1212;
+  --danger-strong: #fca5a5;
   --success: #22c55e;
+  --success-soft: #0d2a1a;
+  --success-strong: #86efac;
   --warning: #f59e0b;
+  --warning-soft: #2b1d09;
+  --warning-strong: #fcd34d;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.6);
@@ -124,7 +165,15 @@
   --accent: #4f46e5;
   --accent-hover: #4338ca;
   --accent-fg: #ffffff;
+  --accent-soft: #eef2ff;
+  --accent-strong: #3730a3;
   --danger: #dc2626;
+  --danger-soft: #fef2f2;
+  --danger-strong: #991b1b;
   --success: #16a34a;
+  --success-soft: #ecfdf5;
+  --success-strong: #047857;
   --warning: #d97706;
+  --warning-soft: #fffbeb;
+  --warning-strong: #b45309;
 }

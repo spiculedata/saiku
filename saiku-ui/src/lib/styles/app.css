@@ -15,8 +15,36 @@ body {
   color: var(--fg);
   font-family: var(--font-sans);
   font-size: var(--fs-md);
+  font-weight: var(--weight-normal);
   line-height: var(--lh-normal);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Heading scale. Components should default to these and only override
+   when they have a deliberate type-treatment reason. Margins follow the
+   space token grid so heading-followed-by-body has consistent rhythm. */
+h1, h2, h3, h4, h5, h6 {
+  margin: 0 0 var(--space-3);
+  color: var(--fg);
+  font-weight: var(--weight-semibold);
+  line-height: var(--lh-tight);
+}
+
+h1 {
+  font-size: var(--fs-2xl);
+  font-weight: var(--weight-bold);
+}
+
+h2 {
+  font-size: var(--fs-xl);
+}
+
+h3 {
+  font-size: var(--fs-lg);
+}
+
+h4, h5, h6 {
+  font-size: var(--fs-md);
 }
 
 button {
@@ -73,7 +101,7 @@ a:hover {
   background: var(--accent);
   color: var(--accent-fg);
   border-color: var(--accent);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .btn--primary:hover:not(:disabled) {

@@ -3,9 +3,9 @@
 <h1 align="center"><a href="https://saiku.bi">Saiku Analytics</a></h1>
 
 <p align="center">
-  Open-source OLAP analytics for cubes — drag-and-drop in the browser,
-  SQL through Mondrian + Calcite, and a typed REST surface so AI agents
-  can query without ever seeing MDX.
+  Open-source Semantic Layer analytics for cubes — drag-and-drop in the
+  browser, SQL through Mondrian + Calcite, and a typed REST surface so AI
+  agents can query without ever seeing MDX.
 </p>
 
 <p align="center">
@@ -33,7 +33,7 @@ nightly).
 ## What is Saiku
 
 Saiku started in 2010 as an open-source OLAP browser for Mondrian. In 2026
-it was rebuilt on top of:
+it was rebuilt as a modern Semantic Layer on top of:
 
 - **Mondrian 4.8.1.x (Spicule fork)** — with a Calcite-based SQL planner
   alongside the legacy `SqlQuery` builder. Calcite is the default; force
@@ -103,7 +103,7 @@ See [`CLAUDE.md`](CLAUDE.md) for the full layout, the dependency catalog
 saiku-bom/             # central dependency-version catalogue
 saiku-core/
   saiku-olap-util/     # olap4j helpers
-  saiku-service/       # OLAP service, AI Query, schema gen, async, cache
+  saiku-service/       # Semantic Layer service, AI Query, schema gen, async, cache
   saiku-semantic/      # YAML semantic layer
   saiku-web/           # JAX-RS REST resources
 saiku-webapp/          # Servlet webapp (Spring XML wiring)

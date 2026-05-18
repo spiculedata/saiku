@@ -66,7 +66,7 @@
     border: 0;
     color: var(--fg-muted);
     cursor: pointer;
-    font-size: 18px;
+    font-size: var(--fs-lg);
     line-height: 1;
   }
   .toast__close:hover { color: var(--fg); }

@@ -108,10 +108,10 @@
   .demo-creds {
     margin: 0 0 var(--space-3);
     padding: var(--space-2) var(--space-3);
-    background: var(--accent-soft, #ecfdf5);
-    color: var(--accent-strong, #047857);
-    border-left: 3px solid var(--accent, #10b981);
-    font-size: 0.85rem;
+    background: var(--success-soft);
+    color: var(--success-strong);
+    border-left: 3px solid var(--success);
+    font-size: var(--fs-sm);
   }
   .login-stack__demo {
     width: 100%;
