@@ -373,4 +373,18 @@
         <url-pattern>/ui/branding/*</url-pattern>
     </servlet-mapping>
 
+    <!-- SvelteKit SPA fallback: any /ui/* request that the default
+         servlet can't resolve to a real file (and isn't a static-asset
+         extension) gets rewritten to /ui/index.html so the SPA can
+         hydrate the route from window.location. Without this,
+         refreshing /ui/dashboards/<path> returns Jetty's 404 page. -->
+    <filter>
+        <filter-name>spaFallback</filter-name>
+        <filter-class>org.saiku.web.servlet.SpaFallbackFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>spaFallback</filter-name>
+        <url-pattern>/ui/*</url-pattern>
+    </filter-mapping>
+
 </web-app>
