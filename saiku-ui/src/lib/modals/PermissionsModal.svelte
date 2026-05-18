@@ -1,29 +1,19 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
-
-  /** Port of saiku-ui-legacy/js/saiku/views/PermissionsModal.js. */
-  export type AclType = "PRIVATE" | "SECURED" | "PUBLIC";
-  export type AclMethod = "READ" | "WRITE" | "GRANT";
-
-  export interface Acl {
-    type: AclType;
-    owner: string;
-    roles: Record<string, AclMethod[]>;
-    users: Record<string, AclMethod[]>;
-  }
+  import type { AclEntry, AclMethod } from "$lib/api/repository";
 
   interface Props {
     path: string;
     allRoles: string[];
-    initial: Acl;
+    initial: AclEntry;
     open: boolean;
-    onSave: (acl: Acl) => void;
+    onSave: (acl: AclEntry) => void;
     onCancel: () => void;
   }
 
   let { path, allRoles, initial, open, onSave, onCancel }: Props = $props();
-  let acl = $state<Acl>(structuredClone(initial));
+  let acl = $state<AclEntry>(structuredClone(initial));
 
   $effect(() => {
     if (open) acl = structuredClone(initial);

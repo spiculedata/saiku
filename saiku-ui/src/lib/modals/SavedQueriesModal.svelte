@@ -3,15 +3,21 @@
   import { i18n } from "$lib/stores/i18n.svelte";
   import {
     deleteSavedQuery,
+    getResourceAcl,
     listSavedQueries,
     moveSavedQuery,
     readSavedQuery,
+    setResourceAcl,
     writeSavedQuery,
+    type AclEntry,
     type SavedQueryFile,
   } from "$lib/api/repository";
+  import { listAllRoles } from "$lib/api/admin";
+  import { session } from "$lib/stores/session.svelte";
+  import PermissionsModal from "$lib/modals/PermissionsModal.svelte";
   import type { ThinQuery } from "$lib/api/query";
   import { toasts } from "$lib/stores/toasts.svelte";
-  import { FolderOpen, Copy, Pencil, Trash2, Search } from "lucide-svelte";
+  import { FolderOpen, Copy, Pencil, ShieldCheck, Trash2, Search } from "lucide-svelte";
 
   interface Props {
     open: boolean;
@@ -28,6 +34,10 @@
   let confirming = $state<SavedQueryFile | null>(null);
   let renaming = $state<SavedQueryFile | null>(null);
   let renameValue = $state<string>("");
+  let aclEditing = $state<SavedQueryFile | null>(null);
+  let aclInitial = $state<AclEntry | null>(null);
+  let aclRoles = $state<string[]>([]);
+  let aclLoading = $state<boolean>(false);
 
   async function refresh() {
     loading = true;
@@ -111,6 +121,36 @@
     }
   }
 
+  async function openAcl(entry: SavedQueryFile) {
+    aclLoading = true;
+    try {
+      const [acl, roles] = await Promise.all([
+        getResourceAcl(entry.path),
+        listAllRoles(),
+      ]);
+      aclInitial = acl;
+      aclRoles = roles;
+      aclEditing = entry;
+    } catch (err) {
+      toasts.danger(i18n.t("toast.aclLoadFailed"), err instanceof Error ? err.message : String(err));
+    } finally {
+      aclLoading = false;
+    }
+  }
+
+  async function saveAcl(acl: AclEntry) {
+    const entry = aclEditing;
+    if (!entry) return;
+    try {
+      await setResourceAcl(entry.path, acl);
+      toasts.success(i18n.t("toast.aclSaved"), entry.path);
+      aclEditing = null;
+      aclInitial = null;
+    } catch (err) {
+      toasts.danger(i18n.t("toast.aclSaveFailed"), err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function commitDelete() {
     const entry = confirming;
     if (!entry) return;
@@ -187,6 +227,17 @@
               <button type="button" class="icon-btn" title={i18n.t("saved.rename")} onclick={() => beginRename(entry)}>
                 <Pencil size={16} />
               </button>
+              {#if session.isAdmin}
+                <button
+                  type="button"
+                  class="icon-btn"
+                  title={i18n.t("saved.permissions")}
+                  disabled={aclLoading}
+                  onclick={() => void openAcl(entry)}
+                >
+                  <ShieldCheck size={16} />
+                </button>
+              {/if}
               <button
                 type="button"
                 class="icon-btn icon-btn--danger"
@@ -216,6 +267,20 @@
     <button type="button" class="btn" onclick={onClose}>{i18n.t("modal.close")}</button>
   {/snippet}
 </Modal>
+
+{#if aclEditing && aclInitial}
+  <PermissionsModal
+    open={true}
+    path={aclEditing.path}
+    allRoles={aclRoles}
+    initial={aclInitial}
+    onSave={saveAcl}
+    onCancel={() => {
+      aclEditing = null;
+      aclInitial = null;
+    }}
+  />
+{/if}
 
 <style>
   .hint { color: var(--fg-muted); font-size: var(--fs-sm); margin: var(--space-2) 0; }

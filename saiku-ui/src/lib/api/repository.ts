@@ -11,6 +11,16 @@ export interface RepositoryNode {
   repoObjects?: RepositoryNode[];
 }
 
+export type AclType = "PRIVATE" | "SECURED" | "PUBLIC";
+export type AclMethod = "READ" | "WRITE" | "GRANT";
+
+export interface AclEntry {
+  owner: string;
+  type: AclType;
+  roles: Record<string, AclMethod[]>;
+  users: Record<string, AclMethod[]>;
+}
+
 /** A flattened descriptor for the saved-queries browser. */
 export interface SavedQueryFile {
   path: string;
@@ -56,6 +66,32 @@ export async function deleteResource(path: string): Promise<void> {
     { method: "DELETE", credentials: "include" },
   );
   if (!res.ok) throw new Error(`deleteResource -> ${res.status}`);
+}
+
+export async function getResourceAcl(path: string): Promise<AclEntry> {
+  const res = await fetch(
+    `${REST_BASE}/api/repository/resource/acl?file=${encodeURIComponent(path)}`,
+    { credentials: "include", headers: { Accept: "application/json" } },
+  );
+  if (!res.ok) throw new Error(`getResourceAcl -> ${res.status}`);
+  const raw = (await res.json()) as Partial<AclEntry>;
+  return {
+    owner: raw.owner ?? "",
+    type: raw.type ?? "PUBLIC",
+    roles: raw.roles ?? {},
+    users: raw.users ?? {},
+  };
+}
+
+export async function setResourceAcl(path: string, acl: AclEntry): Promise<void> {
+  const body = new URLSearchParams({ file: path, acl: JSON.stringify(acl) });
+  const res = await fetch(`${REST_BASE}/api/repository/resource/acl`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  if (!res.ok) throw new Error(`setResourceAcl -> ${res.status}`);
 }
 
 export async function moveResource(source: string, target: string): Promise<void> {
