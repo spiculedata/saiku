@@ -121,7 +121,7 @@
   }
   .tree__row--selected {
     background: var(--bg-subtle);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
   }
   .tree__row:focus-visible {
     outline: none;
@@ -139,7 +139,7 @@
     line-height: 1;
     padding: 2px 6px;
     border-radius: 999px;
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     letter-spacing: 0.03em;
     text-transform: uppercase;
     color: var(--accent-fg);

@@ -25,12 +25,24 @@
     bgMuted: string;
     border: string;
     accent: string;
+    /** Categorical series palette read from --chart-1..8 tokens.
+     *  Falls back to Indigo-anchored defaults harmonised with --accent
+     *  if the tokens are absent for any reason. */
+    chartColors: string[];
   }
+
+  const CHART_FALLBACK_COLORS = [
+    "#4f46e5", "#0ea5e9", "#10b981", "#f59e0b",
+    "#ef4444", "#a855f7", "#ec4899", "#14b8a6",
+  ];
 
   function resolveThemeTokens(): ThemeTokens {
     const cs = getComputedStyle(document.documentElement);
     const get = (name: string, fallback: string) =>
       cs.getPropertyValue(name).trim() || fallback;
+    const chartColors = CHART_FALLBACK_COLORS.map((fallback, i) =>
+      get(`--chart-${i + 1}`, fallback),
+    );
     return {
       fg: get("--fg", "#0f172a"),
       fgMuted: get("--fg-muted", "#475569"),
@@ -38,6 +50,7 @@
       bgMuted: get("--bg-muted", "#f6f7f9"),
       border: get("--border", "#e2e8f0"),
       accent: get("--accent", "#4f46e5"),
+      chartColors,
     };
   }
 
@@ -168,7 +181,11 @@
     const xName = o.xAxisLabel || undefined;
     const yName = o.yAxisLabel || undefined;
 
-    const common = { backgroundColor: "transparent", textStyle: { color: tk.fg } };
+    const common = {
+      backgroundColor: "transparent",
+      color: tk.chartColors,
+      textStyle: { color: tk.fg },
+    };
 
     if (t === "pie" || t === "donut") {
       const totals = cols.map((_, c) => matrix.reduce((s, row) => s + (row[c] ?? 0), 0));
@@ -189,7 +206,7 @@
     if (t === "treemap") {
       const data = rows.map((name, i) => ({
         name,
-        value: (matrix[i] ?? []).reduce((s, v) => s + (v ?? 0), 0),
+        value: (matrix[i] ?? []).reduce<number>((s, v) => s + (v ?? 0), 0),
       })).filter((d) => d.value > 0);
       return {
         ...common,
@@ -207,7 +224,7 @@
     if (t === "sunburst") {
       const data = rows.map((name, i) => ({
         name,
-        value: (matrix[i] ?? []).reduce((s, v) => s + (v ?? 0), 0),
+        value: (matrix[i] ?? []).reduce<number>((s, v) => s + (v ?? 0), 0),
       })).filter((d) => d.value > 0);
       return {
         ...common,

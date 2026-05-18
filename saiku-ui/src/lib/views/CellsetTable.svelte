@@ -792,7 +792,7 @@
     top: 0;
     z-index: 2;
     background: var(--bg-muted);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     text-align: left;
     white-space: nowrap;
   }
@@ -818,7 +818,7 @@
     left: 0;
     z-index: 1;
   }
-  .cellset tbody th.row--nested { font-weight: 500; color: var(--fg-muted); }
+  .cellset tbody th.row--nested { font-weight: var(--weight-medium); color: var(--fg-muted); }
   .cellset tbody th.row:hover {
     background: var(--bg-subtle);
   }
@@ -868,7 +868,7 @@
     font-size: var(--fs-sm);
     font-variant-numeric: tabular-nums;
   }
-  .sel-stats strong { color: var(--fg); font-weight: 600; }
+  .sel-stats strong { color: var(--fg); font-weight: var(--weight-semibold); }
   .sel-stats__clear {
     margin-left: auto;
     border: none;
@@ -918,7 +918,7 @@
   }
   .cellset-ctx-menu__header {
     padding: var(--space-1) var(--space-3);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     color: var(--fg-muted);
     max-width: 320px;
     overflow: hidden;

@@ -120,7 +120,7 @@
     font-size: 0.8125rem;
   }
   .title {
-    font-weight: 500;
+    font-weight: var(--weight-medium);
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;

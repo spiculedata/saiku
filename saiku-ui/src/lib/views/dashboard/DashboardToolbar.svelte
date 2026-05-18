@@ -107,7 +107,7 @@
   }
   .name {
     font-size: 1.125rem;
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     padding: 0.375rem 0.5rem;
     border: 1px solid transparent;
     border-radius: 4px;
@@ -121,7 +121,7 @@
   }
   .name-readonly {
     font-size: 1.125rem;
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     margin: 0;
   }
   .spacer { flex: 1; }

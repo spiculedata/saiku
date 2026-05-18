@@ -235,6 +235,39 @@ a:hover {
   color: var(--fg);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
+  transition:
+    border-color var(--duration-fast),
+    box-shadow var(--duration-fast);
+}
+
+.field__input:focus-visible {
+  border-color: var(--accent);
+}
+
+/* Invalid form-field state. Set the .field--invalid modifier on the
+   wrapper; the input gets a red border and the .field__error message
+   below renders with an alert icon. Centralized so every form modal
+   communicates validation the same way. */
+.field--invalid .field__input {
+  border-color: var(--danger);
+}
+
+.field--invalid .field__input:focus-visible {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--danger);
+  border-color: var(--danger);
+}
+
+.field__error {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  margin-top: var(--space-1);
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.field__error svg {
+  flex-shrink: 0;
 }
 
 .callout {
@@ -247,6 +280,33 @@ a:hover {
 .callout--danger {
   border-left-color: var(--danger);
   color: var(--danger);
+}
+
+/* Motion baseline. Modals, context menus, and toasts appear instantly
+   by default — feels like UI is teleporting rather than responding.
+   These two short keyframes give every overlay-style surface a 120ms
+   fade-in (200ms for the panel content, which also lifts a hair).
+   Components opt in by adding the matching animation:* rule. The
+   prefers-reduced-motion guard suppresses everything for users who
+   need it. */
+@keyframes saiku-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes saiku-panel-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }
 
 /* -------------------------------------------------------------------------

@@ -51,6 +51,7 @@
     box-shadow: var(--shadow-md);
     padding: var(--space-3);
     pointer-events: auto;
+    animation: saiku-panel-in var(--duration-normal) ease;
   }
   .toast--success { border-left-color: var(--success); }
   .toast--warning { border-left-color: var(--warning); }

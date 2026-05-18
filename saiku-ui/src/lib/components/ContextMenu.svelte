@@ -54,10 +54,11 @@
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 6px;
-    box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+    box-shadow: var(--shadow-lg);
     padding: 4px;
     z-index: 1000;
     font-size: var(--fs-sm);
+    animation: saiku-panel-in var(--duration-fast) ease;
   }
   .ctx-menu__item {
     display: block;
