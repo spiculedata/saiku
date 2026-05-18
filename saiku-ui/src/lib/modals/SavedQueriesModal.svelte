@@ -336,20 +336,7 @@
   .saved__name { font-weight: 500; }
   .saved__path { color: var(--fg-subtle); font-size: var(--fs-xs); }
   .saved__actions { display: flex; gap: 2px; }
-  .icon-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    color: var(--fg-muted);
-    cursor: pointer;
-  }
-  .icon-btn:hover { background: var(--bg); border-color: var(--border); color: var(--fg); }
-  .icon-btn--danger:hover { color: var(--danger); }
+  /* .icon-btn / .icon-btn--danger come from app.css */
   .saved__rename {
     display: flex;
     flex: 1;

@@ -13,7 +13,6 @@
     Sigma,
     Folder,
     GitFork,
-    ChevronDown,
     ChevronRight,
     Settings2,
     Plus,
@@ -296,8 +295,8 @@
           {@const gid = `m:${group}`}
           <li class="tree__node">
             <button type="button" class="tree__row tree__row--group" onclick={() => toggle(gid)}>
-              <span class="tree__twisty">
-                {#if expanded[gid] === false}<ChevronRight size={12} />{:else}<ChevronDown size={12} />{/if}
+              <span class="tree__twisty" class:tree__twisty--open={expanded[gid] !== false}>
+                <ChevronRight size={12} />
               </span>
               <span class="tree__label">{group}</span>
               <span class="tree__count">{items.length}</span>
@@ -336,8 +335,8 @@
           {@const did = `d:${dim.uniqueName}`}
           <li class="tree__node">
             <button type="button" class="tree__row tree__row--dim" onclick={() => toggle(did)} title={dim.caption}>
-              <span class="tree__twisty">
-                {#if expanded[did] === false}<ChevronRight size={12} />{:else}<ChevronDown size={12} />{/if}
+              <span class="tree__twisty" class:tree__twisty--open={expanded[did] !== false}>
+                <ChevronRight size={12} />
               </span>
               <span class="tree__icon" aria-hidden="true"><Folder size={13} /></span>
               <span class="tree__label">{dim.caption || dim.name}</span>
@@ -375,8 +374,8 @@
                   {:else}
                     <li class="tree__node">
                       <button type="button" class="tree__row tree__row--hier" onclick={() => toggle(hid)}>
-                        <span class="tree__twisty">
-                          {#if expanded[hid] === false}<ChevronRight size={12} />{:else}<ChevronDown size={12} />{/if}
+                        <span class="tree__twisty" class:tree__twisty--open={expanded[hid] !== false}>
+                          <ChevronRight size={12} />
                         </span>
                         <span class="tree__icon" aria-hidden="true"><GitFork size={13} /></span>
                         <span class="tree__label">{hier.caption || hier.name}</span>
@@ -573,6 +572,12 @@
     justify-content: center;
     width: 14px;
     color: var(--fg-subtle);
+  }
+  .tree__twisty :global(svg) {
+    transition: transform var(--duration-fast) ease;
+  }
+  .tree__twisty--open :global(svg) {
+    transform: rotate(90deg);
   }
   .tree__icon {
     display: inline-flex;

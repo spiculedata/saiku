@@ -17,6 +17,7 @@
   import TextTile from "$lib/views/dashboard/tiles/TextTile.svelte";
   import FilterTile from "$lib/views/dashboard/tiles/FilterTile.svelte";
   import TileEditorModal from "$lib/views/dashboard/TileEditorModal.svelte";
+  import { Settings2, X } from "lucide-svelte";
 
   interface Props {
     tile: DashboardTile;
@@ -51,8 +52,12 @@
     <span class="title">{tile.title ?? defaultTitle(tile)}</span>
     {#if !readOnly}
       <div class="tile-actions">
-        <button type="button" class="icon-btn" aria-label="Edit tile" onclick={handleEdit}>⚙</button>
-        <button type="button" class="icon-btn" aria-label="Remove tile" onclick={handleRemove}>×</button>
+        <button type="button" class="icon-btn" aria-label="Edit tile" onclick={handleEdit}>
+          <Settings2 size={14} />
+        </button>
+        <button type="button" class="icon-btn icon-btn--danger" aria-label="Remove tile" onclick={handleRemove}>
+          <X size={14} />
+        </button>
       </div>
     {/if}
   </header>
@@ -125,14 +130,7 @@
     display: flex;
     gap: 0.25rem;
   }
-  .icon-btn {
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    color: var(--fg-muted);
-    padding: 0 0.25rem;
-  }
-  .icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  /* .icon-btn / .icon-btn--danger inherit shape from app.css */
   .tile-body {
     flex: 1;
     min-height: 0;
