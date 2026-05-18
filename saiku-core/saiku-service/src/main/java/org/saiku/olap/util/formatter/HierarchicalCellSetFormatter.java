@@ -373,6 +373,15 @@ public class HierarchicalCellSetFormatter implements ICellSetFormatter {
             int yOffset = 0;
             final List<Member> memberList = position.getMembers();
             final Map<Hierarchy, List<Integer>> lvls = new HashMap<>();
+            // saiku#845: mirrors the saiku#788 fix on the flattened sibling.
+            // members[] is declared outside the outer position loop and reused
+            // across iterations; a shallow position that only fills slot 0
+            // would otherwise inherit slots 1..N from the previous (deeper)
+            // position's members — silently collapsing mixed-depth row sets
+            // (parent + descendants on the same axis) into a duplicated
+            // deepest row. Clear before each position so shallow slots render
+            // as empty rather than as the wrong member's caption.
+            java.util.Arrays.fill(members, null);
             for (int j = 0; j < memberList.size(); j++) {
                 Member member = memberList.get(j);
                 final AxisOrdinalInfo ordinalInfo = axisInfo.ordinalInfos.get(j);
