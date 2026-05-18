@@ -25,6 +25,7 @@
     type DashboardFilter,
     type DashboardTile,
     type FilterWidget,
+    type KpiConfig,
     type TileQuery,
   } from "$lib/api/dashboards";
   import { flatten, listRepository, type RepositoryNode } from "$lib/api/repository";
@@ -59,6 +60,23 @@
       dimension: tile.target?.dimension ?? "",
       hierarchy: tile.target?.hierarchy ?? "",
       level: tile.target?.level ?? "",
+    })),
+  );
+  // KPI tile config — single working-copy object; nested fields bind
+  // directly via Svelte 5's $state proxy. Defaults fill in unset fields
+  // so the form has stable controls even for a fresh KPI tile.
+  let kpiConfig = $state<KpiConfig>(
+    untrack(() => ({
+      measure: tile.kpi?.measure ?? "",
+      measureCaption: tile.kpi?.measureCaption ?? "",
+      format: tile.kpi?.format ?? "number",
+      customFormat: tile.kpi?.customFormat ?? "",
+      comparison: tile.kpi?.comparison ?? "none",
+      target: tile.kpi?.target,
+      timeLevel: tile.kpi?.timeLevel ?? { dimension: "", hierarchy: "", level: "" },
+      sparkline: tile.kpi?.sparkline ?? false,
+      thresholds: tile.kpi?.thresholds ?? {},
+      direction: tile.kpi?.direction ?? "higher-is-better",
     })),
   );
   let inlineBodyJson = $state<string>(
@@ -115,10 +133,13 @@
     }
   });
 
-  // Filter tiles need the cube's schema to populate dim/hier/level
-  // dropdowns. Prime when a cube is selected.
+  // Filter and KPI tiles need the cube's schema — filters for the
+  // dim/hier/level dropdowns, KPI for the measure picker and (when
+  // prior-period or sparkline are on) the time-level picker. Prime
+  // whenever a cube is selected so the dropdowns aren't empty.
   $effect(() => {
-    if (tile.type !== "filter" || !cube) return;
+    if (tile.type !== "filter" && tile.type !== "kpi") return;
+    if (!cube) return;
     void schemaCache.get(cube).catch(() => {
       // Surface failure inline below
     });
@@ -147,6 +168,62 @@
     for (const d of Object.values(s.dimensions)) {
       if (d.name === filterTarget.dimension && d.hierarchies) {
         return Object.values(d.hierarchies).map((h) => h.name);
+      }
+    }
+    return [];
+  });
+
+  // KPI tile derivers — keyed on kpiConfig.timeLevel.* so they're
+  // independent of the filter-tile dropdowns above. Same loose-schema
+  // narrowing as the filter ones.
+  let measureOptions = $derived(() => {
+    const s = schema() as
+      | { measures?: Record<string, { name?: string; displayName?: string | null; visible?: boolean }> }
+      | null;
+    if (!s?.measures) return [] as { name: string; label: string }[];
+    const out: { name: string; label: string }[] = [];
+    for (const m of Object.values(s.measures)) {
+      if (m?.visible === false) continue;
+      const name = m?.name;
+      if (!name) continue;
+      out.push({ name, label: m?.displayName ?? name });
+    }
+    return out;
+  });
+
+  let kpiHierarchyOptions = $derived(() => {
+    const s = schema() as
+      | { dimensions?: Record<string, { name: string; hierarchies?: Record<string, { name: string }> }> }
+      | null;
+    if (!s?.dimensions) return [] as string[];
+    for (const d of Object.values(s.dimensions)) {
+      if (d.name === kpiConfig.timeLevel?.dimension && d.hierarchies) {
+        return Object.values(d.hierarchies).map((h) => h.name);
+      }
+    }
+    return [];
+  });
+
+  let kpiLevelOptions = $derived(() => {
+    const s = schema() as
+      | {
+          dimensions?: Record<
+            string,
+            {
+              name: string;
+              hierarchies?: Record<string, { name: string; levels?: Record<string, { name: string }> }>;
+            }
+          >;
+        }
+      | null;
+    if (!s?.dimensions) return [] as string[];
+    for (const d of Object.values(s.dimensions)) {
+      if (d.name !== kpiConfig.timeLevel?.dimension) continue;
+      if (!d.hierarchies) return [];
+      for (const h of Object.values(d.hierarchies)) {
+        if (h.name === kpiConfig.timeLevel?.hierarchy && h.levels) {
+          return Object.values(h.levels).map((l) => l.name);
+        }
       }
     }
     return [];
@@ -201,6 +278,12 @@
     // names won't apply to the new cube's schema.
     if (tile.type === "filter") {
       filterTarget = { dimension: "", hierarchy: "", level: "" };
+    }
+    // Same reasoning for KPI: measure + time-level names are cube-scoped.
+    if (tile.type === "kpi") {
+      kpiConfig.measure = "";
+      kpiConfig.measureCaption = "";
+      kpiConfig.timeLevel = { dimension: "", hierarchy: "", level: "" };
     }
   }
 
@@ -274,6 +357,30 @@
         };
         patch.target = target;
       }
+    }
+
+    if (tile.type === "kpi") {
+      // Drop the timeLevel placeholder when none of the time-aware
+      // features need it — keeps the saved JSON tidy.
+      const needsTime = kpiConfig.comparison === "prior-period" || kpiConfig.sparkline === true;
+      const tl = kpiConfig.timeLevel;
+      const cleaned: KpiConfig = {
+        ...kpiConfig,
+        timeLevel:
+          needsTime && tl && tl.dimension && tl.hierarchy && tl.level ? tl : undefined,
+        // Drop empty thresholds object so the JSON diff is empty when
+        // the analyst doesn't touch the threshold inputs.
+        thresholds:
+          kpiConfig.thresholds &&
+          (kpiConfig.thresholds.red != null ||
+            kpiConfig.thresholds.yellow != null ||
+            kpiConfig.thresholds.green != null)
+            ? kpiConfig.thresholds
+            : undefined,
+        target: kpiConfig.comparison === "target" ? kpiConfig.target : undefined,
+        customFormat: kpiConfig.format === "custom" ? kpiConfig.customFormat : undefined,
+      };
+      patch.kpi = cleaned;
     }
 
     // Merge the patch into the repositioned source tile, then commit
@@ -467,6 +574,151 @@
           </select>
         </label>
       {/if}
+
+      {#if tile.type === "kpi"}
+        <label class="field">
+          <span>Measure</span>
+          <select
+            value={kpiConfig.measure ?? ""}
+            disabled={!cube || measureOptions().length === 0}
+            onchange={(e) => {
+              const picked = (e.target as HTMLSelectElement).value;
+              const opt = measureOptions().find((m) => m.name === picked);
+              kpiConfig.measure = picked || undefined;
+              kpiConfig.measureCaption = opt?.label;
+            }}
+          >
+            <option value="">— pick a measure —</option>
+            {#each measureOptions() as m (m.name)}
+              <option value={m.name}>{m.label}</option>
+            {/each}
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Format</span>
+          <select bind:value={kpiConfig.format}>
+            <option value="number">Number</option>
+            <option value="currency">Currency</option>
+            <option value="percent">Percent</option>
+            <option value="custom">Custom pattern</option>
+          </select>
+        </label>
+        {#if kpiConfig.format === "custom"}
+          <label class="field">
+            <span>Custom pattern</span>
+            <input
+              type="text"
+              bind:value={kpiConfig.customFormat}
+              placeholder="e.g. $2 / 2% / 3"
+            />
+            <span class="hint">
+              $N / €N / £N for currency, N% for percent, plain N for fractional digits.
+            </span>
+          </label>
+        {/if}
+
+        <fieldset class="size">
+          <legend>Comparison</legend>
+          <label class="field inline">
+            <span>Mode</span>
+            <select bind:value={kpiConfig.comparison}>
+              <option value="none">None</option>
+              <option value="prior-period">Prior period</option>
+              <option value="target">Target value</option>
+            </select>
+          </label>
+          {#if kpiConfig.comparison === "target"}
+            <label class="field inline">
+              <span>Target</span>
+              <input
+                type="number"
+                bind:value={kpiConfig.target}
+                placeholder="e.g. 100000"
+              />
+            </label>
+          {/if}
+          <label class="field inline">
+            <span>Direction</span>
+            <select bind:value={kpiConfig.direction}>
+              <option value="higher-is-better">Higher is better</option>
+              <option value="lower-is-better">Lower is better</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <label class="checkbox">
+          <input type="checkbox" bind:checked={kpiConfig.sparkline} />
+          <span>Sparkline (mini line chart under the number)</span>
+        </label>
+
+        {#if kpiConfig.comparison === "prior-period" || kpiConfig.sparkline}
+          <fieldset class="size">
+            <legend>Time level (for comparison + sparkline)</legend>
+            <label class="field inline">
+              <span>Dimension</span>
+              <select bind:value={kpiConfig.timeLevel!.dimension} disabled={!cube}>
+                <option value="">— pick —</option>
+                {#each dimensionOptions() as d (d)}
+                  <option value={d}>{d}</option>
+                {/each}
+              </select>
+            </label>
+            <label class="field inline">
+              <span>Hierarchy</span>
+              <select
+                bind:value={kpiConfig.timeLevel!.hierarchy}
+                disabled={!kpiConfig.timeLevel?.dimension}
+              >
+                <option value="">— pick —</option>
+                {#each kpiHierarchyOptions() as h (h)}
+                  <option value={h}>{h}</option>
+                {/each}
+              </select>
+            </label>
+            <label class="field inline">
+              <span>Level</span>
+              <select
+                bind:value={kpiConfig.timeLevel!.level}
+                disabled={!kpiConfig.timeLevel?.hierarchy}
+              >
+                <option value="">— pick —</option>
+                {#each kpiLevelOptions() as l (l)}
+                  <option value={l}>{l}</option>
+                {/each}
+              </select>
+            </label>
+          </fieldset>
+        {/if}
+
+        <fieldset class="size">
+          <legend>Threshold colouring (optional)</legend>
+          <label class="field inline">
+            <span>Red ≤ / ≥</span>
+            <input
+              type="number"
+              bind:value={kpiConfig.thresholds!.red}
+              placeholder="off"
+            />
+          </label>
+          <label class="field inline">
+            <span>Yellow</span>
+            <input
+              type="number"
+              bind:value={kpiConfig.thresholds!.yellow}
+              placeholder="off"
+            />
+          </label>
+          <label class="field inline">
+            <span>Green</span>
+            <input
+              type="number"
+              bind:value={kpiConfig.thresholds!.green}
+              placeholder="off"
+            />
+          </label>
+        </fieldset>
+      {/if}
     </div>
     <footer class="modal-footer">
       <button type="button" class="btn" onclick={onClose}>Cancel</button>
@@ -567,7 +819,8 @@
     letter-spacing: 0.04em;
     padding: 0 0.25rem;
   }
-  .radio {
+  .radio,
+  .checkbox {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;

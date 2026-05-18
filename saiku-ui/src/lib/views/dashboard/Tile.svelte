@@ -16,6 +16,7 @@
   import TableTile from "$lib/views/dashboard/tiles/TableTile.svelte";
   import TextTile from "$lib/views/dashboard/tiles/TextTile.svelte";
   import FilterTile from "$lib/views/dashboard/tiles/FilterTile.svelte";
+  import KpiTile from "$lib/views/dashboard/tiles/KpiTile.svelte";
   import TileEditorModal from "$lib/views/dashboard/TileEditorModal.svelte";
   import { Settings2, X } from "lucide-svelte";
 
@@ -70,6 +71,8 @@
       <TextTile {tile} />
     {:else if tile.type === "filter"}
       <FilterTile {tile} {readOnly} />
+    {:else if tile.type === "kpi"}
+      <KpiTile {tile} />
     {:else}
       <div class="unknown">Unknown tile type: {tile.type}</div>
     {/if}
@@ -95,6 +98,8 @@
         return "Note";
       case "filter":
         return tile.target?.level ? `Filter: ${tile.target.level}` : "Filter";
+      case "kpi":
+        return tile.kpi?.measureCaption ?? tile.kpi?.measure ?? "KPI";
       default:
         return tile.type;
     }

@@ -70,6 +70,13 @@
           <span class="hint">Records of measure cells with row headers.</span>
         </span>
       </button>
+      <button type="button" class="menu-item" role="menuitem" onclick={() => pick("kpi")}>
+        <span class="icon" aria-hidden="true">📈</span>
+        <span>
+          <span class="label">KPI</span>
+          <span class="hint">A single measure as a big number, with optional comparison + sparkline.</span>
+        </span>
+      </button>
       <button type="button" class="menu-item" role="menuitem" onclick={() => pick("filter")}>
         <span class="icon" aria-hidden="true">🔍</span>
         <span>

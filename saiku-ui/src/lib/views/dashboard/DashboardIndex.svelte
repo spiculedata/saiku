@@ -22,7 +22,12 @@
     type RepositoryNode,
   } from "$lib/api/repository";
   import { listAllRoles } from "$lib/api/admin";
-  import { deleteDashboard, newDashboard, saveDashboard } from "$lib/api/dashboards";
+  import {
+    deleteDashboard,
+    newDashboard,
+    normaliseDashboardPath,
+    saveDashboard,
+  } from "$lib/api/dashboards";
   import { session } from "$lib/stores/session.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
