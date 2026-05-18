@@ -109,6 +109,24 @@ function extractFromInline(tile: DashboardTile): ExtractedTarget[] {
   return out;
 }
 
+/** Surface a KPI tile's time level as a candidate dimension for the
+ *  "Suggest filters" panel. Lets the analyst promote a KPI's time
+ *  level into a dashboard widget that then drives the slice. */
+function extractFromKpi(tile: DashboardTile): ExtractedTarget[] {
+  if (tile.type !== "kpi" || !tile.cube || !tile.kpi) return [];
+  const tl = tile.kpi.timeLevel;
+  if (!tl || !tl.dimension || !tl.hierarchy || !tl.level) return [];
+  return [
+    {
+      cube: tile.cube,
+      dimension: tl.dimension,
+      hierarchy: tl.hierarchy,
+      level: tl.level,
+      tileId: tile.id,
+    },
+  ];
+}
+
 /** Walk a parsed ThinQuery JSON object's queryModel.axes and yield every
  *  (dim, hier, level) triple. ThinHierarchy carries display names directly
  *  (dimension="Store", caption="Stores"); ThinLevel.name is the level
@@ -205,6 +223,7 @@ export function suggestFiltersForTiles(tiles: DashboardTile[]): FilterSuggestion
   const map = new Map<string, FilterSuggestion>();
   for (const tile of tiles) {
     for (const t of extractFromInline(tile)) pushTarget(map, t);
+    for (const t of extractFromKpi(tile)) pushTarget(map, t);
   }
   return Array.from(map.values());
 }
@@ -215,6 +234,7 @@ export async function suggestFiltersForTilesAsync(tiles: DashboardTile[]): Promi
   const map = new Map<string, FilterSuggestion>();
   for (const tile of tiles) {
     for (const t of extractFromInline(tile)) pushTarget(map, t);
+    for (const t of extractFromKpi(tile)) pushTarget(map, t);
   }
   const refTiles = tiles.filter((t) => t.query?.kind === "reference");
   const refResults = await Promise.all(refTiles.map(extractFromReference));

@@ -122,6 +122,15 @@ export interface SavedQueryFilter {
  *  axis, otherwise slicer; see server-side ThinQueryFilterMerge), runs
  *  the ThinQuery, and returns the same AiQueryResponse shape inline tiles
  *  already render. */
+/** Defensive: legacy dashboards may have persisted absolute filesystem
+ *  paths from the old listing API. Strip the saiku-home prefix before
+ *  posting so the server-side ThinQuery lookup always sees clean
+ *  repo-relative names. */
+function stripSavedQueryPath(path: string): string {
+  const m = path.match(/^.*?\/data\/[^/]+\/(.+)$/);
+  return m ? m[1] : path;
+}
+
 export async function executeSavedQuery(
   path: string,
   filters: SavedQueryFilter[] = [],
@@ -133,7 +142,7 @@ export async function executeSavedQuery(
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: JSON.stringify({ path, filters }),
+    body: JSON.stringify({ path: stripSavedQueryPath(path), filters }),
   });
   const text = await res.text();
   if (!text) throw new Error(`executeSavedQuery -> ${res.status}: empty body`);

@@ -244,12 +244,26 @@ function encodePath(path: string): string {
  *  `homes/...` pass through. Everything else gets the user's home prefixed
  *  so non-admins don't trip the saveFile ACL gate from saiku#895. */
 export function normaliseDashboardPath(rawPath: string, username: string): string {
-  const p = rawPath.trim();
+  const p = toRepoRelative(rawPath).trim();
   if (!p) throw new Error("Dashboard path is required");
   if (p.startsWith("/")) return p.slice(1);
   if (p.startsWith("homes/")) return p;
   if (!username) throw new Error("Cannot resolve home: no current user");
   return `homes/${username}/${p}`;
+}
+
+/** Strip the saiku-home filesystem prefix the repository listing API returns
+ *  ({@code /Users/.../saiku-home/repository/data/<workspace>/homes/admin/foo})
+ *  down to the repo-relative form the dashboards REST API expects
+ *  ({@code homes/admin/foo}). Absolute paths from `listRepository(...)` need
+ *  this; already-relative inputs (from the editor or hand-typed) pass
+ *  through unchanged. */
+export function toRepoRelative(path: string): string {
+  // Match anything up to and including `/data/<workspace>/`; the capture
+  // group is the repo-relative remainder. Falls through to the input
+  // when the pattern doesn't match (already-relative paths).
+  const m = path.match(/^.*?\/data\/[^/]+\/(.+)$/);
+  return m ? m[1] : path;
 }
 
 async function readError(res: Response): Promise<string> {
