@@ -16,6 +16,9 @@
   import FormatAsPercentageModal from "$lib/modals/FormatAsPercentageModal.svelte";
   import GrowthModal from "$lib/modals/GrowthModal.svelte";
   import FilterModal from "$lib/modals/FilterModal.svelte";
+  import OrderModal from "$lib/modals/OrderModal.svelte";
+  import TopBottomCountModal from "$lib/modals/TopBottomCountModal.svelte";
+  import LimitModal from "$lib/modals/LimitModal.svelte";
   import DateFilterModal from "$lib/modals/DateFilterModal.svelte";
   import { looksLikeTimeHierarchy } from "$lib/modals/dateFilterMdx";
   import ContextMenu from "$lib/components/ContextMenu.svelte";
@@ -979,14 +982,41 @@
   />
 {/if}
 
-{#if axisFilterTarget}
+{#if axisFilterTarget && axisFilterTarget.type === "Order"}
+  <OrderModal
+    axis={axisFilterTarget.axis}
+    measures={cubeMetadata?.measures ?? []}
+    initialMeasure={axisFilterTarget.expression.startsWith("[") ? axisFilterTarget.expression : ""}
+    initialSort={axisFilterTarget.sort as "ASC" | "BASC" | "DESC" | "BDESC"}
+    open={axisFilterOpen}
+    onSave={(measure, sort) => onAxisFilterSave(measure, sort)}
+    onCancel={() => (axisFilterOpen = false)}
+  />
+{:else if axisFilterTarget && (axisFilterTarget.type === "TopCount" || axisFilterTarget.type === "BottomCount")}
+  <TopBottomCountModal
+    axis={axisFilterTarget.axis}
+    variant={axisFilterTarget.type === "TopCount" ? "top" : "bottom"}
+    measures={cubeMetadata?.measures ?? []}
+    initialCount={10}
+    initialMeasure={cubeMetadata?.measures[0]?.uniqueName ?? ""}
+    open={axisFilterOpen}
+    onSave={(expression) => onAxisFilterSave(expression)}
+    onCancel={() => (axisFilterOpen = false)}
+  />
+{:else if axisFilterTarget && axisFilterTarget.type === "Limit"}
+  <LimitModal
+    axis={axisFilterTarget.axis}
+    initialCount={10}
+    open={axisFilterOpen}
+    onSave={(count) => onAxisFilterSave(count)}
+    onCancel={() => (axisFilterOpen = false)}
+  />
+{:else if axisFilterTarget && axisFilterTarget.type === "Filter"}
   <FilterModal
     axis={axisFilterTarget.axis}
-    expressionType={axisFilterTarget.type}
     expression={axisFilterTarget.expression}
-    sortFunction={axisFilterTarget.sort as "ASC" | "BASC" | "DESC" | "BDESC"}
     open={axisFilterOpen}
-    onSave={onAxisFilterSave}
+    onSave={(expression) => onAxisFilterSave(expression)}
     onCancel={() => (axisFilterOpen = false)}
   />
 {/if}
