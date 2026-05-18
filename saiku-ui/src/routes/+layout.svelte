@@ -77,11 +77,12 @@
         <img
           class="topbar__brand-logo"
           src={brandLogo}
-          alt=""
+          alt={i18n.t("brand")}
           onerror={onBrandLogoError}
         />
+      {:else}
+        <span class="topbar__brand-wordmark">{i18n.t("brand")}</span>
       {/if}
-      <span class="topbar__brand-wordmark">{i18n.t("brand")}</span>
     </a>
     <div class="topbar__actions">
       {#if session.current}
