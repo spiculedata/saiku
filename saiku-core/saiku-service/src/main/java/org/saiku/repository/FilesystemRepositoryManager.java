@@ -253,7 +253,12 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     public Object saveFile(Object file, String path, String user, String type, List<String> roles)
             throws RepositoryException {
         if (file == null) {
-            // Create new folder
+            // Create new folder. saiku#895 fix: the canWrite check below was
+            // previously INVERTED (`if (canWrite) throw`), denying writes to
+            // any user who actually had permission and permitting everyone
+            // else. Branch is dead code today (no REST caller reaches it
+            // with file == null), but left in place so a future folder-
+            // create caller doesn't trip the latent footgun.
             String parent;
             if (path.contains(sep)) {
                 parent = path.substring(0, path.lastIndexOf(sep));
@@ -263,8 +268,8 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             File node = getFolder(parent);
             Acl2 acl2 = new Acl2(node);
             acl2.setAdminRoles(userService.getAdminRoles());
-            if (acl2.canWrite(node, user, roles)) {
-                throw new SaikuServiceException("Can't write to file or folder");
+            if (!acl2.canWrite(node, user, roles)) {
+                throw new SaikuServiceException("You don't have permission to write to " + path);
             }
 
             int pos = path.lastIndexOf(sep);
@@ -273,11 +278,19 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             return null;
 
         } else {
+            // saiku#895: gate the actual file write on canWrite for the
+            // parent folder. The pre-fix code constructed the Acl2 but
+            // never consulted it, letting any authenticated user overwrite
+            // any path in the repository (including other users' homes
+            // and the shared /datasources tree).
             int pos = path.lastIndexOf(sep);
             String filename = "." + sep + path.substring(pos + 1, path.length());
             File n = getFolder(path.substring(0, pos));
             Acl2 acl2 = new Acl2(n);
             acl2.setAdminRoles(userService.getAdminRoles());
+            if (!acl2.canWrite(n, user, roles)) {
+                throw new SaikuServiceException("You don't have permission to write to " + path);
+            }
 
             File check = this.getNode(filename);
             if (check.exists()) {
@@ -307,12 +320,17 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     }
 
     public void removeFile(String path, String user, List<String> roles) throws RepositoryException {
+        // saiku#896: delete used to be gated on canRead — strictly weaker
+        // than the operation being performed. canRead is true for every
+        // authenticated user on un-ACL'd nodes (the default), which made
+        // delete a universal capability. canWrite is the correct minimum;
+        // an admin retains delete via the canWrite "admin-roles" override
+        // already baked into Acl2.
         File node = getFolder(path);
         Acl2 acl2 = new Acl2(node);
         acl2.setAdminRoles(userService.getAdminRoles());
-        if (!acl2.canRead(node, user, roles)) {
-            // TODO Throw exception
-            throw new RepositoryException();
+        if (!acl2.canWrite(node, user, roles)) {
+            throw new SaikuServiceException("You don't have permission to remove " + path);
         }
 
         this.getNode(path).delete();
