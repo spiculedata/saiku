@@ -5,6 +5,7 @@
   import type { SaikuCube } from "$lib/api/discover";
   import { cubeKey } from "$lib/stores/datasources.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
+  import { RotateCw } from "lucide-svelte";
 
   interface Props {
     username: string;
@@ -82,10 +83,14 @@
     </select>
     <button
       type="button"
-      class="btn cube-picker__refresh"
+      class="icon-btn cube-picker__refresh"
       onclick={onRefresh}
+      title={i18n.t("cubes.refresh")}
       aria-label={i18n.t("cubes.refresh")}
-    >⟳</button>
+      disabled={datasources.loading}
+    >
+      <RotateCw size={14} class={datasources.loading ? "spin" : ""} />
+    </button>
   </div>
   {#if datasources.error}
     <p class="callout callout--danger">{datasources.error}</p>
@@ -122,7 +127,15 @@
     font-size: var(--fs-sm);
   }
   .cube-picker__refresh {
-    padding: var(--space-2);
+    /* match the select's vertical footprint so they line up at the same height */
+    width: 36px;
+    height: 36px;
+  }
+  .cube-picker__refresh :global(.spin) {
+    animation: cube-picker-spin 900ms linear infinite;
+  }
+  @keyframes cube-picker-spin {
+    to { transform: rotate(360deg); }
   }
   .cube-picker__empty {
     margin: 0;

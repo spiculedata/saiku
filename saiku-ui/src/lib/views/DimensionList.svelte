@@ -534,7 +534,12 @@
     padding-left: 0;
   }
   .tree .tree {
-    padding-left: var(--space-4);
+    /* Tighter per-level indent + a vertical guide line, file-browser
+       style. Helps deep cubes (Stores → Country → State → City → ...)
+       stay readable without consuming the whole sidebar width. */
+    padding-left: var(--space-3);
+    margin-left: var(--space-2);
+    border-left: 1px solid var(--border);
   }
   .tree__empty {
     color: var(--fg-subtle);

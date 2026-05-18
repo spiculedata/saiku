@@ -280,7 +280,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
-    padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+    padding: var(--space-2) var(--space-3);
     color: var(--fg-muted);
     border-bottom: 2px solid transparent;
     background: transparent;
@@ -288,6 +288,7 @@
     border-left: 0;
     border-right: 0;
     font: inherit;
+    font-size: var(--fs-sm);
     cursor: pointer;
     max-width: 18rem;
   }

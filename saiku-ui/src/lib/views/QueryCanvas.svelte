@@ -20,7 +20,8 @@
   import { looksLikeTimeHierarchy } from "$lib/modals/dateFilterMdx";
   import ContextMenu from "$lib/components/ContextMenu.svelte";
   type ContextMenuItem = { id: string; label: string; disabled?: boolean; danger?: boolean; sep?: boolean };
-  import { MoreHorizontal, Loader2, XCircle, ChevronDown, Settings } from "lucide-svelte";
+  import { MoreHorizontal, Loader2, XCircle, ChevronDown, Settings, Sparkles } from "lucide-svelte";
+  import EmptyState from "$lib/components/EmptyState.svelte";
   import { listLevelMembers, listRootMembers, type SaikuMember } from "$lib/api/discover";
   import { datasources } from "$lib/stores/datasources.svelte";
   import { drillthrough as fetchDrillthrough, type QueryResult } from "$lib/api/query";
@@ -868,7 +869,11 @@
           <CellsetTable result={query.result} />
         {/if}
       {:else}
-        <p class="canvas__hint">{i18n.t("canvas.buildPrompt")}</p>
+        <EmptyState
+          icon={Sparkles}
+          title="Build a query"
+          description={i18n.t("canvas.buildPrompt")}
+        />
       {/if}
     </div>
     </div>
