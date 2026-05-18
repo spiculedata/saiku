@@ -27,7 +27,9 @@
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import PermissionsModal from "$lib/modals/PermissionsModal.svelte";
-  import { ShieldCheck } from "lucide-svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
+  import EmptyState from "$lib/components/EmptyState.svelte";
+  import { ShieldCheck, LayoutDashboard } from "lucide-svelte";
 
   let entries = $state<RepositoryNode[]>([]);
   let loading = $state<boolean>(true);
@@ -171,13 +173,16 @@
   {/if}
 
   {#if loading}
-    <p class="muted">Loading dashboards…</p>
+    <Skeleton rows={4} variant="list" />
   {:else if loadError}
     <div class="error">{loadError}</div>
   {:else if entries.length === 0}
-    <p class="muted">
-      No dashboards yet. Click <strong>+ New dashboard</strong> to create the first one.
-    </p>
+    <EmptyState
+      icon={LayoutDashboard}
+      title="No dashboards yet"
+      description="Build your first dashboard from cubes, queries, and KPIs."
+      action={{ label: "+ New dashboard", onClick: handleNew }}
+    />
   {:else}
     <ul class="list">
       {#each entries as e (e.path)}
@@ -265,9 +270,6 @@
   }
   .btn.danger:hover {
     background: color-mix(in srgb, var(--danger) 12%, transparent);
-  }
-  .muted {
-    color: var(--fg-muted);
   }
   .error {
     padding: 0.5rem 0.75rem;

@@ -141,6 +141,64 @@ a:hover {
   color: var(--danger);
 }
 
+/* ----------------------------------------------------------------- *
+ * Data grid — the canonical look for admin / settings tables.
+ *
+ * Replaces the per-component `.grid` declarations in UsersAdmin,
+ * DatasourcesAdmin, SchemasAdmin (and similar) that all defined
+ * slightly different versions of the same intent. Provides:
+ *   - consistent --space-3 cell padding (was --space-2 — too cramped)
+ *   - semibold header weight via token
+ *   - zebra stripes on tbody rows
+ *   - hover affordance using --bg-hover
+ *
+ * Use `.data-grid` on a <table>; the rest follows from descendant
+ * selectors. Action-column cells should use `.data-grid__actions`
+ * for a right-aligned flex row of buttons.
+ * ----------------------------------------------------------------- */
+.data-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.data-grid th,
+.data-grid td {
+  padding: var(--space-3);
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-grid th {
+  background: var(--bg-muted);
+  font-weight: var(--weight-semibold);
+  color: var(--fg);
+}
+
+.data-grid tbody tr {
+  transition: background var(--duration-fast);
+}
+
+.data-grid tbody tr:nth-child(even) {
+  background: var(--bg-subtle);
+}
+
+.data-grid tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.data-grid__actions {
+  display: flex;
+  gap: var(--space-1);
+  justify-content: flex-end;
+}
+
+.data-grid__empty {
+  text-align: center;
+  color: var(--fg-muted);
+  padding: var(--space-5);
+}
+
 .btn--primary {
   background: var(--accent);
   color: var(--accent-fg);

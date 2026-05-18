@@ -9,8 +9,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Path-filter once so the downstream jobs can skip when nothing they care
+  # about changed. A skipped job reports as "skipped" and counts as passing
+  # for branch protection, so listing every job as a required check is safe.
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      java: ${{ steps.filter.outputs.java }}
+      ui: ${{ steps.filter.outputs.ui }}
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          # Force-true on push so the merge commit to development always
+          # exercises everything regardless of which file moved last.
+          predicate-quantifier: every
+          filters: |
+            java:
+              - 'saiku-bom/**'
+              - 'saiku-core/**'
+              - 'saiku-webapp/**'
+              - 'saiku-launcher/**'
+              - 'lib/repo/**'
+              - 'pom.xml'
+              - '**/pom.xml'
+              - '.github/workflows/ci.yml'
+              - '.github/test-floors.json'
+            ui:
+              - 'saiku-ui/**'
+              - '.github/workflows/ci.yml'
+            docs:
+              - 'docs/**'
+              - 'README.md'
+              - 'CLAUDE.md'
+
   build:
     name: build (JDK 21, ${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.java == 'true' || github.event_name == 'push'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -77,12 +116,38 @@ jobs:
           done < <(jq -r '.modules | to_entries[] | "\(.key)\t\(.value)"' "$FLOORS")
           exit "$fail"
 
+  ui:
+    name: ui (svelte-check + vitest)
+    needs: changes
+    if: needs.changes.outputs.ui == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: saiku-ui
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: saiku-ui/package-lock.json
+      - name: Install deps
+        run: npm ci
+      - name: svelte-check + tsc
+        run: npm run check
+      - name: vitest
+        run: npm test -- --run
+
   dist:
     name: bundle (saiku-dist zip)
+    needs: changes
+    if: needs.changes.outputs.java == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
     # Independent of build — give people a downloadable bundle even if a slow
     # integration test in `build` is still running. CI passing the bundle ⇔
-    # the launcher fat-JAR is reproducible from this commit.
+    # the launcher fat-JAR is reproducible from this commit. Skipped on
+    # UI-only PRs since the launcher hasn't changed.
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK 21

@@ -5,6 +5,7 @@
   import { i18n } from "$lib/stores/i18n.svelte";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
   import { generateSchemaHref, generateSchemaLabel } from "./dataSourceActions";
 
   let list = $state<AdminDatasource[]>([]);
@@ -84,9 +85,9 @@
   </header>
   {#if error}<p class="callout callout--danger">{error}</p>{/if}
   {#if loading}
-    <p>Loading…</p>
+    <Skeleton rows={5} variant="table" />
   {:else}
-    <table class="grid">
+    <table class="data-grid">
       <thead><tr><th>Name</th><th>Driver</th><th>Type</th><th>Schema</th><th></th></tr></thead>
       <tbody>
         {#each list as ds}
@@ -95,7 +96,7 @@
             <td>{ds.driver}</td>
             <td>{ds.type}</td>
             <td>{ds.schemaName ?? ""}</td>
-            <td class="row-actions">
+            <td class="data-grid__actions">
               <a
                 class="btn"
                 data-testid="generate-schema-link"
@@ -110,7 +111,7 @@
           </tr>
         {/each}
         {#if list.length === 0}
-          <tr><td colspan="5" class="empty">No datasources.</td></tr>
+          <tr><td colspan="5" class="data-grid__empty">No datasources.</td></tr>
         {/if}
       </tbody>
     </table>
@@ -177,11 +178,7 @@
 <style>
   .pane__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); }
   h2 { margin: 0; }
-  .grid { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
-  .grid th, .grid td { padding: var(--space-2); border-bottom: 1px solid var(--border); text-align: left; }
-  .grid th { background: var(--bg-muted); font-weight: 600; }
-  .row-actions { display: flex; gap: var(--space-1); justify-content: flex-end; }
-  .empty { text-align: center; color: var(--fg-muted); padding: var(--space-4); }
+  /* .data-grid / .data-grid__actions / .data-grid__empty come from app.css */
   .row { display: flex; gap: var(--space-3); }
   .field--grow { flex: 1; }
 </style>
