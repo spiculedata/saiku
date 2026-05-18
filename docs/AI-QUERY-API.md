@@ -1,7 +1,7 @@
 # Saiku AI Query API — Usage Guide
 
 A typed REST surface at `/saiku/api/ai/*` for agents and LLMs to query
-Saiku OLAP cubes **without ever seeing MDX**. The agent fetches a typed
+Saiku Semantic Layer cubes **without ever seeing MDX**. The agent fetches a typed
 schema, fills in a JSON request against it, the server validates names
 against the live cube, builds MDX internally, and returns formatted
 results.
