@@ -160,13 +160,13 @@
   .modal__title {
     margin: 0;
     font-size: var(--fs-lg);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
   }
   .modal__close {
     background: transparent;
     border: 0;
     color: var(--fg-muted);
-    font-size: 24px;
+    font-size: var(--fs-xl);
     line-height: 1;
     cursor: pointer;
     padding: 0 var(--space-1);

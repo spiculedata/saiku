@@ -73,6 +73,6 @@
   }
   .ctx-menu__item:hover:not(:disabled) { background: var(--bg-subtle); }
   .ctx-menu__item:disabled { color: var(--fg-subtle); cursor: default; }
-  .ctx-menu__item.danger { color: #e06c75; }
+  .ctx-menu__item.danger { color: var(--danger); }
   .ctx-menu__sep { height: 1px; background: var(--border); margin: 3px 0; }
 </style>
