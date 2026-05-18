@@ -183,6 +183,68 @@ function extractFromThinQuery(thinQueryJson: unknown): Omit<ExtractedTarget, "ti
   return out;
 }
 
+/** Row-axis (dim, hier, level) triple from a saved query, used by the
+ *  reference-tile click-to-filter capture. Charts read the first entry;
+ *  tables match clicked column captions against the level field. */
+export interface RowAxisRef {
+  dimension: string;
+  hierarchy: string;
+  level: string;
+}
+
+/** Fetch + parse a saved-query reference and return the ROW-axis
+ *  (dim, hier, level) triples in declared order. Empty on any failure
+ *  or when the query has no row axis (column-only or measure-only
+ *  reports). Used by ChartTile / TableTile click-to-filter when the
+ *  tile is bound to a saved query — inline tiles read the same shape
+ *  directly off `tile.query.body.rows`. */
+export async function inferRowAxesFromReference(path: string): Promise<RowAxisRef[]> {
+  try {
+    const raw = await getResource(path);
+    const parsed = JSON.parse(raw) as unknown;
+    return extractAxisRefs(parsed, "ROWS");
+  } catch {
+    return [];
+  }
+}
+
+function extractAxisRefs(thinQueryJson: unknown, axisName: string): RowAxisRef[] {
+  if (!thinQueryJson || typeof thinQueryJson !== "object") return [];
+  const tq = thinQueryJson as Record<string, unknown>;
+  const queryModel = tq.queryModel as Record<string, unknown> | undefined;
+  if (!queryModel) return [];
+  const axes = queryModel.axes as Record<string, unknown> | undefined;
+  if (!axes) return [];
+  const axis = axes[axisName] as Record<string, unknown> | undefined;
+  if (!axis) return [];
+  const hierarchies = axis.hierarchies;
+  if (!Array.isArray(hierarchies)) return [];
+
+  const out: RowAxisRef[] = [];
+  for (const h of hierarchies) {
+    if (!h || typeof h !== "object") continue;
+    const hier = h as Record<string, unknown>;
+    const dim = asString(hier.dimension);
+    let hierName = asString(hier.caption);
+    if (!hierName) {
+      const raw = asString(hier.name);
+      if (raw) {
+        const m = raw.match(/\[([^\]]+)\]\s*$/);
+        hierName = m ? m[1] : raw;
+      }
+    }
+    const levels = hier.levels as Record<string, unknown> | undefined;
+    if (!dim || !hierName || !levels || typeof levels !== "object") continue;
+    for (const levelKey of Object.keys(levels)) {
+      const level = levels[levelKey] as Record<string, unknown> | undefined;
+      const levelName = asString(level?.name) ?? levelKey;
+      if (!levelName) continue;
+      out.push({ dimension: dim, hierarchy: hierName, level: levelName });
+    }
+  }
+  return out;
+}
+
 /** Fetch + parse a saved-query reference into ExtractedTargets. Returns
  *  [] on any failure (missing file, unparseable JSON, missing cube) so
  *  the suggestion panel degrades gracefully. */
