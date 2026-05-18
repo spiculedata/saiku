@@ -56,7 +56,7 @@
   .text-tile :global(h2),
   .text-tile :global(h3) {
     margin: 0.25em 0;
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
   }
   .text-tile :global(p) {
     margin: 0.25em 0;

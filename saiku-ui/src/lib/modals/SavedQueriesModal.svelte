@@ -344,7 +344,7 @@
     font: inherit;
     padding: 0;
   }
-  .saved__name { font-weight: 500; }
+  .saved__name { font-weight: var(--weight-medium); }
   .saved__path { color: var(--fg-subtle); font-size: var(--fs-xs); }
   .saved__actions { display: flex; gap: 2px; }
   /* .icon-btn / .icon-btn--danger come from app.css */

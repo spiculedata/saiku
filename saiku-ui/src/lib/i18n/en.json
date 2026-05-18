@@ -1,6 +1,6 @@
 {
   "brand": "saiku",
-  "topbar.workspace": "Workspace",
+  "topbar.workspace": "Query Editor",
   "topbar.admin": "Admin",
   "topbar.signOut": "Sign out",
   "topbar.fullscreen.enter": "Enter fullscreen",

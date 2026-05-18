@@ -139,7 +139,7 @@
     border-bottom: 1px solid var(--border);
   }
   .topbar__brand {
-    font-weight: 700;
+    font-weight: var(--weight-bold);
     letter-spacing: 0.02em;
     display: flex;
     align-items: center;

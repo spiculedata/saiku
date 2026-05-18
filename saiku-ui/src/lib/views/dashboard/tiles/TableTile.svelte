@@ -313,7 +313,7 @@
   }
   th {
     background: var(--bg-muted);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     position: sticky;
     top: 0;
     z-index: 1;

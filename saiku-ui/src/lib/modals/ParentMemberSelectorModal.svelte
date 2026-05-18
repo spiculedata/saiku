@@ -64,6 +64,6 @@
     text-align: left;
   }
   .row:hover { background: var(--bg-subtle); }
-  .name { font-weight: 500; }
+  .name { font-weight: var(--weight-medium); }
   .un { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--fg-subtle); }
 </style>

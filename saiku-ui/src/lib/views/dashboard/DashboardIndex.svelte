@@ -308,7 +308,7 @@
     min-width: 0;
   }
   .name {
-    font-weight: 500;
+    font-weight: var(--weight-medium);
   }
   .path {
     font-size: 0.75rem;

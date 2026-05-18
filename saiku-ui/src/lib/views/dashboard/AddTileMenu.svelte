@@ -137,7 +137,7 @@
   }
   .label {
     display: block;
-    font-weight: 500;
+    font-weight: var(--weight-medium);
   }
   .hint {
     display: block;

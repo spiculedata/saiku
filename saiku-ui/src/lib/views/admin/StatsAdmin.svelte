@@ -237,13 +237,13 @@
     border-radius: var(--radius);
   }
   .kpi__label { font-size: var(--fs-xs); color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-  .kpi__value { font-size: 24px; font-weight: 700; color: var(--fg); }
+  .kpi__value { font-size: 24px; font-weight: var(--weight-bold); color: var(--fg); }
   .kpi__sub { font-size: var(--fs-xs); color: var(--fg-muted); }
   .block { display: flex; flex-direction: column; gap: var(--space-2); }
   .table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
   table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
   th, td { padding: 6px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--border); }
-  th { background: var(--bg-muted); font-weight: 600; }
+  th { background: var(--bg-muted); font-weight: var(--weight-semibold); }
   tr:last-child td { border-bottom: 0; }
   .mdx { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--fg-muted); }
 </style>

@@ -220,7 +220,7 @@
   .head h2 {
     margin: 0;
     font-size: 1rem;
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
   }
   .close {
     border: none;
@@ -276,7 +276,7 @@
   }
   .level {
     font-size: 0.9375rem;
-    font-weight: 500;
+    font-weight: var(--weight-medium);
   }
   .path, .meta {
     font-size: 0.75rem;

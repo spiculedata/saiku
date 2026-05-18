@@ -57,7 +57,7 @@
   .dt { border-collapse: separate; border-spacing: 0; width: 100%; font-size: var(--fs-sm); }
   .dt th, .dt td { padding: 3px 9px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); white-space: nowrap; text-align: left; }
   .dt td.n { text-align: right; font-variant-numeric: tabular-nums; }
-  .dt th { position: sticky; top: 0; background: var(--bg-muted); color: var(--fg); font-weight: 600; z-index: 1; }
+  .dt th { position: sticky; top: 0; background: var(--bg-muted); color: var(--fg); font-weight: var(--weight-semibold); z-index: 1; }
   .empty { color: var(--fg-muted); padding: var(--space-3); }
   .hint { color: var(--fg-subtle); font-size: var(--fs-xs); margin-top: var(--space-2); }
 </style>

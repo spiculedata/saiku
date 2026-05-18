@@ -133,6 +133,7 @@
     background: var(--bg-overlay);
     border: 0;
     cursor: pointer;
+    animation: saiku-overlay-in var(--duration-fast) ease;
   }
   .modal__panel {
     position: relative;
@@ -146,6 +147,7 @@
     display: flex;
     flex-direction: column;
     min-width: 320px;
+    animation: saiku-panel-in var(--duration-normal) ease;
   }
   .modal__panel:focus { outline: none; }
   .modal__panel--sm { width: 360px; }

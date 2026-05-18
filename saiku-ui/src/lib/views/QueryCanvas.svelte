@@ -1050,7 +1050,7 @@
     align-items: center;
     justify-content: space-between;
     font-size: var(--fs-xs);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--fg-muted);

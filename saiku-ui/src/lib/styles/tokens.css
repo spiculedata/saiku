@@ -44,6 +44,20 @@
   --icon-md: 16px;
   --icon-lg: 20px;
 
+  /* Categorical chart palette read by ChartView.svelte at runtime and
+     handed to ECharts as the `color: [...]` array. Anchored on the
+     primary --accent so charts feel cohesive with the surrounding UI
+     chrome. Dark theme overrides these below with brighter, lower-
+     saturation variants tuned for legibility on the dark background. */
+  --chart-1: #4f46e5;
+  --chart-2: #0ea5e9;
+  --chart-3: #10b981;
+  --chart-4: #f59e0b;
+  --chart-5: #ef4444;
+  --chart-6: #a855f7;
+  --chart-7: #ec4899;
+  --chart-8: #14b8a6;
+
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.16);
@@ -60,7 +74,7 @@
   --bg-overlay: rgba(15, 23, 42, 0.32);
   --fg: #0f172a;
   --fg-muted: #475569;
-  --fg-subtle: #64748b;
+  --fg-subtle: #556378;
   --border: #e2e8f0;
   --border-strong: #cbd5e1;
 
@@ -93,7 +107,7 @@
     --bg-overlay: rgba(0, 0, 0, 0.6);
     --fg: #e6e8ec;
     --fg-muted: #a8aeba;
-    --fg-subtle: #7a8190;
+    --fg-subtle: #8b94a3;
     --border: #242935;
     --border-strong: #333a49;
 
@@ -112,6 +126,15 @@
     --warning-soft: #2b1d09;
     --warning-strong: #fcd34d;
 
+    --chart-1: #818cf8;
+    --chart-2: #38bdf8;
+    --chart-3: #34d399;
+    --chart-4: #fbbf24;
+    --chart-5: #f87171;
+    --chart-6: #c084fc;
+    --chart-7: #f472b6;
+    --chart-8: #2dd4bf;
+
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
     --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.6);
     --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.7);
@@ -128,7 +151,7 @@
   --bg-overlay: rgba(0, 0, 0, 0.6);
   --fg: #e6e8ec;
   --fg-muted: #a8aeba;
-  --fg-subtle: #7a8190;
+  --fg-subtle: #8b94a3;
   --border: #242935;
   --border-strong: #333a49;
 
@@ -147,6 +170,15 @@
   --warning-soft: #2b1d09;
   --warning-strong: #fcd34d;
 
+  --chart-1: #818cf8;
+  --chart-2: #38bdf8;
+  --chart-3: #34d399;
+  --chart-4: #fbbf24;
+  --chart-5: #f87171;
+  --chart-6: #c084fc;
+  --chart-7: #f472b6;
+  --chart-8: #2dd4bf;
+
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.6);
   --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.7);
@@ -162,7 +194,7 @@
   --bg-overlay: rgba(15, 23, 42, 0.32);
   --fg: #0f172a;
   --fg-muted: #475569;
-  --fg-subtle: #64748b;
+  --fg-subtle: #556378;
   --border: #e2e8f0;
   --border-strong: #cbd5e1;
 
@@ -180,4 +212,13 @@
   --warning: #d97706;
   --warning-soft: #fffbeb;
   --warning-strong: #b45309;
+
+  --chart-1: #4f46e5;
+  --chart-2: #0ea5e9;
+  --chart-3: #10b981;
+  --chart-4: #f59e0b;
+  --chart-5: #ef4444;
+  --chart-6: #a855f7;
+  --chart-7: #ec4899;
+  --chart-8: #14b8a6;
 }
