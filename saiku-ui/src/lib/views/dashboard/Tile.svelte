@@ -49,7 +49,11 @@
 </script>
 
 <div class="tile" data-tile-type={tile.type}>
-  <header class="tile-header">
+  <header
+    class="tile-header"
+    class:tile-header--draggable={!readOnly}
+    data-drag-handle={readOnly ? undefined : tile.id}
+  >
     <span class="title">{tile.title ?? defaultTitle(tile)}</span>
     {#if !readOnly}
       <div class="tile-actions">
@@ -123,6 +127,15 @@
     border-bottom: 1px solid var(--border);
     background: var(--bg-muted);
     font-size: 0.8125rem;
+    /* Hint that the header doubles as the drag handle in edit mode.
+       Read-only dashboards opt out via .tile-header--draggable. */
+    user-select: none;
+  }
+  .tile-header--draggable {
+    cursor: grab;
+  }
+  .tile-header--draggable:active {
+    cursor: grabbing;
   }
   .title {
     font-weight: var(--weight-medium);

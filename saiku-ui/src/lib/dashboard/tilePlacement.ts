@@ -181,3 +181,42 @@ export function repositionTile(
 
   return { ok: true, tiles: updated };
 }
+
+/**
+ * Pull every tile (except {@code anchoredId}) as far upward as possible
+ * without overlapping a higher-priority tile or the anchored tile.
+ * Called after a resize-shrink to reclaim the freed vertical space:
+ * tiles that were below the shrunk tile slide up to be adjacent.
+ *
+ * <p>Not called after a drag — drag-drop is treated as an explicit
+ * placement, so any gap a user creates by dragging a tile downward is
+ * preserved until they do another resize-shrink (which kicks gravity
+ * back in).
+ */
+export function compactUpward(tiles: DashboardTile[], anchoredId: string): DashboardTile[] {
+  const next = tiles.map((t) => ({ ...t }));
+  let moved = true;
+  const safety = 1000;
+  for (let iter = 0; moved && iter < safety; iter++) {
+    moved = false;
+    // Settle upward in (y, x) order so upper tiles claim their final
+    // y position before lower ones probe for space.
+    const order = next
+      .map((_, i) => i)
+      .sort((a, b) => next[a].y - next[b].y || next[a].x - next[b].x);
+    for (const i of order) {
+      const t = next[i];
+      if (t.id === anchoredId) continue;
+      while (t.y > 0) {
+        const probeY = t.y - 1;
+        const blocked = next.some(
+          (o, oi) => oi !== i && rectsOverlap(t.x, probeY, t.w, t.h, o.x, o.y, o.w, o.h),
+        );
+        if (blocked) break;
+        t.y = probeY;
+        moved = true;
+      }
+    }
+  }
+  return next;
+}
