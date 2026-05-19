@@ -229,6 +229,43 @@ export function newTileId(): string {
   return cryptoUuid();
 }
 
+/** Pure: clone a Dashboard with a fresh top-level id and fresh per-tile
+ *  ids, so the copy has no overlap with the source for store keying /
+ *  $effect identity / ACL boundaries. Tiles' positions, sizes, cube
+ *  bindings, queries, and KPI / filter config are preserved verbatim;
+ *  only ids change.
+ *
+ *  When {@code newName} is provided it replaces the dashboard name;
+ *  otherwise the source name with " (copy)" appended is used.
+ *
+ *  Pure / immutable: the source is not mutated. Issue #939. */
+export function cloneDashboardWithFreshIds(source: Dashboard, newName?: string): Dashboard {
+  return {
+    ...source,
+    id: cryptoUuid(),
+    name: newName ?? `${source.name} (copy)`,
+    layout: {
+      ...source.layout,
+      tiles: source.layout.tiles.map((t) => ({ ...t, id: cryptoUuid() })),
+    },
+  };
+}
+
+/** Glue: load a dashboard at {@code srcPath}, clone it with fresh ids,
+ *  save the clone at {@code destPath}, and return the new dashboard.
+ *  The caller is responsible for picking a non-colliding destPath —
+ *  saveDashboard overwrites by design. Issue #939. */
+export async function duplicateDashboard(
+  srcPath: string,
+  destPath: string,
+  newName?: string,
+): Promise<Dashboard> {
+  const source = await loadDashboard(srcPath);
+  const cloned = cloneDashboardWithFreshIds(source, newName);
+  await saveDashboard(destPath, cloned);
+  return cloned;
+}
+
 /* ---------------------------- internals ---------------------------- */
 
 /** URL-encode each path segment but leave slashes as-is — DashboardResource

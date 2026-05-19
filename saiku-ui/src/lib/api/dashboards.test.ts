@@ -2,11 +2,18 @@
  * Unit tests for normaliseDashboardPath — the path-rewriter that issue #945
  * relies on to keep new dashboards inside the user's home, even when the
  * user reaches the editor via a hand-typed URL.
+ *
+ * Plus cloneDashboardWithFreshIds for issue #939 (catalogue Duplicate
+ * action) — the pure half of the duplicate flow.
  */
 
 import { describe, expect, it } from "vitest";
 
-import { normaliseDashboardPath } from "./dashboards";
+import {
+  cloneDashboardWithFreshIds,
+  normaliseDashboardPath,
+  type Dashboard,
+} from "./dashboards";
 
 describe("normaliseDashboardPath", () => {
   it("prefixes a bare filename with homes/<user>", () => {
@@ -53,5 +60,103 @@ describe("normaliseDashboardPath", () => {
 
   it("allows a homes/... path even without a current user", () => {
     expect(normaliseDashboardPath("homes/other/x.saikudash", "")).toBe("homes/other/x.saikudash");
+  });
+});
+
+describe("cloneDashboardWithFreshIds", () => {
+  /** A representative source dashboard with two tiles — enough to
+   *  exercise the recursive id-rewrite and verify the rest of the
+   *  shape (cube binding, query body, position) survives untouched. */
+  function makeSource(): Dashboard {
+    return {
+      id: "src-dash-id",
+      name: "Quarterly sales",
+      version: 1,
+      layout: {
+        cols: 12,
+        tiles: [
+          {
+            id: "tile-1",
+            x: 0,
+            y: 0,
+            w: 6,
+            h: 4,
+            type: "chart",
+            chartType: "bar",
+            cube: { connectionName: "c", catalog: "C", schema: "S", cubeName: "Sales" },
+            query: { kind: "inline", body: { measures: [{ name: "Store Sales" }] } },
+          },
+          {
+            id: "tile-2",
+            x: 6,
+            y: 0,
+            w: 3,
+            h: 2,
+            type: "kpi",
+            kpi: { measure: "[Measures].[Store Sales]", format: "currency" },
+          },
+        ],
+      },
+      filters: [
+        { dimension: "Time", hierarchy: "Time", level: "Year", members: ["[Time].[2024]"] },
+      ],
+    };
+  }
+
+  it("mints a fresh top-level dashboard id", () => {
+    const src = makeSource();
+    const copy = cloneDashboardWithFreshIds(src);
+    expect(copy.id).not.toBe(src.id);
+    expect(copy.id.length).toBeGreaterThan(0);
+  });
+
+  it("mints fresh ids for every tile, in the same order", () => {
+    const src = makeSource();
+    const copy = cloneDashboardWithFreshIds(src);
+    const srcIds = src.layout.tiles.map((t) => t.id);
+    const copyIds = copy.layout.tiles.map((t) => t.id);
+    expect(copyIds).toHaveLength(srcIds.length);
+    for (let i = 0; i < copyIds.length; i++) {
+      expect(copyIds[i]).not.toBe(srcIds[i]);
+    }
+    // Distinct tile ids within the copy.
+    expect(new Set(copyIds).size).toBe(copyIds.length);
+  });
+
+  it("appends ' (copy)' to the name when newName isn't supplied", () => {
+    const copy = cloneDashboardWithFreshIds(makeSource());
+    expect(copy.name).toBe("Quarterly sales (copy)");
+  });
+
+  it("uses the explicit newName when supplied", () => {
+    const copy = cloneDashboardWithFreshIds(makeSource(), "Exec view");
+    expect(copy.name).toBe("Exec view");
+  });
+
+  it("preserves every non-id field on tiles (position, cube, query, kpi)", () => {
+    const src = makeSource();
+    const copy = cloneDashboardWithFreshIds(src);
+    for (let i = 0; i < src.layout.tiles.length; i++) {
+      const a = src.layout.tiles[i];
+      const b = copy.layout.tiles[i];
+      const { id: _aId, ...aRest } = a;
+      const { id: _bId, ...bRest } = b;
+      void _aId;
+      void _bId;
+      expect(bRest).toEqual(aRest);
+    }
+  });
+
+  it("preserves dashboard-level filters verbatim", () => {
+    const src = makeSource();
+    const copy = cloneDashboardWithFreshIds(src);
+    expect(copy.filters).toEqual(src.filters);
+  });
+
+  it("does not mutate the source dashboard", () => {
+    const src = makeSource();
+    const snapshot = JSON.parse(JSON.stringify(src));
+    cloneDashboardWithFreshIds(src);
+    expect(src).toEqual(snapshot);
   });
 });
