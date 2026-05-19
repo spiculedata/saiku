@@ -115,7 +115,16 @@ export function installAuthInterceptor(): void {
     const res = await original(input, effectiveInit);
     if (res.status === 401 || res.status === 403) {
       // Only watch /rest/saiku/* — other 401s are someone else's problem.
-      if (url.includes("/rest/saiku/") && !url.includes("/rest/saiku/session")) {
+      // Carve-outs (silent no-op rather than session-ended modal):
+      //   /rest/saiku/session — the session probe itself; 401 is a
+      //     valid "not signed in" answer, not an error.
+      //   /rest/saiku/admin/version — bootstrap-time info fetch that
+      //     loadVersion() already swallows in try/catch (saiku#1004).
+      //     Belt-and-braces against future "harmless info endpoint
+      //     returns 403 to non-admins" bugs.
+      const isCarveOut =
+        url.includes("/rest/saiku/session") || url.includes("/rest/saiku/admin/version");
+      if (url.includes("/rest/saiku/") && !isCarveOut) {
         notify(res.status, url);
       }
     }
