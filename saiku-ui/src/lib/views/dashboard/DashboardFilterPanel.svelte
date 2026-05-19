@@ -27,6 +27,11 @@
     memberDescendsFromAny,
   } from "$lib/dashboard/cascadingFilters";
   import {
+    expandDateRange,
+    fromDateInputValue,
+    toDateInputValue,
+  } from "$lib/dashboard/dateRange";
+  import {
     listAiCubes,
     type AiCubeSummary,
     type CubeRef,
@@ -350,7 +355,38 @@
 
   function handleMemberChange(filterId: string, e: Event): void {
     const v = (e.target as HTMLSelectElement).value;
-    dashboardStore.updatePanelFilter(filterId, { members: v ? [v] : [] });
+    commitPanelMembers(filterId, v ? [v] : []);
+  }
+
+  /** Date-range pickers carry two HTML date inputs — local UI state
+   *  keyed by panel filter id. Persisted member expansion happens via
+   *  expandDateRange + commitPanelMembers; the raw date strings stay
+   *  client-side so we don't pollute the saved JSON with a UX-only
+   *  artefact. */
+  let dateRangeState = $state<Record<string, { from: string; to: string }>>({});
+
+  function dateRangeFor(filterId: string): { from: string; to: string } {
+    return dateRangeState[filterId] ?? { from: "", to: "" };
+  }
+
+  function setDateRange(filterId: string, from: string, to: string): void {
+    dateRangeState = { ...dateRangeState, [filterId]: { from, to } };
+    const f = dashboardStore.current?.filterPanel?.filters.find((p) => p.id === filterId);
+    if (!f) return;
+    const cat = memberCatalogues[filterId];
+    if (!cat?.members) {
+      // Members not loaded yet; bail and let the load $effect re-run
+      // with the new state when ready (next dateRange change retries).
+      return;
+    }
+    const fromDate = fromDateInputValue(from);
+    const toDate = fromDateInputValue(to);
+    const members = expandDateRange(fromDate, toDate, cat.members);
+    commitPanelMembers(filterId, members);
+  }
+
+  function commitPanelMembers(filterId: string, members: string[]): void {
+    dashboardStore.updatePanelFilter(filterId, { members });
     // An explicit panel pick replaces any transient click on the same
     // target — otherwise the click would keep overriding the user's
     // intentional choice and the chip strip would still show the click.
@@ -489,25 +525,48 @@
                 </span>
               {/if}
               <span class="picker-label">{f.level}</span>
-              <select
-                class="picker-select"
-                value={selected}
-                disabled={readOnly}
-                onchange={(e) => handleMemberChange(f.id, e)}
-              >
-                <option value="">— any —</option>
-                {#if displayOptions}
-                  {#each displayOptions as m (m.uniqueName)}
-                    <option value={m.uniqueName}>{m.caption}</option>
-                  {/each}
-                {:else if !f.cube}
-                  <option value="" disabled>(no cube on filter)</option>
-                {:else if cat?.loading}
-                  <option value="" disabled>Loading…</option>
-                {:else if cat?.error}
-                  <option value="" disabled>Error: {cat.error}</option>
-                {/if}
-              </select>
+              {#if f.widget === "date-range"}
+                {@const dr = dateRangeFor(f.id)}
+                <span class="date-range">
+                  <input
+                    type="date"
+                    class="picker-date"
+                    value={dr.from}
+                    disabled={readOnly}
+                    aria-label="From"
+                    onchange={(e) => setDateRange(f.id, (e.target as HTMLInputElement).value, dr.to)}
+                  />
+                  <span class="date-sep" aria-hidden="true">→</span>
+                  <input
+                    type="date"
+                    class="picker-date"
+                    value={dr.to}
+                    disabled={readOnly}
+                    aria-label="To"
+                    onchange={(e) => setDateRange(f.id, dr.from, (e.target as HTMLInputElement).value)}
+                  />
+                </span>
+              {:else}
+                <select
+                  class="picker-select"
+                  value={selected}
+                  disabled={readOnly}
+                  onchange={(e) => handleMemberChange(f.id, e)}
+                >
+                  <option value="">— any —</option>
+                  {#if displayOptions}
+                    {#each displayOptions as m (m.uniqueName)}
+                      <option value={m.uniqueName}>{m.caption}</option>
+                    {/each}
+                  {:else if !f.cube}
+                    <option value="" disabled>(no cube on filter)</option>
+                  {:else if cat?.loading}
+                    <option value="" disabled>Loading…</option>
+                  {:else if cat?.error}
+                    <option value="" disabled>Error: {cat.error}</option>
+                  {/if}
+                </select>
+              {/if}
               {#if !readOnly}
                 <button
                   type="button"
@@ -686,6 +745,23 @@
     background: var(--bg);
     font-size: 0.8125rem;
     max-width: 200px;
+  }
+  .date-range {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .picker-date {
+    padding: 0.125rem 0.25rem;
+    border: 1px solid var(--border-strong, var(--border));
+    border-radius: 4px;
+    background: var(--bg);
+    font-size: 0.8125rem;
+    font-family: inherit;
+  }
+  .date-sep {
+    color: var(--fg-muted);
+    font-size: 0.75rem;
   }
   .picker-remove {
     background: transparent;
