@@ -24,6 +24,8 @@
   import { listAllRoles } from "$lib/api/admin";
   import {
     deleteDashboard,
+    duplicateDashboard,
+    loadDashboard,
     newDashboard,
     normaliseDashboardPath,
     toRepoRelative,
@@ -39,7 +41,7 @@
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
-  import { ShieldCheck, LayoutDashboard, Star } from "lucide-svelte";
+  import { Copy, ShieldCheck, LayoutDashboard } from "lucide-svelte";
 
   let entries = $state<RepositoryNode[]>([]);
   let loading = $state<boolean>(true);
@@ -50,6 +52,10 @@
   let aclInitial = $state<AclEntry | null>(null);
   let aclRoles = $state<string[]>([]);
   let aclLoading = $state<boolean>(false);
+  /** Path of the dashboard currently being duplicated — used to disable
+   *  the per-row Duplicate button while the load + save round-trip is
+   *  in flight, so a double-click doesn't fire two duplicates. */
+  let duplicatingPath = $state<string | null>(null);
 
   let newModalOpen = $state<boolean>(false);
   let deletingPath = $state<string | null>(null);
@@ -132,33 +138,43 @@
     }
   }
 
-  /** Resolve {@code recentDashboards.all()} / {@code favouriteDashboards.all()}
-   *  against the live entry list so paths that no longer exist (or that
-   *  the user can't see for ACL reasons) don't show as broken links.
-   *  Preserves the source order (most-recent-first for recents,
-   *  alphabetical-by-name for favourites). */
-  function resolveEntries(paths: string[]): RepositoryNode[] {
-    const byPath = new Map(entries.map((e) => [e.path, e]));
-    const out: RepositoryNode[] = [];
-    for (const p of paths) {
-      const found = byPath.get(p);
-      if (found) out.push(found);
+  /** Duplicate the dashboard at {@code srcPath}: load it so we can
+   *  default the new-name prompt to the real {@code Dashboard.name}
+   *  (not the filename slug), prompt for a name + path, then call
+   *  duplicateDashboard which clones with fresh ids and saves. Issue #939. */
+  async function handleDuplicate(srcPath: string): Promise<void> {
+    duplicatingPath = srcPath;
+    createError = null;
+    try {
+      const source = await loadDashboard(srcPath);
+      // eslint-disable-next-line no-alert
+      const rawName = window.prompt("Copy name", `${source.name} (copy)`);
+      if (rawName == null) return; // cancelled
+      const name = rawName.trim() || `${source.name} (copy)`;
+      // eslint-disable-next-line no-alert
+      const rawPath = window.prompt(
+        "Repository path for the copy",
+        defaultHomePath() + "/" + slugify(name) + ".saikudash",
+      );
+      if (rawPath == null) return;
+      let path: string;
+      try {
+        path = normaliseDashboardPath(rawPath, session.current?.username ?? "");
+      } catch (e: unknown) {
+        createError = e instanceof Error ? e.message : String(e);
+        return;
+      }
+      if (!path.endsWith(".saikudash")) {
+        createError = "Path must end with .saikudash.";
+        return;
+      }
+      await duplicateDashboard(srcPath, path, name);
+      await goto(`${base}/dashboards/${path}`);
+    } catch (e: unknown) {
+      createError = e instanceof Error ? e.message : String(e);
+    } finally {
+      duplicatingPath = null;
     }
-    return out;
-  }
-
-  let recentEntries = $derived(resolveEntries(recentDashboards.all()));
-  let favouriteEntries = $derived(
-    resolveEntries(
-      favouriteDashboards
-        .all()
-        .slice()
-        .sort((a, b) => basename(a).localeCompare(basename(b))),
-    ),
-  );
-
-  function toggleFavourite(path: string): void {
-    favouriteDashboards.toggle(path);
   }
 
   function slugify(s: string): string {
