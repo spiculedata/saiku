@@ -65,16 +65,19 @@
   let referenceRowAxes = $state<RowAxisRef[] | null>(null);
 
   $effect(() => {
-    if (tile.cube) {
-      resolvedCube = tile.cube;
-      return;
-    }
+    if (tile.cube) resolvedCube = tile.cube;
+    // Row axes still need inferring for reference tiles even when the
+    // analyst picked the cube explicitly — click-to-filter needs the
+    // saved ThinQuery's axes regardless. Skip only when the tile is
+    // inline (axes live on the body directly).
     if (tile.query?.kind !== "reference" || inferenceAttempted) return;
     inferenceAttempted = true;
     const refPath = tile.query.path;
-    void inferCubeFromReference(refPath).then((inferred) => {
-      if (inferred) resolvedCube = inferred;
-    });
+    if (!tile.cube) {
+      void inferCubeFromReference(refPath).then((inferred) => {
+        if (inferred) resolvedCube = inferred;
+      });
+    }
     void inferRowAxesFromReference(refPath).then((axes) => {
       referenceRowAxes = axes;
     });
@@ -191,19 +194,21 @@
   })());
 
   /** Build the click-filter context for a row-header cell. The dashboard
-   *  level for the click is inferred from the tile's base query: we
-   *  match the column caption against the rows[]/columns[] axis level
-   *  captions in the AiQueryMetadata. */
-  function clickFilterForCell(column: string, cellValue: string): DashboardFilter | null {
-    // Find the row/column axis level whose caption corresponds to this
-    // column. For now this is best-effort: agents that need column-axis
-    // click capture (cross-join measures × time) will be served when
-    // task #14's live test pins the contract. For row-axis levels the
-    // header caption equals the level caption.
+   *  level for the click is inferred from the tile's base query — we
+   *  match the column caption against the row-axis level captions —
+   *  and the member ref is constructed as a full MDX unique name from
+   *  the row's parent-level captions so Mondrian can resolve an
+   *  ambiguous leaf (e.g. Quarter "Q2" which exists under every Year).
+   *
+   *  Without the parent path, the server-side resolver fails with
+   *  "Unable to find a member with name [Q2]" because Q2 of 1997 and
+   *  Q2 of 1998 collide. */
+  function clickFilterForCell(
+    column: string,
+    cellValue: string,
+    rowData: Record<string, AiCell | string>,
+  ): DashboardFilter | null {
     if (!tile.query) return null;
-    // Pick the row-axis set off the inline body or the lazy-inferred
-    // axes from the saved ThinQuery for reference tiles. If inference
-    // hasn't completed yet, the click is a no-op.
     let rows: Array<{ dimension: string; hierarchy: string; level: string }> | null = null;
     if (tile.query.kind === "inline") {
       const body = tile.query.body as {
@@ -214,26 +219,45 @@
       rows = referenceRowAxes;
     }
     if (!rows) return null;
-    const match = rows.find((ax) => ax.level === column);
-    if (!match) return null;
-    // The cell value is the formatted caption — we don't have the MDX
-    // unique name here. The server's filter applicability check will
-    // accept the caption AS the member ref in records format because
-    // the merge layer (effectiveQuery.mergeFilters) doesn't validate
-    // member uniqueNames — only dim/hier/level. The AI converter then
-    // resolves the caption to a unique name at query-execute time;
-    // mismatches surface as VALIDATION_ERROR for the agent to retry.
+    const matchIdx = rows.findIndex((ax) => ax.level === column);
+    if (matchIdx === -1) return null;
+    const match = rows[matchIdx];
+
+    // Walk the row axes from coarsest to finest, collecting captions
+    // for every level that sits in the same dim+hier as the clicked
+    // column up to and including the clicked level. Those captions
+    // become the dotted path in the constructed unique name.
+    const pathSegments: string[] = [];
+    for (let i = 0; i <= matchIdx; i++) {
+      const ax = rows[i];
+      if (ax.dimension !== match.dimension || ax.hierarchy !== match.hierarchy) continue;
+      const cell = rowData[ax.level];
+      const cap = typeof cell === "string" ? cell : (cell?.formatted ?? "");
+      if (!cap) return null;
+      pathSegments.push(cap);
+    }
+    // Mondrian unique-name format: [<dim>].[<hier>].[v1].[v2]…[vk].
+    // Captions wrapped in brackets verbatim; Saiku's existing schemas
+    // use bracket-quoted segments so spaces / dots are tolerated.
+    const uniqueName = `[${match.dimension}].[${match.hierarchy}].${pathSegments
+      .map((s) => `[${s}]`)
+      .join(".")}`;
     return {
       dimension: match.dimension,
       hierarchy: match.hierarchy,
       level: match.level,
-      members: [cellValue],
+      members: [uniqueName],
     };
   }
 
-  function handleCellClick(column: string, cellValue: string, isRowHeader: boolean): void {
+  function handleCellClick(
+    column: string,
+    cellValue: string,
+    isRowHeader: boolean,
+    rowData: Record<string, AiCell | string>,
+  ): void {
     if (!isRowHeader) return;
-    const filter = clickFilterForCell(column, cellValue);
+    const filter = clickFilterForCell(column, cellValue, rowData);
     if (!filter) return;
     onClickFilter?.(filter);
   }
@@ -275,13 +299,13 @@
                   <td
                     class:row-header={col.isRowHeader}
                     class:clickable={col.isRowHeader}
-                    onclick={() => handleCellClick(col.caption, renderCell(v), col.isRowHeader)}
+                    onclick={() => handleCellClick(col.caption, renderCell(v), col.isRowHeader, row)}
                     role={col.isRowHeader ? "button" : undefined}
                     tabindex={col.isRowHeader ? 0 : undefined}
                     onkeydown={(e) => {
                       if (col.isRowHeader && (e.key === "Enter" || e.key === " ")) {
                         e.preventDefault();
-                        handleCellClick(col.caption, renderCell(v), col.isRowHeader);
+                        handleCellClick(col.caption, renderCell(v), col.isRowHeader, row);
                       }
                     }}
                   >

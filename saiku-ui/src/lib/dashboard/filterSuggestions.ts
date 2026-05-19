@@ -21,7 +21,7 @@
  */
 
 import { getResource } from "$lib/api/repository";
-import type { CubeRef, DashboardTile } from "$lib/api/dashboards";
+import type { CubeRef, DashboardTile, PanelFilter } from "$lib/api/dashboards";
 
 /** Fetch a saved .saiku ThinQuery and extract its cube ref. Used by the
  *  tile renderers when a reference tile was authored without an explicit
@@ -307,16 +307,16 @@ export async function suggestFiltersForTilesAsync(tiles: DashboardTile[]): Promi
 }
 
 /** Filter the suggestion list down to ones whose target isn't already
- *  surfaced by an existing filter-widget tile. Stops the panel offering
- *  duplicates when the author has already added some widgets. */
+ *  exposed by an existing panel filter. Stops the panel offering
+ *  duplicates when the author has already added some entries. */
 export function pruneAlreadyExposed(
   suggestions: FilterSuggestion[],
-  tiles: DashboardTile[],
+  panelFilters: PanelFilter[],
 ): FilterSuggestion[] {
   const exposed = new Set<string>();
-  for (const tile of tiles) {
-    if (tile.type !== "filter" || !tile.cube || !tile.target) continue;
-    exposed.add(`${cubeKey(tile.cube)}|${tile.target.dimension}/${tile.target.hierarchy}/${tile.target.level}`);
+  for (const f of panelFilters) {
+    if (!f.cube) continue;
+    exposed.add(`${cubeKey(f.cube)}|${f.dimension}/${f.hierarchy}/${f.level}`);
   }
   return suggestions.filter((s) => !exposed.has(s.id));
 }

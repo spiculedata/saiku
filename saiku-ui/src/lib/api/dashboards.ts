@@ -124,12 +124,39 @@ export interface DashboardLayout {
   tiles: DashboardTile[];
 }
 
+/** One entry in the unified filter panel. Inherits the dim/hier/level
+ *  target shape from DashboardFilter and adds:
+ *   - {@code id}: stable identifier so the drag-reorder UI can key
+ *     entries without re-deriving them from target identity.
+ *   - {@code widget}: the picker style (single-select / multi-select /
+ *     date-range). Mirrors the {@code widget} field that used to live
+ *     on filter-type tiles. Required so a panel entry always renders
+ *     with a definite control.
+ *   - {@code cube}: source cube ref. Lets the panel populate the
+ *     member dropdown via /ai/members/search without having to derive
+ *     the cube from a sibling tile. Optional for forward-compat. */
+export interface PanelFilter extends DashboardFilter {
+  id: string;
+  widget: FilterWidget;
+  cube?: CubeRef;
+}
+
+/** Unified filter panel: docks at the top of the dashboard editor as
+ *  a collapsible row of compact pickers. Replaces the per-filter-tile
+ *  model from the dashboards v1 design — filter widgets no longer
+ *  occupy grid cells. See saiku#996. */
+export interface DashboardFilterPanel {
+  collapsed: boolean;
+  filters: PanelFilter[];
+}
+
 export interface Dashboard {
   id: string;
   name: string;
   version: number;
   layout: DashboardLayout;
   filters: DashboardFilter[];
+  filterPanel?: DashboardFilterPanel;
 }
 
 export interface DashboardSaveResponse {

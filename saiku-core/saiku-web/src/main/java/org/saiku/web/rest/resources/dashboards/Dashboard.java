@@ -33,4 +33,11 @@ public class Dashboard {
     /** Default filter values applied on load. Each entry becomes an
      *  {@code ActiveFilter} with {@code source: 'default'} client-side. */
     public List<DashboardFilter> filters = new ArrayList<>();
+
+    /** Unified filter panel docked at the top of the editor (saiku#996).
+     *  Replaces the per-filter-tile model — filter widgets no longer
+     *  occupy grid cells. Null on dashboards saved before the migration;
+     *  the client populates it on first load by promoting any
+     *  {@code type:"filter"} tiles. */
+    public DashboardFilterPanel filterPanel;
 }

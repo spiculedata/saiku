@@ -18,7 +18,11 @@ import {
   normaliseDashboardPath,
   saveDashboard,
   type Dashboard,
+  type DashboardFilter,
+  type DashboardFilterPanel,
   type DashboardTile,
+  type FilterWidget,
+  type PanelFilter,
 } from "$lib/api/dashboards";
 import { session } from "$lib/stores/session.svelte";
 
@@ -68,12 +72,20 @@ class DashboardStore {
   }
 
   /** Replace the active dashboard wholesale (e.g. from a deep-link hydrate
-   *  or an opened saved file). Resets dirty state. */
+   *  or an opened saved file). Resets dirty state.
+   *
+   *  <p>Runs the saiku#996 migration on load: any {@code type:"filter"}
+   *  tile is promoted into the unified filter panel and dropped from the
+   *  grid, and any legacy {@code dashboard.filters[]} defaults whose
+   *  target isn't already on the panel are absorbed too. The dashboard
+   *  is left dirty when the migration touched anything so the next save
+   *  persists the cleaned shape. */
   hydrate(d: Dashboard, savedPath: string): void {
-    this.current = d;
+    const { migrated, changed } = migrateLegacyFilters(d);
+    this.current = migrated;
     this.savedPath = savedPath;
-    this.dirty = false;
-    this.dirtyCount = 0;
+    this.dirty = changed;
+    this.dirtyCount = changed ? 1 : 0;
     this.saveError = null;
   }
 
@@ -194,6 +206,95 @@ class DashboardStore {
     this.updateTile(id, { x, y, w, h });
   }
 
+  /* ------------------------- filter panel mutators ---------------------- */
+
+  /** Ensure the dashboard carries a filterPanel (lazy-initialise on first
+   *  mutation so a freshly-loaded older dashboard doesn't dirty itself
+   *  just by virtue of being touched). */
+  private ensurePanel(): DashboardFilterPanel | null {
+    if (!this.current) return null;
+    const existing = this.current.filterPanel;
+    if (existing) return existing;
+    const fresh: DashboardFilterPanel = { collapsed: false, filters: [] };
+    this.current = { ...this.current, filterPanel: fresh };
+    return fresh;
+  }
+
+  addPanelFilter(filter: PanelFilter): void {
+    const panel = this.ensurePanel();
+    if (!panel || !this.current) return;
+    this.current = {
+      ...this.current,
+      filterPanel: { ...panel, filters: [...panel.filters, filter] },
+    };
+    this.markDirty();
+  }
+
+  removePanelFilter(id: string): void {
+    if (!this.current?.filterPanel) return;
+    const next = this.current.filterPanel.filters.filter((f) => f.id !== id);
+    if (next.length === this.current.filterPanel.filters.length) return;
+    this.current = {
+      ...this.current,
+      filterPanel: { ...this.current.filterPanel, filters: next },
+    };
+    this.markDirty();
+  }
+
+  /** Update one panel filter — typically to flip {@code members[]} when
+   *  the user picks a value in the dropdown. */
+  updatePanelFilter(id: string, patch: Partial<PanelFilter>): void {
+    if (!this.current?.filterPanel) return;
+    let changed = false;
+    const next = this.current.filterPanel.filters.map((f) => {
+      if (f.id !== id) return f;
+      changed = true;
+      return { ...f, ...patch };
+    });
+    if (!changed) return;
+    this.current = {
+      ...this.current,
+      filterPanel: { ...this.current.filterPanel, filters: next },
+    };
+    this.markDirty();
+  }
+
+  /** Reorder panel filters by supplying the full id sequence. Ids not
+   *  present in the new order are appended in their original order (no
+   *  silent drops). */
+  reorderPanelFilters(orderedIds: string[]): void {
+    if (!this.current?.filterPanel) return;
+    const byId = new Map(this.current.filterPanel.filters.map((f) => [f.id, f]));
+    const reordered: PanelFilter[] = [];
+    const seen = new Set<string>();
+    for (const id of orderedIds) {
+      const f = byId.get(id);
+      if (f && !seen.has(id)) {
+        reordered.push(f);
+        seen.add(id);
+      }
+    }
+    for (const f of this.current.filterPanel.filters) {
+      if (!seen.has(f.id)) reordered.push(f);
+    }
+    this.current = {
+      ...this.current,
+      filterPanel: { ...this.current.filterPanel, filters: reordered },
+    };
+    this.markDirty();
+  }
+
+  setPanelCollapsed(collapsed: boolean): void {
+    const panel = this.ensurePanel();
+    if (!panel || !this.current) return;
+    if (panel.collapsed === collapsed) return;
+    this.current = {
+      ...this.current,
+      filterPanel: { ...panel, collapsed },
+    };
+    this.markDirty();
+  }
+
   private markDirty(): void {
     this.dirty = true;
     this.dirtyCount++;
@@ -214,6 +315,80 @@ function sanitiseForSave(d: Dashboard): Dashboard {
       tiles: d.layout.tiles.map((t) => (t.cube ? { ...t, cube: pickCubeRef(t.cube) } : t)),
     },
   };
+}
+
+/** Promote legacy {@code type:"filter"} tiles + {@code dashboard.filters[]}
+ *  defaults into the unified filter panel (saiku#996). Idempotent: a
+ *  dashboard that already lives on the new model has {@code changed:false}
+ *  so its hydrate doesn't dirty the editor by virtue of being opened.
+ *
+ *  <p>Behaviour:
+ *   - Each filter tile becomes a PanelFilter, panel id = tile id so any
+ *     external bookmark referencing the tile id (unlikely but possible)
+ *     still resolves.
+ *   - Filter tiles are removed from the grid layout — they no longer
+ *     occupy real-estate.
+ *   - Defaults whose target isn't already on the panel are appended as
+ *     single-select pickers, preserving their members[].
+ *   - {@code dashboard.filters[]} is emptied after migration; the panel
+ *     is the new source of truth for active filter state. */
+function migrateLegacyFilters(d: Dashboard): { migrated: Dashboard; changed: boolean } {
+  const filterTiles = d.layout.tiles.filter((t) => t.type === "filter");
+  const existing = d.filterPanel?.filters ?? [];
+  const existingKeys = new Set(existing.map(filterKey));
+
+  const promoted: PanelFilter[] = [];
+  for (const tile of filterTiles) {
+    if (!tile.target) continue;
+    const widget: FilterWidget = (tile.widget as FilterWidget | undefined) ?? "single-select";
+    const candidate: PanelFilter = {
+      id: tile.id,
+      widget,
+      cube: tile.cube,
+      dimension: tile.target.dimension,
+      hierarchy: tile.target.hierarchy,
+      level: tile.target.level,
+      members: tile.target.members ?? [],
+    };
+    if (existingKeys.has(filterKey(candidate))) continue;
+    existingKeys.add(filterKey(candidate));
+    promoted.push(candidate);
+  }
+
+  const absorbedDefaults: PanelFilter[] = [];
+  for (let i = 0; i < (d.filters ?? []).length; i++) {
+    const def = d.filters[i];
+    const key = filterKey(def);
+    if (existingKeys.has(key)) continue;
+    existingKeys.add(key);
+    absorbedDefaults.push({
+      id: `default-${i}-${key}`,
+      widget: "single-select",
+      dimension: def.dimension,
+      hierarchy: def.hierarchy,
+      level: def.level,
+      members: def.members ?? [],
+    });
+  }
+
+  const changed = promoted.length + absorbedDefaults.length > 0 || filterTiles.length > 0;
+  if (!changed) return { migrated: d, changed: false };
+
+  const tilesWithoutFilters = d.layout.tiles.filter((t) => t.type !== "filter");
+  const migrated: Dashboard = {
+    ...d,
+    layout: { ...d.layout, tiles: tilesWithoutFilters },
+    filters: [],
+    filterPanel: {
+      collapsed: d.filterPanel?.collapsed ?? false,
+      filters: [...existing, ...promoted, ...absorbedDefaults],
+    },
+  };
+  return { migrated, changed: true };
+}
+
+function filterKey(f: DashboardFilter | PanelFilter): string {
+  return `${f.dimension}/${f.hierarchy}/${f.level}`;
 }
 
 function pickCubeRef(c: DashboardTile["cube"]): DashboardTile["cube"] {
