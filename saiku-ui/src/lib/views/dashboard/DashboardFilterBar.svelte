@@ -26,15 +26,14 @@
   }
 
   function chipSourceTag(af: ActiveFilter): string {
-    switch (af.source.kind) {
-      case "default": return "default";
-      case "widget": return "widget";
-      case "click": return "click";
-    }
+    return af.source.kind;
   }
 
   function isClearable(af: ActiveFilter): boolean {
-    return af.source.kind !== "default";
+    // Panel + click sources are both user-managed and clearable from
+    // the chip bar; clearing a panel chip just resets its members[] in
+    // the persisted dashboard (handled inside activeFilters.clearChip).
+    return true;
   }
 
   function handleClear(af: ActiveFilter): void {
@@ -83,7 +82,7 @@
   .chip[data-source="click"] {
     background: color-mix(in srgb, var(--accent) 18%, transparent);
   }
-  .chip[data-source="widget"] {
+  .chip[data-source="panel"] {
     background: var(--bg-subtle);
   }
   .chip-x {

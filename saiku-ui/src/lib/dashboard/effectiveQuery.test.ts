@@ -58,7 +58,7 @@ function sampleSchema(): SchemaLike {
 function active(dim: string, hier: string, level: string, members: string[] = []): ActiveFilter {
   return {
     id: `${dim}-${hier}-${level}`,
-    source: { kind: "widget", tileId: "w1" },
+    source: { kind: "panel", filterId: "w1" },
     filter: { dimension: dim, hierarchy: hier, level, members },
   };
 }

@@ -77,13 +77,6 @@
           <span class="hint">A single measure as a big number, with optional comparison + sparkline.</span>
         </span>
       </button>
-      <button type="button" class="menu-item" role="menuitem" onclick={() => pick("filter")}>
-        <span class="icon" aria-hidden="true">🔍</span>
-        <span>
-          <span class="label">Filter widget</span>
-          <span class="hint">Pushes a filter across compatible tiles.</span>
-        </span>
-      </button>
       <button type="button" class="menu-item" role="menuitem" onclick={() => pick("text")}>
         <span class="icon" aria-hidden="true">📝</span>
         <span>

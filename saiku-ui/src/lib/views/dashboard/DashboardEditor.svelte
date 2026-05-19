@@ -16,6 +16,7 @@
   import { buildTile } from "$lib/dashboard/tilePlacement";
   import DashboardToolbar from "$lib/views/dashboard/DashboardToolbar.svelte";
   import DashboardFilterBar from "$lib/views/dashboard/DashboardFilterBar.svelte";
+  import DashboardFilterPanel from "$lib/views/dashboard/DashboardFilterPanel.svelte";
   import DashboardGrid from "$lib/views/dashboard/DashboardGrid.svelte";
 
   interface Props {
@@ -80,6 +81,7 @@
     {#if dashboardStore.saveError}
       <div class="error">Save failed: {dashboardStore.saveError}</div>
     {/if}
+    <DashboardFilterPanel {readOnly} />
     <DashboardFilterBar {readOnly} />
     <DashboardGrid {readOnly} />
   {:else}

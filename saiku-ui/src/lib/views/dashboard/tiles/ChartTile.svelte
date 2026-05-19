@@ -84,19 +84,19 @@
   let referenceRowAxes = $state<RowAxisRef[] | null>(null);
 
   $effect(() => {
-    if (tile.cube) {
-      resolvedCube = tile.cube;
-      // Inline tiles never need row-axis inference (the handler reads
-      // tile.query.body.rows directly), but leave the state null so
-      // the reference branch in handleEChartsClick stays opt-in.
-      return;
-    }
+    if (tile.cube) resolvedCube = tile.cube;
+    // Row axes still need inferring for reference tiles even when the
+    // analyst picked the cube explicitly — click-to-filter needs the
+    // saved ThinQuery's axes regardless. Skip only when the tile is
+    // inline (handler reads tile.query.body.rows directly).
     if (tile.query?.kind !== "reference" || inferenceAttempted) return;
     inferenceAttempted = true;
     const refPath = tile.query.path;
-    void inferCubeFromReference(refPath).then((inferred) => {
-      if (inferred) resolvedCube = inferred;
-    });
+    if (!tile.cube) {
+      void inferCubeFromReference(refPath).then((inferred) => {
+        if (inferred) resolvedCube = inferred;
+      });
+    }
     void inferRowAxesFromReference(refPath).then((axes) => {
       referenceRowAxes = axes;
     });
