@@ -32,12 +32,14 @@
   import { session } from "$lib/stores/session.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
+  import { favouriteDashboards } from "$lib/stores/favouriteDashboards.svelte";
+  import { recentDashboards } from "$lib/stores/recentDashboards.svelte";
   import PermissionsModal from "$lib/modals/PermissionsModal.svelte";
   import NewDashboardModal from "$lib/modals/NewDashboardModal.svelte";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
-  import { ShieldCheck, LayoutDashboard } from "lucide-svelte";
+  import { ShieldCheck, LayoutDashboard, Star } from "lucide-svelte";
 
   let entries = $state<RepositoryNode[]>([]);
   let loading = $state<boolean>(true);
@@ -115,6 +117,11 @@
     deletingPath = null;
     try {
       await deleteDashboard(path);
+      // Drop the path from the per-user recents + favourites so a
+      // deleted dashboard doesn't linger as a dead link in either
+      // section on next render (#936).
+      recentDashboards.remove(path);
+      favouriteDashboards.remove(path);
       await refresh();
       toasts.success(i18n.t("toast.deleted"), path);
     } catch (e: unknown) {
@@ -123,6 +130,35 @@
         e instanceof Error ? e.message : String(e),
       );
     }
+  }
+
+  /** Resolve {@code recentDashboards.all()} / {@code favouriteDashboards.all()}
+   *  against the live entry list so paths that no longer exist (or that
+   *  the user can't see for ACL reasons) don't show as broken links.
+   *  Preserves the source order (most-recent-first for recents,
+   *  alphabetical-by-name for favourites). */
+  function resolveEntries(paths: string[]): RepositoryNode[] {
+    const byPath = new Map(entries.map((e) => [e.path, e]));
+    const out: RepositoryNode[] = [];
+    for (const p of paths) {
+      const found = byPath.get(p);
+      if (found) out.push(found);
+    }
+    return out;
+  }
+
+  let recentEntries = $derived(resolveEntries(recentDashboards.all()));
+  let favouriteEntries = $derived(
+    resolveEntries(
+      favouriteDashboards
+        .all()
+        .slice()
+        .sort((a, b) => basename(a).localeCompare(basename(b))),
+    ),
+  );
+
+  function toggleFavourite(path: string): void {
+    favouriteDashboards.toggle(path);
   }
 
   function slugify(s: string): string {
@@ -191,14 +227,72 @@
       action={{ label: "+ New dashboard", onClick: handleNew }}
     />
   {:else}
+    {#if favouriteEntries.length > 0}
+      <section class="pinned" aria-labelledby="favourites-heading">
+        <h2 id="favourites-heading" class="pinned-heading">
+          <Star size={14} aria-hidden="true" /> Favourites
+        </h2>
+        <ul class="list">
+          {#each favouriteEntries as e (e.path)}
+            {@const relPath = toRepoRelative(e.path)}
+            <li class="row">
+              <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
+                <span class="name">{basename(relPath)}</span>
+                <span class="path">{relPath}</span>
+              </a>
+              <button
+                type="button"
+                class="btn icon-only star star--on"
+                onclick={() => toggleFavourite(relPath)}
+                title="Remove from favourites"
+                aria-label="Remove from favourites"
+                aria-pressed="true"
+              >
+                <Star size={14} fill="currentColor" />
+              </button>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
+
+    {#if recentEntries.length > 0}
+      <section class="pinned" aria-labelledby="recents-heading">
+        <h2 id="recents-heading" class="pinned-heading">🕒 Recently viewed</h2>
+        <ul class="list">
+          {#each recentEntries as e (e.path)}
+            {@const relPath = toRepoRelative(e.path)}
+            <li class="row">
+              <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
+                <span class="name">{basename(relPath)}</span>
+                <span class="path">{relPath}</span>
+              </a>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
+
     <ul class="list">
       {#each entries as e (e.path)}
         {@const relPath = toRepoRelative(e.path)}
+        {@const isFav = favouriteDashboards.isFavourite(relPath)}
         <li class="row">
           <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
             <span class="name">{basename(relPath)}</span>
             <span class="path">{relPath}</span>
           </a>
+          <button
+            type="button"
+            class="btn icon-only star"
+            class:star--on={isFav}
+            onclick={() => toggleFavourite(relPath)}
+            title={isFav ? "Remove from favourites" : "Add to favourites"}
+            aria-label={isFav ? "Remove from favourites" : "Add to favourites"}
+            aria-pressed={isFav}
+          >
+            <Star size={14} fill={isFav ? "currentColor" : "none"} />
+          </button>
           {#if session.isAdmin}
             <button
               type="button"
@@ -342,5 +436,42 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .pinned {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+  .pinned-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin: 0;
+    font-size: 0.8125rem;
+    font-weight: var(--weight-medium);
+    color: var(--fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  /* Icon-only buttons are square and sit on the same baseline as the
+     Delete button; the star colour shifts to --accent when active so
+     a glance tells you which dashboards you've pinned. */
+  .btn.icon-only {
+    padding: 0.375rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .btn.star {
+    color: var(--fg-muted);
+  }
+  .btn.star:hover {
+    color: var(--fg);
+  }
+  .btn.star--on {
+    color: var(--accent);
+  }
+  .btn.star--on:hover {
+    color: var(--accent);
   }
 </style>
