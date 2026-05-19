@@ -11,6 +11,12 @@
  * Unordered set semantics — favourites display sorted by the
  * dashboard's own name in the catalogue render, not by toggle
  * order. The UI render handles that sort.
+ *
+ * Reactivity model: read methods (`all`, `isFavourite`) are pure —
+ * they re-read localStorage on every call and use a `version` counter
+ * as a tracking dep so $derived consumers re-evaluate whenever a
+ * mutation runs. This keeps the read path free of $state writes
+ * (which Svelte 5 forbids inside $derived).
  */
 
 import { session } from "$lib/stores/session.svelte";
@@ -50,30 +56,24 @@ function saveToStorage(username: string | null | undefined, paths: Set<string>):
 }
 
 class FavouriteDashboardsStore {
-  private entries = $state<Set<string>>(new Set());
-  private lastUser = $state<string | null>(null);
-
-  private prime(username: string | null | undefined): void {
-    const u = username ?? null;
-    if (u === this.lastUser) return;
-    this.lastUser = u;
-    this.entries = loadFromStorage(u);
-  }
+  /** Re-render trigger. Mutations bump this so $derived consumers
+   *  notice a write. Read methods only *read* this — never write. */
+  private version = $state<number>(0);
 
   /** True if {@code path} is currently favourited for the active user. */
   isFavourite(path: string): boolean {
+    void this.version; // tracking dep — re-evaluate when mutations bump
     const u = session.current?.username ?? null;
-    this.prime(u);
-    return this.entries.has(path);
+    return loadFromStorage(u).has(path);
   }
 
   /** All favourite paths for the current user. Order is insertion-
    *  order of the underlying Set, which is *not* alphabetical — the
    *  catalogue render sorts when displaying. Empty when no user. */
   all(): string[] {
+    void this.version; // tracking dep
     const u = session.current?.username ?? null;
-    this.prime(u);
-    return Array.from(this.entries);
+    return Array.from(loadFromStorage(u));
   }
 
   /** Flip the favourite state for {@code path}. No-op when no user. */
@@ -81,15 +81,15 @@ class FavouriteDashboardsStore {
     if (!path) return;
     const u = session.current?.username ?? null;
     if (!u) return;
-    this.prime(u);
-    const next = new Set(this.entries);
+    const current = loadFromStorage(u);
+    const next = new Set(current);
     if (next.has(path)) {
       next.delete(path);
     } else {
       next.add(path);
     }
-    this.entries = next;
     saveToStorage(u, next);
+    this.version++;
   }
 
   /** Force-remove a path — used when the catalogue deletes a
@@ -97,12 +97,12 @@ class FavouriteDashboardsStore {
   remove(path: string): void {
     const u = session.current?.username ?? null;
     if (!u) return;
-    this.prime(u);
-    if (!this.entries.has(path)) return;
-    const next = new Set(this.entries);
+    const current = loadFromStorage(u);
+    if (!current.has(path)) return;
+    const next = new Set(current);
     next.delete(path);
-    this.entries = next;
     saveToStorage(u, next);
+    this.version++;
   }
 }
 

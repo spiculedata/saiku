@@ -10,6 +10,12 @@
  * scope for the first pass — see issue #936 design notes. If a future
  * ticket adds it, the in-memory state shape doesn't change, only the
  * load / save IO does.
+ *
+ * Reactivity model: read methods (`all`) are pure — they re-read
+ * localStorage on every call and use a `version` counter as a tracking
+ * dep so $derived consumers re-evaluate whenever a mutation runs.
+ * This keeps the read path free of $state writes (which Svelte 5
+ * forbids inside $derived).
  */
 
 import { session } from "$lib/stores/session.svelte";
@@ -54,25 +60,16 @@ function saveToStorage(username: string | null | undefined, paths: string[]): vo
 }
 
 class RecentDashboardsStore {
-  /** Reactive view of the current user's recents. Re-derives from
-   *  storage whenever a mutation runs OR the username changes. */
-  private entries = $state<string[]>([]);
-  private lastUser = $state<string | null>(null);
-
-  /** Lazy-prime on first read so SSR doesn't touch localStorage. */
-  private prime(username: string | null | undefined): void {
-    const u = username ?? null;
-    if (u === this.lastUser) return;
-    this.lastUser = u;
-    this.entries = loadFromStorage(u);
-  }
+  /** Re-render trigger. Mutations bump this so $derived consumers
+   *  notice a write. Read methods only *read* this — never write. */
+  private version = $state<number>(0);
 
   /** All recent paths for the current user, most-recent first, capped
    *  at {@link RECENTS_CAP}. Empty when there's no current user. */
   all(): string[] {
+    void this.version; // tracking dep — re-evaluate when mutations bump
     const u = session.current?.username ?? null;
-    this.prime(u);
-    return this.entries;
+    return loadFromStorage(u);
   }
 
   /** Push a path onto the recents list for the current user. If the
@@ -82,11 +79,11 @@ class RecentDashboardsStore {
     if (!path) return;
     const u = session.current?.username ?? null;
     if (!u) return;
-    this.prime(u);
-    const filtered = this.entries.filter((p) => p !== path);
+    const current = loadFromStorage(u);
+    const filtered = current.filter((p) => p !== path);
     const next = [path, ...filtered].slice(0, RECENTS_CAP);
-    this.entries = next;
     saveToStorage(u, next);
+    this.version++;
   }
 
   /** Remove a single path — used when the catalogue deletes a
@@ -94,11 +91,11 @@ class RecentDashboardsStore {
   remove(path: string): void {
     const u = session.current?.username ?? null;
     if (!u) return;
-    this.prime(u);
-    const next = this.entries.filter((p) => p !== path);
-    if (next.length === this.entries.length) return;
-    this.entries = next;
+    const current = loadFromStorage(u);
+    const next = current.filter((p) => p !== path);
+    if (next.length === current.length) return;
     saveToStorage(u, next);
+    this.version++;
   }
 
   /** Drop the entire list for the current user. Exposed mainly for
@@ -107,8 +104,8 @@ class RecentDashboardsStore {
   clear(): void {
     const u = session.current?.username ?? null;
     if (!u) return;
-    this.entries = [];
     saveToStorage(u, []);
+    this.version++;
   }
 }
 
