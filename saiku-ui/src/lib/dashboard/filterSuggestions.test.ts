@@ -8,7 +8,7 @@ import {
   suggestFiltersForTiles,
   suggestFiltersForTilesAsync,
 } from "$lib/dashboard/filterSuggestions";
-import type { DashboardTile, CubeRef } from "$lib/api/dashboards";
+import type { DashboardTile, CubeRef, PanelFilter } from "$lib/api/dashboards";
 
 const SALES: CubeRef = {
   connectionName: "foodmart",
@@ -203,48 +203,39 @@ describe("suggestFiltersForTilesAsync — reference tiles", () => {
 });
 
 describe("pruneAlreadyExposed", () => {
-  test("drops suggestions whose target matches an existing filter-widget tile", () => {
+  test("drops suggestions whose target matches an existing panel filter", () => {
     const chart = chartTile("c", SALES, {
       rows: [{ dimension: "Store", hierarchy: "Stores", level: "Store State" }],
     });
-    const widget: DashboardTile = {
+    const panelFilter: PanelFilter = {
       id: "w",
-      x: 0,
-      y: 4,
-      w: 6,
-      h: 2,
-      type: "filter",
-      cube: SALES,
-      target: {
-        dimension: "Store",
-        hierarchy: "Stores",
-        level: "Store State",
-        members: [],
-      },
       widget: "single-select",
+      cube: SALES,
+      dimension: "Store",
+      hierarchy: "Stores",
+      level: "Store State",
+      members: [],
     };
-    const suggestions = suggestFiltersForTiles([chart, widget]);
-    const pruned = pruneAlreadyExposed(suggestions, [chart, widget]);
+    const suggestions = suggestFiltersForTiles([chart]);
+    const pruned = pruneAlreadyExposed(suggestions, [panelFilter]);
     expect(pruned).toEqual([]);
   });
 
-  test("keeps suggestions for targets a widget on a different cube already exposes", () => {
+  test("keeps suggestions for targets a panel filter on a different cube already exposes", () => {
     const chart = chartTile("c", SALES, {
       rows: [{ dimension: "Time", hierarchy: "Time", level: "Year" }],
     });
-    const hrWidget: DashboardTile = {
+    const hrPanelFilter: PanelFilter = {
       id: "w",
-      x: 0,
-      y: 4,
-      w: 6,
-      h: 2,
-      type: "filter",
-      cube: HR,
-      target: { dimension: "Time", hierarchy: "Time", level: "Year", members: [] },
       widget: "single-select",
+      cube: HR,
+      dimension: "Time",
+      hierarchy: "Time",
+      level: "Year",
+      members: [],
     };
-    const suggestions = suggestFiltersForTiles([chart, hrWidget]);
-    const pruned = pruneAlreadyExposed(suggestions, [chart, hrWidget]);
+    const suggestions = suggestFiltersForTiles([chart]);
+    const pruned = pruneAlreadyExposed(suggestions, [hrPanelFilter]);
     expect(pruned).toHaveLength(1);
     expect(pruned[0].cube.cubeName).toBe("Sales");
   });

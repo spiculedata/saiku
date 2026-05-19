@@ -22,7 +22,7 @@
 
   import { onDestroy, onMount } from "svelte";
   import * as echarts from "echarts";
-  import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-svelte";
+  import { ArrowDownRight, ArrowUpRight, Minus, Settings2 } from "lucide-svelte";
   import type { CubeRef, DashboardTile, KpiConfig } from "$lib/api/dashboards";
   import {
     executeAiQuery,
@@ -87,6 +87,39 @@
 
   let lastQueryJson = $state<string>("");
 
+  /** Per-(cube/dim/hier/level) cache of the ordered member list, so the
+   *  prior-period expansion below doesn't re-hit /ai/members/search on
+   *  every filter tick. Module-scoped so multiple KPI tiles share it. */
+  const levelMembersCache = new Map<string, Promise<{ uniqueName: string; caption: string }[]>>();
+
+  function fetchLevelMembers(
+    c: CubeRef,
+    dimension: string,
+    hierarchy: string,
+    level: string,
+  ): Promise<{ uniqueName: string; caption: string }[]> {
+    const cubeId = `${c.connectionName}/${c.catalog}/${c.schema}/${c.cubeName}`;
+    const cacheKey = `${cubeId}|${dimension}/${hierarchy}/${level}`;
+    const cached = levelMembersCache.get(cacheKey);
+    if (cached) return cached;
+    const params = new URLSearchParams({
+      cubeId,
+      dimension,
+      hierarchy,
+      level,
+      limit: "1000",
+    });
+    const promise = fetch(`/rest/saiku/api/ai/members/search?${params.toString()}`, {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((hits: unknown) => (Array.isArray(hits) ? (hits as { uniqueName: string; caption: string }[]) : []))
+      .catch(() => [] as { uniqueName: string; caption: string }[]);
+    levelMembersCache.set(cacheKey, promise);
+    return promise;
+  }
+
   $effect(() => {
     const measure = kpi.measure;
     const c = cube;
@@ -100,29 +133,109 @@
 
     // Build the request body. Inline KPI tiles don't carry a TileQuery
     // — the cube + measure + (optional) time-level on rows is enough.
-    type Filter = { dimension: string; hierarchy: string; level: string; members: string[] };
-    const body: Record<string, unknown> = {
-      cube: c,
-      measures: [{ name: measure }],
-      rows: series && tl ? [{ dimension: tl.dimension, hierarchy: tl.hierarchy, level: tl.level }] : [],
-      filters: active.map(
-        (f) =>
-          ({
-            dimension: f.filter.dimension,
-            hierarchy: f.filter.hierarchy,
-            level: f.filter.level,
-            members: f.filter.members ?? [],
-          }) satisfies Filter,
-      ),
+    // Slicing comes purely from dashboard-active filters (defaults /
+    // widgets / clicks); KPI tiles don't carry per-tile filters of
+    // their own — analysts manage the slice via filter widgets.
+    //
+    // Two Mondrian rules to keep happy here:
+    //
+    //   1. The WHERE clause is a tuple — at most one filter per
+    //      hierarchy. When two active filters target the same hierarchy
+    //      at different levels (e.g. Year=1997 *and* Quarter=Q2), keep
+    //      the later one (last-wins, same rule mergeFilters uses for
+    //      chart/table tiles). Iteration order in activeFilters.all is
+    //      defaults → widgets → clicks → so a click on a deeper level
+    //      beats a default at a higher level.
+    //
+    //   2. A hierarchy that's already on rows/columns can't also be a
+    //      slicer. When wantsSeries puts the time-level hierarchy on
+    //      rows AND a filter targets the same hierarchy, move that
+    //      filter's members onto the row axis selection's members[]
+    //      and drop it from filters[].
+    type AxisSelection = {
+      dimension: string;
+      hierarchy: string;
+      level: string;
+      members?: string[];
     };
-    const json = JSON.stringify(body);
-    if (json === lastQueryJson) return;
-    lastQueryJson = json;
+    type Filter = { dimension: string; hierarchy: string; level: string; members: string[] };
+    const byHierarchy = new Map<string, Filter>();
+    for (const af of active) {
+      const f = af.filter;
+      const members = f.members ?? [];
+      if (members.length === 0) continue;
+      const key = `${f.dimension}/${f.hierarchy}`;
+      byHierarchy.set(key, {
+        dimension: f.dimension,
+        hierarchy: f.hierarchy,
+        level: f.level,
+        members,
+      });
+    }
+    const rows: AxisSelection[] = [];
+    let needsPriorExpansion: { rowHierKey: string; slicer: Filter } | null = null;
+    if (series && tl) {
+      const rowHierKey = `${tl.dimension}/${tl.hierarchy}`;
+      const slicer = byHierarchy.get(rowHierKey);
+      rows.push({
+        dimension: tl.dimension,
+        hierarchy: tl.hierarchy,
+        level: tl.level,
+      });
+      byHierarchy.delete(rowHierKey);
+      // Schema-aware prior-period expansion: when the slicer targets
+      // the *same level* as timeLevel (e.g. timeLevel=Quarter, slicer
+      // pins Quarter=Q2), enumerating the full series defeats the
+      // user's filter intent. Instead, after the members API resolves
+      // the level's full ordered list, expand the row to include each
+      // slicer member plus its preceding sibling. lastAndPriorValues
+      // then computes a real prior-period delta vs the period before
+      // the filter (Q2 → vs Q1). Slicers at a *different* level (e.g.
+      // Year=1997 with timeLevel=Quarter) fall back to "drop slicer,
+      // enumerate full series" — handling Year→Quarter descent needs
+      // server-side Descendants() support we don't have yet.
+      if (slicer && slicer.level.toLowerCase() === tl.level.toLowerCase()) {
+        needsPriorExpansion = { rowHierKey, slicer };
+      }
+    }
 
     loading = true;
     error = null;
     void (async () => {
       try {
+        // If we need prior-period expansion, fetch the level's members
+        // first, then expand row.members[] before building the query.
+        if (needsPriorExpansion && tl && c) {
+          const allMembers = await fetchLevelMembers(c, tl.dimension, tl.hierarchy, tl.level);
+          if (allMembers.length > 0) {
+            const slicerSet = new Set(needsPriorExpansion.slicer.members);
+            const expanded = new Set<string>();
+            for (let i = 0; i < allMembers.length; i++) {
+              if (slicerSet.has(allMembers[i].uniqueName)) {
+                expanded.add(allMembers[i].uniqueName);
+                if (i > 0) expanded.add(allMembers[i - 1].uniqueName);
+              }
+            }
+            // Preserve declared order so lastAndPriorValues' last/prior
+            // semantics align with the cube's chronological order.
+            const ordered = allMembers
+              .filter((m) => expanded.has(m.uniqueName))
+              .map((m) => m.uniqueName);
+            if (ordered.length > 0 && rows.length > 0) {
+              rows[0] = { ...rows[0], members: ordered };
+            }
+          }
+        }
+
+        const body: Record<string, unknown> = {
+          cube: c,
+          measures: [{ name: measure }],
+          rows,
+          filters: Array.from(byHierarchy.values()),
+        };
+        const json = JSON.stringify(body);
+        if (json === lastQueryJson) return;
+        lastQueryJson = json;
         const r = await executeAiQuery(body, "records");
         response = r;
         if (r.status !== "SUCCESS") error = r.error ?? `Query failed: ${r.status}`;
@@ -225,7 +338,11 @@
 </script>
 
 {#if !tile.cube || !kpi.measure}
-  <div class="placeholder">KPI tile has no measure — open ⚙ to pick a cube + measure.</div>
+  <div class="placeholder">
+    KPI tile has no measure — open
+    <Settings2 size={14} class="placeholder__icon" aria-label="tile settings" />
+    to pick a cube + measure.
+  </div>
 {:else}
   <div class="kpi-tile" data-tone={delta?.tone ?? "flat"}>
     {#if loading && response == null}
@@ -246,6 +363,10 @@
             <Minus size={14} aria-hidden="true" />
           {/if}
           <span>{deltaLabel}</span>
+        </div>
+      {:else if kpi.comparison === "prior-period" && wantsSeries && valueAndPrior.current != null && valueAndPrior.prior == null}
+        <div class="delta delta--empty" title="The selected period has no preceding period in this cube's data.">
+          <span>no prior period</span>
         </div>
       {:else if kpi.measureCaption}
         <div class="caption">{kpi.measureCaption}</div>
@@ -270,16 +391,29 @@
     padding: 0.5rem;
     text-align: center;
     gap: 0.25rem;
+    /* container-type lives on the tile (the outer box) so children can
+       size with cqi/cqh against the actual tile dimensions. Previously
+       this was on .value, which is self-referential — cqi resolves to 0
+       on the element that establishes the container, and the browser
+       falls back to the viewport, which made the number sized off the
+       window rather than the tile (and the contain: inline-size that
+       comes with container-type made .value's box width ignore its
+       content, shifting it off-centre in the flex column). */
+    container-type: size;
   }
   .value {
-    /* 4-6x chart-tile font size per the issue spec — clamp scales it
-       responsively so the number stays readable in 2-row tiles. */
-    font-size: clamp(1.75rem, 4.5cqi + 0.5rem, 4rem);
+    /* clamp scales the number against the tile's inline size (cqi) so
+       it stays readable across 2-row and 6-row tiles. width:100% +
+       text-align:center keeps the number horizontally centred even
+       when the parent's align-items computation gets confused by an
+       intrinsic-width child. */
+    width: 100%;
+    font-size: clamp(1.75rem, 12cqi, 4rem);
     font-weight: 600;
     line-height: 1.1;
     letter-spacing: -0.01em;
     color: var(--fg);
-    container-type: inline-size;
+    text-align: center;
   }
   .delta {
     display: inline-flex;
@@ -293,6 +427,11 @@
   }
   .delta[data-tone="negative"] {
     color: var(--danger, #c00);
+  }
+  .delta.delta--empty {
+    color: var(--fg-muted);
+    font-style: italic;
+    cursor: help;
   }
   .caption {
     font-size: 0.75rem;
@@ -312,6 +451,11 @@
     color: var(--fg-muted);
     font-size: 0.8125rem;
     text-align: center;
+  }
+  .placeholder :global(.placeholder__icon) {
+    display: inline-block;
+    vertical-align: -2px;
+    color: var(--fg-subtle);
   }
   .error {
     color: var(--danger);

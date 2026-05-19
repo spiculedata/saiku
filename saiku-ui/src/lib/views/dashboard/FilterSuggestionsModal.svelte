@@ -13,8 +13,7 @@
 
   import { untrack } from "svelte";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
-  import { newTileId, type DashboardTile } from "$lib/api/dashboards";
-  import { buildTile } from "$lib/dashboard/tilePlacement";
+  import type { PanelFilter } from "$lib/api/dashboards";
   import {
     suggestFiltersForTilesAsync,
     pruneAlreadyExposed,
@@ -49,12 +48,13 @@
       return;
     }
     const tiles = untrack(() => dashboardStore.current?.layout.tiles ?? []);
+    const panelFilters = untrack(() => dashboardStore.current?.filterPanel?.filters ?? []);
     loading = true;
     scanError = null;
     void (async () => {
       try {
         const raw = await suggestFiltersForTilesAsync(tiles);
-        const pruned = pruneAlreadyExposed(raw, tiles);
+        const pruned = pruneAlreadyExposed(raw, panelFilters);
         suggestions = pruned;
         const next = new Map<string, boolean>();
         for (const s of pruned) next.set(s.id, true);
@@ -86,37 +86,30 @@
   }
 
   function handleAdd(): void {
-    const layout = dashboardStore.current?.layout;
-    if (!layout) {
-      onClose();
-      return;
-    }
-    // Build a running layout so each placement sees previous additions —
-    // otherwise buildTile would stack them all at the same first-free slot.
-    let workingLayout = layout;
-    const newTiles: DashboardTile[] = [];
+    // saiku#996: suggestions now flow into the unified filter panel
+    // instead of dropping per-filter tiles into the grid.
     for (const s of suggestions) {
       if (!selected.get(s.id)) continue;
-      const tile = buildTile(workingLayout, "filter", newTileId());
-      tile.cube = s.cube;
-      tile.widget = "single-select";
-      tile.target = {
+      const filter: PanelFilter = {
+        id: `sug-${cryptoUuid()}`,
+        widget: "single-select",
+        cube: s.cube,
         dimension: s.dimension,
         hierarchy: s.hierarchy,
         level: s.level,
         members: [],
       };
-      tile.title = s.level;
-      newTiles.push(tile);
-      workingLayout = {
-        ...workingLayout,
-        tiles: [...workingLayout.tiles, tile],
-      };
-    }
-    if (newTiles.length > 0) {
-      dashboardStore.replaceTiles([...layout.tiles, ...newTiles]);
+      dashboardStore.addPanelFilter(filter);
     }
     onClose();
+  }
+
+  function cryptoUuid(): string {
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === "x" ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
   }
 
   function describeTileCount(s: FilterSuggestion): string {

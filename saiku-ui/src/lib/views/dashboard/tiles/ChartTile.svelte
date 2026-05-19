@@ -26,7 +26,11 @@
     applicableSavedFilters,
     type SchemaLike,
   } from "$lib/dashboard/effectiveQuery";
-  import { inferCubeFromReference } from "$lib/dashboard/filterSuggestions";
+  import {
+    inferCubeFromReference,
+    inferRowAxesFromReference,
+    type RowAxisRef,
+  } from "$lib/dashboard/filterSuggestions";
   import { buildChartOption, isSupportedChartKind } from "$lib/dashboard/chartOptions";
   import type { CubeRef } from "$lib/api/dashboards";
 
@@ -72,17 +76,29 @@
   // the schema lookup + filter applicability check still works.
   let resolvedCube = $state<CubeRef | null>(null);
   let inferenceAttempted = $state(false);
+  // Row axes from the saved ThinQuery for reference tiles. Click-to-
+  // filter uses the first entry as the dim/hier/level the clicked
+  // category corresponds to — inline tiles read the same shape directly
+  // off `tile.query.body.rows`. Null until inference completes; click
+  // handler short-circuits while we wait.
+  let referenceRowAxes = $state<RowAxisRef[] | null>(null);
 
   $effect(() => {
-    if (tile.cube) {
-      resolvedCube = tile.cube;
-      return;
-    }
+    if (tile.cube) resolvedCube = tile.cube;
+    // Row axes still need inferring for reference tiles even when the
+    // analyst picked the cube explicitly — click-to-filter needs the
+    // saved ThinQuery's axes regardless. Skip only when the tile is
+    // inline (handler reads tile.query.body.rows directly).
     if (tile.query?.kind !== "reference" || inferenceAttempted) return;
     inferenceAttempted = true;
     const refPath = tile.query.path;
-    void inferCubeFromReference(refPath).then((inferred) => {
-      if (inferred) resolvedCube = inferred;
+    if (!tile.cube) {
+      void inferCubeFromReference(refPath).then((inferred) => {
+        if (inferred) resolvedCube = inferred;
+      });
+    }
+    void inferRowAxesFromReference(refPath).then((axes) => {
+      referenceRowAxes = axes;
     });
   });
 
@@ -195,11 +211,22 @@
 
   function handleEChartsClick(params: echarts.ECElementEvent): void {
     if (!onClickFilter) return;
-    if (!tile.query || tile.query.kind !== "inline") return;
-    const body = tile.query.body as {
-      rows?: Array<{ dimension: string; hierarchy: string; level: string }>;
-    };
-    const rowAxis = body.rows?.[0];
+    if (!tile.query) return;
+
+    // Resolve the row axis the clicked category maps to. Inline tiles
+    // carry it directly on the request body; reference tiles need the
+    // axes inferred lazily from the saved ThinQuery (handled in the
+    // mount-time effect above). If inference hasn't completed yet, the
+    // click is a no-op rather than building a malformed filter.
+    let rowAxis: { dimension: string; hierarchy: string; level: string } | undefined;
+    if (tile.query.kind === "inline") {
+      const body = tile.query.body as {
+        rows?: Array<{ dimension: string; hierarchy: string; level: string }>;
+      };
+      rowAxis = body.rows?.[0];
+    } else if (tile.query.kind === "reference") {
+      rowAxis = referenceRowAxes?.[0];
+    }
     if (!rowAxis) return;
 
     // ECharts click events carry different shapes per series type. For

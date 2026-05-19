@@ -43,7 +43,7 @@ function customerSchema(): SchemaLike {
 function active(level: string, members: string[]): ActiveFilter {
   return {
     id: `widget-${level}`,
-    source: { kind: "widget", tileId: `w-${level}` },
+    source: { kind: "panel", filterId: `w-${level}` },
     filter: { dimension: "Customer", hierarchy: "Customers", level, members },
   };
 }
@@ -100,7 +100,7 @@ describe("ancestorSelections", () => {
       [
         {
           id: "gender",
-          source: { kind: "widget", tileId: "wG" },
+          source: { kind: "panel", filterId: "wG" },
           filter: { dimension: "Customer", hierarchy: "Gender", level: "(All)", members: ["[Customer].[Gender].[F]"] },
         },
       ],

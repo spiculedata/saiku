@@ -37,12 +37,33 @@ export async function listRepository(type: string[] = ["saiku"]): Promise<Reposi
     headers: { Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`repository -> ${res.status}`);
-  return (await res.json()) as RepositoryNode[];
+  const tree = (await res.json()) as RepositoryNode[];
+  return tree.map(normaliseNodePaths);
+}
+
+/** Strip the saiku-home filesystem prefix the legacy repository listing
+ *  API returns ({@code /Users/.../saiku-home/repository/data/<workspace>/foo})
+ *  down to the repo-relative form the rest of the API expects ({@code foo}).
+ *  Applied recursively to every node + child so every consumer sees clean
+ *  paths regardless of the storage backend. */
+function normaliseNodePaths(node: RepositoryNode): RepositoryNode {
+  const path = stripRepoRoot(node.path);
+  const children = node.repoObjects ? node.repoObjects.map(normaliseNodePaths) : undefined;
+  return children ? { ...node, path, repoObjects: children } : { ...node, path };
+}
+
+function stripRepoRoot(path: string): string {
+  // Match anything up to and including `/data/<workspace>/`; the capture
+  // group is the repo-relative remainder. Falls through unchanged when
+  // the pattern doesn't match (already-relative paths or a different
+  // storage layout).
+  const m = path.match(/^.*?\/data\/[^/]+\/(.+)$/);
+  return m ? m[1] : path;
 }
 
 export async function getResource(path: string): Promise<string> {
   const res = await fetch(
-    `${REST_BASE}/api/repository/resource?file=${encodeURIComponent(path)}`,
+    `${REST_BASE}/api/repository/resource?file=${encodeURIComponent(stripRepoRoot(path))}`,
     { credentials: "include" },
   );
   if (!res.ok) throw new Error(`resource -> ${res.status}`);
@@ -50,7 +71,7 @@ export async function getResource(path: string): Promise<string> {
 }
 
 export async function saveResource(path: string, content: string): Promise<void> {
-  const body = new URLSearchParams({ file: path, content });
+  const body = new URLSearchParams({ file: stripRepoRoot(path), content });
   const res = await fetch(`${REST_BASE}/api/repository/resource`, {
     method: "POST",
     credentials: "include",
@@ -62,7 +83,7 @@ export async function saveResource(path: string, content: string): Promise<void>
 
 export async function deleteResource(path: string): Promise<void> {
   const res = await fetch(
-    `${REST_BASE}/api/repository/resource?file=${encodeURIComponent(path)}`,
+    `${REST_BASE}/api/repository/resource?file=${encodeURIComponent(stripRepoRoot(path))}`,
     { method: "DELETE", credentials: "include" },
   );
   if (!res.ok) throw new Error(`deleteResource -> ${res.status}`);
@@ -70,7 +91,7 @@ export async function deleteResource(path: string): Promise<void> {
 
 export async function getResourceAcl(path: string): Promise<AclEntry> {
   const res = await fetch(
-    `${REST_BASE}/api/repository/resource/acl?file=${encodeURIComponent(path)}`,
+    `${REST_BASE}/api/repository/resource/acl?file=${encodeURIComponent(stripRepoRoot(path))}`,
     { credentials: "include", headers: { Accept: "application/json" } },
   );
   if (!res.ok) throw new Error(`getResourceAcl -> ${res.status}`);
@@ -84,7 +105,7 @@ export async function getResourceAcl(path: string): Promise<AclEntry> {
 }
 
 export async function setResourceAcl(path: string, acl: AclEntry): Promise<void> {
-  const body = new URLSearchParams({ file: path, acl: JSON.stringify(acl) });
+  const body = new URLSearchParams({ file: stripRepoRoot(path), acl: JSON.stringify(acl) });
   const res = await fetch(`${REST_BASE}/api/repository/resource/acl`, {
     method: "POST",
     credentials: "include",
@@ -95,7 +116,7 @@ export async function setResourceAcl(path: string, acl: AclEntry): Promise<void>
 }
 
 export async function moveResource(source: string, target: string): Promise<void> {
-  const body = new URLSearchParams({ source, target });
+  const body = new URLSearchParams({ source: stripRepoRoot(source), target: stripRepoRoot(target) });
   const res = await fetch(`${REST_BASE}/api/repository/resource/move`, {
     method: "POST",
     credentials: "include",

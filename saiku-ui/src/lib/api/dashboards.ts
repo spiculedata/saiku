@@ -124,12 +124,39 @@ export interface DashboardLayout {
   tiles: DashboardTile[];
 }
 
+/** One entry in the unified filter panel. Inherits the dim/hier/level
+ *  target shape from DashboardFilter and adds:
+ *   - {@code id}: stable identifier so the drag-reorder UI can key
+ *     entries without re-deriving them from target identity.
+ *   - {@code widget}: the picker style (single-select / multi-select /
+ *     date-range). Mirrors the {@code widget} field that used to live
+ *     on filter-type tiles. Required so a panel entry always renders
+ *     with a definite control.
+ *   - {@code cube}: source cube ref. Lets the panel populate the
+ *     member dropdown via /ai/members/search without having to derive
+ *     the cube from a sibling tile. Optional for forward-compat. */
+export interface PanelFilter extends DashboardFilter {
+  id: string;
+  widget: FilterWidget;
+  cube?: CubeRef;
+}
+
+/** Unified filter panel: docks at the top of the dashboard editor as
+ *  a collapsible row of compact pickers. Replaces the per-filter-tile
+ *  model from the dashboards v1 design — filter widgets no longer
+ *  occupy grid cells. See saiku#996. */
+export interface DashboardFilterPanel {
+  collapsed: boolean;
+  filters: PanelFilter[];
+}
+
 export interface Dashboard {
   id: string;
   name: string;
   version: number;
   layout: DashboardLayout;
   filters: DashboardFilter[];
+  filterPanel?: DashboardFilterPanel;
 }
 
 export interface DashboardSaveResponse {
@@ -281,12 +308,26 @@ function encodePath(path: string): string {
  *  `homes/...` pass through. Everything else gets the user's home prefixed
  *  so non-admins don't trip the saveFile ACL gate from saiku#895. */
 export function normaliseDashboardPath(rawPath: string, username: string): string {
-  const p = rawPath.trim();
+  const p = toRepoRelative(rawPath).trim();
   if (!p) throw new Error("Dashboard path is required");
   if (p.startsWith("/")) return p.slice(1);
   if (p.startsWith("homes/")) return p;
   if (!username) throw new Error("Cannot resolve home: no current user");
   return `homes/${username}/${p}`;
+}
+
+/** Strip the saiku-home filesystem prefix the repository listing API returns
+ *  ({@code /Users/.../saiku-home/repository/data/<workspace>/homes/admin/foo})
+ *  down to the repo-relative form the dashboards REST API expects
+ *  ({@code homes/admin/foo}). Absolute paths from `listRepository(...)` need
+ *  this; already-relative inputs (from the editor or hand-typed) pass
+ *  through unchanged. */
+export function toRepoRelative(path: string): string {
+  // Match anything up to and including `/data/<workspace>/`; the capture
+  // group is the repo-relative remainder. Falls through to the input
+  // when the pattern doesn't match (already-relative paths).
+  const m = path.match(/^.*?\/data\/[^/]+\/(.+)$/);
+  return m ? m[1] : path;
 }
 
 async function readError(res: Response): Promise<string> {

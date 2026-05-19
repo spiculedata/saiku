@@ -16,6 +16,7 @@
 package org.saiku.web.rest.resources;
 
 import com.qmino.miredot.annotations.ReturnType;
+import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -605,6 +606,13 @@ public class AdminResource {
     @Produces("text/plain")
     @Path("/version")
     @ReturnType("java.lang.String")
+    // saiku#1004: per-method override of the class-level
+    // @RolesAllowed("ROLE_ADMIN") so the bootstrap fetch from the
+    // SvelteKit UI's root layout doesn't 403 for ROLE_USER members
+    // (which the global 403 interceptor would turn into a misleading
+    // "Session ended" modal before Studio renders). The endpoint just
+    // reads a packaged version.properties — no auth-sensitive data.
+    @PermitAll
     public Response getVersion() {
         Properties prop = new Properties();
         String version = "";

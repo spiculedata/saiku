@@ -28,12 +28,15 @@
     loadDashboard,
     newDashboard,
     normaliseDashboardPath,
+    toRepoRelative,
     saveDashboard,
   } from "$lib/api/dashboards";
   import { session } from "$lib/stores/session.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import PermissionsModal from "$lib/modals/PermissionsModal.svelte";
+  import NewDashboardModal from "$lib/modals/NewDashboardModal.svelte";
+  import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import { Copy, ShieldCheck, LayoutDashboard } from "lucide-svelte";
@@ -51,6 +54,9 @@
    *  the per-row Duplicate button while the load + save round-trip is
    *  in flight, so a double-click doesn't fire two duplicates. */
   let duplicatingPath = $state<string | null>(null);
+
+  let newModalOpen = $state<boolean>(false);
+  let deletingPath = $state<string | null>(null);
 
   async function refresh(): Promise<void> {
     loading = true;
@@ -80,38 +86,24 @@
     return u ? `homes/${u}` : "homes";
   }
 
-  async function handleNew(): Promise<void> {
+  function handleNew(): void {
+    createError = null;
+    newModalOpen = true;
+  }
+
+  async function onNewModalCreate(path: string, name: string): Promise<void> {
+    newModalOpen = false;
     creating = true;
     createError = null;
     try {
-      // eslint-disable-next-line no-alert
-      const rawName = window.prompt(
-        "Dashboard name (e.g. \"Sales overview\")",
-        "Untitled dashboard",
-      );
-      if (rawName == null) return; // cancelled
-      const name = rawName.trim() || "Untitled dashboard";
-      // eslint-disable-next-line no-alert
-      const rawPath = window.prompt(
-        "Repository path (e.g. " + defaultHomePath() + "/my-dashboard.saikudash)",
-        defaultHomePath() + "/" + slugify(name) + ".saikudash",
-      );
-      if (rawPath == null) return;
-      let path: string;
-      try {
-        path = normaliseDashboardPath(rawPath, session.current?.username ?? "");
-      } catch (e: unknown) {
-        createError = e instanceof Error ? e.message : String(e);
-        return;
-      }
-      if (!path.endsWith(".saikudash")) {
+      const finalPath = normaliseDashboardPath(path, session.current?.username ?? "");
+      if (!finalPath.endsWith(".saikudash")) {
         createError = "Path must end with .saikudash.";
         return;
       }
       const fresh = newDashboard(name);
-      await saveDashboard(path, fresh);
-      // Hand off to the editor at the new path.
-      await goto(`${base}/dashboards/${path}`);
+      await saveDashboard(finalPath, fresh);
+      await goto(`${base}/dashboards/${finalPath}`);
     } catch (e: unknown) {
       createError = e instanceof Error ? e.message : String(e);
     } finally {
@@ -119,15 +111,23 @@
     }
   }
 
-  async function handleDelete(path: string): Promise<void> {
-    // eslint-disable-next-line no-alert
-    if (!window.confirm(`Delete ${path}? This can't be undone.`)) return;
+  function handleDelete(path: string): void {
+    deletingPath = path;
+  }
+
+  async function confirmDelete(): Promise<void> {
+    const path = deletingPath;
+    if (!path) return;
+    deletingPath = null;
     try {
       await deleteDashboard(path);
       await refresh();
+      toasts.success(i18n.t("toast.deleted"), path);
     } catch (e: unknown) {
-      // eslint-disable-next-line no-alert
-      window.alert(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
+      toasts.danger(
+        i18n.t("toast.deleteFailed"),
+        e instanceof Error ? e.message : String(e),
+      );
     }
   }
 
@@ -238,34 +238,25 @@
   {:else}
     <ul class="list">
       {#each entries as e (e.path)}
+        {@const relPath = toRepoRelative(e.path)}
         <li class="row">
-          <a class="link" href="{base}/dashboards/{e.path}" title={e.path}>
-            <span class="name">{basename(e.path)}</span>
-            <span class="path">{e.path}</span>
+          <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
+            <span class="name">{basename(relPath)}</span>
+            <span class="path">{relPath}</span>
           </a>
           {#if session.isAdmin}
             <button
               type="button"
               class="btn"
               disabled={aclLoading}
-              onclick={() => void openAcl(e.path)}
+              onclick={() => void openAcl(relPath)}
               title={i18n.t("saved.permissions")}
               aria-label={i18n.t("saved.permissions")}
             >
               <ShieldCheck size={14} />
             </button>
           {/if}
-          <button
-            type="button"
-            class="btn"
-            disabled={duplicatingPath === e.path}
-            onclick={() => void handleDuplicate(e.path)}
-            title="Duplicate"
-            aria-label="Duplicate dashboard"
-          >
-            <Copy size={14} />
-          </button>
-          <button type="button" class="btn danger" onclick={() => handleDelete(e.path)} title="Delete">
+          <button type="button" class="btn danger" onclick={() => handleDelete(relPath)} title="Delete">
             Delete
           </button>
         </li>
@@ -287,6 +278,24 @@
     }}
   />
 {/if}
+
+<NewDashboardModal
+  defaultName="Untitled dashboard"
+  defaultFolder={defaultHomePath()}
+  open={newModalOpen}
+  onCreate={onNewModalCreate}
+  onCancel={() => (newModalOpen = false)}
+/>
+
+<ConfirmModal
+  title="Delete dashboard"
+  message={deletingPath ? `Delete "${deletingPath}"? This cannot be undone.` : ""}
+  confirmLabel="Delete"
+  variant="danger"
+  open={deletingPath !== null}
+  onConfirm={confirmDelete}
+  onCancel={() => (deletingPath = null)}
+/>
 
 <style>
   .page {

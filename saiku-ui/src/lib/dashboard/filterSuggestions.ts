@@ -21,7 +21,7 @@
  */
 
 import { getResource } from "$lib/api/repository";
-import type { CubeRef, DashboardTile } from "$lib/api/dashboards";
+import type { CubeRef, DashboardTile, PanelFilter } from "$lib/api/dashboards";
 
 /** Fetch a saved .saiku ThinQuery and extract its cube ref. Used by the
  *  tile renderers when a reference tile was authored without an explicit
@@ -109,6 +109,24 @@ function extractFromInline(tile: DashboardTile): ExtractedTarget[] {
   return out;
 }
 
+/** Surface a KPI tile's time level as a candidate dimension for the
+ *  "Suggest filters" panel. Lets the analyst promote a KPI's time
+ *  level into a dashboard widget that then drives the slice. */
+function extractFromKpi(tile: DashboardTile): ExtractedTarget[] {
+  if (tile.type !== "kpi" || !tile.cube || !tile.kpi) return [];
+  const tl = tile.kpi.timeLevel;
+  if (!tl || !tl.dimension || !tl.hierarchy || !tl.level) return [];
+  return [
+    {
+      cube: tile.cube,
+      dimension: tl.dimension,
+      hierarchy: tl.hierarchy,
+      level: tl.level,
+      tileId: tile.id,
+    },
+  ];
+}
+
 /** Walk a parsed ThinQuery JSON object's queryModel.axes and yield every
  *  (dim, hier, level) triple. ThinHierarchy carries display names directly
  *  (dimension="Store", caption="Stores"); ThinLevel.name is the level
@@ -165,6 +183,68 @@ function extractFromThinQuery(thinQueryJson: unknown): Omit<ExtractedTarget, "ti
   return out;
 }
 
+/** Row-axis (dim, hier, level) triple from a saved query, used by the
+ *  reference-tile click-to-filter capture. Charts read the first entry;
+ *  tables match clicked column captions against the level field. */
+export interface RowAxisRef {
+  dimension: string;
+  hierarchy: string;
+  level: string;
+}
+
+/** Fetch + parse a saved-query reference and return the ROW-axis
+ *  (dim, hier, level) triples in declared order. Empty on any failure
+ *  or when the query has no row axis (column-only or measure-only
+ *  reports). Used by ChartTile / TableTile click-to-filter when the
+ *  tile is bound to a saved query — inline tiles read the same shape
+ *  directly off `tile.query.body.rows`. */
+export async function inferRowAxesFromReference(path: string): Promise<RowAxisRef[]> {
+  try {
+    const raw = await getResource(path);
+    const parsed = JSON.parse(raw) as unknown;
+    return extractAxisRefs(parsed, "ROWS");
+  } catch {
+    return [];
+  }
+}
+
+function extractAxisRefs(thinQueryJson: unknown, axisName: string): RowAxisRef[] {
+  if (!thinQueryJson || typeof thinQueryJson !== "object") return [];
+  const tq = thinQueryJson as Record<string, unknown>;
+  const queryModel = tq.queryModel as Record<string, unknown> | undefined;
+  if (!queryModel) return [];
+  const axes = queryModel.axes as Record<string, unknown> | undefined;
+  if (!axes) return [];
+  const axis = axes[axisName] as Record<string, unknown> | undefined;
+  if (!axis) return [];
+  const hierarchies = axis.hierarchies;
+  if (!Array.isArray(hierarchies)) return [];
+
+  const out: RowAxisRef[] = [];
+  for (const h of hierarchies) {
+    if (!h || typeof h !== "object") continue;
+    const hier = h as Record<string, unknown>;
+    const dim = asString(hier.dimension);
+    let hierName = asString(hier.caption);
+    if (!hierName) {
+      const raw = asString(hier.name);
+      if (raw) {
+        const m = raw.match(/\[([^\]]+)\]\s*$/);
+        hierName = m ? m[1] : raw;
+      }
+    }
+    const levels = hier.levels as Record<string, unknown> | undefined;
+    if (!dim || !hierName || !levels || typeof levels !== "object") continue;
+    for (const levelKey of Object.keys(levels)) {
+      const level = levels[levelKey] as Record<string, unknown> | undefined;
+      const levelName = asString(level?.name) ?? levelKey;
+      if (!levelName) continue;
+      out.push({ dimension: dim, hierarchy: hierName, level: levelName });
+    }
+  }
+  return out;
+}
+
 /** Fetch + parse a saved-query reference into ExtractedTargets. Returns
  *  [] on any failure (missing file, unparseable JSON, missing cube) so
  *  the suggestion panel degrades gracefully. */
@@ -205,6 +285,7 @@ export function suggestFiltersForTiles(tiles: DashboardTile[]): FilterSuggestion
   const map = new Map<string, FilterSuggestion>();
   for (const tile of tiles) {
     for (const t of extractFromInline(tile)) pushTarget(map, t);
+    for (const t of extractFromKpi(tile)) pushTarget(map, t);
   }
   return Array.from(map.values());
 }
@@ -215,6 +296,7 @@ export async function suggestFiltersForTilesAsync(tiles: DashboardTile[]): Promi
   const map = new Map<string, FilterSuggestion>();
   for (const tile of tiles) {
     for (const t of extractFromInline(tile)) pushTarget(map, t);
+    for (const t of extractFromKpi(tile)) pushTarget(map, t);
   }
   const refTiles = tiles.filter((t) => t.query?.kind === "reference");
   const refResults = await Promise.all(refTiles.map(extractFromReference));
@@ -225,16 +307,16 @@ export async function suggestFiltersForTilesAsync(tiles: DashboardTile[]): Promi
 }
 
 /** Filter the suggestion list down to ones whose target isn't already
- *  surfaced by an existing filter-widget tile. Stops the panel offering
- *  duplicates when the author has already added some widgets. */
+ *  exposed by an existing panel filter. Stops the panel offering
+ *  duplicates when the author has already added some entries. */
 export function pruneAlreadyExposed(
   suggestions: FilterSuggestion[],
-  tiles: DashboardTile[],
+  panelFilters: PanelFilter[],
 ): FilterSuggestion[] {
   const exposed = new Set<string>();
-  for (const tile of tiles) {
-    if (tile.type !== "filter" || !tile.cube || !tile.target) continue;
-    exposed.add(`${cubeKey(tile.cube)}|${tile.target.dimension}/${tile.target.hierarchy}/${tile.target.level}`);
+  for (const f of panelFilters) {
+    if (!f.cube) continue;
+    exposed.add(`${cubeKey(f.cube)}|${f.dimension}/${f.hierarchy}/${f.level}`);
   }
   return suggestions.filter((s) => !exposed.has(s.id));
 }

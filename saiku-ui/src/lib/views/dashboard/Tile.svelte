@@ -15,7 +15,6 @@
   import ChartTile from "$lib/views/dashboard/tiles/ChartTile.svelte";
   import TableTile from "$lib/views/dashboard/tiles/TableTile.svelte";
   import TextTile from "$lib/views/dashboard/tiles/TextTile.svelte";
-  import FilterTile from "$lib/views/dashboard/tiles/FilterTile.svelte";
   import KpiTile from "$lib/views/dashboard/tiles/KpiTile.svelte";
   import TileEditorModal from "$lib/views/dashboard/TileEditorModal.svelte";
   import { Settings2, X } from "lucide-svelte";
@@ -49,7 +48,11 @@
 </script>
 
 <div class="tile" data-tile-type={tile.type}>
-  <header class="tile-header">
+  <header
+    class="tile-header"
+    class:tile-header--draggable={!readOnly}
+    data-drag-handle={readOnly ? undefined : tile.id}
+  >
     <span class="title">{tile.title ?? defaultTitle(tile)}</span>
     {#if !readOnly}
       <div class="tile-actions">
@@ -69,8 +72,6 @@
       <TableTile {tile} onClickFilter={readOnly ? undefined : handleClickFilter} />
     {:else if tile.type === "text"}
       <TextTile {tile} />
-    {:else if tile.type === "filter"}
-      <FilterTile {tile} {readOnly} />
     {:else if tile.type === "kpi"}
       <KpiTile {tile} />
     {:else}
@@ -123,6 +124,15 @@
     border-bottom: 1px solid var(--border);
     background: var(--bg-muted);
     font-size: 0.8125rem;
+    /* Hint that the header doubles as the drag handle in edit mode.
+       Read-only dashboards opt out via .tile-header--draggable. */
+    user-select: none;
+  }
+  .tile-header--draggable {
+    cursor: grab;
+  }
+  .tile-header--draggable:active {
+    cursor: grabbing;
   }
   .title {
     font-weight: var(--weight-medium);
