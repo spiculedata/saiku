@@ -23,6 +23,10 @@
   import { schemaCache } from "$lib/stores/schemaCache.svelte";
   import type { SchemaLike } from "$lib/dashboard/effectiveQuery";
   import {
+    ancestorSelections,
+    memberDescendsFromAny,
+  } from "$lib/dashboard/cascadingFilters";
+  import {
     listAiCubes,
     type AiCubeSummary,
     type CubeRef,
@@ -254,6 +258,63 @@
     return segments.slice(0, keep).join(".");
   }
 
+  /** Build the display option list for one picker. Two passes:
+   *
+   *   1. **Ancestor restriction** — if any other panel filter / active
+   *      click targets a higher level on the same hierarchy AND has a
+   *      member selection, filter this picker's options to descendants
+   *      of the parent selection. e.g. with Year=1997 active, the
+   *      Quarter picker only offers Q1-Q4 of 1997 (not 1998's).
+   *   2. **Caption disambiguation** — when two options share the same
+   *      caption (the typical FoodMart case where Q1 exists under each
+   *      Year), prefix each duplicate with its parent path so the
+   *      analyst can tell them apart. Unique captions stay as-is.
+   *
+   *  Returns null until the underlying members fetch completes. */
+  function displayedOptionsFor(
+    f: PanelFilter,
+  ): { uniqueName: string; caption: string }[] | null {
+    const cat = memberCatalogues[f.id];
+    if (!cat?.members) return null;
+    let opts = cat.members;
+
+    // Pass 1: ancestor restriction.
+    if (f.cube) {
+      void schemaCache.version;
+      const schema = schemaCache.peek(f.cube) as SchemaLike | null;
+      const parents = ancestorSelections(activeFilters.all, schema, f.cube, {
+        dimension: f.dimension,
+        hierarchy: f.hierarchy,
+        level: f.level,
+        members: f.members ?? [],
+      });
+      if (parents.length > 0) {
+        opts = opts.filter((m) => memberDescendsFromAny(m.uniqueName, parents));
+      }
+    }
+
+    // Pass 2: caption disambiguation. Count captions; for any that
+    // collide, prefix with the parent segment(s) parsed out of the
+    // unique name.
+    const captionCounts = new Map<string, number>();
+    for (const m of opts) {
+      captionCounts.set(m.caption, (captionCounts.get(m.caption) ?? 0) + 1);
+    }
+    return opts.map((m) => {
+      if ((captionCounts.get(m.caption) ?? 0) <= 1) return m;
+      const segments = m.uniqueName.match(/\[[^\]]+\]/g) ?? [];
+      // segments[0] = [Dim], segments[1] = [Hier], then one per level.
+      // The leaf is the last; everything between hierarchy prefix and
+      // the leaf is parent context.
+      const parents = segments.slice(2, -1).map((s) => s.slice(1, -1));
+      const parentLabel = parents.join(" / ");
+      return {
+        uniqueName: m.uniqueName,
+        caption: parentLabel ? `${parentLabel} / ${m.caption}` : m.caption,
+      };
+    });
+  }
+
   async function loadMembers(f: PanelFilter, key: string): Promise<void> {
     if (!f.cube) return;
     memberCatalogues = {
@@ -414,6 +475,7 @@
           {#each panel.filters as f (f.id)}
             {@const cat = memberCatalogues[f.id]}
             {@const selected = selectedForPicker(f)}
+            {@const displayOptions = displayedOptionsFor(f)}
             <div
               class="picker"
               class:picker--hover={drag?.hoverId === f.id && drag.fromId !== f.id}
@@ -434,8 +496,8 @@
                 onchange={(e) => handleMemberChange(f.id, e)}
               >
                 <option value="">— any —</option>
-                {#if cat?.members}
-                  {#each cat.members as m (m.uniqueName)}
+                {#if displayOptions}
+                  {#each displayOptions as m (m.uniqueName)}
                     <option value={m.uniqueName}>{m.caption}</option>
                   {/each}
                 {:else if !f.cube}
