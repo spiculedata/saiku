@@ -355,6 +355,29 @@
       action={{ label: "+ New dashboard", onClick: handleNew }}
     />
   {:else}
+    <section class="catalogue-filters" aria-label="Catalogue filters">
+      <input
+        type="search"
+        class="search"
+        placeholder="Search dashboards by name or path…"
+        bind:value={searchQuery}
+        aria-label="Search dashboards"
+      />
+      <label class="sort">
+        <span>Sort:</span>
+        <select bind:value={sortKey} aria-label="Sort dashboards">
+          <option value="name">Name</option>
+          <option value="modified-desc">Last modified ↓</option>
+          <option value="modified-asc">Last modified ↑</option>
+        </select>
+      </label>
+      {#if searchQuery || selectedTags.length > 0 || selectedOwners.length > 0}
+        <button type="button" class="btn btn--ghost" onclick={clearFilters}>
+          Clear filters
+        </button>
+      {/if}
+    </section>
+
     {#if favouriteEntries.length > 0}
       <section class="pinned" aria-labelledby="favourites-heading">
         <h2 id="favourites-heading" class="pinned-heading">
@@ -400,29 +423,6 @@
         </ul>
       </section>
     {/if}
-
-    <section class="catalogue-filters" aria-label="Catalogue filters">
-      <input
-        type="search"
-        class="search"
-        placeholder="Search dashboards by name or path…"
-        bind:value={searchQuery}
-        aria-label="Search dashboards"
-      />
-      <label class="sort">
-        <span>Sort:</span>
-        <select bind:value={sortKey} aria-label="Sort dashboards">
-          <option value="name">Name</option>
-          <option value="modified-desc">Last modified ↓</option>
-          <option value="modified-asc">Last modified ↑</option>
-        </select>
-      </label>
-      {#if searchQuery || selectedTags.length > 0 || selectedOwners.length > 0}
-        <button type="button" class="btn btn--ghost" onclick={clearFilters}>
-          Clear filters
-        </button>
-      {/if}
-    </section>
 
     {#if availableTags.length > 0 || availableOwners.length > 0}
       <section class="filter-chips" aria-label="Tag and owner filters">
