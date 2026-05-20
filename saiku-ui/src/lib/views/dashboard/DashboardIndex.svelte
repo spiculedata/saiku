@@ -41,7 +41,7 @@
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
-  import { Copy, ShieldCheck, LayoutDashboard } from "lucide-svelte";
+  import { Copy, ShieldCheck, LayoutDashboard, Star } from "lucide-svelte";
 
   let entries = $state<RepositoryNode[]>([]);
   let loading = $state<boolean>(true);
@@ -217,6 +217,35 @@
     const p = path.split("/").pop() ?? path;
     return p.endsWith(".saikudash") ? p.slice(0, -".saikudash".length) : p;
   }
+
+  /** Resolve {@code recentDashboards.all()} / {@code favouriteDashboards.all()}
+   *  against the live entry list so paths that no longer exist (or that
+   *  the user can't see for ACL reasons) don't show as broken links.
+   *  Preserves the source order (most-recent-first for recents,
+   *  alphabetical-by-name for favourites). (#936) */
+  function resolveEntries(paths: string[]): RepositoryNode[] {
+    const byPath = new Map(entries.map((e) => [e.path, e]));
+    const out: RepositoryNode[] = [];
+    for (const p of paths) {
+      const found = byPath.get(p);
+      if (found) out.push(found);
+    }
+    return out;
+  }
+
+  let recentEntries = $derived(resolveEntries(recentDashboards.all()));
+  let favouriteEntries = $derived(
+    resolveEntries(
+      favouriteDashboards
+        .all()
+        .slice()
+        .sort((a, b) => basename(a).localeCompare(basename(b))),
+    ),
+  );
+
+  function toggleFavourite(path: string): void {
+    favouriteDashboards.toggle(path);
+  }
 </script>
 
 <div class="page">
@@ -321,6 +350,16 @@
               <ShieldCheck size={14} />
             </button>
           {/if}
+          <button
+            type="button"
+            class="btn"
+            disabled={duplicatingPath === relPath}
+            onclick={() => void handleDuplicate(relPath)}
+            title="Duplicate"
+            aria-label="Duplicate dashboard"
+          >
+            <Copy size={14} />
+          </button>
           <button type="button" class="btn danger" onclick={() => handleDelete(relPath)} title="Delete">
             Delete
           </button>
