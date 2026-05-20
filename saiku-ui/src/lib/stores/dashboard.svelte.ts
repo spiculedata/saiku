@@ -24,6 +24,7 @@ import {
   type FilterWidget,
   type PanelFilter,
 } from "$lib/api/dashboards";
+import { recentDashboards } from "$lib/stores/recentDashboards.svelte";
 import { session } from "$lib/stores/session.svelte";
 
 class DashboardStore {
@@ -57,6 +58,9 @@ class DashboardStore {
       }
       const d = await loadDashboard(path);
       this.hydrate(d, path);
+      // Track on successful view only — 404 fallbacks below shouldn't
+      // poison the "recently viewed" section with dead paths (#936).
+      recentDashboards.push(path);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes("-> 404")) {
