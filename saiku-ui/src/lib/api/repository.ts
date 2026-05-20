@@ -9,6 +9,13 @@ export interface RepositoryNode {
   fileType?: string | null;
   acl?: string | null;
   repoObjects?: RepositoryNode[];
+  /** ACL owner of the file, when the server can resolve one from the
+   *  closest {@code acl.json}. Used by the catalogue's #935 owner filter. */
+  owner?: string | null;
+  /** Last-modified time in millis since epoch. Used by the catalogue's
+   *  #935 modified-sort. {@code 0} when the storage layer doesn't
+   *  expose mtime. */
+  modified?: number;
 }
 
 export type AclType = "PRIVATE" | "SECURED" | "PUBLIC";

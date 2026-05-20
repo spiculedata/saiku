@@ -42,6 +42,13 @@
   import Skeleton from "$lib/components/Skeleton.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import { Copy, ShieldCheck, LayoutDashboard, Star } from "lucide-svelte";
+  import {
+    applyCatalogueFilters,
+    collectOwners,
+    collectTags,
+    type CatalogueEntry,
+    type SortKey,
+  } from "$lib/dashboard/catalogueFilter";
 
   let entries = $state<RepositoryNode[]>([]);
   let loading = $state<boolean>(true);
@@ -60,6 +67,16 @@
   let newModalOpen = $state<boolean>(false);
   let deletingPath = $state<string | null>(null);
 
+  /** Title + tags pulled out of each dashboard's JSON. Populated by
+   *  {@link enrichEntries} after the listing arrives so the catalogue
+   *  can show real names (not filename slugs) and filter on tags. (#935) */
+  let catalogueMeta = $state<Map<string, { title: string | null; tags: string[] }>>(new Map());
+
+  let searchQuery = $state<string>("");
+  let selectedTags = $state<string[]>([]);
+  let selectedOwners = $state<string[]>([]);
+  let sortKey = $state<SortKey>("name");
+
   async function refresh(): Promise<void> {
     loading = true;
     loadError = null;
@@ -69,11 +86,37 @@
       entries = flat.filter(
         (n) => n.type === "FILE" && (n.fileType === "saikudash" || n.path.endsWith(".saikudash")),
       );
+      // Kick off the metadata enrichment — the catalogue renders
+      // immediately with basename-only labels and lights up real names
+      // + tags as each fetch resolves. Doesn't block the UI thread
+      // and tolerates per-entry failures (one bad dashboard doesn't
+      // poison the whole catalogue). (#935)
+      void enrichEntries(entries);
     } catch (e: unknown) {
       loadError = e instanceof Error ? e.message : String(e);
     } finally {
       loading = false;
     }
+  }
+
+  /** Load each dashboard's JSON in parallel and stash the title + tags
+   *  in {@link catalogueMeta}. Per-entry errors are swallowed — a
+   *  dashboard with a malformed body just stays "title:null, tags:[]"
+   *  and falls back to its basename in the UI. */
+  async function enrichEntries(items: ReadonlyArray<RepositoryNode>): Promise<void> {
+    const fresh = new Map<string, { title: string | null; tags: string[] }>();
+    await Promise.all(
+      items.map(async (n) => {
+        const relPath = toRepoRelative(n.path);
+        try {
+          const d = await loadDashboard(relPath);
+          fresh.set(n.path, { title: d.name ?? null, tags: d.tags ?? [] });
+        } catch {
+          fresh.set(n.path, { title: null, tags: [] });
+        }
+      }),
+    );
+    catalogueMeta = fresh;
   }
 
   onMount(() => {
@@ -246,6 +289,46 @@
   function toggleFavourite(path: string): void {
     favouriteDashboards.toggle(path);
   }
+
+  /** Project the raw repo listing into the enriched CatalogueEntry shape
+   *  the filter helpers expect. Title/tags come from {@link catalogueMeta}
+   *  when the per-dashboard fetch has landed; otherwise nulls/empties.
+   *  Owner + modified pass straight through from the listing response. */
+  let catalogueEntries = $derived<CatalogueEntry[]>(
+    entries.map((n) => {
+      const meta = catalogueMeta.get(n.path);
+      return {
+        path: n.path,
+        basename: basename(toRepoRelative(n.path)),
+        title: meta?.title ?? null,
+        tags: meta?.tags ?? [],
+        owner: n.owner ?? null,
+        modified: n.modified ?? 0,
+      };
+    }),
+  );
+
+  let filteredEntries = $derived(
+    applyCatalogueFilters(catalogueEntries, {
+      search: searchQuery,
+      tags: selectedTags,
+      owners: selectedOwners,
+      sort: sortKey,
+    }),
+  );
+
+  let availableTags = $derived(collectTags(catalogueEntries));
+  let availableOwners = $derived(collectOwners(catalogueEntries));
+
+  function toggleSelected(list: string[], value: string): string[] {
+    return list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
+  }
+
+  function clearFilters(): void {
+    searchQuery = "";
+    selectedTags = [];
+    selectedOwners = [];
+  }
 </script>
 
 <div class="page">
@@ -272,6 +355,29 @@
       action={{ label: "+ New dashboard", onClick: handleNew }}
     />
   {:else}
+    <section class="catalogue-filters" aria-label="Catalogue filters">
+      <input
+        type="search"
+        class="search"
+        placeholder="Search dashboards by name or path…"
+        bind:value={searchQuery}
+        aria-label="Search dashboards"
+      />
+      <label class="sort">
+        <span>Sort:</span>
+        <select bind:value={sortKey} aria-label="Sort dashboards">
+          <option value="name">Name</option>
+          <option value="modified-desc">Last modified ↓</option>
+          <option value="modified-asc">Last modified ↑</option>
+        </select>
+      </label>
+      {#if searchQuery || selectedTags.length > 0 || selectedOwners.length > 0}
+        <button type="button" class="btn btn--ghost" onclick={clearFilters}>
+          Clear filters
+        </button>
+      {/if}
+    </section>
+
     {#if favouriteEntries.length > 0}
       <section class="pinned" aria-labelledby="favourites-heading">
         <h2 id="favourites-heading" class="pinned-heading">
@@ -318,13 +424,52 @@
       </section>
     {/if}
 
+    {#if availableTags.length > 0 || availableOwners.length > 0}
+      <section class="filter-chips" aria-label="Tag and owner filters">
+        {#if availableTags.length > 0}
+          <div class="chip-group" aria-label="Filter by tag">
+            <span class="chip-group-label">Tags</span>
+            {#each availableTags as t (t)}
+              {@const selected = selectedTags.includes(t)}
+              <button
+                type="button"
+                class="chip"
+                class:chip--on={selected}
+                aria-pressed={selected}
+                onclick={() => (selectedTags = toggleSelected(selectedTags, t))}
+              >
+                {t}
+              </button>
+            {/each}
+          </div>
+        {/if}
+        {#if availableOwners.length > 0}
+          <div class="chip-group" aria-label="Filter by owner">
+            <span class="chip-group-label">Owners</span>
+            {#each availableOwners as o (o)}
+              {@const selected = selectedOwners.includes(o)}
+              <button
+                type="button"
+                class="chip"
+                class:chip--on={selected}
+                aria-pressed={selected}
+                onclick={() => (selectedOwners = toggleSelected(selectedOwners, o))}
+              >
+                {o}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </section>
+    {/if}
+
     <ul class="list">
-      {#each entries as e (e.path)}
+      {#each filteredEntries as e (e.path)}
         {@const relPath = toRepoRelative(e.path)}
         {@const isFav = favouriteDashboards.isFavourite(relPath)}
         <li class="row">
           <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
-            <span class="name">{basename(relPath)}</span>
+            <span class="name">{e.title ?? e.basename}</span>
             <span class="path">{relPath}</span>
           </a>
           <button
@@ -528,5 +673,79 @@
   }
   .btn.star--on:hover {
     color: var(--accent);
+  }
+  .catalogue-filters {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .catalogue-filters .search {
+    flex: 1;
+    min-width: 12rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--bg);
+    font-size: 0.875rem;
+  }
+  .catalogue-filters .sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.8125rem;
+    color: var(--fg-muted);
+  }
+  .catalogue-filters select {
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--bg);
+    font-size: 0.8125rem;
+  }
+  .btn--ghost {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--fg-muted);
+    font-size: 0.8125rem;
+  }
+  .filter-chips {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+  .chip-group {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+  .chip-group-label {
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--fg-muted);
+    font-weight: var(--weight-medium);
+    margin-right: 0.25rem;
+  }
+  .chip {
+    padding: 0.25rem 0.625rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg);
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: var(--fg);
+  }
+  .chip:hover {
+    background: var(--bg-subtle);
+  }
+  .chip--on {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+  .chip--on:hover {
+    background: var(--accent);
   }
 </style>

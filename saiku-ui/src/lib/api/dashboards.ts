@@ -157,6 +157,8 @@ export interface Dashboard {
   layout: DashboardLayout;
   filters: DashboardFilter[];
   filterPanel?: DashboardFilterPanel;
+  /** Free-text labels for catalogue grouping + filtering (#935). */
+  tags?: string[];
 }
 
 export interface DashboardSaveResponse {

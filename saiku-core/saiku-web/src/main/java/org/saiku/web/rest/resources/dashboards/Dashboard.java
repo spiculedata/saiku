@@ -40,4 +40,9 @@ public class Dashboard {
      *  the client populates it on first load by promoting any
      *  {@code type:"filter"} tiles. */
     public DashboardFilterPanel filterPanel;
+
+    /** Free-text labels for catalogue grouping + filtering (#935).
+     *  Optional — older dashboards round-trip through {@code null} and
+     *  the catalogue simply doesn't surface them in the tag dropdown. */
+    public List<String> tags;
 }
