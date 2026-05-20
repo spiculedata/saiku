@@ -763,8 +763,16 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
                                     }
 
                                     String extension = FilenameUtils.getExtension(file.getPath());
+                                    String owner = acl.getOwner(new File(relativePath));
+                                    long modified = file.lastModified();
                                     repoObjects.add(new RepositoryFileObject(
-                                            filename, "#" + relativePath, extension, relativePath, acls));
+                                            filename,
+                                            "#" + relativePath,
+                                            extension,
+                                            relativePath,
+                                            acls,
+                                            owner,
+                                            modified));
                                 }
                             }
                         }

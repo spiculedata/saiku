@@ -164,6 +164,43 @@ class Acl2 {
         return acls.contains(AclMethod.READ);
     }
 
+    /**
+     * Best-effort owner lookup for a path. Walks the same {@code acl.json}
+     * chain that {@link #getMethods} consults; returns the {@code owner}
+     * field from the file's own ACL entry, or the closest parent's, or
+     * {@code null} when no ACL entry is found before the root.
+     *
+     * <p>Surfaced for the catalogue's #935 owner filter — needed at
+     * listing time without forcing a separate {@code getResourceAcl}
+     * round-trip per file. Best-effort only: a missing or malformed
+     * {@code acl.json} yields {@code null} (the catalogue then renders
+     * the file under an "unknown owner" bucket rather than failing the
+     * listing).
+     */
+    @Nullable
+    public String getOwner(@NotNull File file) {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            TypeReference<Map<String, AclEntry>> ref = new TypeReference<Map<String, AclEntry>>() {};
+            try {
+                Map<String, AclEntry> aclData = mapper.readValue(new File(file, "acl.json"), ref);
+                AclEntry entry = aclData.get(file.getPath());
+                if (entry != null && StringUtils.isNotBlank(entry.getOwner())) {
+                    return entry.getOwner();
+                }
+            } catch (Exception ignored) {
+                // No acl.json at this level — fall through and walk up.
+            }
+            if (file.getParentFile() != null) {
+                return getOwner(file.getParentFile());
+            }
+            return null;
+        } catch (Exception e) {
+            LOG.debug("Owner lookup failed for {}", file.getPath(), e);
+            return null;
+        }
+    }
+
     @NotNull
     public List<AclMethod> getMethods(@NotNull File file, String username, @NotNull List<String> roles) {
         try {

@@ -150,6 +150,22 @@ class DashboardStore {
     this.markDirty();
   }
 
+  /** Replace the dashboard's tag list. Deduped + trimmed; empty list
+   *  collapses to undefined so the persisted JSON stays clean. (#935) */
+  updateTags(tags: string[]): void {
+    if (!this.current) return;
+    const cleaned = Array.from(
+      new Set(tags.map((t) => t.trim()).filter((t) => t.length > 0)),
+    );
+    const next = cleaned.length === 0 ? undefined : cleaned;
+    const same =
+      (this.current.tags ?? []).length === (next ?? []).length &&
+      (this.current.tags ?? []).every((t, i) => t === (next ?? [])[i]);
+    if (same) return;
+    this.current = { ...this.current, tags: next };
+    this.markDirty();
+  }
+
   /** Replace the entire tiles array. Used by repositionTile callers
    *  (the edit modal) that need to commit a tile move AND any cascaded
    *  shifts on neighbours in a single dirty bump. */

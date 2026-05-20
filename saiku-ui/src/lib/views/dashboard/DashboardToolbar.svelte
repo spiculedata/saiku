@@ -15,10 +15,13 @@
   import AddTileMenu from "$lib/views/dashboard/AddTileMenu.svelte";
   import FilterSuggestionsModal from "$lib/views/dashboard/FilterSuggestionsModal.svelte";
   import type { TileType } from "$lib/api/dashboards";
+  import { X } from "lucide-svelte";
 
   interface Props {
     name: string;
     onNameChange?: (next: string) => void;
+    tags?: string[];
+    onTagsChange?: (next: string[]) => void;
     readOnly?: boolean;
     saving?: boolean;
     dirty?: boolean;
@@ -29,6 +32,8 @@
   let {
     name,
     onNameChange,
+    tags = [],
+    onTagsChange,
     readOnly = false,
     saving = false,
     dirty = false,
@@ -37,6 +42,7 @@
   }: Props = $props();
 
   let suggestOpen = $state(false);
+  let newTagInput = $state<string>("");
 
   // The input is controlled by the `name` prop directly — the store is
   // the source of truth. onNameChange propagates user edits upstream and
@@ -44,21 +50,93 @@
   function handleNameInput(e: Event): void {
     onNameChange?.((e.target as HTMLInputElement).value);
   }
+
+  /** Commit the new-tag input. Trims whitespace; ignores empty / dupes
+   *  (the store de-dupes too, this is just to keep the chip rendering
+   *  intuitive). Splits on comma so users can paste "a, b, c". */
+  function commitNewTag(): void {
+    const raw = newTagInput.trim();
+    if (!raw) return;
+    const incoming = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && !tags.includes(s));
+    if (incoming.length === 0) {
+      newTagInput = "";
+      return;
+    }
+    onTagsChange?.([...tags, ...incoming]);
+    newTagInput = "";
+  }
+
+  function removeTag(t: string): void {
+    onTagsChange?.(tags.filter((x) => x !== t));
+  }
+
+  function handleTagInputKeydown(e: KeyboardEvent): void {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitNewTag();
+    } else if (e.key === "Backspace" && newTagInput === "" && tags.length > 0) {
+      // Backspace on empty input removes the last chip — standard chip-
+      // picker UX.
+      e.preventDefault();
+      removeTag(tags[tags.length - 1]);
+    }
+  }
 </script>
 
 <header class="toolbar" role="toolbar" aria-label="Dashboard toolbar">
-  {#if readOnly}
-    <h1 class="name-readonly">{name}</h1>
-  {:else}
-    <input
-      class="name"
-      type="text"
-      value={name}
-      oninput={handleNameInput}
-      placeholder="Untitled dashboard"
-      aria-label="Dashboard name"
-    />
-  {/if}
+  <div class="title-block">
+    {#if readOnly}
+      <h1 class="name-readonly">{name}</h1>
+    {:else}
+      <input
+        class="name"
+        type="text"
+        value={name}
+        oninput={handleNameInput}
+        placeholder="Untitled dashboard"
+        aria-label="Dashboard name"
+      />
+    {/if}
+
+    {#if readOnly}
+      {#if tags.length > 0}
+        <div class="tags" aria-label="Dashboard tags">
+          {#each tags as t (t)}
+            <span class="tag-chip">{t}</span>
+          {/each}
+        </div>
+      {/if}
+    {:else}
+      <div class="tags" aria-label="Dashboard tags">
+        {#each tags as t (t)}
+          <span class="tag-chip">
+            {t}
+            <button
+              type="button"
+              class="tag-remove"
+              onclick={() => removeTag(t)}
+              aria-label="Remove tag {t}"
+              title="Remove tag"
+            >
+              <X size={10} />
+            </button>
+          </span>
+        {/each}
+        <input
+          class="tag-input"
+          type="text"
+          bind:value={newTagInput}
+          onkeydown={handleTagInputKeydown}
+          onblur={commitNewTag}
+          placeholder={tags.length === 0 ? "Add tags…" : "Add tag"}
+          aria-label="Add tag"
+        />
+      </div>
+    {/if}
+  </div>
 
   <div class="spacer"></div>
 
@@ -100,10 +178,16 @@
 <style>
   .toolbar {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.75rem;
     padding: 0.5rem 0.25rem;
     border-bottom: 1px solid var(--border);
+  }
+  .title-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
   }
   .name {
     font-size: 1.125rem;
@@ -123,6 +207,48 @@
     font-size: 1.125rem;
     font-weight: var(--weight-semibold);
     margin: 0;
+  }
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    align-items: center;
+    padding-left: 0.5rem;
+  }
+  .tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: 999px;
+    background: var(--bg-subtle);
+    color: var(--fg);
+    font-size: 0.6875rem;
+    line-height: 1.4;
+  }
+  .tag-remove {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--fg-muted);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+  }
+  .tag-remove:hover {
+    color: var(--danger);
+  }
+  .tag-input {
+    border: 1px dashed transparent;
+    background: transparent;
+    padding: 0.125rem 0.375rem;
+    font-size: 0.6875rem;
+    min-width: 6rem;
+    color: var(--fg);
+  }
+  .tag-input:hover, .tag-input:focus {
+    border-color: var(--border-strong);
+    outline: none;
   }
   .spacer { flex: 1; }
   .actions {

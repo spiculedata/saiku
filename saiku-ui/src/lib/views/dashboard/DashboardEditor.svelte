@@ -91,6 +91,10 @@
     dashboardStore.updateName(name);
   }
 
+  function handleTagsChange(tags: string[]): void {
+    dashboardStore.updateTags(tags);
+  }
+
   function handleAddTile(type: TileType): void {
     const layout = dashboardStore.current?.layout;
     if (!layout) return;
@@ -106,6 +110,8 @@
     <DashboardToolbar
       name={dashboardStore.current.name}
       onNameChange={handleNameChange}
+      tags={dashboardStore.current.tags ?? []}
+      onTagsChange={handleTagsChange}
       {readOnly}
       saving={dashboardStore.saving}
       dirty={dashboardStore.dirty}
