@@ -17,6 +17,12 @@
     serializeQueryToHash,
     type ThinQuery,
   } from "$lib/api/query";
+  import { datasources } from "$lib/stores/datasources.svelte";
+  import {
+    findCubeByRef,
+    parseStarterCubeRef,
+    pickStarterMeasureAndLevel,
+  } from "$lib/api/starterCube";
   import type { ChartType, ChartOptions } from "$lib/views/chartTypes";
   import { DEFAULT_CHART_OPTIONS } from "$lib/views/chartTypes";
 
@@ -107,9 +113,63 @@
         query.chartOptions = (decoded.view.chartOptions as ChartOptions) ?? { ...DEFAULT_CHART_OPTIONS };
         if (query.hasRunnableShape()) void query.run();
       }
+      hydrated = true;
+      return;
     }
+
+    // saiku-cloud#450 — starter-cube bootstrap. When the launch URL
+    // carries the four starterCube* params, resolve the cube via the
+    // discover endpoint, pick first measure + first dim level
+    // (preferring a time-typed hierarchy), and hydrate the workbench
+    // with a fully-formed query model. Customer can immediately drag
+    // a different measure / drill / filter — Studio re-fires the query
+    // on every interaction. No flat MDX preload — that would freeze
+    // the workbench because there's no MDX → model inverse parser.
+    const ref = parseStarterCubeRef(params);
+    if (ref) {
+      void hydrateStarterCube(ref).finally(() => {
+        hydrated = true;
+      });
+      return;
+    }
+
     hydrated = true;
   });
+
+  /** Resolve starter-cube ref → SaikuCube → metadata → query.hydrate.
+   *  Every failure falls through silently: a malformed or missing cube
+   *  must not show an error toast, just leave the empty workbench
+   *  rendered as if the URL params were absent. */
+  async function hydrateStarterCube(ref: ReturnType<typeof parseStarterCubeRef>): Promise<void> {
+    if (!ref) return;
+    try {
+      // Ensure the connection tree is loaded. The session+CubePicker
+      // mount sequence usually does this, but the timing is racey and
+      // we don't want to depend on it.
+      if (!datasources.loaded) {
+        await datasources.load(session.username);
+      }
+      const cube = findCubeByRef(datasources.connections, ref);
+      if (!cube) return;
+      // Fetch dimensions + measures (cached after first call).
+      const metadata = await datasources.metadata(session.username, cube);
+      const pick = pickStarterMeasureAndLevel(metadata.measures, metadata.dimensions);
+      if (!pick) return;
+
+      // Hydrate the query model the same way a manual chip-drop would:
+      // initFor(cube) → addMeasure → includeLevel(ROWS, drop). Studio
+      // sees an ordinary user-built query, so drag/drill/filter all
+      // work natively from this starting point.
+      selection.select(cube);
+      query.initFor(cube);
+      query.addMeasure(pick.measure);
+      query.includeLevel("ROWS", pick.drop);
+      if (query.hasRunnableShape()) void query.run();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("saiku: starter-cube hydrate failed, falling back to empty workbench", err);
+    }
+  }
 
   /** Debounced write-back. history.replaceState — not pushState — so the
    *  back button doesn't step through every chip drop. */
