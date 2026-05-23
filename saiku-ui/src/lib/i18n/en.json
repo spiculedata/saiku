@@ -127,6 +127,7 @@
   "modal.delete.confirm": "Permanently delete {kind} \"{path}\"? This cannot be undone.",
   "modal.about.title": "About Saiku",
   "modal.about.tagline": "Saiku — modernised stack.",
+  "modal.about.community": "Join the community on Slack",
   "modal.save.title": "Save query",
   "modal.save.folder": "Folder",
   "modal.save.folderHint": "Pick an existing folder or type a new path. Missing parent folders are created automatically.",
