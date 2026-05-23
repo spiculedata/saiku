@@ -39,11 +39,18 @@
   import { platform } from "$lib/stores/platform.svelte";
 
   let nonEmpty = $state(true);
+  let visualTotals = $state(false);
 
   $effect(() => {
     if (query.current?.queryModel) {
       query.current.queryModel.axes.ROWS.nonEmpty = nonEmpty;
       query.current.queryModel.axes.COLUMNS.nonEmpty = nonEmpty;
+    }
+  });
+
+  $effect(() => {
+    if (query.current?.queryModel) {
+      query.current.queryModel.visualTotals = visualTotals;
     }
   });
 
@@ -338,6 +345,10 @@
         <label class="toolbar__check" title={i18n.t("toolbar.nonEmpty.hint")}>
           <input type="checkbox" bind:checked={nonEmpty} />
           <span>{i18n.t("toolbar.nonEmpty")}</span>
+        </label>
+        <label class="toolbar__check" title={i18n.t("toolbar.visualTotals.hint")}>
+          <input type="checkbox" bind:checked={visualTotals} />
+          <span>{i18n.t("toolbar.visualTotals")}</span>
         </label>
         <label class="toolbar__check" title={i18n.t("toolbar.async.hint")}>
           <input type="checkbox" bind:checked={query.async} />
