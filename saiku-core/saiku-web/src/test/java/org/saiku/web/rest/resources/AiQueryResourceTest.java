@@ -263,8 +263,7 @@ public class AiQueryResourceTest {
         // AsyncQueryService so drillthrough's existing handle-fallback
         // path can re-attach. Test pins that the handle ends up in the
         // expected DONE state with the executed ThinQuery.
-        org.saiku.service.async.AsyncQueryService async =
-                new org.saiku.service.async.AsyncQueryService();
+        org.saiku.service.async.AsyncQueryService async = new org.saiku.service.async.AsyncQueryService();
         resource.setAsyncQueryService(async);
         // Custom stub that populates the QueryContext getOlapResult so the
         // re-attach branch can read the CellSet. Default StubThinQueryService
@@ -286,9 +285,7 @@ public class AiQueryResourceTest {
         assertNotNull("sync executeAi returns a queryId", queryId);
 
         org.saiku.service.async.AsyncQueryHandle handle = async.get(queryId);
-        assertNotNull(
-                "sync executeAi should register a pre-completed handle for cross-session drillthrough",
-                handle);
+        assertNotNull("sync executeAi should register a pre-completed handle for cross-session drillthrough", handle);
         assertEquals(
                 "registered handle reports DONE so resource-layer drillthrough resolves it",
                 org.saiku.service.async.AsyncQueryHandle.Status.DONE,

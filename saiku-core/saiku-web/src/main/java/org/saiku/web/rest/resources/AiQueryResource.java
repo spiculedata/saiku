@@ -264,7 +264,8 @@ public class AiQueryResource {
         // the same cross-session reachability for free.
         if (asyncQueryService != null && tq.getName() != null) {
             try {
-                org.olap4j.CellSet cellSet = thinQueryService.getContext(tq.getName()).getOlapResult();
+                org.olap4j.CellSet cellSet =
+                        thinQueryService.getContext(tq.getName()).getOlapResult();
                 org.saiku.service.async.AsyncQueryHandle handle =
                         new org.saiku.service.async.AsyncQueryHandle(tq.getName(), tq);
                 handle.setFuture(java.util.concurrent.CompletableFuture.completedFuture(cellSet));
@@ -276,8 +277,7 @@ public class AiQueryResource {
                 // Never fail the query response over the registration —
                 // drillthrough simply won't be reachable from a different
                 // session, which is the pre-fix behaviour.
-                log.debug("AI sync handle registration failed for {}: {}",
-                        tq.getName(), registerErr.toString());
+                log.debug("AI sync handle registration failed for {}: {}", tq.getName(), registerErr.toString());
             }
         }
 
