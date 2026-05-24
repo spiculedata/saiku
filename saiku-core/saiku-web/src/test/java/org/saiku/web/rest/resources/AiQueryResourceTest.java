@@ -248,6 +248,68 @@ public class AiQueryResourceTest {
         assertEquals("Sales", body.get(0).getCubeName());
     }
 
+    /* --- saiku#915 / MCP drillthrough cross-session re-attach ---------- */
+
+    @Test
+    public void syncExecuteRegistersHandleForCrossSessionDrillthrough() {
+        // MCP smoke 2026-05-23: a follow-up drillthrough call lands on a
+        // different session than the sync run_query (JSESSIONID per
+        // request). Without the cross-session re-attach, drillthrough's
+        // resolver sees an empty per-session context and surfaces
+        // "Unknown queryId" even though the result is hot.
+        //
+        // Fix: executeAi mirrors the async-submission path — register a
+        // pre-completed AsyncQueryHandle in the cross-session
+        // AsyncQueryService so drillthrough's existing handle-fallback
+        // path can re-attach. Test pins that the handle ends up in the
+        // expected DONE state with the executed ThinQuery.
+        org.saiku.service.async.AsyncQueryService async =
+                new org.saiku.service.async.AsyncQueryService();
+        resource.setAsyncQueryService(async);
+        // Custom stub that populates the QueryContext getOlapResult so the
+        // re-attach branch can read the CellSet. Default StubThinQueryService
+        // returns null context; this one stores a no-op CellSet via the
+        // registerExternalContext seam the production code uses too.
+        resource.setThinQueryService(new StubThinQueryService() {
+            @Override
+            public CellDataSet execute(ThinQuery tq) {
+                registerExternalContext(tq, null);
+                return buildStubCellDataSet();
+            }
+        });
+
+        Response resp = resource.executeAi(baseRequest(), "records");
+        assertEquals(200, resp.getStatus());
+
+        AiQueryResponse body = (AiQueryResponse) resp.getEntity();
+        String queryId = body.getQueryId();
+        assertNotNull("sync executeAi returns a queryId", queryId);
+
+        org.saiku.service.async.AsyncQueryHandle handle = async.get(queryId);
+        assertNotNull(
+                "sync executeAi should register a pre-completed handle for cross-session drillthrough",
+                handle);
+        assertEquals(
+                "registered handle reports DONE so resource-layer drillthrough resolves it",
+                org.saiku.service.async.AsyncQueryHandle.Status.DONE,
+                handle.getStatus());
+        assertEquals(
+                "handle carries the executed ThinQuery so registerExternalContext re-attaches the right query",
+                queryId,
+                handle.getQuery().getName());
+    }
+
+    @Test
+    public void syncExecuteSucceedsEvenIfAsyncQueryServiceUnwired() {
+        // Back-compat: callers that don't wire asyncQueryService (older
+        // webapp configs, the JSP-only flow, tests) must still get a
+        // clean 200. The re-attach is an opt-in cross-session
+        // enhancement, not a required pre-condition.
+        resource.setAsyncQueryService(null);
+        Response resp = resource.executeAi(baseRequest(), "records");
+        assertEquals(200, resp.getStatus());
+    }
+
     /* ----------------------- Phase 4: async ---------------------------------- */
 
     @Test

@@ -247,6 +247,40 @@ public class AiQueryResource {
             return error("execute failed: " + describeDeepestCause(e));
         }
 
+        // saiku#915 / saiku-cloud MCP smoke-test 2026-05-23: a follow-up
+        // drillthrough call lands on a different session than this sync
+        // execute (very common via MCP, which gets a fresh JSESSIONID per
+        // request when the client doesn't keep a cookie jar). The
+        // session-scoped ThinQueryService context that holds the
+        // (ThinQuery, CellSet) pair is empty on the new session and
+        // drillthrough's resolver path surfaces "Unknown queryId" even
+        // though the result is still hot.
+        //
+        // Mirror the async submission path: register a pre-completed
+        // AsyncQueryHandle keyed on the ThinQuery name. The drillthrough
+        // resource's existing fallback already calls
+        // asyncQueryService.get(queryId) and re-attaches via
+        // ThinQueryService.registerExternalContext — so sync queries get
+        // the same cross-session reachability for free.
+        if (asyncQueryService != null && tq.getName() != null) {
+            try {
+                org.olap4j.CellSet cellSet = thinQueryService.getContext(tq.getName()).getOlapResult();
+                org.saiku.service.async.AsyncQueryHandle handle =
+                        new org.saiku.service.async.AsyncQueryHandle(tq.getName(), tq);
+                handle.setFuture(java.util.concurrent.CompletableFuture.completedFuture(cellSet));
+                handle.compareAndSetStatus(
+                        org.saiku.service.async.AsyncQueryHandle.Status.PENDING,
+                        org.saiku.service.async.AsyncQueryHandle.Status.DONE);
+                asyncQueryService.register(handle);
+            } catch (RuntimeException registerErr) {
+                // Never fail the query response over the registration —
+                // drillthrough simply won't be reachable from a different
+                // session, which is the pre-fix behaviour.
+                log.debug("AI sync handle registration failed for {}: {}",
+                        tq.getName(), registerErr.toString());
+            }
+        }
+
         AiQueryResponse resp = buildResponse(tq, cds, start, format);
         return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
     }
