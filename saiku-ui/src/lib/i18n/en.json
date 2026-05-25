@@ -44,6 +44,8 @@
   "toolbar.autorun.hint": "Automatically run queries after each edit",
   "toolbar.nonEmpty": "Non-empty",
   "toolbar.nonEmpty.hint": "Hide empty rows and columns",
+  "toolbar.visualTotals": "Recalculate totals for visible",
+  "toolbar.visualTotals.hint": "Recompute parent totals from only the visible members (VISUALTOTALS)",
   "toolbar.async": "Async",
   "toolbar.async.hint": "Submit queries asynchronously with progress + cancel",
   "toolbar.swap": "Swap axes",

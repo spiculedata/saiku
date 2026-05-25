@@ -32,6 +32,7 @@
   "toolbar.run": "▶ Exécuter",
   "toolbar.autorun": "Exécution auto",
   "toolbar.nonEmpty": "Non vide",
+  "toolbar.visualTotals": "Recalculer les totaux pour les visibles",
   "toolbar.async": "Asynchrone",
   "toolbar.swap": "⇄ Échanger",
   "toolbar.mdx": "MDX",
