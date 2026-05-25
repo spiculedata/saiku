@@ -17,7 +17,7 @@
   import TextTile from "$lib/views/dashboard/tiles/TextTile.svelte";
   import KpiTile from "$lib/views/dashboard/tiles/KpiTile.svelte";
   import TileEditorModal from "$lib/views/dashboard/TileEditorModal.svelte";
-  import { Settings2, X } from "lucide-svelte";
+  import { Copy, Settings2, X } from "lucide-svelte";
 
   interface Props {
     tile: DashboardTile;
@@ -28,9 +28,23 @@
 
   let editorOpen = $state(false);
 
+  // Freshly-duplicated tiles arrive with their id stamped on the
+  // store's pendingEditTileId signal — open the editor immediately so
+  // the analyst can rename / re-bind without a second click (issue #913).
+  $effect(() => {
+    if (!readOnly && dashboardStore.consumeEditSignal(tile.id)) {
+      editorOpen = true;
+    }
+  });
+
   function handleEdit(): void {
     if (readOnly) return;
     editorOpen = true;
+  }
+
+  function handleDuplicate(): void {
+    if (readOnly) return;
+    dashboardStore.duplicateTile(tile.id);
   }
 
   function handleRemove(): void {
@@ -58,6 +72,9 @@
       <div class="tile-actions">
         <button type="button" class="icon-btn" aria-label="Edit tile" onclick={handleEdit}>
           <Settings2 size={14} />
+        </button>
+        <button type="button" class="icon-btn" aria-label="Duplicate tile" onclick={handleDuplicate}>
+          <Copy size={14} />
         </button>
         <button type="button" class="icon-btn icon-btn--danger" aria-label="Remove tile" onclick={handleRemove}>
           <X size={14} />

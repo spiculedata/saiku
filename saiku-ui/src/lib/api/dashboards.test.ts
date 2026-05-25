@@ -11,8 +11,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   cloneDashboardWithFreshIds,
+  cloneTileWithFreshId,
   normaliseDashboardPath,
   type Dashboard,
+  type DashboardTile,
 } from "./dashboards";
 
 describe("normaliseDashboardPath", () => {
@@ -157,6 +159,81 @@ describe("cloneDashboardWithFreshIds", () => {
     const src = makeSource();
     const snapshot = JSON.parse(JSON.stringify(src));
     cloneDashboardWithFreshIds(src);
+    expect(src).toEqual(snapshot);
+  });
+});
+
+describe("cloneTileWithFreshId", () => {
+  function makeChartTile(): DashboardTile {
+    return {
+      id: "src-tile",
+      x: 2,
+      y: 3,
+      w: 6,
+      h: 4,
+      type: "chart",
+      title: "Sales by region",
+      chartType: "bar",
+      cube: { connectionName: "c", catalog: "C", schema: "S", cubeName: "Sales" },
+      query: { kind: "inline", body: { measures: [{ name: "Store Sales" }] } },
+    };
+  }
+
+  function makeUntitledKpiTile(): DashboardTile {
+    return {
+      id: "src-kpi",
+      x: 0,
+      y: 0,
+      w: 3,
+      h: 2,
+      type: "kpi",
+      kpi: { measure: "[Measures].[Store Sales]", format: "currency" },
+    };
+  }
+
+  it("mints a fresh tile id by default", () => {
+    const src = makeChartTile();
+    const copy = cloneTileWithFreshId(src);
+    expect(copy.id).not.toBe(src.id);
+    expect(copy.id.length).toBeGreaterThan(0);
+  });
+
+  it("honours an explicit newId override", () => {
+    const copy = cloneTileWithFreshId(makeChartTile(), { newId: "my-fixed-id" });
+    expect(copy.id).toBe("my-fixed-id");
+  });
+
+  it("appends ' (copy)' to a titled tile's title by default", () => {
+    const copy = cloneTileWithFreshId(makeChartTile());
+    expect(copy.title).toBe("Sales by region (copy)");
+  });
+
+  it("leaves an untitled tile's title undefined so the defaultTitle fallback still applies", () => {
+    const copy = cloneTileWithFreshId(makeUntitledKpiTile());
+    expect(copy.title).toBeUndefined();
+  });
+
+  it("honours an explicit titleSuffix override", () => {
+    const copy = cloneTileWithFreshId(makeChartTile(), { titleSuffix: " — duplicate" });
+    expect(copy.title).toBe("Sales by region — duplicate");
+  });
+
+  it("preserves every non-id field on the source tile", () => {
+    const src = makeChartTile();
+    const copy = cloneTileWithFreshId(src, { newId: "new" });
+    const { id: _aId, title: _aTitle, ...aRest } = src;
+    const { id: _bId, title: _bTitle, ...bRest } = copy;
+    void _aId;
+    void _bId;
+    void _aTitle;
+    void _bTitle;
+    expect(bRest).toEqual(aRest);
+  });
+
+  it("does not mutate the source tile", () => {
+    const src = makeChartTile();
+    const snapshot = JSON.parse(JSON.stringify(src));
+    cloneTileWithFreshId(src);
     expect(src).toEqual(snapshot);
   });
 });

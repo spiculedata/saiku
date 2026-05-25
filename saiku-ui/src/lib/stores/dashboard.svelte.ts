@@ -13,6 +13,7 @@
  */
 
 import {
+  cloneTileWithFreshId,
   loadDashboard,
   newDashboard,
   normaliseDashboardPath,
@@ -24,6 +25,7 @@ import {
   type FilterWidget,
   type PanelFilter,
 } from "$lib/api/dashboards";
+import { firstFreeSlot } from "$lib/dashboard/tilePlacement";
 import { recentDashboards } from "$lib/stores/recentDashboards.svelte";
 import { session } from "$lib/stores/session.svelte";
 
@@ -43,6 +45,12 @@ class DashboardStore {
 
   dirty = $state<boolean>(false);
   dirtyCount = $state<number>(0);
+
+  /** Signal that the next Tile to render with this id should auto-open
+   *  its editor modal — used by {@link duplicateTile} so the freshly
+   *  cloned tile lands in immediate-edit mode (issue #913). Consumed
+   *  exactly once via {@link consumeEditSignal}; left unset otherwise. */
+  pendingEditTileId = $state<string | null>(null);
 
   /* ----------------------------- lifecycle ----------------------------- */
 
@@ -190,6 +198,44 @@ class DashboardStore {
       },
     };
     this.markDirty();
+  }
+
+  /** Duplicate a tile: mint a fresh id, suffix the title with " (copy)",
+   *  drop it at the next free slot (same w×h as the source), and signal
+   *  the new tile to auto-open its editor. Returns the new tile id, or
+   *  null when the source isn't in the current layout. Issue #913. */
+  duplicateTile(id: string): string | null {
+    if (!this.current) return null;
+    const source = this.current.layout.tiles.find((t) => t.id === id);
+    if (!source) return null;
+    const slot = firstFreeSlot(this.current.layout, source.w, source.h);
+    const cloned: DashboardTile = {
+      ...cloneTileWithFreshId(source),
+      x: slot.x,
+      y: slot.y,
+    };
+    this.current = {
+      ...this.current,
+      layout: {
+        ...this.current.layout,
+        tiles: [...this.current.layout.tiles, cloned],
+      },
+    };
+    this.pendingEditTileId = cloned.id;
+    this.markDirty();
+    return cloned.id;
+  }
+
+  /** Returns true (and clears the signal) iff this tile id matches the
+   *  pending edit signal. Tile.svelte calls this on mount to decide
+   *  whether to open its editor modal automatically. Idempotent: a
+   *  second call returns false. */
+  consumeEditSignal(id: string): boolean {
+    if (this.pendingEditTileId === id) {
+      this.pendingEditTileId = null;
+      return true;
+    }
+    return false;
   }
 
   removeTile(id: string): void {
