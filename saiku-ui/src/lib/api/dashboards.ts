@@ -280,6 +280,35 @@ export function cloneDashboardWithFreshIds(source: Dashboard, newName?: string):
   };
 }
 
+/** Pure: clone a single tile with a fresh id and an optional title
+ *  suffix. Position / size / type / cube / query / kpi / target /
+ *  widget / chartType / text are preserved verbatim; only id (and
+ *  optionally title) change.
+ *
+ *  Title rules:
+ *   - When {@code source.title} is set, the clone's title becomes
+ *     {@code `${source.title}${titleSuffix ?? " (copy)"}`}.
+ *   - When {@code source.title} is missing (the tile relies on the
+ *     `defaultTitle` fallback in Tile.svelte), the clone's title is
+ *     left undefined too — the fallback continues to apply.
+ *
+ *  Pure / immutable: the source is not mutated. Caller must pick the
+ *  layout slot separately (see {@code firstFreeSlot} in
+ *  $lib/dashboard/tilePlacement) and merge x/y after the clone.
+ *  Issue #913. */
+export function cloneTileWithFreshId(
+  source: DashboardTile,
+  opts?: { newId?: string; titleSuffix?: string },
+): DashboardTile {
+  const suffix = opts?.titleSuffix ?? " (copy)";
+  const title = source.title ? `${source.title}${suffix}` : source.title;
+  return {
+    ...source,
+    id: opts?.newId ?? cryptoUuid(),
+    title,
+  };
+}
+
 /** Glue: load a dashboard at {@code srcPath}, clone it with fresh ids,
  *  save the clone at {@code destPath}, and return the new dashboard.
  *  The caller is responsible for picking a non-colliding destPath —
