@@ -13,6 +13,7 @@
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
   import { newTileId, type TileType } from "$lib/api/dashboards";
+  import { panelDiffersFromDefaults } from "$lib/dashboard/filterDefaults";
   import { buildTile } from "$lib/dashboard/tilePlacement";
   import { decodeFilterParams, encodeActiveFilters } from "$lib/dashboard/urlFilterState";
   import DashboardToolbar from "$lib/views/dashboard/DashboardToolbar.svelte";
@@ -101,6 +102,24 @@
     const tile = buildTile(layout, type, newTileId());
     dashboardStore.addTile(tile);
   }
+
+  // Issue #927: Reset filters button enable-state. True when there are
+  // any click-captured filters OR any panel widget whose members[]
+  // differs from its saved default. The URL deep-link state mirrors
+  // activeFilters.all via the existing $effect above, so resetting
+  // clicks here propagates to the URL automatically.
+  let canResetFilters = $derived(
+    activeFilters.clicks.length > 0 ||
+      panelDiffersFromDefaults(
+        dashboardStore.current?.filterPanel?.filters,
+        dashboardStore.savedDefaultMembers,
+      ),
+  );
+
+  function handleResetFilters(): void {
+    activeFilters.resetTransient();
+    dashboardStore.resetPanelFiltersToSaved();
+  }
 </script>
 
 <div class="dashboard-editor">
@@ -117,6 +136,8 @@
       dirty={dashboardStore.dirty}
       onSave={handleSave}
       onAddTile={readOnly ? undefined : handleAddTile}
+      {canResetFilters}
+      onResetFilters={readOnly ? undefined : handleResetFilters}
     />
     {#if dashboardStore.loadError}
       <div class="notice">{dashboardStore.loadError}</div>
