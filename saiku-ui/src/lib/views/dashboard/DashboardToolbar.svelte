@@ -15,7 +15,7 @@
   import AddTileMenu from "$lib/views/dashboard/AddTileMenu.svelte";
   import FilterSuggestionsModal from "$lib/views/dashboard/FilterSuggestionsModal.svelte";
   import type { TileType } from "$lib/api/dashboards";
-  import { X } from "lucide-svelte";
+  import { RotateCcw, X } from "lucide-svelte";
 
   interface Props {
     name: string;
@@ -27,6 +27,11 @@
     dirty?: boolean;
     onSave?: () => void;
     onAddTile?: (type: TileType) => void;
+    /** Issue #927 — true iff any click-filter exists OR any panel
+     *  widget's members[] differs from its saved default. Drives the
+     *  Reset filters button's disabled state. */
+    canResetFilters?: boolean;
+    onResetFilters?: () => void;
   }
 
   let {
@@ -39,6 +44,8 @@
     dirty = false,
     onSave,
     onAddTile,
+    canResetFilters = false,
+    onResetFilters,
   }: Props = $props();
 
   let suggestOpen = $state(false);
@@ -152,6 +159,20 @@
         🔍 Suggest filters
       </button>
 
+      <button
+        type="button"
+        class="btn"
+        onclick={() => onResetFilters?.()}
+        disabled={!canResetFilters || !onResetFilters}
+        aria-disabled={!canResetFilters || !onResetFilters}
+        title={canResetFilters
+          ? "Clear all click-filters and restore panel filters to their saved defaults"
+          : "No active filters to reset"}
+      >
+        <RotateCcw size={14} aria-hidden="true" />
+        <span>Reset filters</span>
+      </button>
+
       <AddTileMenu onPick={(t) => onAddTile?.(t)} disabled={!onAddTile} />
 
       <button
@@ -257,6 +278,9 @@
     align-items: center;
   }
   .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
     padding: 0.375rem 0.75rem;
     border: 1px solid var(--border-strong);
     background: var(--bg);

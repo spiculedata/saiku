@@ -25,6 +25,11 @@ import {
   type FilterWidget,
   type PanelFilter,
 } from "$lib/api/dashboards";
+import {
+  restoreMembersToDefaults,
+  snapshotPanelDefaults,
+  type SavedDefaultMembers,
+} from "$lib/dashboard/filterDefaults";
 import { firstFreeSlot } from "$lib/dashboard/tilePlacement";
 import { recentDashboards } from "$lib/stores/recentDashboards.svelte";
 import { session } from "$lib/stores/session.svelte";
@@ -51,6 +56,12 @@ class DashboardStore {
    *  cloned tile lands in immediate-edit mode (issue #913). Consumed
    *  exactly once via {@link consumeEditSignal}; left unset otherwise. */
   pendingEditTileId = $state<string | null>(null);
+
+  /** Per-panel-widget snapshot of members[] as they were on the
+   *  saved-to-disk dashboard. Re-captured on every {@link hydrate} so
+   *  {@link resetPanelFiltersToSaved} and the toolbar's "can reset?"
+   *  check can compare without a network round-trip. (Issue #927.) */
+  savedDefaultMembers = $state<SavedDefaultMembers>({});
 
   /* ----------------------------- lifecycle ----------------------------- */
 
@@ -99,6 +110,10 @@ class DashboardStore {
     this.dirty = changed;
     this.dirtyCount = changed ? 1 : 0;
     this.saveError = null;
+    // Snapshot AFTER migration — analysts who reset want to land on
+    // the migrated baseline, not on the pre-migration shape that no
+    // longer exists in-memory. (Issue #927.)
+    this.savedDefaultMembers = snapshotPanelDefaults(migrated.filterPanel?.filters);
   }
 
   /** Persist via DashboardResource. Returns true on success. */
@@ -148,6 +163,23 @@ class DashboardStore {
     this.dirtyCount = 0;
     this.loadError = null;
     this.saveError = null;
+    this.savedDefaultMembers = {};
+  }
+
+  /** Restore every panel widget's members[] to its saved-default
+   *  state (empty[] for in-session-added widgets). No-op when nothing
+   *  would change — the {@link restoreMembersToDefaults} helper
+   *  short-circuits via referential identity. Issue #927. */
+  resetPanelFiltersToSaved(): void {
+    if (!this.current?.filterPanel) return;
+    const current = this.current.filterPanel.filters;
+    const next = restoreMembersToDefaults(current, this.savedDefaultMembers);
+    if (next === current) return;
+    this.current = {
+      ...this.current,
+      filterPanel: { ...this.current.filterPanel, filters: next },
+    };
+    this.markDirty();
   }
 
   /* ----------------------------- mutations ----------------------------- */
