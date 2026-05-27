@@ -48,6 +48,38 @@
     }
   });
 
+  /**
+   * saiku-cloud#612 — derived runnable state for the Run button.
+   *
+   * Mirrors `query.hasRunnableShape()` but in a $derived form so
+   * the Run button can be visually disabled + tooltipped when the
+   * shape isn't runnable. Previously the Run button stayed primary-
+   * coloured and clickable; the empty-measure failure only surfaced
+   * AFTER click, inline in the result pane (easy to miss for a
+   * customer used to other BI tools that prevent the click).
+   *
+   * Returns:
+   *   - { ok: true } when the query is runnable
+   *   - { ok: false, reason: <i18n-key>, hint: <i18n-key> } when not
+   *
+   * The two not-runnable reasons we surface explicitly: missing
+   * measure (most common — drag a measure into the Measures area)
+   * and missing hierarchy on rows + columns. The query-store's
+   * post-click error fallback still catches anything else.
+   */
+  let runnable = $derived.by((): { ok: true } | { ok: false; reasonKey: string; hintKey: string } => {
+    const q = query.current?.queryModel;
+    if (!q) return { ok: false, reasonKey: "toolbar.run.disabled.noQuery", hintKey: "toolbar.run.disabled.noQuery.hint" };
+    if (q.details.measures.length === 0) {
+      return { ok: false, reasonKey: "toolbar.run.disabled.noMeasure", hintKey: "toolbar.run.disabled.noMeasure.hint" };
+    }
+    const hasHierarchy = q.axes.COLUMNS.hierarchies.length > 0 || q.axes.ROWS.hierarchies.length > 0;
+    if (!hasHierarchy) {
+      return { ok: false, reasonKey: "toolbar.run.disabled.noHierarchy", hintKey: "toolbar.run.disabled.noHierarchy.hint" };
+    }
+    return { ok: true };
+  });
+
   $effect(() => {
     if (query.current?.queryModel) {
       query.current.queryModel.visualTotals = visualTotals;
@@ -326,7 +358,14 @@
   <div class="toolbar__sep"></div>
   <div class="toolbar__group toolbar__menu" role="group" aria-label="Query">
     <div class="split-btn">
-      <button class="tb-btn tb-btn--primary split-btn__main" title={i18n.t("toolbar.run")} onclick={onRun}>
+      <button
+        class="tb-btn tb-btn--primary split-btn__main"
+        class:tb-btn--disabled-shape={!runnable.ok}
+        title={runnable.ok ? i18n.t("toolbar.run") : i18n.t(runnable.hintKey)}
+        aria-disabled={!runnable.ok}
+        disabled={!runnable.ok}
+        onclick={onRun}
+      >
         <Play size={18} /><span class="tb-btn__label">{i18n.t("toolbar.run")}</span>
       </button>
       <button
@@ -568,6 +607,20 @@
     border-color: var(--accent);
   }
   .tb-btn--primary:hover { filter: brightness(1.1); background: var(--accent); color: var(--bg); }
+  /*
+   * saiku-cloud#612 — visual cue that the query shape isn't runnable yet
+   * (e.g. no measure selected). Distinct from the standard :disabled
+   * appearance because we still want the user to see WHERE the Run
+   * button is + read the tooltip explaining what's missing.
+   */
+  .tb-btn--disabled-shape,
+  .tb-btn--disabled-shape:hover {
+    background: var(--bg-muted);
+    color: var(--fg-muted);
+    border-color: var(--border);
+    filter: none;
+    cursor: not-allowed;
+  }
   .tb-btn--dirty { position: relative; }
   .tb-btn__dot {
     position: absolute;
