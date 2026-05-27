@@ -11,7 +11,7 @@
    * member. Pie slice clicks use the slice name as the member.
    */
 
-  import { onMount, onDestroy } from "svelte";
+  import { onDestroy } from "svelte";
   import * as echarts from "echarts";
   import type { DashboardTile, DashboardFilter } from "$lib/api/dashboards";
   import {
@@ -42,7 +42,14 @@
   let { tile, onClickFilter }: Props = $props();
 
   let host = $state<HTMLDivElement | null>(null);
-  let chart: echarts.ECharts | null = null;
+  // `$state.raw` so the ECharts instance is reactive on *reassignment*
+  // (lets the render $effect re-fire the moment init completes) without
+  // Svelte proxying the library's internal mutable state. Using a plain
+  // `let` here silently broke the chart whenever `tile.query` hydrated
+  // asynchronously: the {:else} branch with bind:this didn't exist on
+  // first render, so onMount fired with `host` still null and chart was
+  // never initialised — see screenshots in saiku#1012.
+  let chart = $state.raw<echarts.ECharts | null>(null);
   let resizeObserver: ResizeObserver | null = null;
 
   let loading = $state(false);
@@ -53,13 +60,19 @@
 
   /* ----------------------------- lifecycle --------------------------- */
 
-  onMount(() => {
-    if (!host) return;
-    chart = echarts.init(host);
-    chart.on("click", handleEChartsClick);
-
-    resizeObserver = new ResizeObserver(() => chart?.resize());
+  // Lazy-init the ECharts instance the first time `host` is bound. The
+  // {#if !tile.query} branch above means the .canvas div doesn't exist
+  // on the very first render when tile.query is still null — onMount
+  // would have missed the binding entirely. An $effect keyed on host
+  // re-runs as soon as bind:this attaches, regardless of which template
+  // branch was active at component mount.
+  $effect(() => {
+    if (!host || chart) return;
+    const instance = echarts.init(host);
+    instance.on("click", handleEChartsClick);
+    resizeObserver = new ResizeObserver(() => instance.resize());
     resizeObserver.observe(host);
+    chart = instance;
   });
 
   onDestroy(() => {
