@@ -15,7 +15,18 @@
 
   $effect(() => {
     if (username && !datasources.loaded && !datasources.loading && !datasources.error) {
-      datasources.load(username);
+      datasources.load(username).then(() => {
+        // saiku-cloud#631: kick off a background poll for late-arriving
+        // cubes (cache-first engine model means warm-up cubes may
+        // surface a few seconds after the initial /discover returns).
+        // Polls /discover/refresh every 3s for up to 60s, stops once
+        // the cube list is stable across 2 consecutive polls.
+        // No-op on non-cloud deploys (the engine just returns the same
+        // list on every poll, which triggers the stable-tick exit).
+        if (datasources.loaded) {
+          datasources.startPolling(username);
+        }
+      });
     }
   });
 
