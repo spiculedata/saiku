@@ -49,6 +49,8 @@
   "canvas.dropLevelsMeasures": "Déposez niveaux ou mesures ici",
   "canvas.dropLevels": "Déposez les niveaux ici",
   "canvas.dropFilters": "Déposez les filtres ici",
+  "canvas.measures": "Mesures",
+  "canvas.dropMeasures": "Déposez les mesures ici",
   "canvas.view.grid": "Tableau",
   "canvas.view.chart": "Graphique",
   "modal.close": "Fermer",

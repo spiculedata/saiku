@@ -49,6 +49,8 @@
   "canvas.dropLevelsMeasures": "Ebenen oder Kennzahlen hier ablegen",
   "canvas.dropLevels": "Ebenen hier ablegen",
   "canvas.dropFilters": "Filter hier ablegen",
+  "canvas.measures": "Kennzahlen",
+  "canvas.dropMeasures": "Kennzahlen hier ablegen",
   "canvas.view.grid": "Tabelle",
   "canvas.view.chart": "Diagramm",
   "modal.close": "Schließen",

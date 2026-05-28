@@ -81,6 +81,8 @@
   "canvas.dropLevelsMeasures": "Drop levels or measures here",
   "canvas.dropLevels": "Drop levels here",
   "canvas.dropFilters": "Drop filters here",
+  "canvas.measures": "Measures",
+  "canvas.dropMeasures": "Drop measures here",
   "canvas.view.grid": "Grid",
   "canvas.view.chart": "Chart",
   "canvas.view.stats": "Stats",
