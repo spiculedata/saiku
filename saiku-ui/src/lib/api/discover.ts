@@ -60,6 +60,11 @@ export interface SaikuMeasure {
   uniqueName: string;
   formula?: string;
   calculated?: boolean;
+  /** Backend may surface visible=false for helper measures. The server
+   *  filters these out unless ?includeHidden=true is set (see saiku#778
+   *  / OlapDiscoverResource.getCubeMeasures). The field is forwarded
+   *  raw so admin UIs can badge "(hidden)" rows without re-checking. */
+  visible?: boolean;
 }
 
 const REST_BASE = "/rest/saiku";
@@ -88,8 +93,24 @@ export async function listDimensions(username: string, cube: SaikuCube): Promise
   return getJson<SaikuDimension[]>(`${cubeUrl(username, cube)}/dimensions`);
 }
 
-export async function listMeasures(username: string, cube: SaikuCube): Promise<SaikuMeasure[]> {
-  return getJson<SaikuMeasure[]>(`${cubeUrl(username, cube)}/measures/`);
+/**
+ * Fetch the measure tree for a cube.
+ *
+ * @param includeHidden When true, append `?includeHidden=true` so the
+ *   server returns helper measures the schema marks `visible="false"`.
+ *   Default false matches the server default (saiku#778 — analyst-safe).
+ *   Admin tooling opts in via the UI toggle (#834); the server still
+ *   enforces the gate, so the param is a UI convenience, not a security
+ *   boundary.
+ */
+export async function listMeasures(
+  username: string,
+  cube: SaikuCube,
+  includeHidden = false,
+): Promise<SaikuMeasure[]> {
+  const base = `${cubeUrl(username, cube)}/measures/`;
+  const url = includeHidden ? `${base}?includeHidden=true` : base;
+  return getJson<SaikuMeasure[]>(url);
 }
 
 export async function listMemberChildren(

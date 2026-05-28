@@ -153,13 +153,25 @@ class DatasourceStore {
     return parts.join("\n");
   }
 
-  async metadata(username: string, cube: SaikuCube): Promise<CubeMetadata> {
-    const key = cubeKey(cube);
+  /**
+   * Fetch (or return cached) cube metadata.
+   *
+   * @param includeHidden When true, requests the measure tree with
+   *   `?includeHidden=true` (admin-only opt-in, #834). The cache key
+   *   includes this flag so toggling it doesn't return a stale measure
+   *   list to the admin — each variant is cached separately.
+   */
+  async metadata(
+    username: string,
+    cube: SaikuCube,
+    includeHidden = false,
+  ): Promise<CubeMetadata> {
+    const key = metadataCacheKey(cube, includeHidden);
     const hit = this.metadataCache.get(key);
     if (hit) return hit;
     const [dimensions, measures] = await Promise.all([
       listDimensions(username, cube),
-      listMeasures(username, cube),
+      listMeasures(username, cube, includeHidden),
     ]);
     const md = { dimensions, measures };
     this.metadataCache.set(key, md);
@@ -176,6 +188,16 @@ class DatasourceStore {
 
 export function cubeKey(cube: SaikuCube): string {
   return `${cube.connection}/${cube.catalog}/${cube.schema}/${cube.name}`;
+}
+
+/**
+ * Cache key for {@link DatasourceStore.metadata}. Includes the
+ * `includeHidden` flag so admins flipping the "Show hidden measures"
+ * toggle (#834) get a fresh fetch rather than a stale (visible-only)
+ * hit. Exported for the tests in this folder.
+ */
+export function metadataCacheKey(cube: SaikuCube, includeHidden: boolean): string {
+  return `${cubeKey(cube)}#includeHidden=${includeHidden ? "1" : "0"}`;
 }
 
 export const datasources = new DatasourceStore();
