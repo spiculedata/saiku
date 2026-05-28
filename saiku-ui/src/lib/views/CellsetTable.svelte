@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { CellEntry, QueryResult } from "$lib/api/query";
   import { parseCellset, rowHeaderDisplay } from "$lib/views/cellsetUtils";
+  import { parseFormattedCell } from "$lib/cellset/cellFormat";
   import { query as queryStore } from "$lib/stores/query.svelte";
   import { datasources } from "$lib/stores/datasources.svelte";
   import { selection } from "$lib/stores/selection.svelte";
@@ -35,7 +36,8 @@
     let min = Infinity, max = -Infinity;
     for (const row of parsed.dataRows) {
       for (const cell of row) {
-        const n = Number(String(cell.value ?? "").replace(/[, ]/g, ""));
+        const display = parseFormattedCell(cell.value).display;
+        const n = Number(String(display ?? "").replace(/[, ]/g, ""));
         if (Number.isFinite(n)) {
           if (n < min) min = n;
           if (n > max) max = n;
@@ -523,7 +525,11 @@
   function toNumber(cell: CellEntry | undefined): number | null {
     if (!cell) return null;
     const raw = cell.properties?.raw;
-    const src = raw ?? cell.value;
+    // Strip Mondrian style-markers from the formatted fallback so
+    // values like "|($2,561.57)|style=red" parse as -2561.57 rather
+    // than NaN. properties.raw (when present) is the unformatted
+    // numeric and bypasses the marker entirely.
+    const src = raw ?? parseFormattedCell(cell.value).display;
     if (src == null || src === "") return null;
     const n = Number(String(src).replace(/[, ]/g, ""));
     return Number.isFinite(n) ? n : null;
@@ -650,7 +656,8 @@
               {/if}
             {/each}
             {#each parsed.dataRows[r] as dc, cIdx}
-              {@const num = isNumeric(dc.value)}
+              {@const fmt = parseFormattedCell(dc.value)}
+              {@const num = isNumeric(fmt.display)}
               {@const selected = isSelected(r, cIdx)}
               {@const hasFocus = isFocused(r, cIdx)}
               <td
@@ -662,10 +669,11 @@
                 aria-selected={selected ? "true" : undefined}
                 data-r={r}
                 data-c={cIdx}
+                style={fmt.color ? `color: ${fmt.color}` : undefined}
                 onmousedown={(e) => onCellMouseDown(e, r, cIdx)}
                 onmouseenter={() => onCellMouseEnter(r, cIdx)}
                 oncontextmenu={(e) => onDataCellContextMenu(e, r, cIdx)}
-              >{dc.value}</td>
+              >{fmt.display}</td>
             {/each}
             {#if spark !== "none"}
               {@const range = sparkRange()}
