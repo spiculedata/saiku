@@ -3,6 +3,16 @@
   import { selection } from "$lib/stores/selection.svelte";
   import { session } from "$lib/stores/session.svelte";
   import type { AxisLocation, ThinHierarchy, ThinMeasure } from "$lib/api/query";
+
+  /** UI-only zone identifier. The backend {@link AxisLocation} enum
+   *  (COLUMNS / ROWS / PAGES / FILTER) is what actually round-trips to
+   *  the server; "MEASURES" is a SvelteKit-only sentinel for the
+   *  dedicated measures panel restored in saiku#1018. Internally the
+   *  model still stores measures in `details.measures` and the MDX
+   *  emitter still places them on `details.axis = COLUMNS`, so nothing
+   *  changes server-side — this is purely about laying out the chip
+   *  drop targets the way users from the Backbone-era UI expect. */
+  type ZoneId = AxisLocation | "MEASURES";
   import CellsetTable from "$lib/views/CellsetTable.svelte";
   import ChartView from "$lib/views/ChartView.svelte";
   import StatsView from "$lib/views/StatsView.svelte";
@@ -356,11 +366,12 @@
     type: "INCLUSION",
   });
 
-  const axisLabels = $derived<Record<AxisLocation, string>>({
+  const axisLabels = $derived<Record<ZoneId, string>>({
     COLUMNS: i18n.t("canvas.columns"),
     ROWS: i18n.t("canvas.rows"),
     FILTER: i18n.t("canvas.filter"),
     PAGES: i18n.t("canvas.pages"),
+    MEASURES: i18n.t("canvas.measures"),
   });
 
   $effect(() => {
@@ -381,17 +392,17 @@
     }
   }
 
-  let dragOverAxis = $state<AxisLocation | null>(null);
+  let dragOverAxis = $state<ZoneId | null>(null);
   let dragOverChipKey = $state<string | null>(null);
   /** Where the chip being dragged came from. Null for sidebar-originated drags
    *  (where any zone is a valid drop). Used to suppress no-op zone highlights
    *  when a chip is dragged over its own axis's empty background. */
-  let dragSourceAxis = $state<AxisLocation | null>(null);
+  let dragSourceAxis = $state<ZoneId | null>(null);
 
-  function chipKey(axis: AxisLocation, kind: "hierarchy" | "measure", id: string): string {
+  function chipKey(axis: ZoneId, kind: "hierarchy" | "measure", id: string): string {
     return `${axis}::${kind}::${id}`;
   }
-  function onDragEnterAxis(axis: AxisLocation, e: DragEvent) {
+  function onDragEnterAxis(axis: ZoneId, e: DragEvent) {
     const types = e.dataTransfer?.types;
     if (!types) return;
     const isChipDrag = types.includes("application/x-saiku-chip");
@@ -406,7 +417,7 @@
       dragOverAxis = axis;
     }
   }
-  function onDragLeaveAxis(axis: AxisLocation, e: DragEvent) {
+  function onDragLeaveAxis(axis: ZoneId, e: DragEvent) {
     // Only clear if we truly left the dropzone (not just crossed into a child chip).
     const related = e.relatedTarget as Node | null;
     const zone = e.currentTarget as HTMLElement;
@@ -416,7 +427,7 @@
   }
   function clearDragOver() { dragOverAxis = null; dragOverChipKey = null; dragSourceAxis = null; }
 
-  function onChipDragOver(e: DragEvent, axis: AxisLocation, kind: "hierarchy" | "measure", id: string) {
+  function onChipDragOver(e: DragEvent, axis: ZoneId, kind: "hierarchy" | "measure", id: string) {
     if (!e.dataTransfer?.types?.includes("application/x-saiku-chip")) return;
     e.preventDefault();
     e.stopPropagation();
@@ -431,30 +442,34 @@
     }
   }
 
-  function onDropAxis(axis: AxisLocation, e: DragEvent) {
+  function onDropAxis(axis: ZoneId, e: DragEvent) {
     e.preventDefault();
     const chipPayload = e.dataTransfer?.getData("application/x-saiku-chip");
     const levelPayload = e.dataTransfer?.getData("application/x-saiku-level");
     const measurePayload = e.dataTransfer?.getData("application/x-saiku-measure");
     if (chipPayload) {
-      // Chip moved between axes. Measures on COLUMNS are axis-locked so we
-      // punt on moving them (reorder-within-axis not supported either).
       try {
         const p = JSON.parse(chipPayload) as
-          | { kind: "hierarchy"; axis: AxisLocation; name: string }
-          | { kind: "measure"; axis: AxisLocation; uniqueName: string };
+          | { kind: "hierarchy"; axis: ZoneId; name: string }
+          | { kind: "measure"; axis: ZoneId; uniqueName: string };
         if (p.kind === "hierarchy") {
+          if (axis === "MEASURES") return; // levels can't live in MEASURES
           if (p.axis === axis) return; // no-op, same axis
           query.moveHierarchyToAxis(p.name, axis);
         }
-        // measure chips: ignore non-COLUMNS targets; no reorder support yet.
+        // measure chips: stay in the MEASURES panel; reorder handled by onChipDrop.
       } catch {
         /* malformed payload — ignore */
       }
     } else if (levelPayload) {
+      if (axis === "MEASURES") return; // levels can't be dropped on the measures panel
       const drop = JSON.parse(levelPayload);
       query.includeLevel(axis, drop);
     } else if (measurePayload) {
+      // Both MEASURES (new home) and COLUMNS (muscle memory from the
+      // old "drop measures with levels" pattern) accept measure drops;
+      // either way addMeasure stashes the measure in details.measures
+      // which the MDX emitter will project onto details.axis (= COLUMNS).
       const m = JSON.parse(measurePayload) as ThinMeasure;
       query.addMeasure(m);
     }
@@ -468,31 +483,34 @@
   }
 
   function onMeasureChipDragStart(e: DragEvent, m: ThinMeasure) {
-    const payload = { kind: "measure" as const, axis: "COLUMNS" as AxisLocation, uniqueName: m.uniqueName };
+    const payload = { kind: "measure" as const, axis: "MEASURES" as ZoneId, uniqueName: m.uniqueName };
     e.dataTransfer?.setData("application/x-saiku-chip", JSON.stringify(payload));
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
-    dragSourceAxis = "COLUMNS";
+    dragSourceAxis = "MEASURES";
   }
 
   /** Drop a dragged chip onto a sibling chip — reorder within axis if same-kind,
    *  otherwise bubble to the zone to handle as a cross-axis move. */
-  function onChipDrop(e: DragEvent, targetAxis: AxisLocation, target: { kind: "hierarchy"; name: string } | { kind: "measure"; uniqueName: string }) {
+  function onChipDrop(e: DragEvent, targetAxis: ZoneId, target: { kind: "hierarchy"; name: string } | { kind: "measure"; uniqueName: string }) {
     const chipPayload = e.dataTransfer?.getData("application/x-saiku-chip");
     if (!chipPayload) return; // not a chip drag; let the zone handle it
     const payload = JSON.parse(chipPayload) as
-      | { kind: "hierarchy"; axis: AxisLocation; name: string }
-      | { kind: "measure"; axis: AxisLocation; uniqueName: string };
+      | { kind: "hierarchy"; axis: ZoneId; name: string }
+      | { kind: "measure"; axis: ZoneId; uniqueName: string };
     // Only same-axis, same-kind drops are reorders. Otherwise defer to the zone handler.
     if (payload.kind === "hierarchy" && target.kind === "hierarchy" && payload.axis === targetAxis) {
       if (payload.name !== target.name) {
         e.preventDefault();
         e.stopPropagation();
         clearDragOver();
-        query.reorderHierarchy(targetAxis, payload.name, target.name);
+        // narrow targetAxis back to AxisLocation — reorderHierarchy only
+        // makes sense for real backend axes, and the hierarchy chip can
+        // only live in COLUMNS/ROWS/PAGES/FILTER anyway.
+        if (targetAxis !== "MEASURES") query.reorderHierarchy(targetAxis, payload.name, target.name);
       }
       return;
     }
-    if (payload.kind === "measure" && target.kind === "measure" && targetAxis === "COLUMNS") {
+    if (payload.kind === "measure" && target.kind === "measure" && targetAxis === "MEASURES") {
       if (payload.uniqueName !== target.uniqueName) {
         e.preventDefault();
         e.stopPropagation();
@@ -668,6 +686,52 @@
   {:else}
     <div class="canvas__body">
     <aside class="dropzones">
+      <!-- Dedicated MEASURES panel (restored from the pre-rewrite UI).
+           Sits above COLUMNS/ROWS so the chip stack visually separates
+           the projection (measures) from the axes (levels). Drops here
+           route to addMeasure, which stashes the measure in
+           details.measures; details.axis remains "COLUMNS" server-side
+           so the MDX emission is unchanged. -->
+      <div
+        class={dragOverAxis === "MEASURES" ? "dropzone dropzone--measures is-dragover" : "dropzone dropzone--measures"}
+        role="region"
+        aria-label={axisLabels.MEASURES}
+        ondragover={onDragOver}
+        ondragenter={(e) => onDragEnterAxis("MEASURES", e)}
+        ondragleave={(e) => onDragLeaveAxis("MEASURES", e)}
+        ondrop={(e) => { clearDragOver(); onDropAxis("MEASURES", e); }}
+      >
+        <header>
+          <span>{axisLabels.MEASURES}</span>
+        </header>
+        <div class="chips">
+          {#each query.current?.queryModel?.details.measures ?? [] as m}
+            <span
+              class={dragOverChipKey === chipKey("MEASURES", "measure", m.uniqueName) ? "chip chip--measure is-drop-before" : "chip chip--measure"}
+              draggable="true"
+              ondragstart={(e) => onMeasureChipDragStart(e, m)}
+              ondragenter={onChipDragEnter}
+              ondragover={(e) => onChipDragOver(e, "MEASURES", "measure", m.uniqueName)}
+              ondrop={(e) => onChipDrop(e, "MEASURES", { kind: "measure", uniqueName: m.uniqueName })}
+              oncontextmenu={(e) => openMeasureMenu(e, m)}
+            >
+              <span class="chip__label" title={i18n.t("canvas.chip.rightClickHint")}>
+                Σ {m.caption || m.name}
+              </span>
+              <button
+                type="button"
+                class="chip__x"
+                title={i18n.t("canvas.menu.removeMeasure")}
+                aria-label="{i18n.t('canvas.menu.removeMeasure')} {m.caption || m.name}"
+                onclick={() => removeMeasure(m.uniqueName)}
+              >×</button>
+            </span>
+          {/each}
+          {#if (query.current?.queryModel?.details.measures.length ?? 0) === 0}
+            <span class="chips__empty">{i18n.t("canvas.dropMeasures")}</span>
+          {/if}
+        </div>
+      </div>
       {#each ["COLUMNS", "ROWS"] as const as axis}
         <div
           class={dragOverAxis === axis ? "dropzone is-dragover" : "dropzone"}
@@ -685,30 +749,6 @@
             </button>
           </header>
           <div class="chips">
-            {#if axis === "COLUMNS" && query.current}
-              {#each query.current.queryModel?.details.measures ?? [] as m}
-                <span
-                  class={dragOverChipKey === chipKey("COLUMNS", "measure", m.uniqueName) ? "chip chip--measure is-drop-before" : "chip chip--measure"}
-                  draggable="true"
-                  ondragstart={(e) => onMeasureChipDragStart(e, m)}
-                  ondragenter={onChipDragEnter}
-                  ondragover={(e) => onChipDragOver(e, "COLUMNS", "measure", m.uniqueName)}
-                  ondrop={(e) => onChipDrop(e, "COLUMNS", { kind: "measure", uniqueName: m.uniqueName })}
-                  oncontextmenu={(e) => openMeasureMenu(e, m)}
-                >
-                  <span class="chip__label" title={i18n.t("canvas.chip.rightClickHint")}>
-                    Σ {m.caption || m.name}
-                  </span>
-                  <button
-                    type="button"
-                    class="chip__x"
-                    title={i18n.t("canvas.menu.removeMeasure")}
-                    aria-label="{i18n.t('canvas.menu.removeMeasure')} {m.caption || m.name}"
-                    onclick={() => removeMeasure(m.uniqueName)}
-                  >×</button>
-                </span>
-              {/each}
-            {/if}
             {#each query.current?.queryModel?.axes[axis].hierarchies ?? [] as h}
               <span
                 class={dragOverChipKey === chipKey(axis, "hierarchy", h.name) ? "chip chip--level is-drop-before" : "chip chip--level"}
@@ -735,11 +775,8 @@
                 >×</button>
               </span>
             {/each}
-            {#if (query.current?.queryModel?.axes[axis].hierarchies.length ?? 0) === 0
-              && !(axis === "COLUMNS" && (query.current?.queryModel?.details.measures.length ?? 0) > 0)}
-              <span class="chips__empty">
-                {axis === "COLUMNS" ? i18n.t("canvas.dropLevelsMeasures") : i18n.t("canvas.dropLevels")}
-              </span>
+            {#if (query.current?.queryModel?.axes[axis].hierarchies.length ?? 0) === 0}
+              <span class="chips__empty">{i18n.t("canvas.dropLevels")}</span>
             {/if}
           </div>
         </div>
