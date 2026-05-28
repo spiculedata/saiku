@@ -78,7 +78,7 @@
     y: number;
     items: ContextMenuItem[];
     // payload for the action handler
-    kind: "measure" | "hierarchy" | "axis" | null;
+    kind: "measure" | "hierarchy" | "axis" | "measures-panel" | null;
     axis: AxisLocation | null;
     measure: ThinMeasure | null;
     hierarchy: ThinHierarchy | null;
@@ -155,6 +155,30 @@
     };
   }
 
+  function openMeasuresMenu(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    // Mirrors the legacy Backbone "Position" picker. Reads the current
+    // (axis, location) so the matching item can show a check (or just
+    // be implied — the previous-selected item is the no-op).
+    menu = {
+      open: true,
+      x: e.clientX, y: e.clientY,
+      kind: "measures-panel",
+      axis: null, measure: null, hierarchy: null,
+      items: [
+        { id: "_hdr", label: i18n.t("canvas.menu.position"), disabled: true },
+        { id: "_sep1", sep: true, label: "" },
+        { id: "pos:BOTTOM_COLUMNS", label: i18n.t("canvas.menu.position.colsMeasures") },
+        { id: "pos:TOP_COLUMNS", label: i18n.t("canvas.menu.position.measuresCols") },
+        { id: "pos:BOTTOM_ROWS", label: i18n.t("canvas.menu.position.rowsMeasures") },
+        { id: "pos:TOP_ROWS", label: i18n.t("canvas.menu.position.measuresRows") },
+        { id: "_sep2", sep: true, label: "" },
+        { id: "pos:reset", label: i18n.t("canvas.menu.position.reset") },
+      ],
+    };
+  }
+
   function openAxisMenu(e: MouseEvent, axis: AxisLocation) {
     e.preventDefault();
     e.stopPropagation();
@@ -200,6 +224,19 @@
         query.removeLevel(m.hierarchy.name, levelName);
         if (query.hasRunnableShape()) void query.run();
       }
+      return;
+    }
+    if (m.kind === "measures-panel") {
+      if (!id.startsWith("pos:")) return;
+      const arg = id.substring("pos:".length);
+      if (arg === "reset") {
+        query.setMeasuresPlacement("COLUMNS", "BOTTOM");
+      } else {
+        // BOTTOM_COLUMNS | TOP_COLUMNS | BOTTOM_ROWS | TOP_ROWS
+        const [location, axis] = arg.split("_") as ["TOP" | "BOTTOM", "COLUMNS" | "ROWS"];
+        query.setMeasuresPlacement(axis, location);
+      }
+      if (query.hasRunnableShape()) void query.run();
       return;
     }
     if (m.kind === "axis" && m.axis) {
@@ -724,6 +761,9 @@
       >
         <header>
           <span>{axisLabels.MEASURES}</span>
+          <button type="button" class="dropzone__menu" title={i18n.t("canvas.menu.position")} aria-label={i18n.t("canvas.menu.position")} onclick={openMeasuresMenu}>
+            <MoreHorizontal size={14} />
+          </button>
         </header>
         <div class="chips">
           {#each query.current?.queryModel?.details.measures ?? [] as m}

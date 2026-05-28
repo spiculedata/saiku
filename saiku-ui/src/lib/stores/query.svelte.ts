@@ -361,6 +361,24 @@ class QueryStore {
     this.markDirty();
   }
 
+  /** Where measures are projected onto the cellset:
+   *   axis ∈ {COLUMNS, ROWS}  — which axis the measure column group sits on
+   *   location ∈ {TOP, BOTTOM} — first or last in that axis's ordering
+   *
+   *  Mirrors the four "Position" options that the pre-rewrite Backbone
+   *  UI exposed off the Measures-panel gear (see WorkspaceDropZone.js
+   *  measure_action). The model and `Fat.convertDetails` already
+   *  honour any AxisLocation here — this method just makes the
+   *  flexibility user-controllable again. */
+  setMeasuresPlacement(axis: AxisLocation, location: "TOP" | "BOTTOM"): void {
+    if (!this.current?.queryModel) return;
+    const d = this.current.queryModel.details;
+    if (d.axis === axis && d.location === location) return;
+    d.axis = axis;
+    d.location = location;
+    this.markDirty();
+  }
+
   swapAxes(): void {
     if (!this.current?.queryModel) return;
     const m = this.current.queryModel;
