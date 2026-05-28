@@ -10,7 +10,7 @@
   import UpgradeBanner from "$lib/components/UpgradeBanner.svelte";
   import { LogOut, Shield, Home, LayoutDashboard, UserRound } from "lucide-svelte";
   import Tour from "$lib/components/Tour.svelte";
-  import SessionErrorModal from "$lib/modals/SessionErrorModal.svelte";
+  import SessionExpiredBanner from "$lib/components/SessionExpiredBanner.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { installAuthInterceptor, onAuthFailure } from "$lib/api/http";
   import "$lib/styles/tokens.css";
@@ -18,7 +18,16 @@
 
   let { children } = $props();
 
-  let sessionError = $state<{ open: boolean; message: string }>({ open: false, message: "" });
+  // Non-modal session-expired banner state (issue #944). The previous
+  // SessionErrorModal was a blocking modal in the middle of the screen,
+  // which is jarring on long-running dashboard / TV-wall views. We now
+  // pin a sticky banner to the top instead and let users sign in when
+  // ready. The auth-failure detection / pending-op replay contract in
+  // $lib/api/http.ts is unchanged.
+  let sessionError = $state<{ open: boolean; statusLabel: string }>({
+    open: false,
+    statusLabel: "",
+  });
 
   // Operator branding: try SVG, then PNG logo from <saiku.home>/branding/,
   // then the bundled default at ${base}/logo.png. Text brand is the last resort.
@@ -41,14 +50,11 @@
     installAuthInterceptor();
     const unsub = onAuthFailure((status) => {
       if (session.current) {
-        sessionError = {
-          open: true,
-          message: `${i18n.t("session.ended")} (${status}).`,
-        };
+        sessionError = { open: true, statusLabel: String(status) };
       }
     });
     const onResumed = () => {
-      sessionError = { open: false, message: "" };
+      sessionError = { open: false, statusLabel: "" };
     };
     window.addEventListener("saiku-session-resumed", onResumed);
     session.bootstrap();
@@ -115,12 +121,11 @@
   </main>
   <ToastStack />
   {#if session.current}<Tour />{/if}
-  <SessionErrorModal
-    message={sessionError.message}
+  <SessionExpiredBanner
     open={sessionError.open}
-    onReload={() => {
-      sessionError = { open: false, message: "" };
-      location.reload();
+    statusLabel={sessionError.statusLabel}
+    onDismiss={() => {
+      sessionError = { open: false, statusLabel: "" };
     }}
   />
 </div>

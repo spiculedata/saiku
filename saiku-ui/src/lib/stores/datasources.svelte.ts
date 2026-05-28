@@ -30,7 +30,7 @@ class DatasourceStore {
       this.connections = await listConnections(username);
       this.loaded = true;
     } catch (err) {
-      this.error = err instanceof Error ? err.message : String(err);
+      this.error = this.silenceAuth(err);
     } finally {
       this.loading = false;
     }
@@ -44,10 +44,21 @@ class DatasourceStore {
       this.metadataCache.clear();
       this.loaded = true;
     } catch (err) {
-      this.error = err instanceof Error ? err.message : String(err);
+      this.error = this.silenceAuth(err);
     } finally {
       this.loading = false;
     }
+  }
+
+  /** Map a fetch failure to the error string that should surface in the
+   *  CUBES sidebar — or {@code null} if the failure is 401/403, since the
+   *  global SessionExpiredBanner (#944) already handles auth-resume and
+   *  showing the raw `… -> 401` line under the picker is both redundant
+   *  AND leaks the internal admin REST path to the user. Non-auth errors
+   *  (transient 5xx, network, schema-load failures) still surface here. */
+  private silenceAuth(err: unknown): string | null {
+    const msg = err instanceof Error ? err.message : String(err);
+    return /->\s*40[13]\b/.test(msg) ? null : msg;
   }
 
   /**

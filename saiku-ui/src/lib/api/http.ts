@@ -12,7 +12,7 @@ export function onAuthFailure(fn: AuthListener): () => void {
 
 /**
  * Subscribe to session-resumed events. Fired after the user successfully
- * re-authenticates from the SessionErrorModal so callers that had an
+ * re-authenticates from the SessionExpiredBanner so callers that had an
  * in-flight request fail with 401/403 can replay it.
  */
 export function onSessionResumed(fn: ResumeListener): () => void {
@@ -90,7 +90,7 @@ function urlOf(input: RequestInfo | URL): string {
  * Wrap global fetch to:
  *  - echo the XSRF-TOKEN cookie as X-XSRF-TOKEN on non-safe requests to /rest/**
  *    (server enforces CSRF via CookieCsrfTokenRepository.withHttpOnlyFalse);
- *  - surface 401 / 403 on /rest/saiku/* through the SessionErrorModal.
+ *  - surface 401 / 403 on /rest/saiku/* through the SessionExpiredBanner.
  * Called once at app boot.
  */
 export function installAuthInterceptor(): void {

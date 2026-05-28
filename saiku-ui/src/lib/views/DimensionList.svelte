@@ -109,7 +109,12 @@
       .metadata(username, cube)
       .then((m) => (metadata = m))
       .catch((err: unknown) => {
-        error = err instanceof Error ? err.message : String(err);
+        const msg = err instanceof Error ? err.message : String(err);
+        // Auth failures are surfaced by the global SessionExpiredBanner
+        // (#944); echoing the raw "/rest/saiku/admin/discover/... -> 401"
+        // here would both be redundant AND leak the internal admin REST
+        // path. Same suppression pattern as datasources.silenceAuth.
+        error = /->\s*40[13]\b/.test(msg) ? null : msg;
       })
       .finally(() => (loading = false));
   });
