@@ -9,6 +9,7 @@
   import MeasuresModal from "$lib/modals/MeasuresModal.svelte";
   import CalculatedMemberModal, { type CalculatedMember } from "$lib/modals/CalculatedMemberModal.svelte";
   import SelectionsModal from "$lib/modals/SelectionsModal.svelte";
+  import { measuresHiddenToggle } from "$lib/stores/measuresHiddenToggle.svelte";
   import {
     Sigma,
     Folder,
@@ -90,7 +91,12 @@
   let cubeSignature = $state<string | null>(null);
 
   function keyFor(cube: SaikuCube): string {
-    return `${cube.connection}/${cube.catalog}/${cube.schema}/${cube.name}`;
+    // Include the admin "show hidden measures" toggle (#834) in the
+    // signature so flipping it triggers a refetch instead of returning
+    // the prior visible-only metadata that's cached against the cube
+    // alone. Non-admins can't flip the toggle, so this only re-fires
+    // for admin sessions.
+    return `${cube.connection}/${cube.catalog}/${cube.schema}/${cube.name}#h=${measuresHiddenToggle.enabled ? "1" : "0"}`;
   }
 
   $effect(() => {
@@ -100,13 +106,16 @@
       cubeSignature = null;
       return;
     }
+    // `measuresHiddenToggle.enabled` is read inside keyFor() — Svelte
+    // 5 picks it up as a $effect dep so toggling triggers a refetch.
+    const includeHidden = session.isAdmin && measuresHiddenToggle.enabled;
     const sig = keyFor(cube);
     if (sig === cubeSignature && metadata) return;
     cubeSignature = sig;
     loading = true;
     error = null;
     datasources
-      .metadata(username, cube)
+      .metadata(username, cube, includeHidden)
       .then((m) => (metadata = m))
       .catch((err: unknown) => {
         error = err instanceof Error ? err.message : String(err);
@@ -430,6 +439,7 @@
     open={measuresOpen}
     onSave={onMeasuresSave}
     onCancel={() => (measuresOpen = false)}
+    refreshing={loading}
   />
   <CalculatedMemberModal
     initial={calculatedInitial}
