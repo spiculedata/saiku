@@ -1,0 +1,185 @@
+<script lang="ts">
+  /*
+   * Empty-state guidance shown when an editable dashboard has zero tiles
+   * (issue #916). Replaces the blank canvas with a single visible call-
+   * to-action: "Add your first tile" plus three primary buttons that
+   * each pre-pick a tile type (Chart, Table, KPI) and hand it off to
+   * the parent's existing handleAddTile() path.
+   *
+   * A secondary "More tile types" affordance points users at the
+   * toolbar's existing Add tile dropdown — we deliberately do NOT
+   * duplicate the dropdown itself here. One source of truth for the
+   * full tile menu, an obvious starter set for first-time users.
+   *
+   * Render contract: parent decides when to show this (tiles.length === 0
+   * AND !readOnly). The component is purely presentational; no store
+   * subscriptions, no lifecycle.
+   */
+
+  import type { TileType } from "$lib/api/dashboards";
+  import { BarChart3, Gauge, Table2 } from "lucide-svelte";
+
+  interface Props {
+    /** Invoked with the selected tile type. Parent owns placement +
+     *  dashboardStore.addTile() (already implemented as handleAddTile()
+     *  in DashboardEditor — same callback wired to AddTileMenu). */
+    onAddTile: (type: TileType) => void;
+  }
+
+  let { onAddTile }: Props = $props();
+</script>
+
+<div class="empty-state" role="region" aria-label="Add your first tile">
+  <div class="card">
+    <h2 class="title">Add your first tile</h2>
+    <p class="subtitle">
+      Pick a tile type to start building this dashboard. You can configure data,
+      filters, and layout after the tile is dropped.
+    </p>
+
+    <div class="cta-row">
+      <button
+        type="button"
+        class="cta"
+        onclick={() => onAddTile("chart")}
+        aria-label="Add a chart tile"
+      >
+        <span class="cta-icon" aria-hidden="true">
+          <BarChart3 size={28} strokeWidth={1.75} />
+        </span>
+        <span class="cta-label">Chart</span>
+        <span class="cta-hint">Bar, line, pie or area visualisations of your measures.</span>
+      </button>
+
+      <button
+        type="button"
+        class="cta"
+        onclick={() => onAddTile("table")}
+        aria-label="Add a table tile"
+      >
+        <span class="cta-icon" aria-hidden="true">
+          <Table2 size={28} strokeWidth={1.75} />
+        </span>
+        <span class="cta-label">Table</span>
+        <span class="cta-hint">Tabular cells with row and column headers.</span>
+      </button>
+
+      <button
+        type="button"
+        class="cta"
+        onclick={() => onAddTile("kpi")}
+        aria-label="Add a KPI tile"
+      >
+        <span class="cta-icon" aria-hidden="true">
+          <Gauge size={28} strokeWidth={1.75} />
+        </span>
+        <span class="cta-label">KPI</span>
+        <span class="cta-hint">A single measure as a big number with optional comparison.</span>
+      </button>
+    </div>
+
+    <p class="more">
+      Need a text note or filter widget? Use
+      <strong>+ Add tile</strong> in the toolbar above for the full list.
+    </p>
+  </div>
+</div>
+
+<style>
+  .empty-state {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 2.5rem 1rem;
+    flex: 1;
+    min-height: 0;
+  }
+  .card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    max-width: 56rem;
+    width: 100%;
+    padding: 2rem 1.5rem;
+    border: 1px dashed var(--border-strong);
+    border-radius: 8px;
+    background: var(--bg-subtle);
+    text-align: center;
+  }
+  .title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: var(--weight-semibold);
+    color: var(--fg);
+  }
+  .subtitle {
+    margin: 0;
+    max-width: 36rem;
+    color: var(--fg-muted);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+  .cta-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    width: 100%;
+    margin-top: 0.5rem;
+  }
+  @media (max-width: 640px) {
+    .cta-row {
+      grid-template-columns: 1fr;
+    }
+  }
+  .cta {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 1.25rem 1rem;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--fg);
+    font-family: inherit;
+    transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+  }
+  .cta:hover {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 6%, var(--bg));
+  }
+  .cta:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .cta:active {
+    transform: translateY(1px);
+  }
+  .cta-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+    margin-bottom: 0.25rem;
+  }
+  .cta-label {
+    font-weight: var(--weight-semibold);
+    font-size: 1rem;
+  }
+  .cta-hint {
+    font-size: 0.75rem;
+    color: var(--fg-muted);
+    line-height: 1.4;
+  }
+  .more {
+    margin: 0.25rem 0 0;
+    color: var(--fg-muted);
+    font-size: 0.8125rem;
+  }
+  .more strong {
+    font-weight: var(--weight-medium);
+    color: var(--fg);
+  }
+</style>
