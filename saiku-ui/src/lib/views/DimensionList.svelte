@@ -54,7 +54,17 @@
       name: m.name,
       uniqueName: m.uniqueName,
       caption: m.caption || m.name,
-      type: m.calculated ? "CALCULATED" : "EXACT",
+      // saiku#1019: schema-defined calc members (e.g. FoodMart Profit)
+      // show as calculated:true in /discover, but Fat.convertDetails'
+      // CALCULATED branch looks them up via query.getCalculatedMeasure()
+      // — a map that only holds USER-added Saiku calc measures, so the
+      // schema one returns null, gets added to details, and trips a
+      // NullPointerException on the next m.getName() roundtrip. Schema
+      // calc members live in cube.getMeasures() like any normal measure,
+      // so the EXACT path (query.getMeasure → cube.getMeasures lookup)
+      // resolves them correctly. The CALCULATED tag stays reserved for
+      // the modal-created measures in QueryCanvas.svelte.
+      type: "EXACT",
     };
     e.dataTransfer?.setData("application/x-saiku-measure", JSON.stringify(thin));
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
@@ -67,7 +77,17 @@
       name: m.name,
       uniqueName: m.uniqueName,
       caption: m.caption || m.name,
-      type: m.calculated ? "CALCULATED" : "EXACT",
+      // saiku#1019: schema-defined calc members (e.g. FoodMart Profit)
+      // show as calculated:true in /discover, but Fat.convertDetails'
+      // CALCULATED branch looks them up via query.getCalculatedMeasure()
+      // — a map that only holds USER-added Saiku calc measures, so the
+      // schema one returns null, gets added to details, and trips a
+      // NullPointerException on the next m.getName() roundtrip. Schema
+      // calc members live in cube.getMeasures() like any normal measure,
+      // so the EXACT path (query.getMeasure → cube.getMeasures lookup)
+      // resolves them correctly. The CALCULATED tag stays reserved for
+      // the modal-created measures in QueryCanvas.svelte.
+      type: "EXACT",
     });
   }
 
@@ -159,7 +179,17 @@
         name: m.name,
         uniqueName: m.uniqueName,
         caption: m.caption || m.name,
-        type: m.calculated ? "CALCULATED" : "EXACT",
+        // saiku#1019: schema-defined calc members (e.g. FoodMart Profit)
+      // show as calculated:true in /discover, but Fat.convertDetails'
+      // CALCULATED branch looks them up via query.getCalculatedMeasure()
+      // — a map that only holds USER-added Saiku calc measures, so the
+      // schema one returns null, gets added to details, and trips a
+      // NullPointerException on the next m.getName() roundtrip. Schema
+      // calc members live in cube.getMeasures() like any normal measure,
+      // so the EXACT path (query.getMeasure → cube.getMeasures lookup)
+      // resolves them correctly. The CALCULATED tag stays reserved for
+      // the modal-created measures in QueryCanvas.svelte.
+      type: "EXACT",
       });
     }
     query.setMeasures(next);
