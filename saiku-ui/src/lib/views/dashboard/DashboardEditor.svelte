@@ -20,6 +20,7 @@
   import DashboardFilterBar from "$lib/views/dashboard/DashboardFilterBar.svelte";
   import DashboardFilterPanel from "$lib/views/dashboard/DashboardFilterPanel.svelte";
   import DashboardGrid from "$lib/views/dashboard/DashboardGrid.svelte";
+  import EmptyDashboardGuidance from "$lib/views/dashboard/EmptyDashboardGuidance.svelte";
 
   interface Props {
     dashboardPath: string;
@@ -120,6 +121,13 @@
     activeFilters.resetTransient();
     dashboardStore.resetPanelFiltersToSaved();
   }
+
+  // Issue #916: surface the empty-state guidance when an editable
+  // dashboard has zero tiles. Viewer mode (readOnly) keeps the blank
+  // canvas — a published-but-empty dashboard isn't an authoring moment.
+  let showEmptyGuidance = $derived(
+    !readOnly && (dashboardStore.current?.layout?.tiles?.length ?? 0) === 0,
+  );
 </script>
 
 <div class="dashboard-editor">
@@ -147,7 +155,11 @@
     {/if}
     <DashboardFilterPanel {readOnly} />
     <DashboardFilterBar {readOnly} />
-    <DashboardGrid {readOnly} />
+    {#if showEmptyGuidance}
+      <EmptyDashboardGuidance onAddTile={handleAddTile} />
+    {:else}
+      <DashboardGrid {readOnly} />
+    {/if}
   {:else}
     <div class="error">{dashboardStore.loadError ?? "Unable to load dashboard."}</div>
   {/if}
