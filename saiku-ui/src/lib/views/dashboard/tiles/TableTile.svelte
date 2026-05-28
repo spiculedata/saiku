@@ -38,6 +38,7 @@
     type RowAxisRef,
   } from "$lib/dashboard/filterSuggestions";
   import type { CubeRef } from "$lib/api/dashboards";
+  import { parseFormattedCell } from "$lib/cellset/cellFormat";
 
   interface Props {
     tile: DashboardTile;
@@ -296,20 +297,22 @@
               <tr>
                 {#each columns as col (col.caption)}
                   {@const v = row[col.caption]}
+                  {@const fmt = parseFormattedCell(renderCell(v))}
                   <td
                     class:row-header={col.isRowHeader}
                     class:clickable={col.isRowHeader}
-                    onclick={() => handleCellClick(col.caption, renderCell(v), col.isRowHeader, row)}
+                    style={fmt.color ? `color: ${fmt.color}` : undefined}
+                    onclick={() => handleCellClick(col.caption, fmt.display, col.isRowHeader, row)}
                     role={col.isRowHeader ? "button" : undefined}
                     tabindex={col.isRowHeader ? 0 : undefined}
                     onkeydown={(e) => {
                       if (col.isRowHeader && (e.key === "Enter" || e.key === " ")) {
                         e.preventDefault();
-                        handleCellClick(col.caption, renderCell(v), col.isRowHeader, row);
+                        handleCellClick(col.caption, fmt.display, col.isRowHeader, row);
                       }
                     }}
                   >
-                    {renderCell(v)}
+                    {fmt.display}
                   </td>
                 {/each}
               </tr>
