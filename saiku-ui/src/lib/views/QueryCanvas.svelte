@@ -126,16 +126,32 @@
   function openHierMenu(e: MouseEvent, axis: AxisLocation, h: ThinHierarchy) {
     e.preventDefault();
     e.stopPropagation();
+    // When the chip carries more than one level, surface a per-level
+    // removal item so users can drop "Quarter" without losing "Year".
+    // The flat-menu approach (vs a submenu) keeps ContextMenu.svelte
+    // simple; a hierarchy with >5 levels would benefit from a submenu,
+    // but those are rare enough that this trade-off is fine for now.
+    const levelNames = Object.keys(h.levels);
+    const items: ContextMenuItem[] = [
+      { id: "selections", label: i18n.t("canvas.menu.editSelections") },
+      { id: "_sep1", sep: true, label: "" },
+    ];
+    if (levelNames.length > 1) {
+      for (const levelName of levelNames) {
+        items.push({
+          id: `removeLevel:${levelName}`,
+          label: `${i18n.t("canvas.menu.removeLevel")}: ${levelName}`,
+        });
+      }
+      items.push({ id: "_sep2", sep: true, label: "" });
+    }
+    items.push({ id: "remove", label: i18n.t("canvas.menu.removeHierarchy"), danger: true });
     menu = {
       open: true,
       x: e.clientX, y: e.clientY,
       kind: "hierarchy",
       axis, measure: null, hierarchy: h,
-      items: [
-        { id: "selections", label: i18n.t("canvas.menu.editSelections") },
-        { id: "_sep", sep: true, label: "" },
-        { id: "remove", label: i18n.t("canvas.menu.removeHierarchy"), danger: true },
-      ],
+      items,
     };
   }
 
@@ -179,6 +195,11 @@
     if (m.kind === "hierarchy" && m.axis && m.hierarchy) {
       if (id === "selections") openSelections(m.axis, m.hierarchy);
       else if (id === "remove") query.removeHierarchy(m.hierarchy.name);
+      else if (id.startsWith("removeLevel:")) {
+        const levelName = id.substring("removeLevel:".length);
+        query.removeLevel(m.hierarchy.name, levelName);
+        if (query.hasRunnableShape()) void query.run();
+      }
       return;
     }
     if (m.kind === "axis" && m.axis) {
