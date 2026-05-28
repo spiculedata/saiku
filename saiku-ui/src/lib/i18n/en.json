@@ -97,6 +97,7 @@
   "canvas.menu.removeMeasure": "Remove measure",
   "canvas.menu.editSelections": "Edit selections…",
   "canvas.menu.removeHierarchy": "Remove hierarchy",
+  "canvas.menu.removeLevel": "Remove level",
   "canvas.menu.orderMdx": "Order…",
   "canvas.menu.filterMdx": "Filter (MDX)…",
   "canvas.menu.topCount": "Top count…",
