@@ -321,6 +321,25 @@ class QueryStore {
     this.markDirty();
   }
 
+  /** Remove a single level from a hierarchy chip. If it was the only
+   *  level, the hierarchy itself is dropped. Mirrors what the cellset
+   *  header's "Remove Level" right-click does, so both entry points
+   *  agree on what "remove" means. */
+  removeLevel(hierarchyName: string, levelName: string): void {
+    if (!this.current?.queryModel) return;
+    const loc = this.findAxisForHierarchy(hierarchyName);
+    if (!loc) return;
+    const hier = this.current.queryModel.axes[loc].hierarchies.find((h) => h.name === hierarchyName);
+    if (!hier) return;
+    if (!(levelName in hier.levels)) return;
+    delete hier.levels[levelName];
+    if (Object.keys(hier.levels).length === 0) {
+      this.removeHierarchy(hierarchyName);
+      return;
+    }
+    this.markDirty();
+  }
+
   addMeasure(m: ThinMeasure): void {
     if (!this.current?.queryModel) return;
     const list = this.current.queryModel.details.measures;
