@@ -12,6 +12,17 @@
  */
 
 import type { AiCell, AiQueryResponse } from "$lib/api/aiQuery";
+import { axisLabelConfig } from "$lib/views/chartAxisLabel";
+
+/**
+ * Truncating axisLabel for a dashboard tile's category axis. Tiles are small,
+ * so a fixed cap keeps deep member captions from overflowing; ECharts shows
+ * the full label in the axis-pointer tooltip on hover. `rotate` is preserved
+ * for callers that crowd many categories. Width default suits a tile.
+ */
+function categoryAxisLabel(rotate = 0): Record<string, unknown> {
+  return { rotate, ...axisLabelConfig(100) };
+}
 
 /** All chart kinds the workspace exposes — matches chartTypes.ts. */
 export type ChartKind =
@@ -162,7 +173,7 @@ export function buildChartOption(response: AiQueryResponse, kind: string): Recor
     return {
       tooltip: {},
       grid: { left: 120, top: 24, right: 16, bottom: 64 },
-      xAxis: { type: "category", data: cols },
+      xAxis: { type: "category", data: cols, axisLabel: categoryAxisLabel() },
       yAxis: { type: "category", data: rows, inverse: true },
       visualMap: { min, max, calculable: true, orient: "horizontal", left: "center", bottom: 8 },
       series: [{ type: "heatmap", data, label: { show: false } }],
@@ -189,7 +200,7 @@ export function buildChartOption(response: AiQueryResponse, kind: string): Recor
     return {
       tooltip: {},
       legend: { type: "scroll", bottom: 0 },
-      xAxis: { type: "category", data: cols },
+      xAxis: { type: "category", data: cols, axisLabel: categoryAxisLabel() },
       yAxis: { type: "value" },
       series: rows.map((name, i) => ({
         type: "scatter",
@@ -228,7 +239,7 @@ export function buildChartOption(response: AiQueryResponse, kind: string): Recor
       tooltip: { trigger: "axis" },
       legend: { type: "scroll", bottom: 0 },
       grid: { top: 24, left: 48, right: 16, bottom: 36 },
-      xAxis: { type: "category", data: rows },
+      xAxis: { type: "category", data: rows, axisLabel: categoryAxisLabel() },
       yAxis: { type: "value" },
       series: [
         {
@@ -266,7 +277,7 @@ export function buildChartOption(response: AiQueryResponse, kind: string): Recor
     tooltip: { trigger: "axis" },
     legend: { type: "scroll", bottom: 0 },
     grid: { top: 24, left: 48, right: 16, bottom: 36 },
-    xAxis: { type: "category", data: rows, axisLabel: { rotate: rows.length > 8 ? 30 : 0 } },
+    xAxis: { type: "category", data: rows, axisLabel: categoryAxisLabel(rows.length > 8 ? 30 : 0) },
     yAxis: { type: "value" },
     series: cols.map((name, c) => ({
       name,
