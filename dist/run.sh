@@ -15,5 +15,15 @@ if [[ -z "$JAR" ]]; then
   exit 1
 fi
 
+# Optional OpenTelemetry: drop opentelemetry-javaagent.jar next to this
+# script and set OTEL_EXPORTER_OTLP_ENDPOINT to enable. See
+# docs/observability.md for the download command and config reference.
+JAVA_OPTS=()
+OTEL_AGENT_JAR="$SCRIPT_DIR/opentelemetry-javaagent.jar"
+if [[ -n "${OTEL_EXPORTER_OTLP_ENDPOINT:-}" && -f "$OTEL_AGENT_JAR" ]]; then
+  JAVA_OPTS+=("-javaagent:$OTEL_AGENT_JAR")
+  export OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-saiku}"
+fi
+
 # Default to a saiku-home that lives next to the JAR (not the user's CWD).
-exec java -jar "$JAR" serve --home "$SCRIPT_DIR/saiku-home" "$@"
+exec java "${JAVA_OPTS[@]}" -jar "$JAR" serve --home "$SCRIPT_DIR/saiku-home" "$@"
