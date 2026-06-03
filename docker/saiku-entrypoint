@@ -30,6 +30,18 @@ case "${1:-serve}" in
     if [[ -n "${SAIKU_MCP_URL:-}" ]]; then
       JAVA_OPTS+=("-Dsaiku.mcp.url=${SAIKU_MCP_URL}")
     fi
+    # OpenTelemetry: attach the side-loaded Java agent only when an OTLP
+    # endpoint is configured. With no endpoint, the agent jar is never
+    # loaded — zero startup cost, zero runtime overhead. OTEL_SERVICE_NAME
+    # defaults to "saiku" so traces are attributed correctly without
+    # forcing every deployer to set it. All other OTEL_* env vars
+    # (sampler, headers, resource attrs) pass through to the agent
+    # untouched — see docs/observability.md.
+    OTEL_AGENT_JAR=/opt/saiku/otel/opentelemetry-javaagent.jar
+    if [[ -n "${OTEL_EXPORTER_OTLP_ENDPOINT:-}" && -f "$OTEL_AGENT_JAR" ]]; then
+      JAVA_OPTS+=("-javaagent:${OTEL_AGENT_JAR}")
+      export OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-saiku}"
+    fi
     exec java "${JAVA_OPTS[@]}" -jar /app/saiku.jar serve \
       --host 0.0.0.0 \
       --port 8080 \

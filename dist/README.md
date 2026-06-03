@@ -62,6 +62,35 @@ saiku-home/
   branding/        Brand customisation samples.
 ```
 
+## OpenTelemetry (optional)
+
+The `run.sh` / `run.bat` wrappers will attach the OpenTelemetry Java
+agent automatically when **both** conditions are true:
+
+1. `opentelemetry-javaagent.jar` is present next to the wrapper script.
+2. `OTEL_EXPORTER_OTLP_ENDPOINT` is set in the environment.
+
+Download the agent (this distribution doesn't ship it to avoid
+inflating the zip with a ~22 MB jar that most users won't use):
+
+```bash
+curl -fsSLO https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/2.28.1/opentelemetry-javaagent-2.28.1.jar
+mv opentelemetry-javaagent-2.28.1.jar opentelemetry-javaagent.jar
+```
+
+Then point it at your collector:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+./run.sh
+```
+
+When `OTEL_EXPORTER_OTLP_ENDPOINT` is unset, the agent is never loaded
+— zero overhead, zero observability. See
+[docs/observability.md](../docs/observability.md) for the full
+configuration reference, what gets auto-instrumented, and sampling
+guidance.
+
 ## Calcite vs legacy Mondrian backend
 
 The bundled Mondrian fork (`pentaho:mondrian:4.8.1.2`) ships a Calcite-based

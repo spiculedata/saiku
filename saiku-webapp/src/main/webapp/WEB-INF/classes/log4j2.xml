@@ -16,7 +16,14 @@
 <Configuration status="WARN" name="saiku">
   <Properties>
     <Property name="saikuHome">${sys:saiku.home:-saiku-home}</Property>
-    <Property name="pattern">%d{ISO8601} %-5p [%c{1}] %m%n</Property>
+    <!--
+      Pattern includes OpenTelemetry trace context when the agent is
+      attached. The agent's log4j2-appender instrumentation populates
+      MDC with trace_id/span_id automatically; %notEmpty hides the
+      bracket entirely when the keys are unset, so logs stay clean
+      when OTEL_EXPORTER_OTLP_ENDPOINT isn't configured.
+    -->
+    <Property name="pattern">%d{ISO8601} %-5p [%c{1}] %notEmpty{[trace_id=%X{trace_id} span_id=%X{span_id}] }%m%n</Property>
   </Properties>
 
   <Appenders>
