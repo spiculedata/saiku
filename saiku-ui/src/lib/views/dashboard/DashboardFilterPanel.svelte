@@ -26,6 +26,16 @@
     ancestorSelections,
     memberDescendsFromAny,
   } from "$lib/dashboard/cascadingFilters";
+  // issue #922: pure cascade state logic for the cascading-select variant.
+  import {
+    applySelection,
+    effectiveDepth,
+    emittedMembers,
+    parentForLevel,
+    selectionsEqual,
+    visibleDropdownCount,
+    type CascadeSelections,
+  } from "$lib/dashboard/cascadingFilter";
   import {
     expandDateRange,
     fromDateInputValue,
@@ -100,6 +110,12 @@
       hierarchy: addHierarchy,
       level: addLevel,
       members: [],
+      // issue #922: a cascading-select needs a config; default to walking
+      // from the chosen level down 3 dropdowns. Editable later via the tile
+      // editor / future panel-row config.
+      ...(addWidget === "cascading-select"
+        ? { cascading: { startLevel: addLevel, depth: 3 } }
+        : {}),
     };
     dashboardStore.addPanelFilter(filter);
     closeAdd();
@@ -192,6 +208,9 @@
     const filters = panel?.filters ?? [];
     for (const f of filters) {
       if (!f.cube) continue;
+      // issue #922: cascading-select runs its own per-level fetch effect
+      // below; the flat single-level catalogue isn't used for it.
+      if (f.widget === "cascading-select") continue;
       // Prime the schema cache so ancestor-cascade resolution
       // (selectedForPicker below) can compute level depths without
       // hitting /ai/schema synchronously inside the template.
@@ -397,6 +416,146 @@
     if (stale) activeFilters.clearChip(stale.id);
   }
 
+  /* ===================== issue #922: cascading-select ====================
+   * The cascading-select variant walks ONE hierarchy level-by-level:
+   * dropdown 0 lists members at the start level; picking one reveals
+   * dropdown 1 with only that member's children; and so on. The deepest
+   * concrete pick is emitted via commitPanelMembers (the SAME merge path
+   * the other variants use). All branching (visibility, "All" truncation,
+   * leaf computation) lives in $lib/dashboard/cascadingFilter; this block
+   * owns only the async per-level member fetch + binding.
+   *
+   * Each dropdown reuses the EXISTING /ai/members/search endpoint, scoped
+   * to the parent member by client-side prefix filtering (member unique
+   * names embed the parent path), so there is no new backend surface.
+   * ====================================================================== */
+
+  // Per-widget cascade selections (index 0 = start level). Keyed by filter id.
+  let cascadeState = $state<Record<string, CascadeSelections>>({});
+  // Fetched member catalogues per (filter, level) — keyed so a parent
+  // change re-fetches. Reuses the same MemberRowState shape as the flat
+  // catalogue above.
+  let cascadeMembers = $state<Record<string, MemberRowState>>({});
+
+  function cascadeSelections(filterId: string): CascadeSelections {
+    return cascadeState[filterId] ?? [];
+  }
+
+  /** Ordered cascade level names (captions), root-most first, starting at
+   *  the configured start level (or the filter's own level) and running
+   *  down the hierarchy. Empty when the schema isn't loaded yet. */
+  function cascadeLevels(f: PanelFilter): string[] {
+    if (!f.cube) return [];
+    void schemaCache.version;
+    const schema = schemaCache.peek(f.cube) as SchemaLike | null;
+    if (!schema?.dimensions) return [];
+    const d = schema.dimensions[f.dimension.toLowerCase()];
+    const h = d?.hierarchies?.[f.hierarchy.toLowerCase()];
+    if (!h?.levels) return [];
+    const allLevels = Object.values(h.levels).map((l) => l.name);
+    const start = f.cascading?.startLevel || f.level;
+    const startIdx = allLevels.findIndex((n) => n.toLowerCase() === start.toLowerCase());
+    if (startIdx < 0) return [];
+    return allLevels.slice(startIdx);
+  }
+
+  /** Effective number of cascade dropdowns for this widget — configured
+   *  depth, bounded by the levels actually available below the start. */
+  function cascadeDepth(f: PanelFilter): number {
+    return effectiveDepth(f.cascading?.depth, cascadeLevels(f).length);
+  }
+
+  function cascadeKey(f: PanelFilter, levelIdx: number, parent: string | null): string {
+    return `${f.id}|${levelIdx}|${parent ?? ""}`;
+  }
+
+  /** Prime / refresh the member catalogue for every currently-visible
+   *  cascade dropdown of every cascading widget. Runs whenever the panel,
+   *  the schema, or the cascade selections change. */
+  $effect(() => {
+    const filters = panel?.filters ?? [];
+    for (const f of filters) {
+      if (f.widget !== "cascading-select" || !f.cube) continue;
+      void schemaCache.get(f.cube).catch(() => {});
+      const levels = cascadeLevels(f);
+      const depth = cascadeDepth(f);
+      if (depth <= 0) continue;
+      const sels = cascadeSelections(f.id);
+      const visible = visibleDropdownCount(sels, depth);
+      for (let i = 0; i < visible; i++) {
+        const parent = i === 0 ? null : parentForLevel(sels, i - 1);
+        if (i > 0 && parent == null) continue; // parent is "All" — nothing to fetch
+        const key = cascadeKey(f, i, parent);
+        const existing = cascadeMembers[key];
+        if (existing && existing.key === key) continue;
+        void loadCascadeMembers(f, levels[i], i, parent, key);
+      }
+    }
+  });
+
+  async function loadCascadeMembers(
+    f: PanelFilter,
+    levelName: string,
+    levelIdx: number,
+    parent: string | null,
+    key: string,
+  ): Promise<void> {
+    if (!f.cube) return;
+    cascadeMembers = {
+      ...cascadeMembers,
+      [key]: { loading: true, error: null, members: null, key },
+    };
+    try {
+      const params = new URLSearchParams({
+        cubeId: cubeKey(f.cube),
+        dimension: f.dimension,
+        hierarchy: f.hierarchy,
+        level: levelName,
+        limit: "500",
+      });
+      const res = await fetch(`/rest/saiku/api/ai/members/search?${params.toString()}`, {
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      let hits = (await res.json()) as { uniqueName: string; caption: string }[];
+      // Scope to the parent member's children via the embedded-path prefix.
+      if (parent) hits = hits.filter((m) => memberDescendsFromAny(m.uniqueName, [parent]));
+      cascadeMembers = {
+        ...cascadeMembers,
+        [key]: { loading: false, error: null, members: hits, key },
+      };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      cascadeMembers = {
+        ...cascadeMembers,
+        [key]: { loading: false, error: msg, members: [], key },
+      };
+    }
+  }
+
+  function cascadeMembersFor(
+    f: PanelFilter,
+    levelIdx: number,
+  ): MemberRowState | undefined {
+    const sels = cascadeSelections(f.id);
+    const parent = levelIdx === 0 ? null : parentForLevel(sels, levelIdx - 1);
+    return cascadeMembers[cascadeKey(f, levelIdx, parent)];
+  }
+
+  function handleCascadeChange(filterId: string, levelIdx: number, e: Event): void {
+    const raw = (e.target as HTMLSelectElement).value;
+    const value = raw === "" ? null : raw; // "" option = "All"
+    const cur = cascadeSelections(filterId);
+    const next = applySelection(cur, levelIdx, value);
+    if (selectionsEqual(cur, next)) return; // idempotent re-selection — no-op
+    cascadeState = { ...cascadeState, [filterId]: next };
+    // Emit the deepest concrete pick through the same merge path the
+    // other variants use (single-element member list, or empty for "All").
+    commitPanelMembers(filterId, emittedMembers(next));
+  }
+  /* ===================== end issue #922 ================================= */
+
   function handleRemove(id: string): void {
     dashboardStore.removePanelFilter(id);
   }
@@ -525,7 +684,36 @@
                 </span>
               {/if}
               <span class="picker-label">{f.level}</span>
-              {#if f.widget === "date-range"}
+              {#if f.widget === "cascading-select"}
+                <!-- issue #922: N stacked dropdowns walking the hierarchy. -->
+                {@const levels = cascadeLevels(f)}
+                {@const depth = cascadeDepth(f)}
+                {@const sels = cascadeSelections(f.id)}
+                {@const visible = visibleDropdownCount(sels, depth)}
+                <span class="cascade">
+                  {#each Array(visible) as _, i (i)}
+                    {@const lvlCat = cascadeMembersFor(f, i)}
+                    <select
+                      class="picker-select"
+                      value={sels[i] ?? ""}
+                      disabled={readOnly}
+                      aria-label={levels[i] ?? `Level ${i + 1}`}
+                      onchange={(e) => handleCascadeChange(f.id, i, e)}
+                    >
+                      <option value="">— all {levels[i] ?? ""} —</option>
+                      {#if lvlCat?.members}
+                        {#each lvlCat.members as m (m.uniqueName)}
+                          <option value={m.uniqueName}>{m.caption}</option>
+                        {/each}
+                      {:else if lvlCat?.loading}
+                        <option value="" disabled>Loading…</option>
+                      {:else if lvlCat?.error}
+                        <option value="" disabled>Error: {lvlCat.error}</option>
+                      {/if}
+                    </select>
+                  {/each}
+                </span>
+              {:else if f.widget === "date-range"}
                 {@const dr = dateRangeFor(f.id)}
                 <span class="date-range">
                   <input
@@ -632,6 +820,7 @@
               <option value="single-select">single-select</option>
               <option value="multi-select">multi-select</option>
               <option value="date-range">date-range</option>
+              <option value="cascading-select">cascading-select</option>
             </select>
           </label>
           {#if addError}
@@ -748,6 +937,14 @@
   }
   .date-range {
     display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  /* issue #922: stacked cascade dropdowns. Wrap so a deep walk doesn't
+     blow out the picker row horizontally. */
+  .cascade {
+    display: inline-flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.25rem;
   }

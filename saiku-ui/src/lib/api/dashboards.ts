@@ -38,7 +38,35 @@ export type TileQuery = ReferenceQuery | InlineQuery;
 
 export type TileType = "chart" | "table" | "text" | "filter" | "kpi";
 
-export type FilterWidget = "single-select" | "multi-select" | "date-range";
+export type FilterWidget = "single-select" | "multi-select" | "date-range" | "cascading-select";
+
+/* --- issue #922: cascading single-select filter widget -------------------
+ * Self-contained additions for the "cascading-select" FilterWidget variant.
+ * Kept in one clearly-delimited block (appended, nothing reordered) so the
+ * parallel #919 conditional-formatting work rebases cleanly. The variant
+ * walks a single hierarchy level-by-level: pick a parent member, the next
+ * dropdown shows only that parent's children, and so on. The deepest
+ * concrete selection is emitted as the filter member. Pure cascade state
+ * logic lives in $lib/dashboard/cascadingFilter; this is just the config
+ * DTO carried on the panel filter / tile.
+ */
+
+/** Per-widget config for the {@code "cascading-select"} variant. The
+ *  cascade walks the levels of {@link DashboardFilter.hierarchy} starting
+ *  at {@code startLevel} (which defaults to the filter's own
+ *  {@code level}) and descends at most {@code depth} dropdowns. No new
+ *  backend surface — each dropdown reuses the existing member-search
+ *  fetch, scoped to the parent member chosen above it. */
+export interface CascadingSelectConfig {
+  /** Root-most cascade level (caption). When omitted the renderer falls
+   *  back to the panel filter's {@link DashboardFilter.level}. */
+  startLevel?: string;
+  /** How many dropdowns deep the cascade may walk (clamped 1..6 and
+   *  further bounded by the levels actually present below startLevel).
+   *  Defaults to 3 when unset. */
+  depth?: number;
+}
+/* --- end issue #922 block ------------------------------------------------- */
 
 /** A dim/hier/level filter — used as both a dashboard-level default and
  *  as the {@code target} of a filter-widget tile. */
@@ -115,6 +143,9 @@ export interface DashboardTile {
   text?: string;
   target?: DashboardFilter;
   widget?: FilterWidget;
+  /** Cascading-select config (issue #922). Only consulted when
+   *  {@code widget === "cascading-select"}. */
+  cascading?: CascadingSelectConfig;
   /** KPI-tile config. Only consulted when {@code type === "kpi"}. */
   kpi?: KpiConfig;
   /** Per-column conditional formatting rules. Only consulted when
@@ -192,6 +223,9 @@ export interface PanelFilter extends DashboardFilter {
   id: string;
   widget: FilterWidget;
   cube?: CubeRef;
+  /** Config for {@code widget === "cascading-select"} (issue #922).
+   *  Ignored by the other variants. */
+  cascading?: CascadingSelectConfig;
 }
 
 /** Unified filter panel: docks at the top of the dashboard editor as
