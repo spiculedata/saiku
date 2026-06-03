@@ -72,6 +72,27 @@ See [`docs/AI-QUERY-API.md`](docs/AI-QUERY-API.md) and
 contract and the `saiku.semantic.*` annotation namespace cubes use to
 describe themselves to agents.
 
+## Observability
+
+Saiku ships **opt-in OpenTelemetry instrumentation** via the OTel Java
+agent — zero code changes, zero overhead when off. Setting
+`OTEL_EXPORTER_OTLP_ENDPOINT` activates auto-instrumentation for Jetty,
+Jersey, JDBC (every Mondrian-emitted SQL becomes a child span),
+outbound HTTP, JVM metrics, and DBCP2 connection pool metrics. Trace
+context is injected into the Saiku log pattern automatically.
+
+```sh
+docker run -d -p 8080:8080 \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 \
+  -e OTEL_SERVICE_NAME=saiku-prod \
+  ghcr.io/spiculedata/saiku:latest
+```
+
+Without the endpoint env var the agent is never loaded. See
+[`docs/observability.md`](docs/observability.md) for the full env-var
+reference, sampling guidance, and what's not yet covered (Tier 2
+custom spans for `ThinQueryService` etc.).
+
 ## Build from source
 
 JDK 21 + Maven 3.9+ required.
