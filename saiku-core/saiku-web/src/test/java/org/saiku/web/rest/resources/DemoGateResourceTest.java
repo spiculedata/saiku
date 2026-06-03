@@ -27,6 +27,8 @@ public class DemoGateResourceTest {
         boolean sendCalled;
         String lastEmail;
         String lastCode;
+        String lastFirstName;
+        String lastLastName;
         boolean verifyResult = true;
         boolean throwOnSend;
         boolean throwOnVerify;
@@ -39,10 +41,13 @@ public class DemoGateResourceTest {
         }
 
         @Override
-        public boolean verifyCode(String email, String code) throws DemoGateException {
+        public boolean verifyCode(String email, String code, String firstName, String lastName)
+                throws DemoGateException {
             if (throwOnVerify) throw new DemoGateException("boom");
             lastEmail = email;
             lastCode = code;
+            lastFirstName = firstName;
+            lastLastName = lastName;
             return verifyResult;
         }
 
@@ -129,6 +134,21 @@ public class DemoGateResourceTest {
         assertTrue(setCookie.startsWith(DemoGateCookie.COOKIE_NAME + "="));
         assertTrue(setCookie.contains("HttpOnly"));
         assertTrue(setCookie.contains("SameSite=Strict"));
+    }
+
+    @Test
+    public void verify_passesFirstAndLastNameToProvider() {
+        FakeProvider p = new FakeProvider();
+        p.verifyResult = true;
+        Map<String, String> body = new HashMap<>();
+        body.put("email", "u@e.com");
+        body.put("code", "123456");
+        body.put("firstName", "Juan");
+        body.put("lastName", "Resendiz");
+        Response resp = resource(p, true).verify(req(null), body);
+        assertEquals(204, resp.getStatus());
+        assertEquals("Juan", p.lastFirstName);
+        assertEquals("Resendiz", p.lastLastName);
     }
 
     @Test

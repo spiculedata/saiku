@@ -52,8 +52,13 @@
 
   const showDemoPanel = $derived(platform.capabilities?.demoMode === true);
 
-  function onGateVerified(): void {
+  async function onGateVerified(): Promise<void> {
     gateCleared = true;
+    // The gate only runs in demo mode, where admin/admin is the public
+    // credential — sign straight in so a verified visitor lands in the app
+    // instead of bouncing to the login form. If that somehow fails, the
+    // revealed login form (gateCleared = true) is the graceful fallback.
+    await loginAsDemo();
   }
 
   async function onSubmit(e: SubmitEvent) {

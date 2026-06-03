@@ -18,8 +18,8 @@ import org.junit.Test;
 /**
  * Exercises the WorkOS HTTP contract against an in-process {@link HttpServer}
  * stub — no WireMock/Mockito (saiku-web has none) and no network. Pins the
- * request shape (path, Bearer auth, body) and the response handling, including
- * the empty-body quirk the gate must tolerate.
+ * request shape (path, Bearer auth, body), response handling (including the
+ * empty-body quirk), and the best-effort name attachment to the WorkOS user.
  */
 public class WorkOsMagicAuthProviderTest {
 
@@ -29,6 +29,8 @@ public class WorkOsMagicAuthProviderTest {
     private final AtomicReference<String> sendAuth = new AtomicReference<>();
     private final AtomicReference<String> sendBody = new AtomicReference<>();
     private final AtomicReference<String> verifyBody = new AtomicReference<>();
+    private final AtomicReference<String> updatePath = new AtomicReference<>();
+    private final AtomicReference<String> updateBody = new AtomicReference<>();
 
     @After
     public void stop() {
@@ -46,6 +48,12 @@ public class WorkOsMagicAuthProviderTest {
         server.createContext("/user_management/authenticate", ex -> {
             verifyBody.set(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             writeResponse(ex, verifyStatus, verifyRespBody);
+        });
+        // Update-user endpoint (name attachment). Matches /user_management/users/{id}.
+        server.createContext("/user_management/users", ex -> {
+            updatePath.set(ex.getRequestURI().getPath());
+            updateBody.set(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            writeResponse(ex, 200, "{}");
         });
         server.start();
         base = "http://127.0.0.1:" + server.getAddress().getPort();
@@ -93,19 +101,19 @@ public class WorkOsMagicAuthProviderTest {
     @Test
     public void verifyCode_trueOn2xx() throws Exception {
         start(200, "{}", 200, "{\"access_token\":\"x\"}");
-        assertTrue(provider().verifyCode("user@example.com", "123456"));
+        assertTrue(provider().verifyCode("user@example.com", "123456", null, null));
     }
 
     @Test
     public void verifyCode_falseOnInvalidGrant() throws Exception {
         start(200, "{}", 401, "{\"error\":\"invalid_grant\"}");
-        assertFalse(provider().verifyCode("user@example.com", "000000"));
+        assertFalse(provider().verifyCode("user@example.com", "000000", null, null));
     }
 
     @Test
     public void verifyCode_sendsClientIdGrantAndCode() throws Exception {
         start(200, "{}", 200, "{}");
-        provider().verifyCode("user@example.com", "123456");
+        provider().verifyCode("user@example.com", "123456", null, null);
         String b = verifyBody.get();
         assertTrue(b.contains("client_abc"));
         assertTrue(b.contains("urn:workos:oauth:grant-type:magic-auth:code"));
@@ -115,6 +123,23 @@ public class WorkOsMagicAuthProviderTest {
     @Test(expected = DemoGateException.class)
     public void verifyCode_throwsOnServerError() throws Exception {
         start(200, "{}", 500, "boom");
-        provider().verifyCode("user@example.com", "123456");
+        provider().verifyCode("user@example.com", "123456", null, null);
+    }
+
+    @Test
+    public void verifyCode_attachesNameToWorkOsUser() throws Exception {
+        start(200, "{}", 200, "{\"user\":{\"id\":\"user_123\"}}");
+        assertTrue(provider().verifyCode("user@example.com", "123456", "Juan", "Resendiz"));
+        assertEquals("/user_management/users/user_123", updatePath.get());
+        String b = updateBody.get();
+        assertTrue(b.contains("\"first_name\":\"Juan\""));
+        assertTrue(b.contains("\"last_name\":\"Resendiz\""));
+    }
+
+    @Test
+    public void verifyCode_skipsNameUpdateWhenNoNames() throws Exception {
+        start(200, "{}", 200, "{\"user\":{\"id\":\"user_123\"}}");
+        provider().verifyCode("user@example.com", "123456", null, null);
+        assertNull("no update call when names are absent", updatePath.get());
     }
 }

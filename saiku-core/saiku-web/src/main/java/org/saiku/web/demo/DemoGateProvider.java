@@ -29,14 +29,18 @@ public interface DemoGateProvider {
     void sendCode(String email) throws DemoGateException;
 
     /**
-     * Verify the {@code code} the visitor entered for {@code email}.
+     * Verify the {@code code} the visitor entered for {@code email}. When
+     * {@code firstName} / {@code lastName} are supplied, providers that maintain
+     * a user record (e.g. WorkOS) attach them to it so the operator sees who
+     * cleared the gate, not just an address — best-effort, never fails the
+     * verification.
      *
      * @return {@code true} when the code is valid (email is validated);
      *     {@code false} when the code is wrong or expired.
      * @throws DemoGateException only on a hard failure — a wrong code is a
      *     {@code false} return, not an exception.
      */
-    boolean verifyCode(String email, String code) throws DemoGateException;
+    boolean verifyCode(String email, String code, String firstName, String lastName) throws DemoGateException;
 
     /** Short, stable provider identifier surfaced on the info endpoint (e.g. {@code "workos"}). */
     String name();

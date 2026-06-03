@@ -7,6 +7,7 @@
 package org.saiku.web.demo;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.net.URI;
@@ -91,7 +92,7 @@ public class WorkOsMagicAuthProvider implements DemoGateProvider {
     }
 
     @Override
-    public boolean verifyCode(String email, String code) throws DemoGateException {
+    public boolean verifyCode(String email, String code, String firstName, String lastName) throws DemoGateException {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("client_id", clientId);
         body.put("client_secret", apiKey);
@@ -107,7 +108,11 @@ public class WorkOsMagicAuthProvider implements DemoGateProvider {
         HttpResponse<String> resp = send(req);
         int sc = resp.statusCode();
         if (sc / 100 == 2) {
-            return true; // valid code → email proven; tokens discarded
+            // Valid code → email proven; tokens discarded. Best-effort: attach
+            // the captured name to the WorkOS user so the operator sees who
+            // signed in, not just an address (saiku#1029).
+            attachName(resp.body(), firstName, lastName);
+            return true;
         }
         // Bad/expired/used code → WorkOS returns a 4xx invalid_grant. Treat the
         // common ones as "wrong code" (false), not a hard failure.
@@ -115,6 +120,47 @@ public class WorkOsMagicAuthProvider implements DemoGateProvider {
             return false;
         }
         throw new DemoGateException("WorkOS authenticate failed (" + sc + "): " + safeBody(resp));
+    }
+
+    /**
+     * Set {@code first_name}/{@code last_name} on the WorkOS user that the
+     * authenticate response identifies. Best-effort: any failure (parse, HTTP,
+     * missing id) is logged and swallowed — it must never fail a verification
+     * that already succeeded. No-ops when both names are blank.
+     */
+    private void attachName(String authBody, String firstName, String lastName) {
+        boolean hasFirst = firstName != null && !firstName.isBlank();
+        boolean hasLast = lastName != null && !lastName.isBlank();
+        if (!hasFirst && !hasLast) {
+            return;
+        }
+        try {
+            JsonNode root = MAPPER.readTree(authBody == null ? "{}" : authBody);
+            String userId = root.path("user").path("id").asText(null);
+            if (userId == null || userId.isBlank()) {
+                return;
+            }
+            Map<String, Object> body = new LinkedHashMap<>();
+            if (hasFirst) {
+                body.put("first_name", firstName.trim());
+            }
+            if (hasLast) {
+                body.put("last_name", lastName.trim());
+            }
+            HttpRequest req = HttpRequest.newBuilder(URI.create(baseUri + "/user_management/users/" + userId))
+                    .timeout(Duration.ofSeconds(15))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString(json(body), StandardCharsets.UTF_8))
+                    .build();
+            HttpResponse<String> r = send(req);
+            if (r.statusCode() / 100 != 2) {
+                log.warn("WorkOS update-user name failed ({}) — verification still succeeded", r.statusCode());
+            }
+        } catch (Exception e) {
+            log.warn("WorkOS update-user name skipped: {}", e.getMessage());
+        }
     }
 
     private HttpResponse<String> send(HttpRequest req) throws DemoGateException {

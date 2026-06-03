@@ -97,8 +97,10 @@ public class DemoGateResource {
         if (code == null || code.isBlank()) {
             return error(400, "VALIDATION_ERROR", "Code is required.", "code");
         }
+        String firstName = body == null ? null : trim(body.get("firstName"));
+        String lastName = body == null ? null : trim(body.get("lastName"));
         try {
-            boolean ok = gate.provider().verifyCode(email, code);
+            boolean ok = gate.provider().verifyCode(email, code, firstName, lastName);
             if (!ok) {
                 rateLimiter.recordFailure(req);
                 return error(400, "INVALID_CODE", "That code is invalid or has expired.", "code");

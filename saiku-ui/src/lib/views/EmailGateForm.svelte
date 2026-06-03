@@ -18,17 +18,20 @@
   let { onVerified }: Props = $props();
 
   let step = $state<GateStep>("email");
+  let firstName = $state("");
+  let lastName = $state("");
   let email = $state("");
   let code = $state("");
   let error = $state<string | null>(null);
   let busy = $state(false);
 
   const emailValid = $derived(isValidEmail(email));
+  const canSend = $derived(emailValid && firstName.trim().length > 0 && lastName.trim().length > 0);
   const codeComplete = $derived(isCompleteCode(code));
 
   async function onSendCode(e: SubmitEvent) {
     e.preventDefault();
-    if (!emailValid || busy) return;
+    if (!canSend || busy) return;
     error = null;
     busy = true;
     try {
@@ -47,7 +50,7 @@
     error = null;
     busy = true;
     try {
-      await verifyCode(email.trim(), code);
+      await verifyCode(email.trim(), code, firstName.trim(), lastName.trim());
       onVerified();
     } catch (err) {
       error = err instanceof Error ? err.message : i18n.t("demoGate.verifyFailed");
@@ -80,6 +83,28 @@
 
   {#if step === "email"}
     <form onsubmit={onSendCode}>
+      <div class="gate__names">
+        <label class="field">
+          <span class="field__label">{i18n.t("demoGate.firstName")}</span>
+          <input
+            class="field__input"
+            bind:value={firstName}
+            placeholder={i18n.t("demoGate.firstNamePlaceholder")}
+            autocomplete="given-name"
+            required
+          />
+        </label>
+        <label class="field">
+          <span class="field__label">{i18n.t("demoGate.lastName")}</span>
+          <input
+            class="field__input"
+            bind:value={lastName}
+            placeholder={i18n.t("demoGate.lastNamePlaceholder")}
+            autocomplete="family-name"
+            required
+          />
+        </label>
+      </div>
       <label class="field">
         <span class="field__label">{i18n.t("demoGate.emailLabel")}</span>
         <input
@@ -91,7 +116,7 @@
           required
         />
       </label>
-      <button type="submit" class="btn btn--primary btn--wide" disabled={busy || !emailValid}>
+      <button type="submit" class="btn btn--primary btn--wide" disabled={busy || !canSend}>
         {busy ? i18n.t("demoGate.sending") : i18n.t("demoGate.sendCode")}
       </button>
     </form>
@@ -152,6 +177,11 @@
     color: var(--fg-muted);
     font-size: var(--fs-sm);
     line-height: var(--lh-normal);
+  }
+  .gate__names {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-2);
   }
   .gate__sent {
     margin: 0 0 var(--space-3);

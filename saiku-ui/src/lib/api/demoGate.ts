@@ -35,9 +35,18 @@ export async function requestCode(email: string): Promise<void> {
   }
 }
 
-/** Verify the {@code code} for {@code email}; on success the server sets the cookie. */
-export async function verifyCode(email: string, code: string): Promise<void> {
-  const res = await postJson(`${BASE}/verify`, { email, code });
+/**
+ * Verify the code for an email; on success the server sets the cookie. The
+ * optional first/last name are attached to the provider's user record (WorkOS)
+ * so the operator sees who cleared the gate.
+ */
+export async function verifyCode(
+  email: string,
+  code: string,
+  firstName?: string,
+  lastName?: string,
+): Promise<void> {
+  const res = await postJson(`${BASE}/verify`, { email, code, firstName, lastName });
   if (!res.ok) {
     throw new Error(await errorMessage(res, "That code is invalid or has expired."));
   }
