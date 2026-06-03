@@ -122,8 +122,13 @@ export function installAuthInterceptor(): void {
       //     loadVersion() already swallows in try/catch (saiku#1004).
       //     Belt-and-braces against future "harmless info endpoint
       //     returns 403 to non-admins" bugs.
+      //   /rest/saiku/demo/gate — the demo email gate (saiku#1029) returns
+      //     400/401 as expected flow (wrong code, not-yet-verified); it must
+      //     not trip the session-ended banner.
       const isCarveOut =
-        url.includes("/rest/saiku/session") || url.includes("/rest/saiku/admin/version");
+        url.includes("/rest/saiku/session") ||
+        url.includes("/rest/saiku/admin/version") ||
+        url.includes("/rest/saiku/demo/gate");
       if (url.includes("/rest/saiku/") && !isCarveOut) {
         notify(res.status, url);
       }

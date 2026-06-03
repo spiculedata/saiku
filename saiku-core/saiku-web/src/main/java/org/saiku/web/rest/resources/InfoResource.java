@@ -51,10 +51,19 @@ public class InfoResource {
     private static final Logger log = LoggerFactory.getLogger(InfoResource.class);
 
     private PlatformUtilsService platformService;
+    private org.saiku.web.demo.DemoGate demoGate;
 
     // @Autowired
     public void setPlatformUtilsService(PlatformUtilsService ps) {
         this.platformService = ps;
+    }
+
+    /**
+     * Optional demo email-gate holder (saiku#1029). Null in unit runs / non-demo
+     * deployments — the capabilities endpoint then reports {@code emailGate:false}.
+     */
+    public void setDemoGate(org.saiku.web.demo.DemoGate demoGate) {
+        this.demoGate = demoGate;
     }
 
     /**
@@ -137,6 +146,11 @@ public class InfoResource {
         body.put("ai", ai);
         body.put("mcp", mcp);
         body.put("demoMode", Boolean.parseBoolean(System.getProperty("saiku.demo", "false")));
+        // saiku#1029: tell the SPA whether the demo email gate is in front of
+        // login, and which provider, so the login page can render the gate form.
+        boolean emailGate = demoGate != null && demoGate.isEnabled();
+        body.put("emailGate", emailGate);
+        body.put("emailGateProvider", emailGate ? demoGate.providerName() : null);
         return Response.ok(body).build();
     }
 

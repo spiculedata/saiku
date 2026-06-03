@@ -68,6 +68,20 @@
 		<session-timeout>10080</session-timeout>
 	</session-config>
 
+    <!-- saiku#1029: demo email gate. Declared BEFORE the Spring Security
+         filterChainProxy so it runs first and stays independent of Spring
+         Security — the verified cookie only unlocks the login form; admin/admin
+         is still required afterwards. Inert (immediate pass-through) unless demo
+         mode is on AND WorkOS is configured. -->
+    <filter>
+        <filter-name>demoGate</filter-name>
+        <filter-class>org.saiku.web.servlet.DemoGateFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>demoGate</filter-name>
+        <url-pattern>/rest/*</url-pattern>
+    </filter-mapping>
+
     <filter>
         <filter-name>org.springframework.security.filterChainProxy</filter-name>
         <filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>

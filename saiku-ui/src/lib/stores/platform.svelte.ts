@@ -14,6 +14,10 @@ export interface PlatformCapabilities {
   };
   /** True when the launcher was started with -Dsaiku.demo=true. */
   demoMode: boolean;
+  /** saiku#1029: true when the demo email gate sits in front of login. */
+  emailGate?: boolean;
+  /** Provider backing the gate (e.g. "workos"), or null when off. */
+  emailGateProvider?: string | null;
 }
 
 class PlatformStore {
