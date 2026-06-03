@@ -1,0 +1,21 @@
+feat(demo): demo email-gate frontend — EmailGateForm + LoginForm gate-first (#1029)
+
+Phase 2 (frontend) of the demo email gate. When /info/capabilities reports
+emailGate:true and the visitor hasn't verified yet, the login page shows a
+two-step email -> code form before the login form. A returning visitor with a
+valid cookie is reported verified by /demo/gate/status and skips the gate.
+
+- EmailGateForm.svelte — email -> "Send code" -> 6-digit verify
+- LoginForm.svelte — gate-first; checks /demo/gate/status on mount, swaps in the
+  login form (+ existing demo prefill) once verified
+- api/demoGate.ts (request / verify / status) + pure $lib/demo/emailGate.ts
+  helper (email + code validation), unit-tested
+- http.ts — /rest/saiku/demo/gate carved out of the session-ended interceptor
+  (its 400/401 are expected flow)
+- PlatformCapabilities gains emailGate / emailGateProvider
+- demoGate.* i18n across en / de / es / fr
+
+Verified locally: npm run check 0 errors (42 baseline warnings), vitest 441/441
+(+6 emailGate cases). Full gate flow needs the Phase 1 backend deployed.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>

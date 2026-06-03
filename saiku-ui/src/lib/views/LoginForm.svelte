@@ -3,13 +3,21 @@
   import { session } from "$lib/stores/session.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { platform } from "$lib/stores/platform.svelte";
+  import { gateStatus } from "$lib/api/demoGate";
   import ApiAccessAdmin from "$lib/views/admin/ApiAccessAdmin.svelte";
+  import EmailGateForm from "$lib/views/EmailGateForm.svelte";
   import { Info } from "lucide-svelte";
 
   let username = $state("admin");
   let password = $state("");
   let error = $state<string | null>(null);
   let busy = $state(false);
+
+  // saiku#1029: when the demo email gate is on, show it before the login form.
+  // gateCleared starts true (no gate); flipped false on mount if the gate is
+  // enabled and this visitor hasn't verified yet (cookie absent).
+  let gateCleared = $state(true);
+  const emailGate = $derived(platform.capabilities?.emailGate === true);
 
   // Anonymous-accessible probe — surfaces demoMode + AI/MCP URLs so the
   // login screen of a demo deployment can show visitors how to drive the
@@ -19,6 +27,18 @@
   onMount(async () => {
     if (!platform.capabilities) {
       await platform.loadCapabilities();
+    }
+    // If the email gate is on, hide the login form until the visitor has
+    // verified. A returning visitor with a valid cookie is reported verified
+    // by /demo/gate/status and skips the gate.
+    if (platform.capabilities?.emailGate) {
+      gateCleared = false;
+      try {
+        const s = await gateStatus();
+        gateCleared = s.verified;
+      } catch {
+        gateCleared = false;
+      }
     }
     // Prefill the demo password the moment the capabilities probe confirms
     // demo mode. Username already defaults to "admin"; pre-filling the
@@ -31,6 +51,10 @@
   });
 
   const showDemoPanel = $derived(platform.capabilities?.demoMode === true);
+
+  function onGateVerified(): void {
+    gateCleared = true;
+  }
 
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault();
@@ -61,6 +85,9 @@
 </script>
 
 <div class="login-stack">
+  {#if emailGate && !gateCleared}
+    <EmailGateForm onVerified={onGateVerified} />
+  {:else}
   <form class="login" onsubmit={onSubmit}>
     <h1>{i18n.t("login.title")}</h1>
     <p class="login__tagline">Semantic Layer analytics for cubes — drag, drop, drill.</p>
@@ -112,6 +139,7 @@
     <aside class="login-stack__demo">
       <ApiAccessAdmin />
     </aside>
+  {/if}
   {/if}
 </div>
 
