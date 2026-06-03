@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import RepositoryBrowser from "$lib/components/RepositoryBrowser.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -25,8 +26,8 @@
 
   let { defaultName, defaultFolder, open, onCreate, onCancel }: Props = $props();
 
-  let name = $state<string>(defaultName);
-  let folder = $state<string>(defaultFolder);
+  let name = $state<string>(untrack(() => defaultName));
+  let folder = $state<string>(untrack(() => defaultFolder));
   let nameTouched = $state<boolean>(false);
 
   $effect(() => {

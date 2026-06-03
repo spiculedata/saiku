@@ -571,19 +571,6 @@
     margin: 0 4px;
   }
   .toolbar__spacer { flex: 1; }
-  .toolbar__toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
-    color: var(--fg-muted);
-    font-size: var(--fs-sm);
-    cursor: pointer;
-    user-select: none;
-    border-radius: 4px;
-  }
-  .toolbar__toggle:hover { background: var(--bg-subtle); color: var(--fg); }
-  .toolbar__toggle input { cursor: pointer; }
 
   .tb-btn {
     display: inline-flex;

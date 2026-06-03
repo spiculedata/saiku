@@ -24,14 +24,14 @@
   </div>
 {:else}
   <div class="admin">
-    <nav class="admin__tabs" role="tablist">
+    <div class="admin__tabs" role="tablist">
       <button type="button" role="tab" class:active={tab === "users"} onclick={() => (tab = "users")}>{i18n.t("admin.tabs.users")}</button>
       <button type="button" role="tab" class:active={tab === "datasources"} onclick={() => (tab = "datasources")}>{i18n.t("admin.tabs.datasources")}</button>
       <button type="button" role="tab" class:active={tab === "schemas"} onclick={() => (tab = "schemas")}>{i18n.t("admin.tabs.schemas")}</button>
       <button type="button" role="tab" class:active={tab === "logs"} onclick={() => (tab = "logs")}>{i18n.t("admin.tabs.logs")}</button>
       <button type="button" role="tab" class:active={tab === "stats"} onclick={() => (tab = "stats")}>{i18n.t("admin.tabs.stats")}</button>
       <button type="button" role="tab" class:active={tab === "api"} onclick={() => (tab = "api")}>API access</button>
-    </nav>
+    </div>
     <section class="admin__body">
       {#if tab === "users"}
         <UsersAdmin />

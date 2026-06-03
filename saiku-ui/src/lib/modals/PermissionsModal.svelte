@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import type { AclEntry, AclMethod } from "$lib/api/repository";
@@ -13,7 +14,7 @@
   }
 
   let { path, allRoles, initial, open, onSave, onCancel }: Props = $props();
-  let acl = $state<AclEntry>(structuredClone(initial));
+  let acl = $state<AclEntry>(untrack(() => structuredClone(initial)));
 
   $effect(() => {
     if (open) acl = structuredClone(initial);

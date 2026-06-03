@@ -660,6 +660,7 @@
         </p>
       {/if}
       {#if panel.filters.length > 0}
+        <!-- svelte-ignore a11y_no_static_element_interactions — pointer events implement drag-to-reorder; keyboard reordering would be a separate UX (kbd shortcuts on focused picker). -->
         <div
           class="picker-row"
           class:picker-row--dragging={drag !== null}
@@ -671,6 +672,7 @@
             {@const cat = memberCatalogues[f.id]}
             {@const selected = selectedForPicker(f)}
             {@const displayOptions = displayedOptionsFor(f)}
+            <!-- svelte-ignore a11y_no_static_element_interactions — pointer events implement drag-to-reorder; the inner Combobox handles keyboard. -->
             <div
               class="picker"
               class:picker--hover={drag?.hoverId === f.id && drag.fromId !== f.id}

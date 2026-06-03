@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
@@ -15,8 +16,8 @@
   }
 
   let { defaultAxis, scope, open, onApply, onCancel }: Props = $props();
-  let axis = $state<PercentageAxis>(defaultAxis);
-  let s = $state<PercentageScope>(scope);
+  let axis = $state<PercentageAxis>(untrack(() => defaultAxis));
+  let s = $state<PercentageScope>(untrack(() => scope));
 
   $effect(() => {
     if (open) {

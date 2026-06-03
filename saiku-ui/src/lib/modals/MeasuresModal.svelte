@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import type { SaikuMeasure } from "$lib/api/discover";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -32,7 +33,7 @@
     refreshing = false,
   }: Props = $props();
 
-  let picks = $state<Set<string>>(new Set(selectedUniqueNames));
+  let picks = $state<Set<string>>(untrack(() => new Set(selectedUniqueNames)));
   let search = $state("");
 
   $effect(() => {

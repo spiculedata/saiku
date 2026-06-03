@@ -314,6 +314,7 @@
         <li class="saved__row">
           {#if renaming?.path === entry.path}
             <div class="saved__rename">
+              <!-- svelte-ignore a11y_autofocus -->
               <input
                 class="saved__rename-input"
                 bind:value={renameValue}
@@ -434,7 +435,9 @@
   }
   .saved__crumb:hover { background: var(--bg-hover); color: var(--fg); }
   .saved__crumb.is-current { color: var(--fg); font-weight: var(--weight-medium); }
-  .saved__crumb-sep { color: var(--fg-subtle); }
+  /* Applied via class={} on a lucide-svelte icon — needs :global so the
+     scoped-style hash doesn't suppress it on the child component's root. */
+  :global(.saved__crumb-sep) { color: var(--fg-subtle); }
 
   .saved__search {
     display: flex;

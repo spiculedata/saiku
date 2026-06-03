@@ -307,7 +307,7 @@
     }
   }
 
-  let wrapperEl: HTMLDivElement | null = null;
+  let wrapperEl = $state<HTMLDivElement | null>(null);
 
   function isNumeric(v: unknown): boolean {
     if (typeof v !== "string") return typeof v === "number";
@@ -603,7 +603,7 @@
     <table class="cellset" role="presentation">
       <thead>
         {#each parsed.columnHeaderRows as hdrRow, rIdx}
-          <tr role="row" aria-rowindex={rIdx + 1}>
+          <tr aria-rowindex={rIdx + 1}>
             {#each hdrRow as c, cIdx}
               {#if cIdx < parsed.rowHeaderColCount}
                 <th class="all_null" role="columnheader" aria-colindex={cIdx + 1}></th>
@@ -638,7 +638,7 @@
         {/if}
         {#each parsed.bodyRows.slice(renderWindow.first, renderWindow.last + 1) as rowCells, iOffset}
           {@const r = renderWindow.first + iOffset}
-          <tr class="vrow" role="row" aria-rowindex={parsed.columnHeaderRows.length + r + 1}>
+          <tr class="vrow" aria-rowindex={parsed.columnHeaderRows.length + r + 1}>
             {#each rowCells as c, cIdx}
               {@const display = rowDisplay[r][cIdx]}
               {#if display.isNull}
