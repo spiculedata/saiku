@@ -59,6 +59,12 @@
   let tileW = $state<number>(untrack(() => tile.w));
   let tileH = $state<number>(untrack(() => tile.h));
   let widget = $state<FilterWidget>(untrack(() => tile.widget ?? "single-select"));
+  // --- issue #922: cascading-select config (start level + depth). Held in
+  // a self-contained working copy so the rebase against #919 stays clean;
+  // only consulted when widget === "cascading-select". ---
+  let cascadeStartLevel = $state<string>(untrack(() => tile.cascading?.startLevel ?? ""));
+  let cascadeDepth = $state<number>(untrack(() => tile.cascading?.depth ?? 3));
+  // --- end issue #922 ---
   let filterTarget = $state<{ dimension: string; hierarchy: string; level: string }>(
     untrack(() => ({
       dimension: tile.target?.dimension ?? "",
@@ -406,6 +412,15 @@
         };
         patch.target = target;
       }
+      // issue #922: persist cascade config only for the cascading variant;
+      // clear it otherwise so the saved JSON stays tidy across widget swaps.
+      patch.cascading =
+        widget === "cascading-select"
+          ? {
+              startLevel: cascadeStartLevel || undefined,
+              depth: cascadeDepth,
+            }
+          : undefined;
     }
 
     if (tile.type === "kpi") {
@@ -619,6 +634,7 @@
             <option value="single-select">single-select</option>
             <option value="multi-select">multi-select</option>
             <option value="date-range">date-range</option>
+            <option value="cascading-select">cascading-select</option>
           </select>
         </label>
         <label class="field">
@@ -648,6 +664,31 @@
             {/each}
           </select>
         </label>
+        <!-- issue #922: cascading-select config. Self-contained block,
+             guarded by the widget check so the #919 rebase is clean. -->
+        {#if widget === "cascading-select"}
+          <fieldset class="size">
+            <legend>Cascade (walk the hierarchy level-by-level)</legend>
+            <label class="field inline">
+              <span>Start level</span>
+              <select bind:value={cascadeStartLevel} disabled={!filterTarget.hierarchy}>
+                <option value="">— use level above —</option>
+                {#each levelOptions() as l (l)}
+                  <option value={l}>{l}</option>
+                {/each}
+              </select>
+            </label>
+            <label class="field inline">
+              <span>Depth</span>
+              <input type="number" min="1" max="6" bind:value={cascadeDepth} />
+            </label>
+          </fieldset>
+          <span class="hint">
+            Renders one dropdown per level from the start level down. Picking a
+            parent reveals its children; choosing “All” resets the levels below.
+          </span>
+        {/if}
+        <!-- end issue #922 -->
       {/if}
 
       {#if tile.type === "kpi"}
