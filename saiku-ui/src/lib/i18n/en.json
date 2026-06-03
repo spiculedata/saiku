@@ -87,6 +87,7 @@
   "canvas.buildPrompt": "Drop levels onto Rows/Columns and measures onto Columns, then hit Run.",
   "canvas.running": "Running query…",
   "canvas.running.short": "Running…",
+  "canvas.error.showDetails": "Show details",
   "canvas.loadingMembers": "Loading members…",
   "canvas.cancelQuery": "Cancel query",
   "canvas.columns": "Columns",

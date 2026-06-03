@@ -94,6 +94,10 @@ class QueryStore {
   result = $state<QueryResult | null>(null);
   running = $state<boolean>(false);
   error = $state<string | null>(null);
+  /** Optional raw engine message for the error callout's "Show details"
+   *  panel. Operators copy-paste this into a support ticket — users see
+   *  the friendly text in {@link error}. */
+  errorDetail = $state<string | null>(null);
   dirty = $state<boolean>(false);
   dirtyCount = $state<number>(0);
   savedPath = $state<string | null>(null);
@@ -129,6 +133,7 @@ class QueryStore {
     this.current = newQuery(cube);
     this.result = null;
     this.error = null;
+    this.errorDetail = null;
     this.dirty = false;
     this.dirtyCount = 0;
     this.savedPath = null;
@@ -139,6 +144,7 @@ class QueryStore {
     this.current = withSafeName(parsed);
     this.result = null;
     this.error = null;
+    this.errorDetail = null;
     this.dirty = false;
     this.dirtyCount = 0;
     this.savedPath = path;
@@ -150,6 +156,7 @@ class QueryStore {
     this.current = withSafeName(q);
     this.result = null;
     this.error = null;
+    this.errorDetail = null;
     this.dirty = false;
     this.dirtyCount = 0;
     this.savedPath = savedPath;
@@ -170,6 +177,7 @@ class QueryStore {
     this.current = null;
     this.result = null;
     this.error = null;
+    this.errorDetail = null;
     this.dirty = false;
     this.dirtyCount = 0;
     this.savedPath = null;
@@ -464,6 +472,7 @@ class QueryStore {
     }
     this.running = true;
     this.error = null;
+    this.errorDetail = null;
     this.runningQueryId = null;
     this.runningElapsedMs = 0;
     const startedAt = Date.now();
@@ -490,6 +499,16 @@ class QueryStore {
         }
       } else {
         this.result = await executeQuery(this.current);
+      }
+      // The backend always returns HTTP 200; engine failures (Mondrian /
+      // Calcite UnsupportedTranslation, MDX parse, datasource down, etc.)
+      // ride along in QueryResult.error with a null cellset. Surface them
+      // as a callout instead of rendering an empty grid.
+      const embedded = this.result?.error;
+      if (embedded) {
+        this.error = friendlyExecuteError(embedded);
+        this.errorDetail = embedded;
+        this.result = null;
       }
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
@@ -537,6 +556,32 @@ class QueryStore {
  *  shapes thrown by the query API when credentials lapse. */
 function isAuthError(message: string): boolean {
   return /\b(?:execute|execute-async|status|result)\s+40[13]\b/.test(message);
+}
+
+/** True when the engine error message names a backend translation /
+ *  internal failure that the user can't fix themselves (Mondrian
+ *  UnsupportedTranslation when Calcite refuses the SQL emission,
+ *  Calcite SqlValidatorException, RolapEvaluatorException, etc.). For
+ *  these, we hide the cryptic detail behind "Show details" and lead
+ *  with a contact-support callout. Other errors (MDX parse, bad cube
+ *  name, datasource down) get the raw message — they're usually
+ *  self-explanatory or fixable. */
+function isInternalEngineError(message: string): boolean {
+  if (!message) return false;
+  return /UnsupportedTranslation|SqlValidatorException|RolapEvaluatorException|InternalError|NullPointerException|CalciteContextException|AssertionError/i.test(
+    message,
+  );
+}
+
+/** Choose the user-facing message for an engine error coming back in
+ *  {@link QueryResult.error}. Internal/translation failures get a
+ *  contact-support callout; ordinary errors (parse, bad name) keep the
+ *  raw message so the user can fix them. */
+export function friendlyExecuteError(raw: string): string {
+  if (isInternalEngineError(raw)) {
+    return "Query failed to run. Please contact support.";
+  }
+  return raw;
 }
 
 export const query = new QueryStore();
