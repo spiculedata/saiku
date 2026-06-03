@@ -64,6 +64,14 @@
     </div>
     <div class="row">
       <label class="field field--grow">
+        <span class="field__label">{i18n.t("modal.chart.rollupRows")}</span>
+        <label class="toggle" title={i18n.t("modal.chart.hideRollupRows.hint")}>
+          <input type="checkbox" bind:checked={form.hideRollupRows} /> {i18n.t("modal.chart.hideRollupRows")}
+        </label>
+      </label>
+    </div>
+    <div class="row">
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.chart.trendLine")}</span>
         <select class="field__input" bind:value={form.trendLine}>
           {#each TREND_MODES as m}
