@@ -83,6 +83,10 @@
 	         /info itself is the plugin-list endpoint the SPA pings on boot. -->
 	    <security:intercept-url pattern="/rest/saiku/info" access="permitAll" />
 	    <security:intercept-url pattern="/rest/saiku/info/**" access="permitAll" />
+	    <!-- saiku#1029: the demo email-gate endpoints run before login (they
+	         unlock the login form), so they're anonymous-accessible. They're
+	         inert unless demo mode + WorkOS are configured. -->
+	    <security:intercept-url pattern="/rest/saiku/demo/gate/**" access="permitAll" />
       <security:intercept-url pattern="/rest/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/json/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/WEB-INF/classes/legacy-schema" access="isAnonymous()" />
