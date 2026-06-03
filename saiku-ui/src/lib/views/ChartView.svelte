@@ -5,6 +5,7 @@
   import { parseCellset, toNumber } from "$lib/views/cellsetUtils";
   import type { ChartType, ChartOptions } from "$lib/views/chartTypes";
   import { DEFAULT_CHART_OPTIONS } from "$lib/views/chartTypes";
+  import { axisLabelConfig, deriveAxisLabelWidth } from "$lib/views/chartAxisLabel";
   import { theme } from "$lib/stores/theme.svelte";
 
   interface Props {
@@ -157,9 +158,25 @@
     const splitLine = { lineStyle: { color: tk.border, opacity: 0.5 } };
     const nameTextStyle = { color: tk.fg };
 
+    // Truncate long category labels (e.g. deep member captions) so they don't
+    // overflow the plot and break the layout. ECharts shows the full,
+    // untruncated label in the axis-pointer tooltip on hover. Width is derived
+    // from the available chart width divided by the number of categories.
+    const chartWidth = host?.clientWidth ?? 0;
+    const catCount = Math.max(rows.length, cols.length, 1);
+    const truncLabel = {
+      color: tk.fgMuted,
+      ...axisLabelConfig(deriveAxisLabelWidth(chartWidth, catCount)),
+    };
+
     const baseAxis = {
       type: "category" as const,
       axisLabel, axisLine, axisTick, splitLine, nameTextStyle,
+    };
+    // Bottom category axis that truncates long labels with an ellipsis.
+    const categoryAxis = {
+      ...baseAxis,
+      axisLabel: truncLabel,
     };
     const valueAxis = {
       type: "value" as const,
@@ -249,7 +266,7 @@
         title,
         tooltip: itemTooltip,
         grid: { left: 120, top: 40, right: 40, bottom: 80 },
-        xAxis: { ...baseAxis, data: cols, name: xName },
+        xAxis: { ...categoryAxis, data: cols, name: xName },
         yAxis: { ...baseAxis, data: rows, inverse: true, name: yName },
         visualMap: {
           min, max, calculable: true, orient: "horizontal",
@@ -284,7 +301,7 @@
         title,
         tooltip: itemTooltip,
         legend,
-        xAxis: { ...baseAxis, data: cols, name: xName },
+        xAxis: { ...categoryAxis, data: cols, name: xName },
         yAxis: { ...valueAxis, name: yName },
         series: rows.map((name, i) => ({
           type: "scatter",
@@ -325,7 +342,7 @@
         tooltip,
         legend,
         grid: { left: 60, top: title ? 50 : 30, right: 40, bottom: 60 },
-        xAxis: { ...baseAxis, data: rows, name: xName },
+        xAxis: { ...categoryAxis, data: rows, name: xName },
         yAxis: { ...valueAxis, name: yName },
         series: [
           { type: "bar", name: "", stack: "waterfall", itemStyle: { borderColor: "transparent", color: "transparent" }, data: spacers, emphasis: { itemStyle: { borderColor: "transparent", color: "transparent" } } },
@@ -359,7 +376,7 @@
       ...common,
       title, tooltip, legend,
       grid: { left: 60, top: title ? 50 : 40, right: 40, bottom: 60 },
-      xAxis: { ...baseAxis, data: rows, name: xName },
+      xAxis: { ...categoryAxis, data: rows, name: xName },
       yAxis: { ...valueAxis, name: yName },
       series: [...base, ...trend],
     };
