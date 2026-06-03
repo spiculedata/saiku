@@ -117,6 +117,59 @@ export interface DashboardTile {
   widget?: FilterWidget;
   /** KPI-tile config. Only consulted when {@code type === "kpi"}. */
   kpi?: KpiConfig;
+  /** Per-column conditional formatting rules. Only consulted when
+   *  {@code type === "table"}. See the issue-#919 block below. */
+  conditionalFormat?: ConditionalFormatRule[];
+}
+
+/* ====================================================================
+ * Issue #919 — conditional formatting on table tiles.
+ *
+ * Self-contained block, appended so a rebase against the parallel #922
+ * (cascading-filter) branch is trivial. The only edit above is the
+ * `conditionalFormat?` field on DashboardTile.
+ * ==================================================================== */
+
+/** How a table cell is decorated by its rule. Display-only.
+ *   - "background": cell background colour by threshold band.
+ *   - "bar":        horizontal mini data-bar, width ∝ value.
+ *   - "font":       font colour by sign or by threshold band.
+ *   - "icon":       ↑ ↓ → glyph by threshold band (or by sign). */
+export type ConditionalFormatType = "background" | "bar" | "font" | "icon";
+
+/** Whether thresholds are read as percentiles of the column's own values
+ *  ("relative", 0–100) or as fixed numeric values ("absolute"). */
+export type ConditionalThresholdMode = "relative" | "absolute";
+
+/** Per-band colour overrides for background / font / icon rules. Omit a
+ *  band to fall back to the helper's default palette. */
+export interface ConditionalBandColors {
+  low?: string;
+  mid?: string;
+  high?: string;
+}
+
+/** A single per-column conditional-formatting rule on a table tile. The
+ *  evaluation logic lives in $lib/dashboard/conditionalFormat.ts; this
+ *  type is just the serialisable config persisted on the dashboard. */
+export interface ConditionalFormatRule {
+  /** Column caption this rule targets — matches the table header text. */
+  column: string;
+  type: ConditionalFormatType;
+  /** Threshold interpretation. Ignored by "bar" (always min/max scaled)
+   *  and by "font"/"icon" when both thresholds are unset (sign mode). */
+  thresholdMode: ConditionalThresholdMode;
+  /** Lower cut: percentile (0–100) when relative, raw value when
+   *  absolute. Leave unset (with {@link highThreshold}) on font/icon to
+   *  get sign-based colouring. */
+  lowThreshold?: number;
+  /** Upper cut: percentile (0–100) when relative, raw value when
+   *  absolute. */
+  highThreshold?: number;
+  /** Per-band colour overrides for background / font / icon. */
+  colors?: ConditionalBandColors;
+  /** Fill colour for "bar" rules. */
+  barColor?: string;
 }
 
 export interface DashboardLayout {

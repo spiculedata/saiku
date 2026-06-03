@@ -39,6 +39,12 @@
   } from "$lib/dashboard/filterSuggestions";
   import type { CubeRef } from "$lib/api/dashboards";
   import { parseFormattedCell } from "$lib/cellset/cellFormat";
+  // Issue #919 — per-column conditional formatting (display-only).
+  import {
+    formatCell,
+    cellFormatToStyle,
+    type CellFormat,
+  } from "$lib/dashboard/conditionalFormat";
 
   interface Props {
     tile: DashboardTile;
@@ -194,6 +200,43 @@
     return [...rowHeader, ...measures];
   })());
 
+  // Issue #919 — conditional formatting. Per-column the rule engine needs
+  // the column's full set of raw numeric values to compute percentile
+  // bands and bar widths. Build a caption → values[] index over the
+  // current response, using AiCell.value when present (the un-formatted
+  // number) and falling back to the plain string for row-header columns
+  // (which the engine then coerces / ignores). Recomputed whenever the
+  // response changes.
+  let columnValues = $derived<Record<string, unknown[]>>((() => {
+    const rules = tile.conditionalFormat;
+    if (!rules || rules.length === 0) return {};
+    const rows = response?.data ?? [];
+    const index: Record<string, unknown[]> = {};
+    for (const rule of rules) {
+      const vals: unknown[] = [];
+      for (const row of rows) {
+        const cell = row[rule.column];
+        vals.push(isAiCell(cell) ? cell.value : cell);
+      }
+      index[rule.column] = vals;
+    }
+    return index;
+  })());
+
+  /** The un-formatted numeric source for a cell — AiCell.value when the
+   *  cell is a measure, else the raw string (engine coerces / ignores). */
+  function cellNumericSource(v: AiCell | string | undefined): unknown {
+    return isAiCell(v) ? v.value : v;
+  }
+
+  /** Compute the conditional-format result for one cell. Returns an empty
+   *  CellFormat when no rule targets the column (the common path). */
+  function cellFormatFor(column: string, v: AiCell | string | undefined): CellFormat {
+    const rules = tile.conditionalFormat;
+    if (!rules || rules.length === 0) return {};
+    return formatCell(rules, column, cellNumericSource(v), columnValues[column] ?? []);
+  }
+
   /** Build the click-filter context for a row-header cell. The dashboard
    *  level for the click is inferred from the tile's base query — we
    *  match the column caption against the row-axis level captions —
@@ -298,10 +341,14 @@
                 {#each columns as col (col.caption)}
                   {@const v = row[col.caption]}
                   {@const fmt = parseFormattedCell(renderCell(v))}
+                  {@const cf = cellFormatFor(col.caption, v)}
+                  {@const cfStyle = cellFormatToStyle(cf)}
                   <td
                     class:row-header={col.isRowHeader}
                     class:clickable={col.isRowHeader}
-                    style={fmt.color ? `color: ${fmt.color}` : undefined}
+                    style={[fmt.color && !cf.color ? `color: ${fmt.color}` : undefined, cfStyle]
+                      .filter(Boolean)
+                      .join("; ") || undefined}
                     onclick={() => handleCellClick(col.caption, fmt.display, col.isRowHeader, row)}
                     role={col.isRowHeader ? "button" : undefined}
                     tabindex={col.isRowHeader ? 0 : undefined}
@@ -312,7 +359,7 @@
                       }
                     }}
                   >
-                    {fmt.display}
+                    {#if cf.icon}<span class="cf-icon" aria-hidden="true">{cf.icon}</span>{/if}{fmt.display}
                   </td>
                 {/each}
               </tr>
@@ -377,5 +424,11 @@
   td.clickable:focus {
     outline: 2px solid var(--accent);
     outline-offset: -2px;
+  }
+  /* Issue #919 — conditional-format icon glyph prepended to a cell. */
+  .cf-icon {
+    display: inline-block;
+    margin-right: 0.25rem;
+    font-weight: var(--weight-semibold);
   }
 </style>
