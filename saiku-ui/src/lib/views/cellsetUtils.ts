@@ -118,3 +118,52 @@ export function toNumber(cell: CellEntry | undefined): number | null {
   const n = Number(String(src).replace(/[, ]/g, ""));
   return Number.isFinite(n) ? n : null;
 }
+
+export interface LeafRows {
+  /** Indices into `parsed.bodyRows` / `parsed.dataRows` for leaf-level rows. */
+  indices: number[];
+  /** Hierarchical labels for each leaf row, including parent context that
+   *  Mondrian elided via dedup (e.g. "2024 / Q1", "2024 / Q2"). */
+  labels: string[];
+}
+
+/**
+ * Returns the indices of rows whose deepest row-header column carries a
+ * value — i.e. leaf rows in the multi-level hierarchy on ROWS — together
+ * with their parent-prefixed labels.
+ *
+ * Charts call this with `hideRollupRows = true` to drop the year/quarter-
+ * style rollup rows that otherwise dominate the bar heights and make the
+ * leaf detail unreadable (saiku#TBD). The grid keeps showing all rows.
+ *
+ * If the rowset has only one level (rowHeaderColCount <= 1) every row is
+ * a leaf and the result mirrors `parsed.rowCategories`.
+ */
+export function deriveLeafRows(parsed: ParsedCellset): LeafRows {
+  if (parsed.rowHeaderColCount <= 1) {
+    return {
+      indices: parsed.bodyRows.map((_, i) => i),
+      labels: parsed.rowCategories.slice(),
+    };
+  }
+  const lastCol = parsed.rowHeaderColCount - 1;
+  const indices: number[] = [];
+  const labels: string[] = [];
+  // Most recent non-empty value seen for each row-header column, so we
+  // can reconstruct the parent context for leaf rows where Mondrian has
+  // elided the repeated parent (the common dedup pattern).
+  const lastSeen: string[] = new Array(parsed.rowHeaderColCount).fill("");
+  for (let r = 0; r < parsed.bodyRows.length; r++) {
+    const row = parsed.bodyRows[r];
+    for (let c = 0; c < row.length; c++) {
+      const v = row[c]?.value ?? "";
+      if (v) lastSeen[c] = v;
+    }
+    const leafCell = row[lastCol];
+    if (leafCell?.value) {
+      indices.push(r);
+      labels.push(lastSeen.slice(0, lastCol + 1).filter(Boolean).join(" / "));
+    }
+  }
+  return { indices, labels };
+}

@@ -43,6 +43,13 @@ export interface ChartOptions {
   legendPosition: "top" | "bottom" | "left" | "right";
   trendLine: TrendLineMode;
   trendPeriod: number;
+  /** When a multi-level hierarchy is on ROWS (e.g. Year + Quarter), the
+   *  cellset includes both rollup rows ("2024", "2025") and leaf rows
+   *  ("2024 Q1", ...). The rollups are sums of their children so they
+   *  dominate every bar height and make the leaves unreadable on a chart.
+   *  This flag drops rollup rows from the chart only — the grid still
+   *  shows them. Defaults to `true`. */
+  hideRollupRows: boolean;
 }
 
 export const DEFAULT_CHART_OPTIONS: ChartOptions = {
@@ -53,4 +60,5 @@ export const DEFAULT_CHART_OPTIONS: ChartOptions = {
   legendPosition: "top",
   trendLine: "none",
   trendPeriod: 3,
+  hideRollupRows: true,
 };

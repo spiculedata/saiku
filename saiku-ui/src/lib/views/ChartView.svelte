@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import * as echarts from "echarts";
   import type { QueryResult } from "$lib/api/query";
-  import { parseCellset, toNumber } from "$lib/views/cellsetUtils";
+  import { deriveLeafRows, parseCellset, toNumber } from "$lib/views/cellsetUtils";
   import type { ChartType, ChartOptions } from "$lib/views/chartTypes";
   import { DEFAULT_CHART_OPTIONS } from "$lib/views/chartTypes";
   import { axisLabelConfig, deriveAxisLabelWidth } from "$lib/views/chartAxisLabel";
@@ -148,9 +148,21 @@
   function buildOption(r: QueryResult, t: ChartType, o: ChartOptions): echarts.EChartsOption {
     const tk = resolveThemeTokens();
     const parsed = parseCellset(r);
-    const rows = parsed.rowCategories;
+    // Multi-level row hierarchies (Year > Quarter, Country > City, …) come
+    // back with both rollup and leaf rows in the same cellset. Showing the
+    // rollups on a chart dwarfs the leaves; deriveLeafRows drops them and
+    // promotes each leaf's parent context into the label (e.g. "2024 / Q1").
+    // The grid view is untouched.
+    let rows = parsed.rowCategories;
+    let matrix: (number | null)[][] = parsed.dataRows.map((row) => row.map(toNumber));
+    if (o.hideRollupRows && parsed.rowHeaderColCount > 1) {
+      const leaf = deriveLeafRows(parsed);
+      if (leaf.indices.length > 0) {
+        rows = leaf.labels;
+        matrix = leaf.indices.map((i) => matrix[i]);
+      }
+    }
     const cols = parsed.columnCategories;
-    const matrix: (number | null)[][] = parsed.dataRows.map((row) => row.map(toNumber));
 
     const axisLabel = { color: tk.fgMuted };
     const axisLine = { lineStyle: { color: tk.border } };
@@ -427,6 +439,7 @@
     void options.legendPosition;
     void options.trendLine;
     void options.trendPeriod;
+    void options.hideRollupRows;
     // Re-theme when the effective theme flips.
     void theme.effective;
     if (chart) render();
