@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import MonacoEditor from "$lib/components/MonacoEditor.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -23,7 +24,7 @@
 
   let { axis, expression, open, onSave, onCancel }: Props = $props();
 
-  let buffer = $state<string>(expression);
+  let buffer = $state<string>(untrack(() => expression));
 
   $effect(() => {
     if (open) buffer = expression;

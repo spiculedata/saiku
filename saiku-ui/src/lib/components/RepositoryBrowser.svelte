@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { Folder, FolderPlus, FileText, ChevronRight, Home } from "lucide-svelte";
   import {
     flatten,
@@ -52,7 +53,7 @@
   }: Props = $props();
 
   // Browser state — current folder being viewed + search filter.
-  let currentPath = $state<string>(deriveStartPath(selectedPath));
+  let currentPath = $state<string>(untrack(() => deriveStartPath(selectedPath)));
   let search = $state<string>("");
   let newFolderName = $state<string>("");
   let creatingFolder = $state<boolean>(false);
@@ -309,7 +310,9 @@
   }
   .repo-browser__crumb:hover { background: var(--bg-hover); color: var(--fg); }
   .repo-browser__crumb.is-current { color: var(--fg); font-weight: var(--weight-medium); }
-  .repo-browser__crumb-sep { color: var(--fg-subtle); }
+  /* Applied via class={} on a lucide-svelte icon — needs :global so the
+     scoped-style hash doesn't suppress it on the child component's root. */
+  :global(.repo-browser__crumb-sep) { color: var(--fg-subtle); }
 
   .repo-browser__search-input {
     width: 100%;

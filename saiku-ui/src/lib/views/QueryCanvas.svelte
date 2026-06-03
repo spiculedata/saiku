@@ -767,6 +767,7 @@
         </header>
         <div class="chips">
           {#each query.current?.queryModel?.details.measures ?? [] as m}
+            <!-- svelte-ignore a11y_no_static_element_interactions — drag/context-menu are mouse affordances; the inner buttons (label, close) handle keyboard accessibility. -->
             <span
               class={dragOverChipKey === chipKey("MEASURES", "measure", m.uniqueName) ? "chip chip--measure is-drop-before" : "chip chip--measure"}
               draggable="true"
@@ -811,6 +812,7 @@
           </header>
           <div class="chips">
             {#each query.current?.queryModel?.axes[axis].hierarchies ?? [] as h}
+              <!-- svelte-ignore a11y_no_static_element_interactions — drag/context-menu are mouse affordances; the inner buttons (label, close) handle keyboard accessibility. -->
               <span
                 class={dragOverChipKey === chipKey(axis, "hierarchy", h.name) ? "chip chip--level is-drop-before" : "chip chip--level"}
                 draggable="true"
@@ -859,6 +861,7 @@
         </header>
         <div class="chips">
           {#each query.current?.queryModel?.axes.FILTER.hierarchies ?? [] as h}
+            <!-- svelte-ignore a11y_no_static_element_interactions — drag/context-menu are mouse affordances; the inner buttons (label, close) handle keyboard accessibility. -->
             <span
               class={dragOverChipKey === chipKey("FILTER", "hierarchy", h.name) ? "chip chip--level is-drop-before" : "chip chip--level"}
               draggable="true"

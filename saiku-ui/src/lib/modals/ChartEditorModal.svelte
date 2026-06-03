@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import type { ChartOptions, TrendLineMode } from "$lib/views/chartTypes";
@@ -22,7 +23,7 @@
   ];
 
   let { initial, open, onSave, onCancel }: Props = $props();
-  let form = $state<ChartOptions>({ ...initial });
+  let form = $state<ChartOptions>(untrack(() => ({ ...initial })));
 
   $effect(() => {
     if (open) form = { ...initial };

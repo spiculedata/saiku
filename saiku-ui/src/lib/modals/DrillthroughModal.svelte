@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import type { SaikuDimension, SaikuMeasure } from "$lib/api/discover";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -17,7 +18,7 @@
   let { dimensions, measures, maxRows, open, onRun, onExportCsv, onCancel }: Props = $props();
   let pickedDims = $state<Set<string>>(new Set());
   let pickedMeasures = $state<Set<string>>(new Set());
-  let rows = $state<number>(maxRows);
+  let rows = $state<number>(untrack(() => maxRows));
 
   $effect(() => {
     if (open) {

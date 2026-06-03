@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
@@ -17,7 +18,7 @@
   }
 
   let { titles, open, onSave, onCancel }: Props = $props();
-  let form = $state<ReportTitles>({ ...titles });
+  let form = $state<ReportTitles>(untrack(() => ({ ...titles })));
 
   $effect(() => {
     if (open) form = { ...titles };
