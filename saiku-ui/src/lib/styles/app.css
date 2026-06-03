@@ -282,6 +282,35 @@ a:hover {
   color: var(--danger);
 }
 
+.callout__text {
+  margin: 0;
+  font-weight: var(--weight-medium);
+}
+
+.callout__details {
+  margin-top: var(--space-2);
+  color: var(--fg-muted);
+  font-weight: var(--weight-normal);
+}
+
+.callout__details summary {
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  user-select: none;
+}
+
+.callout__detail-text {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2);
+  background: var(--bg-muted);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--fs-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--fg);
+}
+
 /* Motion baseline. Modals, context menus, and toasts appear instantly
    by default — feels like UI is teleporting rather than responding.
    These two short keyframes give every overlay-style surface a 120ms

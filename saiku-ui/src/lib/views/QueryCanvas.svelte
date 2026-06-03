@@ -959,7 +959,15 @@
       {#if query.running && !query.result}
         <p class="canvas__hint">{i18n.t("canvas.running")}</p>
       {:else if query.error}
-        <p class="callout callout--danger">{query.error}</p>
+        <div class="callout callout--danger" role="alert">
+          <p class="callout__text">{query.error}</p>
+          {#if query.errorDetail}
+            <details class="callout__details">
+              <summary>{i18n.t("canvas.error.showDetails")}</summary>
+              <pre class="callout__detail-text">{query.errorDetail}</pre>
+            </details>
+          {/if}
+        </div>
       {:else if query.result}
         {#if query.viewMode === "chart"}
           <ChartView result={query.result} type={query.chartType} options={query.chartOptions} />
