@@ -73,7 +73,8 @@ public final class DemoGateSecret {
 
     private static void restrictPermissions(Path file) {
         try {
-            Files.setPosixFilePermissions(file, Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
+            Files.setPosixFilePermissions(
+                    file, Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
         } catch (UnsupportedOperationException | IOException ignored) {
             // Non-POSIX filesystem (Windows) — best effort; the file still sits
             // under saiku-home which the operator already controls.

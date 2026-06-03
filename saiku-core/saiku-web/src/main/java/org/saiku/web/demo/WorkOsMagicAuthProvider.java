@@ -56,9 +56,7 @@ public class WorkOsMagicAuthProvider implements DemoGateProvider {
                 apiKey,
                 clientId,
                 DEFAULT_BASE,
-                HttpClient.newBuilder()
-                        .connectTimeout(Duration.ofSeconds(10))
-                        .build());
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build());
     }
 
     /** Test seam: inject a base URI (a local stub server) and an HttpClient. */

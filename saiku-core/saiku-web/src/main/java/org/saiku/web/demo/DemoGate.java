@@ -73,9 +73,8 @@ public class DemoGate {
         if (notBlank(apiKey) && notBlank(clientId)) {
             provider = new WorkOsMagicAuthProvider(apiKey.trim(), clientId.trim());
         } else if (demo) {
-            log.warn(
-                    "Demo mode is on but WORKOS_API_KEY / WORKOS_CLIENT_ID are not both set — "
-                            + "email gate DISABLED (login works directly). Set both to enable it.");
+            log.warn("Demo mode is on but WORKOS_API_KEY / WORKOS_CLIENT_ID are not both set — "
+                    + "email gate DISABLED (login works directly). Set both to enable it.");
         }
 
         long ttlDays = parseLong(System.getenv("SAIKU_DEMO_GATE_TTL_DAYS"), DEFAULT_TTL_DAYS);
