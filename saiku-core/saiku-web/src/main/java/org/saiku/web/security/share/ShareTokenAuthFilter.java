@@ -82,7 +82,8 @@ public class ShareTokenAuthFilter extends OncePerRequestFilter {
                 "share-guest", token.token, List.of(new SimpleGrantedAuthority(GUEST_ROLE)));
         // Pin the authorised dashboard to the principal — ShareViewResource
         // reads it from here, never from client input.
-        auth.setDetails(new ShareGuestDetails(token.token, token.dashboardPath, token.ownerRolesSnapshot));
+        auth.setDetails(
+                new ShareGuestDetails(token.token, token.dashboardPath, token.createdBy, token.ownerRolesSnapshot));
         try {
             SecurityContextHolder.getContext().setAuthentication(auth);
             chain.doFilter(req, resp);
@@ -118,11 +119,13 @@ public class ShareTokenAuthFilter extends OncePerRequestFilter {
     public static final class ShareGuestDetails {
         public final String token;
         public final String dashboardPath;
+        public final String ownerUser;
         public final List<String> ownerRoles;
 
-        public ShareGuestDetails(String token, String dashboardPath, List<String> ownerRoles) {
+        public ShareGuestDetails(String token, String dashboardPath, String ownerUser, List<String> ownerRoles) {
             this.token = token;
             this.dashboardPath = dashboardPath;
+            this.ownerUser = ownerUser;
             this.ownerRoles = ownerRoles == null ? List.of() : List.copyOf(ownerRoles);
         }
     }

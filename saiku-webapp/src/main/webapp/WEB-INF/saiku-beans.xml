@@ -321,6 +321,40 @@
         <property name="sessionService" ref="sessionService"/>
     </bean>
 
+    <!-- ====================================================================
+         Shareable read-only dashboard links (issue #941).
+         - shareTokenStore: file-backed token store under ${saiku.home}/share-tokens.
+         - shareTokenAuthFilter: Spring Security custom filter; on a valid token
+           presented to /rest/saiku/share/view/** it sets a request-scoped
+           ROLE_SHARE_GUEST pinned to one dashboard (wired in applicationContext-saiku.xml).
+         - shareTokenResource (@ /saiku/share): owner-only mint/list/revoke;
+           mint gated on getResourceACL (canGrant) — the per-dashboard ACL (#940).
+         - shareViewResource (@ /saiku/share/view): the ONLY guest data surface;
+           runs each tile's authored query under the owner's scope (sessionService.runAs).
+         ==================================================================== -->
+    <bean id="shareTokenStore" class="org.saiku.web.share.ShareTokenStore"/>
+
+    <bean id="shareTokenAuthFilter"
+          class="org.saiku.web.security.share.ShareTokenAuthFilter">
+        <constructor-arg ref="shareTokenStore"/>
+    </bean>
+
+    <bean id="shareTokenResource"
+          class="org.saiku.web.rest.resources.share.ShareTokenResource">
+        <property name="store" ref="shareTokenStore"/>
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
+    <bean id="shareViewResource" scope="request"
+          class="org.saiku.web.rest.resources.share.ShareViewResource">
+        <aop:scoped-proxy/>
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
+        <property name="aiQueryResource" ref="aiQueryResource"/>
+    </bean>
+
 
     <bean id="filterRepositoryBean" scope="session"
           class="org.saiku.web.rest.resources.FilterRepositoryResource">
