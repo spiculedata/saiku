@@ -36,7 +36,7 @@ export interface InlineQuery {
 
 export type TileQuery = ReferenceQuery | InlineQuery;
 
-export type TileType = "chart" | "table" | "text" | "filter" | "kpi";
+export type TileType = "chart" | "table" | "text" | "filter" | "kpi" | "image";
 
 export type FilterWidget = "single-select" | "multi-select" | "date-range" | "cascading-select";
 
@@ -129,6 +129,36 @@ export interface KpiConfig {
   direction?: KpiDirection;
 }
 
+/* --- issue #918: image tile --------------------------------------------- */
+
+/** Where an image tile's bytes come from. {@code "url"} → {@link ImageConfig.src}
+ *  is an external http(s) URL the browser loads directly. {@code "upload"} →
+ *  src is the download path of an asset stored in the repository via the
+ *  image upload endpoint. */
+export type ImageSource = "url" | "upload";
+
+/** CSS object-fit for the image within its tile box. */
+export type ImageFit = "contain" | "cover" | "fill" | "scale-down";
+
+/** Per-tile image config (issue #918). Only consulted when
+ *  {@code type === "image"}. All fields optional so an unconfigured tile
+ *  saves cleanly; the renderer shows a placeholder until {@code src} is set. */
+export interface ImageConfig {
+  /** How {@link src} is sourced. Defaults to "url". */
+  source?: ImageSource;
+  /** The image to render: an external http(s) URL ("url" mode) or the
+   *  repository asset download path returned by the upload endpoint
+   *  ("upload" mode). */
+  src?: string;
+  /** CSS object-fit. Defaults to "contain". */
+  fit?: ImageFit;
+  /** Optional caption rendered below the image (plain text). */
+  caption?: string;
+  /** Alt text for accessibility / broken-image fallback. */
+  alt?: string;
+}
+/* --- end issue #918 block ------------------------------------------------ */
+
 export interface DashboardTile {
   id: string;
   x: number;
@@ -151,6 +181,9 @@ export interface DashboardTile {
   /** Per-column conditional formatting rules. Only consulted when
    *  {@code type === "table"}. See the issue-#919 block below. */
   conditionalFormat?: ConditionalFormatRule[];
+  /** Image-tile config (issue #918). Only consulted when
+   *  {@code type === "image"}. */
+  image?: ImageConfig;
 }
 
 /* ====================================================================
@@ -302,6 +335,30 @@ export async function deleteDashboard(path: string): Promise<void> {
     const err = await readError(res);
     throw new Error(`deleteDashboard(${path}) -> ${res.status}: ${err}`);
   }
+}
+
+/** Upload an image asset for an image tile (issue #918). POSTs the file as
+ *  multipart to the hardened upload endpoint (server enforces auth +
+ *  content-type allowlist + size cap + path-traversal-safe per-user storage)
+ *  and returns the same-origin download path to persist as the tile's
+ *  {@link ImageConfig.src}. */
+export async function uploadImageAsset(tileId: string, file: File): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("tileId", tileId);
+  const res = await fetch(`${REST_BASE}/image/upload`, {
+    method: "POST",
+    credentials: "include",
+    // No Content-Type header — the browser sets the multipart boundary.
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await readError(res);
+    throw new Error(`uploadImageAsset -> ${res.status}: ${err}`);
+  }
+  const json = (await res.json()) as { src?: string };
+  if (!json.src) throw new Error("upload response missing src");
+  return json.src;
 }
 
 /** Build an empty Dashboard with a fresh id, ready to be populated by the

@@ -84,6 +84,13 @@
           <span class="hint">Markdown annotation; no data.</span>
         </span>
       </button>
+      <button type="button" class="menu-item" role="menuitem" onclick={() => pick("image")}>
+        <span class="icon" aria-hidden="true">🖼️</span>
+        <span>
+          <span class="label">Image</span>
+          <span class="hint">A logo, diagram or screenshot from a URL or upload.</span>
+        </span>
+      </button>
     </div>
   {/if}
 </div>

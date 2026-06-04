@@ -57,4 +57,8 @@ public class DashboardTile {
     /** KPI tile config — measure, format, comparison, sparkline,
      *  thresholds, slice filters. Null for non-KPI tiles. */
     public KpiConfig kpi;
+
+    /** Image tile config — source (url/upload), src, fit, caption, alt.
+     *  Null for non-image tiles (issue #918). */
+    public ImageConfig image;
 }
