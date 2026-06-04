@@ -10,6 +10,7 @@
     cellRadiusPct,
     gridCells,
     isSingleMeasureKind,
+    MAX_LABELLED_SLICES,
     smallMultipleRowCount,
   } from "$lib/dashboard/smallMultiples";
   import { theme } from "$lib/stores/theme.svelte";
@@ -251,16 +252,18 @@
         textStyle: { color: tk.fg, fontSize: 12 },
       }));
       const titles = title ? [title, ...cellTitles] : cellTitles;
-      // Per-slice labels + leader lines overlap into noise with many categories
-      // or in a small-multiple grid; show them only on a single chart with a
-      // readable slice count. Tooltip carries the detail otherwise.
-      const showSliceLabels = cells.length === 1 && rows.length <= 10;
+      // Category identification: a shared category legend collides with the
+      // per-measure titles and bloats off-screen once there are many categories.
+      // Name the slices directly when few enough to read, else lean on the
+      // tooltip. Inside the slices for a small-multiple grid (leader lines would
+      // cross between neighbours); outside for a single chart where there's room.
+      const showSliceLabels = rows.length <= MAX_LABELLED_SLICES;
+      const sliceLabelInside = cells.length > 1;
 
       if (t === "pie" || t === "donut") {
         return {
           ...common,
           title: titles,
-          legend: rows.length <= 20 ? legend : undefined,
           tooltip: { trigger: "item", ...itemTooltip },
           series: cells.map((cell, m) => {
             const outer = cellRadiusPct(cell, aspect);
@@ -269,8 +272,13 @@
               name: cols[m],
               radius: t === "donut" ? [outer * 0.55 + "%", outer + "%"] : [0, outer + "%"],
               center: [cell.centerXPct + "%", cell.centerYPct + "%"],
-              label: { show: showSliceLabels, color: tk.fg },
-              labelLine: { show: showSliceLabels },
+              label: {
+                show: showSliceLabels,
+                position: sliceLabelInside ? "inside" : "outside",
+                formatter: "{b}",
+                color: sliceLabelInside ? "#fff" : tk.fg,
+              },
+              labelLine: { show: showSliceLabels && !sliceLabelInside },
               data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
             };
           }),

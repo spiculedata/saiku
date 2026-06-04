@@ -46,6 +46,12 @@ export function smallMultipleRowCount(n: number): number {
   return Math.ceil(n / SMALL_MULTIPLE_COLS);
 }
 
+/** Max slice count for which pie/donut/sunburst draw on-slice category labels.
+ *  Beyond this, labels become unreadable noise and we rely on the tooltip
+ *  instead — a shared category legend would collide with the per-measure titles
+ *  and bloat off-screen, so we name the slices directly when few and stop. */
+export const MAX_LABELLED_SLICES = 6;
+
 /** Gutter between cells, as a percentage of the full box (per side). */
 const GUTTER_PCT = 2;
 /** Headroom reserved at the top of each cell for its title, as a percentage

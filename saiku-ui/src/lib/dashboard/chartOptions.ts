@@ -13,7 +13,7 @@
 
 import type { AiCell, AiQueryResponse } from "$lib/api/aiQuery";
 import { axisLabelConfig } from "$lib/views/chartAxisLabel";
-import { cellRadiusPct, gridCells } from "$lib/dashboard/smallMultiples";
+import { cellRadiusPct, gridCells, MAX_LABELLED_SLICES } from "$lib/dashboard/smallMultiples";
 
 /**
  * Truncating axisLabel for a dashboard tile's category axis. Tiles are small,
@@ -139,16 +139,18 @@ export function buildChartOption(
     textAlign: "center",
     textStyle: { fontSize: 12 },
   }));
-  // Per-slice labels + leader lines overlap into noise once there are many
-  // categories or the chart is one of a small-multiple grid (each cell is
-  // small). Show them only on a single chart with a readable slice count; the
-  // tooltip carries the per-slice detail otherwise.
-  const showSliceLabels = cells.length === 1 && rows.length <= 10;
+  // Category identification: a shared category legend collides with the
+  // per-measure titles and bloats off-screen once there are many categories.
+  // Instead we name the slices directly when there are few enough to read, and
+  // lean on the tooltip beyond that. Inside the slices for a small-multiple grid
+  // (leader lines would cross between neighbouring charts); outside (with leader
+  // lines) for a single chart where there's room.
+  const showSliceLabels = rows.length <= MAX_LABELLED_SLICES;
+  const sliceLabelInside = cells.length > 1;
 
   if (t === "pie" || t === "donut") {
     return {
       tooltip: { trigger: "item" },
-      legend: rows.length <= 20 ? { type: "scroll", bottom: 0 } : undefined,
       title: titles,
       series: cells.map((cell, m) => {
         const outer = cellRadiusPct(cell, aspect);
@@ -157,8 +159,12 @@ export function buildChartOption(
           name: cols[m],
           radius: t === "donut" ? [outer * 0.55 + "%", outer + "%"] : [0, outer + "%"],
           center: [cell.centerXPct + "%", cell.centerYPct + "%"],
-          label: { show: showSliceLabels },
-          labelLine: { show: showSliceLabels },
+          label: {
+            show: showSliceLabels,
+            position: sliceLabelInside ? "inside" : "outside",
+            formatter: "{b}",
+          },
+          labelLine: { show: showSliceLabels && !sliceLabelInside },
           data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
         };
       }),
