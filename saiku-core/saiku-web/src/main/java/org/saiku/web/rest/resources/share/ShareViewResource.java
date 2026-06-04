@@ -21,10 +21,10 @@ import org.saiku.web.rest.resources.dashboards.DashboardTile;
 import org.saiku.web.rest.resources.dashboards.TileQuery;
 import org.saiku.web.security.share.ShareTokenAuthFilter.ShareGuestDetails;
 import org.saiku.web.service.SessionService;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * The ONLY data surface an account-free share guest can reach (issue #941).

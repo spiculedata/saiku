@@ -118,12 +118,14 @@ public class ShareTokenResource {
         }
 
         ShareToken t = store.create(path, username, roles, ttlHours * 3600_000L, body.label);
-        log.info("share-link minted token=<redacted:{}> dashboard={} by={} ttlHours={}", t.token.length(), path, username, ttlHours);
+        log.info(
+                "share-link minted token=<redacted:{}> dashboard={} by={} ttlHours={}",
+                t.token.length(),
+                path,
+                username,
+                ttlHours);
         return Response.ok(Map.of(
-                        "status", "OK",
-                        "token", t.token,
-                        "url", "/ui/share/" + t.token,
-                        "expiresAt", t.expiresAt))
+                        "status", "OK", "token", t.token, "url", "/ui/share/" + t.token, "expiresAt", t.expiresAt))
                 .type(MediaType.APPLICATION_JSON)
                 .build();
     }
@@ -164,7 +166,9 @@ public class ShareTokenResource {
         }
         String username = currentUsername();
         List<String> roles = currentRoles();
-        boolean canManage = (username != null && username.equals(t.createdBy)) || isAdmin(roles) || stillCanGrant(t.dashboardPath, username, roles);
+        boolean canManage = (username != null && username.equals(t.createdBy))
+                || isAdmin(roles)
+                || stillCanGrant(t.dashboardPath, username, roles);
         if (!canManage) {
             return Response.status(Response.Status.FORBIDDEN)
                     .entity(Map.of("status", "FORBIDDEN", "error", "You can't revoke this share link"))
@@ -173,7 +177,9 @@ public class ShareTokenResource {
         }
         store.revoke(id);
         log.info("share-link revoked dashboard={} by={}", t.dashboardPath, username);
-        return Response.ok(Map.of("status", "OK")).type(MediaType.APPLICATION_JSON).build();
+        return Response.ok(Map.of("status", "OK"))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
     }
 
     /* --------------------------- helpers ---------------------------- */
