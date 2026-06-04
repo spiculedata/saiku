@@ -99,36 +99,69 @@ describe("buildChartOption — line / area", () => {
   });
 });
 
-describe("buildChartOption — pie / donut", () => {
-  test("pie has one slice per measure (matches workspace ChartView semantics)", () => {
+describe("buildChartOption — pie / donut (small multiples)", () => {
+  test("2-measure pie fans out into 2 series, each sliced by row category", () => {
     const opt = buildChartOption(sampleResponse(), "pie") as Record<string, unknown>;
     const series = opt.series as Array<{
       type: string;
+      name: string;
       radius: unknown;
       data: { name: string; value: number }[];
     }>;
-    expect(series[0].type).toBe("pie");
-    // One slice per measure column; value is the column total across all rows.
-    expect(series[0].data.map((d) => d.name)).toEqual(["Store Sales", "Unit Sales"]);
-    expect(series[0].data[0].value).toBeCloseTo(565238.13 + 612482.65, 2);
-    expect(series[0].data[1].value).toBeCloseTo(266773 + 282417, 2);
+    // One chart (series) per measure.
+    expect(series).toHaveLength(2);
+    expect(series.every((s) => s.type === "pie")).toBe(true);
+    expect(series.map((s) => s.name)).toEqual(["Store Sales", "Unit Sales"]);
+    // Each chart's slices are the ROW categories, sized by that one measure.
+    expect(series[0].data.map((d) => d.name)).toEqual(["1997", "1998"]);
+    expect(series[0].data[0].value).toBeCloseTo(565238.13, 2);
+    expect(series[0].data[1].value).toBeCloseTo(612482.65, 2);
+    expect(series[1].data.map((d) => d.name)).toEqual(["1997", "1998"]);
+    expect(series[1].data[0].value).toBeCloseTo(266773, 2);
+    expect(series[1].data[1].value).toBeCloseTo(282417, 2);
+    // One per-measure title per chart.
+    const titles = opt.title as Array<{ text: string }>;
+    expect(titles.map((tt) => tt.text)).toEqual(["Store Sales", "Unit Sales"]);
   });
 
-  test("donut uses a ring radius", () => {
+  test("1-measure pie renders a single chart (the M=1 case)", () => {
+    const single: AiQueryResponse = {
+      ...sampleResponse(),
+      data: [
+        { Year: "1997", "Store Sales": { value: 565238.13, formatted: "565,238.13" } },
+        { Year: "1998", "Store Sales": { value: 612482.65, formatted: "612,482.65" } },
+      ],
+    };
+    const opt = buildChartOption(single, "pie") as Record<string, unknown>;
+    const series = opt.series as Array<{ type: string; data: { name: string; value: number }[] }>;
+    expect(series).toHaveLength(1);
+    expect(series[0].data.map((d) => d.name)).toEqual(["1997", "1998"]);
+    const titles = opt.title as Array<{ text: string }>;
+    expect(titles).toHaveLength(1);
+    expect(titles[0].text).toBe("Store Sales");
+  });
+
+  test("donut uses a ring radius (inner hole) per series", () => {
     const opt = buildChartOption(sampleResponse(), "donut") as Record<string, unknown>;
-    const series = opt.series as Array<{ radius: string[] }>;
+    const series = opt.series as Array<{ radius: (string | number)[] }>;
+    expect(series).toHaveLength(2);
+    // Donut keeps a non-zero inner radius.
     expect(Array.isArray(series[0].radius)).toBe(true);
+    expect(parseFloat(String(series[0].radius[0]))).toBeGreaterThan(0);
   });
 });
 
 describe("buildChartOption — extended types", () => {
-  test("treemap projects per-row aggregates", () => {
+  test("treemap fans out into one series per measure, items = rows", () => {
     const opt = buildChartOption(sampleResponse(), "treemap") as Record<string, unknown>;
-    const series = opt.series as Array<{ type: string; data: { name: string; value: number }[] }>;
-    expect(series[0].type).toBe("treemap");
-    // Each row aggregates Store Sales + Unit Sales (sum of both measures).
+    const series = opt.series as Array<{ type: string; name: string; data: { name: string; value: number }[] }>;
+    expect(series).toHaveLength(2);
+    expect(series.every((s) => s.type === "treemap")).toBe(true);
+    expect(series.map((s) => s.name)).toEqual(["Store Sales", "Unit Sales"]);
+    // Each chart's items are the ROW categories, sized by that one measure.
     expect(series[0].data[0].name).toBe("1997");
-    expect(series[0].data[0].value).toBeCloseTo(565238.13 + 266773, 2);
+    expect(series[0].data[0].value).toBeCloseTo(565238.13, 2);
+    expect(series[1].data[0].value).toBeCloseTo(266773, 2);
   });
 
   test("heatmap emits [col, row, value] tuples with a visualMap", () => {

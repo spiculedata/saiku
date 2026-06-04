@@ -13,6 +13,7 @@
 
 import type { AiCell, AiQueryResponse } from "$lib/api/aiQuery";
 import { axisLabelConfig } from "$lib/views/chartAxisLabel";
+import { cellRadiusPct, gridCells, MAX_LABELLED_SLICES } from "$lib/dashboard/smallMultiples";
 
 /**
  * Truncating axisLabel for a dashboard tile's category axis. Tiles are small,
@@ -111,7 +112,11 @@ function projectFromAiQueryResponse(response: AiQueryResponse): ChartProjection 
 /** Build an ECharts option object for the given chart kind, projected
  *  from an AiQueryResponse. Returns null when the response has no rows
  *  or the kind isn't recognised. */
-export function buildChartOption(response: AiQueryResponse, kind: string): Record<string, unknown> | null {
+export function buildChartOption(
+  response: AiQueryResponse,
+  kind: string,
+  aspect = 1,
+): Record<string, unknown> | null {
   if (!isSupportedChartKind(kind)) return null;
   const p = projectFromAiQueryResponse(response);
   if (p.matrix.length === 0) return null;
@@ -121,43 +126,81 @@ export function buildChartOption(response: AiQueryResponse, kind: string): Recor
   const cols = p.columnCategories;
   const matrix = p.matrix;
 
-  // Pie / donut: one slice per row, using the first measure column
-  // (matches ChartView's pie shape — single-measure focused).
+  // Pie / donut / treemap / sunburst encode a SINGLE measure. With M measures
+  // we fan out into M small-multiple charts — one per measure — laid out in a
+  // grid inside the same option (M series, one per cell). Each chart shows the
+  // row categories as its items, sized by that one measure. M=1 is just a
+  // single full-box chart (no special branch).
+  const cells = gridCells(cols.length);
+  const titles = cells.map((cell, m) => ({
+    text: cols[m],
+    left: cell.centerXPct + "%",
+    top: cell.topPct + "%",
+    textAlign: "center",
+    textStyle: { fontSize: 12 },
+  }));
+  // Category identification: a shared category legend collides with the
+  // per-measure titles and bloats off-screen once there are many categories.
+  // Instead we name the slices directly when there are few enough to read, and
+  // lean on the tooltip beyond that. Inside the slices for a small-multiple grid
+  // (leader lines would cross between neighbouring charts); outside (with leader
+  // lines) for a single chart where there's room.
+  const showSliceLabels = rows.length <= MAX_LABELLED_SLICES;
+  const sliceLabelInside = cells.length > 1;
+
   if (t === "pie" || t === "donut") {
-    const totals = cols.map((_, c) => matrix.reduce((s, row) => s + (row[c] ?? 0), 0));
-    const radius = t === "donut" ? ["45%", "70%"] : ["0%", "70%"];
     return {
       tooltip: { trigger: "item" },
-      legend: { type: "scroll", bottom: 0 },
-      series: [
-        {
+      title: titles,
+      series: cells.map((cell, m) => {
+        const outer = cellRadiusPct(cell, aspect);
+        return {
           type: "pie",
-          radius,
-          center: ["50%", "45%"],
-          data: cols.map((name, c) => ({ name, value: totals[c] })),
-        },
-      ],
+          name: cols[m],
+          radius: t === "donut" ? [outer * 0.55 + "%", outer + "%"] : [0, outer + "%"],
+          center: [cell.centerXPct + "%", cell.centerYPct + "%"],
+          label: {
+            show: showSliceLabels,
+            position: sliceLabelInside ? "inside" : "outside",
+            formatter: "{b}",
+          },
+          labelLine: { show: showSliceLabels && !sliceLabelInside },
+          data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
+        };
+      }),
     };
   }
 
   if (t === "treemap") {
-    const data = rows
-      .map((name, i) => ({
-        name,
-        value: (matrix[i] ?? []).reduce<number>((s, v) => s + (v ?? 0), 0),
-      }))
-      .filter((d) => d.value > 0);
-    return { tooltip: {}, series: [{ type: "treemap", data, breadcrumb: { show: false } }] };
+    return {
+      tooltip: {},
+      title: titles,
+      series: cells.map((cell, m) => ({
+        type: "treemap",
+        name: cols[m],
+        left: cell.leftPct + "%",
+        top: cell.topPct + cell.heightPct * 0.18 + "%",
+        width: cell.widthPct + "%",
+        height: cell.heightPct * 0.82 + "%",
+        breadcrumb: { show: false },
+        data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
+      })),
+    };
   }
 
   if (t === "sunburst") {
-    const data = rows
-      .map((name, i) => ({
-        name,
-        value: (matrix[i] ?? []).reduce<number>((s, v) => s + (v ?? 0), 0),
-      }))
-      .filter((d) => d.value > 0);
-    return { tooltip: {}, series: [{ type: "sunburst", data, radius: [0, "90%"] }] };
+    return {
+      tooltip: {},
+      title: titles,
+      series: cells.map((cell, m) => ({
+        type: "sunburst",
+        name: cols[m],
+        center: [cell.centerXPct + "%", cell.centerYPct + "%"],
+        radius: [0, cellRadiusPct(cell, aspect) + "%"],
+        label: { show: showSliceLabels },
+        data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
+      })),
+    };
   }
 
   if (t === "heatmap") {

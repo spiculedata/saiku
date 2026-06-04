@@ -32,6 +32,7 @@
     type RowAxisRef,
   } from "$lib/dashboard/filterSuggestions";
   import { buildChartOption, isSupportedChartKind } from "$lib/dashboard/chartOptions";
+  import { isSingleMeasureKind, smallMultipleRowCount } from "$lib/dashboard/smallMultiples";
   import type { CubeRef } from "$lib/api/dashboards";
   // Issue #930 — right-click a data point to drill into its raw fact rows.
   import TileDrillthrough from "./TileDrillthrough.svelte";
@@ -54,12 +55,25 @@
   // never initialised — see screenshots in saiku#1012.
   let chart = $state.raw<echarts.ECharts | null>(null);
   let resizeObserver: ResizeObserver | null = null;
+  // Bumped by the ResizeObserver so the render effect recomputes the
+  // aspect-aware small-multiple radius when the canvas size changes (#1053).
+  let resizeTick = $state(0);
 
   let loading = $state(false);
   let error = $state<string | null>(null);
   let response = $state<AiQueryResponse | null>(null);
   let schema = $state<SchemaLike | null>(null);
   let unsupported = $state(false);
+
+  // Issue #1053: single-measure kinds (pie/donut/treemap/sunburst) with >1
+  // measure render as small multiples — 2 per row (see gridCells). The canvas
+  // grows to N rows and the tile scrolls, so each chart stays full-size rather
+  // than shrinking as more measures are added.
+  let smallMultipleRows = $derived.by(() => {
+    const kind = tile.chartType ?? "bar";
+    const measureCount = response?.metadata?.columns?.length ?? 0;
+    return isSingleMeasureKind(kind) && measureCount > 1 ? smallMultipleRowCount(measureCount) : 1;
+  });
 
   /* ----------------------------- lifecycle --------------------------- */
 
@@ -74,7 +88,12 @@
     const instance = echarts.init(host);
     instance.on("click", handleEChartsClick);
     instance.on("contextmenu", handleEChartsContextMenu);
-    resizeObserver = new ResizeObserver(() => instance.resize());
+    // Resize + bump resizeTick so the render effect recomputes the
+    // aspect-aware small-multiple radius for the new canvas size (#1053).
+    resizeObserver = new ResizeObserver(() => {
+      instance.resize();
+      resizeTick++;
+    });
     resizeObserver.observe(host);
     chart = instance;
   });
@@ -205,6 +224,10 @@
     const r = response;
     const kind = tile.chartType ?? "bar";
     void r;
+    // Re-run when the canvas resizes so the small-multiple radius tracks the
+    // current aspect ratio (#1053).
+    void resizeTick;
+    void smallMultipleRows;
     if (!chart) return;
     unsupported = !isSupportedChartKind(kind);
     if (!r || r.status !== "SUCCESS") {
@@ -215,7 +238,8 @@
       chart.clear();
       return;
     }
-    const option = buildChartOption(r, kind);
+    const aspect = host && host.clientHeight > 0 ? host.clientWidth / host.clientHeight : 1;
+    const option = buildChartOption(r, kind, aspect);
     if (option) {
       // notMerge=true so axis category changes don't leave stale ticks.
       chart.setOption(option, true);
@@ -304,7 +328,7 @@
         Chart type <code>{tile.chartType}</code> not yet supported in dashboards.
       </div>
     {/if}
-    <div class="canvas" bind:this={host}></div>
+    <div class="canvas" bind:this={host} style="height: {smallMultipleRows * 100}%"></div>
   </div>
 {/if}
 
@@ -315,9 +339,13 @@
     position: relative;
     height: 100%;
     width: 100%;
+    /* #1053: small multiples grow the canvas to N rows; scroll within the tile
+       so each chart stays full-size instead of shrinking. */
+    overflow-y: auto;
+    overflow-x: hidden;
   }
   .canvas {
-    height: 100%;
+    /* height is set inline = smallMultipleRows * 100% (100% for a single chart). */
     width: 100%;
   }
   .overlay {

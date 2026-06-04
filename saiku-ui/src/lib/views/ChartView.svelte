@@ -6,6 +6,13 @@
   import type { ChartType, ChartOptions } from "$lib/views/chartTypes";
   import { DEFAULT_CHART_OPTIONS, SERIES_AXIS_THRESHOLD } from "$lib/views/chartTypes";
   import { axisLabelConfig, deriveAxisLabelWidth } from "$lib/views/chartAxisLabel";
+  import {
+    cellRadiusPct,
+    gridCells,
+    isSingleMeasureKind,
+    MAX_LABELLED_SLICES,
+    smallMultipleRowCount,
+  } from "$lib/dashboard/smallMultiples";
   import { theme } from "$lib/stores/theme.svelte";
 
   interface Props {
@@ -18,6 +25,14 @@
 
   let host: HTMLDivElement | null = null;
   let chart: echarts.ECharts | null = null;
+
+  // #1053: single-measure kinds (pie/donut/treemap/sunburst) with >1 measure
+  // render as small multiples — 2 per row. Grow the host to N rows so each
+  // chart stays full-size; the surrounding wrapper scrolls.
+  let smallMultipleRows = $derived.by(() => {
+    const measureCount = parseCellset(result).columnCategories.length;
+    return isSingleMeasureKind(type) && measureCount > 1 ? smallMultipleRowCount(measureCount) : 1;
+  });
 
   interface ThemeTokens {
     fg: string;
@@ -218,50 +233,90 @@
       textStyle: { color: tk.fg },
     };
 
-    if (t === "pie" || t === "donut") {
-      const totals = cols.map((_, c) => matrix.reduce((s, row) => s + (row[c] ?? 0), 0));
-      const radius = t === "donut" ? ["45%", "70%"] : ["0%", "70%"];
-      return {
-        ...common,
-        title, legend,
-        tooltip: { trigger: "item", ...itemTooltip },
-        series: [{
-          type: "pie",
-          radius,
-          label: { color: tk.fg },
-          data: cols.map((name, c) => ({ name, value: totals[c] })),
-        }],
-      };
-    }
+    // Pie / donut / treemap / sunburst encode a SINGLE measure. With M measures
+    // we fan out into M small-multiple charts — one per measure — in a grid
+    // inside the same option (M series, one per cell). Each chart shows the row
+    // categories as its items, sized by that one measure. M=1 is a single
+    // full-box chart. The user's overall chart title (if any) is kept alongside
+    // the per-measure cell titles in ECharts' title array.
+    if (t === "pie" || t === "donut" || t === "treemap" || t === "sunburst") {
+      const cells = gridCells(cols.length);
+      // Aspect-aware radius keeps each chart the same on-screen size regardless
+      // of how many small multiples there are (#1053).
+      const aspect = host && host.clientHeight > 0 ? host.clientWidth / host.clientHeight : 1;
+      const cellTitles = cells.map((cell, m) => ({
+        text: cols[m],
+        left: cell.centerXPct + "%",
+        top: cell.topPct + "%",
+        textAlign: "center" as const,
+        textStyle: { color: tk.fg, fontSize: 12 },
+      }));
+      const titles = title ? [title, ...cellTitles] : cellTitles;
+      // Category identification: a shared category legend collides with the
+      // per-measure titles and bloats off-screen once there are many categories.
+      // Name the slices directly when few enough to read, else lean on the
+      // tooltip. Inside the slices for a small-multiple grid (leader lines would
+      // cross between neighbours); outside for a single chart where there's room.
+      const showSliceLabels = rows.length <= MAX_LABELLED_SLICES;
+      const sliceLabelInside = cells.length > 1;
 
-    if (t === "treemap") {
-      const data = rows.map((name, i) => ({
-        name,
-        value: (matrix[i] ?? []).reduce<number>((s, v) => s + (v ?? 0), 0),
-      })).filter((d) => d.value > 0);
-      return {
-        ...common,
-        title,
-        tooltip: itemTooltip,
-        series: [{
-          type: "treemap",
-          data,
-          label: { color: "#fff" },
-          breadcrumb: { show: false },
-        }],
-      };
-    }
+      if (t === "pie" || t === "donut") {
+        return {
+          ...common,
+          title: titles,
+          tooltip: { trigger: "item", ...itemTooltip },
+          series: cells.map((cell, m) => {
+            const outer = cellRadiusPct(cell, aspect);
+            return {
+              type: "pie",
+              name: cols[m],
+              radius: t === "donut" ? [outer * 0.55 + "%", outer + "%"] : [0, outer + "%"],
+              center: [cell.centerXPct + "%", cell.centerYPct + "%"],
+              label: {
+                show: showSliceLabels,
+                position: sliceLabelInside ? "inside" : "outside",
+                formatter: "{b}",
+                color: sliceLabelInside ? "#fff" : tk.fg,
+              },
+              labelLine: { show: showSliceLabels && !sliceLabelInside },
+              data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
+            };
+          }),
+        };
+      }
 
-    if (t === "sunburst") {
-      const data = rows.map((name, i) => ({
-        name,
-        value: (matrix[i] ?? []).reduce<number>((s, v) => s + (v ?? 0), 0),
-      })).filter((d) => d.value > 0);
+      if (t === "treemap") {
+        return {
+          ...common,
+          title: titles,
+          tooltip: itemTooltip,
+          series: cells.map((cell, m) => ({
+            type: "treemap",
+            name: cols[m],
+            left: cell.leftPct + "%",
+            top: cell.topPct + cell.heightPct * 0.18 + "%",
+            width: cell.widthPct + "%",
+            height: cell.heightPct * 0.82 + "%",
+            label: { color: "#fff" },
+            breadcrumb: { show: false },
+            data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
+          })),
+        };
+      }
+
+      // sunburst
       return {
         ...common,
-        title,
+        title: titles,
         tooltip: itemTooltip,
-        series: [{ type: "sunburst", data, radius: [0, "90%"], label: { color: "#fff" } }],
+        series: cells.map((cell, m) => ({
+          type: "sunburst",
+          name: cols[m],
+          center: [cell.centerXPct + "%", cell.centerYPct + "%"],
+          radius: [0, cellRadiusPct(cell, aspect) + "%"],
+          label: { show: showSliceLabels, color: "#fff" },
+          data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
+        })),
       };
     }
 
@@ -446,7 +501,12 @@
     if (host) {
       chart = echarts.init(host, null);
       render();
-      const ro = new ResizeObserver(() => chart?.resize());
+      // Re-render (not just resize) so the aspect-aware small-multiple radius
+      // recomputes for the new canvas size (#1053).
+      const ro = new ResizeObserver(() => {
+        chart?.resize();
+        render();
+      });
       ro.observe(host);
       return () => ro.disconnect();
     }
@@ -477,15 +537,30 @@
   });
 </script>
 
-<div class="chart" bind:this={host}></div>
+<div class="chart-scroll">
+  <div
+    class="chart"
+    bind:this={host}
+    style="height: {smallMultipleRows * 60}vh; min-height: {smallMultipleRows * 320}px;"
+  ></div>
+</div>
 
 <style>
-  .chart {
+  /* #1053: the frame stays one viewport tall; small multiples grow the inner
+     chart to N rows and this wrapper scrolls, keeping each chart full-size. */
+  .chart-scroll {
     width: 100%;
     height: 60vh;
     min-height: 320px;
+    overflow-y: auto;
+    overflow-x: hidden;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
   }
+  .chart {
+    width: 100%;
+    /* height + min-height are set inline = smallMultipleRows × the single size. */
+  }
 </style>
+
