@@ -32,6 +32,7 @@
     type RowAxisRef,
   } from "$lib/dashboard/filterSuggestions";
   import { buildChartOption, isSupportedChartKind } from "$lib/dashboard/chartOptions";
+  import { isSingleMeasureKind } from "$lib/dashboard/smallMultiples";
   import type { CubeRef } from "$lib/api/dashboards";
   // Issue #930 — right-click a data point to drill into its raw fact rows.
   import TileDrillthrough from "./TileDrillthrough.svelte";
@@ -60,6 +61,16 @@
   let response = $state<AiQueryResponse | null>(null);
   let schema = $state<SchemaLike | null>(null);
   let unsupported = $state(false);
+
+  // Issue #1053: single-measure kinds (pie/donut/treemap/sunburst) with >1
+  // measure render as small multiples — 2 per row (see gridCells). The canvas
+  // grows to N rows and the tile scrolls, so each chart stays full-size rather
+  // than shrinking as more measures are added.
+  let smallMultipleRows = $derived.by(() => {
+    const kind = tile.chartType ?? "bar";
+    const measureCount = response?.metadata?.columns?.length ?? 0;
+    return isSingleMeasureKind(kind) && measureCount > 1 ? Math.ceil(measureCount / 2) : 1;
+  });
 
   /* ----------------------------- lifecycle --------------------------- */
 
@@ -304,7 +315,7 @@
         Chart type <code>{tile.chartType}</code> not yet supported in dashboards.
       </div>
     {/if}
-    <div class="canvas" bind:this={host}></div>
+    <div class="canvas" bind:this={host} style="height: {smallMultipleRows * 100}%"></div>
   </div>
 {/if}
 
@@ -315,9 +326,13 @@
     position: relative;
     height: 100%;
     width: 100%;
+    /* #1053: small multiples grow the canvas to N rows; scroll within the tile
+       so each chart stays full-size instead of shrinking. */
+    overflow-y: auto;
+    overflow-x: hidden;
   }
   .canvas {
-    height: 100%;
+    /* height is set inline = smallMultipleRows * 100% (100% for a single chart). */
     width: 100%;
   }
   .overlay {

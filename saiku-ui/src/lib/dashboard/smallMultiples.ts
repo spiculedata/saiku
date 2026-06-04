@@ -42,18 +42,20 @@ const GUTTER_PCT = 2;
 const TITLE_HEADROOM_FRAC = 0.18;
 
 /**
- * Lay out `n` charts into a grid filling the 0–100% box.
+ * Lay out `n` charts into a grid.
  *
- * Columns = ceil(sqrt(n)); rows = ceil(n / cols). Cells are equal-sized, with
- * a small gutter around each and a little headroom at the top of each cell so a
- * per-chart title can sit above the plot. The drawing center is the center of
- * the plot area (below the title headroom).
+ * **Two charts per row** (cols = 2), rows = ceil(n / 2). We deliberately cap at
+ * 2 columns rather than ceil(sqrt(n)) so charts stay large and readable —
+ * adding more measures grows the number of rows (the host container grows +
+ * scrolls) instead of shrinking every chart. Cells are equal-sized with a small
+ * gutter and a little title headroom at the top; the drawing center sits in the
+ * plot area below the title.
  *
  * n <= 0 → []. n <= 1 → a single full-box cell.
  */
 export function gridCells(n: number): GridCell[] {
   if (n <= 0) return [];
-  const cols = n <= 1 ? 1 : Math.ceil(Math.sqrt(n));
+  const cols = n <= 1 ? 1 : 2;
   const rows = Math.ceil(n / cols);
 
   const cellW = 100 / cols;

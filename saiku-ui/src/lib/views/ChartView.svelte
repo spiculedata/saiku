@@ -6,7 +6,7 @@
   import type { ChartType, ChartOptions } from "$lib/views/chartTypes";
   import { DEFAULT_CHART_OPTIONS, SERIES_AXIS_THRESHOLD } from "$lib/views/chartTypes";
   import { axisLabelConfig, deriveAxisLabelWidth } from "$lib/views/chartAxisLabel";
-  import { gridCells } from "$lib/dashboard/smallMultiples";
+  import { gridCells, isSingleMeasureKind } from "$lib/dashboard/smallMultiples";
   import { theme } from "$lib/stores/theme.svelte";
 
   interface Props {
@@ -19,6 +19,14 @@
 
   let host: HTMLDivElement | null = null;
   let chart: echarts.ECharts | null = null;
+
+  // #1053: single-measure kinds (pie/donut/treemap/sunburst) with >1 measure
+  // render as small multiples — 2 per row. Grow the host to N rows so each
+  // chart stays full-size; the surrounding wrapper scrolls.
+  let smallMultipleRows = $derived.by(() => {
+    const measureCount = parseCellset(result).columnCategories.length;
+    return isSingleMeasureKind(type) && measureCount > 1 ? Math.ceil(measureCount / 2) : 1;
+  });
 
   interface ThemeTokens {
     fg: string;
@@ -508,15 +516,30 @@
   });
 </script>
 
-<div class="chart" bind:this={host}></div>
+<div class="chart-scroll">
+  <div
+    class="chart"
+    bind:this={host}
+    style="height: {smallMultipleRows * 60}vh; min-height: {smallMultipleRows * 320}px;"
+  ></div>
+</div>
 
 <style>
-  .chart {
+  /* #1053: the frame stays one viewport tall; small multiples grow the inner
+     chart to N rows and this wrapper scrolls, keeping each chart full-size. */
+  .chart-scroll {
     width: 100%;
     height: 60vh;
     min-height: 320px;
+    overflow-y: auto;
+    overflow-x: hidden;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
   }
+  .chart {
+    width: 100%;
+    /* height + min-height are set inline = smallMultipleRows × the single size. */
+  }
 </style>
+

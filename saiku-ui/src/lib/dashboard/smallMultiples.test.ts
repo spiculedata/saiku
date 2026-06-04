@@ -87,6 +87,22 @@ describe("gridCells", () => {
     }
   });
 
+  test("caps at 2 columns: n=6 → 2 cols × 3 rows (not ceil(sqrt))", () => {
+    const cells = gridCells(6);
+    expect(cells).toHaveLength(6);
+    // Two per row, three rows — NOT 3×2. Keeps each chart large.
+    expect(Math.max(...cells.map((c) => c.col))).toBe(1);
+    expect(Math.max(...cells.map((c) => c.row))).toBe(2);
+    expect(cells.map((c) => [c.row, c.col])).toEqual([
+      [0, 0],
+      [0, 1],
+      [1, 0],
+      [1, 1],
+      [2, 0],
+      [2, 1],
+    ]);
+  });
+
   test("all cells stay inside the 0–100% box", () => {
     for (const n of [1, 2, 3, 4, 5, 9]) {
       for (const c of gridCells(n)) {
