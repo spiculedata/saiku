@@ -50,10 +50,14 @@
 
   $effect(() => {
     if (open) {
+      // Don't read `selected` here — reading it inside the same effect
+      // that wrote it makes the dropdown's bind:value-driven change re-fire
+      // this effect and reset the user's pick. Use the source.
+      const seedMeasure = initialMeasure || measures[0]?.uniqueName || "";
       mode = "simple";
-      selected = initialMeasure || measures[0]?.uniqueName || "";
+      selected = seedMeasure;
       sort = initialSort;
-      mdxBuffer = selected;
+      mdxBuffer = seedMeasure;
     }
   });
 
