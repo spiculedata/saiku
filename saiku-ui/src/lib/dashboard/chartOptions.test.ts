@@ -189,6 +189,59 @@ describe("buildChartOption — extended types", () => {
   });
 });
 
+describe("buildChartOption — theme tokens (#1050 repaint)", () => {
+  const darkTokens = {
+    fg: "#e5e7eb",
+    fgMuted: "#9ca3af",
+    bg: "#0b1220",
+    bgMuted: "#111827",
+    border: "#334155",
+    accent: "#818cf8",
+    chartColors: ["#aaa111", "#bbb222"],
+  };
+
+  test("bar threads the categorical palette + text/axis colours from tk", () => {
+    const opt = buildChartOption(sampleResponse(), "bar", 1, darkTokens) as Record<string, unknown>;
+    // common: transparent canvas + palette + default text fg.
+    expect(opt.backgroundColor).toBe("transparent");
+    expect(opt.color).toEqual(darkTokens.chartColors);
+    expect((opt.textStyle as { color: string }).color).toBe("#e5e7eb");
+    // axis labels follow fgMuted; gridlines follow border.
+    const xAxis = opt.xAxis as { axisLabel: { color: string }; axisLine: { lineStyle: { color: string } } };
+    expect(xAxis.axisLabel.color).toBe("#9ca3af");
+    expect(xAxis.axisLine.lineStyle.color).toBe("#334155");
+    // tooltip surface follows bg/border/fg.
+    const tooltip = opt.tooltip as { backgroundColor: string; textStyle: { color: string } };
+    expect(tooltip.backgroundColor).toBe("#0b1220");
+    expect(tooltip.textStyle.color).toBe("#e5e7eb");
+  });
+
+  test("pie slice labels follow fg (single chart) and titles follow fg", () => {
+    const single: AiQueryResponse = {
+      ...sampleResponse(),
+      data: [
+        { Year: "1997", "Store Sales": { value: 1, formatted: "1" } },
+        { Year: "1998", "Store Sales": { value: 2, formatted: "2" } },
+      ],
+    };
+    const opt = buildChartOption(single, "pie", 1, darkTokens) as Record<string, unknown>;
+    const series = opt.series as Array<{ label: { position: string; color: string } }>;
+    // M=1 → single chart → labels drawn outside in fg (not the inside "#fff").
+    expect(series[0].label.position).toBe("outside");
+    expect(series[0].label.color).toBe("#e5e7eb");
+    const titles = opt.title as Array<{ textStyle: { color: string } }>;
+    expect(titles[0].textStyle.color).toBe("#e5e7eb");
+  });
+
+  test("defaults to the light fallback palette when tk is omitted", () => {
+    const opt = buildChartOption(sampleResponse(), "bar") as Record<string, unknown>;
+    // Light default fg (#0f172a) — proves the pure callers still get a complete,
+    // deterministic token set with no DOM.
+    expect((opt.textStyle as { color: string }).color).toBe("#0f172a");
+    expect(opt.backgroundColor).toBe("transparent");
+  });
+});
+
 describe("buildChartOption — rejection", () => {
   test("returns null for unknown chart kinds", () => {
     expect(buildChartOption(sampleResponse(), "made-up-kind")).toBeNull();

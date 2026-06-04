@@ -33,6 +33,8 @@
   } from "$lib/dashboard/filterSuggestions";
   import { buildChartOption, isSupportedChartKind } from "$lib/dashboard/chartOptions";
   import { isSingleMeasureKind, smallMultipleRowCount } from "$lib/dashboard/smallMultiples";
+  import { theme } from "$lib/stores/theme.svelte";
+  import { resolveThemeTokens } from "$lib/views/chartTheme";
   import type { CubeRef } from "$lib/api/dashboards";
   // Issue #930 — right-click a data point to drill into its raw fact rows.
   import TileDrillthrough from "./TileDrillthrough.svelte";
@@ -260,6 +262,10 @@
     // current aspect ratio (#1053).
     void resizeTick;
     void smallMultipleRows;
+    // Re-theme when the effective theme flips (light/dark/system) so chart
+    // text/axes/palette repaint — resolveThemeTokens() reads the now-current
+    // :root tokens (#1050).
+    void theme.effective;
     if (!chart) return;
     unsupported = !isSupportedChartKind(kind);
     if (!r || r.status !== "SUCCESS") {
@@ -271,7 +277,7 @@
       return;
     }
     const aspect = host && host.clientHeight > 0 ? host.clientWidth / host.clientHeight : 1;
-    const option = buildChartOption(r, kind, aspect);
+    const option = buildChartOption(r, kind, aspect, resolveThemeTokens());
     if (option) {
       // notMerge=true so axis category changes don't leave stale ticks.
       chart.setOption(option, true);

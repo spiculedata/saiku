@@ -14,6 +14,7 @@
 import type { AiCell, AiQueryResponse } from "$lib/api/aiQuery";
 import { axisLabelConfig } from "$lib/views/chartAxisLabel";
 import { cellRadiusPct, gridCells, MAX_LABELLED_SLICES } from "$lib/dashboard/smallMultiples";
+import { type ThemeTokens, DEFAULT_THEME_TOKENS } from "$lib/views/chartTheme";
 
 /**
  * Truncating axisLabel for a dashboard tile's category axis. Tiles are small,
@@ -111,11 +112,17 @@ function projectFromAiQueryResponse(response: AiQueryResponse): ChartProjection 
 
 /** Build an ECharts option object for the given chart kind, projected
  *  from an AiQueryResponse. Returns null when the response has no rows
- *  or the kind isn't recognised. */
+ *  or the kind isn't recognised.
+ *
+ *  `tk` carries the active theme tokens (see chartTheme.ts) so the chart
+ *  text/axes/palette repaint on a light/dark/system flip. It's optional and
+ *  defaults to the light fallback so the pure callers (tests) stay DOM-free
+ *  and structurally unchanged; ChartTile passes the live resolved tokens. */
 export function buildChartOption(
   response: AiQueryResponse,
   kind: string,
   aspect = 1,
+  tk: ThemeTokens = DEFAULT_THEME_TOKENS,
 ): Record<string, unknown> | null {
   if (!isSupportedChartKind(kind)) return null;
   const p = projectFromAiQueryResponse(response);
@@ -125,6 +132,24 @@ export function buildChartOption(
   const rows = p.rowCategories;
   const cols = p.columnCategories;
   const matrix = p.matrix;
+
+  // Theme-aware shared config — mirrors ChartView.buildOption so dashboard
+  // tiles and the workspace chart colour identically. `common` themes the
+  // canvas (transparent so the tile bg shows through), the categorical
+  // palette, and default text; the axis/legend/tooltip helpers carry the
+  // fg/border tokens into each branch.
+  const common = {
+    backgroundColor: "transparent",
+    color: tk.chartColors,
+    textStyle: { color: tk.fg },
+  };
+  const axisLabel = { color: tk.fgMuted };
+  const axisLine = { lineStyle: { color: tk.border } };
+  const axisTick = { lineStyle: { color: tk.border } };
+  const splitLine = { lineStyle: { color: tk.border, opacity: 0.5 } };
+  const nameTextStyle = { color: tk.fg };
+  const legendStyle = { textStyle: { color: tk.fg } };
+  const tooltipStyle = { backgroundColor: tk.bg, borderColor: tk.border, textStyle: { color: tk.fg } };
 
   // Pie / donut / treemap / sunburst encode a SINGLE measure. With M measures
   // we fan out into M small-multiple charts — one per measure — laid out in a
@@ -137,7 +162,7 @@ export function buildChartOption(
     left: cell.centerXPct + "%",
     top: cell.topPct + "%",
     textAlign: "center",
-    textStyle: { fontSize: 12 },
+    textStyle: { color: tk.fg, fontSize: 12 },
   }));
   // Category identification: a shared category legend collides with the
   // per-measure titles and bloats off-screen once there are many categories.
@@ -150,7 +175,8 @@ export function buildChartOption(
 
   if (t === "pie" || t === "donut") {
     return {
-      tooltip: { trigger: "item" },
+      ...common,
+      tooltip: { trigger: "item", ...tooltipStyle },
       title: titles,
       series: cells.map((cell, m) => {
         const outer = cellRadiusPct(cell, aspect);
@@ -163,6 +189,7 @@ export function buildChartOption(
             show: showSliceLabels,
             position: sliceLabelInside ? "inside" : "outside",
             formatter: "{b}",
+            color: sliceLabelInside ? "#fff" : tk.fg,
           },
           labelLine: { show: showSliceLabels && !sliceLabelInside },
           data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
@@ -173,7 +200,8 @@ export function buildChartOption(
 
   if (t === "treemap") {
     return {
-      tooltip: {},
+      ...common,
+      tooltip: tooltipStyle,
       title: titles,
       series: cells.map((cell, m) => ({
         type: "treemap",
@@ -182,6 +210,7 @@ export function buildChartOption(
         top: cell.topPct + cell.heightPct * 0.18 + "%",
         width: cell.widthPct + "%",
         height: cell.heightPct * 0.82 + "%",
+        label: { color: "#fff" },
         breadcrumb: { show: false },
         data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
       })),
@@ -190,14 +219,15 @@ export function buildChartOption(
 
   if (t === "sunburst") {
     return {
-      tooltip: {},
+      ...common,
+      tooltip: tooltipStyle,
       title: titles,
       series: cells.map((cell, m) => ({
         type: "sunburst",
         name: cols[m],
         center: [cell.centerXPct + "%", cell.centerYPct + "%"],
         radius: [0, cellRadiusPct(cell, aspect) + "%"],
-        label: { show: showSliceLabels },
+        label: { show: showSliceLabels, color: "#fff" },
         data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
       })),
     };
@@ -214,11 +244,26 @@ export function buildChartOption(
     const min = values.length ? Math.min(...values) : 0;
     const max = values.length ? Math.max(...values) : 1;
     return {
-      tooltip: {},
+      ...common,
+      tooltip: tooltipStyle,
       grid: { left: 120, top: 24, right: 16, bottom: 64 },
-      xAxis: { type: "category", data: cols, axisLabel: categoryAxisLabel() },
-      yAxis: { type: "category", data: rows, inverse: true },
-      visualMap: { min, max, calculable: true, orient: "horizontal", left: "center", bottom: 8 },
+      xAxis: {
+        type: "category",
+        data: cols,
+        axisLabel: { ...categoryAxisLabel(), color: tk.fgMuted },
+        axisLine,
+        axisTick,
+      },
+      yAxis: { type: "category", data: rows, inverse: true, axisLabel, axisLine, axisTick },
+      visualMap: {
+        min,
+        max,
+        calculable: true,
+        orient: "horizontal",
+        left: "center",
+        bottom: 8,
+        textStyle: { color: tk.fgMuted },
+      },
       series: [{ type: "heatmap", data, label: { show: false } }],
     };
   }
@@ -226,9 +271,16 @@ export function buildChartOption(
   if (t === "radar") {
     const max = Math.max(0, ...matrix.flatMap((r) => r.map((v) => Math.abs(v ?? 0))));
     return {
-      tooltip: {},
-      legend: { type: "scroll", bottom: 0 },
-      radar: { indicator: cols.map((c) => ({ name: c, max: max || 1 })) },
+      ...common,
+      tooltip: tooltipStyle,
+      legend: { type: "scroll", bottom: 0, ...legendStyle },
+      radar: {
+        indicator: cols.map((c) => ({ name: c, max: max || 1 })),
+        axisName: { color: tk.fgMuted },
+        axisLine: { lineStyle: { color: tk.border } },
+        splitLine: { lineStyle: { color: tk.border, opacity: 0.5 } },
+        splitArea: { areaStyle: { color: [tk.bg, tk.bgMuted], opacity: 0.3 } },
+      },
       series: [
         {
           type: "radar",
@@ -241,10 +293,19 @@ export function buildChartOption(
   if (t === "scatter" || t === "bubble") {
     const max = Math.max(1, ...matrix.flatMap((r) => r.map((v) => Math.abs(v ?? 0))));
     return {
-      tooltip: {},
-      legend: { type: "scroll", bottom: 0 },
-      xAxis: { type: "category", data: cols, axisLabel: categoryAxisLabel() },
-      yAxis: { type: "value" },
+      ...common,
+      tooltip: tooltipStyle,
+      legend: { type: "scroll", bottom: 0, ...legendStyle },
+      xAxis: {
+        type: "category",
+        data: cols,
+        axisLabel: { ...categoryAxisLabel(), color: tk.fgMuted },
+        axisLine,
+        axisTick,
+        splitLine,
+        nameTextStyle,
+      },
+      yAxis: { type: "value", axisLabel, axisLine, axisTick, splitLine, nameTextStyle },
       series: rows.map((name, i) => ({
         type: "scatter",
         name,
@@ -279,11 +340,20 @@ export function buildChartOption(
       running += v;
     }
     return {
-      tooltip: { trigger: "axis" },
-      legend: { type: "scroll", bottom: 0 },
+      ...common,
+      tooltip: { trigger: "axis", ...tooltipStyle },
+      legend: { type: "scroll", bottom: 0, ...legendStyle },
       grid: { top: 24, left: 48, right: 16, bottom: 36 },
-      xAxis: { type: "category", data: rows, axisLabel: categoryAxisLabel() },
-      yAxis: { type: "value" },
+      xAxis: {
+        type: "category",
+        data: rows,
+        axisLabel: { ...categoryAxisLabel(), color: tk.fgMuted },
+        axisLine,
+        axisTick,
+        splitLine,
+        nameTextStyle,
+      },
+      yAxis: { type: "value", axisLabel, axisLine, axisTick, splitLine, nameTextStyle },
       series: [
         {
           type: "bar",
@@ -317,11 +387,20 @@ export function buildChartOption(
   const kindBase: "bar" | "line" = lower.includes("bar") ? "bar" : "line";
   const areaStyle = t === "area" || t === "stackedArea" ? {} : undefined;
   return {
-    tooltip: { trigger: "axis" },
-    legend: { type: "scroll", bottom: 0 },
+    ...common,
+    tooltip: { trigger: "axis", ...tooltipStyle },
+    legend: { type: "scroll", bottom: 0, ...legendStyle },
     grid: { top: 24, left: 48, right: 16, bottom: 36 },
-    xAxis: { type: "category", data: rows, axisLabel: categoryAxisLabel(rows.length > 8 ? 30 : 0) },
-    yAxis: { type: "value" },
+    xAxis: {
+      type: "category",
+      data: rows,
+      axisLabel: { ...categoryAxisLabel(rows.length > 8 ? 30 : 0), color: tk.fgMuted },
+      axisLine,
+      axisTick,
+      splitLine,
+      nameTextStyle,
+    },
+    yAxis: { type: "value", axisLabel, axisLine, axisTick, splitLine, nameTextStyle },
     series: cols.map((name, c) => ({
       name,
       type: kindBase,
