@@ -641,11 +641,22 @@ public class AiQueryResource {
     /* ----------------------- Phase 4: drillthrough ---------------------- */
 
     /**
-     * Drill into a single cell of an earlier result. Uses the same
-     * {@link ThinQueryService#drillthrough(String, int, String)} the
-     * regular query API does — the {@code queryId} for an AI query is
-     * either the sync ThinQuery name (returned in {@code AiQueryResponse.queryId})
-     * or the async handle's underlying ThinQuery name.
+     * Drill into an earlier result's underlying fact rows. Two modes:
+     *
+     * <ul>
+     *   <li><b>Whole-result</b> (no {@code position}): drills the result as a
+     *       whole, via {@link ThinQueryService#drillthrough(String, int, Integer, String)}.
+     *       Optional {@code firstRowset} bound applies here.</li>
+     *   <li><b>Per-cell</b> ({@code position=row:col}): drills the single cell at
+     *       that cellset coordinate, via
+     *       {@link ThinQueryService#drillthrough(String, java.util.List, Integer, String)}
+     *       — the same path the workspace ({@code Query2Resource}) uses. This is
+     *       what dashboard cell-click drillthrough (saiku#930) calls.</li>
+     * </ul>
+     *
+     * <p>The {@code queryId} for an AI query is either the sync ThinQuery name
+     * (returned in {@code AiQueryResponse.queryId}) or the async handle's
+     * underlying ThinQuery name.
      */
     @GET
     @Path("/query/{queryId}/drillthrough")
@@ -654,6 +665,7 @@ public class AiQueryResource {
             @PathParam("queryId") String queryId,
             @QueryParam("maxrows") @DefaultValue("100") int maxrows,
             @QueryParam("firstRowset") Integer firstRowset,
+            @QueryParam("position") String position,
             @QueryParam("returns") String returns) {
         if (thinQueryService == null) return error("Query service not configured");
         // For async queries the handle id != the underlying ThinQuery name.
@@ -711,8 +723,32 @@ public class AiQueryResource {
                 // below handles the typical "in RETURN clause" message.
             }
         }
+        // saiku#930: per-cell drillthrough. position is "row:col" cellset
+        // coordinates (same form Query2Resource accepts). Parse + validate
+        // before touching the engine so a malformed value is a clean 400.
+        List<Integer> cellPosition = null;
+        if (position != null && !position.trim().isEmpty()) {
+            cellPosition = new ArrayList<>();
+            for (String p : position.split(":")) {
+                try {
+                    cellPosition.add(Integer.parseInt(p.trim()));
+                } catch (NumberFormatException nfe) {
+                    AiQueryResponse resp = new AiQueryResponse();
+                    resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
+                    resp.setError("Malformed position '" + position
+                            + "'. Expected \"row:col\" cell coordinates, e.g. \"2:1\".");
+                    resp.setField("position");
+                    return Response.status(Response.Status.BAD_REQUEST)
+                            .entity(resp)
+                            .type(MediaType.APPLICATION_JSON)
+                            .build();
+                }
+            }
+        }
         try {
-            java.sql.ResultSet rs = thinQueryService.drillthrough(name, maxrows, firstRowset, resolvedReturns);
+            java.sql.ResultSet rs = cellPosition != null
+                    ? thinQueryService.drillthrough(name, cellPosition, maxrows, resolvedReturns)
+                    : thinQueryService.drillthrough(name, maxrows, firstRowset, resolvedReturns);
             List<Map<String, AiCell>> rows = new ArrayList<>();
             List<String> columnLabels = new ArrayList<>();
             if (rs != null) {
