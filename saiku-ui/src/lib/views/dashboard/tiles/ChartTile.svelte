@@ -37,6 +37,11 @@
   // Issue #930 — right-click a data point to drill into its raw fact rows.
   import TileDrillthrough from "./TileDrillthrough.svelte";
   import { drillthroughPosition } from "$lib/dashboard/drillthroughCoord";
+  // Issue #933 — shared loading / error / empty states.
+  import TileLoading from "./TileLoading.svelte";
+  import TileError from "./TileError.svelte";
+  import TileEmpty from "./TileEmpty.svelte";
+  import { dashboardStore } from "$lib/stores/dashboard.svelte";
 
   interface Props {
     tile: DashboardTile;
@@ -64,6 +69,26 @@
   let response = $state<AiQueryResponse | null>(null);
   let schema = $state<SchemaLike | null>(null);
   let unsupported = $state(false);
+
+  // Issue #933 — retry re-runs the deduped fetch effect by clearing its
+  // last-query cache and bumping a tick the effect reads. Empty = a
+  // successful query with zero rows; hasEffectiveFilters gates the
+  // empty-state "Reset filters" affordance.
+  let retryTick = $state(0);
+  let isEmpty = $derived(
+    !!response && response.status === "SUCCESS" && (response.data?.length ?? 0) === 0,
+  );
+  let hasEffectiveFilters = $derived(
+    activeFilters.all.some((f) => (f.filter.members?.length ?? 0) > 0),
+  );
+  function retry(): void {
+    lastQueryJson = "";
+    retryTick++;
+  }
+  function resetFilters(): void {
+    activeFilters.resetTransient();
+    dashboardStore.resetPanelFiltersToSaved();
+  }
 
   // Issue #1053: single-measure kinds (pie/donut/treemap/sunburst) with >1
   // measure render as small multiples — 2 per row (see gridCells). The canvas
@@ -162,6 +187,8 @@
     const active = activeFilters.all;
     const s = schema;
     void s;
+    // #933 — retry() bumps this to force a refetch with unchanged inputs.
+    void retryTick;
     if (!tileQuery) return;
 
     if (tileQuery.kind === "reference") {
@@ -317,18 +344,20 @@
   <div class="placeholder">Tile has no query binding — open ⚙ to set one.</div>
 {:else}
   <div class="chart-tile">
+    <div class="canvas" bind:this={host} style="height: {smallMultipleRows * 100}%"></div>
     {#if loading && !response}
-      <div class="overlay">Loading…</div>
-    {/if}
-    {#if error}
-      <div class="overlay error">{error}</div>
-    {/if}
-    {#if unsupported}
+      <div class="overlay solid"><TileLoading variant="chart" /></div>
+    {:else if error}
+      <div class="overlay solid"><TileError message={error} onRetry={retry} /></div>
+    {:else if unsupported}
       <div class="overlay">
         Chart type <code>{tile.chartType}</code> not yet supported in dashboards.
       </div>
+    {:else if isEmpty}
+      <div class="overlay solid">
+        <TileEmpty filtered={hasEffectiveFilters} onReset={resetFilters} />
+      </div>
     {/if}
-    <div class="canvas" bind:this={host} style="height: {smallMultipleRows * 100}%"></div>
   </div>
 {/if}
 
@@ -362,9 +391,12 @@
     text-align: center;
     padding: 0.5rem;
   }
-  .overlay.error {
-    color: var(--danger);
-    background: color-mix(in srgb, var(--danger) 18%, var(--bg));
+  /* Opaque, interactive overlay for the loading skeleton / error / empty
+     states (which carry Retry / Reset buttons). #933 */
+  .overlay.solid {
+    background: var(--bg);
+    pointer-events: auto;
+    padding: 0;
   }
   .placeholder {
     padding: 1rem;

@@ -38,6 +38,11 @@
     lastAndPriorValues,
     type KpiDelta as KpiDeltaT,
   } from "$lib/dashboard/kpi";
+  // Issue #933 — shared loading / error / empty states.
+  import TileLoading from "./TileLoading.svelte";
+  import TileError from "./TileError.svelte";
+  import TileEmpty from "./TileEmpty.svelte";
+  import { dashboardStore } from "$lib/stores/dashboard.svelte";
 
   interface Props {
     tile: DashboardTile;
@@ -48,6 +53,24 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
   let response = $state<AiQueryResponse | null>(null);
+
+  // Issue #933 — retry re-fires the deduped fetch effect; empty = a
+  // successful query with no rows; hasEffectiveFilters gates the reset.
+  let retryTick = $state(0);
+  let isEmpty = $derived(
+    !!response && response.status === "SUCCESS" && (response.data?.length ?? 0) === 0,
+  );
+  let hasEffectiveFilters = $derived(
+    activeFilters.all.some((f) => (f.filter.members?.length ?? 0) > 0),
+  );
+  function retry(): void {
+    lastQueryJson = "";
+    retryTick++;
+  }
+  function resetFilters(): void {
+    activeFilters.resetTransient();
+    dashboardStore.resetPanelFiltersToSaved();
+  }
 
   let sparkHost = $state<HTMLDivElement | null>(null);
   let spark: echarts.ECharts | null = null;
@@ -126,6 +149,8 @@
     const series = wantsSeries;
     const tl = kpi.timeLevel;
     const active = activeFilters.all;
+    // #933 — retry() bumps this to force a refetch with unchanged inputs.
+    void retryTick;
     if (!measure || !c) {
       response = null;
       return;
@@ -346,9 +371,11 @@
 {:else}
   <div class="kpi-tile" data-tone={delta?.tone ?? "flat"}>
     {#if loading && response == null}
-      <div class="loading">Loading…</div>
+      <TileLoading variant="kpi" />
     {:else if error}
-      <div class="error">{error}</div>
+      <TileError message={error} onRetry={retry} />
+    {:else if isEmpty}
+      <TileEmpty filtered={hasEffectiveFilters} onReset={resetFilters} />
     {:else}
       <div class="value" style={mainColourToken ? `color: var(${mainColourToken});` : ""}>
         {formattedMain}
@@ -444,9 +471,7 @@
     height: 36px;
     flex-shrink: 0;
   }
-  .placeholder,
-  .loading,
-  .error {
+  .placeholder {
     padding: 0.75rem 1rem;
     color: var(--fg-muted);
     font-size: 0.8125rem;
@@ -456,10 +481,5 @@
     display: inline-block;
     vertical-align: -2px;
     color: var(--fg-subtle);
-  }
-  .error {
-    color: var(--danger);
-    background: color-mix(in srgb, var(--danger) 12%, transparent);
-    border-radius: 4px;
   }
 </style>

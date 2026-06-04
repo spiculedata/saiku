@@ -123,5 +123,10 @@
   "modal.addFolder.title": "Nouveau dossier",
   "modal.warning.title": "Avertissement",
   "modal.session.title": "Session terminée",
-  "modal.session.reload": "Recharger"
+  "modal.session.reload": "Recharger",
+  "tile.error": "Une erreur s'est produite lors du chargement de cette tuile.",
+  "tile.retry": "Réessayer",
+  "tile.empty": "Aucune donnée.",
+  "tile.empty.filtered": "Aucune donnée ne correspond aux filtres actuels.",
+  "tile.resetFilters": "Réinitialiser les filtres"
 }

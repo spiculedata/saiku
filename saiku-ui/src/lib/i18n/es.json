@@ -123,5 +123,10 @@
   "modal.addFolder.title": "Nueva carpeta",
   "modal.warning.title": "Advertencia",
   "modal.session.title": "Sesión terminada",
-  "modal.session.reload": "Recargar"
+  "modal.session.reload": "Recargar",
+  "tile.error": "Se produjo un error al cargar este panel.",
+  "tile.retry": "Reintentar",
+  "tile.empty": "Sin datos.",
+  "tile.empty.filtered": "Ningún dato coincide con los filtros actuales.",
+  "tile.resetFilters": "Restablecer filtros"
 }

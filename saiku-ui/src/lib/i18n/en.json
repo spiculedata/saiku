@@ -493,5 +493,10 @@
   "a11y.viewOptions": "View options",
   "a11y.axisOptions": "Axis options",
   "a11y.editChartOptions": "Edit chart options",
-  "a11y.cellsetGrid": "Query result grid"
+  "a11y.cellsetGrid": "Query result grid",
+  "tile.error": "Something went wrong loading this tile.",
+  "tile.retry": "Retry",
+  "tile.empty": "No data.",
+  "tile.empty.filtered": "No data matches the current filters.",
+  "tile.resetFilters": "Reset filters"
 }
