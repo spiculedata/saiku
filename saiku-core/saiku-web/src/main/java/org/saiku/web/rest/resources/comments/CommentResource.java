@@ -86,8 +86,7 @@ public class CommentResource {
     @DELETE
     @Path("/{commentId}")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response delete(
-            @PathParam("commentId") String commentId, @QueryParam("dashboard") String dashboard) {
+    public Response delete(@PathParam("commentId") String commentId, @QueryParam("dashboard") String dashboard) {
         if (dashboard == null) {
             return badRequest("dashboard required");
         }
@@ -107,7 +106,9 @@ public class CommentResource {
             return forbidden();
         }
         commentService.softDelete(dashboard, commentId);
-        return Response.ok(Map.of("status", "OK")).type(MediaType.APPLICATION_JSON).build();
+        return Response.ok(Map.of("status", "OK"))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
     }
 
     /* --------------------------- helpers ---------------------------- */
