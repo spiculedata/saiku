@@ -17,6 +17,7 @@
   import ChartView from "$lib/views/ChartView.svelte";
   import StatsView from "$lib/views/StatsView.svelte";
   import { CHART_TYPES } from "$lib/views/chartTypes";
+  import { parseCellset } from "$lib/views/cellsetUtils";
   import type { ViewMode } from "$lib/stores/query.svelte";
   import SelectionsModal from "$lib/modals/SelectionsModal.svelte";
   import DrillthroughModal from "$lib/modals/DrillthroughModal.svelte";
@@ -43,6 +44,21 @@
 
   let chartEditorOpen = $state(false);
   let moreViewOpen = $state(false);
+
+  // Column-category labels from the latest cellset — passed into the
+  // Chart Editor so the per-series Left/Right/Auto picker can list
+  // measure names. Empty when there's no result yet; the editor's
+  // picker section hides itself in that case.
+  const chartSeriesNames = $derived.by((): string[] => {
+    const r = query.result;
+    if (!r || !Array.isArray(r.cellset) || r.cellset.length === 0) return [];
+    try {
+      const parsed = parseCellset(r);
+      return parsed.columnCategories.slice();
+    } catch {
+      return [];
+    }
+  });
   const moreViewModes: ViewMode[] = ["stats", "sparkline", "sparkbar"];
   function viewModeLabel(m: ViewMode): string {
     return i18n.t(`canvas.view.${m}`);
@@ -1045,6 +1061,7 @@
 
 <ChartEditorModal
   initial={query.chartOptions}
+  seriesNames={chartSeriesNames}
   open={chartEditorOpen}
   onSave={(next) => { query.chartOptions = next; chartEditorOpen = false; }}
   onCancel={() => (chartEditorOpen = false)}
