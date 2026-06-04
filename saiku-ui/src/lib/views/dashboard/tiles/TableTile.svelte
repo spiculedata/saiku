@@ -48,6 +48,11 @@
     cellFormatToStyle,
     type CellFormat,
   } from "$lib/dashboard/conditionalFormat";
+  // Issue #933 — shared loading / error / empty states.
+  import TileLoading from "./TileLoading.svelte";
+  import TileError from "./TileError.svelte";
+  import TileEmpty from "./TileEmpty.svelte";
+  import { dashboardStore } from "$lib/stores/dashboard.svelte";
 
   interface Props {
     tile: DashboardTile;
@@ -63,6 +68,21 @@
   let error = $state<string | null>(null);
   let response = $state<AiQueryResponse | null>(null);
   let schema = $state<SchemaLike | null>(null);
+
+  // Issue #933 — retry re-fires the deduped fetch effect; hasEffectiveFilters
+  // gates the empty-state "Reset filters" affordance.
+  let retryTick = $state(0);
+  let hasEffectiveFilters = $derived(
+    activeFilters.all.some((f) => (f.filter.members?.length ?? 0) > 0),
+  );
+  function retry(): void {
+    lastQueryJson = "";
+    retryTick++;
+  }
+  function resetFilters(): void {
+    activeFilters.resetTransient();
+    dashboardStore.resetPanelFiltersToSaved();
+  }
 
   // Resolved cube — usually tile.cube directly, but reference tiles
   // authored before saiku#878 left tile.cube undefined. Lazy-infer from
@@ -117,6 +137,8 @@
     const active = activeFilters.all;
     const s = schema;
     void s;
+    // #933 — retry() bumps this to force a refetch with unchanged inputs.
+    void retryTick;
     if (!tileQuery) return;
 
     if (tileQuery.kind === "reference") {
@@ -353,15 +375,13 @@
 {:else}
   <div class="table-tile" role="region" aria-label="Table tile">
     {#if loading && !response}
-      <div class="state">Loading…</div>
-    {/if}
-    {#if error}
-      <div class="state error">{error}</div>
-    {/if}
-    {#if response && response.status === "SUCCESS"}
+      <TileLoading variant="table" />
+    {:else if error}
+      <TileError message={error} onRetry={retry} />
+    {:else if response && response.status === "SUCCESS"}
       {@const rows = response.data ?? []}
       {#if rows.length === 0}
-        <div class="state empty">No rows.</div>
+        <TileEmpty filtered={hasEffectiveFilters} onReset={resetFilters} />
       {:else}
         <table>
           <thead>
@@ -428,19 +448,6 @@
     padding: 1rem;
     color: var(--fg-muted);
     font-size: 0.8125rem;
-  }
-  .state {
-    padding: 0.5rem;
-    color: var(--fg-muted);
-    font-size: 0.875rem;
-  }
-  .state.error {
-    background: color-mix(in srgb, var(--danger) 10%, transparent);
-    color: var(--danger);
-    border-radius: 4px;
-  }
-  .state.empty {
-    text-align: center;
   }
   table {
     width: 100%;

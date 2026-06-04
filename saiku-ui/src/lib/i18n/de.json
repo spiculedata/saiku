@@ -123,5 +123,10 @@
   "modal.addFolder.title": "Neuer Ordner",
   "modal.warning.title": "Warnung",
   "modal.session.title": "Sitzung beendet",
-  "modal.session.reload": "Neu laden"
+  "modal.session.reload": "Neu laden",
+  "tile.error": "Beim Laden dieser Kachel ist ein Fehler aufgetreten.",
+  "tile.retry": "Erneut versuchen",
+  "tile.empty": "Keine Daten.",
+  "tile.empty.filtered": "Keine Daten entsprechen den aktuellen Filtern.",
+  "tile.resetFilters": "Filter zurücksetzen"
 }
