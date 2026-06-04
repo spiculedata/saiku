@@ -335,6 +335,15 @@
     padding: 0 var(--space-2);
     border-bottom: 1px solid var(--border);
     background: var(--bg-muted);
+    /* .workspace__main has overflow:hidden; without horizontal scroll
+       here a third (or further) tab gets clipped past the right edge
+       and the "+" button becomes unreachable, which presents to the
+       user as "can't open more than 2 tabs". Allow the strip to scroll
+       and make each tab non-shrinking so the labels don't compact
+       into an unreadable column either. */
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
   }
   .tab {
     display: inline-flex;
@@ -351,6 +360,7 @@
     font-size: var(--fs-sm);
     cursor: pointer;
     max-width: 18rem;
+    flex-shrink: 0;
   }
   .tab:hover:not(.tab--active) {
     color: var(--fg);

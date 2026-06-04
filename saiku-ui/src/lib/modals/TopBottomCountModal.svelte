@@ -46,10 +46,16 @@
 
   $effect(() => {
     if (open) {
+      // Don't read `count` / `selected` here — they were just written, and
+      // reading state inside the same effect that wrote it turns the user's
+      // keystrokes into a dep that re-fires this effect and resets the
+      // value back to the prop. Use the source values instead.
+      const seedCount = initialCount || 10;
+      const seedMeasure = initialMeasure || measures[0]?.uniqueName || "";
       mode = "simple";
-      count = initialCount || 10;
-      selected = initialMeasure || measures[0]?.uniqueName || "";
-      mdxBuffer = `${Math.floor(count)}, ${selected}`;
+      count = seedCount;
+      selected = seedMeasure;
+      mdxBuffer = `${Math.floor(seedCount)}, ${seedMeasure}`;
     }
   });
 
