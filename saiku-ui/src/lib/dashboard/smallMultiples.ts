@@ -81,3 +81,23 @@ export function gridCells(n: number): GridCell[] {
   }
   return out;
 }
+
+/**
+ * ECharts radius (%) for a pie/sunburst that fills ~`frac` of its grid cell.
+ *
+ * ECharts radii are a percentage of min(canvasWidth, canvasHeight), so a naive
+ * `widthPct * k` makes charts shrink/grow as the canvas aspect changes with the
+ * number of small multiples (e.g. 2 measures = 1 short row → tiny pies; 3+ = a
+ * taller canvas → bigger pies). Compensating for the canvas `aspect`
+ * (width / height) keeps every chart the same on-screen size regardless of how
+ * many there are. Returns a plain number (percent); the caller appends "%".
+ */
+export function cellRadiusPct(cell: GridCell, aspect: number, frac = 0.42): number {
+  const a = Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
+  // Plot area excludes the title headroom at the top of the cell.
+  const plotHeightPct = cell.heightPct * (1 - 0.18);
+  // pixel radius target = frac * min(cellWidthPx, plotHeightPx); express that as
+  // a % of min(canvasW, canvasH). When W>=H, min is H; when W<H, min is W.
+  const limit = a >= 1 ? Math.min(cell.widthPct * a, plotHeightPct) : Math.min(cell.widthPct, plotHeightPct / a);
+  return Math.max(1, limit * frac);
+}

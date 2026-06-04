@@ -13,7 +13,7 @@
 
 import type { AiCell, AiQueryResponse } from "$lib/api/aiQuery";
 import { axisLabelConfig } from "$lib/views/chartAxisLabel";
-import { gridCells } from "$lib/dashboard/smallMultiples";
+import { cellRadiusPct, gridCells } from "$lib/dashboard/smallMultiples";
 
 /**
  * Truncating axisLabel for a dashboard tile's category axis. Tiles are small,
@@ -112,7 +112,11 @@ function projectFromAiQueryResponse(response: AiQueryResponse): ChartProjection 
 /** Build an ECharts option object for the given chart kind, projected
  *  from an AiQueryResponse. Returns null when the response has no rows
  *  or the kind isn't recognised. */
-export function buildChartOption(response: AiQueryResponse, kind: string): Record<string, unknown> | null {
+export function buildChartOption(
+  response: AiQueryResponse,
+  kind: string,
+  aspect = 1,
+): Record<string, unknown> | null {
   if (!isSupportedChartKind(kind)) return null;
   const p = projectFromAiQueryResponse(response);
   if (p.matrix.length === 0) return null;
@@ -146,18 +150,18 @@ export function buildChartOption(response: AiQueryResponse, kind: string): Recor
       tooltip: { trigger: "item" },
       legend: rows.length <= 20 ? { type: "scroll", bottom: 0 } : undefined,
       title: titles,
-      series: cells.map((cell, m) => ({
-        type: "pie",
-        name: cols[m],
-        radius:
-          t === "donut"
-            ? [(cell.widthPct * 0.22) + "%", (cell.widthPct * 0.34) + "%"]
-            : [0, (cell.widthPct * 0.34) + "%"],
-        center: [cell.centerXPct + "%", cell.centerYPct + "%"],
-        label: { show: showSliceLabels },
-        labelLine: { show: showSliceLabels },
-        data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
-      })),
+      series: cells.map((cell, m) => {
+        const outer = cellRadiusPct(cell, aspect);
+        return {
+          type: "pie",
+          name: cols[m],
+          radius: t === "donut" ? [outer * 0.55 + "%", outer + "%"] : [0, outer + "%"],
+          center: [cell.centerXPct + "%", cell.centerYPct + "%"],
+          label: { show: showSliceLabels },
+          labelLine: { show: showSliceLabels },
+          data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
+        };
+      }),
     };
   }
 
@@ -186,7 +190,7 @@ export function buildChartOption(response: AiQueryResponse, kind: string): Recor
         type: "sunburst",
         name: cols[m],
         center: [cell.centerXPct + "%", cell.centerYPct + "%"],
-        radius: [0, (cell.widthPct * 0.42) + "%"],
+        radius: [0, cellRadiusPct(cell, aspect) + "%"],
         label: { show: showSliceLabels },
         data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
       })),

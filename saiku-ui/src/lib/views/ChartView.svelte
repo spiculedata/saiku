@@ -6,7 +6,7 @@
   import type { ChartType, ChartOptions } from "$lib/views/chartTypes";
   import { DEFAULT_CHART_OPTIONS, SERIES_AXIS_THRESHOLD } from "$lib/views/chartTypes";
   import { axisLabelConfig, deriveAxisLabelWidth } from "$lib/views/chartAxisLabel";
-  import { gridCells, isSingleMeasureKind } from "$lib/dashboard/smallMultiples";
+  import { cellRadiusPct, gridCells, isSingleMeasureKind } from "$lib/dashboard/smallMultiples";
   import { theme } from "$lib/stores/theme.svelte";
 
   interface Props {
@@ -235,6 +235,9 @@
     // the per-measure cell titles in ECharts' title array.
     if (t === "pie" || t === "donut" || t === "treemap" || t === "sunburst") {
       const cells = gridCells(cols.length);
+      // Aspect-aware radius keeps each chart the same on-screen size regardless
+      // of how many small multiples there are (#1053).
+      const aspect = host && host.clientHeight > 0 ? host.clientWidth / host.clientHeight : 1;
       const cellTitles = cells.map((cell, m) => ({
         text: cols[m],
         left: cell.centerXPct + "%",
@@ -254,18 +257,18 @@
           title: titles,
           legend: rows.length <= 20 ? legend : undefined,
           tooltip: { trigger: "item", ...itemTooltip },
-          series: cells.map((cell, m) => ({
-            type: "pie",
-            name: cols[m],
-            radius:
-              t === "donut"
-                ? [cell.widthPct * 0.22 + "%", cell.widthPct * 0.34 + "%"]
-                : [0, cell.widthPct * 0.34 + "%"],
-            center: [cell.centerXPct + "%", cell.centerYPct + "%"],
-            label: { show: showSliceLabels, color: tk.fg },
-            labelLine: { show: showSliceLabels },
-            data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
-          })),
+          series: cells.map((cell, m) => {
+            const outer = cellRadiusPct(cell, aspect);
+            return {
+              type: "pie",
+              name: cols[m],
+              radius: t === "donut" ? [outer * 0.55 + "%", outer + "%"] : [0, outer + "%"],
+              center: [cell.centerXPct + "%", cell.centerYPct + "%"],
+              label: { show: showSliceLabels, color: tk.fg },
+              labelLine: { show: showSliceLabels },
+              data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
+            };
+          }),
         };
       }
 
@@ -297,7 +300,7 @@
           type: "sunburst",
           name: cols[m],
           center: [cell.centerXPct + "%", cell.centerYPct + "%"],
-          radius: [0, cell.widthPct * 0.42 + "%"],
+          radius: [0, cellRadiusPct(cell, aspect) + "%"],
           label: { show: showSliceLabels, color: "#fff" },
           data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
         })),
@@ -485,7 +488,12 @@
     if (host) {
       chart = echarts.init(host, null);
       render();
-      const ro = new ResizeObserver(() => chart?.resize());
+      // Re-render (not just resize) so the aspect-aware small-multiple radius
+      // recomputes for the new canvas size (#1053).
+      const ro = new ResizeObserver(() => {
+        chart?.resize();
+        render();
+      });
       ro.observe(host);
       return () => ro.disconnect();
     }

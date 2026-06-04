@@ -55,6 +55,9 @@
   // never initialised — see screenshots in saiku#1012.
   let chart = $state.raw<echarts.ECharts | null>(null);
   let resizeObserver: ResizeObserver | null = null;
+  // Bumped by the ResizeObserver so the render effect recomputes the
+  // aspect-aware small-multiple radius when the canvas size changes (#1053).
+  let resizeTick = $state(0);
 
   let loading = $state(false);
   let error = $state<string | null>(null);
@@ -85,7 +88,12 @@
     const instance = echarts.init(host);
     instance.on("click", handleEChartsClick);
     instance.on("contextmenu", handleEChartsContextMenu);
-    resizeObserver = new ResizeObserver(() => instance.resize());
+    // Resize + bump resizeTick so the render effect recomputes the
+    // aspect-aware small-multiple radius for the new canvas size (#1053).
+    resizeObserver = new ResizeObserver(() => {
+      instance.resize();
+      resizeTick++;
+    });
     resizeObserver.observe(host);
     chart = instance;
   });
@@ -216,6 +224,10 @@
     const r = response;
     const kind = tile.chartType ?? "bar";
     void r;
+    // Re-run when the canvas resizes so the small-multiple radius tracks the
+    // current aspect ratio (#1053).
+    void resizeTick;
+    void smallMultipleRows;
     if (!chart) return;
     unsupported = !isSupportedChartKind(kind);
     if (!r || r.status !== "SUCCESS") {
@@ -226,7 +238,8 @@
       chart.clear();
       return;
     }
-    const option = buildChartOption(r, kind);
+    const aspect = host && host.clientHeight > 0 ? host.clientWidth / host.clientHeight : 1;
+    const option = buildChartOption(r, kind, aspect);
     if (option) {
       // notMerge=true so axis category changes don't leave stale ticks.
       chart.setOption(option, true);

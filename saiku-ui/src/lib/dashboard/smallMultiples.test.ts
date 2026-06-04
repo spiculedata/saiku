@@ -4,7 +4,7 @@
  */
 
 import { describe, test, expect } from "vitest";
-import { gridCells, isSingleMeasureKind, type GridCell } from "$lib/dashboard/smallMultiples";
+import { cellRadiusPct, gridCells, isSingleMeasureKind, type GridCell } from "$lib/dashboard/smallMultiples";
 
 /** True when two cell rects overlap (touching at gutters is fine). */
 function overlaps(a: GridCell, b: GridCell): boolean {
@@ -112,5 +112,36 @@ describe("gridCells", () => {
         expect(c.topPct + c.heightPct).toBeLessThanOrEqual(100);
       }
     }
+  });
+});
+
+describe("cellRadiusPct", () => {
+  test("positive and bounded (< 50%) for typical cells/aspects", () => {
+    for (const n of [1, 2, 4]) {
+      for (const cell of gridCells(n)) {
+        for (const aspect of [0.5, 1, 2, 3]) {
+          const r = cellRadiusPct(cell, aspect);
+          expect(r).toBeGreaterThan(0);
+          expect(r).toBeLessThan(50);
+        }
+      }
+    }
+  });
+
+  test("non-positive / NaN aspect is treated as 1 (no NaN out)", () => {
+    const cell = gridCells(1)[0];
+    expect(cellRadiusPct(cell, 0)).toBeCloseTo(cellRadiusPct(cell, 1), 6);
+    expect(cellRadiusPct(cell, -5)).toBeCloseTo(cellRadiusPct(cell, 1), 6);
+    expect(Number.isFinite(cellRadiusPct(cell, NaN))).toBe(true);
+  });
+
+  test("keeps on-screen size consistent: 2-up (wide canvas) ≈ 4-up (tall canvas) in px", () => {
+    // The % differs by design (it's relative to min(canvasW,canvasH)); the
+    // PIXEL radius should match. Model a 2:1 tile: 2-up → canvas tileW×tileH
+    // (aspect 2, min=tileH); 4-up → canvas tileW×2·tileH (aspect 1, min=2·tileH).
+    const tileH = 400;
+    const r2 = cellRadiusPct(gridCells(2)[0], 2) / 100 * tileH; // min = tileH
+    const r4 = cellRadiusPct(gridCells(4)[0], 1) / 100 * (2 * tileH); // min = 2·tileH
+    expect(Math.abs(r2 - r4)).toBeLessThan(tileH * 0.1); // within 10% of tile height
   });
 });
