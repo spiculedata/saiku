@@ -32,7 +32,7 @@
     type RowAxisRef,
   } from "$lib/dashboard/filterSuggestions";
   import { buildChartOption, isSupportedChartKind } from "$lib/dashboard/chartOptions";
-  import { isSingleMeasureKind } from "$lib/dashboard/smallMultiples";
+  import { isSingleMeasureKind, smallMultipleRowCount } from "$lib/dashboard/smallMultiples";
   import type { CubeRef } from "$lib/api/dashboards";
   // Issue #930 — right-click a data point to drill into its raw fact rows.
   import TileDrillthrough from "./TileDrillthrough.svelte";
@@ -72,7 +72,7 @@
   let smallMultipleRows = $derived.by(() => {
     const kind = tile.chartType ?? "bar";
     const measureCount = response?.metadata?.columns?.length ?? 0;
-    return isSingleMeasureKind(kind) && measureCount > 1 ? Math.ceil(measureCount / 2) : 1;
+    return isSingleMeasureKind(kind) && measureCount > 1 ? smallMultipleRowCount(measureCount) : 1;
   });
 
   /* ----------------------------- lifecycle --------------------------- */

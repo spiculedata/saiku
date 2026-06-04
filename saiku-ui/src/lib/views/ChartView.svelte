@@ -6,7 +6,12 @@
   import type { ChartType, ChartOptions } from "$lib/views/chartTypes";
   import { DEFAULT_CHART_OPTIONS, SERIES_AXIS_THRESHOLD } from "$lib/views/chartTypes";
   import { axisLabelConfig, deriveAxisLabelWidth } from "$lib/views/chartAxisLabel";
-  import { cellRadiusPct, gridCells, isSingleMeasureKind } from "$lib/dashboard/smallMultiples";
+  import {
+    cellRadiusPct,
+    gridCells,
+    isSingleMeasureKind,
+    smallMultipleRowCount,
+  } from "$lib/dashboard/smallMultiples";
   import { theme } from "$lib/stores/theme.svelte";
 
   interface Props {
@@ -25,7 +30,7 @@
   // chart stays full-size; the surrounding wrapper scrolls.
   let smallMultipleRows = $derived.by(() => {
     const measureCount = parseCellset(result).columnCategories.length;
-    return isSingleMeasureKind(type) && measureCount > 1 ? Math.ceil(measureCount / 2) : 1;
+    return isSingleMeasureKind(type) && measureCount > 1 ? smallMultipleRowCount(measureCount) : 1;
   });
 
   interface ThemeTokens {

@@ -4,7 +4,13 @@
  */
 
 import { describe, test, expect } from "vitest";
-import { cellRadiusPct, gridCells, isSingleMeasureKind, type GridCell } from "$lib/dashboard/smallMultiples";
+import {
+  cellRadiusPct,
+  gridCells,
+  isSingleMeasureKind,
+  smallMultipleRowCount,
+  type GridCell,
+} from "$lib/dashboard/smallMultiples";
 
 /** True when two cell rects overlap (touching at gutters is fine). */
 function overlaps(a: GridCell, b: GridCell): boolean {
@@ -48,21 +54,20 @@ describe("gridCells", () => {
     const cells = gridCells(2);
     expect(cells).toHaveLength(2);
     expect(overlaps(cells[0], cells[1])).toBe(false);
-    // 2 cols × 1 row (ceil(sqrt(2)) = 2).
+    // Up to 3/row; 2 charts fill a single 2-wide row.
     expect(cells[0].row).toBe(0);
     expect(cells[1].row).toBe(0);
     expect(cells[0].col).toBe(0);
     expect(cells[1].col).toBe(1);
   });
 
-  test("n=3 → 2×2 grid with 3 cells, all non-overlapping", () => {
+  test("n=3 → single row of 3 (3 per row)", () => {
     const cells = gridCells(3);
     expect(cells).toHaveLength(3);
-    // cols = ceil(sqrt(3)) = 2, rows = ceil(3/2) = 2.
     expect(cells.map((c) => [c.row, c.col])).toEqual([
       [0, 0],
       [0, 1],
-      [1, 0],
+      [0, 2],
     ]);
     for (let i = 0; i < cells.length; i++) {
       for (let j = i + 1; j < cells.length; j++) {
@@ -71,14 +76,14 @@ describe("gridCells", () => {
     }
   });
 
-  test("n=4 → 2×2 grid", () => {
+  test("n=4 → 3 in the first row, 1 in the second", () => {
     const cells = gridCells(4);
     expect(cells).toHaveLength(4);
     expect(cells.map((c) => [c.row, c.col])).toEqual([
       [0, 0],
       [0, 1],
+      [0, 2],
       [1, 0],
-      [1, 1],
     ]);
     for (let i = 0; i < cells.length; i++) {
       for (let j = i + 1; j < cells.length; j++) {
@@ -87,20 +92,33 @@ describe("gridCells", () => {
     }
   });
 
-  test("caps at 2 columns: n=6 → 2 cols × 3 rows (not ceil(sqrt))", () => {
+  test("caps at 3 columns: n=6 → 3 cols × 2 rows", () => {
     const cells = gridCells(6);
     expect(cells).toHaveLength(6);
-    // Two per row, three rows — NOT 3×2. Keeps each chart large.
-    expect(Math.max(...cells.map((c) => c.col))).toBe(1);
-    expect(Math.max(...cells.map((c) => c.row))).toBe(2);
+    expect(Math.max(...cells.map((c) => c.col))).toBe(2);
+    expect(Math.max(...cells.map((c) => c.row))).toBe(1);
     expect(cells.map((c) => [c.row, c.col])).toEqual([
       [0, 0],
       [0, 1],
+      [0, 2],
       [1, 0],
       [1, 1],
-      [2, 0],
-      [2, 1],
+      [1, 2],
     ]);
+  });
+
+  test("smallMultipleRowCount matches the grid: ≤3 → 1 row, then ceil(n/3)", () => {
+    expect(smallMultipleRowCount(1)).toBe(1);
+    expect(smallMultipleRowCount(2)).toBe(1);
+    expect(smallMultipleRowCount(3)).toBe(1);
+    expect(smallMultipleRowCount(4)).toBe(2);
+    expect(smallMultipleRowCount(6)).toBe(2);
+    expect(smallMultipleRowCount(7)).toBe(3);
+    // Must agree with the actual grid.
+    for (const n of [1, 2, 3, 4, 6, 7, 9]) {
+      const rowsInGrid = Math.max(...gridCells(n).map((c) => c.row)) + 1;
+      expect(smallMultipleRowCount(n)).toBe(rowsInGrid);
+    }
   });
 
   test("all cells stay inside the 0–100% box", () => {
@@ -135,13 +153,15 @@ describe("cellRadiusPct", () => {
     expect(Number.isFinite(cellRadiusPct(cell, NaN))).toBe(true);
   });
 
-  test("keeps on-screen size consistent: 2-up (wide canvas) ≈ 4-up (tall canvas) in px", () => {
-    // The % differs by design (it's relative to min(canvasW,canvasH)); the
-    // PIXEL radius should match. Model a 2:1 tile: 2-up → canvas tileW×tileH
-    // (aspect 2, min=tileH); 4-up → canvas tileW×2·tileH (aspect 1, min=2·tileH).
-    const tileH = 400;
-    const r2 = cellRadiusPct(gridCells(2)[0], 2) / 100 * tileH; // min = tileH
-    const r4 = cellRadiusPct(gridCells(4)[0], 1) / 100 * (2 * tileH); // min = 2·tileH
-    expect(Math.abs(r2 - r4)).toBeLessThan(tileH * 0.1); // within 10% of tile height
+  test("keeps on-screen size consistent: one row vs two rows (px)", () => {
+    // The % differs by design (relative to min(canvasW,canvasH)); the PIXEL
+    // radius should match. Model a wide 3:1 tile (tileW=900, tileH=300):
+    //   3-up → 1 row, canvas 900×300 (aspect 3, min=300)
+    //   6-up → 2 rows, canvas 900×600 (aspect 1.5, min=600)
+    const tileW = 900;
+    const tileH = 300;
+    const r3 = (cellRadiusPct(gridCells(3)[0], tileW / tileH) / 100) * tileH;
+    const r6 = (cellRadiusPct(gridCells(6)[0], tileW / (2 * tileH)) / 100) * (2 * tileH);
+    expect(Math.abs(r3 - r6)).toBeLessThan(tileH * 0.15);
   });
 });

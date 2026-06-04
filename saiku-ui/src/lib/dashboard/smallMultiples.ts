@@ -35,6 +35,17 @@ export interface GridCell {
   centerYPct: number;
 }
 
+/** Charts per row in the small-multiples grid. One knob: change this to lay out
+ *  more/fewer per row (rows grow + the host scrolls to keep each chart full-size). */
+export const SMALL_MULTIPLE_COLS = 3;
+
+/** Number of grid rows for `n` charts at {@link SMALL_MULTIPLE_COLS} per row.
+ *  The host container uses this to grow + scroll so each chart stays full-size. */
+export function smallMultipleRowCount(n: number): number {
+  if (n <= 1) return 1;
+  return Math.ceil(n / SMALL_MULTIPLE_COLS);
+}
+
 /** Gutter between cells, as a percentage of the full box (per side). */
 const GUTTER_PCT = 2;
 /** Headroom reserved at the top of each cell for its title, as a percentage
@@ -44,18 +55,18 @@ const TITLE_HEADROOM_FRAC = 0.18;
 /**
  * Lay out `n` charts into a grid.
  *
- * **Two charts per row** (cols = 2), rows = ceil(n / 2). We deliberately cap at
- * 2 columns rather than ceil(sqrt(n)) so charts stay large and readable —
- * adding more measures grows the number of rows (the host container grows +
- * scrolls) instead of shrinking every chart. Cells are equal-sized with a small
- * gutter and a little title headroom at the top; the drawing center sits in the
- * plot area below the title.
+ * Up to {@link SMALL_MULTIPLE_COLS} charts per row (rows fill left-to-right);
+ * rows = ceil(n / cols). We cap columns (rather than ceil(sqrt(n))) so charts
+ * stay large and readable — adding more measures grows the number of rows (the
+ * host container grows + scrolls) instead of shrinking every chart. Cells are
+ * equal-sized with a small gutter and a little title headroom at the top; the
+ * drawing center sits in the plot area below the title.
  *
  * n <= 0 → []. n <= 1 → a single full-box cell.
  */
 export function gridCells(n: number): GridCell[] {
   if (n <= 0) return [];
-  const cols = n <= 1 ? 1 : 2;
+  const cols = Math.min(SMALL_MULTIPLE_COLS, Math.max(1, n));
   const rows = Math.ceil(n / cols);
 
   const cellW = 100 / cols;
