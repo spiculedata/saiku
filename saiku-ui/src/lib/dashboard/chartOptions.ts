@@ -13,6 +13,7 @@
 
 import type { AiCell, AiQueryResponse } from "$lib/api/aiQuery";
 import { axisLabelConfig } from "$lib/views/chartAxisLabel";
+import { gridCells } from "$lib/dashboard/smallMultiples";
 
 /**
  * Truncating axisLabel for a dashboard tile's category axis. Tiles are small,
@@ -121,43 +122,67 @@ export function buildChartOption(response: AiQueryResponse, kind: string): Recor
   const cols = p.columnCategories;
   const matrix = p.matrix;
 
-  // Pie / donut: one slice per row, using the first measure column
-  // (matches ChartView's pie shape — single-measure focused).
+  // Pie / donut / treemap / sunburst encode a SINGLE measure. With M measures
+  // we fan out into M small-multiple charts — one per measure — laid out in a
+  // grid inside the same option (M series, one per cell). Each chart shows the
+  // row categories as its items, sized by that one measure. M=1 is just a
+  // single full-box chart (no special branch).
+  const cells = gridCells(cols.length);
+  const titles = cells.map((cell, m) => ({
+    text: cols[m],
+    left: cell.centerXPct + "%",
+    top: cell.topPct + "%",
+    textAlign: "center",
+    textStyle: { fontSize: 12 },
+  }));
+
   if (t === "pie" || t === "donut") {
-    const totals = cols.map((_, c) => matrix.reduce((s, row) => s + (row[c] ?? 0), 0));
-    const radius = t === "donut" ? ["45%", "70%"] : ["0%", "70%"];
     return {
       tooltip: { trigger: "item" },
       legend: { type: "scroll", bottom: 0 },
-      series: [
-        {
-          type: "pie",
-          radius,
-          center: ["50%", "45%"],
-          data: cols.map((name, c) => ({ name, value: totals[c] })),
-        },
-      ],
+      title: titles,
+      series: cells.map((cell, m) => ({
+        type: "pie",
+        name: cols[m],
+        radius:
+          t === "donut"
+            ? [(cell.widthPct * 0.22) + "%", (cell.widthPct * 0.34) + "%"]
+            : [0, (cell.widthPct * 0.34) + "%"],
+        center: [cell.centerXPct + "%", cell.centerYPct + "%"],
+        data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
+      })),
     };
   }
 
   if (t === "treemap") {
-    const data = rows
-      .map((name, i) => ({
-        name,
-        value: (matrix[i] ?? []).reduce<number>((s, v) => s + (v ?? 0), 0),
-      }))
-      .filter((d) => d.value > 0);
-    return { tooltip: {}, series: [{ type: "treemap", data, breadcrumb: { show: false } }] };
+    return {
+      tooltip: {},
+      title: titles,
+      series: cells.map((cell, m) => ({
+        type: "treemap",
+        name: cols[m],
+        left: cell.leftPct + "%",
+        top: cell.topPct + cell.heightPct * 0.18 + "%",
+        width: cell.widthPct + "%",
+        height: cell.heightPct * 0.82 + "%",
+        breadcrumb: { show: false },
+        data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
+      })),
+    };
   }
 
   if (t === "sunburst") {
-    const data = rows
-      .map((name, i) => ({
-        name,
-        value: (matrix[i] ?? []).reduce<number>((s, v) => s + (v ?? 0), 0),
-      }))
-      .filter((d) => d.value > 0);
-    return { tooltip: {}, series: [{ type: "sunburst", data, radius: [0, "90%"] }] };
+    return {
+      tooltip: {},
+      title: titles,
+      series: cells.map((cell, m) => ({
+        type: "sunburst",
+        name: cols[m],
+        center: [cell.centerXPct + "%", cell.centerYPct + "%"],
+        radius: [0, (cell.widthPct * 0.42) + "%"],
+        data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
+      })),
+    };
   }
 
   if (t === "heatmap") {

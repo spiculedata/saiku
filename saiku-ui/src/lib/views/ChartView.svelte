@@ -6,6 +6,7 @@
   import type { ChartType, ChartOptions } from "$lib/views/chartTypes";
   import { DEFAULT_CHART_OPTIONS, SERIES_AXIS_THRESHOLD } from "$lib/views/chartTypes";
   import { axisLabelConfig, deriveAxisLabelWidth } from "$lib/views/chartAxisLabel";
+  import { gridCells } from "$lib/dashboard/smallMultiples";
   import { theme } from "$lib/stores/theme.svelte";
 
   interface Props {
@@ -218,50 +219,75 @@
       textStyle: { color: tk.fg },
     };
 
-    if (t === "pie" || t === "donut") {
-      const totals = cols.map((_, c) => matrix.reduce((s, row) => s + (row[c] ?? 0), 0));
-      const radius = t === "donut" ? ["45%", "70%"] : ["0%", "70%"];
-      return {
-        ...common,
-        title, legend,
-        tooltip: { trigger: "item", ...itemTooltip },
-        series: [{
-          type: "pie",
-          radius,
-          label: { color: tk.fg },
-          data: cols.map((name, c) => ({ name, value: totals[c] })),
-        }],
-      };
-    }
+    // Pie / donut / treemap / sunburst encode a SINGLE measure. With M measures
+    // we fan out into M small-multiple charts — one per measure — in a grid
+    // inside the same option (M series, one per cell). Each chart shows the row
+    // categories as its items, sized by that one measure. M=1 is a single
+    // full-box chart. The user's overall chart title (if any) is kept alongside
+    // the per-measure cell titles in ECharts' title array.
+    if (t === "pie" || t === "donut" || t === "treemap" || t === "sunburst") {
+      const cells = gridCells(cols.length);
+      const cellTitles = cells.map((cell, m) => ({
+        text: cols[m],
+        left: cell.centerXPct + "%",
+        top: cell.topPct + "%",
+        textAlign: "center" as const,
+        textStyle: { color: tk.fg, fontSize: 12 },
+      }));
+      const titles = title ? [title, ...cellTitles] : cellTitles;
 
-    if (t === "treemap") {
-      const data = rows.map((name, i) => ({
-        name,
-        value: (matrix[i] ?? []).reduce<number>((s, v) => s + (v ?? 0), 0),
-      })).filter((d) => d.value > 0);
+      if (t === "pie" || t === "donut") {
+        return {
+          ...common,
+          title: titles,
+          legend,
+          tooltip: { trigger: "item", ...itemTooltip },
+          series: cells.map((cell, m) => ({
+            type: "pie",
+            name: cols[m],
+            radius:
+              t === "donut"
+                ? [cell.widthPct * 0.22 + "%", cell.widthPct * 0.34 + "%"]
+                : [0, cell.widthPct * 0.34 + "%"],
+            center: [cell.centerXPct + "%", cell.centerYPct + "%"],
+            label: { color: tk.fg },
+            data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
+          })),
+        };
+      }
+
+      if (t === "treemap") {
+        return {
+          ...common,
+          title: titles,
+          tooltip: itemTooltip,
+          series: cells.map((cell, m) => ({
+            type: "treemap",
+            name: cols[m],
+            left: cell.leftPct + "%",
+            top: cell.topPct + cell.heightPct * 0.18 + "%",
+            width: cell.widthPct + "%",
+            height: cell.heightPct * 0.82 + "%",
+            label: { color: "#fff" },
+            breadcrumb: { show: false },
+            data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
+          })),
+        };
+      }
+
+      // sunburst
       return {
         ...common,
-        title,
+        title: titles,
         tooltip: itemTooltip,
-        series: [{
-          type: "treemap",
-          data,
+        series: cells.map((cell, m) => ({
+          type: "sunburst",
+          name: cols[m],
+          center: [cell.centerXPct + "%", cell.centerYPct + "%"],
+          radius: [0, cell.widthPct * 0.42 + "%"],
           label: { color: "#fff" },
-          breadcrumb: { show: false },
-        }],
-      };
-    }
-
-    if (t === "sunburst") {
-      const data = rows.map((name, i) => ({
-        name,
-        value: (matrix[i] ?? []).reduce<number>((s, v) => s + (v ?? 0), 0),
-      })).filter((d) => d.value > 0);
-      return {
-        ...common,
-        title,
-        tooltip: itemTooltip,
-        series: [{ type: "sunburst", data, radius: [0, "90%"], label: { color: "#fff" } }],
+          data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
+        })),
       };
     }
 
