@@ -8,8 +8,9 @@
    * the owning tile decides when to show it (first load, before any response).
    */
   interface Props {
-    /** Skeleton silhouette to draw. */
-    variant?: "chart" | "table" | "kpi";
+    /** Skeleton silhouette to draw. `radial` = a shimmer ring for
+     *  pie/donut/sunburst; `chart` = rising bars for everything else. */
+    variant?: "chart" | "radial" | "table" | "kpi";
   }
   let { variant = "chart" }: Props = $props();
 
@@ -34,6 +35,10 @@
     <div class="sk-kpi">
       <div class="sk sk-number"></div>
       <div class="sk sk-label"></div>
+    </div>
+  {:else if variant === "radial"}
+    <div class="sk-radial">
+      <div class="sk sk-ring"></div>
     </div>
   {:else}
     <div class="sk-chart">
@@ -95,6 +100,23 @@
   .sk-bar {
     flex: 1;
     min-width: 0;
+  }
+
+  /* Radial: a shimmer ring (pie / donut / sunburst). The mask punches a
+     hole in the centre so the disc reads as a ring. */
+  .sk-radial {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .sk-ring {
+    height: 85%;
+    max-width: 85%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    -webkit-mask: radial-gradient(circle, transparent 38%, #000 39%);
+    mask: radial-gradient(circle, transparent 38%, #000 39%);
   }
 
   /* Table: header strip + body rows of equal cells. */

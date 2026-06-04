@@ -89,6 +89,11 @@
     activeFilters.resetTransient();
     dashboardStore.resetPanelFiltersToSaved();
   }
+  // Radial charts get a ring-shaped loading skeleton; everything else bars.
+  const RADIAL_KINDS = new Set(["pie", "donut", "sunburst"]);
+  let loadingVariant: "chart" | "radial" = $derived(
+    RADIAL_KINDS.has(tile.chartType ?? "") ? "radial" : "chart",
+  );
 
   // Issue #1053: single-measure kinds (pie/donut/treemap/sunburst) with >1
   // measure render as small multiples — 2 per row (see gridCells). The canvas
@@ -346,7 +351,7 @@
   <div class="chart-tile">
     <div class="canvas" bind:this={host} style="height: {smallMultipleRows * 100}%"></div>
     {#if loading && !response}
-      <div class="overlay solid"><TileLoading variant="chart" /></div>
+      <div class="overlay solid"><TileLoading variant={loadingVariant} /></div>
     {:else if error}
       <div class="overlay solid"><TileError message={error} onRetry={retry} /></div>
     {:else if unsupported}
