@@ -125,15 +125,15 @@ public class CommentService {
         return new ArrayList<>(out);
     }
 
-    /** Internal storage path for a dashboard's comments — a flat, sanitised
-     *  name under {@code comments/}. The repository layer additionally guards
-     *  this with resolveWithinDatadir, so a crafted dashboard path can't escape. */
+    /** Internal storage path for a dashboard's comments — a single flat,
+     *  sanitised file at the datadir root (the internal-file writer does NOT
+     *  create parent dirs, so a subfolder would silently fail; the root always
+     *  exists). Separators collapse to {@code _} (no traversal) and {@code ..}
+     *  is neutralised; resolveWithinDatadir guards the final path too. */
     static String commentsPath(String dashboardPath) {
         String flat = dashboardPath == null ? "null" : dashboardPath.replaceAll("[^A-Za-z0-9._-]", "_");
-        // Separators are already gone (so no traversal); also collapse any ".."
-        // run as belt-and-braces. resolveWithinDatadir guards the final path too.
         flat = flat.replace("..", "_");
-        return "comments/" + flat + ".jsonl";
+        return "saiku-comments-" + flat + ".jsonl";
     }
 
     private List<Comment> readAll(String dashboardPath) {

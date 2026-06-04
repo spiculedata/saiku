@@ -109,11 +109,14 @@ public class CommentServiceTest {
 
     @Test
     public void comments_path_is_flattened_and_namespaced() {
-        // Separators / traversal chars collapse to underscores under comments/.
-        assertEquals("comments/dashboards_foo.saikudash.jsonl", CommentService.commentsPath("dashboards/foo.saikudash"));
+        // A single flat file at the datadir root; separators / traversal chars
+        // collapse to underscores (the internal writer won't mkdir a subdir).
+        assertEquals(
+                "saiku-comments-dashboards_foo.saikudash.jsonl",
+                CommentService.commentsPath("dashboards/foo.saikudash"));
         String evil = CommentService.commentsPath("../../etc/passwd");
-        assertTrue(evil.startsWith("comments/"));
+        assertTrue(evil.startsWith("saiku-comments-"));
         assertFalse("no parent-dir hops survive", evil.contains(".."));
-        assertFalse(evil.contains("/etc/"));
+        assertFalse("no separators survive", evil.contains("/") || evil.contains("\\"));
     }
 }
