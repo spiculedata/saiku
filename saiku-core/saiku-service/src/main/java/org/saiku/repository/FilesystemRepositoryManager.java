@@ -268,10 +268,17 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             // and the shared /datasources tree).
             int pos = path.lastIndexOf(sep);
             String filename = "." + sep + path.substring(pos + 1, path.length());
-            File n = getFolder(path.substring(0, pos));
-            Acl2 acl2 = new Acl2(n);
+            File parent = getFolder(path.substring(0, pos));
+            // saiku#895: gate the write on canWrite. #940: when OVERWRITING an
+            // existing file, check that file's own ACL (which inherits the
+            // parent folder when it has no per-file entry) so a per-dashboard
+            // edit/PRIVATE setting is honoured; for a NEW file, fall back to
+            // the parent folder (you need folder-write to create a child).
+            File target = getNode(path);
+            File aclNode = target.exists() ? target : parent;
+            Acl2 acl2 = new Acl2(aclNode);
             acl2.setAdminRoles(userService.getAdminRoles());
-            if (!acl2.canWrite(n, user, roles)) {
+            if (!acl2.canWrite(aclNode, user, roles)) {
                 throw new SaikuServiceException("You don't have permission to write to " + path);
             }
 
@@ -521,13 +528,18 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     private AclEntry getAclObj(String path) {
         File node = null;
         try {
-            node = (File) getFolderNode(path);
+            // getFolder → resolveWithinDatadir → the real File (the broken
+            // getFolderNode/getAllFoldersInCurrentDirectory stub returned null,
+            // so every ACL read silently produced a default entry). Key the
+            // lookup by the node's absolute path to match how entries are
+            // persisted by setACL/seedAcl and read by Acl2.getMethods (#940).
+            node = getFolder(path);
         } catch (RepositoryException e) {
             log.error("Could not get file", e);
         }
         Acl2 acl2 = new Acl2(node);
         acl2.setAdminRoles(userService.getAdminRoles());
-        AclEntry entry = acl2.getEntry(path);
+        AclEntry entry = node != null ? acl2.getEntry(node.getPath()) : null;
         if (entry == null) entry = new AclEntry();
         return entry;
     }
@@ -535,7 +547,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     public AclEntry getACL(String object, String username, List<String> roles) {
         File node = null;
         try {
-            node = (File) getFolderNode(object);
+            node = getFolder(object);
         } catch (RepositoryException e) {
             log.error("Could not get file/folder", e);
         }
@@ -562,7 +574,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
         File node = null;
         try {
-            node = (File) getFolderNode(object);
+            node = getFolder(object);
         } catch (RepositoryException e) {
             log.error("Could not get file/folder " + object, e);
         }
@@ -572,7 +584,13 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
         if (acl2.canGrant(node, username, roles)) {
             if (node != null) {
-                acl2.addEntry(object, ae);
+                // Key by absolute path (was the relative `object`, which never
+                // matched getMethods' file.getPath() lookup) and let serialize
+                // write to the node's acl-home — its parent folder's acl.json
+                // for a file — so a per-dashboard ACL actually persists and is
+                // enforced. The constructor pre-loaded sibling entries, so this
+                // merges instead of clobbering them (#940).
+                acl2.addEntry(node.getPath(), ae);
                 acl2.serialize(node);
             }
         }
