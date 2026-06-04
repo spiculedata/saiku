@@ -72,12 +72,12 @@ public class ShareViewResource {
         }
         Dashboard dash = loadDashboard(g);
         if (dash == null) {
-            return Response.status(Response.Status.NOT_FOUND)
+            return harden(Response.status(Response.Status.NOT_FOUND)
                     .entity(Map.of("status", "NOT_FOUND", "error", "Shared dashboard is no longer available"))
                     .type(MediaType.APPLICATION_JSON)
-                    .build();
+                    .build());
         }
-        return Response.ok(dash).type(MediaType.APPLICATION_JSON).build();
+        return harden(Response.ok(dash).type(MediaType.APPLICATION_JSON).build());
     }
 
     /** Run a single tile's authored query under the owner's scope. The guest
@@ -103,17 +103,17 @@ public class ShareViewResource {
             }
         }
         if (tile == null || tile.query == null) {
-            return Response.status(Response.Status.NOT_FOUND)
+            return harden(Response.status(Response.Status.NOT_FOUND)
                     .entity(Map.of("status", "NOT_FOUND", "error", "No such queryable tile"))
                     .type(MediaType.APPLICATION_JSON)
-                    .build();
+                    .build());
         }
         final TileQuery q = tile.query;
         try {
             // Execute under the share owner's identity (Mondrian role + JCR
             // file ACL). The query comes from the stored dashboard, never the
             // client, so the guest cannot pivot the cube or read raw data.
-            return sessionService.runAs(g.ownerUser, g.ownerRoles, () -> {
+            Response result = sessionService.runAs(g.ownerUser, g.ownerRoles, () -> {
                 if ("inline".equals(q.kind) && q.body != null) {
                     return aiQueryResource.executeAi(q.body, "records");
                 } else if ("reference".equals(q.kind) && q.path != null) {
@@ -126,18 +126,27 @@ public class ShareViewResource {
                         .type(MediaType.APPLICATION_JSON)
                         .build();
             });
+            return harden(result);
         } catch (RuntimeException e) {
             log.warn("share-view tile query failed for {}", tileId, e);
-            return Response.serverError()
+            return harden(Response.serverError()
                     .entity(Map.of("status", "ERROR", "error", "Tile query failed"))
                     .type(MediaType.APPLICATION_JSON)
-                    .build();
+                    .build());
         }
     }
 
     /* --------------------------- helpers ---------------------------- */
 
     private Dashboard loadDashboard(ShareGuestDetails g) {
+        // Defence-in-depth: re-assert the pinned path is a dashboard at the
+        // trust boundary. The suffix is enforced at mint time, but the guest
+        // read path must not blindly read+parse an arbitrary stored path even
+        // though it's server-held (token-pinned) and traversal-guarded
+        // downstream by resolveWithinDatadir (#941 hardening).
+        if (g.dashboardPath == null || !g.dashboardPath.endsWith(".saikudash")) {
+            return null;
+        }
         // Read the dashboard file as the owner — the token authorises viewing
         // exactly this one dashboard, so the owner's ACL is the right scope.
         String raw;
@@ -169,9 +178,37 @@ public class ShareViewResource {
     }
 
     private static Response invalid() {
-        return Response.status(Response.Status.UNAUTHORIZED)
+        return harden(Response.status(Response.Status.UNAUTHORIZED)
                 .entity(Map.of("status", "SHARE_INVALID", "error", "Share link is invalid or expired."))
                 .type(MediaType.APPLICATION_JSON)
+                .build());
+    }
+
+    /**
+     * Defence-in-depth response headers on EVERY guest reply (issue #941
+     * hardening). Share links are account-free and render owner-authored
+     * content, so we:
+     * <ul>
+     *   <li>{@code X-Content-Type-Options: nosniff} — a browser must not MIME-
+     *       sniff a JSON body (which can carry text-tile HTML, image URLs,
+     *       member captions) and execute it as HTML → blocks stored XSS at the
+     *       guest;</li>
+     *   <li>{@code X-Frame-Options: DENY} + {@code CSP frame-ancestors 'none'}
+     *       — no clickjacking of the guest viewer;</li>
+     *   <li>{@code Referrer-Policy: no-referrer} — the share token lives in the
+     *       viewer URL; never leak it via {@code Referer} on outbound links/
+     *       images;</li>
+     *   <li>{@code Cache-Control: no-store} — shared business data is never
+     *       cached by proxies or browser history.</li>
+     * </ul>
+     */
+    private static Response harden(Response r) {
+        return Response.fromResponse(r)
+                .header("X-Content-Type-Options", "nosniff")
+                .header("X-Frame-Options", "DENY")
+                .header("Content-Security-Policy", "frame-ancestors 'none'")
+                .header("Referrer-Policy", "no-referrer")
+                .header("Cache-Control", "no-store, max-age=0")
                 .build();
     }
 }

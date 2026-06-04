@@ -43,7 +43,6 @@ public class ShareTokenAuthFilter extends OncePerRequestFilter {
 
     public static final String GUEST_ROLE = "ROLE_SHARE_GUEST";
     static final String TOKEN_HEADER = "X-Saiku-Share-Token";
-    static final String TOKEN_PARAM = "token";
 
     private final ShareTokenStore store;
 
@@ -74,6 +73,9 @@ public class ShareTokenAuthFilter extends OncePerRequestFilter {
             // reveal whether a given dashboard / token ever existed.
             resp.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             resp.setContentType("application/json");
+            resp.setHeader("X-Content-Type-Options", "nosniff");
+            resp.setHeader("Cache-Control", "no-store");
+            resp.setHeader("Referrer-Policy", "no-referrer");
             resp.getWriter().write("{\"status\":\"SHARE_INVALID\",\"error\":\"Share link is invalid or expired.\"}");
             return;
         }
@@ -93,15 +95,15 @@ public class ShareTokenAuthFilter extends OncePerRequestFilter {
         }
     }
 
-    /** Token from the dedicated header, falling back to a query param for the
-     *  initial bootstrap GET (the SPA otherwise sends it as a header). */
+    /** Token from the dedicated header ONLY. We deliberately do NOT accept a
+     *  {@code ?token=} query param: the token is the sole view-authority secret,
+     *  and a URL param would leak it into the servlet container's access log,
+     *  any fronting proxy's logs, browser history, and the {@code Referer} of
+     *  outbound links/images. The SPA reads the token from the share-link URL
+     *  (fragment) and replays it as this header on every API call (#941). */
     private static String extractToken(HttpServletRequest req) {
         String h = req.getHeader(TOKEN_HEADER);
-        if (h != null && !h.isBlank()) {
-            return h.trim();
-        }
-        String q = req.getParameter(TOKEN_PARAM);
-        return q == null ? null : q.trim();
+        return (h == null || h.isBlank()) ? null : h.trim();
     }
 
     /** Request URI minus the context path, so matching is independent of the

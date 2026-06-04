@@ -39,8 +39,10 @@ public class ShareTokenResource {
 
     private static final Logger log = LoggerFactory.getLogger(ShareTokenResource.class);
 
-    private static final long DEFAULT_TTL_HOURS = 168; // 7 days
-    private static final long MAX_TTL_HOURS = 8760; // 365 days
+    // #941 hardening: account-free public links get a conservative default and
+    // a capped maximum lifetime so a leaked link can't grant access for a year.
+    private static final long DEFAULT_TTL_HOURS = 72; // 3 days
+    private static final long MAX_TTL_HOURS = 720; // 30 days
     private static final int MAX_ACTIVE_TOKENS_PER_USER = 200;
 
     private ShareTokenStore store;
@@ -124,8 +126,12 @@ public class ShareTokenResource {
                 path,
                 username,
                 ttlHours);
+        // Token goes in the URL FRAGMENT (#) — fragments are never sent to the
+        // server, proxies, access logs, or in the Referer header, so the secret
+        // doesn't leak from the share link itself. The SPA reads location.hash
+        // and replays it as the X-Saiku-Share-Token header (#941 hardening).
         return Response.ok(Map.of(
-                        "status", "OK", "token", t.token, "url", "/ui/share/" + t.token, "expiresAt", t.expiresAt))
+                        "status", "OK", "token", t.token, "url", "/ui/share#" + t.token, "expiresAt", t.expiresAt))
                 .type(MediaType.APPLICATION_JSON)
                 .build();
     }
