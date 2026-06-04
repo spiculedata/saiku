@@ -226,3 +226,52 @@ function depthOfRow(row: CellEntry[]): RowDepth {
   }
   return { depth: 0, segment: "" };
 }
+
+/** Per-column axis assignment for a cartesian chart.
+ *
+ *  Returns the same length as {@code cols}, with each entry "left" or
+ *  "right". The decision for column index `c`:
+ *
+ *    1. If the operator pinned this series in {@code seriesAxis}, use
+ *       that — explicit picks always win.
+ *    2. Else if {@code dualAxis} is off, use "left" (single-axis mode).
+ *    3. Else compute max(|value|) for each series and put any whose
+ *       value is less than {@code threshold} × the largest on "right".
+ *
+ *  Returns all-"left" when there's at most one series — there's no
+ *  scale to compare against. */
+export function assignSeriesAxes(
+  cols: string[],
+  matrix: ReadonlyArray<ReadonlyArray<number | null>>,
+  opts: { dualAxis: boolean; seriesAxis: Record<string, "left" | "right">; threshold: number },
+): ("left" | "right")[] {
+  const n = cols.length;
+  if (n === 0) return [];
+  const out: ("left" | "right")[] = new Array(n).fill("left");
+  // Any explicit picks win — apply them first.
+  for (let c = 0; c < n; c++) {
+    const pin = opts.seriesAxis[cols[c]];
+    if (pin === "left" || pin === "right") out[c] = pin;
+  }
+  if (!opts.dualAxis || n < 2) return out;
+
+  const maxAbs: number[] = new Array(n).fill(0);
+  for (let c = 0; c < n; c++) {
+    for (let r = 0; r < matrix.length; r++) {
+      const v = matrix[r]?.[c];
+      if (v != null && Number.isFinite(v)) {
+        const a = Math.abs(v);
+        if (a > maxAbs[c]) maxAbs[c] = a;
+      }
+    }
+  }
+  const overall = Math.max(...maxAbs);
+  if (!Number.isFinite(overall) || overall <= 0) return out;
+  const cutoff = opts.threshold * overall;
+  for (let c = 0; c < n; c++) {
+    // Don't override an explicit pin.
+    if (opts.seriesAxis[cols[c]]) continue;
+    out[c] = maxAbs[c] < cutoff ? "right" : "left";
+  }
+  return out;
+}

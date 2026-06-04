@@ -50,7 +50,25 @@ export interface ChartOptions {
    *  This flag drops rollup rows from the chart only — the grid still
    *  shows them. Defaults to `true`. */
   hideRollupRows: boolean;
+  /** Auto-split series across two y-axes when their magnitudes differ
+   *  by more than the SERIES_AXIS_THRESHOLD ratio (currently 1%). Use
+   *  case: charting an Event Count series in thousands alongside an
+   *  Avg Tone series in single digits — without dual-axis the Tone
+   *  series gets crushed to the zero line. Per-series picks in
+   *  {@link seriesAxis} always override the auto decision. */
+  dualAxis: boolean;
+  /** Per-series y-axis override, keyed by column-category name (the
+   *  same labels rendered in the legend). Values: "left" or "right".
+   *  Absent entries fall back to the auto decision (or "left" when
+   *  {@link dualAxis} is off). */
+  seriesAxis: Record<string, "left" | "right">;
 }
+
+/** Auto-split threshold: a series whose maximum absolute value is less
+ *  than this fraction of the largest series's max-abs is moved to the
+ *  right y-axis. 1% is conservative enough that homogeneous-magnitude
+ *  charts (Sales £ vs Refunds £) stay on a single axis. */
+export const SERIES_AXIS_THRESHOLD = 0.01;
 
 export const DEFAULT_CHART_OPTIONS: ChartOptions = {
   title: "",
@@ -61,4 +79,6 @@ export const DEFAULT_CHART_OPTIONS: ChartOptions = {
   trendLine: "none",
   trendPeriod: 3,
   hideRollupRows: true,
+  dualAxis: true,
+  seriesAxis: {},
 };

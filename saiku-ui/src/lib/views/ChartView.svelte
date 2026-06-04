@@ -2,9 +2,9 @@
   import { onMount, onDestroy } from "svelte";
   import * as echarts from "echarts";
   import type { QueryResult } from "$lib/api/query";
-  import { deriveLeafRows, parseCellset, toNumber } from "$lib/views/cellsetUtils";
+  import { assignSeriesAxes, deriveLeafRows, parseCellset, toNumber } from "$lib/views/cellsetUtils";
   import type { ChartType, ChartOptions } from "$lib/views/chartTypes";
-  import { DEFAULT_CHART_OPTIONS } from "$lib/views/chartTypes";
+  import { DEFAULT_CHART_OPTIONS, SERIES_AXIS_THRESHOLD } from "$lib/views/chartTypes";
   import { axisLabelConfig, deriveAxisLabelWidth } from "$lib/views/chartAxisLabel";
   import { theme } from "$lib/stores/theme.svelte";
 
@@ -374,12 +374,34 @@
     const lower = t.toLowerCase();
     const kind: "bar" | "line" = lower.includes("bar") ? "bar" : "line";
     const areaStyle = t === "area" || t === "stackedArea" ? {} : undefined;
+
+    // Dual y-axis: auto-split low-magnitude series to the right when
+    // they'd otherwise be crushed to the zero line by a dominant series
+    // (Event Count in thousands vs Avg Tone in single digits, etc.).
+    // Per-series picks in o.seriesAxis always win; explicit auto-disable
+    // via o.dualAxis=false reverts to single-axis.
+    const seriesSides = assignSeriesAxes(cols, matrix, {
+      dualAxis: o.dualAxis,
+      seriesAxis: o.seriesAxis,
+      threshold: SERIES_AXIS_THRESHOLD,
+    });
+    const hasRight = seriesSides.some((s) => s === "right");
+    const yAxis = hasRight
+      ? [
+          { ...valueAxis, name: yName, position: "left" as const },
+          // Render the right axis without splitLine duplicates so the
+          // gridlines from the left axis aren't double-drawn.
+          { ...valueAxis, name: undefined, position: "right" as const, splitLine: { show: false } },
+        ]
+      : { ...valueAxis, name: yName };
+
     const base = cols.map((name, c) => ({
       type: kind as "bar" | "line",
       name,
-      stack: isStacked ? "total" : undefined,
+      stack: isStacked ? (seriesSides[c] === "right" ? "total-right" : "total-left") : undefined,
       areaStyle,
       smooth: kind === "line",
+      yAxisIndex: hasRight ? (seriesSides[c] === "right" ? 1 : 0) : 0,
       data: matrix.map((row) => row[c] ?? 0),
     }));
     const trend = kind === "line" && cols.length > 0
@@ -389,9 +411,9 @@
     return {
       ...common,
       title, tooltip, legend,
-      grid: { left: 60, top: title ? 50 : 40, right: 40, bottom: 60 },
+      grid: { left: 60, top: title ? 50 : 40, right: hasRight ? 60 : 40, bottom: 60 },
       xAxis: { ...categoryAxis, data: rows, name: xName },
-      yAxis: { ...valueAxis, name: yName },
+      yAxis,
       series: [...base, ...trend],
     };
   }
@@ -442,6 +464,8 @@
     void options.trendLine;
     void options.trendPeriod;
     void options.hideRollupRows;
+    void options.dualAxis;
+    void options.seriesAxis;
     // Re-theme when the effective theme flips.
     void theme.effective;
     if (chart) render();

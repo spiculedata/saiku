@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveLeafRows, parseCellset } from "./cellsetUtils";
+import { assignSeriesAxes, deriveLeafRows, parseCellset } from "./cellsetUtils";
 import type { CellEntry, QueryResult } from "$lib/api/query";
 
 function header(value: string): CellEntry {
@@ -126,5 +126,90 @@ describe("deriveLeafRows", () => {
       "1998 / Q1",
       "1998 / Q2",
     ]);
+  });
+});
+
+describe("assignSeriesAxes", () => {
+  const baseOpts = { dualAxis: true, seriesAxis: {}, threshold: 0.01 };
+
+  it("keeps every series on the left when scales are within an order of magnitude", () => {
+    const result = assignSeriesAxes(
+      ["Sales", "Refunds"],
+      [
+        [1000, 50],
+        [1200, 80],
+      ],
+      baseOpts,
+    );
+    expect(result).toEqual(["left", "left"]);
+  });
+
+  it("moves a small-magnitude series to the right when another series dominates", () => {
+    // Event Count up to 7000, Avg Tone around -3 — the exact case from the
+    // user-reported screenshot. Tone is < 1% of Count's max so it splits.
+    const result = assignSeriesAxes(
+      ["Event Count", "Avg Tone"],
+      [
+        [6000, -3.4],
+        [2000, -3.39],
+        [1200, -2.8],
+      ],
+      baseOpts,
+    );
+    expect(result).toEqual(["left", "right"]);
+  });
+
+  it("respects an explicit per-series pin even when it contradicts the auto decision", () => {
+    const result = assignSeriesAxes(
+      ["Event Count", "Avg Tone"],
+      [
+        [6000, -3.4],
+        [2000, -3.39],
+      ],
+      { ...baseOpts, seriesAxis: { "Avg Tone": "left" } },
+    );
+    expect(result).toEqual(["left", "left"]);
+  });
+
+  it("returns all-left when dualAxis is off, even with very different magnitudes", () => {
+    const result = assignSeriesAxes(
+      ["Event Count", "Avg Tone"],
+      [[6000, -3.4]],
+      { ...baseOpts, dualAxis: false },
+    );
+    expect(result).toEqual(["left", "left"]);
+  });
+
+  it("applies explicit pins even when dualAxis is off", () => {
+    const result = assignSeriesAxes(
+      ["Event Count", "Avg Tone"],
+      [[6000, -3.4]],
+      { ...baseOpts, dualAxis: false, seriesAxis: { "Avg Tone": "right" } },
+    );
+    expect(result).toEqual(["left", "right"]);
+  });
+
+  it("handles a single series gracefully", () => {
+    const result = assignSeriesAxes(["Sales"], [[100]], baseOpts);
+    expect(result).toEqual(["left"]);
+  });
+
+  it("handles empty cols", () => {
+    const result = assignSeriesAxes([], [], baseOpts);
+    expect(result).toEqual([]);
+  });
+
+  it("treats nulls and zeros as non-dominant", () => {
+    // Even if a series has only nulls/zeros, it shouldn't accidentally
+    // promote others to the right axis (division-by-zero protection).
+    const result = assignSeriesAxes(
+      ["Sales", "Refunds"],
+      [
+        [0, 0],
+        [null, null],
+      ],
+      baseOpts,
+    );
+    expect(result).toEqual(["left", "left"]);
   });
 });
