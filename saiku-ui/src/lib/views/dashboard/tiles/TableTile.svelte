@@ -39,6 +39,9 @@
   } from "$lib/dashboard/filterSuggestions";
   import type { CubeRef } from "$lib/api/dashboards";
   import { parseFormattedCell } from "$lib/cellset/cellFormat";
+  // Issue #930 — right-click a measure cell to drill into its raw fact rows.
+  import TileDrillthrough from "./TileDrillthrough.svelte";
+  import { drillthroughPosition } from "$lib/dashboard/drillthroughCoord";
   // Issue #919 — per-column conditional formatting (display-only).
   import {
     formatCell,
@@ -310,6 +313,39 @@
     if (typeof v === "string") return v;
     return v.formatted ?? "";
   }
+
+  /* --------------------------- drillthrough (#930) -------------------- */
+
+  let drill = $state<TileDrillthrough | null>(null);
+
+  /** Map a measure caption to its 0-based index among the result's measure
+   *  columns (response.metadata.columns) — the column index the backend
+   *  drillthrough convention expects. Returns -1 for row-header columns. */
+  function measureColumnIndex(caption: string): number {
+    const cols = response?.metadata?.columns ?? [];
+    return cols.findIndex((c) => c.caption === caption);
+  }
+
+  // Right-click a measure cell → drill into the raw fact rows behind it.
+  // Verified backend convention is "{col}:{row}", column first. No-op on
+  // row-header cells (those keep their left-click click-to-filter) and
+  // while the tile has no successful response/queryId yet.
+  function handleCellContextMenu(
+    e: MouseEvent,
+    column: string,
+    isRowHeader: boolean,
+    rowIndex: number,
+  ): void {
+    if (isRowHeader) return;
+    const queryId = response?.queryId;
+    if (!queryId || response?.status !== "SUCCESS") return;
+    const colIndex = measureColumnIndex(column);
+    const position = drillthroughPosition(colIndex, rowIndex);
+    if (!position) return;
+    // Only suppress the native menu once we know we're handling the drill.
+    e.preventDefault();
+    void drill?.open(queryId, position);
+  }
 </script>
 
 {#if !tile.query}
@@ -343,6 +379,13 @@
                   {@const fmt = parseFormattedCell(renderCell(v))}
                   {@const cf = cellFormatFor(col.caption, v)}
                   {@const cfStyle = cellFormatToStyle(cf)}
+                  <!-- svelte-ignore a11y_no_static_element_interactions
+                       Right-click drillthrough (#930) is a power-user
+                       shortcut on measure cells; the kebab/overflow drill
+                       affordances on the tile remain the keyboard-accessible
+                       path, so handling contextmenu on a plain <td> adds no
+                       a11y regression. Row-header cells keep their existing
+                       button role + Enter/Space keyboard activation. -->
                   <td
                     class:row-header={col.isRowHeader}
                     class:clickable={col.isRowHeader}
@@ -350,6 +393,8 @@
                       .filter(Boolean)
                       .join("; ") || undefined}
                     onclick={() => handleCellClick(col.caption, fmt.display, col.isRowHeader, row)}
+                    oncontextmenu={(e) =>
+                      handleCellContextMenu(e, col.caption, col.isRowHeader, i)}
                     role={col.isRowHeader ? "button" : undefined}
                     tabindex={col.isRowHeader ? 0 : undefined}
                     onkeydown={(e) => {
@@ -370,6 +415,8 @@
     {/if}
   </div>
 {/if}
+
+<TileDrillthrough bind:this={drill} cube={resolvedCube} />
 
 <style>
   .table-tile {

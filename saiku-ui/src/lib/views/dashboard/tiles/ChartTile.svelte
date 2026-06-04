@@ -33,6 +33,9 @@
   } from "$lib/dashboard/filterSuggestions";
   import { buildChartOption, isSupportedChartKind } from "$lib/dashboard/chartOptions";
   import type { CubeRef } from "$lib/api/dashboards";
+  // Issue #930 — right-click a data point to drill into its raw fact rows.
+  import TileDrillthrough from "./TileDrillthrough.svelte";
+  import { drillthroughPosition } from "$lib/dashboard/drillthroughCoord";
 
   interface Props {
     tile: DashboardTile;
@@ -70,6 +73,7 @@
     if (!host || chart) return;
     const instance = echarts.init(host);
     instance.on("click", handleEChartsClick);
+    instance.on("contextmenu", handleEChartsContextMenu);
     resizeObserver = new ResizeObserver(() => instance.resize());
     resizeObserver.observe(host);
     chart = instance;
@@ -256,6 +260,33 @@
     };
     onClickFilter(filter);
   }
+
+  /* --------------------------- drillthrough (#930) -------------------- */
+
+  let drill = $state<TileDrillthrough | null>(null);
+
+  // Right-click a data point → drill into the raw fact rows behind that
+  // cell. The ECharts contextmenu event carries `dataIndex` (category =
+  // ROW index) and `seriesIndex` (series = MEASURE/COLUMN index); the
+  // verified backend convention is "{col}:{row}" so column index comes
+  // first. Background clicks (no dataIndex) are a no-op. No-op too while
+  // the tile has no successful response/queryId yet.
+  function handleEChartsContextMenu(params: echarts.ECElementEvent): void {
+    const queryId = response?.queryId;
+    if (!queryId || response?.status !== "SUCCESS") return;
+    const rowIndex = params.dataIndex;
+    // Pie series omit seriesIndex on the element event in some echarts
+    // builds; a pie has a single series so default to 0.
+    const colIndex = params.seriesIndex ?? 0;
+    if (typeof rowIndex !== "number") return;
+    const position = drillthroughPosition(colIndex, rowIndex);
+    if (!position) return;
+    // Only suppress the browser's native context menu once we know we're
+    // handling the drill (background clicks keep the native menu).
+    const ev = params.event?.event as MouseEvent | undefined;
+    ev?.preventDefault();
+    void drill?.open(queryId, position);
+  }
 </script>
 
 {#if !tile.query}
@@ -276,6 +307,8 @@
     <div class="canvas" bind:this={host}></div>
   </div>
 {/if}
+
+<TileDrillthrough bind:this={drill} cube={resolvedCube} />
 
 <style>
   .chart-tile {

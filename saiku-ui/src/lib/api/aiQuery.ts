@@ -131,6 +131,76 @@ function stripSavedQueryPath(path: string): string {
   return m ? m[1] : path;
 }
 
+/* ------------------------------------------------------------------------
+ * Issue #930 — drillthrough on cell click.
+ *
+ * Drills the raw fact rows behind one aggregated cell of an already-executed
+ * AI query, addressed by its server-assigned queryId. The dashboard tile
+ * renderers consume this when a data point (chart) / measure cell (table) is
+ * right-clicked. Active dashboard filters are honoured automatically: the
+ * query identified by `queryId` already had them merged at execution time.
+ * ---------------------------------------------------------------------- */
+
+/** Flat tabular drillthrough payload — one map per fact row, keyed by the
+ *  projected column captions in `columns`. Mirrors the server response of
+ *  GET /ai/query/{queryId}/drillthrough. */
+export interface AiDrillthroughResult {
+  queryId: string;
+  rowCount: number;
+  columns: string[];
+  rows: Array<Record<string, AiCell>>;
+}
+
+export interface AiDrillthroughOptions {
+  /** `"{columnIndex}:{rowIndex}"` addressing the cell to drill. Omit to
+   *  drill the whole result. Malformed values yield a server 400. */
+  position?: string;
+  /** Cap on returned fact rows. */
+  maxRows?: number;
+  /** Dimension/measure unique names to project. Omit for all columns. */
+  returns?: string[];
+}
+
+/** GET /rest/saiku/api/ai/query/{queryId}/drillthrough — fetch the raw fact
+ *  rows behind one (or all) cell(s) of a prior AI query. Throws on a non-ok
+ *  response, surfacing the server's error message when one is present. */
+export async function aiDrillthrough(
+  queryId: string,
+  opts: AiDrillthroughOptions = {},
+): Promise<AiDrillthroughResult> {
+  const params = new URLSearchParams();
+  if (opts.position) params.set("position", opts.position);
+  if (opts.maxRows != null) params.set("maxrows", String(opts.maxRows));
+  if (opts.returns && opts.returns.length) params.set("returns", opts.returns.join(","));
+  const qs = params.toString();
+  const url = `${REST_BASE}/query/${encodeURIComponent(queryId)}/drillthrough${qs ? `?${qs}` : ""}`;
+  const res = await fetch(url, {
+    method: "GET",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    // Prefer the server's structured error message when the body parses.
+    let msg = `aiDrillthrough -> ${res.status}`;
+    if (text) {
+      try {
+        const parsed = JSON.parse(text) as { error?: string; message?: string };
+        if (parsed.error || parsed.message) msg = parsed.error ?? parsed.message ?? msg;
+      } catch {
+        msg = `${msg}: ${text}`;
+      }
+    }
+    throw new Error(msg);
+  }
+  if (!text) throw new Error(`aiDrillthrough -> ${res.status}: empty body`);
+  try {
+    return JSON.parse(text) as AiDrillthroughResult;
+  } catch (e) {
+    throw new Error(`aiDrillthrough -> ${res.status}: non-JSON response (${(e as Error).message})`);
+  }
+}
+
 export async function executeSavedQuery(
   path: string,
   filters: SavedQueryFilter[] = [],

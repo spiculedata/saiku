@@ -647,7 +647,8 @@ public class AiQueryResource {
      *   <li><b>Whole-result</b> (no {@code position}): drills the result as a
      *       whole, via {@link ThinQueryService#drillthrough(String, int, Integer, String)}.
      *       Optional {@code firstRowset} bound applies here.</li>
-     *   <li><b>Per-cell</b> ({@code position=row:col}): drills the single cell at
+     *   <li><b>Per-cell</b> ({@code position=col:row}, column-axis index then
+     *       row-axis index): drills the single cell at
      *       that cellset coordinate, via
      *       {@link ThinQueryService#drillthrough(String, java.util.List, Integer, String)}
      *       — the same path the workspace ({@code Query2Resource}) uses. This is
@@ -723,8 +724,10 @@ public class AiQueryResource {
                 // below handles the typical "in RETURN clause" message.
             }
         }
-        // saiku#930: per-cell drillthrough. position is "row:col" cellset
-        // coordinates (same form Query2Resource accepts). Parse + validate
+        // saiku#930: per-cell drillthrough. position is "col:row" cellset
+        // coordinates — component i indexes cellset axis i (axis 0 = columns,
+        // axis 1 = rows), matching ThinQueryService.drillthrough(...).
+        // Parse + validate
         // before touching the engine so a malformed value is a clean 400.
         List<Integer> cellPosition = null;
         if (position != null && !position.trim().isEmpty()) {
