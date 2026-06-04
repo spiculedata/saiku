@@ -500,7 +500,7 @@ public class AiQueryResourceTest {
     public void drillthroughReturns200WithRows() {
         // Override the ThinQueryService with one that has a stub drillthrough.
         resource.setThinQueryService(new StubThinQueryServiceWithDrill());
-        Response resp = resource.drillthrough("sync-query-id", 100, null, null);
+        Response resp = resource.drillthrough("sync-query-id", 100, null, null, null);
         assertEquals(200, resp.getStatus());
         @SuppressWarnings("unchecked")
         Map<String, Object> body = (Map<String, Object>) resp.getEntity();
@@ -511,7 +511,7 @@ public class AiQueryResourceTest {
     @Test
     public void drillthroughCellsAreTypedEnvelopes() {
         resource.setThinQueryService(new StubThinQueryServiceWithDrill());
-        Response resp = resource.drillthrough("sync-query-id", 100, null, null);
+        Response resp = resource.drillthrough("sync-query-id", 100, null, null, null);
         assertEquals(200, resp.getStatus());
         @SuppressWarnings("unchecked")
         Map<String, Object> body = (Map<String, Object>) resp.getEntity();
@@ -539,7 +539,7 @@ public class AiQueryResourceTest {
                 throw new RuntimeException("boom");
             }
         });
-        Response resp = resource.drillthrough("any-id", 100, null, null);
+        Response resp = resource.drillthrough("any-id", 100, null, null, null);
         assertEquals(500, resp.getStatus());
     }
 
@@ -592,9 +592,38 @@ public class AiQueryResourceTest {
                 return buildStubResultSet();
             }
         });
-        Response resp = resource.drillthrough("sync-query-id", 100, 25, null);
+        Response resp = resource.drillthrough("sync-query-id", 100, 25, null, null);
         assertEquals(200, resp.getStatus());
         assertEquals(Integer.valueOf(25), firstRowsetSeen[0]);
+    }
+
+    @Test
+    public void drillthroughWithPositionUsesCellPositionOverload() {
+        // saiku#930: a position=col:row drills the single cell via the
+        // List<Integer> cellPosition service overload (not the whole-result one).
+        final java.util.concurrent.atomic.AtomicReference<java.util.List<Integer>> posSeen =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        resource.setThinQueryService(new ThinQueryService() {
+            @Override
+            public java.sql.ResultSet drillthrough(String n, java.util.List<Integer> pos, Integer m, String r) {
+                posSeen.set(pos);
+                return buildStubResultSet();
+            }
+        });
+        Response resp = resource.drillthrough("sync-query-id", 100, null, "0:1", null);
+        assertEquals(200, resp.getStatus());
+        assertEquals(java.util.Arrays.asList(0, 1), posSeen.get());
+    }
+
+    @Test
+    public void drillthroughMalformedPositionReturns400() {
+        // saiku#930: a non-numeric position is a clean 400 (field=position),
+        // not a 500 from deep in the engine.
+        resource.setThinQueryService(new StubThinQueryServiceWithDrill());
+        Response resp = resource.drillthrough("sync-query-id", 100, null, "abc", null);
+        assertEquals(400, resp.getStatus());
+        AiQueryResponse body = (AiQueryResponse) resp.getEntity();
+        assertEquals("position", body.getField());
     }
 
     /* ------------------------ stub impls --------------------------------- */

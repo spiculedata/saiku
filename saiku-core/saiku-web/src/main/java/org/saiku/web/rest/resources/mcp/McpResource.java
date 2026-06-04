@@ -230,7 +230,9 @@ public class McpResource {
                 int maxrows = optionalInt(args, "maxrows", 100);
                 Integer firstRowset = optionalIntOrNull(args, "firstRowset");
                 String returns = optionalString(args, "returns");
-                return unwrap(aiQueryResource.drillthrough(queryId, maxrows, firstRowset, returns));
+                // position=null → whole-result drillthrough (MCP keeps the existing
+                // behaviour; per-cell position is the dashboard UI path, saiku#930).
+                return unwrap(aiQueryResource.drillthrough(queryId, maxrows, firstRowset, null, returns));
             }
             default:
                 throw new UnknownToolException("Unknown tool: " + name);
