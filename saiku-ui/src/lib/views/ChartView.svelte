@@ -14,6 +14,7 @@
     smallMultipleRowCount,
   } from "$lib/dashboard/smallMultiples";
   import { theme } from "$lib/stores/theme.svelte";
+  import { type ThemeTokens, resolveThemeTokens } from "$lib/views/chartTheme";
 
   interface Props {
     result: QueryResult;
@@ -33,42 +34,6 @@
     const measureCount = parseCellset(result).columnCategories.length;
     return isSingleMeasureKind(type) && measureCount > 1 ? smallMultipleRowCount(measureCount) : 1;
   });
-
-  interface ThemeTokens {
-    fg: string;
-    fgMuted: string;
-    bg: string;
-    bgMuted: string;
-    border: string;
-    accent: string;
-    /** Categorical series palette read from --chart-1..8 tokens.
-     *  Falls back to Indigo-anchored defaults harmonised with --accent
-     *  if the tokens are absent for any reason. */
-    chartColors: string[];
-  }
-
-  const CHART_FALLBACK_COLORS = [
-    "#4f46e5", "#0ea5e9", "#10b981", "#f59e0b",
-    "#ef4444", "#a855f7", "#ec4899", "#14b8a6",
-  ];
-
-  function resolveThemeTokens(): ThemeTokens {
-    const cs = getComputedStyle(document.documentElement);
-    const get = (name: string, fallback: string) =>
-      cs.getPropertyValue(name).trim() || fallback;
-    const chartColors = CHART_FALLBACK_COLORS.map((fallback, i) =>
-      get(`--chart-${i + 1}`, fallback),
-    );
-    return {
-      fg: get("--fg", "#0f172a"),
-      fgMuted: get("--fg-muted", "#475569"),
-      bg: get("--bg", "#ffffff"),
-      bgMuted: get("--bg-muted", "#f6f7f9"),
-      border: get("--border", "#e2e8f0"),
-      accent: get("--accent", "#4f46e5"),
-      chartColors,
-    };
-  }
 
   function legendConfig(o: ChartOptions, tk: ThemeTokens) {
     if (!o.showLegend) return { show: false };
