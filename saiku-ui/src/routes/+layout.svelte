@@ -6,6 +6,7 @@
   import { theme } from "$lib/stores/theme.svelte";
   import { platform } from "$lib/stores/platform.svelte";
   import { embed } from "$lib/stores/embed.svelte";
+  import { presentation } from "$lib/stores/presentation.svelte";
   import ToastStack from "$lib/components/ToastStack.svelte";
   import UpgradeBanner from "$lib/components/UpgradeBanner.svelte";
   import { LogOut, Shield, Home, LayoutDashboard, UserRound } from "lucide-svelte";
@@ -72,11 +73,11 @@
   });
 </script>
 
-<div class="app">
-  {#if !embed.active}
+<div class="app" class:app--cursor-hidden={presentation.active && presentation.cursorHidden}>
+  {#if !embed.active && !presentation.active}
     <UpgradeBanner />
   {/if}
-  {#if !embed.active}
+  {#if !embed.active && !presentation.active}
   <header class="topbar">
     <a class="topbar__brand" href="{base}/" aria-label={i18n.t("brand")}>
       {#if brandLogo}
@@ -136,6 +137,12 @@
     flex-direction: column;
     height: 100vh;
     overflow: hidden;
+  }
+  /* Presentation mode (saiku#928): hide the cursor once the pointer has been
+     idle, for a clean TV-wall surface. Applies everywhere while engaged. */
+  .app--cursor-hidden,
+  .app--cursor-hidden :global(*) {
+    cursor: none !important;
   }
   .topbar {
     display: flex;

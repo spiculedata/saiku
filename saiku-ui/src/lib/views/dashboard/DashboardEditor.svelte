@@ -12,8 +12,11 @@
   import { onMount, untrack } from "svelte";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
+  import { presentation } from "$lib/stores/presentation.svelte";
   import { newTileId, type TileType } from "$lib/api/dashboards";
+  import { isEnterPresentationKey } from "$lib/dashboard/presentationHotkeys";
   import { panelDiffersFromDefaults } from "$lib/dashboard/filterDefaults";
+  import { Minimize2 } from "lucide-svelte";
   import { buildTile } from "$lib/dashboard/tilePlacement";
   import { decodeFilterParams, encodeActiveFilters } from "$lib/dashboard/urlFilterState";
   import DashboardToolbar from "$lib/views/dashboard/DashboardToolbar.svelte";
@@ -46,6 +49,16 @@
       activeFilters.resetTransient();
       void dashboardStore.load(dashboardPath).then(() => hydrateFromUrl());
     });
+    // saiku#928: press F (outside a text field) to enter presentation mode.
+    // Esc-to-exit + idle-cursor hiding are owned by the presentation store.
+    const onKey = (e: KeyboardEvent) => {
+      if (isEnterPresentationKey(e) && !presentation.active) {
+        e.preventDefault();
+        void presentation.enter();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   });
 
   // Path can change without remounting (SvelteKit reuses the route component
@@ -130,35 +143,50 @@
   );
 </script>
 
-<div class="dashboard-editor">
+<div class="dashboard-editor" class:presentation={presentation.active}>
   {#if dashboardStore.loading}
     <div class="loading">Loading dashboard…</div>
   {:else if dashboardStore.current}
-    <DashboardToolbar
-      name={dashboardStore.current.name}
-      onNameChange={handleNameChange}
-      tags={dashboardStore.current.tags ?? []}
-      onTagsChange={handleTagsChange}
-      {readOnly}
-      saving={dashboardStore.saving}
-      dirty={dashboardStore.dirty}
-      onSave={handleSave}
-      onAddTile={readOnly ? undefined : handleAddTile}
-      {canResetFilters}
-      onResetFilters={readOnly ? undefined : handleResetFilters}
-    />
-    {#if dashboardStore.loadError}
-      <div class="notice">{dashboardStore.loadError}</div>
+    {#if !presentation.active}
+      <DashboardToolbar
+        name={dashboardStore.current.name}
+        onNameChange={handleNameChange}
+        tags={dashboardStore.current.tags ?? []}
+        onTagsChange={handleTagsChange}
+        {readOnly}
+        saving={dashboardStore.saving}
+        dirty={dashboardStore.dirty}
+        onSave={handleSave}
+        onAddTile={readOnly ? undefined : handleAddTile}
+        {canResetFilters}
+        onResetFilters={readOnly ? undefined : handleResetFilters}
+        onPresent={() => presentation.enter()}
+      />
+      {#if dashboardStore.loadError}
+        <div class="notice">{dashboardStore.loadError}</div>
+      {/if}
+      {#if dashboardStore.saveError}
+        <div class="error">Save failed: {dashboardStore.saveError}</div>
+      {/if}
+      <DashboardFilterPanel {readOnly} />
+      <DashboardFilterBar {readOnly} />
     {/if}
-    {#if dashboardStore.saveError}
-      <div class="error">Save failed: {dashboardStore.saveError}</div>
-    {/if}
-    <DashboardFilterPanel {readOnly} />
-    <DashboardFilterBar {readOnly} />
-    {#if showEmptyGuidance}
+    {#if showEmptyGuidance && !presentation.active}
       <EmptyDashboardGuidance onAddTile={handleAddTile} />
     {:else}
       <DashboardGrid {readOnly} />
+    {/if}
+    {#if presentation.active}
+      <button
+        type="button"
+        class="present-exit"
+        onclick={() => presentation.exit()}
+        title="Exit presentation (Esc)"
+        aria-label="Exit presentation"
+      >
+        <Minimize2 size={16} aria-hidden="true" />
+        <span>Exit</span>
+      </button>
     {/if}
   {:else}
     <div class="error">{dashboardStore.loadError ?? "Unable to load dashboard."}</div>
@@ -196,5 +224,46 @@
     color: var(--danger);
     border-radius: 4px;
     font-size: 0.875rem;
+  }
+
+  /* Presentation mode (saiku#928): full-bleed tiles, no editor padding, and
+     flatten per-tile chrome (borders, shadows, edit affordances) for a clean
+     TV-wall surface. Tile classes are global selectors because they live in
+     scoped child components. */
+  .dashboard-editor.presentation {
+    padding: 0;
+    gap: 0;
+  }
+  .dashboard-editor.presentation :global(.tile) {
+    border-color: transparent;
+    box-shadow: none;
+  }
+  .dashboard-editor.presentation :global(.tile-actions) {
+    display: none;
+  }
+  /* Floating exit affordance — fades out with the cursor (see layout's
+     idle-cursor rule) so it doesn't sit on a TV wall, but is reachable on
+     any pointer move. */
+  .present-exit {
+    position: fixed;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 50;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--bg) 80%, transparent);
+    color: var(--fg);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    opacity: 0.35;
+    transition: opacity 0.15s ease;
+  }
+  .present-exit:hover,
+  .present-exit:focus-visible {
+    opacity: 1;
   }
 </style>
