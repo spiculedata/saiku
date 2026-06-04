@@ -135,11 +135,16 @@ export function buildChartOption(response: AiQueryResponse, kind: string): Recor
     textAlign: "center",
     textStyle: { fontSize: 12 },
   }));
+  // Per-slice labels + leader lines overlap into noise once there are many
+  // categories or the chart is one of a small-multiple grid (each cell is
+  // small). Show them only on a single chart with a readable slice count; the
+  // tooltip carries the per-slice detail otherwise.
+  const showSliceLabels = cells.length === 1 && rows.length <= 10;
 
   if (t === "pie" || t === "donut") {
     return {
       tooltip: { trigger: "item" },
-      legend: { type: "scroll", bottom: 0 },
+      legend: rows.length <= 20 ? { type: "scroll", bottom: 0 } : undefined,
       title: titles,
       series: cells.map((cell, m) => ({
         type: "pie",
@@ -149,6 +154,8 @@ export function buildChartOption(response: AiQueryResponse, kind: string): Recor
             ? [(cell.widthPct * 0.22) + "%", (cell.widthPct * 0.34) + "%"]
             : [0, (cell.widthPct * 0.34) + "%"],
         center: [cell.centerXPct + "%", cell.centerYPct + "%"],
+        label: { show: showSliceLabels },
+        labelLine: { show: showSliceLabels },
         data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
       })),
     };
@@ -180,6 +187,7 @@ export function buildChartOption(response: AiQueryResponse, kind: string): Recor
         name: cols[m],
         center: [cell.centerXPct + "%", cell.centerYPct + "%"],
         radius: [0, (cell.widthPct * 0.42) + "%"],
+        label: { show: showSliceLabels },
         data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
       })),
     };

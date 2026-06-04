@@ -235,12 +235,16 @@
         textStyle: { color: tk.fg, fontSize: 12 },
       }));
       const titles = title ? [title, ...cellTitles] : cellTitles;
+      // Per-slice labels + leader lines overlap into noise with many categories
+      // or in a small-multiple grid; show them only on a single chart with a
+      // readable slice count. Tooltip carries the detail otherwise.
+      const showSliceLabels = cells.length === 1 && rows.length <= 10;
 
       if (t === "pie" || t === "donut") {
         return {
           ...common,
           title: titles,
-          legend,
+          legend: rows.length <= 20 ? legend : undefined,
           tooltip: { trigger: "item", ...itemTooltip },
           series: cells.map((cell, m) => ({
             type: "pie",
@@ -250,7 +254,8 @@
                 ? [cell.widthPct * 0.22 + "%", cell.widthPct * 0.34 + "%"]
                 : [0, cell.widthPct * 0.34 + "%"],
             center: [cell.centerXPct + "%", cell.centerYPct + "%"],
-            label: { color: tk.fg },
+            label: { show: showSliceLabels, color: tk.fg },
+            labelLine: { show: showSliceLabels },
             data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
           })),
         };
@@ -285,7 +290,7 @@
           name: cols[m],
           center: [cell.centerXPct + "%", cell.centerYPct + "%"],
           radius: [0, cell.widthPct * 0.42 + "%"],
-          label: { color: "#fff" },
+          label: { show: showSliceLabels, color: "#fff" },
           data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
         })),
       };
