@@ -128,42 +128,101 @@ export interface LeafRows {
 }
 
 /**
- * Returns the indices of rows whose deepest row-header column carries a
- * value — i.e. leaf rows in the multi-level hierarchy on ROWS — together
- * with their parent-prefixed labels.
+ * Returns the indices of rows whose row-header sits at the deepest level
+ * of the hierarchy on ROWS — i.e. leaf rows — together with their
+ * parent-prefixed labels.
  *
  * Charts call this with `hideRollupRows = true` to drop the year/quarter-
  * style rollup rows that otherwise dominate the bar heights and make the
- * leaf detail unreadable (saiku#TBD). The grid keeps showing all rows.
+ * leaf detail unreadable. The grid keeps showing all rows.
  *
- * If the rowset has only one level (rowHeaderColCount <= 1) every row is
- * a leaf and the result mirrors `parsed.rowCategories`.
+ * Row "depth" is determined from the Mondrian uniquename on the deepest
+ * row-header cell — segment count in
+ *  `[Time].[Time].[1997]` (3) vs `[Time].[Time].[1997].[1]` (4). This
+ * works whether the cellset packs the hierarchy into a single row-header
+ * column (a single Time hierarchy spanning Year+Month — every row has
+ * one cell, but Year cells are shallower) or into multiple columns
+ * (legacy Year/Quarter shape — multi-col with the deeper column empty
+ * on rollup rows). If no uniquename is present, falls back to "deepest
+ * non-empty column index" — accurate for the multi-col case and a
+ * graceful no-op when there's no hierarchy at all.
  */
 export function deriveLeafRows(parsed: ParsedCellset): LeafRows {
-  if (parsed.rowHeaderColCount <= 1) {
+  const n = parsed.bodyRows.length;
+  if (n === 0 || parsed.rowHeaderColCount === 0) {
+    return { indices: [], labels: [] };
+  }
+
+  // Walk forward once to compute every row's depth + its leaf-level
+  // segment text. The segment is the cell value at the deepest level,
+  // NOT the joined rowCategories label — joining would double-count
+  // parents when Mondrian repeats them on every row instead of deduping.
+  const depths: number[] = new Array(n);
+  const ownSegments: string[] = new Array(n);
+  for (let r = 0; r < n; r++) {
+    const info = depthOfRow(parsed.bodyRows[r]);
+    depths[r] = info.depth;
+    ownSegments[r] = info.segment;
+  }
+  const maxDepth = Math.max(...depths);
+
+  // No hierarchy — every row is at the same level. Keep them all so the
+  // chart matches the grid for the trivial single-level case.
+  if (depths.every((d) => d === maxDepth)) {
     return {
       indices: parsed.bodyRows.map((_, i) => i),
       labels: parsed.rowCategories.slice(),
     };
   }
-  const lastCol = parsed.rowHeaderColCount - 1;
+
+  // For each leaf row, build "parent / .../ leaf" from the most recent
+  // segment seen at each level walked so far.
+  const lastSegByDepth = new Map<number, string>();
   const indices: number[] = [];
   const labels: string[] = [];
-  // Most recent non-empty value seen for each row-header column, so we
-  // can reconstruct the parent context for leaf rows where Mondrian has
-  // elided the repeated parent (the common dedup pattern).
-  const lastSeen: string[] = new Array(parsed.rowHeaderColCount).fill("");
-  for (let r = 0; r < parsed.bodyRows.length; r++) {
-    const row = parsed.bodyRows[r];
-    for (let c = 0; c < row.length; c++) {
-      const v = row[c]?.value ?? "";
-      if (v) lastSeen[c] = v;
-    }
-    const leafCell = row[lastCol];
-    if (leafCell?.value) {
+  for (let r = 0; r < n; r++) {
+    const d = depths[r];
+    const seg = ownSegments[r];
+    if (seg) lastSegByDepth.set(d, seg);
+    if (d === maxDepth) {
       indices.push(r);
-      labels.push(lastSeen.slice(0, lastCol + 1).filter(Boolean).join(" / "));
+      const parts: string[] = [];
+      for (let dd = 1; dd <= maxDepth; dd++) {
+        const v = lastSegByDepth.get(dd);
+        if (v) parts.push(v);
+      }
+      labels.push(parts.length ? parts.join(" / ") : seg);
     }
   }
   return { indices, labels };
+}
+
+interface RowDepth {
+  /** 1-based depth in the hierarchy on rows. */
+  depth: number;
+  /** The cell value at that depth — used as the leaf segment when
+   *  reconstructing parent / leaf labels. */
+  segment: string;
+}
+
+/** Depth + segment of the deepest cell in a row's row-header section.
+ *  Uses the uniquename when available (count of bracketed segments),
+ *  otherwise falls back to the deepest non-empty column index. */
+function depthOfRow(row: CellEntry[]): RowDepth {
+  for (let c = row.length - 1; c >= 0; c--) {
+    const cell = row[c];
+    const un = cell?.properties?.uniquename;
+    if (un) {
+      // `[Time].[Time].[1997].[1]` → 4 segments.
+      const matches = un.match(/\.\[/g);
+      return {
+        depth: (matches?.length ?? 0) + 1,
+        segment: cell?.value ?? "",
+      };
+    }
+    if (cell?.value) {
+      return { depth: c + 1, segment: cell.value };
+    }
+  }
+  return { depth: 0, segment: "" };
 }

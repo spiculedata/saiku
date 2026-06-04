@@ -155,9 +155,11 @@
     // The grid view is untouched.
     let rows = parsed.rowCategories;
     let matrix: (number | null)[][] = parsed.dataRows.map((row) => row.map(toNumber));
-    if (o.hideRollupRows && parsed.rowHeaderColCount > 1) {
+    if (o.hideRollupRows) {
+      // deriveLeafRows is a no-op for single-level rowsets (all rows at the
+      // same depth) and for empty results, so no extra guard is needed here.
       const leaf = deriveLeafRows(parsed);
-      if (leaf.indices.length > 0) {
+      if (leaf.indices.length > 0 && leaf.indices.length < matrix.length) {
         rows = leaf.labels;
         matrix = leaf.indices.map((i) => matrix[i]);
       }
