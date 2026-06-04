@@ -6,7 +6,7 @@
 
     <groupId>org.saikuanalytics</groupId>
     <artifactId>saiku-bom</artifactId>
-    <version>4.3.6</version>
+    <version>4.3.7</version>
     <packaging>pom</packaging>
     <name>Saiku BOM</name>
     <description>Central dependency-version catalogue for Saiku modules.</description>
@@ -346,7 +346,7 @@
             <dependency>
                 <groupId>pentaho</groupId>
                 <artifactId>mondrian</artifactId>
-                <version>4.8.1.12</version>
+                <version>4.8.1.19</version>
                 <!-- xerces 2.12.2 + xalan 2.7.2 are transitively pulled by
                      mondrian but hijack the JDK's built-in JAXP via
                      META-INF/services overrides. Spring 6.2's tightened
