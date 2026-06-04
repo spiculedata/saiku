@@ -4,6 +4,14 @@
   import { i18n } from "$lib/stores/i18n.svelte";
   import LocalePicker from "$lib/components/LocalePicker.svelte";
 
+  interface Props {
+    /** Panel open direction. "up" (default) suits a bottom-anchored host like
+     *  the workspace sidebar footer; "down" suits a top toolbar (saiku#1050,
+     *  the dashboard toolbar) so the panel doesn't open off the top of screen. */
+    placement?: "up" | "down";
+  }
+  let { placement = "up" }: Props = $props();
+
   let open = $state(false);
 
   function onDocumentClick(e: MouseEvent) {
@@ -30,7 +38,7 @@
     <Settings size={14} />
   </button>
   {#if open}
-    <div class="prefs-menu__panel" role="menu">
+    <div class="prefs-menu__panel" class:prefs-menu__panel--down={placement === "down"} role="menu">
       <div class="prefs-menu__row">
         <span class="prefs-menu__label">{i18n.t("topbar.theme")}</span>
         <button
@@ -72,6 +80,14 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
+  }
+  /* Top-toolbar placement (saiku#1050): open downward, aligned to the
+     button's right edge so the panel stays on-screen in the dashboard toolbar. */
+  .prefs-menu__panel--down {
+    bottom: auto;
+    top: calc(100% + 6px);
+    left: auto;
+    right: 0;
   }
   .prefs-menu__row {
     display: flex;
