@@ -355,6 +355,22 @@
         <property name="aiQueryResource" ref="aiQueryResource"/>
     </bean>
 
+    <!-- Per-tile dashboard comments (issue #942). commentService stores a
+         per-dashboard .jsonl via the internal-file API; commentResource
+         (@ /saiku/api/dashboards/comments) gates every op on the caller's
+         ability to READ the dashboard (#940 ACL) + author/admin to delete.
+         Sits on /rest/** = isFullyAuthenticated() so share-link guests
+         (#941 ROLE_SHARE_GUEST) can't reach it. -->
+    <bean id="commentService" class="org.saiku.service.comments.CommentService">
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+    </bean>
+
+    <bean id="commentResource"
+          class="org.saiku.web.rest.resources.comments.CommentResource">
+        <property name="commentService" ref="commentService"/>
+        <property name="sessionService" ref="sessionService"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
 
     <bean id="filterRepositoryBean" scope="session"
           class="org.saiku.web.rest.resources.FilterRepositoryResource">
