@@ -15,7 +15,7 @@
   import AddTileMenu from "$lib/views/dashboard/AddTileMenu.svelte";
   import FilterSuggestionsModal from "$lib/views/dashboard/FilterSuggestionsModal.svelte";
   import type { TileType } from "$lib/api/dashboards";
-  import { RotateCcw, X } from "lucide-svelte";
+  import { Monitor, RotateCcw, X } from "lucide-svelte";
 
   interface Props {
     name: string;
@@ -32,6 +32,9 @@
      *  Reset filters button's disabled state. */
     canResetFilters?: boolean;
     onResetFilters?: () => void;
+    /** Issue #928 — enter presentation / fullscreen mode. Shown in both
+     *  edit and viewer modes (TV-wall display is a viewer use case). */
+    onPresent?: () => void;
   }
 
   let {
@@ -46,6 +49,7 @@
     onAddTile,
     canResetFilters = false,
     onResetFilters,
+    onPresent,
   }: Props = $props();
 
   let suggestOpen = $state(false);
@@ -147,8 +151,21 @@
 
   <div class="spacer"></div>
 
-  {#if !readOnly}
-    <div class="actions">
+  <div class="actions">
+    {#if onPresent}
+      <button
+        type="button"
+        class="btn"
+        onclick={() => onPresent?.()}
+        title="Present — fullscreen, hide chrome (press F, Esc to exit)"
+        aria-label="Present"
+      >
+        <Monitor size={14} aria-hidden="true" />
+        <span>Present</span>
+      </button>
+    {/if}
+
+    {#if !readOnly}
       <button
         type="button"
         class="btn"
@@ -190,8 +207,8 @@
           Saved
         {/if}
       </button>
-    </div>
-  {/if}
+    {/if}
+  </div>
 </header>
 
 <FilterSuggestionsModal open={suggestOpen} onClose={() => (suggestOpen = false)} />
