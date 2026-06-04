@@ -78,6 +78,7 @@
   "modal.delete": "Löschen",
   "modal.about.title": "Über Saiku",
   "modal.about.tagline": "Saiku — modernisierter Stack.",
+  "modal.about.community": "Tritt der Community auf Slack bei",
   "modal.save.title": "Abfrage speichern",
   "modal.save.folder": "Ordner",
   "modal.save.name": "Name",

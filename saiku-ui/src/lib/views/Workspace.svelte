@@ -278,6 +278,12 @@
   <p>
     <strong>{session.username}</strong> · {session.roles.join(", ")}
   </p>
+  <p>
+    <a
+      href="https://join.slack.com/t/saikucloud/shared_invite/zt-3yor7kgiv-YUPhqK0pvd4WljctIQVOTA"
+      target="_blank"
+      rel="noopener noreferrer">{i18n.t("modal.about.community")}</a>
+  </p>
   {#snippet footer()}
     <button class="btn btn--primary" onclick={() => (aboutOpen = false)}>{i18n.t("modal.close")}</button>
   {/snippet}

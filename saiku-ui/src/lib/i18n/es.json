@@ -78,6 +78,7 @@
   "modal.delete": "Eliminar",
   "modal.about.title": "Acerca de Saiku",
   "modal.about.tagline": "Saiku — pila modernizada.",
+  "modal.about.community": "Únete a la comunidad en Slack",
   "modal.save.title": "Guardar consulta",
   "modal.save.folder": "Carpeta",
   "modal.save.name": "Nombre",
