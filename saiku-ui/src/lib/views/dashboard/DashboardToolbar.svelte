@@ -14,6 +14,7 @@
 
   import AddTileMenu from "$lib/views/dashboard/AddTileMenu.svelte";
   import FilterSuggestionsModal from "$lib/views/dashboard/FilterSuggestionsModal.svelte";
+  import PrefsMenu from "$lib/components/PrefsMenu.svelte";
   import type { TileType } from "$lib/api/dashboards";
   import { Monitor, RotateCcw, X } from "lucide-svelte";
 
@@ -208,6 +209,11 @@
         {/if}
       </button>
     {/if}
+
+    <!-- saiku#1050: theme (dark/light/system) + language control, parity with
+         the workspace. Shown in both editor and viewer; the whole toolbar is
+         hidden in presentation mode (#928), so it disappears on TV walls. -->
+    <PrefsMenu placement="down" />
   </div>
 </header>
 
