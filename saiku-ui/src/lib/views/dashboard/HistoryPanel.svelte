@@ -1,17 +1,15 @@
 <script lang="ts">
   /*
    * #947 PR2 — dashboard version history. Lists archived versions (newest
-   * first), previews a version's summary, and restores one (which itself
-   * archives the current state, so restore is reversible).
+   * first), opens a full read-only preview of one (in a new tab so it can't
+   * disturb the editing tab), and restores one (which itself archives the
+   * current state, so restore is reversible).
    */
+  import { base } from "$app/paths";
   import Modal from "$lib/components/Modal.svelte";
-  import { RotateCcw, Eye } from "lucide-svelte";
-  import {
-    getHistory,
-    getHistoryVersion,
-    restoreHistory,
-    type DashboardHistoryEntry,
-  } from "$lib/api/dashboards";
+  import { RotateCcw, ExternalLink } from "lucide-svelte";
+  import { getHistory, restoreHistory, type DashboardHistoryEntry } from "$lib/api/dashboards";
+  import { buildHistoryPreviewUrl } from "$lib/dashboard/historyPreview";
 
   interface Props {
     dashboardPath: string;
@@ -27,11 +25,9 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
   let busyVersion = $state<string | null>(null);
-  let preview = $state<{ version: string; name: string; tiles: number } | null>(null);
 
   $effect(() => {
     if (open) {
-      preview = null;
       void load();
     }
   });
@@ -48,16 +44,11 @@
     }
   }
 
-  async function showPreview(version: string): Promise<void> {
-    busyVersion = version;
-    try {
-      const d = await getHistoryVersion(dashboardPath, version);
-      preview = { version, name: d.name ?? "(untitled)", tiles: d.layout?.tiles?.length ?? 0 };
-    } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to load version";
-    } finally {
-      busyVersion = null;
-    }
+  /** Open a full read-only render of the version in a new tab (isolated store). */
+  function openPreview(version: string): void {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const url = buildHistoryPreviewUrl(dashboardPath, version, { origin, base });
+    window.open(url, "_blank", "noopener");
   }
 
   async function restore(version: string): Promise<void> {
@@ -101,19 +92,15 @@
             <div class="hist__meta">
               <span class="hist__date">{fmtDate(v.createdAt)}</span>
               <span class="hist__author">by {v.author || "unknown"}</span>
-              {#if preview && preview.version === v.version}
-                <span class="hist__preview">“{preview.name}” · {preview.tiles} tile(s)</span>
-              {/if}
             </div>
             <div class="hist__actions">
               <button
                 type="button"
                 class="btn btn--sm"
-                onclick={() => showPreview(v.version)}
-                disabled={busyVersion === v.version}
-                title="Preview this version"
+                onclick={() => openPreview(v.version)}
+                title="Open a read-only preview in a new tab"
               >
-                <Eye size={13} /><span>Preview</span>
+                <ExternalLink size={13} /><span>Preview</span>
               </button>
               <button
                 type="button"
@@ -173,10 +160,6 @@
   .hist__author {
     font-size: var(--fs-xs, 0.75rem);
     color: var(--fg-muted);
-  }
-  .hist__preview {
-    font-size: var(--fs-xs, 0.75rem);
-    color: var(--accent);
   }
   .hist__actions {
     display: flex;
