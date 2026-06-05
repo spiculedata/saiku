@@ -16,7 +16,11 @@
   import FilterSuggestionsModal from "$lib/views/dashboard/FilterSuggestionsModal.svelte";
   import PrefsMenu from "$lib/components/PrefsMenu.svelte";
   import type { TileType } from "$lib/api/dashboards";
-  import { Monitor, RotateCcw, X } from "lucide-svelte";
+  import { Monitor, RotateCcw, X, Share2, History } from "lucide-svelte";
+  // #941 + #947 PR2 — share-link + version-history entry points.
+  import { dashboardStore } from "$lib/stores/dashboard.svelte";
+  import DashboardShareModal from "$lib/views/dashboard/DashboardShareModal.svelte";
+  import HistoryPanel from "$lib/views/dashboard/HistoryPanel.svelte";
 
   interface Props {
     name: string;
@@ -52,6 +56,12 @@
     onResetFilters,
     onPresent,
   }: Props = $props();
+
+  // #941/#947: share + history act on the SAVED dashboard, so the buttons only
+  // appear once it has a repository path (not for an unsaved draft).
+  const savedPath = $derived(dashboardStore.savedPath);
+  let shareOpen = $state(false);
+  let historyOpen = $state(false);
 
   let suggestOpen = $state(false);
   let newTagInput = $state<string>("");
@@ -210,12 +220,45 @@
       </button>
     {/if}
 
+    {#if savedPath}
+      <button
+        type="button"
+        class="btn"
+        onclick={() => (historyOpen = true)}
+        title="Version history — preview and restore earlier saves"
+        aria-haspopup="dialog"
+      >
+        <History size={14} aria-hidden="true" />
+        <span>History</span>
+      </button>
+      <button
+        type="button"
+        class="btn"
+        onclick={() => (shareOpen = true)}
+        title="Share a read-only link to this dashboard"
+        aria-haspopup="dialog"
+      >
+        <Share2 size={14} aria-hidden="true" />
+        <span>Share</span>
+      </button>
+    {/if}
+
     <!-- saiku#1050: theme (dark/light/system) + language control, parity with
          the workspace. Shown in both editor and viewer; the whole toolbar is
          hidden in presentation mode (#928), so it disappears on TV walls. -->
     <PrefsMenu placement="down" />
   </div>
 </header>
+
+{#if savedPath}
+  <DashboardShareModal dashboardPath={savedPath} open={shareOpen} onClose={() => (shareOpen = false)} />
+  <HistoryPanel
+    dashboardPath={savedPath}
+    open={historyOpen}
+    onClose={() => (historyOpen = false)}
+    onRestored={() => void dashboardStore.load(savedPath)}
+  />
+{/if}
 
 <FilterSuggestionsModal open={suggestOpen} onClose={() => (suggestOpen = false)} />
 

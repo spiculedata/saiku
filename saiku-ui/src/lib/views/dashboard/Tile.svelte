@@ -22,7 +22,10 @@
   import KpiTile from "$lib/views/dashboard/tiles/KpiTile.svelte";
   import ImageTile from "$lib/views/dashboard/tiles/ImageTile.svelte";
   import TileEditorModal from "$lib/views/dashboard/TileEditorModal.svelte";
-  import { Copy, MoreVertical, Settings2, X } from "lucide-svelte";
+  import { Copy, MoreVertical, Settings2, X, MessageCircle } from "lucide-svelte";
+  // #942 PR2 — per-tile comments.
+  import CommentsPanel from "$lib/views/dashboard/CommentsPanel.svelte";
+  import { getComments } from "$lib/api/dashboards";
 
   interface Props {
     tile: DashboardTile;
@@ -32,6 +35,22 @@
   let { tile, readOnly = false }: Props = $props();
 
   let editorOpen = $state(false);
+
+  // #942: comments act on the SAVED dashboard. savedPath is empty for an
+  // unsaved draft AND for the public share viewer (hydrated with ""), so the
+  // badge naturally hides in both — guests can't comment.
+  const commentsPath = $derived(dashboardStore.savedPath);
+  let commentsOpen = $state(false);
+  let commentCount = $state(0);
+  let countLoaded = $state(false);
+  $effect(() => {
+    const path = commentsPath;
+    if (!path || countLoaded) return;
+    countLoaded = true;
+    void getComments(path, tile.id)
+      .then((cs) => (commentCount = cs.length))
+      .catch(() => {});
+  });
 
   // Overflow menu: opened from the kebab button or right-click. Coords
   // are viewport-relative (position: fixed) so the same menu element
@@ -138,6 +157,20 @@
     data-drag-handle={readOnly ? undefined : tile.id}
   >
     <span class="title">{tile.title ?? defaultTitle(tile)}</span>
+    <!-- #942: comment badge — shown for a saved dashboard in both edit + viewer
+         (hidden in the share view, where savedPath is empty). -->
+    {#if commentsPath}
+      <button
+        type="button"
+        class="icon-btn tile-comment-badge"
+        aria-label="Comments"
+        title="Comments"
+        onclick={() => (commentsOpen = true)}
+      >
+        <MessageCircle size={14} />
+        {#if commentCount > 0}<span class="tile-comment-count">{commentCount}</span>{/if}
+      </button>
+    {/if}
     {#if !readOnly}
       <div class="tile-actions">
         <button type="button" class="icon-btn" aria-label="Edit tile" onclick={handleEdit}>
@@ -194,6 +227,17 @@
   <TileEditorModal {tile} onClose={() => (editorOpen = false)} />
 {/if}
 
+{#if commentsPath}
+  <CommentsPanel
+    dashboardPath={commentsPath}
+    tileId={tile.id}
+    tileTitle={tile.title ?? defaultTitle(tile)}
+    open={commentsOpen}
+    onClose={() => (commentsOpen = false)}
+    onCountChange={(n) => (commentCount = n)}
+  />
+{/if}
+
 <script module lang="ts">
   import type { DashboardTile as DT } from "$lib/api/dashboards";
 
@@ -228,6 +272,29 @@
     border-radius: 6px;
     background: var(--bg);
     overflow: hidden;
+  }
+  /* #942: comment badge sits between the title and the edit actions. */
+  .tile-comment-badge {
+    position: relative;
+    margin-left: auto;
+  }
+  .tile-comment-badge ~ :global(.tile-actions) {
+    margin-left: 0;
+  }
+  .tile-comment-count {
+    position: absolute;
+    top: -3px;
+    right: -3px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.625rem;
+    line-height: 14px;
+    text-align: center;
+    box-sizing: border-box;
   }
   .tile-header {
     display: flex;
