@@ -527,3 +527,176 @@ function cryptoUuid(): string {
 // Kept for forward compatibility — the inline TileQuery body uses the same
 // shape ThinQuery already round-trips through the AI API.
 export type { ThinQuery };
+
+/* =========================================================================
+ * PR2 clients for the merged governance/sharing backends.
+ * ========================================================================= */
+
+const SHARE_BASE = "/rest/saiku/share";
+
+/** Load a dashboard via the account-free guest share surface (#941). Token in
+ *  the `X-Saiku-Share-Token` header — no cookie. */
+export async function loadSharedDashboard(token: string): Promise<Dashboard> {
+  const res = await fetch(`${SHARE_BASE}/view/dashboard`, {
+    headers: { "X-Saiku-Share-Token": token, Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`loadSharedDashboard -> ${res.status}`);
+  }
+  return (await res.json()) as Dashboard;
+}
+
+/* --------------------------- comments (#942) --------------------------- */
+
+export interface DashboardComment {
+  id: string;
+  tileId: string;
+  author: string;
+  body: string;
+  mentions: string[];
+  createdAt: number;
+  deleted: boolean;
+}
+
+export async function getComments(dashboardPath: string, tileId: string): Promise<DashboardComment[]> {
+  const params = new URLSearchParams({ dashboard: dashboardPath, tile: tileId });
+  const res = await fetch(`${REST_BASE}/comments?${params}`, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`getComments -> ${res.status}`);
+  }
+  return (await res.json()) as DashboardComment[];
+}
+
+export async function postComment(
+  dashboardPath: string,
+  tileId: string,
+  body: string,
+): Promise<DashboardComment> {
+  const res = await fetch(`${REST_BASE}/comments`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ dashboard: dashboardPath, tile: tileId, body }),
+  });
+  if (!res.ok) {
+    throw new Error(`postComment -> ${res.status}: ${await readError(res)}`);
+  }
+  return (await res.json()) as DashboardComment;
+}
+
+export async function deleteComment(dashboardPath: string, commentId: string): Promise<void> {
+  const params = new URLSearchParams({ dashboard: dashboardPath });
+  const res = await fetch(`${REST_BASE}/comments/${encodeURIComponent(commentId)}?${params}`, {
+    method: "DELETE",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`deleteComment -> ${res.status}`);
+  }
+}
+
+/* --------------------------- history (#947) ---------------------------- */
+
+export interface DashboardHistoryEntry {
+  version: string;
+  createdAt: number;
+  author: string;
+}
+
+export async function getHistory(dashboardPath: string): Promise<DashboardHistoryEntry[]> {
+  const res = await fetch(`${REST_BASE}/history?dashboard=${encodeURIComponent(dashboardPath)}`, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`getHistory -> ${res.status}`);
+  }
+  return (await res.json()) as DashboardHistoryEntry[];
+}
+
+export async function getHistoryVersion(dashboardPath: string, version: string): Promise<Dashboard> {
+  const params = new URLSearchParams({ dashboard: dashboardPath, version });
+  const res = await fetch(`${REST_BASE}/history/version?${params}`, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`getHistoryVersion -> ${res.status}`);
+  }
+  return (await res.json()) as Dashboard;
+}
+
+export async function restoreHistory(dashboardPath: string, version: string): Promise<void> {
+  const params = new URLSearchParams({ dashboard: dashboardPath, version });
+  const res = await fetch(`${REST_BASE}/history/restore?${params}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`restoreHistory -> ${res.status}`);
+  }
+}
+
+/* ---------------------------- share mint (#941) ------------------------ */
+
+export interface ShareMintResult {
+  status: string;
+  token: string;
+  url: string;
+  expiresAt: number;
+}
+
+export interface ShareTokenInfo {
+  token: string;
+  dashboardPath: string;
+  createdBy: string;
+  createdAt: number;
+  expiresAt: number;
+  revoked: boolean;
+  label: string;
+  active: boolean;
+}
+
+export async function mintShare(
+  dashboardPath: string,
+  ttlHours?: number,
+  label?: string,
+): Promise<ShareMintResult> {
+  const res = await fetch(`${SHARE_BASE}/mint`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ dashboardPath, ttlHours, label }),
+  });
+  if (!res.ok) {
+    throw new Error(`mintShare -> ${res.status}: ${await readError(res)}`);
+  }
+  return (await res.json()) as ShareMintResult;
+}
+
+export async function listShareTokens(): Promise<ShareTokenInfo[]> {
+  const res = await fetch(`${SHARE_BASE}/tokens`, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`listShareTokens -> ${res.status}`);
+  }
+  return (await res.json()) as ShareTokenInfo[];
+}
+
+export async function revokeShareToken(token: string): Promise<void> {
+  const res = await fetch(`${SHARE_BASE}/tokens/${encodeURIComponent(token)}`, {
+    method: "DELETE",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`revokeShareToken -> ${res.status}`);
+  }
+}
