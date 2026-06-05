@@ -700,3 +700,22 @@ export async function revokeShareToken(token: string): Promise<void> {
     throw new Error(`revokeShareToken -> ${res.status}`);
   }
 }
+
+/* ---------------------- user directory (#942 follow-up) ----------------- */
+
+export interface SaikuUserRef {
+  username: string;
+}
+
+/** Minimal authenticated user list (usernames only) — powers @-mention
+ *  autocomplete in comments. */
+export async function getUsers(): Promise<SaikuUserRef[]> {
+  const res = await fetch("/rest/saiku/api/users", {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`getUsers -> ${res.status}`);
+  }
+  return (await res.json()) as SaikuUserRef[];
+}

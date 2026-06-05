@@ -1,14 +1,21 @@
 <script lang="ts">
   /*
-   * #942 PR2 — per-tile comments thread. Lists comments for one tile, lets the
-   * user post (plain @username typing — mentions are parsed server-side;
-   * autocomplete deferred until a non-admin users-list endpoint exists), and
-   * delete their own (admins delete any).
+   * #942 — per-tile comments thread. Lists comments for one tile, lets the user
+   * post (with @-mention autocomplete from the user directory), and delete their
+   * own (admins delete any). Mentions are parsed + stored server-side.
    */
+  import { tick } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import { Trash2, Send } from "lucide-svelte";
   import { session } from "$lib/stores/session.svelte";
-  import { getComments, postComment, deleteComment, type DashboardComment } from "$lib/api/dashboards";
+  import {
+    getComments,
+    postComment,
+    deleteComment,
+    getUsers,
+    type DashboardComment,
+  } from "$lib/api/dashboards";
+  import { applyMention, currentMentionToken, matchUsers } from "$lib/dashboard/mentionAutocomplete";
 
   interface Props {
     dashboardPath: string;
@@ -84,8 +91,73 @@
     }
   }
 
+  /* ----------------------- @-mention autocomplete ---------------------- */
+
+  let textareaEl = $state<HTMLTextAreaElement | null>(null);
+  let usernames = $state<string[]>([]);
+  let usersLoaded = false;
+  let suggestions = $state<string[]>([]);
+  let selectedIndex = $state(0);
+
+  async function ensureUsers(): Promise<void> {
+    if (usersLoaded) return;
+    usersLoaded = true;
+    try {
+      usernames = (await getUsers()).map((u) => u.username);
+    } catch {
+      usernames = [];
+    }
+  }
+
+  async function refreshSuggestions(): Promise<void> {
+    const caret = textareaEl?.selectionStart ?? body.length;
+    const tok = currentMentionToken(body, caret);
+    if (!tok) {
+      suggestions = [];
+      return;
+    }
+    await ensureUsers();
+    suggestions = matchUsers(usernames, tok.query);
+    selectedIndex = 0;
+  }
+
+  async function pickMention(username: string): Promise<void> {
+    const caret = textareaEl?.selectionStart ?? body.length;
+    const r = applyMention(body, caret, username);
+    body = r.text;
+    suggestions = [];
+    await tick();
+    if (textareaEl) {
+      textareaEl.focus();
+      textareaEl.setSelectionRange(r.caret, r.caret);
+    }
+  }
+
   function onKeydown(e: KeyboardEvent): void {
-    // Ctrl/Cmd+Enter posts.
+    if (suggestions.length > 0) {
+      // Navigate / accept the mention dropdown.
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        selectedIndex = (selectedIndex + 1) % suggestions.length;
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        selectedIndex = (selectedIndex - 1 + suggestions.length) % suggestions.length;
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        void pickMention(suggestions[selectedIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        suggestions = [];
+        return;
+      }
+    }
+    // Ctrl/Cmd+Enter posts (when not selecting a mention).
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
       void post();
@@ -121,13 +193,40 @@
     {/if}
 
     <div class="cmts__compose">
-      <textarea
-        class="cmts__input"
-        bind:value={body}
-        placeholder="Add a comment… use @name to mention someone (Ctrl/Cmd+Enter to post)"
-        rows="2"
-        onkeydown={onKeydown}
-      ></textarea>
+      <div class="cmts__field">
+        <textarea
+          class="cmts__input"
+          bind:this={textareaEl}
+          bind:value={body}
+          placeholder="Add a comment… type @ to mention someone (Ctrl/Cmd+Enter to post)"
+          rows="2"
+          onkeydown={onKeydown}
+          oninput={refreshSuggestions}
+          onclick={refreshSuggestions}
+          onkeyup={refreshSuggestions}
+        ></textarea>
+        {#if suggestions.length > 0}
+          <ul class="cmts__mentions" role="listbox">
+            {#each suggestions as u, i (u)}
+              <li>
+                <button
+                  type="button"
+                  class="cmts__mention"
+                  class:cmts__mention--active={i === selectedIndex}
+                  role="option"
+                  aria-selected={i === selectedIndex}
+                  onmousedown={(e) => {
+                    e.preventDefault();
+                    void pickMention(u);
+                  }}
+                >
+                  @{u}
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
       <button type="button" class="btn primary" onclick={post} disabled={posting || !body.trim()}>
         <Send size={14} /><span>{posting ? "Posting…" : "Post"}</span>
       </button>
@@ -203,9 +302,47 @@
     border-top: 1px solid var(--border);
     padding-top: var(--space-2);
   }
-  .cmts__input {
+  .cmts__field {
+    position: relative;
     flex: 1;
+  }
+  .cmts__input {
+    width: 100%;
+    box-sizing: border-box;
     resize: vertical;
     font: inherit;
+  }
+  /* @-mention dropdown, floats above the textarea. */
+  .cmts__mentions {
+    position: absolute;
+    bottom: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    margin: 0;
+    padding: 4px;
+    list-style: none;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.15));
+    max-height: 12rem;
+    overflow: auto;
+    z-index: 10;
+  }
+  .cmts__mention {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 4px var(--space-2);
+    border: none;
+    background: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font: inherit;
+    color: var(--fg);
+  }
+  .cmts__mention:hover,
+  .cmts__mention--active {
+    background: var(--bg-subtle);
   }
 </style>
