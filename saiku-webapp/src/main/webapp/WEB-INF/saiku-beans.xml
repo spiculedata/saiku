@@ -320,6 +320,14 @@
         <property name="datasourceService" ref="datasourceServiceBean"/>
         <property name="sessionService" ref="sessionService"/>
         <property name="historyService" ref="dashboardHistoryService"/>
+        <!-- #942/#947 cleanup: purge sidecar comment + history files on delete. -->
+        <property name="commentService" ref="commentService"/>
+    </bean>
+
+    <!-- #942 follow-up: minimal authenticated user directory for @-mention
+         autocomplete (usernames only; admin user-mgmt stays on /saiku/admin). -->
+    <bean id="usersResource" class="org.saiku.web.rest.resources.UsersResource">
+        <property name="userService" ref="userServiceBean"/>
     </bean>
 
     <!-- Dashboard versioning / history (issue #947). dashboardHistoryService

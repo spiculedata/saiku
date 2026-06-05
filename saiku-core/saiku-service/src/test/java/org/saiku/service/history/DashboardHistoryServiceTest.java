@@ -34,6 +34,11 @@ public class DashboardHistoryServiceTest {
         public String getInternalFileData(String path) {
             return internal.get(path);
         }
+
+        @Override
+        public void removeInternalFile(String path) {
+            internal.remove(path);
+        }
     }
 
     private FakeDs ds;
@@ -77,6 +82,14 @@ public class DashboardHistoryServiceTest {
         assertEquals(DashboardHistoryService.RETENTION, list.size());
         assertEquals("newest kept", "{\"v\":55}", list.get(0).dashboard);
         assertEquals("oldest kept is v6 (v1-5 pruned)", "{\"v\":6}", list.get(list.size() - 1).dashboard);
+    }
+
+    @Test
+    public void purge_removes_the_history_file() {
+        svc.archive(DASH, "{\"v\":1}", "admin");
+        assertEquals(1, svc.list(DASH).size());
+        svc.purge(DASH);
+        assertEquals("purged history is empty", 0, svc.list(DASH).size());
     }
 
     @Test

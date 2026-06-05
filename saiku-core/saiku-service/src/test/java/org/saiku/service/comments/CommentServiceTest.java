@@ -40,6 +40,11 @@ public class CommentServiceTest {
         public String getFileData(String path, String username, List<String> roles) {
             return dashboardReadable ? "{\"id\":\"x\"}" : null;
         }
+
+        @Override
+        public void removeInternalFile(String path) {
+            internal.remove(path);
+        }
     }
 
     private FakeDs ds;
@@ -80,6 +85,14 @@ public class CommentServiceTest {
         // The deleted row is still on disk (findById sees it) so order is kept.
         assertTrue(svc.findById(DASH, a.id).deleted);
         assertFalse("deleting unknown id is false", svc.softDelete(DASH, "nope"));
+    }
+
+    @Test
+    public void purge_removes_the_comment_file() {
+        svc.add(DASH, "t1", "admin", "hi");
+        assertEquals(1, svc.list(DASH, "t1").size());
+        svc.purge(DASH);
+        assertEquals("purged thread is empty", 0, svc.list(DASH, "t1").size());
     }
 
     @Test

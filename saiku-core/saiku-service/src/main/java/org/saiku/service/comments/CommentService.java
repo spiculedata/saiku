@@ -112,6 +112,16 @@ public class CommentService {
         return found;
     }
 
+    /** Delete this dashboard's entire comment file — called when the dashboard
+     *  itself is removed so the sidecar JSONL isn't orphaned (#942 cleanup). */
+    public void purge(String dashboardPath) {
+        try {
+            datasourceService.removeInternalFile(commentsPath(dashboardPath));
+        } catch (RuntimeException e) {
+            log.warn("could not purge comments for {}", dashboardPath, e);
+        }
+    }
+
     /* --------------------------- internals --------------------------- */
 
     static List<String> parseMentions(String body) {
