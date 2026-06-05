@@ -105,6 +105,37 @@ export function isAiCell(v: unknown): v is AiCell {
   return typeof v === "object" && v !== null && "formatted" in (v as object);
 }
 
+/* ------------------------- share view (#941 PR2) ------------------------- */
+
+/** Base for the account-free guest view surface. The token is carried in the
+ *  `X-Saiku-Share-Token` header (NOT a cookie / query param) — see the
+ *  hardened backend. */
+const SHARE_VIEW_BASE = "/rest/saiku/share/view";
+
+/** Run one tile's authored query under the share owner's scope (#941). The
+ *  guest supplies no query body — only the tile id, validated server-side
+ *  against the token-pinned dashboard. */
+export async function runSharedTileQuery(
+  token: string,
+  tileId: string,
+  format: "records" | "matrix" = "records",
+): Promise<AiQueryResponse> {
+  const url = `${SHARE_VIEW_BASE}/tile/${encodeURIComponent(tileId)}/query?format=${encodeURIComponent(format)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "X-Saiku-Share-Token": token, Accept: "application/json" },
+  });
+  const text = await res.text();
+  if (!text) {
+    throw new Error(`runSharedTileQuery -> ${res.status}: empty body`);
+  }
+  try {
+    return JSON.parse(text) as AiQueryResponse;
+  } catch (e) {
+    throw new Error(`runSharedTileQuery -> ${res.status}: non-JSON response (${(e as Error).message})`);
+  }
+}
+
 /** Slicer-style filter shape that /ai/query/saved accepts to merge
  *  dashboard-level filters onto the loaded ThinQuery. Mirrors the
  *  server-side AiFilterSelection: dim/hier/level + canonical MDX member

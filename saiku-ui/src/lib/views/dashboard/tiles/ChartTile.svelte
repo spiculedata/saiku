@@ -44,6 +44,9 @@
   import TileError from "./TileError.svelte";
   import TileEmpty from "./TileEmpty.svelte";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
+  // #941 share viewer (PR2): in the public /share view a prefetched response is
+  // injected via context; tiles render from it instead of fetching live.
+  import { getShareViewResponse } from "$lib/dashboard/shareViewContext";
 
   interface Props {
     tile: DashboardTile;
@@ -51,6 +54,12 @@
   }
 
   let { tile, onClickFilter }: Props = $props();
+
+  // Non-null only inside the share viewer (getContext at init); see fetch effect.
+  // tile.id is stable for a tile instance and getContext must run at init, so the
+  // one-time read is intentional.
+  // svelte-ignore state_referenced_locally
+  const sharedResponse = getShareViewResponse(tile.id);
 
   let host = $state<HTMLDivElement | null>(null);
   // `$state.raw` so the ECharts instance is reactive on *reassignment*
@@ -190,6 +199,14 @@
   let lastQueryJson = $state<string>("");
 
   $effect(() => {
+    // #941 share viewer: render the prefetched guest response; never fetch live
+    // (a share guest has no session / no /ai/query access).
+    if (sharedResponse) {
+      response = sharedResponse;
+      loading = false;
+      error = null;
+      return;
+    }
     const tileQuery = tile.query;
     const active = activeFilters.all;
     const s = schema;

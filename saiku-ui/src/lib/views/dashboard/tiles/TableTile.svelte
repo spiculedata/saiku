@@ -53,6 +53,8 @@
   import TileError from "./TileError.svelte";
   import TileEmpty from "./TileEmpty.svelte";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
+  // #941 share viewer (PR2): render from a prefetched guest response when present.
+  import { getShareViewResponse } from "$lib/dashboard/shareViewContext";
 
   interface Props {
     tile: DashboardTile;
@@ -63,6 +65,10 @@
   }
 
   let { tile, onClickFilter }: Props = $props();
+
+  // Non-null only inside the share viewer (getContext at init); see fetch effect.
+  // svelte-ignore state_referenced_locally
+  const sharedResponse = getShareViewResponse(tile.id);
 
   let loading = $state(false);
   let error = $state<string | null>(null);
@@ -133,6 +139,13 @@
   let lastQueryJson = $state<string>("");
 
   $effect(() => {
+    // #941 share viewer: render the prefetched guest response; never fetch live.
+    if (sharedResponse) {
+      response = sharedResponse;
+      loading = false;
+      error = null;
+      return;
+    }
     const tileQuery = tile.query;
     const active = activeFilters.all;
     const s = schema;

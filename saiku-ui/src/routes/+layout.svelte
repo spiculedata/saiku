@@ -19,6 +19,10 @@
 
   let { children } = $props();
 
+  // #941 share viewer: the public /share route renders a dashboard for an
+  // account-free guest — no app chrome (topbar / upgrade banner), no session.
+  const isShare = $derived(page.url.pathname.startsWith(`${base}/share`));
+
   // Non-modal session-expired banner state (issue #944). The previous
   // SessionErrorModal was a blocking modal in the middle of the screen,
   // which is jarring on long-running dashboard / TV-wall views. We now
@@ -74,10 +78,10 @@
 </script>
 
 <div class="app" class:app--cursor-hidden={presentation.active && presentation.cursorHidden}>
-  {#if !embed.active && !presentation.active}
+  {#if !embed.active && !presentation.active && !isShare}
     <UpgradeBanner />
   {/if}
-  {#if !embed.active && !presentation.active}
+  {#if !embed.active && !presentation.active && !isShare}
   <header class="topbar">
     <a class="topbar__brand" href="{base}/" aria-label={i18n.t("brand")}>
       {#if brandLogo}
