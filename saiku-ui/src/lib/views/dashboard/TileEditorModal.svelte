@@ -26,6 +26,9 @@
     type DashboardTile,
     type FilterWidget,
     type KpiConfig,
+    type ImageSource,
+    type ImageFit,
+    uploadImageAsset,
     type TileQuery,
     // Issue #919 — conditional formatting on table tiles.
     type ConditionalFormatRule,
@@ -89,6 +92,22 @@
       direction: tile.kpi?.direction ?? "higher-is-better",
     })),
   );
+  // ── Issue #918: image tile config (image only) ──
+  // mode "url" → imageUrl is an external http(s) URL; mode "upload" → a file
+  // is uploaded on save and its returned download path becomes the src
+  // (imageExistingSrc preserves the already-stored path when no new file is
+  // picked). Held as a self-contained working copy, persisted in handleSave.
+  let imageMode = $state<ImageSource>(untrack(() => tile.image?.source ?? "url"));
+  let imageUrl = $state<string>(
+    untrack(() => ((tile.image?.source ?? "url") === "url" ? (tile.image?.src ?? "") : "")),
+  );
+  let imageExistingSrc = $state<string>(untrack(() => tile.image?.src ?? ""));
+  let imageFit = $state<ImageFit>(untrack(() => tile.image?.fit ?? "contain"));
+  let imageCaption = $state<string>(untrack(() => tile.image?.caption ?? ""));
+  let imageAlt = $state<string>(untrack(() => tile.image?.alt ?? ""));
+  let imageFile = $state<File | null>(null);
+  let imageUploading = $state(false);
+  // ── end issue #918 ──
   let inlineBodyJson = $state<string>(
     untrack(() => (tile.query?.kind === "inline" ? JSON.stringify(tile.query.body, null, 2) : "")),
   );
@@ -344,7 +363,7 @@
     { id: "absolute", label: "Absolute (fixed value)" },
   ];
 
-  function handleSave(): void {
+  async function handleSave(): Promise<void> {
     bodyError = null;
     positionError = null;
 
@@ -473,6 +492,35 @@
       patch.conditionalFormat = cleaned.length > 0 ? cleaned : undefined;
     }
 
+    // ── Issue #918: image tile. URL mode persists the typed URL; upload mode
+    // POSTs the picked file to the (auth + content-type + size + path-traversal
+    // hardened) endpoint on save and persists the returned download path,
+    // keeping the existing path when no new file was picked. Upload failures
+    // surface in the modal and abort the save. ──
+    if (tile.type === "image") {
+      let src = imageExistingSrc;
+      if (imageMode === "url") {
+        src = imageUrl.trim();
+      } else if (imageFile) {
+        imageUploading = true;
+        try {
+          src = await uploadImageAsset(tile.id, imageFile);
+        } catch (e) {
+          bodyError = `Image upload failed: ${(e as Error).message}`;
+          imageUploading = false;
+          return;
+        }
+        imageUploading = false;
+      }
+      patch.image = {
+        source: imageMode,
+        src: src || undefined,
+        fit: imageFit,
+        caption: imageCaption.trim() || undefined,
+        alt: imageAlt.trim() || undefined,
+      };
+    }
+
     // Merge the patch into the repositioned source tile, then commit
     // the whole cascade in one go.
     const tiles = reposition.tiles!.map((t) => (t.id === tile.id ? { ...t, ...patch } : t));
@@ -532,7 +580,68 @@
         </label>
       {/if}
 
-      {#if tile.type !== "text"}
+      {#if tile.type === "image"}
+        <fieldset class="mode">
+          <legend>Image source</legend>
+          <label class="radio">
+            <input type="radio" bind:group={imageMode} value="url" />
+            <span>URL</span>
+          </label>
+          <label class="radio">
+            <input type="radio" bind:group={imageMode} value="upload" />
+            <span>Upload file</span>
+          </label>
+        </fieldset>
+
+        {#if imageMode === "url"}
+          <label class="field">
+            <span>Image URL (http/https)</span>
+            <input
+              type="url"
+              bind:value={imageUrl}
+              placeholder="https://example.com/logo.png"
+            />
+          </label>
+        {:else}
+          <label class="field">
+            <span>Upload image{imageExistingSrc ? " (replaces current)" : ""}</span>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              onchange={(e) => {
+                imageFile = (e.currentTarget as HTMLInputElement).files?.[0] ?? null;
+                bodyError = null;
+              }}
+            />
+            <span class="hint">
+              PNG, JPEG, GIF or WebP, up to 2&nbsp;MB. Stored privately in your
+              repository.{imageExistingSrc && !imageFile ? " An image is already set." : ""}
+            </span>
+          </label>
+        {/if}
+
+        <label class="field">
+          <span>Fit</span>
+          <select bind:value={imageFit}>
+            <option value="contain">Contain (whole image, letterboxed)</option>
+            <option value="cover">Cover (fill tile, crop edges)</option>
+            <option value="fill">Fill (stretch to tile)</option>
+            <option value="scale-down">Scale down (never upscale)</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Caption (optional)</span>
+          <input type="text" bind:value={imageCaption} placeholder="e.g. Q4 campaign" />
+        </label>
+
+        <label class="field">
+          <span>Alt text (accessibility)</span>
+          <input type="text" bind:value={imageAlt} placeholder="Describe the image" />
+        </label>
+      {/if}
+
+      {#if tile.type !== "text" && tile.type !== "image"}
         <label class="field">
           <span>Cube</span>
           {#if cubesLoading}
@@ -974,8 +1083,10 @@
       {/if}
     </div>
     <footer class="modal-footer">
-      <button type="button" class="btn" onclick={onClose}>Cancel</button>
-      <button type="button" class="btn primary" onclick={handleSave}>Save</button>
+      <button type="button" class="btn" onclick={onClose} disabled={imageUploading}>Cancel</button>
+      <button type="button" class="btn primary" onclick={handleSave} disabled={imageUploading}>
+        {imageUploading ? "Uploading…" : "Save"}
+      </button>
     </footer>
   </div>
 </div>

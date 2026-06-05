@@ -24,6 +24,8 @@ export function defaultSizeFor(type: TileType): { w: number; h: number } {
       return { w: 6, h: 2 };
     case "kpi":
       return { w: 3, h: 2 };
+    case "image":
+      return { w: 4, h: 3 };
   }
 }
 

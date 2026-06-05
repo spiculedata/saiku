@@ -339,6 +339,17 @@
         <property name="sessionService" ref="sessionService"/>
     </bean>
 
+    <!-- Dashboard image-tile assets (issue #918) @ /saiku/api/dashboards/image.
+         Stores uploaded images Base64-encoded via the same ACL-checked file
+         primitives as the dashboards, in the uploader's home folder, so image
+         assets inherit the owner's permission model. Magic-byte sniffed
+         (PNG/JPEG/GIF/WebP only; SVG blocked), 2 MB cap, served nosniff. -->
+    <bean id="dashboardImageResource"
+          class="org.saiku.web.rest.resources.dashboards.DashboardImageResource">
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
+    </bean>
+
     <!-- ====================================================================
          Shareable read-only dashboard links (issue #941).
          - shareTokenStore: file-backed token store under ${saiku.home}/share-tokens.
