@@ -50,6 +50,7 @@ public class DashboardResource {
 
     private DatasourceService datasourceService;
     private SessionService sessionService;
+    private org.saiku.service.history.DashboardHistoryService historyService;
 
     public void setDatasourceService(DatasourceService s) {
         this.datasourceService = s;
@@ -57,6 +58,11 @@ public class DashboardResource {
 
     public void setSessionService(SessionService s) {
         this.sessionService = s;
+    }
+
+    /** Optional (#947): archives the replaced version on each successful save. */
+    public void setHistoryService(org.saiku.service.history.DashboardHistoryService s) {
+        this.historyService = s;
     }
 
     /**
@@ -123,8 +129,25 @@ public class DashboardResource {
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         }
+        // #947: capture the state being replaced so we can archive it after a
+        // successful write. Best-effort read (a brand-new dashboard has none).
+        String previous = null;
+        try {
+            previous = datasourceService.getFileData(path, username, roles);
+        } catch (RuntimeException ignored) {
+            // no prior version / not readable — nothing to archive
+        }
         String resp = datasourceService.saveFile(body, path, username, roles);
         if (SAVE_OK.equals(resp)) {
+            // Archive AFTER the write succeeds, and never let a history failure
+            // affect the save result (#947).
+            if (historyService != null && previous != null && !previous.isEmpty()) {
+                try {
+                    historyService.archive(path, previous, username);
+                } catch (RuntimeException e) {
+                    log.warn("dashboard history archive failed for {} (save still succeeded)", path, e);
+                }
+            }
             return Response.ok(Map.of("status", "OK", "path", path))
                     .type(MediaType.APPLICATION_JSON)
                     .build();

@@ -319,6 +319,24 @@
           class="org.saiku.web.rest.resources.dashboards.DashboardResource">
         <property name="datasourceService" ref="datasourceServiceBean"/>
         <property name="sessionService" ref="sessionService"/>
+        <property name="historyService" ref="dashboardHistoryService"/>
+    </bean>
+
+    <!-- Dashboard versioning / history (issue #947). dashboardHistoryService
+         archives the replaced version on each save (flat saiku-history-*.jsonl,
+         retain 50); dashboardHistoryResource (@ /saiku/api/dashboards/history)
+         lists/previews/restores, gated on dashboard canRead (#940) for view and
+         canWrite (via saveFile) for restore. Under /rest/** so #941 guests
+         can't reach it. -->
+    <bean id="dashboardHistoryService" class="org.saiku.service.history.DashboardHistoryService">
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+    </bean>
+
+    <bean id="dashboardHistoryResource"
+          class="org.saiku.web.rest.resources.history.DashboardHistoryResource">
+        <property name="historyService" ref="dashboardHistoryService"/>
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
     </bean>
 
     <!-- ====================================================================
