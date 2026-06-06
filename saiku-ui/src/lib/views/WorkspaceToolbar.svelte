@@ -389,23 +389,27 @@
           <input type="checkbox" bind:checked={query.autorun} />
           <span>{i18n.t("toolbar.autorun")}</span>
         </label>
-        <label class="toolbar__check" title={i18n.t("toolbar.nonEmpty.hint")}>
-          <input type="checkbox" bind:checked={nonEmpty} />
-          <span>{i18n.t("toolbar.nonEmpty")}</span>
-        </label>
-        <label class="toolbar__check" title={i18n.t("toolbar.visualTotals.hint")}>
-          <input type="checkbox" bind:checked={visualTotals} />
-          <span>{i18n.t("toolbar.visualTotals")}</span>
-        </label>
+        {#if query.current?.type !== "MDX"}
+          <label class="toolbar__check" title={i18n.t("toolbar.nonEmpty.hint")}>
+            <input type="checkbox" bind:checked={nonEmpty} />
+            <span>{i18n.t("toolbar.nonEmpty")}</span>
+          </label>
+          <label class="toolbar__check" title={i18n.t("toolbar.visualTotals.hint")}>
+            <input type="checkbox" bind:checked={visualTotals} />
+            <span>{i18n.t("toolbar.visualTotals")}</span>
+          </label>
+        {/if}
         <label class="toolbar__check" title={i18n.t("toolbar.async.hint")}>
           <input type="checkbox" bind:checked={query.async} />
           <span>{i18n.t("toolbar.async")}</span>
         </label>
       </div>
     {/if}
-    <button class="tb-btn" title={i18n.t("toolbar.swap")} aria-label={i18n.t("toolbar.swap")} onclick={() => query.swapAxes()}>
-      <ArrowLeftRight size={18} />
-    </button>
+    {#if query.current?.type !== "MDX"}
+      <button class="tb-btn" title={i18n.t("toolbar.swap")} aria-label={i18n.t("toolbar.swap")} onclick={() => query.swapAxes()}>
+        <ArrowLeftRight size={18} />
+      </button>
+    {/if}
   </div>
   {#if onAskAi}
     <div class="toolbar__sep"></div>

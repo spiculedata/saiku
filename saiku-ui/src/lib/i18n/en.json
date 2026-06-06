@@ -389,6 +389,7 @@
   "workspace.aiQuery.empty": "Ask a question about the active cube and I'll translate it to an OLAP query. Type your question in the box below.",
   "workspace.aiQuery.activeCube": "Active cube: {cube}",
   "workspace.aiQuery.tryAsking": "Try asking:",
+  "canvas.mdxBannerText": "Running raw MDX — drop-zone editing is disabled. Switch back to build mode by clearing the MDX.",
   "workspace.aiQuery.example1": "Show me sales by country",
   "workspace.aiQuery.example2": "Top 10 products by revenue",
   "workspace.aiQuery.example3": "Quarterly sales trend",
