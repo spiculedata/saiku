@@ -333,6 +333,67 @@ describe("buildChartOption — theme tokens", () => {
   });
 });
 
+describe("buildChartOption — map (#1071)", () => {
+  /** Countries on rows, one measure. */
+  function geo(): ChartProjection {
+    return {
+      rowCategories: ["USA", "Canada", "Mexico"],
+      columnCategories: ["Store Sales"],
+      matrix: [[565238.13], [221001.5], [97863.2]],
+    };
+  }
+
+  test("emits a single 'map' series on the world map", () => {
+    const opt = buildChartOption(geo(), "map", opts()) as Record<string, unknown>;
+    const series = opt.series as { type: string; map: string }[];
+    expect(series).toHaveLength(1);
+    expect(series[0].type).toBe("map");
+    expect(series[0].map).toBe("world");
+  });
+
+  test("aliases OLAP captions to GeoJSON feature names; passes through matches", () => {
+    const opt = buildChartOption(geo(), "map", opts()) as Record<string, unknown>;
+    const data = (opt.series as { data: { name: string; value: number | null }[] }[])[0].data;
+    expect(data.map((d) => d.name)).toEqual(["United States of America", "Canada", "Mexico"]);
+    expect(data[0].value).toBeCloseTo(565238.13);
+  });
+
+  test("visualMap spans the present values and uses the chosen colour ramp", () => {
+    const opt = buildChartOption(geo(), "map", opts({ colorRamp: "reds" })) as Record<string, unknown>;
+    const vm = opt.visualMap as { min: number; max: number; inRange: { color: string[] } };
+    expect(vm.min).toBeCloseTo(97863.2);
+    expect(vm.max).toBeCloseTo(565238.13);
+    expect(vm.inRange.color[0]).toBe("#fee0d2"); // reds ramp low end
+  });
+
+  test("mapMissing 'blank' leaves a null measure null; 'zero' coerces to 0", () => {
+    const withGap: ChartProjection = {
+      rowCategories: ["USA", "Canada"],
+      columnCategories: ["Store Sales"],
+      matrix: [[100], [null]],
+    };
+    const blank = buildChartOption(withGap, "map", opts({ mapMissing: "blank" })) as Record<string, unknown>;
+    const zero = buildChartOption(withGap, "map", opts({ mapMissing: "zero" })) as Record<string, unknown>;
+    const blankData = (blank.series as { data: { value: number | null }[] }[])[0].data;
+    const zeroData = (zero.series as { data: { value: number | null }[] }[])[0].data;
+    expect(blankData[1].value).toBeNull();
+    expect(zeroData[1].value).toBe(0);
+  });
+
+  test("tooltip formatter HTML-escapes the (data-derived) region name (#1071 XSS hardening)", () => {
+    const hostile: ChartProjection = {
+      rowCategories: ['<img src=x onerror=alert(1)>'],
+      columnCategories: ["Store Sales"],
+      matrix: [[5]],
+    };
+    const opt = buildChartOption(hostile, "map", opts()) as Record<string, unknown>;
+    const fmt = (opt.tooltip as { formatter: (p: unknown) => string }).formatter;
+    const out = fmt({ name: '<img src=x onerror=alert(1)>', value: 5 });
+    expect(out).not.toContain("<img");
+    expect(out).toContain("&lt;img");
+  });
+});
+
 describe("buildChartOption — rejection", () => {
   test("returns null for unknown chart kinds", () => {
     expect(buildChartOption(sample(), "made-up")).toBeNull();

@@ -13,7 +13,8 @@ export type ChartType =
   | "bubble"
   | "treemap"
   | "sunburst"
-  | "waterfall";
+  | "waterfall"
+  | "map";
 
 export const CHART_TYPES: { id: ChartType; label: string; group: string }[] = [
   { id: "bar", label: "Bar", group: "Bars" },
@@ -31,7 +32,13 @@ export const CHART_TYPES: { id: ChartType; label: string; group: string }[] = [
   { id: "radar", label: "Radar", group: "Matrix" },
   { id: "scatter", label: "Scatter", group: "Points" },
   { id: "bubble", label: "Bubble", group: "Points" },
+  // issue #1071: world-countries choropleth (Phase 1). Place names come from
+  // the row hierarchy; the active (first) measure drives the colour.
+  { id: "map", label: "Map (choropleth)", group: "Geo" },
 ];
+
+/** issue #1071: sequential / diverging colour ramps for the map visualMap. */
+export type ChartColorRamp = "blues" | "greens" | "reds" | "viridis" | "diverging";
 
 /** Set of all supported chart-type ids, derived from CHART_TYPES so it can
  *  never drift from the palette. */
@@ -73,6 +80,12 @@ export interface ChartOptions {
    *  Absent entries fall back to the auto decision (or "left" when
    *  {@link dualAxis} is off). */
   seriesAxis: Record<string, "left" | "right">;
+  /** issue #1071 (map only): colour ramp for the choropleth visualMap. */
+  colorRamp: ChartColorRamp;
+  /** issue #1071 (map only): how to render a country present in the data
+   *  with a missing/null measure — "blank" leaves it the map's grey
+   *  unmapped colour, "zero" colours it at the ramp's low end. */
+  mapMissing: "blank" | "zero";
 }
 
 /** Auto-split threshold: a series whose maximum absolute value is less
@@ -92,4 +105,6 @@ export const DEFAULT_CHART_OPTIONS: ChartOptions = {
   hideRollupRows: true,
   dualAxis: true,
   seriesAxis: {},
+  colorRamp: "blues",
+  mapMissing: "blank",
 };

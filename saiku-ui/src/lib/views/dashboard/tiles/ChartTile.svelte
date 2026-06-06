@@ -38,6 +38,9 @@
   } from "$lib/dashboard/chartOptions";
   // #1090: accessible data-table mirror of the chart for screen readers.
   import { chartSummary } from "$lib/charts/a11y";
+  // issue #1071: map tiles need the GeoJSON registered with ECharts before
+  // setOption — lazy-loaded here (the builder/adapter stay pure).
+  import { ensureGeoMap, isGeoMapRegistered } from "$lib/charts/geoMaps";
   import { isSingleMeasureKind, smallMultipleRowCount } from "$lib/dashboard/smallMultiples";
   import { theme } from "$lib/stores/theme.svelte";
   import { resolveThemeTokens } from "$lib/views/chartTheme";
@@ -92,6 +95,9 @@
   // successful query with zero rows; hasEffectiveFilters gates the
   // empty-state "Reset filters" affordance.
   let retryTick = $state(0);
+  // issue #1071: bumped once the world GeoJSON finishes registering, to
+  // re-run the render effect and paint the map (registration is async).
+  let mapReadyTick = $state(0);
   let isEmpty = $derived(
     !!response && response.status === "SUCCESS" && (response.data?.length ?? 0) === 0,
   );
@@ -306,6 +312,15 @@
     }
     if (unsupported) {
       chart.clear();
+      return;
+    }
+    // issue #1071: defer the first map render until its GeoJSON is registered,
+    // then bump mapReadyTick to re-run this effect. Cheap sync check after.
+    void mapReadyTick;
+    if (kind === "map" && !isGeoMapRegistered("world")) {
+      void ensureGeoMap("world")
+        .then(() => (mapReadyTick += 1))
+        .catch((err) => console.warn("[saiku] failed to load world map:", err));
       return;
     }
     const aspect = host && host.clientHeight > 0 ? host.clientWidth / host.clientHeight : 1;

@@ -25,8 +25,9 @@
  * Pure: no DOM, no fetches, no ECharts import. Tests live alongside.
  */
 
-import type { ChartType, ChartOptions } from "$lib/views/chartTypes";
+import type { ChartType, ChartOptions, ChartColorRamp } from "$lib/views/chartTypes";
 import { DEFAULT_CHART_OPTIONS, SERIES_AXIS_THRESHOLD, isChartType } from "$lib/views/chartTypes";
+import { aliasGeoName } from "$lib/charts/geoMatch";
 import { assignSeriesAxes } from "$lib/views/cellsetUtils";
 import { axisLabelConfig, deriveAxisLabelWidth } from "$lib/views/chartAxisLabel";
 import { cellRadiusPct, gridCells, MAX_LABELLED_SLICES } from "$lib/dashboard/smallMultiples";
@@ -175,6 +176,31 @@ function trendSeries(
       itemStyle: { color: tk.fgMuted },
     },
   ];
+}
+
+/* issue #1071: sequential / diverging colour ramps for the map visualMap.
+ * Light→dark low→high; ECharts interpolates between the stops. */
+const COLOR_RAMPS: Record<ChartColorRamp, string[]> = {
+  blues: ["#deebf7", "#9ecae1", "#4292c6", "#08519c"],
+  greens: ["#e5f5e0", "#a1d99b", "#41ab5d", "#006d2c"],
+  reds: ["#fee0d2", "#fc9272", "#ef3b2c", "#a50f15"],
+  viridis: ["#440154", "#3b528b", "#21918c", "#5ec962", "#fde725"],
+  diverging: ["#2166ac", "#67a9cf", "#f7f7f7", "#ef8a62", "#b2182b"],
+};
+
+function colorRampFor(ramp: ChartColorRamp | undefined): string[] {
+  return COLOR_RAMPS[ramp ?? "blues"] ?? COLOR_RAMPS.blues;
+}
+
+/* Escape HTML — the map tooltip uses an ECharts function formatter whose return
+ * value is inserted as innerHTML (renderMode "html"), and the region name is
+ * data-derived (an aliased cube member caption). Without escaping, a hostile
+ * caption could inject markup into the tooltip (stored XSS). #1071 hardening. */
+function escapeHtml(s: string): string {
+  return s.replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c,
+  );
 }
 
 /* ----------------------------- builder ----------------------------- */
@@ -370,6 +396,58 @@ export function buildChartOption(
       },
       series: [
         { type: "radar", data: rows.map((r, i) => ({ name: r, value: matrix[i].map((v) => v ?? 0) })) },
+      ],
+    };
+  }
+
+  if (t === "map") {
+    // issue #1071 Phase 1: world-countries choropleth. Row categories are
+    // place names (from the row hierarchy); the FIRST measure column drives
+    // the colour (multi-measure maps small-multiple later — Phase 2+). The
+    // map must be registered with echarts.registerMap("world", …) BEFORE
+    // setOption — the components do that (this builder stays pure). Names go
+    // through aliasGeoName so OLAP captions (USA, UK) hit the GeoJSON
+    // feature names (United States of America, United Kingdom); unmatched
+    // names simply don't paint.
+    const zero = o.mapMissing === "zero";
+    const data = rows.map((name, i) => {
+      const v = matrix[i][0];
+      return { name: aliasGeoName(name), value: v ?? (zero ? 0 : null) };
+    });
+    const present = data.map((d) => d.value).filter((v): v is number => v != null && Number.isFinite(v));
+    const min = present.length ? Math.min(...present) : 0;
+    const max = present.length ? Math.max(...present) : 1;
+    return {
+      ...common,
+      title,
+      tooltip: {
+        trigger: "item",
+        ...tooltipStyle,
+        // value can be null (blank country) — show "—" rather than "null".
+        formatter: (p: { name?: string; value?: number | null }) =>
+          `${escapeHtml(p?.name ?? "")}: ${p?.value == null || Number.isNaN(p.value) ? "—" : p.value}`,
+      },
+      visualMap: {
+        min,
+        max: max > min ? max : min + 1,
+        calculable: true,
+        orient: "vertical",
+        left: compact ? 4 : 10,
+        bottom: compact ? 4 : 20,
+        textStyle: { color: tk.fgMuted },
+        inRange: { color: colorRampFor(o.colorRamp) },
+      },
+      series: [
+        {
+          type: "map",
+          map: "world",
+          roam: true,
+          nameProperty: "name",
+          emphasis: { label: { show: false }, itemStyle: { areaColor: tk.accent ?? "#7aa6ff" } },
+          itemStyle: { areaColor: tk.bgMuted, borderColor: tk.border },
+          label: { show: false },
+          data,
+        },
       ],
     };
   }

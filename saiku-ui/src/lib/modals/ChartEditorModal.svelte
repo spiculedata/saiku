@@ -2,10 +2,14 @@
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
-  import type { ChartOptions, TrendLineMode } from "$lib/views/chartTypes";
+  import type { ChartOptions, TrendLineMode, ChartColorRamp } from "$lib/views/chartTypes";
 
   interface Props {
     initial: ChartOptions;
+    /** Current chart type — drives type-specific controls (issue #1071:
+     *  the map colour-ramp + missing-data section shows only for "map").
+     *  Undefined → no type-specific sections (back-compat for old callers). */
+    chartType?: string;
     /** Series labels currently rendered on the chart (the column-category
      *  labels — typically measure names). Used to render the per-series
      *  Left/Right/Auto picker. Empty array → the picker section hides
@@ -30,7 +34,10 @@
     "top", "bottom", "left", "right",
   ];
 
-  let { initial, seriesNames = [], open, onSave, onCancel }: Props = $props();
+  // issue #1071: map colour ramps (must mirror COLOR_RAMPS in charts/build.ts).
+  const COLOR_RAMP_IDS: ChartColorRamp[] = ["blues", "greens", "reds", "viridis", "diverging"];
+
+  let { initial, chartType, seriesNames = [], open, onSave, onCancel }: Props = $props();
   let form = $state<ChartOptions>(untrack(() => ({ ...initial })));
 
   $effect(() => {
@@ -59,6 +66,34 @@
       <span class="field__label">{i18n.t("modal.chart.chartTitle")}</span>
       <input class="field__input" bind:value={form.title} placeholder={i18n.t("modal.chart.chartTitlePlaceholder")} />
     </label>
+
+    {#if chartType === "map"}
+      <!-- issue #1071: map-only options. Place names come from the row
+           hierarchy; the active (first) measure drives the colour. -->
+      <div class="map-opts">
+        <span class="map-opts__title">{i18n.t("modal.chart.map.title")}</span>
+        <div class="row">
+          <label class="field field--grow">
+            <span class="field__label">{i18n.t("modal.chart.map.colorRamp")}</span>
+            <select class="field__input" bind:value={form.colorRamp}>
+              {#each COLOR_RAMP_IDS as r}
+                <option value={r}>{i18n.t(`modal.chart.map.ramp.${r}`)}</option>
+              {/each}
+            </select>
+          </label>
+          <label class="field field--grow">
+            <span class="field__label">{i18n.t("modal.chart.map.missing")}</span>
+            <select class="field__input" bind:value={form.mapMissing}>
+              <option value="blank">{i18n.t("modal.chart.map.missing.blank")}</option>
+              <option value="zero">{i18n.t("modal.chart.map.missing.zero")}</option>
+            </select>
+          </label>
+        </div>
+        <p class="hint">{i18n.t("modal.chart.map.hint")}</p>
+      </div>
+    {/if}
+
+    {#if chartType !== "map"}
     <div class="row">
       <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.chart.xAxis")}</span>
@@ -145,6 +180,7 @@
       </label>
     </div>
     <p class="hint">{i18n.t("modal.chart.trendHint")}</p>
+    {/if}
   </div>
 
   {#snippet footer()}
@@ -159,6 +195,8 @@
   .field--grow { flex: 1; }
   .toggle { display: inline-flex; gap: var(--space-2); align-items: center; color: var(--fg); }
   .hint { color: var(--fg-subtle); font-size: var(--fs-xs); margin: 0; }
+  .map-opts { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
+  .map-opts__title { font-size: var(--fs-sm); color: var(--fg-muted); }
   .series-axis { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
   .series-axis__title { font-size: var(--fs-sm); color: var(--fg-muted); }
   .series-axis__list { display: flex; flex-direction: column; gap: var(--space-2); }
