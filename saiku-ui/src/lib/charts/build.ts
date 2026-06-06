@@ -31,7 +31,7 @@ import { aliasGeoName } from "$lib/charts/geoMatch";
 import { assignSeriesAxes } from "$lib/views/cellsetUtils";
 import { axisLabelConfig, deriveAxisLabelWidth } from "$lib/views/chartAxisLabel";
 import { cellRadiusPct, gridCells, MAX_LABELLED_SLICES } from "$lib/dashboard/smallMultiples";
-import { type ThemeTokens, DEFAULT_THEME_TOKENS } from "$lib/views/chartTheme";
+import { type ThemeTokens, DEFAULT_THEME_TOKENS, COLORBLIND_WATERFALL } from "$lib/views/chartTheme";
 import { buildSparklineSvg } from "$lib/charts/sparkline";
 
 /** The shared, already-projected chart input both surfaces produce. Rollup
@@ -348,6 +348,22 @@ export function buildChartOption(
     color: tk.chartColors,
     textStyle: { color: tk.fg },
   };
+
+  // #1091: high-contrast / colour-blind-safe mode. tk.highContrast is set by
+  // resolveThemeTokens() when the global colour-blind-safe pref is on (it also
+  // swaps tk.chartColors to the Okabe-Ito palette). Here we bump stroke widths
+  // and marker sizes for low-vision users, and give every series a same-coloured
+  // border so adjacent bars/slices stay separable for monochrome readers. These
+  // fragments are no-ops (empty objects / unchanged sizes) when the mode is off.
+  const hc = tk.highContrast;
+  // All high-contrast fragments are empty objects when the mode is off, so they
+  // spread to nothing and the default output (and its snapshots) stays
+  // byte-for-byte unchanged. seriesBorder is the raw itemStyle border value;
+  // itemStyleHC wraps it for series that don't otherwise set itemStyle.
+  const seriesBorder = hc ? { borderColor: tk.bg, borderWidth: 1.5 } : {};
+  const itemStyleHC = hc ? { itemStyle: seriesBorder } : {};
+  const lineStyleHC = hc ? { lineStyle: { width: 4 } } : {};
+  const markerHC = hc ? { symbolSize: 10 } : {};
   const axisLabel = { color: tk.fgMuted };
   const axisLine = { lineStyle: { color: tk.border } };
   const axisTick = { lineStyle: { color: tk.border } };
@@ -413,6 +429,9 @@ export function buildChartOption(
               color: sliceLabelInside ? "#fff" : tk.fg,
             },
             labelLine: { show: showSliceLabels && !sliceLabelInside },
+            // #1091: a same-bg border separates adjacent slices for monochrome
+            // / low-vision readers; absent when high-contrast is off.
+            ...itemStyleHC,
             data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
           };
         }),
@@ -503,7 +522,13 @@ export function buildChartOption(
         splitArea: { areaStyle: { color: [tk.bg, tk.bgMuted], opacity: 0.3 } },
       },
       series: [
-        { type: "radar", data: rows.map((r, i) => ({ name: r, value: matrix[i].map((v) => v ?? 0) })) },
+        {
+          type: "radar",
+          // #1091: thicker spokes + symbols in high-contrast mode.
+          ...lineStyleHC,
+          ...markerHC,
+          data: rows.map((r, i) => ({ name: r, value: matrix[i].map((v) => v ?? 0) })),
+        },
       ],
     };
   }
@@ -578,13 +603,17 @@ export function buildChartOption(
       series: rows.map((name, i) => ({
         type: "scatter",
         name,
+        // #1091: larger floor marker + bordered points for low-vision users.
+        ...itemStyleHC,
         symbolSize:
           t === "bubble"
             ? (val: unknown) => {
                 const v = Array.isArray(val) ? (val[1] as number) : (val as number);
-                return Math.max(6, Math.sqrt(Math.abs(v) / bubbleMax) * 40);
+                return Math.max(hc ? 10 : 6, Math.sqrt(Math.abs(v) / bubbleMax) * 40);
               }
-            : 10,
+            : hc
+              ? 14
+              : 10,
         data: matrix[i].map((v, j) => [j, v ?? 0]),
       })),
     };
@@ -633,14 +662,16 @@ export function buildChartOption(
           name: cols[0] ?? "Positive",
           stack: "waterfall",
           data: positives,
-          itemStyle: { color: "#4c9ee6" },
+          // #1091: the default pos/neg blue/red isn't colour-blind safe; swap to
+          // the Okabe-Ito-derived pair (bordered) when high-contrast is on.
+          itemStyle: { color: hc ? COLORBLIND_WATERFALL.positive : "#4c9ee6", ...seriesBorder },
         },
         {
           type: "bar",
           name: `-${cols[0] ?? "Negative"}`,
           stack: "waterfall",
           data: negatives,
-          itemStyle: { color: "#e66c6c" },
+          itemStyle: { color: hc ? COLORBLIND_WATERFALL.negative : "#e66c6c", ...seriesBorder },
         },
       ],
     };
@@ -688,6 +719,9 @@ export function buildChartOption(
       : undefined,
     areaStyle,
     smooth: kindBase === "line",
+    // #1091: high-contrast — thicker line strokes + bigger markers for lines,
+    // a same-bg border for bars so adjacent bars separate. No-ops when off.
+    ...(kindBase === "line" ? { ...lineStyleHC, ...markerHC } : itemStyleHC),
     yAxisIndex: hasRight ? (seriesSides[c] === "right" ? 1 : 0) : 0,
     // Compact (tiles) draws missing cells as gaps; roomy (workspace) as 0.
     data: matrix.map((row) => row[c] ?? (compact ? null : 0)),

@@ -9,6 +9,12 @@
 import { describe, test, expect } from "vitest";
 import { buildChartOption, type ChartProjection } from "$lib/charts/build";
 import { DEFAULT_CHART_OPTIONS, type ChartOptions } from "$lib/views/chartTypes";
+import {
+  DEFAULT_THEME_TOKENS,
+  COLORBLIND_SAFE_COLORS,
+  COLORBLIND_WATERFALL,
+  type ThemeTokens,
+} from "$lib/views/chartTheme";
 
 /** Two row categories × two measures. */
 function sample(): ChartProjection {
@@ -541,5 +547,65 @@ describe("buildChartOption — rejection", () => {
 
   test("returns null when the projection has no rows", () => {
     expect(buildChartOption({ rowCategories: [], columnCategories: [], matrix: [] }, "bar")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #1091: high-contrast / colour-blind-safe mode is driven purely by the
+// ThemeTokens the builder receives (resolveThemeTokens() sets highContrast +
+// swaps the palette when the global pref is on). Here we feed the builder a
+// high-contrast token set directly and assert the contrast-specific output.
+// ---------------------------------------------------------------------------
+describe("buildChartOption — high contrast (#1091)", () => {
+  const SAFE_PALETTE = COLORBLIND_SAFE_COLORS;
+  const hcTokens: ThemeTokens = {
+    ...DEFAULT_THEME_TOKENS,
+    chartColors: SAFE_PALETTE,
+    highContrast: true,
+  };
+
+  test("uses the colour-blind-safe palette as the series colour cycle", () => {
+    const opt = buildChartOption(sample(), "bar", opts(), hcTokens) as Record<string, unknown>;
+    expect(opt.color).toEqual(SAFE_PALETTE);
+  });
+
+  test("thickens line strokes vs the default tokens", () => {
+    const def = buildChartOption(sample(), "line", opts()) as Record<string, unknown>;
+    const hc = buildChartOption(sample(), "line", opts(), hcTokens) as Record<string, unknown>;
+    const defSeries = (def.series as Record<string, unknown>[])[0];
+    const hcSeries = (hc.series as Record<string, unknown>[])[0];
+    // Default line series carry no explicit lineStyle.width; high contrast adds one.
+    expect(defSeries.lineStyle).toBeUndefined();
+    expect((hcSeries.lineStyle as { width: number }).width).toBeGreaterThan(2);
+  });
+
+  test("gives bar series a same-bg border in high contrast", () => {
+    const def = buildChartOption(sample(), "bar", opts()) as Record<string, unknown>;
+    const hc = buildChartOption(sample(), "bar", opts(), hcTokens) as Record<string, unknown>;
+    const defSeries = (def.series as Record<string, unknown>[])[0];
+    const hcSeries = (hc.series as Record<string, unknown>[])[0];
+    expect(defSeries.itemStyle).toBeUndefined();
+    expect((hcSeries.itemStyle as { borderWidth: number }).borderWidth).toBeGreaterThan(0);
+  });
+
+  test("waterfall swaps the hard-coded blue/red for the safe pos/neg colours", () => {
+    const wf: ChartProjection = {
+      rowCategories: ["Start", "Up", "Down"],
+      columnCategories: ["Delta"],
+      matrix: [[100], [40], [-30]],
+    };
+    const def = buildChartOption(wf, "waterfall", opts()) as Record<string, unknown>;
+    const hc = buildChartOption(wf, "waterfall", opts(), hcTokens) as Record<string, unknown>;
+    const defPos = (def.series as { itemStyle?: { color?: string } }[])[1].itemStyle?.color;
+    const defNeg = (def.series as { itemStyle?: { color?: string } }[])[2].itemStyle?.color;
+    const hcPos = (hc.series as { itemStyle?: { color?: string } }[])[1].itemStyle?.color;
+    const hcNeg = (hc.series as { itemStyle?: { color?: string } }[])[2].itemStyle?.color;
+    // Default still uses the legacy blue/red…
+    expect(defPos).toBe("#4c9ee6");
+    expect(defNeg).toBe("#e66c6c");
+    // …high contrast uses the Okabe-Ito-derived pair instead.
+    expect(hcPos).toBe(COLORBLIND_WATERFALL.positive);
+    expect(hcNeg).toBe(COLORBLIND_WATERFALL.negative);
+    expect(hcPos).not.toBe(hcNeg);
   });
 });

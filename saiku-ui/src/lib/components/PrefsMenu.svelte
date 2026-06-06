@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Settings, Moon, Sun, Monitor } from "lucide-svelte";
+  import { Settings, Moon, Sun, Monitor, Contrast } from "lucide-svelte";
   import { theme } from "$lib/stores/theme.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import LocalePicker from "$lib/components/LocalePicker.svelte";
@@ -57,6 +57,21 @@
         </button>
       </div>
       <div class="prefs-menu__row">
+        <span class="prefs-menu__label">{i18n.t("topbar.contrast")}</span>
+        <button
+          type="button"
+          class="btn btn--sm"
+          class:btn--active={theme.colorBlindSafe}
+          role="switch"
+          aria-checked={theme.colorBlindSafe}
+          onclick={() => theme.toggleColorBlindSafe()}
+          title={i18n.t("topbar.contrast.hint")}
+        >
+          <Contrast size={14} />
+          <span>{theme.colorBlindSafe ? i18n.t("topbar.contrast.on") : i18n.t("topbar.contrast.off")}</span>
+        </button>
+      </div>
+      <div class="prefs-menu__row">
         <span class="prefs-menu__label">{i18n.t("topbar.language")}</span>
         <LocalePicker />
       </div>
@@ -98,5 +113,10 @@
   .prefs-menu__label {
     font-size: var(--fs-sm);
     color: var(--fg-muted);
+  }
+  /* #1091: active state for the colour-blind-safe toggle. */
+  .btn--active {
+    border-color: var(--accent);
+    color: var(--accent);
   }
 </style>
