@@ -31,7 +31,13 @@
     inferRowAxesFromReference,
     type RowAxisRef,
   } from "$lib/dashboard/filterSuggestions";
-  import { buildChartOption, isSupportedChartKind } from "$lib/dashboard/chartOptions";
+  import {
+    buildChartOption,
+    isSupportedChartKind,
+    projectFromAiQueryResponse,
+  } from "$lib/dashboard/chartOptions";
+  // #1090: accessible data-table mirror of the chart for screen readers.
+  import { chartSummary } from "$lib/charts/a11y";
   import { isSingleMeasureKind, smallMultipleRowCount } from "$lib/dashboard/smallMultiples";
   import { theme } from "$lib/stores/theme.svelte";
   import { resolveThemeTokens } from "$lib/views/chartTheme";
@@ -114,6 +120,15 @@
     const kind = tile.chartType ?? "bar";
     const measureCount = response?.metadata?.columns?.length ?? 0;
     return isSingleMeasureKind(kind) && measureCount > 1 ? smallMultipleRowCount(measureCount) : 1;
+  });
+
+  // #1090: accessible data-table mirror for screen readers (the canvas is
+  // aria-hidden). Built from the same projection the chart builder uses, so it
+  // always matches what's drawn. Null until a successful response.
+  let a11y = $derived.by(() => {
+    const r = response;
+    if (!r || r.status !== "SUCCESS") return null;
+    return chartSummary(tile.chartType ?? "bar", tile.title ?? "", projectFromAiQueryResponse(r));
   });
 
   /* ----------------------------- lifecycle --------------------------- */
@@ -372,7 +387,34 @@
   <div class="placeholder">Tile has no query binding — open ⚙ to set one.</div>
 {:else}
   <div class="chart-tile">
-    <div class="canvas" bind:this={host} style="height: {smallMultipleRows * 100}%"></div>
+    <!-- #1090: the canvas is decorative to assistive tech; the sr-only table is
+         the accessible representation, so hide the canvas from screen readers. -->
+    <div class="canvas" bind:this={host} aria-hidden="true" style="height: {smallMultipleRows * 100}%"></div>
+    {#if a11y}
+      <!-- #1090: visually-hidden data-table mirror for screen readers. -->
+      <table class="sr-only">
+        <caption>{a11y.caption}</caption>
+        {#if !a11y.empty}
+          <thead>
+            <tr>
+              {#each a11y.headers as h, i (i)}
+                <th scope="col">{h}</th>
+              {/each}
+            </tr>
+          </thead>
+          <tbody>
+            {#each a11y.rows as row, ri (ri)}
+              <tr>
+                <th scope="row">{row[0]}</th>
+                {#each row.slice(1) as cell, ci (ci)}
+                  <td>{cell}</td>
+                {/each}
+              </tr>
+            {/each}
+          </tbody>
+        {/if}
+      </table>
+    {/if}
     {#if loading && !response}
       <div class="overlay solid"><TileLoading variant={loadingVariant} /></div>
     {:else if error}
@@ -404,6 +446,19 @@
   .canvas {
     /* height is set inline = smallMultipleRows * 100% (100% for a single chart). */
     width: 100%;
+  }
+  /* #1090: visually hide the a11y data table while keeping it in the
+     accessibility tree (standard sr-only / visually-hidden pattern). */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
   .overlay {
     position: absolute;
