@@ -48,6 +48,11 @@
     type FilterWidget,
     type PanelFilter,
   } from "$lib/api/dashboards";
+  // issue #921: Top-N / Bottom-N widget — rank a level by a measure and keep
+  // the top/bottom N. Pure resolution in $lib/dashboard/topN; the query runs
+  // via the AI Query API (order+limit → TopCount/BottomCount).
+  import { executeAiQuery } from "$lib/api/aiQuery";
+  import { buildTopNQuery, clampTopN, rankedCaptionsToUniqueNames } from "$lib/dashboard/topN";
 
   interface Props {
     readOnly?: boolean;
@@ -116,6 +121,10 @@
       ...(addWidget === "cascading-select"
         ? { cascading: { startLevel: addLevel, depth: 3 } }
         : {}),
+      // issue #921: a top-n widget needs a config; default to Top 10, measure
+      // chosen on the row. It stays inert (selects no members) until a measure
+      // is picked.
+      ...(addWidget === "top-n" ? { topN: { n: 10, direction: "top" as const } } : {}),
     };
     dashboardStore.addPanelFilter(filter);
     closeAdd();
@@ -415,6 +424,83 @@
     const stale = activeFilters.clicks.find((c) => targetKey(c.filter) === tkey);
     if (stale) activeFilters.clearChip(stale.id);
   }
+
+  /* ===================== issue #921: top-n / bottom-n ====================
+   * Rank the level's members by a measure and keep the top/bottom N. The
+   * member catalogue (memberCatalogues[f.id]) is already loaded by the effect
+   * above; we run the ranking query (order+limit), map the ranked captions to
+   * their unique names via that catalogue, then commit them like any pick. */
+  interface TopNRowState {
+    loading: boolean;
+    error: string | null;
+    key: string;
+  }
+  let topNState = $state<Record<string, TopNRowState>>({});
+
+  function topNMeasureOptions(f: PanelFilter): string[] {
+    if (!f.cube) return [];
+    void schemaCache.version;
+    const s = schemaCache.peek(f.cube) as { measures?: Record<string, { name: string }> } | null;
+    if (!s?.measures) return [];
+    return Object.values(s.measures).map((m) => m.name);
+  }
+
+  function setTopN(
+    filterId: string,
+    partial: Partial<{ measure: string; n: number; direction: "top" | "bottom" }>,
+  ): void {
+    const f = panel?.filters.find((p) => p.id === filterId);
+    const next = { ...(f?.topN ?? {}), ...partial };
+    if (partial.n !== undefined) next.n = clampTopN(partial.n);
+    dashboardStore.updatePanelFilter(filterId, { topN: next });
+  }
+
+  async function resolveTopN(f: PanelFilter, key: string): Promise<void> {
+    topNState = { ...topNState, [f.id]: { loading: true, error: null, key } };
+    try {
+      const tn = f.topN;
+      if (!f.cube || !tn?.measure) return;
+      const body = buildTopNQuery(
+        cubeKey(f.cube),
+        f.dimension,
+        f.hierarchy,
+        f.level,
+        tn.measure,
+        clampTopN(tn.n),
+        tn.direction ?? "top",
+      );
+      const resp = await executeAiQuery(body, "records");
+      if (resp.status !== "SUCCESS" || !resp.metadata?.rows) {
+        throw new Error(resp.error ?? `query ${resp.status}`);
+      }
+      const captions = resp.metadata.rows.map((r) => r.name);
+      const cat = memberCatalogues[f.id];
+      const uniques = rankedCaptionsToUniqueNames(captions, cat?.members ?? []);
+      commitPanelMembers(f.id, uniques);
+      topNState = { ...topNState, [f.id]: { loading: false, error: null, key } };
+    } catch (e: unknown) {
+      topNState = {
+        ...topNState,
+        [f.id]: { loading: false, error: e instanceof Error ? e.message : String(e), key },
+      };
+    }
+  }
+
+  // Re-resolve a top-n filter when its config or member catalogue changes.
+  // Keyed so it runs once per distinct config (no re-fire loop on commit).
+  $effect(() => {
+    const filters = panel?.filters ?? [];
+    for (const f of filters) {
+      if (f.widget !== "top-n" || !f.cube) continue;
+      const tn = f.topN;
+      if (!tn?.measure) continue;
+      const cat = memberCatalogues[f.id];
+      if (!cat?.members) continue;
+      const key = `${cubeKey(f.cube)}|${f.dimension}/${f.hierarchy}/${f.level}|${tn.measure}|${clampTopN(tn.n)}|${tn.direction ?? "top"}|${cat.members.length}`;
+      if (topNState[f.id]?.key === key) continue;
+      void resolveTopN(f, key);
+    }
+  });
 
   /* ===================== issue #922: cascading-select ====================
    * The cascading-select variant walks ONE hierarchy level-by-level:
@@ -736,6 +822,55 @@
                     onchange={(e) => setDateRange(f.id, dr.from, (e.target as HTMLInputElement).value)}
                   />
                 </span>
+              {:else if f.widget === "top-n"}
+                <!-- issue #921: rank by a measure, keep top/bottom N. -->
+                {@const measures = topNMeasureOptions(f)}
+                {@const st = topNState[f.id]}
+                <span class="topn">
+                  <select
+                    class="picker-select"
+                    value={f.topN?.direction ?? "top"}
+                    disabled={readOnly}
+                    aria-label="Direction"
+                    onchange={(e) =>
+                      setTopN(f.id, { direction: (e.target as HTMLSelectElement).value as "top" | "bottom" })}
+                  >
+                    <option value="top">Top</option>
+                    <option value="bottom">Bottom</option>
+                  </select>
+                  <input
+                    type="number"
+                    class="picker-num"
+                    min="1"
+                    max="1000"
+                    value={f.topN?.n ?? 10}
+                    disabled={readOnly}
+                    aria-label="N"
+                    onchange={(e) => setTopN(f.id, { n: Number((e.target as HTMLInputElement).value) })}
+                  />
+                  <span class="topn-by">by</span>
+                  <select
+                    class="picker-select"
+                    value={f.topN?.measure ?? ""}
+                    disabled={readOnly}
+                    aria-label="Measure"
+                    onchange={(e) => setTopN(f.id, { measure: (e.target as HTMLSelectElement).value })}
+                  >
+                    <option value="">— measure —</option>
+                    {#each measures as m (m)}
+                      <option value={m}>{m}</option>
+                    {/each}
+                  </select>
+                  {#if st?.loading}
+                    <span class="topn-state">resolving…</span>
+                  {:else if st?.error}
+                    <span class="topn-state topn-state--error">{st.error}</span>
+                  {:else if (f.members?.length ?? 0) > 0}
+                    <span class="topn-state">{f.members.length} member(s)</span>
+                  {:else if f.topN?.measure}
+                    <span class="topn-state">no matches</span>
+                  {/if}
+                </span>
               {:else}
                 <select
                   class="picker-select"
@@ -823,6 +958,7 @@
               <option value="multi-select">multi-select</option>
               <option value="date-range">date-range</option>
               <option value="cascading-select">cascading-select</option>
+              <option value="top-n">top-n</option>
             </select>
           </label>
           {#if addError}
@@ -957,6 +1093,33 @@
     background: var(--bg);
     font-size: 0.8125rem;
     font-family: inherit;
+  }
+  /* issue #921: top-n / bottom-n inline config. */
+  .topn {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .picker-num {
+    width: 3.5rem;
+    padding: 0.125rem 0.25rem;
+    border: 1px solid var(--border-strong, var(--border));
+    border-radius: 4px;
+    background: var(--bg);
+    font-size: 0.8125rem;
+    font-family: inherit;
+  }
+  .topn-by {
+    font-size: 0.75rem;
+    color: var(--fg-muted);
+  }
+  .topn-state {
+    font-size: 0.75rem;
+    color: var(--fg-muted);
+  }
+  .topn-state--error {
+    color: var(--danger);
   }
   .date-sep {
     color: var(--fg-muted);

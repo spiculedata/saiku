@@ -38,7 +38,27 @@ export type TileQuery = ReferenceQuery | InlineQuery;
 
 export type TileType = "chart" | "table" | "text" | "filter" | "kpi" | "image";
 
-export type FilterWidget = "single-select" | "multi-select" | "date-range" | "cascading-select";
+export type FilterWidget = "single-select" | "multi-select" | "date-range" | "cascading-select" | "top-n";
+
+/* --- issue #921: Top-N / Bottom-N filter widget --------------------------
+ * A panel filter that ranks the members of its dimension/hierarchy/level by a
+ * chosen measure and narrows compatible tiles to the top (or bottom) N. It
+ * resolves at runtime to a member-unique-name list (run the ranking query →
+ * map the ranked captions to unique names via the level's member catalogue)
+ * which flows through the existing filter-merge unchanged — no backend or
+ * merge changes. Config lives in this block; pure resolution helpers are in
+ * $lib/dashboard/topN. */
+export interface TopNConfig {
+  /** Measure unique name to rank by, e.g. {@code [Measures].[Unit Sales]}. */
+  measure?: string;
+  /** Measure caption for display (mirrors the schema's measure caption). */
+  measureCaption?: string;
+  /** How many members to keep. Defaults to 10. */
+  n?: number;
+  /** {@code "top"} = highest-N (desc), {@code "bottom"} = lowest-N (asc). */
+  direction?: "top" | "bottom";
+}
+/* --- end issue #921 block ------------------------------------------------- */
 
 /* --- issue #922: cascading single-select filter widget -------------------
  * Self-contained additions for the "cascading-select" FilterWidget variant.
@@ -259,6 +279,8 @@ export interface PanelFilter extends DashboardFilter {
   /** Config for {@code widget === "cascading-select"} (issue #922).
    *  Ignored by the other variants. */
   cascading?: CascadingSelectConfig;
+  /** Config for {@code widget === "top-n"} (issue #921). Ignored by others. */
+  topN?: TopNConfig;
 }
 
 /** Unified filter panel: docks at the top of the dashboard editor as
