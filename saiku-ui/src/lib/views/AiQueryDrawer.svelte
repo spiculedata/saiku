@@ -300,6 +300,19 @@
           <p class="ai-drawer__empty-cube">
             {i18n.t("workspace.aiQuery.activeCube").replace("{cube}", selection.cube.caption ?? selection.cube.name)}
           </p>
+          <div class="ai-drawer__examples">
+            <div class="ai-drawer__examples-label">{i18n.t("workspace.aiQuery.tryAsking")}</div>
+            {#each [i18n.t("workspace.aiQuery.example1"), i18n.t("workspace.aiQuery.example2"), i18n.t("workspace.aiQuery.example3")] as example}
+              <button
+                type="button"
+                class="ai-drawer__example"
+                onclick={() => {
+                  prompt = example;
+                  inputEl?.focus();
+                }}
+              >{example}</button>
+            {/each}
+          </div>
         {:else}
           <p class="ai-drawer__empty-cube ai-drawer__empty-cube--warn">
             {i18n.t("workspace.aiQuery.noCube")}
@@ -470,6 +483,10 @@
     padding: 12px 14px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-muted);
+    /* Pin header + footer against any squeeze when `messages` swells —
+       previously a tall conversation could nudge the footer below the
+       viewport on short windows. */
+    flex-shrink: 0;
   }
   .ai-drawer__title {
     margin: 0;
@@ -537,6 +554,32 @@
   .ai-drawer__empty-cube--warn {
     color: #b45309;
   }
+  .ai-drawer__examples {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .ai-drawer__examples-label {
+    font-size: 0.78rem;
+    color: var(--fg-muted);
+    margin-bottom: 2px;
+  }
+  .ai-drawer__example {
+    text-align: left;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 0.85rem;
+    color: var(--fg);
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .ai-drawer__example:hover {
+    border-color: var(--accent);
+    background: var(--bg-muted);
+  }
 
   .ai-drawer__turn {
     display: flex;
@@ -556,7 +599,12 @@
     font-size: 0.9rem;
     line-height: 1.4;
     white-space: pre-wrap;
-    word-wrap: break-word;
+    /* `overflow-wrap: anywhere` (vs the older `word-wrap: break-word`)
+       breaks within long unbroken strings like MDX identifiers / URLs
+       too, so a user bubble or candidate chip can never poke past the
+       drawer's right edge. */
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   .ai-drawer__bubble--user {
     background: var(--accent);
@@ -706,11 +754,15 @@
     gap: 8px;
     align-items: flex-end;
     background: var(--bg);
+    flex-shrink: 0;
   }
   .ai-drawer__input {
     flex: 1;
     resize: vertical;
-    min-height: 60px;
+    /* The empty state previously gave the impression there was no input
+       at all — bumped min-height so the textarea has obvious presence at
+       the footer even when collapsed. */
+    min-height: 72px;
     max-height: 200px;
     padding: 8px 10px;
     border: 1px solid var(--border);
