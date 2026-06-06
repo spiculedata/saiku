@@ -1938,6 +1938,7 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
     "tooltip": {
       "backgroundColor": "#ffffff",
       "borderColor": "#e2e8f0",
+      "formatter": [Function],
       "textStyle": {
         "color": "#0f172a",
       },
@@ -2076,6 +2077,7 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
     "tooltip": {
       "backgroundColor": "#ffffff",
       "borderColor": "#e2e8f0",
+      "formatter": [Function],
       "textStyle": {
         "color": "#0f172a",
       },
@@ -2609,6 +2611,7 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
     "tooltip": {
       "backgroundColor": "#ffffff",
       "borderColor": "#e2e8f0",
+      "formatter": [Function],
       "textStyle": {
         "color": "#0f172a",
       },
@@ -3086,6 +3089,7 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
     "tooltip": {
       "backgroundColor": "#ffffff",
       "borderColor": "#e2e8f0",
+      "formatter": [Function],
       "textStyle": {
         "color": "#0f172a",
       },
@@ -3224,6 +3228,7 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
     "tooltip": {
       "backgroundColor": "#ffffff",
       "borderColor": "#e2e8f0",
+      "formatter": [Function],
       "textStyle": {
         "color": "#0f172a",
       },
@@ -3362,6 +3367,7 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
     "tooltip": {
       "backgroundColor": "#ffffff",
       "borderColor": "#e2e8f0",
+      "formatter": [Function],
       "textStyle": {
         "color": "#0f172a",
       },

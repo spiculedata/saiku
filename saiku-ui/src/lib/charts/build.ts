@@ -32,6 +32,7 @@ import { assignSeriesAxes } from "$lib/views/cellsetUtils";
 import { axisLabelConfig, deriveAxisLabelWidth } from "$lib/views/chartAxisLabel";
 import { cellRadiusPct, gridCells, MAX_LABELLED_SLICES } from "$lib/dashboard/smallMultiples";
 import { type ThemeTokens, DEFAULT_THEME_TOKENS } from "$lib/views/chartTheme";
+import { buildSparklineSvg } from "$lib/charts/sparkline";
 
 /** The shared, already-projected chart input both surfaces produce. Rollup
  *  rows are filtered (and parent context promoted into labels) by the caller
@@ -231,6 +232,83 @@ function escapeHtml(s: string): string {
     /[&<>"']/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c,
   );
+}
+
+/* Cartesian (bar/line/area) tooltip with an inline sparkline (#1087).
+ *
+ * trigger:"axis" gives ECharts a default formatter that lists each series'
+ * value at the hovered category. We replace it with a FUNCTION formatter that
+ * keeps that value text AND, beneath each row, draws a tiny SVG sparkline of
+ * THAT series across ALL categories with the hovered point dotted — so a single
+ * hovered bar/point is read in the context of its whole trend.
+ *
+ * SECURITY: the return is inserted as innerHTML and is NOT escaped by ECharts
+ * (same hazard as the #1071 map tooltip). Every data-derived string here — the
+ * axis (category) label and each series name — is run through escapeHtml. The
+ * SVG itself is produced by buildSparklineSvg from PURE NUMERIC matrix columns
+ * (never from a caller string), and its only string input, the colour, is
+ * sanitised inside that builder.
+ *
+ * The sparkline data is captured by column name from the projection matrix, so
+ * trend/MA overlay series (which aren't real columns) simply get no sparkline.
+ * Gated to roomy mode by the caller — compact tiles have no room for it. */
+type AxisTipParam = {
+  axisValueLabel?: string;
+  axisValue?: string | number;
+  seriesName?: string;
+  dataIndex?: number;
+  value?: unknown;
+  marker?: string;
+  color?: string;
+};
+
+function cartesianTooltipFormatter(
+  cols: string[],
+  matrix: (number | null)[][],
+  tk: ThemeTokens,
+): (params: AxisTipParam | AxisTipParam[]) => string {
+  // Column name -> its values down the rows (the series' full trend).
+  const colSeries = new Map<string, (number | null)[]>();
+  cols.forEach((name, c) => {
+    colSeries.set(
+      name,
+      matrix.map((row) => row[c] ?? null),
+    );
+  });
+
+  return (params: AxisTipParam | AxisTipParam[]): string => {
+    const list = Array.isArray(params) ? params : [params];
+    if (list.length === 0) return "";
+    const header = escapeHtml(String(list[0]?.axisValueLabel ?? list[0]?.axisValue ?? ""));
+    const dataIndex = list[0]?.dataIndex ?? -1;
+
+    const rows = list
+      .map((p) => {
+        const name = String(p.seriesName ?? "");
+        const v = p.value;
+        const valueText = v == null || (typeof v === "number" && Number.isNaN(v)) ? "—" : String(v);
+        const safeName = escapeHtml(name);
+        // ECharts' own coloured marker dot is safe HTML it generated itself.
+        const marker = p.marker ?? "";
+        const spark = colSeries.has(name)
+          ? buildSparklineSvg(colSeries.get(name)!, {
+              width: 120,
+              height: 26,
+              color: p.color,
+              highlightIndex: dataIndex,
+            })
+          : "";
+        const row =
+          `<div style="display:flex;align-items:center;gap:6px;margin-top:4px">` +
+          `${marker}<span>${safeName}</span>` +
+          `<strong style="margin-left:auto">${escapeHtml(valueText)}</strong>` +
+          `</div>`;
+        return spark ? row + `<div style="margin-top:2px">${spark}</div>` : row;
+      })
+      .join("");
+
+    return `<div style="font-weight:600;color:${escapeHtml(tk.fg)}">${header}</div>${rows}`;
+  };
 }
 
 /* ----------------------------- builder ----------------------------- */
@@ -624,10 +702,18 @@ export function buildChartOption(
         )
       : [];
 
+  // Sparkline-in-tooltip (#1087): roomy mode only (compact tiles are too small)
+  // and only when there's more than one category — a single column has no trend
+  // to draw (matches the issue's "disabled when there's only one column").
+  const sparklineTip = !compact && rows.length > 1;
+  const cartesianTooltip = sparklineTip
+    ? { trigger: "axis" as const, ...tooltipStyle, formatter: cartesianTooltipFormatter(cols, matrix, tk) }
+    : { trigger: "axis" as const, ...tooltipStyle };
+
   return {
     ...common,
     title,
-    tooltip: { trigger: "axis", ...tooltipStyle },
+    tooltip: cartesianTooltip,
     legend,
     grid: compact
       ? { top: 24, left: 48, right: 16, bottom: 36 }

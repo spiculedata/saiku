@@ -455,6 +455,84 @@ describe("buildChartOption — dataZoom zoom + pan (#1080)", () => {
   });
 });
 
+describe("buildChartOption — cartesian sparkline tooltip (#1087)", () => {
+  function tipFormatter(opt: Record<string, unknown>) {
+    const tip = opt.tooltip as { formatter?: (p: unknown) => string };
+    return tip.formatter;
+  }
+
+  test("roomy bar chart gets a function formatter returning an <svg> sparkline + value", () => {
+    const opt = buildChartOption(sample(), "bar", opts(), undefined, { compact: false }) as Record<
+      string,
+      unknown
+    >;
+    const fmt = tipFormatter(opt);
+    expect(typeof fmt).toBe("function");
+    const out = fmt!([
+      { axisValueLabel: "1997", seriesName: "Store Sales", dataIndex: 0, value: 565238.13, color: "#abc" },
+      { axisValueLabel: "1997", seriesName: "Unit Sales", dataIndex: 0, value: 266773, color: "#def" },
+    ]);
+    expect(out).toContain("<svg");
+    expect(out).toContain("Store Sales");
+    expect(out).toContain("565238.13"); // existing value text is kept
+  });
+
+  test("compact tiles do NOT get the sparkline formatter (no room)", () => {
+    const opt = buildChartOption(sample(), "bar", opts(), undefined, { compact: true }) as Record<
+      string,
+      unknown
+    >;
+    expect(tipFormatter(opt)).toBeUndefined();
+  });
+
+  test("single-category charts get no sparkline formatter (no trend to draw)", () => {
+    const oneRow: ChartProjection = {
+      rowCategories: ["1997"],
+      columnCategories: ["Store Sales"],
+      matrix: [[5]],
+    };
+    const opt = buildChartOption(oneRow, "line", opts(), undefined, { compact: false }) as Record<
+      string,
+      unknown
+    >;
+    expect(tipFormatter(opt)).toBeUndefined();
+  });
+
+  test("SECURITY: formatter HTML-escapes a hostile series name (innerHTML, un-escaped by ECharts)", () => {
+    const hostile: ChartProjection = {
+      rowCategories: ["1997", "1998"],
+      columnCategories: ['<img src=x onerror=alert(1)>', "Unit Sales"],
+      matrix: [
+        [1, 2],
+        [3, 4],
+      ],
+    };
+    const opt = buildChartOption(hostile, "line", opts(), undefined, { compact: false }) as Record<
+      string,
+      unknown
+    >;
+    const fmt = tipFormatter(opt)!;
+    const out = fmt([
+      { axisValueLabel: "1997", seriesName: '<img src=x onerror=alert(1)>', dataIndex: 0, value: 1 },
+    ]);
+    expect(out).not.toContain("<img");
+    expect(out).toContain("&lt;img");
+  });
+
+  test("SECURITY: formatter HTML-escapes a hostile category (axis) label", () => {
+    const opt = buildChartOption(sample(), "bar", opts(), undefined, { compact: false }) as Record<
+      string,
+      unknown
+    >;
+    const fmt = tipFormatter(opt)!;
+    const out = fmt([
+      { axisValueLabel: '<script>alert(1)</script>', seriesName: "Store Sales", dataIndex: 0, value: 1 },
+    ]);
+    expect(out).not.toContain("<script>alert");
+    expect(out).toContain("&lt;script&gt;");
+  });
+});
+
 describe("buildChartOption — rejection", () => {
   test("returns null for unknown chart kinds", () => {
     expect(buildChartOption(sample(), "made-up")).toBeNull();
