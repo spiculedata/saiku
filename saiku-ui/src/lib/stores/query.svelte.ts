@@ -450,9 +450,16 @@ class QueryStore {
   }
 
   hasRunnableShape(): boolean {
-    const q = this.current?.queryModel;
+    if (!this.current) return false;
+    // MDX-mode queries (raw expression set via MDXModal.onRun or the AI
+    // Query drawer's "Edit in canvas") bypass the queryModel surface — the
+    // server runs the raw mdx string and we just need it to be non-empty.
+    if (this.current.type === "MDX") {
+      return !!this.current.mdx && this.current.mdx.trim().length > 0;
+    }
+    const q = this.current.queryModel;
     if (!q) return false;
-    // A runnable shape needs at least one measure (on COLUMNS) AND at least
+    // QUERYMODEL-mode needs at least one measure (on COLUMNS) AND at least
     // one hierarchy on ROWS or COLUMNS. Running without either produces an
     // ugly server-side MDX error, so we silently short-circuit instead.
     const hasMeasure = q.details.measures.length > 0;
