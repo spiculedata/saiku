@@ -7,6 +7,7 @@
   import DimensionList from "$lib/views/DimensionList.svelte";
   import WorkspaceToolbar from "$lib/views/WorkspaceToolbar.svelte";
   import QueryCanvas from "$lib/views/QueryCanvas.svelte";
+  import AiQueryDrawer from "$lib/views/AiQueryDrawer.svelte";
   import PrefsMenu from "$lib/components/PrefsMenu.svelte";
   import { query } from "$lib/stores/query.svelte";
   import { selection } from "$lib/stores/selection.svelte";
@@ -32,6 +33,20 @@
 
   let { session }: Props = $props();
   let aboutOpen = $state(false);
+  let aiDrawerOpen = $state(false);
+
+  /** Hand the model's MDX to the active query tab via the same path
+   *  MDXModal.onRun uses — set type to MDX, store the raw expression, and
+   *  re-run. The canvas re-renders with the result; all existing grid /
+   *  chart / drill features keep working. Closes the drawer so the user
+   *  sees their cellset. */
+  async function handleEditInCanvas(mdx: string): Promise<void> {
+    if (!query.current) return;
+    query.current.mdx = mdx;
+    query.current.type = "MDX";
+    aiDrawerOpen = false;
+    await query.run();
+  }
 
   // Tab labels derived from each tab's saved-path snapshot. The active
   // tab reads the live query store, others read their captured
@@ -267,11 +282,19 @@
           onclick={handleNewTab}
         >+</button>
       </div>
-      <WorkspaceToolbar />
+      <WorkspaceToolbar onAskAi={() => (aiDrawerOpen = true)} />
     {/if}
     <QueryCanvas />
   </section>
 </div>
+
+{#if !embed.active}
+  <AiQueryDrawer
+    open={aiDrawerOpen}
+    onClose={() => (aiDrawerOpen = false)}
+    onEditInCanvas={(mdx) => void handleEditInCanvas(mdx)}
+  />
+{/if}
 
 <Modal title={i18n.t("modal.about.title")} open={aboutOpen} size="sm" onClose={() => (aboutOpen = false)}>
   <p>{i18n.t("modal.about.tagline")}</p>
