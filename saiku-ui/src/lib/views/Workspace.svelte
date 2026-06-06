@@ -35,15 +35,31 @@
   let aboutOpen = $state(false);
   let aiDrawerOpen = $state(false);
 
-  /** Hand the model's MDX to the active query tab via the same path
-   *  MDXModal.onRun uses — set type to MDX, store the raw expression, and
-   *  re-run. The canvas re-renders with the result; all existing grid /
-   *  chart / drill features keep working. Closes the drawer so the user
-   *  sees their cellset. */
+  /** Hand the model's MDX to the active query tab and re-run.
+   *
+   *  Saiku#1131: clear `query.current.name` first. ThinQueryService
+   *  treats the queryName as a stable id for its session-scoped context
+   *  cache (`ThinQueryService.createQuery()` line 224 — only stores the
+   *  inbound ThinQuery if the name isn't already in `context`). When a
+   *  cube was just `initFor`-ed and then we switch to MDX-mode on the
+   *  same tab, the cached entry for that UUID still points at the prior
+   *  ThinQuery (empty queryModel, no mdx). `ArrowCellsetWriter` then
+   *  reads `tqAfter.getMdx()` off that stale entry and the response
+   *  carries the wrong mdx + 0 rows even though the wire request was
+   *  correct.
+   *
+   *  Clearing the name forces `createQuery` to mint a fresh UUID and a
+   *  fresh `QueryContext`, so the rest of the path reads our MDX. The
+   *  store's `query.run()` repopulates `current.name` from the response.
+   *
+   *  Closes the drawer so the user sees their cellset; the canvas
+   *  re-renders with the result and existing grid / chart / drill /
+   *  export features keep working. */
   async function handleEditInCanvas(mdx: string): Promise<void> {
     if (!query.current) return;
     query.current.mdx = mdx;
     query.current.type = "MDX";
+    query.current.name = "";
     aiDrawerOpen = false;
     await query.run();
   }

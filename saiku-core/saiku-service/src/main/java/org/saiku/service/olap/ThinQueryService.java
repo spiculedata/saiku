@@ -221,14 +221,21 @@ public class ThinQueryService implements Serializable {
         }
         Map<String, Object> cubeProperties = olapDiscoverService.getProperties(tq.getCube());
         tq.getProperties().putAll(cubeProperties);
-        if (!context.containsKey(tq.getName())) {
-            //			Cube cub = olapDiscoverService.getNativeCube(tq.getCube());
-            //			Query query = new Query(tq.getName(), cub);
-            //			tq = Thin.convert(query, tq.getCube());
-            QueryContext qt = new QueryContext(Type.OLAP, tq);
-            qt.store(ObjectKey.QUERY, tq);
+        QueryContext qt = context.get(tq.getName());
+        if (qt == null) {
+            qt = new QueryContext(Type.OLAP, tq);
             this.context.put(tq.getName(), qt);
         }
+        // saiku#1131: always refresh the QUERY pointer with the inbound
+        // ThinQuery. The pre-fix code only stored on first-create, leaving
+        // a stale ThinQuery in ObjectKey.QUERY when a subsequent call
+        // reused the same queryName but changed type / mdx / queryModel
+        // (e.g. workspace flipping from QUERYMODEL to MDX after the user
+        // clicked Edit-in-canvas in the AI Query drawer). Downstream
+        // readers like ArrowCellsetWriter pull mdx from
+        // queryContext.getOlapQuery(), so the stale entry would surface
+        // the prior mdx + 0 rows even though the wire request was valid.
+        qt.store(ObjectKey.QUERY, tq);
         return tq;
     }
 
