@@ -394,6 +394,67 @@ describe("buildChartOption — map (#1071)", () => {
   });
 });
 
+describe("buildChartOption — dataZoom zoom + pan (#1080)", () => {
+  // The cartesian families that get x-axis zoom/pan.
+  const CARTESIAN = [
+    "bar",
+    "stackedBar",
+    "line",
+    "stackedLine",
+    "area",
+    "stackedArea",
+    "scatter",
+    "bubble",
+    "waterfall",
+  ] as const;
+  // Non-cartesian types must NEVER get dataZoom (it would be meaningless / break layout).
+  const NON_CARTESIAN = ["pie", "donut", "treemap", "sunburst", "heatmap", "radar", "map"] as const;
+
+  test("every cartesian type (roomy) gets an inside zoom + a bottom slider", () => {
+    for (const t of CARTESIAN) {
+      const opt = buildChartOption(sample(), t, opts(), undefined, { compact: false }) as Record<
+        string,
+        unknown
+      >;
+      const dz = opt.dataZoom as Array<{ type: string; xAxisIndex: number }>;
+      expect(Array.isArray(dz), `${t} dataZoom is array`).toBe(true);
+      expect(dz.map((d) => d.type), `${t} has inside + slider`).toEqual(["inside", "slider"]);
+      // x-axis only — value-axis zoom fights magnitude comparison.
+      expect(dz.every((d) => d.xAxisIndex === 0)).toBe(true);
+    }
+  });
+
+  test("every cartesian type (compact) gets an inside zoom but NO slider", () => {
+    for (const t of CARTESIAN) {
+      const opt = buildChartOption(sample(), t, opts(), undefined, { compact: true }) as Record<
+        string,
+        unknown
+      >;
+      const dz = opt.dataZoom as Array<{ type: string }>;
+      expect(dz.map((d) => d.type), `${t} compact = inside only`).toEqual(["inside"]);
+    }
+  });
+
+  test("non-cartesian types never get dataZoom (roomy or compact)", () => {
+    for (const t of NON_CARTESIAN) {
+      for (const compact of [false, true]) {
+        const proj = t === "map" ? { rowCategories: ["USA"], columnCategories: ["m"], matrix: [[5]] } : sample();
+        const opt = buildChartOption(proj, t, opts(), undefined, { compact }) as Record<string, unknown>;
+        expect(opt.dataZoom, `${t} compact=${compact} has no dataZoom`).toBeUndefined();
+      }
+    }
+  });
+
+  test("dataZoom uses filterMode 'none' so zooming never drops data from the series", () => {
+    const opt = buildChartOption(sample(), "bar", opts(), undefined, { compact: false }) as Record<
+      string,
+      unknown
+    >;
+    const dz = opt.dataZoom as Array<{ filterMode: string }>;
+    expect(dz.every((d) => d.filterMode === "none")).toBe(true);
+  });
+});
+
 describe("buildChartOption — rejection", () => {
   test("returns null for unknown chart kinds", () => {
     expect(buildChartOption(sample(), "made-up")).toBeNull();
