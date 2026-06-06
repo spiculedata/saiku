@@ -30,6 +30,7 @@ import {
   snapshotPanelDefaults,
   type SavedDefaultMembers,
 } from "$lib/dashboard/filterDefaults";
+import { HistoryStack } from "$lib/dashboard/history";
 import { firstFreeSlot } from "$lib/dashboard/tilePlacement";
 import { recentDashboards } from "$lib/stores/recentDashboards.svelte";
 import { session } from "$lib/stores/session.svelte";
@@ -62,6 +63,28 @@ class DashboardStore {
    *  {@link resetPanelFiltersToSaved} and the toolbar's "can reset?"
    *  check can compare without a network round-trip. (Issue #927.) */
   savedDefaultMembers = $state<SavedDefaultMembers>({});
+
+  /* ------------------------------ history ------------------------------ */
+
+  /** Undo/redo history of structural edits (issue #914). Snapshot-based:
+   *  {@link markDirty} pushes a deep clone of the pre-mutation document so
+   *  {@link undo} can restore it. Pure stack logic lives in
+   *  $lib/dashboard/history; this store owns the cloning + reactive
+   *  canUndo/canRedo flags. Reset on every {@link hydrate} (undo does not
+   *  cross a load / page reload). Capped at 50 entries. */
+  private history = new HistoryStack<Dashboard>(50);
+
+  /** Reactive mirrors of {@link history}'s availability — the toolbar
+   *  buttons + keyboard handler read these. Kept in $state so Svelte 5
+   *  re-renders when a mutation / undo / redo shifts the stacks (the
+   *  HistoryStack getters themselves aren't reactive). */
+  canUndo = $state<boolean>(false);
+  canRedo = $state<boolean>(false);
+
+  /** Set true only for the duration of an {@link undo} / {@link redo}
+   *  apply, so the resulting {@code this.current} reassignment doesn't
+   *  record itself back onto the history stack. */
+  private applyingHistory = false;
 
   /* ----------------------------- lifecycle ----------------------------- */
 
@@ -114,6 +137,12 @@ class DashboardStore {
     // the migrated baseline, not on the pre-migration shape that no
     // longer exists in-memory. (Issue #927.)
     this.savedDefaultMembers = snapshotPanelDefaults(migrated.filterPanel?.filters);
+    // Issue #914: a load is a fresh history baseline — undo does not
+    // cross a load / page reload. Seed the stack with the loaded doc so
+    // the first edit has a "before" to fall back to.
+    this.history.reset(structuredClone($state.snapshot(migrated)) as Dashboard);
+    this.pendingBefore = null;
+    this.syncHistoryFlags();
   }
 
   /** Persist via DashboardResource. Returns true on success. */
@@ -164,6 +193,9 @@ class DashboardStore {
     this.loadError = null;
     this.saveError = null;
     this.savedDefaultMembers = {};
+    this.pendingBefore = null;
+    this.canUndo = false;
+    this.canRedo = false;
   }
 
   /** Restore every panel widget's members[] to its saved-default
@@ -172,6 +204,7 @@ class DashboardStore {
    *  short-circuits via referential identity. Issue #927. */
   resetPanelFiltersToSaved(): void {
     if (!this.current?.filterPanel) return;
+    this.recordBefore();
     const current = this.current.filterPanel.filters;
     const next = restoreMembersToDefaults(current, this.savedDefaultMembers);
     if (next === current) return;
@@ -186,6 +219,7 @@ class DashboardStore {
 
   updateName(name: string): void {
     if (!this.current || this.current.name === name) return;
+    this.recordBefore();
     this.current = { ...this.current, name };
     this.markDirty();
   }
@@ -202,6 +236,7 @@ class DashboardStore {
       (this.current.tags ?? []).length === (next ?? []).length &&
       (this.current.tags ?? []).every((t, i) => t === (next ?? [])[i]);
     if (same) return;
+    this.recordBefore();
     this.current = { ...this.current, tags: next };
     this.markDirty();
   }
@@ -211,6 +246,7 @@ class DashboardStore {
    *  shifts on neighbours in a single dirty bump. */
   replaceTiles(tiles: DashboardTile[]): void {
     if (!this.current) return;
+    this.recordBefore();
     this.current = {
       ...this.current,
       layout: { ...this.current.layout, tiles },
@@ -222,6 +258,7 @@ class DashboardStore {
    *  ids in a mutator — keeps the dirty-tracking honest). */
   addTile(tile: DashboardTile): void {
     if (!this.current) return;
+    this.recordBefore();
     this.current = {
       ...this.current,
       layout: {
@@ -240,6 +277,7 @@ class DashboardStore {
     if (!this.current) return null;
     const source = this.current.layout.tiles.find((t) => t.id === id);
     if (!source) return null;
+    this.recordBefore();
     const slot = firstFreeSlot(this.current.layout, source.w, source.h);
     const cloned: DashboardTile = {
       ...cloneTileWithFreshId(source),
@@ -274,6 +312,7 @@ class DashboardStore {
     if (!this.current) return;
     const next = this.current.layout.tiles.filter((t) => t.id !== id);
     if (next.length === this.current.layout.tiles.length) return; // no-op
+    this.recordBefore();
     this.current = {
       ...this.current,
       layout: { ...this.current.layout, tiles: next },
@@ -285,6 +324,7 @@ class DashboardStore {
    *  `$effect` keyed off the tile re-fires. */
   updateTile(id: string, patch: Partial<DashboardTile>): void {
     if (!this.current) return;
+    this.recordBefore();
     let changed = false;
     const next = this.current.layout.tiles.map((t) => {
       if (t.id !== id) return t;
@@ -319,6 +359,7 @@ class DashboardStore {
   }
 
   addPanelFilter(filter: PanelFilter): void {
+    this.recordBefore();
     const panel = this.ensurePanel();
     if (!panel || !this.current) return;
     this.current = {
@@ -332,6 +373,7 @@ class DashboardStore {
     if (!this.current?.filterPanel) return;
     const next = this.current.filterPanel.filters.filter((f) => f.id !== id);
     if (next.length === this.current.filterPanel.filters.length) return;
+    this.recordBefore();
     this.current = {
       ...this.current,
       filterPanel: { ...this.current.filterPanel, filters: next },
@@ -343,6 +385,7 @@ class DashboardStore {
    *  the user picks a value in the dropdown. */
   updatePanelFilter(id: string, patch: Partial<PanelFilter>): void {
     if (!this.current?.filterPanel) return;
+    this.recordBefore();
     let changed = false;
     const next = this.current.filterPanel.filters.map((f) => {
       if (f.id !== id) return f;
@@ -362,6 +405,7 @@ class DashboardStore {
    *  silent drops). */
   reorderPanelFilters(orderedIds: string[]): void {
     if (!this.current?.filterPanel) return;
+    this.recordBefore();
     const byId = new Map(this.current.filterPanel.filters.map((f) => [f.id, f]));
     const reordered: PanelFilter[] = [];
     const seen = new Set<string>();
@@ -393,9 +437,76 @@ class DashboardStore {
     this.markDirty();
   }
 
+  /** Deep clone of the document captured at the top of a mutator, before
+   *  it reassigns {@code this.current}. Consumed by {@link markDirty} to
+   *  push an undo entry. Overwritten (and thus harmlessly discarded) by
+   *  the next mutator when the current one early-returns as a no-op. */
+  private pendingBefore: Dashboard | null = null;
+
+  /** Capture the pre-mutation document for the history stack. Called as
+   *  the first line of every structural mutator. Deep-clones so later
+   *  immutable reassignments can't alias into the snapshot. Skipped while
+   *  applying an undo/redo so the restore isn't itself recorded. */
+  private recordBefore(): void {
+    if (this.applyingHistory || !this.current) {
+      this.pendingBefore = null;
+      return;
+    }
+    this.pendingBefore = structuredClone($state.snapshot(this.current)) as Dashboard;
+  }
+
   private markDirty(): void {
     this.dirty = true;
     this.dirtyCount++;
+    // Record the undo entry now that the mutation has committed. No-op
+    // mutators return before reaching here, so only real changes land on
+    // the stack. Snapshot `current` too so the entry's "after" baseline
+    // matches what redo will reproduce.
+    if (!this.applyingHistory && this.pendingBefore && this.current) {
+      const after = structuredClone($state.snapshot(this.current)) as Dashboard;
+      this.history.push(this.pendingBefore, after);
+      this.pendingBefore = null;
+      this.syncHistoryFlags();
+    }
+  }
+
+  private syncHistoryFlags(): void {
+    this.canUndo = this.history.canUndo;
+    this.canRedo = this.history.canRedo;
+  }
+
+  /* ----------------------------- undo / redo --------------------------- */
+
+  /** Restore the document to the state before the most recent structural
+   *  edit (issue #914). No-op when there's nothing to undo. Leaves the
+   *  dashboard dirty (the in-memory state now differs from disk). */
+  undo(): void {
+    const restored = this.history.undo();
+    if (!restored) return;
+    this.applyDocument(restored);
+  }
+
+  /** Re-apply the most recently undone structural edit. No-op when
+   *  there's nothing to redo. */
+  redo(): void {
+    const restored = this.history.redo();
+    if (!restored) return;
+    this.applyDocument(restored);
+  }
+
+  /** Swap the live document for a history snapshot without recording the
+   *  swap itself. Clones defensively so a future mutation can't alias
+   *  back into the entry still held on the stack. */
+  private applyDocument(doc: Dashboard): void {
+    this.applyingHistory = true;
+    try {
+      this.current = structuredClone(doc) as Dashboard;
+      this.dirty = true;
+      this.dirtyCount++;
+    } finally {
+      this.applyingHistory = false;
+    }
+    this.syncHistoryFlags();
   }
 }
 
