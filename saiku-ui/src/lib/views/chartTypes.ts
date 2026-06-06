@@ -33,6 +33,17 @@ export const CHART_TYPES: { id: ChartType; label: string; group: string }[] = [
   { id: "bubble", label: "Bubble", group: "Points" },
 ];
 
+/** Set of all supported chart-type ids, derived from CHART_TYPES so it can
+ *  never drift from the palette. */
+const CHART_TYPE_SET: ReadonlySet<string> = new Set(CHART_TYPES.map((c) => c.id));
+
+/** Type guard: is `kind` one of the supported chart types? The single source
+ *  of truth for "can we render this kind", shared by the workspace and the
+ *  dashboard (re-exported from chartOptions.ts as isSupportedChartKind). */
+export function isChartType(kind: string): kind is ChartType {
+  return CHART_TYPE_SET.has(kind);
+}
+
 export type TrendLineMode = "none" | "linear" | "ma" | "wma";
 
 export interface ChartOptions {

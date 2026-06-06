@@ -1,0 +1,524 @@
+/*
+ * The single, canonical chart-option builder for Saiku (#1076).
+ *
+ * Before this module the workspace (ChartView.svelte) and the dashboard
+ * (chartOptions.ts) each re-implemented the same 15 ECharts chart types with
+ * subtly different configs — so dashboard tiles silently lacked dual-axis,
+ * trend lines and rollup filtering, and every new feature meant two PRs that
+ * kept drifting. This builder is the one place both surfaces go through.
+ *
+ * Both surfaces project their native result shape into a {@link ChartProjection}
+ * ({rowCategories, columnCategories, matrix}) and call buildChartOption() with
+ * the full {@link ChartOptions}, the active {@link ThemeTokens}, and a
+ * {@link ChartGeometry}. The two surfaces differ only in *presentation density*,
+ * captured by the single `compact` geometry flag:
+ *
+ *   - workspace (compact = false): roomy grid margins, configurable legend,
+ *     geometry-derived axis-label truncation width, missing values drawn as 0.
+ *   - dashboard tiles (compact = true): tile-tight margins, bottom scroll
+ *     legend, fixed label width (+rotate when crowded), missing values as gaps.
+ *
+ * Surface-specific concerns stay OUT of here: cellset/AiQueryResponse parsing,
+ * rollup-row filtering (needs cellset depth), the ECharts instance lifecycle,
+ * click→drillthrough, host sizing, and reading live theme tokens from the DOM.
+ *
+ * Pure: no DOM, no fetches, no ECharts import. Tests live alongside.
+ */
+
+import type { ChartType, ChartOptions } from "$lib/views/chartTypes";
+import { DEFAULT_CHART_OPTIONS, SERIES_AXIS_THRESHOLD, isChartType } from "$lib/views/chartTypes";
+import { assignSeriesAxes } from "$lib/views/cellsetUtils";
+import { axisLabelConfig, deriveAxisLabelWidth } from "$lib/views/chartAxisLabel";
+import { cellRadiusPct, gridCells, MAX_LABELLED_SLICES } from "$lib/dashboard/smallMultiples";
+import { type ThemeTokens, DEFAULT_THEME_TOKENS } from "$lib/views/chartTheme";
+
+/** The shared, already-projected chart input both surfaces produce. Rollup
+ *  rows are filtered (and parent context promoted into labels) by the caller
+ *  BEFORE projection — the builder treats `rowCategories`/`matrix` as final. */
+export interface ChartProjection {
+  /** Category labels — one per row (the x-axis categories / pie slices). */
+  rowCategories: string[];
+  /** Series labels — one per measure column (the legend entries). */
+  columnCategories: string[];
+  /** Values: matrix[row][col]. `null` = a genuinely missing cell. */
+  matrix: (number | null)[][];
+}
+
+/** Canvas geometry + presentation density. `aspect` (w/h) keeps small-multiple
+ *  radii on-screen-constant; `chartWidth` drives derived axis-label width in the
+ *  roomy (non-compact) mode; `compact` selects the dashboard-tile cosmetics. */
+export interface ChartGeometry {
+  aspect?: number;
+  chartWidth?: number;
+  compact?: boolean;
+}
+
+/* ----------------------------- helpers ----------------------------- */
+
+function legendConfig(o: ChartOptions, tk: ThemeTokens): Record<string, unknown> {
+  if (!o.showLegend) return { show: false };
+  const position: Record<string, unknown> = { textStyle: { color: tk.fg } };
+  if (o.legendPosition === "top") position.top = 10;
+  else if (o.legendPosition === "bottom") position.bottom = 10;
+  else if (o.legendPosition === "left") {
+    position.left = 10;
+    position.top = "middle";
+    position.orient = "vertical";
+  } else if (o.legendPosition === "right") {
+    position.right = 10;
+    position.top = "middle";
+    position.orient = "vertical";
+  }
+  return position;
+}
+
+function titleConfig(o: ChartOptions, tk: ThemeTokens): Record<string, unknown> | undefined {
+  if (!o.title) return undefined;
+  return { text: o.title, left: "center", textStyle: { color: tk.fg } };
+}
+
+function linearRegression(vals: (number | null)[]): number[] {
+  const n = vals.length;
+  let sumX = 0,
+    sumY = 0,
+    sumXY = 0,
+    sumXX = 0,
+    count = 0;
+  for (let i = 0; i < n; i++) {
+    const y = vals[i];
+    if (y == null || !Number.isFinite(y)) continue;
+    sumX += i;
+    sumY += y;
+    sumXY += i * y;
+    sumXX += i * i;
+    count += 1;
+  }
+  if (count < 2) return vals.map(() => 0);
+  const meanX = sumX / count;
+  const meanY = sumY / count;
+  const denom = sumXX - sumX * meanX;
+  const slope = denom === 0 ? 0 : (sumXY - sumX * meanY) / denom;
+  const intercept = meanY - slope * meanX;
+  return vals.map((_, i) => slope * i + intercept);
+}
+
+function movingAverage(vals: (number | null)[], period: number): (number | null)[] {
+  const out: (number | null)[] = [];
+  for (let i = 0; i < vals.length; i++) {
+    if (i < period - 1) {
+      out.push(null);
+      continue;
+    }
+    let sum = 0;
+    let c = 0;
+    for (let k = i - period + 1; k <= i; k++) {
+      const v = vals[k];
+      if (v != null && Number.isFinite(v)) {
+        sum += v;
+        c += 1;
+      }
+    }
+    out.push(c ? sum / c : null);
+  }
+  return out;
+}
+
+function weightedMovingAverage(vals: (number | null)[], period: number): (number | null)[] {
+  const out: (number | null)[] = [];
+  for (let i = 0; i < vals.length; i++) {
+    if (i < period - 1) {
+      out.push(null);
+      continue;
+    }
+    let num = 0,
+      den = 0;
+    for (let k = 0; k < period; k++) {
+      const v = vals[i - period + 1 + k];
+      if (v != null && Number.isFinite(v)) {
+        num += (k + 1) * v;
+        den += k + 1;
+      }
+    }
+    out.push(den ? num / den : null);
+  }
+  return out;
+}
+
+function trendSeries(
+  name: string,
+  vals: (number | null)[],
+  o: ChartOptions,
+  tk: ThemeTokens,
+): Record<string, unknown>[] {
+  if (o.trendLine === "none") return [];
+  const period = Math.max(2, o.trendPeriod || 3);
+  let data: (number | null)[] = [];
+  let seriesName = name;
+  if (o.trendLine === "linear") {
+    data = linearRegression(vals);
+    seriesName = `${name} (trend)`;
+  } else if (o.trendLine === "ma") {
+    data = movingAverage(vals, period);
+    seriesName = `${name} (MA${period})`;
+  } else if (o.trendLine === "wma") {
+    data = weightedMovingAverage(vals, period);
+    seriesName = `${name} (WMA${period})`;
+  }
+  return [
+    {
+      type: "line",
+      name: seriesName,
+      data,
+      smooth: true,
+      showSymbol: false,
+      lineStyle: { type: "dashed", width: 2, color: tk.fgMuted },
+      itemStyle: { color: tk.fgMuted },
+    },
+  ];
+}
+
+/* ----------------------------- builder ----------------------------- */
+
+/**
+ * Build an ECharts option object for one chart, from an already-projected
+ * {@link ChartProjection}. Returns null when the kind isn't supported or the
+ * projection has no rows.
+ *
+ * @param projection rows/cols/matrix (rollup-filtered by the caller)
+ * @param type       one of the 15 supported chart types
+ * @param options    full ChartOptions (title/legend/axes/trend/dual-axis)
+ * @param tk         active theme tokens (text/axis/palette colours)
+ * @param geom       canvas geometry + the `compact` density flag
+ */
+export function buildChartOption(
+  projection: ChartProjection,
+  type: ChartType | string,
+  options: ChartOptions = DEFAULT_CHART_OPTIONS,
+  tk: ThemeTokens = DEFAULT_THEME_TOKENS,
+  geom: ChartGeometry = {},
+): Record<string, unknown> | null {
+  if (!isChartType(type)) return null;
+  const t: ChartType = type;
+  const rows = projection.rowCategories;
+  const cols = projection.columnCategories;
+  const matrix = projection.matrix;
+  if (matrix.length === 0) return null;
+
+  const o = options;
+  const compact = geom.compact ?? false;
+  const aspect = Number.isFinite(geom.aspect) && (geom.aspect ?? 0) > 0 ? (geom.aspect as number) : 1;
+
+  // Theme-derived fragments — identical across both surfaces.
+  const common = {
+    backgroundColor: "transparent",
+    color: tk.chartColors,
+    textStyle: { color: tk.fg },
+  };
+  const axisLabel = { color: tk.fgMuted };
+  const axisLine = { lineStyle: { color: tk.border } };
+  const axisTick = { lineStyle: { color: tk.border } };
+  const splitLine = { lineStyle: { color: tk.border, opacity: 0.5 } };
+  const nameTextStyle = { color: tk.fg };
+  const tooltipStyle = { backgroundColor: tk.bg, borderColor: tk.border, textStyle: { color: tk.fg } };
+
+  // Category-axis label: compact uses a fixed truncation width (tiles are
+  // small); roomy mode derives the per-label width from the canvas width and
+  // category count. `rotate` is only used by the compact bar branch when
+  // categories crowd. The full label always shows in the axis-pointer tooltip.
+  const catCount = Math.max(rows.length, cols.length, 1);
+  const catLabelWidth = compact ? 100 : deriveAxisLabelWidth(geom.chartWidth ?? 0, catCount);
+  const catLabel = (rotate = 0) => ({ color: tk.fgMuted, rotate, ...axisLabelConfig(catLabelWidth) });
+
+  const legend = compact
+    ? o.showLegend
+      ? { type: "scroll", bottom: 0, textStyle: { color: tk.fg } }
+      : { show: false }
+    : legendConfig(o, tk);
+  const title = titleConfig(o, tk);
+  const xName = o.xAxisLabel || undefined;
+  const yName = o.yAxisLabel || undefined;
+
+  const baseAxis = { type: "category" as const, axisLabel, axisLine, axisTick, splitLine, nameTextStyle };
+  const valueAxis = { type: "value" as const, axisLabel, axisLine, axisTick, splitLine, nameTextStyle };
+
+  // Pie / donut / treemap / sunburst encode a SINGLE measure. With M measures
+  // we fan out into M small-multiple charts — one per measure — laid out in a
+  // grid inside the same option (M series, one per cell). M=1 is a single chart.
+  if (t === "pie" || t === "donut" || t === "treemap" || t === "sunburst") {
+    const cells = gridCells(cols.length);
+    const cellTitles = cells.map((cell, m) => ({
+      text: cols[m],
+      left: cell.centerXPct + "%",
+      top: cell.topPct + "%",
+      textAlign: "center" as const,
+      textStyle: { color: tk.fg, fontSize: 12 },
+    }));
+    const titles = title ? [title, ...cellTitles] : cellTitles;
+    // Name slices directly when few enough to read; else lean on the tooltip.
+    // Inside the slices for a small-multiple grid (leader lines would cross
+    // between neighbours); outside for a single chart where there's room.
+    const showSliceLabels = rows.length <= MAX_LABELLED_SLICES;
+    const sliceLabelInside = cells.length > 1;
+
+    if (t === "pie" || t === "donut") {
+      return {
+        ...common,
+        title: titles,
+        tooltip: { trigger: "item", ...tooltipStyle },
+        series: cells.map((cell, m) => {
+          const outer = cellRadiusPct(cell, aspect);
+          return {
+            type: "pie",
+            name: cols[m],
+            radius: t === "donut" ? [outer * 0.55 + "%", outer + "%"] : [0, outer + "%"],
+            center: [cell.centerXPct + "%", cell.centerYPct + "%"],
+            label: {
+              show: showSliceLabels,
+              position: sliceLabelInside ? "inside" : "outside",
+              formatter: "{b}",
+              color: sliceLabelInside ? "#fff" : tk.fg,
+            },
+            labelLine: { show: showSliceLabels && !sliceLabelInside },
+            data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
+          };
+        }),
+      };
+    }
+
+    if (t === "treemap") {
+      return {
+        ...common,
+        title: titles,
+        tooltip: tooltipStyle,
+        series: cells.map((cell, m) => ({
+          type: "treemap",
+          name: cols[m],
+          left: cell.leftPct + "%",
+          top: cell.topPct + cell.heightPct * 0.18 + "%",
+          width: cell.widthPct + "%",
+          height: cell.heightPct * 0.82 + "%",
+          label: { color: "#fff" },
+          breadcrumb: { show: false },
+          data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
+        })),
+      };
+    }
+
+    // sunburst
+    return {
+      ...common,
+      title: titles,
+      tooltip: tooltipStyle,
+      series: cells.map((cell, m) => ({
+        type: "sunburst",
+        name: cols[m],
+        center: [cell.centerXPct + "%", cell.centerYPct + "%"],
+        radius: [0, cellRadiusPct(cell, aspect) + "%"],
+        label: { show: showSliceLabels, color: "#fff" },
+        data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
+      })),
+    };
+  }
+
+  if (t === "heatmap") {
+    const data: [number, number, number][] = [];
+    for (let i = 0; i < matrix.length; i++) {
+      for (let j = 0; j < (matrix[i]?.length ?? 0); j++) {
+        data.push([j, i, matrix[i][j] ?? 0]);
+      }
+    }
+    const values = data.map((d) => d[2]);
+    const min = values.length ? Math.min(...values) : 0;
+    const max = values.length ? Math.max(...values) : 1;
+    return {
+      ...common,
+      title,
+      tooltip: tooltipStyle,
+      grid: compact
+        ? { left: 120, top: 24, right: 16, bottom: 64 }
+        : { left: 120, top: 40, right: 40, bottom: 80 },
+      xAxis: { ...baseAxis, axisLabel: catLabel(), data: cols, name: xName },
+      yAxis: { ...baseAxis, data: rows, inverse: true, name: yName },
+      visualMap: {
+        min,
+        max,
+        calculable: true,
+        orient: "horizontal",
+        left: "center",
+        bottom: compact ? 8 : 10,
+        textStyle: { color: tk.fgMuted },
+      },
+      series: [
+        { type: "heatmap", data, label: { show: false }, emphasis: { itemStyle: { shadowBlur: 10 } } },
+      ],
+    };
+  }
+
+  if (t === "radar") {
+    const max = Math.max(0, ...matrix.flatMap((r) => r.map((v) => Math.abs(v ?? 0))));
+    return {
+      ...common,
+      title,
+      tooltip: tooltipStyle,
+      legend,
+      radar: {
+        indicator: cols.map((c) => ({ name: c, max: max || 1 })),
+        axisName: { color: tk.fgMuted },
+        axisLine: { lineStyle: { color: tk.border } },
+        splitLine: { lineStyle: { color: tk.border, opacity: 0.5 } },
+        splitArea: { areaStyle: { color: [tk.bg, tk.bgMuted], opacity: 0.3 } },
+      },
+      series: [
+        { type: "radar", data: rows.map((r, i) => ({ name: r, value: matrix[i].map((v) => v ?? 0) })) },
+      ],
+    };
+  }
+
+  if (t === "scatter" || t === "bubble") {
+    const bubbleMax = Math.max(1, ...matrix.flatMap((r) => r.map((v) => Math.abs(v ?? 0))));
+    return {
+      ...common,
+      title,
+      tooltip: tooltipStyle,
+      legend,
+      xAxis: { ...baseAxis, axisLabel: catLabel(), data: cols, name: xName },
+      yAxis: { ...valueAxis, name: yName },
+      series: rows.map((name, i) => ({
+        type: "scatter",
+        name,
+        symbolSize:
+          t === "bubble"
+            ? (val: unknown) => {
+                const v = Array.isArray(val) ? (val[1] as number) : (val as number);
+                return Math.max(6, Math.sqrt(Math.abs(v) / bubbleMax) * 40);
+              }
+            : 10,
+        data: matrix[i].map((v, j) => [j, v ?? 0]),
+      })),
+    };
+  }
+
+  if (t === "waterfall") {
+    const vals = matrix.map((r) => r[0] ?? 0);
+    const spacers: number[] = [];
+    const positives: (number | null)[] = [];
+    const negatives: (number | null)[] = [];
+    let running = 0;
+    for (const v of vals) {
+      if (v >= 0) {
+        spacers.push(running);
+        positives.push(v);
+        negatives.push(null);
+      } else {
+        spacers.push(running + v);
+        positives.push(null);
+        negatives.push(-v);
+      }
+      running += v;
+    }
+    return {
+      ...common,
+      title,
+      tooltip: { trigger: "axis", ...tooltipStyle },
+      legend,
+      grid: compact
+        ? { top: 24, left: 48, right: 16, bottom: 36 }
+        : { left: 60, top: title ? 50 : 30, right: 40, bottom: 60 },
+      xAxis: { ...baseAxis, axisLabel: catLabel(), data: rows, name: xName },
+      yAxis: { ...valueAxis, name: yName },
+      series: [
+        {
+          type: "bar",
+          name: "",
+          stack: "waterfall",
+          itemStyle: { borderColor: "transparent", color: "transparent" },
+          emphasis: { itemStyle: { borderColor: "transparent", color: "transparent" } },
+          data: spacers,
+        },
+        {
+          type: "bar",
+          name: cols[0] ?? "Positive",
+          stack: "waterfall",
+          data: positives,
+          itemStyle: { color: "#4c9ee6" },
+        },
+        {
+          type: "bar",
+          name: `-${cols[0] ?? "Negative"}`,
+          stack: "waterfall",
+          data: negatives,
+          itemStyle: { color: "#e66c6c" },
+        },
+      ],
+    };
+  }
+
+  // bar / stackedBar / line / stackedLine / area / stackedArea
+  const isStacked = t.startsWith("stacked");
+  // includes("bar") is case-sensitive — "stackedBar" has a capital B, so the
+  // naive check returned false and stacked-bar fell through to the line branch.
+  const lower = t.toLowerCase();
+  const kindBase: "bar" | "line" = lower.includes("bar") ? "bar" : "line";
+  const areaStyle = t === "area" || t === "stackedArea" ? {} : undefined;
+
+  // Dual y-axis: auto-split low-magnitude series to the right so a dominant
+  // series doesn't crush them to the zero line (Event Count in thousands vs
+  // Avg Tone in single digits). Per-series picks in o.seriesAxis always win;
+  // o.dualAxis=false reverts to single-axis. assignSeriesAxes returns all-left
+  // when dualAxis is off, so hasRight is false and we emit a single y-axis.
+  const seriesSides = assignSeriesAxes(cols, matrix, {
+    dualAxis: o.dualAxis,
+    seriesAxis: o.seriesAxis,
+    threshold: SERIES_AXIS_THRESHOLD,
+  });
+  const hasRight = seriesSides.some((s) => s === "right");
+  const yAxis = hasRight
+    ? [
+        { ...valueAxis, name: yName, position: "left" as const },
+        // Drop the right axis's splitLine so left-axis gridlines aren't doubled.
+        { ...valueAxis, name: undefined, position: "right" as const, splitLine: { show: false } },
+      ]
+    : { ...valueAxis, name: yName };
+
+  const base = cols.map((name, c) => ({
+    type: kindBase,
+    name,
+    // Single-axis stacked → one "total" group (matches both surfaces' prior
+    // output); dual-axis stacked → separate groups per side so each axis stacks
+    // independently.
+    stack: isStacked
+      ? hasRight
+        ? seriesSides[c] === "right"
+          ? "total-right"
+          : "total-left"
+        : "total"
+      : undefined,
+    areaStyle,
+    smooth: kindBase === "line",
+    yAxisIndex: hasRight ? (seriesSides[c] === "right" ? 1 : 0) : 0,
+    // Compact (tiles) draws missing cells as gaps; roomy (workspace) as 0.
+    data: matrix.map((row) => row[c] ?? (compact ? null : 0)),
+  }));
+  const trend =
+    kindBase === "line" && cols.length > 0
+      ? trendSeries(
+          cols[0],
+          matrix.map((row) => row[0] ?? null),
+          o,
+          tk,
+        )
+      : [];
+
+  return {
+    ...common,
+    title,
+    tooltip: { trigger: "axis", ...tooltipStyle },
+    legend,
+    grid: compact
+      ? { top: 24, left: 48, right: 16, bottom: 36 }
+      : { left: 60, top: title ? 50 : 40, right: hasRight ? 60 : 40, bottom: 60 },
+    xAxis: { ...baseAxis, axisLabel: catLabel(compact && rows.length > 8 ? 30 : 0), data: rows, name: xName },
+    yAxis,
+    series: [...base, ...trend],
+  };
+}
