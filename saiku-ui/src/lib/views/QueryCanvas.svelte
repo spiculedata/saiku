@@ -1061,6 +1061,7 @@
 
 <ChartEditorModal
   initial={query.chartOptions}
+  chartType={query.chartType}
   seriesNames={chartSeriesNames}
   open={chartEditorOpen}
   onSave={(next) => { query.chartOptions = next; chartEditorOpen = false; }}

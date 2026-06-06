@@ -9,7 +9,11 @@
   import { theme } from "$lib/stores/theme.svelte";
   import { resolveThemeTokens } from "$lib/views/chartTheme";
   import { buildChartOption, type ChartProjection } from "$lib/charts/build";
+  // #1090: accessible data-table mirror of the chart for screen readers.
   import { chartSummary } from "$lib/charts/a11y";
+  // issue #1071: map charts need the GeoJSON registered with ECharts before
+  // setOption — done lazily here (the builder stays pure).
+  import { ensureGeoMap, isGeoMapRegistered } from "$lib/charts/geoMaps";
 
   interface Props {
     result: QueryResult;
@@ -74,6 +78,15 @@
 
   function render() {
     if (!chart) return;
+    // issue #1071: defer the first map render until its GeoJSON is registered,
+    // then re-render. Avoids ECharts warning on an unknown map name + an empty
+    // flash. Once registered this is a cheap sync check.
+    if (type === "map" && !isGeoMapRegistered("world")) {
+      void ensureGeoMap("world")
+        .then(() => render())
+        .catch((err) => console.warn("[saiku] failed to load world map:", err));
+      return;
+    }
     let opt: Record<string, unknown> | null;
     try {
       opt = buildOption(result, type, options);
@@ -130,6 +143,9 @@
     void options.hideRollupRows;
     void options.dualAxis;
     void options.seriesAxis;
+    // issue #1071: map colour ramp + missing-data behaviour.
+    void options.colorRamp;
+    void options.mapMissing;
     // Re-theme when the effective theme flips.
     void theme.effective;
     if (chart) render();
