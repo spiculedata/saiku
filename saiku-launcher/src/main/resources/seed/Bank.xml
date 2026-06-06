@@ -6,12 +6,15 @@
   the Customer dimension is linked through the account_owner bridge table
   (mm_owner) with an ownership weight rather than a foreign key on the fact.
 
-  Two cubes over the SAME fact table show the two allocation styles:
+  Three cubes over the SAME fact table:
     - "Joint Accounts (Full Count)" — every owner sees the full balance;
       totals de-duplicate on the account grain at every level (incl. the
       Segment roll-up), so the grand total is the true 13000, not 21000.
     - "Joint Accounts (Weighted)"   — each balance split by ownership weight,
       reconciling to 13000.
+    - "Account Statistics"          — a plain star (no bridge) over the same
+      fact, exposing the non-additive median + percentile aggregators next to
+      the additive Total Balance for distributional comparison.
 
   Companion data: bank.sql (tables mm_*), loaded into the demo H2 database.
   Requires the Calcite query backend (the Saiku default) — bridge queries
@@ -123,6 +126,34 @@
                       bridgeDimensionKeyColumn="customer_id"
                       aggregation="weighted"
                       weightColumn="weight"/>
+        </DimensionLinks>
+      </MeasureGroup>
+    </MeasureGroups>
+  </Cube>
+
+  <!-- Plain star (no bridge) over the same fact. Shows the non-additive
+       median / percentile aggregators next to the additive Total Balance,
+       so the distributional shape of account balances is queryable
+       alongside the totals. Computed at the queried grain; not rolled up. -->
+  <Cube name="Account Statistics">
+    <Dimensions>
+      <Dimension source="Branch"/>
+      <Dimension source="Date"/>
+    </Dimensions>
+    <MeasureGroups>
+      <MeasureGroup name="Balances" table="mm_fact">
+        <Measures>
+          <Measure name="Total Balance" column="balance" aggregator="sum"
+                   formatString="#,###"/>
+          <Measure name="Median Balance" column="balance"
+                   aggregator="median" formatString="#,###"/>
+          <Measure name="P90 Balance" column="balance"
+                   aggregator="percentile" percentile="90"
+                   formatString="#,###"/>
+        </Measures>
+        <DimensionLinks>
+          <ForeignKeyLink dimension="Branch" foreignKeyColumn="branch_id"/>
+          <ForeignKeyLink dimension="Date" foreignKeyColumn="date_key"/>
         </DimensionLinks>
       </MeasureGroup>
     </MeasureGroups>
