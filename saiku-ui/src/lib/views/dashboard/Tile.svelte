@@ -15,6 +15,8 @@
 
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
+  // issue #924: highlight tiles a hovered panel filter narrows, dim the rest.
+  import { filterAffinityHover } from "$lib/stores/filterAffinity.svelte";
   import type { DashboardTile, DashboardFilter } from "$lib/api/dashboards";
   import ChartTile from "$lib/views/dashboard/tiles/ChartTile.svelte";
   import TableTile from "$lib/views/dashboard/tiles/TableTile.svelte";
@@ -150,7 +152,13 @@
      kebab button (⋮) in the header is the keyboard-accessible
      equivalent — same menu, same actions — so no a11y regression
      from suppressing the contextmenu-handler-needs-a-role rule. -->
-<div class="tile" data-tile-type={tile.type} oncontextmenu={openContextMenu}>
+<div
+  class="tile"
+  class:tile--filter-hit={filterAffinityHover.active && filterAffinityHover.isAffected(tile.id)}
+  class:tile--filter-miss={filterAffinityHover.active && !filterAffinityHover.isAffected(tile.id)}
+  data-tile-type={tile.type}
+  oncontextmenu={openContextMenu}
+>
   <header
     class="tile-header"
     class:tile-header--draggable={!readOnly}
@@ -272,6 +280,20 @@
     border-radius: 6px;
     background: var(--bg);
     overflow: hidden;
+    /* issue #924: smooth the highlight/dim when a filter is hovered. */
+    transition:
+      opacity 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  /* issue #924: a hovered panel filter previews its reach — compatible
+     tiles get a 1px accent ring (inset, so layout doesn't shift), tiles
+     it won't touch fade back. Purely transient; clears on mouse-out. */
+  .tile--filter-hit {
+    box-shadow: inset 0 0 0 1px var(--accent);
+    border-color: var(--accent);
+  }
+  .tile--filter-miss {
+    opacity: 0.5;
   }
   /* #942: comment badge sits between the title and the edit actions. */
   .tile-comment-badge {

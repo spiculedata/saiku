@@ -22,6 +22,11 @@
   import { activeFilters, targetKey } from "$lib/stores/activeFilters.svelte";
   import { schemaCache } from "$lib/stores/schemaCache.svelte";
   import type { SchemaLike } from "$lib/dashboard/effectiveQuery";
+  // issue #924: "affects N of M tiles" hover hint. Compute which tiles a
+  // filter narrows (same resolveTarget compat the merge uses) + broadcast
+  // it to the grid via the shared hover store.
+  import { computeFilterAffinity } from "$lib/dashboard/filterAffinity";
+  import { filterAffinityHover } from "$lib/stores/filterAffinity.svelte";
   import {
     ancestorSelections,
     memberDescendsFromAny,
@@ -651,6 +656,31 @@
     dashboardStore.setPanelCollapsed(!panel.collapsed);
   }
 
+  /* ===================== issue #924: affects-N-tiles hint ================
+   * On hover / focus of a filter row, work out which tiles its
+   * dim/hier/level resolves against — reusing the exact resolveTarget
+   * compat the filter-merge uses, so the hint never lies — and broadcast
+   * it so the grid highlights the hits + dims the misses and this row
+   * shows an "Affects N of M tiles" badge. Clears on leave/blur. */
+  function hoverFilter(f: PanelFilter): void {
+    const tiles = dashboardStore.current?.layout.tiles ?? [];
+    // Prime any not-yet-cached tile cube so a moment-later re-hover
+    // resolves (peek is sync; get is fire-and-forget, ticks schemaCache).
+    for (const t of tiles) {
+      if (t.cube) void schemaCache.get(t.cube).catch(() => {});
+    }
+    const affinity = computeFilterAffinity(
+      { dimension: f.dimension, hierarchy: f.hierarchy, level: f.level },
+      tiles,
+      (cube) => schemaCache.peek(cube) as SchemaLike | null,
+    );
+    filterAffinityHover.set(f.id, affinity);
+  }
+
+  function unhoverFilter(): void {
+    filterAffinityHover.clear();
+  }
+
   /* --------------------------- drag-reorder ---------------------------- */
 
   interface DragState {
@@ -765,6 +795,10 @@
               class:picker--source={drag?.fromId === f.id}
               data-panel-filter-id={f.id}
               onpointerdown={(e) => onPickerPointerDown(e, f.id)}
+              onmouseenter={() => hoverFilter(f)}
+              onmouseleave={unhoverFilter}
+              onfocusin={() => hoverFilter(f)}
+              onfocusout={unhoverFilter}
             >
               {#if !readOnly}
                 <span class="grip" data-drag-handle aria-hidden="true">
@@ -772,6 +806,12 @@
                 </span>
               {/if}
               <span class="picker-label">{f.level}</span>
+              <!-- issue #924: how many tiles this filter narrows, shown while hovered. -->
+              {#if filterAffinityHover.hoveredFilterId === f.id}
+                <span class="affects-badge" aria-live="polite">
+                  Affects {filterAffinityHover.affectedCount} of {filterAffinityHover.totalCount} tiles
+                </span>
+              {/if}
               {#if f.widget === "cascading-select"}
                 <!-- issue #922: N stacked dropdowns walking the hierarchy. -->
                 {@const levels = cascadeLevels(f)}
@@ -1064,6 +1104,16 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--fg-muted);
+  }
+  /* issue #924: "affects N of M tiles" hover badge. */
+  .affects-badge {
+    font-size: 0.6875rem;
+    line-height: 1;
+    padding: 0.125rem 0.375rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-fg, #fff);
+    white-space: nowrap;
   }
   .picker-select {
     padding: 0.125rem 0.25rem;
