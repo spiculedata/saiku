@@ -913,9 +913,9 @@
     {/if}
     <div class="canvas__result">
     {#if query.current?.type === "MDX"}
-      <div class="canvas__mdx-banner" role="status">
+      <div class="canvas__mdx-banner" role="status" title={i18n.t("canvas.mdxBannerText")}>
         <span class="canvas__mdx-badge">MDX</span>
-        <span class="canvas__mdx-text">{i18n.t("canvas.mdxBannerText")}</span>
+        <span class="canvas__mdx-text">{i18n.t("canvas.mdxBannerShort")}</span>
       </div>
     {/if}
     <div class="view-toggle" role="tablist" aria-label={i18n.t("canvas.resultView")}>
@@ -1182,28 +1182,34 @@
     overflow: hidden;
   }
   .canvas__mdx-banner {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
-    background: rgba(99, 102, 241, 0.08);
-    border: 1px solid rgba(99, 102, 241, 0.25);
-    border-radius: var(--radius-md);
-    font-size: var(--fs-sm);
+    gap: 6px;
+    padding: 2px 8px 2px 2px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 0.75rem;
     color: var(--fg-muted);
+    align-self: flex-start;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .canvas__mdx-badge {
     background: var(--accent);
     color: white;
     border-radius: 999px;
-    padding: 2px 8px;
-    font-size: 0.72rem;
+    padding: 1px 7px;
+    font-size: 0.7rem;
     font-weight: 600;
     letter-spacing: 0.04em;
   }
   .canvas__mdx-text {
-    flex: 1;
     min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .canvas__empty {
     display: flex;
