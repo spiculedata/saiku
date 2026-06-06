@@ -18,6 +18,7 @@
     Search,
     Maximize2,
     Minimize2,
+    Sparkles,
   } from "lucide-svelte";
   import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
   import SavedQueriesModal from "$lib/modals/SavedQueriesModal.svelte";
@@ -37,6 +38,13 @@
   import type { SaikuCube } from "$lib/api/discover";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { platform } from "$lib/stores/platform.svelte";
+
+  interface Props {
+    /** Open the AI Query drawer. Owned by Workspace so the drawer can overlay the canvas. */
+    onAskAi?: () => void;
+  }
+
+  let { onAskAi }: Props = $props();
 
   let nonEmpty = $state(true);
   let visualTotals = $state(false);
@@ -399,6 +407,20 @@
       <ArrowLeftRight size={18} />
     </button>
   </div>
+  {#if onAskAi}
+    <div class="toolbar__sep"></div>
+    <div class="toolbar__group" role="group" aria-label={i18n.t("workspace.aiQuery.title")}>
+      <button
+        class="tb-btn tb-btn--ai"
+        title={i18n.t("workspace.aiQuery.open")}
+        aria-label={i18n.t("workspace.aiQuery.open")}
+        onclick={() => onAskAi?.()}
+      >
+        <Sparkles size={18} />
+        <span class="tb-btn__label">{i18n.t("workspace.aiQuery.title")}</span>
+      </button>
+    </div>
+  {/if}
   <div class="toolbar__sep"></div>
   <div class="toolbar__group toolbar__menu" role="group" aria-label="Tools">
     <button
@@ -594,6 +616,15 @@
     border-color: var(--accent);
   }
   .tb-btn--primary:hover { filter: brightness(1.1); background: var(--accent); color: var(--bg); }
+  .tb-btn--ai {
+    background: linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 60%, #8b5cf6) 100%);
+    color: var(--bg);
+    border-color: var(--accent);
+  }
+  .tb-btn--ai:hover {
+    filter: brightness(1.08);
+    color: var(--bg);
+  }
   /*
    * saiku-cloud#612 — visual cue that the query shape isn't runnable yet
    * (e.g. no measure selected). Distinct from the standard :disabled
