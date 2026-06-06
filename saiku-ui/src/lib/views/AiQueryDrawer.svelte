@@ -439,7 +439,8 @@
     top: 0;
     right: 0;
     bottom: 0;
-    width: min(420px, 100vw);
+    width: min(380px, 92vw);
+    max-width: 100vw;
     background: var(--bg);
     border-left: 1px solid var(--border);
     box-shadow: -8px 0 24px rgba(0, 0, 0, 0.08);
@@ -449,6 +450,14 @@
     transition: transform 0.18s ease-out;
     z-index: 100;
     color: var(--fg);
+  }
+  /* On narrow viewports the drawer takes most of the screen so nothing
+     overflows past the right edge — caught visually on demo verification
+     when the original 420px drawer clipped at the right of the window. */
+  @media (max-width: 900px) {
+    .ai-drawer {
+      width: min(360px, 100vw);
+    }
   }
   .ai-drawer--open {
     transform: translateX(0);
