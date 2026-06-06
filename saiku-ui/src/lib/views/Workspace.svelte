@@ -55,12 +55,18 @@
    *  Closes the drawer so the user sees their cellset; the canvas
    *  re-renders with the result and existing grid / chart / drill /
    *  export features keep working. */
+  /**
+   * Push AI-generated MDX into the active workspace tab and run it.
+   * The drawer stays open so the user can keep iterating — every
+   * AI response auto-runs in the canvas behind the drawer, and the
+   * conversation thread persists. Closing the drawer is a separate
+   * user action (X or Esc).
+   */
   async function handleEditInCanvas(mdx: string): Promise<void> {
     if (!query.current) return;
     query.current.mdx = mdx;
     query.current.type = "MDX";
     query.current.name = "";
-    aiDrawerOpen = false;
     await query.run();
   }
 

@@ -209,6 +209,14 @@
       },
     ];
     inflight = false;
+
+    // Auto-render the AI's MDX in the workspace canvas behind the drawer
+    // so the user sees the data immediately. The drawer stays open — each
+    // follow-up question updates the canvas in place. Edit-in-canvas
+    // becomes a no-op repeat for the user who explicitly clicks it.
+    if (mdx) {
+      onEditInCanvas(mdx);
+    }
   }
 
   function clearConversation(): void {
