@@ -758,7 +758,7 @@
       <p class="canvas__hint">{i18n.t("canvas.pickPrompt")}</p>
     </div>
   {:else}
-    <div class="canvas__body">
+    <div class={query.current?.type === "MDX" ? "canvas__body canvas__body--mdx" : "canvas__body"}>
     {#if query.current?.type !== "MDX"}
     <aside class="dropzones">
       <!-- Dedicated MEASURES panel (restored from the pre-rewrite UI).
@@ -1172,6 +1172,13 @@
     grid-template-columns: 260px 1fr;
     gap: var(--space-3);
     overflow: hidden;
+  }
+  /* MDX mode: the dropzones aside is `{#if}`-hidden, so a 260px 1fr
+     grid would place the result in column 1 (260px) and leave column 2
+     empty. Collapse to a single 1fr column so the result eats the
+     entire freed-up horizontal space. */
+  .canvas__body--mdx {
+    grid-template-columns: 1fr;
   }
   .canvas__result {
     min-width: 0;
