@@ -148,6 +148,8 @@
     void options.mapMissing;
     // Re-theme when the effective theme flips.
     void theme.effective;
+    // #1091: repaint when the colour-blind-safe pref flips.
+    void theme.colorBlindSafe;
     if (chart) render();
   });
 

@@ -304,6 +304,8 @@
     // text/axes/palette repaint — resolveThemeTokens() reads the now-current
     // :root tokens (#1050).
     void theme.effective;
+    // #1091: repaint when the colour-blind-safe pref flips.
+    void theme.colorBlindSafe;
     if (!chart) return;
     unsupported = !isSupportedChartKind(kind);
     if (!r || r.status !== "SUCCESS") {
