@@ -42,6 +42,8 @@ import org.saiku.service.olap.ai.AiSchema;
 import org.saiku.service.olap.ai.AiSchemaConverter;
 import org.saiku.service.olap.ai.AiValidationException;
 import org.saiku.service.olap.ai.OlapAiCubeMetadataService;
+import org.saiku.service.olap.ai.ask.AiAskApi;
+import org.saiku.service.olap.ai.ask.AiAskService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.context.request.RequestAttributes;
@@ -72,6 +74,17 @@ public class AiQueryResource {
     private org.saiku.service.datasource.DatasourceService datasourceService;
 
     private org.saiku.web.service.SessionService sessionService;
+    /**
+     * Phase 2: optional natural-language ask layer. When set, {@code POST /ai/ask} is enabled
+     * (otherwise it returns 503 "not configured"). Held as {@code null} when no Spring wiring
+     * supplies one — the rest of the resource is unaffected.
+     */
+    private AiAskService askService;
+
+    public void setAskService(AiAskService s) {
+        this.askService = s;
+    }
+
     private final AiSchemaConverter converter = new AiSchemaConverter();
     /** Phase 2: JSON-Schema-driven shape validator. Runs first so an
      *  agent gets one structured 400 per shape failure instead of a
@@ -283,6 +296,117 @@ public class AiQueryResource {
 
         AiQueryResponse resp = buildResponse(tq, cds, start, format);
         return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
+     * Natural-language ask endpoint.
+     *
+     * <p>Body: {@code {question: string, cube: AiCubeRef, history?: [{role, content}]}}.
+     * Translates {@code question} to an {@link AiQueryRequest} via the configured
+     * {@link AiAskService} (Anthropic / OpenAI tool-use), executes the resulting request through
+     * the same path {@code /ai/query} uses, and returns an {@link AiAskApi.AskResponse} envelope
+     * carrying:
+     *
+     * <ul>
+     *   <li>{@code request} — the structured query the model emitted (handy for the UI's "edit in
+     *       canvas" flow);
+     *   <li>{@code response} — the full {@link AiQueryResponse} from executing it;
+     *   <li>{@code generatedMdx} — convenience mirror of {@code response.metadata.generatedMdx}.
+     * </ul>
+     *
+     * <p>Status codes:
+     *
+     * <ul>
+     *   <li>200 — translation succeeded; {@code response} carries the executed query envelope
+     *       (which itself may report VALIDATION_ERROR if the model named something invalid — the
+     *       UI surfaces those candidate lists as clickable suggestions).
+     *   <li>400 — malformed request body (missing question / cube).
+     *   <li>503 — {@link AiAskService} not wired (provider=noop). Body is an
+     *       {@link AiAskApi.AskResponse} with {@code degraded=true, reason=...} so the UI can
+     *       render a clear "AI ask is not configured" message.
+     * </ul>
+     */
+    @POST
+    @Path("/ask")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response ask(AiAskApi.AskRequest body) {
+        if (body == null) {
+            return badRequest("body", "request body required", null);
+        }
+        if (body.getQuestion() == null || body.getQuestion().isBlank()) {
+            return badRequest("question", "question must be non-blank", null);
+        }
+        if (body.getCube() == null || body.getCube().getCubeName() == null) {
+            return badRequest("cube", "cube ref required", null);
+        }
+        if (askService == null) {
+            AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+            out.setDegraded(true);
+            out.setReason("AI ask is not configured. Set saiku.ai.ask.provider to 'anthropic' "
+                    + "or 'openai' and supply the matching API key (env: ANTHROPIC_API_KEY or "
+                    + "OPENAI_API_KEY) to enable the feature.");
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity(out)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+
+        AiAskService.AskOutcome outcome = askService.ask(body.getCube(), body.getQuestion(), body.historyAsMessages());
+        if (outcome.degraded()) {
+            AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+            out.setDegraded(true);
+            out.setReason(outcome.reason());
+            out.setModel(outcome.model());
+            int status = outcome.reason() != null && outcome.reason().startsWith("AI ask is not configured")
+                    ? Response.Status.SERVICE_UNAVAILABLE.getStatusCode()
+                    : Response.Status.OK.getStatusCode();
+            return Response.status(status)
+                    .entity(out)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+
+        AiQueryRequest req = outcome.request();
+        AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+        out.setDegraded(false);
+        out.setModel(outcome.model());
+        out.setRequest(req);
+
+        // Execute the produced request through the same path /ai/query uses. Errors are translated
+        // back into a 200 with the {request, model} echoed so the UI can still show "the model
+        // proposed this, but it failed at <stage>" — much more useful than a 500.
+        long start = System.currentTimeMillis();
+        try {
+            // Phase 2 shape-validate before the converter sees the request — same as /ai/query.
+            schemaValidator.assertValid(MAPPER.valueToTree(req));
+            AiSchema schema = cubeMetadataService.getSchema(req.getCube());
+            ThinQuery tq = converter.convert(req, schema);
+            CellDataSet cds = thinQueryService.execute(tq);
+            AiQueryResponse aiResp = buildResponse(tq, cds, start, "records");
+            out.setResponse(aiResp);
+            if (aiResp != null && aiResp.getMetadata() != null) {
+                out.setGeneratedMdx(aiResp.getMetadata().getGeneratedMdx());
+            }
+        } catch (AiValidationException e) {
+            // Surface the converter's structured validation as the response envelope so the UI
+            // can render candidate-list suggestions just like a direct /ai/query call would.
+            AiQueryResponse aiResp = new AiQueryResponse();
+            aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.VALIDATION_ERROR);
+            aiResp.setError(e.getMessage());
+            aiResp.setField(e.getField());
+            aiResp.setAvailable(e.getAvailable() == null ? null : new java.util.ArrayList<>(e.getAvailable()));
+            aiResp.setRuntimeMs(System.currentTimeMillis() - start);
+            out.setResponse(aiResp);
+        } catch (RuntimeException e) {
+            log.warn("AI ask execution failed after successful translation", e);
+            AiQueryResponse aiResp = new AiQueryResponse();
+            aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.EXECUTION_ERROR);
+            aiResp.setError("execute failed: " + describeDeepestCause(e));
+            aiResp.setRuntimeMs(System.currentTimeMillis() - start);
+            out.setResponse(aiResp);
+        }
+        return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
     }
 
     /** Mondrian's parser raises "MDX object '<ref>' not found in cube '<name>'"

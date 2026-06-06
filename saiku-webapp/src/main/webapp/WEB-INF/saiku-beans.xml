@@ -239,6 +239,45 @@
              dashboard reference-tile binding. -->
         <property name="datasourceService" ref="datasourceServiceBean"/>
         <property name="sessionService" ref="sessionService"/>
+        <!-- Phase 2: natural-language ask layer. Off by default (provider=noop) —
+             the resource returns 503 with a clear "not configured" message until
+             saiku.ai.ask.provider is set to 'anthropic' or 'openai' and the
+             matching API key env var is supplied. See aiAskServiceBean below. -->
+        <property name="askService" ref="aiAskServiceBean"/>
+    </bean>
+
+    <!-- ====================================================================
+         Natural-language ask layer (POST /saiku/api/ai/ask).
+
+         Off by default. Activate per-deployment by setting:
+
+           saiku.ai.ask.provider = anthropic | openai
+           env  ANTHROPIC_API_KEY = sk-...   (for anthropic)
+           env  OPENAI_API_KEY    = sk-...   (for openai)
+
+         Optional overrides:
+           saiku.ai.ask.model    = claude-sonnet-4-7 | gpt-4o-mini | ...
+           saiku.ai.ask.endpoint = https://my.openai-compatible.host/v1/chat/completions
+           saiku.ai.ask.apiKey   = sk-... (explicit override of the env var)
+
+         API keys are never logged; a single INFO line at boot records the
+         selected provider + model.
+         ==================================================================== -->
+    <bean id="aiAskProviderFactory"
+          class="org.saiku.service.olap.ai.ask.NlAskProviderFactory">
+        <constructor-arg value="${saiku.ai.ask.provider:noop}"/>
+        <constructor-arg value="${saiku.ai.ask.apiKey:}"/>
+        <constructor-arg value="${saiku.ai.ask.model:}"/>
+        <constructor-arg value="${saiku.ai.ask.endpoint:}"/>
+    </bean>
+
+    <bean id="aiAskProviderBean"
+          factory-bean="aiAskProviderFactory" factory-method="build"/>
+
+    <bean id="aiAskServiceBean"
+          class="org.saiku.service.olap.ai.ask.AiAskService">
+        <constructor-arg ref="aiCubeMetadataServiceBean"/>
+        <constructor-arg ref="aiAskProviderBean"/>
     </bean>
 
     <!-- ====================================================================
