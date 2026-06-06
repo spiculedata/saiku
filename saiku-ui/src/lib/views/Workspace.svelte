@@ -13,6 +13,7 @@
   import { selection } from "$lib/stores/selection.svelte";
   import { tabs } from "$lib/stores/tabs.svelte";
   import { embed } from "$lib/stores/embed.svelte";
+  import { aiAskHealth } from "$lib/stores/aiAskHealth.svelte";
   import {
     deserializeQueryFromHash,
     serializeQueryToHash,
@@ -304,13 +305,13 @@
           onclick={handleNewTab}
         >+</button>
       </div>
-      <WorkspaceToolbar onAskAi={() => (aiDrawerOpen = true)} />
+      <WorkspaceToolbar onAskAi={aiAskHealth.configured ? () => (aiDrawerOpen = true) : undefined} />
     {/if}
     <QueryCanvas />
   </section>
 </div>
 
-{#if !embed.active}
+{#if !embed.active && aiAskHealth.configured}
   <AiQueryDrawer
     open={aiDrawerOpen}
     onClose={() => (aiDrawerOpen = false)}

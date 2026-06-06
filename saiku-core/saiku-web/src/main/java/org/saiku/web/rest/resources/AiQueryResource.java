@@ -326,6 +326,27 @@ public class AiQueryResource {
      *       render a clear "AI ask is not configured" message.
      * </ul>
      */
+    /**
+     * Cheap configuration probe used by the workspace to decide whether to render the "Ask the AI"
+     * toolbar button. Returns {@code {"configured": true|false}} — never throws, never depends on a
+     * cube selection. The body is intentionally tiny so the client can call it on app load.
+     *
+     * <p>Returns {@code configured:false} when:
+     * <ul>
+     *   <li>the {@link AiAskService} bean wasn't wired (no provider configured at all), or
+     *   <li>the bean wraps a {@link org.saiku.service.olap.ai.ask.NoopNlAskProvider}.
+     * </ul>
+     */
+    @GET
+    @Path("/ask/health")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response askHealth() {
+        boolean configured = askService != null && askService.isConfigured();
+        java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("configured", configured);
+        return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+    }
+
     @POST
     @Path("/ask")
     @Consumes(MediaType.APPLICATION_JSON)

@@ -19,4 +19,9 @@ public final class NoopNlAskProvider implements NlAskProvider {
     public NlAskResponse ask(NlAskRequest request) {
         return NlAskResponse.degraded(REASON);
     }
+
+    @Override
+    public boolean isConfigured() {
+        return false;
+    }
 }
