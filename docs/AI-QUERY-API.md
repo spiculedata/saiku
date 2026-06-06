@@ -948,3 +948,163 @@ response for the agent to inspect directly.
 
 A correctly-grounded agent never sees MDX, never invents names, and gets
 self-correcting validation feedback when it misses.
+
+---
+
+## Natural-language ask layer — `POST /ai/ask`
+
+The endpoints above assume the caller speaks the **typed** AiQueryRequest
+shape — agents do, humans don't. The optional ask layer adds an LLM bridge
+on the server: it takes a plain-English question, asks the configured LLM
+provider to fill in an `AiQueryRequest` against the live cube schema, runs
+that request through the same `/ai/query` converter, and returns the
+executed result + the model's MDX + the structured request the model
+emitted.
+
+This powers the workspace AI Query drawer (#1093). Off by default —
+without provider config the endpoint returns 503 with a clear
+"not configured" body, so existing deployments are unaffected until
+someone opts in.
+
+### Activation
+
+Two properties + one env var per provider. Both can be set on the JVM
+(`-Dsaiku.ai.ask.provider=anthropic`) or via the deployment's properties
+file consumed by Spring.
+
+```properties
+# anthropic
+saiku.ai.ask.provider = anthropic
+# env ANTHROPIC_API_KEY = sk-ant-...
+
+# openai (or any OpenAI-compatible host — Azure, vLLM, Ollama, Together)
+saiku.ai.ask.provider = openai
+# env OPENAI_API_KEY    = sk-...
+
+# optional, both providers
+saiku.ai.ask.model    = claude-sonnet-4-7 | gpt-4o-mini | ...
+saiku.ai.ask.endpoint = https://my.openai-compatible.host/v1/chat/completions
+saiku.ai.ask.apiKey   = sk-...   # explicit override of the env var
+```
+
+Provider defaults: `anthropic` → `claude-sonnet-4-6`,
+`openai` → `gpt-4o-mini` against `https://api.openai.com/v1/chat/completions`.
+
+**API keys are never logged.** A single INFO line at boot records the
+selected provider + model:
+
+```
+INFO  o.s.s.o.a.a.NlAskProviderFactory - AI ask provider: anthropic (model=claude-sonnet-4-6)
+```
+
+When the provider is set but the key isn't, the factory falls back to
+the noop provider with a WARN explaining what's missing, rather than
+failing to boot.
+
+Docker example:
+
+```bash
+docker run -d --name saiku \
+  -e SAIKU_DEMO=true -e SAIKU_HOME=/app/saiku-home \
+  -e ANTHROPIC_API_KEY=sk-ant-... \
+  -e JAVA_OPTS='-Dsaiku.ai.ask.provider=anthropic' \
+  ghcr.io/spiculedata/saiku:latest
+```
+
+### Request
+
+```http
+POST /saiku/api/ai/ask
+Content-Type: application/json
+
+{
+  "question": "show sales by country last quarter",
+  "cube": {
+    "connectionName": "foodmart",
+    "catalog": "FoodMart",
+    "schema": "FoodMart",
+    "cubeName": "Sales"
+  },
+  "history": [
+    { "role": "user",      "content": "earlier question" },
+    { "role": "assistant", "content": "earlier summary"  }
+  ]
+}
+```
+
+`history` is optional. When supplied, prior `(user, assistant)` turns
+are sent back to the model so follow-ups like *"now break it down by
+region"* resolve against the earlier question. System prompts are
+controlled by the provider — callers cannot inject them.
+
+### Response
+
+```json
+{
+  "degraded": false,
+  "model": "claude-sonnet-4-6",
+  "request": { /* the structured AiQueryRequest the model emitted */ },
+  "response": { /* the full AiQueryResponse — same shape as /ai/query */ },
+  "generatedMdx": "SELECT NON EMPTY ... FROM [Sales]"
+}
+```
+
+- `request` is the AiQueryRequest the model produced. Hand it to
+  `POST /ai/query` verbatim to re-execute, or expose it to the user as
+  "the typed query behind your question."
+- `response` is the executed result. If the model emitted a request the
+  schema rejects, `response.status` is `VALIDATION_ERROR` and the body
+  carries `field` + `available` candidates — same self-correction
+  envelope `/ai/query` uses. The translation succeeded; execution
+  layered the error.
+- `generatedMdx` is a convenience mirror of
+  `response.metadata.generatedMdx`.
+
+### Status codes
+
+| HTTP | When |
+| --- | --- |
+| 200 | Translation succeeded; `response` carries the executed result (or VALIDATION_ERROR for the user to self-correct). |
+| 200 + `degraded:true` | Translation failed at the provider layer (transport error, model refused, parse error). `reason` carries the explanation. |
+| 400 | Missing `question` or `cube` in the body. |
+| 503 + `degraded:true` | Provider is `noop` (not configured) — body's `reason` explains how to enable. |
+
+### Examples
+
+```bash
+# Off by default — 503 with a usable "how to enable" reason.
+curl -sS -X POST -H 'Content-Type: application/json' \
+  -u admin:admin \
+  http://localhost:8080/saiku/api/ai/ask \
+  -d '{"question":"show sales by country","cube":{"connectionName":"foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"}}'
+# {"degraded":true,"reason":"AI ask is not configured. Set saiku.ai.ask.provider..."}
+
+# With anthropic enabled: full round-trip.
+curl -sS -X POST -H 'Content-Type: application/json' \
+  -u admin:admin \
+  http://localhost:8080/saiku/api/ai/ask \
+  -d '{"question":"show sales by country","cube":{"connectionName":"foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"}}' \
+  | jq '{model, generatedMdx, rows: .response.totalRows}'
+# {
+#   "model": "claude-sonnet-4-6",
+#   "generatedMdx": "SELECT NON EMPTY {[Measures].[Store Sales]} ON COLUMNS, NON EMPTY {[Customers].[Country].Members} ON ROWS FROM [Sales]",
+#   "rows": 3
+# }
+```
+
+### What the model sees vs doesn't
+
+The ask layer sends the model **only** the cube's AiSchema (serialised
+JSON — measures, dimensions, hierarchies, levels, sample members) plus
+the AiQueryRequest JSON Schema as a tool's `input_schema`. The model is
+forced via `tool_choice` to emit a tool call; raw prose is rejected as
+degraded.
+
+The model never sees:
+- Other cubes the user can access — only the one named in the request.
+- The underlying SQL or warehouse credentials.
+- The conversation history of other users.
+- The HTTP request, session cookies, or any header the caller sent.
+
+This is the same isolation model the existing `/ai/query` agent surface
+uses, applied one layer earlier.
