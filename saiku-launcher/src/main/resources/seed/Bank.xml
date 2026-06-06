@@ -13,8 +13,8 @@
     - "Joint Accounts (Weighted)"   — each balance split by ownership weight,
       reconciling to 13000.
     - "Account Statistics"          — a plain star (no bridge) over the same
-      fact, exposing the non-additive median + percentile aggregators next to
-      the additive Total Balance for distributional comparison.
+      fact, exposing avg / min / max alongside the additive total + account
+      count for distributional comparison.
 
   Companion data: bank.sql (tables mm_*), loaded into the demo H2 database.
   Requires the Calcite query backend (the Saiku default) — bridge queries
@@ -131,10 +131,13 @@
     </MeasureGroups>
   </Cube>
 
-  <!-- Plain star (no bridge) over the same fact. Shows the non-additive
-       median / percentile aggregators next to the additive Total Balance,
-       so the distributional shape of account balances is queryable
-       alongside the totals. Computed at the queried grain; not rolled up. -->
+  <!-- Plain star (no bridge) over the same fact. Total + Avg + Min + Max
+       Balance plus an Account Count, so the distributional shape of account
+       balances is queryable alongside the totals. The mondrian-4.8.1.21
+       aggregator vocabulary is sum / count / min / max / avg /
+       distinct-count — non-additive median / percentile aggregators aren't
+       wired through the engine yet; if they land in a later mondrian release
+       they slot back in here. -->
   <Cube name="Account Statistics">
     <Dimensions>
       <Dimension source="Branch"/>
@@ -145,11 +148,14 @@
         <Measures>
           <Measure name="Total Balance" column="balance" aggregator="sum"
                    formatString="#,###"/>
-          <Measure name="Median Balance" column="balance"
-                   aggregator="median" formatString="#,###"/>
-          <Measure name="P90 Balance" column="balance"
-                   aggregator="percentile" percentile="90"
+          <Measure name="Avg Balance" column="balance" aggregator="avg"
                    formatString="#,###"/>
+          <Measure name="Min Balance" column="balance" aggregator="min"
+                   formatString="#,###"/>
+          <Measure name="Max Balance" column="balance" aggregator="max"
+                   formatString="#,###"/>
+          <Measure name="Account Count" column="account_id"
+                   aggregator="distinct-count" formatString="#,###"/>
         </Measures>
         <DimensionLinks>
           <ForeignKeyLink dimension="Branch" foreignKeyColumn="branch_id"/>
