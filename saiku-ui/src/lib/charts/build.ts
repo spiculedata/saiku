@@ -192,6 +192,36 @@ function colorRampFor(ramp: ChartColorRamp | undefined): string[] {
   return COLOR_RAMPS[ramp ?? "blues"] ?? COLOR_RAMPS.blues;
 }
 
+/* issue #1080: x-axis zoom + pan for CARTESIAN charts (bar/line/area family,
+ * scatter/bubble, waterfall). Brush/selection events are out of scope (#1085) —
+ * this is zoom/pan only.
+ *
+ * Roomy (workspace) gets BOTH an `inside` zoom (mouse-wheel + drag-to-pan) and a
+ * thin bottom `slider` so the zoomed window is visible and resettable by hand.
+ * Compact (dashboard tiles) gets ONLY the `inside` zoom — tiles are too small to
+ * spend vertical space on a slider, and dashboard charts are usually glanceable
+ * rather than explored. Both are x-axis-only (zooming the value axis fights the
+ * "compare magnitudes" job a bar/line chart does).
+ *
+ * Behaviour is always-on for the surface (driven by the existing `compact` geom
+ * flag) — no new persisted ChartOptions field, so dashboard save (#1077, paused)
+ * stays untouched. The builder stays pure: this just shapes option JSON; the
+ * echarts instance/lifecycle lives in the .svelte components. */
+function dataZoomConfig(compact: boolean): Record<string, unknown>[] {
+  const inside = { type: "inside", xAxisIndex: 0, filterMode: "none" as const };
+  if (compact) return [inside];
+  return [
+    inside,
+    {
+      type: "slider",
+      xAxisIndex: 0,
+      filterMode: "none" as const,
+      bottom: 8,
+      height: 16,
+    },
+  ];
+}
+
 /* Escape HTML — the map tooltip uses an ECharts function formatter whose return
  * value is inserted as innerHTML (renderMode "html"), and the region name is
  * data-derived (an aliased cube member caption). Without escaping, a hostile
@@ -459,6 +489,12 @@ export function buildChartOption(
       title,
       tooltip: tooltipStyle,
       legend,
+      // #1080: roomy gets a slider + inside zoom; compact gets inside-only. The
+      // roomy slider sits at the bottom, so reserve a little extra grid bottom.
+      grid: compact
+        ? { top: 24, left: 48, right: 16, bottom: 36 }
+        : { left: 60, top: title ? 50 : 40, right: 40, bottom: 76 },
+      dataZoom: dataZoomConfig(compact),
       xAxis: { ...baseAxis, axisLabel: catLabel(), data: cols, name: xName },
       yAxis: { ...valueAxis, name: yName },
       series: rows.map((name, i) => ({
@@ -501,7 +537,8 @@ export function buildChartOption(
       legend,
       grid: compact
         ? { top: 24, left: 48, right: 16, bottom: 36 }
-        : { left: 60, top: title ? 50 : 30, right: 40, bottom: 60 },
+        : { left: 60, top: title ? 50 : 30, right: 40, bottom: 76 },
+      dataZoom: dataZoomConfig(compact), // #1080: x-axis zoom + pan
       xAxis: { ...baseAxis, axisLabel: catLabel(), data: rows, name: xName },
       yAxis: { ...valueAxis, name: yName },
       series: [
@@ -594,7 +631,8 @@ export function buildChartOption(
     legend,
     grid: compact
       ? { top: 24, left: 48, right: 16, bottom: 36 }
-      : { left: 60, top: title ? 50 : 40, right: hasRight ? 60 : 40, bottom: 60 },
+      : { left: 60, top: title ? 50 : 40, right: hasRight ? 60 : 40, bottom: 76 },
+    dataZoom: dataZoomConfig(compact), // #1080: x-axis zoom + pan
     xAxis: { ...baseAxis, axisLabel: catLabel(compact && rows.length > 8 ? 30 : 0), data: rows, name: xName },
     yAxis,
     series: [...base, ...trend],

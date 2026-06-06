@@ -14,6 +14,13 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#ec4899",
       "#14b8a6",
     ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
     "grid": {
       "bottom": 36,
       "left": 48,
@@ -138,6 +145,13 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#a855f7",
       "#ec4899",
       "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
     ],
     "grid": {
       "bottom": 36,
@@ -264,6 +278,19 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#ec4899",
       "#14b8a6",
     ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 36,
+      "left": 48,
+      "right": 16,
+      "top": 24,
+    },
     "legend": {
       "bottom": 0,
       "textStyle": {
@@ -640,6 +667,13 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#ec4899",
       "#14b8a6",
     ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
     "grid": {
       "bottom": 36,
       "left": 48,
@@ -962,6 +996,19 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#ec4899",
       "#14b8a6",
     ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 36,
+      "left": 48,
+      "right": 16,
+      "top": 24,
+    },
     "legend": {
       "bottom": 0,
       "textStyle": {
@@ -1085,6 +1132,13 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#a855f7",
       "#ec4899",
       "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
     ],
     "grid": {
       "bottom": 36,
@@ -1211,6 +1265,13 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#ec4899",
       "#14b8a6",
     ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
     "grid": {
       "bottom": 36,
       "left": 48,
@@ -1335,6 +1396,13 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#a855f7",
       "#ec4899",
       "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
     ],
     "grid": {
       "bottom": 36,
@@ -1655,6 +1723,13 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#ec4899",
       "#14b8a6",
     ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
     "grid": {
       "bottom": 36,
       "left": 48,
@@ -1804,8 +1879,22 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#ec4899",
       "#14b8a6",
     ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+      {
+        "bottom": 8,
+        "filterMode": "none",
+        "height": 16,
+        "type": "slider",
+        "xAxisIndex": 0,
+      },
+    ],
     "grid": {
-      "bottom": 60,
+      "bottom": 76,
       "left": 60,
       "right": 40,
       "top": 40,
@@ -1928,8 +2017,22 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#ec4899",
       "#14b8a6",
     ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+      {
+        "bottom": 8,
+        "filterMode": "none",
+        "height": 16,
+        "type": "slider",
+        "xAxisIndex": 0,
+      },
+    ],
     "grid": {
-      "bottom": 60,
+      "bottom": 76,
       "left": 60,
       "right": 40,
       "top": 40,
@@ -2052,6 +2155,26 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#ec4899",
       "#14b8a6",
     ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+      {
+        "bottom": 8,
+        "filterMode": "none",
+        "height": 16,
+        "type": "slider",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 76,
+      "left": 60,
+      "right": 40,
+      "top": 40,
+    },
     "legend": {
       "textStyle": {
         "color": "#0f172a",
@@ -2427,8 +2550,22 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#ec4899",
       "#14b8a6",
     ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+      {
+        "bottom": 8,
+        "filterMode": "none",
+        "height": 16,
+        "type": "slider",
+        "xAxisIndex": 0,
+      },
+    ],
     "grid": {
-      "bottom": 60,
+      "bottom": 76,
       "left": 60,
       "right": 40,
       "top": 40,
@@ -2747,6 +2884,26 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#ec4899",
       "#14b8a6",
     ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+      {
+        "bottom": 8,
+        "filterMode": "none",
+        "height": 16,
+        "type": "slider",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 76,
+      "left": 60,
+      "right": 40,
+      "top": 40,
+    },
     "legend": {
       "textStyle": {
         "color": "#0f172a",
@@ -2870,8 +3027,22 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#ec4899",
       "#14b8a6",
     ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+      {
+        "bottom": 8,
+        "filterMode": "none",
+        "height": 16,
+        "type": "slider",
+        "xAxisIndex": 0,
+      },
+    ],
     "grid": {
-      "bottom": 60,
+      "bottom": 76,
       "left": 60,
       "right": 40,
       "top": 40,
@@ -2994,8 +3165,22 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#ec4899",
       "#14b8a6",
     ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+      {
+        "bottom": 8,
+        "filterMode": "none",
+        "height": 16,
+        "type": "slider",
+        "xAxisIndex": 0,
+      },
+    ],
     "grid": {
-      "bottom": 60,
+      "bottom": 76,
       "left": 60,
       "right": 40,
       "top": 40,
@@ -3118,8 +3303,22 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#ec4899",
       "#14b8a6",
     ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+      {
+        "bottom": 8,
+        "filterMode": "none",
+        "height": 16,
+        "type": "slider",
+        "xAxisIndex": 0,
+      },
+    ],
     "grid": {
-      "bottom": 60,
+      "bottom": 76,
       "left": 60,
       "right": 40,
       "top": 40,
@@ -3436,8 +3635,22 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#ec4899",
       "#14b8a6",
     ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+      {
+        "bottom": 8,
+        "filterMode": "none",
+        "height": 16,
+        "type": "slider",
+        "xAxisIndex": 0,
+      },
+    ],
     "grid": {
-      "bottom": 60,
+      "bottom": 76,
       "left": 60,
       "right": 40,
       "top": 30,
