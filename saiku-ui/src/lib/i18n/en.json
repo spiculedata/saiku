@@ -390,6 +390,7 @@
   "workspace.aiQuery.activeCube": "Active cube: {cube}",
   "workspace.aiQuery.tryAsking": "Try asking:",
   "canvas.mdxBannerText": "Running raw MDX — drop-zone editing is disabled. Switch back to build mode by clearing the MDX.",
+  "canvas.mdxBannerShort": "Raw MDX mode — drop-zones disabled",
   "workspace.aiQuery.offTopic": "I can only answer questions about the active cube. {reason} Try rephrasing your question in terms of measures, dimensions, or members.",
   "workspace.aiQuery.example1": "Show me sales by country",
   "workspace.aiQuery.example2": "Top 10 products by revenue",
