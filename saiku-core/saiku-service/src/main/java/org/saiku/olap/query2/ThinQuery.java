@@ -63,9 +63,17 @@ public class ThinQuery implements ISaikuQuery {
      */
     public void setQueryModel(ThinQueryModel queryModel) {
         this.queryModel = queryModel;
-        if (queryModel != null) {
-            this.type = Type.QUERYMODEL;
-        }
+        // saiku#1131: do NOT auto-set type=QUERYMODEL here. Jackson invokes
+        // setters in JSON property order; a request body that explicitly
+        // says {"type":"MDX", "queryModel":{...empty...}, "mdx":"SELECT ..."}
+        // (the workspace's Edit-in-canvas shape — queryModel is the prior
+        // QUERYMODEL state, kept on the wire for round-trip) would get its
+        // type silently clobbered back to QUERYMODEL when Jackson calls
+        // setQueryModel after setType. The downstream converter then
+        // regenerates MDX from the (empty) queryModel and Mondrian runs
+        // "SELECT FROM [Sales]" — 0 rows — even though the wire carried a
+        // valid mdx. Java callers that build ThinQuery imperatively must
+        // set type explicitly; the QUERYMODEL constructor already does.
     }
 
     /**
