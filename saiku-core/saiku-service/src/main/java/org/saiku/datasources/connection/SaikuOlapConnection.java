@@ -126,20 +126,21 @@ public class SaikuOlapConnection implements ISaikuConnection {
                 }
 
                 Class.forName(driver);
-                Connection connection = DriverManager.getConnection(url, username, password);
+                try (Connection connection = DriverManager.getConnection(url, username, password)) {
 
-                if (connection != null) {
-                    final OlapWrapper wrapper = (OlapWrapper) connection;
-                    OlapConnection tmpolapConnection = wrapper.unwrap(OlapConnection.class);
+                    if (connection != null) {
+                        final OlapWrapper wrapper = (OlapWrapper) connection;
+                        OlapConnection tmpolapConnection = wrapper.unwrap(OlapConnection.class);
 
-                    if (tmpolapConnection == null) {
-                        throw new Exception("Connection is null");
+                        if (tmpolapConnection == null) {
+                            throw new Exception("Connection is null");
+                        }
+
+                        log.info("Catalogs:" + tmpolapConnection.getOlapCatalogs().size());
+                        olapConnection = tmpolapConnection;
+                        initialized = true;
+                        return true;
                     }
-
-                    log.info("Catalogs:" + tmpolapConnection.getOlapCatalogs().size());
-                    olapConnection = tmpolapConnection;
-                    initialized = true;
-                    return true;
                 }
             } else if (props.containsKey("enabled")
                     && props.getProperty("enabled").equals("false")) {
