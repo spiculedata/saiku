@@ -131,13 +131,12 @@
     </MeasureGroups>
   </Cube>
 
-  <!-- Plain star (no bridge) over the same fact. Total + Avg + Min + Max
-       Balance plus an Account Count, so the distributional shape of account
-       balances is queryable alongside the totals. The mondrian-4.8.1.21
-       aggregator vocabulary is sum / count / min / max / avg /
-       distinct-count — non-additive median / percentile aggregators aren't
-       wired through the engine yet; if they land in a later mondrian release
-       they slot back in here. -->
+  <!-- Plain star (no bridge) over the same fact, exposing the non-additive
+       leaf aggregators median / percentile (mondrian-saiku #104) alongside
+       the additive total. Computed at the queried grain via
+       PERCENTILE_CONT(...) WITHIN GROUP (ORDER BY column); not rolled up.
+       Requires the Calcite backend (the Saiku default) on a database that
+       supports PERCENTILE_CONT — the demo's H2 datasource qualifies. -->
   <Cube name="Account Statistics">
     <Dimensions>
       <Dimension source="Branch"/>
@@ -148,14 +147,11 @@
         <Measures>
           <Measure name="Total Balance" column="balance" aggregator="sum"
                    formatString="#,###"/>
-          <Measure name="Avg Balance" column="balance" aggregator="avg"
+          <Measure name="Median Balance" column="balance"
+                   aggregator="median" formatString="#,###"/>
+          <Measure name="P90 Balance" column="balance"
+                   aggregator="percentile" percentile="90"
                    formatString="#,###"/>
-          <Measure name="Min Balance" column="balance" aggregator="min"
-                   formatString="#,###"/>
-          <Measure name="Max Balance" column="balance" aggregator="max"
-                   formatString="#,###"/>
-          <Measure name="Account Count" column="account_id"
-                   aggregator="distinct-count" formatString="#,###"/>
         </Measures>
         <DimensionLinks>
           <ForeignKeyLink dimension="Branch" foreignKeyColumn="branch_id"/>
