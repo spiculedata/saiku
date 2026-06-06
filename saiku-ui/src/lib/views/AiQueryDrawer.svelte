@@ -257,7 +257,7 @@
   class="ai-drawer"
   class:ai-drawer--open={open}
   aria-labelledby="ai-drawer-title"
-  aria-hidden={!open}
+  inert={!open}
 >
   <header class="ai-drawer__header">
     <Sparkles size={18} aria-hidden="true" />
