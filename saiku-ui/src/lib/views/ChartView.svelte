@@ -8,7 +8,8 @@
   import { isSingleMeasureKind, smallMultipleRowCount } from "$lib/dashboard/smallMultiples";
   import { theme } from "$lib/stores/theme.svelte";
   import { resolveThemeTokens } from "$lib/views/chartTheme";
-  import { buildChartOption } from "$lib/charts/build";
+  import { buildChartOption, type ChartProjection } from "$lib/charts/build";
+  import { chartSummary } from "$lib/charts/a11y";
 
   interface Props {
     result: QueryResult;
@@ -29,12 +30,11 @@
     return isSingleMeasureKind(type) && measureCount > 1 ? smallMultipleRowCount(measureCount) : 1;
   });
 
-  // Project the workspace cellset into the shared {rows, cols, matrix} shape and
-  // delegate to the single canonical builder (#1076). The workspace is the
-  // "roomy" (non-compact) surface; rollup filtering (which needs cellset depth)
-  // happens here, before projection, since the builder treats rows as final.
-  function buildOption(r: QueryResult, t: ChartType, o: ChartOptions): Record<string, unknown> | null {
-    const tk = resolveThemeTokens();
+  // Project the workspace cellset into the shared {rows, cols, matrix} shape.
+  // Rollup filtering (which needs cellset depth) happens here, before
+  // projection, since the builder treats rows as final. Shared by the chart
+  // builder and the a11y data-table mirror (#1090) so both see the same data.
+  function projectResult(r: QueryResult, o: ChartOptions): ChartProjection {
     const parsed = parseCellset(r);
     // Multi-level row hierarchies (Year > Quarter, Country > City, …) come back
     // with both rollup and leaf rows in the same cellset. Showing the rollups on
@@ -52,19 +52,25 @@
         matrix = leaf.indices.map((i) => matrix[i]);
       }
     }
-    const cols = parsed.columnCategories;
+    return { rowCategories: rows, columnCategories: parsed.columnCategories, matrix };
+  }
 
+  // Delegate to the single canonical builder (#1076). The workspace is the
+  // "roomy" (non-compact) surface.
+  function buildOption(r: QueryResult, t: ChartType, o: ChartOptions): Record<string, unknown> | null {
+    const tk = resolveThemeTokens();
+    const p = projectResult(r, o);
     // Aspect-aware radius keeps each small-multiple the same on-screen size
     // regardless of how many there are (#1053); chartWidth drives the derived
     // per-label axis truncation width.
     const aspect = host && host.clientHeight > 0 ? host.clientWidth / host.clientHeight : 1;
     const chartWidth = host?.clientWidth ?? 0;
-    return buildChartOption({ rowCategories: rows, columnCategories: cols, matrix }, t, o, tk, {
-      aspect,
-      chartWidth,
-      compact: false,
-    });
+    return buildChartOption(p, t, o, tk, { aspect, chartWidth, compact: false });
   }
+
+  // #1090: accessible data-table mirror of the chart for screen readers. The
+  // canvas is aria-hidden (invisible to AT anyway); this exposes the same data.
+  let a11y = $derived(chartSummary(type, options.title ?? "", projectResult(result, options)));
 
   function render() {
     if (!chart) return;
@@ -136,11 +142,37 @@
 </script>
 
 <div class="chart-scroll">
+  <!-- #1090: the canvas is decorative to assistive tech; the sr-only table below
+       is the accessible representation, so hide the canvas from screen readers. -->
   <div
     class="chart"
     bind:this={host}
+    aria-hidden="true"
     style="height: {smallMultipleRows * 60}vh; min-height: {smallMultipleRows * 320}px;"
   ></div>
+  <!-- #1090: visually-hidden data-table mirror for screen readers. -->
+  <table class="sr-only">
+    <caption>{a11y.caption}</caption>
+    {#if !a11y.empty}
+      <thead>
+        <tr>
+          {#each a11y.headers as h, i (i)}
+            <th scope="col">{h}</th>
+          {/each}
+        </tr>
+      </thead>
+      <tbody>
+        {#each a11y.rows as row, ri (ri)}
+          <tr>
+            <th scope="row">{row[0]}</th>
+            {#each row.slice(1) as cell, ci (ci)}
+              <td>{cell}</td>
+            {/each}
+          </tr>
+        {/each}
+      </tbody>
+    {/if}
+  </table>
 </div>
 
 <style>
@@ -159,5 +191,18 @@
   .chart {
     width: 100%;
     /* height + min-height are set inline = smallMultipleRows × the single size. */
+  }
+  /* #1090: visually hide the a11y data table while keeping it in the
+     accessibility tree (standard sr-only / visually-hidden pattern). */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 </style>
