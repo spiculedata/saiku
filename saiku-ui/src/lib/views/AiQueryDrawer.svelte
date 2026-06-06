@@ -161,12 +161,19 @@
       if (reason.toLowerCase().includes("not configured")) {
         notConfiguredBanner = reason;
       }
+      // Server-side scope guardrail — the model called refuse_off_topic
+      // because the question isn't about the cube. Render as a softer
+      // "scope" turn rather than a generic error so the user can rephrase.
+      const isOffTopic = reason.startsWith("OFF_TOPIC: ");
+      const text = isOffTopic
+        ? i18n.t("workspace.aiQuery.offTopic").replace("{reason}", reason.slice("OFF_TOPIC: ".length))
+        : reason;
       turns = [
         ...turns,
         {
           id: nextId(),
-          role: "error",
-          text: reason,
+          role: isOffTopic ? "assistant" : "error",
+          text,
         },
       ];
       inflight = false;

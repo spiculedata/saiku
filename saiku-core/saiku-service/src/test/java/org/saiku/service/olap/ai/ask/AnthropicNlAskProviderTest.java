@@ -44,13 +44,22 @@ public class AnthropicNlAskProviderTest {
 
         assertEquals("claude-x", root.get("model").asText());
         assertEquals(1024, root.get("max_tokens").asInt());
-        assertEquals("tool", root.get("tool_choice").get("type").asText());
-        assertEquals("emit_query", root.get("tool_choice").get("name").asText());
+        // tool_choice "any" lets the model pick emit_query OR refuse_off_topic.
+        assertEquals("any", root.get("tool_choice").get("type").asText());
 
         JsonNode tools = root.get("tools");
-        assertEquals(1, tools.size());
+        assertEquals(2, tools.size());
         assertEquals("emit_query", tools.get(0).get("name").asText());
         assertEquals("object", tools.get(0).get("input_schema").get("type").asText());
+        assertEquals("refuse_off_topic", tools.get(1).get("name").asText());
+        assertEquals(
+                "string",
+                tools.get(1)
+                        .get("input_schema")
+                        .get("properties")
+                        .get("reason")
+                        .get("type")
+                        .asText());
 
         // System prompt embeds the cube schema + ref
         String system = root.get("system").asText();
@@ -121,6 +130,17 @@ public class AnthropicNlAskProviderTest {
         NlAskResponse resp = AnthropicNlAskProvider.parseToolResponse(body, "claude-x");
         assertTrue(resp.degraded());
         assertEquals("empty tool_use input", resp.reason());
+    }
+
+    @Test
+    public void parseToolResponseReturnsOffTopicWhenModelCallsRefusalTool() throws Exception {
+        String body = "{\"content\":["
+                + "{\"type\":\"tool_use\",\"name\":\"refuse_off_topic\","
+                + "\"input\":{\"reason\":\"That's about weather, not the Sales cube.\"}}"
+                + "]}";
+        NlAskResponse resp = AnthropicNlAskProvider.parseToolResponse(body, "claude-x");
+        assertTrue(resp.degraded());
+        assertEquals("OFF_TOPIC: That's about weather, not the Sales cube.", resp.reason());
     }
 
     @Test
