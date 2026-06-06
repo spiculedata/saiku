@@ -759,6 +759,7 @@
     </div>
   {:else}
     <div class="canvas__body">
+    {#if query.current?.type !== "MDX"}
     <aside class="dropzones">
       <!-- Dedicated MEASURES panel (restored from the pre-rewrite UI).
            Sits above COLUMNS/ROWS so the chip stack visually separates
@@ -909,7 +910,14 @@
         </div>
       </div>
     </aside>
+    {/if}
     <div class="canvas__result">
+    {#if query.current?.type === "MDX"}
+      <div class="canvas__mdx-banner" role="status">
+        <span class="canvas__mdx-badge">MDX</span>
+        <span class="canvas__mdx-text">{i18n.t("canvas.mdxBannerText")}</span>
+      </div>
+    {/if}
     <div class="view-toggle" role="tablist" aria-label={i18n.t("canvas.resultView")}>
       <button type="button" role="tab" class:active={query.viewMode === "grid"} onclick={() => (query.viewMode = "grid")}>
         {i18n.t("canvas.view.grid")}
@@ -1172,6 +1180,30 @@
     flex-direction: column;
     gap: var(--space-2);
     overflow: hidden;
+  }
+  .canvas__mdx-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: rgba(99, 102, 241, 0.08);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    border-radius: var(--radius-md);
+    font-size: var(--fs-sm);
+    color: var(--fg-muted);
+  }
+  .canvas__mdx-badge {
+    background: var(--accent);
+    color: white;
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .canvas__mdx-text {
+    flex: 1;
+    min-width: 0;
   }
   .canvas__empty {
     display: flex;
