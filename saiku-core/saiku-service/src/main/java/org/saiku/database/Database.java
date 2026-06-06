@@ -60,6 +60,11 @@ public class Database {
             log.warn("Foodmart sample data not loaded: {}", e.getMessage());
         }
         try {
+            loadBank();
+        } catch (Exception e) {
+            log.warn("Bank (bridge demo) sample data not loaded: {}", e.getMessage());
+        }
+        try {
             loadEarthquakes();
         } catch (Exception e) {
             log.warn("Earthquakes sample data not loaded: {}", e.getMessage());
@@ -173,6 +178,64 @@ public class Database {
 
                 statement.executeQuery("select 1");
             }
+        }
+    }
+
+    /**
+     * Bridge (many-to-many) demo: the joint-accounts "Bank" schema. Its mm_*
+     * tables live in the SAME H2 database as FoodMart (distinct names, no
+     * clash), so this reuses FoodMart's url + data dir — no extra config. On
+     * first run it RUNSCRIPTs bank.sql and registers the Bank datasource
+     * (two cubes: full-count + weighted). Requires the Calcite backend.
+     */
+    private void loadBank() throws SQLException {
+        String url = servletContext.getInitParameter("foodmart.url");
+        if (url == null || url.equals("${foodmart_url}")) {
+            return;
+        }
+        JdbcDataSource ds2 = new JdbcDataSource();
+        ds2.setURL(dsm.getFoodmarturl());
+        ds2.setUser("sa");
+        ds2.setPassword("");
+
+        Connection c = ds2.getConnection();
+        DatabaseMetaData dbm = c.getMetaData();
+        ResultSet tables = dbm.getTables(null, null, "mm_owner", null);
+        if (tables.next()) {
+            // Already loaded.
+            return;
+        }
+        Statement statement = c.createStatement();
+        statement.execute("RUNSCRIPT FROM '" + dsm.getFoodmartdir() + "/bank.sql'");
+        statement.executeQuery("select 1");
+
+        String schema = null;
+        try {
+            schema = readFile(dsm.getFoodmartdir() + "/Bank.xml", StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            log.error("Can't read Bank schema file", e);
+        }
+        try {
+            dsm.addSchema(schema, "/datasources/bank.xml", null);
+        } catch (Exception e) {
+            log.error("Can't add Bank schema file to repo", e);
+        }
+        String catalogUri =
+                new java.io.File(dsm.getFoodmartdir() + "/Bank.xml").toURI().toString();
+        Properties p = new Properties();
+        p.setProperty("driver", "mondrian.olap4j.MondrianOlap4jDriver");
+        p.setProperty(
+                "location",
+                "jdbc:mondrian:Jdbc=jdbc:h2:" + dsm.getFoodmartdir() + "/foodmart;" + "Catalog=" + catalogUri
+                        + ";JdbcDrivers=org.h2.Driver");
+        p.setProperty("username", "sa");
+        p.setProperty("password", "");
+        p.setProperty("id", "4432dd20-fcae-11e3-a3ac-0800200c9a68");
+        SaikuDatasource ds = new SaikuDatasource("bank", SaikuDatasource.Type.OLAP, p);
+        try {
+            dsm.addDatasource(ds);
+        } catch (Exception e) {
+            log.error("Can't add Bank data source to repo", e);
         }
     }
 

@@ -280,6 +280,26 @@ public class SaikuLauncher implements Callable<Integer> {
                     }
                 }
             }
+
+            // Bridge (many-to-many) demo: the Bank schema + its data load
+            // into the same H2 database as FoodMart (distinct mm_* tables).
+            // Database.loadBank() runs bank.sql and registers the datasource.
+            stageResource("/seed/Bank.xml", dataDir.resolve("Bank.xml"));
+            stageResource("/seed/bank.sql", dataDir.resolve("bank.sql"));
+        }
+
+        /** Copy a classpath seed resource to {@code target} if it is missing,
+         *  preserving any user edits on relaunch. */
+        private static void stageResource(String resource, Path target) throws Exception {
+            if (Files.exists(target)) {
+                return;
+            }
+            try (InputStream in = SaikuLauncher.class.getResourceAsStream(resource)) {
+                if (in != null) {
+                    Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+                    System.out.println("Seeded: " + target);
+                }
+            }
         }
 
         /**

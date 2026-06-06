@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Saiku demo schema: joint bank accounts — a bridge (many-to-many) dimension.
+
+  One account has one balance but can be co-owned by several customers, so
+  the Customer dimension is linked through the account_owner bridge table
+  (mm_owner) with an ownership weight rather than a foreign key on the fact.
+
+  Two cubes over the SAME fact table show the two allocation styles:
+    - "Joint Accounts (Full Count)" — every owner sees the full balance;
+      totals de-duplicate on the account grain at every level (incl. the
+      Segment roll-up), so the grand total is the true 13000, not 21000.
+    - "Joint Accounts (Weighted)"   — each balance split by ownership weight,
+      reconciling to 13000.
+
+  Companion data: bank.sql (tables mm_*), loaded into the demo H2 database.
+  Requires the Calcite query backend (the Saiku default) — bridge queries
+  cannot be evaluated by the legacy SQL generator.
+-->
+<Schema name="Bank" metamodelVersion="4.0">
+
+  <PhysicalSchema>
+    <Table name="mm_fact">
+      <Key><Column name="account_id"/></Key>
+    </Table>
+    <Table name="mm_owner"/>
+    <Table name="mm_customer"/>
+    <Table name="mm_branch"/>
+    <Table name="mm_date"/>
+  </PhysicalSchema>
+
+  <!-- The many-to-many dimension. Customers roll up into segments; full-count
+       totals de-duplicate correctly at the Segment level too. -->
+  <Dimension name="Customer" table="mm_customer" key="Customer">
+    <Attributes>
+      <Attribute name="Segment"><Key><Column name="segment"/></Key></Attribute>
+      <Attribute name="Customer">
+        <Key><Column name="customer_id"/></Key>
+        <Name><Column name="customer_name"/></Name>
+      </Attribute>
+    </Attributes>
+    <Hierarchies>
+      <Hierarchy name="By Segment" allMemberName="All Customers">
+        <Level attribute="Segment"/>
+        <Level attribute="Customer"/>
+      </Hierarchy>
+    </Hierarchies>
+  </Dimension>
+
+  <Dimension name="Branch" table="mm_branch" key="Branch">
+    <Attributes>
+      <Attribute name="Branch">
+        <Key><Column name="branch_id"/></Key>
+        <Name><Column name="branch_name"/></Name>
+      </Attribute>
+    </Attributes>
+  </Dimension>
+
+  <Dimension name="Date" table="mm_date" key="Date Id" type="TIME">
+    <Attributes>
+      <Attribute name="Date Id" hasHierarchy="false">
+        <Key><Column name="date_key"/></Key>
+      </Attribute>
+      <Attribute name="Year" levelType="TimeYears" hasHierarchy="false">
+        <Key><Column name="yr"/></Key>
+      </Attribute>
+    </Attributes>
+    <Hierarchies>
+      <Hierarchy name="Calendar" allMemberName="All Years">
+        <Level attribute="Year"/>
+      </Hierarchy>
+    </Hierarchies>
+  </Dimension>
+
+  <Cube name="Joint Accounts (Full Count)">
+    <Dimensions>
+      <Dimension source="Customer"/>
+      <Dimension source="Branch"/>
+      <Dimension source="Date"/>
+    </Dimensions>
+    <MeasureGroups>
+      <MeasureGroup name="Balances" table="mm_fact">
+        <Measures>
+          <Measure name="Balance" column="balance" aggregator="sum"
+                   formatString="#,###"/>
+          <Measure name="Fees" column="fees" aggregator="sum"
+                   formatString="#,###"/>
+        </Measures>
+        <DimensionLinks>
+          <ForeignKeyLink dimension="Branch" foreignKeyColumn="branch_id"/>
+          <ForeignKeyLink dimension="Date" foreignKeyColumn="date_key"/>
+          <BridgeLink dimension="Customer"
+                      bridgeTable="mm_owner"
+                      factForeignKeyColumn="account_id"
+                      bridgeFactKeyColumn="account_id"
+                      bridgeDimensionKeyColumn="customer_id"/>
+        </DimensionLinks>
+      </MeasureGroup>
+    </MeasureGroups>
+  </Cube>
+
+  <Cube name="Joint Accounts (Weighted)">
+    <Dimensions>
+      <Dimension source="Customer"/>
+      <Dimension source="Branch"/>
+      <Dimension source="Date"/>
+    </Dimensions>
+    <MeasureGroups>
+      <MeasureGroup name="Balances" table="mm_fact">
+        <Measures>
+          <Measure name="Balance" column="balance" aggregator="sum"
+                   formatString="#,###"/>
+          <Measure name="Fees" column="fees" aggregator="sum"
+                   formatString="#,###"/>
+        </Measures>
+        <DimensionLinks>
+          <ForeignKeyLink dimension="Branch" foreignKeyColumn="branch_id"/>
+          <ForeignKeyLink dimension="Date" foreignKeyColumn="date_key"/>
+          <BridgeLink dimension="Customer"
+                      bridgeTable="mm_owner"
+                      factForeignKeyColumn="account_id"
+                      bridgeFactKeyColumn="account_id"
+                      bridgeDimensionKeyColumn="customer_id"
+                      aggregation="weighted"
+                      weightColumn="weight"/>
+        </DimensionLinks>
+      </MeasureGroup>
+    </MeasureGroups>
+  </Cube>
+
+</Schema>
