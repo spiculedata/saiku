@@ -39,17 +39,27 @@ public final class OpenAINlAskProvider implements NlAskProvider {
     public static final String DEFAULT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 
     private static final String TOOL_NAME = "emit_query";
+    private static final String REFUSAL_TOOL_NAME = "refuse_off_topic";
+    private static final String REFUSAL_REASON_PREFIX = "OFF_TOPIC: ";
 
-    private static final String SYSTEM_PROMPT = "You are a Mondrian OLAP query assistant. Your job is to "
-            + "translate a user's natural-language question into a single AiQueryRequest by calling the "
-            + "emit_query function. CRITICAL RULES: (1) Every name field MUST refer to a member, measure, "
+    private static final String SYSTEM_PROMPT = "You are a Mondrian OLAP query assistant scoped to a "
+            + "single cube. Your job is to translate a user's natural-language question about the "
+            + "cube's data into a single AiQueryRequest by calling the emit_query function. "
+            + "SCOPE GUARDRAIL: If the user's question is NOT about querying this cube's data — e.g. "
+            + "general knowledge, coding help, weather, math, prose composition, jokes, advice, "
+            + "personal questions, or anything you couldn't answer with measures/dimensions from the "
+            + "schema below — you MUST call the refuse_off_topic function with a one-sentence reason. "
+            + "Do not attempt to answer off-topic questions with prose, and do not invent a cube "
+            + "query just to satisfy the user. Borderline cases (analytical questions phrased in "
+            + "domain terms that map to the schema) should still call emit_query. "
+            + "CRITICAL RULES for emit_query: (1) Every name field MUST refer to a member, measure, "
             + "dimension, hierarchy or level present in the provided cube schema — never invent names. "
             + "(2) Echo the connectionName, catalog, schema and cubeName from the provided cube ref "
             + "exactly. (3) Prefer rows for the dimension the user wants to break down by; use columns "
             + "only when the user explicitly compares across two axes. (4) Put time / region restrictions "
             + "in filters (the slicer). (5) When the user asks for 'top N' or 'bottom N', set both "
             + "`order` and `limit`. (6) Keep aggregator overrides off unless the user asks for one. "
-            + "Always call emit_query — never respond with prose.";
+            + "Always call exactly one function — never respond with prose.";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -144,11 +154,27 @@ public final class OpenAINlAskProvider implements NlAskProvider {
         fn.put("description", "Emit a structured AiQueryRequest matching the cube schema.");
         fn.set("parameters", MAPPER.readTree(request.requestJsonSchema()));
 
-        // Force the model to call our tool — OpenAI uses tool_choice as an object with function name.
-        ObjectNode toolChoice = root.putObject("tool_choice");
-        toolChoice.put("type", "function");
-        ObjectNode toolChoiceFn = toolChoice.putObject("function");
-        toolChoiceFn.put("name", TOOL_NAME);
+        // Refusal path — model picks this when the user's question isn't
+        // about the cube. Stops the AI key becoming a free general LLM proxy.
+        ObjectNode refusalTool = tools.addObject();
+        refusalTool.put("type", "function");
+        ObjectNode refusalFn = refusalTool.putObject("function");
+        refusalFn.put("name", REFUSAL_TOOL_NAME);
+        refusalFn.put(
+                "description",
+                "Refuse a question that isn't about querying this cube's data. Call with a one-sentence reason.");
+        ObjectNode refusalParams = refusalFn.putObject("parameters");
+        refusalParams.put("type", "object");
+        ObjectNode refusalProps = refusalParams.putObject("properties");
+        ObjectNode reasonProp = refusalProps.putObject("reason");
+        reasonProp.put("type", "string");
+        reasonProp.put("description", "One-sentence explanation of why the question is off-topic.");
+        refusalParams.putArray("required").add("reason");
+
+        // tool_choice "required" — model must call a function, picks emit_query
+        // OR refuse_off_topic. Was forced-emit_query before; that would have
+        // the model invent queries for off-topic questions.
+        root.put("tool_choice", "required");
 
         ArrayNode messages = root.putArray("messages");
         ObjectNode system = messages.addObject();
@@ -203,13 +229,23 @@ public final class OpenAINlAskProvider implements NlAskProvider {
         }
         for (JsonNode call : toolCalls) {
             JsonNode function = call.path("function");
-            if (TOOL_NAME.equals(function.path("name").asText())) {
+            String fnName = function.path("name").asText();
+            if (TOOL_NAME.equals(fnName)) {
                 String arguments = function.path("arguments").asText(null);
                 if (arguments == null || arguments.isBlank()) {
                     return NlAskResponse.degraded("empty tool_call arguments", model);
                 }
                 // arguments is itself JSON-encoded as a string per the OpenAI contract — return as-is.
                 return NlAskResponse.ok(arguments, model, inputTokens, outputTokens);
+            }
+            if (REFUSAL_TOOL_NAME.equals(fnName)) {
+                String reason = "Question is not about the cube.";
+                String argsStr = function.path("arguments").asText("");
+                if (!argsStr.isBlank()) {
+                    JsonNode args = MAPPER.readTree(argsStr);
+                    reason = args.path("reason").asText(reason);
+                }
+                return NlAskResponse.degraded(REFUSAL_REASON_PREFIX + reason, model);
             }
         }
         return NlAskResponse.degraded("tool_calls did not include emit_query", model);

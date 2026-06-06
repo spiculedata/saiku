@@ -36,17 +36,28 @@ public final class AnthropicNlAskProvider implements NlAskProvider {
     private static final String ENDPOINT = "https://api.anthropic.com/v1/messages";
     private static final String API_VERSION = "2023-06-01";
     private static final String TOOL_NAME = "emit_query";
+    private static final String REFUSAL_TOOL_NAME = "refuse_off_topic";
 
-    private static final String SYSTEM_PROMPT = "You are a Mondrian OLAP query assistant. Your job is to "
-            + "translate a user's natural-language question into a single AiQueryRequest by calling the "
-            + "emit_query tool. CRITICAL RULES: (1) Every name field MUST refer to a member, measure, "
+    private static final String SYSTEM_PROMPT = "You are a Mondrian OLAP query assistant scoped to a "
+            + "single cube. Your job is to translate a user's natural-language question about the "
+            + "cube's data into a single AiQueryRequest by calling the emit_query tool. "
+            + "SCOPE GUARDRAIL: If the user's question is NOT about querying this cube's data — e.g. "
+            + "general knowledge, coding help, weather, math, prose composition, jokes, advice, "
+            + "personal questions, or anything you couldn't answer with measures/dimensions from the "
+            + "schema below — you MUST call the refuse_off_topic tool with a one-sentence reason. "
+            + "Do not attempt to answer off-topic questions with prose, and do not invent a cube "
+            + "query just to satisfy the user. Borderline cases (analytical questions phrased in "
+            + "domain terms that map to the schema) should still call emit_query. "
+            + "CRITICAL RULES for emit_query: (1) Every name field MUST refer to a member, measure, "
             + "dimension, hierarchy or level present in the provided cube schema — never invent names. "
             + "(2) Echo the connectionName, catalog, schema and cubeName from the provided cube ref "
             + "exactly. (3) Prefer rows for the dimension the user wants to break down by; use columns "
             + "only when the user explicitly compares across two axes. (4) Put time / region restrictions "
             + "in filters (the slicer). (5) When the user asks for 'top N' or 'bottom N', set both "
             + "`order` and `limit`. (6) Keep aggregator overrides off unless the user asks for one. "
-            + "Always call emit_query — never respond with prose.";
+            + "Always call exactly one tool — never respond with prose.";
+
+    private static final String REFUSAL_REASON_PREFIX = "OFF_TOPIC: ";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -140,9 +151,27 @@ public final class AnthropicNlAskProvider implements NlAskProvider {
         tool.put("description", "Emit a structured AiQueryRequest matching the cube schema.");
         tool.set("input_schema", MAPPER.readTree(request.requestJsonSchema()));
 
+        // Refusal path — the model picks this when the user's question isn't
+        // about the cube. Stops Saiku's AI key from becoming a free general
+        // LLM proxy.
+        ObjectNode refusalTool = tools.addObject();
+        refusalTool.put("name", REFUSAL_TOOL_NAME);
+        refusalTool.put(
+                "description",
+                "Refuse a question that isn't about querying this cube's data. Call with a one-sentence reason.");
+        ObjectNode refusalSchema = refusalTool.putObject("input_schema");
+        refusalSchema.put("type", "object");
+        ObjectNode refusalProps = refusalSchema.putObject("properties");
+        ObjectNode reasonProp = refusalProps.putObject("reason");
+        reasonProp.put("type", "string");
+        reasonProp.put("description", "One-sentence explanation of why the question is off-topic.");
+        refusalSchema.putArray("required").add("reason");
+
+        // tool_choice "any" — model must call a tool, but picks emit_query OR
+        // refuse_off_topic. Was "tool" (forced emit_query) before; that path
+        // would have the model invent queries for off-topic questions.
         ObjectNode toolChoice = root.putObject("tool_choice");
-        toolChoice.put("type", "tool");
-        toolChoice.put("name", TOOL_NAME);
+        toolChoice.put("type", "any");
 
         ArrayNode messages = root.putArray("messages");
         for (NlAskMessage m : request.history()) {
@@ -183,13 +212,20 @@ public final class AnthropicNlAskProvider implements NlAskProvider {
         JsonNode content = root.path("content");
         if (content.isArray()) {
             for (JsonNode block : content) {
-                if ("tool_use".equals(block.path("type").asText())
-                        && TOOL_NAME.equals(block.path("name").asText())) {
+                if (!"tool_use".equals(block.path("type").asText())) {
+                    continue;
+                }
+                String toolName = block.path("name").asText();
+                if (TOOL_NAME.equals(toolName)) {
                     JsonNode input = block.path("input");
                     if (input.isMissingNode() || input.isNull()) {
                         return NlAskResponse.degraded("empty tool_use input", model);
                     }
                     return NlAskResponse.ok(MAPPER.writeValueAsString(input), model, inputTokens, outputTokens);
+                }
+                if (REFUSAL_TOOL_NAME.equals(toolName)) {
+                    String reason = block.path("input").path("reason").asText("Question is not about the cube.");
+                    return NlAskResponse.degraded(REFUSAL_REASON_PREFIX + reason, model);
                 }
             }
         }

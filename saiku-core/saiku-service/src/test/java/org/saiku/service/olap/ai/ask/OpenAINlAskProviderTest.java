@@ -33,18 +33,19 @@ public class OpenAINlAskProviderTest {
 
         assertEquals("gpt-x", root.get("model").asText());
         assertEquals(1024, root.get("max_tokens").asInt());
-        assertEquals("function", root.get("tool_choice").get("type").asText());
-        assertEquals(
-                "emit_query",
-                root.get("tool_choice").get("function").get("name").asText());
+        // tool_choice "required" — model must call a function, picks emit_query OR refuse_off_topic.
+        assertEquals("required", root.get("tool_choice").asText());
 
         JsonNode tools = root.get("tools");
-        assertEquals(1, tools.size());
+        assertEquals(2, tools.size());
         assertEquals("function", tools.get(0).get("type").asText());
         assertEquals("emit_query", tools.get(0).get("function").get("name").asText());
         assertEquals(
                 "object",
                 tools.get(0).get("function").get("parameters").get("type").asText());
+        assertEquals("function", tools.get(1).get("type").asText());
+        assertEquals(
+                "refuse_off_topic", tools.get(1).get("function").get("name").asText());
 
         // System message embeds the cube schema
         JsonNode messages = root.get("messages");
@@ -131,5 +132,14 @@ public class OpenAINlAskProviderTest {
         NlAskResponse resp = OpenAINlAskProvider.parseToolResponse(body, "gpt-x");
         assertTrue(resp.degraded());
         assertEquals("empty tool_call arguments", resp.reason());
+    }
+
+    @Test
+    public void parseToolResponseReturnsOffTopicWhenModelCallsRefusalTool() throws Exception {
+        String body = "{\"choices\":[{\"message\":{\"tool_calls\":[{\"function\":{\"name\":\"refuse_off_topic\","
+                + "\"arguments\":\"{\\\"reason\\\":\\\"That's about weather, not the Sales cube.\\\"}\"}}]}}]}";
+        NlAskResponse resp = OpenAINlAskProvider.parseToolResponse(body, "gpt-x");
+        assertTrue(resp.degraded());
+        assertEquals("OFF_TOPIC: That's about weather, not the Sales cube.", resp.reason());
     }
 }
