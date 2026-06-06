@@ -379,6 +379,19 @@ describe("buildChartOption — map (#1071)", () => {
     expect(blankData[1].value).toBeNull();
     expect(zeroData[1].value).toBe(0);
   });
+
+  test("tooltip formatter HTML-escapes the (data-derived) region name (#1071 XSS hardening)", () => {
+    const hostile: ChartProjection = {
+      rowCategories: ['<img src=x onerror=alert(1)>'],
+      columnCategories: ["Store Sales"],
+      matrix: [[5]],
+    };
+    const opt = buildChartOption(hostile, "map", opts()) as Record<string, unknown>;
+    const fmt = (opt.tooltip as { formatter: (p: unknown) => string }).formatter;
+    const out = fmt({ name: '<img src=x onerror=alert(1)>', value: 5 });
+    expect(out).not.toContain("<img");
+    expect(out).toContain("&lt;img");
+  });
 });
 
 describe("buildChartOption — rejection", () => {

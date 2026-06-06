@@ -192,6 +192,17 @@ function colorRampFor(ramp: ChartColorRamp | undefined): string[] {
   return COLOR_RAMPS[ramp ?? "blues"] ?? COLOR_RAMPS.blues;
 }
 
+/* Escape HTML — the map tooltip uses an ECharts function formatter whose return
+ * value is inserted as innerHTML (renderMode "html"), and the region name is
+ * data-derived (an aliased cube member caption). Without escaping, a hostile
+ * caption could inject markup into the tooltip (stored XSS). #1071 hardening. */
+function escapeHtml(s: string): string {
+  return s.replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] ?? c,
+  );
+}
+
 /* ----------------------------- builder ----------------------------- */
 
 /**
@@ -414,7 +425,7 @@ export function buildChartOption(
         ...tooltipStyle,
         // value can be null (blank country) — show "—" rather than "null".
         formatter: (p: { name?: string; value?: number | null }) =>
-          `${p?.name ?? ""}: ${p?.value == null || Number.isNaN(p.value) ? "—" : p.value}`,
+          `${escapeHtml(p?.name ?? "")}: ${p?.value == null || Number.isNaN(p.value) ? "—" : p.value}`,
       },
       visualMap: {
         min,
