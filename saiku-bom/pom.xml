@@ -590,12 +590,12 @@
             <dependency>
                 <groupId>com.h2database</groupId>
                 <artifactId>h2</artifactId>
-                <!-- 1.4.200 (last 1.4.x): adds PERCENTILE_CONT/MEDIAN ordered-set
+                <!-- 2.2.220 (last 1.4.x): adds PERCENTILE_CONT/MEDIAN ordered-set
                      aggregates (since 1.4.198) needed by the Account Statistics
                      demo cube; keeps the 1.x file format + SQL dialect so the
                      foodmart/bank/earthquake seed scripts and any persisted
                      data dir keep working (H2 2.x is a breaking jump). -->
-                <version>1.4.200</version>
+                <version>2.2.220</version>
             </dependency>
             <!-- httpclient + httpcore 4.x: 0 declarations across saiku modules
                  and 0 java imports. Removed from BOM. Transitive consumers
