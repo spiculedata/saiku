@@ -742,7 +742,11 @@
   }
 </script>
 
-{#if panel}
+<!-- issue #924: render the panel chrome in edit mode even before a
+     filterPanel exists, so "+ Add filter" is always reachable on a fresh
+     dashboard (committing the first filter lazily creates the panel via
+     ensurePanel). In readOnly we still only show it once filters exist. -->
+{#if panel || !readOnly}
   <section class="panel" aria-label="Dashboard filter panel">
     <header class="panel-header">
       <button
@@ -759,8 +763,8 @@
         {/if}
         <span class="panel-title">
           Filters
-          {#if panel.filters.length > 0}
-            <span class="count">({panel.filters.length})</span>
+          {#if (panel?.filters.length ?? 0) > 0}
+            <span class="count">({panel?.filters.length})</span>
           {/if}
         </span>
       </button>
@@ -769,13 +773,13 @@
       {/if}
     </header>
     {#if !collapsed}
-      {#if panel.filters.length === 0 && !adding}
+      {#if (panel?.filters.length ?? 0) === 0 && !adding}
         <p class="empty">
           No filters yet — click <em>+ Add filter</em> to register one,
           or use <em>Suggest filters</em> in the toolbar.
         </p>
       {/if}
-      {#if panel.filters.length > 0}
+      {#if (panel?.filters.length ?? 0) > 0}
         <!-- svelte-ignore a11y_no_static_element_interactions — pointer events implement drag-to-reorder; keyboard reordering would be a separate UX (kbd shortcuts on focused picker). -->
         <div
           class="picker-row"
@@ -784,7 +788,7 @@
           onpointerup={onPickerPointerUp}
           onpointercancel={onPickerPointerCancel}
         >
-          {#each panel.filters as f (f.id)}
+          {#each panel?.filters ?? [] as f (f.id)}
             {@const cat = memberCatalogues[f.id]}
             {@const selected = selectedForPicker(f)}
             {@const displayOptions = displayedOptionsFor(f)}
