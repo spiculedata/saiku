@@ -79,6 +79,16 @@ public class DashboardHistoryService {
         return null;
     }
 
+    /** Delete this dashboard's entire history file — called when the dashboard
+     *  itself is removed so the sidecar JSONL isn't orphaned (#947 cleanup). */
+    public void purge(String dashboardPath) {
+        try {
+            datasourceService.removeInternalFile(historyPath(dashboardPath));
+        } catch (RuntimeException e) {
+            log.warn("could not purge history for {}", dashboardPath, e);
+        }
+    }
+
     /* --------------------------- internals --------------------------- */
 
     /** Flat, sanitised internal path at the datadir root (no subdir — the

@@ -51,6 +51,7 @@ public class DashboardResource {
     private DatasourceService datasourceService;
     private SessionService sessionService;
     private org.saiku.service.history.DashboardHistoryService historyService;
+    private org.saiku.service.comments.CommentService commentService;
 
     public void setDatasourceService(DatasourceService s) {
         this.datasourceService = s;
@@ -63,6 +64,11 @@ public class DashboardResource {
     /** Optional (#947): archives the replaced version on each successful save. */
     public void setHistoryService(org.saiku.service.history.DashboardHistoryService s) {
         this.historyService = s;
+    }
+
+    /** Optional (#942 cleanup): purges the comment sidecar on delete. */
+    public void setCommentService(org.saiku.service.comments.CommentService s) {
+        this.commentService = s;
     }
 
     /**
@@ -167,6 +173,23 @@ public class DashboardResource {
         List<String> roles = currentRoles();
         String resp = datasourceService.removeFile(path, username, roles);
         if (REMOVE_OK.equals(resp)) {
+            // Purge the dashboard's sidecar comment + history files so they
+            // aren't orphaned (#942/#947 cleanup). Best-effort — never fail the
+            // delete because a sidecar couldn't be removed.
+            if (historyService != null) {
+                try {
+                    historyService.purge(path);
+                } catch (RuntimeException ignored) {
+                    // logged at the service layer
+                }
+            }
+            if (commentService != null) {
+                try {
+                    commentService.purge(path);
+                } catch (RuntimeException ignored) {
+                    // logged at the service layer
+                }
+            }
             return Response.ok(Map.of("status", "OK", "path", path))
                     .type(MediaType.APPLICATION_JSON)
                     .build();
