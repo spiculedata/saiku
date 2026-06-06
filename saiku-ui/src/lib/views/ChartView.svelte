@@ -2,19 +2,13 @@
   import { onMount, onDestroy } from "svelte";
   import * as echarts from "echarts";
   import type { QueryResult } from "$lib/api/query";
-  import { assignSeriesAxes, deriveLeafRows, parseCellset, toNumber } from "$lib/views/cellsetUtils";
+  import { deriveLeafRows, parseCellset, toNumber } from "$lib/views/cellsetUtils";
   import type { ChartType, ChartOptions } from "$lib/views/chartTypes";
-  import { DEFAULT_CHART_OPTIONS, SERIES_AXIS_THRESHOLD } from "$lib/views/chartTypes";
-  import { axisLabelConfig, deriveAxisLabelWidth } from "$lib/views/chartAxisLabel";
-  import {
-    cellRadiusPct,
-    gridCells,
-    isSingleMeasureKind,
-    MAX_LABELLED_SLICES,
-    smallMultipleRowCount,
-  } from "$lib/dashboard/smallMultiples";
+  import { DEFAULT_CHART_OPTIONS } from "$lib/views/chartTypes";
+  import { isSingleMeasureKind, smallMultipleRowCount } from "$lib/dashboard/smallMultiples";
   import { theme } from "$lib/stores/theme.svelte";
-  import { type ThemeTokens, resolveThemeTokens } from "$lib/views/chartTheme";
+  import { resolveThemeTokens } from "$lib/views/chartTheme";
+  import { buildChartOption } from "$lib/charts/build";
 
   interface Props {
     result: QueryResult;
@@ -35,109 +29,23 @@
     return isSingleMeasureKind(type) && measureCount > 1 ? smallMultipleRowCount(measureCount) : 1;
   });
 
-  function legendConfig(o: ChartOptions, tk: ThemeTokens) {
-    if (!o.showLegend) return { show: false };
-    const position: Record<string, unknown> = { textStyle: { color: tk.fg } };
-    if (o.legendPosition === "top") position.top = 10;
-    else if (o.legendPosition === "bottom") position.bottom = 10;
-    else if (o.legendPosition === "left") { position.left = 10; position.top = "middle"; position.orient = "vertical"; }
-    else if (o.legendPosition === "right") { position.right = 10; position.top = "middle"; position.orient = "vertical"; }
-    return position;
-  }
-
-  function titleConfig(o: ChartOptions, tk: ThemeTokens) {
-    if (!o.title) return undefined;
-    return { text: o.title, left: "center", textStyle: { color: tk.fg } };
-  }
-
-  function linearRegression(vals: (number | null)[]): number[] {
-    const n = vals.length;
-    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0, count = 0;
-    for (let i = 0; i < n; i++) {
-      const y = vals[i];
-      if (y == null || !Number.isFinite(y)) continue;
-      sumX += i;
-      sumY += y;
-      sumXY += i * y;
-      sumXX += i * i;
-      count += 1;
-    }
-    if (count < 2) return vals.map(() => 0);
-    const meanX = sumX / count;
-    const meanY = sumY / count;
-    const denom = sumXX - sumX * meanX;
-    const slope = denom === 0 ? 0 : (sumXY - sumX * meanY) / denom;
-    const intercept = meanY - slope * meanX;
-    return vals.map((_, i) => slope * i + intercept);
-  }
-
-  function movingAverage(vals: (number | null)[], period: number): (number | null)[] {
-    const out: (number | null)[] = [];
-    for (let i = 0; i < vals.length; i++) {
-      if (i < period - 1) { out.push(null); continue; }
-      let sum = 0; let c = 0;
-      for (let k = i - period + 1; k <= i; k++) {
-        const v = vals[k];
-        if (v != null && Number.isFinite(v)) { sum += v; c += 1; }
-      }
-      out.push(c ? sum / c : null);
-    }
-    return out;
-  }
-
-  function weightedMovingAverage(vals: (number | null)[], period: number): (number | null)[] {
-    const out: (number | null)[] = [];
-    for (let i = 0; i < vals.length; i++) {
-      if (i < period - 1) { out.push(null); continue; }
-      let num = 0, den = 0;
-      for (let k = 0; k < period; k++) {
-        const v = vals[i - period + 1 + k];
-        if (v != null && Number.isFinite(v)) { num += (k + 1) * v; den += k + 1; }
-      }
-      out.push(den ? num / den : null);
-    }
-    return out;
-  }
-
-  function trendSeries(name: string, vals: (number | null)[], o: ChartOptions, tk: ThemeTokens) {
-    if (o.trendLine === "none") return [];
-    const period = Math.max(2, o.trendPeriod || 3);
-    let data: (number | null)[] = [];
-    let seriesName = name;
-    if (o.trendLine === "linear") {
-      data = linearRegression(vals);
-      seriesName = `${name} (trend)`;
-    } else if (o.trendLine === "ma") {
-      data = movingAverage(vals, period);
-      seriesName = `${name} (MA${period})`;
-    } else if (o.trendLine === "wma") {
-      data = weightedMovingAverage(vals, period);
-      seriesName = `${name} (WMA${period})`;
-    }
-    return [{
-      type: "line" as const,
-      name: seriesName,
-      data,
-      smooth: true,
-      showSymbol: false,
-      lineStyle: { type: "dashed" as const, width: 2, color: tk.fgMuted },
-      itemStyle: { color: tk.fgMuted },
-    }];
-  }
-
-  function buildOption(r: QueryResult, t: ChartType, o: ChartOptions): echarts.EChartsOption {
+  // Project the workspace cellset into the shared {rows, cols, matrix} shape and
+  // delegate to the single canonical builder (#1076). The workspace is the
+  // "roomy" (non-compact) surface; rollup filtering (which needs cellset depth)
+  // happens here, before projection, since the builder treats rows as final.
+  function buildOption(r: QueryResult, t: ChartType, o: ChartOptions): Record<string, unknown> | null {
     const tk = resolveThemeTokens();
     const parsed = parseCellset(r);
-    // Multi-level row hierarchies (Year > Quarter, Country > City, …) come
-    // back with both rollup and leaf rows in the same cellset. Showing the
-    // rollups on a chart dwarfs the leaves; deriveLeafRows drops them and
-    // promotes each leaf's parent context into the label (e.g. "2024 / Q1").
-    // The grid view is untouched.
+    // Multi-level row hierarchies (Year > Quarter, Country > City, …) come back
+    // with both rollup and leaf rows in the same cellset. Showing the rollups on
+    // a chart dwarfs the leaves; deriveLeafRows drops them and promotes each
+    // leaf's parent context into the label (e.g. "2024 / Q1"). The grid view is
+    // untouched.
     let rows = parsed.rowCategories;
     let matrix: (number | null)[][] = parsed.dataRows.map((row) => row.map(toNumber));
     if (o.hideRollupRows) {
-      // deriveLeafRows is a no-op for single-level rowsets (all rows at the
-      // same depth) and for empty results, so no extra guard is needed here.
+      // deriveLeafRows is a no-op for single-level rowsets (all rows at the same
+      // depth) and for empty results, so no extra guard is needed here.
       const leaf = deriveLeafRows(parsed);
       if (leaf.indices.length > 0 && leaf.indices.length < matrix.length) {
         rows = leaf.labels;
@@ -146,310 +54,35 @@
     }
     const cols = parsed.columnCategories;
 
-    const axisLabel = { color: tk.fgMuted };
-    const axisLine = { lineStyle: { color: tk.border } };
-    const axisTick = { lineStyle: { color: tk.border } };
-    const splitLine = { lineStyle: { color: tk.border, opacity: 0.5 } };
-    const nameTextStyle = { color: tk.fg };
-
-    // Truncate long category labels (e.g. deep member captions) so they don't
-    // overflow the plot and break the layout. ECharts shows the full,
-    // untruncated label in the axis-pointer tooltip on hover. Width is derived
-    // from the available chart width divided by the number of categories.
+    // Aspect-aware radius keeps each small-multiple the same on-screen size
+    // regardless of how many there are (#1053); chartWidth drives the derived
+    // per-label axis truncation width.
+    const aspect = host && host.clientHeight > 0 ? host.clientWidth / host.clientHeight : 1;
     const chartWidth = host?.clientWidth ?? 0;
-    const catCount = Math.max(rows.length, cols.length, 1);
-    const truncLabel = {
-      color: tk.fgMuted,
-      ...axisLabelConfig(deriveAxisLabelWidth(chartWidth, catCount)),
-    };
-
-    const baseAxis = {
-      type: "category" as const,
-      axisLabel, axisLine, axisTick, splitLine, nameTextStyle,
-    };
-    // Bottom category axis that truncates long labels with an ellipsis.
-    const categoryAxis = {
-      ...baseAxis,
-      axisLabel: truncLabel,
-    };
-    const valueAxis = {
-      type: "value" as const,
-      axisLabel, axisLine, axisTick, splitLine, nameTextStyle,
-    };
-    const legend = legendConfig(o, tk);
-    const title = titleConfig(o, tk);
-    const tooltip = {
-      trigger: "axis" as const,
-      backgroundColor: tk.bg,
-      borderColor: tk.border,
-      textStyle: { color: tk.fg },
-    };
-    const itemTooltip = {
-      backgroundColor: tk.bg,
-      borderColor: tk.border,
-      textStyle: { color: tk.fg },
-    };
-    const xName = o.xAxisLabel || undefined;
-    const yName = o.yAxisLabel || undefined;
-
-    const common = {
-      backgroundColor: "transparent",
-      color: tk.chartColors,
-      textStyle: { color: tk.fg },
-    };
-
-    // Pie / donut / treemap / sunburst encode a SINGLE measure. With M measures
-    // we fan out into M small-multiple charts — one per measure — in a grid
-    // inside the same option (M series, one per cell). Each chart shows the row
-    // categories as its items, sized by that one measure. M=1 is a single
-    // full-box chart. The user's overall chart title (if any) is kept alongside
-    // the per-measure cell titles in ECharts' title array.
-    if (t === "pie" || t === "donut" || t === "treemap" || t === "sunburst") {
-      const cells = gridCells(cols.length);
-      // Aspect-aware radius keeps each chart the same on-screen size regardless
-      // of how many small multiples there are (#1053).
-      const aspect = host && host.clientHeight > 0 ? host.clientWidth / host.clientHeight : 1;
-      const cellTitles = cells.map((cell, m) => ({
-        text: cols[m],
-        left: cell.centerXPct + "%",
-        top: cell.topPct + "%",
-        textAlign: "center" as const,
-        textStyle: { color: tk.fg, fontSize: 12 },
-      }));
-      const titles = title ? [title, ...cellTitles] : cellTitles;
-      // Category identification: a shared category legend collides with the
-      // per-measure titles and bloats off-screen once there are many categories.
-      // Name the slices directly when few enough to read, else lean on the
-      // tooltip. Inside the slices for a small-multiple grid (leader lines would
-      // cross between neighbours); outside for a single chart where there's room.
-      const showSliceLabels = rows.length <= MAX_LABELLED_SLICES;
-      const sliceLabelInside = cells.length > 1;
-
-      if (t === "pie" || t === "donut") {
-        return {
-          ...common,
-          title: titles,
-          tooltip: { trigger: "item", ...itemTooltip },
-          series: cells.map((cell, m) => {
-            const outer = cellRadiusPct(cell, aspect);
-            return {
-              type: "pie",
-              name: cols[m],
-              radius: t === "donut" ? [outer * 0.55 + "%", outer + "%"] : [0, outer + "%"],
-              center: [cell.centerXPct + "%", cell.centerYPct + "%"],
-              label: {
-                show: showSliceLabels,
-                position: sliceLabelInside ? "inside" : "outside",
-                formatter: "{b}",
-                color: sliceLabelInside ? "#fff" : tk.fg,
-              },
-              labelLine: { show: showSliceLabels && !sliceLabelInside },
-              data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
-            };
-          }),
-        };
-      }
-
-      if (t === "treemap") {
-        return {
-          ...common,
-          title: titles,
-          tooltip: itemTooltip,
-          series: cells.map((cell, m) => ({
-            type: "treemap",
-            name: cols[m],
-            left: cell.leftPct + "%",
-            top: cell.topPct + cell.heightPct * 0.18 + "%",
-            width: cell.widthPct + "%",
-            height: cell.heightPct * 0.82 + "%",
-            label: { color: "#fff" },
-            breadcrumb: { show: false },
-            data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
-          })),
-        };
-      }
-
-      // sunburst
-      return {
-        ...common,
-        title: titles,
-        tooltip: itemTooltip,
-        series: cells.map((cell, m) => ({
-          type: "sunburst",
-          name: cols[m],
-          center: [cell.centerXPct + "%", cell.centerYPct + "%"],
-          radius: [0, cellRadiusPct(cell, aspect) + "%"],
-          label: { show: showSliceLabels, color: "#fff" },
-          data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
-        })),
-      };
-    }
-
-    if (t === "heatmap") {
-      const data: [number, number, number][] = [];
-      for (let i = 0; i < matrix.length; i++) {
-        for (let j = 0; j < (matrix[i]?.length ?? 0); j++) {
-          data.push([j, i, matrix[i][j] ?? 0]);
-        }
-      }
-      const values = data.map((d) => d[2]);
-      const min = values.length ? Math.min(...values) : 0;
-      const max = values.length ? Math.max(...values) : 1;
-      return {
-        ...common,
-        title,
-        tooltip: itemTooltip,
-        grid: { left: 120, top: 40, right: 40, bottom: 80 },
-        xAxis: { ...categoryAxis, data: cols, name: xName },
-        yAxis: { ...baseAxis, data: rows, inverse: true, name: yName },
-        visualMap: {
-          min, max, calculable: true, orient: "horizontal",
-          left: "center", bottom: 10,
-          textStyle: { color: tk.fgMuted },
-        },
-        series: [{ type: "heatmap", data, label: { show: false }, emphasis: { itemStyle: { shadowBlur: 10 } } }],
-      };
-    }
-
-    if (t === "radar") {
-      const max = Math.max(0, ...matrix.flatMap((r) => r.map((v) => Math.abs(v ?? 0))));
-      return {
-        ...common,
-        title,
-        tooltip: itemTooltip,
-        legend,
-        radar: {
-          indicator: cols.map((c) => ({ name: c, max: max || 1 })),
-          axisName: { color: tk.fgMuted },
-          axisLine: { lineStyle: { color: tk.border } },
-          splitLine: { lineStyle: { color: tk.border, opacity: 0.5 } },
-          splitArea: { areaStyle: { color: [tk.bg, tk.bgMuted], opacity: 0.3 } },
-        },
-        series: [{ type: "radar", data: rows.map((r, i) => ({ name: r, value: matrix[i].map((v) => v ?? 0) })) }],
-      };
-    }
-
-    if (t === "scatter" || t === "bubble") {
-      return {
-        ...common,
-        title,
-        tooltip: itemTooltip,
-        legend,
-        xAxis: { ...categoryAxis, data: cols, name: xName },
-        yAxis: { ...valueAxis, name: yName },
-        series: rows.map((name, i) => ({
-          type: "scatter",
-          name,
-          symbolSize: t === "bubble"
-            ? (val: unknown) => {
-                const v = Array.isArray(val) ? (val[1] as number) : (val as number);
-                const max = Math.max(1, ...matrix.flatMap((r) => r.map((vv) => Math.abs(vv ?? 0))));
-                return Math.max(6, Math.sqrt(Math.abs(v) / max) * 40);
-              }
-            : 10,
-          data: matrix[i].map((v, j) => [j, v ?? 0]),
-        })),
-      };
-    }
-
-    if (t === "waterfall") {
-      const vals = matrix.map((r) => r[0] ?? 0);
-      const spacers: number[] = [];
-      const positives: (number | null)[] = [];
-      const negatives: (number | null)[] = [];
-      let running = 0;
-      for (const v of vals) {
-        if (v >= 0) {
-          spacers.push(running);
-          positives.push(v);
-          negatives.push(null);
-        } else {
-          spacers.push(running + v);
-          positives.push(null);
-          negatives.push(-v);
-        }
-        running += v;
-      }
-      return {
-        ...common,
-        title,
-        tooltip,
-        legend,
-        grid: { left: 60, top: title ? 50 : 30, right: 40, bottom: 60 },
-        xAxis: { ...categoryAxis, data: rows, name: xName },
-        yAxis: { ...valueAxis, name: yName },
-        series: [
-          { type: "bar", name: "", stack: "waterfall", itemStyle: { borderColor: "transparent", color: "transparent" }, data: spacers, emphasis: { itemStyle: { borderColor: "transparent", color: "transparent" } } },
-          { type: "bar", name: cols[0] ?? "Positive", stack: "waterfall", data: positives, itemStyle: { color: "#4c9ee6" } },
-          { type: "bar", name: `-${cols[0] ?? "Negative"}`, stack: "waterfall", data: negatives, itemStyle: { color: "#e66c6c" } },
-        ],
-      };
-    }
-
-    // bar / stackedBar / line / stackedLine / area / stackedArea
-    const isStacked = t.startsWith("stacked");
-    // includes("bar") is case-sensitive — "stackedBar" has a capital B,
-    // so the naive check returned false and stacked-bar fell through to
-    // the line branch (i.e. was drawn as a stacked line).
-    const lower = t.toLowerCase();
-    const kind: "bar" | "line" = lower.includes("bar") ? "bar" : "line";
-    const areaStyle = t === "area" || t === "stackedArea" ? {} : undefined;
-
-    // Dual y-axis: auto-split low-magnitude series to the right when
-    // they'd otherwise be crushed to the zero line by a dominant series
-    // (Event Count in thousands vs Avg Tone in single digits, etc.).
-    // Per-series picks in o.seriesAxis always win; explicit auto-disable
-    // via o.dualAxis=false reverts to single-axis.
-    const seriesSides = assignSeriesAxes(cols, matrix, {
-      dualAxis: o.dualAxis,
-      seriesAxis: o.seriesAxis,
-      threshold: SERIES_AXIS_THRESHOLD,
+    return buildChartOption({ rowCategories: rows, columnCategories: cols, matrix }, t, o, tk, {
+      aspect,
+      chartWidth,
+      compact: false,
     });
-    const hasRight = seriesSides.some((s) => s === "right");
-    const yAxis = hasRight
-      ? [
-          { ...valueAxis, name: yName, position: "left" as const },
-          // Render the right axis without splitLine duplicates so the
-          // gridlines from the left axis aren't double-drawn.
-          { ...valueAxis, name: undefined, position: "right" as const, splitLine: { show: false } },
-        ]
-      : { ...valueAxis, name: yName };
-
-    const base = cols.map((name, c) => ({
-      type: kind as "bar" | "line",
-      name,
-      stack: isStacked ? (seriesSides[c] === "right" ? "total-right" : "total-left") : undefined,
-      areaStyle,
-      smooth: kind === "line",
-      yAxisIndex: hasRight ? (seriesSides[c] === "right" ? 1 : 0) : 0,
-      data: matrix.map((row) => row[c] ?? 0),
-    }));
-    const trend = kind === "line" && cols.length > 0
-      ? trendSeries(cols[0], matrix.map((row) => row[0] ?? null), o, tk)
-      : [];
-
-    return {
-      ...common,
-      title, tooltip, legend,
-      grid: { left: 60, top: title ? 50 : 40, right: hasRight ? 60 : 40, bottom: 60 },
-      xAxis: { ...categoryAxis, data: rows, name: xName },
-      yAxis,
-      series: [...base, ...trend],
-    };
   }
 
   function render() {
     if (!chart) return;
-    let opt: echarts.EChartsCoreOption;
+    let opt: Record<string, unknown> | null;
     try {
       opt = buildOption(result, type, options);
     } catch (err) {
       // If buildOption throws (e.g. cellset shape doesn't fit the requested
       // chart type), clear the canvas instead of leaving the previous chart's
       // series on screen. Without this, switching from a "broken" chart to a
-      // valid one would still render the broken state because the stale
-      // series would merge with the new option.
+      // valid one would still render the broken state because the stale series
+      // would merge with the new option.
       console.warn("[saiku] chart buildOption failed; clearing canvas:", err);
+      chart.clear();
+      return;
+    }
+    if (!opt) {
+      // Unsupported kind / empty projection — clear rather than keep stale series.
       chart.clear();
       return;
     }
@@ -528,4 +161,3 @@
     /* height + min-height are set inline = smallMultipleRows × the single size. */
   }
 </style>
-
