@@ -17,6 +17,8 @@
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
   // issue #924: highlight tiles a hovered panel filter narrows, dim the rest.
   import { filterAffinityHover } from "$lib/stores/filterAffinity.svelte";
+  // issue #915: multi-select tiles for bulk operations.
+  import { tileSelection, type SelectClickMode } from "$lib/stores/tileSelection.svelte";
   import type { DashboardTile, DashboardFilter } from "$lib/api/dashboards";
   import ChartTile from "$lib/views/dashboard/tiles/ChartTile.svelte";
   import TableTile from "$lib/views/dashboard/tiles/TableTile.svelte";
@@ -145,19 +147,42 @@
   function handleClickFilter(filter: DashboardFilter): void {
     activeFilters.pushClick(filter, tile.id);
   }
+
+  // issue #915: multi-select. A click on the tile body (not a button, not
+  // the chart/table click-filter affordances) toggles/extends/replaces the
+  // selection depending on modifier keys. Selection is an edit-mode-only
+  // concern — read-only viewers never select. Clicks that land on an
+  // interactive control (buttons, links, inputs) are left alone so existing
+  // tile actions keep working.
+  function handleSelectClick(e: MouseEvent): void {
+    if (readOnly) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest("button, a, input, select, textarea, [data-resize-handle]")) {
+      return;
+    }
+    const mode: SelectClickMode =
+      e.ctrlKey || e.metaKey ? "toggle" : e.shiftKey ? "extend" : "replace";
+    tileSelection.click(tile.id, mode);
+  }
+
+  const selected = $derived(!readOnly && tileSelection.isSelected(tile.id));
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions
-     Right-click is a power-user shortcut for the overflow menu. The
-     kebab button (⋮) in the header is the keyboard-accessible
-     equivalent — same menu, same actions — so no a11y regression
-     from suppressing the contextmenu-handler-needs-a-role rule. -->
+<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events
+     Right-click is a power-user shortcut for the overflow menu, and click
+     drives edit-mode multi-select (#915). The kebab button (⋮) in the
+     header is the keyboard-accessible equivalent for the menu; tile
+     selection is a power-user layout aid, not a primary navigation path,
+     so suppressing the static-handler + click-needs-keys rules here is
+     intentional rather than an a11y regression. -->
 <div
   class="tile"
+  class:tile--selected={selected}
   class:tile--filter-hit={filterAffinityHover.active && filterAffinityHover.isAffected(tile.id)}
   class:tile--filter-miss={filterAffinityHover.active && !filterAffinityHover.isAffected(tile.id)}
   data-tile-type={tile.type}
   oncontextmenu={openContextMenu}
+  onclick={handleSelectClick}
 >
   <header
     class="tile-header"
@@ -294,6 +319,15 @@
   }
   .tile--filter-miss {
     opacity: 0.5;
+  }
+  /* issue #915: multi-select outline. A 2px accent ring drawn with
+     box-shadow (not border) so it never shifts the tile's layout, plus a
+     matching border colour for a crisp edge. Sits above the filter-hit
+     ring naturally — both use box-shadow, last-declared wins on overlap,
+     and a selected tile reads as selected first. */
+  .tile--selected {
+    box-shadow: inset 0 0 0 2px var(--accent);
+    border-color: var(--accent);
   }
   /* #942: comment badge sits between the title and the edit actions. */
   .tile-comment-badge {

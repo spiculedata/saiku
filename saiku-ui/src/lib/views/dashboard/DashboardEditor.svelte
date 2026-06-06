@@ -12,6 +12,7 @@
   import { onMount, untrack } from "svelte";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
+  import { tileSelection } from "$lib/stores/tileSelection.svelte";
   import { presentation } from "$lib/stores/presentation.svelte";
   import { newTileId, type TileType } from "$lib/api/dashboards";
   import { isEnterPresentationKey } from "$lib/dashboard/presentationHotkeys";
@@ -24,6 +25,7 @@
   import DashboardFilterBar from "$lib/views/dashboard/DashboardFilterBar.svelte";
   import DashboardFilterPanel from "$lib/views/dashboard/DashboardFilterPanel.svelte";
   import DashboardGrid from "$lib/views/dashboard/DashboardGrid.svelte";
+  import DashboardBulkActionsBar from "$lib/views/dashboard/DashboardBulkActionsBar.svelte";
   import EmptyDashboardGuidance from "$lib/views/dashboard/EmptyDashboardGuidance.svelte";
 
   interface Props {
@@ -48,6 +50,7 @@
     // Untracked so we don't re-fire on store mutations the load itself triggers.
     untrack(() => {
       activeFilters.resetTransient();
+      tileSelection.clear(); // #915: never carry a selection into a fresh load
       void dashboardStore.load(dashboardPath).then(() => hydrateFromUrl());
     });
     // saiku#928: press F (outside a text field) to enter presentation mode.
@@ -81,6 +84,7 @@
     untrack(() => {
       if (dashboardStore.savedPath !== path) {
         activeFilters.resetTransient();
+        tileSelection.clear(); // #915: selection belongs to the prior dashboard
         void dashboardStore.load(path).then(() => hydrateFromUrl());
       }
     });
@@ -206,6 +210,11 @@
       <EmptyDashboardGuidance onAddTile={handleAddTile} />
     {:else}
       <DashboardGrid {readOnly} />
+    {/if}
+    <!-- #915: bulk-ops bar — self-hides unless 2+ tiles are selected in
+         an editable, non-presentation dashboard. -->
+    {#if !presentation.active}
+      <DashboardBulkActionsBar {readOnly} />
     {/if}
     {#if presentation.active}
       <button

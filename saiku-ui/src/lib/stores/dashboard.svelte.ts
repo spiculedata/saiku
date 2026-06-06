@@ -320,6 +320,62 @@ class DashboardStore {
     this.markDirty();
   }
 
+  /** Bulk-remove tiles by id in a single dirty bump (issue #915). Ids
+   *  not present are ignored; a no-op (none matched) leaves state and
+   *  dirty count untouched. */
+  removeTiles(ids: Iterable<string>): void {
+    if (!this.current) return;
+    const drop = new Set(ids);
+    if (drop.size === 0) return;
+    const next = this.current.layout.tiles.filter((t) => !drop.has(t.id));
+    if (next.length === this.current.layout.tiles.length) return; // no-op
+    this.current = {
+      ...this.current,
+      layout: { ...this.current.layout, tiles: next },
+    };
+    this.markDirty();
+  }
+
+  /** Bulk-duplicate tiles by id in a single dirty bump (issue #915).
+   *  Each source gets a fresh id, a " (copy)" title suffix, and lands at
+   *  the next free slot — slots are reserved as we go so duplicates don't
+   *  stack on the same cell. Unlike {@link duplicateTile} this does NOT
+   *  set pendingEditTileId (a bulk duplicate shouldn't pop N editors).
+   *  Returns the new tile ids in source order. */
+  duplicateTiles(ids: Iterable<string>): string[] {
+    if (!this.current) return [];
+    const want = new Set(ids);
+    if (want.size === 0) return [];
+    // Preserve layout order for stable, predictable placement.
+    const sources = this.current.layout.tiles.filter((t) => want.has(t.id));
+    if (sources.length === 0) return [];
+
+    // Reserve slots against a growing working layout so each clone sees
+    // the previous clone already occupying its cell.
+    let working = this.current.layout;
+    const clones: DashboardTile[] = [];
+    for (const source of sources) {
+      const slot = firstFreeSlot(working, source.w, source.h);
+      const cloned: DashboardTile = {
+        ...cloneTileWithFreshId(source),
+        x: slot.x,
+        y: slot.y,
+      };
+      clones.push(cloned);
+      working = { ...working, tiles: [...working.tiles, cloned] };
+    }
+
+    this.current = {
+      ...this.current,
+      layout: {
+        ...this.current.layout,
+        tiles: [...this.current.layout.tiles, ...clones],
+      },
+    };
+    this.markDirty();
+    return clones.map((c) => c.id);
+  }
+
   /** Replace one tile's properties. Object identity changes so any
    *  `$effect` keyed off the tile re-fires. */
   updateTile(id: string, patch: Partial<DashboardTile>): void {
