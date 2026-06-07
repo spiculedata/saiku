@@ -339,7 +339,11 @@
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: 300px 1fr;
+    /* minmax(0, 1fr) (not bare 1fr) so the main column can shrink below its
+       content's min-width — otherwise the whole workspace is forced wider
+       than the viewport and the page scrolls horizontally at narrow widths
+       (#1176). */
+    grid-template-columns: 300px minmax(0, 1fr);
     gap: 1px;
     background: var(--border);
     overflow: hidden;
