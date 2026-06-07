@@ -1,5 +1,6 @@
 package org.saiku.web.rest.resources;
 
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -13,8 +14,18 @@ import mondrian.server.monitor.StatementInfo;
 
 /**
  * Mondrian Server Info and Stats Endpoints.
+ *
+ * <p>saiku#1165 hardening: these endpoints expose <b>server-global</b> Mondrian
+ * state — every open OLAP connection and every in-flight MDX/SQL statement
+ * across all users' sessions ({@code monitor.getConnections()} /
+ * {@code getStatements()}). That is operator-only diagnostic data, so the whole
+ * resource is restricted to {@code ROLE_ADMIN} (enforced by the registered
+ * {@code RolesAllowedDynamicFeature}, same as {@code AdminResource}). Previously
+ * it was reachable by any authenticated {@code ROLE_USER}, leaking other
+ * tenants' query text and activity.
  */
 @Path("/saiku/statistics")
+@RolesAllowed("ROLE_ADMIN")
 public class StatisticsResource {
 
     //	StringWriter sqlWriter = new StringWriter();
