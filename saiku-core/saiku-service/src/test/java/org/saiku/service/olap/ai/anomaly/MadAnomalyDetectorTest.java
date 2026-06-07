@@ -41,7 +41,9 @@ public class MadAnomalyDetectorTest {
 
         // Contrast: Z-score's spread is inflated by the 1000 outlier and misses #9.
         List<AnomalyPoint> z = new ZScoreAnomalyDetector().detect(series, 3.5);
-        assertFalse("Z-score is fooled by the training outlier and misses #9", z.get(9).isAnomaly());
+        assertFalse(
+                "Z-score is fooled by the training outlier and misses #9",
+                z.get(9).isAnomaly());
     }
 
     @Test

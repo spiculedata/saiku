@@ -71,9 +71,7 @@ public class ZScoreAnomalyDetectorTest {
 
     @Test
     public void nanGapsArePositionallyPreservedAndNeverFlagged() {
-        double[] series = {
-            10, Double.NaN, 9, 10, 11, 100, 9, 11, 10, 10, 9, 11, 10, 10, 9, 11, 10, 9, 11, 10
-        };
+        double[] series = {10, Double.NaN, 9, 10, 11, 100, 9, 11, 10, 10, 9, 11, 10, 10, 9, 11, 10, 9, 11, 10};
         List<AnomalyPoint> out = det.detect(series, 3.0);
         assertEquals(series.length, out.size());
         AnomalyPoint gap = out.get(1);

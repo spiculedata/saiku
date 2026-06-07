@@ -41,8 +41,7 @@ public class StlAnomalyDetector implements AnomalyDetector {
     public List<AnomalyPoint> detect(double[] series, double threshold) {
         throw new AiValidationException(
                 "method",
-                "STL (seasonal-trend) anomaly detection is not yet supported. "
-                        + "Use 'zscore' or 'mad' for now.",
+                "STL (seasonal-trend) anomaly detection is not yet supported. " + "Use 'zscore' or 'mad' for now.",
                 List.of(ZScoreAnomalyDetector.METHOD, MadAnomalyDetector.METHOD));
     }
 }
