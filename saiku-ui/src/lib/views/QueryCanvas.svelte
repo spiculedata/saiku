@@ -674,6 +674,26 @@
     }
   }
 
+  // #1176: collapse the query-builder above the result when the canvas body
+  // is too narrow to show both side-by-side, so the result/chart gets the
+  // full width instead of being pushed off-screen. Container-width based
+  // (ResizeObserver), mirroring the dashboard grid's responsive stack.
+  let bodyEl = $state<HTMLDivElement | null>(null);
+  let bodyWidth = $state(0);
+  const BODY_STACK_PX = 640;
+  let bodyNarrow = $derived(bodyWidth > 0 && bodyWidth < BODY_STACK_PX);
+
+  $effect(() => {
+    const el = bodyEl;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      bodyWidth = entries[0]?.contentRect.width ?? el.clientWidth;
+    });
+    ro.observe(el);
+    bodyWidth = el.clientWidth;
+    return () => ro.disconnect();
+  });
+
   let resultHostEl = $state<HTMLDivElement | null>(null);
 
   $effect(() => {
@@ -777,7 +797,12 @@
       <p class="canvas__hint">{i18n.t("canvas.pickPrompt")}</p>
     </div>
   {:else}
-    <div class={query.current?.type === "MDX" ? "canvas__body canvas__body--mdx" : "canvas__body"}>
+    <div
+      bind:this={bodyEl}
+      class="canvas__body"
+      class:canvas__body--mdx={query.current?.type === "MDX"}
+      class:canvas__body--narrow={bodyNarrow && query.current?.type !== "MDX"}
+    >
     {#if query.current?.type !== "MDX"}
     <aside class="dropzones">
       <!-- Dedicated MEASURES panel (restored from the pre-rewrite UI).
@@ -1188,9 +1213,32 @@
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: 260px 1fr;
+    /* minmax(0, 1fr) (not bare 1fr) so the result column can shrink BELOW
+       its content's min-width instead of forcing the whole canvas wider than
+       the viewport — that overflow is what pushed the result/chart off-screen
+       at narrow widths (#1176). */
+    grid-template-columns: 260px minmax(0, 1fr);
     gap: var(--space-3);
     overflow: hidden;
+  }
+  /* #1176: when the body is too narrow to show builder + result side by
+     side, stack the builder above the result (single column) and let the
+     body scroll, so the result/chart gets the full width. Container-width
+     driven (.canvas__body--narrow toggled by a ResizeObserver). */
+  .canvas__body--narrow {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .canvas__body--narrow .dropzones {
+    flex: 0 0 auto;
+    overflow-y: visible; /* the body scrolls; no nested scroll area */
+  }
+  .canvas__body--narrow .canvas__result {
+    /* Give the result a usable height when stacked so the chart/grid isn't a
+       sliver; the body scrolls to reach it. */
+    min-height: 65vh;
   }
   /* MDX mode: the dropzones aside is `{#if}`-hidden, so a 260px 1fr
      grid would place the result in column 1 (260px) and leave column 2
@@ -1354,6 +1402,9 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-1) 0;
+    /* #1176: wrap the Grid/Chart/More + chart-type controls instead of
+       overflowing the result column at narrow widths. */
+    flex-wrap: wrap;
   }
   .view-toggle button {
     padding: var(--space-1) var(--space-3);
