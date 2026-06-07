@@ -67,9 +67,18 @@ public class RepositoryIT {
             return;
         }
 
-        // Read
-        HttpResponse<String> read =
-                harness.getAuth(BASE + "/resource?file=" + URLEncoder.encode(name, StandardCharsets.UTF_8));
+        // Read — the resource produces text/plain (raw file body), but the
+        // default getAuth() sends Accept: application/json. Build the request
+        // by hand so content negotiation passes. Was hidden behind the
+        // save-NPEs-with-stateless-Basic path; the Repository#getRepository
+        // null-type fix unblocked save so the read now actually runs.
+        java.net.http.HttpRequest readReq = java.net.http.HttpRequest.newBuilder(java.net.URI.create(
+                        harness.baseUrl() + BASE + "/resource?file=" + URLEncoder.encode(name, StandardCharsets.UTF_8)))
+                .header("Authorization", harness.adminBasicAuth())
+                .header("Accept", "text/plain")
+                .GET()
+                .build();
+        HttpResponse<String> read = harness.send(readReq);
         assertEquals(200, read.statusCode());
         assertEquals(content, read.body());
 

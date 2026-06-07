@@ -112,7 +112,12 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
         String username = sessionService.getAllSessionObjects().get("username").toString();
         List<String> roles =
                 (List<String>) sessionService.getAllSessionObjects().get("roles");
-        String[] t = type.split(",");
+        // type=null is a perfectly valid "give me everything" call — the legacy
+        // unconditional split() NPE'd whenever a Basic-auth request hit a
+        // ScopedRepo cache populated by a prior form-login (CsrfIT was the
+        // first test to expose this). The separate ScopedRepo session-bleed
+        // is filed; this just stops the resource from NPEing under it.
+        String[] t = type == null ? new String[0] : type.split(",");
         List<IRepositoryObject> l;
 
         if (path == null) {
