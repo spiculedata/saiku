@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import ModalActions from "$lib/modals/parts/ModalActions.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/CustomFilterModal.js.
@@ -63,8 +64,11 @@
     {/if}
   </div>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
-    <button type="button" class="btn btn--primary" onclick={() => onApply(op, value, needsSecond ? value2 : undefined)}>{i18n.t("modal.apply")}</button>
+    <ModalActions
+      {onCancel}
+      onApply={() => onApply(op, value, needsSecond ? value2 : undefined)}
+      primaryKey="modal.apply"
+    />
   {/snippet}
 </Modal>
 

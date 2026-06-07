@@ -2,6 +2,8 @@
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import MonacoEditor from "$lib/components/MonacoEditor.svelte";
+  import ModalModeSwitch from "$lib/modals/parts/ModalModeSwitch.svelte";
+  import ModalActions from "$lib/modals/parts/ModalActions.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import type { SaikuMeasure } from "$lib/api/discover";
 
@@ -91,24 +93,7 @@
   size={mode === "mdx" ? "lg" : "md"}
   onClose={onCancel}
 >
-  <div class="mode-switch" role="tablist" aria-label={i18n.t("modal.filter.mode")}>
-    <button
-      type="button"
-      role="tab"
-      class="mode-switch__btn"
-      class:active={mode === "simple"}
-      aria-selected={mode === "simple"}
-      onclick={() => switchMode("simple")}
-    >{i18n.t("modal.filter.modeSimple")}</button>
-    <button
-      type="button"
-      role="tab"
-      class="mode-switch__btn"
-      class:active={mode === "mdx"}
-      aria-selected={mode === "mdx"}
-      onclick={() => switchMode("mdx")}
-    >{i18n.t("modal.filter.modeMdx")}</button>
-  </div>
+  <ModalModeSwitch {mode} onChange={switchMode} />
 
   <label class="field">
     <span class="field__label">{i18n.t("modal.filter.sort")}</span>
@@ -141,40 +126,6 @@
   {/if}
 
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
-    <button
-      type="button"
-      class="btn btn--primary"
-      disabled={!valid}
-      onclick={commit}
-    >{i18n.t("modal.ok")}</button>
+    <ModalActions {onCancel} onApply={commit} enabled={valid} />
   {/snippet}
 </Modal>
-
-<style>
-  .mode-switch {
-    display: inline-flex;
-    margin-bottom: var(--space-3);
-    background: var(--bg-muted);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 2px;
-  }
-  .mode-switch__btn {
-    padding: 4px var(--space-3);
-    background: transparent;
-    border: 0;
-    border-radius: 3px;
-    color: var(--fg-muted);
-    font: inherit;
-    font-size: var(--fs-sm);
-    cursor: pointer;
-  }
-  .mode-switch__btn:hover { color: var(--fg); }
-  .mode-switch__btn.active {
-    background: var(--bg);
-    color: var(--fg);
-    font-weight: var(--weight-medium);
-    box-shadow: var(--shadow-sm);
-  }
-</style>
