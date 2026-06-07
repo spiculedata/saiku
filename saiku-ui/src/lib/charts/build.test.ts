@@ -13,6 +13,8 @@ import {
   DEFAULT_THEME_TOKENS,
   COLORBLIND_SAFE_COLORS,
   COLORBLIND_WATERFALL,
+  NAMED_PALETTES,
+  resolvePalette,
   type ThemeTokens,
 } from "$lib/views/chartTheme";
 
@@ -699,6 +701,130 @@ describe("buildChartOption — number formatting (#1082)", () => {
     const out = fmt([{ axisValueLabel: "1997", seriesName: "Store Sales", dataIndex: 0, value: 565238.13 }]);
     expect(out).toContain("<svg"); // sparkline preserved in roomy mode
     expect(out).toContain("565.2k"); // value abbreviated
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #1081: per-series colour override + theme-aware named palettes.
+// Precedence: per-series override > colour-blind-safe (highContrast) > named
+// palette > theme default (tk.chartColors).
+// ---------------------------------------------------------------------------
+describe("buildChartOption — named palettes + series colours (#1081)", () => {
+  test("default palette uses the theme palette (tk.chartColors) — legacy unchanged", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ palette: "default" })) as Record<string, unknown>;
+    expect(opt.color).toEqual(DEFAULT_THEME_TOKENS.chartColors);
+  });
+
+  test("omitting palette is identical to 'default' (back-compat)", () => {
+    const noPalette = opts();
+    delete (noPalette as Partial<ChartOptions>).palette;
+    const opt = buildChartOption(sample(), "bar", noPalette) as Record<string, unknown>;
+    expect(opt.color).toEqual(DEFAULT_THEME_TOKENS.chartColors);
+  });
+
+  test("option.color equals the resolved named palette for a given id", () => {
+    for (const id of Object.keys(NAMED_PALETTES)) {
+      const opt = buildChartOption(sample(), "bar", opts({ palette: id })) as Record<string, unknown>;
+      expect(opt.color, id).toEqual(NAMED_PALETTES[id]);
+      // resolvePalette is the single source — keep them aligned.
+      expect(opt.color).toEqual(resolvePalette(id, DEFAULT_THEME_TOKENS));
+    }
+  });
+
+  test("an unknown palette id falls back to the theme default palette", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ palette: "made-up" })) as Record<string, unknown>;
+    expect(opt.color).toEqual(DEFAULT_THEME_TOKENS.chartColors);
+  });
+
+  test("named palette is theme-aware (resolves against the passed tokens for 'default')", () => {
+    const dark: ThemeTokens = { ...DEFAULT_THEME_TOKENS, chartColors: ["#111", "#222"] };
+    const opt = buildChartOption(sample(), "bar", opts({ palette: "default" }), dark) as Record<string, unknown>;
+    expect(opt.color).toEqual(["#111", "#222"]);
+  });
+
+  test("a seriesColors override lands on the correct cartesian series (by name)", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ seriesColors: { "Unit Sales": "#ff0000" } }),
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ name: string; color?: string }>;
+    expect(series.find((s) => s.name === "Store Sales")?.color).toBeUndefined();
+    expect(series.find((s) => s.name === "Unit Sales")?.color).toBe("#ff0000");
+  });
+
+  test("no seriesColors → no series carries an explicit colour (palette cycle drives it)", () => {
+    const opt = buildChartOption(sample(), "bar", opts()) as Record<string, unknown>;
+    const series = opt.series as Array<{ color?: string }>;
+    expect(series.every((s) => s.color === undefined)).toBe(true);
+  });
+
+  test("pie applies the override at the data-item (slice) level by name", () => {
+    const opt = buildChartOption(
+      sample(),
+      "pie",
+      opts({ seriesColors: { "1998": "#00ff00" } }),
+    ) as Record<string, unknown>;
+    const data = (opt.series as Array<{ data: { name: string; itemStyle?: { color?: string } }[] }>)[0].data;
+    expect(data.find((d) => d.name === "1997")?.itemStyle).toBeUndefined();
+    expect(data.find((d) => d.name === "1998")?.itemStyle?.color).toBe("#00ff00");
+  });
+
+  test("scatter applies the override to the matching (row-named) series", () => {
+    const opt = buildChartOption(
+      sample(),
+      "scatter",
+      opts({ seriesColors: { "1998": "#0000ff" } }),
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ name: string; color?: string }>;
+    expect(series.find((s) => s.name === "1997")?.color).toBeUndefined();
+    expect(series.find((s) => s.name === "1998")?.color).toBe("#0000ff");
+  });
+
+  test("colour-blind-safe (highContrast) overrides the named palette", () => {
+    const hc: ThemeTokens = {
+      ...DEFAULT_THEME_TOKENS,
+      chartColors: COLORBLIND_SAFE_COLORS,
+      highContrast: true,
+    };
+    const opt = buildChartOption(sample(), "bar", opts({ palette: "vibrant" }), hc) as Record<string, unknown>;
+    // cb-safe wins: the cycle is the Okabe-Ito palette, NOT "vibrant".
+    expect(opt.color).toEqual(COLORBLIND_SAFE_COLORS);
+    expect(opt.color).not.toEqual(NAMED_PALETTES.vibrant);
+  });
+
+  test("per-series override still wins for that one series even with cb-safe on", () => {
+    const hc: ThemeTokens = {
+      ...DEFAULT_THEME_TOKENS,
+      chartColors: COLORBLIND_SAFE_COLORS,
+      highContrast: true,
+    };
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ palette: "vibrant", seriesColors: { "Store Sales": "#abcdef" } }),
+      hc,
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ name: string; color?: string }>;
+    // Cycle is still cb-safe, but the explicit override paints its one series.
+    expect(opt.color).toEqual(COLORBLIND_SAFE_COLORS);
+    expect(series.find((s) => s.name === "Store Sales")?.color).toBe("#abcdef");
+    expect(series.find((s) => s.name === "Unit Sales")?.color).toBeUndefined();
+  });
+});
+
+describe("resolvePalette (#1081)", () => {
+  test("'default' / undefined return the theme palette", () => {
+    expect(resolvePalette("default", DEFAULT_THEME_TOKENS)).toEqual(DEFAULT_THEME_TOKENS.chartColors);
+    expect(resolvePalette(undefined, DEFAULT_THEME_TOKENS)).toEqual(DEFAULT_THEME_TOKENS.chartColors);
+  });
+
+  test("a named id returns its fixed colour array", () => {
+    expect(resolvePalette("cool", DEFAULT_THEME_TOKENS)).toEqual(NAMED_PALETTES.cool);
+  });
+
+  test("an unknown id falls back to the theme palette", () => {
+    expect(resolvePalette("nope", DEFAULT_THEME_TOKENS)).toEqual(DEFAULT_THEME_TOKENS.chartColors);
   });
 });
 

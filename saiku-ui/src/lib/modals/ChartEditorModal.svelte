@@ -3,6 +3,7 @@
   import Modal from "$lib/components/Modal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import type { ChartOptions, TrendLineMode, ChartColorRamp } from "$lib/views/chartTypes";
+  import { PALETTE_IDS } from "$lib/views/chartTheme";
 
   interface Props {
     initial: ChartOptions;
@@ -36,6 +37,9 @@
 
   // issue #1071: map colour ramps (must mirror COLOR_RAMPS in charts/build.ts).
   const COLOR_RAMP_IDS: ChartColorRamp[] = ["blues", "greens", "reds", "viridis", "diverging"];
+
+  // issue #1081: named categorical palettes (single source: chartTheme.ts).
+  const PALETTES = PALETTE_IDS;
 
   let { initial, chartType, seriesNames = [], open, onSave, onCancel }: Props = $props();
   let form = $state<ChartOptions>(untrack(() => ({ ...initial })));
@@ -85,6 +89,29 @@
     }
     const n = Number(trimmed);
     setNumberFormat({ decimals: Number.isFinite(n) ? Math.max(0, Math.floor(n)) : null });
+  }
+
+  // issue #1081: per-series colour override helpers. An absent / blank entry
+  // means "use the palette cycle"; the <input type=color> defaults to a neutral
+  // grey so the picker has a value, but we only persist a real override.
+  const DEFAULT_PICKER = "#888888";
+
+  function seriesColorFor(name: string): string {
+    return form.seriesColors?.[name] ?? DEFAULT_PICKER;
+  }
+
+  function hasSeriesColor(name: string): boolean {
+    return !!form.seriesColors?.[name];
+  }
+
+  function setSeriesColor(name: string, hex: string): void {
+    form.seriesColors = { ...(form.seriesColors ?? {}), [name]: hex };
+  }
+
+  function clearSeriesColor(name: string): void {
+    const next = { ...(form.seriesColors ?? {}) };
+    delete next[name];
+    form.seriesColors = next;
   }
 </script>
 
@@ -147,6 +174,43 @@
           {/each}
         </select>
       </label>
+    </div>
+    <div class="colours">
+      <span class="colours__title">{i18n.t("modal.chart.colours")}</span>
+      <label class="field field--grow">
+        <span class="field__label">{i18n.t("modal.chart.palette")}</span>
+        <select class="field__input" bind:value={form.palette}>
+          {#each PALETTES as p}
+            <option value={p}>{i18n.t(`modal.chart.palette.${p}`)}</option>
+          {/each}
+        </select>
+      </label>
+      {#if seriesNames.length > 0}
+        <p class="hint">{i18n.t("modal.chart.seriesColors.hint")}</p>
+        <div class="colours__list">
+          {#each seriesNames as name (name)}
+            <div class="colours__row">
+              <span class="colours__name" title={name}>{name}</span>
+              <input
+                type="color"
+                class="colours__pick"
+                aria-label={name}
+                value={seriesColorFor(name)}
+                oninput={(e) => setSeriesColor(name, (e.currentTarget as HTMLInputElement).value)}
+              />
+              <button
+                type="button"
+                class="colours__reset"
+                disabled={!hasSeriesColor(name)}
+                title={i18n.t("modal.chart.seriesColors.reset")}
+                onclick={() => clearSeriesColor(name)}
+              >
+                {i18n.t("modal.chart.seriesColors.reset")}
+              </button>
+            </div>
+          {/each}
+        </div>
+      {/if}
     </div>
     <div class="row">
       <label class="field field--grow">
@@ -337,4 +401,12 @@
   .series-axis__pick { width: 8rem; flex: 0 0 auto; }
   .number-format { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
   .number-format__title { font-size: var(--fs-sm); color: var(--fg-muted); }
+  .colours { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
+  .colours__title { font-size: var(--fs-sm); color: var(--fg-muted); }
+  .colours__list { display: flex; flex-direction: column; gap: var(--space-2); }
+  .colours__row { display: flex; align-items: center; gap: var(--space-3); }
+  .colours__name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-size: var(--fs-sm); }
+  .colours__pick { flex: 0 0 auto; width: 2.5rem; height: 1.75rem; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; cursor: pointer; }
+  .colours__reset { flex: 0 0 auto; font-size: var(--fs-xs); }
+  .colours__reset:disabled { opacity: 0.4; cursor: default; }
 </style>
