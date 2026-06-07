@@ -230,10 +230,20 @@ function colorRampFor(ramp: ChartColorRamp | undefined): string[] {
  * Behaviour is always-on for the surface (driven by the existing `compact` geom
  * flag) — no new persisted ChartOptions field, so dashboard save (#1077, paused)
  * stays untouched. The builder stays pure: this just shapes option JSON; the
- * echarts instance/lifecycle lives in the .svelte components. */
-function dataZoomConfig(compact: boolean): Record<string, unknown>[] {
+ * echarts instance/lifecycle lives in the .svelte components.
+ *
+ * `categoryCount` gates the visible slider — with one or a handful of bars the
+ * slider has nothing meaningful to zoom and just steals vertical space (and
+ * draws an empty track under the chart, which reads as a UI bug). The inside
+ * (mouse-wheel) zoom stays armed regardless; it's invisible until used. */
+const ZOOM_SLIDER_MIN_CATEGORIES = 12;
+function dataZoomConfig(
+  compact: boolean,
+  categoryCount: number,
+): Record<string, unknown>[] {
   const inside = { type: "inside", xAxisIndex: 0, filterMode: "none" as const };
   if (compact) return [inside];
+  if (categoryCount < ZOOM_SLIDER_MIN_CATEGORIES) return [inside];
   return [
     inside,
     {
@@ -615,8 +625,14 @@ export function buildChartOption(
       // roomy slider sits at the bottom, so reserve a little extra grid bottom.
       grid: compact
         ? { top: 24, left: 48, right: 16, bottom: 36 }
-        : { left: 60, top: title ? 50 : 40, right: 40, bottom: 76 },
-      dataZoom: dataZoomConfig(compact),
+        : {
+            left: 60,
+            top: title ? 50 : 40,
+            right: 40,
+            bottom: cols.length >= ZOOM_SLIDER_MIN_CATEGORIES ? 76 : 40,
+          },
+      // scatter / bubble: x-axis is `cols`, so slider gate keys off cols.length.
+      dataZoom: dataZoomConfig(compact, cols.length),
       xAxis: { ...baseAxis, axisLabel: catLabel(), data: cols, name: xName },
       yAxis: { ...valueAxis, name: yName },
       series: rows.map((name, i) => ({
@@ -663,8 +679,14 @@ export function buildChartOption(
       legend,
       grid: compact
         ? { top: 24, left: 48, right: 16, bottom: 36 }
-        : { left: 60, top: title ? 50 : 30, right: 40, bottom: 76 },
-      dataZoom: dataZoomConfig(compact), // #1080: x-axis zoom + pan
+        : {
+            left: 60,
+            top: title ? 50 : 30,
+            right: 40,
+            bottom: rows.length >= ZOOM_SLIDER_MIN_CATEGORIES ? 76 : 40,
+          },
+      // waterfall: x-axis is `rows`.
+      dataZoom: dataZoomConfig(compact, rows.length), // #1080: x-axis zoom + pan
       xAxis: { ...baseAxis, axisLabel: catLabel(), data: rows, name: xName },
       yAxis: { ...valueAxis, name: yName },
       series: [
@@ -768,10 +790,19 @@ export function buildChartOption(
     title,
     tooltip: cartesianTooltip,
     legend,
+    // Reserve room for the zoom slider only when it's actually drawn —
+    // otherwise the plot area gets squashed for an affordance that
+    // isn't present (saiku follow-up to #1080 + screenshot 2026-06-07).
     grid: compact
       ? { top: 24, left: 48, right: 16, bottom: 36 }
-      : { left: 60, top: title ? 50 : 40, right: hasRight ? 60 : 40, bottom: 76 },
-    dataZoom: dataZoomConfig(compact), // #1080: x-axis zoom + pan
+      : {
+          left: 60,
+          top: title ? 50 : 40,
+          right: hasRight ? 60 : 40,
+          bottom: rows.length >= ZOOM_SLIDER_MIN_CATEGORIES ? 76 : 40,
+        },
+    // bar / line / area: x-axis is `rows`.
+    dataZoom: dataZoomConfig(compact, rows.length), // #1080: x-axis zoom + pan
     xAxis: { ...baseAxis, axisLabel: catLabel(compact && rows.length > 8 ? 30 : 0), data: rows, name: xName },
     yAxis,
     series: [...base, ...trend],

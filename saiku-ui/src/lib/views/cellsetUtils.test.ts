@@ -130,14 +130,18 @@ describe("deriveLeafRows", () => {
 });
 
 describe("assignSeriesAxes", () => {
-  const baseOpts = { dualAxis: true, seriesAxis: {}, threshold: 0.01 };
+  // Mirrors SERIES_AXIS_THRESHOLD's runtime value — bumped to 10% in
+  // 2026-06 so 100× magnitude ratios (the Balance vs Fees case) split
+  // automatically. 1% used to leave them crushed on one axis.
+  const baseOpts = { dualAxis: true, seriesAxis: {}, threshold: 0.1 };
 
   it("keeps every series on the left when scales are within an order of magnitude", () => {
+    // Within ~1 order of magnitude (Sales £1k-£1.2k, Refunds £500-£800).
     const result = assignSeriesAxes(
       ["Sales", "Refunds"],
       [
-        [1000, 50],
-        [1200, 80],
+        [1000, 500],
+        [1200, 800],
       ],
       baseOpts,
     );
@@ -145,14 +149,30 @@ describe("assignSeriesAxes", () => {
   });
 
   it("moves a small-magnitude series to the right when another series dominates", () => {
-    // Event Count up to 7000, Avg Tone around -3 — the exact case from the
-    // user-reported screenshot. Tone is < 1% of Count's max so it splits.
+    // Event Count up to 7000, Avg Tone around -3 — Tone is < 10% of
+    // Count's max so it splits to the right axis.
     const result = assignSeriesAxes(
       ["Event Count", "Avg Tone"],
       [
         [6000, -3.4],
         [2000, -3.39],
         [1200, -2.8],
+      ],
+      baseOpts,
+    );
+    expect(result).toEqual(["left", "right"]);
+  });
+
+  it("splits exact-cutoff ratios (Balance £7500 vs Fees £75, ratio = 1%)", () => {
+    // Boundary case from the 2026-06 user-reported screenshot —
+    // Fees.max (75) == 1% of Balance.max (7500). With the strict `<`
+    // check + threshold 1% this stayed on left and was crushed; with
+    // `<=` + threshold 10% it splits cleanly to the right axis.
+    const result = assignSeriesAxes(
+      ["Balance", "Fees"],
+      [
+        [7500, 75],
+        [5000, 50],
       ],
       baseOpts,
     );
