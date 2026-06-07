@@ -33,6 +33,7 @@ import { axisLabelConfig, deriveAxisLabelWidth } from "$lib/views/chartAxisLabel
 import { cellRadiusPct, gridCells, MAX_LABELLED_SLICES } from "$lib/dashboard/smallMultiples";
 import { type ThemeTokens, DEFAULT_THEME_TOKENS, COLORBLIND_WATERFALL } from "$lib/views/chartTheme";
 import { buildSparklineSvg } from "$lib/charts/sparkline";
+import { formatNumber, type NumberFormat } from "$lib/charts/numberFormat";
 
 /** The shared, already-projected chart input both surfaces produce. Rollup
  *  rows are filtered (and parent context promoted into labels) by the caller
@@ -289,6 +290,8 @@ function cartesianTooltipFormatter(
   cols: string[],
   matrix: (number | null)[][],
   tk: ThemeTokens,
+  nf?: NumberFormat,
+  withSparkline = true,
 ): (params: AxisTipParam | AxisTipParam[]) => string {
   // Column name -> its values down the rows (the series' full trend).
   const colSeries = new Map<string, (number | null)[]>();
@@ -309,11 +312,20 @@ function cartesianTooltipFormatter(
       .map((p) => {
         const name = String(p.seriesName ?? "");
         const v = p.value;
-        const valueText = v == null || (typeof v === "number" && Number.isNaN(v)) ? "—" : String(v);
+        // #1082: route the numeric value through formatNumber (prefix/suffix/
+        // decimals/thousands/abbreviate) when a format is set; with none it
+        // falls back to the prior String(v) / "—" behaviour. Still escaped
+        // below because the return is inserted as innerHTML.
+        const valueText =
+          nf && typeof v === "number"
+            ? formatNumber(v, nf)
+            : v == null || (typeof v === "number" && Number.isNaN(v))
+              ? "—"
+              : String(v);
         const safeName = escapeHtml(name);
         // ECharts' own coloured marker dot is safe HTML it generated itself.
         const marker = p.marker ?? "";
-        const spark = colSeries.has(name)
+        const spark = withSparkline && colSeries.has(name)
           ? buildSparklineSvg(colSeries.get(name)!, {
               width: 120,
               height: 26,
@@ -407,8 +419,37 @@ export function buildChartOption(
   const xName = o.xAxisLabel || undefined;
   const yName = o.yAxisLabel || undefined;
 
+  // #1082: optional number formatting for VALUE text (axis labels, tooltip
+  // values, data labels). `nf` is undefined when no format is set, so every
+  // value-axis/tooltip/label fragment below stays byte-for-byte identical and
+  // legacy snapshots are unchanged. The category axis is never reformatted.
+  const nf: NumberFormat | undefined =
+    o.numberFormat && Object.values(o.numberFormat).some((v) => v !== undefined && v !== null && v !== false && v !== "")
+      ? o.numberFormat
+      : undefined;
+  // Value-axis label config: only attach a formatter when nf is active, so the
+  // axisLabel object is unchanged for unformatted charts.
+  const valueAxisLabel = nf
+    ? { color: tk.fgMuted, formatter: (val: number) => formatNumber(val, nf) }
+    : axisLabel;
+  // Series data-label formatter (#1082): attached to cartesian series so that
+  // IF data labels are shown they use the format. We don't force labels on —
+  // we only set label.formatter (label.show stays at its ECharts default), and
+  // only when nf is active so the series object is otherwise unchanged. The
+  // value-axis branch always formats; this covers any displayed point labels.
+  const seriesValueLabel: Record<string, unknown> = nf
+    ? { label: { formatter: (p: { value?: unknown }) => formatNumber(p?.value as number, nf) } }
+    : {};
+
   const baseAxis = { type: "category" as const, axisLabel, axisLine, axisTick, splitLine, nameTextStyle };
-  const valueAxis = { type: "value" as const, axisLabel, axisLine, axisTick, splitLine, nameTextStyle };
+  const valueAxis = {
+    type: "value" as const,
+    axisLabel: valueAxisLabel,
+    axisLine,
+    axisTick,
+    splitLine,
+    nameTextStyle,
+  };
 
   // Pie / donut / treemap / sunburst encode a SINGLE measure. With M measures
   // we fan out into M small-multiple charts — one per measure — laid out in a
@@ -741,6 +782,8 @@ export function buildChartOption(
     // #1091: high-contrast — thicker line strokes + bigger markers for lines,
     // a same-bg border for bars so adjacent bars separate. No-ops when off.
     ...(kindBase === "line" ? { ...lineStyleHC, ...markerHC } : itemStyleHC),
+    // #1082: format any displayed data labels (no-op object when nf is off).
+    ...seriesValueLabel,
     yAxisIndex: hasRight ? (seriesSides[c] === "right" ? 1 : 0) : 0,
     // Compact (tiles) draws missing cells as gaps; roomy (workspace) as 0.
     data: matrix.map((row) => row[c] ?? (compact ? null : 0)),
@@ -759,9 +802,18 @@ export function buildChartOption(
   // and only when there's more than one category — a single column has no trend
   // to draw (matches the issue's "disabled when there's only one column").
   const sparklineTip = !compact && rows.length > 1;
-  const cartesianTooltip = sparklineTip
-    ? { trigger: "axis" as const, ...tooltipStyle, formatter: cartesianTooltipFormatter(cols, matrix, tk) }
-    : { trigger: "axis" as const, ...tooltipStyle };
+  // #1082: when a number format is set we always need a function formatter so
+  // tooltip values are formatted, even in compact mode (which has no sparkline).
+  // Without a format we keep the prior behaviour: sparkline formatter in roomy
+  // mode, ECharts' default text formatter otherwise.
+  const cartesianTooltip =
+    sparklineTip || nf
+      ? {
+          trigger: "axis" as const,
+          ...tooltipStyle,
+          formatter: cartesianTooltipFormatter(cols, matrix, tk, nf, sparklineTip),
+        }
+      : { trigger: "axis" as const, ...tooltipStyle };
 
   return {
     ...common,
