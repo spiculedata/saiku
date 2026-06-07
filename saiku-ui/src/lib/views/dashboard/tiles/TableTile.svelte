@@ -19,22 +19,20 @@
 
   import type { DashboardTile, DashboardFilter } from "$lib/api/dashboards";
   import {
-    executeAiQuery,
-    executeSavedQuery,
     isAiCell,
     searchMembers,
-    type AiQueryResponse,
     type AiCell,
   } from "$lib/api/aiQuery";
+  // #1231 — shared fetch state + effect body across ChartTile / TableTile.
+  import {
+    TileQueryState,
+    runTileQueryEffect,
+  } from "$lib/hooks/useTileQuery.svelte";
   // #1166: resolve clicked row-header captions to real member unique names.
   import { pickMemberUniqueNameForPath } from "$lib/dashboard/clickFilterMember";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
   import { schemaCache } from "$lib/stores/schemaCache.svelte";
-  import {
-    effectiveQueryFor,
-    applicableSavedFilters,
-    type SchemaLike,
-  } from "$lib/dashboard/effectiveQuery";
+  import { type SchemaLike } from "$lib/dashboard/effectiveQuery";
   import {
     inferCubeFromReference,
     inferRowAxesFromReference,
@@ -63,7 +61,6 @@
   // #941 share viewer (PR2): render from a prefetched guest response when present.
   import { getShareViewResponse } from "$lib/dashboard/shareViewContext";
   // Issue #931 — per-tile auto-refresh: timer wiring + "last updated" indicator.
-  import { TileAutoRefresh } from "$lib/dashboard/tileAutoRefresh.svelte";
   import { isAutoRefreshOn } from "$lib/dashboard/autoRefresh";
   import TileRefreshIndicator from "./TileRefreshIndicator.svelte";
 
@@ -81,21 +78,24 @@
   // svelte-ignore state_referenced_locally
   const sharedResponse = getShareViewResponse(tile.id);
 
-  let loading = $state(false);
-  let error = $state<string | null>(null);
-  let response = $state<AiQueryResponse | null>(null);
+  // #1231 — shared fetch lifecycle (loading / error / response / dedupe
+  // cache / retry tick / refresh tick / auto-refresh) lives on
+  // TileQueryState. Local $derived aliases keep the rest of the script +
+  // template reading off local names; assignments only happen inside
+  // runTileQueryEffect.
+  const q = new TileQueryState();
+  let response = $derived(q.response);
+  let loading = $derived(q.loading);
+  let error = $derived(q.error);
+  const auto = q.auto;
+  function retry(): void {
+    q.retry();
+  }
   let schema = $state<SchemaLike | null>(null);
 
-  // Issue #933 — retry re-fires the deduped fetch effect; hasEffectiveFilters
-  // gates the empty-state "Reset filters" affordance.
-  let retryTick = $state(0);
   let hasEffectiveFilters = $derived(
     activeFilters.all.some((f) => (f.filter.members?.length ?? 0) > 0),
   );
-  function retry(): void {
-    lastQueryJson = "";
-    retryTick++;
-  }
   function resetFilters(): void {
     activeFilters.resetTransient();
     dashboardStore.resetPanelFiltersToSaved();
@@ -106,14 +106,8 @@
    * configured cadence by clearing the dedupe cache + bumping a tick the
    * fetch effect reads (same mechanism as retry()), so the re-run uses the
    * CURRENT effective query. Never auto-refreshes in the share viewer. */
-  const auto = new TileAutoRefresh();
-  let refreshTick = $state(0);
-  function triggerAutoRefresh(): void {
-    lastQueryJson = "";
-    refreshTick++;
-  }
   let autoRefreshOn = $derived(!sharedResponse && isAutoRefreshOn(tile.refreshInterval));
-  $effect(() => auto.arm(tile.refreshInterval, triggerAutoRefresh));
+  $effect(() => auto.arm(tile.refreshInterval, () => q.triggerAutoRefresh()));
   $effect(() => {
     if (autoRefreshOn && auto.lastUpdated > 0) return auto.startHeartbeat();
   });
@@ -165,88 +159,15 @@
 
   // Recompute the effective query whenever the active filter set or
   // schema changes; refetch on identity change.
-  let lastQueryJson = $state<string>("");
-
   $effect(() => {
-    // #941 share viewer: render the prefetched guest response; never fetch live.
-    if (sharedResponse) {
-      response = sharedResponse;
-      loading = false;
-      error = null;
-      return;
-    }
-    const tileQuery = tile.query;
-    const active = activeFilters.all;
-    const s = schema;
-    void s;
-    // #933 — retry() bumps this to force a refetch with unchanged inputs.
-    void retryTick;
-    // #931 — auto-refresh bumps this to re-run with the current effective query.
-    void refreshTick;
-    if (!tileQuery) return;
-
-    if (tileQuery.kind === "reference") {
-      // Reference tile: server loads the saved ThinQuery, merges any
-      // applicable dashboard filters onto it via ThinQueryFilterMerge,
-      // then runs it. Filter applicability is checked client-side first
-      // against the tile's cube schema so we don't ship filters the
-      // server would have to drop anyway.
-      const refFilters = applicableSavedFilters(schema, active);
-      const key = `ref:${tileQuery.path}|${JSON.stringify(refFilters)}`;
-      if (key === lastQueryJson) return;
-      lastQueryJson = key;
-      loading = true;
-      error = null;
-      void (async () => {
-        try {
-          const r = await executeSavedQuery(
-            tileQuery.path,
-            refFilters.map((f) => ({
-              dimension: f.dimension,
-              hierarchy: f.hierarchy,
-              level: f.level,
-              members: f.members ?? [],
-            })),
-          );
-          response = r;
-          if (r.status !== "SUCCESS") error = r.error ?? `Query failed: ${r.status}`;
-          else auto.markUpdated(); // #931
-        } catch (e: unknown) {
-          error = e instanceof Error ? e.message : String(e);
-          response = null;
-        } finally {
-          loading = false;
-        }
-      })();
-      return;
-    }
-
-    // Inline tile: merge active filters into the base body via the
-    // effective-query builder, then POST to /ai/query.
-    const effective = effectiveQueryFor(tile, active, schema);
-    if (!effective) return;
-    const json = JSON.stringify(effective);
-    if (json === lastQueryJson) return; // no-op; avoid duplicate fetches
-    lastQueryJson = json;
-
-    loading = true;
-    error = null;
-    void (async () => {
-      try {
-        const r = await executeAiQuery(effective, "records");
-        response = r;
-        if (r.status !== "SUCCESS") {
-          error = r.error ?? `Query failed: ${r.status}`;
-        } else {
-          auto.markUpdated(); // #931
-        }
-      } catch (e: unknown) {
-        error = e instanceof Error ? e.message : String(e);
-        response = null;
-      } finally {
-        loading = false;
-      }
-    })();
+    void q.retryTick;
+    void q.refreshTick;
+    runTileQueryEffect(q, {
+      tile,
+      activeFilters: activeFilters.all,
+      schema,
+      sharedResponse: sharedResponse ?? null,
+    });
   });
 
   // Derived: a flat list of column captions (row headers first, then

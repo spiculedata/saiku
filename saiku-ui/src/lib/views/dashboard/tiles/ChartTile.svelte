@@ -15,20 +15,19 @@
   import * as echarts from "echarts";
   import type { DashboardTile, DashboardFilter } from "$lib/api/dashboards";
   import {
-    executeAiQuery,
-    executeSavedQuery,
     searchMembers,
     type AiQueryResponse,
   } from "$lib/api/aiQuery";
+  // #1231 — shared fetch state + effect body across ChartTile / TableTile.
+  import {
+    TileQueryState,
+    runTileQueryEffect,
+  } from "$lib/hooks/useTileQuery.svelte";
   // #1166: resolve a clicked category caption to a real member unique name.
   import { pickMemberUniqueName } from "$lib/dashboard/clickFilterMember";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
   import { schemaCache } from "$lib/stores/schemaCache.svelte";
-  import {
-    effectiveQueryFor,
-    applicableSavedFilters,
-    type SchemaLike,
-  } from "$lib/dashboard/effectiveQuery";
+  import { type SchemaLike } from "$lib/dashboard/effectiveQuery";
   import {
     inferCubeFromReference,
     inferRowAxesFromReference,
@@ -63,7 +62,6 @@
   // injected via context; tiles render from it instead of fetching live.
   import { getShareViewResponse } from "$lib/dashboard/shareViewContext";
   // Issue #931 — per-tile auto-refresh: timer wiring + "last updated" indicator.
-  import { TileAutoRefresh } from "$lib/dashboard/tileAutoRefresh.svelte";
   import { isAutoRefreshOn } from "$lib/dashboard/autoRefresh";
   import TileRefreshIndicator from "./TileRefreshIndicator.svelte";
 
@@ -94,17 +92,22 @@
   // aspect-aware small-multiple radius when the canvas size changes (#1053).
   let resizeTick = $state(0);
 
-  let loading = $state(false);
-  let error = $state<string | null>(null);
-  let response = $state<AiQueryResponse | null>(null);
+  // #1231 — fetch lifecycle (loading / error / response / dedupe cache /
+  // retry tick / refresh tick / auto-refresh) lives on TileQueryState so
+  // ChartTile + TableTile share the same plumbing. KpiTile builds its
+  // body inline and does NOT use this hook. The `let foo = $derived(q.foo)`
+  // aliases below keep the rest of the script + template reading off
+  // local names; assignments only happen inside runTileQueryEffect.
+  const q = new TileQueryState();
+  let response = $derived(q.response);
+  let loading = $derived(q.loading);
+  let error = $derived(q.error);
+  const auto = q.auto;
+  function retry(): void {
+    q.retry();
+  }
   let schema = $state<SchemaLike | null>(null);
   let unsupported = $state(false);
-
-  // Issue #933 — retry re-runs the deduped fetch effect by clearing its
-  // last-query cache and bumping a tick the effect reads. Empty = a
-  // successful query with zero rows; hasEffectiveFilters gates the
-  // empty-state "Reset filters" affordance.
-  let retryTick = $state(0);
   // issue #1071: bumped once the world GeoJSON finishes registering, to
   // re-run the render effect and paint the map (registration is async).
   let mapReadyTick = $state(0);
@@ -114,10 +117,6 @@
   let hasEffectiveFilters = $derived(
     activeFilters.all.some((f) => (f.filter.members?.length ?? 0) > 0),
   );
-  function retry(): void {
-    lastQueryJson = "";
-    retryTick++;
-  }
   function resetFilters(): void {
     activeFilters.resetTransient();
     dashboardStore.resetPanelFiltersToSaved();
@@ -125,21 +124,16 @@
 
   /* --- issue #931: auto-refresh ------------------------------------------
    * A per-tile timer re-fires the existing (filter-aware) fetch on the
-   * configured cadence. We clear the fetch effect's dedupe cache + bump a
-   * tick the effect reads — same mechanism as retry() — so the re-run picks
-   * up the CURRENT effective query (active filters included). Never auto-
-   * refreshes in the share viewer (no live /ai/query access). */
-  const auto = new TileAutoRefresh();
-  let refreshTick = $state(0);
-  function triggerAutoRefresh(): void {
-    lastQueryJson = "";
-    refreshTick++;
-  }
+   * configured cadence. q.triggerAutoRefresh clears the dedupe cache +
+   * bumps q.refreshTick the fetch effect reads — same mechanism as
+   * q.retry() — so the re-run picks up the CURRENT effective query
+   * (active filters included). Never auto-refreshes in the share viewer
+   * (no live /ai/query access). */
   let autoRefreshOn = $derived(!sharedResponse && isAutoRefreshOn(tile.refreshInterval));
   // Arm / re-arm whenever the interval changes (config edit) or the tile
   // re-renders — the returned teardown clears the prior timer so they never
   // stack ("reset on re-render / config change").
-  $effect(() => auto.arm(tile.refreshInterval, triggerAutoRefresh));
+  $effect(() => auto.arm(tile.refreshInterval, () => q.triggerAutoRefresh()));
   // Heartbeat keeps the "X ago" label fresh; only while the indicator shows.
   $effect(() => {
     if (autoRefreshOn && auto.lastUpdated > 0) return auto.startHeartbeat();
@@ -250,82 +244,17 @@
 
   /* ----------------------------- fetch effect ------------------------- */
 
-  let lastQueryJson = $state<string>("");
-
   $effect(() => {
-    // #941 share viewer: render the prefetched guest response; never fetch live
-    // (a share guest has no session / no /ai/query access).
-    if (sharedResponse) {
-      response = sharedResponse;
-      loading = false;
-      error = null;
-      return;
-    }
-    const tileQuery = tile.query;
-    const active = activeFilters.all;
-    const s = schema;
-    void s;
-    // #933 — retry() bumps this to force a refetch with unchanged inputs.
-    void retryTick;
-    // #931 — auto-refresh bumps this to re-run with the current effective query.
-    void refreshTick;
-    if (!tileQuery) return;
-
-    if (tileQuery.kind === "reference") {
-      const refFilters = applicableSavedFilters(schema, active);
-      const key = `ref:${tileQuery.path}|${JSON.stringify(refFilters)}`;
-      if (key === lastQueryJson) return;
-      lastQueryJson = key;
-      loading = true;
-      error = null;
-      void (async () => {
-        try {
-          const r = await executeSavedQuery(
-            tileQuery.path,
-            refFilters.map((f) => ({
-              dimension: f.dimension,
-              hierarchy: f.hierarchy,
-              level: f.level,
-              members: f.members ?? [],
-            })),
-          );
-          response = r;
-          if (r.status !== "SUCCESS") error = r.error ?? `Query failed: ${r.status}`;
-          else auto.markUpdated(); // #931
-        } catch (e: unknown) {
-          error = e instanceof Error ? e.message : String(e);
-          response = null;
-        } finally {
-          loading = false;
-        }
-      })();
-      return;
-    }
-
-    const effective = effectiveQueryFor(tile, active, schema);
-    if (!effective) return;
-    const json = JSON.stringify(effective);
-    if (json === lastQueryJson) return;
-    lastQueryJson = json;
-
-    loading = true;
-    error = null;
-    void (async () => {
-      try {
-        const r = await executeAiQuery(effective, "records");
-        response = r;
-        if (r.status !== "SUCCESS") {
-          error = r.error ?? `Query failed: ${r.status}`;
-        } else {
-          auto.markUpdated(); // #931
-        }
-      } catch (e: unknown) {
-        error = e instanceof Error ? e.message : String(e);
-        response = null;
-      } finally {
-        loading = false;
-      }
-    })();
+    // Reactive deps the effect body reads internally — read here so the
+    // effect framework registers them on the COMPONENT's scope.
+    void q.retryTick;
+    void q.refreshTick;
+    runTileQueryEffect(q, {
+      tile,
+      activeFilters: activeFilters.all,
+      schema,
+      sharedResponse: sharedResponse ?? null,
+    });
   });
 
   /* ----------------------------- render effect ------------------------ */
