@@ -1,0 +1,304 @@
+schema:
+  name: "Bank"
+  metamodel_version: "4.0"
+physical_schema:
+  tables:
+  - name: "mm_fact"
+    key:
+    - "account_id"
+  - name: "mm_owner"
+  - name: "mm_customer"
+  - name: "mm_branch"
+  - name: "mm_date"
+  - name: "mm_txn"
+  - name: "mm_calendar"
+  - name: "mm_monthly"
+shared_dimensions:
+  Customer:
+    table: "mm_customer"
+    key: "Customer"
+    attributes:
+    - name: "Segment"
+      key:
+      - "segment"
+    - name: "Customer"
+      key:
+      - "customer_id"
+      name_column: "customer_name"
+    hierarchies:
+    - name: "By Segment"
+      all_member_name: "All Customers"
+      levels:
+      - "Segment"
+      - "Customer"
+  Branch:
+    table: "mm_branch"
+    key: "Branch"
+    attributes:
+    - name: "Branch"
+      key:
+      - "branch_id"
+      name_column: "branch_name"
+  Date:
+    table: "mm_date"
+    key: "Date Id"
+    type: "TIME"
+    attributes:
+    - name: "Date Id"
+      key:
+      - "date_key"
+      has_hierarchy: false
+    - name: "Year"
+      key:
+      - "yr"
+      level_type: "TimeYears"
+      has_hierarchy: false
+    hierarchies:
+    - name: "Calendar"
+      all_member_name: "All Years"
+      levels:
+      - "Year"
+  Account:
+    table: "mm_fact"
+    key: "Account Id"
+    attributes:
+    - name: "Account Id"
+      key:
+      - "account_id"
+      has_hierarchy: false
+    - name: "Balance Tier"
+      tier:
+        column: "balance"
+        bins:
+        - boundary: "1000"
+          label: "Small"
+        - boundary: "3000"
+          label: "Medium"
+        - label: "Large"
+    - name: "Age Years"
+      duration:
+        start_column: "open_date"
+        end_column: "as_of_date"
+        unit: "YEAR"
+  Calendar:
+    table: "mm_calendar"
+    key: "Month"
+    type: "TIME"
+    attributes:
+    - name: "Year"
+      key:
+      - "yr"
+      level_type: "TimeYears"
+      has_hierarchy: false
+    - name: "Quarter"
+      key:
+      - "quarter"
+      level_type: "TimeQuarters"
+      has_hierarchy: false
+    - name: "Month"
+      key:
+      - "month_key"
+      name_column: "month_name"
+      order_by_column: "month_key"
+      level_type: "TimeMonths"
+      has_hierarchy: false
+    hierarchies:
+    - name: "Calendar"
+      all_member_name: "All Periods"
+      levels:
+      - "Year"
+      - "Quarter"
+      - "Month"
+cubes:
+  Joint Accounts (Full Count):
+    dimensions:
+    - source: "Customer"
+    - source: "Branch"
+    - source: "Date"
+    measure_groups:
+    - name: "Balances"
+      table: "mm_fact"
+      measures:
+      - name: "Balance"
+        column: "balance"
+        aggregator: "sum"
+        format_string: "#,###"
+      - name: "Fees"
+        column: "fees"
+        aggregator: "sum"
+        format_string: "#,###"
+      dimension_links:
+      - type: "foreign_key"
+        dimension: "Branch"
+        foreign_key_column: "branch_id"
+      - type: "foreign_key"
+        dimension: "Date"
+        foreign_key_column: "date_key"
+      - type: "bridge"
+        dimension: "Customer"
+        bridge_table: "mm_owner"
+        fact_foreign_key_column: "account_id"
+        bridge_fact_key_column: "account_id"
+        bridge_dimension_key_column: "customer_id"
+  Joint Accounts (Weighted):
+    dimensions:
+    - source: "Customer"
+    - source: "Branch"
+    - source: "Date"
+    measure_groups:
+    - name: "Balances"
+      table: "mm_fact"
+      measures:
+      - name: "Balance"
+        column: "balance"
+        aggregator: "sum"
+        format_string: "#,###"
+      - name: "Fees"
+        column: "fees"
+        aggregator: "sum"
+        format_string: "#,###"
+      dimension_links:
+      - type: "foreign_key"
+        dimension: "Branch"
+        foreign_key_column: "branch_id"
+      - type: "foreign_key"
+        dimension: "Date"
+        foreign_key_column: "date_key"
+      - type: "bridge"
+        dimension: "Customer"
+        bridge_table: "mm_owner"
+        fact_foreign_key_column: "account_id"
+        bridge_fact_key_column: "account_id"
+        bridge_dimension_key_column: "customer_id"
+        aggregation: "weighted"
+        weight_column: "weight"
+  Account Statistics:
+    dimensions:
+    - source: "Branch"
+    - source: "Date"
+    measure_groups:
+    - name: "Balances"
+      table: "mm_fact"
+      measures:
+      - name: "Total Balance"
+        column: "balance"
+        aggregator: "sum"
+        format_string: "#,###"
+      - name: "Median Balance"
+        column: "balance"
+        aggregator: "median"
+        format_string: "#,###"
+      - name: "P90 Balance"
+        column: "balance"
+        aggregator: "percentile"
+        percentile: "90"
+        format_string: "#,###"
+      dimension_links:
+      - type: "foreign_key"
+        dimension: "Branch"
+        foreign_key_column: "branch_id"
+      - type: "foreign_key"
+        dimension: "Date"
+        foreign_key_column: "date_key"
+  Accounts:
+    dimensions:
+    - source: "Account"
+    - source: "Branch"
+    measure_groups:
+    - name: "Balances"
+      table: "mm_fact"
+      measures:
+      - name: "Balance"
+        column: "balance"
+        aggregator: "sum"
+        format_string: "#,###"
+      dimension_links:
+      - type: "fact"
+        dimension: "Account"
+      - type: "foreign_key"
+        dimension: "Branch"
+        foreign_key_column: "branch_id"
+  Transactions:
+    measure_groups:
+    - name: "Txns"
+      table: "mm_txn"
+      measures:
+      - name: "Distinct Amount"
+        column: "amount"
+        aggregator: "sum"
+        distinct_key_column: "txn_id"
+        format_string: "#,###"
+      - name: "Naive Amount"
+        column: "amount"
+        aggregator: "sum"
+        format_string: "#,###"
+  Monthly Revenue:
+    dimensions:
+    - source: "Calendar"
+    measure_groups:
+    - name: "Revenue"
+      table: "mm_monthly"
+      measures:
+      - name: "Revenue"
+        column: "revenue"
+        aggregator: "sum"
+        format_string: "#,###"
+      dimension_links:
+      - type: "foreign_key"
+        dimension: "Calendar"
+        foreign_key_column: "month_key"
+    time_calcs:
+    - name: "Revenue YoY"
+      type: "yoy"
+      measure: "Revenue"
+      time_dimension: "Calendar"
+      format_string: "0.0%"
+    - name: "Revenue PoP"
+      type: "pop"
+      measure: "Revenue"
+      time_dimension: "Calendar"
+      format_string: "0.0%"
+    - name: "Revenue YTD"
+      type: "ytd"
+      measure: "Revenue"
+      time_dimension: "Calendar"
+      format_string: "#,###"
+    - name: "Revenue R3"
+      type: "rolling"
+      measure: "Revenue"
+      time_dimension: "Calendar"
+      window: 3
+      function: "avg"
+      format_string: "#,###"
+roles:
+- name: "Tenant"
+  schema_grant:
+    access: "all"
+    cubes:
+    - cube: "Accounts"
+      access: "all"
+      predicate_grants:
+      - measure_group: "Balances"
+        column: "tenant"
+        operator: "eq"
+        parameter: "tenant"
+- name: "Premium"
+  schema_grant:
+    access: "all"
+    cubes:
+    - cube: "Joint Accounts (Full Count)"
+      access: "all"
+      hierarchies:
+      - hierarchy: "[Customer].[By Segment]"
+        access: "custom"
+        bottom_level: "[Customer].[By Segment].[Customer]"
+        members:
+        - member: "[Customer].[By Segment].[Premium]"
+          access: "all"
+parameters:
+- name: "tenant"
+  type: "Numeric"
+  default_value: "1"
+  allowed_values:
+  - "1"
+  - "2"
