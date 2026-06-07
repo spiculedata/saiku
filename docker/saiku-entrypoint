@@ -18,6 +18,18 @@ set -euo pipefail
 case "${1:-serve}" in
   serve)
     shift || true
+    # Preserve any user-supplied JAVA_OPTS BEFORE we rebuild the array
+    # with the well-known capability props below. Without this, anything
+    # the operator passes via `-e JAVA_OPTS='-Dsaiku.ai.ask.provider=anthropic'`
+    # (or any other Spring placeholder override / JVM tuning flag) is
+    # silently dropped. word-splits the env var into an array so flags
+    # with spaces survive intact.
+    USER_JAVA_OPTS=()
+    if [[ -n "${JAVA_OPTS:-}" ]]; then
+      # shellcheck disable=SC2206  # intentional word-split
+      USER_JAVA_OPTS=( ${JAVA_OPTS} )
+    fi
+
     # Capability props surfaced by GET /rest/saiku/info/capabilities so
     # the SPA's admin panel + (when on) demo-mode login screen can show
     # accurate connection instructions. Empty values are passed through
@@ -41,6 +53,11 @@ case "${1:-serve}" in
     if [[ -n "${OTEL_EXPORTER_OTLP_ENDPOINT:-}" && -f "$OTEL_AGENT_JAR" ]]; then
       JAVA_OPTS+=("-javaagent:${OTEL_AGENT_JAR}")
       export OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-saiku}"
+    fi
+    # Append user JAVA_OPTS last so they can override the built-ins
+    # (e.g. overriding -Dsaiku.demo from an env var stays possible).
+    if [[ ${#USER_JAVA_OPTS[@]} -gt 0 ]]; then
+      JAVA_OPTS+=( "${USER_JAVA_OPTS[@]}" )
     fi
     exec java "${JAVA_OPTS[@]}" -jar /app/saiku.jar serve \
       --host 0.0.0.0 \
