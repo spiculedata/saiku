@@ -31,7 +31,7 @@
 
   let relative = $derived(formatRelativeTime(lastUpdated, now));
   let label = $derived(
-    i18n.t("dashboard.refresh.lastUpdated", "Last updated {time} ago").replace("{time}", relative),
+    i18n.t("dashboard.refresh.lastUpdated", "Last updated {time}").replace("{time}", relative),
   );
 </script>
 

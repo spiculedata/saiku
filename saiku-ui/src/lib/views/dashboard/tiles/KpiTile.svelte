@@ -546,13 +546,14 @@
     height: 36px;
     flex-shrink: 0;
   }
-  /* #931: auto-refresh badge — bottom-right of the KPI box, click-through.
-     container-type:size on .kpi-tile makes it the containing block, so the
-     absolute anchor resolves to the tile. */
+  /* #931: auto-refresh badge — top-right of the KPI box, click-through.
+     Top (not bottom) so it clears the optional sparkline along the KPI's
+     bottom edge. container-type:size on .kpi-tile makes it the containing
+     block, so the absolute anchor resolves to the tile. */
   .refresh-badge {
     position: absolute;
     right: 0.25rem;
-    bottom: 0.25rem;
+    top: 0.25rem;
     z-index: 2;
     background: color-mix(in srgb, var(--bg) 80%, transparent);
     border-radius: 4px;

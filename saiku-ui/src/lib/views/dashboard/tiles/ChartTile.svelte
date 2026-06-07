@@ -558,11 +558,13 @@
     color: var(--fg-muted);
     font-size: 0.8125rem;
   }
-  /* #931: auto-refresh badge — bottom-right, above the canvas, click-through. */
+  /* #931: auto-refresh badge — top-right, above the canvas, click-through.
+     Top (not bottom) so it clears the ECharts legend + x-axis labels that
+     live along the chart's bottom edge. */
   .refresh-badge {
     position: absolute;
     right: 0.25rem;
-    bottom: 0.25rem;
+    top: 0.25rem;
     z-index: 2;
     background: color-mix(in srgb, var(--bg) 80%, transparent);
     border-radius: 4px;
