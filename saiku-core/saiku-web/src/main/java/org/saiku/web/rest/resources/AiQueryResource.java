@@ -842,171 +842,249 @@ public class AiQueryResource {
             @QueryParam("position") String position,
             @QueryParam("returns") String returns) {
         if (thinQueryService == null) return error("Query service not configured");
-        // For async queries the handle id != the underlying ThinQuery name.
-        // Resolve through the handle when possible.
+
+        // Stage 1: resolve the underlying ThinQuery name (async handle
+        // resolution + cross-session re-attach of external context).
+        String name = resolveDrillthroughName(queryId);
+
+        // Stage 2: rewrite the bare-caption returns clause to fully-qualified
+        // MDX (saiku#782). A resolver AiValidationException short-circuits to
+        // a 400; otherwise the resolved value is parked in resolvedReturns[0].
+        String[] resolvedReturns = {returns};
+        Response returnsError = rewriteDrillthroughReturns(name, returns, resolvedReturns);
+        if (returnsError != null) return returnsError;
+
+        // Stage 3: parse + validate the optional per-cell position (saiku#930)
+        // before touching the engine so a malformed value is a clean 400.
+        List<Integer>[] cellPositionHolder = parsePositionHolder();
+        Response positionError = parseCellPosition(position, cellPositionHolder);
+        if (positionError != null) return positionError;
+        List<Integer> cellPosition = cellPositionHolder[0];
+
+        // Stage 4: execute the drillthrough + serialise the response body,
+        // translating the known failure modes to their typed envelopes.
+        try {
+            java.sql.ResultSet rs = cellPosition != null
+                    ? thinQueryService.drillthrough(name, cellPosition, maxrows, resolvedReturns[0])
+                    : thinQueryService.drillthrough(name, maxrows, firstRowset, resolvedReturns[0]);
+            return serialiseDrillthroughBody(queryId, rs);
+        } catch (NullPointerException e) {
+            return translateDrillthroughNpe(queryId, e);
+        } catch (Exception e) {
+            return translateDrillthroughFailure(queryId, e);
+        }
+    }
+
+    /**
+     * Resolve a drillthrough/column-discovery {@code queryId} to the
+     * underlying ThinQuery name. For async queries the handle id is not the
+     * ThinQuery name, so we look up through the handle when available.
+     *
+     * <p>saiku#862: when the resolved query has no per-session context (a
+     * drillthrough request that landed on a different session than the async
+     * submit — Basic-auth clients without a shared cookie jar, some
+     * load-balanced setups), re-attach the async query's ThinQuery + CellSet
+     * to THIS request's session-scoped ThinQueryService context. Without this
+     * the empty context map drives the NPE-catch path to surface
+     * "Unknown queryId" even though the handle is live.
+     */
+    private String resolveDrillthroughName(String queryId) {
         String name = queryId;
         if (asyncQueryService != null) {
             AsyncQueryHandle h = asyncQueryService.get(queryId);
             if (h != null) {
                 name = h.getQuery().getName();
-                // saiku#862: re-attach the async query's ThinQuery + CellSet
-                // to THIS request's session-scoped ThinQueryService context.
-                // Without this, a drillthrough request that lands on a
-                // different session than the async submit (e.g. Basic-auth
-                // clients without a shared cookie jar; some load-balanced
-                // setups) hits an empty context map and the NPE-catch path
-                // surfaces "Unknown queryId" even though the handle is live.
                 if (thinQueryService.getContext(name) == null) {
                     org.olap4j.CellSet cs = asyncQueryService.result(queryId);
                     thinQueryService.registerExternalContext(h.getQuery(), cs);
                 }
             }
         }
-        // saiku#782: agents only have bare captions (the keys of each row in
-        // a drillthrough response) — accept those and rewrite to the fully
-        // qualified MDX form Mondrian's RETURN clause expects. Tokens that
-        // are already bracketed pass through unchanged, so callers that
-        // already speak MDX aren't surprised. Validation errors from the
-        // resolver carry the candidate list so the agent can self-correct
-        // without scraping /schema.
-        String resolvedReturns = returns;
-        if (returns != null && !returns.trim().isEmpty() && cubeMetadataService != null) {
-            try {
-                org.saiku.service.util.QueryContext qc = thinQueryService.getContext(name);
-                if (qc != null && qc.getOlapQuery() != null && qc.getOlapQuery().getCube() != null) {
-                    org.saiku.olap.dto.SaikuCube cube = qc.getOlapQuery().getCube();
-                    AiCubeRef ref =
-                            new AiCubeRef(cube.getConnection(), cube.getCatalog(), cube.getSchema(), cube.getName());
-                    AiSchema schema = cubeMetadataService.getSchema(ref);
-                    resolvedReturns = AiReturnsResolver.resolve(returns, schema);
-                }
-            } catch (AiValidationException ve) {
-                AiQueryResponse resp = new AiQueryResponse();
-                resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
-                resp.setError(ve.getMessage());
-                resp.setField(ve.getField());
-                if (ve.getAvailable() != null) resp.setAvailable(ve.getAvailable());
-                return Response.status(Response.Status.BAD_REQUEST)
-                        .entity(resp)
-                        .type(MediaType.APPLICATION_JSON)
-                        .build();
-            } catch (RuntimeException ignored) {
-                // Schema lookup failure shouldn't poison the drillthrough —
-                // fall through with the raw returns value and let Mondrian
-                // report whatever it reports. The 400-translation block
-                // below handles the typical "in RETURN clause" message.
-            }
-        }
-        // saiku#930: per-cell drillthrough. position is "col:row" cellset
-        // coordinates — component i indexes cellset axis i (axis 0 = columns,
-        // axis 1 = rows), matching ThinQueryService.drillthrough(...).
-        // Parse + validate
-        // before touching the engine so a malformed value is a clean 400.
-        List<Integer> cellPosition = null;
-        if (position != null && !position.trim().isEmpty()) {
-            cellPosition = new ArrayList<>();
-            for (String p : position.split(":")) {
-                try {
-                    cellPosition.add(Integer.parseInt(p.trim()));
-                } catch (NumberFormatException nfe) {
-                    AiQueryResponse resp = new AiQueryResponse();
-                    resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
-                    resp.setError("Malformed position '" + position
-                            + "'. Expected \"row:col\" cell coordinates, e.g. \"2:1\".");
-                    resp.setField("position");
-                    return Response.status(Response.Status.BAD_REQUEST)
-                            .entity(resp)
-                            .type(MediaType.APPLICATION_JSON)
-                            .build();
-                }
-            }
+        return name;
+    }
+
+    /**
+     * saiku#782: agents only have bare captions (the keys of each row in a
+     * drillthrough response) — accept those and rewrite to the fully qualified
+     * MDX form Mondrian's RETURN clause expects. Tokens that are already
+     * bracketed pass through unchanged, so callers that already speak MDX
+     * aren't surprised. Validation errors from the resolver carry the
+     * candidate list so the agent can self-correct without scraping /schema.
+     *
+     * <p>Writes the resolved value into {@code out[0]} (left as the raw
+     * {@code returns} when no resolution applies). Returns a 400 Response when
+     * the resolver raises {@link AiValidationException}; otherwise null.
+     */
+    private Response rewriteDrillthroughReturns(String name, String returns, String[] out) {
+        if (returns == null || returns.trim().isEmpty() || cubeMetadataService == null) {
+            return null;
         }
         try {
-            java.sql.ResultSet rs = cellPosition != null
-                    ? thinQueryService.drillthrough(name, cellPosition, maxrows, resolvedReturns)
-                    : thinQueryService.drillthrough(name, maxrows, firstRowset, resolvedReturns);
-            List<Map<String, AiCell>> rows = new ArrayList<>();
-            List<String> columnLabels = new ArrayList<>();
-            if (rs != null) {
-                java.sql.ResultSetMetaData md = rs.getMetaData();
-                int colCount = md.getColumnCount();
-                // saiku#800: Mondrian's drillthrough sometimes returns the same
-                // getColumnLabel() for multiple columns within a hierarchy
-                // (e.g. Year + Quarter + Month all labelled "Quarter"). Pre-
-                // compute disambiguated keys ONCE before the row loop so:
-                //   * the first occurrence keeps its raw label (back-compat)
-                //   * subsequent duplicates fall back to getColumnName(c) when
-                //     that differs, else to a positional suffix _2, _3, ...
-                // Without this, every row's Map.put silently overwrote the
-                // earlier column, leaving the first column labelled with the
-                // LAST column's value — silent data corruption.
-                columnLabels = disambiguateColumnLabels(md);
-                while (rs.next()) {
-                    Map<String, AiCell> row = new LinkedHashMap<>();
-                    for (int c = 1; c <= colCount; c++) {
-                        Object v = rs.getObject(c);
-                        row.put(columnLabels.get(c - 1), toCellFromObject(v));
-                    }
-                    rows.add(row);
-                }
-                rs.close();
+            org.saiku.service.util.QueryContext qc = thinQueryService.getContext(name);
+            if (qc != null && qc.getOlapQuery() != null && qc.getOlapQuery().getCube() != null) {
+                org.saiku.olap.dto.SaikuCube cube = qc.getOlapQuery().getCube();
+                AiCubeRef ref =
+                        new AiCubeRef(cube.getConnection(), cube.getCatalog(), cube.getSchema(), cube.getName());
+                AiSchema schema = cubeMetadataService.getSchema(ref);
+                out[0] = AiReturnsResolver.resolve(returns, schema);
             }
-            Map<String, Object> body = new LinkedHashMap<>();
-            body.put("queryId", queryId);
-            body.put("rowCount", rows.size());
-            // saiku#800: explicit columns[] so agents can read by position
-            // when the label heuristic still leaves ambiguity.
-            body.put("columns", columnLabels);
-            body.put("rows", rows);
-            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
-        } catch (NullPointerException e) {
-            // ThinQueryService.drillthrough dereferences the internal
-            // QueryContext map without a present-check; an unknown queryId
-            // leaks an NPE with internal class names. Catch and translate to
-            // a clean 404 with the typed AiQueryResponse envelope (saiku#783).
-            log.warn("AI drillthrough on unknown queryId {} — translated to 404", queryId);
+        } catch (AiValidationException ve) {
             AiQueryResponse resp = new AiQueryResponse();
             resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
-            resp.setError("Unknown queryId '" + queryId
-                    + "'. The queryId must come from a previous /query or "
-                    + "/query/execute-async response and must not have been evicted.");
-            resp.setField("queryId");
-            return Response.status(Response.Status.NOT_FOUND)
+            resp.setError(ve.getMessage());
+            resp.setField(ve.getField());
+            if (ve.getAvailable() != null) resp.setAvailable(ve.getAvailable());
+            return Response.status(Response.Status.BAD_REQUEST)
                     .entity(resp)
                     .type(MediaType.APPLICATION_JSON)
                     .build();
-        } catch (Exception e) {
-            // Drillthrough defaults to the (0,0) cell — when the source
-            // cellset is empty (e.g. NON EMPTY filtered everything out),
-            // Mondrian throws "Cell coordinates (0, 0) fall outside CellSet
-            // bounds (0, 0)". Surface that as an empty drillthrough (200 +
-            // rowCount=0) rather than a generic 500 (saiku#794).
-            String m = e.getMessage();
-            if (m != null && m.contains("fall outside CellSet bounds")) {
-                Map<String, Object> body = new LinkedHashMap<>();
-                body.put("queryId", queryId);
-                body.put("rowCount", 0);
-                body.put("rows", new ArrayList<>());
-                return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
-            }
-            // A bad `returns=` query param surfaces as
-            // "Can't perform drillthrough operation on unknown member
-            // '<ref>' in RETURN clause" — Mondrian-friendly text. Lift to a
-            // 400 with the typed envelope pointing at the offending param
-            // (saiku#795).
-            if (m != null && m.contains("in RETURN clause")) {
+        } catch (RuntimeException ignored) {
+            // Schema lookup failure shouldn't poison the drillthrough — fall
+            // through with the raw returns value and let Mondrian report
+            // whatever it reports. The 400-translation block in
+            // translateDrillthroughFailure handles the typical
+            // "in RETURN clause" message.
+        }
+        return null;
+    }
+
+    /** Allocate the single-element holder for the parsed cell position. */
+    @SuppressWarnings("unchecked")
+    private static List<Integer>[] parsePositionHolder() {
+        return (List<Integer>[]) new List[1];
+    }
+
+    /**
+     * saiku#930: per-cell drillthrough. {@code position} is "col:row" cellset
+     * coordinates — component i indexes cellset axis i (axis 0 = columns,
+     * axis 1 = rows), matching {@link ThinQueryService#drillthrough}. Parsed +
+     * validated before touching the engine so a malformed value is a clean
+     * 400.
+     *
+     * <p>Writes the parsed coordinates into {@code out[0]} (left null when no
+     * position is supplied — whole-result mode). Returns a 400 Response on a
+     * non-numeric coordinate; otherwise null.
+     */
+    private Response parseCellPosition(String position, List<Integer>[] out) {
+        if (position == null || position.trim().isEmpty()) {
+            return null;
+        }
+        List<Integer> cellPosition = new ArrayList<>();
+        for (String p : position.split(":")) {
+            try {
+                cellPosition.add(Integer.parseInt(p.trim()));
+            } catch (NumberFormatException nfe) {
                 AiQueryResponse resp = new AiQueryResponse();
                 resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
-                resp.setError(m.replaceFirst("^.*Mondrian Error:", "").trim());
-                resp.setField("returns");
+                resp.setError(
+                        "Malformed position '" + position + "'. Expected \"row:col\" cell coordinates, e.g. \"2:1\".");
+                resp.setField("position");
                 return Response.status(Response.Status.BAD_REQUEST)
                         .entity(resp)
                         .type(MediaType.APPLICATION_JSON)
                         .build();
             }
-            log.error("AI drillthrough failed for {}", queryId, e);
-            return error("drillthrough failed: " + e.getMessage());
         }
+        out[0] = cellPosition;
+        return null;
+    }
+
+    /**
+     * Serialise a drillthrough {@link java.sql.ResultSet} into the typed
+     * response body — keys {@code queryId}, {@code rowCount}, {@code columns},
+     * {@code rows}. The ResultSet is fully drained and closed here.
+     *
+     * <p>saiku#800: Mondrian's drillthrough sometimes returns the same
+     * {@code getColumnLabel()} for multiple columns within a hierarchy (e.g.
+     * Year + Quarter + Month all labelled "Quarter"). Disambiguated keys are
+     * pre-computed ONCE before the row loop so the first occurrence keeps its
+     * raw label (back-compat) and subsequent duplicates fall back to
+     * {@code getColumnName(c)} when it differs, else a positional suffix
+     * _2, _3, … Without this every row's Map.put silently overwrote the
+     * earlier column, leaving the first column labelled with the LAST column's
+     * value — silent data corruption. The explicit {@code columns[]} lets
+     * agents read by position when the label heuristic still leaves ambiguity.
+     */
+    private Response serialiseDrillthroughBody(String queryId, java.sql.ResultSet rs) throws java.sql.SQLException {
+        List<Map<String, AiCell>> rows = new ArrayList<>();
+        List<String> columnLabels = new ArrayList<>();
+        if (rs != null) {
+            java.sql.ResultSetMetaData md = rs.getMetaData();
+            int colCount = md.getColumnCount();
+            columnLabels = disambiguateColumnLabels(md);
+            while (rs.next()) {
+                Map<String, AiCell> row = new LinkedHashMap<>();
+                for (int c = 1; c <= colCount; c++) {
+                    Object v = rs.getObject(c);
+                    row.put(columnLabels.get(c - 1), toCellFromObject(v));
+                }
+                rows.add(row);
+            }
+            rs.close();
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("queryId", queryId);
+        body.put("rowCount", rows.size());
+        body.put("columns", columnLabels);
+        body.put("rows", rows);
+        return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
+     * saiku#783: {@link ThinQueryService#drillthrough} dereferences the
+     * internal QueryContext map without a present-check; an unknown queryId
+     * leaks an NPE with internal class names. Translate to a clean 404 with
+     * the typed AiQueryResponse envelope (field=queryId).
+     */
+    private Response translateDrillthroughNpe(String queryId, NullPointerException e) {
+        log.warn("AI drillthrough on unknown queryId {} — translated to 404", queryId);
+        AiQueryResponse resp = new AiQueryResponse();
+        resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
+        resp.setError("Unknown queryId '" + queryId
+                + "'. The queryId must come from a previous /query or "
+                + "/query/execute-async response and must not have been evicted.");
+        resp.setField("queryId");
+        return Response.status(Response.Status.NOT_FOUND)
+                .entity(resp)
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    /**
+     * Translate a non-NPE drillthrough engine failure to its typed envelope:
+     *
+     * <ul>
+     *   <li>saiku#794: an empty source cellset (drillthrough defaults to the
+     *       (0,0) cell; "Cell coordinates (0, 0) fall outside CellSet bounds
+     *       (0, 0)") surfaces as an empty drillthrough — 200 + rowCount=0 —
+     *       rather than a generic 500.</li>
+     *   <li>saiku#795: a bad {@code returns=} param surfaces as
+     *       "Can't perform drillthrough operation on unknown member '&lt;ref&gt;'
+     *       in RETURN clause" — lifted to a 400 with field=returns.</li>
+     *   <li>anything else: a generic 500 via {@link #error}.</li>
+     * </ul>
+     */
+    private Response translateDrillthroughFailure(String queryId, Exception e) {
+        String m = e.getMessage();
+        if (m != null && m.contains("fall outside CellSet bounds")) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("queryId", queryId);
+            body.put("rowCount", 0);
+            body.put("rows", new ArrayList<>());
+            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+        }
+        if (m != null && m.contains("in RETURN clause")) {
+            AiQueryResponse resp = new AiQueryResponse();
+            resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
+            resp.setError(m.replaceFirst("^.*Mondrian Error:", "").trim());
+            resp.setField("returns");
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(resp)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        log.error("AI drillthrough failed for {}", queryId, e);
+        return error("drillthrough failed: " + e.getMessage());
     }
 
     /**
@@ -1028,20 +1106,9 @@ public class AiQueryResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response drillthroughColumns(@PathParam("queryId") String queryId) {
         if (thinQueryService == null) return error("Query service not configured");
-        String name = queryId;
-        if (asyncQueryService != null) {
-            AsyncQueryHandle h = asyncQueryService.get(queryId);
-            if (h != null) {
-                name = h.getQuery().getName();
-                // saiku#862: re-attach the async result's cellset to this
-                // request's session-scoped ThinQueryService context so
-                // column discovery can resolve. See drillthrough() above.
-                if (thinQueryService.getContext(name) == null) {
-                    org.olap4j.CellSet cs = asyncQueryService.result(queryId);
-                    thinQueryService.registerExternalContext(h.getQuery(), cs);
-                }
-            }
-        }
+        // saiku#862: same async-handle resolution + cross-session re-attach as
+        // drillthrough() so column discovery resolves on a different session.
+        String name = resolveDrillthroughName(queryId);
         try {
             List<Map<String, String>> cols = thinQueryService.drillthroughColumns(name);
             Map<String, Object> body = new LinkedHashMap<>();

@@ -626,6 +626,84 @@ public class AiQueryResourceTest {
         assertEquals("position", body.getField());
     }
 
+    /* --- #1160 characterization: lock the error-translation branches ----- */
+
+    /** saiku#783: an unknown queryId leaks an NPE from the internal
+     *  QueryContext lookup; the resource must translate that to a clean 404
+     *  with the typed VALIDATION_ERROR envelope and field=queryId. */
+    @Test
+    public void drillthroughUnknownQueryIdReturns404() {
+        resource.setThinQueryService(new ThinQueryService() {
+            @Override
+            public java.sql.ResultSet drillthrough(String n, int m, Integer f, String r) {
+                throw new NullPointerException("internal QueryContext was null");
+            }
+        });
+        Response resp = resource.drillthrough("missing-id", 100, null, null, null);
+        assertEquals(404, resp.getStatus());
+        AiQueryResponse body = (AiQueryResponse) resp.getEntity();
+        assertEquals(AiQueryResponse.Status.VALIDATION_ERROR, body.getStatus());
+        assertEquals("queryId", body.getField());
+    }
+
+    /** saiku#794: drilling an empty source cellset (Mondrian throws
+     *  "Cell coordinates ... fall outside CellSet bounds ...") is surfaced as
+     *  an empty drillthrough — 200 with rowCount=0 — not a 500. */
+    @Test
+    public void drillthroughEmptyCellsetReturns200WithZeroRows() {
+        resource.setThinQueryService(new ThinQueryService() {
+            @Override
+            public java.sql.ResultSet drillthrough(String n, int m, Integer f, String r) {
+                throw new RuntimeException("Cell coordinates (0, 0) fall outside CellSet bounds (0, 0)");
+            }
+        });
+        Response resp = resource.drillthrough("sync-query-id", 100, null, null, null);
+        assertEquals(200, resp.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        assertEquals("sync-query-id", body.get("queryId"));
+        assertEquals(0, body.get("rowCount"));
+    }
+
+    /** saiku#795: a bad {@code returns=} clause surfaces from Mondrian as
+     *  "... in RETURN clause" and must lift to a 400 with field=returns. */
+    @Test
+    public void drillthroughBadReturnsClauseReturns400() {
+        resource.setThinQueryService(new ThinQueryService() {
+            @Override
+            public java.sql.ResultSet drillthrough(String n, int m, Integer f, String r) {
+                throw new RuntimeException("Mondrian Error: Can't perform drillthrough operation on unknown member"
+                        + " '[Bogus]' in RETURN clause");
+            }
+        });
+        // No cubeMetadataService context for this name, so the resolver is
+        // skipped and the raw returns value reaches the engine — exercising
+        // the 400 translation in the execute/catch branch.
+        Response resp = resource.drillthrough("sync-query-id", 100, null, null, "[Bogus]");
+        assertEquals(400, resp.getStatus());
+        AiQueryResponse body = (AiQueryResponse) resp.getEntity();
+        assertEquals(AiQueryResponse.Status.VALIDATION_ERROR, body.getStatus());
+        assertEquals("returns", body.getField());
+    }
+
+    /** saiku#800/#808: explicit columns[] are echoed in the whole-result body
+     *  alongside queryId/rowCount/rows — locks the exact JSON body key set. */
+    @Test
+    public void drillthroughBodyExposesColumnsKey() {
+        resource.setThinQueryService(new StubThinQueryServiceWithDrill());
+        Response resp = resource.drillthrough("sync-query-id", 100, null, null, null);
+        assertEquals(200, resp.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        assertTrue("queryId key present", body.containsKey("queryId"));
+        assertTrue("rowCount key present", body.containsKey("rowCount"));
+        assertTrue("columns key present", body.containsKey("columns"));
+        assertTrue("rows key present", body.containsKey("rows"));
+        @SuppressWarnings("unchecked")
+        List<String> columns = (List<String>) body.get("columns");
+        assertEquals(java.util.Arrays.asList("year", "sales"), columns);
+    }
+
     /* ------------------------ stub impls --------------------------------- */
 
     /** Returns a hand-rolled 2x1 CellDataSet (rows = [1997, 1998], measures = [Store Sales]). */
