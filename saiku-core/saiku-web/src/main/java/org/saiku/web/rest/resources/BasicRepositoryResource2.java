@@ -38,7 +38,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
@@ -351,21 +350,40 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
             if (StringUtils.isBlank(zipFile)) throw new Exception("You must specify a zip file to upload");
 
             output = "Uploding file: " + zipFile + " ...\r\n";
+            // saiku#1165 hardening: bound decompression so a zip bomb can't OOM
+            // the server. The #1157 fix validated entry NAMES; this caps entry
+            // SIZES. Limits are on UNCOMPRESSED bytes actually read (the zip
+            // header sizes are attacker-controlled, so we can't trust them),
+            // plus a total-size and entry-count cap. All tunable via
+            // -Dsaiku.repo.zip* .
+            final long maxEntryBytes = longProp("saiku.repo.zipMaxEntryBytes", 10L * 1024 * 1024);
+            final long maxTotalBytes = longProp("saiku.repo.zipMaxTotalBytes", 50L * 1024 * 1024);
+            final int maxEntries = intProp("saiku.repo.zipMaxEntries", 1000);
+            long totalBytes = 0;
+            int entryCount = 0;
             ZipInputStream zis = new ZipInputStream(uploadedInputStream);
             ZipEntry ze = zis.getNextEntry();
             byte[] doc = null;
             boolean isFile = false;
             if (ze == null) {
-                doc = IOUtils.toByteArray(uploadedInputStream);
+                doc = readCapped(uploadedInputStream, maxEntryBytes);
                 isFile = true;
             }
             while (ze != null || doc != null) {
                 String fileName = null;
                 if (!isFile) {
                     fileName = ze.getName();
-                    doc = IOUtils.toByteArray(zis);
+                    doc = readCapped(zis, maxEntryBytes);
                 } else {
                     fileName = zipFile;
+                }
+                if (++entryCount > maxEntries) {
+                    throw new ZipLimitExceededException("archive has too many entries (limit " + maxEntries + ")");
+                }
+                totalBytes += doc.length;
+                if (totalBytes > maxTotalBytes) {
+                    throw new ZipLimitExceededException(
+                            "archive exceeds the total uncompressed size limit (" + maxTotalBytes + " bytes)");
                 }
 
                 // saiku#1157: zip-slip defense-in-depth. Reject a traversal /
@@ -407,10 +425,64 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
             output += " SUCCESSFUL!\r\n";
             return Response.ok(output).build();
 
+        } catch (ZipLimitExceededException e) {
+            // saiku#1165: a decompression-size guard tripped — treat as a bad
+            // upload (400), not a server error, and never write a partial result.
+            log.warn("Rejected oversized zip upload (saiku#1165): {}", e.getMessage());
+            return Response.status(Status.BAD_REQUEST)
+                    .entity(output + "REJECTED: " + e.getMessage() + "\r\n")
+                    .type("text/plain")
+                    .build();
         } catch (Exception e) {
             log.error("Cannot unzip resources " + zipFile, e);
             String error = ExceptionUtils.getRootCauseMessage(e);
             return Response.serverError().entity(output + "\r\n" + error).build();
+        }
+    }
+
+    /**
+     * saiku#1165: read at most {@code max} uncompressed bytes from {@code in}
+     * (a single zip entry, or the whole non-zip upload), throwing rather than
+     * buffering an unbounded amount — the defense against a zip bomb.
+     */
+    static byte[] readCapped(InputStream in, long max) throws IOException {
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        long total = 0;
+        int n;
+        while ((n = in.read(buf)) != -1) {
+            total += n;
+            if (total > max) {
+                throw new ZipLimitExceededException(
+                        "a zip entry exceeds the per-entry uncompressed size limit (" + max + " bytes)");
+            }
+            bos.write(buf, 0, n);
+        }
+        return bos.toByteArray();
+    }
+
+    private static long longProp(String name, long def) {
+        try {
+            String v = System.getProperty(name);
+            return v == null ? def : Long.parseLong(v.trim());
+        } catch (NumberFormatException e) {
+            return def;
+        }
+    }
+
+    private static int intProp(String name, int def) {
+        try {
+            String v = System.getProperty(name);
+            return v == null ? def : Integer.parseInt(v.trim());
+        } catch (NumberFormatException e) {
+            return def;
+        }
+    }
+
+    /** Thrown when an uploaded archive breaches a decompression safety limit (saiku#1165). */
+    static final class ZipLimitExceededException extends IOException {
+        ZipLimitExceededException(String message) {
+            super(message);
         }
     }
 
