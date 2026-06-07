@@ -620,7 +620,7 @@
       {/if}
     </section>
 
-    {#if favouriteEntries.length > 0}
+    {#if viewMode === "list" && favouriteEntries.length > 0}
       <section class="pinned" aria-labelledby="favourites-heading">
         <h2 id="favourites-heading" class="pinned-heading">
           <Star size={14} aria-hidden="true" /> Favourites
@@ -649,7 +649,7 @@
       </section>
     {/if}
 
-    {#if recentEntries.length > 0}
+    {#if viewMode === "list" && recentEntries.length > 0}
       <section class="pinned" aria-labelledby="recents-heading">
         <h2 id="recents-heading" class="pinned-heading">🕒 Recently viewed</h2>
         <ul class="list">
@@ -769,21 +769,30 @@
     {#snippet folderBranch(node: FolderNode, depth: number)}
       {@const open = isExpanded(node.path)}
       <li class="tree-folder" style="--depth: {depth}">
-        <div class="tree-folder-head">
-          <button
-            type="button"
-            class="btn icon-only tree-toggle"
-            aria-expanded={open}
-            onclick={() => toggleFolder(node.path)}
-            title={open ? i18n.t("dashboard.folder.collapse") : i18n.t("dashboard.folder.expand")}
-            aria-label={open ? i18n.t("dashboard.folder.collapse") : i18n.t("dashboard.folder.expand")}
-          >
+        <!-- #937: the whole row toggles the folder (not just the chevron);
+             action buttons stopPropagation so they don't toggle. role=button
+             + keydown keep it keyboard-accessible (no a11y suppression). -->
+        <div
+          class="tree-folder-head"
+          class:tree-folder-head--open={open}
+          role="button"
+          tabindex="0"
+          aria-expanded={open}
+          onclick={() => toggleFolder(node.path)}
+          onkeydown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              toggleFolder(node.path);
+            }
+          }}
+        >
+          <span class="tree-chevron" aria-hidden="true">
             {#if open}
               <ChevronDown size={14} />
             {:else}
               <ChevronRight size={14} />
             {/if}
-          </button>
+          </span>
           <Folder size={15} aria-hidden="true" />
           <span class="tree-folder-name">{node.name}</span>
           <span class="tree-folder-count"
@@ -793,7 +802,10 @@
             <button
               type="button"
               class="btn icon-only"
-              onclick={() => openNewFolder(node.path)}
+              onclick={(e) => {
+                e.stopPropagation();
+                openNewFolder(node.path);
+              }}
               title={i18n.t("dashboard.folder.new")}
               aria-label={i18n.t("dashboard.folder.new")}
             >
@@ -803,7 +815,10 @@
               type="button"
               class="btn icon-only"
               disabled={movingBusy}
-              onclick={() => openRenameFolder(node.path)}
+              onclick={(e) => {
+                e.stopPropagation();
+                openRenameFolder(node.path);
+              }}
               title={i18n.t("dashboard.folder.rename")}
               aria-label={i18n.t("dashboard.folder.rename")}
             >
@@ -1156,24 +1171,40 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.375rem 0.5rem;
-    padding-left: calc(0.5rem + var(--depth, 0) * 1.25rem);
+    padding: 0.5rem 0.625rem;
+    padding-left: calc(0.625rem + var(--depth, 0) * 1.25rem);
     border-radius: 6px;
+    cursor: pointer;
+    user-select: none;
   }
   .tree-folder-head:hover {
+    background: var(--bg-subtle);
+  }
+  .tree-folder-head:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .tree-folder-head--open {
     background: var(--bg-subtle);
   }
   .tree-folder-head:hover .tree-folder-actions,
   .tree-folder-head:focus-within .tree-folder-actions {
     opacity: 1;
   }
-  .tree-toggle {
-    padding: 0.125rem;
-    border: none;
-    background: transparent;
+  /* Chevron + folder icon read as muted affordances; the name is the anchor. */
+  .tree-chevron {
+    display: inline-flex;
+    align-items: center;
+    color: var(--fg-muted);
+    flex: 0 0 auto;
+  }
+  .tree-folder-head > :global(svg) {
+    color: var(--accent);
+    flex: 0 0 auto;
   }
   .tree-folder-name {
-    font-weight: var(--weight-medium);
+    font-weight: var(--weight-semibold);
+    color: var(--fg);
   }
   .tree-folder-count {
     font-size: 0.6875rem;
