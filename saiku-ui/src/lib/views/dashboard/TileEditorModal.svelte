@@ -42,6 +42,7 @@
   import { CHART_TYPES, DEFAULT_CHART_OPTIONS, type ChartOptions } from "$lib/views/chartTypes";
   // #1077: reuse the workspace chart-options editor for dashboard chart tiles.
   import ChartEditorModal from "$lib/modals/ChartEditorModal.svelte";
+  import TileEditorImage from "$lib/views/dashboard/TileEditorImage.svelte";
   // ── Issue #912: inline visual query editor (embedded QueryCanvas) ──
   import QueryCanvas from "$lib/views/QueryCanvas.svelte";
   import DimensionList from "$lib/views/DimensionList.svelte";
@@ -779,64 +780,19 @@
       {/if}
 
       {#if tile.type === "image"}
-        <fieldset class="mode">
-          <legend>Image source</legend>
-          <label class="radio">
-            <input type="radio" bind:group={imageMode} value="url" />
-            <span>URL</span>
-          </label>
-          <label class="radio">
-            <input type="radio" bind:group={imageMode} value="upload" />
-            <span>Upload file</span>
-          </label>
-        </fieldset>
-
-        {#if imageMode === "url"}
-          <label class="field">
-            <span>Image URL (http/https)</span>
-            <input
-              type="url"
-              bind:value={imageUrl}
-              placeholder="https://example.com/logo.png"
-            />
-          </label>
-        {:else}
-          <label class="field">
-            <span>Upload image{imageExistingSrc ? " (replaces current)" : ""}</span>
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/gif,image/webp"
-              onchange={(e) => {
-                imageFile = (e.currentTarget as HTMLInputElement).files?.[0] ?? null;
-                bodyError = null;
-              }}
-            />
-            <span class="hint">
-              PNG, JPEG, GIF or WebP, up to 2&nbsp;MB. Stored privately in your
-              repository.{imageExistingSrc && !imageFile ? " An image is already set." : ""}
-            </span>
-          </label>
-        {/if}
-
-        <label class="field">
-          <span>Fit</span>
-          <select bind:value={imageFit}>
-            <option value="contain">Contain (whole image, letterboxed)</option>
-            <option value="cover">Cover (fill tile, crop edges)</option>
-            <option value="fill">Fill (stretch to tile)</option>
-            <option value="scale-down">Scale down (never upscale)</option>
-          </select>
-        </label>
-
-        <label class="field">
-          <span>Caption (optional)</span>
-          <input type="text" bind:value={imageCaption} placeholder="e.g. Q4 campaign" />
-        </label>
-
-        <label class="field">
-          <span>Alt text (accessibility)</span>
-          <input type="text" bind:value={imageAlt} placeholder="Describe the image" />
-        </label>
+        <!-- saiku#1229: image tile editor extracted to TileEditorImage.
+             Parent stays the persistence boundary (handleSave still reads
+             imageFile / imageUrl / etc to build the ImageConfig payload). -->
+        <TileEditorImage
+          bind:imageMode
+          bind:imageUrl
+          imageExistingSrc={imageExistingSrc}
+          bind:imageFit
+          bind:imageCaption
+          bind:imageAlt
+          bind:imageFile
+          onFileChosen={() => { bodyError = null; }}
+        />
       {/if}
 
       {#if tile.type !== "text" && tile.type !== "image"}
