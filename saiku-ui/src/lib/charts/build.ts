@@ -74,6 +74,29 @@ function legendConfig(o: ChartOptions, tk: ThemeTokens): Record<string, unknown>
   return position;
 }
 
+/** Compact (dashboard-tile) legend: always a scroll legend (tiles are small,
+ *  so many series must scroll), positioned by `legendPosition`. The default
+ *  ("bottom") yields `{type:"scroll", bottom:0}` — exactly the pre-#1077 tile
+ *  legend — so legacy tiles are unchanged; the chart-tile editor (#1077) can
+ *  now move it. `showLegend:false` hides it. */
+function compactLegend(o: ChartOptions, tk: ThemeTokens): Record<string, unknown> {
+  if (!o.showLegend) return { show: false };
+  const base: Record<string, unknown> = { type: "scroll", textStyle: { color: tk.fg } };
+  if (o.legendPosition === "top") base.top = 0;
+  else if (o.legendPosition === "left") {
+    base.left = 0;
+    base.top = "middle";
+    base.orient = "vertical";
+  } else if (o.legendPosition === "right") {
+    base.right = 0;
+    base.top = "middle";
+    base.orient = "vertical";
+  } else {
+    base.bottom = 0; // "bottom" / default
+  }
+  return base;
+}
+
 function titleConfig(o: ChartOptions, tk: ThemeTokens): Record<string, unknown> | undefined {
   if (!o.title) return undefined;
   return { text: o.title, left: "center", textStyle: { color: tk.fg } };
@@ -379,11 +402,7 @@ export function buildChartOption(
   const catLabelWidth = compact ? 100 : deriveAxisLabelWidth(geom.chartWidth ?? 0, catCount);
   const catLabel = (rotate = 0) => ({ color: tk.fgMuted, rotate, ...axisLabelConfig(catLabelWidth) });
 
-  const legend = compact
-    ? o.showLegend
-      ? { type: "scroll", bottom: 0, textStyle: { color: tk.fg } }
-      : { show: false }
-    : legendConfig(o, tk);
+  const legend = compact ? compactLegend(o, tk) : legendConfig(o, tk);
   const title = titleConfig(o, tk);
   const xName = o.xAxisLabel || undefined;
   const yName = o.yAxisLabel || undefined;

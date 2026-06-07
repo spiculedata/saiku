@@ -31,14 +31,18 @@ export type { ChartType as ChartKind } from "$lib/views/chartTypes";
 export const isSupportedChartKind = isChartType;
 
 /** Dashboard baseline chart options — reproduces the pre-#1076 tile look:
- *  single y-axis, no trend line, no overall title, bottom scroll legend. The
- *  chart-tile editor (#1077) will override these per tile. */
+ *  single y-axis, no trend line, no overall title, bottom scroll legend. Used
+ *  for legacy tiles that have no per-tile {@link ChartOptions}; the chart-tile
+ *  editor (#1077) overrides these per tile via the `options` arg below. */
 const DASHBOARD_BASELINE: ChartOptions = {
   ...DEFAULT_CHART_OPTIONS,
   title: "",
   trendLine: "none",
   dualAxis: false,
   hideRollupRows: false,
+  // Tiles render the legend at the bottom (the compact builder keeps it a
+  // scroll legend); baseline must say "bottom" so legacy tiles are unchanged.
+  legendPosition: "bottom",
 };
 
 function isAiCell(v: unknown): v is AiCell {
@@ -84,17 +88,21 @@ export function projectFromAiQueryResponse(response: AiQueryResponse): ChartProj
  *
  * `aspect` (canvas w/h) keeps small-multiple radii on-screen-constant; `tk`
  * carries the active theme tokens (chartTheme.ts) so tiles repaint on a
- * light/dark/system flip. Both default to keep the pure callers (tests)
- * DOM-free and structurally unchanged.
+ * light/dark/system flip. `options` are the per-tile {@link ChartOptions} set
+ * via the chart-tile editor (#1077); when omitted, the dashboard baseline is
+ * used so legacy tiles render exactly as before. All default to keep the pure
+ * callers (tests) DOM-free and structurally unchanged.
  */
 export function buildChartOption(
   response: AiQueryResponse,
   kind: string,
   aspect = 1,
   tk: ThemeTokens = DEFAULT_THEME_TOKENS,
+  options?: ChartOptions,
 ): Record<string, unknown> | null {
   if (!isChartType(kind)) return null;
   const projection = projectFromAiQueryResponse(response);
   if (projection.matrix.length === 0) return null;
-  return buildSharedChartOption(projection, kind, DASHBOARD_BASELINE, tk, { aspect, compact: true });
+  const effective = options ?? DASHBOARD_BASELINE;
+  return buildSharedChartOption(projection, kind, effective, tk, { aspect, compact: true });
 }

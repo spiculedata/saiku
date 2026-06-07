@@ -226,13 +226,33 @@ describe("buildChartOption — title & legend", () => {
     expect((opt.legend as { bottom: number }).bottom).toBe(10);
   });
 
-  test("compact ignores legendPosition and pins a bottom scroll legend", () => {
-    const opt = buildChartOption(sample(), "bar", opts({ legendPosition: "left" }), undefined, {
+  test("compact legend defaults to a bottom scroll legend (legacy-tile parity)", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ legendPosition: "bottom" }), undefined, {
       compact: true,
     }) as Record<string, unknown>;
     const legend = opt.legend as { type: string; bottom: number };
     expect(legend.type).toBe("scroll");
     expect(legend.bottom).toBe(0);
+  });
+
+  test("compact legend now honors legendPosition (#1077) while staying a scroll legend", () => {
+    const top = buildChartOption(sample(), "bar", opts({ legendPosition: "top" }), undefined, {
+      compact: true,
+    }) as Record<string, unknown>;
+    expect((top.legend as { type: string; top: number }).type).toBe("scroll");
+    expect((top.legend as { top: number }).top).toBe(0);
+    const left = buildChartOption(sample(), "bar", opts({ legendPosition: "left" }), undefined, {
+      compact: true,
+    }) as Record<string, unknown>;
+    expect((left.legend as { left: number; orient: string }).left).toBe(0);
+    expect((left.legend as { orient: string }).orient).toBe("vertical");
+  });
+
+  test("compact legend hidden when showLegend is false", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ showLegend: false }), undefined, {
+      compact: true,
+    }) as Record<string, unknown>;
+    expect((opt.legend as { show: boolean }).show).toBe(false);
   });
 
   test("compact pie merges no overall title — just per-measure cell titles", () => {

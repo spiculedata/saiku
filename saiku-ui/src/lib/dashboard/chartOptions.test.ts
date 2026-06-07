@@ -5,6 +5,7 @@
 
 import { describe, test, expect } from "vitest";
 import { buildChartOption, isSupportedChartKind } from "$lib/dashboard/chartOptions";
+import { DEFAULT_CHART_OPTIONS } from "$lib/views/chartTypes";
 import type { AiQueryResponse } from "$lib/api/aiQuery";
 
 function sampleResponse(): AiQueryResponse {
@@ -239,6 +240,41 @@ describe("buildChartOption — theme tokens (#1050 repaint)", () => {
     // deterministic token set with no DOM.
     expect((opt.textStyle as { color: string }).color).toBe("#0f172a");
     expect(opt.backgroundColor).toBe("transparent");
+  });
+});
+
+describe("buildChartOption — per-tile options (#1077)", () => {
+  test("omitting options keeps the legacy baseline (single y-axis, bottom legend)", () => {
+    const opt = buildChartOption(sampleResponse(), "bar") as Record<string, unknown>;
+    // Baseline dualAxis=false → single y-axis object (not an array).
+    expect(Array.isArray(opt.yAxis)).toBe(false);
+    const legend = opt.legend as { type: string; bottom: number };
+    expect(legend.type).toBe("scroll");
+    expect(legend.bottom).toBe(0);
+  });
+
+  test("passing options enables tile dual-axis + a user title", () => {
+    const options = {
+      ...DEFAULT_CHART_OPTIONS,
+      title: "My tile",
+      dualAxis: true,
+      seriesAxis: { "Unit Sales": "right" as const },
+    };
+    const opt = buildChartOption(sampleResponse(), "bar", 1, undefined, options) as Record<string, unknown>;
+    expect(Array.isArray(opt.yAxis)).toBe(true);
+    const series = opt.series as Array<{ name: string; yAxisIndex: number }>;
+    expect(series.find((s) => s.name === "Unit Sales")?.yAxisIndex).toBe(1);
+    // Cartesian (non-pie) chart → single title object carrying the user title.
+    expect((opt.title as { text: string }).text).toBe("My tile");
+  });
+
+  test("passing options with a trend line adds a trend series on a line tile", () => {
+    const options = { ...DEFAULT_CHART_OPTIONS, dualAxis: false, trendLine: "linear" as const };
+    const opt = buildChartOption(sampleResponse(), "line", 1, undefined, options) as Record<string, unknown>;
+    const series = opt.series as Array<{ name: string }>;
+    // 2 measure series + 1 trend on the first measure.
+    expect(series.length).toBe(3);
+    expect(series[series.length - 1].name).toContain("(trend)");
   });
 });
 

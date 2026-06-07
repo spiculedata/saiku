@@ -28,10 +28,10 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "top": 24,
     },
     "legend": {
-      "bottom": 0,
       "textStyle": {
         "color": "#0f172a",
       },
+      "top": 0,
       "type": "scroll",
     },
     "series": [
@@ -160,10 +160,10 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "top": 24,
     },
     "legend": {
-      "bottom": 0,
       "textStyle": {
         "color": "#0f172a",
       },
+      "top": 0,
       "type": "scroll",
     },
     "series": [
@@ -292,10 +292,10 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "top": 24,
     },
     "legend": {
-      "bottom": 0,
       "textStyle": {
         "color": "#0f172a",
       },
+      "top": 0,
       "type": "scroll",
     },
     "series": [
@@ -681,10 +681,10 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "top": 24,
     },
     "legend": {
-      "bottom": 0,
       "textStyle": {
         "color": "#0f172a",
       },
+      "top": 0,
       "type": "scroll",
     },
     "series": [
@@ -910,10 +910,10 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#14b8a6",
     ],
     "legend": {
-      "bottom": 0,
       "textStyle": {
         "color": "#0f172a",
       },
+      "top": 0,
       "type": "scroll",
     },
     "radar": {
@@ -1010,10 +1010,10 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "top": 24,
     },
     "legend": {
-      "bottom": 0,
       "textStyle": {
         "color": "#0f172a",
       },
+      "top": 0,
       "type": "scroll",
     },
     "series": [
@@ -1147,10 +1147,10 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "top": 24,
     },
     "legend": {
-      "bottom": 0,
       "textStyle": {
         "color": "#0f172a",
       },
+      "top": 0,
       "type": "scroll",
     },
     "series": [
@@ -1279,10 +1279,10 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "top": 24,
     },
     "legend": {
-      "bottom": 0,
       "textStyle": {
         "color": "#0f172a",
       },
+      "top": 0,
       "type": "scroll",
     },
     "series": [
@@ -1411,10 +1411,10 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "top": 24,
     },
     "legend": {
-      "bottom": 0,
       "textStyle": {
         "color": "#0f172a",
       },
+      "top": 0,
       "type": "scroll",
     },
     "series": [
@@ -1737,10 +1737,10 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "top": 24,
     },
     "legend": {
-      "bottom": 0,
       "textStyle": {
         "color": "#0f172a",
       },
+      "top": 0,
       "type": "scroll",
     },
     "series": [

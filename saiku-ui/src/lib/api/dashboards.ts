@@ -9,6 +9,7 @@
  */
 
 import type { ThinQuery } from "$lib/api/query";
+import type { ChartOptions } from "$lib/views/chartTypes";
 
 const REST_BASE = "/rest/saiku/api/dashboards";
 
@@ -216,6 +217,11 @@ export interface DashboardTile {
   cube?: CubeRef;
   query?: TileQuery;
   chartType?: string;
+  /** Per-tile chart options (title / axes / legend / dualAxis / seriesAxis /
+   *  trend lines). Only consulted when {@code type === "chart"}. Absent on
+   *  legacy tiles → the renderer falls back to the dashboard baseline, so the
+   *  appearance is unchanged (migration-safe). Issue #1077. */
+  chartOptions?: ChartOptions;
   text?: string;
   target?: DashboardFilter;
   widget?: FilterWidget;
