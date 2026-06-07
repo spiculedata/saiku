@@ -40,6 +40,23 @@
   import { flatten, listRepository, type RepositoryNode } from "$lib/api/repository";
   import { repositionTile } from "$lib/dashboard/tilePlacement";
   import { CHART_TYPES } from "$lib/views/chartTypes";
+  // ── Issue #912: inline visual query editor (embedded QueryCanvas) ──
+  import QueryCanvas from "$lib/views/QueryCanvas.svelte";
+  import DimensionList from "$lib/views/DimensionList.svelte";
+  import { query } from "$lib/stores/query.svelte";
+  import { selection } from "$lib/stores/selection.svelte";
+  import { session } from "$lib/stores/session.svelte";
+  import { datasources } from "$lib/stores/datasources.svelte";
+  import { findCubeByRef } from "$lib/api/starterCube";
+  import {
+    bodyToThinQuery,
+    thinQueryToBody,
+    bodyIsRunnable,
+    type InlineQueryBody,
+  } from "$lib/dashboard/queryBodyConversion";
+  import type { QueryStateSnapshot } from "$lib/stores/query.svelte";
+  import type { SaikuCube } from "$lib/api/discover";
+  import { i18n } from "$lib/stores/i18n.svelte";
 
   interface Props {
     tile: DashboardTile;
@@ -140,6 +157,105 @@
     untrack(() => (tile.query?.kind === "inline" ? "inline" : "reference")),
   );
   let referencePath = $state<string>(untrack(() => (tile.query?.kind === "reference" ? tile.query.path : "")));
+
+  // ── Issue #912: inline visual query editor ──────────────────────────
+  // For chart / table tiles, "Edit query visually" mounts the workspace
+  // QueryCanvas inside this modal (embedded mode). The canvas + drop zones
+  // drive the SINGLETON query store, so before seeding it we stash the
+  // workspace's live query + cube snapshot and restore them when the embed
+  // closes — the dashboard author's open workspace tab must survive an
+  // inline edit untouched. On commit, the built model is converted to the
+  // tile's inline AiQueryRequest body (no separate Save inside the embed).
+  let queryEditorOpen = $state(false);
+  let queryEditorError = $state<string | null>(null);
+  // Saved workspace store state, restored on close.
+  let savedQuerySnapshot: QueryStateSnapshot | null = null;
+  let savedCube: SaikuCube | null = null;
+  // The body the embed was seeded from — passed back to thinQueryToBody so
+  // unmanaged passthrough fields (order / limit / …) survive the round-trip.
+  let seedBody: InlineQueryBody | null = null;
+
+  /** Resolve the tile's CubeRef to a live SaikuCube via the loaded
+   *  connection tree (loading it first if needed). Returns null when the
+   *  cube can't be found — the embed surfaces a hint instead of mounting
+   *  a canvas with no cube. */
+  async function resolveTileCube(): Promise<SaikuCube | null> {
+    if (!cube) return null;
+    if (!datasources.loaded && session.current) {
+      try {
+        await datasources.load(session.current.username);
+      } catch {
+        return null;
+      }
+    }
+    return findCubeByRef(datasources.connections, {
+      connection: cube.connectionName,
+      catalog: cube.catalog,
+      schema: cube.schema,
+      name: cube.cubeName,
+    });
+  }
+
+  async function openQueryEditor(): Promise<void> {
+    queryEditorError = null;
+    const resolved = await resolveTileCube();
+    if (!resolved) {
+      queryEditorError = i18n.t("tileEditor.query.pickCubeFirst");
+      return;
+    }
+    // Stash the workspace's live state so we can put it back on close.
+    // snapshotAndReset cancels any in-flight workspace query too.
+    savedQuerySnapshot = query.snapshotAndReset();
+    savedCube = selection.snapshot();
+
+    // Seed the singleton store from the tile's current inline body (if any).
+    seedBody =
+      tile.query?.kind === "inline" ? (tile.query.body as InlineQueryBody) : null;
+    const seeded = bodyToThinQuery(seedBody, resolved);
+    query.hydrate(seeded);
+    selection.restore(resolved);
+    if (query.hasRunnableShape()) void query.run();
+    queryEditorOpen = true;
+  }
+
+  /** Read the embed's built model back into the tile's inline body fields
+   *  and switch the tile to inline mode. Returns false (with an inline
+   *  error) when the built query isn't runnable, so the caller can keep
+   *  the embed open. */
+  function commitQueryEditor(): boolean {
+    if (!query.current) return false;
+    if (!bodyIsRunnable(query.current)) {
+      queryEditorError = i18n.t("tileEditor.query.notRunnable");
+      return false;
+    }
+    const built = thinQueryToBody(query.current, seedBody);
+    inlineBodyJson = JSON.stringify(built, null, 2);
+    queryMode = "inline";
+    bodyError = null;
+    return true;
+  }
+
+  /** Restore the workspace store state captured in openQueryEditor and
+   *  close the embed. Safe to call when nothing was captured. */
+  function teardownQueryEditor(): void {
+    if (savedQuerySnapshot) {
+      query.restore(savedQuerySnapshot);
+      savedQuerySnapshot = null;
+    }
+    selection.restore(savedCube);
+    savedCube = null;
+    queryEditorOpen = false;
+  }
+
+  function applyQueryEditor(): void {
+    if (commitQueryEditor()) teardownQueryEditor();
+  }
+
+  function cancelQueryEditor(): void {
+    queryEditorError = null;
+    teardownQueryEditor();
+  }
+  // ── end issue #912 ──
 
   // Cube catalogue + saved-query catalogue, fetched once on open.
   let cubes = $state<AiCubeSummary[]>([]);
@@ -375,6 +491,15 @@
     bodyError = null;
     positionError = null;
 
+    // #912: if the visual query editor is still open, commit its built
+    // query into the inline body first. If it isn't runnable, keep the
+    // modal open so the author can finish the query (commitQueryEditor
+    // surfaces the inline error).
+    if (queryEditorOpen) {
+      if (!commitQueryEditor()) return;
+      teardownQueryEditor();
+    }
+
     // Resolve the new position via the layout-aware helper: validates
     // x+w <= cols, refuses sub-1 sizes, and cascade-pushes siblings if
     // the new rectangle overlaps them. Returns either a full new tiles
@@ -542,22 +667,30 @@
     dashboardStore.replaceTiles(tiles);
     onClose();
   }
+
+  /** Close the modal without saving. #912: tear the visual query editor
+   *  down first so the workspace's live query store is restored even when
+   *  the author cancels mid-edit. */
+  function handleClose(): void {
+    if (queryEditorOpen || savedQuerySnapshot) teardownQueryEditor();
+    onClose();
+  }
 </script>
 
 <div
   class="modal-backdrop"
   role="presentation"
   onclick={(e) => {
-    if (e.target === e.currentTarget) onClose();
+    if (e.target === e.currentTarget) handleClose();
   }}
   onkeydown={(e) => {
-    if (e.key === "Escape") onClose();
+    if (e.key === "Escape") handleClose();
   }}
 >
-  <div class="modal" role="dialog" aria-label="Edit tile">
+  <div class="modal" class:modal--wide={queryEditorOpen} role="dialog" aria-label="Edit tile">
     <header class="modal-header">
       <h2>Edit {tile.type} tile</h2>
-      <button type="button" class="close" aria-label="Close" onclick={onClose}>×</button>
+      <button type="button" class="close" aria-label="Close" onclick={handleClose}>×</button>
     </header>
     <div class="modal-body">
       <label class="field">
@@ -688,6 +821,10 @@
       {/if}
 
       {#if tile.type === "chart" || tile.type === "table"}
+        <!-- #912/#1175 fix: while the visual builder is open it owns the whole
+             query section — hide the mode radios + the reference/inline blocks
+             so they don't render on top of the embedded canvas. -->
+        {#if !queryEditorOpen}
         <fieldset class="mode">
           <legend>Query source</legend>
           <label class="radio">
@@ -699,7 +836,60 @@
             <span>Inline JSON</span>
           </label>
         </fieldset>
+        {/if}
 
+        <!-- ════════════════════════════════════════════════════════════
+             Issue #912 — inline visual query editor. Mounts the workspace
+             QueryCanvas (embedded mode) so the author builds the tile's
+             query with drag-and-drop without leaving the dashboard. The
+             modal widens while the editor is open; Save commits the built
+             query into the inline body (no separate Save inside the embed).
+             ════════════════════════════════════════════════════════════ -->
+        {#if !queryEditorOpen}
+          <div class="qe-launch">
+            <button
+              type="button"
+              class="btn"
+              disabled={!cube}
+              onclick={() => void openQueryEditor()}
+            >
+              {i18n.t("tileEditor.query.editInline")}
+            </button>
+            <span class="hint">
+              {cube ? i18n.t("tileEditor.query.editInline.hint") : i18n.t("tileEditor.query.pickCubeFirst")}
+            </span>
+          </div>
+          {#if queryEditorError}
+            <span class="hint error">{queryEditorError}</span>
+          {/if}
+        {:else}
+          <fieldset class="qe-section">
+            <legend>{i18n.t("tileEditor.query.builder")}</legend>
+            {#if queryEditorError}
+              <span class="hint error">{queryEditorError}</span>
+            {/if}
+            <div class="qe-embed">
+              {#if session.current}
+                <aside class="qe-dims">
+                  <DimensionList username={session.current.username} />
+                </aside>
+              {/if}
+              <div class="qe-canvas">
+                <QueryCanvas embedded />
+              </div>
+            </div>
+            <div class="qe-actions">
+              <button type="button" class="btn" onclick={cancelQueryEditor}>
+                {i18n.t("tileEditor.query.collapse")}
+              </button>
+              <button type="button" class="btn primary" onclick={applyQueryEditor}>
+                {i18n.t("modal.apply")}
+              </button>
+            </div>
+          </fieldset>
+        {/if}
+
+        {#if !queryEditorOpen}
         {#if queryMode === "reference"}
           <label class="field">
             <span>Saved query (.saiku file)</span>
@@ -744,10 +934,12 @@
               <span class="hint error">{bodyError}</span>
             {:else}
               <span class="hint">
-                Paste an AiQueryRequest. A no-code editor lands in a later slice.
+                Paste an AiQueryRequest, or use “{i18n.t("tileEditor.query.editInline")}”
+                above to build it visually.
               </span>
             {/if}
           </label>
+        {/if}
         {/if}
       {/if}
 
@@ -1131,7 +1323,7 @@
       {/if}
     </div>
     <footer class="modal-footer">
-      <button type="button" class="btn" onclick={onClose} disabled={imageUploading}>Cancel</button>
+      <button type="button" class="btn" onclick={handleClose} disabled={imageUploading}>Cancel</button>
       <button type="button" class="btn primary" onclick={handleSave} disabled={imageUploading}>
         {imageUploading ? "Uploading…" : "Save"}
       </button>
@@ -1157,6 +1349,14 @@
     max-height: 90vh;
     display: flex;
     flex-direction: column;
+    /* #912: smooth the grow/shrink when the visual editor opens. */
+    transition: width 0.15s ease;
+  }
+  /* #912: the modal grows to ~80vw while the embedded QueryCanvas is open
+     so the drop zones + result preview have room to work. */
+  .modal--wide {
+    width: min(1100px, 92vw);
+    height: 88vh;
   }
   .modal-header {
     display: flex;
@@ -1183,6 +1383,12 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+  }
+  /* #912: when the modal is in wide (visual-editor) mode, let the body
+     consume the leftover height so the embedded .qe-section can grow. */
+  .modal--wide .modal-body {
+    flex: 1;
+    min-height: 0;
   }
   .field {
     display: flex;
@@ -1338,5 +1544,73 @@
   }
   .cf-add {
     align-self: flex-start;
+  }
+  /* ── Issue #912: inline visual query editor (embedded QueryCanvas) ── */
+  .qe-launch {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    flex-wrap: wrap;
+  }
+  .qe-launch .hint {
+    flex: 1;
+    min-width: 12rem;
+  }
+  .qe-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    margin: 0;
+    /* Let the embed take the freed-up vertical space when the modal grows. */
+    flex: 1;
+    min-height: 0;
+  }
+  .qe-section legend {
+    font-size: 0.75rem;
+    color: var(--fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0 0.25rem;
+  }
+  /* Two-pane embed: dimension sidebar (drag source) + the canvas/result. */
+  .qe-embed {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 0.5rem;
+    flex: 1;
+    min-height: 0;
+    /* A floor so the drop zones + result preview are usable even before the
+       modal's flex height resolves. */
+    min-height: 360px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .qe-dims {
+    overflow-y: auto;
+    padding: 0.5rem;
+    border-right: 1px solid var(--border);
+    background: var(--bg-subtle);
+    min-width: 0;
+  }
+  .qe-canvas {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  /* QueryCanvas's root is .canvas (flex:1); make it fill the embed pane. */
+  .qe-canvas :global(.canvas) {
+    flex: 1;
+    min-height: 0;
+  }
+  .qe-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
   }
 </style>
