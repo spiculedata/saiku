@@ -92,6 +92,20 @@ public class SessionService implements ISessionService {
 
             if (authorisationPredicate.isAuthorised(auth)) {
                 Object p = auth.getPrincipal();
+                // saiku#1165: defeat session fixation. Now that authentication has
+                // succeeded, rotate the HTTP session id so any pre-auth id an
+                // attacker may have planted in the victim's browser is discarded.
+                // changeSessionId() keeps the session's attributes (including the
+                // SecurityContext saved during authenticate()) and reissues the
+                // JSESSIONID cookie with the new id. This manual login flow bypasses
+                // Spring Security's SessionAuthenticationStrategy, so we rotate here.
+                try {
+                    req.changeSessionId();
+                } catch (IllegalStateException noSession) {
+                    // No active session to rotate (shouldn't happen after getSession
+                    // above) — nothing to fix; continue.
+                    log.debug("Session id rotation skipped: no active session", noSession);
+                }
                 createSession(auth, username, password);
                 return sessionHolder.get(p);
             } else {
