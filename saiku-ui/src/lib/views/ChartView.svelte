@@ -14,6 +14,10 @@
   // issue #1071: map charts need the GeoJSON registered with ECharts before
   // setOption — done lazily here (the builder stays pure).
   import { ensureGeoMap, isGeoMapRegistered } from "$lib/charts/geoMaps";
+  // #1092: preserve the dataZoom window (+ brush) across re-renders (resize /
+  // theme flip / same-shape data refresh). Pure decision lives in the helper;
+  // the getOption()/setOption() I/O stays here.
+  import { reconcileZoomState } from "$lib/charts/zoomState";
 
   interface Props {
     result: QueryResult;
@@ -105,6 +109,11 @@
       chart.clear();
       return;
     }
+    // #1092: capture the live zoom/brush BEFORE we overwrite the option, so we
+    // can put the user's window back after. reconcileZoomState() only returns
+    // something when the chart is "the same chart" (same type + category count),
+    // so a type switch or a new dataset starts fresh at full range.
+    const preserved = reconcileZoomState(chart.getOption() as Record<string, unknown>, opt, type);
     // Include "series" in replaceMerge — switching chart types must drop the
     // previous series wholesale, otherwise a stacked-bar's series would merge
     // with the next radar's etc., producing the "stale chart" symptom.
@@ -112,6 +121,9 @@
       notMerge: false,
       replaceMerge: ["xAxis", "yAxis", "legend", "tooltip", "title", "visualMap", "radar", "series"],
     });
+    // #1092: re-apply the saved window/selection (merge, so colours/data from the
+    // fresh render stay and only the zoom/brush slice is overlaid).
+    if (preserved) chart.setOption(preserved, { notMerge: false });
   }
 
   onMount(() => {

@@ -41,6 +41,9 @@
   // issue #1071: map tiles need the GeoJSON registered with ECharts before
   // setOption — lazy-loaded here (the builder/adapter stay pure).
   import { ensureGeoMap, isGeoMapRegistered } from "$lib/charts/geoMaps";
+  // #1092: preserve the dataZoom window (+ brush) across re-renders (tile resize
+  // / theme flip / same-shape data refresh). Pure decision in the helper.
+  import { reconcileZoomState } from "$lib/charts/zoomState";
   import { isSingleMeasureKind, smallMultipleRowCount } from "$lib/dashboard/smallMultiples";
   import { theme } from "$lib/stores/theme.svelte";
   import { resolveThemeTokens } from "$lib/views/chartTheme";
@@ -328,8 +331,18 @@
     const aspect = host && host.clientHeight > 0 ? host.clientWidth / host.clientHeight : 1;
     const option = buildChartOption(r, kind, aspect, resolveThemeTokens());
     if (option) {
+      // #1092: capture the live zoom/brush before overwriting; only re-applied
+      // when the chart type + category count are unchanged (resize / theme flip
+      // / same-shape refresh), so a new query or chart-type switch starts fresh.
+      const preserved = reconcileZoomState(
+        chart.getOption() as Record<string, unknown>,
+        option,
+        kind,
+      );
       // notMerge=true so axis category changes don't leave stale ticks.
       chart.setOption(option, true);
+      // Overlay the saved window/selection (merge so the fresh render is kept).
+      if (preserved) chart.setOption(preserved, { notMerge: false });
     } else {
       chart.clear();
     }
