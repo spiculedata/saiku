@@ -48,6 +48,10 @@
     cellFormatToStyle,
     type CellFormat,
   } from "$lib/dashboard/conditionalFormat";
+  // Issue #920 — opt-in inline sparkline column (display-only). Pure
+  // geometry lives in $lib/dashboard/sparkline; this component only
+  // collects each row's numeric measure values and renders the SVG.
+  import { sparklineGeometry, sparklineBars, numericValues } from "$lib/dashboard/sparkline";
   // Issue #933 — shared loading / error / empty states.
   import TileLoading from "./TileLoading.svelte";
   import TileError from "./TileError.svelte";
@@ -349,6 +353,37 @@
     return v.formatted ?? "";
   }
 
+  /* ----------------------- sparkline column (#920) -------------------- */
+
+  // Opt-in trailing column that draws a tiny inline trend per row from the
+  // row's numeric measure cells. Display-only; the geometry maths lives in
+  // $lib/dashboard/sparkline. Needs >= 2 measure columns to be meaningful.
+  let sparklineEnabled = $derived(
+    tile.type === "table" &&
+      (tile.sparkline?.enabled ?? false) &&
+      (response?.metadata?.columns?.length ?? 0) >= 2,
+  );
+  let sparklineType = $derived<"line" | "bar">(tile.sparkline?.type ?? "line");
+
+  /** A row's numeric measure values, in measure-column order. Row-header
+   *  columns are excluded — only response.metadata.columns (the measures)
+   *  feed the trend. Non-numeric measure cells become null and are dropped
+   *  by the geometry helper. */
+  function rowMeasureValues(row: Record<string, AiCell | string>): unknown[] {
+    const cols = response?.metadata?.columns ?? [];
+    return cols.map((c) => {
+      const cell = row[c.caption];
+      return isAiCell(cell) ? cell.value : cell;
+    });
+  }
+
+  /** Bar geometry for a row, using the same default viewBox as
+   *  sparklineGeometry so the bars line up with the svg's 0 0 100 24 box.
+   *  Only the finite measure values feed the bars (non-numeric dropped). */
+  function sparklineBarsFor(row: Record<string, AiCell | string>) {
+    return sparklineBars(numericValues(rowMeasureValues(row)));
+  }
+
   /* --------------------------- drillthrough (#930) -------------------- */
 
   let drill = $state<TileDrillthrough | null>(null);
@@ -402,6 +437,9 @@
               {#each columns as col (col.caption)}
                 <th class:row-header={col.isRowHeader}>{col.caption}</th>
               {/each}
+              {#if sparklineEnabled}
+                <th class="spark-header">Trend</th>
+              {/if}
             </tr>
           </thead>
           <tbody>
@@ -440,6 +478,49 @@
                     {#if cf.icon}<span class="cf-icon" aria-hidden="true">{cf.icon}</span>{/if}{fmt.display}
                   </td>
                 {/each}
+                {#if sparklineEnabled}
+                  {@const g = sparklineGeometry(rowMeasureValues(row))}
+                  <td class="spark-cell">
+                    {#if g.renderable}
+                      <svg
+                        class="spark"
+                        viewBox={`0 0 ${g.width} ${g.height}`}
+                        width={g.width}
+                        height={g.height}
+                        preserveAspectRatio="none"
+                        role="img"
+                        aria-label={`Trend across ${g.points.length} measures, min ${g.min}, max ${g.max}`}
+                      >
+                        {#if sparklineType === "bar"}
+                          {#each sparklineBarsFor(row) as bar (bar.x)}
+                            <rect
+                              x={bar.x}
+                              y={bar.y}
+                              width={bar.width}
+                              height={bar.height}
+                              fill="var(--accent)"
+                            />
+                          {/each}
+                        {:else}
+                          <polyline
+                            points={g.polyline}
+                            fill="none"
+                            stroke="var(--accent)"
+                            stroke-width="1.25"
+                            stroke-linejoin="round"
+                            stroke-linecap="round"
+                            vector-effect="non-scaling-stroke"
+                          />
+                          {#if g.last}
+                            <circle cx={g.last.x} cy={g.last.y} r="1.5" fill="var(--accent)" />
+                          {/if}
+                        {/if}
+                      </svg>
+                    {:else}
+                      <span class="spark-empty" aria-hidden="true">—</span>
+                    {/if}
+                  </td>
+                {/if}
               </tr>
             {/each}
           </tbody>
@@ -497,5 +578,23 @@
     display: inline-block;
     margin-right: 0.25rem;
     font-weight: var(--weight-semibold);
+  }
+  /* Issue #920 — inline sparkline column. */
+  th.spark-header {
+    text-align: center;
+  }
+  td.spark-cell {
+    text-align: center;
+    padding: 0.125rem 0.5rem;
+    white-space: nowrap;
+  }
+  svg.spark {
+    display: block;
+    width: 64px;
+    height: 18px;
+    color: var(--accent);
+  }
+  .spark-empty {
+    color: var(--fg-muted);
   }
 </style>
