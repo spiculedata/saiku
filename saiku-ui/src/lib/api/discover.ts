@@ -38,6 +38,15 @@ export interface SaikuLevel {
   caption: string;
   uniqueName: string;
   description?: string;
+  /** Mondrian-native level type (olap4j {@code Level.Type}): one of
+   *  {@code TimeYears} / {@code TimeHalfYears} / {@code TimeQuarters} /
+   *  {@code TimeMonths} / {@code TimeWeeks} / {@code TimeDays} /
+   *  {@code TimeHours} / {@code TimeMinutes} / {@code TimeSeconds} /
+   *  {@code TimeUndefined} / {@code Regular}. Set from
+   *  {@code <Attribute levelType="...">} in the schema. saiku#1221 added
+   *  the JSON surface so the SPA can detect time levels deterministically
+   *  rather than substring-matching captions. */
+  levelType?: string;
 }
 
 export interface SaikuHierarchy {
@@ -52,6 +61,12 @@ export interface SaikuDimension {
   caption: string;
   uniqueName: string;
   hierarchies: SaikuHierarchy[];
+  /** Mondrian-native dimension type from olap4j {@code Dimension.Type}:
+   *  one of {@code TIME} / {@code MEASURE} / {@code OTHER}. Set from
+   *  {@code <Dimension type="TIME">} in the schema. saiku#1221 added
+   *  this so the SPA's time-filter detection has a dimension-level
+   *  signal independent of caption text. */
+  dimensionType?: string;
 }
 
 export interface SaikuMeasure {
