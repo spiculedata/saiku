@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -23,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 /**
  * Created by bugg on 01/05/14.
@@ -376,23 +378,39 @@ public class Database {
     private void updateForEncyption() throws SQLException {
         Connection c = ds.getConnection();
 
-        Statement statement = c.createStatement();
-        statement.execute("ALTER TABLE users ALTER COLUMN password VARCHAR(100) DEFAULT NULL");
-
-        ResultSet result = statement.executeQuery("select username, password from users");
-
-        while (result.next()) {
-            statement = c.createStatement();
-
-            String pword = result.getString("password");
-            String hashedPassword = passwordEncoder.encode(pword);
-            String sql = "UPDATE users " + "SET password = '" + hashedPassword + "' WHERE username = '"
-                    + result.getString("username") + "'";
-            statement.executeUpdate(sql);
+        try (Statement statement = c.createStatement()) {
+            statement.execute("ALTER TABLE users ALTER COLUMN password VARCHAR(100) DEFAULT NULL");
         }
-        statement = c.createStatement();
 
-        statement.execute("INSERT INTO LOG(log) VALUES('update passwords');");
+        encryptUserPasswords(c, passwordEncoder);
+
+        try (Statement logStatement = c.createStatement()) {
+            logStatement.execute("INSERT INTO LOG(log) VALUES('update passwords');");
+        }
+    }
+
+    /**
+     * Bcrypt every user's stored password, binding the username + hash as
+     * PreparedStatement parameters.
+     *
+     * <p>saiku#1155: the previous implementation string-concatenated the
+     * DB-sourced {@code username} into the UPDATE, so a username containing a
+     * single quote broke the migration and a crafted value such as
+     * {@code x' OR '1'='1} rewrote EVERY row's password with one hash
+     * (CWE-89). Parameter binding closes that. Package-private + static so the
+     * security regression test exercises this exact code path.
+     */
+    static void encryptUserPasswords(Connection c, PasswordEncoder encoder) throws SQLException {
+        try (Statement read = c.createStatement();
+                ResultSet result = read.executeQuery("select username, password from users");
+                PreparedStatement update = c.prepareStatement("UPDATE users SET password = ? WHERE username = ?")) {
+            while (result.next()) {
+                String hashedPassword = encoder.encode(result.getString("password"));
+                update.setString(1, hashedPassword);
+                update.setString(2, result.getString("username"));
+                update.executeUpdate();
+            }
+        }
     }
 
     private void loadLegacyDatasources() throws SQLException {
