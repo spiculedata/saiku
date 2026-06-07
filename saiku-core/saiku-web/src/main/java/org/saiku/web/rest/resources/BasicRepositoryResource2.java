@@ -31,6 +31,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -366,6 +368,21 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
                     fileName = zipFile;
                 }
 
+                // saiku#1157: zip-slip defense-in-depth. Reject a traversal /
+                // absolute entry name at the zip layer BEFORE it reaches
+                // saveResource (whose resolveWithinDatadir is the primary
+                // guard) so a future regression in the path resolver can't
+                // silently re-open the hole. Fail closed with a 400 naming the
+                // offending entry; nothing further in the archive is written.
+                if (isUnsafeZipEntryName(fileName)) {
+                    log.warn("Rejected unsafe zip entry name (saiku#1157): {}", fileName);
+                    return Response.status(Status.BAD_REQUEST)
+                            .entity(output + "REJECTED: unsafe entry name '" + fileName
+                                    + "' — path traversal / absolute paths are not allowed.\r\n")
+                            .type("text/plain")
+                            .build();
+                }
+
                 output += "Saving " + fileName + "... ";
                 String fullPath = (StringUtils.isNotBlank(directory)) ? directory + "/" + fileName : fileName;
 
@@ -395,5 +412,31 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
             String error = ExceptionUtils.getRootCauseMessage(e);
             return Response.serverError().entity(output + "\r\n" + error).build();
         }
+    }
+
+    /**
+     * saiku#1157: defense-in-depth zip-slip guard. Returns {@code true} when a
+     * zip archive entry name could escape the target directory and must be
+     * rejected before {@code saveResource} is called. A name is unsafe when it
+     * is blank, absolute (a unix leading {@code /}, a Windows drive like
+     * {@code C:\}, or a leading backslash / UNC path), or contains a
+     * {@code ..} path segment after separator normalisation. The downstream
+     * {@code FilesystemRepositoryManager.resolveWithinDatadir} remains the
+     * primary guard; this is a second, independent layer.
+     */
+    static boolean isUnsafeZipEntryName(String name) {
+        if (StringUtils.isBlank(name)) return true;
+        String normalized = name.replace('\\', '/');
+        if (normalized.startsWith("/")) return true; // unix-absolute or leading slash (also catches UNC)
+        if (normalized.matches("(?i)^[a-z]:/.*")) return true; // Windows drive-absolute, e.g. C:/ or C:\
+        for (String segment : normalized.split("/")) {
+            if (segment.equals("..")) return true; // traversal segment
+        }
+        try {
+            if (Paths.get(name).isAbsolute()) return true; // platform-specific backstop
+        } catch (InvalidPathException e) {
+            return true; // not a legal path on this platform → reject
+        }
+        return false;
     }
 }
