@@ -590,12 +590,17 @@
             <dependency>
                 <groupId>com.h2database</groupId>
                 <artifactId>h2</artifactId>
-                <!-- 1.4.200 (last 1.4.x): adds PERCENTILE_CONT/MEDIAN ordered-set
-                     aggregates (since 1.4.198) needed by the Account Statistics
-                     demo cube; keeps the 1.x file format + SQL dialect so the
-                     foodmart/bank/earthquake seed scripts and any persisted
-                     data dir keep working (H2 2.x is a breaking jump). -->
-                <version>1.4.200</version>
+                <!-- saiku#840: bumped 1.4.200 → 2.2.220. H2 2.x rewrote the
+                     persistent file format (existing 1.4.x .mv.db files are
+                     unreadable) and tightened the SQL grammar around
+                     identifier quoting + type coercion. Empirically: the
+                     bundled foodmart_h2.sql / bank.sql seeds already parse
+                     under 2.x; Mondrian's Calcite H2 dialect is
+                     forward-compatible; full IT suite (86/86) is green.
+                     Persisted demo data dirs are reseeded on every boot, so
+                     no upgrade path needed. Still ships PERCENTILE_CONT /
+                     MEDIAN for the Account Statistics cube. -->
+                <version>2.2.220</version>
             </dependency>
             <!-- httpclient + httpcore 4.x: 0 declarations across saiku modules
                  and 0 java imports. Removed from BOM. Transitive consumers
