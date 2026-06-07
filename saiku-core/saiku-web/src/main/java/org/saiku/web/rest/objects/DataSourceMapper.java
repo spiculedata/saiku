@@ -154,6 +154,10 @@ public class DataSourceMapper {
                 location = "jdbc:xmla:Server=" + jdbcurl;
             }
 
+            // Reject admin-supplied JDBC URLs that smuggle H2 INIT/RUNSCRIPT/ALIAS (RCE) before
+            // the location ever reaches DriverManager.getConnection. Covers the wrapped jdbcurl.
+            JdbcUrlValidator.validate(location);
+
             props.setProperty("location", location);
             props.setProperty("username", this.username);
             props.setProperty("password", this.password);
@@ -198,7 +202,10 @@ public class DataSourceMapper {
                     props.setProperty("driver", row.substring(7, row.length()));
                 }
                 if (row.startsWith("location=")) {
-                    props.setProperty("location", row.substring(9, row.length()));
+                    String rawLocation = row.substring(9, row.length());
+                    // Same RCE guard for the advanced/csv raw location= line.
+                    JdbcUrlValidator.validate(rawLocation);
+                    props.setProperty("location", rawLocation);
                 }
                 if (row.startsWith("username=")) {
                     if (row.length() > 9) {
