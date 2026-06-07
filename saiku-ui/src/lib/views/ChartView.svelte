@@ -11,6 +11,8 @@
   import { buildChartOption, type ChartProjection } from "$lib/charts/build";
   // #1086: map an ECharts click back to absolute cellset coords for drillthrough.
   import { chartDrillTarget } from "$lib/charts/chartDrillCoord";
+  // #1083: client-side category sort + top-N (transient, no re-query).
+  import { applySortLimit, type ChartSortDirection } from "$lib/charts/sortLimit";
   // #1090: accessible data-table mirror of the chart for screen readers.
   import { chartSummary } from "$lib/charts/a11y";
   // issue #1071: map charts need the GeoJSON registered with ECharts before
@@ -31,6 +33,18 @@
 
   let host: HTMLDivElement | null = null;
   let chart: echarts.ECharts | null = null;
+
+  // #1083: client-side sort + top-N controls. Transient component-local state —
+  // re-orders / trims the CATEGORIES shown without re-querying the server.
+  // Deliberately NOT persisted (dashboard per-tile persistence is #1077, paused).
+  // sortDir sorts by the first measure column; topN trims after sorting.
+  let sortDir = $state<ChartSortDirection>("none");
+  let topN = $state<number | null>(null);
+  const TOP_N_CHOICES = [5, 10, 20, 50];
+
+  // The category count available to chart (so the top-N picker can disable
+  // values that wouldn't trim anything and show what's being limited).
+  let rowCount = $derived(parseCellset(result).rowCategories.length);
 
   // #1053: single-measure kinds (pie/donut/treemap/sunburst) with >1 measure
   // render as small multiples — 2 per row. Grow the host to N rows so each
@@ -62,7 +76,13 @@
         matrix = leaf.indices.map((i) => matrix[i]);
       }
     }
-    return { rowCategories: rows, columnCategories: parsed.columnCategories, matrix };
+    // #1083: re-order / trim the categories CLIENT-SIDE (sort by the first
+    // measure, then keep the top-N) before either the chart builder or the a11y
+    // table sees them, so both stay in sync. A no-op when the controls are off.
+    return applySortLimit(
+      { rowCategories: rows, columnCategories: parsed.columnCategories, matrix },
+      { direction: sortDir, measureIndex: 0, topN },
+    );
   }
 
   // Delegate to the single canonical builder (#1076). The workspace is the
@@ -211,6 +231,9 @@
     void theme.effective;
     // #1091: repaint when the colour-blind-safe pref flips.
     void theme.colorBlindSafe;
+    // #1083: repaint when the client-side sort / top-N controls change.
+    void sortDir;
+    void topN;
     if (chart) render();
   });
 
@@ -219,6 +242,29 @@
     chart = null;
   });
 </script>
+
+<!-- #1083: client-side sort + top-N controls. Transient (not persisted): they
+     re-order / trim the categories shown without re-querying. Sort is by the
+     first measure column. -->
+<div class="chart-controls">
+  <label class="ctrl">
+    <span class="ctrl-label">Sort</span>
+    <select bind:value={sortDir} aria-label="Sort categories by the first measure">
+      <option value="none">As queried</option>
+      <option value="asc">Ascending</option>
+      <option value="desc">Descending</option>
+    </select>
+  </label>
+  <label class="ctrl">
+    <span class="ctrl-label">Top</span>
+    <select bind:value={topN} aria-label="Limit to top N categories">
+      <option value={null}>All</option>
+      {#each TOP_N_CHOICES as n (n)}
+        <option value={n} disabled={n >= rowCount}>Top {n}</option>
+      {/each}
+    </select>
+  </label>
+</div>
 
 <div class="chart-scroll">
   <!-- #1090: the canvas is decorative to assistive tech; the sr-only table below
@@ -255,6 +301,32 @@
 </div>
 
 <style>
+  /* #1083: chart-local sort + top-N controls. Sit above the canvas, themed to
+     match the rest of the workspace chrome. */
+  .chart-controls {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 0.5rem;
+  }
+  .ctrl {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .ctrl-label {
+    font-size: 0.8rem;
+    color: var(--fg-muted);
+  }
+  .ctrl select {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.4rem;
+    color: var(--fg);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
   /* #1053: the frame stays one viewport tall; small multiples grow the inner
      chart to N rows and this wrapper scrolls, keeping each chart full-size. */
   .chart-scroll {
