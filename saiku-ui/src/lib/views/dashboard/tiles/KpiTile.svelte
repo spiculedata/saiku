@@ -38,6 +38,9 @@
     lastAndPriorValues,
     type KpiDelta as KpiDeltaT,
   } from "$lib/dashboard/kpi";
+  // #992 — year-over-year (same-period-previous-year) expansion.
+  import { expandYearOverYearRows } from "$lib/dashboard/kpiYoy";
+  import { i18n } from "$lib/stores/i18n.svelte";
   // Issue #933 — shared loading / error / empty states.
   import TileLoading from "./TileLoading.svelte";
   import TileError from "./TileError.svelte";
@@ -108,10 +111,14 @@
 
   let cube = $derived<CubeRef | null>(tile.cube ?? null);
 
-  // True when we need the by-time-level query (for sparkline or
-  // prior-period delta); false when a single-cell query is enough.
+  // True when we need the by-time-level query (for sparkline or a
+  // time-based delta — prior-period or year-over-year); false when a
+  // single-cell query is enough.
   let wantsSeries = $derived(
-    !!kpi.timeLevel && (kpi.sparkline === true || kpi.comparison === "prior-period"),
+    !!kpi.timeLevel &&
+      (kpi.sparkline === true ||
+        kpi.comparison === "prior-period" ||
+        kpi.comparison === "year-over-year"),
   );
 
   let lastQueryJson = $state<string>("");
@@ -161,6 +168,7 @@
     const c = cube;
     const series = wantsSeries;
     const tl = kpi.timeLevel;
+    const comparison = kpi.comparison;
     const active = activeFilters.all;
     // #933 — retry() bumps this to force a refetch with unchanged inputs.
     void retryTick;
@@ -221,17 +229,20 @@
         level: tl.level,
       });
       byHierarchy.delete(rowHierKey);
-      // Schema-aware prior-period expansion: when the slicer targets
+      // Schema-aware time-comparison expansion: when the slicer targets
       // the *same level* as timeLevel (e.g. timeLevel=Quarter, slicer
       // pins Quarter=Q2), enumerating the full series defeats the
       // user's filter intent. Instead, after the members API resolves
       // the level's full ordered list, expand the row to include each
-      // slicer member plus its preceding sibling. lastAndPriorValues
-      // then computes a real prior-period delta vs the period before
-      // the filter (Q2 → vs Q1). Slicers at a *different* level (e.g.
-      // Year=1997 with timeLevel=Quarter) fall back to "drop slicer,
-      // enumerate full series" — handling Year→Quarter descent needs
-      // server-side Descendants() support we don't have yet.
+      // slicer member plus its comparison counterpart:
+      //   - prior-period (#991): the preceding sibling (Q2 → Q1).
+      //   - year-over-year (#992): the same relative position one parent
+      //     (year) earlier (Q2.1997 → Q2.1996), via expandYearOverYearRows.
+      // lastAndPriorValues then computes a real delta vs that earlier
+      // member. Slicers at a *different* level (e.g. Year=1997 with
+      // timeLevel=Quarter) fall back to "drop slicer, enumerate full
+      // series" — handling Year→Quarter descent needs server-side
+      // Descendants() support we don't have yet.
       if (slicer && slicer.level.toLowerCase() === tl.level.toLowerCase()) {
         needsPriorExpansion = { rowHierKey, slicer };
       }
@@ -246,19 +257,28 @@
         if (needsPriorExpansion && tl && c) {
           const allMembers = await fetchLevelMembers(c, tl.dimension, tl.hierarchy, tl.level);
           if (allMembers.length > 0) {
-            const slicerSet = new Set(needsPriorExpansion.slicer.members);
-            const expanded = new Set<string>();
-            for (let i = 0; i < allMembers.length; i++) {
-              if (slicerSet.has(allMembers[i].uniqueName)) {
-                expanded.add(allMembers[i].uniqueName);
-                if (i > 0) expanded.add(allMembers[i - 1].uniqueName);
+            const slicerMembers = needsPriorExpansion.slicer.members;
+            let ordered: string[];
+            if (comparison === "year-over-year") {
+              // #992: each pinned member + its same-period-previous-year
+              // counterpart, in the cube's chronological declaration order.
+              ordered = expandYearOverYearRows(slicerMembers, allMembers);
+            } else {
+              // #991: each pinned member + its preceding sibling.
+              const slicerSet = new Set(slicerMembers);
+              const expanded = new Set<string>();
+              for (let i = 0; i < allMembers.length; i++) {
+                if (slicerSet.has(allMembers[i].uniqueName)) {
+                  expanded.add(allMembers[i].uniqueName);
+                  if (i > 0) expanded.add(allMembers[i - 1].uniqueName);
+                }
               }
+              // Preserve declared order so lastAndPriorValues' last/prior
+              // semantics align with the cube's chronological order.
+              ordered = allMembers
+                .filter((m) => expanded.has(m.uniqueName))
+                .map((m) => m.uniqueName);
             }
-            // Preserve declared order so lastAndPriorValues' last/prior
-            // semantics align with the cube's chronological order.
-            const ordered = allMembers
-              .filter((m) => expanded.has(m.uniqueName))
-              .map((m) => m.uniqueName);
             if (ordered.length > 0 && rows.length > 0) {
               rows[0] = { ...rows[0], members: ordered };
             }
@@ -313,7 +333,9 @@
   let mainValue = $derived(valueAndPrior.current);
 
   let delta = $derived.by<KpiDeltaT | null>(() => {
-    if (kpi.comparison === "prior-period") {
+    // prior-period and year-over-year share the last/prior series shape —
+    // the difference is purely which baseline member the expansion picked.
+    if (kpi.comparison === "prior-period" || kpi.comparison === "year-over-year") {
       return kpiDelta(valueAndPrior.current, valueAndPrior.prior, kpi.direction);
     }
     if (kpi.comparison === "target" && kpi.target != null) {
@@ -370,8 +392,13 @@
       maximumFractionDigits: 1,
       signDisplay: "always",
     }).format(d.ratio);
-    if (kpi.comparison === "target") return `${pct} vs target`;
-    return `${pct} vs prior`;
+    if (kpi.comparison === "target") {
+      return `${pct} ${i18n.t("dashboard.kpi.vsTarget", "vs target")}`;
+    }
+    if (kpi.comparison === "year-over-year") {
+      return `${pct} ${i18n.t("dashboard.kpi.vsLastYear", "vs last year")}`;
+    }
+    return `${pct} ${i18n.t("dashboard.kpi.vsPrior", "vs prior")}`;
   }
 </script>
 
@@ -404,9 +431,13 @@
           {/if}
           <span>{deltaLabel}</span>
         </div>
+      {:else if kpi.comparison === "year-over-year" && wantsSeries && valueAndPrior.current != null && valueAndPrior.prior == null}
+        <div class="delta delta--empty" title={i18n.t("dashboard.kpi.noLastYear.title", "The selected period has no same-period-previous-year counterpart in this cube's data.")}>
+          <span>{i18n.t("dashboard.kpi.noLastYear", "no prior year")}</span>
+        </div>
       {:else if kpi.comparison === "prior-period" && wantsSeries && valueAndPrior.current != null && valueAndPrior.prior == null}
-        <div class="delta delta--empty" title="The selected period has no preceding period in this cube's data.">
-          <span>no prior period</span>
+        <div class="delta delta--empty" title={i18n.t("dashboard.kpi.noPriorPeriod.title", "The selected period has no preceding period in this cube's data.")}>
+          <span>{i18n.t("dashboard.kpi.noPriorPeriod", "no prior period")}</span>
         </div>
       {:else if kpi.measureCaption}
         <div class="caption">{kpi.measureCaption}</div>
