@@ -471,3 +471,6 @@ nbdist/
 # otherwise swallow the vendored JARs.
 !/lib/repo/
 !/lib/repo/**
+
+# Claude Code session worktrees / scratch (never commit)
+.claude/

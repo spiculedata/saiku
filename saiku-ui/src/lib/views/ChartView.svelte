@@ -11,6 +11,8 @@
   import { buildChartOption, type ChartProjection } from "$lib/charts/build";
   // #1086: map an ECharts click back to absolute cellset coords for drillthrough.
   import { chartDrillTarget } from "$lib/charts/chartDrillCoord";
+  // #1083: client-side category sort + top-N (transient, no re-query).
+  import { applySortLimit, sortLimitOrder, type ChartSortDirection } from "$lib/charts/sortLimit";
   // #1090: accessible data-table mirror of the chart for screen readers.
   import { chartSummary } from "$lib/charts/a11y";
   // issue #1071: map charts need the GeoJSON registered with ECharts before
@@ -32,6 +34,18 @@
   let host: HTMLDivElement | null = null;
   let chart: echarts.ECharts | null = null;
 
+  // #1083: client-side sort + top-N controls. Transient component-local state —
+  // re-orders / trims the CATEGORIES shown without re-querying the server.
+  // Deliberately NOT persisted (dashboard per-tile persistence is #1077, paused).
+  // sortDir sorts by the first measure column; topN trims after sorting.
+  let sortDir = $state<ChartSortDirection>("none");
+  let topN = $state<number | null>(null);
+  const TOP_N_CHOICES = [5, 10, 20, 50];
+
+  // The category count available to chart (so the top-N picker can disable
+  // values that wouldn't trim anything and show what's being limited).
+  let rowCount = $derived(parseCellset(result).rowCategories.length);
+
   // #1053: single-measure kinds (pie/donut/treemap/sunburst) with >1 measure
   // render as small multiples — 2 per row. Grow the host to N rows so each
   // chart stays full-size; the surrounding wrapper scrolls.
@@ -44,7 +58,15 @@
   // Rollup filtering (which needs cellset depth) happens here, before
   // projection, since the builder treats rows as final. Shared by the chart
   // builder and the a11y data-table mirror (#1090) so both see the same data.
-  function projectResult(r: QueryResult, o: ChartOptions): ChartProjection {
+  // Leaf-filtered projection (BEFORE the #1083 sort/limit) + the cellset
+  // body-row index for each leaf position (undefined when 1:1). Factored out so
+  // projectResult and the drill-coordinate mapping share ONE source of truth for
+  // the rollup-leaf reindex — they must agree or click-to-drill drills the
+  // wrong row.
+  function leafProjection(
+    r: QueryResult,
+    o: ChartOptions,
+  ): { projection: ChartProjection; leafIndices: number[] | undefined } {
     const parsed = parseCellset(r);
     // Multi-level row hierarchies (Year > Quarter, Country > City, …) come back
     // with both rollup and leaf rows in the same cellset. Showing the rollups on
@@ -53,6 +75,7 @@
     // untouched.
     let rows = parsed.rowCategories;
     let matrix: (number | null)[][] = parsed.dataRows.map((row) => row.map(toNumber));
+    let leafIndices: number[] | undefined;
     if (o.hideRollupRows) {
       // deriveLeafRows is a no-op for single-level rowsets (all rows at the same
       // depth) and for empty results, so no extra guard is needed here.
@@ -60,9 +83,24 @@
       if (leaf.indices.length > 0 && leaf.indices.length < matrix.length) {
         rows = leaf.labels;
         matrix = leaf.indices.map((i) => matrix[i]);
+        leafIndices = leaf.indices;
       }
     }
-    return { rowCategories: rows, columnCategories: parsed.columnCategories, matrix };
+    return {
+      projection: { rowCategories: rows, columnCategories: parsed.columnCategories, matrix },
+      leafIndices,
+    };
+  }
+
+  function projectResult(r: QueryResult, o: ChartOptions): ChartProjection {
+    // #1083: re-order / trim the categories CLIENT-SIDE (sort by the first
+    // measure, then keep the top-N) before either the chart builder or the a11y
+    // table sees them, so both stay in sync. A no-op when the controls are off.
+    return applySortLimit(leafProjection(r, o).projection, {
+      direction: sortDir,
+      measureIndex: 0,
+      topN,
+    });
   }
 
   // Delegate to the single canonical builder (#1076). The workspace is the
@@ -78,20 +116,20 @@
     return buildChartOption(p, t, o, tk, { aspect, chartWidth, compact: false });
   }
 
-  // #1086: when hideRollupRows is active the chart shows only the LEAF rows
-  // (deriveLeafRows reindexes them), so a chart category index no longer equals
-  // the cellset body-row index. Recompute the same leaf indices the projection
-  // used so the click handler can map a clicked bar/slice back to the right
-  // cellset row. Returns undefined when rollups are shown (1:1 mapping). This
-  // mirrors the row-selection branch in projectResult — kept in sync with it.
-  function currentLeafIndices(r: QueryResult, o: ChartOptions): number[] | undefined {
-    if (!o.hideRollupRows) return undefined;
-    const parsed = parseCellset(r);
-    const leaf = deriveLeafRows(parsed);
-    if (leaf.indices.length > 0 && leaf.indices.length < parsed.dataRows.length) {
-      return leaf.indices;
-    }
-    return undefined;
+  // #1086 + #1083: map a clicked chart category (its DISPLAYED index, after the
+  // rollup-leaf filter AND the client-side sort/top-N) back to the absolute
+  // cellset body-row index. Without composing the sort permutation here, a click
+  // after sorting/trimming would drill the wrong row. Returns an array indexed by
+  // displayed position → body-row index, or undefined when the mapping is 1:1
+  // (no leaf filter and no sort/limit) so chartDrillTarget treats it as identity.
+  function currentDisplayIndices(r: QueryResult, o: ChartOptions): number[] | undefined {
+    const { projection, leafIndices } = leafProjection(r, o);
+    const order = sortLimitOrder(projection, { direction: sortDir, measureIndex: 0, topN });
+    const isIdentity = leafIndices === undefined && order.every((v, i) => v === i);
+    if (isIdentity) return undefined;
+    // order[displayedPos] = leaf-projection index; leafIndices maps that to the
+    // raw cellset body row (or it's already the body row when no leaf filter).
+    return order.map((leafPos) => (leafIndices ? leafIndices[leafPos] : leafPos));
   }
 
   // #1086: ECharts click → reuse the workspace's existing drillthrough flow.
@@ -110,7 +148,7 @@
       parsed,
       categoryIndex,
       seriesIndex,
-      currentLeafIndices(result, options),
+      currentDisplayIndices(result, options),
     );
     if (!target) return; // out-of-range / "All"-style click → no-op
     host.dispatchEvent(
@@ -211,6 +249,9 @@
     void theme.effective;
     // #1091: repaint when the colour-blind-safe pref flips.
     void theme.colorBlindSafe;
+    // #1083: repaint when the client-side sort / top-N controls change.
+    void sortDir;
+    void topN;
     if (chart) render();
   });
 
@@ -219,6 +260,29 @@
     chart = null;
   });
 </script>
+
+<!-- #1083: client-side sort + top-N controls. Transient (not persisted): they
+     re-order / trim the categories shown without re-querying. Sort is by the
+     first measure column. -->
+<div class="chart-controls">
+  <label class="ctrl">
+    <span class="ctrl-label">Sort</span>
+    <select bind:value={sortDir} aria-label="Sort categories by the first measure">
+      <option value="none">As queried</option>
+      <option value="asc">Ascending</option>
+      <option value="desc">Descending</option>
+    </select>
+  </label>
+  <label class="ctrl">
+    <span class="ctrl-label">Top</span>
+    <select bind:value={topN} aria-label="Limit to top N categories">
+      <option value={null}>All</option>
+      {#each TOP_N_CHOICES as n (n)}
+        <option value={n} disabled={n >= rowCount}>Top {n}</option>
+      {/each}
+    </select>
+  </label>
+</div>
 
 <div class="chart-scroll">
   <!-- #1090: the canvas is decorative to assistive tech; the sr-only table below
@@ -255,6 +319,32 @@
 </div>
 
 <style>
+  /* #1083: chart-local sort + top-N controls. Sit above the canvas, themed to
+     match the rest of the workspace chrome. */
+  .chart-controls {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 0.5rem;
+  }
+  .ctrl {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .ctrl-label {
+    font-size: 0.8rem;
+    color: var(--fg-muted);
+  }
+  .ctrl select {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.4rem;
+    color: var(--fg);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
   /* #1053: the frame stays one viewport tall; small multiples grow the inner
      chart to N rows and this wrapper scrolls, keeping each chart full-size. */
   .chart-scroll {
