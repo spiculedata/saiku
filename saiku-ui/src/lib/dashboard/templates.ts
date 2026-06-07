@@ -135,12 +135,72 @@ const TIME_SERIES_ANALYSIS: DashboardTemplate = {
   ],
 };
 
+/** Geographic overview — a choropleth map of a measure by country
+ *  (uses the #1071 `map` chart type), two headline KPIs, and a regional
+ *  breakdown table. Bind the map's rows to a geography level (e.g. Store
+ *  Country) — common aliases like USA/UK are matched automatically. */
+const GEOGRAPHIC_OVERVIEW: DashboardTemplate = {
+  id: "geographic-overview",
+  name: "Geographic overview",
+  description: "A choropleth map of a measure by country, KPI cards, and a regional table.",
+  tiles: [
+    { x: 0, y: 0, w: 8, h: 4, type: "chart", title: "Sales by country", chartType: "map" },
+    { x: 8, y: 0, w: 4, h: 2, type: "kpi", title: "Total sales", kpi: { format: "currency" } },
+    { x: 8, y: 2, w: 4, h: 2, type: "kpi", title: "Countries", kpi: { format: "number" } },
+    { x: 0, y: 4, w: 12, h: 4, type: "table", title: "Sales by region" },
+  ],
+};
+
+/** Product performance — headline product KPIs, a top-products bar chart,
+ *  a category-share donut, and a product detail table. */
+const PRODUCT_PERFORMANCE: DashboardTemplate = {
+  id: "product-performance",
+  name: "Product performance",
+  description: "Product KPIs, a top-products bar, a category-share donut, and a detail table.",
+  tiles: [
+    { x: 0, y: 0, w: 4, h: 2, type: "kpi", title: "Units sold", kpi: { format: "number" } },
+    { x: 4, y: 0, w: 4, h: 2, type: "kpi", title: "Revenue", kpi: { format: "currency" } },
+    { x: 8, y: 0, w: 4, h: 2, type: "kpi", title: "Avg price", kpi: { format: "currency" } },
+    { x: 0, y: 2, w: 6, h: 4, type: "chart", title: "Top products", chartType: "bar" },
+    { x: 6, y: 2, w: 6, h: 4, type: "chart", title: "Category share", chartType: "donut" },
+    { x: 0, y: 6, w: 12, h: 4, type: "table", title: "Product detail" },
+  ],
+};
+
+/** Executive overview — four headline KPIs, a revenue trend line, a
+ *  revenue-by-segment donut, and a top-accounts table. */
+const EXECUTIVE_OVERVIEW: DashboardTemplate = {
+  id: "executive-overview",
+  name: "Executive overview",
+  description: "Headline KPIs, a revenue trend, a revenue-by-segment donut, and a top-accounts table.",
+  tiles: [
+    { x: 0, y: 0, w: 3, h: 2, type: "kpi", title: "Revenue", kpi: { format: "currency" } },
+    { x: 3, y: 0, w: 3, h: 2, type: "kpi", title: "Orders", kpi: { format: "number" } },
+    { x: 6, y: 0, w: 3, h: 2, type: "kpi", title: "Customers", kpi: { format: "number" } },
+    {
+      x: 9,
+      y: 0,
+      w: 3,
+      h: 2,
+      type: "kpi",
+      title: "Margin",
+      kpi: { format: "percent", direction: "higher-is-better" },
+    },
+    { x: 0, y: 2, w: 8, h: 4, type: "chart", title: "Revenue trend", chartType: "line" },
+    { x: 8, y: 2, w: 4, h: 4, type: "chart", title: "Revenue by segment", chartType: "donut" },
+    { x: 0, y: 6, w: 12, h: 3, type: "table", title: "Top accounts" },
+  ],
+};
+
 /** All bundled starter templates, in picker display order. */
 export const TEMPLATES: ReadonlyArray<DashboardTemplate> = [
   KPI_DASHBOARD,
   SALES_REPORT,
   OPERATIONS_SUMMARY,
   TIME_SERIES_ANALYSIS,
+  GEOGRAPHIC_OVERVIEW,
+  PRODUCT_PERFORMANCE,
+  EXECUTIVE_OVERVIEW,
 ];
 
 /** Look up a template by id. Returns `undefined` when no template
