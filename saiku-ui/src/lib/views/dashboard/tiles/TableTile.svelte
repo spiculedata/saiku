@@ -59,6 +59,10 @@
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   // #941 share viewer (PR2): render from a prefetched guest response when present.
   import { getShareViewResponse } from "$lib/dashboard/shareViewContext";
+  // Issue #931 — per-tile auto-refresh: timer wiring + "last updated" indicator.
+  import { TileAutoRefresh } from "$lib/dashboard/tileAutoRefresh.svelte";
+  import { isAutoRefreshOn } from "$lib/dashboard/autoRefresh";
+  import TileRefreshIndicator from "./TileRefreshIndicator.svelte";
 
   interface Props {
     tile: DashboardTile;
@@ -93,6 +97,24 @@
     activeFilters.resetTransient();
     dashboardStore.resetPanelFiltersToSaved();
   }
+
+  /* --- issue #931: auto-refresh ------------------------------------------
+   * Per-tile timer re-fires the existing (filter-aware) fetch on the
+   * configured cadence by clearing the dedupe cache + bumping a tick the
+   * fetch effect reads (same mechanism as retry()), so the re-run uses the
+   * CURRENT effective query. Never auto-refreshes in the share viewer. */
+  const auto = new TileAutoRefresh();
+  let refreshTick = $state(0);
+  function triggerAutoRefresh(): void {
+    lastQueryJson = "";
+    refreshTick++;
+  }
+  let autoRefreshOn = $derived(!sharedResponse && isAutoRefreshOn(tile.refreshInterval));
+  $effect(() => auto.arm(tile.refreshInterval, triggerAutoRefresh));
+  $effect(() => {
+    if (autoRefreshOn && auto.lastUpdated > 0) return auto.startHeartbeat();
+  });
+  /* --- end issue #931 block ---------------------------------------------- */
 
   // Resolved cube — usually tile.cube directly, but reference tiles
   // authored before saiku#878 left tile.cube undefined. Lazy-infer from
@@ -156,6 +178,8 @@
     void s;
     // #933 — retry() bumps this to force a refetch with unchanged inputs.
     void retryTick;
+    // #931 — auto-refresh bumps this to re-run with the current effective query.
+    void refreshTick;
     if (!tileQuery) return;
 
     if (tileQuery.kind === "reference") {
@@ -183,6 +207,7 @@
           );
           response = r;
           if (r.status !== "SUCCESS") error = r.error ?? `Query failed: ${r.status}`;
+          else auto.markUpdated(); // #931
         } catch (e: unknown) {
           error = e instanceof Error ? e.message : String(e);
           response = null;
@@ -209,6 +234,8 @@
         response = r;
         if (r.status !== "SUCCESS") {
           error = r.error ?? `Query failed: ${r.status}`;
+        } else {
+          auto.markUpdated(); // #931
         }
       } catch (e: unknown) {
         error = e instanceof Error ? e.message : String(e);
@@ -527,6 +554,12 @@
         </table>
       {/if}
     {/if}
+    {#if autoRefreshOn && auto.lastUpdated > 0}
+      <!-- #931: auto-refresh "last updated" badge + spinning icon. -->
+      <div class="refresh-badge">
+        <TileRefreshIndicator lastUpdated={auto.lastUpdated} spinning={loading} now={auto.now} />
+      </div>
+    {/if}
   </div>
 {/if}
 
@@ -537,6 +570,22 @@
     height: 100%;
     overflow: auto;
     padding: 0.25rem 0.5rem;
+    /* #931: anchor the auto-refresh badge to the tile box. */
+    position: relative;
+  }
+  /* #931: auto-refresh badge — pinned bottom-right, sticky so it stays put
+     while the table body scrolls; click-through so it never blocks cells. */
+  .refresh-badge {
+    position: sticky;
+    bottom: 0.25rem;
+    float: right;
+    margin-right: 0.25rem;
+    z-index: 2;
+    background: color-mix(in srgb, var(--bg) 80%, transparent);
+    border-radius: 4px;
+    padding: 0.0625rem 0.25rem;
+    pointer-events: none;
+    max-width: calc(100% - 0.5rem);
   }
   .placeholder {
     padding: 1rem;

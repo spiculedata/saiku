@@ -239,6 +239,16 @@ export interface DashboardTile {
   /** Image-tile config (issue #918). Only consulted when
    *  {@code type === "image"}. */
   image?: ImageConfig;
+  /* --- issue #931: per-tile auto-refresh --------------------------------
+   * Auto-refresh cadence in MINUTES. 0 / undefined = off (the default —
+   * tiles fetch once and stay static). When set to a positive value the
+   * tile re-runs its existing (filter-aware) query on that interval, pausing
+   * while the tab is hidden. Valid values are constrained to the picker list
+   * in $lib/dashboard/autoRefresh (normaliseInterval clamps anything else to
+   * off, so a hand-edited JSON can't smuggle in a sub-minute loop). Consulted
+   * by the chart / table / KPI tiles. */
+  refreshInterval?: number;
+  /* --- end issue #931 block --------------------------------------------- */
 }
 
 /* ====================================================================
