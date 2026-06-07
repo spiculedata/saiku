@@ -299,6 +299,8 @@
     const r = response;
     const kind = tile.chartType ?? "bar";
     void r;
+    // Re-render when the per-tile chart options change (editor save) (#1077).
+    void tile.chartOptions;
     // Re-run when the canvas resizes so the small-multiple radius tracks the
     // current aspect ratio (#1053).
     void resizeTick;
@@ -329,7 +331,9 @@
       return;
     }
     const aspect = host && host.clientHeight > 0 ? host.clientWidth / host.clientHeight : 1;
-    const option = buildChartOption(r, kind, aspect, resolveThemeTokens());
+    // #1077: per-tile chart options (title/axes/legend/dualAxis/trend). Undefined
+    // on legacy tiles → the adapter falls back to the dashboard baseline.
+    const option = buildChartOption(r, kind, aspect, resolveThemeTokens(), tile.chartOptions);
     if (option) {
       // #1092: capture the live zoom/brush before overwriting; only re-applied
       // when the chart type + category count are unchanged (resize / theme flip

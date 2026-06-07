@@ -39,7 +39,9 @@
   } from "$lib/api/dashboards";
   import { flatten, listRepository, type RepositoryNode } from "$lib/api/repository";
   import { repositionTile } from "$lib/dashboard/tilePlacement";
-  import { CHART_TYPES } from "$lib/views/chartTypes";
+  import { CHART_TYPES, DEFAULT_CHART_OPTIONS, type ChartOptions } from "$lib/views/chartTypes";
+  // #1077: reuse the workspace chart-options editor for dashboard chart tiles.
+  import ChartEditorModal from "$lib/modals/ChartEditorModal.svelte";
   // ── Issue #912: inline visual query editor (embedded QueryCanvas) ──
   import QueryCanvas from "$lib/views/QueryCanvas.svelte";
   import DimensionList from "$lib/views/DimensionList.svelte";
@@ -72,6 +74,16 @@
   let title = $state(untrack(() => tile.title ?? ""));
   let cube = $state<CubeRef | null>(untrack(() => tile.cube ?? null));
   let chartType = $state(untrack(() => tile.chartType ?? "bar"));
+  // #1077: per-tile chart options (title/axes/legend/dualAxis/seriesAxis/trend).
+  // Working copy seeded from the tile (or defaults). Only persisted if the user
+  // actually opens + saves the chart-options editor (chartOptionsTouched) — so
+  // editing a legacy chart tile's title alone never stamps default options onto
+  // it (which would change its appearance).
+  let chartOptions = $state<ChartOptions>(
+    untrack(() => ({ ...DEFAULT_CHART_OPTIONS, ...(tile.chartOptions ?? {}) })),
+  );
+  let chartOptionsTouched = $state(false);
+  let chartOptionsOpen = $state(false);
   let text = $state(untrack(() => tile.text ?? ""));
   // Position + size — numeric controls per the design's "no drag-resize"
   // call. Users rearrange via these fields; the grid auto-places tiles
@@ -419,6 +431,21 @@
     return [];
   });
 
+  // #1077: measure names for the chart-options editor's per-series axis picker.
+  // Only inline tiles expose their measures statically; reference tiles resolve
+  // at fetch time, so the picker hides (empty → ChartEditorModal omits it).
+  let chartSeriesNames = $derived(() => {
+    if (queryMode !== "inline") return [] as string[];
+    try {
+      const b = JSON.parse(inlineBodyJson) as { measures?: Array<{ name?: string }> };
+      return Array.isArray(b?.measures)
+        ? b.measures.map((m) => m?.name).filter((n): n is string => !!n)
+        : [];
+    } catch {
+      return [];
+    }
+  });
+
   function cubeKey(c: CubeRef): string {
     return `${c.connectionName}/${c.catalog}/${c.schema}/${c.cubeName}`;
   }
@@ -533,6 +560,12 @@
 
     if (tile.type === "chart") {
       patch.chartType = chartType;
+      // #1077: only persist chart options if the user actually edited them, so
+      // saving an untouched legacy chart tile preserves its existing options
+      // (and look) rather than stamping defaults onto it.
+      if (chartOptionsTouched) {
+        patch.chartOptions = chartOptions;
+      }
     }
 
     if (tile.type === "chart" || tile.type === "table") {
@@ -818,6 +851,16 @@
             {/each}
           </select>
         </label>
+        <!-- #1077: per-tile chart options via the reused workspace editor. -->
+        <div class="field">
+          <span>Chart options</span>
+          <button type="button" class="btn chart-opts-btn" onclick={() => (chartOptionsOpen = true)}>
+            Title, axes, legend, dual-axis &amp; trend…
+          </button>
+          <span class="hint">
+            {chartOptionsTouched ? "Customised for this tile." : "Using dashboard defaults."}
+          </span>
+        </div>
       {/if}
 
       {#if tile.type === "chart" || tile.type === "table"}
@@ -1331,6 +1374,23 @@
   </div>
 </div>
 
+<!-- #1077: chart-options editor (reused from the workspace), layered above the
+     tile editor. Edits a working copy; persisted with the tile on Save. -->
+{#if tile.type === "chart"}
+  <ChartEditorModal
+    initial={chartOptions}
+    {chartType}
+    seriesNames={chartSeriesNames()}
+    open={chartOptionsOpen}
+    onSave={(next) => {
+      chartOptions = next;
+      chartOptionsTouched = true;
+      chartOptionsOpen = false;
+    }}
+    onCancel={() => (chartOptionsOpen = false)}
+  />
+{/if}
+
 <style>
   .modal-backdrop {
     position: fixed;
@@ -1491,6 +1551,11 @@
     background: var(--accent);
     color: white;
     border-color: var(--accent);
+  }
+  /* #1077: chart-options launcher button. */
+  .chart-opts-btn {
+    align-self: flex-start;
+    text-align: left;
   }
   /* ── Issue #919: conditional-formatting rule editor (table only) ── */
   .cf-section {
