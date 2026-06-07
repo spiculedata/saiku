@@ -42,6 +42,20 @@
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
+  /** Issue #912 — when {@code embedded} is true the canvas is mounted
+   *  inside the dashboard tile editor rather than the workspace. The host
+   *  (TileEditorModal) owns the query-store lifecycle: it seeds the model
+   *  from the tile's inline body and commits it back on Save. So in
+   *  embedded mode we suppress the workspace-only auto-init effect that
+   *  re-`initFor`s (and thereby wipes) the model whenever
+   *  {@link selection.cube} changes, and clears it when no cube is
+   *  selected. Everything else — drop zones, view toggle, result pane,
+   *  context menus — is reused verbatim. */
+  interface Props {
+    embedded?: boolean;
+  }
+  let { embedded = false }: Props = $props();
+
   let chartEditorOpen = $state(false);
   let moreViewOpen = $state(false);
 
@@ -449,6 +463,11 @@
   });
 
   $effect(() => {
+    // #912: in the embedded (tile-editor) host the modal owns the query
+    // lifecycle — seeding the model from the tile body and committing it
+    // back on Save. Re-`initFor`ing here would clobber that seeded model
+    // the instant the cube is mirrored into `selection`, so opt out.
+    if (embedded) return;
     if (selection.cube && (!query.current || query.current.cube.uniqueName !== selection.cube.uniqueName)) {
       query.initFor(selection.cube);
     }
