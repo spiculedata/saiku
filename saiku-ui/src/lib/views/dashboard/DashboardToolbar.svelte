@@ -16,7 +16,8 @@
   import FilterSuggestionsModal from "$lib/views/dashboard/FilterSuggestionsModal.svelte";
   import PrefsMenu from "$lib/components/PrefsMenu.svelte";
   import type { TileType } from "$lib/api/dashboards";
-  import { Monitor, RotateCcw, X, Share2, History } from "lucide-svelte";
+  import { Monitor, RotateCcw, X, Share2, History, Undo2, Redo2 } from "lucide-svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
   // #941 + #947 PR2 — share-link + version-history entry points.
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import DashboardShareModal from "$lib/views/dashboard/DashboardShareModal.svelte";
@@ -40,6 +41,12 @@
     /** Issue #928 — enter presentation / fullscreen mode. Shown in both
      *  edit and viewer modes (TV-wall display is a viewer use case). */
     onPresent?: () => void;
+    /** Issue #914 — undo / redo of structural edits. Buttons render in
+     *  edit mode only; disabled when the respective stack is empty. */
+    canUndo?: boolean;
+    canRedo?: boolean;
+    onUndo?: () => void;
+    onRedo?: () => void;
   }
 
   let {
@@ -55,6 +62,10 @@
     canResetFilters = false,
     onResetFilters,
     onPresent,
+    canUndo = false,
+    canRedo = false,
+    onUndo,
+    onRedo,
   }: Props = $props();
 
   // #941/#947: share + history act on the SAVED dashboard, so the buttons only
@@ -177,6 +188,31 @@
     {/if}
 
     {#if !readOnly}
+      <div class="undo-redo" role="group" aria-label={i18n.t("dashboard.history.group", "Undo and redo")}>
+        <button
+          type="button"
+          class="btn icon-only"
+          onclick={() => onUndo?.()}
+          disabled={!canUndo || !onUndo}
+          aria-disabled={!canUndo || !onUndo}
+          title={i18n.t("dashboard.undo.title", "Undo (Ctrl/Cmd+Z)")}
+          aria-label={i18n.t("dashboard.undo", "Undo")}
+        >
+          <Undo2 size={14} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          class="btn icon-only"
+          onclick={() => onRedo?.()}
+          disabled={!canRedo || !onRedo}
+          aria-disabled={!canRedo || !onRedo}
+          title={i18n.t("dashboard.redo.title", "Redo (Ctrl/Cmd+Shift+Z)")}
+          aria-label={i18n.t("dashboard.redo", "Redo")}
+        >
+          <Redo2 size={14} aria-hidden="true" />
+        </button>
+      </div>
+
       <button
         type="button"
         class="btn"
@@ -355,6 +391,14 @@
     font-size: 0.875rem;
   }
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .undo-redo {
+    display: inline-flex;
+    gap: 0.25rem;
+    align-items: center;
+  }
+  .btn.icon-only {
+    padding: 0.375rem 0.5rem;
+  }
   .btn.primary {
     background: var(--accent);
     color: white;

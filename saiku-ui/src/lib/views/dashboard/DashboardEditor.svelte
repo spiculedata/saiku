@@ -15,6 +15,7 @@
   import { presentation } from "$lib/stores/presentation.svelte";
   import { newTileId, type TileType } from "$lib/api/dashboards";
   import { isEnterPresentationKey } from "$lib/dashboard/presentationHotkeys";
+  import { isUndoKey, isRedoKey } from "$lib/dashboard/historyHotkeys";
   import { panelDiffersFromDefaults } from "$lib/dashboard/filterDefaults";
   import { Minimize2 } from "lucide-svelte";
   import { buildTile } from "$lib/dashboard/tilePlacement";
@@ -55,6 +56,18 @@
       if (isEnterPresentationKey(e) && !presentation.active) {
         e.preventDefault();
         void presentation.enter();
+        return;
+      }
+      // Issue #914: Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z (or Ctrl+Y) redo.
+      // Disabled in viewer mode; the predicates already ignore keystrokes
+      // originating inside a text field / contenteditable.
+      if (readOnly) return;
+      if (isUndoKey(e)) {
+        e.preventDefault();
+        handleUndo();
+      } else if (isRedoKey(e)) {
+        e.preventDefault();
+        handleRedo();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -135,6 +148,20 @@
     dashboardStore.resetPanelFiltersToSaved();
   }
 
+  // Issue #914: undo / redo of structural edits. Both are no-ops in
+  // viewer mode (readOnly) — guarded here and at the store/keyboard
+  // layer so neither the button nor the shortcut can mutate a viewed
+  // dashboard.
+  function handleUndo(): void {
+    if (readOnly) return;
+    dashboardStore.undo();
+  }
+
+  function handleRedo(): void {
+    if (readOnly) return;
+    dashboardStore.redo();
+  }
+
   // Issue #916: surface the empty-state guidance when an editable
   // dashboard has zero tiles. Viewer mode (readOnly) keeps the blank
   // canvas — a published-but-empty dashboard isn't an authoring moment.
@@ -161,6 +188,10 @@
         {canResetFilters}
         onResetFilters={readOnly ? undefined : handleResetFilters}
         onPresent={() => presentation.enter()}
+        canUndo={!readOnly && dashboardStore.canUndo}
+        canRedo={!readOnly && dashboardStore.canRedo}
+        onUndo={readOnly ? undefined : handleUndo}
+        onRedo={readOnly ? undefined : handleRedo}
       />
       {#if dashboardStore.loadError}
         <div class="notice">{dashboardStore.loadError}</div>
