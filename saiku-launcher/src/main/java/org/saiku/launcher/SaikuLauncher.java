@@ -140,6 +140,14 @@ public class SaikuLauncher implements Callable<Integer> {
             stageSeedAssets(dataDir);
             stageBrandingSample(brandingDir);
             stageDefaultDatasource(saikuHome);
+            // saiku#1245: in demo mode, also stage a "Welcome" dashboard
+            // under /dashboards/ so a fresh demo container has something
+            // ready-to-look-at at first login instead of an empty list.
+            // The file is idempotent (stageResource only writes when
+            // missing) so operator edits survive container restarts.
+            if (isDemoModeActive()) {
+                stageDemoDashboards(saikuHome);
+            }
 
             Path warPath = extractWar();
 
@@ -496,6 +504,27 @@ public class SaikuLauncher implements Callable<Integer> {
                 Files.writeString(target, resolved, java.nio.charset.StandardCharsets.UTF_8);
                 System.out.println("Seeded: " + target);
             }
+        }
+
+        /**
+         * Stage demo content under {@code <home>/repository/data/unknown/dashboards/}.
+         * Only runs in demo mode (gated at the call site); idempotent because
+         * {@link #stageResource} is a no-op when the target already exists, so
+         * an operator who tweaks the welcome dashboard in the UI keeps their
+         * edits across container restarts.
+         *
+         * <p>Lives next to the foodmart datasource staging so a single demo
+         * boot lands cube + dashboards + branding sample together — a fresh
+         * container has something to look at at first login.
+         */
+        private static void stageDemoDashboards(Path saikuHome) throws Exception {
+            Path dashDir = saikuHome
+                    .resolve("repository")
+                    .resolve("data")
+                    .resolve("unknown")
+                    .resolve("dashboards");
+            Files.createDirectories(dashDir);
+            stageResource("/seed/demo/welcome.saikudash", dashDir.resolve("welcome.saikudash"));
         }
 
         private static void stageBrandingSample(Path brandingDir) throws Exception {
