@@ -17,8 +17,11 @@
   import {
     executeAiQuery,
     executeSavedQuery,
+    searchMembers,
     type AiQueryResponse,
   } from "$lib/api/aiQuery";
+  // #1166: resolve a clicked category caption to a real member unique name.
+  import { pickMemberUniqueName } from "$lib/dashboard/clickFilterMember";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
   import { schemaCache } from "$lib/stores/schemaCache.svelte";
   import {
@@ -386,6 +389,10 @@
 
   /* ----------------------------- click capture ------------------------ */
 
+  // #1166: per-(cube/dim/hier/level) cache of the level's members so a
+  // repeated click on the same chart doesn't re-hit /ai/members/search.
+  const clickMemberCache = new Map<string, Promise<{ uniqueName: string; caption: string }[]>>();
+
   function handleEChartsClick(params: echarts.ECElementEvent): void {
     if (!onClickFilter) return;
     if (!tile.query) return;
@@ -408,17 +415,39 @@
 
     // ECharts click events carry different shapes per series type. For
     // bar/line/area: params.name is the category. For pie: params.name
-    // is the slice name. In both cases that's the dashboard.click
-    // "member" value.
+    // is the slice name. In both cases that's the clicked member's caption.
     const name = typeof params.name === "string" ? params.name : null;
     if (!name) return;
-    const filter: DashboardFilter = {
-      dimension: rowAxis.dimension,
-      hierarchy: rowAxis.hierarchy,
-      level: rowAxis.level,
-      members: [name],
-    };
-    onClickFilter(filter);
+
+    const cube = resolvedCube;
+    if (!cube) return;
+
+    // #1166: the click gives us a caption ("Beer") but the filter contract
+    // needs a real MDX unique name. Hand-building "[dim].[hier].[caption]"
+    // is wrong — it omits ancestor segments and may use display aliases the
+    // cube doesn't know — so ask the server for the level's members and pick
+    // the one whose caption matches. Its uniqueName is the server's own, so
+    // it round-trips back into /ai/query. If we can't resolve it, no-op
+    // rather than push a member every consuming tile would choke on.
+    const { dimension, hierarchy, level } = rowAxis;
+    const cacheKey = `${cube.connectionName}/${cube.catalog}/${cube.schema}/${cube.cubeName}|${dimension}/${hierarchy}/${level}|${name}`;
+    let lookup = clickMemberCache.get(cacheKey);
+    if (!lookup) {
+      lookup = searchMembers(cube, dimension, hierarchy, level, name);
+      clickMemberCache.set(cacheKey, lookup);
+    }
+    void lookup.then((hits) => {
+      const uniqueName = pickMemberUniqueName(hits, name);
+      if (!uniqueName) {
+        clickMemberCache.delete(cacheKey); // don't cache a miss — allow a retry
+        console.warn(
+          `[saiku] click-to-filter: no member matched caption "${name}" in ${dimension}/${level}`,
+        );
+        return;
+      }
+      const filter: DashboardFilter = { dimension, hierarchy, level, members: [uniqueName] };
+      onClickFilter(filter);
+    });
   }
 
   /* --------------------------- drillthrough (#930) -------------------- */

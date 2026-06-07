@@ -105,6 +105,48 @@ export function isAiCell(v: unknown): v is AiCell {
   return typeof v === "object" && v !== null && "formatted" in (v as object);
 }
 
+/* ------------------------- member search (#1166) ------------------------- */
+
+/** One hit from GET /ai/members/search — a real cube member. `uniqueName`
+ *  is the server's own MDX unique name (canonical, or display-aliased
+ *  exactly as the server emits it) so it round-trips back into /ai/query
+ *  filters without us ever hand-assembling a `[dim].[hier].[member]` string. */
+export interface AiMemberHit {
+  uniqueName: string;
+  caption: string;
+  name?: string;
+}
+
+/** GET /rest/saiku/api/ai/members/search — discover real members of a level.
+ *  `dimension` + `level` are required server-side; `hierarchy` may be blank.
+ *  `q` is a case-insensitive substring match on the caption. Resolves to an
+ *  empty list on any non-OK / transport / parse failure so callers can treat
+ *  "couldn't resolve" as "no members" rather than throwing. */
+export async function searchMembers(
+  cube: { connectionName: string; catalog: string; schema: string; cubeName: string },
+  dimension: string,
+  hierarchy: string,
+  level: string,
+  q: string,
+  limit = 100,
+): Promise<AiMemberHit[]> {
+  const cubeId = `${cube.connectionName}/${cube.catalog}/${cube.schema}/${cube.cubeName}`;
+  const params = new URLSearchParams({ cubeId, dimension, level, limit: String(limit) });
+  if (hierarchy) params.set("hierarchy", hierarchy);
+  if (q) params.set("q", q);
+  try {
+    const res = await fetch(`${REST_BASE}/members/search?${params.toString()}`, {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return [];
+    const hits: unknown = await res.json();
+    return Array.isArray(hits) ? (hits as AiMemberHit[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 /* ------------------------- share view (#941 PR2) ------------------------- */
 
 /** Base for the account-free guest view surface. The token is carried in the

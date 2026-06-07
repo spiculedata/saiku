@@ -22,9 +22,12 @@
     executeAiQuery,
     executeSavedQuery,
     isAiCell,
+    searchMembers,
     type AiQueryResponse,
     type AiCell,
   } from "$lib/api/aiQuery";
+  // #1166: resolve clicked row-header captions to real member unique names.
+  import { pickMemberUniqueNameForPath } from "$lib/dashboard/clickFilterMember";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
   import { schemaCache } from "$lib/stores/schemaCache.svelte";
   import {
@@ -306,21 +309,27 @@
     return formatCell(rules, column, cellNumericSource(v), columnValues[column] ?? []);
   }
 
-  /** Build the click-filter context for a row-header cell. The dashboard
-   *  level for the click is inferred from the tile's base query — we
-   *  match the column caption against the row-axis level captions —
-   *  and the member ref is constructed as a full MDX unique name from
-   *  the row's parent-level captions so Mondrian can resolve an
-   *  ambiguous leaf (e.g. Quarter "Q2" which exists under every Year).
+  // #1166: per-(cube/dim/hier/level/q) cache of the level's members so a
+  // repeated click on the same column doesn't re-hit /ai/members/search.
+  const clickMemberCache = new Map<string, Promise<{ uniqueName: string; caption: string }[]>>();
+
+  /** Resolve the click-filter context for a row-header cell. The dashboard
+   *  level for the click is inferred from the tile's base query — we match
+   *  the column caption against the row-axis level captions — and we collect
+   *  the row's parent-level captions as the ancestor path so an ambiguous
+   *  leaf (e.g. Quarter "Q2", which exists under every Year) can be pinned
+   *  to the right member.
    *
-   *  Without the parent path, the server-side resolver fails with
-   *  "Unable to find a member with name [Q2]" because Q2 of 1997 and
-   *  Q2 of 1998 collide. */
-  function clickFilterForCell(
+   *  #1166: we no longer hand-assemble the member unique name here. The
+   *  tile's stored dim/hier may be display aliases (e.g. hierarchy "Products"
+   *  where the cube's real hierarchy is "Product"), so a constructed
+   *  "[Product].[Products].[Beer]" fails on the server with "Unable to find
+   *  a member". Instead the caller asks the server for the level's real
+   *  members and matches this caption path against them. */
+  function clickFilterContext(
     column: string,
-    cellValue: string,
     rowData: Record<string, AiCell | string>,
-  ): DashboardFilter | null {
+  ): { dimension: string; hierarchy: string; level: string; captionPath: string[] } | null {
     if (!tile.query) return null;
     let rows: Array<{ dimension: string; hierarchy: string; level: string }> | null = null;
     if (tile.query.kind === "inline") {
@@ -336,31 +345,19 @@
     if (matchIdx === -1) return null;
     const match = rows[matchIdx];
 
-    // Walk the row axes from coarsest to finest, collecting captions
-    // for every level that sits in the same dim+hier as the clicked
-    // column up to and including the clicked level. Those captions
-    // become the dotted path in the constructed unique name.
-    const pathSegments: string[] = [];
+    // Walk the row axes from coarsest to finest, collecting captions for
+    // every level in the same dim+hier up to and including the clicked one.
+    const captionPath: string[] = [];
     for (let i = 0; i <= matchIdx; i++) {
       const ax = rows[i];
       if (ax.dimension !== match.dimension || ax.hierarchy !== match.hierarchy) continue;
       const cell = rowData[ax.level];
       const cap = typeof cell === "string" ? cell : (cell?.formatted ?? "");
       if (!cap) return null;
-      pathSegments.push(cap);
+      captionPath.push(cap);
     }
-    // Mondrian unique-name format: [<dim>].[<hier>].[v1].[v2]…[vk].
-    // Captions wrapped in brackets verbatim; Saiku's existing schemas
-    // use bracket-quoted segments so spaces / dots are tolerated.
-    const uniqueName = `[${match.dimension}].[${match.hierarchy}].${pathSegments
-      .map((s) => `[${s}]`)
-      .join(".")}`;
-    return {
-      dimension: match.dimension,
-      hierarchy: match.hierarchy,
-      level: match.level,
-      members: [uniqueName],
-    };
+    if (captionPath.length === 0) return null;
+    return { dimension: match.dimension, hierarchy: match.hierarchy, level: match.level, captionPath };
   }
 
   function handleCellClick(
@@ -369,10 +366,32 @@
     isRowHeader: boolean,
     rowData: Record<string, AiCell | string>,
   ): void {
-    if (!isRowHeader) return;
-    const filter = clickFilterForCell(column, cellValue, rowData);
-    if (!filter) return;
-    onClickFilter?.(filter);
+    if (!isRowHeader || !onClickFilter) return;
+    const ctx = clickFilterContext(column, rowData);
+    if (!ctx) return;
+    const cube = resolvedCube;
+    if (!cube) return;
+
+    const { dimension, hierarchy, level, captionPath } = ctx;
+    const leaf = captionPath[captionPath.length - 1];
+    const cacheKey = `${cube.connectionName}/${cube.catalog}/${cube.schema}/${cube.cubeName}|${dimension}/${hierarchy}/${level}|${leaf}`;
+    let lookup = clickMemberCache.get(cacheKey);
+    if (!lookup) {
+      lookup = searchMembers(cube, dimension, hierarchy, level, leaf);
+      clickMemberCache.set(cacheKey, lookup);
+    }
+    void lookup.then((hits) => {
+      const uniqueName = pickMemberUniqueNameForPath(hits, captionPath);
+      if (!uniqueName) {
+        clickMemberCache.delete(cacheKey); // don't cache a miss — allow a retry
+        console.warn(
+          `[saiku] click-to-filter: no member matched "${captionPath.join(" › ")}" in ${dimension}/${level}`,
+        );
+        return;
+      }
+      const filter: DashboardFilter = { dimension, hierarchy, level, members: [uniqueName] };
+      onClickFilter?.(filter);
+    });
   }
 
   function renderCell(v: AiCell | string): string {
