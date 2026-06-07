@@ -233,6 +233,26 @@ function buildCaptureWrapper(grid: HTMLElement, meta: ExportMeta): { node: HTMLE
   clone.style.height = "auto";
   clone.style.maxHeight = "none";
   clone.style.flex = "none";
+  // cloneNode(true) copies <canvas> ELEMENTS but NOT their drawn bitmap, so
+  // every ECharts tile would rasterise blank. Repaint each clone canvas from
+  // its live counterpart (same document order) before capture. drawImage from
+  // a 2D canvas is safe; guard per-canvas so one tainted/zero-size canvas
+  // can't abort the whole export.
+  const liveCanvases = grid.querySelectorAll("canvas");
+  const cloneCanvases = clone.querySelectorAll("canvas");
+  for (let i = 0; i < cloneCanvases.length; i++) {
+    const src = liveCanvases[i];
+    const dst = cloneCanvases[i] as HTMLCanvasElement | undefined;
+    if (!src || !dst || src.width === 0 || src.height === 0) continue;
+    dst.width = src.width;
+    dst.height = src.height;
+    try {
+      dst.getContext("2d")?.drawImage(src, 0, 0);
+    } catch {
+      // Cross-origin-tainted source canvas — skip it; toPng surfaces the
+      // wider failure if the whole capture is blocked.
+    }
+  }
   wrapper.appendChild(clone);
 
   // --- footer -------------------------------------------------------------
