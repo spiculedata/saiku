@@ -68,12 +68,14 @@ export interface ChartOptions {
    *  This flag drops rollup rows from the chart only — the grid still
    *  shows them. Defaults to `true`. */
   hideRollupRows: boolean;
-  /** Auto-split series across two y-axes when their magnitudes differ
-   *  by more than the SERIES_AXIS_THRESHOLD ratio (currently 1%). Use
-   *  case: charting an Event Count series in thousands alongside an
-   *  Avg Tone series in single digits — without dual-axis the Tone
-   *  series gets crushed to the zero line. Per-series picks in
-   *  {@link seriesAxis} always override the auto decision. */
+  /** Auto-split series across two y-axes when a series's maximum is at
+   *  or below {@link SERIES_AXIS_THRESHOLD} (10%) of the dominant
+   *  series's maximum. That's roughly "more than an order of magnitude
+   *  apart" — the visual cliff where the smaller series gets crushed
+   *  to the zero line of a left axis dominated by the larger one
+   *  (Balance £7k vs Fees £75; Event Count in thousands vs Avg Tone
+   *  in single digits). Per-series picks in {@link seriesAxis} always
+   *  override the auto decision. */
   dualAxis: boolean;
   /** Per-series y-axis override, keyed by column-category name (the
    *  same labels rendered in the legend). Values: "left" or "right".
@@ -86,13 +88,28 @@ export interface ChartOptions {
    *  with a missing/null measure — "blank" leaves it the map's grey
    *  unmapped colour, "zero" colours it at the ramp's low end. */
   mapMissing: "blank" | "zero";
+  /** Client-side category sort (#1083) — sorts the cartesian x-axis by
+   *  the first measure column without re-querying. "none" preserves
+   *  query order. Moved from ChartView's transient local state into
+   *  the persisted options bag in saiku 2026-06 so it can be tweaked
+   *  via the chart-options modal rather than a separate toolbar above
+   *  the canvas. */
+  sortDirection: "none" | "asc" | "desc";
+  /** Client-side top-N category limit (#1083). `null` = show all
+   *  categories; otherwise trim to the top N after sorting. Saved
+   *  alongside {@link sortDirection} so the cleanup-after-export look
+   *  persists with the tile. */
+  topN: number | null;
 }
 
-/** Auto-split threshold: a series whose maximum absolute value is less
- *  than this fraction of the largest series's max-abs is moved to the
- *  right y-axis. 1% is conservative enough that homogeneous-magnitude
- *  charts (Sales £ vs Refunds £) stay on a single axis. */
-export const SERIES_AXIS_THRESHOLD = 0.01;
+/** Auto-split threshold: a series whose maximum absolute value is at
+ *  or below this fraction of the largest series's max-abs is moved to
+ *  the right y-axis. 10% ≈ "more than an order of magnitude apart" —
+ *  bumped from 1% (which only fired at 100x ratios — Balance vs Fees
+ *  in the user-reported 2026-06-07 screenshot was exactly 1% and so
+ *  stayed crushed on the left axis). Series within ~10% of dominant
+ *  still share an axis (Sales £ ≈ Refunds £). */
+export const SERIES_AXIS_THRESHOLD = 0.1;
 
 export const DEFAULT_CHART_OPTIONS: ChartOptions = {
   title: "",
@@ -107,4 +124,6 @@ export const DEFAULT_CHART_OPTIONS: ChartOptions = {
   seriesAxis: {},
   colorRamp: "blues",
   mapMissing: "blank",
+  sortDirection: "none",
+  topN: null,
 };

@@ -271,7 +271,11 @@ export function assignSeriesAxes(
   for (let c = 0; c < n; c++) {
     // Don't override an explicit pin.
     if (opts.seriesAxis[cols[c]]) continue;
-    out[c] = maxAbs[c] < cutoff ? "right" : "left";
+    // `<=` not `<`: a series whose magnitude lands EXACTLY at the cutoff
+    // (Balance £7500 vs Fees £75 → ratio = 1%) should split. The strict
+    // `<` left it crushed on the left axis — see saiku 2026-06-07
+    // screenshot bug.
+    out[c] = maxAbs[c] <= cutoff ? "right" : "left";
   }
   return out;
 }

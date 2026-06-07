@@ -128,15 +128,23 @@
         </label>
       </label>
     </div>
-    <div class="row">
-      <label class="field field--grow">
-        <span class="field__label">{i18n.t("modal.chart.yAxes")}</span>
-        <label class="toggle" title={i18n.t("modal.chart.dualAxis.hint")}>
-          <input type="checkbox" bind:checked={form.dualAxis} /> {i18n.t("modal.chart.dualAxis")}
+    <!-- Auto dual-axis is meaningless with a single measure (nothing to
+         split to the right axis); hide the toggle in that case rather
+         than letting users tick a no-op. -->
+    {#if seriesNames.length >= 2}
+      <div class="row">
+        <label class="field field--grow">
+          <span class="field__label">{i18n.t("modal.chart.yAxes")}</span>
+          <label class="toggle" title={i18n.t("modal.chart.dualAxis.hint")}>
+            <input type="checkbox" bind:checked={form.dualAxis} /> {i18n.t("modal.chart.dualAxis")}
+          </label>
         </label>
-      </label>
-    </div>
-    {#if seriesNames.length > 0}
+      </div>
+    {/if}
+    <!-- Per-series Left/Right override only makes sense with ≥2 measures —
+         a single series has nothing to balance against the dominant axis,
+         so the section is hidden rather than dangled as a useless picker. -->
+    {#if seriesNames.length >= 2}
       <div class="series-axis">
         <span class="series-axis__title">{i18n.t("modal.chart.seriesAxis")}</span>
         <p class="hint">{i18n.t("modal.chart.seriesAxis.hint")}</p>
@@ -180,6 +188,37 @@
       </label>
     </div>
     <p class="hint">{i18n.t("modal.chart.trendHint")}</p>
+    <!-- #1083 (relocated 2026-06-07): client-side category sort + top-N.
+         Reordering / trimming happens on the projection without re-querying;
+         lives in chart options so the choice persists with the tile rather
+         than reverting on reload. -->
+    <div class="row">
+      <label class="field field--grow">
+        <span class="field__label">{i18n.t("modal.chart.sort")}</span>
+        <select class="field__input" bind:value={form.sortDirection}>
+          <option value="none">{i18n.t("modal.chart.sort.none")}</option>
+          <option value="asc">{i18n.t("modal.chart.sort.asc")}</option>
+          <option value="desc">{i18n.t("modal.chart.sort.desc")}</option>
+        </select>
+      </label>
+      <label class="field field--grow">
+        <span class="field__label">{i18n.t("modal.chart.topN")}</span>
+        <select
+          class="field__input"
+          value={form.topN ?? ""}
+          onchange={(e) => {
+            const v = (e.currentTarget as HTMLSelectElement).value;
+            form.topN = v === "" ? null : Number(v);
+          }}
+        >
+          <option value="">{i18n.t("modal.chart.topN.all")}</option>
+          <option value="5">Top 5</option>
+          <option value="10">Top 10</option>
+          <option value="20">Top 20</option>
+          <option value="50">Top 50</option>
+        </select>
+      </label>
+    </div>
     {/if}
   </div>
 

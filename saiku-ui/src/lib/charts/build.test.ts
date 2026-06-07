@@ -436,28 +436,57 @@ describe("buildChartOption — dataZoom zoom + pan (#1080)", () => {
   // Non-cartesian types must NEVER get dataZoom (it would be meaningless / break layout).
   const NON_CARTESIAN = ["pie", "donut", "treemap", "sunburst", "heatmap", "radar", "map"] as const;
 
-  test("every cartesian type (roomy) gets an inside zoom + a bottom slider", () => {
+  // Big enough to trip the slider gate — the screenshot bug fix only emits
+  // the visible bottom slider when there are enough categories that zooming
+  // is actually useful (< ~12 categories = no slider). Both rows and cols
+  // dense because scatter / bubble key off cols.length, the rest off rows.
+  function denseSample(): ChartProjection {
+    const rows = Array.from({ length: 20 }, (_, i) => `r${i}`);
+    const cols = Array.from({ length: 20 }, (_, i) => `c${i}`);
+    const matrix = rows.map((_, i) => cols.map((_, j) => 100 + i * 5 + j));
+    return { rowCategories: rows, columnCategories: cols, matrix };
+  }
+
+  test("dense cartesian (roomy) gets an inside zoom + a bottom slider", () => {
     for (const t of CARTESIAN) {
-      const opt = buildChartOption(sample(), t, opts(), undefined, { compact: false }) as Record<
-        string,
-        unknown
-      >;
+      const opt = buildChartOption(denseSample(), t, opts(), undefined, {
+        compact: false,
+      }) as Record<string, unknown>;
       const dz = opt.dataZoom as Array<{ type: string; xAxisIndex: number }>;
       expect(Array.isArray(dz), `${t} dataZoom is array`).toBe(true);
-      expect(dz.map((d) => d.type), `${t} has inside + slider`).toEqual(["inside", "slider"]);
+      expect(
+        dz.map((d) => d.type),
+        `${t} has inside + slider`,
+      ).toEqual(["inside", "slider"]);
       // x-axis only — value-axis zoom fights magnitude comparison.
       expect(dz.every((d) => d.xAxisIndex === 0)).toBe(true);
     }
   });
 
+  test("sparse cartesian (roomy) hides the slider — empty track would be a UI bug", () => {
+    // sample() has 2 rows / 2 cols — well below the gate. Inside-zoom
+    // stays armed (it's invisible until used) but the visible slider
+    // is suppressed so we don't draw an empty track under the bars.
+    for (const t of CARTESIAN) {
+      const opt = buildChartOption(sample(), t, opts(), undefined, {
+        compact: false,
+      }) as Record<string, unknown>;
+      const dz = opt.dataZoom as Array<{ type: string }>;
+      expect(dz.map((d) => d.type), `${t} sparse = inside only`).toEqual([
+        "inside",
+      ]);
+    }
+  });
+
   test("every cartesian type (compact) gets an inside zoom but NO slider", () => {
     for (const t of CARTESIAN) {
-      const opt = buildChartOption(sample(), t, opts(), undefined, { compact: true }) as Record<
-        string,
-        unknown
-      >;
+      const opt = buildChartOption(denseSample(), t, opts(), undefined, {
+        compact: true,
+      }) as Record<string, unknown>;
       const dz = opt.dataZoom as Array<{ type: string }>;
-      expect(dz.map((d) => d.type), `${t} compact = inside only`).toEqual(["inside"]);
+      expect(dz.map((d) => d.type), `${t} compact = inside only`).toEqual([
+        "inside",
+      ]);
     }
   });
 
