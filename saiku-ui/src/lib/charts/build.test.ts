@@ -605,6 +605,103 @@ describe("buildChartOption — cartesian sparkline tooltip (#1087)", () => {
   });
 });
 
+describe("buildChartOption — number formatting (#1082)", () => {
+  function yAxisOf(opt: Record<string, unknown>): { axisLabel?: { formatter?: (v: number) => string } } {
+    const y = opt.yAxis;
+    return Array.isArray(y) ? (y[0] as { axisLabel?: { formatter?: (v: number) => string } }) : (y as never);
+  }
+
+  test("no numberFormat → value axis keeps a plain axisLabel (no formatter)", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ dualAxis: false })) as Record<string, unknown>;
+    const y = yAxisOf(opt);
+    expect(y.axisLabel?.formatter).toBeUndefined();
+  });
+
+  test("numberFormat sets a value-axis formatter that applies prefix/decimals", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ dualAxis: false, numberFormat: { prefix: "£", decimals: 0, thousands: true } }),
+    ) as Record<string, unknown>;
+    const y = yAxisOf(opt);
+    expect(typeof y.axisLabel?.formatter).toBe("function");
+    const out = y.axisLabel!.formatter!(1234567);
+    expect(out.startsWith("£")).toBe(true);
+    expect(out.replace(/[^0-9]/g, "")).toBe("1234567");
+  });
+
+  test("dual-axis formats BOTH value axes", () => {
+    const disparate: ChartProjection = {
+      rowCategories: ["a", "b"],
+      columnCategories: ["Big", "Tiny"],
+      matrix: [
+        [100000, 1],
+        [120000, 2],
+      ],
+    };
+    const opt = buildChartOption(
+      disparate,
+      "bar",
+      opts({ dualAxis: true, numberFormat: { suffix: "u" } }),
+    ) as Record<string, unknown>;
+    const y = opt.yAxis as Array<{ axisLabel?: { formatter?: (v: number) => string } }>;
+    expect(y).toHaveLength(2);
+    expect(y[0].axisLabel?.formatter?.(5)).toBe("5u");
+    expect(y[1].axisLabel?.formatter?.(5)).toBe("5u");
+  });
+
+  test("tooltip value text is formatted (compact tile, no sparkline)", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ numberFormat: { prefix: "$", decimals: 0 } }), undefined, {
+      compact: true,
+    }) as Record<string, unknown>;
+    const fmt = (opt.tooltip as { formatter?: (p: unknown) => string }).formatter;
+    expect(typeof fmt).toBe("function");
+    const out = fmt!([{ axisValueLabel: "1997", seriesName: "Store Sales", dataIndex: 0, value: 565238.13 }]);
+    expect(out).toContain("$565238");
+    expect(out).not.toContain("<svg"); // compact tiles never draw the sparkline
+  });
+
+  test("formatted tooltip value is still HTML-escaped (innerHTML safety)", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ numberFormat: { prefix: "<b>", suffix: "</b>" } }),
+      undefined,
+      { compact: true },
+    ) as Record<string, unknown>;
+    const fmt = (opt.tooltip as { formatter: (p: unknown) => string }).formatter;
+    const out = fmt([{ axisValueLabel: "1997", seriesName: "Store Sales", dataIndex: 0, value: 5 }]);
+    expect(out).not.toContain("<b>5</b>");
+    expect(out).toContain("&lt;b&gt;");
+  });
+
+  test("cartesian series carry a label.formatter only when numberFormat is set", () => {
+    const plain = buildChartOption(sample(), "bar", opts()) as Record<string, unknown>;
+    expect((plain.series as Record<string, unknown>[])[0].label).toBeUndefined();
+    const fmtd = buildChartOption(sample(), "bar", opts({ numberFormat: { suffix: "%" } })) as Record<
+      string,
+      unknown
+    >;
+    const label = (fmtd.series as Array<{ label?: { formatter?: (p: { value: number }) => string } }>)[0].label;
+    expect(typeof label?.formatter).toBe("function");
+    expect(label!.formatter!({ value: 42 })).toBe("42%");
+  });
+
+  test("roomy mode keeps the sparkline formatter AND formats the value", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ numberFormat: { abbreviate: true } }),
+      undefined,
+      { compact: false },
+    ) as Record<string, unknown>;
+    const fmt = (opt.tooltip as { formatter: (p: unknown) => string }).formatter;
+    const out = fmt([{ axisValueLabel: "1997", seriesName: "Store Sales", dataIndex: 0, value: 565238.13 }]);
+    expect(out).toContain("<svg"); // sparkline preserved in roomy mode
+    expect(out).toContain("565.2k"); // value abbreviated
+  });
+});
+
 describe("buildChartOption — rejection", () => {
   test("returns null for unknown chart kinds", () => {
     expect(buildChartOption(sample(), "made-up")).toBeNull();

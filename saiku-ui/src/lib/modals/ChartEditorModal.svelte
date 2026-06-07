@@ -58,6 +58,34 @@
     }
     form.seriesAxis = next;
   }
+
+  // issue #1082: number-format controls. The field is optional on ChartOptions
+  // (undefined = inert), so bind through local accessors that read with inert
+  // defaults and write a fresh numberFormat object.
+  const nfPrefix = $derived(form.numberFormat?.prefix ?? "");
+  const nfSuffix = $derived(form.numberFormat?.suffix ?? "");
+  // Decimals: "" means auto (null). Keep it as a string for the blank-able input.
+  const nfDecimals = $derived(
+    form.numberFormat?.decimals === null || form.numberFormat?.decimals === undefined
+      ? ""
+      : String(form.numberFormat.decimals),
+  );
+  const nfThousands = $derived(form.numberFormat?.thousands ?? false);
+  const nfAbbreviate = $derived(form.numberFormat?.abbreviate ?? false);
+
+  function setNumberFormat(patch: Partial<NonNullable<ChartOptions["numberFormat"]>>): void {
+    form.numberFormat = { ...form.numberFormat, ...patch };
+  }
+
+  function onDecimalsInput(raw: string): void {
+    const trimmed = raw.trim();
+    if (trimmed === "") {
+      setNumberFormat({ decimals: null });
+      return;
+    }
+    const n = Number(trimmed);
+    setNumberFormat({ decimals: Number.isFinite(n) ? Math.max(0, Math.floor(n)) : null });
+  }
 </script>
 
 <Modal title={i18n.t("modal.chart.title")} {open} size="md" onClose={onCancel}>
@@ -223,6 +251,67 @@
         </select>
       </label>
     </div>
+
+    <!-- issue #1082: number formatting for value text (axis labels, tooltip
+         values, data labels). All controls optional; blank/off = raw values. -->
+    <div class="number-format">
+      <span class="number-format__title">{i18n.t("modal.chart.numberFormat")}</span>
+      <div class="row">
+        <label class="field field--grow">
+          <span class="field__label">{i18n.t("modal.chart.numberFormat.prefix")}</span>
+          <input
+            class="field__input"
+            value={nfPrefix}
+            placeholder={i18n.t("modal.chart.numberFormat.prefixPlaceholder")}
+            oninput={(e) => setNumberFormat({ prefix: (e.currentTarget as HTMLInputElement).value })}
+          />
+        </label>
+        <label class="field field--grow">
+          <span class="field__label">{i18n.t("modal.chart.numberFormat.suffix")}</span>
+          <input
+            class="field__input"
+            value={nfSuffix}
+            placeholder={i18n.t("modal.chart.numberFormat.suffixPlaceholder")}
+            oninput={(e) => setNumberFormat({ suffix: (e.currentTarget as HTMLInputElement).value })}
+          />
+        </label>
+        <label class="field field--grow">
+          <span class="field__label">{i18n.t("modal.chart.numberFormat.decimals")}</span>
+          <input
+            class="field__input"
+            type="number"
+            min="0"
+            max="20"
+            value={nfDecimals}
+            placeholder={i18n.t("modal.chart.numberFormat.decimalsAuto")}
+            oninput={(e) => onDecimalsInput((e.currentTarget as HTMLInputElement).value)}
+          />
+        </label>
+      </div>
+      <div class="row">
+        <label class="field field--grow">
+          <label class="toggle">
+            <input
+              type="checkbox"
+              checked={nfThousands}
+              onchange={(e) => setNumberFormat({ thousands: (e.currentTarget as HTMLInputElement).checked })}
+            />
+            {i18n.t("modal.chart.numberFormat.thousands")}
+          </label>
+        </label>
+        <label class="field field--grow">
+          <label class="toggle" title={i18n.t("modal.chart.numberFormat.abbreviate.hint")}>
+            <input
+              type="checkbox"
+              checked={nfAbbreviate}
+              onchange={(e) => setNumberFormat({ abbreviate: (e.currentTarget as HTMLInputElement).checked })}
+            />
+            {i18n.t("modal.chart.numberFormat.abbreviate")}
+          </label>
+        </label>
+      </div>
+      <p class="hint">{i18n.t("modal.chart.numberFormat.hint")}</p>
+    </div>
     {/if}
   </div>
 
@@ -246,4 +335,6 @@
   .series-axis__row { display: flex; align-items: center; gap: var(--space-3); }
   .series-axis__name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-size: var(--fs-sm); }
   .series-axis__pick { width: 8rem; flex: 0 0 auto; }
+  .number-format { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
+  .number-format__title { font-size: var(--fs-sm); color: var(--fg-muted); }
 </style>
