@@ -38,6 +38,23 @@ export function isNarrow(width: number, breakpoint: number = DEFAULT_STACK_BREAK
   return width <= breakpoint;
 }
 
+/* Stacked-cell sizing — mirror the desktop grid's row metrics so a tile
+ * keeps roughly its authored height when collapsed into the single column.
+ * The desktop grid uses grid-auto-rows: minmax(80px, auto) with a 8px gap. */
+export const STACK_ROW_PX = 80;
+export const STACK_GAP_PX = 8;
+/** Floor so a 1-row tile (e.g. a thin KPI) is still readable when stacked. */
+export const STACK_MIN_PX = 160;
+
+/** Height (px) a tile should occupy in the stacked single-column layout,
+ *  derived from its saved row span {@code h} so a chart keeps roughly its
+ *  desktop height instead of collapsing to one auto-row. Floored at
+ *  {@link STACK_MIN_PX}. Pure. */
+export function stackedCellHeight(h: number): number {
+  const rows = Math.max(1, Math.floor(h) || 1);
+  return Math.max(STACK_MIN_PX, rows * STACK_ROW_PX + (rows - 1) * STACK_GAP_PX);
+}
+
 /** True for tile types that pin to the top of the mobile stack. Today
  *  that's only the "filter" tile type; isolated here so the rule has a
  *  single home if more pinned types appear. */
