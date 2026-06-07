@@ -184,11 +184,74 @@ public class AnthropicNlAskProviderTest {
         assertTrue(resp.reason().startsWith("Transport error"));
     }
 
-    /** Minimal {@link HttpClient} stub — only {@code send} is exercised. */
+    // ---------- characterization: security invariants (issue #1159) ----------
+
+    /**
+     * Security invariant: the API key may appear ONLY in the {@code x-api-key} header (plus the
+     * {@code anthropic-version} pin), never in the serialized request body.
+     */
+    @Test
+    public void askSendsKeyInHeaderAndNeverInBody() {
+        StubHttp fake = StubHttp.fixed(200, "{\"content\":[]}");
+        AnthropicNlAskProvider provider = new AnthropicNlAskProvider(
+                new AnthropicNlAskProvider.Config("sk-secret-key", "claude-x", 0.0, 1024, Duration.ofSeconds(5)), fake);
+
+        provider.ask(new NlAskRequest(CUBE, "show sales", SCHEMA, REQUEST_SCHEMA, List.of()));
+
+        HttpRequest sent = fake.lastRequest;
+        assertNotNull(sent);
+        assertEquals("sk-secret-key", sent.headers().firstValue("x-api-key").orElse(null));
+        assertEquals(
+                "2023-06-01", sent.headers().firstValue("anthropic-version").orElse(null));
+        assertEquals(
+                "application/json", sent.headers().firstValue("content-type").orElse(null));
+        assertFalse("API key must never appear in the request body", fake.lastBody.contains("sk-secret-key"));
+    }
+
+    /** Security invariant: refuse_off_topic tool is always present and tool_choice forces a call. */
+    @Test
+    public void requestAlwaysCarriesRefusalToolAndForcesToolChoice() throws Exception {
+        AnthropicNlAskProvider provider =
+                new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config("k", "claude-x", 0.0, 1024, null));
+        JsonNode root = MAPPER.readTree(
+                provider.buildRequestBody(new NlAskRequest(CUBE, "q", SCHEMA, REQUEST_SCHEMA, List.of())));
+
+        assertEquals("any", root.get("tool_choice").get("type").asText());
+        JsonNode refusal = root.get("tools").get(1);
+        assertEquals("refuse_off_topic", refusal.get("name").asText());
+        assertEquals(
+                "reason", refusal.get("input_schema").get("required").get(0).asText());
+    }
+
+    /** Locks the system-prompt guardrail wording — must keep "tool" (not "function") for Anthropic. */
+    @Test
+    public void systemPromptKeepsGuardrailWordingVerbatim() throws Exception {
+        AnthropicNlAskProvider provider =
+                new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config("k", "claude-x", 0.0, 1024, null));
+        String system = MAPPER.readTree(
+                        provider.buildRequestBody(new NlAskRequest(CUBE, "q", SCHEMA, REQUEST_SCHEMA, List.of())))
+                .get("system")
+                .asText();
+        assertTrue(system.contains("you MUST call the refuse_off_topic tool"));
+        assertTrue(system.contains("Always call exactly one tool"));
+    }
+
+    /** Refusal with no reason field falls back to the canonical OFF_TOPIC default reason. */
+    @Test
+    public void parseToolResponseRefusalDefaultsReasonWhenAbsent() throws Exception {
+        String body = "{\"content\":[{\"type\":\"tool_use\",\"name\":\"refuse_off_topic\",\"input\":{}}]}";
+        NlAskResponse resp = AnthropicNlAskProvider.parseToolResponse(body, "claude-x");
+        assertTrue(resp.degraded());
+        assertEquals("OFF_TOPIC: Question is not about the cube.", resp.reason());
+    }
+
+    /** Minimal {@link HttpClient} stub — only {@code send} is exercised. Captures the last request. */
     private static final class StubHttp extends HttpClient {
         private final int status;
         private final String body;
         private final boolean throwIo;
+        HttpRequest lastRequest;
+        String lastBody;
 
         private StubHttp(int status, String body, boolean throwIo) {
             this.status = status;
@@ -206,12 +269,40 @@ public class AnthropicNlAskProviderTest {
 
         @Override
         public <T> HttpResponse<T> send(HttpRequest request, HttpResponse.BodyHandler<T> handler) throws IOException {
+            this.lastRequest = request;
+            this.lastBody = bodyAsString(request);
             if (throwIo) {
                 throw new IOException("boom");
             }
             @SuppressWarnings("unchecked")
             HttpResponse<T> resp = (HttpResponse<T>) new StubResponse(request, status, body);
             return resp;
+        }
+
+        private static String bodyAsString(HttpRequest request) {
+            StringBuilder sb = new StringBuilder();
+            request.bodyPublisher().ifPresent(pub -> {
+                java.util.concurrent.Flow.Subscriber<java.nio.ByteBuffer> sub =
+                        new java.util.concurrent.Flow.Subscriber<>() {
+                            @Override
+                            public void onSubscribe(java.util.concurrent.Flow.Subscription s) {
+                                s.request(Long.MAX_VALUE);
+                            }
+
+                            @Override
+                            public void onNext(java.nio.ByteBuffer item) {
+                                sb.append(java.nio.charset.StandardCharsets.UTF_8.decode(item));
+                            }
+
+                            @Override
+                            public void onError(Throwable t) {}
+
+                            @Override
+                            public void onComplete() {}
+                        };
+                pub.subscribe(sub);
+            });
+            return sb.toString();
         }
 
         @Override

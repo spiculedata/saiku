@@ -5,14 +5,11 @@
 package org.saiku.service.olap.ai.ask;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.Duration;
 
 /**
@@ -27,16 +24,15 @@ import java.time.Duration;
  * <p>Talks to the HTTPS endpoint directly via JDK {@link HttpClient} — no Anthropic SDK
  * dependency. Failures (transport, non-2xx, missing tool block, parse error) return a
  * {@link NlAskResponse#degraded(String, String)} rather than throwing, per the provider contract.
+ * The shared request/response orchestration lives in {@link AbstractNlAskProvider}.
  */
-public final class AnthropicNlAskProvider implements NlAskProvider {
+public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
 
     /** Default model id. Bump when Anthropic publishes a newer stable Sonnet. */
     public static final String DEFAULT_MODEL = "claude-sonnet-4-6";
 
     private static final String ENDPOINT = "https://api.anthropic.com/v1/messages";
     private static final String API_VERSION = "2023-06-01";
-    private static final String TOOL_NAME = "emit_query";
-    private static final String REFUSAL_TOOL_NAME = "refuse_off_topic";
 
     private static final String SYSTEM_PROMPT = "You are a Mondrian OLAP query assistant scoped to a "
             + "single cube. Your job is to translate a user's natural-language question about the "
@@ -56,10 +52,6 @@ public final class AnthropicNlAskProvider implements NlAskProvider {
             + "in filters (the slicer). (5) When the user asks for 'top N' or 'bottom N', set both "
             + "`order` and `limit`. (6) Keep aggregator overrides off unless the user asks for one. "
             + "Always call exactly one tool — never respond with prose.";
-
-    private static final String REFUSAL_REASON_PREFIX = "OFF_TOPIC: ";
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /** Provider configuration. */
     public record Config(String apiKey, String model, double temperature, int maxTokens, Duration requestTimeout) {
@@ -84,57 +76,49 @@ public final class AnthropicNlAskProvider implements NlAskProvider {
     }
 
     private final Config config;
-    private final HttpClient http;
 
     public AnthropicNlAskProvider(String apiKey) {
         this(Config.of(apiKey));
     }
 
     public AnthropicNlAskProvider(Config config) {
-        this(
-                config,
-                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build());
+        this(config, defaultHttpClient());
     }
 
     /** Package-visible ctor for tests that need to inject a fake client. */
     AnthropicNlAskProvider(Config config, HttpClient http) {
+        super(http);
         if (config == null) {
             throw new IllegalArgumentException("config");
         }
         this.config = config;
-        this.http = http;
+    }
+
+    // ---------- provider hooks ----------
+
+    @Override
+    protected String endpoint() {
+        return ENDPOINT;
     }
 
     @Override
-    public NlAskResponse ask(NlAskRequest request) {
-        try {
-            String body = buildRequestBody(request);
-            HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(ENDPOINT))
-                    .timeout(config.requestTimeout())
-                    .header("x-api-key", config.apiKey())
-                    .header("anthropic-version", API_VERSION)
-                    .header("content-type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(body))
-                    .build();
-            HttpResponse<String> response = http.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() / 100 != 2) {
-                return NlAskResponse.degraded(
-                        "HTTP " + response.statusCode() + ": " + truncate(response.body(), 200), config.model());
-            }
-            return parseToolResponse(response.body(), config.model());
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            return NlAskResponse.degraded("Transport error: " + e.getClass().getSimpleName(), config.model());
-        } catch (RuntimeException e) {
-            return NlAskResponse.degraded("Unexpected error: " + e.getClass().getSimpleName(), config.model());
-        }
+    protected String model() {
+        return config.model();
+    }
+
+    @Override
+    protected Duration requestTimeout() {
+        return config.requestTimeout();
+    }
+
+    @Override
+    protected void applyAuthHeaders(HttpRequest.Builder builder) {
+        builder.header("x-api-key", config.apiKey()).header("anthropic-version", API_VERSION);
     }
 
     // ---------- request building ----------
 
+    @Override
     String buildRequestBody(NlAskRequest request) throws IOException {
         ObjectNode root = MAPPER.createObjectNode();
         root.put("model", config.model());
@@ -186,16 +170,12 @@ public final class AnthropicNlAskProvider implements NlAskProvider {
         return MAPPER.writeValueAsString(root);
     }
 
-    private static String cubeRefJson(NlAskRequest request) {
-        ObjectNode r = MAPPER.createObjectNode();
-        r.put("connectionName", request.cubeRef().getConnectionName());
-        r.put("catalog", request.cubeRef().getCatalog());
-        r.put("schema", request.cubeRef().getSchema());
-        r.put("cubeName", request.cubeRef().getCubeName());
-        return r.toString();
-    }
-
     // ---------- response parsing ----------
+
+    @Override
+    protected NlAskResponse doParseToolResponse(String body, String model) throws IOException {
+        return parseToolResponse(body, model);
+    }
 
     /**
      * Parse an Anthropic Messages API response body into an {@link NlAskResponse}. Visible for
@@ -230,12 +210,5 @@ public final class AnthropicNlAskProvider implements NlAskProvider {
             }
         }
         return NlAskResponse.degraded("no tool_use block", model);
-    }
-
-    private static String truncate(String s, int max) {
-        if (s == null) {
-            return "";
-        }
-        return s.length() <= max ? s : s.substring(0, max) + "...";
     }
 }
