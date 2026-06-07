@@ -375,6 +375,51 @@ public class AiSchemaConverter {
         // with two members of one hierarchy, which Mondrian rejects.
         // Reject up-front with a teaching error so the agent merges them
         // into one filter with op:"in" + combined members instead.
+        //
+        // This method is a thin orchestrator (saiku#1161): the
+        // cross-filter collision pass, per-filter member validation, the
+        // per-op element builder, and the tuple-of-sets CROSSJOIN rewrite
+        // are each factored into a dedicated helper. The order of those
+        // calls is load-bearing — see each helper's javadoc.
+        validateNoDuplicateFilterHierarchy(filters, schema);
+
+        StringBuilder s = new StringBuilder("(");
+        for (int i = 0; i < filters.size(); i++) {
+            AiFilterSelection f = filters.get(i);
+            String fieldPath = "filters[" + i + "]";
+            AiAxisSelection probe = new AiAxisSelection(f.getDimension(), f.getHierarchy(), f.getLevel());
+            AiSchema.Level level = lookupLevel(probe, schema, fieldPath);
+
+            String op = f.getOp() == null ? "in" : f.getOp().toLowerCase();
+            List<String> members = f.getMembers() == null ? java.util.Collections.emptyList() : f.getMembers();
+            // Reject anything in `members[]` that isn't a strict member-reference
+            // form before it gets spliced into the MDX (saiku#786). Also runs
+            // the per-filter dedupe-by-leaf and dim/hier prefix checks. Skipped
+            // for op=relative, which doesn't read members[].
+            validateFilterMembers(probe, op, members, schema, fieldPath);
+
+            if (i > 0) s.append(", ");
+
+            // Mondrian's slicer accepts a bare set and applies implicit
+            // aggregation across its members. Wrapping with Aggregate()
+            // turns the slicer-element into a Numeric Expression and
+            // confuses the parser ("No function matches signature
+            // '{<Numeric Expression>}'") when the set is in the WHERE
+            // position. Emit the set form directly.
+            s.append(buildSlicerElement(f, op, members, level, fieldPath).expr);
+        }
+        s.append(")");
+        return rewriteTupleOfSets(s.toString(), filters);
+    }
+
+    /**
+     * First pass over ALL filters: reject two filters that target the same
+     * hierarchy. This MUST run to completion before any tuple element is
+     * built — a collision in a later filter throws before an earlier
+     * filter's member-validation error would (saiku#784). Keep it a
+     * distinct pass; do not fuse into the build loop.
+     */
+    private void validateNoDuplicateFilterHierarchy(List<AiFilterSelection> filters, AiSchema schema) {
         java.util.Set<String> seenHierarchies = new java.util.LinkedHashSet<>();
         for (int i = 0; i < filters.size(); i++) {
             AiFilterSelection f = filters.get(i);
@@ -390,226 +435,238 @@ public class AiSchemaConverter {
                         null);
             }
         }
+    }
 
-        StringBuilder s = new StringBuilder("(");
-        for (int i = 0; i < filters.size(); i++) {
-            AiFilterSelection f = filters.get(i);
-            String fieldPath = "filters[" + i + "]";
-            AiAxisSelection probe = new AiAxisSelection(f.getDimension(), f.getHierarchy(), f.getLevel());
-            AiSchema.Level level = lookupLevel(probe, schema, fieldPath);
-
-            String op = f.getOp() == null ? "in" : f.getOp().toLowerCase();
-            List<String> members = f.getMembers() == null ? java.util.Collections.emptyList() : f.getMembers();
-            // Reject anything in `members[]` that isn't a strict member-reference
-            // form before it gets spliced into the MDX. saiku#786: arbitrary
-            // strings (containing comma + function call) used to inline into the
-            // {...} set literal and reach Mondrian's parser. Doesn't apply to
-            // op=relative, which doesn't read members[].
-            if (!"relative".equals(op)) {
-                AiSchema.Hierarchy filterHier = lookupHierarchy(probe, schema, fieldPath);
-                // Detect duplicate-by-leaf-segment within this filter's
-                // members[] — catches the same-logical-member-two-ref-forms
-                // pattern that silently double-counts in Mondrian's bare-set
-                // slicer (saiku#804). Within a single filter all members are
-                // at the same declared level, so two refs sharing the same
-                // leaf-segment caption resolve to the same member.
-                java.util.Map<String, Integer> seenLeaf = new java.util.LinkedHashMap<>();
-                for (int mi = 0; mi < members.size(); mi++) {
-                    String mref = members.get(mi);
-                    validateMemberRef(mref, fieldPath + ".members[" + mi + "]");
-                    // Slicer members must be at least [Dim].[Member] —
-                    // a single-segment ref is the dim itself, not a member.
-                    // Mirrors the iter 141 axis-side check; without this,
-                    // the slicer splices `WHERE ([Dim])` and Mondrian 500s.
-                    if (countBracketedSegments(mref) < 2) {
-                        throw new AiValidationException(
-                                fieldPath + ".members[" + mi + "]",
-                                "Member '" + mref + "' is the dimension itself, not a member. "
-                                        + "Member refs need at least [Dim].[Member] or [Dim].[Hier].[Member].",
-                                null);
-                    }
-                    // Skip dedupe for op=between — its members are [start, end]
-                    // positional pair, and a degenerate range [X]:[X] (same
-                    // start and end) is the legitimate way to express "a
-                    // single member range" (covered by iter 216).
-                    if (!"between".equals(op)) {
-                        String leaf = lastBracketSegmentLower(mref);
-                        Integer prev = seenLeaf.put(leaf, mi);
-                        if (prev != null) {
-                            throw new AiValidationException(
-                                    fieldPath + ".members[" + mi + "]",
-                                    "Member '" + mref + "' resolves to the same member as "
-                                            + fieldPath + ".members[" + prev
-                                            + "] ('" + members.get(prev) + "'). "
-                                            + "Mondrian aggregates duplicates without deduplication "
-                                            + "and would silently double-count. "
-                                            + "Use only one ref form per logical member.",
-                                    null);
-                        }
-                    }
-                    // Also assert the member's dim+hier prefix matches the
-                    // declared filter dim+hier (saiku#798, saiku#799). The
-                    // level depth check is skipped because slicer members can
-                    // sit at any depth (op=in with a Year member while
-                    // level=Quarter is a valid pattern). Dim+hier checks are
-                    // the ones safe to apply uniformly to slicers.
-                    String[] dimHier = firstTwoSegments(mref);
-                    if (filterHier != null && dimHier != null && dimHier[0] != null) {
-                        String expectedDim = extractDimFromHierarchyUniqueName(filterHier.uniqueName);
-                        if (expectedDim != null && !expectedDim.equalsIgnoreCase(dimHier[0])) {
-                            throw new AiValidationException(
-                                    fieldPath + ".members[" + mi + "]",
-                                    "Member '" + mref + "' belongs to dimension '" + dimHier[0]
-                                            + "', but the filter declares dimension '" + expectedDim
-                                            + "'. Move the member into a filter on its own dimension, "
-                                            + "or supply a member from '" + expectedDim + "'.",
-                                    null);
-                        }
-                        String expectedHier = extractHierFromHierarchyUniqueName(filterHier.uniqueName, expectedDim);
-                        if (expectedHier != null && dimHier[1] != null && !expectedHier.equalsIgnoreCase(dimHier[1])) {
-                            throw new AiValidationException(
-                                    fieldPath + ".members[" + mi + "]",
-                                    "Member '" + mref + "' belongs to hierarchy '" + dimHier[1]
-                                            + "' under dimension '" + dimHier[0]
-                                            + "', but the filter declares hierarchy '" + expectedHier
-                                            + "'. Supply a member from hierarchy '" + expectedHier + "'.",
-                                    null);
-                        }
-                    }
+    /**
+     * Per-filter member validation — the AI-query injection defense
+     * (saiku#786, #798, #799, #804). Runs the strict member-ref syntax
+     * check, the &lt;2-segment "dimension itself" guard, the per-filter
+     * dedupe-by-leaf (skipped for op=between), and the dim/hier prefix
+     * match — in that exact order. No-op for op=relative, which doesn't
+     * read members[]. The {@code seenLeaf} map is local so it resets per
+     * filter.
+     */
+    private void validateFilterMembers(
+            AiAxisSelection probe, String op, List<String> members, AiSchema schema, String fieldPath) {
+        if ("relative".equals(op)) return;
+        AiSchema.Hierarchy filterHier = lookupHierarchy(probe, schema, fieldPath);
+        // Detect duplicate-by-leaf-segment within this filter's
+        // members[] — catches the same-logical-member-two-ref-forms
+        // pattern that silently double-counts in Mondrian's bare-set
+        // slicer (saiku#804). Within a single filter all members are
+        // at the same declared level, so two refs sharing the same
+        // leaf-segment caption resolve to the same member.
+        java.util.Map<String, Integer> seenLeaf = new java.util.LinkedHashMap<>();
+        for (int mi = 0; mi < members.size(); mi++) {
+            String mref = members.get(mi);
+            validateMemberRef(mref, fieldPath + ".members[" + mi + "]");
+            // Slicer members must be at least [Dim].[Member] —
+            // a single-segment ref is the dim itself, not a member.
+            // Mirrors the iter 141 axis-side check; without this,
+            // the slicer splices `WHERE ([Dim])` and Mondrian 500s.
+            if (countBracketedSegments(mref) < 2) {
+                throw new AiValidationException(
+                        fieldPath + ".members[" + mi + "]",
+                        "Member '" + mref + "' is the dimension itself, not a member. "
+                                + "Member refs need at least [Dim].[Member] or [Dim].[Hier].[Member].",
+                        null);
+            }
+            // Skip dedupe for op=between — its members are [start, end]
+            // positional pair, and a degenerate range [X]:[X] (same
+            // start and end) is the legitimate way to express "a
+            // single member range" (covered by iter 216).
+            if (!"between".equals(op)) {
+                String leaf = lastBracketSegmentLower(mref);
+                Integer prev = seenLeaf.put(leaf, mi);
+                if (prev != null) {
+                    throw new AiValidationException(
+                            fieldPath + ".members[" + mi + "]",
+                            "Member '" + mref + "' resolves to the same member as "
+                                    + fieldPath + ".members[" + prev
+                                    + "] ('" + members.get(prev) + "'). "
+                                    + "Mondrian aggregates duplicates without deduplication "
+                                    + "and would silently double-count. "
+                                    + "Use only one ref form per logical member.",
+                            null);
                 }
             }
-
-            if (i > 0) s.append(", ");
-
-            String expr;
-            boolean isSet;
-            switch (op) {
-                case "in": {
-                    if (members.isEmpty()) {
-                        throw new AiValidationException(
-                                fieldPath + ".members", "'in' filter must specify at least one member", null);
-                    }
-                    if (members.size() == 1) {
-                        expr = members.get(0);
-                        isSet = false;
-                    } else {
-                        StringBuilder set = new StringBuilder("{");
-                        for (int j = 0; j < members.size(); j++) {
-                            if (j > 0) set.append(", ");
-                            set.append(members.get(j));
-                        }
-                        set.append("}");
-                        expr = set.toString();
-                        isSet = true;
-                    }
-                    break;
+            // Also assert the member's dim+hier prefix matches the
+            // declared filter dim+hier (saiku#798, saiku#799). The
+            // level depth check is skipped because slicer members can
+            // sit at any depth (op=in with a Year member while
+            // level=Quarter is a valid pattern). Dim+hier checks are
+            // the ones safe to apply uniformly to slicers.
+            String[] dimHier = firstTwoSegments(mref);
+            if (filterHier != null && dimHier != null && dimHier[0] != null) {
+                String expectedDim = extractDimFromHierarchyUniqueName(filterHier.uniqueName);
+                if (expectedDim != null && !expectedDim.equalsIgnoreCase(dimHier[0])) {
+                    throw new AiValidationException(
+                            fieldPath + ".members[" + mi + "]",
+                            "Member '" + mref + "' belongs to dimension '" + dimHier[0]
+                                    + "', but the filter declares dimension '" + expectedDim
+                                    + "'. Move the member into a filter on its own dimension, "
+                                    + "or supply a member from '" + expectedDim + "'.",
+                            null);
                 }
-                case "not_in": {
-                    if (members.isEmpty()) {
-                        throw new AiValidationException(
-                                fieldPath + ".members", "'not_in' filter must specify at least one member", null);
-                    }
-                    StringBuilder set = new StringBuilder();
-                    set.append("Except(").append(level.uniqueName).append(".Members, {");
+                String expectedHier = extractHierFromHierarchyUniqueName(filterHier.uniqueName, expectedDim);
+                if (expectedHier != null && dimHier[1] != null && !expectedHier.equalsIgnoreCase(dimHier[1])) {
+                    throw new AiValidationException(
+                            fieldPath + ".members[" + mi + "]",
+                            "Member '" + mref + "' belongs to hierarchy '" + dimHier[1]
+                                    + "' under dimension '" + dimHier[0]
+                                    + "', but the filter declares hierarchy '" + expectedHier
+                                    + "'. Supply a member from hierarchy '" + expectedHier + "'.",
+                            null);
+                }
+            }
+        }
+    }
+
+    /** A slicer tuple-element and whether it is a set expression. The
+     *  {@code isSet} flag mirrors {@link #slicerHasSet} per op; the two are
+     *  deliberately kept independent so they stay in lock-step (saiku#1161). */
+    private static final class SlicerElement {
+        final String expr;
+        final boolean isSet;
+
+        SlicerElement(String expr, boolean isSet) {
+            this.expr = expr;
+            this.isSet = isSet;
+        }
+    }
+
+    /**
+     * Build one slicer tuple-element from a filter — the per-op switch.
+     * Emits MDX byte-identical to the inline version: 'in' single member
+     * is a bare member, 'in' &gt;=2 is '{m1, m2, ...}', 'not_in' is
+     * 'Except(level.Members, {...})', 'between' is '{mA : mB}',
+     * 'descendants_of' is a bare member, 'relative' delegates to
+     * {@link #relativeSet}. Every AiValidationException is preserved.
+     */
+    private SlicerElement buildSlicerElement(
+            AiFilterSelection f, String op, List<String> members, AiSchema.Level level, String fieldPath) {
+        String expr;
+        boolean isSet;
+        switch (op) {
+            case "in": {
+                if (members.isEmpty()) {
+                    throw new AiValidationException(
+                            fieldPath + ".members", "'in' filter must specify at least one member", null);
+                }
+                if (members.size() == 1) {
+                    expr = members.get(0);
+                    isSet = false;
+                } else {
+                    StringBuilder set = new StringBuilder("{");
                     for (int j = 0; j < members.size(); j++) {
                         if (j > 0) set.append(", ");
                         set.append(members.get(j));
                     }
-                    set.append("})");
+                    set.append("}");
                     expr = set.toString();
                     isSet = true;
-                    break;
                 }
-                case "between": {
-                    if (members.size() != 2) {
-                        throw new AiValidationException(
-                                fieldPath + ".members",
-                                "'between' filter requires exactly 2 members [start, end]",
-                                null);
-                    }
-                    // Mondrian's `:` range operator requires both endpoints
-                    // at the same level. Heterogeneous depths (Year :
-                    // Quarter) make Mondrian crash with "Internal error"
-                    // (saiku#802). Skip key-form refs (same caveat as
-                    // saiku#790's level-depth check).
-                    String mA = members.get(0);
-                    String mB = members.get(1);
-                    if (mA != null && mB != null && mA.indexOf("&[") < 0 && mB.indexOf("&[") < 0) {
-                        int depthA = countBracketedSegments(mA);
-                        int depthB = countBracketedSegments(mB);
-                        if (depthA != depthB) {
-                            throw new AiValidationException(
-                                    fieldPath + ".members",
-                                    "'between' endpoints must be at the same level. "
-                                            + "Member 0 has " + depthA + " bracketed segments, member 1 has "
-                                            + depthB + ".",
-                                    null);
-                        }
-                    }
-                    // Standard MDX range: m1 : m2 returns the set of
-                    // members from m1 to m2 inclusive at their common
-                    // level. Mondrian's slicer accepts the bare range.
-                    expr = "{" + mA + " : " + mB + "}";
-                    isSet = true;
-                    break;
-                }
-                case "descendants_of": {
-                    if (members.size() != 1) {
-                        throw new AiValidationException(
-                                fieldPath + ".members", "'descendants_of' filter requires exactly 1 member", null);
-                    }
-                    // In WHERE position, a non-leaf member is already the
-                    // aggregate of all its descendants — that's how
-                    // Mondrian's natural roll-up works. Emitting the
-                    // member alone (instead of Descendants(member)) gives
-                    // the same numeric answer with MDX that parses
-                    // reliably across Mondrian's function-overload rules.
-                    expr = members.get(0);
-                    isSet = false;
-                    break;
-                }
-                case "relative": {
-                    // Reject `members[]` being populated alongside a
-                    // relative preset — it's silently dropped otherwise,
-                    // and an agent that supplied both is almost certainly
-                    // confused about which one will take effect.
-                    if (!members.isEmpty()) {
-                        throw new AiValidationException(
-                                fieldPath + ".members",
-                                "'relative' filter doesn't read `members[]`. "
-                                        + "Either drop the relative preset and use op=in with the members, "
-                                        + "or drop the members and rely on the preset (value + n).",
-                                null);
-                    }
-                    expr = relativeSet(f, level, fieldPath);
-                    isSet = isRelativeSet(f);
-                    break;
-                }
-                default:
-                    throw new AiValidationException(
-                            fieldPath + ".op",
-                            "Unknown filter op '" + f.getOp() + "'",
-                            java.util.Arrays.asList("in", "not_in", "between", "descendants_of", "relative"));
+                break;
             }
-
-            // Mondrian's slicer accepts a bare set and applies implicit
-            // aggregation across its members. Wrapping with Aggregate()
-            // turns the slicer-element into a Numeric Expression and
-            // confuses the parser ("No function matches signature
-            // '{<Numeric Expression>}'") when the set is in the WHERE
-            // position. Emit the set form directly.
-            s.append(expr);
+            case "not_in": {
+                if (members.isEmpty()) {
+                    throw new AiValidationException(
+                            fieldPath + ".members", "'not_in' filter must specify at least one member", null);
+                }
+                StringBuilder set = new StringBuilder();
+                set.append("Except(").append(level.uniqueName).append(".Members, {");
+                for (int j = 0; j < members.size(); j++) {
+                    if (j > 0) set.append(", ");
+                    set.append(members.get(j));
+                }
+                set.append("})");
+                expr = set.toString();
+                isSet = true;
+                break;
+            }
+            case "between": {
+                if (members.size() != 2) {
+                    throw new AiValidationException(
+                            fieldPath + ".members", "'between' filter requires exactly 2 members [start, end]", null);
+                }
+                // Mondrian's `:` range operator requires both endpoints
+                // at the same level. Heterogeneous depths (Year :
+                // Quarter) make Mondrian crash with "Internal error"
+                // (saiku#802). Skip key-form refs (same caveat as
+                // saiku#790's level-depth check).
+                String mA = members.get(0);
+                String mB = members.get(1);
+                if (mA != null && mB != null && mA.indexOf("&[") < 0 && mB.indexOf("&[") < 0) {
+                    int depthA = countBracketedSegments(mA);
+                    int depthB = countBracketedSegments(mB);
+                    if (depthA != depthB) {
+                        throw new AiValidationException(
+                                fieldPath + ".members",
+                                "'between' endpoints must be at the same level. "
+                                        + "Member 0 has " + depthA + " bracketed segments, member 1 has "
+                                        + depthB + ".",
+                                null);
+                    }
+                }
+                // Standard MDX range: m1 : m2 returns the set of
+                // members from m1 to m2 inclusive at their common
+                // level. Mondrian's slicer accepts the bare range.
+                expr = "{" + mA + " : " + mB + "}";
+                isSet = true;
+                break;
+            }
+            case "descendants_of": {
+                if (members.size() != 1) {
+                    throw new AiValidationException(
+                            fieldPath + ".members", "'descendants_of' filter requires exactly 1 member", null);
+                }
+                // In WHERE position, a non-leaf member is already the
+                // aggregate of all its descendants — that's how
+                // Mondrian's natural roll-up works. Emitting the
+                // member alone (instead of Descendants(member)) gives
+                // the same numeric answer with MDX that parses
+                // reliably across Mondrian's function-overload rules.
+                expr = members.get(0);
+                isSet = false;
+                break;
+            }
+            case "relative": {
+                // Reject `members[]` being populated alongside a
+                // relative preset — it's silently dropped otherwise,
+                // and an agent that supplied both is almost certainly
+                // confused about which one will take effect.
+                if (!members.isEmpty()) {
+                    throw new AiValidationException(
+                            fieldPath + ".members",
+                            "'relative' filter doesn't read `members[]`. "
+                                    + "Either drop the relative preset and use op=in with the members, "
+                                    + "or drop the members and rely on the preset (value + n).",
+                            null);
+                }
+                expr = relativeSet(f, level, fieldPath);
+                isSet = isRelativeSet(f);
+                break;
+            }
+            default:
+                throw new AiValidationException(
+                        fieldPath + ".op",
+                        "Unknown filter op '" + f.getOp() + "'",
+                        java.util.Arrays.asList("in", "not_in", "between", "descendants_of", "relative"));
         }
-        s.append(")");
-        String slicer = s.toString();
-        // If there are ≥2 filters AND any of them is a set, the bare
-        // tuple-of-sets form '({set1}, {set2})' is illegal — Mondrian
-        // returns "No function matches signature '(<Set>, <Set>)'"
-        // (saiku#801). Rewrite to a single-element slicer over the
-        // CROSSJOIN of the constituent sets, which Mondrian implicitly
-        // aggregates the same way a single set is implicitly aggregated.
-        // Single-filter sets keep the bare form to avoid the iter-1
-        // digit-only-leaves parser quirk.
+        return new SlicerElement(expr, isSet);
+    }
+
+    /**
+     * Post-pass for the assembled tuple slicer. If there are &ge;2 filters
+     * AND any of them is a set, the bare tuple-of-sets form
+     * '({set1}, {set2})' is illegal — Mondrian returns "No function matches
+     * signature '(&lt;Set&gt;, &lt;Set&gt;)'" (saiku#801). Rewrite to a
+     * single-element slicer over the CROSSJOIN of the constituent sets,
+     * which Mondrian implicitly aggregates the same way a single set is
+     * implicitly aggregated. Single-filter sets keep the bare form to avoid
+     * the iter-1 digit-only-leaves parser quirk.
+     */
+    private static String rewriteTupleOfSets(String slicer, List<AiFilterSelection> filters) {
         if (filters.size() >= 2 && slicerHasSet(filters)) {
             StringBuilder cj = new StringBuilder();
             cj.append("CROSSJOIN(");
