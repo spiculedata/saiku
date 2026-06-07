@@ -24,8 +24,15 @@ public class DemoGateCookieTest {
     public void verify_rejectsTamperedSignature() {
         DemoGateCookie c = new DemoGateCookie(SECRET, 100);
         String v = c.sign("user@example.com");
-        char last = v.charAt(v.length() - 1);
-        String tampered = v.substring(0, v.length() - 1) + (last == 'A' ? 'B' : 'A');
+        // Tamper the FIRST character of the signature (right after "payload.").
+        // The previous version flipped the LAST base64 char, which was ~25% flaky:
+        // an unpadded base64 string's final character carries 4 unused trailing
+        // bits, so flipping it among A-P left the decoded HMAC bytes unchanged and
+        // the "tampered" cookie still verified. The first signature char's bits are
+        // fully significant, so this deterministically changes the decoded HMAC.
+        int dot = v.indexOf('.');
+        char first = v.charAt(dot + 1);
+        String tampered = v.substring(0, dot + 1) + (first == 'A' ? 'B' : 'A') + v.substring(dot + 2);
         assertFalse(c.verify(tampered));
     }
 
