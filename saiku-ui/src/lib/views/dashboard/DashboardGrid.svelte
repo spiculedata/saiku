@@ -2,8 +2,14 @@
   /*
    * 12-column CSS grid that holds the dashboard's tiles.
    *
-   * Auto-stacks to a single column below ~768px so the grid stays
-   * readable on phones (read-only mode forces the same stack).
+   * Mobile auto-stack (saiku#932): a ResizeObserver tracks the grid
+   * container's width; at or below stackBreakpoint (default 768px) the
+   * grid collapses to a single full-width column. Tiles are reordered via
+   * an inline CSS `order` computed from the saved (y, x) positions — filter
+   * tiles pinned to the top, then top-to-bottom / left-to-right — by the
+   * pure helpers in $lib/dashboard/responsiveLayout. This is display-only:
+   * the saved layout is never mutated and the free-form grid returns intact
+   * once the container widens. Drag/resize is suppressed while stacked.
    *
    * Edit-mode interactions (saiku#911):
    *   - Drag-to-move: the tile header (rendered with data-drag-handle
@@ -25,18 +31,67 @@
    * regardless of how the browser actually solved the 1fr columns.
    */
 
+  import { onDestroy } from "svelte";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import { compactUpward, repositionTile } from "$lib/dashboard/tilePlacement";
   import { tileSelection } from "$lib/stores/tileSelection.svelte";
+  import {
+    DEFAULT_STACK_BREAKPOINT,
+    isNarrow,
+    stackOrderMap,
+  } from "$lib/dashboard/responsiveLayout";
   import Tile from "$lib/views/dashboard/Tile.svelte";
 
   interface Props {
     readOnly?: boolean;
+    /** Container width (px) at or below which the grid auto-stacks into a
+     *  single full-width column. Display-only; the saved layout is never
+     *  mutated. Defaults to {@link DEFAULT_STACK_BREAKPOINT} (768px). */
+    stackBreakpoint?: number;
   }
 
-  let { readOnly = false }: Props = $props();
+  let { readOnly = false, stackBreakpoint = DEFAULT_STACK_BREAKPOINT }: Props = $props();
 
   let gridEl = $state<HTMLDivElement | null>(null);
+
+  /* ---------------- mobile auto-stack (issue #932) -------------------
+   * A ResizeObserver on the grid container (mirroring how ChartTile /
+   * KpiTile observe their canvases) tracks the content width. Below
+   * stackBreakpoint the grid collapses every tile into a single
+   * full-width column, ordered by saved (y, x) with filter tiles pinned
+   * to the top — see $lib/dashboard/responsiveLayout. This is a
+   * display-only render: drag/resize is suppressed while stacked and the
+   * persisted layout is untouched, so widening the viewport restores the
+   * free-form grid exactly. */
+  let gridWidth = $state(0);
+  let resizeObserver: ResizeObserver | null = null;
+
+  $effect(() => {
+    const el = gridEl;
+    if (!el) return;
+    resizeObserver?.disconnect();
+    resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) gridWidth = entry.contentRect.width;
+    });
+    resizeObserver.observe(el);
+    // Seed an immediate measurement so the first paint already reflects
+    // a narrow container (the observer's first callback is async).
+    gridWidth = el.clientWidth;
+  });
+
+  onDestroy(() => resizeObserver?.disconnect());
+
+  let stacked = $derived(isNarrow(gridWidth, stackBreakpoint));
+
+  /** Tile id → stacked render position. Drives the CSS `order` per cell
+   *  while the {#each} keeps rendering in saved order (so tile identity /
+   *  keys are stable). Only consulted when {@link stacked}. */
+  let orderMap = $derived(
+    stacked && dashboardStore.current
+      ? stackOrderMap(dashboardStore.current.layout.tiles)
+      : null,
+  );
 
   /** Origin captured when a drag or resize starts. The fields are
    *  shared between both modes — drag updates x/y, resize updates w/h
@@ -68,6 +123,9 @@
 
   function onPointerDown(e: PointerEvent): void {
     if (readOnly) return;
+    // Drag/resize is meaningless in the single-column stacked layout — the
+    // snap math has no column basis — so gestures are disabled there (#932).
+    if (stacked) return;
     if (e.button !== 0) return; // primary button only
     const target = e.target as HTMLElement | null;
     if (!target) return;
@@ -230,6 +288,7 @@
     <div
       class="grid"
       class:grid--gesturing={gesture !== null}
+      class:grid--stacked={stacked}
       style:--cols={dash.layout.cols}
       role="region"
       aria-label="Dashboard tiles"
@@ -247,9 +306,10 @@
           class:cell--dragging={isGestureTarget}
           style:grid-column="{tile.x + 1} / span {tile.w}"
           style:grid-row="{tile.y + 1} / span {tile.h}"
+          style:order={orderMap ? orderMap.get(tile.id) : undefined}
         >
           <Tile {tile} {readOnly} />
-          {#if !readOnly}
+          {#if !readOnly && !stacked}
             <span
               class="resize-handle"
               data-resize-handle={tile.id}
@@ -259,7 +319,7 @@
           {/if}
         </div>
       {/each}
-      {#if gesture}
+      {#if gesture && !stacked}
         <div
           class="ghost"
           class:ghost--resize={gesture.mode === "resize"}
@@ -352,22 +412,24 @@
     border-style: solid;
     border-width: 2px;
   }
-  /* Auto-stack: below ~768px every tile collapses to a single column
-     and drag-resize is disabled (the grid template loses its column
-     basis, so the snap math wouldn't be meaningful anyway). */
-  @media (max-width: 768px) {
-    .grid {
-      grid-template-columns: 1fr;
-      touch-action: auto;
-    }
-    .cell {
-      grid-column: 1 / span 1 !important;
-      grid-row: auto / auto !important;
-    }
-    .resize-handle,
-    .ghost {
-      display: none;
-    }
+  /* Mobile auto-stack (issue #932): on a narrow container the grid
+     collapses to a single full-width column. The breakpoint is driven by
+     a ResizeObserver in JS (configurable via the stackBreakpoint prop),
+     not a CSS media query, so it tracks the grid container's own width
+     rather than the viewport — correct when the grid is embedded in a
+     narrower panel. Each cell's `order` is set inline from the stacked
+     ordering (filters first, then saved (y, x)); drag-resize is disabled
+     because the single column has no column basis for the snap math.
+     Display-only: the saved grid-column / grid-row stay on the element
+     and simply take over again once the container widens. */
+  .grid--stacked {
+    grid-template-columns: 1fr;
+    grid-auto-rows: minmax(80px, auto);
+    touch-action: auto;
+  }
+  .grid--stacked .cell {
+    grid-column: 1 / span 1 !important;
+    grid-row: auto / auto !important;
   }
   .empty {
     padding: 3rem 1rem;
