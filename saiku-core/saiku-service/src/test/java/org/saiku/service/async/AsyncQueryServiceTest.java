@@ -300,6 +300,102 @@ public class AsyncQueryServiceTest {
         svc = null; // prevent double-shutdown in @After
     }
 
+    /* ----------------- #1165 audit-3: owner binding (IDOR) ------------------ */
+
+    @Test
+    public void handle_ownerDefaultsToNullViaTwoArgCtor() {
+        AsyncQueryHandle h = new AsyncQueryHandle("id", named("q"));
+        assertNull("two-arg ctor leaves owner unset", h.getOwner());
+        assertTrue("null owner matches a null caller", h.isOwnedBy(null));
+        assertFalse("null owner does NOT match a named caller", h.isOwnedBy("alice"));
+    }
+
+    @Test
+    public void handle_isOwnedBy_matchesExactPrincipalOnly() {
+        AsyncQueryHandle h = new AsyncQueryHandle("id", named("q"), "alice");
+        assertEquals("alice", h.getOwner());
+        assertTrue(h.isOwnedBy("alice"));
+        assertFalse(h.isOwnedBy("bob"));
+        assertFalse(h.isOwnedBy(null));
+    }
+
+    @Test
+    public void getOwned_returnsHandleForMatchingOwner() {
+        svc = new AsyncQueryService();
+        AsyncQueryHandle h = new AsyncQueryHandle("owned-1", named("q"), "alice");
+        svc.register(h);
+        assertSame(h, svc.getOwned("owned-1", "alice", false));
+    }
+
+    @Test
+    public void getOwned_returnsNullForMismatchedOwner() {
+        svc = new AsyncQueryService();
+        AsyncQueryHandle h = new AsyncQueryHandle("owned-2", named("q"), "alice");
+        svc.register(h);
+        // Non-owner must get null (resource then 404s — no existence oracle).
+        assertNull(svc.getOwned("owned-2", "bob", false));
+        // ...and the handle is still there for its real owner.
+        assertSame(h, svc.getOwned("owned-2", "alice", false));
+    }
+
+    @Test
+    public void getOwned_returnsNullForUnknownId() {
+        svc = new AsyncQueryService();
+        assertNull(svc.getOwned("nope", "alice", false));
+        assertNull("unknown id is null even for admin", svc.getOwned("nope", "alice", true));
+    }
+
+    @Test
+    public void getOwned_adminBypassesOwnershipCheck() {
+        svc = new AsyncQueryService();
+        AsyncQueryHandle h = new AsyncQueryHandle("owned-3", named("q"), "alice");
+        svc.register(h);
+        assertSame("admin may access another user's handle", h, svc.getOwned("owned-3", "bob", true));
+    }
+
+    @Test
+    public void cancelOwned_cancelsOnlyForOwnerOrAdmin() {
+        StubThinQueryService stub = new StubThinQueryService();
+        stub.block = new CountDownLatch(1);
+        svc = new AsyncQueryService();
+        svc.setThinQueryService(stub);
+
+        AsyncQueryHandle h = svc.submit(named("q-owned-cancel"));
+        h.setOwner("alice");
+
+        // Non-owner cancel is refused and does NOT flip the status.
+        assertFalse("non-owner cancel refused", svc.cancelOwned(h.getId(), "bob", false));
+        assertNotSame(AsyncQueryHandle.Status.CANCELLED, h.getStatus());
+
+        // Owner cancel proceeds.
+        assertTrue("owner cancel proceeds", svc.cancelOwned(h.getId(), "alice", false));
+        assertEquals(AsyncQueryHandle.Status.CANCELLED, h.getStatus());
+
+        stub.block.countDown();
+    }
+
+    @Test
+    public void cancelOwned_adminCancelsForeignHandle() {
+        StubThinQueryService stub = new StubThinQueryService();
+        stub.block = new CountDownLatch(1);
+        svc = new AsyncQueryService();
+        svc.setThinQueryService(stub);
+
+        AsyncQueryHandle h = svc.submit(named("q-admin-cancel"));
+        h.setOwner("alice");
+        assertTrue("admin may cancel another user's handle", svc.cancelOwned(h.getId(), "bob", true));
+        assertEquals(AsyncQueryHandle.Status.CANCELLED, h.getStatus());
+        stub.block.countDown();
+    }
+
+    @Test
+    public void cancelOwned_unknownIdReturnsFalse() {
+        svc = new AsyncQueryService();
+        svc.setThinQueryService(new StubThinQueryService());
+        assertFalse(svc.cancelOwned("nope", "alice", false));
+        assertFalse(svc.cancelOwned("nope", "alice", true));
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private static ThinQuery named(String name) {

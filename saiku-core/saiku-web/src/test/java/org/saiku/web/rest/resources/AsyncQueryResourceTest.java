@@ -65,7 +65,9 @@ public class AsyncQueryResourceTest {
         @Override
         public AsyncQueryHandle submit(ThinQuery q, RequestAttributes ignored) {
             String id = java.util.UUID.randomUUID().toString();
-            AsyncQueryHandle h = new AsyncQueryHandle(id, q);
+            // Mirror production: bind the owner from the current principal so
+            // the resource-layer ownership check is exercised end-to-end.
+            AsyncQueryHandle h = new AsyncQueryHandle(id, q, AsyncQueryService.currentPrincipal());
             h.setFuture(CompletableFuture.completedFuture(cellSet));
             // Seed the map via reflection — handles field is private in parent.
             try {
@@ -185,6 +187,68 @@ public class AsyncQueryResourceTest {
         Response r = resource.asyncResult(id, fakeHeaders(MediaType.valueOf(ARROW)));
         assertEquals(409, r.getStatus());
         svc.shutdown();
+    }
+
+    /**
+     * #1165 audit-3: a different authenticated user must NOT be able to read,
+     * cancel, or even confirm the existence of another user's async handle.
+     * The resource resolves the owner from the Spring Security context at both
+     * submit time and access time, so we drive that context here.
+     */
+    @Test
+    public void foreignUserCannotAccessAnotherUsersHandle() throws Exception {
+        org.springframework.security.core.context.SecurityContext original =
+                org.springframework.security.core.context.SecurityContextHolder.getContext();
+        try {
+            ResolvedAsyncQueryService svc = new ResolvedAsyncQueryService(null);
+            Query2Resource resource = new Query2Resource();
+            resource.setAsyncQueryService(svc);
+
+            // alice submits — handle gets owner "alice".
+            authenticate("alice", "ROLE_USER");
+            ThinQuery tq = new ThinQuery();
+            tq.setName("owned-by-alice");
+            Response accepted = resource.executeAsync(tq);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) accepted.getEntity();
+            String id = (String) body.get("queryId");
+            assertNotNull(id);
+
+            // bob (a different user) must see 404 on status / result / cancel.
+            authenticate("bob", "ROLE_USER");
+            assertEquals(404, resource.asyncStatus(id).getStatus());
+            assertEquals(
+                    404,
+                    resource.asyncResult(id, fakeHeaders(MediaType.APPLICATION_JSON_TYPE))
+                            .getStatus());
+            assertEquals(404, resource.asyncCancel(id).getStatus());
+
+            // alice (the owner) still gets through.
+            authenticate("alice", "ROLE_USER");
+            assertEquals(200, resource.asyncStatus(id).getStatus());
+
+            // an admin (different principal) bypasses the ownership check.
+            authenticate("root", "ROLE_ADMIN");
+            assertEquals(200, resource.asyncStatus(id).getStatus());
+
+            svc.shutdown();
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.setContext(original);
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
+    }
+
+    private static void authenticate(String principal, String role) {
+        org.springframework.security.authentication.UsernamePasswordAuthenticationToken auth =
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        principal,
+                        "n/a",
+                        java.util.Collections.singletonList(
+                                new org.springframework.security.core.authority.SimpleGrantedAuthority(role)));
+        org.springframework.security.core.context.SecurityContext ctx =
+                org.springframework.security.core.context.SecurityContextHolder.createEmptyContext();
+        ctx.setAuthentication(auth);
+        org.springframework.security.core.context.SecurityContextHolder.setContext(ctx);
     }
 
     private static HttpHeaders fakeHeaders(final MediaType... accept) {
