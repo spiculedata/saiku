@@ -48,6 +48,10 @@
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   // #941 share viewer (PR2): render from a prefetched guest response when present.
   import { getShareViewResponse } from "$lib/dashboard/shareViewContext";
+  // Issue #931 — per-tile auto-refresh: timer wiring + "last updated" indicator.
+  import { TileAutoRefresh } from "$lib/dashboard/tileAutoRefresh.svelte";
+  import { isAutoRefreshOn } from "$lib/dashboard/autoRefresh";
+  import TileRefreshIndicator from "./TileRefreshIndicator.svelte";
 
   interface Props {
     tile: DashboardTile;
@@ -80,6 +84,24 @@
     activeFilters.resetTransient();
     dashboardStore.resetPanelFiltersToSaved();
   }
+
+  /* --- issue #931: auto-refresh ------------------------------------------
+   * Per-tile timer re-fires the existing (filter-aware) KPI fetch on the
+   * configured cadence by clearing the dedupe cache + bumping a tick the
+   * fetch effect reads (same mechanism as retry()), so the re-run uses the
+   * CURRENT active-filter slice. Never auto-refreshes in the share viewer. */
+  const auto = new TileAutoRefresh();
+  let refreshTick = $state(0);
+  function triggerAutoRefresh(): void {
+    lastQueryJson = "";
+    refreshTick++;
+  }
+  let autoRefreshOn = $derived(!sharedResponse && isAutoRefreshOn(tile.refreshInterval));
+  $effect(() => auto.arm(tile.refreshInterval, triggerAutoRefresh));
+  $effect(() => {
+    if (autoRefreshOn && auto.lastUpdated > 0) return auto.startHeartbeat();
+  });
+  /* --- end issue #931 block ---------------------------------------------- */
 
   let sparkHost = $state<HTMLDivElement | null>(null);
   let spark: echarts.ECharts | null = null;
@@ -172,6 +194,8 @@
     const active = activeFilters.all;
     // #933 — retry() bumps this to force a refetch with unchanged inputs.
     void retryTick;
+    // #931 — auto-refresh bumps this to re-run with the current filter slice.
+    void refreshTick;
     if (!measure || !c) {
       response = null;
       return;
@@ -297,6 +321,7 @@
         const r = await executeAiQuery(body, "records");
         response = r;
         if (r.status !== "SUCCESS") error = r.error ?? `Query failed: ${r.status}`;
+        else auto.markUpdated(); // #931
       } catch (e: unknown) {
         error = e instanceof Error ? e.message : String(e);
         response = null;
@@ -446,6 +471,12 @@
         <div class="spark" bind:this={sparkHost} aria-hidden="true"></div>
       {/if}
     {/if}
+    {#if autoRefreshOn && auto.lastUpdated > 0}
+      <!-- #931: auto-refresh "last updated" badge + spinning icon. -->
+      <div class="refresh-badge">
+        <TileRefreshIndicator lastUpdated={auto.lastUpdated} spinning={loading} now={auto.now} />
+      </div>
+    {/if}
   </div>
 {/if}
 
@@ -514,6 +545,20 @@
     width: 100%;
     height: 36px;
     flex-shrink: 0;
+  }
+  /* #931: auto-refresh badge — bottom-right of the KPI box, click-through.
+     container-type:size on .kpi-tile makes it the containing block, so the
+     absolute anchor resolves to the tile. */
+  .refresh-badge {
+    position: absolute;
+    right: 0.25rem;
+    bottom: 0.25rem;
+    z-index: 2;
+    background: color-mix(in srgb, var(--bg) 80%, transparent);
+    border-radius: 4px;
+    padding: 0.0625rem 0.25rem;
+    pointer-events: none;
+    max-width: calc(100% - 0.5rem);
   }
   .placeholder {
     padding: 0.75rem 1rem;

@@ -59,6 +59,10 @@
   // #941 share viewer (PR2): in the public /share view a prefetched response is
   // injected via context; tiles render from it instead of fetching live.
   import { getShareViewResponse } from "$lib/dashboard/shareViewContext";
+  // Issue #931 — per-tile auto-refresh: timer wiring + "last updated" indicator.
+  import { TileAutoRefresh } from "$lib/dashboard/tileAutoRefresh.svelte";
+  import { isAutoRefreshOn } from "$lib/dashboard/autoRefresh";
+  import TileRefreshIndicator from "./TileRefreshIndicator.svelte";
 
   interface Props {
     tile: DashboardTile;
@@ -115,6 +119,29 @@
     activeFilters.resetTransient();
     dashboardStore.resetPanelFiltersToSaved();
   }
+
+  /* --- issue #931: auto-refresh ------------------------------------------
+   * A per-tile timer re-fires the existing (filter-aware) fetch on the
+   * configured cadence. We clear the fetch effect's dedupe cache + bump a
+   * tick the effect reads — same mechanism as retry() — so the re-run picks
+   * up the CURRENT effective query (active filters included). Never auto-
+   * refreshes in the share viewer (no live /ai/query access). */
+  const auto = new TileAutoRefresh();
+  let refreshTick = $state(0);
+  function triggerAutoRefresh(): void {
+    lastQueryJson = "";
+    refreshTick++;
+  }
+  let autoRefreshOn = $derived(!sharedResponse && isAutoRefreshOn(tile.refreshInterval));
+  // Arm / re-arm whenever the interval changes (config edit) or the tile
+  // re-renders — the returned teardown clears the prior timer so they never
+  // stack ("reset on re-render / config change").
+  $effect(() => auto.arm(tile.refreshInterval, triggerAutoRefresh));
+  // Heartbeat keeps the "X ago" label fresh; only while the indicator shows.
+  $effect(() => {
+    if (autoRefreshOn && auto.lastUpdated > 0) return auto.startHeartbeat();
+  });
+  /* --- end issue #931 block ---------------------------------------------- */
   // Radial charts get a ring-shaped loading skeleton; everything else bars.
   const RADIAL_KINDS = new Set(["pie", "donut", "sunburst"]);
   let loadingVariant: "chart" | "radial" = $derived(
@@ -237,6 +264,8 @@
     void s;
     // #933 — retry() bumps this to force a refetch with unchanged inputs.
     void retryTick;
+    // #931 — auto-refresh bumps this to re-run with the current effective query.
+    void refreshTick;
     if (!tileQuery) return;
 
     if (tileQuery.kind === "reference") {
@@ -259,6 +288,7 @@
           );
           response = r;
           if (r.status !== "SUCCESS") error = r.error ?? `Query failed: ${r.status}`;
+          else auto.markUpdated(); // #931
         } catch (e: unknown) {
           error = e instanceof Error ? e.message : String(e);
           response = null;
@@ -283,6 +313,8 @@
         response = r;
         if (r.status !== "SUCCESS") {
           error = r.error ?? `Query failed: ${r.status}`;
+        } else {
+          auto.markUpdated(); // #931
         }
       } catch (e: unknown) {
         error = e instanceof Error ? e.message : String(e);
@@ -462,6 +494,12 @@
         <TileEmpty filtered={hasEffectiveFilters} onReset={resetFilters} />
       </div>
     {/if}
+    {#if autoRefreshOn && auto.lastUpdated > 0}
+      <!-- #931: auto-refresh "last updated" badge + spinning icon. -->
+      <div class="refresh-badge">
+        <TileRefreshIndicator lastUpdated={auto.lastUpdated} spinning={loading} now={auto.now} />
+      </div>
+    {/if}
   </div>
 {/if}
 
@@ -519,6 +557,18 @@
     padding: 1rem;
     color: var(--fg-muted);
     font-size: 0.8125rem;
+  }
+  /* #931: auto-refresh badge — bottom-right, above the canvas, click-through. */
+  .refresh-badge {
+    position: absolute;
+    right: 0.25rem;
+    bottom: 0.25rem;
+    z-index: 2;
+    background: color-mix(in srgb, var(--bg) 80%, transparent);
+    border-radius: 4px;
+    padding: 0.0625rem 0.25rem;
+    pointer-events: none;
+    max-width: calc(100% - 0.5rem);
   }
   code {
     background: var(--bg-subtle);

@@ -58,6 +58,8 @@
   } from "$lib/dashboard/queryBodyConversion";
   import type { QueryStateSnapshot } from "$lib/stores/query.svelte";
   import type { SaikuCube } from "$lib/api/discover";
+  // Issue #931 — per-tile auto-refresh interval picker (chart / table / kpi).
+  import { REFRESH_INTERVAL_OPTIONS, normaliseInterval } from "$lib/dashboard/autoRefresh";
   import { i18n } from "$lib/stores/i18n.svelte";
 
   interface Props {
@@ -139,6 +141,13 @@
   let imageFile = $state<File | null>(null);
   let imageUploading = $state(false);
   // ── end issue #918 ──
+  // ── Issue #931: per-tile auto-refresh interval (minutes; 0 = off) ──
+  // Self-contained working copy, normalised on init so a hand-edited /
+  // off-list persisted value falls back to "off". Persisted in handleSave for
+  // chart / table / kpi tiles. Kept a small clearly-delimited block so the
+  // parallel #912 (inline query editor) edit on this modal rebases cleanly.
+  let refreshInterval = $state<number>(untrack(() => normaliseInterval(tile.refreshInterval)));
+  // ── end issue #931 ──
   let inlineBodyJson = $state<string>(
     untrack(() => (tile.query?.kind === "inline" ? JSON.stringify(tile.query.body, null, 2) : "")),
   );
@@ -663,6 +672,14 @@
       // ── Issue #920: persist sparkline column config. Only store when
       // enabled so a fresh / opted-out tile keeps tidy JSON. ──
       patch.sparkline = sparklineEnabled ? { enabled: true, type: sparklineType } : undefined;
+    }
+
+    // ── Issue #931: persist the auto-refresh interval (chart / table / kpi).
+    // Normalise so an off-list value never reaches the saved JSON; store
+    // undefined for "off" so the diff is empty when untouched. ──
+    if (tile.type === "chart" || tile.type === "table" || tile.type === "kpi") {
+      const mins = normaliseInterval(refreshInterval);
+      patch.refreshInterval = mins > 0 ? mins : undefined;
     }
 
     // ── Issue #918: image tile. URL mode persists the typed URL; upload mode
@@ -1363,6 +1380,34 @@
             </label>
           {/if}
         </fieldset>
+      {/if}
+
+      <!-- ════════════════════════════════════════════════════════════
+           Issue #931 — Auto-refresh interval (chart / table / kpi tiles).
+           Re-runs the tile's existing (filter-aware) query on the chosen
+           cadence; pauses while the tab is hidden. Pure option list +
+           normalisation live in $lib/dashboard/autoRefresh.ts. Small,
+           clearly-delimited block so the parallel #912 (inline query
+           editor) edit on this modal rebases cleanly.
+           ════════════════════════════════════════════════════════════ -->
+      {#if tile.type === "chart" || tile.type === "table" || tile.type === "kpi"}
+        <label class="field">
+          <span>{i18n.t("dashboard.refresh.label", "Auto-refresh")}</span>
+          <select
+            value={String(refreshInterval)}
+            onchange={(e) => (refreshInterval = Number((e.target as HTMLSelectElement).value))}
+          >
+            {#each REFRESH_INTERVAL_OPTIONS as opt (opt.minutes)}
+              <option value={String(opt.minutes)}>{i18n.t(opt.labelKey, opt.labelFallback)}</option>
+            {/each}
+          </select>
+          <span class="hint">
+            {i18n.t(
+              "dashboard.refresh.hint",
+              "Re-runs this tile's query on the interval, honouring active filters. Pauses while the browser tab is hidden.",
+            )}
+          </span>
+        </label>
       {/if}
     </div>
     <footer class="modal-footer">
