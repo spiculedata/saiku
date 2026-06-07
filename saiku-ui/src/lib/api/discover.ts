@@ -6,6 +6,29 @@ export interface SaikuCube {
   caption: string;
   uniqueName: string;
   visible: boolean;
+  /** Declarative time-intelligence directives parsed from the cube's
+   *  {@code <TimeCalcs>} schema section (saiku#1221 Phase 3). Surfaced by
+   *  the server so the SPA date-filter modal can offer them as one-click
+   *  measures rather than asking the user to author MDX. Empty / undefined
+   *  for cubes that don't ship any (the common case today). */
+  timeCalcs?: SaikuTimeCalc[];
+}
+
+export interface SaikuTimeCalc {
+  /** Display name; also the {@code [Measures]} suffix the agent uses. */
+  name: string;
+  /** One of {@code yoy} / {@code pop} / {@code ytd} / {@code rolling}. */
+  type: string;
+  /** Underlying measure the calc derives from. */
+  measure: string;
+  /** Time dimension the calc operates against. */
+  timeDimension: string;
+  /** For {@code type=\"rolling\"}: window size; undefined otherwise. */
+  window?: number;
+  /** For {@code type=\"rolling\"}: aggregator (sum / avg / min / max). */
+  function?: string;
+  /** Mondrian format string for the resulting cell values. */
+  formatString?: string;
 }
 
 export interface SaikuSchema {

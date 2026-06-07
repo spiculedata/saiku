@@ -13,6 +13,7 @@
     type RelativePreset,
     type TimeGrain,
   } from "./dateFilterMdx";
+  import type { SaikuTimeCalc } from "$lib/api/discover";
 
   /** Date-range picker that emits a Mondrian MDX set expression. The modal
    *  is pure UI — translation lives in `dateFilterMdx.ts` so we can unit-test
@@ -49,6 +50,16 @@
      *  anchor in the Compare tab (e.g. find [Year] when the chip is [Month]).
      *  Optional — if omitted the Compare tab falls back to .Lag() shift. */
     hierarchyLevels?: HierLevel[];
+    /** Declarative {@code <TimeCalc>} directives shipped on the cube (saiku
+     *  #1221 Phase 3). When present and the user is in the Compare tab, a
+     *  list of one-click "Apply Revenue YoY" buttons appears; clicking
+     *  invokes {@link onAddCalcMeasure} so the host can splice the
+     *  calculated measure into the active query. */
+    timeCalcs?: SaikuTimeCalc[];
+    /** Fired when the user clicks a TimeCalc button. Receives the calc's
+     *  display name; the host is responsible for adding the matching
+     *  {@code [Measures].[<name>]} reference to the query's COLUMNS axis. */
+    onAddCalcMeasure?: (calcName: string) => void;
     onApply: (mdx: string) => void;
     onCancel: () => void;
   }
@@ -60,6 +71,8 @@
     levelName,
     levelType,
     hierarchyLevels,
+    timeCalcs,
+    onAddCalcMeasure,
     onApply,
     onCancel,
   }: Props = $props();
@@ -311,6 +324,24 @@
     {#if !applyEnabled}
       <p class="hint hint--err">{i18n.t("modal.dateFilter.rangeInvalid")}</p>
     {/if}
+    {#if timeCalcs && timeCalcs.length > 0 && onAddCalcMeasure}
+      <div class="timecalcs">
+        <div class="timecalcs__label">{i18n.t("modal.dateFilter.compare.timeCalcs")}</div>
+        <p class="hint">{i18n.t("modal.dateFilter.compare.timeCalcsHint")}</p>
+        <div class="timecalcs__buttons">
+          {#each timeCalcs as tc}
+            <button
+              type="button"
+              class="btn btn--small"
+              onclick={() => onAddCalcMeasure?.(tc.name)}
+              title={`${tc.type.toUpperCase()} · ${tc.measure}${tc.window ? ` · window ${tc.window}` : ""}`}
+            >
+              {tc.name}
+            </button>
+          {/each}
+        </div>
+      </div>
+    {/if}
   {/if}
 
   <div class="preview">
@@ -375,5 +406,27 @@
     white-space: pre-wrap;
     word-break: break-all;
     color: var(--fg);
+  }
+  .timecalcs {
+    margin-top: var(--space-3);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border);
+  }
+  .timecalcs__label {
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-muted);
+    margin-bottom: 4px;
+  }
+  .timecalcs__buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+  }
+  .btn--small {
+    font-size: var(--fs-xs);
+    padding: 4px 10px;
   }
 </style>

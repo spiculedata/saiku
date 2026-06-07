@@ -15,6 +15,10 @@
  */
 package org.saiku.olap.dto;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 public class SaikuCube extends AbstractSaikuObject {
 
     private String connection;
@@ -22,6 +26,12 @@ public class SaikuCube extends AbstractSaikuObject {
     private String schema;
     private String caption;
     private boolean visible;
+    /** Declarative time-intelligence directives parsed from the cube's
+     *  {@code <TimeCalcs>} schema section (saiku#1221 Phase 3; ships with
+     *  mondrian-saiku#112). Empty list when none authored or the cube's
+     *  schema XML isn't reachable. Surfaced in the wire response so the SPA
+     *  date-filter modal can render them as one-click measures. */
+    private List<SaikuTimeCalc> timeCalcs;
 
     public SaikuCube() {}
 
@@ -76,5 +86,14 @@ public class SaikuCube extends AbstractSaikuObject {
 
     public String getSchema() {
         return schema;
+    }
+
+    /** Returns a defensive copy; never null (empty list when none parsed). */
+    public List<SaikuTimeCalc> getTimeCalcs() {
+        return timeCalcs == null ? Collections.emptyList() : new ArrayList<>(timeCalcs);
+    }
+
+    public void setTimeCalcs(List<SaikuTimeCalc> timeCalcs) {
+        this.timeCalcs = timeCalcs == null ? null : new ArrayList<>(timeCalcs);
     }
 }
