@@ -6,6 +6,7 @@ package org.saiku.web.rest.resources.dashboards;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -113,21 +114,39 @@ public class DashboardResource {
     @Path("/{path:.+}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response save(@PathParam("path") String path, Dashboard dashboard) {
+    public Response save(@PathParam("path") String path, String rawBody) {
         if (path == null || path.isBlank()) {
             return badRequest("path", "path required");
         }
-        if (dashboard == null) {
+        if (rawBody == null || rawBody.isBlank()) {
             return badRequest("body", "dashboard body required");
         }
-        if (dashboard.layout == null) {
+        // #1179: persist the RAW request JSON (re-pretty-printed) instead of
+        // re-serialising the typed Dashboard POJO. The Java model intentionally
+        // declares only a subset of tile/filter fields, so re-serialising the
+        // typed object silently DROPS everything else the UI sends
+        // (chartOptions, conditionalFormat, cascading, topN, …) — they worked in
+        // the session but vanished on reload. Parsing to a JsonNode keeps every
+        // field; we validate the shape from the node (object with an object
+        // `layout`) without a typed bind, so unknown fields can't be lost or
+        // trigger an unknown-property rejection.
+        JsonNode node;
+        try {
+            node = MAPPER.readTree(rawBody);
+        } catch (JsonProcessingException e) {
+            return badRequest("body", "invalid dashboard JSON: " + e.getOriginalMessage());
+        }
+        if (node == null || !node.isObject()) {
+            return badRequest("body", "dashboard body required");
+        }
+        if (!node.hasNonNull("layout") || !node.get("layout").isObject()) {
             return badRequest("layout", "layout required");
         }
         String username = currentUsername();
         List<String> roles = currentRoles();
         String body;
         try {
-            body = MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(dashboard);
+            body = MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(node);
         } catch (JsonProcessingException e) {
             log.error("dashboard {} serialisation failed", path, e);
             return Response.serverError()
