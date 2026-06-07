@@ -102,6 +102,36 @@ public class Query2Resource {
     }
 
     /**
+     * Resolve the current caller's principal name from the Spring Security
+     * context. {@code null} when unauthenticated / no context (mirrors
+     * {@link AsyncQueryService#currentPrincipal()} so submit-time and
+     * access-time identity are derived the same way).
+     */
+    private static String currentPrincipal() {
+        return AsyncQueryService.currentPrincipal();
+    }
+
+    /** True when the current caller holds {@code ROLE_ADMIN}. */
+    private static boolean currentUserIsAdmin() {
+        try {
+            org.springframework.security.core.Authentication auth =
+                    org.springframework.security.core.context.SecurityContextHolder.getContext()
+                            .getAuthentication();
+            if (auth == null) {
+                return false;
+            }
+            for (org.springframework.security.core.GrantedAuthority ga : auth.getAuthorities()) {
+                if ("ROLE_ADMIN".equals(ga.getAuthority())) {
+                    return true;
+                }
+            }
+        } catch (RuntimeException ignore) {
+            // No / broken security context — treat as non-admin.
+        }
+        return false;
+    }
+
+    /**
      * Delete query from the query pool.
      * @summary Delete Query
      * @param queryName The query name
@@ -339,8 +369,10 @@ public class Query2Resource {
         if (asyncQueryService == null) {
             return Response.status(Status.NOT_FOUND).build();
         }
-        AsyncQueryHandle h = asyncQueryService.get(id);
+        AsyncQueryHandle h = asyncQueryService.getOwned(id, currentPrincipal(), currentUserIsAdmin());
         if (h == null) {
+            // Unknown id OR not owned by this caller — 404 on both so a
+            // non-owner can't use the response code as an id-existence oracle.
             return Response.status(Status.NOT_FOUND).build();
         }
         Map<String, Object> body = new java.util.LinkedHashMap<>();
@@ -366,8 +398,9 @@ public class Query2Resource {
         if (asyncQueryService == null) {
             return Response.status(Status.NOT_FOUND).build();
         }
-        AsyncQueryHandle h = asyncQueryService.get(id);
+        AsyncQueryHandle h = asyncQueryService.getOwned(id, currentPrincipal(), currentUserIsAdmin());
         if (h == null) {
+            // Unknown id OR not owned by this caller — 404 on both.
             return Response.status(Status.NOT_FOUND).build();
         }
         if (h.getStatus() == AsyncQueryHandle.Status.FAILED) {
@@ -416,8 +449,9 @@ public class Query2Resource {
         if (asyncQueryService == null) {
             return Response.status(Status.NOT_FOUND).build();
         }
-        boolean cancelled = asyncQueryService.cancel(id);
+        boolean cancelled = asyncQueryService.cancelOwned(id, currentPrincipal(), currentUserIsAdmin());
         if (!cancelled) {
+            // Unknown id OR not owned by this caller — 404 on both.
             return Response.status(Status.NOT_FOUND).build();
         }
         return Response.status(Status.NO_CONTENT).build();

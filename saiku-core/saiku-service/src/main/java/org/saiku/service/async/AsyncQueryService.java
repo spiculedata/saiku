@@ -132,7 +132,7 @@ public class AsyncQueryService {
             throw new IllegalStateException("AsyncQueryService.thinQueryService not wired — cannot submit");
         }
         final String id = UUID.randomUUID().toString();
-        final AsyncQueryHandle handle = new AsyncQueryHandle(id, query);
+        final AsyncQueryHandle handle = new AsyncQueryHandle(id, query, currentPrincipal());
         handles.put(id, handle);
 
         final CompletableFuture<CellSet> fut;
@@ -209,6 +209,70 @@ public class AsyncQueryService {
             h.touch();
         }
         return h;
+    }
+
+    /**
+     * Owner-scoped lookup. Returns the handle for {@code id} only when it is
+     * owned by {@code principal} (or {@code admin} is true); otherwise returns
+     * {@code null} — indistinguishably from an unknown id, so callers can 404
+     * on both and avoid leaking handle existence to a non-owner (IDOR fix,
+     * #1165 audit-3).
+     *
+     * @param id the async handle id
+     * @param principal the current caller's principal name ({@code null} if
+     *     unauthenticated / no security context)
+     * @param admin whether the caller holds an admin role and may bypass the
+     *     ownership check
+     */
+    public AsyncQueryHandle getOwned(String id, String principal, boolean admin) {
+        AsyncQueryHandle h = handles.get(id);
+        if (h == null) {
+            return null;
+        }
+        if (!admin && !h.isOwnedBy(principal)) {
+            return null;
+        }
+        h.touch();
+        return h;
+    }
+
+    /**
+     * Owner-scoped cancel. Cancels only when the handle is owned by
+     * {@code principal} (or {@code admin}); returns {@code false} on a missing
+     * handle <em>or</em> an ownership mismatch so the resource can 404 on both.
+     */
+    public boolean cancelOwned(String id, String principal, boolean admin) {
+        AsyncQueryHandle h = handles.get(id);
+        if (h == null) {
+            return false;
+        }
+        if (!admin && !h.isOwnedBy(principal)) {
+            return false;
+        }
+        return cancel(id);
+    }
+
+    /**
+     * Resolve the current caller's principal name from the Spring Security
+     * context, or {@code null} when there is none (no authentication, or an
+     * anonymous principal). Used to bind an owner to a handle at submit time.
+     */
+    public static String currentPrincipal() {
+        try {
+            org.springframework.security.core.Authentication auth =
+                    org.springframework.security.core.context.SecurityContextHolder.getContext()
+                            .getAuthentication();
+            if (auth == null || !auth.isAuthenticated()) {
+                return null;
+            }
+            if (auth instanceof org.springframework.security.authentication.AnonymousAuthenticationToken) {
+                return null;
+            }
+            String name = auth.getName();
+            return (name == null || name.isEmpty()) ? null : name;
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /** Register a pre-built handle. Used by tests that need to exercise

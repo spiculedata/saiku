@@ -118,6 +118,36 @@ public class AiQueryResource {
         this.asyncQueryService = a;
     }
 
+    /**
+     * Resolve the current caller's principal name (the async-handle owner) from
+     * the Spring Security context. {@code null} when unauthenticated / no
+     * context — kept in lockstep with {@link AsyncQueryService#currentPrincipal()}
+     * so submit-time and access-time identity are derived the same way.
+     */
+    private static String currentPrincipal() {
+        return AsyncQueryService.currentPrincipal();
+    }
+
+    /** True when the current caller holds {@code ROLE_ADMIN}. */
+    private static boolean currentUserIsAdmin() {
+        try {
+            org.springframework.security.core.Authentication auth =
+                    org.springframework.security.core.context.SecurityContextHolder.getContext()
+                            .getAuthentication();
+            if (auth == null) {
+                return false;
+            }
+            for (org.springframework.security.core.GrantedAuthority ga : auth.getAuthorities()) {
+                if ("ROLE_ADMIN".equals(ga.getAuthority())) {
+                    return true;
+                }
+            }
+        } catch (RuntimeException ignore) {
+            // No / broken security context — treat as non-admin.
+        }
+        return false;
+    }
+
     public void setDatasourceService(org.saiku.service.datasource.DatasourceService s) {
         this.datasourceService = s;
     }
@@ -292,7 +322,7 @@ public class AiQueryResource {
                 org.olap4j.CellSet cellSet =
                         thinQueryService.getContext(tq.getName()).getOlapResult();
                 org.saiku.service.async.AsyncQueryHandle handle =
-                        new org.saiku.service.async.AsyncQueryHandle(tq.getName(), tq);
+                        new org.saiku.service.async.AsyncQueryHandle(tq.getName(), tq, currentPrincipal());
                 handle.setFuture(java.util.concurrent.CompletableFuture.completedFuture(cellSet));
                 handle.compareAndSetStatus(
                         org.saiku.service.async.AsyncQueryHandle.Status.PENDING,
@@ -720,8 +750,10 @@ public class AiQueryResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response asyncStatus(@PathParam("queryId") String queryId) {
         if (asyncQueryService == null) return error("Async service not configured");
-        AsyncQueryHandle h = asyncQueryService.get(queryId);
+        AsyncQueryHandle h = asyncQueryService.getOwned(queryId, currentPrincipal(), currentUserIsAdmin());
         if (h == null) {
+            // Unknown id OR not owned by this caller — 404 on both so the
+            // status code can't be used as an id-existence oracle (IDOR fix).
             return Response.status(Response.Status.NOT_FOUND).build();
         }
         Map<String, Object> body = new LinkedHashMap<>();
@@ -741,7 +773,8 @@ public class AiQueryResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response asyncResult(@PathParam("queryId") String queryId) {
         if (asyncQueryService == null) return error("Async service not configured");
-        AsyncQueryHandle h = asyncQueryService.get(queryId);
+        AsyncQueryHandle h = asyncQueryService.getOwned(queryId, currentPrincipal(), currentUserIsAdmin());
+        // Unknown id OR not owned by this caller — 404 on both (IDOR fix).
         if (h == null) return Response.status(Response.Status.NOT_FOUND).build();
         switch (h.getStatus()) {
             case PENDING:
@@ -788,7 +821,10 @@ public class AiQueryResource {
         // instead of a misleading CANCELLED. Idempotent retries on an
         // already-cancelled handle still return CANCELLED (so the response
         // shape stays stable for "I asked twice").
-        AsyncQueryHandle h = asyncQueryService.get(queryId);
+        String principal = currentPrincipal();
+        boolean admin = currentUserIsAdmin();
+        AsyncQueryHandle h = asyncQueryService.getOwned(queryId, principal, admin);
+        // Unknown id OR not owned by this caller — 404 on both (IDOR fix).
         if (h == null) return Response.status(Response.Status.NOT_FOUND).build();
         AsyncQueryHandle.Status before = h.getStatus();
         Map<String, Object> body = new LinkedHashMap<>();
@@ -805,7 +841,7 @@ public class AiQueryResource {
             body.put("status", "CANCELLED");
             return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
         }
-        boolean ok = asyncQueryService.cancel(queryId);
+        boolean ok = asyncQueryService.cancelOwned(queryId, principal, admin);
         if (!ok) return Response.status(Response.Status.NOT_FOUND).build();
         body.put("status", "CANCELLED");
         return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
@@ -891,7 +927,13 @@ public class AiQueryResource {
     private String resolveDrillthroughName(String queryId) {
         String name = queryId;
         if (asyncQueryService != null) {
-            AsyncQueryHandle h = asyncQueryService.get(queryId);
+            // Owner-scoped: a non-owner who guesses/leaks another user's handle
+            // id must not be able to re-attach that user's CellSet to their own
+            // session and drill the fact rows (IDOR fix, #1165 audit-3). On an
+            // ownership mismatch getOwned returns null, so we fall through to
+            // name = queryId — the caller's own (empty) session context then
+            // drives the standard "unknown queryId" 404 path.
+            AsyncQueryHandle h = asyncQueryService.getOwned(queryId, currentPrincipal(), currentUserIsAdmin());
             if (h != null) {
                 name = h.getQuery().getName();
                 if (thinQueryService.getContext(name) == null) {
