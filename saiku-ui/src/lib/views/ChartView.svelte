@@ -12,7 +12,7 @@
   // #1086: map an ECharts click back to absolute cellset coords for drillthrough.
   import { chartDrillTarget } from "$lib/charts/chartDrillCoord";
   // #1083: client-side category sort + top-N (transient, no re-query).
-  import { applySortLimit, type ChartSortDirection } from "$lib/charts/sortLimit";
+  import { applySortLimit, sortLimitOrder, type ChartSortDirection } from "$lib/charts/sortLimit";
   // #1090: accessible data-table mirror of the chart for screen readers.
   import { chartSummary } from "$lib/charts/a11y";
   // issue #1071: map charts need the GeoJSON registered with ECharts before
@@ -58,7 +58,15 @@
   // Rollup filtering (which needs cellset depth) happens here, before
   // projection, since the builder treats rows as final. Shared by the chart
   // builder and the a11y data-table mirror (#1090) so both see the same data.
-  function projectResult(r: QueryResult, o: ChartOptions): ChartProjection {
+  // Leaf-filtered projection (BEFORE the #1083 sort/limit) + the cellset
+  // body-row index for each leaf position (undefined when 1:1). Factored out so
+  // projectResult and the drill-coordinate mapping share ONE source of truth for
+  // the rollup-leaf reindex — they must agree or click-to-drill drills the
+  // wrong row.
+  function leafProjection(
+    r: QueryResult,
+    o: ChartOptions,
+  ): { projection: ChartProjection; leafIndices: number[] | undefined } {
     const parsed = parseCellset(r);
     // Multi-level row hierarchies (Year > Quarter, Country > City, …) come back
     // with both rollup and leaf rows in the same cellset. Showing the rollups on
@@ -67,6 +75,7 @@
     // untouched.
     let rows = parsed.rowCategories;
     let matrix: (number | null)[][] = parsed.dataRows.map((row) => row.map(toNumber));
+    let leafIndices: number[] | undefined;
     if (o.hideRollupRows) {
       // deriveLeafRows is a no-op for single-level rowsets (all rows at the same
       // depth) and for empty results, so no extra guard is needed here.
@@ -74,15 +83,24 @@
       if (leaf.indices.length > 0 && leaf.indices.length < matrix.length) {
         rows = leaf.labels;
         matrix = leaf.indices.map((i) => matrix[i]);
+        leafIndices = leaf.indices;
       }
     }
+    return {
+      projection: { rowCategories: rows, columnCategories: parsed.columnCategories, matrix },
+      leafIndices,
+    };
+  }
+
+  function projectResult(r: QueryResult, o: ChartOptions): ChartProjection {
     // #1083: re-order / trim the categories CLIENT-SIDE (sort by the first
     // measure, then keep the top-N) before either the chart builder or the a11y
     // table sees them, so both stay in sync. A no-op when the controls are off.
-    return applySortLimit(
-      { rowCategories: rows, columnCategories: parsed.columnCategories, matrix },
-      { direction: sortDir, measureIndex: 0, topN },
-    );
+    return applySortLimit(leafProjection(r, o).projection, {
+      direction: sortDir,
+      measureIndex: 0,
+      topN,
+    });
   }
 
   // Delegate to the single canonical builder (#1076). The workspace is the
@@ -98,20 +116,20 @@
     return buildChartOption(p, t, o, tk, { aspect, chartWidth, compact: false });
   }
 
-  // #1086: when hideRollupRows is active the chart shows only the LEAF rows
-  // (deriveLeafRows reindexes them), so a chart category index no longer equals
-  // the cellset body-row index. Recompute the same leaf indices the projection
-  // used so the click handler can map a clicked bar/slice back to the right
-  // cellset row. Returns undefined when rollups are shown (1:1 mapping). This
-  // mirrors the row-selection branch in projectResult — kept in sync with it.
-  function currentLeafIndices(r: QueryResult, o: ChartOptions): number[] | undefined {
-    if (!o.hideRollupRows) return undefined;
-    const parsed = parseCellset(r);
-    const leaf = deriveLeafRows(parsed);
-    if (leaf.indices.length > 0 && leaf.indices.length < parsed.dataRows.length) {
-      return leaf.indices;
-    }
-    return undefined;
+  // #1086 + #1083: map a clicked chart category (its DISPLAYED index, after the
+  // rollup-leaf filter AND the client-side sort/top-N) back to the absolute
+  // cellset body-row index. Without composing the sort permutation here, a click
+  // after sorting/trimming would drill the wrong row. Returns an array indexed by
+  // displayed position → body-row index, or undefined when the mapping is 1:1
+  // (no leaf filter and no sort/limit) so chartDrillTarget treats it as identity.
+  function currentDisplayIndices(r: QueryResult, o: ChartOptions): number[] | undefined {
+    const { projection, leafIndices } = leafProjection(r, o);
+    const order = sortLimitOrder(projection, { direction: sortDir, measureIndex: 0, topN });
+    const isIdentity = leafIndices === undefined && order.every((v, i) => v === i);
+    if (isIdentity) return undefined;
+    // order[displayedPos] = leaf-projection index; leafIndices maps that to the
+    // raw cellset body row (or it's already the body row when no leaf filter).
+    return order.map((leafPos) => (leafIndices ? leafIndices[leafPos] : leafPos));
   }
 
   // #1086: ECharts click → reuse the workspace's existing drillthrough flow.
@@ -130,7 +148,7 @@
       parsed,
       categoryIndex,
       seriesIndex,
-      currentLeafIndices(result, options),
+      currentDisplayIndices(result, options),
     );
     if (!target) return; // out-of-range / "All"-style click → no-op
     host.dispatchEvent(

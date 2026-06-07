@@ -73,10 +73,20 @@ function compareMeasure(a: number | null, b: number | null, direction: "asc" | "
  * @param projection the already-projected {rowCategories, columnCategories, matrix}
  * @param state      component-local sort + top-N state
  */
-export function applySortLimit(
+/**
+ * The display ORDER — a permutation of input row indices in the order the
+ * categories will be shown (after sort, then top-N). Identity `[0..n-1]` when
+ * the state is a no-op.
+ *
+ * Exposed separately from {@link applySortLimit} so click-to-drill (#1086) can
+ * map a clicked chart category (its displayed index) back to the ORIGINAL
+ * projection row it came from — otherwise a click after sorting/trimming would
+ * drill the wrong cell.
+ */
+export function sortLimitOrder(
   projection: ChartProjection,
   state: ChartSortLimit = NO_SORT_LIMIT,
-): ChartProjection {
+): number[] {
   const { rowCategories, columnCategories, matrix } = projection;
   const rowCount = rowCategories.length;
 
@@ -104,6 +114,15 @@ export function applySortLimit(
     order = order.slice(0, state.topN);
   }
 
+  return order;
+}
+
+export function applySortLimit(
+  projection: ChartProjection,
+  state: ChartSortLimit = NO_SORT_LIMIT,
+): ChartProjection {
+  const { rowCategories, columnCategories, matrix } = projection;
+  const order = sortLimitOrder(projection, state);
   return {
     rowCategories: order.map((i) => rowCategories[i]),
     columnCategories,

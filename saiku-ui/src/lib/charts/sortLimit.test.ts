@@ -4,7 +4,7 @@
 
 import { describe, test, expect } from "vitest";
 import type { ChartProjection } from "$lib/charts/build";
-import { applySortLimit, isNoOp, NO_SORT_LIMIT } from "$lib/charts/sortLimit";
+import { applySortLimit, sortLimitOrder, isNoOp, NO_SORT_LIMIT } from "$lib/charts/sortLimit";
 
 /** Five stores, two measures. Sales (col 0) is intentionally unsorted. */
 function sample(): ChartProjection {
@@ -20,6 +20,35 @@ function sample(): ChartProjection {
     ],
   };
 }
+
+describe("sortLimitOrder (drill-mapping permutation, #1083 + #1086)", () => {
+  test("identity [0..n-1] when off — so click-to-drill stays 1:1", () => {
+    expect(sortLimitOrder(sample(), NO_SORT_LIMIT)).toEqual([0, 1, 2, 3, 4]);
+    expect(sortLimitOrder(sample())).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  test("descending order is the original indices in sorted order (50,40,30,20,10 → C,E,A,D,B)", () => {
+    expect(sortLimitOrder(sample(), { direction: "desc", measureIndex: 0, topN: null })).toEqual([2, 4, 0, 3, 1]);
+  });
+
+  test("ascending order", () => {
+    expect(sortLimitOrder(sample(), { direction: "asc", measureIndex: 0, topN: null })).toEqual([1, 3, 0, 4, 2]);
+  });
+
+  test("top-N trims AFTER sorting (desc top 2 → the two highest original rows)", () => {
+    expect(sortLimitOrder(sample(), { direction: "desc", measureIndex: 0, topN: 2 })).toEqual([2, 4]);
+  });
+
+  test("the order matches what applySortLimit actually renders (rows stay in lockstep)", () => {
+    const state = { direction: "desc" as const, measureIndex: 0, topN: 3 };
+    const order = sortLimitOrder(sample(), state);
+    const out = applySortLimit(sample(), state);
+    const original = sample();
+    // Each rendered category/row at position i must come from original row order[i].
+    out.rowCategories.forEach((cat, i) => expect(cat).toBe(original.rowCategories[order[i]]));
+    out.matrix.forEach((row, i) => expect(row).toEqual(original.matrix[order[i]]));
+  });
+});
 
 describe("applySortLimit", () => {
   test("no-op when off: same order, fresh object, input not mutated", () => {
