@@ -27,6 +27,7 @@
 
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import { compactUpward, repositionTile } from "$lib/dashboard/tilePlacement";
+  import { tileSelection } from "$lib/stores/tileSelection.svelte";
   import Tile from "$lib/views/dashboard/Tile.svelte";
 
   interface Props {
@@ -191,6 +192,25 @@
   function onPointerCancel(): void {
     gesture = null;
   }
+
+  // issue #915: a click on the empty canvas (not on any tile) clears the
+  // multi-selection. Tile clicks set the selection and bubble up here, so
+  // we only clear when the click did NOT land inside a .tile.
+  function onGridClick(e: MouseEvent): void {
+    if (readOnly) return;
+    const target = e.target as HTMLElement | null;
+    if (!target?.closest(".tile")) {
+      tileSelection.clear();
+    }
+  }
+
+  // issue #915: keep the selection honest — drop any ids whose tiles have
+  // been removed (delete, bulk-delete, filter migration). Tracks the live
+  // tile-id list reactively.
+  $effect(() => {
+    const ids = dashboardStore.current?.layout.tiles.map((t) => t.id) ?? [];
+    tileSelection.prune(ids);
+  });
 </script>
 
 {#if dashboardStore.current}
@@ -201,6 +221,12 @@
       <p class="hint">Use <em>Add tile</em> in the toolbar to start building.</p>
     </div>
   {:else}
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions
+         The grid's onclick only clears the multi-selection when the user
+         clicks the empty canvas (#915) — a power-user layout aid, not a
+         primary control. Tile selection itself has keyboard-reachable
+         per-tile actions (edit / remove / kebab) so this background-clear
+         shortcut carries no keyboard responsibility of its own. -->
     <div
       class="grid"
       class:grid--gesturing={gesture !== null}
@@ -212,6 +238,7 @@
       onpointermove={onPointerMove}
       onpointerup={onPointerUp}
       onpointercancel={onPointerCancel}
+      onclick={onGridClick}
     >
       {#each dash.layout.tiles as tile (tile.id)}
         {@const isGestureTarget = gesture?.tileId === tile.id}
