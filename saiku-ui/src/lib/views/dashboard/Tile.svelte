@@ -26,7 +26,7 @@
   import KpiTile from "$lib/views/dashboard/tiles/KpiTile.svelte";
   import ImageTile from "$lib/views/dashboard/tiles/ImageTile.svelte";
   import TileEditorModal from "$lib/views/dashboard/TileEditorModal.svelte";
-  import { Copy, MoreVertical, Settings2, X, MessageCircle } from "lucide-svelte";
+  import { Copy, MoreVertical, Settings2, X, MessageCircle, Minus, Plus } from "lucide-svelte";
   // #942 PR2 — per-tile comments.
   import CommentsPanel from "$lib/views/dashboard/CommentsPanel.svelte";
   import { getComments } from "$lib/api/dashboards";
@@ -254,6 +254,33 @@
       <Copy size={14} aria-hidden="true" />
       <span>Duplicate</span>
     </button>
+    <!-- #932/#1175: height stepper — a touch-friendly way to grow/shrink a
+         tile without dragging, especially in the mobile stacked layout. Stays
+         open so repeated taps work; closes on outside click / Escape. -->
+    <div class="tile-menu__row" role="group" aria-label="Tile height">
+      <span class="tile-menu__label">Height</span>
+      <button
+        type="button"
+        class="tile-menu__step"
+        aria-label="Decrease height"
+        title="Decrease height"
+        onclick={() => dashboardStore.adjustTileHeight(tile.id, -1)}
+        disabled={tile.h <= 1}
+      >
+        <Minus size={14} aria-hidden="true" />
+      </button>
+      <span class="tile-menu__val" aria-live="polite">{tile.h}</span>
+      <button
+        type="button"
+        class="tile-menu__step"
+        aria-label="Increase height"
+        title="Increase height"
+        onclick={() => dashboardStore.adjustTileHeight(tile.id, 1)}
+        disabled={tile.h >= 24}
+      >
+        <Plus size={14} aria-hidden="true" />
+      </button>
+    </div>
   </div>
 {/if}
 
@@ -424,5 +451,43 @@
   .tile-menu__item:focus {
     background: var(--bg-subtle);
     outline: none;
+  }
+  /* #932/#1175: height stepper row. */
+  .tile-menu__row {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+  }
+  .tile-menu__label {
+    flex: 1;
+    color: var(--fg-muted);
+    font-size: 0.8125rem;
+  }
+  .tile-menu__step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border: 1px solid var(--border-strong, var(--border));
+    background: var(--bg);
+    border-radius: 4px;
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .tile-menu__step:hover:not(:disabled) {
+    background: var(--bg-subtle);
+  }
+  .tile-menu__step:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .tile-menu__val {
+    min-width: 1.25rem;
+    text-align: center;
+    font-size: 0.8125rem;
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
   }
 </style>

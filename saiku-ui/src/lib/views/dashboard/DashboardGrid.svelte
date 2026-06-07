@@ -39,6 +39,7 @@
     DEFAULT_STACK_BREAKPOINT,
     isNarrow,
     stackOrderMap,
+    stackedCellHeight,
   } from "$lib/dashboard/responsiveLayout";
   import Tile from "$lib/views/dashboard/Tile.svelte";
 
@@ -308,6 +309,7 @@
           style:grid-column="{tile.x + 1} / span {tile.w}"
           style:grid-row="{tile.y + 1} / span {tile.h}"
           style:order={orderMap ? orderMap.get(tile.id) : undefined}
+          style:height={stacked ? stackedCellHeight(tile.h) + "px" : undefined}
         >
           <Tile {tile} {readOnly} />
           {#if !readOnly && !stacked}
@@ -424,13 +426,20 @@
      Display-only: the saved grid-column / grid-row stay on the element
      and simply take over again once the container widens. */
   .grid--stacked {
-    grid-template-columns: 1fr;
-    grid-auto-rows: minmax(80px, auto);
+    /* Single full-width column. Flexbox (not grid) so each cell takes the
+       DEFINITE inline height we set from the tile's saved row span — that
+       definite height is what lets the tile's `height: 100%` (and the chart
+       canvas's `height: 100%`) resolve, so charts fill their tile exactly
+       instead of spilling their axis labels into the next tile. The grid
+       keeps its own overflow-y, so the column scrolls as one. */
+    display: flex;
+    flex-direction: column;
     touch-action: auto;
   }
   .grid--stacked .cell {
-    grid-column: 1 / span 1 !important;
-    grid-row: auto / auto !important;
+    width: 100%;
+    /* Height comes from the inline px (stackedCellHeight); never shrink. */
+    flex: 0 0 auto;
   }
   .empty {
     padding: 3rem 1rem;

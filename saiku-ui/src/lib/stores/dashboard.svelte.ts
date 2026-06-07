@@ -31,7 +31,7 @@ import {
   type SavedDefaultMembers,
 } from "$lib/dashboard/filterDefaults";
 import { HistoryStack } from "$lib/dashboard/history";
-import { firstFreeSlot } from "$lib/dashboard/tilePlacement";
+import { firstFreeSlot, repositionTile } from "$lib/dashboard/tilePlacement";
 import { recentDashboards } from "$lib/stores/recentDashboards.svelte";
 import { session } from "$lib/stores/session.svelte";
 
@@ -252,6 +252,23 @@ class DashboardStore {
       layout: { ...this.current.layout, tiles },
     };
     this.markDirty();
+  }
+
+  /** Adjust a tile's height by `delta` rows (e.g. ±1), clamped to
+   *  [1, 24]. Cascades neighbours via repositionTile so nothing overlaps
+   *  in the free-form grid; in the mobile stacked view the larger row
+   *  span just maps to a taller cell. Powers the "Height − / +" stepper
+   *  in the tile menu (#932/#1175) — a touch-friendly alternative to
+   *  drag-resize on narrow screens. Undoable (routes via replaceTiles). */
+  adjustTileHeight(id: string, delta: number): void {
+    if (!this.current) return;
+    const layout = this.current.layout;
+    const tile = layout.tiles.find((t) => t.id === id);
+    if (!tile) return;
+    const nh = Math.max(1, Math.min(24, tile.h + delta));
+    if (nh === tile.h) return;
+    const result = repositionTile(layout, id, { x: tile.x, y: tile.y, w: tile.w, h: nh });
+    if (result.ok && result.tiles) this.replaceTiles(result.tiles);
   }
 
   /** Append a tile. Tile id must be set by the caller (we never invent

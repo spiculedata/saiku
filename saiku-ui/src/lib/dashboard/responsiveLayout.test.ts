@@ -15,6 +15,8 @@ import {
   compareByPosition,
   stackedOrder,
   stackOrderMap,
+  stackedCellHeight,
+  STACK_MIN_PX,
 } from "$lib/dashboard/responsiveLayout";
 import type { DashboardTile, TileType } from "$lib/api/dashboards";
 
@@ -126,5 +128,20 @@ describe("stackOrderMap", () => {
     const map = stackOrderMap(tiles);
     expect(map.get("filter")).toBe(0);
     expect(map.get("chart")).toBe(1);
+  });
+});
+
+describe("stackedCellHeight", () => {
+  test("scales with the saved row span (80px/row + 8px gaps)", () => {
+    expect(stackedCellHeight(4)).toBe(4 * 80 + 3 * 8); // 344
+    expect(stackedCellHeight(3)).toBe(3 * 80 + 2 * 8); // 256
+  });
+  test("floors a 1-row tile at STACK_MIN_PX so it stays readable", () => {
+    expect(stackedCellHeight(1)).toBe(STACK_MIN_PX); // 80 → floored to 160
+    expect(stackedCellHeight(2)).toBe(2 * 80 + 8); // 168, above the floor
+  });
+  test("guards non-finite / zero spans", () => {
+    expect(stackedCellHeight(0)).toBe(STACK_MIN_PX);
+    expect(stackedCellHeight(NaN)).toBe(STACK_MIN_PX);
   });
 });
