@@ -14,6 +14,8 @@ DROP TABLE IF EXISTS "mm_customer";
 DROP TABLE IF EXISTS "mm_branch";
 DROP TABLE IF EXISTS "mm_date";
 DROP TABLE IF EXISTS "mm_txn";
+DROP TABLE IF EXISTS "mm_calendar";
+DROP TABLE IF EXISTS "mm_monthly";
 
 CREATE TABLE "mm_fact" (
     "account_id" INTEGER,
@@ -93,6 +95,34 @@ INSERT INTO "mm_txn" ("txn_id","line_no","account_id","amount") VALUES
     (100, 1, 1, 100), (100, 2, 1, 100), (100, 3, 1, 100),
     (200, 1, 2,  50),
     (300, 1, 3, 300), (300, 2, 3, 300);
+
+-- Time-intelligence fixture (#112): a monthly calendar + revenue series.
+-- 3 months x 2 years. Golden values (summed Revenue):
+--   2024: Jan 100, Feb 200, Mar 300 ; 2025: Jan 150, Feb 250, Mar 350
+--   YoY  2025 Jan = (150-100)/100 = 0.5
+--   PoP  2024 Feb = (200-100)/100 = 1.0
+--   YTD  2024 Mar = 100+200+300 = 600
+--   Rolling-3 avg 2025 Mar = (150+250+350)/3 = 250
+CREATE TABLE "mm_calendar" (
+    "month_key"  INTEGER,
+    "month_name" VARCHAR(8),
+    "quarter"    VARCHAR(8),
+    "yr"         INTEGER
+);
+CREATE TABLE "mm_monthly" (
+    "month_key" INTEGER,
+    "revenue"   INTEGER
+);
+INSERT INTO "mm_calendar" ("month_key","month_name","quarter","yr") VALUES
+    (202401, 'Jan', '2024-Q1', 2024),
+    (202402, 'Feb', '2024-Q1', 2024),
+    (202403, 'Mar', '2024-Q1', 2024),
+    (202501, 'Jan', '2025-Q1', 2025),
+    (202502, 'Feb', '2025-Q1', 2025),
+    (202503, 'Mar', '2025-Q1', 2025);
+INSERT INTO "mm_monthly" ("month_key","revenue") VALUES
+    (202401, 100), (202402, 200), (202403, 300),
+    (202501, 150), (202502, 250), (202503, 350);
 
 -- Golden values (asserted in BankShowcaseH2EndToEndTest):
 --   Balance grand total ........................ 13000

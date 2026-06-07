@@ -35,6 +35,8 @@
     <Table name="mm_branch"/>
     <Table name="mm_date"/>
     <Table name="mm_txn"/>
+    <Table name="mm_calendar"/>
+    <Table name="mm_monthly"/>
   </PhysicalSchema>
 
   <!-- The many-to-many dimension. Customers roll up into segments; full-count
@@ -249,5 +251,58 @@
       </CubeGrant>
     </SchemaGrant>
   </Role>
+
+  <!-- A typed Time dimension (Year > Quarter > Month) for time intelligence. -->
+  <Dimension name="Calendar" table="mm_calendar" key="Month" type="TIME">
+    <Attributes>
+      <Attribute name="Year" levelType="TimeYears" hasHierarchy="false">
+        <Key><Column name="yr"/></Key>
+      </Attribute>
+      <Attribute name="Quarter" levelType="TimeQuarters" hasHierarchy="false">
+        <Key><Column name="quarter"/></Key>
+      </Attribute>
+      <Attribute name="Month" levelType="TimeMonths" hasHierarchy="false">
+        <Key><Column name="month_key"/></Key>
+        <Name><Column name="month_name"/></Name>
+        <OrderBy><Column name="month_key"/></OrderBy>
+      </Attribute>
+    </Attributes>
+    <Hierarchies>
+      <Hierarchy name="Calendar" allMemberName="All Periods">
+        <Level attribute="Year"/>
+        <Level attribute="Quarter"/>
+        <Level attribute="Month"/>
+      </Hierarchy>
+    </Hierarchies>
+  </Dimension>
+
+  <!-- #112 declarative time intelligence over a monthly revenue series. -->
+  <Cube name="Monthly Revenue">
+    <Dimensions>
+      <Dimension source="Calendar"/>
+    </Dimensions>
+    <MeasureGroups>
+      <MeasureGroup name="Revenue" table="mm_monthly">
+        <Measures>
+          <Measure name="Revenue" column="revenue" aggregator="sum"
+                   formatString="#,###"/>
+        </Measures>
+        <DimensionLinks>
+          <ForeignKeyLink dimension="Calendar" foreignKeyColumn="month_key"/>
+        </DimensionLinks>
+      </MeasureGroup>
+    </MeasureGroups>
+    <TimeCalcs>
+      <TimeCalc name="Revenue YoY"  type="yoy"     measure="Revenue"
+                timeDimension="Calendar" formatString="0.0%"/>
+      <TimeCalc name="Revenue PoP"  type="pop"     measure="Revenue"
+                timeDimension="Calendar" formatString="0.0%"/>
+      <TimeCalc name="Revenue YTD"  type="ytd"     measure="Revenue"
+                timeDimension="Calendar" formatString="#,###"/>
+      <TimeCalc name="Revenue R3"   type="rolling" measure="Revenue"
+                timeDimension="Calendar" window="3" function="avg"
+                formatString="#,###"/>
+    </TimeCalcs>
+  </Cube>
 
 </Schema>

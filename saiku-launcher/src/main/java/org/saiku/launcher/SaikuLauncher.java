@@ -447,6 +447,12 @@ public class SaikuLauncher implements Callable<Integer> {
             // story has a discoverable fixture in <home>/data/ for anyone
             // running the demo locally.
             stageResource("/seed/bank.lkml", dataDir.resolve("bank.lkml"));
+            // Bank.yaml — the M4 YAML round-trip of Bank.xml (mondrian-saiku
+            // #112 + #130). Same schema, same cubes, same roles — just the
+            // YAML representation produced by the M4 YAML converter. Staged
+            // alongside Bank.xml so the round-trip story is verifiable in
+            // <home>/data/.
+            stageResource("/seed/Bank.yaml", dataDir.resolve("Bank.yaml"));
         }
 
         /** Copy a classpath seed resource to {@code target} if it is missing,
