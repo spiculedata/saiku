@@ -17,6 +17,7 @@
     flatten,
     getResourceAcl,
     listRepository,
+    moveResource,
     setResourceAcl,
     type AclEntry,
     type RepositoryNode,
@@ -41,9 +42,23 @@
   import PermissionsModal from "$lib/modals/PermissionsModal.svelte";
   import NewDashboardModal from "$lib/modals/NewDashboardModal.svelte";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
+  import AddFolderModal from "$lib/modals/AddFolderModal.svelte";
+  import MoveRepositoryObject from "$lib/modals/MoveRepositoryObject.svelte";
+  import RenameFolderModal from "$lib/modals/RenameFolderModal.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
-  import { Copy, ShieldCheck, LayoutDashboard, Star } from "lucide-svelte";
+  import {
+    Copy,
+    ShieldCheck,
+    LayoutDashboard,
+    Star,
+    Folder,
+    FolderPlus,
+    FolderInput,
+    Pencil,
+    ChevronRight,
+    ChevronDown,
+  } from "lucide-svelte";
   import {
     applyCatalogueFilters,
     collectOwners,
@@ -51,6 +66,16 @@
     type CatalogueEntry,
     type SortKey,
   } from "$lib/dashboard/catalogueFilter";
+  import {
+    buildFolderTree,
+    collectFolderPaths,
+    joinPath,
+    moveDashboardPath,
+    parentFolder,
+    renameFolderMoves,
+    type CatalogueLeaf,
+    type FolderNode,
+  } from "$lib/dashboard/catalogueTree";
 
   let entries = $state<RepositoryNode[]>([]);
   let loading = $state<boolean>(true);
@@ -78,6 +103,30 @@
   let selectedTags = $state<string[]>([]);
   let selectedOwners = $state<string[]>([]);
   let sortKey = $state<SortKey>("name");
+
+  /* --- issue #937: folder / hierarchy view ----------------------------- */
+  /** Catalogue layout: the flat "list" (existing behaviour) or the folder
+   *  "tree" that groups dashboards by their repository path. */
+  let viewMode = $state<"list" | "tree">("list");
+  /** Folder paths the user has expanded in the tree. Starts empty; the
+   *  top-level folders auto-expand via {@link autoExpandedFolders}. */
+  let expandedFolders = $state<Set<string>>(new Set());
+  /** Freshly-created empty folders that hold no dashboards yet — seeded
+   *  into the tree so a "New folder" action shows up immediately even
+   *  before anything is moved into it. Cleared on refresh (the repo
+   *  listing is the source of truth once a dashboard lands inside). */
+  let extraFolders = $state<string[]>([]);
+
+  /** "New folder" modal: the parent folder it will be created under. */
+  let newFolderParent = $state<string | null>(null);
+  /** "Move dashboard" modal: the relative path of the dashboard to move. */
+  let movingPath = $state<string | null>(null);
+  /** "Rename folder" modal: the folder path being renamed. */
+  let renamingFolder = $state<string | null>(null);
+  /** Set true while a move / rename round-trip is in flight to disable
+   *  the triggering controls. */
+  let movingBusy = $state<boolean>(false);
+  /* --- end issue #937 block -------------------------------------------- */
 
   async function refresh(): Promise<void> {
     loading = true;
@@ -339,6 +388,162 @@
     selectedTags = [];
     selectedOwners = [];
   }
+
+  /* --- issue #937: folder-tree derivations + actions ------------------- */
+
+  /** Project the (already search/tag/owner-filtered, but otherwise the
+   *  same) catalogue entries into folder-tree leaves keyed by their
+   *  repo-relative path. Reuses {@link filteredEntries} so the tree
+   *  honours the search box + chips exactly like the list does. */
+  let folderTree = $derived<FolderNode>(
+    buildFolderTree(
+      filteredEntries.map(
+        (e): CatalogueLeaf => ({
+          path: toRepoRelative(e.path),
+          title: e.title,
+          basename: e.basename,
+        }),
+      ),
+      extraFolders,
+    ),
+  );
+
+  /** Full folder set (built from ALL entries, ignoring the active search /
+   *  tag / owner filters) plus any freshly-created empty folders, so the
+   *  move-target picker always lists every destination — not just folders
+   *  that happen to match the current filter. The leading "" is the root,
+   *  letting a dashboard be moved up to the top level. */
+  let allFolderPaths = $derived<string[]>([
+    "",
+    ...collectFolderPaths(
+      buildFolderTree(
+        entries.map(
+          (n): CatalogueLeaf => ({
+            path: toRepoRelative(n.path),
+            title: null,
+            basename: basename(toRepoRelative(n.path)),
+          }),
+        ),
+        extraFolders,
+      ),
+    ),
+  ]);
+
+  /** First entry into the tree view seeds the expanded set with the
+   *  top-level folders so the catalogue opens to a useful depth without
+   *  fighting the user's subsequent toggles. Guarded so it only runs once
+   *  per view-mode switch (not on every tree re-derive). */
+  let treeSeeded = $state<boolean>(false);
+  $effect(() => {
+    if (viewMode === "tree" && !treeSeeded) {
+      expandedFolders = new Set(folderTree.folders.map((f) => f.path));
+      treeSeeded = true;
+    } else if (viewMode === "list") {
+      treeSeeded = false;
+    }
+  });
+
+  function isExpanded(path: string): boolean {
+    return expandedFolders.has(path);
+  }
+
+  function toggleFolder(path: string): void {
+    const next = new Set(expandedFolders);
+    if (next.has(path)) next.delete(path);
+    else next.add(path);
+    expandedFolders = next;
+  }
+
+  function openNewFolder(parent: string): void {
+    newFolderParent = parent;
+  }
+
+  function onCreateFolder(name: string): void {
+    const parent = newFolderParent ?? "";
+    newFolderParent = null;
+    const path = joinPath(parent, name.trim());
+    // Repository folders are implicit (created on first file save). We add
+    // the new folder to the local seed list + expand it so the user can
+    // immediately move dashboards into it. It persists server-side as soon
+    // as a dashboard is saved/moved under it.
+    if (!extraFolders.includes(path)) extraFolders = [...extraFolders, path];
+    const next = new Set(expandedFolders);
+    next.add(parent);
+    next.add(path);
+    expandedFolders = next;
+    toasts.success(i18n.t("dashboard.folder.created"), path);
+  }
+
+  function openMove(relPath: string): void {
+    movingPath = relPath;
+  }
+
+  async function onMoveDashboard(targetFolder: string): Promise<void> {
+    const src = movingPath;
+    movingPath = null;
+    if (!src) return;
+    const dest = moveDashboardPath(src, targetFolder);
+    if (dest === src) return; // no-op move (already in target folder)
+    movingBusy = true;
+    try {
+      await moveResource(src, dest);
+      // Drop the now-stale extra-folder seed for the source's old parent if
+      // it became empty — refresh re-derives folders from the listing.
+      recentDashboards.remove(src);
+      favouriteDashboards.remove(src);
+      await refresh();
+      toasts.success(i18n.t("dashboard.folder.moved"), dest);
+    } catch (e: unknown) {
+      toasts.danger(
+        i18n.t("dashboard.folder.moveFailed"),
+        e instanceof Error ? e.message : String(e),
+      );
+    } finally {
+      movingBusy = false;
+    }
+  }
+
+  function openRenameFolder(path: string): void {
+    renamingFolder = path;
+  }
+
+  async function onRenameFolder(newName: string): Promise<void> {
+    const folder = renamingFolder;
+    renamingFolder = null;
+    if (!folder) return;
+    // A repository folder has no rename primitive — renaming a folder is
+    // the set of moves of every dashboard under it. Compute them purely,
+    // then issue one move per file.
+    const dashPaths = entries.map((n) => toRepoRelative(n.path));
+    const moves = renameFolderMoves(folder, newName, dashPaths);
+    if (moves.length === 0) {
+      // An empty folder (only in the local seed list) — just rewrite the
+      // seed entry so the rename is reflected without any server round-trip.
+      const parent = parentFolder(folder);
+      const renamed = joinPath(parent, newName.trim());
+      extraFolders = extraFolders.map((f) => (f === folder ? renamed : f));
+      toasts.success(i18n.t("toast.renamed"), renamed);
+      return;
+    }
+    movingBusy = true;
+    try {
+      for (const m of moves) {
+        await moveResource(m.from, m.to);
+        recentDashboards.remove(m.from);
+        favouriteDashboards.remove(m.from);
+      }
+      await refresh();
+      toasts.success(i18n.t("toast.renamed"), newName.trim());
+    } catch (e: unknown) {
+      toasts.danger(
+        i18n.t("toast.renameFailed"),
+        e instanceof Error ? e.message : String(e),
+      );
+    } finally {
+      movingBusy = false;
+    }
+  }
+  /* --- end issue #937 block -------------------------------------------- */
 </script>
 
 <div class="page">
@@ -381,6 +586,33 @@
           <option value="modified-asc">Last modified ↑</option>
         </select>
       </label>
+      <div class="view-toggle" role="group" aria-label={i18n.t("dashboard.view.label")}>
+        <button
+          type="button"
+          class="btn view-btn"
+          class:view-btn--on={viewMode === "list"}
+          aria-pressed={viewMode === "list"}
+          onclick={() => (viewMode = "list")}
+        >
+          {i18n.t("dashboard.view.list")}
+        </button>
+        <button
+          type="button"
+          class="btn view-btn"
+          class:view-btn--on={viewMode === "tree"}
+          aria-pressed={viewMode === "tree"}
+          onclick={() => (viewMode = "tree")}
+        >
+          <Folder size={14} aria-hidden="true" />
+          {i18n.t("dashboard.view.folders")}
+        </button>
+      </div>
+      {#if viewMode === "tree"}
+        <button type="button" class="btn" onclick={() => openNewFolder("")}>
+          <FolderPlus size={14} aria-hidden="true" />
+          {i18n.t("dashboard.folder.new")}
+        </button>
+      {/if}
       {#if searchQuery || selectedTags.length > 0 || selectedOwners.length > 0}
         <button type="button" class="btn btn--ghost" onclick={clearFilters}>
           Clear filters
@@ -388,7 +620,7 @@
       {/if}
     </section>
 
-    {#if favouriteEntries.length > 0}
+    {#if viewMode === "list" && favouriteEntries.length > 0}
       <section class="pinned" aria-labelledby="favourites-heading">
         <h2 id="favourites-heading" class="pinned-heading">
           <Star size={14} aria-hidden="true" /> Favourites
@@ -417,7 +649,7 @@
       </section>
     {/if}
 
-    {#if recentEntries.length > 0}
+    {#if viewMode === "list" && recentEntries.length > 0}
       <section class="pinned" aria-labelledby="recents-heading">
         <h2 id="recents-heading" class="pinned-heading">🕒 Recently viewed</h2>
         <ul class="list">
@@ -473,54 +705,172 @@
       </section>
     {/if}
 
-    <ul class="list">
-      {#each filteredEntries as e (e.path)}
-        {@const relPath = toRepoRelative(e.path)}
-        {@const isFav = favouriteDashboards.isFavourite(relPath)}
-        <li class="row">
-          <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
-            <span class="name">{e.title ?? e.basename}</span>
-            <span class="path">{relPath}</span>
-          </a>
-          <button
-            type="button"
-            class="btn icon-only star"
-            class:star--on={isFav}
-            onclick={() => toggleFavourite(relPath)}
-            title={isFav ? "Remove from favourites" : "Add to favourites"}
-            aria-label={isFav ? "Remove from favourites" : "Add to favourites"}
-            aria-pressed={isFav}
+    <!-- Shared per-dashboard action row, used by both the flat list and the
+         folder tree. `showMove` adds the #937 "move to folder" button. -->
+    {#snippet dashboardRow(relPath: string, label: string, showMove: boolean)}
+      {@const isFav = favouriteDashboards.isFavourite(relPath)}
+      <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
+        <span class="name">{label}</span>
+        <span class="path">{relPath}</span>
+      </a>
+      <button
+        type="button"
+        class="btn icon-only star"
+        class:star--on={isFav}
+        onclick={() => toggleFavourite(relPath)}
+        title={isFav ? "Remove from favourites" : "Add to favourites"}
+        aria-label={isFav ? "Remove from favourites" : "Add to favourites"}
+        aria-pressed={isFav}
+      >
+        <Star size={14} fill={isFav ? "currentColor" : "none"} />
+      </button>
+      {#if showMove}
+        <button
+          type="button"
+          class="btn"
+          disabled={movingBusy}
+          onclick={() => openMove(relPath)}
+          title={i18n.t("dashboard.folder.move")}
+          aria-label={i18n.t("dashboard.folder.move")}
+        >
+          <FolderInput size={14} />
+        </button>
+      {/if}
+      {#if session.isAdmin}
+        <button
+          type="button"
+          class="btn"
+          disabled={aclLoading}
+          onclick={() => void openAcl(relPath)}
+          title={i18n.t("saved.permissions")}
+          aria-label={i18n.t("saved.permissions")}
+        >
+          <ShieldCheck size={14} />
+        </button>
+      {/if}
+      <button
+        type="button"
+        class="btn"
+        disabled={duplicatingPath === relPath}
+        onclick={() => void handleDuplicate(relPath)}
+        title="Duplicate"
+        aria-label="Duplicate dashboard"
+      >
+        <Copy size={14} />
+      </button>
+      <button type="button" class="btn danger" onclick={() => handleDelete(relPath)} title="Delete">
+        Delete
+      </button>
+    {/snippet}
+
+    <!-- Recursive folder-tree renderer (#937). Renders a folder header
+         (toggle + name + per-folder actions) then, when expanded, its
+         child folders (recursing) and its dashboards. -->
+    {#snippet folderBranch(node: FolderNode, depth: number)}
+      {@const open = isExpanded(node.path)}
+      <li class="tree-folder" style="--depth: {depth}">
+        <!-- #937: the whole row toggles the folder (not just the chevron);
+             action buttons stopPropagation so they don't toggle. role=button
+             + keydown keep it keyboard-accessible (no a11y suppression). -->
+        <div
+          class="tree-folder-head"
+          class:tree-folder-head--open={open}
+          role="button"
+          tabindex="0"
+          aria-expanded={open}
+          onclick={() => toggleFolder(node.path)}
+          onkeydown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              toggleFolder(node.path);
+            }
+          }}
+        >
+          <span class="tree-chevron" aria-hidden="true">
+            {#if open}
+              <ChevronDown size={14} />
+            {:else}
+              <ChevronRight size={14} />
+            {/if}
+          </span>
+          <Folder size={15} aria-hidden="true" />
+          <span class="tree-folder-name">{node.name}</span>
+          <span class="tree-folder-count"
+            >{node.folders.length + node.dashboards.length}</span
           >
-            <Star size={14} fill={isFav ? "currentColor" : "none"} />
-          </button>
-          {#if session.isAdmin}
+          <span class="tree-folder-actions">
             <button
               type="button"
-              class="btn"
-              disabled={aclLoading}
-              onclick={() => void openAcl(relPath)}
-              title={i18n.t("saved.permissions")}
-              aria-label={i18n.t("saved.permissions")}
+              class="btn icon-only"
+              onclick={(e) => {
+                e.stopPropagation();
+                openNewFolder(node.path);
+              }}
+              title={i18n.t("dashboard.folder.new")}
+              aria-label={i18n.t("dashboard.folder.new")}
             >
-              <ShieldCheck size={14} />
+              <FolderPlus size={14} />
             </button>
-          {/if}
-          <button
-            type="button"
-            class="btn"
-            disabled={duplicatingPath === relPath}
-            onclick={() => void handleDuplicate(relPath)}
-            title="Duplicate"
-            aria-label="Duplicate dashboard"
-          >
-            <Copy size={14} />
-          </button>
-          <button type="button" class="btn danger" onclick={() => handleDelete(relPath)} title="Delete">
-            Delete
-          </button>
-        </li>
-      {/each}
-    </ul>
+            <button
+              type="button"
+              class="btn icon-only"
+              disabled={movingBusy}
+              onclick={(e) => {
+                e.stopPropagation();
+                openRenameFolder(node.path);
+              }}
+              title={i18n.t("dashboard.folder.rename")}
+              aria-label={i18n.t("dashboard.folder.rename")}
+            >
+              <Pencil size={14} />
+            </button>
+          </span>
+        </div>
+        {#if open}
+          <ul class="tree-children">
+            {#each node.folders as child (child.path)}
+              {@render folderBranch(child, depth + 1)}
+            {/each}
+            {#if node.dashboards.length === 0 && node.folders.length === 0}
+              <li class="tree-empty" style="--depth: {depth + 1}">
+                {i18n.t("dashboard.folder.empty")}
+              </li>
+            {/if}
+            {#each node.dashboards as d (d.path)}
+              <li class="row tree-row" style="--depth: {depth + 1}">
+                {@render dashboardRow(d.path, d.title ?? d.basename, true)}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </li>
+    {/snippet}
+
+    {#if viewMode === "list"}
+      <ul class="list">
+        {#each filteredEntries as e (e.path)}
+          {@const relPath = toRepoRelative(e.path)}
+          <li class="row">
+            {@render dashboardRow(relPath, e.title ?? e.basename, false)}
+          </li>
+        {/each}
+      </ul>
+    {:else}
+      <ul class="list tree" aria-label={i18n.t("dashboard.view.folders")}>
+        <!-- Root-level dashboards (no folder) render flat at the top. -->
+        {#each folderTree.dashboards as d (d.path)}
+          <li class="row">
+            {@render dashboardRow(d.path, d.title ?? d.basename, true)}
+          </li>
+        {/each}
+        {#each folderTree.folders as node (node.path)}
+          {@render folderBranch(node, 0)}
+        {/each}
+        {#if folderTree.folders.length === 0 && folderTree.dashboards.length === 0}
+          <li class="tree-empty" style="--depth: 0">{i18n.t("dashboard.folder.empty")}</li>
+        {/if}
+      </ul>
+    {/if}
   {/if}
 </div>
 
@@ -555,6 +905,33 @@
   onConfirm={confirmDelete}
   onCancel={() => (deletingPath = null)}
 />
+
+<!-- #937 folder dialogs -->
+<AddFolderModal
+  parentPath={newFolderParent ?? ""}
+  open={newFolderParent !== null}
+  onCreate={onCreateFolder}
+  onCancel={() => (newFolderParent = null)}
+/>
+
+{#if movingPath !== null}
+  <MoveRepositoryObject
+    sourcePath={movingPath}
+    folders={allFolderPaths}
+    open={true}
+    onMove={(f) => void onMoveDashboard(f)}
+    onCancel={() => (movingPath = null)}
+  />
+{/if}
+
+{#if renamingFolder !== null}
+  <RenameFolderModal
+    folderPath={renamingFolder}
+    open={true}
+    onRename={(n) => void onRenameFolder(n)}
+    onCancel={() => (renamingFolder = null)}
+  />
+{/if}
 
 <style>
   .page {
@@ -757,5 +1134,109 @@
   }
   .chip--on:hover {
     background: var(--accent);
+  }
+
+  /* --- issue #937: view toggle + folder tree ------------------------- */
+  .view-toggle {
+    display: inline-flex;
+    gap: 0;
+  }
+  .view-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 0;
+  }
+  .view-btn:first-child {
+    border-top-left-radius: 4px;
+    border-bottom-left-radius: 4px;
+  }
+  .view-btn:last-child {
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+    border-left: none;
+  }
+  .view-btn--on {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+  .tree {
+    gap: 0.25rem;
+  }
+  .tree-folder {
+    list-style: none;
+  }
+  .tree-folder-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.625rem;
+    padding-left: calc(0.625rem + var(--depth, 0) * 1.25rem);
+    border-radius: 6px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .tree-folder-head:hover {
+    background: var(--bg-subtle);
+  }
+  .tree-folder-head:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .tree-folder-head--open {
+    background: var(--bg-subtle);
+  }
+  .tree-folder-head:hover .tree-folder-actions,
+  .tree-folder-head:focus-within .tree-folder-actions {
+    opacity: 1;
+  }
+  /* Chevron + folder icon read as muted affordances; the name is the anchor. */
+  .tree-chevron {
+    display: inline-flex;
+    align-items: center;
+    color: var(--fg-muted);
+    flex: 0 0 auto;
+  }
+  .tree-folder-head > :global(svg) {
+    color: var(--accent);
+    flex: 0 0 auto;
+  }
+  .tree-folder-name {
+    font-weight: var(--weight-semibold);
+    color: var(--fg);
+  }
+  .tree-folder-count {
+    font-size: 0.6875rem;
+    color: var(--fg-muted);
+    background: var(--bg-subtle);
+    border-radius: 999px;
+    padding: 0.0625rem 0.4375rem;
+  }
+  .tree-folder-actions {
+    margin-left: auto;
+    display: inline-flex;
+    gap: 0.25rem;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+  .tree-children {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .tree-row {
+    margin-left: calc(var(--depth, 0) * 1.25rem);
+  }
+  .tree-empty {
+    list-style: none;
+    font-size: 0.8125rem;
+    color: var(--fg-muted);
+    font-style: italic;
+    padding: 0.375rem 0.5rem;
+    padding-left: calc(0.5rem + var(--depth, 0) * 1.25rem);
   }
 </style>
