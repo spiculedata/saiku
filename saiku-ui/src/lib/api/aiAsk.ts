@@ -17,6 +17,28 @@
 import type { AiQueryResponse } from "./aiQuery";
 
 const ASK_URL = "/rest/saiku/api/ai/ask";
+const ASK_HEALTH_URL = "/rest/saiku/api/ai/ask/health";
+
+export interface AskHealth {
+  configured: boolean;
+}
+
+/** GET /ai/ask/health. Returns {configured: false} on transport failure so the
+ *  workspace silently hides the Ask AI button rather than showing an error. */
+export async function fetchAskHealth(): Promise<AskHealth> {
+  try {
+    const res = await fetch(ASK_HEALTH_URL, {
+      method: "GET",
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return { configured: false };
+    const body = (await res.json()) as AskHealth;
+    return { configured: !!body.configured };
+  } catch {
+    return { configured: false };
+  }
+}
 
 /** Mirror of {@link org.saiku.service.olap.ai.AiCubeRef}. */
 export interface AiCubeRef {

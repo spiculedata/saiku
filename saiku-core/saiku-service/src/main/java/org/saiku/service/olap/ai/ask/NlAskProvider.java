@@ -28,8 +28,20 @@ package org.saiku.service.olap.ai.ask;
  * <p>The {@link NoopNlAskProvider} is the default when no provider is configured — it always
  * returns degraded so the API can render a clear "not configured" message.
  */
-@FunctionalInterface
 public interface NlAskProvider {
 
     NlAskResponse ask(NlAskRequest request);
+
+    /**
+     * Whether this provider can actually answer a request. {@code false} only for
+     * {@link NoopNlAskProvider} — the placeholder returned when no provider name / API key is
+     * configured. Concrete providers (Anthropic, OpenAI, etc.) always return {@code true} because
+     * the factory wouldn't construct them without credentials.
+     *
+     * <p>Used by the {@code /ai/ask/health} endpoint so the UI can hide the "Ask the AI" toolbar
+     * button on instances that haven't wired up an LLM key — wasted clicks otherwise.
+     */
+    default boolean isConfigured() {
+        return true;
+    }
 }

@@ -53,6 +53,15 @@ public class AiAskService {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
 
+    /**
+     * Whether the underlying provider can answer a real request. Surfaced by the
+     * {@code /ai/ask/health} endpoint so the UI can hide the "Ask the AI" button on instances that
+     * haven't wired up an LLM key.
+     */
+    public boolean isConfigured() {
+        return provider.isConfigured();
+    }
+
     /** Result of an {@link #ask(AiCubeRef, String, List)} call. */
     public record AskOutcome(boolean degraded, String reason, AiQueryRequest request, String model) {
         public static AskOutcome ok(AiQueryRequest request, String model) {
