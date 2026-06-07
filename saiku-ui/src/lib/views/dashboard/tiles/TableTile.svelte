@@ -593,7 +593,6 @@
     width: 64px;
     height: 18px;
     color: var(--accent);
-    vertical-align: middle;
   }
   .spark-empty {
     color: var(--fg-muted);
