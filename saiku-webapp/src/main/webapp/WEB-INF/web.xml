@@ -259,6 +259,17 @@
       		<param-value>org.saiku.web.rest.SaikuJerseyApplication</param-value>
     	</init-param>
     	<load-on-startup>1</load-on-startup>
+    	<!-- saiku#1165 audit-3: global upload backstop on the REST surface.
+    	     Individual endpoints may impose tighter caps; these are the outer
+    	     limits the container enforces before a request reaches Jersey, so a
+    	     hostile multipart body can't exhaust memory/disk. 50 MB per file,
+    	     50 MB per request, with a 256 KB in-memory threshold (larger parts
+    	     spill to a temp file). -->
+    	<multipart-config>
+    		<max-file-size>52428800</max-file-size>
+    		<max-request-size>52428800</max-request-size>
+    		<file-size-threshold>262144</file-size-threshold>
+    	</multipart-config>
   	</servlet>
 
 	  <servlet-mapping>
