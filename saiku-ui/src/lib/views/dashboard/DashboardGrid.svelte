@@ -49,11 +49,25 @@
      *  single full-width column. Display-only; the saved layout is never
      *  mutated. Defaults to {@link DEFAULT_STACK_BREAKPOINT} (768px). */
     stackBreakpoint?: number;
+    /** Issue #929 — bindable handle on the grid root so the toolbar's
+     *  Export action can rasterise the rendered tiles. Two-way bound from
+     *  the parent editor; null until the grid mounts. */
+    gridElement?: HTMLDivElement | null;
   }
 
-  let { readOnly = false, stackBreakpoint = DEFAULT_STACK_BREAKPOINT }: Props = $props();
+  let {
+    readOnly = false,
+    stackBreakpoint = DEFAULT_STACK_BREAKPOINT,
+    gridElement = $bindable(null),
+  }: Props = $props();
 
+  // The export target is the same node the ResizeObserver / drag math use;
+  // mirror it into the bindable prop so the parent can pass it to the
+  // toolbar without a second ref.
   let gridEl = $state<HTMLDivElement | null>(null);
+  $effect(() => {
+    gridElement = gridEl;
+  });
 
   /* ---------------- mobile auto-stack (issue #932) -------------------
    * A ResizeObserver on the grid container (mirroring how ChartTile /

@@ -27,6 +27,8 @@
   "dependencies": {
     "apache-arrow": "^15.0.2",
     "echarts": "^6.0.0",
+    "html-to-image": "^1.11.13",
+    "jspdf": "^3.0.1",
     "lucide-svelte": "^1.0.1",
     "monaco-editor": "^0.55.1"
   },
