@@ -48,17 +48,14 @@
   import Skeleton from "$lib/components/Skeleton.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import DashboardIndexFilters from "$lib/views/dashboard/DashboardIndexFilters.svelte";
+  import DashboardCatalogueTree from "$lib/views/dashboard/DashboardCatalogueTree.svelte";
+  import DashboardCataloguePinned from "$lib/views/dashboard/DashboardCataloguePinned.svelte";
   import {
     Copy,
     ShieldCheck,
     LayoutDashboard,
     Star,
-    Folder,
-    FolderPlus,
     FolderInput,
-    Pencil,
-    ChevronRight,
-    ChevronDown,
   } from "lucide-svelte";
   import {
     applyCatalogueFilters,
@@ -580,50 +577,13 @@
       onNewFolder={() => openNewFolder("")}
     />
 
-    {#if viewMode === "list" && favouriteEntries.length > 0}
-      <section class="pinned" aria-labelledby="favourites-heading">
-        <h2 id="favourites-heading" class="pinned-heading">
-          <Star size={14} aria-hidden="true" /> Favourites
-        </h2>
-        <ul class="list">
-          {#each favouriteEntries as e (e.path)}
-            {@const relPath = toRepoRelative(e.path)}
-            <li class="row">
-              <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
-                <span class="name">{basename(relPath)}</span>
-                <span class="path">{relPath}</span>
-              </a>
-              <button
-                type="button"
-                class="btn icon-only star star--on"
-                onclick={() => toggleFavourite(relPath)}
-                title="Remove from favourites"
-                aria-label="Remove from favourites"
-                aria-pressed="true"
-              >
-                <Star size={14} fill="currentColor" />
-              </button>
-            </li>
-          {/each}
-        </ul>
-      </section>
-    {/if}
-
-    {#if viewMode === "list" && recentEntries.length > 0}
-      <section class="pinned" aria-labelledby="recents-heading">
-        <h2 id="recents-heading" class="pinned-heading">🕒 Recently viewed</h2>
-        <ul class="list">
-          {#each recentEntries as e (e.path)}
-            {@const relPath = toRepoRelative(e.path)}
-            <li class="row">
-              <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
-                <span class="name">{basename(relPath)}</span>
-                <span class="path">{relPath}</span>
-              </a>
-            </li>
-          {/each}
-        </ul>
-      </section>
+    {#if viewMode === "list"}
+      <DashboardCataloguePinned
+        favourites={favouriteEntries}
+        recents={recentEntries}
+        onToggleFavourite={toggleFavourite}
+        {basename}
+      />
     {/if}
 
     {#if availableTags.length > 0 || availableOwners.length > 0}
@@ -723,89 +683,6 @@
       </button>
     {/snippet}
 
-    <!-- Recursive folder-tree renderer (#937). Renders a folder header
-         (toggle + name + per-folder actions) then, when expanded, its
-         child folders (recursing) and its dashboards. -->
-    {#snippet folderBranch(node: FolderNode, depth: number)}
-      {@const open = isExpanded(node.path)}
-      <li class="tree-folder" style="--depth: {depth}">
-        <!-- #937: the whole row toggles the folder (not just the chevron);
-             action buttons stopPropagation so they don't toggle. role=button
-             + keydown keep it keyboard-accessible (no a11y suppression). -->
-        <div
-          class="tree-folder-head"
-          class:tree-folder-head--open={open}
-          role="button"
-          tabindex="0"
-          aria-expanded={open}
-          onclick={() => toggleFolder(node.path)}
-          onkeydown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              toggleFolder(node.path);
-            }
-          }}
-        >
-          <span class="tree-chevron" aria-hidden="true">
-            {#if open}
-              <ChevronDown size={14} />
-            {:else}
-              <ChevronRight size={14} />
-            {/if}
-          </span>
-          <Folder size={15} aria-hidden="true" />
-          <span class="tree-folder-name">{node.name}</span>
-          <span class="tree-folder-count"
-            >{node.folders.length + node.dashboards.length}</span
-          >
-          <span class="tree-folder-actions">
-            <button
-              type="button"
-              class="btn icon-only"
-              onclick={(e) => {
-                e.stopPropagation();
-                openNewFolder(node.path);
-              }}
-              title={i18n.t("dashboard.folder.new")}
-              aria-label={i18n.t("dashboard.folder.new")}
-            >
-              <FolderPlus size={14} />
-            </button>
-            <button
-              type="button"
-              class="btn icon-only"
-              disabled={movingBusy}
-              onclick={(e) => {
-                e.stopPropagation();
-                openRenameFolder(node.path);
-              }}
-              title={i18n.t("dashboard.folder.rename")}
-              aria-label={i18n.t("dashboard.folder.rename")}
-            >
-              <Pencil size={14} />
-            </button>
-          </span>
-        </div>
-        {#if open}
-          <ul class="tree-children">
-            {#each node.folders as child (child.path)}
-              {@render folderBranch(child, depth + 1)}
-            {/each}
-            {#if node.dashboards.length === 0 && node.folders.length === 0}
-              <li class="tree-empty" style="--depth: {depth + 1}">
-                {i18n.t("dashboard.folder.empty")}
-              </li>
-            {/if}
-            {#each node.dashboards as d (d.path)}
-              <li class="row tree-row" style="--depth: {depth + 1}">
-                {@render dashboardRow(d.path, d.title ?? d.basename, true)}
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      </li>
-    {/snippet}
-
     {#if viewMode === "list"}
       <ul class="list">
         {#each filteredEntries as e (e.path)}
@@ -816,20 +693,22 @@
         {/each}
       </ul>
     {:else}
-      <ul class="list tree" aria-label={i18n.t("dashboard.view.folders")}>
-        <!-- Root-level dashboards (no folder) render flat at the top. -->
-        {#each folderTree.dashboards as d (d.path)}
-          <li class="row">
-            {@render dashboardRow(d.path, d.title ?? d.basename, true)}
-          </li>
-        {/each}
-        {#each folderTree.folders as node (node.path)}
-          {@render folderBranch(node, 0)}
-        {/each}
-        {#if folderTree.folders.length === 0 && folderTree.dashboards.length === 0}
-          <li class="tree-empty" style="--depth: 0">{i18n.t("dashboard.folder.empty")}</li>
-        {/if}
-      </ul>
+      <!-- Tree rendering lives in the dedicated delegate (saiku#1234). -->
+      <DashboardCatalogueTree
+        {folderTree}
+        bind:expandedFolders
+        {duplicatingPath}
+        {movingBusy}
+        {aclLoading}
+        onToggleFolder={toggleFolder}
+        onNewFolder={openNewFolder}
+        onRenameFolder={openRenameFolder}
+        onToggleFavourite={toggleFavourite}
+        onMove={openMove}
+        onOpenAcl={(p) => void openAcl(p)}
+        onDuplicate={(p) => void handleDuplicate(p)}
+        onDelete={handleDelete}
+      />
     {/if}
   {/if}
 </div>
@@ -984,22 +863,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .pinned {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-  .pinned-heading {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    margin: 0;
-    font-size: 0.8125rem;
-    font-weight: var(--weight-medium);
-    color: var(--fg-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
+  /* .pinned / .pinned-heading moved to DashboardCataloguePinned. */
   /* Icon-only buttons are square and sit on the same baseline as the
      Delete button; the star colour shifts to --accent when active so
      a glance tells you which dashboards you've pinned. */
@@ -1064,83 +928,6 @@
     background: var(--accent);
   }
 
-  /* --- issue #937: folder tree (view toggle moved to delegate) ------- */
-  .tree {
-    gap: 0.25rem;
-  }
-  .tree-folder {
-    list-style: none;
-  }
-  .tree-folder-head {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.625rem;
-    padding-left: calc(0.625rem + var(--depth, 0) * 1.25rem);
-    border-radius: 6px;
-    cursor: pointer;
-    user-select: none;
-  }
-  .tree-folder-head:hover {
-    background: var(--bg-subtle);
-  }
-  .tree-folder-head:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
-  }
-  .tree-folder-head--open {
-    background: var(--bg-subtle);
-  }
-  .tree-folder-head:hover .tree-folder-actions,
-  .tree-folder-head:focus-within .tree-folder-actions {
-    opacity: 1;
-  }
-  /* Chevron + folder icon read as muted affordances; the name is the anchor. */
-  .tree-chevron {
-    display: inline-flex;
-    align-items: center;
-    color: var(--fg-muted);
-    flex: 0 0 auto;
-  }
-  .tree-folder-head > :global(svg) {
-    color: var(--accent);
-    flex: 0 0 auto;
-  }
-  .tree-folder-name {
-    font-weight: var(--weight-semibold);
-    color: var(--fg);
-  }
-  .tree-folder-count {
-    font-size: 0.6875rem;
-    color: var(--fg-muted);
-    background: var(--bg-subtle);
-    border-radius: 999px;
-    padding: 0.0625rem 0.4375rem;
-  }
-  .tree-folder-actions {
-    margin-left: auto;
-    display: inline-flex;
-    gap: 0.25rem;
-    opacity: 0;
-    transition: opacity 0.12s ease;
-  }
-  .tree-children {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-  .tree-row {
-    margin-left: calc(var(--depth, 0) * 1.25rem);
-  }
-  .tree-empty {
-    list-style: none;
-    font-size: 0.8125rem;
-    color: var(--fg-muted);
-    font-style: italic;
-    padding: 0.375rem 0.5rem;
-    padding-left: calc(0.5rem + var(--depth, 0) * 1.25rem);
-  }
+  /* #937 folder tree + #1234 pinned styles moved into their delegates
+     (DashboardCatalogueTree / DashboardCataloguePinned). */
 </style>
