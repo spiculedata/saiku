@@ -202,7 +202,14 @@ public class Database {
 
         Connection c = ds2.getConnection();
         DatabaseMetaData dbm = c.getMetaData();
-        ResultSet tables = dbm.getTables(null, null, "mm_owner", null);
+        // Guard on mm_txn — the LATEST table added to bank.sql (saiku#1217 /
+        // mondrian-saiku#119, Bank Transactions cube). Older bank.sql versions
+        // created mm_owner first, so checking mm_owner makes upgrades from a
+        // pre-#1217 demo silently skip the new RUNSCRIPT and leave Mondrian
+        // crashing on "Table 'mm_txn' does not exist". The new bank.sql is
+        // idempotent (DROP IF EXISTS / CREATE TABLE) so re-running it on a
+        // partially-seeded database is safe.
+        ResultSet tables = dbm.getTables(null, null, "mm_txn", null);
         if (tables.next()) {
             // Already loaded.
             return;
