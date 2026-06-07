@@ -30,6 +30,13 @@ public class AiCell {
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
     private Map<String, String> properties;
 
+    /** Statistical anomaly verdict for this cell, attached by the
+     *  {@code /ai/anomaly} endpoint (saiku#907) only on cells the detector
+     *  flagged. {@code NON_NULL} so ordinary {@code /ai/query} cells stay
+     *  lean and unflagged anomaly cells don't carry an empty object. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private org.saiku.service.olap.ai.anomaly.AnomalyPoint anomaly;
+
     public AiCell() {}
 
     public AiCell(Double value, String formatted, String unit) {
@@ -75,6 +82,14 @@ public class AiCell {
 
     public void setProperties(Map<String, String> v) {
         this.properties = v;
+    }
+
+    public org.saiku.service.olap.ai.anomaly.AnomalyPoint getAnomaly() {
+        return anomaly;
+    }
+
+    public void setAnomaly(org.saiku.service.olap.ai.anomaly.AnomalyPoint v) {
+        this.anomaly = v;
     }
 
     /** Best-effort: parse a Mondrian-formatted string back into a Double,

@@ -206,6 +206,32 @@ export interface ImageConfig {
 }
 /* --- end issue #918 block ------------------------------------------------ */
 
+/* --- issue #907: anomaly detection on time-series chart tiles ------------
+ * Opt-in server-side statistical anomaly detection (Tier-3, NO LLM) layered
+ * over a time-series chart tile (line / bar / area). When enabled the chart
+ * tile calls POST /ai/anomaly instead of /ai/query; anomalous points are drawn
+ * as ECharts markPoints on top of the existing render path. Config carried on
+ * the chart tile below; all computation is server-side. */
+
+/** Detector method. {@code "stl"} is reserved — the backend currently returns
+ *  a clear "not yet supported" validation error for it. */
+export type AnomalyMethodConfig = "zscore" | "mad" | "stl";
+
+/** Per-tile anomaly config (issue #907). Only consulted when
+ *  {@code type === "chart"} and {@link AnomalyConfig.enabled} is true. */
+export interface AnomalyConfig {
+  /** Master opt-in. When false / unset no anomaly request is made. */
+  enabled: boolean;
+  /** Detector method. Defaults to "zscore". */
+  method?: AnomalyMethodConfig;
+  /** Detector cutoff. Omit to use the method default (zscore 3.0, mad 3.5). */
+  threshold?: number;
+  /** Unique name of the time axis to scan. Defaults to the tile's row axis
+   *  (the chart's category axis) when omitted at request time. */
+  timeAxis?: string;
+}
+/* --- end issue #907 block ------------------------------------------------- */
+
 export interface DashboardTile {
   id: string;
   x: number;
@@ -222,6 +248,9 @@ export interface DashboardTile {
    *  legacy tiles → the renderer falls back to the dashboard baseline, so the
    *  appearance is unchanged (migration-safe). Issue #1077. */
   chartOptions?: ChartOptions;
+  /** Anomaly-detection config (issue #907). Only consulted when
+   *  {@code type === "chart"} and the chart is a time-series type. */
+  anomaly?: AnomalyConfig;
   text?: string;
   target?: DashboardFilter;
   widget?: FilterWidget;
