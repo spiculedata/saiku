@@ -23,7 +23,7 @@
       bracket entirely when the keys are unset, so logs stay clean
       when OTEL_EXPORTER_OTLP_ENDPOINT isn't configured.
     -->
-    <Property name="pattern">%d{ISO8601} %-5p [%c{1}] %notEmpty{[trace_id=%X{trace_id} span_id=%X{span_id}] }%m%n</Property>
+    <Property name="pattern">%d{ISO8601} %-5p [%c{1}] %notEmpty{[trace_id=%X{trace_id} span_id=%X{span_id}] }%encode{%m}{CRLF}%n</Property>
   </Properties>
 
   <Appenders>
