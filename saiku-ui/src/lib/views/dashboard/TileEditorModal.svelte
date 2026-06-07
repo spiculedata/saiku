@@ -453,7 +453,10 @@
     if (tile.type === "kpi") {
       // Drop the timeLevel placeholder when none of the time-aware
       // features need it — keeps the saved JSON tidy.
-      const needsTime = kpiConfig.comparison === "prior-period" || kpiConfig.sparkline === true;
+      const needsTime =
+        kpiConfig.comparison === "prior-period" ||
+        kpiConfig.comparison === "year-over-year" ||
+        kpiConfig.sparkline === true;
       const tl = kpiConfig.timeLevel;
       const cleaned: KpiConfig = {
         ...kpiConfig,
@@ -862,6 +865,7 @@
             <select bind:value={kpiConfig.comparison}>
               <option value="none">None</option>
               <option value="prior-period">Prior period</option>
+              <option value="year-over-year">Year over year</option>
               <option value="target">Target value</option>
             </select>
           </label>
@@ -889,7 +893,7 @@
           <span>Sparkline (mini line chart under the number)</span>
         </label>
 
-        {#if kpiConfig.comparison === "prior-period" || kpiConfig.sparkline}
+        {#if kpiConfig.comparison === "prior-period" || kpiConfig.comparison === "year-over-year" || kpiConfig.sparkline}
           <fieldset class="size">
             <legend>Time level (for comparison + sparkline)</legend>
             <label class="field inline">

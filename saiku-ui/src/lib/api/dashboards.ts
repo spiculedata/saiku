@@ -109,8 +109,11 @@ export interface TimeLevelRef {
   level: string;
 }
 
-/** Comparison mode for the KPI tile's secondary callout. */
-export type KpiComparison = "none" | "prior-period" | "target";
+/** Comparison mode for the KPI tile's secondary callout.
+ *  - "prior-period" — delta vs the preceding sibling at {@link KpiConfig.timeLevel}.
+ *  - "year-over-year" — delta vs the same period one year earlier (#992);
+ *    resolves the parallel-period member (e.g. Q2.1997 → Q2.1996). */
+export type KpiComparison = "none" | "prior-period" | "year-over-year" | "target";
 
 /** Direction: "higher" means a bigger number is better (drives both the
  *  prior-period arrow colour and threshold green/red mapping). */
@@ -142,7 +145,8 @@ export interface KpiConfig {
   comparison?: KpiComparison;
   /** Target value when {@link comparison} is "target". */
   target?: number;
-  /** Time level used for prior-period delta and / or sparkline. */
+  /** Time level used for prior-period / year-over-year delta and / or
+   *  sparkline. */
   timeLevel?: TimeLevelRef;
   sparkline?: boolean;
   thresholds?: KpiThresholds;
