@@ -27,10 +27,12 @@
     duplicateDashboard,
     loadDashboard,
     newDashboard,
+    newTileId,
     normaliseDashboardPath,
     toRepoRelative,
     saveDashboard,
   } from "$lib/api/dashboards";
+  import { getTemplate, instantiateTemplate } from "$lib/dashboard/templates";
   import { session } from "$lib/stores/session.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -136,7 +138,11 @@
     newModalOpen = true;
   }
 
-  async function onNewModalCreate(path: string, name: string): Promise<void> {
+  async function onNewModalCreate(
+    path: string,
+    name: string,
+    templateId: string | null,
+  ): Promise<void> {
     newModalOpen = false;
     creating = true;
     createError = null;
@@ -146,7 +152,11 @@
         createError = "Path must end with .saikudash.";
         return;
       }
-      const fresh = newDashboard(name);
+      // Blank → empty dashboard; otherwise seed the chosen starter
+      // template's tiles into a fresh dashboard (#938). A stale/unknown
+      // template id falls back to blank rather than failing the create.
+      const template = templateId ? getTemplate(templateId) : undefined;
+      const fresh = template ? instantiateTemplate(template, newTileId, name) : newDashboard(name);
       await saveDashboard(finalPath, fresh);
       await goto(`${base}/dashboards/${finalPath}`);
     } catch (e: unknown) {
