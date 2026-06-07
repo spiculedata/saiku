@@ -19,9 +19,28 @@ public class CryptoUtil {
     };
 
     /**
-     * {@inheritDoc}
+     * Encrypts a datasource password for storage.
+     *
+     * <p>As of the per-install-key hardening this now emits an AES-256-GCM value with a {@code v2:}
+     * version prefix, keyed by the per-install key (see {@link InstallKeyProvider}). The previous
+     * implementation used a hard-coded, compiled-in 3DES key identical across every install, which
+     * meant anyone with a {@code .sds} file could decrypt every stored password offline. Existing
+     * legacy values are still readable via {@link #decrypt(String)}'s fallback and are migrated to
+     * {@code v2} on the next save.
      */
     public static String encrypt(String text) {
+        if (text == null || text.length() == 0) {
+            return text;
+        }
+        return AesGcmPasswordEncoder.encrypt(text);
+    }
+
+    /**
+     * Legacy static-3DES encrypt. Retained only so existing tests/tools and migration fixtures can
+     * reproduce historical ciphertext; <strong>do not</strong> use for new saves — it is keyed by a
+     * compiled-in static key and is therefore insecure. New saves go through {@link #encrypt(String)}.
+     */
+    static String legacyEncrypt(String text) {
         try {
             if (text.length() == 0) {
                 return text;
@@ -59,7 +78,27 @@ public class CryptoUtil {
         }
     }
 
+    /**
+     * Decrypts a stored datasource password.
+     *
+     * <p>If the value carries the {@code v2:} prefix it is AES-256-GCM decrypted with the per-install
+     * key. Otherwise it is treated as a legacy static-3DES value and decrypted with the historical
+     * hard-coded key — this is the backward-compatibility path so every {@code .sds} written before
+     * this change still loads. Legacy values are transparently upgraded to {@code v2} the next time
+     * the datasource is saved (which re-runs {@link #encrypt(String)}).
+     */
     public static String decrypt(String encrypted) {
+        if (encrypted == null || encrypted.length() == 0) {
+            return encrypted;
+        }
+        if (AesGcmPasswordEncoder.isV2(encrypted)) {
+            return AesGcmPasswordEncoder.decrypt(encrypted);
+        }
+        return legacyDecrypt(encrypted);
+    }
+
+    /** Legacy static-3DES decrypt-only fallback for pre-existing stored passwords. */
+    static String legacyDecrypt(String encrypted) {
         try {
             if (encrypted.length() == 0) {
                 return encrypted;
