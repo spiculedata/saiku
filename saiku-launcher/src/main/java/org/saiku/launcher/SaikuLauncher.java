@@ -14,6 +14,9 @@ import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
 import org.eclipse.jetty.ee10.webapp.WebAppContext;
 import org.eclipse.jetty.http.HttpCookie;
+import org.eclipse.jetty.server.ForwardedRequestCustomizer;
+import org.eclipse.jetty.server.HttpConfiguration;
+import org.eclipse.jetty.server.HttpConnectionFactory;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.session.DefaultSessionCache;
@@ -147,7 +150,36 @@ public class SaikuLauncher implements Callable<Integer> {
             enforceDefaultCredentialPolicy(warPath);
 
             Server server = new Server();
-            ServerConnector connector = new ServerConnector(server);
+            // saiku#1165 audit-3: harden the HTTP transport.
+            //  * ForwardedRequestCustomizer — honour X-Forwarded-Proto / -Host
+            //    from a TLS-terminating reverse proxy so request.isSecure() is
+            //    true on a forwarded HTTPS request. Without it, the Secure flag
+            //    on the XSRF-TOKEN cookie is dropped behind a proxy. When the
+            //    forwarded headers are ABSENT (direct HTTP, e.g. the IT harness)
+            //    isSecure() stays false — no behaviour change for direct hits.
+            //
+            //    IMPORTANT: X-Forwarded-For is DELIBERATELY NOT trusted
+            //    (setForwardedForHeader(null)). Saiku binds plain HTTP directly
+            //    by default (no proxy assumed), and LoginRateLimiter / AuditLogger
+            //    intentionally key off getRemoteAddr() and only honour
+            //    X-Forwarded-For when saiku.auth.trustForwardedFor=true. If the
+            //    customizer rewrote getRemoteAddr() from X-Forwarded-For, any
+            //    client could spoof its IP per request and evade the login rate
+            //    limit + forge the audit trail. So we restore only the scheme/host
+            //    here and leave client-IP resolution to the existing controls.
+            //  * sendServerVersion=false — suppress the "Server: Jetty/<ver>"
+            //    banner (version disclosure / fingerprinting).
+            //  * sendXPoweredBy=false — likewise drop X-Powered-By.
+            HttpConfiguration httpConfig = new HttpConfiguration();
+            ForwardedRequestCustomizer forwarded = new ForwardedRequestCustomizer();
+            forwarded.setForwardedForHeader(null); // do not let X-Forwarded-For override getRemoteAddr()
+            httpConfig.addCustomizer(forwarded);
+            httpConfig.setSendServerVersion(false);
+            httpConfig.setSendXPoweredBy(false);
+            // Keep Jetty's default request-header size unless an operator tunes it.
+            httpConfig.setRequestHeaderSize(
+                    Integer.getInteger("saiku.http.requestHeaderSize", httpConfig.getRequestHeaderSize()));
+            ServerConnector connector = new ServerConnector(server, new HttpConnectionFactory(httpConfig));
             connector.setHost(host);
             connector.setPort(port);
             server.addConnector(connector);
@@ -156,6 +188,12 @@ public class SaikuLauncher implements Callable<Integer> {
             webapp.setContextPath(contextPath);
             webapp.setWar(warPath.toString());
             webapp.setExtractWAR(true);
+
+            // saiku#1165 audit-3: global backstop on form-urlencoded request
+            // bodies (the per-endpoint caps only covered specific resources).
+            // Multipart/file uploads are bounded separately by the Jersey
+            // servlet's <multipart-config> in web.xml. Default 2 MB; tunable.
+            webapp.setMaxFormContentSize(Integer.getInteger("saiku.http.maxFormContentSize", 2_000_000));
 
             // Tier-1 auth hardening: JSESSIONID cookie attrs.
             //   HttpOnly = true   (always — no JS needs to read it)
