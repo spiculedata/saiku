@@ -190,8 +190,9 @@ public class SaikuProperties extends Properties {
     }
 
     private void load(final PropertySource source) {
-        try {
-            instance.load(source.openStream());
+        // try-with-resources so the property source's stream is always closed (saiku#1191).
+        try (InputStream in = source.openStream()) {
+            instance.load(in);
             if (populateCount == 0) {
                 log.info("Saiku: properties loaded from '" + source.getDescription() + "'");
                 instance.list(System.out);

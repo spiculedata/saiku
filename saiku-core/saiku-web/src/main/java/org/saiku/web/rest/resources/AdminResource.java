@@ -617,12 +617,9 @@ public class AdminResource {
         Properties prop = new Properties();
         String version = "";
         ClassLoader classloader = Thread.currentThread().getContextClassLoader();
-        InputStream is = classloader.getResourceAsStream("org/saiku/web/rest/resources/version.properties");
-        try {
-            // load a properties file
+        // try-with-resources so the version.properties stream is always closed (saiku#1191).
+        try (InputStream is = classloader.getResourceAsStream("org/saiku/web/rest/resources/version.properties")) {
             prop.load(is);
-
-            // get the property value and print it out
             version = prop.getProperty("VERSION");
         } catch (IOException ex) {
             log.error("IO Exception when reading input stream", ex);

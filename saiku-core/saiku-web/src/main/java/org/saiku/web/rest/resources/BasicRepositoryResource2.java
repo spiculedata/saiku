@@ -346,6 +346,7 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
             @FormDataParam("directory") String directory) {
         String zipFile = fileDetail.getFileName();
         String output = "";
+        ZipInputStream zis = null;
         try {
             if (StringUtils.isBlank(zipFile)) throw new Exception("You must specify a zip file to upload");
 
@@ -361,7 +362,7 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
             final int maxEntries = intProp("saiku.repo.zipMaxEntries", 1000);
             long totalBytes = 0;
             int entryCount = 0;
-            ZipInputStream zis = new ZipInputStream(uploadedInputStream);
+            zis = new ZipInputStream(uploadedInputStream);
             ZipEntry ze = zis.getNextEntry();
             byte[] doc = null;
             boolean isFile = false;
@@ -418,9 +419,7 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
 
             if (!isFile) {
                 zis.closeEntry();
-                zis.close();
             }
-            uploadedInputStream.close();
 
             output += " SUCCESSFUL!\r\n";
             return Response.ok(output).build();
@@ -437,6 +436,25 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
             log.error("Cannot unzip resources " + zipFile, e);
             String error = ExceptionUtils.getRootCauseMessage(e);
             return Response.serverError().entity(output + "\r\n" + error).build();
+        } finally {
+            // saiku#1191: close the zip + multipart streams on every path — the success
+            // path used to do this inline, but the unsafe-entry early return and the
+            // zip-bomb/size-limit throws (saiku#1157/#1165) skipped it and leaked the
+            // upload stream. Closing the ZipInputStream also closes the wrapped
+            // uploadedInputStream; the second close is a null-safe no-op fallback for the
+            // case where an error fired before the ZipInputStream was created.
+            if (zis != null) {
+                try {
+                    zis.close();
+                } catch (IOException ignored) {
+                    // ignore
+                }
+            }
+            try {
+                uploadedInputStream.close();
+            } catch (IOException ignored) {
+                // ignore
+            }
         }
     }
 

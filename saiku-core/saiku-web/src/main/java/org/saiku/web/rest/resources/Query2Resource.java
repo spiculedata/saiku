@@ -1023,9 +1023,10 @@ public class Query2Resource {
                         "<!DOCTYPE html><html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n";
                 if (css) {
                     html += "<style>\n";
-                    InputStream is = JSConverter.class.getResourceAsStream("saiku.table.full.css");
-                    String cssContent = IOUtils.toString(is);
-                    html += cssContent;
+                    // try-with-resources so the bundled CSS stream is always closed (saiku#1191).
+                    try (InputStream is = JSConverter.class.getResourceAsStream("saiku.table.full.css")) {
+                        html += IOUtils.toString(is);
+                    }
                     html += "</style>\n";
                 }
                 html += "</head>\n<body><div class='workspace_results'>\n";

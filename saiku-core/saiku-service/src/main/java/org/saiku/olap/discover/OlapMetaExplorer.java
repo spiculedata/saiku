@@ -15,8 +15,10 @@
  */
 package org.saiku.olap.discover;
 
+import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -336,10 +338,21 @@ public class OlapMetaExplorer {
                 if (isMondrian(nativeCube)) {
                     if (SaikuMondrianHelper.hasAnnotation(l, MondrianDictionary.SQLMemberLookup)) {
                         if (search) {
+                            // getSQLMemberLookup returns a live ResultSet backed by its own JDBC
+                            // Connection + Statement (opened from the Mondrian RolapConnection's
+                            // DataSource). The helper can't close them without losing the ResultSet,
+                            // and this caller previously dropped all three — a JDBC connection leak on
+                            // every SQL member search. Materialise, then close the ResultSet and its
+                            // owning Statement + Connection (saiku#1191).
                             ResultSet rs = SaikuMondrianHelper.getSQLMemberLookup(
                                     con, MondrianDictionary.SQLMemberLookup, l, searchString);
-                            simpleMembers = ObjectUtil.convert2simple(rs);
-                            log.debug("Found " + simpleMembers.size() + " members using SQL lookup for level " + level);
+                            try {
+                                simpleMembers = ObjectUtil.convert2simple(rs);
+                                log.debug("Found " + simpleMembers.size() + " members using SQL lookup for level "
+                                        + level);
+                            } finally {
+                                closeResultSetWithOwner(rs);
+                            }
                             return simpleMembers;
                         } else {
                             return new ArrayList<>();
@@ -394,6 +407,47 @@ public class OlapMetaExplorer {
         }
 
         return new ArrayList<>();
+    }
+
+    /**
+     * Close a ResultSet returned by {@link SaikuMondrianHelper#getSQLMemberLookup} together with the
+     * JDBC Statement and Connection that own it. The lookup helper opens a fresh connection from the
+     * Mondrian DataSource and hands back only the ResultSet, so closing the ResultSet alone would
+     * leak the Statement and (pooled) Connection. Best-effort and null-safe (saiku#1191).
+     */
+    private static void closeResultSetWithOwner(ResultSet rs) {
+        if (rs == null) {
+            return;
+        }
+        Statement st = null;
+        Connection cn = null;
+        try {
+            st = rs.getStatement();
+            if (st != null) {
+                cn = st.getConnection();
+            }
+        } catch (SQLException ignored) {
+            // best-effort recovery of the owning Statement/Connection
+        }
+        try {
+            rs.close();
+        } catch (SQLException ignored) {
+            // ignore
+        }
+        if (st != null) {
+            try {
+                st.close();
+            } catch (SQLException ignored) {
+                // ignore
+            }
+        }
+        if (cn != null) {
+            try {
+                cn.close();
+            } catch (SQLException ignored) {
+                // ignore
+            }
+        }
     }
 
     public List<SaikuMember> getMemberChildren(SaikuCube cube, String uniqueMemberName) throws SaikuOlapException {
