@@ -53,6 +53,28 @@ export function isChartType(kind: string): kind is ChartType {
 
 export type TrendLineMode = "none" | "linear" | "ma" | "wma";
 
+/** issue #1079: a single reference / annotation line drawn across a cartesian
+ *  chart (ECharts markLine). `axis:"y"` draws a horizontal line at the value
+ *  (a threshold / target); `axis:"x"` draws a vertical line at the category
+ *  index `value` (e.g. a "campaign launched" marker). `label` annotates it;
+ *  `color` overrides the theme default. */
+export interface ReferenceLine {
+  axis: "x" | "y";
+  value: number;
+  label?: string;
+  color?: string;
+}
+
+/** issue #1079: a shaded reference band (ECharts markArea) spanning [from, to]
+ *  on the given axis — a target range / SLA window / highlighted period. */
+export interface ReferenceBand {
+  axis: "x" | "y";
+  from: number;
+  to: number;
+  label?: string;
+  color?: string;
+}
+
 export interface ChartOptions {
   title: string;
   xAxisLabel: string;
@@ -86,6 +108,13 @@ export interface ChartOptions {
    *  with a missing/null measure — "blank" leaves it the map's grey
    *  unmapped colour, "zero" colours it at the ramp's low end. */
   mapMissing: "blank" | "zero";
+  /** issue #1079: reference / annotation lines drawn over CARTESIAN charts
+   *  (bar/line/area/scatter/column) as ECharts markLines. Optional; legacy
+   *  charts (undefined / []) get no markLine and render exactly as before. */
+  referenceLines?: ReferenceLine[];
+  /** issue #1079: shaded reference bands (ECharts markArea) over cartesian
+   *  charts. Optional; undefined / [] adds no markArea. */
+  referenceBands?: ReferenceBand[];
 }
 
 /** Auto-split threshold: a series whose maximum absolute value is less
@@ -107,4 +136,7 @@ export const DEFAULT_CHART_OPTIONS: ChartOptions = {
   seriesAxis: {},
   colorRamp: "blues",
   mapMissing: "blank",
+  // issue #1079: inert defaults — no reference lines/bands on legacy charts.
+  referenceLines: [],
+  referenceBands: [],
 };

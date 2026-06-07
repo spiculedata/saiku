@@ -2,7 +2,13 @@
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
-  import type { ChartOptions, TrendLineMode, ChartColorRamp } from "$lib/views/chartTypes";
+  import type {
+    ChartOptions,
+    TrendLineMode,
+    ChartColorRamp,
+    ReferenceLine,
+    ReferenceBand,
+  } from "$lib/views/chartTypes";
 
   interface Props {
     initial: ChartOptions;
@@ -38,11 +44,63 @@
   const COLOR_RAMP_IDS: ChartColorRamp[] = ["blues", "greens", "reds", "viridis", "diverging"];
 
   let { initial, chartType, seriesNames = [], open, onSave, onCancel }: Props = $props();
-  let form = $state<ChartOptions>(untrack(() => ({ ...initial })));
+
+  // Deep-copy the reference arrays so editing the working copy never mutates the
+  // caller's `initial` options object (#1079). Spreading alone shares the array.
+  function cloneForm(src: ChartOptions): ChartOptions {
+    return {
+      ...src,
+      referenceLines: (src.referenceLines ?? []).map((l) => ({ ...l })),
+      referenceBands: (src.referenceBands ?? []).map((b) => ({ ...b })),
+    };
+  }
+
+  let form = $state<ChartOptions>(untrack(() => cloneForm(initial)));
 
   $effect(() => {
-    if (open) form = { ...initial };
+    if (open) form = cloneForm(initial);
   });
+
+  // issue #1079: reference lines / bands are only meaningful on cartesian
+  // charts (bar/line/area/scatter family). Hide the section for the
+  // proportional / matrix / map types where markLine/markArea don't apply.
+  const REF_CARTESIAN = new Set([
+    "bar",
+    "stackedBar",
+    "line",
+    "stackedLine",
+    "area",
+    "stackedArea",
+    "scatter",
+    "bubble",
+    "waterfall",
+  ]);
+  const showRefSection = $derived(chartType === undefined || REF_CARTESIAN.has(chartType));
+
+  function addRefLine(): void {
+    form.referenceLines = [...(form.referenceLines ?? []), { axis: "y", value: 0 }];
+  }
+  function removeRefLine(idx: number): void {
+    form.referenceLines = (form.referenceLines ?? []).filter((_, i) => i !== idx);
+  }
+  function updateRefLine(idx: number, patch: Partial<ReferenceLine>): void {
+    form.referenceLines = (form.referenceLines ?? []).map((l, i) => (i === idx ? { ...l, ...patch } : l));
+  }
+
+  function addRefBand(): void {
+    form.referenceBands = [...(form.referenceBands ?? []), { axis: "y", from: 0, to: 0 }];
+  }
+  function removeRefBand(idx: number): void {
+    form.referenceBands = (form.referenceBands ?? []).filter((_, i) => i !== idx);
+  }
+  function updateRefBand(idx: number, patch: Partial<ReferenceBand>): void {
+    form.referenceBands = (form.referenceBands ?? []).map((b, i) => (i === idx ? { ...b, ...patch } : b));
+  }
+
+  function numVal(e: Event): number {
+    const v = parseFloat((e.currentTarget as HTMLInputElement).value);
+    return Number.isFinite(v) ? v : 0;
+  }
 
   function axisPickFor(name: string): AxisPick {
     const v = form.seriesAxis?.[name];
@@ -180,6 +238,102 @@
       </label>
     </div>
     <p class="hint">{i18n.t("modal.chart.trendHint")}</p>
+
+    {#if showRefSection}
+      <div class="ref">
+        <span class="ref__title">{i18n.t("modal.chart.refLines")}</span>
+        <p class="hint">{i18n.t("modal.chart.refLines.hint")}</p>
+        <div class="ref__list">
+          {#each form.referenceLines ?? [] as line, i (i)}
+            <div class="ref__row">
+              <select
+                class="field__input ref__axis"
+                value={line.axis}
+                onchange={(e) => updateRefLine(i, { axis: (e.currentTarget as HTMLSelectElement).value as "x" | "y" })}
+                aria-label={i18n.t("modal.chart.refLines.axis")}
+              >
+                <option value="y">{i18n.t("modal.chart.refLines.axis.y")}</option>
+                <option value="x">{i18n.t("modal.chart.refLines.axis.x")}</option>
+              </select>
+              <input
+                class="field__input ref__value"
+                type="number"
+                value={line.value}
+                oninput={(e) => updateRefLine(i, { value: numVal(e) })}
+                placeholder={i18n.t("modal.chart.refLines.value")}
+                aria-label={i18n.t("modal.chart.refLines.value")}
+              />
+              <input
+                class="field__input ref__label"
+                type="text"
+                value={line.label ?? ""}
+                oninput={(e) => updateRefLine(i, { label: (e.currentTarget as HTMLInputElement).value })}
+                placeholder={i18n.t("modal.chart.refLines.label")}
+                aria-label={i18n.t("modal.chart.refLines.label")}
+              />
+              <input
+                class="ref__color"
+                type="color"
+                value={line.color ?? "#888888"}
+                oninput={(e) => updateRefLine(i, { color: (e.currentTarget as HTMLInputElement).value })}
+                aria-label={i18n.t("modal.chart.refLines.color")}
+                title={i18n.t("modal.chart.refLines.color")}
+              />
+              <button type="button" class="btn ref__remove" onclick={() => removeRefLine(i)}>
+                {i18n.t("modal.chart.refLines.remove")}
+              </button>
+            </div>
+          {/each}
+        </div>
+        <button type="button" class="btn ref__add" onclick={addRefLine}>{i18n.t("modal.chart.refLines.add")}</button>
+
+        <span class="ref__title">{i18n.t("modal.chart.refBands")}</span>
+        <p class="hint">{i18n.t("modal.chart.refBands.hint")}</p>
+        <div class="ref__list">
+          {#each form.referenceBands ?? [] as band, i (i)}
+            <div class="ref__row">
+              <select
+                class="field__input ref__axis"
+                value={band.axis}
+                onchange={(e) => updateRefBand(i, { axis: (e.currentTarget as HTMLSelectElement).value as "x" | "y" })}
+                aria-label={i18n.t("modal.chart.refLines.axis")}
+              >
+                <option value="y">{i18n.t("modal.chart.refLines.axis.y")}</option>
+                <option value="x">{i18n.t("modal.chart.refLines.axis.x")}</option>
+              </select>
+              <input
+                class="field__input ref__value"
+                type="number"
+                value={band.from}
+                oninput={(e) => updateRefBand(i, { from: numVal(e) })}
+                placeholder={i18n.t("modal.chart.refBands.from")}
+                aria-label={i18n.t("modal.chart.refBands.from")}
+              />
+              <input
+                class="field__input ref__value"
+                type="number"
+                value={band.to}
+                oninput={(e) => updateRefBand(i, { to: numVal(e) })}
+                placeholder={i18n.t("modal.chart.refBands.to")}
+                aria-label={i18n.t("modal.chart.refBands.to")}
+              />
+              <input
+                class="ref__color"
+                type="color"
+                value={band.color ?? "#888888"}
+                oninput={(e) => updateRefBand(i, { color: (e.currentTarget as HTMLInputElement).value })}
+                aria-label={i18n.t("modal.chart.refLines.color")}
+                title={i18n.t("modal.chart.refLines.color")}
+              />
+              <button type="button" class="btn ref__remove" onclick={() => removeRefBand(i)}>
+                {i18n.t("modal.chart.refLines.remove")}
+              </button>
+            </div>
+          {/each}
+        </div>
+        <button type="button" class="btn ref__add" onclick={addRefBand}>{i18n.t("modal.chart.refBands.add")}</button>
+      </div>
+    {/if}
     {/if}
   </div>
 
@@ -203,4 +357,14 @@
   .series-axis__row { display: flex; align-items: center; gap: var(--space-3); }
   .series-axis__name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-size: var(--fs-sm); }
   .series-axis__pick { width: 8rem; flex: 0 0 auto; }
+  .ref { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
+  .ref__title { font-size: var(--fs-sm); color: var(--fg-muted); }
+  .ref__list { display: flex; flex-direction: column; gap: var(--space-2); }
+  .ref__row { display: flex; align-items: center; gap: var(--space-2); }
+  .ref__axis { width: 8.5rem; flex: 0 0 auto; }
+  .ref__value { width: 6rem; flex: 0 0 auto; }
+  .ref__label { flex: 1; min-width: 4rem; }
+  .ref__color { width: 2.25rem; height: 2rem; flex: 0 0 auto; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; }
+  .ref__remove { flex: 0 0 auto; }
+  .ref__add { align-self: flex-start; }
 </style>

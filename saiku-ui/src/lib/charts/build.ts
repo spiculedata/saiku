@@ -25,7 +25,13 @@
  * Pure: no DOM, no fetches, no ECharts import. Tests live alongside.
  */
 
-import type { ChartType, ChartOptions, ChartColorRamp } from "$lib/views/chartTypes";
+import type {
+  ChartType,
+  ChartOptions,
+  ChartColorRamp,
+  ReferenceLine,
+  ReferenceBand,
+} from "$lib/views/chartTypes";
 import { DEFAULT_CHART_OPTIONS, SERIES_AXIS_THRESHOLD, isChartType } from "$lib/views/chartTypes";
 import { aliasGeoName } from "$lib/charts/geoMatch";
 import { assignSeriesAxes } from "$lib/views/cellsetUtils";
@@ -202,6 +208,94 @@ function trendSeries(
   ];
 }
 
+/* issue #1079: reference / annotation lines + bands for CARTESIAN charts.
+ *
+ * Both are ECharts series-level overlays attached to a single carrier series
+ * (the first measure series, or a dedicated zero-data series when there are no
+ * measures, so they always paint). They DON'T add data points — markLine and
+ * markArea live alongside `data` on the series. Returning `undefined` when there
+ * is nothing to draw keeps the carrier series byte-for-byte identical to the
+ * pre-#1079 output (so existing charts and their snapshots are unchanged).
+ *
+ * A y-axis line → markLine data `{ yAxis: value }` (horizontal); an x-axis line
+ * → `{ xAxis: value }` (the category index for a category x-axis). Bands become
+ * markArea data PAIRS (`[{start},{end}]`). Default colour is the muted
+ * foreground token; per-entry `color` overrides it. In compact (tile) mode the
+ * label text is hidden to avoid clutter — the line/band still renders. The
+ * builder stays pure: this only shapes plain option JSON. */
+function markLineConfig(
+  lines: ReferenceLine[] | undefined,
+  tk: ThemeTokens,
+  compact: boolean,
+): Record<string, unknown> | undefined {
+  if (!lines || lines.length === 0) return undefined;
+  return {
+    symbol: ["none", "none"],
+    label: { show: !compact },
+    data: lines.map((l) => {
+      const color = l.color || tk.fgMuted;
+      const point: Record<string, unknown> = l.axis === "x" ? { xAxis: l.value } : { yAxis: l.value };
+      point.lineStyle = { color, type: "dashed" };
+      if (l.label) point.name = l.label;
+      if (!compact && l.label) {
+        point.label = { show: true, formatter: l.label, color };
+      }
+      return point;
+    }),
+  };
+}
+
+function markAreaConfig(
+  bands: ReferenceBand[] | undefined,
+  tk: ThemeTokens,
+  compact: boolean,
+): Record<string, unknown> | undefined {
+  if (!bands || bands.length === 0) return undefined;
+  return {
+    label: { show: !compact },
+    data: bands.map((b) => {
+      const color = b.color || tk.fgMuted;
+      const axisKey = b.axis === "x" ? "xAxis" : "yAxis";
+      const start: Record<string, unknown> = {
+        [axisKey]: b.from,
+        itemStyle: { color, opacity: 0.12 },
+      };
+      if (!compact && b.label) {
+        start.name = b.label;
+        start.label = { show: true, formatter: b.label, color };
+      }
+      const end: Record<string, unknown> = { [axisKey]: b.to };
+      return [start, end];
+    }),
+  };
+}
+
+/* issue #1079: attach the prepared markLine/markArea overlays to a cartesian
+ * series list. They ride on the FIRST series so they paint once (markLine on
+ * every series would draw duplicate lines). When the list is empty (no measure
+ * columns) a dedicated zero-data carrier series is appended so the annotations
+ * still render. Mutating in place is safe — `series` is freshly mapped here. A
+ * no-op (returns the list unchanged) when there are no marks, preserving legacy
+ * output exactly. */
+function attachMarks(
+  series: Record<string, unknown>[],
+  markLine: Record<string, unknown> | undefined,
+  markArea: Record<string, unknown> | undefined,
+): Record<string, unknown>[] {
+  if (markLine === undefined && markArea === undefined) return series;
+  const carrier =
+    series.length > 0
+      ? series[0]
+      : (() => {
+          const c: Record<string, unknown> = { type: "line", name: "", data: [], silent: true };
+          series.push(c);
+          return c;
+        })();
+  if (markLine !== undefined) carrier.markLine = markLine;
+  if (markArea !== undefined) carrier.markArea = markArea;
+  return series;
+}
+
 /* issue #1071: sequential / diverging colour ramps for the map visualMap.
  * Light→dark low→high; ECharts interpolates between the stops. */
 const COLOR_RAMPS: Record<ChartColorRamp, string[]> = {
@@ -364,6 +458,13 @@ export function buildChartOption(
   const o = options;
   const compact = geom.compact ?? false;
   const aspect = Number.isFinite(geom.aspect) && (geom.aspect ?? 0) > 0 ? (geom.aspect as number) : 1;
+
+  // issue #1079: reference lines / bands — cartesian charts only (attached
+  // below to the first measure series, or a dedicated carrier when there are
+  // no measures). undefined when none configured, so the carrier series is
+  // unchanged for legacy charts.
+  const markLine = markLineConfig(o.referenceLines, tk, compact);
+  const markArea = markAreaConfig(o.referenceBands, tk, compact);
 
   // Theme-derived fragments — identical across both surfaces.
   const common = {
@@ -619,22 +720,26 @@ export function buildChartOption(
       dataZoom: dataZoomConfig(compact),
       xAxis: { ...baseAxis, axisLabel: catLabel(), data: cols, name: xName },
       yAxis: { ...valueAxis, name: yName },
-      series: rows.map((name, i) => ({
-        type: "scatter",
-        name,
-        // #1091: larger floor marker + bordered points for low-vision users.
-        ...itemStyleHC,
-        symbolSize:
-          t === "bubble"
-            ? (val: unknown) => {
-                const v = Array.isArray(val) ? (val[1] as number) : (val as number);
-                return Math.max(hc ? 10 : 6, Math.sqrt(Math.abs(v) / bubbleMax) * 40);
-              }
-            : hc
-              ? 14
-              : 10,
-        data: matrix[i].map((v, j) => [j, v ?? 0]),
-      })),
+      series: attachMarks(
+        rows.map((name, i) => ({
+          type: "scatter",
+          name,
+          // #1091: larger floor marker + bordered points for low-vision users.
+          ...itemStyleHC,
+          symbolSize:
+            t === "bubble"
+              ? (val: unknown) => {
+                  const v = Array.isArray(val) ? (val[1] as number) : (val as number);
+                  return Math.max(hc ? 10 : 6, Math.sqrt(Math.abs(v) / bubbleMax) * 40);
+                }
+              : hc
+                ? 14
+                : 10,
+          data: matrix[i].map((v, j) => [j, v ?? 0]),
+        })),
+        markLine,
+        markArea,
+      ),
     };
   }
 
@@ -667,7 +772,8 @@ export function buildChartOption(
       dataZoom: dataZoomConfig(compact), // #1080: x-axis zoom + pan
       xAxis: { ...baseAxis, axisLabel: catLabel(), data: rows, name: xName },
       yAxis: { ...valueAxis, name: yName },
-      series: [
+      series: attachMarks(
+        [
         {
           type: "bar",
           name: "",
@@ -693,6 +799,9 @@ export function buildChartOption(
           itemStyle: { color: hc ? COLORBLIND_WATERFALL.negative : "#e66c6c", ...seriesBorder },
         },
       ],
+        markLine,
+        markArea,
+      ),
     };
   }
 
@@ -774,6 +883,9 @@ export function buildChartOption(
     dataZoom: dataZoomConfig(compact), // #1080: x-axis zoom + pan
     xAxis: { ...baseAxis, axisLabel: catLabel(compact && rows.length > 8 ? 30 : 0), data: rows, name: xName },
     yAxis,
-    series: [...base, ...trend],
+    // issue #1079: reference lines/bands ride on the first measure series (or a
+    // dedicated carrier when there are no measures). Trend overlays stay
+    // markLine-free. No-op when nothing is configured (legacy output unchanged).
+    series: attachMarks([...base, ...trend], markLine, markArea),
   };
 }
