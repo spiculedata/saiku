@@ -44,9 +44,9 @@ public class DashboardResourceTest {
     /* ------------------------------ save ------------------------------ */
 
     @Test
-    public void save_serialisesAndForwardsToDatasourceService() {
+    public void save_serialisesAndForwardsToDatasourceService() throws Exception {
         Dashboard d = sampleDashboard();
-        Response r = resource.save("/dashboards/q4.saikudash", d);
+        Response r = resource.save("/dashboards/q4.saikudash", MAPPER.writeValueAsString(d));
         assertEquals(200, r.getStatus());
         assertEquals("/dashboards/q4.saikudash", stubDs.savedPath);
         assertEquals("admin", stubDs.savedAs);
@@ -76,11 +76,7 @@ public class DashboardResourceTest {
 
     @Test
     public void save_missingLayoutReturns400() {
-        Dashboard d = new Dashboard();
-        d.id = "x";
-        d.name = "X";
-        d.layout = null;
-        Response r = resource.save("/x.saikudash", d);
+        Response r = resource.save("/x.saikudash", "{\"id\":\"x\",\"name\":\"X\"}");
         assertEquals(400, r.getStatus());
         @SuppressWarnings("unchecked")
         Map<String, Object> body = (Map<String, Object>) r.getEntity();
@@ -88,10 +84,38 @@ public class DashboardResourceTest {
     }
 
     @Test
-    public void save_datasourceServiceFailureReturns500() {
+    public void save_datasourceServiceFailureReturns500() throws Exception {
         stubDs.failOnSave = true;
-        Response r = resource.save("/x.saikudash", sampleDashboard());
+        Response r = resource.save("/x.saikudash", MAPPER.writeValueAsString(sampleDashboard()));
         assertEquals(500, r.getStatus());
+    }
+
+    @Test
+    public void save_invalidJsonReturns400() {
+        Response r = resource.save("/x.saikudash", "{not json");
+        assertEquals(400, r.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) r.getEntity();
+        assertEquals("body", body.get("field"));
+    }
+
+    @Test
+    public void save_preservesUnknownTileFields() throws Exception {
+        // #1179: the UI sends per-tile fields the Java model doesn't declare
+        // (chartOptions, conditionalFormat, cascading, topN). They must survive
+        // the save (round-trip into the stored content), not be dropped by
+        // re-serialising the typed POJO.
+        String json = "{\"id\":\"d1\",\"name\":\"D\",\"version\":1,\"layout\":{\"cols\":12,\"tiles\":["
+                + "{\"id\":\"t1\",\"x\":0,\"y\":0,\"w\":6,\"h\":4,\"type\":\"chart\",\"chartType\":\"bar\","
+                + "\"chartOptions\":{\"dualAxis\":true,\"trendLine\":\"linear\"},"
+                + "\"conditionalFormat\":[{\"column\":\"Sales\",\"type\":\"bar\"}]}]}}";
+        Response r = resource.save("/d1.saikudash", json);
+        assertEquals(200, r.getStatus());
+        JsonNode tile =
+                MAPPER.readTree(stubDs.savedContent).get("layout").get("tiles").get(0);
+        assertTrue("chartOptions must survive save", tile.has("chartOptions"));
+        assertEquals("linear", tile.get("chartOptions").get("trendLine").asText());
+        assertTrue("conditionalFormat must survive save", tile.has("conditionalFormat"));
     }
 
     /* ------------------------------ load ------------------------------ */
