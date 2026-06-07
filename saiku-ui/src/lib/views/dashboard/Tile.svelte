@@ -168,13 +168,14 @@
   const selected = $derived(!readOnly && tileSelection.isSelected(tile.id));
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events
-     Right-click is a power-user shortcut for the overflow menu, and click
-     drives edit-mode multi-select (#915). The kebab button (⋮) in the
-     header is the keyboard-accessible equivalent for the menu; tile
-     selection is a power-user layout aid, not a primary navigation path,
-     so suppressing the static-handler + click-needs-keys rules here is
-     intentional rather than an a11y regression. -->
+<!-- Right-click is a power-user shortcut for the overflow menu, and click
+     drives edit-mode multi-select (#915). The kebab button (⋮) in the header
+     is the keyboard-accessible equivalent; tile selection is a power-user
+     layout aid, not a primary navigation path — so suppressing these rules is
+     intentional. NB: this svelte-check honours only the FIRST code in a
+     multi-code svelte-ignore, so they must be one-per-comment (#920). -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
   class="tile"
   class:tile--selected={selected}

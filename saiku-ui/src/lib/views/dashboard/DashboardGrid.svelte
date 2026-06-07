@@ -279,12 +279,13 @@
       <p class="hint">Use <em>Add tile</em> in the toolbar to start building.</p>
     </div>
   {:else}
-    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions
-         The grid's onclick only clears the multi-selection when the user
-         clicks the empty canvas (#915) — a power-user layout aid, not a
-         primary control. Tile selection itself has keyboard-reachable
-         per-tile actions (edit / remove / kebab) so this background-clear
-         shortcut carries no keyboard responsibility of its own. -->
+    <!-- The grid's onclick only clears the multi-selection when the user clicks
+         the empty canvas (#915) — a power-user layout aid with keyboard-
+         reachable per-tile actions (edit / remove / kebab), so it carries no
+         keyboard responsibility. One code per comment — this svelte-check only
+         honours the first code in a multi-code svelte-ignore (#920). -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
       class="grid"
       class:grid--gesturing={gesture !== null}
