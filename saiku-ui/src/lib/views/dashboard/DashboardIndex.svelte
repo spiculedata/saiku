@@ -47,6 +47,7 @@
   import RenameFolderModal from "$lib/modals/RenameFolderModal.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import DashboardIndexFilters from "$lib/views/dashboard/DashboardIndexFilters.svelte";
   import {
     Copy,
     ShieldCheck,
@@ -570,55 +571,14 @@
       action={{ label: "+ New dashboard", onClick: handleNew }}
     />
   {:else}
-    <section class="catalogue-filters" aria-label="Catalogue filters">
-      <input
-        type="search"
-        class="search"
-        placeholder="Search dashboards by name or path…"
-        bind:value={searchQuery}
-        aria-label="Search dashboards"
-      />
-      <label class="sort">
-        <span>Sort:</span>
-        <select bind:value={sortKey} aria-label="Sort dashboards">
-          <option value="name">Name</option>
-          <option value="modified-desc">Last modified ↓</option>
-          <option value="modified-asc">Last modified ↑</option>
-        </select>
-      </label>
-      <div class="view-toggle" role="group" aria-label={i18n.t("dashboard.view.label")}>
-        <button
-          type="button"
-          class="btn view-btn"
-          class:view-btn--on={viewMode === "list"}
-          aria-pressed={viewMode === "list"}
-          onclick={() => (viewMode = "list")}
-        >
-          {i18n.t("dashboard.view.list")}
-        </button>
-        <button
-          type="button"
-          class="btn view-btn"
-          class:view-btn--on={viewMode === "tree"}
-          aria-pressed={viewMode === "tree"}
-          onclick={() => (viewMode = "tree")}
-        >
-          <Folder size={14} aria-hidden="true" />
-          {i18n.t("dashboard.view.folders")}
-        </button>
-      </div>
-      {#if viewMode === "tree"}
-        <button type="button" class="btn" onclick={() => openNewFolder("")}>
-          <FolderPlus size={14} aria-hidden="true" />
-          {i18n.t("dashboard.folder.new")}
-        </button>
-      {/if}
-      {#if searchQuery || selectedTags.length > 0 || selectedOwners.length > 0}
-        <button type="button" class="btn btn--ghost" onclick={clearFilters}>
-          Clear filters
-        </button>
-      {/if}
-    </section>
+    <DashboardIndexFilters
+      bind:searchQuery
+      bind:sortKey
+      bind:viewMode
+      showClearFilters={!!searchQuery || selectedTags.length > 0 || selectedOwners.length > 0}
+      onClearFilters={clearFilters}
+      onNewFolder={() => openNewFolder("")}
+    />
 
     {#if viewMode === "list" && favouriteEntries.length > 0}
       <section class="pinned" aria-labelledby="favourites-heading">
@@ -1061,41 +1021,9 @@
   .btn.star--on:hover {
     color: var(--accent);
   }
-  .catalogue-filters {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-  .catalogue-filters .search {
-    flex: 1;
-    min-width: 12rem;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-strong);
-    border-radius: 4px;
-    background: var(--bg);
-    font-size: 0.875rem;
-  }
-  .catalogue-filters .sort {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.8125rem;
-    color: var(--fg-muted);
-  }
-  .catalogue-filters select {
-    padding: 0.375rem 0.5rem;
-    border: 1px solid var(--border-strong);
-    border-radius: 4px;
-    background: var(--bg);
-    font-size: 0.8125rem;
-  }
-  .btn--ghost {
-    background: transparent;
-    border-color: var(--border);
-    color: var(--fg-muted);
-    font-size: 0.8125rem;
-  }
+  /* .catalogue-filters / .view-toggle / .view-btn styles relocated to
+     DashboardIndexFilters.svelte (saiku#1234) — Svelte's scoped CSS
+     does not cross component boundaries. */
   .filter-chips {
     display: flex;
     flex-direction: column;
@@ -1136,31 +1064,7 @@
     background: var(--accent);
   }
 
-  /* --- issue #937: view toggle + folder tree ------------------------- */
-  .view-toggle {
-    display: inline-flex;
-    gap: 0;
-  }
-  .view-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    border-radius: 0;
-  }
-  .view-btn:first-child {
-    border-top-left-radius: 4px;
-    border-bottom-left-radius: 4px;
-  }
-  .view-btn:last-child {
-    border-top-right-radius: 4px;
-    border-bottom-right-radius: 4px;
-    border-left: none;
-  }
-  .view-btn--on {
-    background: var(--accent);
-    color: white;
-    border-color: var(--accent);
-  }
+  /* --- issue #937: folder tree (view toggle moved to delegate) ------- */
   .tree {
     gap: 0.25rem;
   }
