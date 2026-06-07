@@ -62,6 +62,37 @@ export const COLORBLIND_SAFE_COLORS = [
   "#cc79a7", // reddish purple
 ];
 
+/* #1081: named categorical palettes the user can pick per chart (ChartOptions.
+ * palette). "default" is intentionally absent here — it resolves to the active
+ * theme tokens (tk.chartColors), which is the existing CHART_FALLBACK_COLORS in
+ * light/dark unless overridden by --chart-* CSS tokens — so picking "default"
+ * (the inert ChartOptions default) reproduces the pre-#1081 colour cycle exactly.
+ * The other palettes are fixed hex sets that read acceptably on both light and
+ * dark backgrounds (mid-saturation, no near-white / near-black extremes). */
+export const NAMED_PALETTES: Record<string, string[]> = {
+  vibrant: ["#ef4444", "#f97316", "#eab308", "#22c55e", "#06b6d4", "#3b82f6", "#8b5cf6", "#ec4899"],
+  cool: ["#0ea5e9", "#06b6d4", "#14b8a6", "#22c55e", "#3b82f6", "#6366f1", "#8b5cf6", "#0891b2"],
+  warm: ["#ef4444", "#f97316", "#f59e0b", "#eab308", "#dc2626", "#ea580c", "#d97706", "#b45309"],
+  earth: ["#92400e", "#b45309", "#a16207", "#4d7c0f", "#15803d", "#0f766e", "#78716c", "#57534e"],
+};
+
+/** #1081: stable list of selectable palette ids for the editor dropdown —
+ *  "default" first (theme-derived), then the named palettes. */
+export const PALETTE_IDS: string[] = ["default", ...Object.keys(NAMED_PALETTES)];
+
+/**
+ * #1081: resolve a named-palette id to its colour array. "default" (and any
+ * unknown / undefined id) returns the active theme palette (tk.chartColors), so
+ * the result is theme-aware (light + dark) and legacy charts are unchanged. This
+ * is the NAMED-palette layer only — the builder applies the higher-priority
+ * colour-blind-safe palette and per-series overrides on top of this. Pure (no
+ * DOM, no store read) so it can be unit-tested directly.
+ */
+export function resolvePalette(id: string | undefined, tk: ThemeTokens): string[] {
+  if (!id || id === "default") return tk.chartColors;
+  return NAMED_PALETTES[id] ?? tk.chartColors;
+}
+
 /** #1091: waterfall pos/neg colours for high-contrast mode. Picked from the
  *  Okabe-Ito palette (bluish-green up, vermillion down) so they stay
  *  distinguishable across the common colour-vision deficiencies — unlike the

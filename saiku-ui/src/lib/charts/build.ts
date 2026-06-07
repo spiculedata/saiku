@@ -31,7 +31,12 @@ import { aliasGeoName } from "$lib/charts/geoMatch";
 import { assignSeriesAxes } from "$lib/views/cellsetUtils";
 import { axisLabelConfig, deriveAxisLabelWidth } from "$lib/views/chartAxisLabel";
 import { cellRadiusPct, gridCells, MAX_LABELLED_SLICES } from "$lib/dashboard/smallMultiples";
-import { type ThemeTokens, DEFAULT_THEME_TOKENS, COLORBLIND_WATERFALL } from "$lib/views/chartTheme";
+import {
+  type ThemeTokens,
+  DEFAULT_THEME_TOKENS,
+  COLORBLIND_WATERFALL,
+  resolvePalette,
+} from "$lib/views/chartTheme";
 import { buildSparklineSvg } from "$lib/charts/sparkline";
 
 /** The shared, already-projected chart input both surfaces produce. Rollup
@@ -216,6 +221,27 @@ function colorRampFor(ramp: ChartColorRamp | undefined): string[] {
   return COLOR_RAMPS[ramp ?? "blues"] ?? COLOR_RAMPS.blues;
 }
 
+/* #1081: resolve the active categorical colour CYCLE (the option-level `color`
+ * array) honouring the documented precedence:
+ *   colour-blind-safe (when the global pref made tk.highContrast)  >  named
+ *   palette (o.palette)  >  theme default (tk.chartColors).
+ * The per-series override layer is applied separately, on the individual
+ * series, so it can win for a single series without disturbing the cycle.
+ *
+ * resolveThemeTokens() already swaps tk.chartColors to the Okabe-Ito palette
+ * when cb-safe is on; so when tk.highContrast is set we keep tk.chartColors and
+ * IGNORE any named palette — cb-safe accessibility must win over cosmetics. */
+function paletteColors(o: ChartOptions, tk: ThemeTokens): string[] {
+  if (tk.highContrast) return tk.chartColors;
+  return resolvePalette(o.palette, tk);
+}
+
+/* #1081: the per-series colour override for `name`, or undefined. Keyed by the
+ * series (column-category) label — the legend entry / measure name. */
+function seriesColorFor(o: ChartOptions, name: string): string | undefined {
+  return o.seriesColors?.[name];
+}
+
 /* issue #1080: x-axis zoom + pan for CARTESIAN charts (bar/line/area family,
  * scatter/bubble, waterfall). Brush/selection events are out of scope (#1085) —
  * this is zoom/pan only.
@@ -366,9 +392,13 @@ export function buildChartOption(
   const aspect = Number.isFinite(geom.aspect) && (geom.aspect ?? 0) > 0 ? (geom.aspect as number) : 1;
 
   // Theme-derived fragments — identical across both surfaces.
+  // #1081: `color` is the resolved categorical cycle (cb-safe > named palette >
+  // theme default). With the inert default (palette "default", cb-safe off) this
+  // equals tk.chartColors, so legacy output and snapshots stay unchanged.
+  const palette = paletteColors(o, tk);
   const common = {
     backgroundColor: "transparent",
-    color: tk.chartColors,
+    color: palette,
     textStyle: { color: tk.fg },
   };
 
@@ -451,7 +481,17 @@ export function buildChartOption(
             // #1091: a same-bg border separates adjacent slices for monochrome
             // / low-vision readers; absent when high-contrast is off.
             ...itemStyleHC,
-            data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
+            // #1081: pie slices are the row categories, so the per-series colour
+            // override applies at the DATA-ITEM level (by slice name). An item
+            // with no override keeps the palette-cycle colour. Merges with the
+            // high-contrast same-bg border above when both are active.
+            data: rows.map((name, i) => {
+              const override = seriesColorFor(o, name);
+              const base = { name, value: matrix[i][m] ?? 0 };
+              return override
+                ? { ...base, itemStyle: { ...seriesBorder, color: override } }
+                : base;
+            }),
           };
         }),
       };
@@ -622,6 +662,8 @@ export function buildChartOption(
       series: rows.map((name, i) => ({
         type: "scatter",
         name,
+        // #1081: per-series colour override (by series name) wins for this series.
+        ...(seriesColorFor(o, name) ? { color: seriesColorFor(o, name) } : {}),
         // #1091: larger floor marker + bordered points for low-vision users.
         ...itemStyleHC,
         symbolSize:
@@ -726,6 +768,10 @@ export function buildChartOption(
   const base = cols.map((name, c) => ({
     type: kindBase,
     name,
+    // #1081: per-series colour override (by series name) wins over the cycle
+    // for this one series. ECharts honours a series-level `color` for both bar
+    // and line; absent overrides leave it off so the palette cycle drives it.
+    ...(seriesColorFor(o, name) ? { color: seriesColorFor(o, name) } : {}),
     // Single-axis stacked → one "total" group (matches both surfaces' prior
     // output); dual-axis stacked → separate groups per side so each axis stacks
     // independently.

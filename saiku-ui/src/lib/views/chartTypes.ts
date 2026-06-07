@@ -86,6 +86,19 @@ export interface ChartOptions {
    *  with a missing/null measure — "blank" leaves it the map's grey
    *  unmapped colour, "zero" colours it at the ramp's low end. */
   mapMissing: "blank" | "zero";
+  /** issue #1081: named categorical palette id (see NAMED_PALETTES in
+   *  chartTheme.ts — "default", "vibrant", "cool", "warm", "earth"). Optional;
+   *  legacy charts predating #1081 omit it and fall back to the theme default
+   *  palette (tk.chartColors), so their output is byte-for-byte unchanged.
+   *  Precedence: per-series {@link seriesColors} > colour-blind-safe (when the
+   *  global pref is on) > this named palette > theme default. */
+  palette?: string;
+  /** issue #1081: per-series colour override, keyed by series (column-category)
+   *  name — the same labels rendered in the legend / used by {@link seriesAxis}.
+   *  Values are hex colours. An entry wins over the named palette AND the
+   *  colour-blind-safe palette for that one series. Optional; legacy charts omit
+   *  it (treated as {}) so nothing overrides and their output is unchanged. */
+  seriesColors?: Record<string, string>;
 }
 
 /** Auto-split threshold: a series whose maximum absolute value is less
@@ -107,4 +120,8 @@ export const DEFAULT_CHART_OPTIONS: ChartOptions = {
   seriesAxis: {},
   colorRamp: "blues",
   mapMissing: "blank",
+  // #1081: inert defaults — "default" resolves to the theme palette and an
+  // empty override map applies nothing, so legacy charts are unchanged.
+  palette: "default",
+  seriesColors: {},
 };
