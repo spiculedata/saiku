@@ -276,14 +276,12 @@
         <input class="field__input" type="date" bind:value={toDate} />
       </label>
     </div>
-    <label class="field">
-      <span class="field__label">{i18n.t("modal.dateFilter.compare")}</span>
-      <select class="field__input" bind:value={compare}>
-        <option value="NONE">{i18n.t("modal.dateFilter.compare.none")}</option>
-        <option value="PRIOR_PERIOD">{i18n.t("modal.dateFilter.compare.priorPeriod")}</option>
-        <option value="PRIOR_YEAR">{i18n.t("modal.dateFilter.compare.priorYear")}</option>
-      </select>
-    </label>
+    <!-- saiku#1221 Phase 4: legacy compare dropdown retired. The Compare
+         tab supersedes PRIOR_PERIOD / PRIOR_YEAR with grain-aware
+         ParallelPeriod via buildCompareMdx; buildAbsoluteMdx still honours
+         the older `compare` field for saved queries that round-trip
+         through. Always-NONE here keeps the local state simple. -->
+    <p class="hint">{i18n.t("modal.dateFilter.compareMoved")}</p>
     {#if !applyEnabled}
       <p class="hint hint--err">{i18n.t("modal.dateFilter.rangeInvalid")}</p>
     {/if}

@@ -162,10 +162,18 @@
     // simple; a hierarchy with >5 levels would benefit from a submenu,
     // but those are rare enough that this trade-off is fine for now.
     const levelNames = Object.keys(h.levels);
-    const items: ContextMenuItem[] = [
-      { id: "selections", label: i18n.t("canvas.menu.editSelections") },
-      { id: "_sep1", sep: true, label: "" },
-    ];
+    // saiku#1221 Phase 4: skip the Selections detour for time-typed chips.
+    // If the dimension or any level is Mondrian-native time-typed, surface
+    // "Date filter…" as a primary item directly on the hierarchy menu.
+    // Selections is still available for users who want the member picker
+    // (e.g. "just Q1 + Q3"), but it's no longer the only entry point.
+    const isTime = isHierarchyTimeTyped(h);
+    const items: ContextMenuItem[] = [];
+    if (isTime) {
+      items.push({ id: "dateFilter", label: i18n.t("canvas.menu.dateFilter") });
+    }
+    items.push({ id: "selections", label: i18n.t("canvas.menu.editSelections") });
+    items.push({ id: "_sep1", sep: true, label: "" });
     if (levelNames.length > 1) {
       for (const levelName of levelNames) {
         items.push({
@@ -183,6 +191,21 @@
       axis, measure: null, hierarchy: h,
       items,
     };
+  }
+
+  /** True if the hierarchy's dimension is Mondrian-typed TIME or any of its
+   *  levels carries a {@code levelType="Time*"} annotation. Used by the
+   *  context-menu builder to surface "Date filter…" as a primary action. */
+  function isHierarchyTimeTyped(h: ThinHierarchy): boolean {
+    for (const d of cubeMetadata?.dimensions ?? []) {
+      for (const hh of d.hierarchies ?? []) {
+        if (hh.uniqueName === h.name || hh.name === h.name) {
+          if (d.dimensionType === "TIME") return true;
+          return !!hh.levels?.some((l) => !!l.levelType && l.levelType.startsWith("Time"));
+        }
+      }
+    }
+    return false;
   }
 
   function openMeasuresMenu(e: MouseEvent) {
@@ -248,6 +271,7 @@
     }
     if (m.kind === "hierarchy" && m.axis && m.hierarchy) {
       if (id === "selections") openSelections(m.axis, m.hierarchy);
+      else if (id === "dateFilter") openDateFilterDirect(m.axis, m.hierarchy);
       else if (id === "remove") query.removeHierarchy(m.hierarchy.name);
       else if (id.startsWith("removeLevel:")) {
         const levelName = id.substring("removeLevel:".length);
@@ -629,6 +653,25 @@
 
   function removeMeasure(uniqueName: string) {
     query.removeMeasure(uniqueName);
+  }
+
+  /** Open the date-filter modal directly on a hierarchy chip, skipping the
+   *  SelectionsModal detour. Used for time-typed chips (saiku#1221 Phase 4)
+   *  where browsing members first is rarely what the user wants. Picks the
+   *  deepest declared level on the chip (leaf grain) so the modal opens on
+   *  the chip's effective grain, not just the first level. */
+  function openDateFilterDirect(axis: AxisLocation, hier: ThinHierarchy) {
+    if (!selection.cube) return;
+    const levelNames = Object.keys(hier.levels);
+    const levelName = levelNames[levelNames.length - 1] ?? levelNames[0];
+    if (!levelName) return;
+    dateFilterTarget = {
+      axis,
+      hierarchyName: hier.name,
+      hierarchyCaption: hier.caption ?? hier.name,
+      levelName,
+    };
+    dateFilterOpen = true;
   }
 
   async function openSelections(axis: AxisLocation, hier: ThinHierarchy) {
