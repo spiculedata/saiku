@@ -326,7 +326,44 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         this.getNode(path).delete();
     }
 
-    public void moveFile(String source, String target, String user, List<String> roles) throws RepositoryException {}
+    public void moveFile(String source, String target, String user, List<String> roles) throws RepositoryException {
+        // #937: catalogue folder rename/move depends on this. It used to be an
+        // empty stub, so RepositoryDatasourceManager.moveFile always returned
+        // "Move Okay" while nothing actually moved — the move silently reverted on
+        // reload. Implement a real filesystem move with the same canWrite ACL gate
+        // removeFile uses (the node is removed from its old location) plus
+        // path-traversal safety via getNode/resolveWithinDatadir on BOTH ends.
+        File src = getNode(source);
+        if (!src.exists()) {
+            throw new RepositoryException("Cannot move: source does not exist (" + source + ")");
+        }
+        Acl2 srcAcl = new Acl2(src);
+        srcAcl.setAdminRoles(userService.getAdminRoles());
+        if (!srcAcl.canWrite(src, user, roles)) {
+            throw new SaikuServiceException("You don't have permission to move " + source);
+        }
+        File dest = getNode(target);
+        if (dest.exists()) {
+            throw new RepositoryException("Cannot move: target already exists (" + target + ")");
+        }
+        File destParent = dest.getParentFile();
+        if (destParent != null && destParent.exists()) {
+            // Writing the node into its new parent requires write on that parent.
+            Acl2 destAcl = new Acl2(destParent);
+            destAcl.setAdminRoles(userService.getAdminRoles());
+            if (!destAcl.canWrite(destParent, user, roles)) {
+                throw new SaikuServiceException("You don't have permission to write to " + target);
+            }
+        }
+        if (destParent != null && !destParent.exists() && !destParent.mkdirs()) {
+            throw new RepositoryException("Cannot move: could not create destination folder for " + target);
+        }
+        try {
+            Files.move(src.toPath(), dest.toPath());
+        } catch (IOException e) {
+            throw new RepositoryException("Failed to move " + source + " to " + target + ": " + e.getMessage());
+        }
+    }
 
     public Object saveInternalFile(Object file, String path, String type) throws RepositoryException {
         File f = null;
