@@ -16,6 +16,7 @@
 
 package org.saiku.web.rest.objects;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Properties;
 import java.util.UUID;
 import org.saiku.datasources.datasource.SaikuDatasource;
@@ -31,7 +32,16 @@ public class DataSourceMapper {
     private String schema;
     private String driver;
     private String username;
+
+    /**
+     * saiku#1165: the backend datasource password must never be serialised back
+     * to a client (it was leaking via GET .../org.saiku.datasources/{id}).
+     * WRITE_ONLY omits it from every response while still accepting an inbound
+     * value on datasource create/update.
+     */
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
+
     private String connectiontype;
     private String id;
     private String path;
