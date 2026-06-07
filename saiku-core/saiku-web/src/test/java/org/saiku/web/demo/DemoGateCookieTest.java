@@ -6,6 +6,8 @@ package org.saiku.web.demo;
 
 import static org.junit.Assert.*;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import org.junit.Test;
 
 public class DemoGateCookieTest {
@@ -57,7 +59,36 @@ public class DemoGateCookieTest {
     @Test
     public void email_normalizedForCaseAndWhitespace() {
         DemoGateCookie c = new DemoGateCookie(SECRET, 100);
-        assertEquals(c.sign("User@Example.com"), c.sign("  user@example.com "));
+        // Fixed expiry so the comparison is deterministic (sign() embeds now+ttl).
+        assertEquals(c.sign("User@Example.com", 123456789L), c.sign("  user@example.com ", 123456789L));
+    }
+
+    @Test
+    public void verify_rejectsExpiredMarker() {
+        // #1156: a marker whose signed expiry has lapsed must not validate.
+        DemoGateCookie c = new DemoGateCookie(SECRET, 100);
+        assertFalse(c.verify(c.sign("user@example.com", 1000L))); // epoch 1000s = long past
+    }
+
+    @Test
+    public void verify_acceptsNotYetExpiredMarker() {
+        DemoGateCookie c = new DemoGateCookie(SECRET, 100);
+        long future = System.currentTimeMillis() / 1000L + 3600;
+        assertTrue(c.verify(c.sign("user@example.com", future)));
+    }
+
+    @Test
+    public void verify_rejectsClientExtendedExpiry() {
+        // #1156: re-encoding the payload with a later expiry but reusing the
+        // original signature must fail — the expiry is part of the signed data.
+        DemoGateCookie c = new DemoGateCookie(SECRET, 100);
+        String v = c.sign("user@example.com", 1000L); // expired
+        String sig = v.substring(v.indexOf('.') + 1);
+        long farFuture = System.currentTimeMillis() / 1000L + 31_536_000L;
+        String forgedPayload = Base64.getUrlEncoder()
+                .withoutPadding()
+                .encodeToString(("user@example.com|" + farFuture).getBytes(StandardCharsets.UTF_8));
+        assertFalse(c.verify(forgedPayload + "." + sig));
     }
 
     @Test
