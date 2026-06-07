@@ -1191,6 +1191,18 @@
     levelName={`${dateFilterTarget.hierarchyName}.[${dateFilterTarget.levelName}]`}
     levelType={dfLevelType}
     hierarchyLevels={dfHierLevels}
+    timeCalcs={selection.cube?.timeCalcs}
+    onAddCalcMeasure={(name) => {
+      // saiku#1221 Phase 3: TimeCalc click → splice the calc's
+      // [Measures] reference into the active query. Keeps the modal
+      // open so users can stack multiple calcs.
+      query.addMeasure({
+        name,
+        caption: name,
+        uniqueName: `[Measures].[${name}]`,
+        type: "EXACT",
+      });
+    }}
     onApply={onDateFilterApply}
     onCancel={() => (dateFilterOpen = false)}
   />
