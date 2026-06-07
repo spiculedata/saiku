@@ -404,6 +404,11 @@ public class SaikuLauncher implements Callable<Integer> {
             // Database.loadBank() runs bank.sql and registers the datasource.
             stageResource("/seed/Bank.xml", dataDir.resolve("Bank.xml"));
             stageResource("/seed/bank.sql", dataDir.resolve("bank.sql"));
+            // bank.lkml — the synthetic Looker model paired with Bank.xml.
+            // Not loaded by Mondrian; staged here so the Looker→M4 migration
+            // story has a discoverable fixture in <home>/data/ for anyone
+            // running the demo locally.
+            stageResource("/seed/bank.lkml", dataDir.resolve("bank.lkml"));
         }
 
         /** Copy a classpath seed resource to {@code target} if it is missing,
