@@ -9,6 +9,8 @@
   import { theme } from "$lib/stores/theme.svelte";
   import { resolveThemeTokens } from "$lib/views/chartTheme";
   import { buildChartOption, type ChartProjection } from "$lib/charts/build";
+  // #1086: map an ECharts click back to absolute cellset coords for drillthrough.
+  import { chartDrillTarget } from "$lib/charts/chartDrillCoord";
   // #1090: accessible data-table mirror of the chart for screen readers.
   import { chartSummary } from "$lib/charts/a11y";
   // issue #1071: map charts need the GeoJSON registered with ECharts before
@@ -76,6 +78,49 @@
     return buildChartOption(p, t, o, tk, { aspect, chartWidth, compact: false });
   }
 
+  // #1086: when hideRollupRows is active the chart shows only the LEAF rows
+  // (deriveLeafRows reindexes them), so a chart category index no longer equals
+  // the cellset body-row index. Recompute the same leaf indices the projection
+  // used so the click handler can map a clicked bar/slice back to the right
+  // cellset row. Returns undefined when rollups are shown (1:1 mapping). This
+  // mirrors the row-selection branch in projectResult — kept in sync with it.
+  function currentLeafIndices(r: QueryResult, o: ChartOptions): number[] | undefined {
+    if (!o.hideRollupRows) return undefined;
+    const parsed = parseCellset(r);
+    const leaf = deriveLeafRows(parsed);
+    if (leaf.indices.length > 0 && leaf.indices.length < parsed.dataRows.length) {
+      return leaf.indices;
+    }
+    return undefined;
+  }
+
+  // #1086: ECharts click → reuse the workspace's existing drillthrough flow.
+  // The grid (CellsetTable) drills by dispatching a bubbling `saiku-drillthrough`
+  // CustomEvent with absolute cellset coords; QueryCanvas listens for it and
+  // opens the DrillthroughModal. We translate the clicked data point into the
+  // same coords and dispatch the identical event — no new backend path.
+  function handleChartClick(params: { dataIndex?: number; seriesIndex?: number }) {
+    if (!host) return;
+    const categoryIndex = params.dataIndex;
+    // Pie/donut element events sometimes omit seriesIndex; a pie is one series.
+    const seriesIndex = params.seriesIndex ?? 0;
+    if (typeof categoryIndex !== "number") return; // background click → no-op
+    const parsed = parseCellset(result);
+    const target = chartDrillTarget(
+      parsed,
+      categoryIndex,
+      seriesIndex,
+      currentLeafIndices(result, options),
+    );
+    if (!target) return; // out-of-range / "All"-style click → no-op
+    host.dispatchEvent(
+      new CustomEvent("saiku-drillthrough", {
+        bubbles: true,
+        detail: { row: target.row, col: target.col },
+      }),
+    );
+  }
+
   // #1090: accessible data-table mirror of the chart for screen readers. The
   // canvas is aria-hidden (invisible to AT anyway); this exposes the same data.
   let a11y = $derived(chartSummary(type, options.title ?? "", projectResult(result, options)));
@@ -129,6 +174,10 @@
   onMount(() => {
     if (host) {
       chart = echarts.init(host, null);
+      // #1086: click a data point → drill via the existing drillthrough flow.
+      chart.on("click", (params) =>
+        handleChartClick(params as { dataIndex?: number; seriesIndex?: number }),
+      );
       render();
       // Re-render (not just resize) so the aspect-aware small-multiple radius
       // recomputes for the new canvas size (#1053).
