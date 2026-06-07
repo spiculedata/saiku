@@ -25,13 +25,26 @@ import java.io.IOException;
  * header support never runs for them. A plain servlet filter is the only thing
  * that reaches every response uniformly.
  *
- * <p>The CSP here is intentionally limited to {@code frame-ancestors 'none'}
- * (anti-clickjacking) and does <b>not</b> constrain content sources — a full
- * {@code script-src}/{@code style-src} policy would break the SvelteKit + monaco
- * + ECharts SPA (inline styles, eval) and needs a separate report-only rollout.
- * Headers are only set when absent, so endpoints that deliberately send a
- * stricter policy (e.g. the image-serving endpoint's {@code default-src 'none';
- * sandbox}) are not overridden.
+ * <p>The always-on headers (nosniff, Referrer-Policy, Permissions-Policy, and
+ * HSTS under TLS) do not affect framing and are safe everywhere.
+ *
+ * <p><b>Frame protection is opt-in.</b> Saiku ships a cross-origin embed feature
+ * ({@code ?embed=1} — the chromeless UI meant to be iframed into a
+ * wiki/Confluence/Notion page, see {@code embed.svelte.ts}). A blanket
+ * {@code X-Frame-Options: DENY} / {@code frame-ancestors 'none'} would break it,
+ * so by default this filter emits <em>no</em> framing headers (framing behaves
+ * as it did before this filter existed). Operators who do not embed — or who
+ * embed only from known origins — lock it down with
+ * {@code -Dsaiku.security.frameAncestors=...} :
+ * <ul>
+ *   <li>{@code 'none'} → no framing at all ({@code X-Frame-Options: DENY} + CSP)</li>
+ *   <li>{@code 'self'} → same-origin only ({@code X-Frame-Options: SAMEORIGIN} + CSP)</li>
+ *   <li>{@code 'self' https://wiki.example.com} → an allow-list (CSP {@code frame-ancestors}
+ *       only; {@code X-Frame-Options} is omitted because it cannot express a list)</li>
+ * </ul>
+ * The dedicated public share-view endpoint sets its own {@code DENY} regardless;
+ * headers here are only set when absent, so that (and the image endpoint's
+ * stricter {@code default-src 'none'; sandbox} CSP) are never overridden.
  */
 public class SecurityHeadersFilter implements Filter {
 
@@ -40,9 +53,6 @@ public class SecurityHeadersFilter implements Filter {
             throws IOException, ServletException {
         if (response instanceof HttpServletResponse) {
             HttpServletResponse resp = (HttpServletResponse) response;
-            // Clickjacking: refuse to be framed (legacy header + modern CSP directive).
-            setIfAbsent(resp, "X-Frame-Options", "DENY");
-            setIfAbsent(resp, "Content-Security-Policy", "frame-ancestors 'none'");
             // Stop MIME-sniffing of responses (e.g. branding / uploaded content).
             setIfAbsent(resp, "X-Content-Type-Options", "nosniff");
             // Don't leak dashboard/query URLs to third parties via Referer.
@@ -55,8 +65,42 @@ public class SecurityHeadersFilter implements Filter {
             if (isSecure(request)) {
                 setIfAbsent(resp, "Strict-Transport-Security", "max-age=31536000; includeSubDomains");
             }
+            // Frame protection: OPT-IN so the cross-origin ?embed=1 feature keeps
+            // working by default. Configure saiku.security.frameAncestors to enable.
+            String frameAncestors = frameAncestors();
+            if (frameAncestors != null) {
+                setIfAbsent(resp, "Content-Security-Policy", "frame-ancestors " + frameAncestors);
+                String xfo = xFrameOptionsFor(frameAncestors);
+                if (xfo != null) {
+                    setIfAbsent(resp, "X-Frame-Options", xfo);
+                }
+            }
         }
         chain.doFilter(request, response);
+    }
+
+    /**
+     * The configured CSP {@code frame-ancestors} value, or {@code null} when unset
+     * (the default — framing is left unrestricted so {@code ?embed=1} works).
+     */
+    static String frameAncestors() {
+        String v = System.getProperty("saiku.security.frameAncestors");
+        return (v == null || v.isBlank()) ? null : v.trim();
+    }
+
+    /**
+     * Map a {@code frame-ancestors} value to the equivalent legacy
+     * {@code X-Frame-Options}, or {@code null} when it can't be expressed (an
+     * allow-list) — in which case only the CSP directive is sent.
+     */
+    static String xFrameOptionsFor(String frameAncestors) {
+        if ("'none'".equals(frameAncestors)) {
+            return "DENY";
+        }
+        if ("'self'".equals(frameAncestors)) {
+            return "SAMEORIGIN";
+        }
+        return null;
     }
 
     private static void setIfAbsent(HttpServletResponse resp, String name, String value) {
