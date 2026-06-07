@@ -18,6 +18,7 @@ import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 import javax.xml.transform.sax.SAXSource;
+import org.jdom2.input.SAXBuilder;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 import org.xml.sax.XMLReader;
@@ -65,6 +66,25 @@ public final class SecureXml {
         dbf.setXIncludeAware(false);
         dbf.setExpandEntityReferences(false);
         return dbf.newDocumentBuilder();
+    }
+
+    /**
+     * Build a JDOM2 {@link SAXBuilder} that refuses DOCTYPE declarations and external entities.
+     * Use this instead of {@code new SAXBuilder()} anywhere user-influenced XML is parsed with
+     * JDOM2 (e.g. saved-query deserialisation in {@code QueryDeserializer}). With
+     * {@code disallow-doctype-decl} set, any inbound DOCTYPE is rejected outright, which defeats
+     * both classic XXE (file read / SSRF) and entity-expansion DoS ("billion laughs"). Saved-query
+     * XML never legitimately carries a DOCTYPE, so this is strictly hardening with no behaviour
+     * change for valid input.
+     */
+    public static SAXBuilder secureSaxBuilder() {
+        SAXBuilder builder = new SAXBuilder();
+        builder.setFeature(FEATURE_DISALLOW_DOCTYPE, true);
+        builder.setFeature(FEATURE_EXTERNAL_GENERAL_ENTITIES, false);
+        builder.setFeature(FEATURE_EXTERNAL_PARAMETER_ENTITIES, false);
+        builder.setFeature(FEATURE_LOAD_EXTERNAL_DTD, false);
+        builder.setExpandEntities(false);
+        return builder;
     }
 
     /**
