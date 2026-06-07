@@ -31,7 +31,7 @@
   import TopBottomCountModal from "$lib/modals/TopBottomCountModal.svelte";
   import LimitModal from "$lib/modals/LimitModal.svelte";
   import DateFilterModal from "$lib/modals/DateFilterModal.svelte";
-  import { looksLikeTimeHierarchy } from "$lib/modals/dateFilterMdx";
+  import { isTimeHierarchy } from "$lib/modals/dateFilterMdx";
   import ContextMenu from "$lib/components/ContextMenu.svelte";
   type ContextMenuItem = { id: string; label: string; disabled?: boolean; danger?: boolean; sep?: boolean };
   import { MoreHorizontal, Loader2, XCircle, ChevronDown, Settings, Sparkles } from "lucide-svelte";
@@ -1069,7 +1069,25 @@
     initialType={selectionsInitial.type}
     open={selectionsOpen}
     onSave={onSelectionsSave}
-    showDateFilter={looksLikeTimeHierarchy(selectionsTarget.hierarchyCaption)}
+    showDateFilter={(() => {
+      // Resolve the hierarchy's Mondrian-native type from cubeMetadata. This
+      // beats the legacy caption substring match — translations and renamed
+      // hierarchies no longer hide the date filter button (saiku#1221).
+      const hierName = selectionsTarget.hierarchyName;
+      let dimensionType: string | undefined;
+      let levels: { levelType?: string }[] | undefined;
+      for (const d of cubeMetadata?.dimensions ?? []) {
+        for (const h of d.hierarchies ?? []) {
+          if (h.uniqueName === hierName || h.name === hierName) {
+            dimensionType = d.dimensionType;
+            levels = h.levels;
+            break;
+          }
+        }
+        if (dimensionType !== undefined || levels) break;
+      }
+      return isTimeHierarchy(dimensionType, levels, selectionsTarget.hierarchyCaption);
+    })()}
     onOpenDateFilter={() => {
       // Hand off the currently-open Selections target to the date-filter
       // modal. Closing Selections first avoids stacked overlays.

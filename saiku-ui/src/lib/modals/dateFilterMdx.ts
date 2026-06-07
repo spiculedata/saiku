@@ -192,12 +192,133 @@ export function isAbsoluteValid(opts: Pick<AbsoluteOptions, "from" | "to">): boo
   return a <= b;
 }
 
-/** Heuristic gate for the menu item: "does this hierarchy look time-like?"
- *  based on caption tokens. Deliberately permissive — false positives just
- *  mean the user sees a preview that probably won't execute, which is
- *  recoverable; false negatives hide the feature outright. */
-export function looksLikeTimeHierarchy(caption: string | undefined): boolean {
-  if (!caption) return true; // err on the side of showing
+/** Mondrian-native level types that mean "this level is a time grain"
+ *  (olap4j {@code Level.Type}, populated from {@code <Attribute levelType=...>}
+ *  on the schema). Used by {@link isTimeLevelType} and {@link grainFromLevelType}. */
+const TIME_LEVEL_TYPES = new Set([
+  "TimeYears",
+  "TimeHalfYears",
+  "TimeQuarters",
+  "TimeMonths",
+  "TimeWeeks",
+  "TimeDays",
+  "TimeHours",
+  "TimeMinutes",
+  "TimeSeconds",
+  "TimeUndefined",
+]);
+
+/** True iff the Mondrian-native level type marks this as a time grain. */
+export function isTimeLevelType(levelType: string | null | undefined): boolean {
+  return !!levelType && TIME_LEVEL_TYPES.has(levelType);
+}
+
+/** Map a Mondrian {@code Level.Type} string to a coarse grain bucket the
+ *  preset filter understands. {@code null} when the level isn't time-typed. */
+export type TimeGrain = "year" | "halfYear" | "quarter" | "month" | "week" | "day" | "hour" | "minute" | "second";
+
+export function grainFromLevelType(levelType: string | null | undefined): TimeGrain | null {
+  switch (levelType) {
+    case "TimeYears": return "year";
+    case "TimeHalfYears": return "halfYear";
+    case "TimeQuarters": return "quarter";
+    case "TimeMonths": return "month";
+    case "TimeWeeks": return "week";
+    case "TimeDays": return "day";
+    case "TimeHours": return "hour";
+    case "TimeMinutes": return "minute";
+    case "TimeSeconds": return "second";
+    default: return null;
+  }
+}
+
+/** Parallel-period MDX builder for the Compare tab. Given the same primary
+ *  set (`[from] : [to]`) and a grain-aware shift unit, emits the
+ *  {@code ParallelPeriod} prior window — grain-correct, unlike the old
+ *  hard-coded {@code .Lag(365)} which only worked on day levels.
+ *
+ *  Falls back to {@code .Lag(n)} when {@code parallelLevel} is null
+ *  (e.g. caller couldn't resolve a year/quarter level on the hierarchy).
+ *
+ *  Example: primary {@code {[Time].[2024-Q2] : [Time].[2024-Q4]}}, shift
+ *  unit "year", parallelLevel {@code [Time].[Year]} →
+ *  {@code UNION(primary, {ParallelPeriod([Time].[Year], 1, [Time].[2024-Q2]) :
+ *  ParallelPeriod([Time].[Year], 1, [Time].[2024-Q4])})}. */
+export interface CompareOptions {
+  /** Hierarchy unique name. */
+  hierarchy: string;
+  /** Level unique name of the chip — used to materialise from/to members. */
+  level: string;
+  /** Inclusive ISO date for primary window start. */
+  from: string;
+  /** Inclusive ISO date for primary window end. */
+  to: string;
+  /** Shift unit: "year" = same period last year, "quarter" = previous
+   *  quarter, "month" = previous month, "day" = previous day, etc.
+   *  Translated to a {@code ParallelPeriod} call against
+   *  {@code parallelLevel}. */
+  shiftUnit: "year" | "quarter" | "month" | "week" | "day";
+  /** Number of shift units back. Default 1. */
+  shiftCount?: number;
+  /** Level unique name for the {@code ParallelPeriod} anchor (e.g.
+   *  {@code [Time].[Year]}). When null, falls back to {@code .Lag(days)}. */
+  parallelLevel?: string | null;
+}
+
+export function buildCompareMdx(opts: CompareOptions): string {
+  const from = memberForDate(opts.from, opts.hierarchy, opts.level);
+  const to = memberForDate(opts.to, opts.hierarchy, opts.level);
+  const primary = `{${from} : ${to}}`;
+  const n = Math.max(1, Math.floor(opts.shiftCount ?? 1));
+  if (opts.parallelLevel) {
+    const sFrom = `ParallelPeriod(${opts.parallelLevel}, ${n}, ${from})`;
+    const sTo = `ParallelPeriod(${opts.parallelLevel}, ${n}, ${to})`;
+    return `UNION(${primary}, {${sFrom} : ${sTo}})`;
+  }
+  // Fallback: day-grain lag. Only correct on day-level hierarchies; the
+  // schema-aware ParallelPeriod path above is preferred whenever the
+  // caller can resolve the right anchor level.
+  const days = daysBetweenInclusive(opts.from, opts.to);
+  const unitDays =
+    opts.shiftUnit === "year" ? 365 :
+    opts.shiftUnit === "quarter" ? 91 :
+    opts.shiftUnit === "month" ? 30 :
+    opts.shiftUnit === "week" ? 7 : 1;
+  const shift = unitDays * n + (opts.shiftUnit === "day" ? 0 : days - 1);
+  return `UNION(${primary}, {${from}.Lag(${shift}) : ${to}.Lag(${shift})})`;
+}
+
+/** Whether to surface the date-filter UI for a hierarchy.
+ *
+ *  Cascade, strongest signal first:
+ *
+ *  1. **Dimension type from olap4j** ({@code <Dimension type="TIME">}) —
+ *     the Mondrian-native dimension-level signal.
+ *  2. **Any level in the hierarchy has a {@code levelType="Time*"}** —
+ *     the per-level grain signal.
+ *  3. **Caption substring match** — legacy fallback for schemas that
+ *     ship neither native marker. Kept so older schemas don't lose the
+ *     date filter button on upgrade; superseded as schemas adopt
+ *     {@code levelType}.
+ *
+ *  Pass {@code dimensionType} and {@code levels} from
+ *  {@code SaikuDimension} / {@code SaikuHierarchy.levels}. The function
+ *  is intentionally pure so it can be unit-tested without DOM. */
+export function isTimeHierarchy(
+  dimensionType: string | null | undefined,
+  levels: { levelType?: string }[] | null | undefined,
+  caption: string | null | undefined,
+): boolean {
+  if (dimensionType === "TIME") return true;
+  if (levels && levels.some((l) => isTimeLevelType(l.levelType))) return true;
+  return looksLikeTimeCaption(caption);
+}
+
+/** Pure substring check kept as the last-resort fallback. Older schemas
+ *  without {@code <Dimension type="TIME">} or {@code levelType} still get
+ *  the date filter button. */
+export function looksLikeTimeCaption(caption: string | null | undefined): boolean {
+  if (!caption) return false;
   const c = caption.toLowerCase();
   return (
     c.includes("date") ||
@@ -208,4 +329,49 @@ export function looksLikeTimeHierarchy(caption: string | undefined): boolean {
     c.includes("quarter") ||
     c.includes("year")
   );
+}
+
+/** Back-compat shim — existing callers pass a caption and got a permissive
+ *  default-true for empty. {@link isTimeHierarchy} is the new entry point.
+ *  Kept so call sites can be migrated incrementally.
+ *  @deprecated use {@link isTimeHierarchy} */
+export function looksLikeTimeHierarchy(caption: string | undefined): boolean {
+  if (!caption) return true;
+  return looksLikeTimeCaption(caption);
+}
+
+/** Preset → minimum required grain. Lets the UI hide presets that are
+ *  finer than the level supports (e.g. "Last N days" doesn't make sense
+ *  on a TimeYears level). Coarser-than-required is OK because Mondrian's
+ *  {@code LastPeriods} respects the level's own granularity. */
+export const PRESET_MIN_GRAIN: Record<string, TimeGrain> = {
+  TODAY: "day",
+  YESTERDAY: "day",
+  LAST_N_DAYS: "day",
+  LAST_N_WEEKS: "week",
+  LAST_N_MONTHS: "month",
+  LAST_N_QUARTERS: "quarter",
+  LAST_N_YEARS: "year",
+  ROLLING_N: "day",
+  MONTH_TO_DATE: "day",
+  QUARTER_TO_DATE: "day",
+  YEAR_TO_DATE: "day",
+};
+
+const GRAIN_ORDER: TimeGrain[] = [
+  "year",
+  "halfYear",
+  "quarter",
+  "month",
+  "week",
+  "day",
+  "hour",
+  "minute",
+  "second",
+];
+
+/** True iff {@code have} is at least as fine as {@code required}. */
+export function grainAtLeast(have: TimeGrain | null, required: TimeGrain): boolean {
+  if (!have) return true; // unknown grain → permissive; legacy schemas
+  return GRAIN_ORDER.indexOf(have) >= GRAIN_ORDER.indexOf(required);
 }
