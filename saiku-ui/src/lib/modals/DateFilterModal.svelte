@@ -4,9 +4,14 @@
   import {
     buildRelativeMdx,
     buildAbsoluteMdx,
+    buildCompareMdx,
     isRelativeValid,
     isAbsoluteValid,
+    grainFromLevelType,
+    grainAtLeast,
+    PRESET_MIN_GRAIN,
     type RelativePreset,
+    type TimeGrain,
   } from "./dateFilterMdx";
 
   /** Date-range picker that emits a Mondrian MDX set expression. The modal
@@ -20,14 +25,30 @@
    *  Preview MDX is rendered reactively at the bottom so the user sees what
    *  will be applied before committing. */
 
-  type Tab = "relative" | "absolute";
+  type Tab = "relative" | "absolute" | "compare";
   type Compare = "NONE" | "PRIOR_PERIOD" | "PRIOR_YEAR";
+  type ShiftUnit = "year" | "quarter" | "month" | "week" | "day";
+
+  /** Hierarchy level snapshot (from cubeMetadata) — narrowed to just the fields
+   *  the modal needs to resolve grain + find the parallel-period anchor. */
+  interface HierLevel {
+    uniqueName: string;
+    levelType?: string;
+  }
 
   interface Props {
     open: boolean;
     hierarchyCaption: string;
     hierarchyName: string;
     levelName: string;
+    /** Mondrian-native level type of the level being filtered (saiku#1221).
+     *  Used to gate which Relative presets show up — "Last N days" doesn't
+     *  appear on a TimeYears level. Optional for legacy schemas. */
+    levelType?: string;
+    /** Sibling levels in the same hierarchy, for resolving the parallel-period
+     *  anchor in the Compare tab (e.g. find [Year] when the chip is [Month]).
+     *  Optional — if omitted the Compare tab falls back to .Lag() shift. */
+    hierarchyLevels?: HierLevel[];
     onApply: (mdx: string) => void;
     onCancel: () => void;
   }
@@ -37,6 +58,8 @@
     hierarchyCaption,
     hierarchyName,
     levelName,
+    levelType,
+    hierarchyLevels,
     onApply,
     onCancel,
   }: Props = $props();
@@ -61,18 +84,71 @@
   let fromDate = $state<string>("");
   let toDate = $state<string>("");
   let compare = $state<Compare>("NONE");
+  // Compare-tab state.
+  let cmpFrom = $state<string>("");
+  let cmpTo = $state<string>("");
+  let cmpShiftUnit = $state<ShiftUnit>("year");
+  let cmpShiftCount = $state<number>(1);
 
   $effect(() => {
     if (open) {
       tab = "relative";
-      preset = "LAST_N_DAYS";
+      // Land on a preset the level's grain actually supports — landing
+      // on LAST_N_DAYS on a TimeYears level shows a disabled state immediately.
+      preset = (DEFAULT_PRESET_FOR_GRAIN[currentGrain ?? "day"] ?? "LAST_N_DAYS") as RelativePreset;
       n = 7;
       const today = new Date().toISOString().slice(0, 10);
       const weekAgo = new Date(Date.now() - 6 * 86_400_000).toISOString().slice(0, 10);
       fromDate = weekAgo;
       toDate = today;
       compare = "NONE";
+      cmpFrom = weekAgo;
+      cmpTo = today;
+      cmpShiftUnit = "year";
+      cmpShiftCount = 1;
     }
+  });
+
+  /** Mondrian-native grain for the chip's level; null when the schema
+   *  hasn't marked it (legacy). */
+  const currentGrain = $derived<TimeGrain | null>(grainFromLevelType(levelType));
+
+  /** Presets whose minimum required grain the chip's level supports.
+   *  E.g. on TimeYears we keep YEAR_TO_DATE / LAST_N_YEARS and drop
+   *  LAST_N_DAYS. */
+  const presetsAllowed = $derived(
+    PRESETS.filter((p) => grainAtLeast(currentGrain, PRESET_MIN_GRAIN[p.id] ?? "day")),
+  );
+
+  /** Default preset to land on for a given grain — the coarsest preset
+   *  that makes sense on a level of that grain. */
+  const DEFAULT_PRESET_FOR_GRAIN: Record<TimeGrain, RelativePreset> = {
+    year: "LAST_N_YEARS",
+    halfYear: "LAST_N_QUARTERS",
+    quarter: "LAST_N_QUARTERS",
+    month: "LAST_N_MONTHS",
+    week: "LAST_N_WEEKS",
+    day: "LAST_N_DAYS",
+    hour: "LAST_N_DAYS",
+    minute: "LAST_N_DAYS",
+    second: "LAST_N_DAYS",
+  };
+
+  /** Best anchor level for ParallelPeriod in Compare mode — the deepest
+   *  level on this hierarchy whose grain matches the shift unit. For "year"
+   *  we want the [Year] level; "month" wants [Month]. Null when none of the
+   *  sibling levels carries the right levelType.
+   *
+   *  Returning null forces buildCompareMdx onto the .Lag fallback — still
+   *  correct on day-grain hierarchies, less correct on coarser ones, but
+   *  always emits SOMETHING the user can preview. */
+  const parallelLevel = $derived.by(() => {
+    if (!hierarchyLevels) return null;
+    const targetGrain = cmpShiftUnit;
+    const match = hierarchyLevels.find(
+      (l) => grainFromLevelType(l.levelType) === targetGrain,
+    );
+    return match?.uniqueName ?? null;
   });
 
   const takesN = $derived(PRESETS.find((p) => p.id === preset)?.takesN ?? false);
@@ -84,6 +160,18 @@
         n: takesN ? n : undefined,
         hierarchy: hierarchyName,
         level: levelName,
+      });
+    }
+    if (tab === "compare") {
+      if (!isAbsoluteValid({ from: cmpFrom, to: cmpTo })) return "";
+      return buildCompareMdx({
+        hierarchy: hierarchyName,
+        level: levelName,
+        from: cmpFrom,
+        to: cmpTo,
+        shiftUnit: cmpShiftUnit,
+        shiftCount: cmpShiftCount,
+        parallelLevel,
       });
     }
     if (!isAbsoluteValid({ from: fromDate, to: toDate })) return "";
@@ -104,6 +192,13 @@
         hierarchy: hierarchyName,
         level: levelName,
       });
+    }
+    if (tab === "compare") {
+      return (
+        isAbsoluteValid({ from: cmpFrom, to: cmpTo }) &&
+        Number.isFinite(cmpShiftCount) &&
+        cmpShiftCount >= 1
+      );
     }
     return isAbsoluteValid({ from: fromDate, to: toDate });
   });
@@ -128,16 +223,25 @@
       class:active={tab === "absolute"}
       onclick={() => (tab = "absolute")}
     >{i18n.t("modal.dateFilter.tab.absolute")}</button>
+    <button
+      type="button"
+      role="tab"
+      class:active={tab === "compare"}
+      onclick={() => (tab = "compare")}
+    >{i18n.t("modal.dateFilter.tab.compare")}</button>
   </div>
 
   {#if tab === "relative"}
     <label class="field">
       <span class="field__label">{i18n.t("modal.dateFilter.preset")}</span>
       <select class="field__input" bind:value={preset}>
-        {#each PRESETS as p}
+        {#each presetsAllowed as p}
           <option value={p.id}>{i18n.t(p.label)}</option>
         {/each}
       </select>
+      {#if currentGrain && (presetsAllowed.length !== PRESETS.length)}
+        <span class="hint">{i18n.t("modal.dateFilter.grainHint").replace("{grain}", currentGrain)}</span>
+      {/if}
     </label>
     {#if takesN}
       <label class="field">
@@ -148,7 +252,7 @@
         {/if}
       </label>
     {/if}
-  {:else}
+  {:else if tab === "absolute"}
     <div class="row">
       <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.dateFilter.from")}</span>
@@ -167,6 +271,43 @@
         <option value="PRIOR_YEAR">{i18n.t("modal.dateFilter.compare.priorYear")}</option>
       </select>
     </label>
+    {#if !applyEnabled}
+      <p class="hint hint--err">{i18n.t("modal.dateFilter.rangeInvalid")}</p>
+    {/if}
+  {:else if tab === "compare"}
+    <div class="row">
+      <label class="field field--grow">
+        <span class="field__label">{i18n.t("modal.dateFilter.from")}</span>
+        <input class="field__input" type="date" bind:value={cmpFrom} />
+      </label>
+      <label class="field field--grow">
+        <span class="field__label">{i18n.t("modal.dateFilter.to")}</span>
+        <input class="field__input" type="date" bind:value={cmpTo} />
+      </label>
+    </div>
+    <div class="row">
+      <label class="field field--grow">
+        <span class="field__label">{i18n.t("modal.dateFilter.compare.shiftUnit")}</span>
+        <select class="field__input" bind:value={cmpShiftUnit}>
+          <option value="year">{i18n.t("modal.dateFilter.compare.unit.year")}</option>
+          <option value="quarter">{i18n.t("modal.dateFilter.compare.unit.quarter")}</option>
+          <option value="month">{i18n.t("modal.dateFilter.compare.unit.month")}</option>
+          <option value="week">{i18n.t("modal.dateFilter.compare.unit.week")}</option>
+          <option value="day">{i18n.t("modal.dateFilter.compare.unit.day")}</option>
+        </select>
+      </label>
+      <label class="field field--grow">
+        <span class="field__label">{i18n.t("modal.dateFilter.compare.shiftCount")}</span>
+        <input class="field__input" type="number" min="1" bind:value={cmpShiftCount} />
+      </label>
+    </div>
+    <p class="hint">
+      {#if parallelLevel}
+        {i18n.t("modal.dateFilter.compare.parallelLevelOk").replace("{level}", parallelLevel)}
+      {:else}
+        {i18n.t("modal.dateFilter.compare.parallelLevelFallback")}
+      {/if}
+    </p>
     {#if !applyEnabled}
       <p class="hint hint--err">{i18n.t("modal.dateFilter.rangeInvalid")}</p>
     {/if}
