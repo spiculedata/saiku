@@ -175,8 +175,8 @@ export function renameFolderMoves(
 ): { from: string; to: string }[] {
   const oldSegs = pathSegments(oldFolder);
   if (oldSegs.length === 0) return []; // can't rename the root
-  const cleanNew = lastSegment(newName);
-  if (!cleanNew) return [];
+  const cleanNew = lastSegment(newName).trim();
+  if (!cleanNew) return []; // blank / whitespace-only name → no-op (#937)
   const parent = oldSegs.slice(0, -1).join("/");
   const newFolder = joinPath(parent, cleanNew);
   if (newFolder === pathSegments(oldFolder).join("/")) return []; // no-op rename
