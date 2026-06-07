@@ -1,13 +1,16 @@
 package org.saiku.launcher;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.Properties;
 import java.util.concurrent.Callable;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
 import org.eclipse.jetty.ee10.webapp.WebAppContext;
 import org.eclipse.jetty.http.HttpCookie;
@@ -68,7 +71,16 @@ public class SaikuLauncher implements Callable<Integer> {
 
         @Override
         public Integer call() throws Exception {
-            Server server = bootServer(port, host, contextPath, home);
+            Server server;
+            try {
+                server = bootServer(port, host, contextPath, home);
+            } catch (DefaultCredentialsException e) {
+                // saiku#1153: clean refusal, no stack trace — the message tells
+                // the operator exactly how to proceed. Non-zero exit so init
+                // systems / CI see the failure.
+                System.err.println(e.getMessage());
+                return 2;
+            }
             int actualPort = ((ServerConnector) server.getConnectors()[0]).getLocalPort();
             String base = "http://" + host + ":" + actualPort + contextPath;
             if (!base.endsWith("/")) base = base + "/";
@@ -127,6 +139,12 @@ public class SaikuLauncher implements Callable<Integer> {
             stageDefaultDatasource(saikuHome);
 
             Path warPath = extractWar();
+
+            // saiku#1153: refuse to serve in production while the shipped default
+            // admin password is unchanged. Demo mode (SAIKU_DEMO=true) and an
+            // explicit SAIKU_ALLOW_DEFAULT_ADMIN=true both opt out. Throws
+            // DefaultCredentialsException, which the CLI turns into a clean exit.
+            enforceDefaultCredentialPolicy(warPath);
 
             Server server = new Server();
             ServerConnector connector = new ServerConnector(server);
@@ -223,6 +241,106 @@ public class SaikuLauncher implements Callable<Integer> {
             System.out.println("  Suppress this warning with -Dsaiku.security.acknowledged=true");
             System.out.println(bar);
             System.out.println();
+        }
+
+        /* ------------------- saiku#1153: default-credential policy ----------------- */
+
+        /**
+         * The exact {@code admin} password token this build ships with after the
+         * saiku#1154 bcrypt migration. MUST stay in sync with the {@code admin=}
+         * row in {@code saiku-webapp/.../WEB-INF/users.properties}; if you
+         * regenerate that hash, update this constant too (a bcrypt salt is random,
+         * so the string changes every time it is re-encoded).
+         */
+        static final String SHIPPED_BCRYPT_ADMIN_DEFAULT =
+                "{bcrypt}$2a$10$4lJwsvvv..UqK31JmBSoCOf7hYgKurOB2sEacVVIrqA97BXc4cFju";
+
+        /** Thrown to refuse boot when the default admin password is still active. */
+        static final class DefaultCredentialsException extends RuntimeException {
+            DefaultCredentialsException(String message) {
+                super(message);
+            }
+        }
+
+        /**
+         * True when {@code adminPropertyValue} (the raw {@code admin=} value from
+         * users.properties, i.e. {@code <encodedpw>,ROLE_...}) is still the
+         * shipped default — either the legacy {@code {noop}admin} or this build's
+         * {@link #SHIPPED_BCRYPT_ADMIN_DEFAULT}. Any operator rotation produces a
+         * different hash and returns false.
+         */
+        static boolean isDefaultAdminValue(String adminPropertyValue) {
+            if (adminPropertyValue == null) return false;
+            String enc = adminPropertyValue.split(",", 2)[0].trim();
+            return enc.equals("{noop}admin") || enc.equals(SHIPPED_BCRYPT_ADMIN_DEFAULT);
+        }
+
+        /**
+         * Read the effective {@code admin} row from the bundled WAR's
+         * users.properties and report whether it is still the shipped default.
+         * Fails open (returns false) on any read error — a refusal must be a
+         * deliberate, confident decision, never a side effect of a parse glitch.
+         */
+        static boolean adminPasswordIsDefault(Path warPath) {
+            try (ZipFile zip = new ZipFile(warPath.toFile())) {
+                ZipEntry e = zip.getEntry("WEB-INF/users.properties");
+                if (e == null) return false;
+                Properties p = new Properties();
+                try (InputStream in = zip.getInputStream(e)) {
+                    p.load(in);
+                }
+                return isDefaultAdminValue(p.getProperty("admin"));
+            } catch (IOException ex) {
+                return false;
+            }
+        }
+
+        /** Pure policy decision: refuse only when the default is active AND we're
+         *  not in demo mode AND the operator hasn't explicitly opted in. */
+        static boolean shouldRefuse(boolean adminIsDefault, boolean demoMode, boolean allowOverride) {
+            return adminIsDefault && !demoMode && !allowOverride;
+        }
+
+        /** True when {@code SAIKU_ALLOW_DEFAULT_ADMIN=true} (env) or
+         *  {@code -Dsaiku.allowDefaultAdmin=true} (system property) is set. */
+        static boolean allowDefaultAdmin() {
+            String env = System.getenv("SAIKU_ALLOW_DEFAULT_ADMIN");
+            if (env != null && Boolean.parseBoolean(env.trim())) return true;
+            return Boolean.parseBoolean(System.getProperty("saiku.allowDefaultAdmin", "false"));
+        }
+
+        /**
+         * saiku#1153: stop a production boot dead when the shipped default admin
+         * password is unchanged. Demo mode and the explicit override opt out.
+         *
+         * @throws DefaultCredentialsException with an operator-facing fix-it
+         *     message when the boot should be refused.
+         */
+        static void enforceDefaultCredentialPolicy(Path warPath) {
+            if (!shouldRefuse(adminPasswordIsDefault(warPath), isDemoModeRequested(), allowDefaultAdmin())) {
+                return;
+            }
+            String bar = "============================================================";
+            String msg = String.join(
+                    System.lineSeparator(),
+                    "",
+                    bar,
+                    "  FATAL: refusing to start — the default admin password is",
+                    "  still in place (admin / admin). A network-exposed instance",
+                    "  with default credentials is compromised within seconds.",
+                    "",
+                    "  Fix one of the following, then restart:",
+                    "    * Rotate the admin password in users.properties (bcrypt):",
+                    "        htpasswd -nbBC 12 admin <newpassword>",
+                    "    * Replace the in-memory auth with LDAP / OAuth / SAML",
+                    "      (applicationContext-spring-security-memory.xml).",
+                    "",
+                    "  To start anyway (NOT for a production / exposed host), set:",
+                    "        SAIKU_ALLOW_DEFAULT_ADMIN=true",
+                    "  or run the bundled demo:  SAIKU_DEMO=true",
+                    bar,
+                    "");
+            throw new DefaultCredentialsException(msg);
         }
 
         /**
