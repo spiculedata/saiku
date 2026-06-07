@@ -108,6 +108,11 @@
 	         full auth. Order matters: more specific patterns precede /rest/**. -->
 	    <security:intercept-url pattern="/rest/saiku/share/view/**" access="hasRole('SHARE_GUEST') or isFullyAuthenticated()" />
 	    <security:intercept-url pattern="/rest/saiku/share/**" access="isFullyAuthenticated()" />
+      <!-- saiku#1165 audit-3: route-level admin gate (defense in depth). The
+           admin resources already carry @RolesAllowed("ROLE_ADMIN"), but this
+           ensures a future un-annotated /admin resource can't be reached by a
+           non-admin. Must precede /rest/** (more specific first). -->
+      <security:intercept-url pattern="/rest/saiku/admin/**" access="hasRole('ADMIN')" />
       <security:intercept-url pattern="/rest/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/json/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/WEB-INF/classes/legacy-schema" access="isAnonymous()" />
@@ -148,9 +153,11 @@
     </security:http>
 
     <!-- Tier-1 auth hardening: CSRF wiring (saiku#1150). -->
+    <!-- saiku#1165 audit-3: XSRF-TOKEN cookie via factory so it carries
+         SameSite=Lax (matching JSESSIONID); stays non-HttpOnly for the SPA. -->
     <bean id="csrfTokenRepository"
-          class="org.springframework.security.web.csrf.CookieCsrfTokenRepository"
-          factory-method="withHttpOnlyFalse"/>
+          class="org.saiku.web.security.csrf.SaikuCsrfTokenRepository"
+          factory-method="create"/>
     <bean id="csrfRequestMatcher"
           class="org.saiku.web.security.csrf.SaikuCsrfRequestMatcher"/>
     <bean id="csrfTokenRequestHandler"
