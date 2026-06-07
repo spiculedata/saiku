@@ -1,0 +1,147 @@
+<script lang="ts">
+  /*
+   * Catalogue search / sort / view-toggle / tag+owner chip filters —
+   * extracted from DashboardIndex (saiku#1234). Owns no business logic
+   * of its own; everything funnels back to the parent via $bindable()
+   * props on the filter state + callbacks for the few one-shot actions
+   * (open new-folder modal, clear all filters).
+   *
+   * Display of "Clear filters" is parent-driven via `showClearFilters`
+   * (true when any of search / tags / owners are non-empty) so the
+   * delegate doesn't need to know about emptiness rules — keeps the
+   * applicability rule in one place.
+   */
+  import { Folder, FolderPlus } from "lucide-svelte";
+  import { i18n } from "$lib/stores/i18n.svelte";
+  import type { SortKey } from "$lib/dashboard/catalogueFilter";
+
+  interface Props {
+    searchQuery: string;
+    sortKey: SortKey;
+    viewMode: "list" | "tree";
+    showClearFilters: boolean;
+    onClearFilters: () => void;
+    onNewFolder: () => void;
+  }
+
+  let {
+    searchQuery = $bindable(),
+    sortKey = $bindable(),
+    viewMode = $bindable(),
+    showClearFilters,
+    onClearFilters,
+    onNewFolder,
+  }: Props = $props();
+</script>
+
+<section class="catalogue-filters" aria-label="Catalogue filters">
+  <input
+    type="search"
+    class="search"
+    placeholder="Search dashboards by name or path…"
+    bind:value={searchQuery}
+    aria-label="Search dashboards"
+  />
+  <label class="sort">
+    <span>Sort:</span>
+    <select bind:value={sortKey} aria-label="Sort dashboards">
+      <option value="name">Name</option>
+      <option value="modified-desc">Last modified ↓</option>
+      <option value="modified-asc">Last modified ↑</option>
+    </select>
+  </label>
+  <div class="view-toggle" role="group" aria-label={i18n.t("dashboard.view.label")}>
+    <button
+      type="button"
+      class="btn view-btn"
+      class:view-btn--on={viewMode === "list"}
+      aria-pressed={viewMode === "list"}
+      onclick={() => (viewMode = "list")}
+    >
+      {i18n.t("dashboard.view.list")}
+    </button>
+    <button
+      type="button"
+      class="btn view-btn"
+      class:view-btn--on={viewMode === "tree"}
+      aria-pressed={viewMode === "tree"}
+      onclick={() => (viewMode = "tree")}
+    >
+      <Folder size={14} aria-hidden="true" />
+      {i18n.t("dashboard.view.folders")}
+    </button>
+  </div>
+  {#if viewMode === "tree"}
+    <button type="button" class="btn" onclick={onNewFolder}>
+      <FolderPlus size={14} aria-hidden="true" />
+      {i18n.t("dashboard.folder.new")}
+    </button>
+  {/if}
+  {#if showClearFilters}
+    <button type="button" class="btn btn--ghost" onclick={onClearFilters}>
+      Clear filters
+    </button>
+  {/if}
+</section>
+
+<style>
+  .catalogue-filters {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .catalogue-filters .search {
+    flex: 1;
+    min-width: 12rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--bg);
+    font-size: 0.875rem;
+  }
+  .catalogue-filters .sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.8125rem;
+    color: var(--fg-muted);
+  }
+  .catalogue-filters select {
+    padding: 0.375rem 0.5rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--bg);
+    font-size: 0.8125rem;
+  }
+  .btn--ghost {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--fg-muted);
+    font-size: 0.8125rem;
+  }
+  .view-toggle {
+    display: inline-flex;
+    gap: 0;
+  }
+  .view-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 0;
+  }
+  .view-btn:first-child {
+    border-top-left-radius: 4px;
+    border-bottom-left-radius: 4px;
+  }
+  .view-btn:last-child {
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+    border-left: none;
+  }
+  .view-btn--on {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+</style>
