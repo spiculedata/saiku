@@ -828,6 +828,147 @@ describe("resolvePalette (#1081)", () => {
   });
 });
 
+describe("buildChartOption — reference lines & bands (#1079)", () => {
+  type MarkLine = { symbol: unknown; label: Record<string, unknown>; data: Array<Record<string, unknown>> };
+  type MarkArea = { label: Record<string, unknown>; data: Array<Array<Record<string, unknown>>> };
+
+  function firstSeriesMarkLine(opt: Record<string, unknown>): MarkLine | undefined {
+    const series = opt.series as Array<{ markLine?: MarkLine }>;
+    return series.map((s) => s.markLine).find((m) => m != null);
+  }
+  function firstSeriesMarkArea(opt: Record<string, unknown>): MarkArea | undefined {
+    const series = opt.series as Array<{ markArea?: MarkArea }>;
+    return series.map((s) => s.markArea).find((m) => m != null);
+  }
+
+  test("no referenceLines → no markLine on any series (legacy unchanged)", () => {
+    const opt = buildChartOption(sample(), "bar", opts()) as Record<string, unknown>;
+    const series = opt.series as Array<{ markLine?: unknown; markArea?: unknown }>;
+    expect(series.every((s) => s.markLine === undefined)).toBe(true);
+    expect(series.every((s) => s.markArea === undefined)).toBe(true);
+  });
+
+  test("explicitly empty referenceLines adds no markLine", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ referenceLines: [] })) as Record<string, unknown>;
+    expect(firstSeriesMarkLine(opt)).toBeUndefined();
+  });
+
+  test("a y-axis reference line attaches markLine data with yAxis + label + colour", () => {
+    const opt = buildChartOption(
+      sample(),
+      "line",
+      opts({ referenceLines: [{ axis: "y", value: 300000, label: "Target", color: "#ff0000" }] }),
+    ) as Record<string, unknown>;
+    const ml = firstSeriesMarkLine(opt)!;
+    expect(ml).toBeDefined();
+    expect(ml.data).toHaveLength(1);
+    expect(ml.data[0].yAxis).toBe(300000);
+    expect(ml.data[0].xAxis).toBeUndefined();
+    expect(ml.data[0].name).toBe("Target");
+    expect((ml.data[0].lineStyle as { color: string }).color).toBe("#ff0000");
+  });
+
+  test("an x-axis reference line uses xAxis (category index), not yAxis", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ referenceLines: [{ axis: "x", value: 1, label: "Launch" }] }),
+    ) as Record<string, unknown>;
+    const ml = firstSeriesMarkLine(opt)!;
+    expect(ml.data[0].xAxis).toBe(1);
+    expect(ml.data[0].yAxis).toBeUndefined();
+    expect(ml.data[0].name).toBe("Launch");
+  });
+
+  test("colour defaults to the theme fgMuted token when omitted", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ referenceLines: [{ axis: "y", value: 5 }] })) as Record<
+      string,
+      unknown
+    >;
+    const ml = firstSeriesMarkLine(opt)!;
+    expect((ml.data[0].lineStyle as { color: string }).color).toBe(DEFAULT_THEME_TOKENS.fgMuted);
+  });
+
+  test("markLine rides on the first measure series only (not every series)", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ referenceLines: [{ axis: "y", value: 1 }] }),
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ name: string; markLine?: unknown }>;
+    const withMark = series.filter((s) => s.markLine !== undefined);
+    expect(withMark).toHaveLength(1);
+    expect(withMark[0].name).toBe("Store Sales");
+  });
+
+  test("compact mode still renders the line but hides its label text", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ referenceLines: [{ axis: "y", value: 5, label: "T" }] }),
+      undefined,
+      { compact: true },
+    ) as Record<string, unknown>;
+    const ml = firstSeriesMarkLine(opt)!;
+    expect(ml.data).toHaveLength(1);
+    expect((ml.label as { show: boolean }).show).toBe(false);
+  });
+
+  test("a reference band attaches markArea data pairs spanning [from, to]", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ referenceBands: [{ axis: "y", from: 100, to: 200, label: "Range" }] }),
+    ) as Record<string, unknown>;
+    const ma = firstSeriesMarkArea(opt)!;
+    expect(ma.data).toHaveLength(1);
+    const [start, end] = ma.data[0];
+    expect(start.yAxis).toBe(100);
+    expect(end.yAxis).toBe(200);
+    expect(start.name).toBe("Range");
+  });
+
+  test("an x-axis band uses xAxis on both endpoints", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ referenceBands: [{ axis: "x", from: 0, to: 1 }] }),
+    ) as Record<string, unknown>;
+    const ma = firstSeriesMarkArea(opt)!;
+    const [start, end] = ma.data[0];
+    expect(start.xAxis).toBe(0);
+    expect(end.xAxis).toBe(1);
+  });
+
+  test("non-cartesian types never get markLine/markArea (e.g. pie)", () => {
+    const opt = buildChartOption(
+      sample(),
+      "pie",
+      opts({ referenceLines: [{ axis: "y", value: 5 }], referenceBands: [{ axis: "y", from: 0, to: 1 }] }),
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ markLine?: unknown; markArea?: unknown }>;
+    expect(series.every((s) => s.markLine === undefined && s.markArea === undefined)).toBe(true);
+  });
+
+  test("trend overlay series stay markLine-free; the data series carries the ref line", () => {
+    const ts: ChartProjection = {
+      rowCategories: ["a", "b", "c", "d"],
+      columnCategories: ["m"],
+      matrix: [[1], [2], [3], [4]],
+    };
+    const opt = buildChartOption(
+      ts,
+      "line",
+      opts({ trendLine: "linear", referenceLines: [{ axis: "y", value: 2 }] }),
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ name: string; markLine?: unknown }>;
+    expect(series).toHaveLength(2); // data + trend
+    expect(series[0].markLine).toBeDefined(); // data series carries it
+    expect(series[1].name).toBe("m (trend)");
+    expect(series[1].markLine).toBeUndefined(); // trend overlay is mark-free
+  });
+});
+
 describe("buildChartOption — rejection", () => {
   test("returns null for unknown chart kinds", () => {
     expect(buildChartOption(sample(), "made-up")).toBeNull();
