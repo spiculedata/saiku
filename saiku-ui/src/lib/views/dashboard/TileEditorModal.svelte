@@ -39,10 +39,16 @@
   } from "$lib/api/dashboards";
   import { flatten, listRepository, type RepositoryNode } from "$lib/api/repository";
   import { repositionTile } from "$lib/dashboard/tilePlacement";
-  import { CHART_TYPES, DEFAULT_CHART_OPTIONS, type ChartOptions } from "$lib/views/chartTypes";
+  import { DEFAULT_CHART_OPTIONS, type ChartOptions } from "$lib/views/chartTypes";
   // #1077: reuse the workspace chart-options editor for dashboard chart tiles.
   import ChartEditorModal from "$lib/modals/ChartEditorModal.svelte";
   import TileEditorImage from "$lib/views/dashboard/TileEditorImage.svelte";
+  import TileEditorText from "$lib/views/dashboard/TileEditorText.svelte";
+  import TileEditorChart from "$lib/views/dashboard/TileEditorChart.svelte";
+  import TileEditorFilter from "$lib/views/dashboard/TileEditorFilter.svelte";
+  import TileEditorKpi from "$lib/views/dashboard/TileEditorKpi.svelte";
+  import TileEditorTableConditional from "$lib/views/dashboard/TileEditorTableConditional.svelte";
+  import TileEditorTableSparkline from "$lib/views/dashboard/TileEditorTableSparkline.svelte";
   // ── Issue #912: inline visual query editor (embedded QueryCanvas) ──
   import QueryCanvas from "$lib/views/QueryCanvas.svelte";
   import DimensionList from "$lib/views/DimensionList.svelte";
@@ -491,38 +497,15 @@
 
   let positionError = $state<string | null>(null);
 
-  // ── Issue #919: rule-editor helpers (table only) ──
-  /** Append a fresh rule with sensible defaults. */
-  function addConditionalRule(): void {
-    conditionalFormat = [
-      ...conditionalFormat,
-      {
-        column: "",
-        type: "background",
-        thresholdMode: "relative",
-        lowThreshold: 25,
-        highThreshold: 75,
-      },
-    ];
-  }
-  function removeConditionalRule(index: number): void {
-    conditionalFormat = conditionalFormat.filter((_, i) => i !== index);
-  }
+  // saiku#1229: addConditionalRule / removeConditionalRule + CONDITIONAL_TYPES
+  // / CONDITIONAL_MODES moved into TileEditorTableConditional.svelte. handleSave
+  // below still needs ruleUsesThresholds when persisting the saved payload, so
+  // it stays here as a parent-local helper.
   /** A rule needs explicit thresholds for background; font/icon may run in
    *  sign mode (no thresholds). bar never uses thresholds. */
   function ruleUsesThresholds(r: ConditionalFormatRule): boolean {
     return r.type === "background" || r.type === "font" || r.type === "icon";
   }
-  const CONDITIONAL_TYPES: { id: ConditionalFormatType; label: string }[] = [
-    { id: "background", label: "Background colour" },
-    { id: "bar", label: "Data bar" },
-    { id: "font", label: "Font colour" },
-    { id: "icon", label: "Icon (↑ ↓ →)" },
-  ];
-  const CONDITIONAL_MODES: { id: ConditionalThresholdMode; label: string }[] = [
-    { id: "relative", label: "Relative (percentile)" },
-    { id: "absolute", label: "Absolute (fixed value)" },
-  ];
 
   async function handleSave(): Promise<void> {
     bodyError = null;
@@ -773,10 +756,7 @@
       {/if}
 
       {#if tile.type === "text"}
-        <label class="field">
-          <span>Markdown / HTML (sanitised on render)</span>
-          <textarea bind:value={text} rows="10"></textarea>
-        </label>
+        <TileEditorText bind:text />
       {/if}
 
       {#if tile.type === "image"}
@@ -816,24 +796,11 @@
       {/if}
 
       {#if tile.type === "chart"}
-        <label class="field">
-          <span>Chart type</span>
-          <select bind:value={chartType}>
-            {#each CHART_TYPES as ct (ct.id)}
-              <option value={ct.id}>{ct.label} ({ct.group})</option>
-            {/each}
-          </select>
-        </label>
-        <!-- #1077: per-tile chart options via the reused workspace editor. -->
-        <div class="field">
-          <span>Chart options</span>
-          <button type="button" class="btn chart-opts-btn" onclick={() => (chartOptionsOpen = true)}>
-            Title, axes, legend, dual-axis &amp; trend…
-          </button>
-          <span class="hint">
-            {chartOptionsTouched ? "Customised for this tile." : "Using dashboard defaults."}
-          </span>
-        </div>
+        <TileEditorChart
+          bind:chartType
+          {chartOptionsTouched}
+          onOpenChartOptions={() => (chartOptionsOpen = true)}
+        />
       {/if}
 
       {#if tile.type === "chart" || tile.type === "table"}
@@ -960,213 +927,27 @@
       {/if}
 
       {#if tile.type === "filter"}
-        <label class="field">
-          <span>Widget</span>
-          <select bind:value={widget}>
-            <option value="single-select">single-select</option>
-            <option value="multi-select">multi-select</option>
-            <option value="date-range">date-range</option>
-            <option value="cascading-select">cascading-select</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Dimension</span>
-          <select bind:value={filterTarget.dimension} disabled={!cube}>
-            <option value="">— pick —</option>
-            {#each dimensionOptions() as d (d)}
-              <option value={d}>{d}</option>
-            {/each}
-          </select>
-        </label>
-        <label class="field">
-          <span>Hierarchy</span>
-          <select bind:value={filterTarget.hierarchy} disabled={!filterTarget.dimension}>
-            <option value="">— pick —</option>
-            {#each hierarchyOptions() as h (h)}
-              <option value={h}>{h}</option>
-            {/each}
-          </select>
-        </label>
-        <label class="field">
-          <span>Level</span>
-          <select bind:value={filterTarget.level} disabled={!filterTarget.hierarchy}>
-            <option value="">— pick —</option>
-            {#each levelOptions() as l (l)}
-              <option value={l}>{l}</option>
-            {/each}
-          </select>
-        </label>
-        <!-- issue #922: cascading-select config. Self-contained block,
-             guarded by the widget check so the #919 rebase is clean. -->
-        {#if widget === "cascading-select"}
-          <fieldset class="size">
-            <legend>Cascade (walk the hierarchy level-by-level)</legend>
-            <label class="field inline">
-              <span>Start level</span>
-              <select bind:value={cascadeStartLevel} disabled={!filterTarget.hierarchy}>
-                <option value="">— use level above —</option>
-                {#each levelOptions() as l (l)}
-                  <option value={l}>{l}</option>
-                {/each}
-              </select>
-            </label>
-            <label class="field inline">
-              <span>Depth</span>
-              <input type="number" min="1" max="6" bind:value={cascadeDepth} />
-            </label>
-          </fieldset>
-          <span class="hint">
-            Renders one dropdown per level from the start level down. Picking a
-            parent reveals its children; choosing “All” resets the levels below.
-          </span>
-        {/if}
-        <!-- end issue #922 -->
+        <TileEditorFilter
+          bind:widget
+          bind:filterTarget
+          bind:cascadeStartLevel
+          bind:cascadeDepth
+          cubePicked={!!cube}
+          dimensions={dimensionOptions()}
+          hierarchies={hierarchyOptions()}
+          levels={levelOptions()}
+        />
       {/if}
 
       {#if tile.type === "kpi"}
-        <label class="field">
-          <span>Measure</span>
-          <select
-            value={kpiConfig.measure ?? ""}
-            disabled={!cube || measureOptions().length === 0}
-            onchange={(e) => {
-              const picked = (e.target as HTMLSelectElement).value;
-              const opt = measureOptions().find((m) => m.name === picked);
-              kpiConfig.measure = picked || undefined;
-              kpiConfig.measureCaption = opt?.label;
-            }}
-          >
-            <option value="">— pick a measure —</option>
-            {#each measureOptions() as m (m.name)}
-              <option value={m.name}>{m.label}</option>
-            {/each}
-          </select>
-        </label>
-
-        <label class="field">
-          <span>Format</span>
-          <select bind:value={kpiConfig.format}>
-            <option value="number">Number</option>
-            <option value="currency">Currency</option>
-            <option value="percent">Percent</option>
-            <option value="custom">Custom pattern</option>
-          </select>
-        </label>
-        {#if kpiConfig.format === "custom"}
-          <label class="field">
-            <span>Custom pattern</span>
-            <input
-              type="text"
-              bind:value={kpiConfig.customFormat}
-              placeholder="e.g. $2 / 2% / 3"
-            />
-            <span class="hint">
-              $N / €N / £N for currency, N% for percent, plain N for fractional digits.
-            </span>
-          </label>
-        {/if}
-
-        <fieldset class="size">
-          <legend>Comparison</legend>
-          <label class="field inline">
-            <span>Mode</span>
-            <select bind:value={kpiConfig.comparison}>
-              <option value="none">None</option>
-              <option value="prior-period">Prior period</option>
-              <option value="year-over-year">Year over year</option>
-              <option value="target">Target value</option>
-            </select>
-          </label>
-          {#if kpiConfig.comparison === "target"}
-            <label class="field inline">
-              <span>Target</span>
-              <input
-                type="number"
-                bind:value={kpiConfig.target}
-                placeholder="e.g. 100000"
-              />
-            </label>
-          {/if}
-          <label class="field inline">
-            <span>Direction</span>
-            <select bind:value={kpiConfig.direction}>
-              <option value="higher-is-better">Higher is better</option>
-              <option value="lower-is-better">Lower is better</option>
-            </select>
-          </label>
-        </fieldset>
-
-        <label class="checkbox">
-          <input type="checkbox" bind:checked={kpiConfig.sparkline} />
-          <span>Sparkline (mini line chart under the number)</span>
-        </label>
-
-        {#if kpiConfig.comparison === "prior-period" || kpiConfig.comparison === "year-over-year" || kpiConfig.sparkline}
-          <fieldset class="size">
-            <legend>Time level (for comparison + sparkline)</legend>
-            <label class="field inline">
-              <span>Dimension</span>
-              <select bind:value={kpiConfig.timeLevel!.dimension} disabled={!cube}>
-                <option value="">— pick —</option>
-                {#each dimensionOptions() as d (d)}
-                  <option value={d}>{d}</option>
-                {/each}
-              </select>
-            </label>
-            <label class="field inline">
-              <span>Hierarchy</span>
-              <select
-                bind:value={kpiConfig.timeLevel!.hierarchy}
-                disabled={!kpiConfig.timeLevel?.dimension}
-              >
-                <option value="">— pick —</option>
-                {#each kpiHierarchyOptions() as h (h)}
-                  <option value={h}>{h}</option>
-                {/each}
-              </select>
-            </label>
-            <label class="field inline">
-              <span>Level</span>
-              <select
-                bind:value={kpiConfig.timeLevel!.level}
-                disabled={!kpiConfig.timeLevel?.hierarchy}
-              >
-                <option value="">— pick —</option>
-                {#each kpiLevelOptions() as l (l)}
-                  <option value={l}>{l}</option>
-                {/each}
-              </select>
-            </label>
-          </fieldset>
-        {/if}
-
-        <fieldset class="size">
-          <legend>Threshold colouring (optional)</legend>
-          <label class="field inline">
-            <span>Red ≤ / ≥</span>
-            <input
-              type="number"
-              bind:value={kpiConfig.thresholds!.red}
-              placeholder="off"
-            />
-          </label>
-          <label class="field inline">
-            <span>Yellow</span>
-            <input
-              type="number"
-              bind:value={kpiConfig.thresholds!.yellow}
-              placeholder="off"
-            />
-          </label>
-          <label class="field inline">
-            <span>Green</span>
-            <input
-              type="number"
-              bind:value={kpiConfig.thresholds!.green}
-              placeholder="off"
-            />
-          </label>
-        </fieldset>
+        <TileEditorKpi
+          bind:kpiConfig
+          cubePicked={!!cube}
+          measures={measureOptions()}
+          dimensions={dimensionOptions()}
+          hierarchies={kpiHierarchyOptions()}
+          levels={kpiLevelOptions()}
+        />
       {/if}
 
       <!-- ════════════════════════════════════════════════════════════
@@ -1177,133 +958,7 @@
            is config capture only.
            ════════════════════════════════════════════════════════════ -->
       {#if tile.type === "table"}
-        <fieldset class="cf-section">
-          <legend>Conditional formatting (per column)</legend>
-          <span class="hint">
-            Display-only — the underlying data is unchanged. Match a rule to a
-            column by its header caption.
-          </span>
-
-          {#if conditionalFormat.length === 0}
-            <span class="hint">No rules yet.</span>
-          {/if}
-
-          {#each conditionalFormat as cfRule, i (i)}
-            <div class="cf-rule">
-              <div class="cf-rule-head">
-                <span class="cf-rule-label">Rule {i + 1}</span>
-                <button
-                  type="button"
-                  class="cf-remove"
-                  aria-label="Remove rule"
-                  onclick={() => removeConditionalRule(i)}>×</button
-                >
-              </div>
-
-              <label class="field">
-                <span>Column (header caption)</span>
-                <input type="text" bind:value={cfRule.column} placeholder="e.g. Unit Sales" />
-              </label>
-
-              <div class="cf-row">
-                <label class="field inline">
-                  <span>Format</span>
-                  <select bind:value={cfRule.type}>
-                    {#each CONDITIONAL_TYPES as t (t.id)}
-                      <option value={t.id}>{t.label}</option>
-                    {/each}
-                  </select>
-                </label>
-
-                {#if ruleUsesThresholds(cfRule)}
-                  <label class="field inline">
-                    <span>Threshold mode</span>
-                    <select bind:value={cfRule.thresholdMode}>
-                      {#each CONDITIONAL_MODES as m (m.id)}
-                        <option value={m.id}>{m.label}</option>
-                      {/each}
-                    </select>
-                  </label>
-                {/if}
-              </div>
-
-              {#if ruleUsesThresholds(cfRule)}
-                <div class="cf-row">
-                  <label class="field inline">
-                    <span>
-                      Low {cfRule.thresholdMode === "relative" ? "(percentile)" : "(value)"}
-                    </span>
-                    <input type="number" bind:value={cfRule.lowThreshold} placeholder="off" />
-                  </label>
-                  <label class="field inline">
-                    <span>
-                      High {cfRule.thresholdMode === "relative" ? "(percentile)" : "(value)"}
-                    </span>
-                    <input type="number" bind:value={cfRule.highThreshold} placeholder="off" />
-                  </label>
-                </div>
-                {#if cfRule.type === "font" || cfRule.type === "icon"}
-                  <span class="hint">
-                    Leave both thresholds empty to colour / point by sign
-                    (negative = red / ↓, positive = green / ↑).
-                  </span>
-                {/if}
-              {/if}
-
-              {#if cfRule.type === "bar"}
-                <label class="field">
-                  <span>Bar colour</span>
-                  <input type="text" bind:value={cfRule.barColor} placeholder="#4c8dff" />
-                </label>
-              {/if}
-
-              {#if cfRule.type === "background" || cfRule.type === "font" || cfRule.type === "icon"}
-                <div class="cf-row">
-                  <label class="field inline">
-                    <span>Low colour</span>
-                    <input
-                      type="text"
-                      value={cfRule.colors?.low ?? ""}
-                      placeholder="default red"
-                      oninput={(e) => {
-                        const v = (e.target as HTMLInputElement).value;
-                        cfRule.colors = { ...cfRule.colors, low: v || undefined };
-                      }}
-                    />
-                  </label>
-                  <label class="field inline">
-                    <span>Mid colour</span>
-                    <input
-                      type="text"
-                      value={cfRule.colors?.mid ?? ""}
-                      placeholder="default amber"
-                      oninput={(e) => {
-                        const v = (e.target as HTMLInputElement).value;
-                        cfRule.colors = { ...cfRule.colors, mid: v || undefined };
-                      }}
-                    />
-                  </label>
-                  <label class="field inline">
-                    <span>High colour</span>
-                    <input
-                      type="text"
-                      value={cfRule.colors?.high ?? ""}
-                      placeholder="default green"
-                      oninput={(e) => {
-                        const v = (e.target as HTMLInputElement).value;
-                        cfRule.colors = { ...cfRule.colors, high: v || undefined };
-                      }}
-                    />
-                  </label>
-                </div>
-              {/if}
-            </div>
-          {/each}
-
-          <button type="button" class="btn cf-add" onclick={addConditionalRule}>
-            + Add column rule
-          </button>
-        </fieldset>
+        <TileEditorTableConditional bind:conditionalFormat />
       {/if}
 
       <!-- ════════════════════════════════════════════════════════════
@@ -1313,29 +968,7 @@
            $lib/dashboard/sparkline.ts; this is config capture only.
            ════════════════════════════════════════════════════════════ -->
       {#if tile.type === "table"}
-        <fieldset class="cf-section">
-          <legend>Sparkline column</legend>
-          <span class="hint">
-            Adds a trailing “Trend” column drawing a mini chart per row from
-            that row's numeric measure values. Needs at least two measure
-            columns to render; rows with fewer numeric values show a dash.
-          </span>
-
-          <label class="checkbox">
-            <input type="checkbox" bind:checked={sparklineEnabled} />
-            <span>Show sparkline column</span>
-          </label>
-
-          {#if sparklineEnabled}
-            <label class="field inline">
-              <span>Style</span>
-              <select bind:value={sparklineType}>
-                <option value="line">Line</option>
-                <option value="bar">Bar</option>
-              </select>
-            </label>
-          {/if}
-        </fieldset>
+        <TileEditorTableSparkline bind:sparklineEnabled bind:sparklineType />
       {/if}
 
       <!-- ════════════════════════════════════════════════════════════
@@ -1498,8 +1131,7 @@
     letter-spacing: 0.04em;
     padding: 0 0.25rem;
   }
-  .radio,
-  .checkbox {
+  .radio {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
@@ -1553,64 +1185,11 @@
     color: white;
     border-color: var(--accent);
   }
-  /* #1077: chart-options launcher button. */
-  .chart-opts-btn {
-    align-self: flex-start;
-    text-align: left;
-  }
-  /* ── Issue #919: conditional-formatting rule editor (table only) ── */
-  .cf-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 0.5rem 0.75rem;
-    margin: 0;
-  }
-  .cf-section legend {
-    font-size: 0.75rem;
-    color: var(--fg-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    padding: 0 0.25rem;
-  }
-  .cf-rule {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 0.5rem 0.625rem;
-    background: var(--bg-subtle);
-  }
-  .cf-rule-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .cf-rule-label {
-    font-size: 0.75rem;
-    color: var(--fg-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .cf-remove {
-    border: none;
-    background: transparent;
-    font-size: 1.125rem;
-    line-height: 1;
-    cursor: pointer;
-    color: var(--fg-muted);
-  }
-  .cf-row {
-    display: flex;
-    gap: 0.5rem;
-    align-items: flex-end;
-  }
-  .cf-add {
-    align-self: flex-start;
-  }
+  /* #1077, #919: chart-options + conditional-formatting styles moved
+     into TileEditorChart / TileEditorTableConditional / TileEditorKpi /
+     TileEditorTableSparkline (per saiku#1229). Svelte's scoped CSS
+     does not cross component boundaries, so the rules live next to
+     the markup that uses them. */
   /* ── Issue #912: inline visual query editor (embedded QueryCanvas) ── */
   .qe-launch {
     display: flex;
