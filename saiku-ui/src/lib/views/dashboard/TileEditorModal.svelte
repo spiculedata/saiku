@@ -34,6 +34,8 @@
     type ConditionalFormatRule,
     type ConditionalFormatType,
     type ConditionalThresholdMode,
+    // Issue #920 — inline sparkline column on table tiles.
+    type SparklineType,
   } from "$lib/api/dashboards";
   import { flatten, listRepository, type RepositoryNode } from "$lib/api/repository";
   import { repositionTile } from "$lib/dashboard/tilePlacement";
@@ -124,6 +126,12 @@
       })),
     ),
   );
+  // ── Issue #920: opt-in inline sparkline column (table only) ──
+  // Working copy of the table tile's sparkline config; persisted in
+  // handleSave under the table-guarded block. Isolated so it rebases
+  // cleanly against the parallel #919 conditional-format edit.
+  let sparklineEnabled = $state<boolean>(untrack(() => tile.sparkline?.enabled ?? false));
+  let sparklineType = $state<SparklineType>(untrack(() => tile.sparkline?.type ?? "line"));
   // Query source — "reference" picks a saved .saiku from the repo,
   // "inline" pastes an AiQueryRequest body. Default to "reference" so
   // non-technical authors aren't dropped into a JSON textarea on a
@@ -490,6 +498,10 @@
           return out;
         });
       patch.conditionalFormat = cleaned.length > 0 ? cleaned : undefined;
+
+      // ── Issue #920: persist sparkline column config. Only store when
+      // enabled so a fresh / opted-out tile keeps tidy JSON. ──
+      patch.sparkline = sparklineEnabled ? { enabled: true, type: sparklineType } : undefined;
     }
 
     // ── Issue #918: image tile. URL mode persists the typed URL; upload mode
@@ -1079,6 +1091,38 @@
           <button type="button" class="btn cf-add" onclick={addConditionalRule}>
             + Add column rule
           </button>
+        </fieldset>
+      {/if}
+
+      <!-- ════════════════════════════════════════════════════════════
+           Issue #920 — Sparkline column (TABLE tiles only). Opt-in
+           trailing column drawing a tiny inline trend per row from the
+           row's numeric measure cells. Geometry maths lives in
+           $lib/dashboard/sparkline.ts; this is config capture only.
+           ════════════════════════════════════════════════════════════ -->
+      {#if tile.type === "table"}
+        <fieldset class="cf-section">
+          <legend>Sparkline column</legend>
+          <span class="hint">
+            Adds a trailing “Trend” column drawing a mini chart per row from
+            that row's numeric measure values. Needs at least two measure
+            columns to render; rows with fewer numeric values show a dash.
+          </span>
+
+          <label class="checkbox">
+            <input type="checkbox" bind:checked={sparklineEnabled} />
+            <span>Show sparkline column</span>
+          </label>
+
+          {#if sparklineEnabled}
+            <label class="field inline">
+              <span>Style</span>
+              <select bind:value={sparklineType}>
+                <option value="line">Line</option>
+                <option value="bar">Bar</option>
+              </select>
+            </label>
+          {/if}
         </fieldset>
       {/if}
     </div>

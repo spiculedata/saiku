@@ -149,6 +149,28 @@ export interface KpiConfig {
   direction?: KpiDirection;
 }
 
+/* --- issue #920: table sparkline column ---------------------------------
+ * Opt-in trailing column on a table tile that draws a tiny inline SVG
+ * trend (line or bar) from each row's numeric measure cells. Display-only,
+ * no backend surface — the geometry is computed client-side from the
+ * already-fetched response. Pure geometry lives in
+ * $lib/dashboard/sparkline. Config carried on the table tile below.
+ */
+
+/** Sparkline glyph style. {@code "line"} = mini polyline; {@code "bar"} =
+ *  mini column chart. Defaults to "line". */
+export type SparklineType = "line" | "bar";
+
+/** Per-tile sparkline config (issue #920). Only consulted when
+ *  {@code type === "table"} and {@link SparklineConfig.enabled} is true. */
+export interface SparklineConfig {
+  /** Master opt-in. When false / unset the column is not rendered. */
+  enabled: boolean;
+  /** Glyph style. Defaults to "line". */
+  type?: SparklineType;
+}
+/* --- end issue #920 block ------------------------------------------------- */
+
 /* --- issue #918: image tile --------------------------------------------- */
 
 /** Where an image tile's bytes come from. {@code "url"} → {@link ImageConfig.src}
@@ -201,6 +223,9 @@ export interface DashboardTile {
   /** Per-column conditional formatting rules. Only consulted when
    *  {@code type === "table"}. See the issue-#919 block below. */
   conditionalFormat?: ConditionalFormatRule[];
+  /** Sparkline column config (issue #920). Only consulted when
+   *  {@code type === "table"}. See the issue-#920 block above. */
+  sparkline?: SparklineConfig;
   /** Image-tile config (issue #918). Only consulted when
    *  {@code type === "image"}. */
   image?: ImageConfig;
