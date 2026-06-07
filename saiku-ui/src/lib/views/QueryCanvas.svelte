@@ -1169,11 +1169,28 @@
 />
 
 {#if dateFilterTarget}
+  {@const dfHierLevels = (() => {
+    // Resolve the sibling levels of the chip — needed for the Compare tab
+    // to find the right ParallelPeriod anchor (saiku#1221 Phase 2).
+    const hierName = dateFilterTarget.hierarchyName;
+    for (const d of cubeMetadata?.dimensions ?? []) {
+      for (const h of d.hierarchies ?? []) {
+        if (h.uniqueName === hierName || h.name === hierName) return h.levels;
+      }
+    }
+    return undefined;
+  })()}
+  {@const dfLevelType = (() => {
+    const target = `${dateFilterTarget.hierarchyName}.[${dateFilterTarget.levelName}]`;
+    return dfHierLevels?.find((l) => l.uniqueName === target)?.levelType;
+  })()}
   <DateFilterModal
     open={dateFilterOpen}
     hierarchyCaption={dateFilterTarget.hierarchyCaption}
     hierarchyName={dateFilterTarget.hierarchyName}
     levelName={`${dateFilterTarget.hierarchyName}.[${dateFilterTarget.levelName}]`}
+    levelType={dfLevelType}
+    hierarchyLevels={dfHierLevels}
     onApply={onDateFilterApply}
     onCancel={() => (dateFilterOpen = false)}
   />
