@@ -73,6 +73,19 @@
          Security — the verified cookie only unlocks the login form; admin/admin
          is still required afterwards. Inert (immediate pass-through) unless demo
          mode is on AND WorkOS is configured. -->
+    <!-- saiku#1165 hardening: stamp browser-facing security headers on EVERY
+         response. Listed first + mapped to /* so it also covers /ui/** and the
+         root, whose Spring Security chains are security="none" (Spring's own
+         header support never runs there). -->
+    <filter>
+        <filter-name>securityHeaders</filter-name>
+        <filter-class>org.saiku.web.servlet.SecurityHeadersFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>securityHeaders</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
     <filter>
         <filter-name>demoGate</filter-name>
         <filter-class>org.saiku.web.servlet.DemoGateFilter</filter-class>
