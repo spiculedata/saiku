@@ -93,6 +93,9 @@ public class PdfReport {
     }
 
     private void addSvgImage(String svg, Document document, PdfWriter pdfWriter) {
+        // saiku#1165: reject external refs / DOCTYPE before Batik parses it
+        // (SSRF / local-file-read / XXE via user-supplied SVG).
+        org.saiku.web.svg.SvgSecurity.requireSafe(svg);
         document.newPage();
         StringBuilder stringBuffer = new StringBuilder(svg);
         if (!svg.startsWith("<svg xmlns=\"http://www.w3.org/2000/svg\" ")) {
