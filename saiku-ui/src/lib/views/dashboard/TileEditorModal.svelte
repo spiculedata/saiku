@@ -821,6 +821,10 @@
       {/if}
 
       {#if tile.type === "chart" || tile.type === "table"}
+        <!-- #912/#1175 fix: while the visual builder is open it owns the whole
+             query section — hide the mode radios + the reference/inline blocks
+             so they don't render on top of the embedded canvas. -->
+        {#if !queryEditorOpen}
         <fieldset class="mode">
           <legend>Query source</legend>
           <label class="radio">
@@ -832,6 +836,7 @@
             <span>Inline JSON</span>
           </label>
         </fieldset>
+        {/if}
 
         <!-- ════════════════════════════════════════════════════════════
              Issue #912 — inline visual query editor. Mounts the workspace
@@ -884,6 +889,7 @@
           </fieldset>
         {/if}
 
+        {#if !queryEditorOpen}
         {#if queryMode === "reference"}
           <label class="field">
             <span>Saved query (.saiku file)</span>
@@ -933,6 +939,7 @@
               </span>
             {/if}
           </label>
+        {/if}
         {/if}
       {/if}
 
