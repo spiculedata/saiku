@@ -4,9 +4,11 @@ package org.saiku.web.svg;
  * @author Tomasz Nurkiewicz
  * @since 1/15/13, 10:29 AM
  */
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import org.apache.batik.transcoder.*;
 import org.apache.batik.transcoder.image.JPEGTranscoder;
 import org.apache.batik.transcoder.image.PNGTranscoder;
@@ -76,13 +78,26 @@ abstract class BatikConverter extends Converter {
         super(contentType, extension);
     }
 
-    public void convert(InputStream in, OutputStream out, Integer size) throws TranscoderException {
+    /** saiku#1165: cap the in-memory SVG so a giant payload can't OOM the server. */
+    private static final int MAX_SVG_BYTES = 20 * 1024 * 1024;
+
+    public void convert(InputStream in, OutputStream out, Integer size) throws TranscoderException, IOException {
+        // saiku#1165: read the SVG, reject external references / DOCTYPE (SSRF /
+        // local-file-read / XXE via Batik), then transcode from the validated copy.
+        byte[] svg = in.readNBytes(MAX_SVG_BYTES + 1);
+        if (svg.length > MAX_SVG_BYTES) {
+            throw new TranscoderException("SVG exceeds the " + MAX_SVG_BYTES + "-byte export limit");
+        }
+        SvgSecurity.requireSafe(new String(svg, StandardCharsets.UTF_8));
+
         Transcoder t = createTranscoder();
+        // Defense-in-depth: never run on-load scripts during transcode.
+        t.addTranscodingHint(SVGAbstractTranscoder.KEY_EXECUTE_ONLOAD, Boolean.FALSE);
         if (size != null) {
             final float sizeBound = Math.max(Math.min(size, 2000.0f), 32.0f);
             t.addTranscodingHint(SVGAbstractTranscoder.KEY_WIDTH, sizeBound);
         }
-        t.transcode(new TranscoderInput(in), new TranscoderOutput(out));
+        t.transcode(new TranscoderInput(new ByteArrayInputStream(svg)), new TranscoderOutput(out));
     }
 
     protected abstract Transcoder createTranscoder();
