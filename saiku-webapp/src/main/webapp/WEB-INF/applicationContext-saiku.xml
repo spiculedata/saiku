@@ -59,14 +59,25 @@
           session yet at login time, so no cookie to echo. HTTP Basic is also exempt
           (stateless, no browser form).
       -->
-      <!-- CSRF disabled for local-dev / Calcite-fork bring-up.
-           Spring Security 6's deferred CSRF token (CookieCsrfTokenRepository)
-           doesn't materialize the XSRF-TOKEN cookie eagerly, which breaks
-           the SPA's XHR flow: POSTs to /rest/** return 403 because the
-           token isn't readable from JS. Re-enable + wire a
-           CsrfTokenRequestAttributeHandler that forces token resolution
-           before locking this down for production. -->
-      <security:csrf disabled="true"/>
+      <!-- CSRF enforced on state-changing /rest/** methods (saiku#1150).
+           - Token stored in a non-HttpOnly XSRF-TOKEN cookie so the SPA can
+             read it via document.cookie and echo as X-XSRF-TOKEN.
+           - request-handler-ref is the PLAIN (non-XOR) handler. The XSD
+             documents the default as the plain handler, but CsrfFilter's
+             field default is actually XorCsrfTokenRequestAttributeHandler
+             which XOR-masks the token: the SPA-echo'd cookie value would
+             then fail to validate. The plain handler stores and validates
+             the same value, which is what the cookie-read pattern needs.
+           - SaikuCsrfRequestMatcher exempts the login bootstrap path
+             (/rest/saiku/session) and stateless Authorization-header auth
+             (HTTP Basic, used by every IT harness and the MCP endpoint).
+           - CsrfCookieMaterializerFilter (wired below) forces the deferred
+             token to resolve on every request so the XSRF-TOKEN cookie is
+             written before the response commits — without it, GET requests
+             never seed the cookie. -->
+      <security:csrf token-repository-ref="csrfTokenRepository"
+                     request-matcher-ref="csrfRequestMatcher"
+                     request-handler-ref="csrfTokenRequestHandler"/>
       <security:intercept-url pattern="/serverdocs/**" access="isAnonymous()" />
 	    <!-- /rest/saiku/session is the SPA's login + session-info endpoint.
 	         permitAll lets anonymous POST (login) and authenticated GET
@@ -127,15 +138,25 @@
            security-context filter, so the guest auth is set before the
            authorization check and never persisted to the session. -->
       <security:custom-filter ref="shareTokenAuthFilter" before="PRE_AUTH_FILTER"/>
+      <!-- saiku#1150: force the deferred CsrfToken to resolve on every
+           response so the XSRF-TOKEN cookie is written eagerly. Sits AFTER
+           Spring Security's CSRF filter (BASIC_AUTH_FILTER is a stable
+           late slot in the chain) so the request attribute is already
+           installed by the time we read it. -->
+      <security:custom-filter ref="csrfCookieMaterializerFilter" after="BASIC_AUTH_FILTER"/>
       <security:anonymous/>
     </security:http>
 
-    <!-- Tier-1 auth hardening: CSRF wiring -->
+    <!-- Tier-1 auth hardening: CSRF wiring (saiku#1150). -->
     <bean id="csrfTokenRepository"
           class="org.springframework.security.web.csrf.CookieCsrfTokenRepository"
           factory-method="withHttpOnlyFalse"/>
     <bean id="csrfRequestMatcher"
           class="org.saiku.web.security.csrf.SaikuCsrfRequestMatcher"/>
+    <bean id="csrfTokenRequestHandler"
+          class="org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler"/>
+    <bean id="csrfCookieMaterializerFilter"
+          class="org.saiku.web.security.csrf.CsrfCookieMaterializerFilter"/>
 
     <import resource="applicationContext-spring-security.xml"/>
 
