@@ -85,6 +85,18 @@ public class AiQueryResource {
         this.askService = s;
     }
 
+    /**
+     * saiku#1151: per-caller call-rate cap on the cost-bearing ask endpoint.
+     * Default budget; replace via {@link #setAskRateLimiter} (Spring wiring or
+     * tests). Size caps live in {@code AiAskGuard}.
+     */
+    private org.saiku.web.security.ratelimit.AiRateLimiter askRateLimiter =
+            new org.saiku.web.security.ratelimit.AiRateLimiter();
+
+    public void setAskRateLimiter(org.saiku.web.security.ratelimit.AiRateLimiter l) {
+        this.askRateLimiter = l;
+    }
+
     private final AiSchemaConverter converter = new AiSchemaConverter();
     /** Phase 2: JSON-Schema-driven shape validator. Runs first so an
      *  agent gets one structured 400 per shape failure instead of a
@@ -360,6 +372,22 @@ public class AiQueryResource {
         }
         if (body.getCube() == null || body.getCube().getCubeName() == null) {
             return badRequest("cube", "cube ref required", null);
+        }
+        // saiku#1151: cap request size + call rate before reaching the paid LLM
+        // provider. Oversize questions/histories inflate per-call token spend;
+        // unbounded call frequency is a cost-DoS. The logic lives in AiAskGuard /
+        // AiRateLimiter so it stays unit-testable and this resource keeps a thin
+        // touch.
+        org.saiku.web.security.ratelimit.AiAskGuard.Violation sizeViolation =
+                org.saiku.web.security.ratelimit.AiAskGuard.checkSize(body);
+        if (sizeViolation != null) {
+            return askLimitResponse(sizeViolation.isPayloadTooLarge() ? 413 : 400, sizeViolation.getMessage());
+        }
+        if (!askRateLimiter.tryAcquire(askRateKey())) {
+            return askLimitResponse(
+                    429,
+                    "Too many AI ask requests — limit is " + askRateLimiter.getMaxCalls() + " per "
+                            + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.");
         }
         if (askService == null) {
             AiAskApi.AskResponse out = new AiAskApi.AskResponse();
@@ -1358,5 +1386,56 @@ public class AiQueryResource {
                 .entity(resp)
                 .type(MediaType.APPLICATION_JSON)
                 .build();
+    }
+
+    /**
+     * saiku#1151: a degraded {@link AiAskApi.AskResponse} for a size/rate
+     * rejection at the given HTTP status (413 oversize, 400 bad shape, 429 rate).
+     * Reuses the same envelope the configured/degraded paths use so the UI
+     * renders a clear message rather than choking on an unexpected shape.
+     */
+    private Response askLimitResponse(int status, String reason) {
+        AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+        out.setDegraded(true);
+        out.setReason(reason);
+        return Response.status(status)
+                .entity(out)
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    /**
+     * saiku#1151: rate-limit identity = caller principal + client IP. Falls back
+     * to a constant when no request is bound to the thread (unit tests), so
+     * those callers share a single bucket.
+     */
+    private String askRateKey() {
+        jakarta.servlet.http.HttpServletRequest req = currentRequest();
+        String user = null;
+        String ip = null;
+        if (req != null) {
+            user = req.getRemoteUser();
+            if (user == null && req.getUserPrincipal() != null) {
+                user = req.getUserPrincipal().getName();
+            }
+            ip = req.getRemoteAddr();
+        }
+        return (user == null ? "anon" : user) + ":" + (ip == null ? "unknown" : ip);
+    }
+
+    /**
+     * The {@link jakarta.servlet.http.HttpServletRequest} bound to the current
+     * thread via Spring, or {@code null} when none is bound. Mirrors how this
+     * resource already reaches request state ({@code RequestContextHolder}),
+     * which works for the Spring-singleton wiring (a {@code @Context} field
+     * would not).
+     */
+    private static jakarta.servlet.http.HttpServletRequest currentRequest() {
+        org.springframework.web.context.request.RequestAttributes attrs =
+                org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes) {
+            return ((org.springframework.web.context.request.ServletRequestAttributes) attrs).getRequest();
+        }
+        return null;
     }
 }
