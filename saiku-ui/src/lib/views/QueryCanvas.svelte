@@ -56,8 +56,44 @@
   }
   let { embedded = false }: Props = $props();
 
-  let chartEditorOpen = $state(false);
   let moreViewOpen = $state(false);
+
+  // saiku#1233 — consolidated open/target state for the modal cluster.
+  // `null` means closed; a non-null value means open with that target.
+  // chartEditor is bool-only (no per-open target). One source of truth
+  // beats six independent open/target pairs scattered through this
+  // file — see closeModal() for the close-and-clear sweep.
+  type AxisFilterType = "Order" | "Filter" | "TopCount" | "BottomCount" | "Limit";
+  interface ModalState {
+    chartEditor: boolean;
+    customFilter: ThinMeasure | null;
+    formatPct: { measure: ThinMeasure } | null;
+    growth: ThinMeasure | null;
+    dateFilter: {
+      axis: AxisLocation;
+      hierarchyName: string;
+      hierarchyCaption: string;
+      levelName: string;
+    } | null;
+    axisFilter: {
+      axis: AxisLocation;
+      type: AxisFilterType;
+      expression: string;
+      sort: string;
+    } | null;
+  }
+  let modals = $state<ModalState>({
+    chartEditor: false,
+    customFilter: null,
+    formatPct: null,
+    growth: null,
+    dateFilter: null,
+    axisFilter: null,
+  });
+  function closeModal(k: keyof ModalState): void {
+    if (k === "chartEditor") modals.chartEditor = false;
+    else modals[k] = null;
+  }
 
   // Column-category labels from the latest cellset — passed into the
   // Chart Editor so the per-series Left/Right/Auto picker can list
@@ -115,23 +151,6 @@
   }
   let menu = $state<MenuCtx>({ open: false, x: 0, y: 0, items: [], kind: null, axis: null, measure: null, hierarchy: null });
 
-  let customFilterOpen = $state(false);
-  let customFilterTarget = $state<ThinMeasure | null>(null);
-  let formatPctOpen = $state(false);
-  let formatPctTarget = $state<{ measure: ThinMeasure } | null>(null);
-  let growthOpen = $state(false);
-  let growthTarget = $state<ThinMeasure | null>(null);
-
-  let dateFilterOpen = $state(false);
-  let dateFilterTarget = $state<{
-    axis: AxisLocation;
-    hierarchyName: string;
-    hierarchyCaption: string;
-    levelName: string;
-  } | null>(null);
-
-  let axisFilterOpen = $state(false);
-  let axisFilterTarget = $state<{ axis: AxisLocation; type: "Order" | "Filter" | "TopCount" | "BottomCount" | "Limit"; expression: string; sort: string } | null>(null);
 
   function openMeasureMenu(e: MouseEvent, m: ThinMeasure) {
     e.preventDefault();
@@ -256,14 +275,11 @@
     if (!id) return;
     if (m.kind === "measure" && m.measure) {
       if (id === "filter") {
-        customFilterTarget = m.measure;
-        customFilterOpen = true;
+        modals.customFilter = m.measure;
       } else if (id === "format-pct") {
-        formatPctTarget = { measure: m.measure };
-        formatPctOpen = true;
+        modals.formatPct = { measure: m.measure };
       } else if (id === "growth") {
-        growthTarget = m.measure;
-        growthOpen = true;
+        modals.growth = m.measure;
       } else if (id === "remove") {
         query.removeMeasure(m.measure.uniqueName);
       }
@@ -304,8 +320,7 @@
       else if (id === "filter-bot") { type = "BottomCount"; placeholder = "10, [Measures].[Unit Sales]"; }
       else if (id === "filter-limit") { type = "Limit"; placeholder = "10"; }
       const sortOrder = model?.axes[axis].sortOrder ?? "ASC";
-      axisFilterTarget = { axis, type, expression: placeholder, sort: sortOrder };
-      axisFilterOpen = true;
+      modals.axisFilter = { axis, type, expression: placeholder, sort: sortOrder };
     }
   }
 
@@ -343,8 +358,8 @@
   }
 
   function onCustomFilterApply(op: string, value: string, value2?: string) {
-    customFilterOpen = false;
-    const m = customFilterTarget;
+    closeModal("customFilter");
+    const m = modals.customFilter;
     if (!m || !query.current?.queryModel) return;
     const set = rowsAxisSet();
     if (!set) {
@@ -361,8 +376,8 @@
   }
 
   function onFormatPctApply(base: "ROWS" | "COLUMNS" | "GRAND_TOTAL", _scope: "all" | "selected") {
-    formatPctOpen = false;
-    const t = formatPctTarget;
+    closeModal("formatPct");
+    const t = modals.formatPct;
     if (!t || !query.current?.queryModel) return;
     const calcName = `${t.measure.name} %`;
     let denomTuple: string;
@@ -388,8 +403,8 @@
   }
 
   function onGrowthApply(basis: string, ref?: string) {
-    growthOpen = false;
-    const m = growthTarget;
+    closeModal("growth");
+    const m = modals.growth;
     if (!m || !query.current?.queryModel) return;
     const p = primaryRowsHier();
     if (!p) { toasts.warning(i18n.t("toast.noRowsHier"), i18n.t("toast.noRowsHier.growth")); return; }
@@ -426,8 +441,8 @@
   }
 
   function onAxisFilterSave(expression: string, sort?: string) {
-    axisFilterOpen = false;
-    const t = axisFilterTarget;
+    closeModal("axisFilter");
+    const t = modals.axisFilter;
     if (!t || !query.current?.queryModel) return;
     const axis = query.current.queryModel.axes[t.axis];
     if (t.type === "Order") {
@@ -455,8 +470,8 @@
   }
 
   function onDateFilterApply(mdx: string) {
-    dateFilterOpen = false;
-    const t = dateFilterTarget;
+    closeModal("dateFilter");
+    const t = modals.dateFilter;
     if (!t || !query.current?.queryModel) return;
     const axis = query.current.queryModel.axes[t.axis];
     const hadExisting = !!axis.mdx;
@@ -665,13 +680,12 @@
     const levelNames = Object.keys(hier.levels);
     const levelName = levelNames[levelNames.length - 1] ?? levelNames[0];
     if (!levelName) return;
-    dateFilterTarget = {
+    modals.dateFilter = {
       axis,
       hierarchyName: hier.name,
       hierarchyCaption: hier.caption ?? hier.name,
       levelName,
     };
-    dateFilterOpen = true;
   }
 
   async function openSelections(axis: AxisLocation, hier: ThinHierarchy) {
@@ -1051,7 +1065,7 @@
             {/each}
           </select>
         </label>
-        <button type="button" class="tb-btn tb-btn--ghost" title={i18n.t("modal.chart.title")} aria-label={i18n.t("a11y.editChartOptions")} onclick={() => (chartEditorOpen = true)}>
+        <button type="button" class="tb-btn tb-btn--ghost" title={i18n.t("modal.chart.title")} aria-label={i18n.t("a11y.editChartOptions")} onclick={() => (modals.chartEditor = true)}>
           <Settings size={18} />
         </button>
       {/if}
@@ -1135,9 +1149,8 @@
       // Hand off the currently-open Selections target to the date-filter
       // modal. Closing Selections first avoids stacked overlays.
       if (!selectionsTarget) return;
-      dateFilterTarget = { ...selectionsTarget };
+      modals.dateFilter = { ...selectionsTarget };
       selectionsOpen = false;
-      dateFilterOpen = true;
     }}
     onCancel={() => (selectionsOpen = false)}
   />
@@ -1176,9 +1189,9 @@
   initial={query.chartOptions}
   chartType={query.chartType}
   seriesNames={chartSeriesNames}
-  open={chartEditorOpen}
-  onSave={(next) => { query.chartOptions = next; chartEditorOpen = false; }}
-  onCancel={() => (chartEditorOpen = false)}
+  open={modals.chartEditor}
+  onSave={(next) => { query.chartOptions = next; modals.chartEditor = false; }}
+  onCancel={() => (modals.chartEditor = false)}
 />
 
 <ContextMenu
@@ -1191,31 +1204,31 @@
 />
 
 <CustomFilterModal
-  measureCaption={customFilterTarget?.caption ?? customFilterTarget?.name ?? ""}
-  open={customFilterOpen}
+  measureCaption={modals.customFilter?.caption ?? modals.customFilter?.name ?? ""}
+  open={!!modals.customFilter}
   onApply={onCustomFilterApply}
-  onCancel={() => (customFilterOpen = false)}
+  onCancel={() => (closeModal("customFilter"))}
 />
 
 <FormatAsPercentageModal
   defaultAxis="COLUMNS"
   scope="all"
-  open={formatPctOpen}
+  open={!!modals.formatPct}
   onApply={onFormatPctApply}
-  onCancel={() => (formatPctOpen = false)}
+  onCancel={() => (closeModal("formatPct"))}
 />
 
 <GrowthModal
-  open={growthOpen}
+  open={!!modals.growth}
   onApply={onGrowthApply}
-  onCancel={() => (growthOpen = false)}
+  onCancel={() => (closeModal("growth"))}
 />
 
-{#if dateFilterTarget}
+{#if modals.dateFilter}
   {@const dfHierLevels = (() => {
     // Resolve the sibling levels of the chip — needed for the Compare tab
     // to find the right ParallelPeriod anchor (saiku#1221 Phase 2).
-    const hierName = dateFilterTarget.hierarchyName;
+    const hierName = modals.dateFilter.hierarchyName;
     for (const d of cubeMetadata?.dimensions ?? []) {
       for (const h of d.hierarchies ?? []) {
         if (h.uniqueName === hierName || h.name === hierName) return h.levels;
@@ -1224,14 +1237,14 @@
     return undefined;
   })()}
   {@const dfLevelType = (() => {
-    const target = `${dateFilterTarget.hierarchyName}.[${dateFilterTarget.levelName}]`;
+    const target = `${modals.dateFilter.hierarchyName}.[${modals.dateFilter.levelName}]`;
     return dfHierLevels?.find((l) => l.uniqueName === target)?.levelType;
   })()}
   <DateFilterModal
-    open={dateFilterOpen}
-    hierarchyCaption={dateFilterTarget.hierarchyCaption}
-    hierarchyName={dateFilterTarget.hierarchyName}
-    levelName={`${dateFilterTarget.hierarchyName}.[${dateFilterTarget.levelName}]`}
+    open={!!modals.dateFilter}
+    hierarchyCaption={modals.dateFilter.hierarchyCaption}
+    hierarchyName={modals.dateFilter.hierarchyName}
+    levelName={`${modals.dateFilter.hierarchyName}.[${modals.dateFilter.levelName}]`}
     levelType={dfLevelType}
     hierarchyLevels={dfHierLevels}
     timeCalcs={selection.cube?.timeCalcs}
@@ -1247,46 +1260,46 @@
       });
     }}
     onApply={onDateFilterApply}
-    onCancel={() => (dateFilterOpen = false)}
+    onCancel={() => (closeModal("dateFilter"))}
   />
 {/if}
 
-{#if axisFilterTarget && axisFilterTarget.type === "Order"}
+{#if modals.axisFilter && modals.axisFilter.type === "Order"}
   <OrderModal
-    axis={axisFilterTarget.axis}
+    axis={modals.axisFilter.axis}
     measures={cubeMetadata?.measures ?? []}
-    initialMeasure={axisFilterTarget.expression.startsWith("[") ? axisFilterTarget.expression : ""}
-    initialSort={axisFilterTarget.sort as "ASC" | "BASC" | "DESC" | "BDESC"}
-    open={axisFilterOpen}
+    initialMeasure={modals.axisFilter.expression.startsWith("[") ? modals.axisFilter.expression : ""}
+    initialSort={modals.axisFilter.sort as "ASC" | "BASC" | "DESC" | "BDESC"}
+    open={!!modals.axisFilter}
     onSave={(measure, sort) => onAxisFilterSave(measure, sort)}
-    onCancel={() => (axisFilterOpen = false)}
+    onCancel={() => (closeModal("axisFilter"))}
   />
-{:else if axisFilterTarget && (axisFilterTarget.type === "TopCount" || axisFilterTarget.type === "BottomCount")}
+{:else if modals.axisFilter && (modals.axisFilter.type === "TopCount" || modals.axisFilter.type === "BottomCount")}
   <TopBottomCountModal
-    axis={axisFilterTarget.axis}
-    variant={axisFilterTarget.type === "TopCount" ? "top" : "bottom"}
+    axis={modals.axisFilter.axis}
+    variant={modals.axisFilter.type === "TopCount" ? "top" : "bottom"}
     measures={cubeMetadata?.measures ?? []}
     initialCount={10}
     initialMeasure={cubeMetadata?.measures[0]?.uniqueName ?? ""}
-    open={axisFilterOpen}
+    open={!!modals.axisFilter}
     onSave={(expression) => onAxisFilterSave(expression)}
-    onCancel={() => (axisFilterOpen = false)}
+    onCancel={() => (closeModal("axisFilter"))}
   />
-{:else if axisFilterTarget && axisFilterTarget.type === "Limit"}
+{:else if modals.axisFilter && modals.axisFilter.type === "Limit"}
   <LimitModal
-    axis={axisFilterTarget.axis}
+    axis={modals.axisFilter.axis}
     initialCount={10}
-    open={axisFilterOpen}
+    open={!!modals.axisFilter}
     onSave={(count) => onAxisFilterSave(count)}
-    onCancel={() => (axisFilterOpen = false)}
+    onCancel={() => (closeModal("axisFilter"))}
   />
-{:else if axisFilterTarget && axisFilterTarget.type === "Filter"}
+{:else if modals.axisFilter && modals.axisFilter.type === "Filter"}
   <FilterModal
-    axis={axisFilterTarget.axis}
-    expression={axisFilterTarget.expression}
-    open={axisFilterOpen}
+    axis={modals.axisFilter.axis}
+    expression={modals.axisFilter.expression}
+    open={!!modals.axisFilter}
     onSave={(expression) => onAxisFilterSave(expression)}
-    onCancel={() => (axisFilterOpen = false)}
+    onCancel={() => (closeModal("axisFilter"))}
   />
 {/if}
 
