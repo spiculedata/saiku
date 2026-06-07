@@ -41,7 +41,6 @@
   <p class="hint"><code>{folderPath}</code></p>
   <label class="field">
     <span class="field__label">{i18n.t("dashboard.folder.renameLabel")}</span>
-    <!-- svelte-ignore a11y_autofocus -->
     <input
       class="field__input"
       bind:value={name}
