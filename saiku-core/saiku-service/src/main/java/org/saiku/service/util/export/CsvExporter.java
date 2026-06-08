@@ -139,7 +139,10 @@ public class CsvExporter {
             AbstractBaseCell[][] rowData = table.getCellSetBody();
             AbstractBaseCell[][] rowHeader = table.getCellSetHeaders();
 
-            boolean offset = rowHeader.length > 0;
+            // Null-guard: a measures-only query (no COLUMNS dimension on the
+            // cellset) returns a null header. Without this the CSV export NPEs
+            // through to a 500. See saiku 2026-06 export bug.
+            boolean offset = rowHeader != null && rowHeader.length > 0;
             String[][] result = new String[(offset ? 1 : 0) + rowData.length][];
             if (offset) {
                 List<String> cols = new ArrayList<>();
