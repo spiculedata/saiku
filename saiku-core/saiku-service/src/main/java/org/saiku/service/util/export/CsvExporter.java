@@ -37,6 +37,36 @@ public class CsvExporter {
 
     private static final Logger log = LoggerFactory.getLogger(CsvExporter.class);
 
+    /**
+     * CSV / formula-injection neutralisation (OWASP, CWE-1236). When a CSV is
+     * opened in Excel / Google Sheets / LibreOffice, a cell whose text begins
+     * with {@code = + - @} (or a leading TAB / CR) is evaluated as a formula —
+     * so attacker-influenceable cube data (member captions, fact text) could
+     * run e.g. {@code =cmd|'/C calc'!A0} or exfiltrate via {@code =WEBSERVICE(...)}.
+     * We defang such a field by prefixing a single quote, which forces the
+     * spreadsheet to treat it as literal text.
+     *
+     * <p>Plain (optionally signed / currency-prefixed) numbers are left as-is
+     * so a legitimate negative measure like {@code -1,234.50} still exports as
+     * a number rather than being quoted into text. Applied to every emitted
+     * field, BEFORE quote-doubling + enclosing.
+     */
+    static String neutralizeCsvFormula(String value) {
+        if (value == null || value.isEmpty()) {
+            return value;
+        }
+        char first = value.charAt(0);
+        boolean risky = first == '=' || first == '+' || first == '-' || first == '@' || first == '\t' || first == '\r';
+        return (risky && !isPlainNumber(value)) ? "'" + value : value;
+    }
+
+    /** True for an optionally-signed, optionally currency-prefixed number
+     *  (thousands separators + decimal + percent tolerated) — these stay
+     *  un-neutralised so numeric exports don't degrade to text. */
+    static boolean isPlainNumber(String value) {
+        return value.matches("[-+]?[$€£¥]?(\\d+|\\d{1,3}(,\\d{3})+)(\\.\\d+)?%?");
+    }
+
     public static byte[] exportCsv(CellSet cellSet) {
         return exportCsv(cellSet, SaikuProperties.webExportCsvDelimiter, SaikuProperties.webExportCsvTextEscape);
     }
@@ -102,7 +132,9 @@ public class CsvExporter {
                         } else {
                             header = "";
                         }
-                        header += enclosing + rs.getMetaData().getColumnName(s + 1) + enclosing;
+                        header += enclosing
+                                + neutralizeCsvFormula(rs.getMetaData().getColumnName(s + 1))
+                                + enclosing;
                     }
                     if (header != null && printHeader) {
                         header += "\r\n";
@@ -121,6 +153,7 @@ public class CsvExporter {
                     if (i > 0) {
                         sb.append(delimiter);
                     }
+                    content = neutralizeCsvFormula(content);
                     content = content.replace("\"", "\"\"");
                     sb.append(enclosing).append(content).append(enclosing);
                 }
@@ -160,7 +193,7 @@ public class CsvExporter {
                             col = value + "/" + col;
                         }
                     }
-                    cols.add(enclosing + col + enclosing);
+                    cols.add(enclosing + neutralizeCsvFormula(col) + enclosing);
                 }
                 result[0] = cols.toArray(new String[cols.size()]);
             }
@@ -188,6 +221,7 @@ public class CsvExporter {
                     if (value == null || "null".equals(value)) {
                         value = "";
                     }
+                    value = neutralizeCsvFormula(value);
                     value = value.replace("\"", "\"\"");
                     value = enclosing + value + enclosing;
                     cols.add(value);
