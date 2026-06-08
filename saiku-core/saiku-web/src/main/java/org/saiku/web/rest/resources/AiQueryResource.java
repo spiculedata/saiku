@@ -458,6 +458,114 @@ public class AiQueryResource {
     }
 
     /**
+     * Server-side statistical forecast over a time-series query (saiku#908),
+     * Tier-3: in-JVM via {@link org.saiku.service.olap.ai.forecast.Forecaster},
+     * NO LLM / NO external model. Runs {@code body.query} through the SAME path
+     * {@code /ai/query} uses, extracts each measure series in time order, and
+     * projects {@code horizon} future points with prediction intervals at the
+     * requested {@code confidence}.
+     *
+     * <p>Echoes the typed {@link AiQueryResponse} (records, observed data
+     * untouched) plus a sibling {@code forecast} block keyed by measure caption
+     * — {@code {method, horizon, confidence, timeAxis, series:{caption:[{value,
+     * lower,upper,forecast}]}}} — which the chart tile appends as a dashed
+     * continuation with a confidence band. Unknown method / bad horizon /
+     * confidence return the self-correcting 400 envelope; {@code arima} and
+     * {@code prophet} are registered stubs that 400 until impls land.
+     */
+    @POST
+    @Path("/forecast")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response forecast(org.saiku.service.olap.ai.forecast.AiForecastRequest body) {
+        long start = System.currentTimeMillis();
+        if (body == null) {
+            return badRequest("body", "request body required", null);
+        }
+        AiQueryRequest req = body.getQuery();
+        if (req == null) {
+            return badRequest("query", "query (an AiQueryRequest) is required", null);
+        }
+        String timeAxis = body.getTimeAxis();
+        if (timeAxis == null || timeAxis.isBlank()) {
+            return badRequest("timeAxis", "timeAxis (the time axis unique name) is required", null);
+        }
+
+        // Resolve forecaster + params up-front so bad inputs fail fast with a
+        // clean 400 before we execute the (expensive) query.
+        org.saiku.service.olap.ai.forecast.Forecaster forecaster;
+        try {
+            forecaster = org.saiku.service.olap.ai.forecast.Forecasters.forMethod(body.getMethod());
+        } catch (AiValidationException e) {
+            return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+        }
+        int horizon = body.getHorizon() == null ? 6 : body.getHorizon();
+        if (horizon < 1 || horizon > 365) {
+            return badRequest("horizon", "horizon must be between 1 and 365", null);
+        }
+        double confidence = body.getConfidence() == null ? 0.95 : body.getConfidence();
+        if (confidence <= 0 || confidence >= 1 || Double.isNaN(confidence)) {
+            return badRequest("confidence", "confidence must be between 0 and 1 (exclusive)", null);
+        }
+
+        AiSchema schema;
+        ThinQuery tq;
+        try {
+            schemaValidator.assertValid(MAPPER.valueToTree(req));
+            if (req.getCube() == null) {
+                return badRequest("query.cube", "cube ref required", null);
+            }
+            schema = cubeMetadataService.getSchema(req.getCube());
+            tq = converter.convert(req, schema);
+        } catch (AiValidationException e) {
+            return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+        } catch (RuntimeException e) {
+            log.error("AI forecast query validation failed", e);
+            return error("validation failed: " + e.getMessage());
+        }
+
+        CellDataSet cds;
+        try {
+            cds = thinQueryService.execute(tq);
+        } catch (RuntimeException e) {
+            Response translated = translateMondrianLookupError(e);
+            if (translated != null) return translated;
+            Response pathErr = translatePhysPathNpe(e);
+            if (pathErr != null) return pathErr;
+            log.error("AI forecast query execution failed", e);
+            return error("execute failed: " + describeDeepestCause(e));
+        }
+
+        AiQueryResponse resp = buildResponse(tq, cds, start, "records");
+        Map<String, List<org.saiku.service.olap.ai.forecast.ForecastPoint>> series;
+        try {
+            series = org.saiku.service.olap.ai.forecast.ForecastAssembler.assemble(
+                    resp, forecaster, horizon, confidence, timeAxis);
+        } catch (AiValidationException e) {
+            return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+        } catch (RuntimeException e) {
+            // arima/prophet stubs throw AiValidationException (handled above);
+            // anything else here is a real forecaster bug → 500.
+            log.error("AI forecast failed", e);
+            return error("forecast failed: " + e.getMessage());
+        }
+        resp.setRuntimeMs(System.currentTimeMillis() - start);
+
+        // Echo the typed response plus a sibling forecast block (observed data
+        // untouched), mirroring the /anomaly envelope.
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("response", resp);
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("method", forecaster.method());
+        summary.put("horizon", horizon);
+        summary.put("confidence", confidence);
+        summary.put("timeAxis", timeAxis);
+        summary.put("series", series);
+        out.put("forecast", summary);
+        return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
      * Natural-language ask endpoint.
      *
      * <p>Body: {@code {question: string, cube: AiCubeRef, history?: [{role, content}]}}.
