@@ -16,6 +16,7 @@
 package org.saiku.web.rest.resources;
 
 import com.qmino.miredot.annotations.ReturnType;
+import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -605,6 +606,13 @@ public class AdminResource {
     @Produces("text/plain")
     @Path("/version")
     @ReturnType("java.lang.String")
+    // saiku#1004: per-method override of the class-level
+    // @RolesAllowed("ROLE_ADMIN") so the bootstrap fetch from the
+    // SvelteKit UI's root layout doesn't 403 for ROLE_USER members
+    // (which the global 403 interceptor would turn into a misleading
+    // "Session ended" modal before Studio renders). The endpoint just
+    // reads a packaged version.properties — no auth-sensitive data.
+    @PermitAll
     public Response getVersion() {
         Properties prop = new Properties();
         String version = "";
@@ -707,9 +715,16 @@ public class AdminResource {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
         try {
-            return Response.status(Response.Status.OK)
-                    .entity(logExtractor.readLog(logname))
-                    .build();
+            String body = logExtractor.readLog(logname);
+            if (body == null) {
+                // Missing log file → 404 rather than 500 + opaque text/plain
+                // body. The SPA's Logs tab surfaces this as an empty pane
+                // with a "no log yet" hint via the existing idle-state copy.
+                return Response.status(Response.Status.NOT_FOUND)
+                        .entity("Log file '" + logname + "' does not exist yet.")
+                        .build();
+            }
+            return Response.status(Response.Status.OK).entity(body).build();
         } catch (IOException e) {
             log.error("Could not read log file", e);
             return Response.serverError().entity("Could not read log file").build();

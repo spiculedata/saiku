@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
@@ -12,7 +13,7 @@
   }
 
   let { sourcePath, folders, open, onMove, onCancel }: Props = $props();
-  let target = $state<string>(folders[0] ?? "");
+  let target = $state<string>(untrack(() => folders[0] ?? ""));
 </script>
 
 <Modal title={i18n.t("modal.move.title")} {open} size="md" onClose={onCancel}>

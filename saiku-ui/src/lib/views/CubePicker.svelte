@@ -5,6 +5,7 @@
   import type { SaikuCube } from "$lib/api/discover";
   import { cubeKey } from "$lib/stores/datasources.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
+  import { RotateCw } from "lucide-svelte";
 
   interface Props {
     username: string;
@@ -14,7 +15,18 @@
 
   $effect(() => {
     if (username && !datasources.loaded && !datasources.loading && !datasources.error) {
-      datasources.load(username);
+      datasources.load(username).then(() => {
+        // saiku-cloud#631: kick off a background poll for late-arriving
+        // cubes (cache-first engine model means warm-up cubes may
+        // surface a few seconds after the initial /discover returns).
+        // Polls /discover/refresh every 3s for up to 60s, stops once
+        // the cube list is stable across 2 consecutive polls.
+        // No-op on non-cloud deploys (the engine just returns the same
+        // list on every poll, which triggers the stable-tick exit).
+        if (datasources.loaded) {
+          datasources.startPolling(username);
+        }
+      });
     }
   });
 
@@ -82,10 +94,14 @@
     </select>
     <button
       type="button"
-      class="btn cube-picker__refresh"
+      class="icon-btn cube-picker__refresh"
       onclick={onRefresh}
+      title={i18n.t("cubes.refresh")}
       aria-label={i18n.t("cubes.refresh")}
-    >⟳</button>
+      disabled={datasources.loading}
+    >
+      <RotateCw size={14} class={datasources.loading ? "spin" : ""} />
+    </button>
   </div>
   {#if datasources.error}
     <p class="callout callout--danger">{datasources.error}</p>
@@ -103,7 +119,7 @@
   }
   .cube-picker__label {
     font-size: var(--fs-xs);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--fg-muted);
@@ -122,7 +138,15 @@
     font-size: var(--fs-sm);
   }
   .cube-picker__refresh {
-    padding: var(--space-2);
+    /* match the select's vertical footprint so they line up at the same height */
+    width: 36px;
+    height: 36px;
+  }
+  .cube-picker__refresh :global(.spin) {
+    animation: cube-picker-spin 900ms linear infinite;
+  }
+  @keyframes cube-picker-spin {
+    to { transform: rotate(360deg); }
   }
   .cube-picker__empty {
     margin: 0;

@@ -68,6 +68,10 @@ public final class SaikuItHarness {
             return existing;
         }
         Path home = Files.createTempDirectory("saiku-it-");
+        // saiku#1153: the harness authenticates as the default admin/admin seed
+        // user, so it must opt in to the default-credentials policy or bootServer
+        // refuses to start. The IT JVM is a trusted local fixture, never exposed.
+        System.setProperty("saiku.allowDefaultAdmin", "true");
         // Boot port=0 → OS picks an ephemeral port. Host 127.0.0.1 to avoid
         // firewall prompts on macOS CI runners.
         Server server = SaikuLauncher.ServeCommand.bootServer(0, "127.0.0.1", "/", home);

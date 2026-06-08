@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Log4j 2 configuration. Reached via the slf4j → log4j2 binding
+  (log4j-slf4j2-impl) and the log4j-1.2-api shim that lets legacy
+  `org.apache.log4j.*` callers keep working.
+
+  File appender writes to ${sys:saiku.home}/logs/saiku.log so the
+  admin Logs panel + LogExtractor can read it back at runtime.
+  ${sys:saiku.home} is set by SaikuLauncher.ServeCommand.bootServer
+  (and by the saiku-webapp Spring property `saiku.home`).
+
+  Falls back to ./saiku-home/logs/saiku.log if the system property
+  is unset (the launcher always sets it, but a hand-deployed WAR
+  inside a vanilla Tomcat might not).
+-->
+<Configuration status="WARN" name="saiku">
+  <Properties>
+    <Property name="saikuHome">${sys:saiku.home:-saiku-home}</Property>
+    <!--
+      Pattern includes OpenTelemetry trace context when the agent is
+      attached. The agent's log4j2-appender instrumentation populates
+      MDC with trace_id/span_id automatically; %notEmpty hides the
+      bracket entirely when the keys are unset, so logs stay clean
+      when OTEL_EXPORTER_OTLP_ENDPOINT isn't configured.
+    -->
+    <Property name="pattern">%d{ISO8601} %-5p [%c{1}] %notEmpty{[trace_id=%X{trace_id} span_id=%X{span_id}] }%encode{%m}{CRLF}%n</Property>
+  </Properties>
+
+  <Appenders>
+    <Console name="CONSOLE" target="SYSTEM_OUT">
+      <ThresholdFilter level="WARN" onMatch="ACCEPT" onMismatch="DENY"/>
+      <PatternLayout pattern="${pattern}"/>
+    </Console>
+
+    <RollingFile name="SAIKUFILE"
+                 fileName="${saikuHome}/logs/saiku.log"
+                 filePattern="${saikuHome}/logs/saiku.log.%d{yyyy-MM-dd}.gz">
+      <PatternLayout pattern="${pattern}"/>
+      <Policies>
+        <TimeBasedTriggeringPolicy interval="1"/>
+      </Policies>
+      <!-- Keep two weeks of history; older daily archives are pruned. -->
+      <DefaultRolloverStrategy max="14"/>
+    </RollingFile>
+  </Appenders>
+
+  <Loggers>
+    <Logger name="org.saiku" level="INFO"/>
+    <Logger name="mondrian.sql" level="WARN"/>
+    <Logger name="mondrian" level="WARN"/>
+    <!-- Jetty + Jersey are chatty at INFO. Bump up to WARN. -->
+    <Logger name="org.eclipse.jetty" level="WARN"/>
+    <Logger name="org.glassfish.jersey" level="WARN"/>
+
+    <Root level="INFO">
+      <AppenderRef ref="CONSOLE"/>
+      <AppenderRef ref="SAIKUFILE"/>
+    </Root>
+  </Loggers>
+</Configuration>

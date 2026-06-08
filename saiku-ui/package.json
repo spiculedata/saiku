@@ -1,7 +1,7 @@
 {
   "name": "saiku-ui",
   "private": true,
-  "version": "3.17.0",
+  "version": "3.18.0",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
@@ -17,6 +17,7 @@
     "@sveltejs/kit": "^2.8.5",
     "@sveltejs/vite-plugin-svelte": "^5.0.1",
     "@types/node": "^25.6.0",
+    "happy-dom": "^20.9.0",
     "svelte": "^5.2.7",
     "svelte-check": "^4.1.0",
     "typescript": "^5.7.2",

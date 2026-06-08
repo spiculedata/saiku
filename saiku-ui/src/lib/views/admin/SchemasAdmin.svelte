@@ -5,6 +5,7 @@
   import { i18n } from "$lib/stores/i18n.svelte";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
 
   let list = $state<AdminSchema[]>([]);
   let loading = $state(true);
@@ -70,9 +71,9 @@
   </header>
   {#if error}<p class="callout callout--danger">{error}</p>{/if}
   {#if loading}
-    <p>Loading…</p>
+    <Skeleton rows={4} variant="table" />
   {:else}
-    <table class="grid">
+    <table class="data-grid">
       <thead><tr><th>Name</th><th>Path</th><th>Type</th><th></th></tr></thead>
       <tbody>
         {#each list as s}
@@ -80,13 +81,13 @@
             <td>{s.name}</td>
             <td>{s.path ?? ""}</td>
             <td>{s.type ?? ""}</td>
-            <td class="row-actions">
+            <td class="data-grid__actions">
               <button class="btn btn--danger" onclick={() => (deleting = s)}>Delete</button>
             </td>
           </tr>
         {/each}
         {#if list.length === 0}
-          <tr><td colspan="4" class="empty">No schemas.</td></tr>
+          <tr><td colspan="4" class="data-grid__empty">No schemas.</td></tr>
         {/if}
       </tbody>
     </table>
@@ -125,10 +126,6 @@
 <style>
   .pane__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); }
   h2 { margin: 0; }
-  .grid { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
-  .grid th, .grid td { padding: var(--space-2); border-bottom: 1px solid var(--border); text-align: left; }
-  .grid th { background: var(--bg-muted); font-weight: 600; }
-  .row-actions { display: flex; gap: var(--space-1); justify-content: flex-end; }
-  .empty { text-align: center; color: var(--fg-muted); padding: var(--space-4); }
+  /* .data-grid / .data-grid__actions / .data-grid__empty come from app.css */
   .xml { font-family: var(--font-mono); font-size: var(--fs-sm); resize: vertical; }
 </style>

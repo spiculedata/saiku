@@ -5,6 +5,7 @@
   import { i18n } from "$lib/stores/i18n.svelte";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import Skeleton from "$lib/components/Skeleton.svelte";
 
   let list = $state<AdminUser[]>([]);
   let loading = $state(true);
@@ -71,9 +72,9 @@
   </header>
   {#if error}<p class="callout callout--danger">{error}</p>{/if}
   {#if loading}
-    <p>{i18n.t("cubes.loading")}</p>
+    <Skeleton rows={4} variant="table" />
   {:else}
-    <table class="grid">
+    <table class="data-grid">
       <thead><tr>
         <th>{i18n.t("admin.users.username")}</th>
         <th>{i18n.t("admin.users.email")}</th>
@@ -86,14 +87,14 @@
             <td>{u.username}</td>
             <td>{u.email ?? ""}</td>
             <td>{u.roles.join(", ")}</td>
-            <td class="row-actions">
+            <td class="data-grid__actions">
               <button class="btn" onclick={() => (editing = { ...u, password: "" })}>{i18n.t("admin.edit")}</button>
               <button class="btn btn--danger" onclick={() => (deleting = u)}>{i18n.t("admin.delete")}</button>
             </td>
           </tr>
         {/each}
         {#if list.length === 0}
-          <tr><td colspan="4" class="empty">{i18n.t("admin.empty")}</td></tr>
+          <tr><td colspan="4" class="data-grid__empty">{i18n.t("admin.empty")}</td></tr>
         {/if}
       </tbody>
     </table>
@@ -143,10 +144,6 @@
 <style>
   .pane__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); }
   h2 { margin: 0; }
-  .grid { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
-  .grid th, .grid td { padding: var(--space-2); border-bottom: 1px solid var(--border); text-align: left; }
-  .grid th { background: var(--bg-muted); font-weight: 600; }
-  .row-actions { display: flex; gap: var(--space-1); justify-content: flex-end; }
-  .empty { text-align: center; color: var(--fg-muted); padding: var(--space-4); }
+  /* .data-grid / .data-grid__actions / .data-grid__empty come from app.css */
   .check { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) 0; }
 </style>

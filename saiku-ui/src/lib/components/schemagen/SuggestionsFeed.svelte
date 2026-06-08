@@ -150,14 +150,14 @@
   .feed__group-title {
     margin: 0;
     font-size: var(--fs-sm);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     display: inline-flex;
     align-items: baseline;
     gap: var(--space-2);
   }
   .feed__count {
     font-size: var(--fs-xs);
-    font-weight: 400;
+    font-weight: var(--weight-normal);
     color: var(--fg-muted);
   }
   .feed__bulk {

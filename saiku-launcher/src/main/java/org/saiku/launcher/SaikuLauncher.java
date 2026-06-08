@@ -1,16 +1,22 @@
 package org.saiku.launcher;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.Properties;
 import java.util.concurrent.Callable;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
 import org.eclipse.jetty.ee10.webapp.WebAppContext;
 import org.eclipse.jetty.http.HttpCookie;
+import org.eclipse.jetty.server.ForwardedRequestCustomizer;
+import org.eclipse.jetty.server.HttpConfiguration;
+import org.eclipse.jetty.server.HttpConnectionFactory;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.session.DefaultSessionCache;
@@ -23,7 +29,7 @@ import picocli.CommandLine.Option;
         name = "saiku",
         mixinStandardHelpOptions = true,
         version = "saiku 3.17",
-        description = "Saiku OLAP server.",
+        description = "Saiku Semantic Layer server.",
         subcommands = {SaikuLauncher.ServeCommand.class})
 public class SaikuLauncher implements Callable<Integer> {
 
@@ -68,7 +74,16 @@ public class SaikuLauncher implements Callable<Integer> {
 
         @Override
         public Integer call() throws Exception {
-            Server server = bootServer(port, host, contextPath, home);
+            Server server;
+            try {
+                server = bootServer(port, host, contextPath, home);
+            } catch (DefaultCredentialsException e) {
+                // saiku#1153: clean refusal, no stack trace — the message tells
+                // the operator exactly how to proceed. Non-zero exit so init
+                // systems / CI see the failure.
+                System.err.println(e.getMessage());
+                return 2;
+            }
             int actualPort = ((ServerConnector) server.getConnectors()[0]).getLocalPort();
             String base = "http://" + host + ":" + actualPort + contextPath;
             if (!base.endsWith("/")) base = base + "/";
@@ -101,16 +116,78 @@ public class SaikuLauncher implements Callable<Integer> {
             Files.createDirectories(saikuHome.resolve("plugins"));
             Files.createDirectories(brandingDir);
             System.setProperty("saiku.home", saikuHome.toString());
+            // Expose the running fat-JAR's version so InfoResource can stamp
+            // it into the DXT manifest + the eventual /info/version endpoint.
+            // Implementation-Version comes from the shade-plugin manifest
+            // transformer (see saiku-launcher/pom.xml). Null in IDE / unit
+            // runs — fine, the resource falls back to "0.0.0".
+            String pkgVersion = SaikuLauncher.class.getPackage().getImplementationVersion();
+            if (pkgVersion != null && !pkgVersion.isBlank()) {
+                System.setProperty("saiku.version", pkgVersion);
+            }
+            // saiku#897: enable the "demo" Spring profile when the
+            // SAIKU_DEMO=true env var is set. The profile gates loading of
+            // users-demo.properties (bob / krishna / smith) — production
+            // deployments leave SAIKU_DEMO unset and only get admin/admin.
+            // An explicit -Dspring.profiles.active=demo also works for
+            // operators who don't want to rely on env vars; if BOTH are
+            // set, the explicit -D wins (don't clobber it here).
+            if (isDemoModeRequested() && System.getProperty("spring.profiles.active") == null) {
+                System.setProperty("spring.profiles.active", "demo");
+            }
             System.out.println("Saiku home: " + saikuHome);
 
             stageSeedAssets(dataDir);
             stageBrandingSample(brandingDir);
             stageDefaultDatasource(saikuHome);
+            // saiku#1245: in demo mode, also stage a "Welcome" dashboard
+            // under /dashboards/ so a fresh demo container has something
+            // ready-to-look-at at first login instead of an empty list.
+            // The file is idempotent (stageResource only writes when
+            // missing) so operator edits survive container restarts.
+            if (isDemoModeActive()) {
+                stageDemoDashboards(saikuHome);
+            }
 
             Path warPath = extractWar();
 
+            // saiku#1153: refuse to serve in production while the shipped default
+            // admin password is unchanged. Demo mode (SAIKU_DEMO=true) and an
+            // explicit SAIKU_ALLOW_DEFAULT_ADMIN=true both opt out. Throws
+            // DefaultCredentialsException, which the CLI turns into a clean exit.
+            enforceDefaultCredentialPolicy(warPath);
+
             Server server = new Server();
-            ServerConnector connector = new ServerConnector(server);
+            // saiku#1165 audit-3: harden the HTTP transport.
+            //  * ForwardedRequestCustomizer — honour X-Forwarded-Proto / -Host
+            //    from a TLS-terminating reverse proxy so request.isSecure() is
+            //    true on a forwarded HTTPS request. Without it, the Secure flag
+            //    on the XSRF-TOKEN cookie is dropped behind a proxy. When the
+            //    forwarded headers are ABSENT (direct HTTP, e.g. the IT harness)
+            //    isSecure() stays false — no behaviour change for direct hits.
+            //
+            //    IMPORTANT: X-Forwarded-For is DELIBERATELY NOT trusted
+            //    (setForwardedForHeader(null)). Saiku binds plain HTTP directly
+            //    by default (no proxy assumed), and LoginRateLimiter / AuditLogger
+            //    intentionally key off getRemoteAddr() and only honour
+            //    X-Forwarded-For when saiku.auth.trustForwardedFor=true. If the
+            //    customizer rewrote getRemoteAddr() from X-Forwarded-For, any
+            //    client could spoof its IP per request and evade the login rate
+            //    limit + forge the audit trail. So we restore only the scheme/host
+            //    here and leave client-IP resolution to the existing controls.
+            //  * sendServerVersion=false — suppress the "Server: Jetty/<ver>"
+            //    banner (version disclosure / fingerprinting).
+            //  * sendXPoweredBy=false — likewise drop X-Powered-By.
+            HttpConfiguration httpConfig = new HttpConfiguration();
+            ForwardedRequestCustomizer forwarded = new ForwardedRequestCustomizer();
+            forwarded.setForwardedForHeader(null); // do not let X-Forwarded-For override getRemoteAddr()
+            httpConfig.addCustomizer(forwarded);
+            httpConfig.setSendServerVersion(false);
+            httpConfig.setSendXPoweredBy(false);
+            // Keep Jetty's default request-header size unless an operator tunes it.
+            httpConfig.setRequestHeaderSize(
+                    Integer.getInteger("saiku.http.requestHeaderSize", httpConfig.getRequestHeaderSize()));
+            ServerConnector connector = new ServerConnector(server, new HttpConnectionFactory(httpConfig));
             connector.setHost(host);
             connector.setPort(port);
             server.addConnector(connector);
@@ -119,6 +196,12 @@ public class SaikuLauncher implements Callable<Integer> {
             webapp.setContextPath(contextPath);
             webapp.setWar(warPath.toString());
             webapp.setExtractWAR(true);
+
+            // saiku#1165 audit-3: global backstop on form-urlencoded request
+            // bodies (the per-endpoint caps only covered specific resources).
+            // Multipart/file uploads are bounded separately by the Jersey
+            // servlet's <multipart-config> in web.xml. Default 2 MB; tunable.
+            webapp.setMaxFormContentSize(Integer.getInteger("saiku.http.maxFormContentSize", 2_000_000));
 
             // Tier-1 auth hardening: JSESSIONID cookie attrs.
             //   HttpOnly = true   (always — no JS needs to read it)
@@ -184,14 +267,154 @@ public class SaikuLauncher implements Callable<Integer> {
             String bar = "============================================================";
             System.out.println();
             System.out.println(bar);
-            System.out.println("  SECURITY: default credentials (admin/admin) are active.");
-            System.out.println("  Change them in saiku-webapp's users.properties before");
+            if (isDemoModeActive()) {
+                System.out.println("  SECURITY: 4 default credentials are active (DEMO MODE):");
+                System.out.println("    admin/admin                (ROLE_USER, ROLE_ADMIN)");
+                System.out.println("    bob/dylan                  (ROLE_USER)");
+                System.out.println("    krishna/krish2341          (ROLE_USER)");
+                System.out.println("    smith/pravah@001           (ROLE_USER)");
+                System.out.println("  Demo accounts own pre-seeded saved queries in");
+                System.out.println("  /homes/<user>/ — useful for tutorials, NOT for production.");
+                System.out.println("  Drop demo mode by unsetting SAIKU_DEMO and removing");
+                System.out.println("  -Dspring.profiles.active=demo. See saiku#897.");
+            } else {
+                System.out.println("  SECURITY: default credentials (admin/admin) are active.");
+            }
+            System.out.println("  Rotate them in saiku-webapp's users.properties before");
             System.out.println("  exposing this instance, or replace the in-memory auth");
             System.out.println("  config (applicationContext-spring-security-memory.xml)");
             System.out.println("  with LDAP / OAuth / SAML.");
             System.out.println("  Suppress this warning with -Dsaiku.security.acknowledged=true");
             System.out.println(bar);
             System.out.println();
+        }
+
+        /* ------------------- saiku#1153: default-credential policy ----------------- */
+
+        /**
+         * The exact {@code admin} password token this build ships with after the
+         * saiku#1154 bcrypt migration. MUST stay in sync with the {@code admin=}
+         * row in {@code saiku-webapp/.../WEB-INF/users.properties}; if you
+         * regenerate that hash, update this constant too (a bcrypt salt is random,
+         * so the string changes every time it is re-encoded).
+         */
+        static final String SHIPPED_BCRYPT_ADMIN_DEFAULT =
+                "{bcrypt}$2a$10$4lJwsvvv..UqK31JmBSoCOf7hYgKurOB2sEacVVIrqA97BXc4cFju";
+
+        /** Thrown to refuse boot when the default admin password is still active. */
+        static final class DefaultCredentialsException extends RuntimeException {
+            DefaultCredentialsException(String message) {
+                super(message);
+            }
+        }
+
+        /**
+         * True when {@code adminPropertyValue} (the raw {@code admin=} value from
+         * users.properties, i.e. {@code <encodedpw>,ROLE_...}) is still the
+         * shipped default — either the legacy {@code {noop}admin} or this build's
+         * {@link #SHIPPED_BCRYPT_ADMIN_DEFAULT}. Any operator rotation produces a
+         * different hash and returns false.
+         */
+        static boolean isDefaultAdminValue(String adminPropertyValue) {
+            if (adminPropertyValue == null) return false;
+            String enc = adminPropertyValue.split(",", 2)[0].trim();
+            return enc.equals("{noop}admin") || enc.equals(SHIPPED_BCRYPT_ADMIN_DEFAULT);
+        }
+
+        /**
+         * Read the effective {@code admin} row from the bundled WAR's
+         * users.properties and report whether it is still the shipped default.
+         * Fails open (returns false) on any read error — a refusal must be a
+         * deliberate, confident decision, never a side effect of a parse glitch.
+         */
+        static boolean adminPasswordIsDefault(Path warPath) {
+            try (ZipFile zip = new ZipFile(warPath.toFile())) {
+                ZipEntry e = zip.getEntry("WEB-INF/users.properties");
+                if (e == null) return false;
+                Properties p = new Properties();
+                try (InputStream in = zip.getInputStream(e)) {
+                    p.load(in);
+                }
+                return isDefaultAdminValue(p.getProperty("admin"));
+            } catch (IOException ex) {
+                return false;
+            }
+        }
+
+        /** Pure policy decision: refuse only when the default is active AND we're
+         *  not in demo mode AND the operator hasn't explicitly opted in. */
+        static boolean shouldRefuse(boolean adminIsDefault, boolean demoMode, boolean allowOverride) {
+            return adminIsDefault && !demoMode && !allowOverride;
+        }
+
+        /** True when {@code SAIKU_ALLOW_DEFAULT_ADMIN=true} (env) or
+         *  {@code -Dsaiku.allowDefaultAdmin=true} (system property) is set. */
+        static boolean allowDefaultAdmin() {
+            String env = System.getenv("SAIKU_ALLOW_DEFAULT_ADMIN");
+            if (env != null && Boolean.parseBoolean(env.trim())) return true;
+            return Boolean.parseBoolean(System.getProperty("saiku.allowDefaultAdmin", "false"));
+        }
+
+        /**
+         * saiku#1153: stop a production boot dead when the shipped default admin
+         * password is unchanged. Demo mode and the explicit override opt out.
+         *
+         * @throws DefaultCredentialsException with an operator-facing fix-it
+         *     message when the boot should be refused.
+         */
+        static void enforceDefaultCredentialPolicy(Path warPath) {
+            if (!shouldRefuse(adminPasswordIsDefault(warPath), isDemoModeRequested(), allowDefaultAdmin())) {
+                return;
+            }
+            String bar = "============================================================";
+            String msg = String.join(
+                    System.lineSeparator(),
+                    "",
+                    bar,
+                    "  FATAL: refusing to start — the default admin password is",
+                    "  still in place (admin / admin). A network-exposed instance",
+                    "  with default credentials is compromised within seconds.",
+                    "",
+                    "  Fix one of the following, then restart:",
+                    "    * Rotate the admin password in users.properties (bcrypt):",
+                    "        htpasswd -nbBC 12 admin <newpassword>",
+                    "    * Replace the in-memory auth with LDAP / OAuth / SAML",
+                    "      (applicationContext-spring-security-memory.xml).",
+                    "",
+                    "  To start anyway (NOT for a production / exposed host), set:",
+                    "        SAIKU_ALLOW_DEFAULT_ADMIN=true",
+                    "  or run the bundled demo:  SAIKU_DEMO=true",
+                    bar,
+                    "");
+            throw new DefaultCredentialsException(msg);
+        }
+
+        /**
+         * True when the operator asked for demo mode either by env var
+         * ({@code SAIKU_DEMO=true}) or explicit Spring profile activation
+         * ({@code -Dspring.profiles.active=demo}). The two are honoured
+         * symmetrically — the env var is the friendly switch the bundled
+         * Docker image already sets; the {@code -D} is the override path
+         * for operators who don't want the env-based affordance.
+         */
+        private static boolean isDemoModeRequested() {
+            String env = System.getenv("SAIKU_DEMO");
+            if (env != null && Boolean.parseBoolean(env.trim())) {
+                return true;
+            }
+            String profiles = System.getProperty("spring.profiles.active", "");
+            for (String p : profiles.split(",")) {
+                if ("demo".equalsIgnoreCase(p.trim())) return true;
+            }
+            return false;
+        }
+
+        /** True when demo mode is currently in effect (post-bootstrap), which
+         *  is equivalent to {@link #isDemoModeRequested()} once
+         *  {@code bootServer} has run. Kept as a separate method so the
+         *  intent at each call site is unambiguous. */
+        private static boolean isDemoModeActive() {
+            return isDemoModeRequested();
         }
 
         private static void stageSeedAssets(Path dataDir) throws Exception {
@@ -219,6 +442,37 @@ public class SaikuLauncher implements Callable<Integer> {
                             }
                         }
                     }
+                }
+            }
+
+            // Bridge (many-to-many) demo: the Bank schema + its data load
+            // into the same H2 database as FoodMart (distinct mm_* tables).
+            // Database.loadBank() runs bank.sql and registers the datasource.
+            stageResource("/seed/Bank.xml", dataDir.resolve("Bank.xml"));
+            stageResource("/seed/bank.sql", dataDir.resolve("bank.sql"));
+            // bank.lkml — the synthetic Looker model paired with Bank.xml.
+            // Not loaded by Mondrian; staged here so the Looker→M4 migration
+            // story has a discoverable fixture in <home>/data/ for anyone
+            // running the demo locally.
+            stageResource("/seed/bank.lkml", dataDir.resolve("bank.lkml"));
+            // Bank.yaml — the M4 YAML round-trip of Bank.xml (mondrian-saiku
+            // #112 + #130). Same schema, same cubes, same roles — just the
+            // YAML representation produced by the M4 YAML converter. Staged
+            // alongside Bank.xml so the round-trip story is verifiable in
+            // <home>/data/.
+            stageResource("/seed/Bank.yaml", dataDir.resolve("Bank.yaml"));
+        }
+
+        /** Copy a classpath seed resource to {@code target} if it is missing,
+         *  preserving any user edits on relaunch. */
+        private static void stageResource(String resource, Path target) throws Exception {
+            if (Files.exists(target)) {
+                return;
+            }
+            try (InputStream in = SaikuLauncher.class.getResourceAsStream(resource)) {
+                if (in != null) {
+                    Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+                    System.out.println("Seeded: " + target);
                 }
             }
         }
@@ -250,6 +504,27 @@ public class SaikuLauncher implements Callable<Integer> {
                 Files.writeString(target, resolved, java.nio.charset.StandardCharsets.UTF_8);
                 System.out.println("Seeded: " + target);
             }
+        }
+
+        /**
+         * Stage demo content under {@code <home>/repository/data/unknown/dashboards/}.
+         * Only runs in demo mode (gated at the call site); idempotent because
+         * {@link #stageResource} is a no-op when the target already exists, so
+         * an operator who tweaks the welcome dashboard in the UI keeps their
+         * edits across container restarts.
+         *
+         * <p>Lives next to the foodmart datasource staging so a single demo
+         * boot lands cube + dashboards + branding sample together — a fresh
+         * container has something to look at at first login.
+         */
+        private static void stageDemoDashboards(Path saikuHome) throws Exception {
+            Path dashDir = saikuHome
+                    .resolve("repository")
+                    .resolve("data")
+                    .resolve("unknown")
+                    .resolve("dashboards");
+            Files.createDirectories(dashDir);
+            stageResource("/seed/demo/welcome.saikudash", dashDir.resolve("welcome.saikudash"));
         }
 
         private static void stageBrandingSample(Path brandingDir) throws Exception {

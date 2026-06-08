@@ -1,0 +1,273 @@
+/*
+ *   Copyright 2026 Spicule Ltd
+ *   Apache License, Version 2.0.
+ */
+package org.saiku.web.rest.resources.dashboards;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import java.util.List;
+import java.util.Map;
+import org.saiku.service.datasource.DatasourceService;
+import org.saiku.web.service.SessionService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * JAX-RS CRUD over {@code .saikudash} dashboard JSON files. Backed by the
+ * same {@link DatasourceService} file primitives that {@code .saiku} query
+ * files use, so dashboards inherit the JCR permission model + repository
+ * layout without a parallel storage path.
+ *
+ * <p>v1 surface is CRUD only — query execution still flows through
+ * {@code /rest/saiku/api/ai/query} unchanged. The dashboard layer is a
+ * layout-only thing on the backend; the frontend computes effective
+ * filters and re-issues queries per tile. See
+ * {@code docs/plans/2026-05-16-dashboards-design.md}.
+ */
+@Path("/saiku/api/dashboards")
+public class DashboardResource {
+
+    private static final Logger log = LoggerFactory.getLogger(DashboardResource.class);
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+            // The UI persists per-tile config (chart options / sparkline /
+            // conditional format / cascading-filter / auto-refresh) that
+            // this resource's Java DTOs don't catalogue exhaustively.
+            // Failing the load endpoint when the UI adds a field is the
+            // wrong stance — dashboards are persisted-from-UI documents,
+            // not server-authored types. Unknown fields drop silently
+            // here; DashboardTile pairs an any-getter / any-setter so
+            // they round-trip on save instead of being lost. Without
+            // BOTH, the saiku 2026-06 welcome-dashboard incident
+            // recurs every time the UI grows a field.
+            .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
+    /** Save-OK and remove-OK sentinels returned by {@link DatasourceService}.
+     *  Re-checked here so a future signature change there gets caught locally. */
+    private static final String SAVE_OK = "Save Okay";
+
+    private static final String REMOVE_OK = "Remove Okay";
+
+    private DatasourceService datasourceService;
+    private SessionService sessionService;
+    private org.saiku.service.history.DashboardHistoryService historyService;
+    private org.saiku.service.comments.CommentService commentService;
+
+    public void setDatasourceService(DatasourceService s) {
+        this.datasourceService = s;
+    }
+
+    public void setSessionService(SessionService s) {
+        this.sessionService = s;
+    }
+
+    /** Optional (#947): archives the replaced version on each successful save. */
+    public void setHistoryService(org.saiku.service.history.DashboardHistoryService s) {
+        this.historyService = s;
+    }
+
+    /** Optional (#942 cleanup): purges the comment sidecar on delete. */
+    public void setCommentService(org.saiku.service.comments.CommentService s) {
+        this.commentService = s;
+    }
+
+    /**
+     * Load a dashboard by repository path. {@code path} is the full JCR
+     * path including the {@code .saikudash} extension, URL-encoded if
+     * it contains slashes.
+     */
+    @GET
+    @Path("/{path:.+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response load(@PathParam("path") String path) {
+        String username = currentUsername();
+        List<String> roles = currentRoles();
+        String body;
+        try {
+            body = datasourceService.getFileData(path, username, roles);
+        } catch (RuntimeException e) {
+            log.warn("dashboard load failed for {} (user={})", path, username, e);
+            return notFound(path, "Dashboard not found or not readable");
+        }
+        if (body == null || body.isEmpty()) {
+            return notFound(path, "Dashboard not found");
+        }
+        // Match the save path's #1179 stance — parse as a JsonNode, do
+        // a shallow shape check, return the raw JSON. Binding to the
+        // typed Dashboard POJO and re-serialising silently dropped UI-
+        // owned fields (chartOptions / sparkline / cascading / topN /
+        // refreshInterval) that the Java model doesn't catalogue, which
+        // exploded as a 500 on welcome.saikudash 2026-06-07. Disk →
+        // wire passthrough keeps the UI as the schema authority.
+        try {
+            JsonNode node = MAPPER.readTree(body);
+            if (node == null || !node.isObject()) {
+                log.error("dashboard {} is not a JSON object", path);
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity(Map.of("status", "ERROR", "error", "Stored dashboard is not a JSON object"))
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            }
+            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+        } catch (JsonProcessingException e) {
+            log.error("dashboard {} is unparseable as Dashboard JSON", path, e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(Map.of("status", "ERROR", "error", "Stored dashboard is not valid JSON: " + e.getMessage()))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+    }
+
+    /**
+     * Create or overwrite a dashboard. The JSON body is canonicalised
+     * (pretty-printed, NULL fields dropped) before write so the stored
+     * file is diff-friendly under git-backed repos.
+     */
+    @POST
+    @Path("/{path:.+}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response save(@PathParam("path") String path, String rawBody) {
+        if (path == null || path.isBlank()) {
+            return badRequest("path", "path required");
+        }
+        if (rawBody == null || rawBody.isBlank()) {
+            return badRequest("body", "dashboard body required");
+        }
+        // #1179: persist the RAW request JSON (re-pretty-printed) instead of
+        // re-serialising the typed Dashboard POJO. The Java model intentionally
+        // declares only a subset of tile/filter fields, so re-serialising the
+        // typed object silently DROPS everything else the UI sends
+        // (chartOptions, conditionalFormat, cascading, topN, …) — they worked in
+        // the session but vanished on reload. Parsing to a JsonNode keeps every
+        // field; we validate the shape from the node (object with an object
+        // `layout`) without a typed bind, so unknown fields can't be lost or
+        // trigger an unknown-property rejection.
+        JsonNode node;
+        try {
+            node = MAPPER.readTree(rawBody);
+        } catch (JsonProcessingException e) {
+            return badRequest("body", "invalid dashboard JSON: " + e.getOriginalMessage());
+        }
+        if (node == null || !node.isObject()) {
+            return badRequest("body", "dashboard body required");
+        }
+        if (!node.hasNonNull("layout") || !node.get("layout").isObject()) {
+            return badRequest("layout", "layout required");
+        }
+        String username = currentUsername();
+        List<String> roles = currentRoles();
+        String body;
+        try {
+            body = MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(node);
+        } catch (JsonProcessingException e) {
+            log.error("dashboard {} serialisation failed", path, e);
+            return Response.serverError()
+                    .entity(Map.of("status", "ERROR", "error", "Failed to serialise dashboard: " + e.getMessage()))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        // #947: capture the state being replaced so we can archive it after a
+        // successful write. Best-effort read (a brand-new dashboard has none).
+        String previous = null;
+        try {
+            previous = datasourceService.getFileData(path, username, roles);
+        } catch (RuntimeException ignored) {
+            // no prior version / not readable — nothing to archive
+        }
+        String resp = datasourceService.saveFile(body, path, username, roles);
+        if (SAVE_OK.equals(resp)) {
+            // Archive AFTER the write succeeds, and never let a history failure
+            // affect the save result (#947).
+            if (historyService != null && previous != null && !previous.isEmpty()) {
+                try {
+                    historyService.archive(path, previous, username);
+                } catch (RuntimeException e) {
+                    log.warn("dashboard history archive failed for {} (save still succeeded)", path, e);
+                }
+            }
+            return Response.ok(Map.of("status", "OK", "path", path))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        log.warn("dashboard save rejected for {} (user={}) — datasourceService returned '{}'", path, username, resp);
+        return Response.serverError()
+                .entity(Map.of("status", "ERROR", "error", "Save rejected: " + resp))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    @DELETE
+    @Path("/{path:.+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response delete(@PathParam("path") String path) {
+        String username = currentUsername();
+        List<String> roles = currentRoles();
+        String resp = datasourceService.removeFile(path, username, roles);
+        if (REMOVE_OK.equals(resp)) {
+            // Purge the dashboard's sidecar comment + history files so they
+            // aren't orphaned (#942/#947 cleanup). Best-effort — never fail the
+            // delete because a sidecar couldn't be removed.
+            if (historyService != null) {
+                try {
+                    historyService.purge(path);
+                } catch (RuntimeException ignored) {
+                    // logged at the service layer
+                }
+            }
+            if (commentService != null) {
+                try {
+                    commentService.purge(path);
+                } catch (RuntimeException ignored) {
+                    // logged at the service layer
+                }
+            }
+            return Response.ok(Map.of("status", "OK", "path", path))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        return notFound(path, "Delete rejected: " + resp);
+    }
+
+    /* --------------------------- helpers ---------------------------- */
+
+    private String currentUsername() {
+        if (sessionService == null) return null;
+        Object u = sessionService.getAllSessionObjects().get("username");
+        return u == null ? null : u.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> currentRoles() {
+        if (sessionService == null) return List.of();
+        Object r = sessionService.getAllSessionObjects().get("roles");
+        if (r instanceof List<?>) return (List<String>) r;
+        return List.of();
+    }
+
+    private static Response notFound(String path, String message) {
+        return Response.status(Response.Status.NOT_FOUND)
+                .entity(Map.of("status", "NOT_FOUND", "path", path, "error", message))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    private static Response badRequest(String field, String message) {
+        return Response.status(Response.Status.BAD_REQUEST)
+                .entity(Map.of("status", "VALIDATION_ERROR", "field", field, "error", message))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+}

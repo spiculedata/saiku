@@ -132,20 +132,28 @@ public class OlapMetaExplorer {
 
     public List<SaikuCube> getCubes(String connectionName) throws SaikuOlapException {
         OlapConnection olapcon = connections.getOlapConnection(connectionName);
+        // saiku#1221 Phase 3: cache the connection's catalog-XML URL once per
+        // call so we can parse TimeCalc directives per cube. Empty when the
+        // connection isn't configured with a Mondrian Catalog= URL.
+        String catalogUrl = resolveCatalogUrl(connectionName);
         List<SaikuCube> cubes = new ArrayList<>();
         if (olapcon != null) {
             try {
                 for (Catalog cat : olapcon.getOlapCatalogs()) {
                     for (Schema schem : cat.getSchemas()) {
                         for (Cube cub : schem.getCubes()) {
-                            cubes.add(new SaikuCube(
+                            SaikuCube sc = new SaikuCube(
                                     connectionName,
                                     cub.getUniqueName(),
                                     cub.getName(),
                                     cub.getCaption(),
                                     cat.getName(),
                                     schem.getName(),
-                                    cub.isVisible()));
+                                    cub.isVisible());
+                            if (catalogUrl != null) {
+                                sc.setTimeCalcs(org.saiku.olap.util.TimeCalcParser.parse(catalogUrl, cub.getName()));
+                            }
+                            cubes.add(sc);
                         }
                     }
                 }
@@ -155,6 +163,23 @@ public class OlapMetaExplorer {
         }
         Collections.sort(cubes, new SaikuCubeCaptionComparator());
         return cubes;
+    }
+
+    /** Pull the {@code Catalog=} URL out of a connection's {@code location}
+     *  property (the Mondrian connection string). Returns {@code null} when
+     *  the connection doesn't expose one — TimeCalc surfacing is a nice-to-
+     *  have, never load-bearing. */
+    private String resolveCatalogUrl(String connectionName) {
+        try {
+            org.saiku.datasources.connection.ISaikuConnection scon = connections.getConnection(connectionName);
+            if (scon == null) return null;
+            java.util.Properties props = scon.getProperties();
+            if (props == null) return null;
+            String location = props.getProperty(org.saiku.datasources.connection.ISaikuConnection.URL_KEY);
+            return org.saiku.olap.util.TimeCalcParser.extractCatalogUrl(location);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     public List<SaikuCube> getCubes(List<String> connectionNames) throws SaikuOlapException {

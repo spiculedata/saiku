@@ -59,15 +59,32 @@
     return new Date(ms).toLocaleString();
   }
 
-  function durationMs(start: number | undefined, end: number | undefined): string {
-    if (!start) return "—";
-    const e = end && end > 0 ? end : Date.now();
-    return `${(e - start)}ms`;
+  /**
+   * Mondrian StatementInfo doesn't carry wall-clock start / end; it
+   * carries `sqlStatementExecuteNanos` (cumulative SQL execute time
+   * for the statement). Render that as ms — it's the closest
+   * available proxy for "how long did this query spend in the DB".
+   * Returns "—" when the statement hasn't run any SQL yet (a cache
+   * hit, or still building the plan).
+   */
+  function sqlDurationMs(nanos: number | undefined): string {
+    if (!nanos || nanos <= 0) return "—";
+    const ms = nanos / 1_000_000;
+    return ms < 1 ? "<1ms" : `${Math.round(ms).toLocaleString()}ms`;
   }
 
-  function truncateMdx(mdx: string | undefined, max = 80): string {
-    if (!mdx) return "—";
-    return mdx.length <= max ? mdx : mdx.slice(0, max - 1) + "…";
+  /** Statement lifecycle inferred from the executing flag + start/end
+   *  counters. Mondrian doesn't model an enum, but the boolean +
+   *  ratio is enough for an at-a-glance "is it running". */
+  function statementState(
+    executing: boolean | undefined,
+    starts: number | undefined,
+    ends: number | undefined,
+  ): string {
+    if (executing) return "Running";
+    if ((starts ?? 0) > 0 && (ends ?? 0) >= (starts ?? 0)) return "Done";
+    if ((starts ?? 0) > 0) return "Pending";
+    return "Idle";
   }
 
   /** Jackson sends NaN as the literal string "NaN" (Java float NaN doesn't
@@ -158,6 +175,15 @@
       {#if !stats.statements?.length}
         <p class="muted">{i18n.t("admin.stats.empty")}</p>
       {:else}
+        <!-- Mondrian StatementInfo carries counters, not a snapshot of
+             the MDX text or wall-clock timestamps — see the live JSON
+             at /rest/saiku/statistics/mondrian. The earlier columns
+             (`state` / `duration` from start/end / `mdx`) read fields
+             that don't exist in the response, so every row rendered
+             "—". Reshape the table around the fields that ARE there:
+             a derived state from the `executing` flag + start/end
+             counters, SQL execute time as duration, cache hit ratio,
+             and row-fetch / phase counts. -->
         <div class="table-wrap">
           <table>
             <thead>
@@ -166,17 +192,19 @@
                 <th>{i18n.t("admin.stats.col.state")}</th>
                 <th>{i18n.t("admin.stats.col.duration")}</th>
                 <th>{i18n.t("admin.stats.col.cacheHits")}</th>
-                <th>{i18n.t("admin.stats.col.mdx")}</th>
+                <th>{i18n.t("admin.stats.col.rowsFetched")}</th>
+                <th>{i18n.t("admin.stats.col.phases")}</th>
               </tr>
             </thead>
             <tbody>
-              {#each stats.statements as s}
+              {#each stats.statements as s, i (s.statementId ?? i)}
                 <tr>
                   <td>{s.statementId ?? "—"}</td>
-                  <td>{s.state ?? "—"}</td>
-                  <td>{durationMs(s.startTimeMillis, s.endTimeMillis)}</td>
+                  <td>{statementState(s.executing, s.executeStartCount, s.executeEndCount)}</td>
+                  <td>{sqlDurationMs(s.sqlStatementExecuteNanos)}</td>
                   <td>{fmtNum(s.cellCacheHitCount)} / {fmtNum(s.cellCacheRequestCount)}</td>
-                  <td class="mdx" title={s.mdx}>{truncateMdx(s.mdx)}</td>
+                  <td>{fmtNum(s.sqlStatementRowFetchCount)}</td>
+                  <td>{fmtNum(s.phaseCount)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -190,21 +218,26 @@
       {#if !stats.connections?.length}
         <p class="muted">{i18n.t("admin.stats.empty")}</p>
       {:else}
+        <!-- ConnectionInfo also carries only counters (no id / catalog
+             / wall-clock). Display the activity counters instead so
+             the panel actually conveys something. -->
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>id</th>
-                <th>{i18n.t("admin.stats.col.catalog")}</th>
-                <th>{i18n.t("admin.stats.col.duration")}</th>
+                <th>#</th>
+                <th>{i18n.t("admin.stats.col.statements")}</th>
+                <th>{i18n.t("admin.stats.col.executes")}</th>
+                <th>{i18n.t("admin.stats.col.cacheHits")}</th>
               </tr>
             </thead>
             <tbody>
-              {#each stats.connections as c}
+              {#each stats.connections as c, i (i)}
                 <tr>
-                  <td>{c.connectionId ?? "—"}</td>
-                  <td>{c.catalogName ?? "—"}</td>
-                  <td>{durationMs(c.startTimeMillis, c.endTimeMillis)}</td>
+                  <td>{i + 1}</td>
+                  <td>{fmtNum(c.statementEndCount)} / {fmtNum(c.statementStartCount)}</td>
+                  <td>{fmtNum(c.executeEndCount)} / {fmtNum(c.executeStartCount)}</td>
+                  <td>{fmtNum(c.cellCacheHitCount)} / {fmtNum(c.cellCacheRequestCount)}</td>
                 </tr>
               {/each}
             </tbody>
@@ -237,13 +270,14 @@
     border-radius: var(--radius);
   }
   .kpi__label { font-size: var(--fs-xs); color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-  .kpi__value { font-size: 24px; font-weight: 700; color: var(--fg); }
+  .kpi__value { font-size: 24px; font-weight: var(--weight-bold); color: var(--fg); }
   .kpi__sub { font-size: var(--fs-xs); color: var(--fg-muted); }
   .block { display: flex; flex-direction: column; gap: var(--space-2); }
   .table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
   table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
   th, td { padding: 6px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--border); }
-  th { background: var(--bg-muted); font-weight: 600; }
+  th { background: var(--bg-muted); font-weight: var(--weight-semibold); }
   tr:last-child td { border-bottom: 0; }
-  .mdx { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--fg-muted); }
+  /* .mdx selector dropped — Mondrian StatementInfo doesn't surface
+     the source MDX, so the column was removed in the 2026-06 rework. */
 </style>

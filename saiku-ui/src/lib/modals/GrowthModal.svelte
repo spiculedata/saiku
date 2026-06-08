@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import ModalActions from "$lib/modals/parts/ModalActions.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/GrowthModal.js. */
@@ -37,8 +38,11 @@
     </label>
   {/if}
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
-    <button type="button" class="btn btn--primary" onclick={() => onApply(basis, basis === "specific" ? reference : undefined)}>{i18n.t("modal.apply")}</button>
+    <ModalActions
+      {onCancel}
+      onApply={() => onApply(basis, basis === "specific" ? reference : undefined)}
+      primaryKey="modal.apply"
+    />
   {/snippet}
 </Modal>
 

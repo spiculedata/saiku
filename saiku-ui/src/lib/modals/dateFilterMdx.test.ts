@@ -2,10 +2,16 @@ import { describe, it, expect } from "vitest";
 import {
   buildRelativeMdx,
   buildAbsoluteMdx,
+  buildCompareMdx,
   isRelativeValid,
   isAbsoluteValid,
   memberForDate,
   looksLikeTimeHierarchy,
+  isTimeHierarchy,
+  isTimeLevelType,
+  grainFromLevelType,
+  grainAtLeast,
+  looksLikeTimeCaption,
 } from "./dateFilterMdx";
 
 const HIER = "[Time].[Time]";
@@ -149,7 +155,7 @@ describe("validation", () => {
   });
 });
 
-describe("looksLikeTimeHierarchy", () => {
+describe("looksLikeTimeHierarchy (legacy, caption-only)", () => {
   it("matches common time-ish captions", () => {
     expect(looksLikeTimeHierarchy("Time")).toBe(true);
     expect(looksLikeTimeHierarchy("Order Date")).toBe(true);
@@ -158,5 +164,96 @@ describe("looksLikeTimeHierarchy", () => {
   });
   it("returns true for undefined caption (err on the side of showing)", () => {
     expect(looksLikeTimeHierarchy(undefined)).toBe(true);
+  });
+});
+
+describe("isTimeLevelType + grainFromLevelType", () => {
+  it("recognises Mondrian-native Time* level types", () => {
+    expect(isTimeLevelType("TimeYears")).toBe(true);
+    expect(isTimeLevelType("TimeQuarters")).toBe(true);
+    expect(isTimeLevelType("TimeMonths")).toBe(true);
+    expect(isTimeLevelType("TimeDays")).toBe(true);
+    expect(isTimeLevelType("Regular")).toBe(false);
+    expect(isTimeLevelType("")).toBe(false);
+    expect(isTimeLevelType(undefined)).toBe(false);
+  });
+  it("maps level type to grain bucket", () => {
+    expect(grainFromLevelType("TimeYears")).toBe("year");
+    expect(grainFromLevelType("TimeMonths")).toBe("month");
+    expect(grainFromLevelType("TimeDays")).toBe("day");
+    expect(grainFromLevelType("Regular")).toBeNull();
+  });
+});
+
+describe("isTimeHierarchy — native-signal cascade", () => {
+  it("dimensionType TIME wins regardless of caption", () => {
+    expect(isTimeHierarchy("TIME", undefined, "Customer")).toBe(true);
+  });
+  it("any TimeX level type marks the hierarchy", () => {
+    expect(isTimeHierarchy(undefined, [{ levelType: "TimeMonths" }], "ZZZ")).toBe(true);
+  });
+  it("falls back to caption substring only when natives absent", () => {
+    expect(isTimeHierarchy(undefined, [], "Order Date")).toBe(true);
+    expect(isTimeHierarchy(undefined, [], "Customer")).toBe(false);
+  });
+  it("non-time dimension type overrides caption that contains 'date'", () => {
+    // OTHER dimension type, no time levels, caption "Customer" → false.
+    expect(isTimeHierarchy("OTHER", [{ levelType: "Regular" }], "Customer")).toBe(false);
+  });
+  it("missing all signals → false (no permissive default)", () => {
+    expect(isTimeHierarchy(undefined, undefined, undefined)).toBe(false);
+  });
+});
+
+describe("grainAtLeast", () => {
+  it("year level cannot satisfy day-required preset", () => {
+    expect(grainAtLeast("year", "day")).toBe(false);
+  });
+  it("day level satisfies day-required preset", () => {
+    expect(grainAtLeast("day", "day")).toBe(true);
+  });
+  it("day level satisfies any coarser requirement", () => {
+    expect(grainAtLeast("day", "year")).toBe(true);
+    expect(grainAtLeast("day", "month")).toBe(true);
+  });
+  it("unknown grain (null) → permissive (legacy schemas)", () => {
+    expect(grainAtLeast(null, "day")).toBe(true);
+  });
+});
+
+describe("buildCompareMdx — grain-aware parallel period", () => {
+  it("uses ParallelPeriod when an anchor level is supplied", () => {
+    expect(
+      buildCompareMdx({
+        hierarchy: "[Time].[Time]",
+        level: "[Time].[Time].[Day]",
+        from: "2024-04-01",
+        to: "2024-06-30",
+        shiftUnit: "year",
+        parallelLevel: "[Time].[Time].[Year]",
+      }),
+    ).toContain("ParallelPeriod([Time].[Time].[Year], 1,");
+  });
+  it("falls back to .Lag(shift) when anchor level missing", () => {
+    const mdx = buildCompareMdx({
+      hierarchy: "[Time].[Time]",
+      level: "[Time].[Time].[Day]",
+      from: "2024-01-01",
+      to: "2024-01-07",
+      shiftUnit: "year",
+    });
+    expect(mdx).toContain(".Lag(");
+    expect(mdx).not.toContain("ParallelPeriod");
+  });
+  it("emits UNION of primary and shifted windows", () => {
+    const mdx = buildCompareMdx({
+      hierarchy: "[Time].[Time]",
+      level: "[Time].[Time].[Day]",
+      from: "2024-01-01",
+      to: "2024-01-31",
+      shiftUnit: "month",
+      parallelLevel: "[Time].[Time].[Month]",
+    });
+    expect(mdx).toMatch(/^UNION\(\{.*:.*\}, \{.*ParallelPeriod.*:.*ParallelPeriod.*\}\)$/);
   });
 });

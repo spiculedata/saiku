@@ -5,7 +5,7 @@
     <groupId>org.saikuanalytics</groupId>
     <artifactId>saiku</artifactId>
     <packaging>pom</packaging>
-    <version>4.2.0</version>
+    <version>4.5.0</version>
     <name>Saiku Module Project</name>
     <scm>
         <developerConnection>
@@ -18,7 +18,6 @@
         <module>saiku-core</module>
         <module>saiku-webapp</module>
         <module>saiku-launcher</module>
-        <module>saiku-mcp</module>
     </modules>
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
@@ -105,6 +104,26 @@
             <snapshots><enabled>true</enabled></snapshots>
         </repository>
     </repositories>
+
+    <!-- Where mvn deploy publishes saiku's own module jars (saiku-bom,
+         saiku-core/*, saiku-webapp). The release workflow's settings.xml
+         supplies the GITHUB_TOKEN-backed credentials under server id
+         `github-saiku-self`. The fat-jar saiku-launcher and the raw war
+         saiku-webapp set <skip>true</skip> on maven-deploy-plugin in
+         their own poms — only sensibly-sized Maven-consumable artifacts
+         land in GH Packages. -->
+    <distributionManagement>
+        <repository>
+            <id>github-saiku-self</id>
+            <name>GitHub Packages - spiculedata/saiku</name>
+            <url>https://maven.pkg.github.com/spiculedata/saiku</url>
+        </repository>
+        <snapshotRepository>
+            <id>github-saiku-self</id>
+            <name>GitHub Packages - spiculedata/saiku (snapshots)</name>
+            <url>https://maven.pkg.github.com/spiculedata/saiku</url>
+        </snapshotRepository>
+    </distributionManagement>
     <build>
         <plugins>
             <plugin>

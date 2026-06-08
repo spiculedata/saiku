@@ -903,6 +903,12 @@ public class ExcelWorksheetBuilder {
 
         int width = 0;
         int x = 0;
+        // Null-guard: a measures-only query (no hierarchy on COLUMNS or ROWS)
+        // can leave the cellset with a null/empty header band. NPE'd through
+        // to the export endpoint as a 500 — see saiku 2026-06 export bug.
+        if (rowsetHeader == null) {
+            return 0;
+        }
         boolean exit = (rowsetHeader.length < 1 || rowsetHeader[0][0].getRawValue() != null);
         String cellValue = null;
 
@@ -925,6 +931,11 @@ public class ExcelWorksheetBuilder {
      * @return
      */
     private int findTopLeftCornerHeight() {
+        // Same null-guard as findTopLeftCornerWidth — measures-only queries
+        // yield a null header band.
+        if (rowsetHeader == null) {
+            return 0;
+        }
         return rowsetHeader.length > 0 ? rowsetHeader.length - 1 : 0;
     }
 

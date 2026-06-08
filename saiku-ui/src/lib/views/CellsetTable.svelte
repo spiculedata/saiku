@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { CellEntry, QueryResult } from "$lib/api/query";
   import { parseCellset, rowHeaderDisplay } from "$lib/views/cellsetUtils";
+  import { parseFormattedCell } from "$lib/cellset/cellFormat";
   import { query as queryStore } from "$lib/stores/query.svelte";
   import { datasources } from "$lib/stores/datasources.svelte";
   import { selection } from "$lib/stores/selection.svelte";
@@ -35,7 +36,8 @@
     let min = Infinity, max = -Infinity;
     for (const row of parsed.dataRows) {
       for (const cell of row) {
-        const n = Number(String(cell.value ?? "").replace(/[, ]/g, ""));
+        const display = parseFormattedCell(cell.value).display;
+        const n = Number(String(display ?? "").replace(/[, ]/g, ""));
         if (Number.isFinite(n)) {
           if (n < min) min = n;
           if (n > max) max = n;
@@ -305,7 +307,7 @@
     }
   }
 
-  let wrapperEl: HTMLDivElement | null = null;
+  let wrapperEl = $state<HTMLDivElement | null>(null);
 
   function isNumeric(v: unknown): boolean {
     if (typeof v !== "string") return typeof v === "number";
@@ -523,7 +525,11 @@
   function toNumber(cell: CellEntry | undefined): number | null {
     if (!cell) return null;
     const raw = cell.properties?.raw;
-    const src = raw ?? cell.value;
+    // Strip Mondrian style-markers from the formatted fallback so
+    // values like "|($2,561.57)|style=red" parse as -2561.57 rather
+    // than NaN. properties.raw (when present) is the unformatted
+    // numeric and bypasses the marker entirely.
+    const src = raw ?? parseFormattedCell(cell.value).display;
     if (src == null || src === "") return null;
     const n = Number(String(src).replace(/[, ]/g, ""));
     return Number.isFinite(n) ? n : null;
@@ -597,7 +603,7 @@
     <table class="cellset" role="presentation">
       <thead>
         {#each parsed.columnHeaderRows as hdrRow, rIdx}
-          <tr role="row" aria-rowindex={rIdx + 1}>
+          <tr aria-rowindex={rIdx + 1}>
             {#each hdrRow as c, cIdx}
               {#if cIdx < parsed.rowHeaderColCount}
                 <th class="all_null" role="columnheader" aria-colindex={cIdx + 1}></th>
@@ -632,7 +638,7 @@
         {/if}
         {#each parsed.bodyRows.slice(renderWindow.first, renderWindow.last + 1) as rowCells, iOffset}
           {@const r = renderWindow.first + iOffset}
-          <tr class="vrow" role="row" aria-rowindex={parsed.columnHeaderRows.length + r + 1}>
+          <tr class="vrow" aria-rowindex={parsed.columnHeaderRows.length + r + 1}>
             {#each rowCells as c, cIdx}
               {@const display = rowDisplay[r][cIdx]}
               {#if display.isNull}
@@ -650,7 +656,8 @@
               {/if}
             {/each}
             {#each parsed.dataRows[r] as dc, cIdx}
-              {@const num = isNumeric(dc.value)}
+              {@const fmt = parseFormattedCell(dc.value)}
+              {@const num = isNumeric(fmt.display)}
               {@const selected = isSelected(r, cIdx)}
               {@const hasFocus = isFocused(r, cIdx)}
               <td
@@ -662,10 +669,11 @@
                 aria-selected={selected ? "true" : undefined}
                 data-r={r}
                 data-c={cIdx}
+                style={fmt.color ? `color: ${fmt.color}` : undefined}
                 onmousedown={(e) => onCellMouseDown(e, r, cIdx)}
                 onmouseenter={() => onCellMouseEnter(r, cIdx)}
                 oncontextmenu={(e) => onDataCellContextMenu(e, r, cIdx)}
-              >{dc.value}</td>
+              >{fmt.display}</td>
             {/each}
             {#if spark !== "none"}
               {@const range = sparkRange()}
@@ -792,7 +800,7 @@
     top: 0;
     z-index: 2;
     background: var(--bg-muted);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     text-align: left;
     white-space: nowrap;
   }
@@ -818,7 +826,7 @@
     left: 0;
     z-index: 1;
   }
-  .cellset tbody th.row--nested { font-weight: 500; color: var(--fg-muted); }
+  .cellset tbody th.row--nested { font-weight: var(--weight-medium); color: var(--fg-muted); }
   .cellset tbody th.row:hover {
     background: var(--bg-subtle);
   }
@@ -868,7 +876,7 @@
     font-size: var(--fs-sm);
     font-variant-numeric: tabular-nums;
   }
-  .sel-stats strong { color: var(--fg); font-weight: 600; }
+  .sel-stats strong { color: var(--fg); font-weight: var(--weight-semibold); }
   .sel-stats__clear {
     margin-left: auto;
     border: none;
@@ -918,7 +926,7 @@
   }
   .cellset-ctx-menu__header {
     padding: var(--space-1) var(--space-3);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     color: var(--fg-muted);
     max-width: 320px;
     overflow: hidden;

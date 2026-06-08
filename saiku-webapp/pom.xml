@@ -2,15 +2,29 @@
     <parent>
         <artifactId>saiku</artifactId>
         <groupId>org.saikuanalytics</groupId>
-        <version>4.2.0</version>
+        <version>4.5.0</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
     <artifactId>saiku-webapp</artifactId>
-    <version>4.2.0</version>
+    <version>4.5.0</version>
     <name>saiku - webapp</name>
     <packaging>war</packaging>
     <build>
         <plugins>
+            <!-- The webapp's artifact is a ~100MB war that bundles every
+                 transitive dep. Nobody needs to <dependency> it from
+                 Maven — consumers either run the launcher fat-jar or
+                 build their own webapp. Skip mvn deploy so GH Packages
+                 doesn't fill up with multi-hundred-meg blobs per release.
+                 The saiku-core/* JARs are the actual consumable surface. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <version>3.1.3</version>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.felix</groupId>
                 <artifactId>maven-bundle-plugin</artifactId>
@@ -71,7 +85,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-war-plugin</artifactId>
-                <version>3.4.0</version>
+                <version>3.5.1</version>
                 <executions>
                     <execution>
                         <!-- First step is to disable the default-war build step. -->
@@ -94,15 +108,30 @@
                             <goal>war</goal>
                         </goals>
                         <configuration>
-                            <!-- xerces/xalan are dragged in transitively (mondrian +
-                                 hadoop via hive-jdbc) but their META-INF/services
-                                 javax.xml.parsers.* overrides hijack JAXP. Spring 6.2's
-                                 stricter namespace validation breaks against
-                                 xerces for applicationContext.xml's
-                                 <mvc:annotation-driven/>. JDK 21 has internal
-                                 xerces+xalan that respects JAXP's resolver chain
-                                 — strip the external copies from WEB-INF/lib so
-                                 the JDK's implementation wins. -->
+                            <!-- xerces is dragged in transitively (mondrian +
+                                 hadoop via hive-jdbc) but its
+                                 META-INF/services javax.xml.parsers.* override
+                                 hijacks JAXP and Spring 6.2's stricter
+                                 namespace validation breaks against it for
+                                 applicationContext.xml's
+                                 <mvc:annotation-driven/>. JDK 21 has an
+                                 internal xerces that respects JAXP's resolver
+                                 chain — strip the external copy so the JDK's
+                                 implementation wins.
+
+                                 xalan IS bundled (was previously stripped):
+                                 JDK 21's built-in XSLTC NPEs when compiling
+                                 the xhtml2fo.xsl PDF-export stylesheet
+                                 ("Cannot invoke String.hashCode() because
+                                 this._stringRep is null" inside XSLTC.compile,
+                                 2026-06-07 demo bug). Apache Xalan's
+                                 TransformerFactory handles the XSL correctly;
+                                 its SPI registration doesn't conflict with
+                                 Spring (Spring's complaint was about Xerces's
+                                 DocumentBuilderFactory, not Xalan's
+                                 TransformerFactory). The matching serializer
+                                 jar is kept alongside xalan because xalan
+                                 calls into it. -->
                             <!-- netty-3.7.0 (from zookeeper via hive-jdbc) and
                                  netty-all-4.0.23 (from hadoop-hdfs) collide with
                                  the netty-common/buffer 4.1.117 that arrow-memory-netty
@@ -111,7 +140,7 @@
                                  UnsupportedOperationException on memoryAddress(),
                                  crashing arrow's NettyAllocationManager.<clinit>
                                  the first time a query executes. -->
-                            <packagingExcludes>WEB-INF/lib/saiku-query-${saiku-query.version}.jar,WEB-INF/lib/xercesImpl-*.jar,WEB-INF/lib/xalan-*.jar,WEB-INF/lib/serializer-*.jar,WEB-INF/lib/netty-3.*.jar,WEB-INF/lib/netty-all-*.jar</packagingExcludes>
+                            <packagingExcludes>WEB-INF/lib/saiku-query-${saiku-query.version}.jar,WEB-INF/lib/xercesImpl-*.jar,WEB-INF/lib/netty-3.*.jar,WEB-INF/lib/netty-all-*.jar</packagingExcludes>
                         </configuration>
                     </execution>
                 </executions>
@@ -216,7 +245,7 @@
             </plugin>
             <plugin>
                 <artifactId>maven-war-plugin</artifactId>
-                <version>3.4.0</version>
+                <version>3.5.1</version>
                 <configuration>
                     <warSourceExcludes>WEB-INF/saiku-beans.xml</warSourceExcludes>
                     <webResources>
@@ -230,10 +259,11 @@
             <plugin>
                 <groupId>com.github.eirslett</groupId>
                 <artifactId>frontend-maven-plugin</artifactId>
-                <!-- 1.15.1 fixes Node 22 tarball extraction permission errors
-                     on Linux CI runners that bit the dist job (1.15.0 chokes
-                     on share/doc/node/* permission bits during extraction). -->
-                <version>1.15.1</version>
+                <!-- 1.15.1 fixed Node 22 tarball extraction permission errors;
+                     2.0.0 carries forward that fix + drops Maven 3.x support
+                     (we're on 3.9+ via the dist build). Goal surface (npm/node
+                     install + npm ci) is unchanged. -->
+                <version>2.0.0</version>
                 <configuration>
                     <workingDirectory>${project.basedir}/../saiku-ui</workingDirectory>
                     <!-- Use saiku-webapp/target/node — local to this module,
@@ -410,7 +440,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jxr-plugin</artifactId>
-                <version>3.4.0</version>
+                <version>3.5.1</version>
                 <configuration>
                     <aggregate>true</aggregate>
                 </configuration>

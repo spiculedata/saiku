@@ -97,7 +97,7 @@
     line-height: 1;
     padding: 3px 8px;
     border-radius: 999px;
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     letter-spacing: 0.03em;
     text-transform: uppercase;
     color: var(--accent-fg);
@@ -129,7 +129,7 @@
     color: var(--fg-muted);
   }
   .card__after {
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
   }
   .card__rationale {
     margin: 0;

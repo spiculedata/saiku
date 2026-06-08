@@ -1,0 +1,3729 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildChartOption — coverage of all 15 types > snapshot of every type's structure (compact / dashboard) 1`] = `
+{
+  "area": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 36,
+      "left": 48,
+      "right": 16,
+      "top": 24,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 0,
+      "type": "scroll",
+    },
+    "series": [
+      {
+        "areaStyle": {},
+        "data": [
+          565238.13,
+          612482.65,
+        ],
+        "name": "Store Sales",
+        "smooth": true,
+        "stack": undefined,
+        "type": "line",
+        "yAxisIndex": 0,
+      },
+      {
+        "areaStyle": {},
+        "data": [
+          266773,
+          282417,
+        ],
+        "name": "Unit Sales",
+        "smooth": true,
+        "stack": undefined,
+        "type": "line",
+        "yAxisIndex": 0,
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "axis",
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 100,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "1997",
+        "1998",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+  "bar": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 36,
+      "left": 48,
+      "right": 16,
+      "top": 24,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 0,
+      "type": "scroll",
+    },
+    "series": [
+      {
+        "areaStyle": undefined,
+        "data": [
+          565238.13,
+          612482.65,
+        ],
+        "name": "Store Sales",
+        "smooth": false,
+        "stack": undefined,
+        "type": "bar",
+        "yAxisIndex": 0,
+      },
+      {
+        "areaStyle": undefined,
+        "data": [
+          266773,
+          282417,
+        ],
+        "name": "Unit Sales",
+        "smooth": false,
+        "stack": undefined,
+        "type": "bar",
+        "yAxisIndex": 0,
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "axis",
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 100,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "1997",
+        "1998",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+  "bubble": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 56,
+      "left": 48,
+      "right": 16,
+      "top": 24,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 0,
+      "type": "scroll",
+    },
+    "series": [
+      {
+        "data": [
+          [
+            0,
+            565238.13,
+          ],
+          [
+            1,
+            266773,
+          ],
+        ],
+        "name": "1997",
+        "symbolSize": [Function],
+        "type": "scatter",
+      },
+      {
+        "data": [
+          [
+            0,
+            612482.65,
+          ],
+          [
+            1,
+            282417,
+          ],
+        ],
+        "name": "1998",
+        "symbolSize": [Function],
+        "type": "scatter",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 100,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "Store Sales",
+        "Unit Sales",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+  "donut": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "series": [
+      {
+        "center": [
+          "25%",
+          "58.64%",
+        ],
+        "data": [
+          {
+            "name": "1997",
+            "value": 565238.13,
+          },
+          {
+            "name": "1998",
+            "value": 612482.65,
+          },
+        ],
+        "label": {
+          "color": "#fff",
+          "formatter": "{b}",
+          "position": "inside",
+          "show": true,
+        },
+        "labelLine": {
+          "show": false,
+        },
+        "name": "Store Sales",
+        "radius": [
+          "10.626000000000001%",
+          "19.32%",
+        ],
+        "type": "pie",
+      },
+      {
+        "center": [
+          "75%",
+          "58.64%",
+        ],
+        "data": [
+          {
+            "name": "1997",
+            "value": 266773,
+          },
+          {
+            "name": "1998",
+            "value": 282417,
+          },
+        ],
+        "label": {
+          "color": "#fff",
+          "formatter": "{b}",
+          "position": "inside",
+          "show": true,
+        },
+        "labelLine": {
+          "show": false,
+        },
+        "name": "Unit Sales",
+        "radius": [
+          "10.626000000000001%",
+          "19.32%",
+        ],
+        "type": "pie",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": [
+      {
+        "left": "25%",
+        "text": "Store Sales",
+        "textAlign": "center",
+        "textStyle": {
+          "color": "#0f172a",
+          "fontSize": 12,
+        },
+        "top": "2%",
+      },
+      {
+        "left": "75%",
+        "text": "Unit Sales",
+        "textAlign": "center",
+        "textStyle": {
+          "color": "#0f172a",
+          "fontSize": 12,
+        },
+        "top": "2%",
+      },
+    ],
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "item",
+    },
+  },
+  "heatmap": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "grid": {
+      "bottom": 60,
+      "left": 96,
+      "right": 16,
+      "top": 24,
+    },
+    "series": [
+      {
+        "data": [
+          [
+            0,
+            0,
+            565238.13,
+          ],
+          [
+            1,
+            0,
+            266773,
+          ],
+          [
+            0,
+            1,
+            612482.65,
+          ],
+          [
+            1,
+            1,
+            282417,
+          ],
+        ],
+        "emphasis": {
+          "itemStyle": {
+            "shadowBlur": 10,
+          },
+        },
+        "label": {
+          "show": false,
+        },
+        "type": "heatmap",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+    },
+    "visualMap": {
+      "calculable": false,
+      "itemHeight": 140,
+      "max": 612482.65,
+      "min": 266773,
+      "orient": "vertical",
+      "right": 16,
+      "textStyle": {
+        "color": "#475569",
+      },
+      "top": "center",
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 100,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "Store Sales",
+        "Unit Sales",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "1997",
+        "1998",
+      ],
+      "inverse": true,
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+  },
+  "line": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 36,
+      "left": 48,
+      "right": 16,
+      "top": 24,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 0,
+      "type": "scroll",
+    },
+    "series": [
+      {
+        "areaStyle": undefined,
+        "data": [
+          565238.13,
+          612482.65,
+        ],
+        "name": "Store Sales",
+        "smooth": true,
+        "stack": undefined,
+        "type": "line",
+        "yAxisIndex": 0,
+      },
+      {
+        "areaStyle": undefined,
+        "data": [
+          266773,
+          282417,
+        ],
+        "name": "Unit Sales",
+        "smooth": true,
+        "stack": undefined,
+        "type": "line",
+        "yAxisIndex": 0,
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "axis",
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 100,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "1997",
+        "1998",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+  "pie": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "series": [
+      {
+        "center": [
+          "25%",
+          "58.64%",
+        ],
+        "data": [
+          {
+            "name": "1997",
+            "value": 565238.13,
+          },
+          {
+            "name": "1998",
+            "value": 612482.65,
+          },
+        ],
+        "label": {
+          "color": "#fff",
+          "formatter": "{b}",
+          "position": "inside",
+          "show": true,
+        },
+        "labelLine": {
+          "show": false,
+        },
+        "name": "Store Sales",
+        "radius": [
+          0,
+          "19.32%",
+        ],
+        "type": "pie",
+      },
+      {
+        "center": [
+          "75%",
+          "58.64%",
+        ],
+        "data": [
+          {
+            "name": "1997",
+            "value": 266773,
+          },
+          {
+            "name": "1998",
+            "value": 282417,
+          },
+        ],
+        "label": {
+          "color": "#fff",
+          "formatter": "{b}",
+          "position": "inside",
+          "show": true,
+        },
+        "labelLine": {
+          "show": false,
+        },
+        "name": "Unit Sales",
+        "radius": [
+          0,
+          "19.32%",
+        ],
+        "type": "pie",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": [
+      {
+        "left": "25%",
+        "text": "Store Sales",
+        "textAlign": "center",
+        "textStyle": {
+          "color": "#0f172a",
+          "fontSize": 12,
+        },
+        "top": "2%",
+      },
+      {
+        "left": "75%",
+        "text": "Unit Sales",
+        "textAlign": "center",
+        "textStyle": {
+          "color": "#0f172a",
+          "fontSize": 12,
+        },
+        "top": "2%",
+      },
+    ],
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "item",
+    },
+  },
+  "radar": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 0,
+      "type": "scroll",
+    },
+    "radar": {
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisName": {
+        "color": "#475569",
+      },
+      "indicator": [
+        {
+          "max": 612482.65,
+          "name": "Store Sales",
+        },
+        {
+          "max": 612482.65,
+          "name": "Unit Sales",
+        },
+      ],
+      "splitArea": {
+        "areaStyle": {
+          "color": [
+            "#ffffff",
+            "#f6f7f9",
+          ],
+          "opacity": 0.3,
+        },
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+    },
+    "series": [
+      {
+        "data": [
+          {
+            "name": "1997",
+            "value": [
+              565238.13,
+              266773,
+            ],
+          },
+          {
+            "name": "1998",
+            "value": [
+              612482.65,
+              282417,
+            ],
+          },
+        ],
+        "type": "radar",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+    },
+  },
+  "scatter": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 56,
+      "left": 48,
+      "right": 16,
+      "top": 24,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 0,
+      "type": "scroll",
+    },
+    "series": [
+      {
+        "data": [
+          [
+            0,
+            565238.13,
+          ],
+          [
+            1,
+            266773,
+          ],
+        ],
+        "name": "1997",
+        "symbolSize": 10,
+        "type": "scatter",
+      },
+      {
+        "data": [
+          [
+            0,
+            612482.65,
+          ],
+          [
+            1,
+            282417,
+          ],
+        ],
+        "name": "1998",
+        "symbolSize": 10,
+        "type": "scatter",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 100,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "Store Sales",
+        "Unit Sales",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+  "stackedArea": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 36,
+      "left": 48,
+      "right": 16,
+      "top": 24,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 0,
+      "type": "scroll",
+    },
+    "series": [
+      {
+        "areaStyle": {},
+        "data": [
+          565238.13,
+          612482.65,
+        ],
+        "name": "Store Sales",
+        "smooth": true,
+        "stack": "total",
+        "type": "line",
+        "yAxisIndex": 0,
+      },
+      {
+        "areaStyle": {},
+        "data": [
+          266773,
+          282417,
+        ],
+        "name": "Unit Sales",
+        "smooth": true,
+        "stack": "total",
+        "type": "line",
+        "yAxisIndex": 0,
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "axis",
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 100,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "1997",
+        "1998",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+  "stackedBar": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 36,
+      "left": 48,
+      "right": 16,
+      "top": 24,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 0,
+      "type": "scroll",
+    },
+    "series": [
+      {
+        "areaStyle": undefined,
+        "data": [
+          565238.13,
+          612482.65,
+        ],
+        "name": "Store Sales",
+        "smooth": false,
+        "stack": "total",
+        "type": "bar",
+        "yAxisIndex": 0,
+      },
+      {
+        "areaStyle": undefined,
+        "data": [
+          266773,
+          282417,
+        ],
+        "name": "Unit Sales",
+        "smooth": false,
+        "stack": "total",
+        "type": "bar",
+        "yAxisIndex": 0,
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "axis",
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 100,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "1997",
+        "1998",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+  "stackedLine": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 36,
+      "left": 48,
+      "right": 16,
+      "top": 24,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 0,
+      "type": "scroll",
+    },
+    "series": [
+      {
+        "areaStyle": undefined,
+        "data": [
+          565238.13,
+          612482.65,
+        ],
+        "name": "Store Sales",
+        "smooth": true,
+        "stack": "total",
+        "type": "line",
+        "yAxisIndex": 0,
+      },
+      {
+        "areaStyle": undefined,
+        "data": [
+          266773,
+          282417,
+        ],
+        "name": "Unit Sales",
+        "smooth": true,
+        "stack": "total",
+        "type": "line",
+        "yAxisIndex": 0,
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "axis",
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 100,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "1997",
+        "1998",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+  "sunburst": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "series": [
+      {
+        "center": [
+          "25%",
+          "58.64%",
+        ],
+        "data": [
+          {
+            "name": "1997",
+            "value": 565238.13,
+          },
+          {
+            "name": "1998",
+            "value": 612482.65,
+          },
+        ],
+        "label": {
+          "color": "#fff",
+          "show": true,
+        },
+        "name": "Store Sales",
+        "radius": [
+          0,
+          "19.32%",
+        ],
+        "type": "sunburst",
+      },
+      {
+        "center": [
+          "75%",
+          "58.64%",
+        ],
+        "data": [
+          {
+            "name": "1997",
+            "value": 266773,
+          },
+          {
+            "name": "1998",
+            "value": 282417,
+          },
+        ],
+        "label": {
+          "color": "#fff",
+          "show": true,
+        },
+        "name": "Unit Sales",
+        "radius": [
+          0,
+          "19.32%",
+        ],
+        "type": "sunburst",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": [
+      {
+        "left": "25%",
+        "text": "Store Sales",
+        "textAlign": "center",
+        "textStyle": {
+          "color": "#0f172a",
+          "fontSize": 12,
+        },
+        "top": "2%",
+      },
+      {
+        "left": "75%",
+        "text": "Unit Sales",
+        "textAlign": "center",
+        "textStyle": {
+          "color": "#0f172a",
+          "fontSize": 12,
+        },
+        "top": "2%",
+      },
+    ],
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+    },
+  },
+  "treemap": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "series": [
+      {
+        "breadcrumb": {
+          "show": false,
+        },
+        "data": [
+          {
+            "name": "1997",
+            "value": 565238.13,
+          },
+          {
+            "name": "1998",
+            "value": 612482.65,
+          },
+        ],
+        "height": "78.72%",
+        "label": {
+          "color": "#fff",
+        },
+        "left": "2%",
+        "name": "Store Sales",
+        "top": "19.28%",
+        "type": "treemap",
+        "width": "46%",
+      },
+      {
+        "breadcrumb": {
+          "show": false,
+        },
+        "data": [
+          {
+            "name": "1997",
+            "value": 266773,
+          },
+          {
+            "name": "1998",
+            "value": 282417,
+          },
+        ],
+        "height": "78.72%",
+        "label": {
+          "color": "#fff",
+        },
+        "left": "52%",
+        "name": "Unit Sales",
+        "top": "19.28%",
+        "type": "treemap",
+        "width": "46%",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": [
+      {
+        "left": "25%",
+        "text": "Store Sales",
+        "textAlign": "center",
+        "textStyle": {
+          "color": "#0f172a",
+          "fontSize": 12,
+        },
+        "top": "2%",
+      },
+      {
+        "left": "75%",
+        "text": "Unit Sales",
+        "textAlign": "center",
+        "textStyle": {
+          "color": "#0f172a",
+          "fontSize": 12,
+        },
+        "top": "2%",
+      },
+    ],
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+    },
+  },
+  "waterfall": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 56,
+      "left": 48,
+      "right": 16,
+      "top": 24,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 0,
+      "type": "scroll",
+    },
+    "series": [
+      {
+        "data": [
+          0,
+          565238.13,
+        ],
+        "emphasis": {
+          "itemStyle": {
+            "borderColor": "transparent",
+            "color": "transparent",
+          },
+        },
+        "itemStyle": {
+          "borderColor": "transparent",
+          "color": "transparent",
+        },
+        "name": "",
+        "stack": "waterfall",
+        "type": "bar",
+      },
+      {
+        "data": [
+          565238.13,
+          612482.65,
+        ],
+        "itemStyle": {
+          "color": "#4c9ee6",
+        },
+        "name": "Store Sales",
+        "stack": "waterfall",
+        "type": "bar",
+      },
+      {
+        "data": [
+          null,
+          null,
+        ],
+        "itemStyle": {
+          "color": "#e66c6c",
+        },
+        "name": "-Store Sales",
+        "stack": "waterfall",
+        "type": "bar",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "axis",
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 100,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "1997",
+        "1998",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+}
+`;
+
+exports[`buildChartOption — coverage of all 15 types > snapshot of every type's structure (non-compact / workspace) 1`] = `
+{
+  "area": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 40,
+      "left": 60,
+      "right": 40,
+      "top": 40,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 10,
+    },
+    "series": [
+      {
+        "areaStyle": {},
+        "data": [
+          565238.13,
+          612482.65,
+        ],
+        "name": "Store Sales",
+        "smooth": true,
+        "stack": undefined,
+        "type": "line",
+        "yAxisIndex": 0,
+      },
+      {
+        "areaStyle": {},
+        "data": [
+          266773,
+          282417,
+        ],
+        "name": "Unit Sales",
+        "smooth": true,
+        "stack": undefined,
+        "type": "line",
+        "yAxisIndex": 0,
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "formatter": [Function],
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "axis",
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 120,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "1997",
+        "1998",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+  "bar": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 40,
+      "left": 60,
+      "right": 40,
+      "top": 40,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 10,
+    },
+    "series": [
+      {
+        "areaStyle": undefined,
+        "data": [
+          565238.13,
+          612482.65,
+        ],
+        "name": "Store Sales",
+        "smooth": false,
+        "stack": undefined,
+        "type": "bar",
+        "yAxisIndex": 0,
+      },
+      {
+        "areaStyle": undefined,
+        "data": [
+          266773,
+          282417,
+        ],
+        "name": "Unit Sales",
+        "smooth": false,
+        "stack": undefined,
+        "type": "bar",
+        "yAxisIndex": 0,
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "formatter": [Function],
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "axis",
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 120,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "1997",
+        "1998",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+  "bubble": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 56,
+      "left": 60,
+      "right": 40,
+      "top": 40,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 10,
+    },
+    "series": [
+      {
+        "data": [
+          [
+            0,
+            565238.13,
+          ],
+          [
+            1,
+            266773,
+          ],
+        ],
+        "name": "1997",
+        "symbolSize": [Function],
+        "type": "scatter",
+      },
+      {
+        "data": [
+          [
+            0,
+            612482.65,
+          ],
+          [
+            1,
+            282417,
+          ],
+        ],
+        "name": "1998",
+        "symbolSize": [Function],
+        "type": "scatter",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 120,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "Store Sales",
+        "Unit Sales",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+  "donut": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "series": [
+      {
+        "center": [
+          "25%",
+          "58.64%",
+        ],
+        "data": [
+          {
+            "name": "1997",
+            "value": 565238.13,
+          },
+          {
+            "name": "1998",
+            "value": 612482.65,
+          },
+        ],
+        "label": {
+          "color": "#fff",
+          "formatter": "{b}",
+          "position": "inside",
+          "show": true,
+        },
+        "labelLine": {
+          "show": false,
+        },
+        "name": "Store Sales",
+        "radius": [
+          "10.626000000000001%",
+          "19.32%",
+        ],
+        "type": "pie",
+      },
+      {
+        "center": [
+          "75%",
+          "58.64%",
+        ],
+        "data": [
+          {
+            "name": "1997",
+            "value": 266773,
+          },
+          {
+            "name": "1998",
+            "value": 282417,
+          },
+        ],
+        "label": {
+          "color": "#fff",
+          "formatter": "{b}",
+          "position": "inside",
+          "show": true,
+        },
+        "labelLine": {
+          "show": false,
+        },
+        "name": "Unit Sales",
+        "radius": [
+          "10.626000000000001%",
+          "19.32%",
+        ],
+        "type": "pie",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": [
+      {
+        "left": "25%",
+        "text": "Store Sales",
+        "textAlign": "center",
+        "textStyle": {
+          "color": "#0f172a",
+          "fontSize": 12,
+        },
+        "top": "2%",
+      },
+      {
+        "left": "75%",
+        "text": "Unit Sales",
+        "textAlign": "center",
+        "textStyle": {
+          "color": "#0f172a",
+          "fontSize": 12,
+        },
+        "top": "2%",
+      },
+    ],
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "item",
+    },
+  },
+  "heatmap": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "grid": {
+      "bottom": 60,
+      "left": 120,
+      "right": 96,
+      "top": 40,
+    },
+    "series": [
+      {
+        "data": [
+          [
+            0,
+            0,
+            565238.13,
+          ],
+          [
+            1,
+            0,
+            266773,
+          ],
+          [
+            0,
+            1,
+            612482.65,
+          ],
+          [
+            1,
+            1,
+            282417,
+          ],
+        ],
+        "emphasis": {
+          "itemStyle": {
+            "shadowBlur": 10,
+          },
+        },
+        "label": {
+          "show": false,
+        },
+        "type": "heatmap",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+    },
+    "visualMap": {
+      "calculable": false,
+      "itemHeight": 140,
+      "max": 612482.65,
+      "min": 266773,
+      "orient": "vertical",
+      "right": 16,
+      "textStyle": {
+        "color": "#475569",
+      },
+      "top": "center",
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 120,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "Store Sales",
+        "Unit Sales",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "1997",
+        "1998",
+      ],
+      "inverse": true,
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+  },
+  "line": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 40,
+      "left": 60,
+      "right": 40,
+      "top": 40,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 10,
+    },
+    "series": [
+      {
+        "areaStyle": undefined,
+        "data": [
+          565238.13,
+          612482.65,
+        ],
+        "name": "Store Sales",
+        "smooth": true,
+        "stack": undefined,
+        "type": "line",
+        "yAxisIndex": 0,
+      },
+      {
+        "areaStyle": undefined,
+        "data": [
+          266773,
+          282417,
+        ],
+        "name": "Unit Sales",
+        "smooth": true,
+        "stack": undefined,
+        "type": "line",
+        "yAxisIndex": 0,
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "formatter": [Function],
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "axis",
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 120,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "1997",
+        "1998",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+  "pie": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "series": [
+      {
+        "center": [
+          "25%",
+          "58.64%",
+        ],
+        "data": [
+          {
+            "name": "1997",
+            "value": 565238.13,
+          },
+          {
+            "name": "1998",
+            "value": 612482.65,
+          },
+        ],
+        "label": {
+          "color": "#fff",
+          "formatter": "{b}",
+          "position": "inside",
+          "show": true,
+        },
+        "labelLine": {
+          "show": false,
+        },
+        "name": "Store Sales",
+        "radius": [
+          0,
+          "19.32%",
+        ],
+        "type": "pie",
+      },
+      {
+        "center": [
+          "75%",
+          "58.64%",
+        ],
+        "data": [
+          {
+            "name": "1997",
+            "value": 266773,
+          },
+          {
+            "name": "1998",
+            "value": 282417,
+          },
+        ],
+        "label": {
+          "color": "#fff",
+          "formatter": "{b}",
+          "position": "inside",
+          "show": true,
+        },
+        "labelLine": {
+          "show": false,
+        },
+        "name": "Unit Sales",
+        "radius": [
+          0,
+          "19.32%",
+        ],
+        "type": "pie",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": [
+      {
+        "left": "25%",
+        "text": "Store Sales",
+        "textAlign": "center",
+        "textStyle": {
+          "color": "#0f172a",
+          "fontSize": 12,
+        },
+        "top": "2%",
+      },
+      {
+        "left": "75%",
+        "text": "Unit Sales",
+        "textAlign": "center",
+        "textStyle": {
+          "color": "#0f172a",
+          "fontSize": 12,
+        },
+        "top": "2%",
+      },
+    ],
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "item",
+    },
+  },
+  "radar": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 10,
+    },
+    "radar": {
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisName": {
+        "color": "#475569",
+      },
+      "indicator": [
+        {
+          "max": 612482.65,
+          "name": "Store Sales",
+        },
+        {
+          "max": 612482.65,
+          "name": "Unit Sales",
+        },
+      ],
+      "splitArea": {
+        "areaStyle": {
+          "color": [
+            "#ffffff",
+            "#f6f7f9",
+          ],
+          "opacity": 0.3,
+        },
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+    },
+    "series": [
+      {
+        "data": [
+          {
+            "name": "1997",
+            "value": [
+              565238.13,
+              266773,
+            ],
+          },
+          {
+            "name": "1998",
+            "value": [
+              612482.65,
+              282417,
+            ],
+          },
+        ],
+        "type": "radar",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+    },
+  },
+  "scatter": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 56,
+      "left": 60,
+      "right": 40,
+      "top": 40,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 10,
+    },
+    "series": [
+      {
+        "data": [
+          [
+            0,
+            565238.13,
+          ],
+          [
+            1,
+            266773,
+          ],
+        ],
+        "name": "1997",
+        "symbolSize": 10,
+        "type": "scatter",
+      },
+      {
+        "data": [
+          [
+            0,
+            612482.65,
+          ],
+          [
+            1,
+            282417,
+          ],
+        ],
+        "name": "1998",
+        "symbolSize": 10,
+        "type": "scatter",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 120,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "Store Sales",
+        "Unit Sales",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+  "stackedArea": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 40,
+      "left": 60,
+      "right": 40,
+      "top": 40,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 10,
+    },
+    "series": [
+      {
+        "areaStyle": {},
+        "data": [
+          565238.13,
+          612482.65,
+        ],
+        "name": "Store Sales",
+        "smooth": true,
+        "stack": "total",
+        "type": "line",
+        "yAxisIndex": 0,
+      },
+      {
+        "areaStyle": {},
+        "data": [
+          266773,
+          282417,
+        ],
+        "name": "Unit Sales",
+        "smooth": true,
+        "stack": "total",
+        "type": "line",
+        "yAxisIndex": 0,
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "formatter": [Function],
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "axis",
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 120,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "1997",
+        "1998",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+  "stackedBar": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 40,
+      "left": 60,
+      "right": 40,
+      "top": 40,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 10,
+    },
+    "series": [
+      {
+        "areaStyle": undefined,
+        "data": [
+          565238.13,
+          612482.65,
+        ],
+        "name": "Store Sales",
+        "smooth": false,
+        "stack": "total",
+        "type": "bar",
+        "yAxisIndex": 0,
+      },
+      {
+        "areaStyle": undefined,
+        "data": [
+          266773,
+          282417,
+        ],
+        "name": "Unit Sales",
+        "smooth": false,
+        "stack": "total",
+        "type": "bar",
+        "yAxisIndex": 0,
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "formatter": [Function],
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "axis",
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 120,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "1997",
+        "1998",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+  "stackedLine": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 40,
+      "left": 60,
+      "right": 40,
+      "top": 40,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 10,
+    },
+    "series": [
+      {
+        "areaStyle": undefined,
+        "data": [
+          565238.13,
+          612482.65,
+        ],
+        "name": "Store Sales",
+        "smooth": true,
+        "stack": "total",
+        "type": "line",
+        "yAxisIndex": 0,
+      },
+      {
+        "areaStyle": undefined,
+        "data": [
+          266773,
+          282417,
+        ],
+        "name": "Unit Sales",
+        "smooth": true,
+        "stack": "total",
+        "type": "line",
+        "yAxisIndex": 0,
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "formatter": [Function],
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "axis",
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 120,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "1997",
+        "1998",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+  "sunburst": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "series": [
+      {
+        "center": [
+          "25%",
+          "58.64%",
+        ],
+        "data": [
+          {
+            "name": "1997",
+            "value": 565238.13,
+          },
+          {
+            "name": "1998",
+            "value": 612482.65,
+          },
+        ],
+        "label": {
+          "color": "#fff",
+          "show": true,
+        },
+        "name": "Store Sales",
+        "radius": [
+          0,
+          "19.32%",
+        ],
+        "type": "sunburst",
+      },
+      {
+        "center": [
+          "75%",
+          "58.64%",
+        ],
+        "data": [
+          {
+            "name": "1997",
+            "value": 266773,
+          },
+          {
+            "name": "1998",
+            "value": 282417,
+          },
+        ],
+        "label": {
+          "color": "#fff",
+          "show": true,
+        },
+        "name": "Unit Sales",
+        "radius": [
+          0,
+          "19.32%",
+        ],
+        "type": "sunburst",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": [
+      {
+        "left": "25%",
+        "text": "Store Sales",
+        "textAlign": "center",
+        "textStyle": {
+          "color": "#0f172a",
+          "fontSize": 12,
+        },
+        "top": "2%",
+      },
+      {
+        "left": "75%",
+        "text": "Unit Sales",
+        "textAlign": "center",
+        "textStyle": {
+          "color": "#0f172a",
+          "fontSize": 12,
+        },
+        "top": "2%",
+      },
+    ],
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+    },
+  },
+  "treemap": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "series": [
+      {
+        "breadcrumb": {
+          "show": false,
+        },
+        "data": [
+          {
+            "name": "1997",
+            "value": 565238.13,
+          },
+          {
+            "name": "1998",
+            "value": 612482.65,
+          },
+        ],
+        "height": "78.72%",
+        "label": {
+          "color": "#fff",
+        },
+        "left": "2%",
+        "name": "Store Sales",
+        "top": "19.28%",
+        "type": "treemap",
+        "width": "46%",
+      },
+      {
+        "breadcrumb": {
+          "show": false,
+        },
+        "data": [
+          {
+            "name": "1997",
+            "value": 266773,
+          },
+          {
+            "name": "1998",
+            "value": 282417,
+          },
+        ],
+        "height": "78.72%",
+        "label": {
+          "color": "#fff",
+        },
+        "left": "52%",
+        "name": "Unit Sales",
+        "top": "19.28%",
+        "type": "treemap",
+        "width": "46%",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": [
+      {
+        "left": "25%",
+        "text": "Store Sales",
+        "textAlign": "center",
+        "textStyle": {
+          "color": "#0f172a",
+          "fontSize": 12,
+        },
+        "top": "2%",
+      },
+      {
+        "left": "75%",
+        "text": "Unit Sales",
+        "textAlign": "center",
+        "textStyle": {
+          "color": "#0f172a",
+          "fontSize": 12,
+        },
+        "top": "2%",
+      },
+    ],
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+    },
+  },
+  "waterfall": {
+    "backgroundColor": "transparent",
+    "color": [
+      "#4f46e5",
+      "#0ea5e9",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#a855f7",
+      "#ec4899",
+      "#14b8a6",
+    ],
+    "dataZoom": [
+      {
+        "filterMode": "none",
+        "type": "inside",
+        "xAxisIndex": 0,
+      },
+    ],
+    "grid": {
+      "bottom": 56,
+      "left": 60,
+      "right": 40,
+      "top": 30,
+    },
+    "legend": {
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "top": 10,
+    },
+    "series": [
+      {
+        "data": [
+          0,
+          565238.13,
+        ],
+        "emphasis": {
+          "itemStyle": {
+            "borderColor": "transparent",
+            "color": "transparent",
+          },
+        },
+        "itemStyle": {
+          "borderColor": "transparent",
+          "color": "transparent",
+        },
+        "name": "",
+        "stack": "waterfall",
+        "type": "bar",
+      },
+      {
+        "data": [
+          565238.13,
+          612482.65,
+        ],
+        "itemStyle": {
+          "color": "#4c9ee6",
+        },
+        "name": "Store Sales",
+        "stack": "waterfall",
+        "type": "bar",
+      },
+      {
+        "data": [
+          null,
+          null,
+        ],
+        "itemStyle": {
+          "color": "#e66c6c",
+        },
+        "name": "-Store Sales",
+        "stack": "waterfall",
+        "type": "bar",
+      },
+    ],
+    "textStyle": {
+      "color": "#0f172a",
+    },
+    "title": undefined,
+    "tooltip": {
+      "backgroundColor": "#ffffff",
+      "borderColor": "#e2e8f0",
+      "textStyle": {
+        "color": "#0f172a",
+      },
+      "trigger": "axis",
+    },
+    "xAxis": {
+      "axisLabel": {
+        "color": "#475569",
+        "ellipsis": "…",
+        "hideOverlap": true,
+        "overflow": "truncate",
+        "rotate": 0,
+        "width": 120,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "data": [
+        "1997",
+        "1998",
+      ],
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "category",
+    },
+    "yAxis": {
+      "axisLabel": {
+        "color": "#475569",
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "axisTick": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+        },
+      },
+      "name": undefined,
+      "nameTextStyle": {
+        "color": "#0f172a",
+      },
+      "splitLine": {
+        "lineStyle": {
+          "color": "#e2e8f0",
+          "opacity": 0.5,
+        },
+      },
+      "type": "value",
+    },
+  },
+}
+`;

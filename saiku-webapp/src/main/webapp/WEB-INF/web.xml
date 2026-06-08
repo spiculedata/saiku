@@ -68,6 +68,33 @@
 		<session-timeout>10080</session-timeout>
 	</session-config>
 
+    <!-- saiku#1029: demo email gate. Declared BEFORE the Spring Security
+         filterChainProxy so it runs first and stays independent of Spring
+         Security — the verified cookie only unlocks the login form; admin/admin
+         is still required afterwards. Inert (immediate pass-through) unless demo
+         mode is on AND WorkOS is configured. -->
+    <!-- saiku#1165 hardening: stamp browser-facing security headers on EVERY
+         response. Listed first + mapped to /* so it also covers /ui/** and the
+         root, whose Spring Security chains are security="none" (Spring's own
+         header support never runs there). -->
+    <filter>
+        <filter-name>securityHeaders</filter-name>
+        <filter-class>org.saiku.web.servlet.SecurityHeadersFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>securityHeaders</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+
+    <filter>
+        <filter-name>demoGate</filter-name>
+        <filter-class>org.saiku.web.servlet.DemoGateFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>demoGate</filter-name>
+        <url-pattern>/rest/*</url-pattern>
+    </filter-mapping>
+
     <filter>
         <filter-name>org.springframework.security.filterChainProxy</filter-name>
         <filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
@@ -232,6 +259,17 @@
       		<param-value>org.saiku.web.rest.SaikuJerseyApplication</param-value>
     	</init-param>
     	<load-on-startup>1</load-on-startup>
+    	<!-- saiku#1165 audit-3: global upload backstop on the REST surface.
+    	     Individual endpoints may impose tighter caps; these are the outer
+    	     limits the container enforces before a request reaches Jersey, so a
+    	     hostile multipart body can't exhaust memory/disk. 50 MB per file,
+    	     50 MB per request, with a 256 KB in-memory threshold (larger parts
+    	     spill to a temp file). -->
+    	<multipart-config>
+    		<max-file-size>52428800</max-file-size>
+    		<max-request-size>52428800</max-request-size>
+    		<file-size-threshold>262144</file-size-threshold>
+    	</multipart-config>
   	</servlet>
 
 	  <servlet-mapping>
@@ -372,5 +410,19 @@
         <servlet-name>branding</servlet-name>
         <url-pattern>/ui/branding/*</url-pattern>
     </servlet-mapping>
+
+    <!-- SvelteKit SPA fallback: any /ui/* request that the default
+         servlet can't resolve to a real file (and isn't a static-asset
+         extension) gets rewritten to /ui/index.html so the SPA can
+         hydrate the route from window.location. Without this,
+         refreshing /ui/dashboards/<path> returns Jetty's 404 page. -->
+    <filter>
+        <filter-name>spaFallback</filter-name>
+        <filter-class>org.saiku.web.servlet.SpaFallbackFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>spaFallback</filter-name>
+        <url-pattern>/ui/*</url-pattern>
+    </filter-mapping>
 
 </web-app>

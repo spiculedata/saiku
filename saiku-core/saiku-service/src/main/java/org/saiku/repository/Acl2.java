@@ -39,12 +39,78 @@ class Acl2 {
 
     private List<String> adminRoles;
 
-    private AclMethod rootMethod = AclMethod.WRITE;
+    /**
+     * Default method granted on un-ACL'd nodes whose parent chain runs out
+     * before hitting an {@code acl.json}. Flipped from {@link AclMethod#WRITE}
+     * to {@link AclMethod#READ} for saiku#951.
+     *
+     * <p>Note: this value is currently <b>not reached at runtime</b> for any
+     * real filesystem path. The fallback branch in {@link #getMethods} that
+     * consults {@code rootMethod} guards on
+     * {@code file.getParentFile().getName().equals("/")}, but the Java
+     * {@link File} model returns the empty string ({@code ""}) for the
+     * filesystem root on Unix (and {@code "C:"}-style names on Windows) —
+     * never the literal {@code "/"}. Every un-ACL'd path therefore walks the
+     * parent chain up to a null parent and resolves to {@link AclMethod#NONE}.
+     *
+     * <p>Flipping the default is defensive: if a future change repairs the
+     * parent-detection guard to actually trigger this branch, the inherited
+     * default is least-privilege (READ, not WRITE) so the fix doesn't
+     * accidentally widen access. The previous value of {@link AclMethod#WRITE}
+     * was a Jackrabbit-era artifact carried over verbatim during the
+     * filesystem port.
+     */
+    private AclMethod rootMethod = AclMethod.READ;
 
     @NotNull
     private final Map<String, AclEntry> acl = new TreeMap<>();
 
-    public Acl2(File n) {}
+    @Nullable
+    private final File node;
+
+    public Acl2(File n) {
+        this.node = n;
+        loadAclHome();
+    }
+
+    /**
+     * The directory whose {@code acl.json} holds {@code f}'s entry: the folder
+     * itself for a directory, otherwise its parent. A node's ACL lives in the
+     * acl.json of its own folder (folders) or its parent folder (files) —
+     * keyed by the node's absolute path. This is what lets a single file
+     * (e.g. a {@code .saikudash} dashboard) carry its own ACL alongside its
+     * siblings instead of being limited to whole-folder granularity (#940).
+     */
+    @Nullable
+    private static File aclHome(@Nullable File f) {
+        if (f == null) {
+            return null;
+        }
+        return f.isDirectory() ? f : f.getParentFile();
+    }
+
+    /**
+     * Best-effort load of the node's acl-home {@code acl.json} into
+     * {@link #acl} so {@link #getEntry} sees persisted entries and
+     * {@link #serialize} merges rather than overwrites siblings. A missing
+     * file (fresh folder) just leaves the map empty.
+     */
+    private void loadAclHome() {
+        File home = aclHome(node);
+        if (home == null) {
+            return;
+        }
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            TypeReference<Map<String, AclEntry>> ref = new TypeReference<Map<String, AclEntry>>() {};
+            Map<String, AclEntry> data = mapper.readValue(new File(home, "acl.json"), ref);
+            if (data != null) {
+                acl.putAll(data);
+            }
+        } catch (Exception ignored) {
+            // No acl.json at this level yet — start from an empty map.
+        }
+    }
 
     public void setAdminRoles(List<String> adminRoles) {
         this.adminRoles = adminRoles;
@@ -103,7 +169,11 @@ class Acl2 {
 
     public void serialize(File n) {
         try {
-            File f = new File(n, "acl.json");
+            File home = aclHome(n);
+            if (home == null) {
+                home = n;
+            }
+            File f = new File(home, "acl.json");
             ObjectMapper mapper = new ObjectMapper();
             mapper.writeValue(f, acl);
         } catch (Exception e) {
@@ -143,6 +213,44 @@ class Acl2 {
         return acls.contains(AclMethod.READ);
     }
 
+    /**
+     * Best-effort owner lookup for a path. Walks the same {@code acl.json}
+     * chain that {@link #getMethods} consults; returns the {@code owner}
+     * field from the file's own ACL entry, or the closest parent's, or
+     * {@code null} when no ACL entry is found before the root.
+     *
+     * <p>Surfaced for the catalogue's #935 owner filter — needed at
+     * listing time without forcing a separate {@code getResourceAcl}
+     * round-trip per file. Best-effort only: a missing or malformed
+     * {@code acl.json} yields {@code null} (the catalogue then renders
+     * the file under an "unknown owner" bucket rather than failing the
+     * listing).
+     */
+    @Nullable
+    public String getOwner(@NotNull File file) {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            TypeReference<Map<String, AclEntry>> ref = new TypeReference<Map<String, AclEntry>>() {};
+            try {
+                File home = aclHome(file);
+                Map<String, AclEntry> aclData = mapper.readValue(new File(home, "acl.json"), ref);
+                AclEntry entry = aclData.get(file.getPath());
+                if (entry != null && StringUtils.isNotBlank(entry.getOwner())) {
+                    return entry.getOwner();
+                }
+            } catch (Exception ignored) {
+                // No acl.json at this level — fall through and walk up.
+            }
+            if (file.getParentFile() != null) {
+                return getOwner(file.getParentFile());
+            }
+            return null;
+        } catch (Exception e) {
+            LOG.debug("Owner lookup failed for {}", file.getPath(), e);
+            return null;
+        }
+    }
+
     @NotNull
     public List<AclMethod> getMethods(@NotNull File file, String username, @NotNull List<String> roles) {
         try {
@@ -152,7 +260,12 @@ class Acl2 {
 
             try {
                 TypeReference<Map<String, AclEntry>> ref = new TypeReference<Map<String, AclEntry>>() {};
-                aclData = mapper.readValue(new File(file, "acl.json"), ref);
+                // Read the node's acl-home: a folder's own acl.json, or — for a
+                // file — its parent's, where the file's per-resource entry lives
+                // keyed by absolute path. A null/absent entry then falls through
+                // to the parent-chain walk below (inheritance), unchanged (#940).
+                File home = aclHome(file);
+                aclData = mapper.readValue(new File(home, "acl.json"), ref);
                 entry = aclData.get(file.getPath());
             } catch (Exception e) {
                 LOG.debug("Exception: " + file.getPath(), e.getCause());

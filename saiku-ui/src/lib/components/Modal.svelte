@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { tick } from "svelte";
+  import { X } from "lucide-svelte";
 
   interface Props {
     title: string;
@@ -84,6 +85,7 @@
   <div
     class="modal"
     role="dialog"
+    tabindex="-1"
     aria-modal="true"
     aria-labelledby={titleId}
     onkeydown={onKeyDown}
@@ -102,7 +104,9 @@
     >
       <header class="modal__header">
         <h2 class="modal__title" id={titleId}>{title}</h2>
-        <button type="button" class="modal__close" aria-label="Close" onclick={onClose}>×</button>
+        <button type="button" class="icon-btn modal__close" aria-label="Close" onclick={onClose}>
+          <X size={16} />
+        </button>
       </header>
       <div class="modal__body">
         {@render children?.()}
@@ -130,6 +134,7 @@
     background: var(--bg-overlay);
     border: 0;
     cursor: pointer;
+    animation: saiku-overlay-in var(--duration-fast) ease;
   }
   .modal__panel {
     position: relative;
@@ -143,6 +148,7 @@
     display: flex;
     flex-direction: column;
     min-width: 320px;
+    animation: saiku-panel-in var(--duration-normal) ease;
   }
   .modal__panel:focus { outline: none; }
   .modal__panel--sm { width: 360px; }
@@ -160,18 +166,10 @@
   .modal__title {
     margin: 0;
     font-size: var(--fs-lg);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
   }
-  .modal__close {
-    background: transparent;
-    border: 0;
-    color: var(--fg-muted);
-    font-size: 24px;
-    line-height: 1;
-    cursor: pointer;
-    padding: 0 var(--space-1);
-  }
-  .modal__close:hover { color: var(--fg); }
+  /* .modal__close inherits its shape from the global .icon-btn class;
+     this rule remains as a placeholder for modal-specific tweaks. */
   .modal__body {
     padding: var(--space-5);
     overflow: auto;

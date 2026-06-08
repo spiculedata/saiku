@@ -788,6 +788,138 @@ check "info endpoint 200" GET "/rest/saiku/info" '' "isinstance(r, list)"
 check "mondrian server version" GET "/rest/saiku/statistics/mondrian/server/version" '' \
   "r.get('majorVersion')==4 and r.get('productName')=='mondrian'"
 
+# ---- dashboards (v1 CRUD) ----
+#
+# Exercises /rest/saiku/api/dashboards against the JCR repo. Uses a
+# uniquely-named test dashboard so reruns don't trip on stale state.
+
+DASH_PATH="/dashboards/test-ai-live-$(date +%s).saikudash"
+DASH_BODY='{"id":"test-1","name":"test-ai-live dashboard","version":1,"layout":{"cols":12,"tiles":[{"id":"tile-a","x":0,"y":0,"w":6,"h":4,"type":"chart","chartType":"bar","cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"query":{"kind":"inline","body":{"cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}}}]},"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","members":["[Time].[Time].[1997]"]}]}'
+
+check "dashboards: POST saves a fresh dashboard" POST "/rest/saiku/api/dashboards${DASH_PATH}" \
+  "$DASH_BODY" \
+  "r.get('status')=='OK' and r.get('path')=='${DASH_PATH}'"
+
+check "dashboards: GET round-trips the body verbatim" GET "/rest/saiku/api/dashboards${DASH_PATH}" '' \
+  "r.get('name')=='test-ai-live dashboard' and len(r['layout']['tiles'])==1 and r['layout']['tiles'][0]['query']['kind']=='inline' and r['filters'][0]['level']=='Year'"
+
+check "dashboards: GET nonexistent path returns 404" GET "/rest/saiku/api/dashboards/no/such/path.saikudash" '' \
+  "http==404 and r.get('status')=='NOT_FOUND'"
+
+# Add a second tile (filter widget) and re-save.
+UPDATED_BODY='{"id":"test-1","name":"test-ai-live dashboard","version":1,"layout":{"cols":12,"tiles":[{"id":"tile-a","x":0,"y":0,"w":6,"h":4,"type":"chart","chartType":"bar","cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"query":{"kind":"inline","body":{"cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}}},{"id":"tile-b","x":0,"y":4,"w":12,"h":1,"type":"filter","widget":"multi-select","cube":{"connectionName":"unknown_foodmart","catalog":"FoodMart","schema":"FoodMart","cubeName":"Sales"},"target":{"dimension":"Time","hierarchy":"Time","level":"Year","members":[]}}]},"filters":[{"dimension":"Time","hierarchy":"Time","level":"Year","members":["[Time].[Time].[1997]"]}]}'
+
+check "dashboards: POST updates an existing dashboard" POST "/rest/saiku/api/dashboards${DASH_PATH}" \
+  "$UPDATED_BODY" \
+  "r.get('status')=='OK'"
+
+check "dashboards: updated tile count survives the round-trip" GET "/rest/saiku/api/dashboards${DASH_PATH}" '' \
+  "len(r['layout']['tiles'])==2 and r['layout']['tiles'][1]['type']=='filter' and r['layout']['tiles'][1]['target']['level']=='Year'"
+
+check "dashboards: DELETE removes the file" DELETE "/rest/saiku/api/dashboards${DASH_PATH}" '' \
+  "r.get('status')=='OK'"
+
+check "dashboards: GET after delete is 404" GET "/rest/saiku/api/dashboards${DASH_PATH}" '' \
+  "http==404"
+
+# ---- MCP streamable-http endpoint (saiku#878) ----
+#
+# Native /rest/saiku/api/mcp lives inside saiku-webapp behind the same
+# Spring Security chain as /rest/saiku/api/ai. Auth: HTTP Basic. Each
+# request carries the mcp-session-id minted by initialize. JSON-RPC body
+# captured per call so we can predicate on the result envelope.
+
+MCP_SESSION_FILE=$(mktemp)
+trap 'rm -f "$COOKIES" "$MCP_SESSION_FILE"' EXIT
+
+# mcp_call: 1=label  2=jsonrpc-body  3=predicate-over-result
+# Captures the mcp-session-id response header on initialize so subsequent
+# calls automatically thread it.
+mcp_call() {
+  local label="$1" body="$2" predicate="$3"
+  local out hdr code session
+  out=$(mktemp); hdr=$(mktemp)
+  session=$(cat "$MCP_SESSION_FILE" 2>/dev/null || true)
+  local sid_header=()
+  if [[ -n "$session" ]]; then sid_header=(-H "Mcp-Session-Id: $session"); fi
+
+  code=$(curl -sS -u "$USER:$PASS" "${sid_header[@]}" \
+    -H 'Content-Type: application/json' \
+    -X POST "$URL/rest/saiku/api/mcp" --data "$body" \
+    -D "$hdr" -o "$out" -w '%{http_code}')
+  # Capture session id on response when present (initialize sets it).
+  local new_sid
+  new_sid=$(grep -i '^Mcp-Session-Id:' "$hdr" | tail -1 | sed -E 's/.*:[[:space:]]*(.*)\r?$/\1/' | tr -d '\r')
+  if [[ -n "$new_sid" ]]; then echo "$new_sid" > "$MCP_SESSION_FILE"; fi
+
+  if [[ "$code" == "202" ]]; then
+    # Notification — no body to assert on; bail with pass.
+    PASS_COUNT=$((PASS_COUNT+1))
+    echo "pass  $label (notification ack)"
+    rm -f "$out" "$hdr"
+    return
+  fi
+
+  if ! python3 -c "
+import json, sys
+try:
+    env = json.load(open('$out'))
+except Exception as e:
+    print('json-parse-fail:', e, file=sys.stderr); sys.exit(1)
+http = $code
+r = env.get('result', env)
+if not ($predicate):
+    print('predicate-fail | http={} | response={}'.format(http, json.dumps(env)[:600]), file=sys.stderr)
+    sys.exit(1)
+" 2>/tmp/err.out; then
+    FAIL_COUNT=$((FAIL_COUNT+1))
+    FAILURES+=("$label")
+    echo "FAIL  $label"
+    sed 's/^/      /' /tmp/err.out
+  else
+    PASS_COUNT=$((PASS_COUNT+1))
+    echo "pass  $label"
+  fi
+  rm -f "$out" "$hdr"
+}
+
+# Unauthenticated → 401 (no anonymous handshake).
+HTTP_NO_AUTH=$(curl -sS -H 'Content-Type: application/json' \
+  -X POST "$URL/rest/saiku/api/mcp" \
+  --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+  -o /dev/null -w '%{http_code}')
+if [[ "$HTTP_NO_AUTH" == "401" ]]; then
+  PASS_COUNT=$((PASS_COUNT+1)); echo "pass  mcp: anonymous initialize → 401"
+else
+  FAIL_COUNT=$((FAIL_COUNT+1))
+  FAILURES+=("mcp: anonymous initialize")
+  echo "FAIL  mcp: anonymous initialize (expected 401, got $HTTP_NO_AUTH)"
+fi
+
+mcp_call "mcp: initialize hands back a session id" \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test-ai-live","version":"1"}}}' \
+  "r.get('serverInfo',{}).get('name')=='saiku' and r.get('protocolVersion')"
+
+mcp_call "mcp: notifications/initialized ack" \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  "True"
+
+mcp_call "mcp: tools/list returns 6 tools" \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+  "len(r.get('tools',[]))==6 and {t['name'] for t in r['tools']} == {'list_cubes','describe_cube','search_members','run_query','preview_query','drillthrough'}"
+
+mcp_call "mcp: tools/call list_cubes delegates to AI API" \
+  '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_cubes","arguments":{}}}' \
+  "isinstance(r.get('structuredContent'), list) and any(c.get('cubeName')=='Sales' for c in r['structuredContent'])"
+
+mcp_call "mcp: tools/call run_query mirrors AI /query response" \
+  '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"run_query","arguments":{"cube":"'"$CUBE"'","measures":[{"name":"Store Sales"}],"rows":[{"dimension":"Product","hierarchy":"Products","level":"Product Family"}]}}}' \
+  "r['structuredContent'].get('status')=='SUCCESS' and r['structuredContent'].get('totalRows')==3"
+
+mcp_call "mcp: tools/call unknown tool → JSON-RPC -32601" \
+  '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"no_such_tool","arguments":{}}}' \
+  "env.get('error',{}).get('code')==-32601"
+
 # ---- summary ----
 echo ""
 echo "---"

@@ -29,6 +29,24 @@ class FoConverter {
 
     private static Transformer createTransformer() throws TransformerConfigurationException {
         TransformerFactory factory = TransformerFactory.newInstance();
+        // Harden the XSLT factory against external entity / stylesheet resolution (XXE / SSRF).
+        // Wrapped defensively: not every TransformerFactory implementation supports every
+        // property, and an unsupported one must not break document conversion.
+        try {
+            factory.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
+        } catch (Exception e) {
+            // Feature unsupported by this factory implementation; continue.
+        }
+        try {
+            factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "");
+        } catch (Exception e) {
+            // Attribute unsupported by this factory implementation; continue.
+        }
+        try {
+            factory.setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_STYLESHEET, "");
+        } catch (Exception e) {
+            // Attribute unsupported by this factory implementation; continue.
+        }
         Transformer transformer = factory.newTransformer();
 
         if (transformer == null) {

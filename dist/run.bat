@@ -18,5 +18,17 @@ if not defined JAR (
     exit /b 1
 )
 
-java -jar "%JAR%" serve --home "%SCRIPT_DIR%saiku-home" %*
+rem Optional OpenTelemetry: drop opentelemetry-javaagent.jar next to this
+rem script and set OTEL_EXPORTER_OTLP_ENDPOINT to enable. See
+rem docs\observability.md for the download command and config reference.
+set "JAVA_OPTS="
+set "OTEL_AGENT_JAR=%SCRIPT_DIR%opentelemetry-javaagent.jar"
+if defined OTEL_EXPORTER_OTLP_ENDPOINT (
+    if exist "%OTEL_AGENT_JAR%" (
+        set "JAVA_OPTS=-javaagent:%OTEL_AGENT_JAR%"
+        if not defined OTEL_SERVICE_NAME set "OTEL_SERVICE_NAME=saiku"
+    )
+)
+
+java %JAVA_OPTS% -jar "%JAR%" serve --home "%SCRIPT_DIR%saiku-home" %*
 endlocal

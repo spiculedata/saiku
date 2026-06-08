@@ -1,39 +1,38 @@
-# Saiku demo image — bundles the launcher (REST + UI on :8080) and the
-# MCP wrapper (stdio JSON-RPC) in one container so Claude Desktop /
-# Cursor / Cline can wire to a running Saiku via a single
-# `docker exec -i <name> saiku-mcp` invocation.
+# Saiku demo image — bundles the launcher (REST + UI + native MCP on :8080)
+# in a single container. Since #878 the MCP endpoint lives inside saiku-webapp
+# at /rest/saiku/api/mcp; MCP hosts (Claude Desktop, Cursor, …) authenticate
+# with per-user Basic credentials over the same chain as the AI REST API.
+# No separate stdio binary required.
 #
 # Build flow (release.yml / ci.yml):
-#   1. The jar job builds both fat JARs under saiku-launcher/target/
-#      and saiku-mcp/target/.
-#   2. The docker job stages them into ./build-context/ as
-#      saiku.jar and saiku-mcp.jar.
-#   3. This Dockerfile COPYs them in. No Maven runs at image build —
+#   1. The jar job builds the launcher fat JAR under saiku-launcher/target/.
+#   2. The docker job stages it into ./build-context/saiku.jar.
+#   3. This Dockerfile COPYs it in. No Maven runs at image build —
 #      avoids needing GH Packages auth inside the container.
 FROM eclipse-temurin:21-jre-noble
 ARG JAR_PATH=build-context/saiku.jar
-ARG MCP_JAR_PATH=build-context/saiku-mcp.jar
+ARG OTEL_AGENT_VERSION=2.28.1
+ARG OTEL_AGENT_SHA256=faa89bdeebf9b1f52be4a4374689176717b02a59df2d8f8b6eb9aa39f9292589
 WORKDIR /app
 
 COPY ${JAR_PATH} /app/saiku.jar
-COPY ${MCP_JAR_PATH} /app/saiku-mcp.jar
 COPY docker/saiku-entrypoint /usr/local/bin/saiku-entrypoint
-COPY docker/saiku-mcp /usr/local/bin/saiku-mcp
-RUN chmod +x /usr/local/bin/saiku-entrypoint /usr/local/bin/saiku-mcp
+RUN chmod +x /usr/local/bin/saiku-entrypoint
 
-ENV SAIKU_HOME=/app/saiku-home \
-    SAIKU_URL=http://localhost:8080 \
-    SAIKU_USER=admin \
-    SAIKU_PASS=admin
+# OpenTelemetry Java agent — side-loaded, only attached at runtime when
+# OTEL_EXPORTER_OTLP_ENDPOINT is set (see saiku-entrypoint). Pinned by
+# checksum so a tampered Maven Central response can't slip in a different
+# binary. See docs/observability.md for the runtime activation contract.
+RUN set -eux; \
+    mkdir -p /opt/saiku/otel; \
+    curl -fsSL -o /opt/saiku/otel/opentelemetry-javaagent.jar \
+      "https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/${OTEL_AGENT_VERSION}/opentelemetry-javaagent-${OTEL_AGENT_VERSION}.jar"; \
+    echo "${OTEL_AGENT_SHA256}  /opt/saiku/otel/opentelemetry-javaagent.jar" | sha256sum -c -
+
+ENV SAIKU_HOME=/app/saiku-home
 
 VOLUME ["/app/saiku-home"]
 EXPOSE 8080
 
-# Default: run the launcher. Override with `mcp` to run the stdio
-# MCP server against an external SAIKU_URL. The intended demo flow is:
-#   docker run -d -p 8080:8080 --name saiku-demo ghcr.io/spiculedata/saiku
-#   # then in Claude Desktop config:
-#   command: docker
-#   args:    ["exec", "-i", "saiku-demo", "saiku-mcp"]
 ENTRYPOINT ["/usr/local/bin/saiku-entrypoint"]
 CMD ["serve"]

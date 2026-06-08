@@ -138,7 +138,7 @@
   .drawer__title {
     margin: 0;
     font-size: var(--fs-lg);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
   }
   .drawer__kind {
     margin: 0;
@@ -155,7 +155,7 @@
     line-height: 1;
     padding: 3px 8px;
     border-radius: 999px;
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.03em;
     background: var(--fg-subtle);
@@ -175,7 +175,7 @@
   }
   .drawer__badge-rule {
     text-transform: none;
-    font-weight: 400;
+    font-weight: var(--weight-normal);
     opacity: 0.85;
   }
   .drawer__field {
@@ -219,7 +219,7 @@
     color: var(--fg-muted);
   }
   .drawer__meta dt {
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
   }
   .drawer__meta dd {
     margin: 0;

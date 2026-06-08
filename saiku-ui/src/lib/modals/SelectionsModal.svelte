@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import type { SaikuMember } from "$lib/api/discover";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -34,8 +35,8 @@
   }: Props = $props();
 
   let search = $state("");
-  let selected = $state<Set<string>>(new Set(initialSelected));
-  let type = $state<SelectionType>(initialType);
+  let selected = $state<Set<string>>(untrack(() => new Set(initialSelected)));
+  let type = $state<SelectionType>(untrack(() => initialType));
 
   $effect(() => {
     if (open) {

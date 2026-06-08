@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
@@ -63,7 +64,7 @@
     onCancel,
   }: Props = $props();
 
-  let form = $state<CalculatedMember>({ ...initial });
+  let form = $state<CalculatedMember>(untrack(() => ({ ...initial })));
   let textarea: HTMLTextAreaElement | null = null;
   let measureFilter = $state("");
 

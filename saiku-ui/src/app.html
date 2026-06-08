@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
     <title>Saiku</title>
-    <link rel="icon" type="image/svg+xml" href="/ui/favicon.svg" />
-    <link rel="icon" type="image/x-icon" href="/ui/favicon.ico" />
-    <link rel="apple-touch-icon" href="/ui/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="%sveltekit.assets%/favicon.svg" />
+    <link rel="icon" type="image/x-icon" href="%sveltekit.assets%/favicon.ico" />
+    <link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
     %sveltekit.head%
     <!-- Operator branding overlay. Served from <saiku.home>/branding/brand.css.
          If the file does not exist the backend returns 404 and the link drops
          silently, leaving the built-in tokens.css theme in place. -->
-    <link rel="stylesheet" href="/ui/branding/brand.css" onerror="this.remove()" />
+    <link rel="stylesheet" href="%sveltekit.assets%/branding/brand.css" onerror="this.remove()" />
   </head>
   <body data-sveltekit-preload-data="hover">
     <div style="display: contents">%sveltekit.body%</div>

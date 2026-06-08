@@ -1,8 +1,21 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import RepositoryBrowser from "$lib/components/RepositoryBrowser.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
-  /** Port of saiku-ui-legacy/js/saiku/views/SaveQuery.js. */
+  /*
+   * Save-query dialog.
+   *
+   * Uses the shared RepositoryBrowser in "save" mode — user navigates
+   * folders, optionally creates a new one inline, and the selected
+   * folder becomes the target. A separate "Name" input below collects
+   * the filename. The save endpoint mkdirs missing parent folders at
+   * write time so any path the browser shows can be written into.
+   *
+   * Replaces the previous combo-input that didn't give users a real
+   * sense of where their saved queries lived.
+   */
   interface Props {
     defaultName: string;
     defaultFolder: string;
@@ -12,9 +25,10 @@
     onCancel: () => void;
   }
 
-  let { defaultName, defaultFolder, folders, open, onSave, onCancel }: Props = $props();
-  let name = $state<string>(defaultName);
-  let folder = $state<string>(defaultFolder);
+  let { defaultName, defaultFolder, open, onSave, onCancel }: Props = $props();
+
+  let name = $state<string>(untrack(() => defaultName));
+  let folder = $state<string>(untrack(() => defaultFolder));
 
   $effect(() => {
     if (open) {
@@ -23,29 +37,47 @@
     }
   });
 
+  function normalizeFolder(raw: string): string {
+    return raw.replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
+  }
+
   const valid = $derived(name.trim().length > 0);
 </script>
 
-<Modal title={i18n.t("modal.save.title")} {open} size="md" onClose={onCancel}>
-  <label class="field">
-    <span class="field__label">{i18n.t("modal.save.folder")}</span>
-    <select class="field__input" bind:value={folder}>
-      {#each folders as f}
-        <option value={f}>{f || "/"}</option>
-      {/each}
-    </select>
-  </label>
-  <label class="field">
+<Modal title={i18n.t("modal.save.title")} {open} size="lg" onClose={onCancel}>
+  <p class="save-modal__intro">
+    {i18n.t("modal.save.intro").replace("{folder}", folder || i18n.t("repo.root"))}
+  </p>
+
+  <RepositoryBrowser
+    mode="save"
+    selectedPath={folder}
+    onSelect={(p) => (folder = p)}
+  />
+
+  <label class="field save-modal__name">
     <span class="field__label">{i18n.t("modal.save.name")}</span>
     <input class="field__input" bind:value={name} autocomplete="off" required />
   </label>
+
   {#snippet footer()}
     <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
     <button
       type="button"
       class="btn btn--primary"
       disabled={!valid}
-      onclick={() => onSave(folder, name.trim())}
+      onclick={() => onSave(normalizeFolder(folder), name.trim())}
     >{i18n.t("modal.save")}</button>
   {/snippet}
 </Modal>
+
+<style>
+  .save-modal__intro {
+    margin: 0 0 var(--space-3);
+    color: var(--fg-muted);
+    font-size: var(--fs-sm);
+  }
+  .save-modal__name {
+    margin-top: var(--space-3);
+  }
+</style>

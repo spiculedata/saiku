@@ -3,10 +3,21 @@
   import { selection } from "$lib/stores/selection.svelte";
   import { session } from "$lib/stores/session.svelte";
   import type { AxisLocation, ThinHierarchy, ThinMeasure } from "$lib/api/query";
+
+  /** UI-only zone identifier. The backend {@link AxisLocation} enum
+   *  (COLUMNS / ROWS / PAGES / FILTER) is what actually round-trips to
+   *  the server; "MEASURES" is a SvelteKit-only sentinel for the
+   *  dedicated measures panel restored in saiku#1018. Internally the
+   *  model still stores measures in `details.measures` and the MDX
+   *  emitter still places them on `details.axis = COLUMNS`, so nothing
+   *  changes server-side — this is purely about laying out the chip
+   *  drop targets the way users from the Backbone-era UI expect. */
+  type ZoneId = AxisLocation | "MEASURES";
   import CellsetTable from "$lib/views/CellsetTable.svelte";
   import ChartView from "$lib/views/ChartView.svelte";
   import StatsView from "$lib/views/StatsView.svelte";
   import { CHART_TYPES } from "$lib/views/chartTypes";
+  import { parseCellset } from "$lib/views/cellsetUtils";
   import type { ViewMode } from "$lib/stores/query.svelte";
   import SelectionsModal from "$lib/modals/SelectionsModal.svelte";
   import DrillthroughModal from "$lib/modals/DrillthroughModal.svelte";
@@ -16,19 +27,88 @@
   import FormatAsPercentageModal from "$lib/modals/FormatAsPercentageModal.svelte";
   import GrowthModal from "$lib/modals/GrowthModal.svelte";
   import FilterModal from "$lib/modals/FilterModal.svelte";
+  import OrderModal from "$lib/modals/OrderModal.svelte";
+  import TopBottomCountModal from "$lib/modals/TopBottomCountModal.svelte";
+  import LimitModal from "$lib/modals/LimitModal.svelte";
   import DateFilterModal from "$lib/modals/DateFilterModal.svelte";
-  import { looksLikeTimeHierarchy } from "$lib/modals/dateFilterMdx";
+  import { isTimeHierarchy } from "$lib/modals/dateFilterMdx";
   import ContextMenu from "$lib/components/ContextMenu.svelte";
   type ContextMenuItem = { id: string; label: string; disabled?: boolean; danger?: boolean; sep?: boolean };
-  import { MoreHorizontal, Loader2, XCircle, ChevronDown, Settings } from "lucide-svelte";
+  import { MoreHorizontal, Loader2, XCircle, ChevronDown, Settings, Sparkles } from "lucide-svelte";
+  import EmptyState from "$lib/components/EmptyState.svelte";
   import { listLevelMembers, listRootMembers, type SaikuMember } from "$lib/api/discover";
   import { datasources } from "$lib/stores/datasources.svelte";
   import { drillthrough as fetchDrillthrough, type QueryResult } from "$lib/api/query";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
-  let chartEditorOpen = $state(false);
+  /** Issue #912 — when {@code embedded} is true the canvas is mounted
+   *  inside the dashboard tile editor rather than the workspace. The host
+   *  (TileEditorModal) owns the query-store lifecycle: it seeds the model
+   *  from the tile's inline body and commits it back on Save. So in
+   *  embedded mode we suppress the workspace-only auto-init effect that
+   *  re-`initFor`s (and thereby wipes) the model whenever
+   *  {@link selection.cube} changes, and clears it when no cube is
+   *  selected. Everything else — drop zones, view toggle, result pane,
+   *  context menus — is reused verbatim. */
+  interface Props {
+    embedded?: boolean;
+  }
+  let { embedded = false }: Props = $props();
+
   let moreViewOpen = $state(false);
+
+  // saiku#1233 — consolidated open/target state for the modal cluster.
+  // `null` means closed; a non-null value means open with that target.
+  // chartEditor is bool-only (no per-open target). One source of truth
+  // beats six independent open/target pairs scattered through this
+  // file — see closeModal() for the close-and-clear sweep.
+  type AxisFilterType = "Order" | "Filter" | "TopCount" | "BottomCount" | "Limit";
+  interface ModalState {
+    chartEditor: boolean;
+    customFilter: ThinMeasure | null;
+    formatPct: { measure: ThinMeasure } | null;
+    growth: ThinMeasure | null;
+    dateFilter: {
+      axis: AxisLocation;
+      hierarchyName: string;
+      hierarchyCaption: string;
+      levelName: string;
+    } | null;
+    axisFilter: {
+      axis: AxisLocation;
+      type: AxisFilterType;
+      expression: string;
+      sort: string;
+    } | null;
+  }
+  let modals = $state<ModalState>({
+    chartEditor: false,
+    customFilter: null,
+    formatPct: null,
+    growth: null,
+    dateFilter: null,
+    axisFilter: null,
+  });
+  function closeModal(k: keyof ModalState): void {
+    if (k === "chartEditor") modals.chartEditor = false;
+    else modals[k] = null;
+  }
+
+  // Column-category labels from the latest cellset — passed into the
+  // Chart Editor so the per-series Left/Right/Auto picker can list
+  // measure names. Empty when there's no result yet; the editor's
+  // picker section hides itself in that case.
+  const chartSeriesNames = $derived.by((): string[] => {
+    const r = query.result;
+    if (!r || !Array.isArray(r.cellset) || r.cellset.length === 0) return [];
+    try {
+      const parsed = parseCellset(r);
+      return parsed.columnCategories.slice();
+    } catch {
+      return [];
+    }
+  });
   const moreViewModes: ViewMode[] = ["stats", "sparkline", "sparkbar"];
   function viewModeLabel(m: ViewMode): string {
     return i18n.t(`canvas.view.${m}`);
@@ -64,30 +144,13 @@
     y: number;
     items: ContextMenuItem[];
     // payload for the action handler
-    kind: "measure" | "hierarchy" | "axis" | null;
+    kind: "measure" | "hierarchy" | "axis" | "measures-panel" | null;
     axis: AxisLocation | null;
     measure: ThinMeasure | null;
     hierarchy: ThinHierarchy | null;
   }
   let menu = $state<MenuCtx>({ open: false, x: 0, y: 0, items: [], kind: null, axis: null, measure: null, hierarchy: null });
 
-  let customFilterOpen = $state(false);
-  let customFilterTarget = $state<ThinMeasure | null>(null);
-  let formatPctOpen = $state(false);
-  let formatPctTarget = $state<{ measure: ThinMeasure } | null>(null);
-  let growthOpen = $state(false);
-  let growthTarget = $state<ThinMeasure | null>(null);
-
-  let dateFilterOpen = $state(false);
-  let dateFilterTarget = $state<{
-    axis: AxisLocation;
-    hierarchyName: string;
-    hierarchyCaption: string;
-    levelName: string;
-  } | null>(null);
-
-  let axisFilterOpen = $state(false);
-  let axisFilterTarget = $state<{ axis: AxisLocation; type: "Order" | "Filter" | "TopCount" | "BottomCount" | "Limit"; expression: string; sort: string } | null>(null);
 
   function openMeasureMenu(e: MouseEvent, m: ThinMeasure) {
     e.preventDefault();
@@ -112,15 +175,78 @@
   function openHierMenu(e: MouseEvent, axis: AxisLocation, h: ThinHierarchy) {
     e.preventDefault();
     e.stopPropagation();
+    // When the chip carries more than one level, surface a per-level
+    // removal item so users can drop "Quarter" without losing "Year".
+    // The flat-menu approach (vs a submenu) keeps ContextMenu.svelte
+    // simple; a hierarchy with >5 levels would benefit from a submenu,
+    // but those are rare enough that this trade-off is fine for now.
+    const levelNames = Object.keys(h.levels);
+    // saiku#1221 Phase 4: skip the Selections detour for time-typed chips.
+    // If the dimension or any level is Mondrian-native time-typed, surface
+    // "Date filter…" as a primary item directly on the hierarchy menu.
+    // Selections is still available for users who want the member picker
+    // (e.g. "just Q1 + Q3"), but it's no longer the only entry point.
+    const isTime = isHierarchyTimeTyped(h);
+    const items: ContextMenuItem[] = [];
+    if (isTime) {
+      items.push({ id: "dateFilter", label: i18n.t("canvas.menu.dateFilter") });
+    }
+    items.push({ id: "selections", label: i18n.t("canvas.menu.editSelections") });
+    items.push({ id: "_sep1", sep: true, label: "" });
+    if (levelNames.length > 1) {
+      for (const levelName of levelNames) {
+        items.push({
+          id: `removeLevel:${levelName}`,
+          label: `${i18n.t("canvas.menu.removeLevel")}: ${levelName}`,
+        });
+      }
+      items.push({ id: "_sep2", sep: true, label: "" });
+    }
+    items.push({ id: "remove", label: i18n.t("canvas.menu.removeHierarchy"), danger: true });
     menu = {
       open: true,
       x: e.clientX, y: e.clientY,
       kind: "hierarchy",
       axis, measure: null, hierarchy: h,
+      items,
+    };
+  }
+
+  /** True if the hierarchy's dimension is Mondrian-typed TIME or any of its
+   *  levels carries a {@code levelType="Time*"} annotation. Used by the
+   *  context-menu builder to surface "Date filter…" as a primary action. */
+  function isHierarchyTimeTyped(h: ThinHierarchy): boolean {
+    for (const d of cubeMetadata?.dimensions ?? []) {
+      for (const hh of d.hierarchies ?? []) {
+        if (hh.uniqueName === h.name || hh.name === h.name) {
+          if (d.dimensionType === "TIME") return true;
+          return !!hh.levels?.some((l) => !!l.levelType && l.levelType.startsWith("Time"));
+        }
+      }
+    }
+    return false;
+  }
+
+  function openMeasuresMenu(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    // Mirrors the legacy Backbone "Position" picker. Reads the current
+    // (axis, location) so the matching item can show a check (or just
+    // be implied — the previous-selected item is the no-op).
+    menu = {
+      open: true,
+      x: e.clientX, y: e.clientY,
+      kind: "measures-panel",
+      axis: null, measure: null, hierarchy: null,
       items: [
-        { id: "selections", label: i18n.t("canvas.menu.editSelections") },
-        { id: "_sep", sep: true, label: "" },
-        { id: "remove", label: i18n.t("canvas.menu.removeHierarchy"), danger: true },
+        { id: "_hdr", label: i18n.t("canvas.menu.position"), disabled: true },
+        { id: "_sep1", sep: true, label: "" },
+        { id: "pos:BOTTOM_COLUMNS", label: i18n.t("canvas.menu.position.colsMeasures") },
+        { id: "pos:TOP_COLUMNS", label: i18n.t("canvas.menu.position.measuresCols") },
+        { id: "pos:BOTTOM_ROWS", label: i18n.t("canvas.menu.position.rowsMeasures") },
+        { id: "pos:TOP_ROWS", label: i18n.t("canvas.menu.position.measuresRows") },
+        { id: "_sep2", sep: true, label: "" },
+        { id: "pos:reset", label: i18n.t("canvas.menu.position.reset") },
       ],
     };
   }
@@ -149,14 +275,11 @@
     if (!id) return;
     if (m.kind === "measure" && m.measure) {
       if (id === "filter") {
-        customFilterTarget = m.measure;
-        customFilterOpen = true;
+        modals.customFilter = m.measure;
       } else if (id === "format-pct") {
-        formatPctTarget = { measure: m.measure };
-        formatPctOpen = true;
+        modals.formatPct = { measure: m.measure };
       } else if (id === "growth") {
-        growthTarget = m.measure;
-        growthOpen = true;
+        modals.growth = m.measure;
       } else if (id === "remove") {
         query.removeMeasure(m.measure.uniqueName);
       }
@@ -164,7 +287,26 @@
     }
     if (m.kind === "hierarchy" && m.axis && m.hierarchy) {
       if (id === "selections") openSelections(m.axis, m.hierarchy);
+      else if (id === "dateFilter") openDateFilterDirect(m.axis, m.hierarchy);
       else if (id === "remove") query.removeHierarchy(m.hierarchy.name);
+      else if (id.startsWith("removeLevel:")) {
+        const levelName = id.substring("removeLevel:".length);
+        query.removeLevel(m.hierarchy.name, levelName);
+        if (query.hasRunnableShape()) void query.run();
+      }
+      return;
+    }
+    if (m.kind === "measures-panel") {
+      if (!id.startsWith("pos:")) return;
+      const arg = id.substring("pos:".length);
+      if (arg === "reset") {
+        query.setMeasuresPlacement("COLUMNS", "BOTTOM");
+      } else {
+        // BOTTOM_COLUMNS | TOP_COLUMNS | BOTTOM_ROWS | TOP_ROWS
+        const [location, axis] = arg.split("_") as ["TOP" | "BOTTOM", "COLUMNS" | "ROWS"];
+        query.setMeasuresPlacement(axis, location);
+      }
+      if (query.hasRunnableShape()) void query.run();
       return;
     }
     if (m.kind === "axis" && m.axis) {
@@ -178,8 +320,7 @@
       else if (id === "filter-bot") { type = "BottomCount"; placeholder = "10, [Measures].[Unit Sales]"; }
       else if (id === "filter-limit") { type = "Limit"; placeholder = "10"; }
       const sortOrder = model?.axes[axis].sortOrder ?? "ASC";
-      axisFilterTarget = { axis, type, expression: placeholder, sort: sortOrder };
-      axisFilterOpen = true;
+      modals.axisFilter = { axis, type, expression: placeholder, sort: sortOrder };
     }
   }
 
@@ -217,8 +358,8 @@
   }
 
   function onCustomFilterApply(op: string, value: string, value2?: string) {
-    customFilterOpen = false;
-    const m = customFilterTarget;
+    closeModal("customFilter");
+    const m = modals.customFilter;
     if (!m || !query.current?.queryModel) return;
     const set = rowsAxisSet();
     if (!set) {
@@ -235,8 +376,8 @@
   }
 
   function onFormatPctApply(base: "ROWS" | "COLUMNS" | "GRAND_TOTAL", _scope: "all" | "selected") {
-    formatPctOpen = false;
-    const t = formatPctTarget;
+    closeModal("formatPct");
+    const t = modals.formatPct;
     if (!t || !query.current?.queryModel) return;
     const calcName = `${t.measure.name} %`;
     let denomTuple: string;
@@ -262,8 +403,8 @@
   }
 
   function onGrowthApply(basis: string, ref?: string) {
-    growthOpen = false;
-    const m = growthTarget;
+    closeModal("growth");
+    const m = modals.growth;
     if (!m || !query.current?.queryModel) return;
     const p = primaryRowsHier();
     if (!p) { toasts.warning(i18n.t("toast.noRowsHier"), i18n.t("toast.noRowsHier.growth")); return; }
@@ -300,8 +441,8 @@
   }
 
   function onAxisFilterSave(expression: string, sort?: string) {
-    axisFilterOpen = false;
-    const t = axisFilterTarget;
+    closeModal("axisFilter");
+    const t = modals.axisFilter;
     if (!t || !query.current?.queryModel) return;
     const axis = query.current.queryModel.axes[t.axis];
     if (t.type === "Order") {
@@ -329,8 +470,8 @@
   }
 
   function onDateFilterApply(mdx: string) {
-    dateFilterOpen = false;
-    const t = dateFilterTarget;
+    closeModal("dateFilter");
+    const t = modals.dateFilter;
     if (!t || !query.current?.queryModel) return;
     const axis = query.current.queryModel.axes[t.axis];
     const hadExisting = !!axis.mdx;
@@ -352,14 +493,20 @@
     type: "INCLUSION",
   });
 
-  const axisLabels = $derived<Record<AxisLocation, string>>({
+  const axisLabels = $derived<Record<ZoneId, string>>({
     COLUMNS: i18n.t("canvas.columns"),
     ROWS: i18n.t("canvas.rows"),
     FILTER: i18n.t("canvas.filter"),
     PAGES: i18n.t("canvas.pages"),
+    MEASURES: i18n.t("canvas.measures"),
   });
 
   $effect(() => {
+    // #912: in the embedded (tile-editor) host the modal owns the query
+    // lifecycle — seeding the model from the tile body and committing it
+    // back on Save. Re-`initFor`ing here would clobber that seeded model
+    // the instant the cube is mirrored into `selection`, so opt out.
+    if (embedded) return;
     if (selection.cube && (!query.current || query.current.cube.uniqueName !== selection.cube.uniqueName)) {
       query.initFor(selection.cube);
     }
@@ -377,17 +524,17 @@
     }
   }
 
-  let dragOverAxis = $state<AxisLocation | null>(null);
+  let dragOverAxis = $state<ZoneId | null>(null);
   let dragOverChipKey = $state<string | null>(null);
   /** Where the chip being dragged came from. Null for sidebar-originated drags
    *  (where any zone is a valid drop). Used to suppress no-op zone highlights
    *  when a chip is dragged over its own axis's empty background. */
-  let dragSourceAxis = $state<AxisLocation | null>(null);
+  let dragSourceAxis = $state<ZoneId | null>(null);
 
-  function chipKey(axis: AxisLocation, kind: "hierarchy" | "measure", id: string): string {
+  function chipKey(axis: ZoneId, kind: "hierarchy" | "measure", id: string): string {
     return `${axis}::${kind}::${id}`;
   }
-  function onDragEnterAxis(axis: AxisLocation, e: DragEvent) {
+  function onDragEnterAxis(axis: ZoneId, e: DragEvent) {
     const types = e.dataTransfer?.types;
     if (!types) return;
     const isChipDrag = types.includes("application/x-saiku-chip");
@@ -402,7 +549,7 @@
       dragOverAxis = axis;
     }
   }
-  function onDragLeaveAxis(axis: AxisLocation, e: DragEvent) {
+  function onDragLeaveAxis(axis: ZoneId, e: DragEvent) {
     // Only clear if we truly left the dropzone (not just crossed into a child chip).
     const related = e.relatedTarget as Node | null;
     const zone = e.currentTarget as HTMLElement;
@@ -412,7 +559,7 @@
   }
   function clearDragOver() { dragOverAxis = null; dragOverChipKey = null; dragSourceAxis = null; }
 
-  function onChipDragOver(e: DragEvent, axis: AxisLocation, kind: "hierarchy" | "measure", id: string) {
+  function onChipDragOver(e: DragEvent, axis: ZoneId, kind: "hierarchy" | "measure", id: string) {
     if (!e.dataTransfer?.types?.includes("application/x-saiku-chip")) return;
     e.preventDefault();
     e.stopPropagation();
@@ -427,30 +574,34 @@
     }
   }
 
-  function onDropAxis(axis: AxisLocation, e: DragEvent) {
+  function onDropAxis(axis: ZoneId, e: DragEvent) {
     e.preventDefault();
     const chipPayload = e.dataTransfer?.getData("application/x-saiku-chip");
     const levelPayload = e.dataTransfer?.getData("application/x-saiku-level");
     const measurePayload = e.dataTransfer?.getData("application/x-saiku-measure");
     if (chipPayload) {
-      // Chip moved between axes. Measures on COLUMNS are axis-locked so we
-      // punt on moving them (reorder-within-axis not supported either).
       try {
         const p = JSON.parse(chipPayload) as
-          | { kind: "hierarchy"; axis: AxisLocation; name: string }
-          | { kind: "measure"; axis: AxisLocation; uniqueName: string };
+          | { kind: "hierarchy"; axis: ZoneId; name: string }
+          | { kind: "measure"; axis: ZoneId; uniqueName: string };
         if (p.kind === "hierarchy") {
+          if (axis === "MEASURES") return; // levels can't live in MEASURES
           if (p.axis === axis) return; // no-op, same axis
           query.moveHierarchyToAxis(p.name, axis);
         }
-        // measure chips: ignore non-COLUMNS targets; no reorder support yet.
+        // measure chips: stay in the MEASURES panel; reorder handled by onChipDrop.
       } catch {
         /* malformed payload — ignore */
       }
     } else if (levelPayload) {
+      if (axis === "MEASURES") return; // levels can't be dropped on the measures panel
       const drop = JSON.parse(levelPayload);
       query.includeLevel(axis, drop);
     } else if (measurePayload) {
+      // Both MEASURES (new home) and COLUMNS (muscle memory from the
+      // old "drop measures with levels" pattern) accept measure drops;
+      // either way addMeasure stashes the measure in details.measures
+      // which the MDX emitter will project onto details.axis (= COLUMNS).
       const m = JSON.parse(measurePayload) as ThinMeasure;
       query.addMeasure(m);
     }
@@ -464,31 +615,34 @@
   }
 
   function onMeasureChipDragStart(e: DragEvent, m: ThinMeasure) {
-    const payload = { kind: "measure" as const, axis: "COLUMNS" as AxisLocation, uniqueName: m.uniqueName };
+    const payload = { kind: "measure" as const, axis: "MEASURES" as ZoneId, uniqueName: m.uniqueName };
     e.dataTransfer?.setData("application/x-saiku-chip", JSON.stringify(payload));
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
-    dragSourceAxis = "COLUMNS";
+    dragSourceAxis = "MEASURES";
   }
 
   /** Drop a dragged chip onto a sibling chip — reorder within axis if same-kind,
    *  otherwise bubble to the zone to handle as a cross-axis move. */
-  function onChipDrop(e: DragEvent, targetAxis: AxisLocation, target: { kind: "hierarchy"; name: string } | { kind: "measure"; uniqueName: string }) {
+  function onChipDrop(e: DragEvent, targetAxis: ZoneId, target: { kind: "hierarchy"; name: string } | { kind: "measure"; uniqueName: string }) {
     const chipPayload = e.dataTransfer?.getData("application/x-saiku-chip");
     if (!chipPayload) return; // not a chip drag; let the zone handle it
     const payload = JSON.parse(chipPayload) as
-      | { kind: "hierarchy"; axis: AxisLocation; name: string }
-      | { kind: "measure"; axis: AxisLocation; uniqueName: string };
+      | { kind: "hierarchy"; axis: ZoneId; name: string }
+      | { kind: "measure"; axis: ZoneId; uniqueName: string };
     // Only same-axis, same-kind drops are reorders. Otherwise defer to the zone handler.
     if (payload.kind === "hierarchy" && target.kind === "hierarchy" && payload.axis === targetAxis) {
       if (payload.name !== target.name) {
         e.preventDefault();
         e.stopPropagation();
         clearDragOver();
-        query.reorderHierarchy(targetAxis, payload.name, target.name);
+        // narrow targetAxis back to AxisLocation — reorderHierarchy only
+        // makes sense for real backend axes, and the hierarchy chip can
+        // only live in COLUMNS/ROWS/PAGES/FILTER anyway.
+        if (targetAxis !== "MEASURES") query.reorderHierarchy(targetAxis, payload.name, target.name);
       }
       return;
     }
-    if (payload.kind === "measure" && target.kind === "measure" && targetAxis === "COLUMNS") {
+    if (payload.kind === "measure" && target.kind === "measure" && targetAxis === "MEASURES") {
       if (payload.uniqueName !== target.uniqueName) {
         e.preventDefault();
         e.stopPropagation();
@@ -514,6 +668,24 @@
 
   function removeMeasure(uniqueName: string) {
     query.removeMeasure(uniqueName);
+  }
+
+  /** Open the date-filter modal directly on a hierarchy chip, skipping the
+   *  SelectionsModal detour. Used for time-typed chips (saiku#1221 Phase 4)
+   *  where browsing members first is rarely what the user wants. Picks the
+   *  deepest declared level on the chip (leaf grain) so the modal opens on
+   *  the chip's effective grain, not just the first level. */
+  function openDateFilterDirect(axis: AxisLocation, hier: ThinHierarchy) {
+    if (!selection.cube) return;
+    const levelNames = Object.keys(hier.levels);
+    const levelName = levelNames[levelNames.length - 1] ?? levelNames[0];
+    if (!levelName) return;
+    modals.dateFilter = {
+      axis,
+      hierarchyName: hier.name,
+      hierarchyCaption: hier.caption ?? hier.name,
+      levelName,
+    };
   }
 
   async function openSelections(axis: AxisLocation, hier: ThinHierarchy) {
@@ -558,6 +730,26 @@
       selectionsLoading = false;
     }
   }
+
+  // #1176: collapse the query-builder above the result when the canvas body
+  // is too narrow to show both side-by-side, so the result/chart gets the
+  // full width instead of being pushed off-screen. Container-width based
+  // (ResizeObserver), mirroring the dashboard grid's responsive stack.
+  let bodyEl = $state<HTMLDivElement | null>(null);
+  let bodyWidth = $state(0);
+  const BODY_STACK_PX = 640;
+  let bodyNarrow = $derived(bodyWidth > 0 && bodyWidth < BODY_STACK_PX);
+
+  $effect(() => {
+    const el = bodyEl;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      bodyWidth = entries[0]?.contentRect.width ?? el.clientWidth;
+    });
+    ro.observe(el);
+    bodyWidth = el.clientWidth;
+    return () => ro.disconnect();
+  });
 
   let resultHostEl = $state<HTMLDivElement | null>(null);
 
@@ -662,8 +854,64 @@
       <p class="canvas__hint">{i18n.t("canvas.pickPrompt")}</p>
     </div>
   {:else}
-    <div class="canvas__body">
+    <div
+      bind:this={bodyEl}
+      class="canvas__body"
+      class:canvas__body--mdx={query.current?.type === "MDX"}
+      class:canvas__body--narrow={bodyNarrow && query.current?.type !== "MDX"}
+    >
+    {#if query.current?.type !== "MDX"}
     <aside class="dropzones">
+      <!-- Dedicated MEASURES panel (restored from the pre-rewrite UI).
+           Sits above COLUMNS/ROWS so the chip stack visually separates
+           the projection (measures) from the axes (levels). Drops here
+           route to addMeasure, which stashes the measure in
+           details.measures; details.axis remains "COLUMNS" server-side
+           so the MDX emission is unchanged. -->
+      <div
+        class={dragOverAxis === "MEASURES" ? "dropzone dropzone--measures is-dragover" : "dropzone dropzone--measures"}
+        role="region"
+        aria-label={axisLabels.MEASURES}
+        ondragover={onDragOver}
+        ondragenter={(e) => onDragEnterAxis("MEASURES", e)}
+        ondragleave={(e) => onDragLeaveAxis("MEASURES", e)}
+        ondrop={(e) => { clearDragOver(); onDropAxis("MEASURES", e); }}
+      >
+        <header>
+          <span>{axisLabels.MEASURES}</span>
+          <button type="button" class="dropzone__menu" title={i18n.t("canvas.menu.position")} aria-label={i18n.t("canvas.menu.position")} onclick={openMeasuresMenu}>
+            <MoreHorizontal size={14} />
+          </button>
+        </header>
+        <div class="chips">
+          {#each query.current?.queryModel?.details.measures ?? [] as m}
+            <!-- svelte-ignore a11y_no_static_element_interactions — drag/context-menu are mouse affordances; the inner buttons (label, close) handle keyboard accessibility. -->
+            <span
+              class={dragOverChipKey === chipKey("MEASURES", "measure", m.uniqueName) ? "chip chip--measure is-drop-before" : "chip chip--measure"}
+              draggable="true"
+              ondragstart={(e) => onMeasureChipDragStart(e, m)}
+              ondragenter={onChipDragEnter}
+              ondragover={(e) => onChipDragOver(e, "MEASURES", "measure", m.uniqueName)}
+              ondrop={(e) => onChipDrop(e, "MEASURES", { kind: "measure", uniqueName: m.uniqueName })}
+              oncontextmenu={(e) => openMeasureMenu(e, m)}
+            >
+              <span class="chip__label" title={i18n.t("canvas.chip.rightClickHint")}>
+                Σ {m.caption || m.name}
+              </span>
+              <button
+                type="button"
+                class="chip__x"
+                title={i18n.t("canvas.menu.removeMeasure")}
+                aria-label="{i18n.t('canvas.menu.removeMeasure')} {m.caption || m.name}"
+                onclick={() => removeMeasure(m.uniqueName)}
+              >×</button>
+            </span>
+          {/each}
+          {#if (query.current?.queryModel?.details.measures.length ?? 0) === 0}
+            <span class="chips__empty">{i18n.t("canvas.dropMeasures")}</span>
+          {/if}
+        </div>
+      </div>
       {#each ["COLUMNS", "ROWS"] as const as axis}
         <div
           class={dragOverAxis === axis ? "dropzone is-dragover" : "dropzone"}
@@ -681,31 +929,8 @@
             </button>
           </header>
           <div class="chips">
-            {#if axis === "COLUMNS" && query.current}
-              {#each query.current.queryModel?.details.measures ?? [] as m}
-                <span
-                  class={dragOverChipKey === chipKey("COLUMNS", "measure", m.uniqueName) ? "chip chip--measure is-drop-before" : "chip chip--measure"}
-                  draggable="true"
-                  ondragstart={(e) => onMeasureChipDragStart(e, m)}
-                  ondragenter={onChipDragEnter}
-                  ondragover={(e) => onChipDragOver(e, "COLUMNS", "measure", m.uniqueName)}
-                  ondrop={(e) => onChipDrop(e, "COLUMNS", { kind: "measure", uniqueName: m.uniqueName })}
-                  oncontextmenu={(e) => openMeasureMenu(e, m)}
-                >
-                  <span class="chip__label" title={i18n.t("canvas.chip.rightClickHint")}>
-                    Σ {m.caption || m.name}
-                  </span>
-                  <button
-                    type="button"
-                    class="chip__x"
-                    title={i18n.t("canvas.menu.removeMeasure")}
-                    aria-label="{i18n.t('canvas.menu.removeMeasure')} {m.caption || m.name}"
-                    onclick={() => removeMeasure(m.uniqueName)}
-                  >×</button>
-                </span>
-              {/each}
-            {/if}
             {#each query.current?.queryModel?.axes[axis].hierarchies ?? [] as h}
+              <!-- svelte-ignore a11y_no_static_element_interactions — drag/context-menu are mouse affordances; the inner buttons (label, close) handle keyboard accessibility. -->
               <span
                 class={dragOverChipKey === chipKey(axis, "hierarchy", h.name) ? "chip chip--level is-drop-before" : "chip chip--level"}
                 draggable="true"
@@ -731,11 +956,8 @@
                 >×</button>
               </span>
             {/each}
-            {#if (query.current?.queryModel?.axes[axis].hierarchies.length ?? 0) === 0
-              && !(axis === "COLUMNS" && (query.current?.queryModel?.details.measures.length ?? 0) > 0)}
-              <span class="chips__empty">
-                {axis === "COLUMNS" ? i18n.t("canvas.dropLevelsMeasures") : i18n.t("canvas.dropLevels")}
-              </span>
+            {#if (query.current?.queryModel?.axes[axis].hierarchies.length ?? 0) === 0}
+              <span class="chips__empty">{i18n.t("canvas.dropLevels")}</span>
             {/if}
           </div>
         </div>
@@ -757,6 +979,7 @@
         </header>
         <div class="chips">
           {#each query.current?.queryModel?.axes.FILTER.hierarchies ?? [] as h}
+            <!-- svelte-ignore a11y_no_static_element_interactions — drag/context-menu are mouse affordances; the inner buttons (label, close) handle keyboard accessibility. -->
             <span
               class={dragOverChipKey === chipKey("FILTER", "hierarchy", h.name) ? "chip chip--level is-drop-before" : "chip chip--level"}
               draggable="true"
@@ -788,7 +1011,14 @@
         </div>
       </div>
     </aside>
+    {/if}
     <div class="canvas__result">
+    {#if query.current?.type === "MDX"}
+      <div class="canvas__mdx-banner" role="status" title={i18n.t("canvas.mdxBannerText")}>
+        <span class="canvas__mdx-badge">MDX</span>
+        <span class="canvas__mdx-text">{i18n.t("canvas.mdxBannerShort")}</span>
+      </div>
+    {/if}
     <div class="view-toggle" role="tablist" aria-label={i18n.t("canvas.resultView")}>
       <button type="button" role="tab" class:active={query.viewMode === "grid"} onclick={() => (query.viewMode = "grid")}>
         {i18n.t("canvas.view.grid")}
@@ -835,7 +1065,7 @@
             {/each}
           </select>
         </label>
-        <button type="button" class="tb-btn tb-btn--ghost" title={i18n.t("modal.chart.title")} aria-label={i18n.t("a11y.editChartOptions")} onclick={() => (chartEditorOpen = true)}>
+        <button type="button" class="tb-btn tb-btn--ghost" title={i18n.t("modal.chart.title")} aria-label={i18n.t("a11y.editChartOptions")} onclick={() => (modals.chartEditor = true)}>
           <Settings size={18} />
         </button>
       {/if}
@@ -854,7 +1084,15 @@
       {#if query.running && !query.result}
         <p class="canvas__hint">{i18n.t("canvas.running")}</p>
       {:else if query.error}
-        <p class="callout callout--danger">{query.error}</p>
+        <div class="callout callout--danger" role="alert">
+          <p class="callout__text">{query.error}</p>
+          {#if query.errorDetail}
+            <details class="callout__details">
+              <summary>{i18n.t("canvas.error.showDetails")}</summary>
+              <pre class="callout__detail-text">{query.errorDetail}</pre>
+            </details>
+          {/if}
+        </div>
       {:else if query.result}
         {#if query.viewMode === "chart"}
           <ChartView result={query.result} type={query.chartType} options={query.chartOptions} />
@@ -868,7 +1106,11 @@
           <CellsetTable result={query.result} />
         {/if}
       {:else}
-        <p class="canvas__hint">{i18n.t("canvas.buildPrompt")}</p>
+        <EmptyState
+          icon={Sparkles}
+          title="Build a query"
+          description={i18n.t("canvas.buildPrompt")}
+        />
       {/if}
     </div>
     </div>
@@ -884,14 +1126,31 @@
     initialType={selectionsInitial.type}
     open={selectionsOpen}
     onSave={onSelectionsSave}
-    showDateFilter={looksLikeTimeHierarchy(selectionsTarget.hierarchyCaption)}
+    showDateFilter={(() => {
+      // Resolve the hierarchy's Mondrian-native type from cubeMetadata. This
+      // beats the legacy caption substring match — translations and renamed
+      // hierarchies no longer hide the date filter button (saiku#1221).
+      const hierName = selectionsTarget.hierarchyName;
+      let dimensionType: string | undefined;
+      let levels: { levelType?: string }[] | undefined;
+      for (const d of cubeMetadata?.dimensions ?? []) {
+        for (const h of d.hierarchies ?? []) {
+          if (h.uniqueName === hierName || h.name === hierName) {
+            dimensionType = d.dimensionType;
+            levels = h.levels;
+            break;
+          }
+        }
+        if (dimensionType !== undefined || levels) break;
+      }
+      return isTimeHierarchy(dimensionType, levels, selectionsTarget.hierarchyCaption);
+    })()}
     onOpenDateFilter={() => {
       // Hand off the currently-open Selections target to the date-filter
       // modal. Closing Selections first avoids stacked overlays.
       if (!selectionsTarget) return;
-      dateFilterTarget = { ...selectionsTarget };
+      modals.dateFilter = { ...selectionsTarget };
       selectionsOpen = false;
-      dateFilterOpen = true;
     }}
     onCancel={() => (selectionsOpen = false)}
   />
@@ -928,9 +1187,11 @@
 
 <ChartEditorModal
   initial={query.chartOptions}
-  open={chartEditorOpen}
-  onSave={(next) => { query.chartOptions = next; chartEditorOpen = false; }}
-  onCancel={() => (chartEditorOpen = false)}
+  chartType={query.chartType}
+  seriesNames={chartSeriesNames}
+  open={modals.chartEditor}
+  onSave={(next) => { query.chartOptions = next; modals.chartEditor = false; }}
+  onCancel={() => (modals.chartEditor = false)}
 />
 
 <ContextMenu
@@ -943,46 +1204,102 @@
 />
 
 <CustomFilterModal
-  measureCaption={customFilterTarget?.caption ?? customFilterTarget?.name ?? ""}
-  open={customFilterOpen}
+  measureCaption={modals.customFilter?.caption ?? modals.customFilter?.name ?? ""}
+  open={!!modals.customFilter}
   onApply={onCustomFilterApply}
-  onCancel={() => (customFilterOpen = false)}
+  onCancel={() => (closeModal("customFilter"))}
 />
 
 <FormatAsPercentageModal
   defaultAxis="COLUMNS"
   scope="all"
-  open={formatPctOpen}
+  open={!!modals.formatPct}
   onApply={onFormatPctApply}
-  onCancel={() => (formatPctOpen = false)}
+  onCancel={() => (closeModal("formatPct"))}
 />
 
 <GrowthModal
-  open={growthOpen}
+  open={!!modals.growth}
   onApply={onGrowthApply}
-  onCancel={() => (growthOpen = false)}
+  onCancel={() => (closeModal("growth"))}
 />
 
-{#if dateFilterTarget}
+{#if modals.dateFilter}
+  {@const dfHierLevels = (() => {
+    // Resolve the sibling levels of the chip — needed for the Compare tab
+    // to find the right ParallelPeriod anchor (saiku#1221 Phase 2).
+    const hierName = modals.dateFilter.hierarchyName;
+    for (const d of cubeMetadata?.dimensions ?? []) {
+      for (const h of d.hierarchies ?? []) {
+        if (h.uniqueName === hierName || h.name === hierName) return h.levels;
+      }
+    }
+    return undefined;
+  })()}
+  {@const dfLevelType = (() => {
+    const target = `${modals.dateFilter.hierarchyName}.[${modals.dateFilter.levelName}]`;
+    return dfHierLevels?.find((l) => l.uniqueName === target)?.levelType;
+  })()}
   <DateFilterModal
-    open={dateFilterOpen}
-    hierarchyCaption={dateFilterTarget.hierarchyCaption}
-    hierarchyName={dateFilterTarget.hierarchyName}
-    levelName={`${dateFilterTarget.hierarchyName}.[${dateFilterTarget.levelName}]`}
+    open={!!modals.dateFilter}
+    hierarchyCaption={modals.dateFilter.hierarchyCaption}
+    hierarchyName={modals.dateFilter.hierarchyName}
+    levelName={`${modals.dateFilter.hierarchyName}.[${modals.dateFilter.levelName}]`}
+    levelType={dfLevelType}
+    hierarchyLevels={dfHierLevels}
+    timeCalcs={selection.cube?.timeCalcs}
+    onAddCalcMeasure={(name) => {
+      // saiku#1221 Phase 3: TimeCalc click → splice the calc's
+      // [Measures] reference into the active query. Keeps the modal
+      // open so users can stack multiple calcs.
+      query.addMeasure({
+        name,
+        caption: name,
+        uniqueName: `[Measures].[${name}]`,
+        type: "EXACT",
+      });
+    }}
     onApply={onDateFilterApply}
-    onCancel={() => (dateFilterOpen = false)}
+    onCancel={() => (closeModal("dateFilter"))}
   />
 {/if}
 
-{#if axisFilterTarget}
+{#if modals.axisFilter && modals.axisFilter.type === "Order"}
+  <OrderModal
+    axis={modals.axisFilter.axis}
+    measures={cubeMetadata?.measures ?? []}
+    initialMeasure={modals.axisFilter.expression.startsWith("[") ? modals.axisFilter.expression : ""}
+    initialSort={modals.axisFilter.sort as "ASC" | "BASC" | "DESC" | "BDESC"}
+    open={!!modals.axisFilter}
+    onSave={(measure, sort) => onAxisFilterSave(measure, sort)}
+    onCancel={() => (closeModal("axisFilter"))}
+  />
+{:else if modals.axisFilter && (modals.axisFilter.type === "TopCount" || modals.axisFilter.type === "BottomCount")}
+  <TopBottomCountModal
+    axis={modals.axisFilter.axis}
+    variant={modals.axisFilter.type === "TopCount" ? "top" : "bottom"}
+    measures={cubeMetadata?.measures ?? []}
+    initialCount={10}
+    initialMeasure={cubeMetadata?.measures[0]?.uniqueName ?? ""}
+    open={!!modals.axisFilter}
+    onSave={(expression) => onAxisFilterSave(expression)}
+    onCancel={() => (closeModal("axisFilter"))}
+  />
+{:else if modals.axisFilter && modals.axisFilter.type === "Limit"}
+  <LimitModal
+    axis={modals.axisFilter.axis}
+    initialCount={10}
+    open={!!modals.axisFilter}
+    onSave={(count) => onAxisFilterSave(count)}
+    onCancel={() => (closeModal("axisFilter"))}
+  />
+{:else if modals.axisFilter && modals.axisFilter.type === "Filter"}
   <FilterModal
-    axis={axisFilterTarget.axis}
-    expressionType={axisFilterTarget.type}
-    expression={axisFilterTarget.expression}
-    sortFunction={axisFilterTarget.sort as "ASC" | "BASC" | "DESC" | "BDESC"}
-    open={axisFilterOpen}
-    onSave={onAxisFilterSave}
-    onCancel={() => (axisFilterOpen = false)}
+    axis={modals.axisFilter.axis}
+    expression={modals.axisFilter.expression}
+    open={!!modals.axisFilter}
+    onSave={(expression) => onAxisFilterSave(expression)}
+    onCancel={() => (closeModal("axisFilter"))}
   />
 {/if}
 
@@ -999,9 +1316,39 @@
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: 260px 1fr;
+    /* minmax(0, 1fr) (not bare 1fr) so the result column can shrink BELOW
+       its content's min-width instead of forcing the whole canvas wider than
+       the viewport — that overflow is what pushed the result/chart off-screen
+       at narrow widths (#1176). */
+    grid-template-columns: 260px minmax(0, 1fr);
     gap: var(--space-3);
     overflow: hidden;
+  }
+  /* #1176: when the body is too narrow to show builder + result side by
+     side, stack the builder above the result (single column) and let the
+     body scroll, so the result/chart gets the full width. Container-width
+     driven (.canvas__body--narrow toggled by a ResizeObserver). */
+  .canvas__body--narrow {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .canvas__body--narrow .dropzones {
+    flex: 0 0 auto;
+    overflow-y: visible; /* the body scrolls; no nested scroll area */
+  }
+  .canvas__body--narrow .canvas__result {
+    /* Give the result a usable height when stacked so the chart/grid isn't a
+       sliver; the body scrolls to reach it. */
+    min-height: 65vh;
+  }
+  /* MDX mode: the dropzones aside is `{#if}`-hidden, so a 260px 1fr
+     grid would place the result in column 1 (260px) and leave column 2
+     empty. Collapse to a single 1fr column so the result eats the
+     entire freed-up horizontal space. */
+  .canvas__body--mdx {
+    grid-template-columns: 1fr;
   }
   .canvas__result {
     min-width: 0;
@@ -1010,6 +1357,36 @@
     flex-direction: column;
     gap: var(--space-2);
     overflow: hidden;
+  }
+  .canvas__mdx-banner {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px 2px 2px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 0.75rem;
+    color: var(--fg-muted);
+    align-self: flex-start;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .canvas__mdx-badge {
+    background: var(--accent);
+    color: white;
+    border-radius: 999px;
+    padding: 1px 7px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .canvas__mdx-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .canvas__empty {
     display: flex;
@@ -1050,7 +1427,7 @@
     align-items: center;
     justify-content: space-between;
     font-size: var(--fs-xs);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--fg-muted);
@@ -1075,7 +1452,15 @@
     flex-wrap: wrap;
     gap: var(--space-1);
   }
-  .chips__empty { color: var(--fg-subtle); font-size: var(--fs-sm); }
+  .chips__empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    color: var(--fg-subtle);
+    font-size: var(--fs-sm);
+    font-style: italic;
+  }
   .chip {
     display: inline-flex;
     align-items: center;
@@ -1120,6 +1505,9 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-1) 0;
+    /* #1176: wrap the Grid/Chart/More + chart-type controls instead of
+       overflowing the result column at narrow widths. */
+    flex-wrap: wrap;
   }
   .view-toggle button {
     padding: var(--space-1) var(--space-3);

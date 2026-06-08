@@ -36,10 +36,12 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetails;
+import org.springframework.security.web.authentication.preauth.PreAuthenticatedAuthenticationToken;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -90,6 +92,20 @@ public class SessionService implements ISessionService {
 
             if (authorisationPredicate.isAuthorised(auth)) {
                 Object p = auth.getPrincipal();
+                // saiku#1165: defeat session fixation. Now that authentication has
+                // succeeded, rotate the HTTP session id so any pre-auth id an
+                // attacker may have planted in the victim's browser is discarded.
+                // changeSessionId() keeps the session's attributes (including the
+                // SecurityContext saved during authenticate()) and reissues the
+                // JSESSIONID cookie with the new id. This manual login flow bypasses
+                // Spring Security's SessionAuthenticationStrategy, so we rotate here.
+                try {
+                    req.changeSessionId();
+                } catch (IllegalStateException noSession) {
+                    // No active session to rotate (shouldn't happen after getSession
+                    // above) — nothing to fix; continue.
+                    log.debug("Session id rotation skipped: no active session", noSession);
+                }
                 createSession(auth, username, password);
                 return sessionHolder.get(p);
             } else {
@@ -230,6 +246,51 @@ public class SessionService implements ISessionService {
             }
         }
         return new HashMap<>();
+    }
+
+    /**
+     * Execute {@code action} as if {@code username} (granted {@code roles}) were
+     * the authenticated principal, restoring the prior state in a {@code finally}.
+     *
+     * <p>For server-initiated <b>delegated</b> execution ONLY — issue #941 share
+     * links run an account-free guest's tile query under the share owner's data
+     * scope, which spans two mechanisms: the Mondrian connection role (read from
+     * {@link SecurityContextHolder}) and the JCR file ACL (read from the session
+     * map via {@link #getAllSessionObjects()}). This sets both for the duration
+     * and removes them after, so no impersonated identity leaks past the call.
+     * Never call this from a path driven by untrusted input that picks the
+     * username/roles — the share-link path derives them from a server-held token
+     * minted by someone who already had GRANT.
+     */
+    public <T> T runAs(String username, List<String> roles, java.util.function.Supplier<T> action) {
+        Authentication prior = SecurityContextHolder.getContext() == null
+                ? null
+                : SecurityContextHolder.getContext().getAuthentication();
+        List<GrantedAuthority> auths = new ArrayList<>();
+        if (roles != null) {
+            for (String r : roles) {
+                auths.add(new SimpleGrantedAuthority(r));
+            }
+        }
+        PreAuthenticatedAuthenticationToken owner = new PreAuthenticatedAuthenticationToken(username, null, auths);
+        Object principal = owner.getPrincipal();
+        boolean addedSession = false;
+        try {
+            SecurityContextHolder.getContext().setAuthentication(owner);
+            if (principal != null && !sessionHolder.containsKey(principal)) {
+                Map<String, Object> sess = new HashMap<>();
+                sess.put("username", username);
+                sess.put("roles", roles == null ? new ArrayList<>() : new ArrayList<>(roles));
+                sessionHolder.put(principal, sess);
+                addedSession = true;
+            }
+            return action.get();
+        } finally {
+            if (addedSession) {
+                sessionHolder.remove(principal);
+            }
+            SecurityContextHolder.getContext().setAuthentication(prior);
+        }
     }
 
     public void clearSessions(HttpServletRequest req, String username, String password) throws Exception {

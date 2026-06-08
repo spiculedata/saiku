@@ -59,14 +59,25 @@
           session yet at login time, so no cookie to echo. HTTP Basic is also exempt
           (stateless, no browser form).
       -->
-      <!-- CSRF disabled for local-dev / Calcite-fork bring-up.
-           Spring Security 6's deferred CSRF token (CookieCsrfTokenRepository)
-           doesn't materialize the XSRF-TOKEN cookie eagerly, which breaks
-           the SPA's XHR flow: POSTs to /rest/** return 403 because the
-           token isn't readable from JS. Re-enable + wire a
-           CsrfTokenRequestAttributeHandler that forces token resolution
-           before locking this down for production. -->
-      <security:csrf disabled="true"/>
+      <!-- CSRF enforced on state-changing /rest/** methods (saiku#1150).
+           - Token stored in a non-HttpOnly XSRF-TOKEN cookie so the SPA can
+             read it via document.cookie and echo as X-XSRF-TOKEN.
+           - request-handler-ref is the PLAIN (non-XOR) handler. The XSD
+             documents the default as the plain handler, but CsrfFilter's
+             field default is actually XorCsrfTokenRequestAttributeHandler
+             which XOR-masks the token: the SPA-echo'd cookie value would
+             then fail to validate. The plain handler stores and validates
+             the same value, which is what the cookie-read pattern needs.
+           - SaikuCsrfRequestMatcher exempts the login bootstrap path
+             (/rest/saiku/session) and stateless Authorization-header auth
+             (HTTP Basic, used by every IT harness and the MCP endpoint).
+           - CsrfCookieMaterializerFilter (wired below) forces the deferred
+             token to resolve on every request so the XSRF-TOKEN cookie is
+             written before the response commits — without it, GET requests
+             never seed the cookie. -->
+      <security:csrf token-repository-ref="csrfTokenRepository"
+                     request-matcher-ref="csrfRequestMatcher"
+                     request-handler-ref="csrfTokenRequestHandler"/>
       <security:intercept-url pattern="/serverdocs/**" access="isAnonymous()" />
 	    <!-- /rest/saiku/session is the SPA's login + session-info endpoint.
 	         permitAll lets anonymous POST (login) and authenticated GET
@@ -77,21 +88,82 @@
 	         legacy `isAnonymous() or isFullyAuthenticated()` pattern. -->
 	    <security:intercept-url pattern="/rest/saiku/session" access="permitAll" />
 	    <security:intercept-url pattern="/rest/saiku/session/**" access="permitAll" />
+	    <!-- /rest/saiku/info and its sub-paths are anonymous-accessible.
+	         The SPA's login page reads /info/capabilities pre-auth to decide
+	         whether to surface the demo-mode connection panel (saiku#871).
+	         /info itself is the plugin-list endpoint the SPA pings on boot. -->
+	    <security:intercept-url pattern="/rest/saiku/info" access="permitAll" />
+	    <security:intercept-url pattern="/rest/saiku/info/**" access="permitAll" />
+	    <!-- saiku#1029: the demo email-gate endpoints run before login (they
+	         unlock the login form), so they're anonymous-accessible. They're
+	         inert unless demo mode + WorkOS are configured. -->
+	    <security:intercept-url pattern="/rest/saiku/demo/gate/**" access="permitAll" />
+	    <!-- saiku#941 shareable read-only links. The guest VIEW surface admits
+	         ROLE_SHARE_GUEST (established by shareTokenAuthFilter on a valid
+	         token) OR a logged-in user previewing the link. That role unlocks
+	         ONLY this prefix — every other path stays isFullyAuthenticated()
+	         below, so a guest can never reach /ai/query, drillthrough, other
+	         dashboards, the repository, or the mint endpoints. The owner-only
+	         mint/list/revoke surface (/share/**, not /share/view/**) requires
+	         full auth. Order matters: more specific patterns precede /rest/**. -->
+	    <security:intercept-url pattern="/rest/saiku/share/view/**" access="hasRole('SHARE_GUEST') or isFullyAuthenticated()" />
+	    <security:intercept-url pattern="/rest/saiku/share/**" access="isFullyAuthenticated()" />
+      <!-- saiku#1165 audit-3: route-level admin gate (defense in depth). The
+           admin resources already carry @RolesAllowed("ROLE_ADMIN"), but this
+           ensures a future un-annotated /admin resource can't be reached by a
+           non-admin. Must precede /rest/** (more specific first). -->
+      <security:intercept-url pattern="/rest/saiku/admin/**" access="hasRole('ADMIN')" />
       <security:intercept-url pattern="/rest/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/json/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/WEB-INF/classes/legacy-schema" access="isAnonymous()" />
       <security:logout logout-url="/logout"/>
-      <!-- HTTP Basic removed: SPA does form-login. Re-add only if a
-           non-SPA client (XMLA?) needs Basic. -->
+      <!-- HTTP Basic re-enabled (saiku#878) so the native MCP endpoint
+           and any other stateless agent / DXT-shim client can authenticate
+           with Authorization: Basic. Coexists with the SPA form-login
+           chain — Spring Security tries Basic first on requests carrying
+           an Authorization header, falling through to the session cookie
+           otherwise.
+
+           entry-point-ref points at a no-challenge 401 entry point
+           (saiku#878 follow-up): the default BasicAuthenticationEntryPoint
+           stamps `WWW-Authenticate: Basic realm="..."` on every 401,
+           which makes the browser pop up a native auth dialog on the
+           SPA's XHR 401s. The SPA already has its own session-resume
+           modal — we never want the browser's default. The
+           HttpStatusEntryPoint just sets status 401 with no header. -->
+      <security:http-basic entry-point-ref="basicAuth401NoChallenge"/>
+      <!-- Rate-limit auth attempts before BASIC_AUTH_FILTER so a blocked
+           IP gets a clean 429 without ever waking the AuthenticationProvider.
+           LoginRateLimiter is shared with SessionResource (form-login)
+           and is fed success / failure events via SpringSecurityAuditListener. -->
+      <security:custom-filter ref="loginRateLimitFilter" before="BASIC_AUTH_FILTER"/>
+      <!-- saiku#941: establish a request-scoped ROLE_SHARE_GUEST for valid
+           share tokens on /share/view/**. Placed at PRE_AUTH_FILTER (a distinct
+           slot from loginRateLimitFilter's BASIC_AUTH_FILTER) and after the
+           security-context filter, so the guest auth is set before the
+           authorization check and never persisted to the session. -->
+      <security:custom-filter ref="shareTokenAuthFilter" before="PRE_AUTH_FILTER"/>
+      <!-- saiku#1150: force the deferred CsrfToken to resolve on every
+           response so the XSRF-TOKEN cookie is written eagerly. Sits AFTER
+           Spring Security's CSRF filter (BASIC_AUTH_FILTER is a stable
+           late slot in the chain) so the request attribute is already
+           installed by the time we read it. -->
+      <security:custom-filter ref="csrfCookieMaterializerFilter" after="BASIC_AUTH_FILTER"/>
       <security:anonymous/>
     </security:http>
 
-    <!-- Tier-1 auth hardening: CSRF wiring -->
+    <!-- Tier-1 auth hardening: CSRF wiring (saiku#1150). -->
+    <!-- saiku#1165 audit-3: XSRF-TOKEN cookie via factory so it carries
+         SameSite=Lax (matching JSESSIONID); stays non-HttpOnly for the SPA. -->
     <bean id="csrfTokenRepository"
-          class="org.springframework.security.web.csrf.CookieCsrfTokenRepository"
-          factory-method="withHttpOnlyFalse"/>
+          class="org.saiku.web.security.csrf.SaikuCsrfTokenRepository"
+          factory-method="create"/>
     <bean id="csrfRequestMatcher"
           class="org.saiku.web.security.csrf.SaikuCsrfRequestMatcher"/>
+    <bean id="csrfTokenRequestHandler"
+          class="org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler"/>
+    <bean id="csrfCookieMaterializerFilter"
+          class="org.saiku.web.security.csrf.CsrfCookieMaterializerFilter"/>
 
     <import resource="applicationContext-spring-security.xml"/>
 

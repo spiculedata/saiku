@@ -31,6 +31,11 @@ public class SaikuDimension extends AbstractSaikuObject {
      *  {@code mondrian.olap.Annotated} reflection seam used for measures and
      *  levels. */
     private Map<String, String> annotations;
+    /** Mondrian-native dimension type from olap4j's {@code Dimension.Type} enum
+     *  (TIME / MEASURE / OTHER). Set from {@code <Dimension type="TIME">} in
+     *  the schema XML. Lets the SPA detect time dimensions without falling
+     *  back to caption substring matching (saiku#1221). */
+    private String dimensionType;
 
     public SaikuDimension() {
         super(null, null);
@@ -74,5 +79,13 @@ public class SaikuDimension extends AbstractSaikuObject {
 
     public void setAnnotations(Map<String, String> annotations) {
         this.annotations = annotations == null ? null : new HashMap<>(annotations);
+    }
+
+    public String getDimensionType() {
+        return dimensionType;
+    }
+
+    public void setDimensionType(String dimensionType) {
+        this.dimensionType = dimensionType;
     }
 }

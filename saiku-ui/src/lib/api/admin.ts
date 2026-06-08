@@ -58,6 +58,22 @@ export const users = {
   remove: (username: string) => json<null>("DELETE", `/users/${encodeURIComponent(username)}`),
 };
 
+/**
+ * Derive the set of distinct roles from the admin user listing. The server
+ * does not expose a dedicated `/admin/roles` endpoint; the role universe is
+ * the union of every user's role grants. Includes ROLE_ADMIN even when no
+ * user has it (it's the privileged role and the ACL editor always wants to
+ * show it as an option).
+ */
+export async function listAllRoles(): Promise<string[]> {
+  const all = await users.list();
+  const set = new Set<string>(["ROLE_ADMIN", "ROLE_USER"]);
+  for (const u of all) {
+    for (const r of u.roles) set.add(r);
+  }
+  return Array.from(set).sort();
+}
+
 export const adminDatasources = {
   list: () => get<AdminDatasource[]>("/datasources"),
   refresh: (id: string) => json<AdminDatasource>("PUT", `/datasources/${encodeURIComponent(id)}/refresh`),
@@ -125,26 +141,49 @@ export interface MondrianServerInfo {
   [k: string]: unknown;
 }
 
+/**
+ * Mondrian connection-info shape as actually emitted by
+ * {@code /rest/saiku/statistics/mondrian}. Verified against the
+ * 4.8 server's StatementInfo/ConnectionInfo output 2026-06-07 —
+ * the legacy `connectionId` / `catalogName` / `startTimeMillis`
+ * fields are NOT present at runtime, so don't add them back as
+ * optional unless you've confirmed mondrian-saiku now emits them.
+ */
 export interface MondrianConnectionInfo {
-  connectionId?: number;
-  serverId?: number;
-  startTimeMillis?: number;
-  endTimeMillis?: number;
-  catalogName?: string;
+  stack?: string | null;
+  cellCacheHitCount?: number;
+  cellCacheRequestCount?: number;
+  cellCacheMissCount?: number;
+  cellCachePendingCount?: number;
+  statementStartCount?: number;
+  statementEndCount?: number;
+  executeStartCount?: number;
+  executeEndCount?: number;
   [k: string]: unknown;
 }
 
+/**
+ * Mondrian statement-info shape as actually emitted by the server.
+ * No mdx / state / startTimeMillis here — Mondrian's StatementInfo
+ * carries counters, not a snapshot of the SQL text or wall-clock.
+ */
 export interface MondrianStatementInfo {
   statementId?: number;
-  serverId?: number;
-  connectionId?: number;
-  state?: string;
-  mdx?: string;
-  startTimeMillis?: number;
-  endTimeMillis?: number;
+  stack?: string | null;
+  executing?: boolean;
+  executeStartCount?: number;
+  executeEndCount?: number;
+  phaseCount?: number;
+  cellRequestCount?: number;
   cellCacheHitCount?: number;
   cellCacheMissCount?: number;
   cellCacheRequestCount?: number;
+  cellCachePendingCount?: number;
+  sqlStatementStartCount?: number;
+  sqlStatementExecuteCount?: number;
+  sqlStatementEndCount?: number;
+  sqlStatementRowFetchCount?: number;
+  sqlStatementExecuteNanos?: number;
   [k: string]: unknown;
 }
 
