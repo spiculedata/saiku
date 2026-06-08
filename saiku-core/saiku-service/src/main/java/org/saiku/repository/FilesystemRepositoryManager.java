@@ -502,8 +502,8 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         List<MondrianSchema> schema = new ArrayList<>();
 
         for (File file : files) {
-            try {
-                Scanner scanner = new Scanner(file);
+            // try-with-resources so each Scanner (and its file handle) is closed (saiku#1191).
+            try (Scanner scanner = new Scanner(file)) {
 
                 while (scanner.hasNextLine()) {
                     String line = scanner.nextLine();

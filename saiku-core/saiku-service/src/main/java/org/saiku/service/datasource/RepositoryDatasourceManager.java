@@ -166,9 +166,8 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
             // in the bean-graph init (saiku-cloud tenant scoping uses it).
             return p;
         }
-        InputStream input;
-        try {
-            input = new FileInputStream(externalparameters);
+        // try-with-resources so the external-params file handle is always closed (saiku#1191).
+        try (InputStream input = new FileInputStream(externalparameters)) {
             p.load(input);
         } catch (IOException e) {
             log.debug("file did not exist");
@@ -178,10 +177,9 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
 
     public String[] getAvailablePropertiesKeys() {
         Properties p = new Properties();
-        InputStream input;
 
-        try {
-            input = new FileInputStream(externalparameters);
+        // try-with-resources so the external-params file handle is always closed (saiku#1191).
+        try (InputStream input = new FileInputStream(externalparameters)) {
             p.load(input);
         } catch (IOException e) {
             log.debug("file did not exist");

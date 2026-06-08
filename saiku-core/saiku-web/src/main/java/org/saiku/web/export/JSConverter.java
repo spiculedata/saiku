@@ -60,13 +60,20 @@ public class JSConverter {
     }
 
     private static void loadJavascriptScripts(Context javascriptContext, Scriptable globalScope) throws IOException {
-        // fetch the .js files and put them on scope of the javascriptContext to be executed
-        Reader underscoreReader = new InputStreamReader(JSConverter.class.getResourceAsStream("underscore.js"));
-        javascriptContext.evaluateReader(globalScope, underscoreReader, "underscore.js", 1, null);
-        Reader saikuRendererReader = new InputStreamReader(JSConverter.class.getResourceAsStream("SaikuRenderer.js"));
-        javascriptContext.evaluateReader(globalScope, saikuRendererReader, "SaikuRenderer.js", 1, null);
-        String result = IOUtils.toString(JSConverter.class.getResourceAsStream("SaikuTableRenderer.js"));
-        javascriptContext.evaluateString(globalScope, result, "SaikuTableRenderer.js", 1, null);
+        // fetch the .js files and put them on scope of the javascriptContext to be executed.
+        // Each resource stream is closed via try-with-resources so a failed/partial export
+        // can't leak the underlying classpath InputStreams (saiku#1191).
+        try (Reader underscoreReader = new InputStreamReader(JSConverter.class.getResourceAsStream("underscore.js"))) {
+            javascriptContext.evaluateReader(globalScope, underscoreReader, "underscore.js", 1, null);
+        }
+        try (Reader saikuRendererReader =
+                new InputStreamReader(JSConverter.class.getResourceAsStream("SaikuRenderer.js"))) {
+            javascriptContext.evaluateReader(globalScope, saikuRendererReader, "SaikuRenderer.js", 1, null);
+        }
+        try (InputStream tableRendererStream = JSConverter.class.getResourceAsStream("SaikuTableRenderer.js")) {
+            String result = IOUtils.toString(tableRendererStream);
+            javascriptContext.evaluateString(globalScope, result, "SaikuTableRenderer.js", 1, null);
+        }
     }
 
     private static String appendSaikuCommercialIfNecessary(String content) {
@@ -86,19 +93,11 @@ public class JSConverter {
 
     private static String getVersion() {
         Properties prop = new Properties();
-        InputStream input = null;
         String version = "";
         ClassLoader classloader = Thread.currentThread().getContextClassLoader();
-        InputStream is = classloader.getResourceAsStream("org/saiku/web/rest/resources/version.properties");
-        try {
-
-            // input = new FileInputStream("version.properties");
-
-            // load a properties file
+        // try-with-resources so the version.properties stream is always closed (saiku#1191).
+        try (InputStream is = classloader.getResourceAsStream("org/saiku/web/rest/resources/version.properties")) {
             prop.load(is);
-
-            // get the property value and print it out
-            System.out.println(prop.getProperty("VERSION"));
             version = prop.getProperty("VERSION");
         } catch (IOException e) {
             e.printStackTrace();
