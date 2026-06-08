@@ -13,6 +13,8 @@ import {
   DEFAULT_THEME_TOKENS,
   COLORBLIND_SAFE_COLORS,
   COLORBLIND_WATERFALL,
+  NAMED_PALETTES,
+  resolvePalette,
   type ThemeTokens,
 } from "$lib/views/chartTheme";
 
@@ -602,6 +604,368 @@ describe("buildChartOption — cartesian sparkline tooltip (#1087)", () => {
     ]);
     expect(out).not.toContain("<script>alert");
     expect(out).toContain("&lt;script&gt;");
+  });
+});
+
+describe("buildChartOption — number formatting (#1082)", () => {
+  function yAxisOf(opt: Record<string, unknown>): { axisLabel?: { formatter?: (v: number) => string } } {
+    const y = opt.yAxis;
+    return Array.isArray(y) ? (y[0] as { axisLabel?: { formatter?: (v: number) => string } }) : (y as never);
+  }
+
+  test("no numberFormat → value axis keeps a plain axisLabel (no formatter)", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ dualAxis: false })) as Record<string, unknown>;
+    const y = yAxisOf(opt);
+    expect(y.axisLabel?.formatter).toBeUndefined();
+  });
+
+  test("numberFormat sets a value-axis formatter that applies prefix/decimals", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ dualAxis: false, numberFormat: { prefix: "£", decimals: 0, thousands: true } }),
+    ) as Record<string, unknown>;
+    const y = yAxisOf(opt);
+    expect(typeof y.axisLabel?.formatter).toBe("function");
+    const out = y.axisLabel!.formatter!(1234567);
+    expect(out.startsWith("£")).toBe(true);
+    expect(out.replace(/[^0-9]/g, "")).toBe("1234567");
+  });
+
+  test("dual-axis formats BOTH value axes", () => {
+    const disparate: ChartProjection = {
+      rowCategories: ["a", "b"],
+      columnCategories: ["Big", "Tiny"],
+      matrix: [
+        [100000, 1],
+        [120000, 2],
+      ],
+    };
+    const opt = buildChartOption(
+      disparate,
+      "bar",
+      opts({ dualAxis: true, numberFormat: { suffix: "u" } }),
+    ) as Record<string, unknown>;
+    const y = opt.yAxis as Array<{ axisLabel?: { formatter?: (v: number) => string } }>;
+    expect(y).toHaveLength(2);
+    expect(y[0].axisLabel?.formatter?.(5)).toBe("5u");
+    expect(y[1].axisLabel?.formatter?.(5)).toBe("5u");
+  });
+
+  test("tooltip value text is formatted (compact tile, no sparkline)", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ numberFormat: { prefix: "$", decimals: 0 } }), undefined, {
+      compact: true,
+    }) as Record<string, unknown>;
+    const fmt = (opt.tooltip as { formatter?: (p: unknown) => string }).formatter;
+    expect(typeof fmt).toBe("function");
+    const out = fmt!([{ axisValueLabel: "1997", seriesName: "Store Sales", dataIndex: 0, value: 565238.13 }]);
+    expect(out).toContain("$565238");
+    expect(out).not.toContain("<svg"); // compact tiles never draw the sparkline
+  });
+
+  test("formatted tooltip value is still HTML-escaped (innerHTML safety)", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ numberFormat: { prefix: "<b>", suffix: "</b>" } }),
+      undefined,
+      { compact: true },
+    ) as Record<string, unknown>;
+    const fmt = (opt.tooltip as { formatter: (p: unknown) => string }).formatter;
+    const out = fmt([{ axisValueLabel: "1997", seriesName: "Store Sales", dataIndex: 0, value: 5 }]);
+    expect(out).not.toContain("<b>5</b>");
+    expect(out).toContain("&lt;b&gt;");
+  });
+
+  test("cartesian series carry a label.formatter only when numberFormat is set", () => {
+    const plain = buildChartOption(sample(), "bar", opts()) as Record<string, unknown>;
+    expect((plain.series as Record<string, unknown>[])[0].label).toBeUndefined();
+    const fmtd = buildChartOption(sample(), "bar", opts({ numberFormat: { suffix: "%" } })) as Record<
+      string,
+      unknown
+    >;
+    const label = (fmtd.series as Array<{ label?: { formatter?: (p: { value: number }) => string } }>)[0].label;
+    expect(typeof label?.formatter).toBe("function");
+    expect(label!.formatter!({ value: 42 })).toBe("42%");
+  });
+
+  test("roomy mode keeps the sparkline formatter AND formats the value", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ numberFormat: { abbreviate: true } }),
+      undefined,
+      { compact: false },
+    ) as Record<string, unknown>;
+    const fmt = (opt.tooltip as { formatter: (p: unknown) => string }).formatter;
+    const out = fmt([{ axisValueLabel: "1997", seriesName: "Store Sales", dataIndex: 0, value: 565238.13 }]);
+    expect(out).toContain("<svg"); // sparkline preserved in roomy mode
+    expect(out).toContain("565.2k"); // value abbreviated
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #1081: per-series colour override + theme-aware named palettes.
+// Precedence: per-series override > colour-blind-safe (highContrast) > named
+// palette > theme default (tk.chartColors).
+// ---------------------------------------------------------------------------
+describe("buildChartOption — named palettes + series colours (#1081)", () => {
+  test("default palette uses the theme palette (tk.chartColors) — legacy unchanged", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ palette: "default" })) as Record<string, unknown>;
+    expect(opt.color).toEqual(DEFAULT_THEME_TOKENS.chartColors);
+  });
+
+  test("omitting palette is identical to 'default' (back-compat)", () => {
+    const noPalette = opts();
+    delete (noPalette as Partial<ChartOptions>).palette;
+    const opt = buildChartOption(sample(), "bar", noPalette) as Record<string, unknown>;
+    expect(opt.color).toEqual(DEFAULT_THEME_TOKENS.chartColors);
+  });
+
+  test("option.color equals the resolved named palette for a given id", () => {
+    for (const id of Object.keys(NAMED_PALETTES)) {
+      const opt = buildChartOption(sample(), "bar", opts({ palette: id })) as Record<string, unknown>;
+      expect(opt.color, id).toEqual(NAMED_PALETTES[id]);
+      // resolvePalette is the single source — keep them aligned.
+      expect(opt.color).toEqual(resolvePalette(id, DEFAULT_THEME_TOKENS));
+    }
+  });
+
+  test("an unknown palette id falls back to the theme default palette", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ palette: "made-up" })) as Record<string, unknown>;
+    expect(opt.color).toEqual(DEFAULT_THEME_TOKENS.chartColors);
+  });
+
+  test("named palette is theme-aware (resolves against the passed tokens for 'default')", () => {
+    const dark: ThemeTokens = { ...DEFAULT_THEME_TOKENS, chartColors: ["#111", "#222"] };
+    const opt = buildChartOption(sample(), "bar", opts({ palette: "default" }), dark) as Record<string, unknown>;
+    expect(opt.color).toEqual(["#111", "#222"]);
+  });
+
+  test("a seriesColors override lands on the correct cartesian series (by name)", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ seriesColors: { "Unit Sales": "#ff0000" } }),
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ name: string; color?: string }>;
+    expect(series.find((s) => s.name === "Store Sales")?.color).toBeUndefined();
+    expect(series.find((s) => s.name === "Unit Sales")?.color).toBe("#ff0000");
+  });
+
+  test("no seriesColors → no series carries an explicit colour (palette cycle drives it)", () => {
+    const opt = buildChartOption(sample(), "bar", opts()) as Record<string, unknown>;
+    const series = opt.series as Array<{ color?: string }>;
+    expect(series.every((s) => s.color === undefined)).toBe(true);
+  });
+
+  test("pie applies the override at the data-item (slice) level by name", () => {
+    const opt = buildChartOption(
+      sample(),
+      "pie",
+      opts({ seriesColors: { "1998": "#00ff00" } }),
+    ) as Record<string, unknown>;
+    const data = (opt.series as Array<{ data: { name: string; itemStyle?: { color?: string } }[] }>)[0].data;
+    expect(data.find((d) => d.name === "1997")?.itemStyle).toBeUndefined();
+    expect(data.find((d) => d.name === "1998")?.itemStyle?.color).toBe("#00ff00");
+  });
+
+  test("scatter applies the override to the matching (row-named) series", () => {
+    const opt = buildChartOption(
+      sample(),
+      "scatter",
+      opts({ seriesColors: { "1998": "#0000ff" } }),
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ name: string; color?: string }>;
+    expect(series.find((s) => s.name === "1997")?.color).toBeUndefined();
+    expect(series.find((s) => s.name === "1998")?.color).toBe("#0000ff");
+  });
+
+  test("colour-blind-safe (highContrast) overrides the named palette", () => {
+    const hc: ThemeTokens = {
+      ...DEFAULT_THEME_TOKENS,
+      chartColors: COLORBLIND_SAFE_COLORS,
+      highContrast: true,
+    };
+    const opt = buildChartOption(sample(), "bar", opts({ palette: "vibrant" }), hc) as Record<string, unknown>;
+    // cb-safe wins: the cycle is the Okabe-Ito palette, NOT "vibrant".
+    expect(opt.color).toEqual(COLORBLIND_SAFE_COLORS);
+    expect(opt.color).not.toEqual(NAMED_PALETTES.vibrant);
+  });
+
+  test("per-series override still wins for that one series even with cb-safe on", () => {
+    const hc: ThemeTokens = {
+      ...DEFAULT_THEME_TOKENS,
+      chartColors: COLORBLIND_SAFE_COLORS,
+      highContrast: true,
+    };
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ palette: "vibrant", seriesColors: { "Store Sales": "#abcdef" } }),
+      hc,
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ name: string; color?: string }>;
+    // Cycle is still cb-safe, but the explicit override paints its one series.
+    expect(opt.color).toEqual(COLORBLIND_SAFE_COLORS);
+    expect(series.find((s) => s.name === "Store Sales")?.color).toBe("#abcdef");
+    expect(series.find((s) => s.name === "Unit Sales")?.color).toBeUndefined();
+  });
+});
+
+describe("resolvePalette (#1081)", () => {
+  test("'default' / undefined return the theme palette", () => {
+    expect(resolvePalette("default", DEFAULT_THEME_TOKENS)).toEqual(DEFAULT_THEME_TOKENS.chartColors);
+    expect(resolvePalette(undefined, DEFAULT_THEME_TOKENS)).toEqual(DEFAULT_THEME_TOKENS.chartColors);
+  });
+
+  test("a named id returns its fixed colour array", () => {
+    expect(resolvePalette("cool", DEFAULT_THEME_TOKENS)).toEqual(NAMED_PALETTES.cool);
+  });
+
+  test("an unknown id falls back to the theme palette", () => {
+    expect(resolvePalette("nope", DEFAULT_THEME_TOKENS)).toEqual(DEFAULT_THEME_TOKENS.chartColors);
+  });
+});
+
+describe("buildChartOption — reference lines & bands (#1079)", () => {
+  type MarkLine = { symbol: unknown; label: Record<string, unknown>; data: Array<Record<string, unknown>> };
+  type MarkArea = { label: Record<string, unknown>; data: Array<Array<Record<string, unknown>>> };
+
+  function firstSeriesMarkLine(opt: Record<string, unknown>): MarkLine | undefined {
+    const series = opt.series as Array<{ markLine?: MarkLine }>;
+    return series.map((s) => s.markLine).find((m) => m != null);
+  }
+  function firstSeriesMarkArea(opt: Record<string, unknown>): MarkArea | undefined {
+    const series = opt.series as Array<{ markArea?: MarkArea }>;
+    return series.map((s) => s.markArea).find((m) => m != null);
+  }
+
+  test("no referenceLines → no markLine on any series (legacy unchanged)", () => {
+    const opt = buildChartOption(sample(), "bar", opts()) as Record<string, unknown>;
+    const series = opt.series as Array<{ markLine?: unknown; markArea?: unknown }>;
+    expect(series.every((s) => s.markLine === undefined)).toBe(true);
+    expect(series.every((s) => s.markArea === undefined)).toBe(true);
+  });
+
+  test("explicitly empty referenceLines adds no markLine", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ referenceLines: [] })) as Record<string, unknown>;
+    expect(firstSeriesMarkLine(opt)).toBeUndefined();
+  });
+
+  test("a y-axis reference line attaches markLine data with yAxis + label + colour", () => {
+    const opt = buildChartOption(
+      sample(),
+      "line",
+      opts({ referenceLines: [{ axis: "y", value: 300000, label: "Target", color: "#ff0000" }] }),
+    ) as Record<string, unknown>;
+    const ml = firstSeriesMarkLine(opt)!;
+    expect(ml).toBeDefined();
+    expect(ml.data).toHaveLength(1);
+    expect(ml.data[0].yAxis).toBe(300000);
+    expect(ml.data[0].xAxis).toBeUndefined();
+    expect(ml.data[0].name).toBe("Target");
+    expect((ml.data[0].lineStyle as { color: string }).color).toBe("#ff0000");
+  });
+
+  test("an x-axis reference line uses xAxis (category index), not yAxis", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ referenceLines: [{ axis: "x", value: 1, label: "Launch" }] }),
+    ) as Record<string, unknown>;
+    const ml = firstSeriesMarkLine(opt)!;
+    expect(ml.data[0].xAxis).toBe(1);
+    expect(ml.data[0].yAxis).toBeUndefined();
+    expect(ml.data[0].name).toBe("Launch");
+  });
+
+  test("colour defaults to the theme fgMuted token when omitted", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ referenceLines: [{ axis: "y", value: 5 }] })) as Record<
+      string,
+      unknown
+    >;
+    const ml = firstSeriesMarkLine(opt)!;
+    expect((ml.data[0].lineStyle as { color: string }).color).toBe(DEFAULT_THEME_TOKENS.fgMuted);
+  });
+
+  test("markLine rides on the first measure series only (not every series)", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ referenceLines: [{ axis: "y", value: 1 }] }),
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ name: string; markLine?: unknown }>;
+    const withMark = series.filter((s) => s.markLine !== undefined);
+    expect(withMark).toHaveLength(1);
+    expect(withMark[0].name).toBe("Store Sales");
+  });
+
+  test("compact mode still renders the line but hides its label text", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ referenceLines: [{ axis: "y", value: 5, label: "T" }] }),
+      undefined,
+      { compact: true },
+    ) as Record<string, unknown>;
+    const ml = firstSeriesMarkLine(opt)!;
+    expect(ml.data).toHaveLength(1);
+    expect((ml.label as { show: boolean }).show).toBe(false);
+  });
+
+  test("a reference band attaches markArea data pairs spanning [from, to]", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ referenceBands: [{ axis: "y", from: 100, to: 200, label: "Range" }] }),
+    ) as Record<string, unknown>;
+    const ma = firstSeriesMarkArea(opt)!;
+    expect(ma.data).toHaveLength(1);
+    const [start, end] = ma.data[0];
+    expect(start.yAxis).toBe(100);
+    expect(end.yAxis).toBe(200);
+    expect(start.name).toBe("Range");
+  });
+
+  test("an x-axis band uses xAxis on both endpoints", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ referenceBands: [{ axis: "x", from: 0, to: 1 }] }),
+    ) as Record<string, unknown>;
+    const ma = firstSeriesMarkArea(opt)!;
+    const [start, end] = ma.data[0];
+    expect(start.xAxis).toBe(0);
+    expect(end.xAxis).toBe(1);
+  });
+
+  test("non-cartesian types never get markLine/markArea (e.g. pie)", () => {
+    const opt = buildChartOption(
+      sample(),
+      "pie",
+      opts({ referenceLines: [{ axis: "y", value: 5 }], referenceBands: [{ axis: "y", from: 0, to: 1 }] }),
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ markLine?: unknown; markArea?: unknown }>;
+    expect(series.every((s) => s.markLine === undefined && s.markArea === undefined)).toBe(true);
+  });
+
+  test("trend overlay series stay markLine-free; the data series carries the ref line", () => {
+    const ts: ChartProjection = {
+      rowCategories: ["a", "b", "c", "d"],
+      columnCategories: ["m"],
+      matrix: [[1], [2], [3], [4]],
+    };
+    const opt = buildChartOption(
+      ts,
+      "line",
+      opts({ trendLine: "linear", referenceLines: [{ axis: "y", value: 2 }] }),
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ name: string; markLine?: unknown }>;
+    expect(series).toHaveLength(2); // data + trend
+    expect(series[0].markLine).toBeDefined(); // data series carries it
+    expect(series[1].name).toBe("m (trend)");
+    expect(series[1].markLine).toBeUndefined(); // trend overlay is mark-free
   });
 });
 

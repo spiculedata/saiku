@@ -23,11 +23,26 @@ export type AiQueryStatus =
   | "WAREHOUSE_ERROR"
   | "CUBE_NOT_FOUND";
 
+/** Per-point statistical anomaly verdict (saiku#907). Attached to a cell by
+ *  POST /ai/anomaly only when the detector flagged that point. */
+export interface AnomalyPoint {
+  /** Unsigned deviation in detector-native units (sigmas for zscore/mad). */
+  score: number;
+  /** Central tendency the point was compared against (mean / median). */
+  expected: number;
+  /** "above" / "below" relative to expected, or null on a tie. */
+  direction?: "above" | "below" | null;
+  /** Always true on attached cells (non-anomalous cells carry no AnomalyPoint). */
+  anomaly: boolean;
+}
+
 export interface AiCell {
   value: number | null;
   formatted: string;
   unit?: string | null;
   properties?: Record<string, string>;
+  /** Set only on cells flagged by the /ai/anomaly endpoint (saiku#907). */
+  anomaly?: AnomalyPoint | null;
 }
 
 export interface AiQueryCaption {
@@ -272,6 +287,190 @@ export async function aiDrillthrough(
   } catch (e) {
     throw new Error(`aiDrillthrough -> ${res.status}: non-JSON response (${(e as Error).message})`);
   }
+}
+
+/* ------------------------------------------------------------------------
+ * Issue #907 — server-side statistical anomaly detection.
+ *
+ * Runs the tile's authored query through the same path /ai/query uses, then
+ * flags anomalous points along the time axis with the chosen detector. The
+ * returned response is the standard AiQueryResponse (records format) with an
+ * `anomaly:{score,expected,direction}` object on each flagged cell, alongside
+ * a compact summary block (method / threshold / timeAxis / anomalyCount).
+ * ---------------------------------------------------------------------- */
+
+export type AnomalyMethod = "zscore" | "mad" | "stl";
+
+export interface AnomalySummary {
+  method: string;
+  threshold: number;
+  timeAxis: string;
+  /** Explicit count — 0 (never absent) when no anomalies were found. */
+  anomalyCount: number;
+}
+
+export interface AiAnomalyResponse {
+  response: AiQueryResponse;
+  anomaly: AnomalySummary;
+}
+
+export interface AiAnomalyOptions {
+  method?: AnomalyMethod;
+  /** Detector cutoff; omit to use the method default (zscore 3.0, mad 3.5). */
+  threshold?: number;
+  /** Unique name of the time axis to scan. */
+  timeAxis: string;
+}
+
+/** POST /rest/saiku/api/ai/anomaly. On a validation error the server returns a
+ *  400 whose body is a bare AiQueryResponse (status VALIDATION_ERROR); we
+ *  surface that as a thrown Error carrying the server message so the tile can
+ *  fall back to the plain chart. */
+export async function detectAnomalies(
+  query: Record<string, unknown>,
+  opts: AiAnomalyOptions,
+): Promise<AiAnomalyResponse> {
+  const body: Record<string, unknown> = {
+    query,
+    timeAxis: opts.timeAxis,
+    method: opts.method ?? "zscore",
+  };
+  if (opts.threshold != null) body.threshold = opts.threshold;
+  const res = await fetch(`${REST_BASE}/anomaly`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!text) throw new Error(`detectAnomalies -> ${res.status}: empty body`);
+  if (!res.ok) {
+    // 400 bodies are the bare AiQueryResponse validation envelope.
+    let msg = `detectAnomalies -> ${res.status}`;
+    try {
+      const parsed = JSON.parse(text) as { error?: string; message?: string };
+      if (parsed.error || parsed.message) msg = parsed.error ?? parsed.message ?? msg;
+    } catch {
+      msg = `${msg}: ${text}`;
+    }
+    throw new Error(msg);
+  }
+  try {
+    return JSON.parse(text) as AiAnomalyResponse;
+  } catch (e) {
+    throw new Error(`detectAnomalies -> ${res.status}: non-JSON response (${(e as Error).message})`);
+  }
+}
+
+/* ------------------------------------------------------------------------
+ * Issue #908 — server-side time-series forecast.
+ *
+ * Runs the tile's query through the same path /ai/query uses, then projects each
+ * measure series `horizon` steps. The observed response is returned UNCHANGED;
+ * the projection lives in a sibling `forecast` block keyed by measure caption,
+ * each point carrying {value, lower, upper, forecast:true}.
+ * ---------------------------------------------------------------------- */
+
+export type ForecastMethod = "ets" | "arima" | "prophet";
+
+/** One projected horizon point + its prediction interval. */
+export interface ForecastPoint {
+  value: number;
+  lower: number;
+  upper: number;
+  forecast: boolean;
+}
+
+export interface ForecastSummary {
+  method: string;
+  horizon: number;
+  confidence: number;
+  timeAxis: string;
+  /** measure caption → horizon forecast points (in time order). */
+  series: Record<string, ForecastPoint[]>;
+}
+
+export interface AiForecastResponse {
+  response: AiQueryResponse;
+  forecast: ForecastSummary;
+}
+
+export interface AiForecastOptions {
+  method?: ForecastMethod;
+  /** Future points to project (server clamps 1–365). */
+  horizon?: number;
+  /** Prediction-interval confidence in (0,1). */
+  confidence?: number;
+  /** Unique name of the time axis to project along. */
+  timeAxis: string;
+}
+
+/** POST /rest/saiku/api/ai/forecast. On a validation error the server returns a
+ *  400 whose body is a bare AiQueryResponse (status VALIDATION_ERROR); we
+ *  surface that as a thrown Error carrying the server message so the tile can
+ *  fall back to the plain chart. */
+export async function forecastQuery(
+  query: Record<string, unknown>,
+  opts: AiForecastOptions,
+): Promise<AiForecastResponse> {
+  const body: Record<string, unknown> = {
+    query,
+    timeAxis: opts.timeAxis,
+    method: opts.method ?? "ets",
+  };
+  if (opts.horizon != null) body.horizon = opts.horizon;
+  if (opts.confidence != null) body.confidence = opts.confidence;
+  const res = await fetch(`${REST_BASE}/forecast`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!text) throw new Error(`forecastQuery -> ${res.status}: empty body`);
+  if (!res.ok) {
+    let msg = `forecastQuery -> ${res.status}`;
+    try {
+      const parsed = JSON.parse(text) as { error?: string; message?: string };
+      if (parsed.error || parsed.message) msg = parsed.error ?? parsed.message ?? msg;
+    } catch {
+      msg = `${msg}: ${text}`;
+    }
+    throw new Error(msg);
+  }
+  try {
+    return JSON.parse(text) as AiForecastResponse;
+  } catch (e) {
+    throw new Error(`forecastQuery -> ${res.status}: non-JSON response (${(e as Error).message})`);
+  }
+}
+
+/** Build the GET URL for the CSV export of a drillthrough (issue #1051).
+ *  Mirrors {@link aiDrillthrough}'s params (position / maxRows / returns) but
+ *  targets the streaming text/csv endpoint. The URL is same-origin and the
+ *  browser sends session credentials automatically, so the download can be
+ *  triggered with `window.open(url)` / an `<a download>` — no fetch needed. */
+export function aiDrillthroughCsvUrl(queryId: string, opts: AiDrillthroughOptions = {}): string {
+  const params = new URLSearchParams();
+  if (opts.position) params.set("position", opts.position);
+  if (opts.maxRows != null) params.set("maxrows", String(opts.maxRows));
+  if (opts.returns && opts.returns.length) params.set("returns", opts.returns.join(","));
+  const qs = params.toString();
+  return `${REST_BASE}/query/${encodeURIComponent(queryId)}/drillthrough/export/csv${qs ? `?${qs}` : ""}`;
+}
+
+/** Trigger a browser download of the drillthrough CSV (issue #1051). The
+ *  endpoint sets `Content-Disposition: attachment`, so opening the
+ *  same-origin authenticated GET in a new tab streams the file straight to
+ *  the user's downloads — the same mechanism the Workspace export uses. */
+export function downloadAiDrillthroughCsv(queryId: string, opts: AiDrillthroughOptions = {}): void {
+  window.open(aiDrillthroughCsvUrl(queryId, opts), "_blank");
 }
 
 export async function executeSavedQuery(

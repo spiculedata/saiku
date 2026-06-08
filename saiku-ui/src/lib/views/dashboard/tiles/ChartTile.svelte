@@ -16,7 +16,10 @@
   import type { DashboardTile, DashboardFilter } from "$lib/api/dashboards";
   import {
     searchMembers,
+    detectAnomalies,
+    forecastQuery,
     type AiQueryResponse,
+    type ForecastPoint,
   } from "$lib/api/aiQuery";
   // #1231 — shared fetch state + effect body across ChartTile / TableTile.
   import {
@@ -25,6 +28,16 @@
   } from "$lib/hooks/useTileQuery.svelte";
   // #1166: resolve a clicked category caption to a real member unique name.
   import { pickMemberUniqueName } from "$lib/dashboard/clickFilterMember";
+  // Issue #907 — server-side anomaly detection overlay (markPoints).
+  import {
+    anomalyMarksBySeries,
+    hasAnyAnomaly,
+    type AnomalyMark,
+  } from "$lib/dashboard/anomalyMarkPoints";
+  // Issue #908 — forecast horizon overlay (dashed line + confidence band).
+  import { applyForecastOverlay } from "$lib/dashboard/forecastOverlay";
+  import { escapeHtml } from "$lib/charts/sparkline";
+  import { i18n } from "$lib/stores/i18n.svelte";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
   import { schemaCache } from "$lib/stores/schemaCache.svelte";
   import { type SchemaLike } from "$lib/dashboard/effectiveQuery";
@@ -108,6 +121,39 @@
   }
   let schema = $state<SchemaLike | null>(null);
   let unsupported = $state(false);
+
+  /* --- issue #907: anomaly detection ------------------------------------
+   * When the tile opts in (tile.anomaly.enabled) AND the chart kind is a
+   * time-series type (line / bar / area), the fetch routes through
+   * POST /ai/anomaly instead of /ai/query (via the inlineFetch override on
+   * the shared #1231 hook). The augmented response (cells carry an `anomaly`
+   * verdict) drives a markPoint overlay in the render effect. Anomaly is only
+   * valid for inline tiles — reference tiles run a saved ThinQuery through a
+   * different endpoint, so we leave those on the plain path. */
+  const ANOMALY_KINDS = new Set(["line", "bar", "area"]);
+  let anomalyEnabled = $derived(
+    !!tile.anomaly?.enabled
+      && ANOMALY_KINDS.has(tile.chartType ?? "")
+      && tile.query?.kind === "inline"
+      && !sharedResponse,
+  );
+
+  /* --- issue #908: forecast -----------------------------------------------
+   * Same gating as anomaly (time-series, inline, live). When on, the fetch
+   * routes through POST /ai/forecast; the returned forecast block drives a
+   * dashed continuation + confidence band in the render effect. If BOTH
+   * forecast and anomaly are enabled, forecast wins the single inline fetch
+   * (one endpoint per pass) — documented limitation. */
+  let forecastEnabled = $derived(
+    !!tile.forecast?.enabled
+      && ANOMALY_KINDS.has(tile.chartType ?? "")
+      && tile.query?.kind === "inline"
+      && !sharedResponse,
+  );
+  // Forecast block (measure caption → horizon points), set by the inline fetch.
+  let forecastSeries = $state<Record<string, ForecastPoint[]> | null>(null);
+  // Fallback overlay colour when a series carries no explicit colour.
+  const FORECAST_FALLBACK_COLOR = "#7c7c7c";
   // issue #1071: bumped once the world GeoJSON finishes registering, to
   // re-run the render effect and paint the map (registration is async).
   let mapReadyTick = $state(0);
@@ -254,8 +300,60 @@
       activeFilters: activeFilters.all,
       schema,
       sharedResponse: sharedResponse ?? null,
+      // #907 anomaly + #908 forecast each route the inline fetch through their
+      // own endpoint; forecast wins if both are on (one endpoint per pass). The
+      // configs fold into the dedupe key so toggling forces a re-fetch.
+      dedupeExtra:
+        forecastEnabled || anomalyEnabled
+          ? JSON.stringify({
+              f: forecastEnabled ? tile.forecast : null,
+              a: anomalyEnabled ? tile.anomaly : null,
+            })
+          : null,
+      inlineFetch: forecastEnabled
+        ? async (effective) => {
+            // #908: project the horizon via /ai/forecast; stash the block for render.
+            const timeAxis = resolveTimeAxis(effective, tile.forecast?.timeAxis);
+            const out = await forecastQuery(effective, {
+              method: tile.forecast?.method ?? "ets",
+              horizon: tile.forecast?.horizon,
+              confidence: tile.forecast?.confidence,
+              timeAxis,
+            });
+            forecastSeries = out.forecast?.series ?? null;
+            return out.response;
+          }
+        : anomalyEnabled
+          ? async (effective) => {
+              // #907: route through /ai/anomaly (per-cell verdicts on the response).
+              const timeAxis = resolveTimeAxis(effective, tile.anomaly?.timeAxis);
+              const out = await detectAnomalies(effective, {
+                method: tile.anomaly?.method ?? "zscore",
+                threshold: tile.anomaly?.threshold,
+                timeAxis,
+              });
+              return out.response;
+            }
+          : undefined,
     });
   });
+
+  /* #907: pick the time-axis unique name for the anomaly request. Prefers an
+   * explicit config value; otherwise derives it from the first row axis of the
+   * effective query body ("[Dim].[Hier].[Level]"). Falls back to a best-effort
+   * dimension name when the level shape is incomplete. */
+  function resolveTimeAxis(effective: Record<string, unknown>, configured?: string): string {
+    if (configured && configured.trim()) return configured.trim();
+    const rows = (effective as { rows?: Array<Record<string, unknown>> }).rows;
+    const first = rows && rows.length > 0 ? rows[0] : undefined;
+    if (first) {
+      const lvl = typeof first.level === "string" ? first.level : "";
+      if (lvl) return lvl;
+      const dim = typeof first.dimension === "string" ? first.dimension : "";
+      if (dim) return dim;
+    }
+    return "";
+  }
 
   /* ----------------------------- render effect ------------------------ */
 
@@ -299,6 +397,15 @@
     // on legacy tiles → the adapter falls back to the dashboard baseline.
     const option = buildChartOption(r, kind, aspect, resolveThemeTokens(), tile.chartOptions);
     if (option) {
+      // #907: layer anomaly markPoints on top of the freshly-built option,
+      // leaving the existing render path untouched when detection is off / no
+      // anomalies were found.
+      if (anomalyEnabled) overlayAnomalyMarkPoints(option, r);
+      // #908: append the forecast horizon (dashed line + confidence band) when
+      // forecasting is on and the server returned a forecast block.
+      if (forecastEnabled && forecastSeries) {
+        applyForecastOverlay(option, forecastSeries, FORECAST_FALLBACK_COLOR);
+      }
       // #1092: capture the live zoom/brush before overwriting; only re-applied
       // when the chart type + category count are unchanged (resize / theme flip
       // / same-shape refresh), so a new query or chart-type switch starts fresh.
@@ -315,6 +422,72 @@
       chart.clear();
     }
   });
+
+  /* --------------------------- anomaly overlay (#907) ----------------- */
+
+  /** Mutate the built ECharts option, attaching a markPoint set to each series
+   *  that has anomalies. The marker uses the cell's plotted value at the
+   *  anomalous category; the tooltip reports the score + expected value with an
+   *  HTML-escaped series/category name (XSS-safe — names are data-derived). */
+  function overlayAnomalyMarkPoints(option: Record<string, unknown>, r: AiQueryResponse): void {
+    const marks = anomalyMarksBySeries(r);
+    if (!hasAnyAnomaly(marks)) return;
+    const series = option.series;
+    if (!Array.isArray(series)) return;
+    for (const [si, list] of marks) {
+      const s = series[si] as Record<string, unknown> | undefined;
+      if (!s || typeof s !== "object") continue;
+      s.markPoint = {
+        symbol: "pin",
+        symbolSize: 38,
+        itemStyle: { color: ANOMALY_MARK_COLOR },
+        label: { show: false },
+        tooltip: {
+          formatter: (p: { data?: { anomalyTip?: string } }) => p?.data?.anomalyTip ?? "",
+        },
+        data: list.map((m) => ({
+          // ECharts coord: [categoryValue, numericValue]. Category value matches
+          // the x-axis label so it lands on the right point regardless of order.
+          coord: [m.category, m.value],
+          value: "",
+          anomalyTip: anomalyTooltip(m),
+        })),
+      };
+    }
+  }
+
+  /** Build the escaped HTML tooltip for one anomaly mark. Data-derived names
+   *  (series caption + category) are run through escapeHtml (the established
+   *  #1071/#1087 pattern reused from $lib/charts). */
+  function anomalyTooltip(m: AnomalyMark): string {
+    const sigma = m.anomaly.score.toFixed(2);
+    const dirWord =
+      m.anomaly.direction === "above"
+        ? i18n.t("dashboard.anomaly.above", "above")
+        : m.anomaly.direction === "below"
+          ? i18n.t("dashboard.anomaly.below", "below")
+          : "";
+    const expectedNum = Number.isFinite(m.anomaly.expected)
+      ? m.anomaly.expected.toLocaleString(undefined, { maximumFractionDigits: 2 })
+      : "—";
+    const title = i18n.t("dashboard.anomaly.tooltipTitle", "Anomaly detected");
+    const scoreLabel = i18n.t("dashboard.anomaly.score", "Score");
+    const expectedLabel = i18n.t("dashboard.anomaly.expected", "Expected");
+    const sigmaSuffix = i18n.t("dashboard.anomaly.sigmaExpectation", "σ from expectation");
+    // "Nσ above expectation" — direction word only when present.
+    const headline = dirWord ? `${sigma}σ ${escapeHtml(dirWord)} ${escapeHtml(sigmaSuffix)}`
+      : `${sigma} ${escapeHtml(sigmaSuffix)}`;
+    return (
+      `<div style="font-weight:600">${escapeHtml(title)}</div>`
+      + `<div>${escapeHtml(m.series)} — ${escapeHtml(m.category)}: ${escapeHtml(m.formatted)}</div>`
+      + `<div>${headline}</div>`
+      + `<div>${escapeHtml(scoreLabel)}: ${sigma} · ${escapeHtml(expectedLabel)}: ${escapeHtml(expectedNum)}</div>`
+    );
+  }
+
+  // Anomaly marker colour — a warning red that stays legible on the chart
+  // palette and in both themes.
+  const ANOMALY_MARK_COLOR = "#e2483d";
 
   /* ----------------------------- click capture ------------------------ */
 

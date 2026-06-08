@@ -53,6 +53,46 @@ export function isChartType(kind: string): kind is ChartType {
 
 export type TrendLineMode = "none" | "linear" | "ma" | "wma";
 
+/** issue #1082: number-formatting controls for chart VALUE text — applied to
+ *  the value-axis labels, tooltip values and (when shown) series data labels.
+ *  All fields optional; an absent/empty `numberFormat` renders raw values
+ *  exactly as before (legacy charts are unchanged). The category axis is never
+ *  reformatted. */
+export interface NumberFormatOptions {
+  /** Prepended verbatim, e.g. "£", "$". */
+  prefix?: string;
+  /** Appended verbatim, e.g. "%", " ms". */
+  suffix?: string;
+  /** Fixed decimal places. null/undefined = auto (natural precision). */
+  decimals?: number | null;
+  /** Group integer digits with locale thousands separators. */
+  thousands?: boolean;
+  /** Collapse large magnitudes to k / M / B / T. */
+  abbreviate?: boolean;
+}
+
+/** issue #1079: a single reference / annotation line drawn across a cartesian
+ *  chart (ECharts markLine). `axis:"y"` draws a horizontal line at the value
+ *  (a threshold / target); `axis:"x"` draws a vertical line at the category
+ *  index `value` (e.g. a "campaign launched" marker). `label` annotates it;
+ *  `color` overrides the theme default. */
+export interface ReferenceLine {
+  axis: "x" | "y";
+  value: number;
+  label?: string;
+  color?: string;
+}
+
+/** issue #1079: a shaded reference band (ECharts markArea) spanning [from, to]
+ *  on the given axis — a target range / SLA window / highlighted period. */
+export interface ReferenceBand {
+  axis: "x" | "y";
+  from: number;
+  to: number;
+  label?: string;
+  color?: string;
+}
+
 export interface ChartOptions {
   title: string;
   xAxisLabel: string;
@@ -100,6 +140,29 @@ export interface ChartOptions {
    *  alongside {@link sortDirection} so the cleanup-after-export look
    *  persists with the tile. */
   topN: number | null;
+  /** issue #1082: optional number-formatting for VALUE text (axis labels,
+   *  tooltip values, data labels). Undefined/empty = raw values as today. */
+  numberFormat?: NumberFormatOptions;
+  /** issue #1081: named categorical palette id (see NAMED_PALETTES in
+   *  chartTheme.ts — "default", "vibrant", "cool", "warm", "earth"). Optional;
+   *  legacy charts predating #1081 omit it and fall back to the theme default
+   *  palette (tk.chartColors), so their output is byte-for-byte unchanged.
+   *  Precedence: per-series {@link seriesColors} > colour-blind-safe (when the
+   *  global pref is on) > this named palette > theme default. */
+  palette?: string;
+  /** issue #1081: per-series colour override, keyed by series (column-category)
+   *  name — the same labels rendered in the legend / used by {@link seriesAxis}.
+   *  Values are hex colours. An entry wins over the named palette AND the
+   *  colour-blind-safe palette for that one series. Optional; legacy charts omit
+   *  it (treated as {}) so nothing overrides and their output is unchanged. */
+  seriesColors?: Record<string, string>;
+  /** issue #1079: reference / annotation lines drawn over CARTESIAN charts
+   *  (bar/line/area/scatter/column) as ECharts markLines. Optional; legacy
+   *  charts (undefined / []) get no markLine and render exactly as before. */
+  referenceLines?: ReferenceLine[];
+  /** issue #1079: shaded reference bands (ECharts markArea) over cartesian
+   *  charts. Optional; undefined / [] adds no markArea. */
+  referenceBands?: ReferenceBand[];
 }
 
 /** Auto-split threshold: a series whose maximum absolute value is at
@@ -126,4 +189,11 @@ export const DEFAULT_CHART_OPTIONS: ChartOptions = {
   mapMissing: "blank",
   sortDirection: "none",
   topN: null,
+  // #1081: inert defaults — "default" resolves to the theme palette and an
+  // empty override map applies nothing, so legacy charts are unchanged.
+  palette: "default",
+  seriesColors: {},
+  // issue #1079: inert defaults — no reference lines/bands on legacy charts.
+  referenceLines: [],
+  referenceBands: [],
 };

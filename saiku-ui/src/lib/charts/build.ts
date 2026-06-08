@@ -25,14 +25,26 @@
  * Pure: no DOM, no fetches, no ECharts import. Tests live alongside.
  */
 
-import type { ChartType, ChartOptions, ChartColorRamp } from "$lib/views/chartTypes";
+import type {
+  ChartType,
+  ChartOptions,
+  ChartColorRamp,
+  ReferenceLine,
+  ReferenceBand,
+} from "$lib/views/chartTypes";
 import { DEFAULT_CHART_OPTIONS, SERIES_AXIS_THRESHOLD, isChartType } from "$lib/views/chartTypes";
 import { aliasGeoName } from "$lib/charts/geoMatch";
 import { assignSeriesAxes } from "$lib/views/cellsetUtils";
 import { axisLabelConfig, deriveAxisLabelWidth } from "$lib/views/chartAxisLabel";
 import { cellRadiusPct, gridCells, MAX_LABELLED_SLICES } from "$lib/dashboard/smallMultiples";
-import { type ThemeTokens, DEFAULT_THEME_TOKENS, COLORBLIND_WATERFALL } from "$lib/views/chartTheme";
+import {
+  type ThemeTokens,
+  DEFAULT_THEME_TOKENS,
+  COLORBLIND_WATERFALL,
+  resolvePalette,
+} from "$lib/views/chartTheme";
 import { buildSparklineSvg } from "$lib/charts/sparkline";
+import { formatNumber, type NumberFormat } from "$lib/charts/numberFormat";
 
 /** The shared, already-projected chart input both surfaces produce. Rollup
  *  rows are filtered (and parent context promoted into labels) by the caller
@@ -202,6 +214,94 @@ function trendSeries(
   ];
 }
 
+/* issue #1079: reference / annotation lines + bands for CARTESIAN charts.
+ *
+ * Both are ECharts series-level overlays attached to a single carrier series
+ * (the first measure series, or a dedicated zero-data series when there are no
+ * measures, so they always paint). They DON'T add data points — markLine and
+ * markArea live alongside `data` on the series. Returning `undefined` when there
+ * is nothing to draw keeps the carrier series byte-for-byte identical to the
+ * pre-#1079 output (so existing charts and their snapshots are unchanged).
+ *
+ * A y-axis line → markLine data `{ yAxis: value }` (horizontal); an x-axis line
+ * → `{ xAxis: value }` (the category index for a category x-axis). Bands become
+ * markArea data PAIRS (`[{start},{end}]`). Default colour is the muted
+ * foreground token; per-entry `color` overrides it. In compact (tile) mode the
+ * label text is hidden to avoid clutter — the line/band still renders. The
+ * builder stays pure: this only shapes plain option JSON. */
+function markLineConfig(
+  lines: ReferenceLine[] | undefined,
+  tk: ThemeTokens,
+  compact: boolean,
+): Record<string, unknown> | undefined {
+  if (!lines || lines.length === 0) return undefined;
+  return {
+    symbol: ["none", "none"],
+    label: { show: !compact },
+    data: lines.map((l) => {
+      const color = l.color || tk.fgMuted;
+      const point: Record<string, unknown> = l.axis === "x" ? { xAxis: l.value } : { yAxis: l.value };
+      point.lineStyle = { color, type: "dashed" };
+      if (l.label) point.name = l.label;
+      if (!compact && l.label) {
+        point.label = { show: true, formatter: l.label, color };
+      }
+      return point;
+    }),
+  };
+}
+
+function markAreaConfig(
+  bands: ReferenceBand[] | undefined,
+  tk: ThemeTokens,
+  compact: boolean,
+): Record<string, unknown> | undefined {
+  if (!bands || bands.length === 0) return undefined;
+  return {
+    label: { show: !compact },
+    data: bands.map((b) => {
+      const color = b.color || tk.fgMuted;
+      const axisKey = b.axis === "x" ? "xAxis" : "yAxis";
+      const start: Record<string, unknown> = {
+        [axisKey]: b.from,
+        itemStyle: { color, opacity: 0.12 },
+      };
+      if (!compact && b.label) {
+        start.name = b.label;
+        start.label = { show: true, formatter: b.label, color };
+      }
+      const end: Record<string, unknown> = { [axisKey]: b.to };
+      return [start, end];
+    }),
+  };
+}
+
+/* issue #1079: attach the prepared markLine/markArea overlays to a cartesian
+ * series list. They ride on the FIRST series so they paint once (markLine on
+ * every series would draw duplicate lines). When the list is empty (no measure
+ * columns) a dedicated zero-data carrier series is appended so the annotations
+ * still render. Mutating in place is safe — `series` is freshly mapped here. A
+ * no-op (returns the list unchanged) when there are no marks, preserving legacy
+ * output exactly. */
+function attachMarks(
+  series: Record<string, unknown>[],
+  markLine: Record<string, unknown> | undefined,
+  markArea: Record<string, unknown> | undefined,
+): Record<string, unknown>[] {
+  if (markLine === undefined && markArea === undefined) return series;
+  const carrier =
+    series.length > 0
+      ? series[0]
+      : (() => {
+          const c: Record<string, unknown> = { type: "line", name: "", data: [], silent: true };
+          series.push(c);
+          return c;
+        })();
+  if (markLine !== undefined) carrier.markLine = markLine;
+  if (markArea !== undefined) carrier.markArea = markArea;
+  return series;
+}
+
 /* issue #1071: sequential / diverging colour ramps for the map visualMap.
  * Light→dark low→high; ECharts interpolates between the stops. */
 const COLOR_RAMPS: Record<ChartColorRamp, string[]> = {
@@ -214,6 +314,27 @@ const COLOR_RAMPS: Record<ChartColorRamp, string[]> = {
 
 function colorRampFor(ramp: ChartColorRamp | undefined): string[] {
   return COLOR_RAMPS[ramp ?? "blues"] ?? COLOR_RAMPS.blues;
+}
+
+/* #1081: resolve the active categorical colour CYCLE (the option-level `color`
+ * array) honouring the documented precedence:
+ *   colour-blind-safe (when the global pref made tk.highContrast)  >  named
+ *   palette (o.palette)  >  theme default (tk.chartColors).
+ * The per-series override layer is applied separately, on the individual
+ * series, so it can win for a single series without disturbing the cycle.
+ *
+ * resolveThemeTokens() already swaps tk.chartColors to the Okabe-Ito palette
+ * when cb-safe is on; so when tk.highContrast is set we keep tk.chartColors and
+ * IGNORE any named palette — cb-safe accessibility must win over cosmetics. */
+function paletteColors(o: ChartOptions, tk: ThemeTokens): string[] {
+  if (tk.highContrast) return tk.chartColors;
+  return resolvePalette(o.palette, tk);
+}
+
+/* #1081: the per-series colour override for `name`, or undefined. Keyed by the
+ * series (column-category) label — the legend entry / measure name. */
+function seriesColorFor(o: ChartOptions, name: string): string | undefined {
+  return o.seriesColors?.[name];
 }
 
 /* issue #1080: x-axis zoom + pan for CARTESIAN charts (bar/line/area family,
@@ -307,6 +428,8 @@ function cartesianTooltipFormatter(
   cols: string[],
   matrix: (number | null)[][],
   tk: ThemeTokens,
+  nf?: NumberFormat,
+  withSparkline = true,
 ): (params: AxisTipParam | AxisTipParam[]) => string {
   // Column name -> its values down the rows (the series' full trend).
   const colSeries = new Map<string, (number | null)[]>();
@@ -327,11 +450,20 @@ function cartesianTooltipFormatter(
       .map((p) => {
         const name = String(p.seriesName ?? "");
         const v = p.value;
-        const valueText = v == null || (typeof v === "number" && Number.isNaN(v)) ? "—" : String(v);
+        // #1082: route the numeric value through formatNumber (prefix/suffix/
+        // decimals/thousands/abbreviate) when a format is set; with none it
+        // falls back to the prior String(v) / "—" behaviour. Still escaped
+        // below because the return is inserted as innerHTML.
+        const valueText =
+          nf && typeof v === "number"
+            ? formatNumber(v, nf)
+            : v == null || (typeof v === "number" && Number.isNaN(v))
+              ? "—"
+              : String(v);
         const safeName = escapeHtml(name);
         // ECharts' own coloured marker dot is safe HTML it generated itself.
         const marker = p.marker ?? "";
-        const spark = colSeries.has(name)
+        const spark = withSparkline && colSeries.has(name)
           ? buildSparklineSvg(colSeries.get(name)!, {
               width: 120,
               height: 26,
@@ -383,10 +515,21 @@ export function buildChartOption(
   const compact = geom.compact ?? false;
   const aspect = Number.isFinite(geom.aspect) && (geom.aspect ?? 0) > 0 ? (geom.aspect as number) : 1;
 
+  // issue #1079: reference lines / bands — cartesian charts only (attached
+  // below to the first measure series, or a dedicated carrier when there are
+  // no measures). undefined when none configured, so the carrier series is
+  // unchanged for legacy charts.
+  const markLine = markLineConfig(o.referenceLines, tk, compact);
+  const markArea = markAreaConfig(o.referenceBands, tk, compact);
+
   // Theme-derived fragments — identical across both surfaces.
+  // #1081: `color` is the resolved categorical cycle (cb-safe > named palette >
+  // theme default). With the inert default (palette "default", cb-safe off) this
+  // equals tk.chartColors, so legacy output and snapshots stay unchanged.
+  const palette = paletteColors(o, tk);
   const common = {
     backgroundColor: "transparent",
-    color: tk.chartColors,
+    color: palette,
     textStyle: { color: tk.fg },
   };
 
@@ -442,8 +585,37 @@ export function buildChartOption(
   const xName = o.xAxisLabel || undefined;
   const yName = o.yAxisLabel || undefined;
 
+  // #1082: optional number formatting for VALUE text (axis labels, tooltip
+  // values, data labels). `nf` is undefined when no format is set, so every
+  // value-axis/tooltip/label fragment below stays byte-for-byte identical and
+  // legacy snapshots are unchanged. The category axis is never reformatted.
+  const nf: NumberFormat | undefined =
+    o.numberFormat && Object.values(o.numberFormat).some((v) => v !== undefined && v !== null && v !== false && v !== "")
+      ? o.numberFormat
+      : undefined;
+  // Value-axis label config: only attach a formatter when nf is active, so the
+  // axisLabel object is unchanged for unformatted charts.
+  const valueAxisLabel = nf
+    ? { color: tk.fgMuted, formatter: (val: number) => formatNumber(val, nf) }
+    : axisLabel;
+  // Series data-label formatter (#1082): attached to cartesian series so that
+  // IF data labels are shown they use the format. We don't force labels on —
+  // we only set label.formatter (label.show stays at its ECharts default), and
+  // only when nf is active so the series object is otherwise unchanged. The
+  // value-axis branch always formats; this covers any displayed point labels.
+  const seriesValueLabel: Record<string, unknown> = nf
+    ? { label: { formatter: (p: { value?: unknown }) => formatNumber(p?.value as number, nf) } }
+    : {};
+
   const baseAxis = { type: "category" as const, axisLabel, axisLine, axisTick, splitLine, nameTextStyle };
-  const valueAxis = { type: "value" as const, axisLabel, axisLine, axisTick, splitLine, nameTextStyle };
+  const valueAxis = {
+    type: "value" as const,
+    axisLabel: valueAxisLabel,
+    axisLine,
+    axisTick,
+    splitLine,
+    nameTextStyle,
+  };
 
   // Pie / donut / treemap / sunburst encode a SINGLE measure. With M measures
   // we fan out into M small-multiple charts — one per measure — laid out in a
@@ -505,9 +677,20 @@ export function buildChartOption(
             },
             labelLine: { show: showSliceLabels && !sliceLabelInside },
             ...itemStyleHC,
+            // #1081: pie slices are the row categories, so the per-series colour
+            // override applies at the DATA-ITEM level (by slice name). An item
+            // with no override keeps the palette-cycle colour. Merges with the
+            // high-contrast same-bg border above when both are active. The
+            // collapsedData short-circuit (rollup-only result) keeps precedence.
             data:
               collapsedData ??
-              rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
+              rows.map((name, i) => {
+                const override = seriesColorFor(o, name);
+                const base = { name, value: matrix[i][m] ?? 0 };
+                return override
+                  ? { ...base, itemStyle: { ...seriesBorder, color: override } }
+                  : base;
+              }),
           };
         }),
       };
@@ -712,22 +895,28 @@ export function buildChartOption(
         name: xName,
       },
       yAxis: { ...valueAxis, name: yName },
-      series: rows.map((name, i) => ({
-        type: "scatter",
-        name,
-        // #1091: larger floor marker + bordered points for low-vision users.
-        ...itemStyleHC,
-        symbolSize:
-          t === "bubble"
-            ? (val: unknown) => {
-                const v = Array.isArray(val) ? (val[1] as number) : (val as number);
-                return Math.max(hc ? 10 : 6, Math.sqrt(Math.abs(v) / bubbleMax) * 40);
-              }
-            : hc
-              ? 14
-              : 10,
-        data: matrix[i].map((v, j) => [j, v ?? 0]),
-      })),
+      series: attachMarks(
+        rows.map((name, i) => ({
+          type: "scatter",
+          name,
+          // #1081: per-series colour override (by series name) wins for this series.
+          ...(seriesColorFor(o, name) ? { color: seriesColorFor(o, name) } : {}),
+          // #1091: larger floor marker + bordered points for low-vision users.
+          ...itemStyleHC,
+          symbolSize:
+            t === "bubble"
+              ? (val: unknown) => {
+                  const v = Array.isArray(val) ? (val[1] as number) : (val as number);
+                  return Math.max(hc ? 10 : 6, Math.sqrt(Math.abs(v) / bubbleMax) * 40);
+                }
+              : hc
+                ? 14
+                : 10,
+          data: matrix[i].map((v, j) => [j, v ?? 0]),
+        })),
+        markLine,
+        markArea,
+      ),
     };
   }
 
@@ -769,7 +958,8 @@ export function buildChartOption(
         name: xName,
       },
       yAxis: { ...valueAxis, name: yName },
-      series: [
+      series: attachMarks(
+        [
         {
           type: "bar",
           name: "",
@@ -795,6 +985,9 @@ export function buildChartOption(
           itemStyle: { color: hc ? COLORBLIND_WATERFALL.negative : "#e66c6c", ...seriesBorder },
         },
       ],
+        markLine,
+        markArea,
+      ),
     };
   }
 
@@ -828,6 +1021,10 @@ export function buildChartOption(
   const base = cols.map((name, c) => ({
     type: kindBase,
     name,
+    // #1081: per-series colour override (by series name) wins over the cycle
+    // for this one series. ECharts honours a series-level `color` for both bar
+    // and line; absent overrides leave it off so the palette cycle drives it.
+    ...(seriesColorFor(o, name) ? { color: seriesColorFor(o, name) } : {}),
     // Single-axis stacked → one "total" group (matches both surfaces' prior
     // output); dual-axis stacked → separate groups per side so each axis stacks
     // independently.
@@ -843,6 +1040,8 @@ export function buildChartOption(
     // #1091: high-contrast — thicker line strokes + bigger markers for lines,
     // a same-bg border for bars so adjacent bars separate. No-ops when off.
     ...(kindBase === "line" ? { ...lineStyleHC, ...markerHC } : itemStyleHC),
+    // #1082: format any displayed data labels (no-op object when nf is off).
+    ...seriesValueLabel,
     yAxisIndex: hasRight ? (seriesSides[c] === "right" ? 1 : 0) : 0,
     // Compact (tiles) draws missing cells as gaps; roomy (workspace) as 0.
     data: matrix.map((row) => row[c] ?? (compact ? null : 0)),
@@ -861,9 +1060,18 @@ export function buildChartOption(
   // and only when there's more than one category — a single column has no trend
   // to draw (matches the issue's "disabled when there's only one column").
   const sparklineTip = !compact && rows.length > 1;
-  const cartesianTooltip = sparklineTip
-    ? { trigger: "axis" as const, ...tooltipStyle, formatter: cartesianTooltipFormatter(cols, matrix, tk) }
-    : { trigger: "axis" as const, ...tooltipStyle };
+  // #1082: when a number format is set we always need a function formatter so
+  // tooltip values are formatted, even in compact mode (which has no sparkline).
+  // Without a format we keep the prior behaviour: sparkline formatter in roomy
+  // mode, ECharts' default text formatter otherwise.
+  const cartesianTooltip =
+    sparklineTip || nf
+      ? {
+          trigger: "axis" as const,
+          ...tooltipStyle,
+          formatter: cartesianTooltipFormatter(cols, matrix, tk, nf, sparklineTip),
+        }
+      : { trigger: "axis" as const, ...tooltipStyle };
 
   return {
     ...common,
@@ -895,6 +1103,9 @@ export function buildChartOption(
       name: xName,
     },
     yAxis,
-    series: [...base, ...trend],
+    // issue #1079: reference lines/bands ride on the first measure series (or a
+    // dedicated carrier when there are no measures). Trend overlays stay
+    // markLine-free. No-op when nothing is configured (legacy output unchanged).
+    series: attachMarks([...base, ...trend], markLine, markArea),
   };
 }

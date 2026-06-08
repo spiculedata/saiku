@@ -166,6 +166,13 @@
     dashboardStore.redo();
   }
 
+  // Issue #929: handle on the dashboard grid root so the toolbar's Export
+  // action can rasterise the rendered tiles (honouring active filters,
+  // since they're already applied to the rendered output) to PNG / PDF.
+  // Bound from <DashboardGrid> below; null while the grid is unmounted
+  // (e.g. the empty-state guidance is showing).
+  let gridElement = $state<HTMLDivElement | null>(null);
+
   // Issue #916: surface the empty-state guidance when an editable
   // dashboard has zero tiles. Viewer mode (readOnly) keeps the blank
   // canvas — a published-but-empty dashboard isn't an authoring moment.
@@ -196,6 +203,7 @@
         canRedo={!readOnly && dashboardStore.canRedo}
         onUndo={readOnly ? undefined : handleUndo}
         onRedo={readOnly ? undefined : handleRedo}
+        {gridElement}
       />
       {#if dashboardStore.loadError}
         <div class="notice">{dashboardStore.loadError}</div>
@@ -209,7 +217,7 @@
     {#if showEmptyGuidance && !presentation.active}
       <EmptyDashboardGuidance onAddTile={handleAddTile} />
     {:else}
-      <DashboardGrid {readOnly} />
+      <DashboardGrid {readOnly} bind:gridElement />
     {/if}
     <!-- #915: bulk-ops bar — self-hides unless 2+ tiles are selected in
          an editable, non-presentation dashboard. -->

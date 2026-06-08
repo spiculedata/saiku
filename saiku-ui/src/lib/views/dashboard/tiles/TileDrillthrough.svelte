@@ -16,7 +16,7 @@
 
   import DrillthroughModal from "$lib/modals/DrillthroughModal.svelte";
   import DrillthroughResultModal from "$lib/modals/DrillthroughResultModal.svelte";
-  import { aiDrillthrough } from "$lib/api/aiQuery";
+  import { aiDrillthrough, downloadAiDrillthroughCsv } from "$lib/api/aiQuery";
   import { drillthroughToQueryResult } from "$lib/dashboard/drillthroughCoord";
   import { datasources } from "$lib/stores/datasources.svelte";
   import { session } from "$lib/stores/session.svelte";
@@ -102,13 +102,21 @@
     }
   }
 
-  function exportCsv(_opts: { dimensions: string[]; measures: string[] }): void {
-    // The AI Query drillthrough surface (/ai/query/{queryId}/drillthrough)
-    // is JSON-only — it has no CSV export sibling (unlike the workspace
-    // ThinQuery path). Rather than open a 404, run the in-modal drillthrough
-    // so the user still sees the rows. CSV export from a dashboard tile can
-    // be a follow-up if a server-side endpoint lands.
-    void runDrillthrough({ ..._opts, maxRows: 10000 });
+  function exportCsv(opts: { dimensions: string[]; measures: string[] }): void {
+    // Issue #1051: stream the drillthrough as a CSV file from the AI Query
+    // surface (GET /ai/query/{queryId}/drillthrough/export/csv). The endpoint
+    // sets Content-Disposition: attachment, so opening the same-origin
+    // authenticated URL downloads the file directly — same mechanism the
+    // Workspace export uses. Honours the picked returns + the captured
+    // cell position, replacing the earlier JSON-refetch fallback.
+    pickerOpen = false;
+    if (!activeQueryId) return;
+    const returns = [...opts.dimensions, ...opts.measures];
+    downloadAiDrillthroughCsv(activeQueryId, {
+      position: activePosition ?? undefined,
+      maxRows: 10000,
+      returns: returns.length ? returns : undefined,
+    });
   }
 </script>
 

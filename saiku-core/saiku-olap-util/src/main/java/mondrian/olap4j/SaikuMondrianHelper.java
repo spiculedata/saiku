@@ -170,39 +170,34 @@ public class SaikuMondrianHelper {
     }
 
     public static List<org.olap4j.metadata.Member> getMDXMemberLookup(OlapConnection con, String cube, Level level) {
-        OlapStatement statement = null;
-        try {
-            statement = con.createStatement();
-        } catch (OlapException e) {
-            e.printStackTrace();
+        String l;
+        RolapCubeDimension o = (RolapCubeDimension) ((MondrianOlap4jDimension) level.getDimension()).getOlapElement();
+        if (isHanger(o)) {
+            l = level.getHierarchy().getUniqueName();
+        } else {
+            l = level.getUniqueName();
         }
-        try {
-            String l = null;
-            RolapCubeDimension o =
-                    (RolapCubeDimension) ((MondrianOlap4jDimension) level.getDimension()).getOlapElement();
-            if (isHanger(o)) {
-                l = level.getHierarchy().getUniqueName();
-            } else {
-                l = level.getUniqueName();
-            }
-            CellSet cellSet = statement.executeOlapQuery("with member [Measures].[Zero] as 0\n"
-                    + " select AddCalculatedMembers(" + l
-                    + ".Members) on 0\n"
-                    + " from [" + cube + "]\n"
-                    + " where [Measures].[Zero]");
-
+        // try-with-resources so the OlapStatement and CellSet are always closed — the method
+        // materialises the members into a List, so the cell set can be released here. This also
+        // removes the prior NPE risk where a failed createStatement() left statement == null
+        // and the next block dereferenced it (saiku#1191).
+        try (OlapStatement statement = con.createStatement();
+                CellSet cellSet = statement.executeOlapQuery("with member [Measures].[Zero] as 0\n"
+                        + " select AddCalculatedMembers(" + l
+                        + ".Members) on 0\n"
+                        + " from [" + cube + "]\n"
+                        + " where [Measures].[Zero]")) {
             List<org.olap4j.metadata.Member> members = new ArrayList<org.olap4j.metadata.Member>();
             List<CellSetAxis> cellSetAxes = cellSet.getAxes();
             CellSetAxis columnsAxis = cellSetAxes.get(0);
-            // Print headings.
-            System.out.print("\t");
-            // CellSetAxis columnsAxis = cellSetAxes.get(Axis.COLUMNS.ordinal());
             for (Position position : columnsAxis.getPositions()) {
                 org.olap4j.metadata.Member m = position.getMembers().get(0);
                 members.add(m);
             }
             return members;
-        } catch (OlapException e) {
+        } catch (java.sql.SQLException e) {
+            // OlapException (from executeOlapQuery) and the implicit close() of the
+            // OlapStatement/CellSet both surface as SQLException — OlapException extends it.
             e.printStackTrace();
         }
         return null;

@@ -1,58 +1,91 @@
 # Testing
 
-Phase 0's safety-net deliverables for `mvn verify` and the CI matrix. Start here before making invasive changes to the codebase.
+The test suite and how CI gates it. Read this before invasive changes — `mvn verify` is the
+contract every PR must keep green.
 
 ## How to run
 
 ```bash
-mvn verify
+mvn verify                                    # compile + unit tests + spotless:check (the CI gate)
+mvn -B -ntp -DskipITs=false verify            # what CI runs — also executes the saiku-launcher ITs
+mvn spotless:apply                            # auto-format Java (Palantir Java Format) before committing
+./scripts/install-hooks.sh                    # one-time: pre-commit hook runs spotless:check on staged .java
 ```
 
-Runs compile + unit tests + Spotless check on the default reactor (`saiku-core`, `saiku-webapp`). Expects JDK 21 and Maven 3.9+. No network access required beyond Maven Central + Apache / Atlassian public repos.
-
-To apply formatting before committing:
+Targeting a module or a single class:
 
 ```bash
-mvn spotless:apply
+mvn -pl saiku-core/saiku-service -am test                              # one module's unit tests
+mvn -pl saiku-core/saiku-service -am test -Dtest=AiSchemaConverterTest  # a single class
+mvn -P integration verify                                              # run the saiku-launcher ITs locally
 ```
 
-To install the pre-commit hook that runs `spotless:check` on staged Java files:
+> **`-am` + `-Dtest` gotcha:** with `-am`, upstream modules that have no class matching `-Dtest`
+> fail surefire with *"No tests matching pattern"*. Add `-Dsurefire.failIfNoSpecifiedTests=false`.
+> (PowerShell: quote `-D` args, e.g. `"-Dtest=Foo"`.)
 
-```bash
-./scripts/install-hooks.sh
-```
+`mvn` needs `~/.m2/settings.xml` with a GitHub PAT (`read:packages`) for the four Spicule
+GitHub-Packages artifacts (`mondrian-saiku`, `olap4j`, `olap4j-xmlaserver`, `saiku-query`) — see
+`CLAUDE.md`. Locally pass `-s "<settings.xml>"` if it isn't at the default path.
 
-## Current coverage (baseline)
+## Current coverage
 
-Existing unit tests in the repo at the time Phase 0 landed:
+Roughly **990 `@Test` methods across ~155 test classes** (a long way past the Phase-0 baseline of 10).
 
-| Module | Test | What it covers |
-|---|---|---|
-| `saiku-core/saiku-service` | `NoReHashPasswordEncoderTest` | Password-encoder helper, 3 cases. |
-| `saiku-core/saiku-service` | `RepositoryDatasourceManagerTest` | `RepositoryDatasourceManager` with `MockRepositoryManager` + `MockConnectionManager` + `MockHttpSession`, 7 cases. |
+| Module | Test classes | ~`@Test` | What it covers |
+|---|---|---|---|
+| `saiku-core/saiku-service` | ~94 | ~609 | OLAP query/AI-query conversion + MDX-injection defense (`olap/ai/`), AI anomaly/forecast detectors (`olap/ai/anomaly`, `olap/ai/forecast`), schema generation/inference (`schema/generate/`), cellset formatters, cache (`SaikuQueryCache`, `QueryCacheKey`), repository/ACL/path-traversal, datasource/crypto, comments/history, CSV/Excel export hardening, `SecureXml`. |
+| `saiku-core/saiku-web` | ~37 | ~268 | JAX-RS REST resources (`AiQueryResource`, `Query2Resource`, `DataSourceResource`, `AdminResource`, `InfoResource`, demo gate, error-leak), serialization, `JdbcUrlValidator`. |
+| `saiku-core/saiku-semantic` | 1 | ~14 | YAML semantic layer. |
+| `saiku-launcher` | ~22 (all `*IT`) | ~99 | End-to-end integration: boots an in-process Jetty via `SaikuItHarness.shared()` and exercises the live REST surface (`/ai/*`, query2, drillthrough, datasources, repository, exporter). Run by failsafe; **skipped unless** `-DskipITs=false` (CI) or `-P integration` (local). |
+| `saiku-core/saiku-olap-util` | 0 | 0 | No tests (olap4j helpers). |
 
-Total: **10 tests, all passing on JDK 21.**
+### Test categories & conventions
 
-## What is not covered
-
-- **End-to-end MDX execution.** There is no live FoodMart + Mondrian + olap4j smoke test in the suite. Phase 0 drafted one (`MondrianFoodMartHarnessTest`) but the bundled HSQL FoodMart dump and the `FoodMart4.xml` schema declared in `util/` do not line up under the currently-installed `pentaho:mondrian:4.8.0.0-SAIKU` fork (`date_string` column missing in `time_by_day`, classic `FoodMart.xml` rejected by the Mondrian 4 loader). Resurrect in Phase 1 or Phase 3 with a schema/data pair known to match the Mondrian fork in use.
-- **`OlapDiscoverService` integration test.** Gated on the MDX harness above.
-- **Web layer (`saiku-core/saiku-web`).** REST resources have zero unit-test coverage. Phase 1's Spring Boot migration is a natural time to add slice tests.
-- **Webapp (`saiku-webapp`).** No integration tests. Phase 1 should add at least a startup smoke test.
-- **UI.** `saiku-ui` is excluded from the Phase 0 reactor; it will be rebuilt from scratch in Phase 4/6 with its own Playwright suite (see Task 0.8 in the implementation plan).
-- **Multi-DB matrix.** Only HSQL is exercised via the legacy tests. Postgres / MySQL / SQL Server / DuckDB coverage lands in Phase 3 with the YAML semantic layer.
-
-## Quarantined / flaky tests
-
-None.
-
-## Environment prerequisites
-
-- JDK 21 (Temurin, Corretto, Zulu all fine).
-- Maven 3.9+.
-- First build populates `~/.m2` — requires internet access for Maven Central + Apache + Atlassian repos.
-- Local forks of `olap4j`, `olap4j-xmlaserver`, `mondrian` (Spicule `4.8.0.0-SAIKU`), and `saiku-query` must be installed in `~/.m2`. See `docs/plans/2026-04-18-saiku-modernisation-design.md` for repo locations.
+- **Framework:** JUnit 4 (`org.junit.Test`) throughout (one JUnit 5 file, `SemanticLayerTest`).
+  Plain JUnit assertions with descriptive messages; no AssertJ/Hamcrest. **Mockito is not on the
+  saiku-core test classpath** — tests use hand-rolled stubs (the `Mock*` helpers, anonymous
+  subclasses) or a real in-memory H2 result for `ResultSet`-shaped inputs.
+- **Naming:** prose (`validatorRejectsCrossjoinInjection`, `whenBudgetExceeded_oldestEntryEvicted`).
+- **Golden tests** (`*GoldenTest`, e.g. `MdxEchoGoldenTest`, `SchemaInferrerGoldenTest`): compare
+  generated output against committed fixtures under `src/test/resources/`. Regenerate with
+  `-Dsaiku.goldens.update=true` / `-Dschemagen.updateGolden=true` — the test then **fails on purpose**
+  so the diff is reviewed before commit.
+- **Characterization tests** (`*CharacterizationTest`): pin full output state as a refactor safety-net.
+- **Property tests** (`*PropertyTest`): hand-rolled generator, fixed seed, invariant checks (no jqwik).
+- **Reusable fixtures:** `QuirksTestFixture`, `FoodmartTestFixture`, `Mock*` (repository/connection/session).
 
 ## CI
 
-`.github/workflows/ci.yml` runs `mvn verify` + `spotless:check` on Linux and macOS against JDK 21. Pull requests must be green before merge.
+`.github/workflows/ci.yml` runs **`mvn -B -ntp -DskipITs=false verify`** on **Ubuntu and macOS**
+against **JDK 21**. A PR is green only when, on both OSes:
+
+1. Compile + **surefire unit tests** pass.
+2. **failsafe integration tests** (`saiku-launcher/**/*IT`) pass (CI sets `-DskipITs=false`).
+3. **Spotless** (`spotless-maven-plugin` 2.46.1 / Palantir Java Format) reports clean — bound to the
+   `verify` phase, so it runs *after* tests; `mvn spotless:apply` fixes violations.
+4. **Per-module test-count floors** (`.github/test-floors.json`) are met — CI fails if a module's
+   surefire total drops below its floor (`saiku-core/saiku-service`: 252, `saiku-core/saiku-web`: 44),
+   catching accidental test deletions. Bump the floor when you add tests.
+
+A separate `docker` workflow builds the launcher image and does **not** gate the Maven build.
+
+## Quarantined / flaky tests
+
+None are quarantined. Two sets fail **only on local Windows** (environment, not code) — **CI on
+Linux/macOS is authoritative**, do not chase them locally:
+
+- **`*GoldenTest`** (e.g. `MdxEchoGoldenTest`): goldens are LF; Windows CRLF checkouts produce
+  line-ending-only diffs. A `.gitattributes eol=lf` on the golden resources would remove the noise.
+- **`SaikuQueryCacheTest`**: a couple of cases assert timing/file-system behaviour that is flaky on a
+  loaded or slow filesystem.
+
+## Environment prerequisites
+
+- JDK 21 (Temurin, Corretto, Zulu).
+- Maven 3.9+.
+- `~/.m2/settings.xml` with a GitHub PAT (`read:packages`) — required to resolve the four Spicule
+  GitHub-Packages artifacts even though they are public. One PAT covers all four. Local forks of
+  `mondrian-saiku` / `olap4j` / `olap4j-xmlaserver` / `saiku-query` in `~/.m2` are preferred over the
+  remote.
+- First build populates `~/.m2` (needs Maven Central + Apache + Atlassian + GitHub Packages).

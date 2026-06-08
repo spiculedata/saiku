@@ -72,6 +72,17 @@ export interface TileQueryDeps {
   /** Share-viewer prefetched response — when set, render this verbatim
    *  and skip the live fetch (no /ai/query access in the guest view). */
   sharedResponse: AiQueryResponse | null;
+  /** Optional override for the INLINE-tile fetch (issue #907). When set, the
+   *  inline branch calls this with the effective query body instead of
+   *  {@link executeAiQuery} — e.g. ChartTile routes through /ai/anomaly to
+   *  augment the response with per-cell verdicts. Reference tiles are
+   *  unaffected. Omit for the default /ai/query path. */
+  inlineFetch?: (effective: Record<string, unknown>) => Promise<AiQueryResponse>;
+  /** Optional extra token folded into the inline dedupe key (issue #907) so a
+   *  config change that doesn't alter the query body itself — e.g. toggling
+   *  anomaly detection or changing its method/threshold — still forces a
+   *  re-fetch. */
+  dedupeExtra?: string | null;
 }
 
 /**
@@ -141,7 +152,9 @@ export function runTileQueryEffect(
   // effective-query builder, then POST to /ai/query.
   const effective = effectiveQueryFor(tile, activeFilters, schema);
   if (!effective) return;
-  const json = JSON.stringify(effective);
+  // #907: dedupeExtra folds non-body config (e.g. anomaly settings) into the
+  // key so toggling it re-fetches even though `effective` is unchanged.
+  const json = JSON.stringify({ q: effective, x: deps.dedupeExtra ?? null });
   if (json === state.lastQueryJson) return; // no-op; avoid duplicate fetches
   state.lastQueryJson = json;
 
@@ -149,7 +162,10 @@ export function runTileQueryEffect(
   state.error = null;
   void (async () => {
     try {
-      const r = await executeAiQuery(effective, "records");
+      // #907: inlineFetch override (e.g. /ai/anomaly) when supplied, else /ai/query.
+      const r = deps.inlineFetch
+        ? await deps.inlineFetch(effective)
+        : await executeAiQuery(effective, "records");
       state.response = r;
       if (r.status !== "SUCCESS") {
         state.error = r.error ?? `Query failed: ${r.status}`;

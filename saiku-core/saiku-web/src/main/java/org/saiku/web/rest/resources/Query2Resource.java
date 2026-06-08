@@ -944,11 +944,15 @@ public class Query2Resource {
         try {
             CellDataSet cellData = thinQueryService.getFormattedResult(queryName, format);
             QueryResult queryResult = RestUtil.convert(cellData);
-            PdfReport pdf = new PdfReport();
-            byte[] doc = pdf.createPdf(queryResult, svg);
+            // The download filename — falls back to "export" so users
+            // who didn't pass ?name= still get a sensible default.
             if (name == null || name.equals("")) {
                 name = "export";
             }
+            PdfReport pdf = new PdfReport();
+            // Pass the document name through so it lands as the PDF's
+            // running page header (xhtml2fo.xsl reads <head><title>).
+            byte[] doc = pdf.createPdf(queryResult, svg, name);
             return Response.ok(doc)
                     .type("application/pdf")
                     .header("content-disposition", "attachment; filename = " + name + ".pdf")
@@ -1023,9 +1027,10 @@ public class Query2Resource {
                         "<!DOCTYPE html><html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\n";
                 if (css) {
                     html += "<style>\n";
-                    InputStream is = JSConverter.class.getResourceAsStream("saiku.table.full.css");
-                    String cssContent = IOUtils.toString(is);
-                    html += cssContent;
+                    // try-with-resources so the bundled CSS stream is always closed (saiku#1191).
+                    try (InputStream is = JSConverter.class.getResourceAsStream("saiku.table.full.css")) {
+                        html += IOUtils.toString(is);
+                    }
                     html += "</style>\n";
                 }
                 html += "</head>\n<body><div class='workspace_results'>\n";
