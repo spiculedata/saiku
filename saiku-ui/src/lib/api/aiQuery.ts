@@ -23,11 +23,26 @@ export type AiQueryStatus =
   | "WAREHOUSE_ERROR"
   | "CUBE_NOT_FOUND";
 
+/** Per-point statistical anomaly verdict (saiku#907). Attached to a cell by
+ *  POST /ai/anomaly only when the detector flagged that point. */
+export interface AnomalyPoint {
+  /** Unsigned deviation in detector-native units (sigmas for zscore/mad). */
+  score: number;
+  /** Central tendency the point was compared against (mean / median). */
+  expected: number;
+  /** "above" / "below" relative to expected, or null on a tie. */
+  direction?: "above" | "below" | null;
+  /** Always true on attached cells (non-anomalous cells carry no AnomalyPoint). */
+  anomaly: boolean;
+}
+
 export interface AiCell {
   value: number | null;
   formatted: string;
   unit?: string | null;
   properties?: Record<string, string>;
+  /** Set only on cells flagged by the /ai/anomaly endpoint (saiku#907). */
+  anomaly?: AnomalyPoint | null;
 }
 
 export interface AiQueryCaption {
@@ -271,6 +286,82 @@ export async function aiDrillthrough(
     return JSON.parse(text) as AiDrillthroughResult;
   } catch (e) {
     throw new Error(`aiDrillthrough -> ${res.status}: non-JSON response (${(e as Error).message})`);
+  }
+}
+
+/* ------------------------------------------------------------------------
+ * Issue #907 — server-side statistical anomaly detection.
+ *
+ * Runs the tile's authored query through the same path /ai/query uses, then
+ * flags anomalous points along the time axis with the chosen detector. The
+ * returned response is the standard AiQueryResponse (records format) with an
+ * `anomaly:{score,expected,direction}` object on each flagged cell, alongside
+ * a compact summary block (method / threshold / timeAxis / anomalyCount).
+ * ---------------------------------------------------------------------- */
+
+export type AnomalyMethod = "zscore" | "mad" | "stl";
+
+export interface AnomalySummary {
+  method: string;
+  threshold: number;
+  timeAxis: string;
+  /** Explicit count — 0 (never absent) when no anomalies were found. */
+  anomalyCount: number;
+}
+
+export interface AiAnomalyResponse {
+  response: AiQueryResponse;
+  anomaly: AnomalySummary;
+}
+
+export interface AiAnomalyOptions {
+  method?: AnomalyMethod;
+  /** Detector cutoff; omit to use the method default (zscore 3.0, mad 3.5). */
+  threshold?: number;
+  /** Unique name of the time axis to scan. */
+  timeAxis: string;
+}
+
+/** POST /rest/saiku/api/ai/anomaly. On a validation error the server returns a
+ *  400 whose body is a bare AiQueryResponse (status VALIDATION_ERROR); we
+ *  surface that as a thrown Error carrying the server message so the tile can
+ *  fall back to the plain chart. */
+export async function detectAnomalies(
+  query: Record<string, unknown>,
+  opts: AiAnomalyOptions,
+): Promise<AiAnomalyResponse> {
+  const body: Record<string, unknown> = {
+    query,
+    timeAxis: opts.timeAxis,
+    method: opts.method ?? "zscore",
+  };
+  if (opts.threshold != null) body.threshold = opts.threshold;
+  const res = await fetch(`${REST_BASE}/anomaly`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!text) throw new Error(`detectAnomalies -> ${res.status}: empty body`);
+  if (!res.ok) {
+    // 400 bodies are the bare AiQueryResponse validation envelope.
+    let msg = `detectAnomalies -> ${res.status}`;
+    try {
+      const parsed = JSON.parse(text) as { error?: string; message?: string };
+      if (parsed.error || parsed.message) msg = parsed.error ?? parsed.message ?? msg;
+    } catch {
+      msg = `${msg}: ${text}`;
+    }
+    throw new Error(msg);
+  }
+  try {
+    return JSON.parse(text) as AiAnomalyResponse;
+  } catch (e) {
+    throw new Error(`detectAnomalies -> ${res.status}: non-JSON response (${(e as Error).message})`);
   }
 }
 
