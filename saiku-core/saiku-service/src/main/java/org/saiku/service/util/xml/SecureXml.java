@@ -65,6 +65,14 @@ public final class SecureXml {
         dbf.setFeature(FEATURE_LOAD_EXTERNAL_DTD, false);
         dbf.setXIncludeAware(false);
         dbf.setExpandEntityReferences(false);
+        // Namespace awareness is REQUIRED for downstream consumers that
+        // read prefixed attributes / elements (XSLT compilation in
+        // PdfReport, for one — without it Xalan reads `xsl:stylesheet`
+        // as a non-qualified element and fails with "stylesheet requires
+        // attribute: version", which produced an empty 15-byte PDF on
+        // 2026-06-07). Matches the SAX factory above which DOES set
+        // this; the omission here was an oversight.
+        dbf.setNamespaceAware(true);
         return dbf.newDocumentBuilder();
     }
 

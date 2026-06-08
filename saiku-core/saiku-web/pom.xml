@@ -136,6 +136,28 @@
             <groupId>org.apache.xmlgraphics</groupId>
             <artifactId>fop</artifactId>
         </dependency>
+        <!--
+            JDK 21's bundled XSLTC TransformerFactory NPEs when compiling
+            xhtml2fo.xsl with the JDK-internal Xalan ("Cannot invoke
+            String.hashCode() because this._stringRep is null" inside
+            XSLTC.compile) — bug confirmed 2026-06-07 on the demo
+            container: PDF export produced a 15-byte file with just the
+            "%PDF-1.4" header.
+
+            Adding Apache Xalan to the classpath lets the JAXP SPI pick
+            it over the broken JDK-internal one. Sized at ~3 MB; we pay
+            it only on saiku-web.
+        -->
+        <dependency>
+            <groupId>xalan</groupId>
+            <artifactId>xalan</artifactId>
+            <version>2.7.3</version>
+        </dependency>
+        <dependency>
+            <groupId>xalan</groupId>
+            <artifactId>serializer</artifactId>
+            <version>2.7.3</version>
+        </dependency>
         <dependency>
             <groupId>commons-collections</groupId>
             <artifactId>commons-collections</artifactId>
