@@ -262,7 +262,13 @@
      user feedback). The floating toolbar above the canvas felt like
      toolbar clutter; the persisted option lives with the rest of the
      chart config now. -->
-<div class="chart-scroll">
+<!-- Scrollbar only when small-multiples grow the canvas beyond the
+     wrapper height. With a single chart we render the canvas at exactly
+     60vh / 320px so the wrapper's overflow can stay hidden — otherwise
+     ECharts' internal padding shoves the content over by a pixel or two
+     and a phantom vertical scrollbar appears (user feedback 2026-06-07
+     "scrollbar that isn't needed"). -->
+<div class="chart-scroll" class:chart-scroll--scrollable={smallMultipleRows > 1}>
   <!-- #1090: the canvas is decorative to assistive tech; the sr-only table below
        is the accessible representation, so hide the canvas from screen readers. -->
   <div
@@ -304,11 +310,15 @@
     width: 100%;
     height: 60vh;
     min-height: 320px;
-    overflow-y: auto;
+    overflow-y: hidden;
     overflow-x: hidden;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
+  }
+  /* Only show the scrollbar when small-multiples actually overflow. */
+  .chart-scroll--scrollable {
+    overflow-y: auto;
   }
   .chart {
     width: 100%;

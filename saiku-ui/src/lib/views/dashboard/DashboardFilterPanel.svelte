@@ -767,7 +767,7 @@
                     onchange={(e) => setTopN(f.id, { measure: (e.target as HTMLSelectElement).value })}
                   >
                     <option value="">— measure —</option>
-                    {#each measures as m (m)}
+                    {#each measures as m, _im (_im)}
                       <option value={m}>{m}</option>
                     {/each}
                   </select>
@@ -838,7 +838,7 @@
             <span>Dimension</span>
             <select bind:value={addDimension} disabled={!addCube}>
               <option value="">— pick —</option>
-              {#each addDimensionOptions() as d (d)}
+              {#each addDimensionOptions() as d, _id (_id)}
                 <option value={d}>{d}</option>
               {/each}
             </select>
@@ -847,7 +847,7 @@
             <span>Hierarchy</span>
             <select bind:value={addHierarchy} disabled={!addDimension}>
               <option value="">— pick —</option>
-              {#each addHierarchyOptions() as h (h)}
+              {#each addHierarchyOptions() as h, _ih (_ih)}
                 <option value={h}>{h}</option>
               {/each}
             </select>
@@ -856,7 +856,7 @@
             <span>Level</span>
             <select bind:value={addLevel} disabled={!addHierarchy}>
               <option value="">— pick —</option>
-              {#each addLevelOptions() as l (l)}
+              {#each addLevelOptions() as l, _il (_il)}
                 <option value={l}>{l}</option>
               {/each}
             </select>

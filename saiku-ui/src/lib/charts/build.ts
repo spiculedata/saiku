@@ -418,7 +418,17 @@ export function buildChartOption(
   // categories crowd. The full label always shows in the axis-pointer tooltip.
   const catCount = Math.max(rows.length, cols.length, 1);
   const catLabelWidth = compact ? 100 : deriveAxisLabelWidth(geom.chartWidth ?? 0, catCount);
-  const catLabel = (rotate = 0) => ({ color: tk.fgMuted, rotate, ...axisLabelConfig(catLabelWidth) });
+  // Rotated labels read diagonally — they don't compete with siblings for
+  // horizontal slot width, so they can hold ~2x the chars before clipping.
+  // Without this, scatter / heatmap labels rotated 30° still truncated to
+  // "Beer..." / "Drink..." even though there was room (user feedback
+  // 2026-06-07 "x axis is unreadable").
+  const ROTATED_LABEL_WIDTH = 160;
+  const catLabel = (rotate = 0) => ({
+    color: tk.fgMuted,
+    rotate,
+    ...axisLabelConfig(rotate !== 0 ? ROTATED_LABEL_WIDTH : catLabelWidth),
+  });
 
   const legend = compact ? compactLegend(o, tk) : legendConfig(o, tk);
   const title = titleConfig(o, tk);
@@ -432,20 +442,41 @@ export function buildChartOption(
   // we fan out into M small-multiple charts — one per measure — laid out in a
   // grid inside the same option (M series, one per cell). M=1 is a single chart.
   if (t === "pie" || t === "donut" || t === "treemap" || t === "sunburst") {
-    const cells = gridCells(cols.length);
-    const cellTitles = cells.map((cell, m) => ({
-      text: cols[m],
-      left: cell.centerXPct + "%",
-      top: cell.topPct + "%",
-      textAlign: "center" as const,
-      textStyle: { color: tk.fg, fontSize: 12 },
-    }));
+    // Beyond this many measures we collapse to a single chart whose slices
+    // are summed across rows — the screenshot bug 2026-06-07 had 24+
+    // tiny pies with vast whitespace because gridCells fanned the layout
+    // across every column. A single pie with the columns as slices is the
+    // useful default for "Store Sales by Product Category".
+    const MAX_SMALL_MULTIPLES = 6;
+    const collapseToSingle = cols.length > MAX_SMALL_MULTIPLES;
+    const cells = gridCells(collapseToSingle ? 1 : cols.length);
+    // When collapsed, the single cell's title is just the chart title (set
+    // by titleConfig); skip the per-cell title so we don't draw two stacked
+    // labels.
+    const cellTitles = collapseToSingle
+      ? []
+      : cells.map((cell, m) => ({
+          text: cols[m],
+          left: cell.centerXPct + "%",
+          top: cell.topPct + "%",
+          textAlign: "center" as const,
+          textStyle: { color: tk.fg, fontSize: 12 },
+        }));
     const titles = title ? [title, ...cellTitles] : cellTitles;
     // Name slices directly when few enough to read; else lean on the tooltip.
     // Inside the slices for a small-multiple grid (leader lines would cross
     // between neighbours); outside for a single chart where there's room.
-    const showSliceLabels = rows.length <= MAX_LABELLED_SLICES;
+    const showSliceLabels =
+      (collapseToSingle ? cols.length : rows.length) <= MAX_LABELLED_SLICES;
     const sliceLabelInside = cells.length > 1;
+    // Pre-compute the collapsed dataset (one slice per column, value =
+    // sum of that column across all rows).
+    const collapsedData = collapseToSingle
+      ? cols.map((name, c) => ({
+          name,
+          value: matrix.reduce((sum, row) => sum + (row[c] ?? 0), 0),
+        }))
+      : null;
 
     if (t === "pie" || t === "donut") {
       return {
@@ -456,7 +487,7 @@ export function buildChartOption(
           const outer = cellRadiusPct(cell, aspect);
           return {
             type: "pie",
-            name: cols[m],
+            name: collapsedData ? "Total" : cols[m],
             radius: t === "donut" ? [outer * 0.55 + "%", outer + "%"] : [0, outer + "%"],
             center: [cell.centerXPct + "%", cell.centerYPct + "%"],
             label: {
@@ -466,10 +497,10 @@ export function buildChartOption(
               color: sliceLabelInside ? "#fff" : tk.fg,
             },
             labelLine: { show: showSliceLabels && !sliceLabelInside },
-            // #1091: a same-bg border separates adjacent slices for monochrome
-            // / low-vision readers; absent when high-contrast is off.
             ...itemStyleHC,
-            data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
+            data:
+              collapsedData ??
+              rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })),
           };
         }),
       };
@@ -482,14 +513,16 @@ export function buildChartOption(
         tooltip: tooltipStyle,
         series: cells.map((cell, m) => ({
           type: "treemap",
-          name: cols[m],
+          name: collapsedData ? "Total" : cols[m],
           left: cell.leftPct + "%",
           top: cell.topPct + cell.heightPct * 0.18 + "%",
           width: cell.widthPct + "%",
           height: cell.heightPct * 0.82 + "%",
           label: { color: "#fff" },
           breadcrumb: { show: false },
-          data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
+          data: (
+            collapsedData ?? rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 }))
+          ).filter((d) => d.value > 0),
         })),
       };
     }
@@ -501,11 +534,13 @@ export function buildChartOption(
       tooltip: tooltipStyle,
       series: cells.map((cell, m) => ({
         type: "sunburst",
-        name: cols[m],
+        name: collapsedData ? "Total" : cols[m],
         center: [cell.centerXPct + "%", cell.centerYPct + "%"],
         radius: [0, cellRadiusPct(cell, aspect) + "%"],
         label: { show: showSliceLabels, color: "#fff" },
-        data: rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 })).filter((d) => d.value > 0),
+        data: (
+          collapsedData ?? rows.map((name, i) => ({ name, value: matrix[i][m] ?? 0 }))
+        ).filter((d) => d.value > 0),
       })),
     };
   }
