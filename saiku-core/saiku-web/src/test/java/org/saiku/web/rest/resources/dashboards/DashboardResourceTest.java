@@ -125,7 +125,10 @@ public class DashboardResourceTest {
         stubDs.stored.put("/dashboards/q4.saikudash", MAPPER.writeValueAsString(sampleDashboard()));
         Response r = resource.load("/dashboards/q4.saikudash");
         assertEquals(200, r.getStatus());
-        Dashboard d = (Dashboard) r.getEntity();
+        // #1246: load() now returns the RAW JSON body (UI is the schema authority;
+        // it no longer re-serialises a typed Dashboard POJO, which dropped UI-owned
+        // fields). The entity is the JSON string — parse it to assert the content.
+        Dashboard d = MAPPER.readValue((String) r.getEntity(), Dashboard.class);
         assertEquals("Q4 Sales", d.name);
         assertEquals(2, d.layout.tiles.size());
     }

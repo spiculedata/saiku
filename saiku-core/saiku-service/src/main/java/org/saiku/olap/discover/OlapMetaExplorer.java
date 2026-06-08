@@ -153,8 +153,7 @@ public class OlapMetaExplorer {
                                     schem.getName(),
                                     cub.isVisible());
                             if (catalogUrl != null) {
-                                sc.setTimeCalcs(
-                                        org.saiku.olap.util.TimeCalcParser.parse(catalogUrl, cub.getName()));
+                                sc.setTimeCalcs(org.saiku.olap.util.TimeCalcParser.parse(catalogUrl, cub.getName()));
                             }
                             cubes.add(sc);
                         }

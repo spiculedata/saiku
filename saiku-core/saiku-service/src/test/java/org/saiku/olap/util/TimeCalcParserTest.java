@@ -26,28 +26,27 @@ import org.xml.sax.SAXException;
  *  most assertions feed a {@link Document} parsed from an in-memory string. */
 public class TimeCalcParserTest {
 
-    private static final String BANK_SCHEMA_FRAGMENT =
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-                    + "<Schema name='Bank'>\n"
-                    + "  <Cube name='Monthly Revenue'>\n"
-                    + "    <MeasureGroups/>\n"
-                    + "    <TimeCalcs>\n"
-                    + "      <TimeCalc name='Revenue YoY' type='yoy' measure='Revenue'\n"
-                    + "                timeDimension='Calendar' formatString='0.0%'/>\n"
-                    + "      <TimeCalc name='Revenue PoP' type='pop' measure='Revenue'\n"
-                    + "                timeDimension='Calendar' formatString='0.0%'/>\n"
-                    + "      <TimeCalc name='Revenue YTD' type='ytd' measure='Revenue'\n"
-                    + "                timeDimension='Calendar' formatString='#,###'/>\n"
-                    + "      <TimeCalc name='Revenue R3' type='rolling' measure='Revenue'\n"
-                    + "                timeDimension='Calendar' window='3' function='avg'\n"
-                    + "                formatString='#,###'/>\n"
-                    + "    </TimeCalcs>\n"
-                    + "  </Cube>\n"
-                    + "  <Cube name='Accounts'>\n"
-                    + "    <!-- no TimeCalcs here — parser must return empty list for this cube -->\n"
-                    + "    <MeasureGroups/>\n"
-                    + "  </Cube>\n"
-                    + "</Schema>\n";
+    private static final String BANK_SCHEMA_FRAGMENT = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            + "<Schema name='Bank'>\n"
+            + "  <Cube name='Monthly Revenue'>\n"
+            + "    <MeasureGroups/>\n"
+            + "    <TimeCalcs>\n"
+            + "      <TimeCalc name='Revenue YoY' type='yoy' measure='Revenue'\n"
+            + "                timeDimension='Calendar' formatString='0.0%'/>\n"
+            + "      <TimeCalc name='Revenue PoP' type='pop' measure='Revenue'\n"
+            + "                timeDimension='Calendar' formatString='0.0%'/>\n"
+            + "      <TimeCalc name='Revenue YTD' type='ytd' measure='Revenue'\n"
+            + "                timeDimension='Calendar' formatString='#,###'/>\n"
+            + "      <TimeCalc name='Revenue R3' type='rolling' measure='Revenue'\n"
+            + "                timeDimension='Calendar' window='3' function='avg'\n"
+            + "                formatString='#,###'/>\n"
+            + "    </TimeCalcs>\n"
+            + "  </Cube>\n"
+            + "  <Cube name='Accounts'>\n"
+            + "    <!-- no TimeCalcs here — parser must return empty list for this cube -->\n"
+            + "    <MeasureGroups/>\n"
+            + "  </Cube>\n"
+            + "</Schema>\n";
 
     private static Document doc(String xml) throws IOException, SAXException, ParserConfigurationException {
         return SecureXml.secureDocumentBuilder().parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
@@ -116,7 +115,8 @@ public class TimeCalcParserTest {
 
     @Test
     public void extractsCatalogUrlFromMondrianConnectionString() {
-        String dsl = "jdbc:mondrian:Jdbc=jdbc:h2:/app/data/foodmart;Catalog=file:/app/data/Bank.xml;JdbcDrivers=org.h2.Driver";
+        String dsl =
+                "jdbc:mondrian:Jdbc=jdbc:h2:/app/data/foodmart;Catalog=file:/app/data/Bank.xml;JdbcDrivers=org.h2.Driver";
         assertEquals("file:/app/data/Bank.xml", TimeCalcParser.extractCatalogUrl(dsl));
     }
 
