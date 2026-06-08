@@ -182,6 +182,25 @@
                 <artifactId>poi-ooxml</artifactId>
                 <version>5.4.0</version>
             </dependency>
+            <!--
+                POI 5.4.0 compiles against commons-compress 1.27.1 which
+                changed the ZipArchiveOutputStream.putArchiveEntry signature.
+                Without pinning, transitive deps from hadoop/curator drag
+                1.21 onto the runtime classpath and XLSX export NPEs with:
+
+                    NoSuchMethodError: 'void ...ZipArchiveOutputStream
+                      .putArchiveEntry(...ZipArchiveEntry)'
+                        at o.a.poi.openxml4j.opc.internal
+                            .ZipContentTypeManager.saveImpl:67
+
+                Pinned via BOM so the WAR + launcher both pick up the
+                right version. See saiku 2026-06 export-failure bug.
+            -->
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-compress</artifactId>
+                <version>1.27.1</version>
+            </dependency>
             <dependency>
                 <groupId>org.olap4j</groupId>
                 <artifactId>olap4j-xmla</artifactId>
