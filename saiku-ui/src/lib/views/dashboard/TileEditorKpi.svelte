@@ -119,7 +119,7 @@
       <span>Dimension</span>
       <select bind:value={kpiConfig.timeLevel!.dimension} disabled={!cubePicked}>
         <option value="">— pick —</option>
-        {#each dimensions as d (d)}
+        {#each dimensions as d, _id (_id)}
           <option value={d}>{d}</option>
         {/each}
       </select>
@@ -131,7 +131,7 @@
         disabled={!kpiConfig.timeLevel?.dimension}
       >
         <option value="">— pick —</option>
-        {#each hierarchies as h (h)}
+        {#each hierarchies as h, _ih (_ih)}
           <option value={h}>{h}</option>
         {/each}
       </select>
@@ -143,7 +143,7 @@
         disabled={!kpiConfig.timeLevel?.hierarchy}
       >
         <option value="">— pick —</option>
-        {#each levels as l (l)}
+        {#each levels as l, _il (_il)}
           <option value={l}>{l}</option>
         {/each}
       </select>

@@ -149,7 +149,11 @@
         <span class="series-axis__title">{i18n.t("modal.chart.seriesAxis")}</span>
         <p class="hint">{i18n.t("modal.chart.seriesAxis.hint")}</p>
         <div class="series-axis__list">
-          {#each seriesNames as name (name)}
+          <!-- Defensive: use index keys because seriesNames is derived
+               from cellset columnCategories which can hold duplicates
+               when a query has multi-measure × multi-hierarchy cols
+               (Svelte 5 hard-fails on each_key_duplicate). -->
+          {#each seriesNames as name, ni (ni)}
             <div class="series-axis__row">
               <span class="series-axis__name" title={name}>{name}</span>
               <select

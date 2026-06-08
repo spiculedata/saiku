@@ -47,7 +47,7 @@
   <span>Dimension</span>
   <select bind:value={filterTarget.dimension} disabled={!cubePicked}>
     <option value="">— pick —</option>
-    {#each dimensions as d (d)}
+    {#each dimensions as d, _id (_id)}
       <option value={d}>{d}</option>
     {/each}
   </select>
@@ -56,7 +56,7 @@
   <span>Hierarchy</span>
   <select bind:value={filterTarget.hierarchy} disabled={!filterTarget.dimension}>
     <option value="">— pick —</option>
-    {#each hierarchies as h (h)}
+    {#each hierarchies as h, _ih (_ih)}
       <option value={h}>{h}</option>
     {/each}
   </select>
@@ -65,7 +65,7 @@
   <span>Level</span>
   <select bind:value={filterTarget.level} disabled={!filterTarget.hierarchy}>
     <option value="">— pick —</option>
-    {#each levels as l (l)}
+    {#each levels as l, _il (_il)}
       <option value={l}>{l}</option>
     {/each}
   </select>
@@ -78,7 +78,7 @@
       <span>Start level</span>
       <select bind:value={cascadeStartLevel} disabled={!filterTarget.hierarchy}>
         <option value="">— use level above —</option>
-        {#each levels as l (l)}
+        {#each levels as l, _il (_il)}
           <option value={l}>{l}</option>
         {/each}
       </select>
