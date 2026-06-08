@@ -85,4 +85,24 @@ public class ZScoreAnomalyDetectorTest {
         assertEquals(3.0, det.defaultThreshold(), 1e-9);
         assertEquals("zscore", det.method());
     }
+
+    @Test
+    public void thresholdComparisonIsStrictlyGreater() {
+        // Lock `score > threshold` (NOT >=). Read the spike's actual score, then probe the
+        // boundary: at exactly that score it must NOT flag; one ULP below it must flag; one ULP
+        // above it must not. An operator flip (> → >=) or off-by-epsilon slips past every
+        // extreme-spike test but goes RED here.
+        double[] series = {10, 11, 9, 10, 10, 100, 11, 9, 10, 10, 9, 11, 10, 10, 9, 11, 10, 9, 11, 10};
+        double spikeScore = det.detect(series, 3.0).get(5).getScore();
+        assertTrue("sanity: spike has a real positive score", spikeScore > 0);
+        assertFalse(
+                "at exactly the score, strict > must not flag",
+                det.detect(series, spikeScore).get(5).isAnomaly());
+        assertTrue(
+                "one ULP below the score must flag",
+                det.detect(series, Math.nextDown(spikeScore)).get(5).isAnomaly());
+        assertFalse(
+                "one ULP above the score must not flag",
+                det.detect(series, Math.nextUp(spikeScore)).get(5).isAnomaly());
+    }
 }
