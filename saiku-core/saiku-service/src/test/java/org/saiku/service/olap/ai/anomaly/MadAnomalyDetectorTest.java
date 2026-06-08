@@ -70,4 +70,65 @@ public class MadAnomalyDetectorTest {
         assertEquals(3.5, det.defaultThreshold(), 1e-9);
         assertEquals("mad", det.method());
     }
+
+    @Test
+    public void belowMedianSpikeIsFlaggedAsBelow() {
+        // Symmetry with the ZScore suite: a downward spike must report direction "below".
+        double[] series = {50, 51, 49, 50, 50, -400, 51, 49, 50, 50};
+        List<AnomalyPoint> out = det.detect(series, 3.5);
+        AnomalyPoint dip = out.get(5);
+        assertTrue(dip.isAnomaly());
+        assertEquals("below", dip.getDirection());
+    }
+
+    @Test
+    public void nanGapsAreFilteredFromStatsAndNeverFlagged() {
+        // NaN must be excluded from the median/MAD stats (the .filter) yet keep its output slot
+        // as a non-anomalous zero-score point — the ZScore suite locks this; MAD didn't. Remove
+        // the NaN filter and the median skews (Java sorts NaN last) → this goes RED.
+        // (Series is varied enough that MAD stays > 0 after the NaN is dropped — see the MAD=0
+        // limitation test below for the degenerate majority-identical case.)
+        double[] series = {10, Double.NaN, 12, 9, 11, 100, 8, 13, 10, 9};
+        List<AnomalyPoint> out = det.detect(series, 3.5);
+        assertEquals(series.length, out.size());
+        AnomalyPoint gap = out.get(1);
+        assertFalse(gap.isAnomaly());
+        assertNull(gap.getDirection());
+        assertEquals(0.0, gap.getScore(), 1e-9);
+        assertTrue(
+                "the real spike must still be flagged with NaN present",
+                out.get(5).isAnomaly());
+    }
+
+    @Test
+    public void madZeroFromMajorityIdenticalValuesYieldsNoAnomalies() {
+        // Known MAD limitation (characterization): when MORE than half the points equal the
+        // median, the median absolute deviation is 0, so even a huge spike is NOT flagged — the
+        // detector deliberately emits zero-score non-anomalies instead of dividing by zero.
+        // Pinned here so this surprising-but-intentional behaviour can't change silently.
+        double[] series = {10, 10, 10, 10, 10, 1000, 10, 10, 10, 10}; // 9 of 10 identical => MAD 0
+        List<AnomalyPoint> out = det.detect(series, 3.5);
+        for (AnomalyPoint p : out) {
+            assertFalse("MAD=0 (majority-identical) flags nothing, even the 1000 spike", p.isAnomaly());
+            assertEquals(0.0, p.getScore(), 1e-9);
+        }
+    }
+
+    @Test
+    public void thresholdComparisonIsStrictlyGreater() {
+        // Lock `score > threshold` (NOT >=), same as the ZScore guard: at exactly the spike's
+        // score it must not flag; one ULP below flags; one ULP above does not.
+        double[] series = {10, 11, 9, 10, 10, 100, 11, 9, 10, 10};
+        double spikeScore = det.detect(series, 3.5).get(5).getScore();
+        assertTrue("sanity: spike has a real positive score", spikeScore > 0);
+        assertFalse(
+                "at exactly the score, strict > must not flag",
+                det.detect(series, spikeScore).get(5).isAnomaly());
+        assertTrue(
+                "one ULP below the score must flag",
+                det.detect(series, Math.nextDown(spikeScore)).get(5).isAnomaly());
+        assertFalse(
+                "one ULP above the score must not flag",
+                det.detect(series, Math.nextUp(spikeScore)).get(5).isAnomaly());
+    }
 }
