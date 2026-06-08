@@ -141,26 +141,49 @@ export interface MondrianServerInfo {
   [k: string]: unknown;
 }
 
+/**
+ * Mondrian connection-info shape as actually emitted by
+ * {@code /rest/saiku/statistics/mondrian}. Verified against the
+ * 4.8 server's StatementInfo/ConnectionInfo output 2026-06-07 —
+ * the legacy `connectionId` / `catalogName` / `startTimeMillis`
+ * fields are NOT present at runtime, so don't add them back as
+ * optional unless you've confirmed mondrian-saiku now emits them.
+ */
 export interface MondrianConnectionInfo {
-  connectionId?: number;
-  serverId?: number;
-  startTimeMillis?: number;
-  endTimeMillis?: number;
-  catalogName?: string;
+  stack?: string | null;
+  cellCacheHitCount?: number;
+  cellCacheRequestCount?: number;
+  cellCacheMissCount?: number;
+  cellCachePendingCount?: number;
+  statementStartCount?: number;
+  statementEndCount?: number;
+  executeStartCount?: number;
+  executeEndCount?: number;
   [k: string]: unknown;
 }
 
+/**
+ * Mondrian statement-info shape as actually emitted by the server.
+ * No mdx / state / startTimeMillis here — Mondrian's StatementInfo
+ * carries counters, not a snapshot of the SQL text or wall-clock.
+ */
 export interface MondrianStatementInfo {
   statementId?: number;
-  serverId?: number;
-  connectionId?: number;
-  state?: string;
-  mdx?: string;
-  startTimeMillis?: number;
-  endTimeMillis?: number;
+  stack?: string | null;
+  executing?: boolean;
+  executeStartCount?: number;
+  executeEndCount?: number;
+  phaseCount?: number;
+  cellRequestCount?: number;
   cellCacheHitCount?: number;
   cellCacheMissCount?: number;
   cellCacheRequestCount?: number;
+  cellCachePendingCount?: number;
+  sqlStatementStartCount?: number;
+  sqlStatementExecuteCount?: number;
+  sqlStatementEndCount?: number;
+  sqlStatementRowFetchCount?: number;
+  sqlStatementExecuteNanos?: number;
   [k: string]: unknown;
 }
 
