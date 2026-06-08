@@ -451,6 +451,28 @@ export async function forecastQuery(
   }
 }
 
+/** Build the GET URL for the CSV export of a drillthrough (issue #1051).
+ *  Mirrors {@link aiDrillthrough}'s params (position / maxRows / returns) but
+ *  targets the streaming text/csv endpoint. The URL is same-origin and the
+ *  browser sends session credentials automatically, so the download can be
+ *  triggered with `window.open(url)` / an `<a download>` — no fetch needed. */
+export function aiDrillthroughCsvUrl(queryId: string, opts: AiDrillthroughOptions = {}): string {
+  const params = new URLSearchParams();
+  if (opts.position) params.set("position", opts.position);
+  if (opts.maxRows != null) params.set("maxrows", String(opts.maxRows));
+  if (opts.returns && opts.returns.length) params.set("returns", opts.returns.join(","));
+  const qs = params.toString();
+  return `${REST_BASE}/query/${encodeURIComponent(queryId)}/drillthrough/export/csv${qs ? `?${qs}` : ""}`;
+}
+
+/** Trigger a browser download of the drillthrough CSV (issue #1051). The
+ *  endpoint sets `Content-Disposition: attachment`, so opening the
+ *  same-origin authenticated GET in a new tab streams the file straight to
+ *  the user's downloads — the same mechanism the Workspace export uses. */
+export function downloadAiDrillthroughCsv(queryId: string, opts: AiDrillthroughOptions = {}): void {
+  window.open(aiDrillthroughCsvUrl(queryId, opts), "_blank");
+}
+
 export async function executeSavedQuery(
   path: string,
   filters: SavedQueryFilter[] = [],
