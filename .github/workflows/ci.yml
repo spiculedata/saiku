@@ -37,11 +37,15 @@ jobs:
               - 'lib/repo/**'
               - 'pom.xml'
               - '**/pom.xml'
-              - '.github/workflows/ci.yml'
+              # Any workflow file edit (ci.yml, release.yml, release-prep.yml,
+              # claude.yml, …) re-runs the build so branch-protected required
+              # jobs aren't silently skipped — a workflow-only PR otherwise
+              # sits as BLOCKED waiting for required checks that never fire.
+              - '.github/workflows/**'
               - '.github/test-floors.json'
             ui:
               - 'saiku-ui/**'
-              - '.github/workflows/ci.yml'
+              - '.github/workflows/**'
             docs:
               - 'docs/**'
               - 'README.md'
