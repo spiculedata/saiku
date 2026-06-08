@@ -1373,20 +1373,13 @@ public class AiQueryResource {
             @QueryParam("position") String position,
             @QueryParam("returns") String returns) {
         if (thinQueryService == null) return error("Query service not configured");
-        // Resolve async handle id -> underlying ThinQuery name, re-attaching
-        // the async cellset to this session's context (saiku#862). Same logic
-        // as the JSON drillthrough endpoint above.
-        String name = queryId;
-        if (asyncQueryService != null) {
-            AsyncQueryHandle h = asyncQueryService.get(queryId);
-            if (h != null) {
-                name = h.getQuery().getName();
-                if (thinQueryService.getContext(name) == null) {
-                    org.olap4j.CellSet cs = asyncQueryService.result(queryId);
-                    thinQueryService.registerExternalContext(h.getQuery(), cs);
-                }
-            }
-        }
+        // Resolve async handle id -> underlying ThinQuery name, re-attaching the
+        // async cellset to this session's context (saiku#862). Routed through the
+        // shared OWNER-SCOPED resolver (getOwned) so a non-owner can't export
+        // another user's drillthrough via a leaked/guessed queryId — the inlined
+        // copy here used the unowned get() and re-attached cross-user (IDOR,
+        // saiku#1284; mirrors the JSON + columns endpoints' #1208/#1165-audit-3 fix).
+        String name = resolveDrillthroughName(queryId);
         // Resolve bare-caption returns to qualified MDX (saiku#782), mirroring
         // the JSON endpoint so the two stay behaviourally consistent.
         String resolvedReturns = returns;
