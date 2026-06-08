@@ -27,6 +27,7 @@ import org.saiku.olap.dto.resultset.CellDataSet;
 import org.saiku.olap.dto.resultset.MemberCell;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.olap.util.OlapResultSetUtil;
+import org.saiku.olap.util.SaikuProperties;
 import org.saiku.service.async.AsyncQueryHandle;
 import org.saiku.service.async.AsyncQueryService;
 import org.saiku.service.olap.ThinQueryService;
@@ -44,6 +45,7 @@ import org.saiku.service.olap.ai.AiValidationException;
 import org.saiku.service.olap.ai.OlapAiCubeMetadataService;
 import org.saiku.service.olap.ai.ask.AiAskApi;
 import org.saiku.service.olap.ai.ask.AiAskService;
+import org.saiku.web.util.JdbcCleanup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.context.request.RequestAttributes;
@@ -1244,6 +1246,156 @@ public class AiQueryResource {
         }
         log.error("AI drillthrough failed for {}", queryId, e);
         return error("drillthrough failed: " + e.getMessage());
+    }
+
+    /**
+     * CSV export of a drillthrough (saiku#1051). Streams the same underlying
+     * fact rows the JSON {@link #drillthrough} endpoint returns, but rendered
+     * as an RFC-4180 CSV file with a {@code Content-Disposition: attachment}
+     * header so a browser triggers a download.
+     *
+     * <p>Honours the exact same params as the JSON endpoint:
+     * <ul>
+     *   <li>{@code position=col:row} — per-cell drillthrough (saiku#930);
+     *       omit for whole-result.</li>
+     *   <li>{@code returns} — the projection (DRILLTHROUGH ... RETURN ...).
+     *       Bare captions are resolved to qualified MDX exactly as the JSON
+     *       path does (saiku#782).</li>
+     *   <li>{@code maxrows} — row cap (defaults 100).</li>
+     * </ul>
+     *
+     * <p>The CSV bytes are produced by {@link ThinQueryService#exportResultSetCsv(java.sql.ResultSet)}
+     * — the SAME service path the workspace export ({@code Query2Resource.getDrillthroughExport})
+     * uses — so quoting/escaping behaviour stays identical across the product.
+     *
+     * <p>Auth: inherits the {@code /rest/**} = isFullyAuthenticated rule; no
+     * permitAll, not reachable by share guests.
+     */
+    @GET
+    @Path("/query/{queryId}/drillthrough/export/csv")
+    @Produces({"text/csv"})
+    public Response drillthroughExportCsv(
+            @PathParam("queryId") String queryId,
+            @QueryParam("maxrows") @DefaultValue("100") int maxrows,
+            @QueryParam("firstRowset") Integer firstRowset,
+            @QueryParam("position") String position,
+            @QueryParam("returns") String returns) {
+        if (thinQueryService == null) return error("Query service not configured");
+        // Resolve async handle id -> underlying ThinQuery name, re-attaching
+        // the async cellset to this session's context (saiku#862). Same logic
+        // as the JSON drillthrough endpoint above.
+        String name = queryId;
+        if (asyncQueryService != null) {
+            AsyncQueryHandle h = asyncQueryService.get(queryId);
+            if (h != null) {
+                name = h.getQuery().getName();
+                if (thinQueryService.getContext(name) == null) {
+                    org.olap4j.CellSet cs = asyncQueryService.result(queryId);
+                    thinQueryService.registerExternalContext(h.getQuery(), cs);
+                }
+            }
+        }
+        // Resolve bare-caption returns to qualified MDX (saiku#782), mirroring
+        // the JSON endpoint so the two stay behaviourally consistent.
+        String resolvedReturns = returns;
+        if (returns != null && !returns.trim().isEmpty() && cubeMetadataService != null) {
+            try {
+                org.saiku.service.util.QueryContext qc = thinQueryService.getContext(name);
+                if (qc != null && qc.getOlapQuery() != null && qc.getOlapQuery().getCube() != null) {
+                    org.saiku.olap.dto.SaikuCube cube = qc.getOlapQuery().getCube();
+                    AiCubeRef ref =
+                            new AiCubeRef(cube.getConnection(), cube.getCatalog(), cube.getSchema(), cube.getName());
+                    AiSchema schema = cubeMetadataService.getSchema(ref);
+                    resolvedReturns = AiReturnsResolver.resolve(returns, schema);
+                }
+            } catch (AiValidationException ve) {
+                AiQueryResponse resp = new AiQueryResponse();
+                resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
+                resp.setError(ve.getMessage());
+                resp.setField(ve.getField());
+                if (ve.getAvailable() != null) resp.setAvailable(ve.getAvailable());
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(resp)
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            } catch (RuntimeException ignored) {
+                // Schema lookup failure shouldn't poison the export — fall
+                // through with the raw returns value (see JSON path).
+            }
+        }
+        // saiku#930: parse + validate position before touching the engine.
+        List<Integer> cellPosition = null;
+        if (position != null && !position.trim().isEmpty()) {
+            cellPosition = new ArrayList<>();
+            for (String p : position.split(":")) {
+                try {
+                    cellPosition.add(Integer.parseInt(p.trim()));
+                } catch (NumberFormatException nfe) {
+                    AiQueryResponse resp = new AiQueryResponse();
+                    resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
+                    resp.setError("Malformed position '" + position
+                            + "'. Expected \"row:col\" cell coordinates, e.g. \"2:1\".");
+                    resp.setField("position");
+                    return Response.status(Response.Status.BAD_REQUEST)
+                            .entity(resp)
+                            .type(MediaType.APPLICATION_JSON)
+                            .build();
+                }
+            }
+        }
+        java.sql.ResultSet rs = null;
+        try {
+            rs = cellPosition != null
+                    ? thinQueryService.drillthrough(name, cellPosition, maxrows, resolvedReturns)
+                    : thinQueryService.drillthrough(name, maxrows, firstRowset, resolvedReturns);
+            byte[] doc = thinQueryService.exportResultSetCsv(rs);
+            String fileName = SaikuProperties.webExportCsvName + "-drillthrough.csv";
+            return Response.ok(doc, "text/csv")
+                    .header("content-disposition", "attachment; filename=" + fileName)
+                    .header("content-length", doc.length)
+                    .build();
+        } catch (NullPointerException e) {
+            // Unknown queryId leaks an NPE on the internal QueryContext lookup
+            // — translate to a clean 404 (same as the JSON path, saiku#783).
+            log.warn("AI drillthrough CSV export on unknown queryId {} — translated to 404", queryId);
+            AiQueryResponse resp = new AiQueryResponse();
+            resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
+            resp.setError("Unknown queryId '" + queryId
+                    + "'. The queryId must come from a previous /query or "
+                    + "/query/execute-async response and must not have been evicted.");
+            resp.setField("queryId");
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(resp)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        } catch (Exception e) {
+            String m = e.getMessage();
+            // Empty source cellset — drillthrough at (0,0) falls outside an
+            // empty cellset. Return an empty (header-less) CSV rather than a
+            // 500, matching the JSON endpoint's empty-result handling.
+            if (m != null && m.contains("fall outside CellSet bounds")) {
+                byte[] doc = new byte[0];
+                String fileName = SaikuProperties.webExportCsvName + "-drillthrough.csv";
+                return Response.ok(doc, "text/csv")
+                        .header("content-disposition", "attachment; filename=" + fileName)
+                        .header("content-length", doc.length)
+                        .build();
+            }
+            if (m != null && m.contains("in RETURN clause")) {
+                AiQueryResponse resp = new AiQueryResponse();
+                resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
+                resp.setError(m.replaceFirst("^.*Mondrian Error:", "").trim());
+                resp.setField("returns");
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(resp)
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            }
+            log.error("AI drillthrough CSV export failed for {}", queryId, e);
+            return error("drillthrough CSV export failed: " + e.getMessage());
+        } finally {
+            JdbcCleanup.closeQuietly(rs);
+        }
     }
 
     /**

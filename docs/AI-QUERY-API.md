@@ -40,6 +40,7 @@ Plus the long-tail:
 | `DELETE /saiku/api/ai/query/{queryId}` | Cancel an in-flight query |
 | `GET /saiku/api/ai/query/{queryId}/drillthrough?maxrows=N` | Get the raw fact rows behind a result. Add `?firstRowset=N` for warehouse-side short-circuit; add `?returns=col1,col2` to project a subset. |
 | `GET /saiku/api/ai/query/{queryId}/drillthrough/columns` | List the drillthrough columns available for `returns=` (saiku#774) |
+| `GET /saiku/api/ai/query/{queryId}/drillthrough/export/csv` | Same params as the JSON drillthrough (`position`, `returns`, `maxrows`, `firstRowset`); streams `text/csv` with `Content-Disposition: attachment` for direct download (saiku#1051). |
 
 All routes require an authenticated session (form login at `POST /login`
 on the launcher; same auth as the regular UI).
