@@ -341,6 +341,123 @@ public class AiQueryResource {
     }
 
     /**
+     * Server-side statistical anomaly detection over a time-series query
+     * (saiku#907). Tier-3: NO LLM, NO external model — all computation runs
+     * in-JVM via {@link org.saiku.service.olap.ai.anomaly.AnomalyDetector}.
+     *
+     * <p>Body: {@code { query: {<AiQueryRequest>}, method: "zscore"|"mad"|"stl",
+     * threshold: number, timeAxis: "<axis unique name>" }}. The {@code query}
+     * is executed through the exact same path {@code /ai/query} uses (validate →
+     * convert → {@link ThinQueryService#execute}); the numeric series is then
+     * extracted per measure column (rows = time members in order) and the chosen
+     * detector flags anomalous points. The response is the standard
+     * {@link AiQueryResponse} (records format) AUGMENTED with an
+     * {@code anomaly:{score,expected,direction}} object on each flagged cell,
+     * plus a top-level {@code anomalyCount} so "no anomalies" is an explicit
+     * {@code 0}, never a missing field.
+     *
+     * <p>Validation errors (unknown method, bad threshold, missing query/cube,
+     * STL stub, or a non-numeric time axis) reuse the same
+     * {@link AiValidationException} → {@code badRequest} envelope as the rest of
+     * this resource, with {@code field} + {@code available} for self-correction.
+     */
+    @POST
+    @Path("/anomaly")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response detectAnomalies(org.saiku.service.olap.ai.anomaly.AiAnomalyRequest body) {
+        long start = System.currentTimeMillis();
+        if (body == null) {
+            return badRequest("body", "request body required", null);
+        }
+        AiQueryRequest req = body.getQuery();
+        if (req == null) {
+            return badRequest("query", "query (an AiQueryRequest) is required", null);
+        }
+        String timeAxis = body.getTimeAxis();
+        if (timeAxis == null || timeAxis.isBlank()) {
+            return badRequest("timeAxis", "timeAxis (the time axis unique name) is required", null);
+        }
+
+        // Resolve the detector + threshold up-front so bad method / threshold
+        // fail fast with a clean 400 before we execute the (expensive) query.
+        org.saiku.service.olap.ai.anomaly.AnomalyDetector detector;
+        try {
+            detector = org.saiku.service.olap.ai.anomaly.AnomalyDetectors.forMethod(body.getMethod());
+        } catch (AiValidationException e) {
+            return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+        }
+        double threshold = detector.defaultThreshold();
+        if (body.getThreshold() != null) {
+            double t = body.getThreshold();
+            if (Double.isNaN(t) || Double.isInfinite(t) || t <= 0) {
+                return badRequest("threshold", "threshold must be a positive number", null);
+            }
+            threshold = t;
+        }
+
+        // Execute the query through the SAME path /ai/query uses.
+        AiSchema schema;
+        ThinQuery tq;
+        try {
+            schemaValidator.assertValid(MAPPER.valueToTree(req));
+            if (req.getCube() == null) {
+                return badRequest("query.cube", "cube ref required", null);
+            }
+            schema = cubeMetadataService.getSchema(req.getCube());
+            tq = converter.convert(req, schema);
+        } catch (AiValidationException e) {
+            return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+        } catch (RuntimeException e) {
+            log.error("AI anomaly query validation failed", e);
+            return error("validation failed: " + e.getMessage());
+        }
+
+        CellDataSet cds;
+        try {
+            cds = thinQueryService.execute(tq);
+        } catch (RuntimeException e) {
+            Response translated = translateMondrianLookupError(e);
+            if (translated != null) return translated;
+            Response pathErr = translatePhysPathNpe(e);
+            if (pathErr != null) return pathErr;
+            log.error("AI anomaly query execution failed", e);
+            return error("execute failed: " + describeDeepestCause(e));
+        }
+
+        // Always build in records format — that is the shape the augmenter and
+        // the chart tiles consume.
+        AiQueryResponse resp = buildResponse(tq, cds, start, "records");
+        try {
+            org.saiku.service.olap.ai.anomaly.AnomalyAugmenter.augment(resp, detector, threshold, timeAxis);
+        } catch (AiValidationException e) {
+            return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+        } catch (RuntimeException e) {
+            // STL stub throws AiValidationException (handled above); any other
+            // failure here is a real bug in the detector — surface it as a 500.
+            log.error("AI anomaly detection failed", e);
+            return error("anomaly detection failed: " + e.getMessage());
+        }
+
+        int anomalyCount = org.saiku.service.olap.ai.anomaly.AnomalyAugmenter.countAnomalies(resp);
+        resp.setRuntimeMs(System.currentTimeMillis() - start);
+
+        // Echo the typed response plus a compact anomaly summary block. We wrap
+        // in a LinkedHashMap rather than mutating AiQueryResponse so the /query
+        // shape stays untouched for other callers; clients read resp fields as
+        // usual and check the sibling anomaly summary for counts/params.
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("response", resp);
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("method", detector.method());
+        summary.put("threshold", threshold);
+        summary.put("timeAxis", timeAxis);
+        summary.put("anomalyCount", anomalyCount);
+        out.put("anomaly", summary);
+        return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
      * Natural-language ask endpoint.
      *
      * <p>Body: {@code {question: string, cube: AiCubeRef, history?: [{role, content}]}}.
