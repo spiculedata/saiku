@@ -241,3 +241,125 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: false
+
+  docs-changelog:
+    name: Open docs-site changelog PR
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: [jar, release]
+    steps:
+      # The PR needs to land in spiculedata/saiku-cloud — which means we
+      # need a token with `repo` scope on THAT repo. The default
+      # GITHUB_TOKEN is scoped to this repo only. Provide a PAT in the
+      # repo's secrets as DOCS_SITE_PAT. The step is a no-op (with a
+      # loud notice) if the secret is absent so a release doesn't fail
+      # purely because the token rotation lapsed.
+      - name: Guard on missing PAT
+        id: guard
+        env:
+          DOCS_SITE_PAT: ${{ secrets.DOCS_SITE_PAT }}
+        run: |
+          if [ -z "$DOCS_SITE_PAT" ]; then
+            echo "::warning::DOCS_SITE_PAT not set — skipping docs PR creation."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout saiku-cloud
+        if: steps.guard.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: spiculedata/saiku-cloud
+          token: ${{ secrets.DOCS_SITE_PAT }}
+          ref: develop
+          path: saiku-cloud
+
+      - name: Prepend draft changelog entry
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          VERSION: ${{ needs.jar.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd saiku-cloud
+          CHANGELOG=docs-site/src/content/docs/help/changelog.mdx
+          DATE=$(date -u +'%-d %B %Y')
+
+          # Pull the GitHub-generated "What's Changed" markdown for this
+          # tag and demote it to a sub-bullet list. softprops/action
+          # already wrote it to the release body; we just refetch via
+          # the API so this job stays decoupled from the upstream job.
+          NOTES=$(curl -sSL \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$VERSION" \
+            | python3 -c "import json,sys; print(json.load(sys.stdin).get('body','') or '')")
+
+          # Build the new section. The placeholder bullet asks a human
+          # editor to summarise the auto-generated notes in customer-
+          # facing language before merging; the raw merge log goes into
+          # a collapsible <details> below.
+          NEW_SECTION=$(cat <<EOF
+          ## **${VERSION#v}** &nbsp;·&nbsp; *${DATE}*
+
+          > **Draft** — replace these bullets with a customer-facing
+          > summary of what changed, then merge. The auto-generated
+          > merge log lives in the details block below for reference.
+
+          - _Summarise the highlights here._
+
+          <details>
+          <summary>Auto-generated merge log</summary>
+
+          ${NOTES}
+
+          </details>
+
+          ---
+
+          EOF
+          )
+
+          # Insert after the first --- horizontal rule (which sits below
+          # the page intro), preserving the rest of the file unchanged.
+          python3 - "$CHANGELOG" <<PY
+          import sys
+          path = sys.argv[1]
+          with open(path) as f:
+              body = f.read()
+          marker = "\n---\n\n"
+          idx = body.find(marker)
+          if idx < 0:
+              # Fall back to appending if the file shape has drifted.
+              with open(path, 'a') as f:
+                  f.write("\n" + """${NEW_SECTION}""")
+          else:
+              insertion = body[: idx + len(marker)] + """${NEW_SECTION}""" + body[idx + len(marker) :]
+              with open(path, 'w') as f:
+                  f.write(insertion)
+          PY
+
+      - name: Open the PR
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_SITE_PAT }}
+          VERSION: ${{ needs.jar.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd saiku-cloud
+          BRANCH="docs/changelog-${VERSION}"
+          git config user.name "saiku-release-bot"
+          git config user.email "release-bot@saiku.bi"
+          git checkout -b "$BRANCH"
+          git add docs-site/src/content/docs/help/changelog.mdx
+          git commit -m "docs(changelog): draft entry for ${VERSION}"
+          git push -u origin "$BRANCH"
+          gh pr create \
+            --repo spiculedata/saiku-cloud \
+            --base develop \
+            --head "$BRANCH" \
+            --title "docs(changelog): draft entry for ${VERSION}" \
+            --body "Auto-opened by the saiku release workflow. The new section at the top of \`help/changelog.mdx\` is a draft — replace the placeholder bullet with a customer-facing summary of what changed, then merge.
+
+          See [saiku release ${VERSION}](https://github.com/${{ github.repository }}/releases/tag/${VERSION}) for the full notes." \
+            --label docs,release
