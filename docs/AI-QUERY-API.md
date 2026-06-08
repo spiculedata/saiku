@@ -41,6 +41,8 @@ Plus the long-tail:
 | `GET /saiku/api/ai/query/{queryId}/drillthrough?maxrows=N` | Get the raw fact rows behind a result. Add `?firstRowset=N` for warehouse-side short-circuit; add `?returns=col1,col2` to project a subset. |
 | `GET /saiku/api/ai/query/{queryId}/drillthrough/columns` | List the drillthrough columns available for `returns=` (saiku#774) |
 | `GET /saiku/api/ai/query/{queryId}/drillthrough/export/csv` | Same params as the JSON drillthrough (`position`, `returns`, `maxrows`, `firstRowset`); streams `text/csv` with `Content-Disposition: attachment` for direct download (saiku#1051). |
+| `POST /saiku/api/ai/anomaly` | Run a query, then flag anomalous points along a time axis. Returns the typed records response with an `anomaly:{score,expected,direction}` block on each flagged cell, plus an `anomaly` summary (`method`, `threshold`, `anomalyCount`) (saiku#907). |
+| `POST /saiku/api/ai/forecast` | Run a time-series query, then project `horizon` future points with prediction intervals. Returns the typed records response (observed data untouched) plus a `forecast` block keyed by measure (saiku#908). |
 
 All routes require an authenticated session (form login at `POST /login`
 on the launcher; same auth as the regular UI).
@@ -603,6 +605,24 @@ to know which columns are valid before issuing a constrained drillthrough
 
 If both are supplied, `firstRowset` wins.
 
+**Per-cell drillthrough** — by default the endpoint drills the result as a
+whole. To drill the fact rows behind a *single* cell (what a dashboard
+cell-click does, saiku#930), pass the cellset coordinate as
+`?position=col:row` — the **column-axis** position index first, then the
+**row-axis** position index, zero-based:
+
+```http
+GET /rest/saiku/api/ai/query/{queryId}/drillthrough?position=2:1&maxrows=20
+```
+
+Here `2:1` means "the cell at column-axis position 2, row-axis position 1".
+The indices are positions on the cellset axes, not member ordinals — they
+mirror the indices the workspace (`Query2Resource`) uses, so the same cell
+yields the same rows in either surface. A malformed `position` returns a
+`400` with a descriptive message rather than drilling the whole result.
+The CSV export endpoint
+(`/query/{queryId}/drillthrough/export/csv`) accepts the same `position`.
+
 ---
 
 ## Step 6 — async path (long-running queries)
@@ -647,6 +667,112 @@ DELETE /rest/saiku/api/ai/query/7f8b94b5-03aa-4fd9-aead-11ed3bdadfcb
 
 Cancellation is best-effort but real — it calls `OlapStatement.cancel()`
 on the live Mondrian statement, not just a soft flag.
+
+---
+
+## Step 7 — analytics: anomaly detection + forecast
+
+Two server-side analytics endpoints run a query through the **same path**
+`POST /query` uses, then layer a statistical pass on top of the result.
+Both are **Tier-3, in-JVM** — no LLM, no external model, no network call —
+and both reuse the self-correcting `400` envelope (`field` + `available`)
+for bad parameters.
+
+### Anomaly detection — `POST /ai/anomaly` (saiku#907)
+
+Flags anomalous points along a time axis. Body wraps an ordinary
+`AiQueryRequest` plus the time axis to scan:
+
+```jsonc
+{
+  "query": { /* a normal /query request body — cube, measures, rows, … */ },
+  "timeAxis": "[Time].[Time].[Month]",  // required: unique name of the time axis
+  "method": "zscore",                    // optional: "zscore" (default) | "mad"
+  "threshold": 3.0                       // optional: positive; default per method
+}
+```
+
+- `method` — `zscore` (rolling mean ± σ, default threshold **3.0**) or
+  `mad` (median absolute deviation, more outlier-robust, default
+  threshold **3.5**). `stl` is registered but returns a `400` until the
+  impl lands. Unknown methods return the candidate list in `available`.
+- `threshold` — must be a positive number; larger = stricter (fewer
+  points flagged).
+
+The response is the standard **records** response, with an `anomaly`
+block added to each flagged cell, plus a sibling summary so "no
+anomalies" is an explicit `0` — never a missing field:
+
+```jsonc
+{
+  "response": {
+    "format": "records",
+    "data": [
+      /* … normal rows; the measure cell is the {value,formatted,unit} envelope … */
+      {
+        "Month": "December",
+        "Unit Sales": {
+          "value": 9281.0, "formatted": "9,281", "unit": null,
+          "anomaly": { "score": 4.12, "expected": 5230.0,
+                       "direction": "high", "anomaly": true }
+        }
+      }
+    ]
+  },
+  "anomaly": { "method": "zscore", "threshold": 3.0,
+               "timeAxis": "[Time].[Time].[Month]", "anomalyCount": 1 }
+}
+```
+
+The `anomaly` object hangs off the flagged **measure cell** inside the
+`data` row (non-anomalous cells are left untouched, so the payload stays
+lean). `direction` is `high` / `low` relative to `expected`; `score` is
+the detector's distance metric (σ for `zscore`, scaled MAD for `mad`).
+The dashboard chart tile reads these to drop marker points on the series.
+
+### Forecast — `POST /ai/forecast` (saiku#908)
+
+Projects future points for each measure in a time-series query, with
+prediction intervals:
+
+```jsonc
+{
+  "query": { /* a normal /query request body */ },
+  "timeAxis": "[Time].[Time].[Month]",  // required
+  "method": "ets",                       // optional: "ets" (default)
+  "horizon": 6,                          // optional: future points, 1–365 (default 6)
+  "confidence": 0.95                     // optional: interval level, 0–1 exclusive (default 0.95)
+}
+```
+
+- `method` — `ets` (exponential smoothing, Holt's linear trend) is the
+  only live forecaster; `arima` and `prophet` are registered stubs that
+  `400` until implemented.
+- `horizon` — number of future periods, **1–365**.
+- `confidence` — interval level, strictly between 0 and 1.
+
+The response echoes the typed records response (observed data
+**untouched**) plus a `forecast` block keyed by measure caption. Each
+projected point carries the point estimate and the interval bounds:
+
+```jsonc
+{
+  "response": { /* the observed series, unchanged */ },
+  "forecast": {
+    "method": "ets", "horizon": 6, "confidence": 0.95,
+    "timeAxis": "[Time].[Time].[Month]",
+    "series": {
+      "Unit Sales": [
+        { "value": 5310.4, "lower": 4980.1, "upper": 5640.7, "forecast": true }
+      ]
+    }
+  }
+}
+```
+
+`forecast: true` marks projected points (vs observed); `lower`/`upper`
+are the interval bounds at the requested `confidence`. The chart tile
+appends these as a dashed continuation with a shaded confidence band.
 
 ---
 
