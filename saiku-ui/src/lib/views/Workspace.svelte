@@ -20,6 +20,7 @@
     type ThinQuery,
   } from "$lib/api/query";
   import { datasources } from "$lib/stores/datasources.svelte";
+  import { platform } from "$lib/stores/platform.svelte";
   import {
     findCubeByRef,
     parseStarterCubeRef,
@@ -321,6 +322,16 @@
 
 <Modal title={i18n.t("modal.about.title")} open={aboutOpen} size="sm" onClose={() => (aboutOpen = false)}>
   <p>{i18n.t("modal.about.tagline")}</p>
+  <!-- Build version surfaced from /rest/saiku/admin/version, populated
+       on app boot by platform.loadVersion(). The Maven build filters
+       version.properties so the value tracks ${project.version} on the
+       deployed jar — no manual sync needed. -->
+  {#if platform.version}
+    <p class="about-version">
+      {i18n.t("modal.about.version")}
+      <code>{platform.version}</code>
+    </p>
+  {/if}
   <p>
     <strong>{session.username}</strong> · {session.roles.join(", ")}
   </p>

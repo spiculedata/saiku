@@ -77,11 +77,11 @@ public class JSConverter {
     }
 
     private static String appendSaikuCommercialIfNecessary(String content) {
-        if (getVersion() != null && !getVersion().contains("EE")) {
-            content = content
-                    + "<div style='margin-top:10px;'><h5>Export Provided By Saiku Analytics Community Edition(http://meteorite.bi)"
-                    + "</h5></div>";
-        }
+        // The "Export Provided By Saiku Analytics Community Edition
+        // (http://meteorite.bi)" footer was dropped 2026-06-08 (user
+        // feedback: stale branding + dead URL). The method name + call
+        // are kept so existing entrypoints don't need rewriting; it now
+        // just normalises non-breaking spaces.
         content = content.replaceAll("&nbsp;", " ");
         content = content.replaceAll("&nbsp", " ");
         return content;
