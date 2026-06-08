@@ -365,6 +365,92 @@ export async function detectAnomalies(
   }
 }
 
+/* ------------------------------------------------------------------------
+ * Issue #908 — server-side time-series forecast.
+ *
+ * Runs the tile's query through the same path /ai/query uses, then projects each
+ * measure series `horizon` steps. The observed response is returned UNCHANGED;
+ * the projection lives in a sibling `forecast` block keyed by measure caption,
+ * each point carrying {value, lower, upper, forecast:true}.
+ * ---------------------------------------------------------------------- */
+
+export type ForecastMethod = "ets" | "arima" | "prophet";
+
+/** One projected horizon point + its prediction interval. */
+export interface ForecastPoint {
+  value: number;
+  lower: number;
+  upper: number;
+  forecast: boolean;
+}
+
+export interface ForecastSummary {
+  method: string;
+  horizon: number;
+  confidence: number;
+  timeAxis: string;
+  /** measure caption → horizon forecast points (in time order). */
+  series: Record<string, ForecastPoint[]>;
+}
+
+export interface AiForecastResponse {
+  response: AiQueryResponse;
+  forecast: ForecastSummary;
+}
+
+export interface AiForecastOptions {
+  method?: ForecastMethod;
+  /** Future points to project (server clamps 1–365). */
+  horizon?: number;
+  /** Prediction-interval confidence in (0,1). */
+  confidence?: number;
+  /** Unique name of the time axis to project along. */
+  timeAxis: string;
+}
+
+/** POST /rest/saiku/api/ai/forecast. On a validation error the server returns a
+ *  400 whose body is a bare AiQueryResponse (status VALIDATION_ERROR); we
+ *  surface that as a thrown Error carrying the server message so the tile can
+ *  fall back to the plain chart. */
+export async function forecastQuery(
+  query: Record<string, unknown>,
+  opts: AiForecastOptions,
+): Promise<AiForecastResponse> {
+  const body: Record<string, unknown> = {
+    query,
+    timeAxis: opts.timeAxis,
+    method: opts.method ?? "ets",
+  };
+  if (opts.horizon != null) body.horizon = opts.horizon;
+  if (opts.confidence != null) body.confidence = opts.confidence;
+  const res = await fetch(`${REST_BASE}/forecast`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!text) throw new Error(`forecastQuery -> ${res.status}: empty body`);
+  if (!res.ok) {
+    let msg = `forecastQuery -> ${res.status}`;
+    try {
+      const parsed = JSON.parse(text) as { error?: string; message?: string };
+      if (parsed.error || parsed.message) msg = parsed.error ?? parsed.message ?? msg;
+    } catch {
+      msg = `${msg}: ${text}`;
+    }
+    throw new Error(msg);
+  }
+  try {
+    return JSON.parse(text) as AiForecastResponse;
+  } catch (e) {
+    throw new Error(`forecastQuery -> ${res.status}: non-JSON response (${(e as Error).message})`);
+  }
+}
+
 export async function executeSavedQuery(
   path: string,
   filters: SavedQueryFilter[] = [],

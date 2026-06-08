@@ -17,7 +17,9 @@
   import {
     searchMembers,
     detectAnomalies,
+    forecastQuery,
     type AiQueryResponse,
+    type ForecastPoint,
   } from "$lib/api/aiQuery";
   // #1231 — shared fetch state + effect body across ChartTile / TableTile.
   import {
@@ -32,6 +34,8 @@
     hasAnyAnomaly,
     type AnomalyMark,
   } from "$lib/dashboard/anomalyMarkPoints";
+  // Issue #908 — forecast horizon overlay (dashed line + confidence band).
+  import { applyForecastOverlay } from "$lib/dashboard/forecastOverlay";
   import { escapeHtml } from "$lib/charts/sparkline";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
@@ -133,6 +137,23 @@
       && tile.query?.kind === "inline"
       && !sharedResponse,
   );
+
+  /* --- issue #908: forecast -----------------------------------------------
+   * Same gating as anomaly (time-series, inline, live). When on, the fetch
+   * routes through POST /ai/forecast; the returned forecast block drives a
+   * dashed continuation + confidence band in the render effect. If BOTH
+   * forecast and anomaly are enabled, forecast wins the single inline fetch
+   * (one endpoint per pass) — documented limitation. */
+  let forecastEnabled = $derived(
+    !!tile.forecast?.enabled
+      && ANOMALY_KINDS.has(tile.chartType ?? "")
+      && tile.query?.kind === "inline"
+      && !sharedResponse,
+  );
+  // Forecast block (measure caption → horizon points), set by the inline fetch.
+  let forecastSeries = $state<Record<string, ForecastPoint[]> | null>(null);
+  // Fallback overlay colour when a series carries no explicit colour.
+  const FORECAST_FALLBACK_COLOR = "#7c7c7c";
   // issue #1071: bumped once the world GeoJSON finishes registering, to
   // re-run the render effect and paint the map (registration is async).
   let mapReadyTick = $state(0);
@@ -279,24 +300,41 @@
       activeFilters: activeFilters.all,
       schema,
       sharedResponse: sharedResponse ?? null,
-      // #907: when anomaly detection is on, route the inline fetch through
-      // POST /ai/anomaly (augments the response with per-cell verdicts) and
-      // fold the anomaly config into the dedupe key so toggling detection
-      // on/off (or changing method/threshold) forces a re-fetch.
-      dedupeExtra: anomalyEnabled ? JSON.stringify(tile.anomaly) : null,
-      inlineFetch: anomalyEnabled
+      // #907 anomaly + #908 forecast each route the inline fetch through their
+      // own endpoint; forecast wins if both are on (one endpoint per pass). The
+      // configs fold into the dedupe key so toggling forces a re-fetch.
+      dedupeExtra:
+        forecastEnabled || anomalyEnabled
+          ? JSON.stringify({
+              f: forecastEnabled ? tile.forecast : null,
+              a: anomalyEnabled ? tile.anomaly : null,
+            })
+          : null,
+      inlineFetch: forecastEnabled
         ? async (effective) => {
-            // Resolve the time axis — explicit config value, else the tile's
-            // first row axis (the chart's category axis).
-            const timeAxis = resolveTimeAxis(effective, tile.anomaly?.timeAxis);
-            const out = await detectAnomalies(effective, {
-              method: tile.anomaly?.method ?? "zscore",
-              threshold: tile.anomaly?.threshold,
+            // #908: project the horizon via /ai/forecast; stash the block for render.
+            const timeAxis = resolveTimeAxis(effective, tile.forecast?.timeAxis);
+            const out = await forecastQuery(effective, {
+              method: tile.forecast?.method ?? "ets",
+              horizon: tile.forecast?.horizon,
+              confidence: tile.forecast?.confidence,
               timeAxis,
             });
+            forecastSeries = out.forecast?.series ?? null;
             return out.response;
           }
-        : undefined,
+        : anomalyEnabled
+          ? async (effective) => {
+              // #907: route through /ai/anomaly (per-cell verdicts on the response).
+              const timeAxis = resolveTimeAxis(effective, tile.anomaly?.timeAxis);
+              const out = await detectAnomalies(effective, {
+                method: tile.anomaly?.method ?? "zscore",
+                threshold: tile.anomaly?.threshold,
+                timeAxis,
+              });
+              return out.response;
+            }
+          : undefined,
     });
   });
 
@@ -363,6 +401,11 @@
       // leaving the existing render path untouched when detection is off / no
       // anomalies were found.
       if (anomalyEnabled) overlayAnomalyMarkPoints(option, r);
+      // #908: append the forecast horizon (dashed line + confidence band) when
+      // forecasting is on and the server returned a forecast block.
+      if (forecastEnabled && forecastSeries) {
+        applyForecastOverlay(option, forecastSeries, FORECAST_FALLBACK_COLOR);
+      }
       // #1092: capture the live zoom/brush before overwriting; only re-applied
       // when the chart type + category count are unchanged (resize / theme flip
       // / same-shape refresh), so a new query or chart-type switch starts fresh.

@@ -38,6 +38,8 @@
     type SparklineType,
     // Issue #907 — anomaly detection on time-series chart tiles.
     type AnomalyMethodConfig,
+    // Issue #908 — forecast on time-series chart tiles.
+    type ForecastMethodConfig,
   } from "$lib/api/dashboards";
   import { flatten, listRepository, type RepositoryNode } from "$lib/api/repository";
   import { repositionTile } from "$lib/dashboard/tilePlacement";
@@ -191,6 +193,13 @@
   let anomalyTimeAxis = $state<string>(untrack(() => tile.anomaly?.timeAxis ?? ""));
   // Default threshold shown as the placeholder, tracking the chosen method.
   let anomalyDefaultThreshold = $derived(anomalyMethod === "mad" ? 3.5 : 3.0);
+  // ── Issue #908: forecast (time-series chart tiles only) ──
+  // Working copy of the chart tile's forecast config; persisted on save.
+  let forecastEnabled = $state<boolean>(untrack(() => tile.forecast?.enabled ?? false));
+  let forecastMethod = $state<ForecastMethodConfig>(untrack(() => tile.forecast?.method ?? "ets"));
+  let forecastHorizon = $state<number>(untrack(() => tile.forecast?.horizon ?? 6));
+  let forecastConfidence = $state<number>(untrack(() => tile.forecast?.confidence ?? 0.95));
+  let forecastTimeAxis = $state<string>(untrack(() => tile.forecast?.timeAxis ?? ""));
   // Query source — "reference" picks a saved .saiku from the repo,
   // "inline" pastes an AiQueryRequest body. Default to "reference" so
   // non-technical authors aren't dropped into a JSON textarea on a
@@ -588,6 +597,23 @@
               timeAxis: anomalyTimeAxis.trim() || undefined,
             }
           : undefined;
+      // ── Issue #908: persist forecast config (undefined when disabled). ──
+      patch.forecast =
+        forecastEnabled && ANOMALY_CHART_KINDS.has(chartType)
+          ? {
+              enabled: true,
+              method: forecastMethod,
+              horizon:
+                Number.isFinite(forecastHorizon) && forecastHorizon >= 1
+                  ? Math.round(forecastHorizon)
+                  : undefined,
+              confidence:
+                Number.isFinite(forecastConfidence) && forecastConfidence > 0 && forecastConfidence < 1
+                  ? forecastConfidence
+                  : undefined,
+              timeAxis: forecastTimeAxis.trim() || undefined,
+            }
+          : undefined;
     }
 
     if (tile.type === "chart" || tile.type === "table") {
@@ -867,6 +893,52 @@
                   placeholder={i18n.t("dashboard.anomaly.timeAxis.placeholder", "Defaults to the first row axis")}
                 />
                 <span class="hint">{i18n.t("dashboard.anomaly.timeAxis.hint", "Unique name of the time level, e.g. [Time].[Time].[Month].")}</span>
+              </label>
+            {/if}
+          </fieldset>
+
+          <!-- ── Issue #908: forecast (time-series charts only) ── -->
+          <fieldset class="anomaly">
+            <legend>{i18n.t("dashboard.forecast.legend", "Forecast")}</legend>
+            <label class="checkbox">
+              <input type="checkbox" bind:checked={forecastEnabled} />
+              <span>{i18n.t("dashboard.forecast.enable", "Show forecast")}</span>
+            </label>
+            {#if forecastEnabled}
+              <label class="field">
+                <span>{i18n.t("dashboard.forecast.method", "Method")}</span>
+                <select bind:value={forecastMethod}>
+                  <option value="ets">{i18n.t("dashboard.forecast.method.ets", "Exponential smoothing")}</option>
+                  <option value="arima">{i18n.t("dashboard.forecast.method.arima", "ARIMA (not yet supported)")}</option>
+                  <option value="prophet"
+                    >{i18n.t("dashboard.forecast.method.prophet", "Prophet (not yet supported)")}</option
+                  >
+                </select>
+              </label>
+              <label class="field">
+                <span>{i18n.t("dashboard.forecast.horizon", "Horizon (points)")}</span>
+                <input type="number" min="1" max="365" step="1" bind:value={forecastHorizon} />
+                <span class="hint"
+                  >{i18n.t("dashboard.forecast.horizon.hint", "How many future points to project.")}</span
+                >
+              </label>
+              <label class="field">
+                <span>{i18n.t("dashboard.forecast.confidence", "Confidence")}</span>
+                <input type="number" min="0.5" max="0.999" step="0.01" bind:value={forecastConfidence} />
+                <span class="hint"
+                  >{i18n.t("dashboard.forecast.confidence.hint", "Prediction-interval level, e.g. 0.95.")}</span
+                >
+              </label>
+              <label class="field">
+                <span>{i18n.t("dashboard.forecast.timeAxis", "Time axis")}</span>
+                <input
+                  type="text"
+                  bind:value={forecastTimeAxis}
+                  placeholder={i18n.t("dashboard.forecast.timeAxis.placeholder", "Defaults to the first row axis")}
+                />
+                <span class="hint"
+                  >{i18n.t("dashboard.forecast.timeAxis.hint", "Unique name of the time level, e.g. [Time].[Time].[Month].")}</span
+                >
               </label>
             {/if}
           </fieldset>
