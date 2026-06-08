@@ -151,6 +151,15 @@ public class DatasourceService implements Serializable {
         }
     }
 
+    /**
+     * Delete an internal file (no ACL gate — internal files are server-managed).
+     * Best-effort: a missing file is a no-op. Used to purge a dashboard's
+     * sidecar comment / history JSONL when the dashboard itself is deleted.
+     */
+    public void removeInternalFile(String path) {
+        datasources.removeInternalFile(path);
+    }
+
     public String saveFile(String content, String path, String name, List<String> roles) {
         return datasources.saveFile(path, content, name, roles);
     }

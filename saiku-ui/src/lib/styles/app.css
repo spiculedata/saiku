@@ -15,8 +15,36 @@ body {
   color: var(--fg);
   font-family: var(--font-sans);
   font-size: var(--fs-md);
+  font-weight: var(--weight-normal);
   line-height: var(--lh-normal);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Heading scale. Components should default to these and only override
+   when they have a deliberate type-treatment reason. Margins follow the
+   space token grid so heading-followed-by-body has consistent rhythm. */
+h1, h2, h3, h4, h5, h6 {
+  margin: 0 0 var(--space-3);
+  color: var(--fg);
+  font-weight: var(--weight-semibold);
+  line-height: var(--lh-tight);
+}
+
+h1 {
+  font-size: var(--fs-2xl);
+  font-weight: var(--weight-bold);
+}
+
+h2 {
+  font-size: var(--fs-xl);
+}
+
+h3 {
+  font-size: var(--fs-lg);
+}
+
+h4, h5, h6 {
+  font-size: var(--fs-md);
 }
 
 button {
@@ -57,11 +85,14 @@ a:hover {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background var(--duration-fast);
+  transition:
+    background var(--duration-fast),
+    border-color var(--duration-fast),
+    color var(--duration-fast);
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--bg-subtle);
+  background: var(--bg-hover);
 }
 
 .btn:disabled {
@@ -69,11 +100,110 @@ a:hover {
   cursor: not-allowed;
 }
 
+/* ----------------------------------------------------------------- *
+ * Icon button — small square affordance for inline icon-only actions
+ * (list-row actions, toolbar quick-actions, modal close, etc).
+ *
+ * One canonical shape so SavedQueriesModal / Tile / Toast / Modal all
+ * render their X / pencil / trash icons the same way. Per-component
+ * .icon-btn declarations should be removed in favor of this class.
+ * ----------------------------------------------------------------- */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast),
+    border-color var(--duration-fast),
+    color var(--duration-fast);
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--fg);
+}
+
+.icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.icon-btn--danger:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+/* ----------------------------------------------------------------- *
+ * Data grid — the canonical look for admin / settings tables.
+ *
+ * Replaces the per-component `.grid` declarations in UsersAdmin,
+ * DatasourcesAdmin, SchemasAdmin (and similar) that all defined
+ * slightly different versions of the same intent. Provides:
+ *   - consistent --space-3 cell padding (was --space-2 — too cramped)
+ *   - semibold header weight via token
+ *   - zebra stripes on tbody rows
+ *   - hover affordance using --bg-hover
+ *
+ * Use `.data-grid` on a <table>; the rest follows from descendant
+ * selectors. Action-column cells should use `.data-grid__actions`
+ * for a right-aligned flex row of buttons.
+ * ----------------------------------------------------------------- */
+.data-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.data-grid th,
+.data-grid td {
+  padding: var(--space-3);
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-grid th {
+  background: var(--bg-muted);
+  font-weight: var(--weight-semibold);
+  color: var(--fg);
+}
+
+.data-grid tbody tr {
+  transition: background var(--duration-fast);
+}
+
+.data-grid tbody tr:nth-child(even) {
+  background: var(--bg-subtle);
+}
+
+.data-grid tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.data-grid__actions {
+  display: flex;
+  gap: var(--space-1);
+  justify-content: flex-end;
+}
+
+.data-grid__empty {
+  text-align: center;
+  color: var(--fg-muted);
+  padding: var(--space-5);
+}
+
 .btn--primary {
   background: var(--accent);
   color: var(--accent-fg);
   border-color: var(--accent);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .btn--primary:hover:not(:disabled) {
@@ -105,6 +235,39 @@ a:hover {
   color: var(--fg);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
+  transition:
+    border-color var(--duration-fast),
+    box-shadow var(--duration-fast);
+}
+
+.field__input:focus-visible {
+  border-color: var(--accent);
+}
+
+/* Invalid form-field state. Set the .field--invalid modifier on the
+   wrapper; the input gets a red border and the .field__error message
+   below renders with an alert icon. Centralized so every form modal
+   communicates validation the same way. */
+.field--invalid .field__input {
+  border-color: var(--danger);
+}
+
+.field--invalid .field__input:focus-visible {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--danger);
+  border-color: var(--danger);
+}
+
+.field__error {
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  margin-top: var(--space-1);
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.field__error svg {
+  flex-shrink: 0;
 }
 
 .callout {
@@ -117,6 +280,62 @@ a:hover {
 .callout--danger {
   border-left-color: var(--danger);
   color: var(--danger);
+}
+
+.callout__text {
+  margin: 0;
+  font-weight: var(--weight-medium);
+}
+
+.callout__details {
+  margin-top: var(--space-2);
+  color: var(--fg-muted);
+  font-weight: var(--weight-normal);
+}
+
+.callout__details summary {
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  user-select: none;
+}
+
+.callout__detail-text {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2);
+  background: var(--bg-muted);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--fs-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--fg);
+}
+
+/* Motion baseline. Modals, context menus, and toasts appear instantly
+   by default — feels like UI is teleporting rather than responding.
+   These two short keyframes give every overlay-style surface a 120ms
+   fade-in (200ms for the panel content, which also lifts a hair).
+   Components opt in by adding the matching animation:* rule. The
+   prefers-reduced-motion guard suppresses everything for users who
+   need it. */
+@keyframes saiku-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes saiku-panel-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }
 
 /* -------------------------------------------------------------------------

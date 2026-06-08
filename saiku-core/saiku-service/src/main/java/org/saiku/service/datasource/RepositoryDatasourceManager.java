@@ -47,7 +47,29 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     public static final String ORBIS_WORKSPACE_DIR = "workspace";
     public static final String SAIKU_AUTH_PRINCIPAL = "SAIKU_AUTH_PRINCIPAL";
 
-    private final Map<String, SaikuDatasource> datasources = new ConcurrentHashMap<>();
+    /**
+     * Per-workspace datasource caches. Outer key is the Saiku workspace name
+     * (see {@link #ORBIS_WORKSPACE_DIR} session attribute); inner map is the
+     * usual datasource-name → SaikuDatasource lookup.
+     *
+     * <p>Previously this was a single flat map. That meant every refresh /
+     * mutation operated globally — a refresh issued by tenant A clobbered
+     * tenant B's view. The per-workspace structure makes refresh + mutation
+     * tenant-local; tenants only ever see entries for their own workspace.
+     *
+     * <p>Inner maps are loaded lazily on first access per workspace
+     * (see {@link #datasourcesForCurrentWorkspace()}).
+     */
+    private final Map<String, Map<String, SaikuDatasource>> tenantDatasources = new ConcurrentHashMap<>();
+
+    /**
+     * Default workspace name when no session attribute is set (boot, scheduled
+     * tasks, single-tenant deployments with {@code workspaces=false}). Mirrors
+     * the legacy {@code unknown} directory the engine has always used as the
+     * unscoped default.
+     */
+    private static final String DEFAULT_WORKSPACE = "unknown";
+
     public IConnectionManager connectionManager;
     private ScopedRepo sessionRegistry;
     private boolean workspaces;
@@ -92,8 +114,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         // Phase 2: Jackrabbit content-repo backend deleted; only classpath remains.
         separator = "/";
         log.debug("init datadir= " + datadir);
-        irm = FilesystemRepositoryManager.getFilesystemRepositoryManager(
-                cleanse(datadir), defaultRole, sessionRegistry, workspaces);
+        irm = createRepositoryManager();
         log.debug("2nd init datadir= " + datadir);
 
         // Perform the repository manager startup routines
@@ -108,30 +129,57 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         loadDatasources(ext);
     }
 
+    /**
+     * Factory hook for the underlying {@link IRepositoryManager}. The default
+     * implementation returns a {@link FilesystemRepositoryManager} configured
+     * from this service's properties — the long-standing OSS behaviour.
+     *
+     * <p>Downstream distributions (e.g. Saiku Cloud) override this method to
+     * substitute a wrapping implementation that, say, routes specific path
+     * prefixes through a Postgres-backed store while leaving everything else
+     * on the filesystem. Subclasses typically call {@code super.createRepositoryManager()}
+     * to obtain the filesystem instance and wrap it.
+     *
+     * <p>Kept {@code protected} so the hook is invisible to bean consumers but
+     * available to subclasses; private state read here ({@code datadir},
+     * {@code defaultRole}, {@code sessionRegistry}, {@code workspaces}) stays
+     * encapsulated.
+     */
+    protected IRepositoryManager createRepositoryManager() {
+        return FilesystemRepositoryManager.getFilesystemRepositoryManager(
+                cleanse(datadir), defaultRole, sessionRegistry, workspaces);
+    }
+
     public void setRepositoryManager(IRepositoryManager irm) {
         this.irm = irm;
     }
 
     public Properties checkForExternalDataSourceProperties() {
         Properties p = new Properties();
-        InputStream input;
-
-        try {
-            input = new FileInputStream(externalparameters);
+        if (externalparameters == null || externalparameters.isEmpty()) {
+            // No external-params file configured — return empty. The
+            // legacy implementation hit `new FileInputStream(null)` here
+            // which throws NPE, NOT IOException. The catch below would
+            // miss it and the NPE would escape. The pre-refactor flow
+            // happened to call load() once at boot with externalparameters
+            // always set; the lazy datasource cache can hit this earlier
+            // in the bean-graph init (saiku-cloud tenant scoping uses it).
+            return p;
+        }
+        // try-with-resources so the external-params file handle is always closed (saiku#1191).
+        try (InputStream input = new FileInputStream(externalparameters)) {
             p.load(input);
         } catch (IOException e) {
             log.debug("file did not exist");
         }
-
         return p;
     }
 
     public String[] getAvailablePropertiesKeys() {
         Properties p = new Properties();
-        InputStream input;
 
-        try {
-            input = new FileInputStream(externalparameters);
+        // try-with-resources so the external-params file handle is always closed (saiku#1191).
+        try (InputStream input = new FileInputStream(externalparameters)) {
             p.load(input);
         } catch (IOException e) {
             log.debug("file did not exist");
@@ -227,7 +275,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
 
             // Adding the connection before refreshing it
             SaikuDatasource sds = new SaikuDatasource(name, SaikuDatasource.Type.OLAP, datasource.getProperties());
-            datasources.put(ds.getName(), sds);
+            datasourcesForCurrentWorkspace().put(ds.getName(), sds);
 
             // In a workspace environment it is necessary to prefix the datasource name with the workspace name
             connectionManager.refreshConnection(name);
@@ -238,8 +286,9 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         String name = ds.getName();
         SaikuDatasource sds = new SaikuDatasource(name, SaikuDatasource.Type.OLAP, datasource.getProperties());
 
-        // It stores the datasource name prefixed with the workspace name
-        datasources.put(name, sds);
+        // Cache per-workspace — see datasourcesForCurrentWorkspace() for the
+        // tenant-scoping rationale.
+        datasourcesForCurrentWorkspace().put(name, sds);
 
         return datasource;
     }
@@ -254,7 +303,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
 
             try {
                 irm.saveDataSource(ds, separator + "datasources" + separator + ds.getName() + ".sds", "fixme");
-                datasources.put(datasource.getName(), datasource);
+                datasourcesForCurrentWorkspace().put(datasource.getName(), datasource);
 
             } catch (RepositoryException e) {
                 log.error("Could not add data source" + datasource.getName(), e);
@@ -274,7 +323,7 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         if (ds != null) {
             for (DataSource data : ds) {
                 if (data.getId().equals(datasourceId)) {
-                    datasources.remove(data.getName());
+                    datasourcesForCurrentWorkspace().remove(data.getName());
                     String path = data.getPath();
                     if (!datadir.equals("${CLASSPATH_REPO_PATH_UNPARSED}")) {
                         path = path.replaceFirst(datadir, "");
@@ -309,18 +358,19 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
     }
 
     public Map<String, SaikuDatasource> getDatasources(String[] roles) {
-        return datasources;
+        return datasourcesForCurrentWorkspace();
     }
 
     public SaikuDatasource getDatasource(String datasourceName) {
-        return datasources.get(datasourceName);
+        return datasourcesForCurrentWorkspace().get(datasourceName);
     }
 
     @Override
     public SaikuDatasource getDatasource(String datasourceName, boolean refresh) {
+        Map<String, SaikuDatasource> current = datasourcesForCurrentWorkspace();
         if (!refresh) {
-            if (datasources.size() > 0) {
-                return datasources.get(datasourceName);
+            if (current.size() > 0) {
+                return current.get(datasourceName);
             }
         } else {
             return getDatasource(datasourceName);
@@ -535,6 +585,60 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         datadir = datadir.replaceFirst(":", ":/");
 
         this.datadir = datadir;
+    }
+
+    /**
+     * @return the current request's workspace name from the bound
+     *         {@link HttpSession}, or {@link #DEFAULT_WORKSPACE} when no
+     *         session is in scope or the attribute is unset. Cleansed in
+     *         the same way as {@code FilesystemRepositoryManager.cleanse()}
+     *         so the value is filesystem-safe.
+     */
+    private String currentWorkspaceKey() {
+        if (!workspaces) {
+            return DEFAULT_WORKSPACE;
+        }
+        try {
+            jakarta.servlet.http.HttpSession session = getSession();
+            if (session == null) {
+                return DEFAULT_WORKSPACE;
+            }
+            Object attr = session.getAttribute(ORBIS_WORKSPACE_DIR);
+            if (attr == null) {
+                return DEFAULT_WORKSPACE;
+            }
+            String workspace = ((String) attr).trim();
+            return workspace.isEmpty() ? DEFAULT_WORKSPACE : cleanse(workspace);
+        } catch (Exception e) {
+            log.debug("could not resolve current workspace, falling back to default", e);
+            return DEFAULT_WORKSPACE;
+        }
+    }
+
+    /**
+     * Returns the inner datasource map for the current request's workspace,
+     * loading it lazily on first access.
+     *
+     * <p>Lazy + per-workspace is the load-bearing change: the legacy global
+     * map was clobbered every time any tenant ran {@code /admin/discover/refresh}.
+     * With per-workspace caching, that operation only affects the caller's
+     * workspace; other tenants keep serving from their own warm caches.
+     *
+     * <p>Returns an empty map during bean wiring (before {@link #load()} has
+     * run): the IRepositoryManager isn't initialised yet and trying to scan
+     * the filesystem would NPE on {@code externalparameters}. The legacy
+     * empty-flat-map happened to short-circuit this; the lazy-load path
+     * needs an explicit guard.
+     */
+    private Map<String, SaikuDatasource> datasourcesForCurrentWorkspace() {
+        if (irm == null) {
+            // Bean init is still in progress (connectionManager → userService
+            // → datasourceService → here). Hand back an empty map; load() will
+            // populate the default workspace once it runs.
+            return new ConcurrentHashMap<>();
+        }
+        return tenantDatasources.computeIfAbsent(
+                currentWorkspaceKey(), k -> loadDatasourcesFor(k, checkForExternalDataSourceProperties()));
     }
 
     public String getDatadir() {
@@ -800,38 +904,53 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
         this.connectionProcessor = connectionProcessor;
     }
 
+    /**
+     * Refresh the cached datasources for the CURRENT request's workspace
+     * only. Other workspaces' caches are left untouched.
+     *
+     * <p>Used by the {@code /admin/discover/refresh} REST endpoint via
+     * {@link #onApplicationEvent(HttpSessionCreatedEvent)} and any other
+     * caller that wants the current tenant's view re-built from disk.
+     */
     private void loadDatasources(Properties ext) {
-        datasources.clear();
+        String workspace = currentWorkspaceKey();
+        Map<String, SaikuDatasource> fresh = loadDatasourcesFor(workspace, ext);
+        tenantDatasources.put(workspace, fresh);
+    }
 
+    /**
+     * Workspace-scoped load helper. Resolves SDS files against
+     * {@code irm.getAllDataSources()} — which (after the
+     * {@code ScopedRepo} fix) reads the current request's workspace
+     * — and builds the inner cache map. Returns a new map rather
+     * than mutating in place so the caller controls visibility.
+     */
+    private Map<String, SaikuDatasource> loadDatasourcesFor(String workspace, Properties ext) {
+        Map<String, SaikuDatasource> built = new ConcurrentHashMap<>();
         List<DataSource> exporteddatasources = null;
 
         try {
             exporteddatasources = irm.getAllDataSources();
         } catch (RepositoryException e1) {
-            log.error("Could not export data sources", e1);
+            log.error("Could not export data sources for workspace=" + workspace, e1);
         }
 
         if (exporteddatasources != null) {
-            int i = 0;
-            while (i < exporteddatasources.size()) {
-                DataSource file = exporteddatasources.get(i);
-
+            for (DataSource file : exporteddatasources) {
                 try {
                     if (file.getName() != null && file.getType() != null) {
-
                         SaikuDatasource.Type t =
                                 SaikuDatasource.Type.valueOf(file.getType().toUpperCase());
                         SaikuDatasource ds =
                                 new SaikuDatasource(file.getName(), t, setupDataSourceProperties(file, ext));
-                        datasources.put(file.getName(), ds);
+                        built.put(file.getName(), ds);
                     }
                 } catch (Exception e) {
-                    // throw new SaikuServiceException("Failed to add datasource", e);
-                    log.error("Failed to add datasource", e);
+                    log.error("Failed to add datasource (workspace=" + workspace + ")", e);
                 }
-                i++;
             }
         }
+        return built;
     }
 
     private Properties setupDataSourceProperties(DataSource file, Properties ext) {

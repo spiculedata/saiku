@@ -115,6 +115,48 @@ public class AiSchemaConverterMdxInjectionTest {
         assertRejects(null, "x");
     }
 
+    /* --------- multiline / control-char bypass class (saiku#786 hardening) --------- */
+    //
+    // These lock MEMBER_REF_PATTERN's anchoring against the classic Java
+    // `^...$` pitfall: `$` matches before a *trailing* line terminator, so a
+    // naively anchored validator can be bypassed with `valid\npayload`. The
+    // current pattern is NOT compiled with Pattern.MULTILINE and correctly
+    // rejects every payload below (verified out-of-band against the live
+    // regex) — but until now the suite locked only ONE injection shape
+    // (comma-Crossjoin), so a future refactor that adds MULTILINE, or swaps
+    // the regex for a hand-rolled parser, could silently reopen an
+    // MDX-injection hole with every existing test still green. These turn
+    // that whole regression class RED.
+
+    @Test
+    public void validatorRejectsNewlineInjection() {
+        assertRejects("[Foo]\nCrossjoin([Time].[Time].Members, [Store].[Stores].Members)", "x");
+        assertRejects("[Foo].[Bar]\nCrossjoin([a], [b])", "x");
+    }
+
+    @Test
+    public void validatorRejectsCarriageReturnInjection() {
+        assertRejects("[Foo]\r\nDROP TABLE", "x");
+        assertRejects("[Foo].[Bar]\r; WITH MEMBER [Measures].[x] AS 1", "x");
+    }
+
+    @Test
+    public void validatorRejectsLeadingNewlineInjection() {
+        // Payload that leads with a newline, then breaks out entirely.
+        assertRejects("\nCrossjoin([a], [b])", "x");
+    }
+
+    @Test
+    public void validatorRejectsMidRefNewlineInjection() {
+        // Newline injected between a valid dim segment and an operator tail.
+        assertRejects("[Foo].\n[Bar] + [Baz]", "x");
+    }
+
+    @Test
+    public void validatorRejectsTabInjection() {
+        assertRejects("[Foo]\tCrossjoin([a], [b])", "x");
+    }
+
     /* ----------------------- end-to-end via converter ------------------------ */
 
     @Test
@@ -135,6 +177,27 @@ public class AiSchemaConverterMdxInjectionTest {
             assertTrue(
                     "error message names members[]",
                     e.getMessage().toLowerCase().contains("member"));
+        }
+    }
+
+    @Test
+    public void newlineInjectionInAxisMembersRaisesFieldPath() {
+        // End-to-end twin of the validator-direct multiline check: a newline
+        // payload in axis members[] must be rejected by convert() with the
+        // same field-path contract, not just by the static validator.
+        AiQueryRequest req = baseReq();
+        AiAxisSelection sel = new AiAxisSelection("Product", "Products", "Product Family");
+        sel.setMembers(Arrays.asList(
+                "[Product].[Products].[Drink]\nCrossjoin([Time].[Time].Members, [Store].[Stores].Members)"));
+        req.setRows(Collections.singletonList(sel));
+        try {
+            converter.convert(req, schema);
+            fail("expected AiValidationException; converter let newline-injection through");
+        } catch (AiValidationException e) {
+            assertNotNull(e.getField());
+            assertTrue(
+                    "field path walks back to the offending entry: " + e.getField(),
+                    e.getField().endsWith(".members[0]"));
         }
     }
 

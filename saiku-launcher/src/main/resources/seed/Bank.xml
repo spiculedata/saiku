@@ -1,0 +1,308 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Saiku demo schema: joint bank accounts — a bridge (many-to-many) dimension.
+
+  One account has one balance but can be co-owned by several customers, so
+  the Customer dimension is linked through the account_owner bridge table
+  (mm_owner) with an ownership weight rather than a foreign key on the fact.
+
+  Two cubes over the SAME fact table show the two allocation styles:
+    - "Joint Accounts (Full Count)" — every owner sees the full balance;
+      totals de-duplicate on the account grain at every level (incl. the
+      Segment roll-up), so the grand total is the true 13000, not 21000.
+    - "Joint Accounts (Weighted)"   — each balance split by ownership weight,
+      reconciling to 13000.
+
+  Companion data: bank.sql (tables mm_*), loaded into the demo H2 database.
+  Requires the Calcite query backend (the Saiku default) — bridge queries
+  cannot be evaluated by the legacy SQL generator.
+-->
+<Schema name="Bank" metamodelVersion="4.0">
+
+  <!-- Bounded query-context parameter (#105): the tenant supplied per query
+       (e.g. session.tenant), enumerated + typed, bound by the Tenant role. -->
+  <QueryParameter name="tenant" type="Numeric" defaultValue="1">
+    <QueryParameterValue>1</QueryParameterValue>
+    <QueryParameterValue>2</QueryParameterValue>
+  </QueryParameter>
+
+  <PhysicalSchema>
+    <Table name="mm_fact">
+      <Key><Column name="account_id"/></Key>
+    </Table>
+    <Table name="mm_owner"/>
+    <Table name="mm_customer"/>
+    <Table name="mm_branch"/>
+    <Table name="mm_date"/>
+    <Table name="mm_txn"/>
+    <Table name="mm_calendar"/>
+    <Table name="mm_monthly"/>
+  </PhysicalSchema>
+
+  <!-- The many-to-many dimension. Customers roll up into segments; full-count
+       totals de-duplicate correctly at the Segment level too. -->
+  <Dimension name="Customer" table="mm_customer" key="Customer">
+    <Attributes>
+      <Attribute name="Segment"><Key><Column name="segment"/></Key></Attribute>
+      <Attribute name="Customer">
+        <Key><Column name="customer_id"/></Key>
+        <Name><Column name="customer_name"/></Name>
+      </Attribute>
+    </Attributes>
+    <Hierarchies>
+      <Hierarchy name="By Segment" allMemberName="All Customers">
+        <Level attribute="Segment"/>
+        <Level attribute="Customer"/>
+      </Hierarchy>
+    </Hierarchies>
+  </Dimension>
+
+  <Dimension name="Branch" table="mm_branch" key="Branch">
+    <Attributes>
+      <Attribute name="Branch">
+        <Key><Column name="branch_id"/></Key>
+        <Name><Column name="branch_name"/></Name>
+      </Attribute>
+    </Attributes>
+  </Dimension>
+
+  <Dimension name="Date" table="mm_date" key="Date Id" type="TIME">
+    <Attributes>
+      <Attribute name="Date Id" hasHierarchy="false">
+        <Key><Column name="date_key"/></Key>
+      </Attribute>
+      <Attribute name="Year" levelType="TimeYears" hasHierarchy="false">
+        <Key><Column name="yr"/></Key>
+      </Attribute>
+    </Attributes>
+    <Hierarchies>
+      <Hierarchy name="Calendar" allMemberName="All Years">
+        <Level attribute="Year"/>
+      </Hierarchy>
+    </Hierarchies>
+  </Dimension>
+
+  <Cube name="Joint Accounts (Full Count)">
+    <Dimensions>
+      <Dimension source="Customer"/>
+      <Dimension source="Branch"/>
+      <Dimension source="Date"/>
+    </Dimensions>
+    <MeasureGroups>
+      <MeasureGroup name="Balances" table="mm_fact">
+        <Measures>
+          <Measure name="Balance" column="balance" aggregator="sum"
+                   formatString="#,###"/>
+          <Measure name="Fees" column="fees" aggregator="sum"
+                   formatString="#,###"/>
+        </Measures>
+        <DimensionLinks>
+          <ForeignKeyLink dimension="Branch" foreignKeyColumn="branch_id"/>
+          <ForeignKeyLink dimension="Date" foreignKeyColumn="date_key"/>
+          <BridgeLink dimension="Customer"
+                      bridgeTable="mm_owner"
+                      factForeignKeyColumn="account_id"
+                      bridgeFactKeyColumn="account_id"
+                      bridgeDimensionKeyColumn="customer_id"/>
+        </DimensionLinks>
+      </MeasureGroup>
+    </MeasureGroups>
+  </Cube>
+
+  <Cube name="Joint Accounts (Weighted)">
+    <Dimensions>
+      <Dimension source="Customer"/>
+      <Dimension source="Branch"/>
+      <Dimension source="Date"/>
+    </Dimensions>
+    <MeasureGroups>
+      <MeasureGroup name="Balances" table="mm_fact">
+        <Measures>
+          <Measure name="Balance" column="balance" aggregator="sum"
+                   formatString="#,###"/>
+          <Measure name="Fees" column="fees" aggregator="sum"
+                   formatString="#,###"/>
+        </Measures>
+        <DimensionLinks>
+          <ForeignKeyLink dimension="Branch" foreignKeyColumn="branch_id"/>
+          <ForeignKeyLink dimension="Date" foreignKeyColumn="date_key"/>
+          <BridgeLink dimension="Customer"
+                      bridgeTable="mm_owner"
+                      factForeignKeyColumn="account_id"
+                      bridgeFactKeyColumn="account_id"
+                      bridgeDimensionKeyColumn="customer_id"
+                      aggregation="weighted"
+                      weightColumn="weight"/>
+        </DimensionLinks>
+      </MeasureGroup>
+    </MeasureGroups>
+  </Cube>
+
+  <!-- =================================================================
+       Cube 3 — Account Statistics. A plain star (no bridge) over the same
+       fact, showing the non-additive leaf aggregators median / percentile
+       (#104). Computed at the queried grain via PERCENTILE_CONT; requires
+       the Calcite backend on a PERCENTILE_CONT-capable database (the demo's
+       H2 datasource qualifies).
+       ================================================================= -->
+  <Cube name="Account Statistics">
+    <Dimensions>
+      <Dimension source="Branch"/>
+      <Dimension source="Date"/>
+    </Dimensions>
+    <MeasureGroups>
+      <MeasureGroup name="Balances" table="mm_fact">
+        <Measures>
+          <Measure name="Total Balance" column="balance" aggregator="sum"
+                   formatString="#,###"/>
+          <Measure name="Median Balance" column="balance"
+                   aggregator="median" formatString="#,###"/>
+          <Measure name="P90 Balance" column="balance"
+                   aggregator="percentile" percentile="90"
+                   formatString="#,###"/>
+        </Measures>
+        <DimensionLinks>
+          <ForeignKeyLink dimension="Branch" foreignKeyColumn="branch_id"/>
+          <ForeignKeyLink dimension="Date" foreignKeyColumn="date_key"/>
+        </DimensionLinks>
+      </MeasureGroup>
+    </MeasureGroups>
+  </Cube>
+
+  <!-- Degenerate dimension on the fact: native Tier (binning) over balance
+       and native Duration (account age) over open_date..as_of_date (#108). -->
+  <Dimension name="Account" table="mm_fact" key="Account Id">
+    <Attributes>
+      <Attribute name="Account Id" hasHierarchy="false">
+        <Key><Column name="account_id"/></Key>
+      </Attribute>
+      <Attribute name="Balance Tier" hasHierarchy="true">
+        <Tier column="balance">
+          <Bin boundary="1000" label="Small"/>
+          <Bin boundary="3000" label="Medium"/>
+          <Bin label="Large"/>
+        </Tier>
+      </Attribute>
+      <Attribute name="Age Years" hasHierarchy="true">
+        <Duration startColumn="open_date" endColumn="as_of_date" unit="YEAR"/>
+      </Attribute>
+    </Attributes>
+  </Dimension>
+
+  <!-- Native tier + duration over the fact via the degenerate Account dim. -->
+  <Cube name="Accounts">
+    <Dimensions>
+      <Dimension source="Account"/>
+      <Dimension source="Branch"/>
+    </Dimensions>
+    <MeasureGroups>
+      <MeasureGroup name="Balances" table="mm_fact">
+        <Measures>
+          <Measure name="Balance" column="balance" aggregator="sum"
+                   formatString="#,###"/>
+        </Measures>
+        <DimensionLinks>
+          <FactLink dimension="Account"/>
+          <ForeignKeyLink dimension="Branch" foreignKeyColumn="branch_id"/>
+        </DimensionLinks>
+      </MeasureGroup>
+    </MeasureGroups>
+  </Cube>
+
+  <!-- Measure-level distinct grain (#119): mm_txn fans out (one txn repeated
+       per line). Distinct Amount de-dups on txn_id before summing; Naive
+       Amount shows the double-count the distinct grain avoids. -->
+  <Cube name="Transactions">
+    <Dimensions/>
+    <MeasureGroups>
+      <MeasureGroup name="Txns" table="mm_txn">
+        <Measures>
+          <Measure name="Distinct Amount" column="amount" aggregator="sum"
+                   distinctKeyColumn="txn_id" formatString="#,###"/>
+          <Measure name="Naive Amount" column="amount" aggregator="sum"
+                   formatString="#,###"/>
+        </Measures>
+        <DimensionLinks/>
+      </MeasureGroup>
+    </MeasureGroups>
+  </Cube>
+
+  <!-- Predicate row-security (#106): filter fact rows by the bound tenant
+       query parameter (#105). Enforced in the Calcite path. -->
+  <Role name="Tenant">
+    <SchemaGrant access="all">
+      <CubeGrant cube="Accounts" access="all">
+        <PredicateGrant measureGroup="Balances" column="tenant"
+                        operator="eq" parameter="tenant"/>
+      </CubeGrant>
+    </SchemaGrant>
+  </Role>
+
+  <!-- Member/Hierarchy-grant row-security (#107) on the bridge dimension:
+       the Premium role sees only Premium-segment customers; the bridge
+       fan-out is constrained to visible owners (Standard-only accounts drop). -->
+  <Role name="Premium">
+    <SchemaGrant access="all">
+      <CubeGrant cube="Joint Accounts (Full Count)" access="all">
+        <HierarchyGrant hierarchy="[Customer].[By Segment]" access="custom"
+                        bottomLevel="[Customer].[By Segment].[Customer]">
+          <MemberGrant member="[Customer].[By Segment].[Premium]" access="all"/>
+        </HierarchyGrant>
+      </CubeGrant>
+    </SchemaGrant>
+  </Role>
+
+  <!-- A typed Time dimension (Year > Quarter > Month) for time intelligence. -->
+  <Dimension name="Calendar" table="mm_calendar" key="Month" type="TIME">
+    <Attributes>
+      <Attribute name="Year" levelType="TimeYears" hasHierarchy="false">
+        <Key><Column name="yr"/></Key>
+      </Attribute>
+      <Attribute name="Quarter" levelType="TimeQuarters" hasHierarchy="false">
+        <Key><Column name="quarter"/></Key>
+      </Attribute>
+      <Attribute name="Month" levelType="TimeMonths" hasHierarchy="false">
+        <Key><Column name="month_key"/></Key>
+        <Name><Column name="month_name"/></Name>
+        <OrderBy><Column name="month_key"/></OrderBy>
+      </Attribute>
+    </Attributes>
+    <Hierarchies>
+      <Hierarchy name="Calendar" allMemberName="All Periods">
+        <Level attribute="Year"/>
+        <Level attribute="Quarter"/>
+        <Level attribute="Month"/>
+      </Hierarchy>
+    </Hierarchies>
+  </Dimension>
+
+  <!-- #112 declarative time intelligence over a monthly revenue series. -->
+  <Cube name="Monthly Revenue">
+    <Dimensions>
+      <Dimension source="Calendar"/>
+    </Dimensions>
+    <MeasureGroups>
+      <MeasureGroup name="Revenue" table="mm_monthly">
+        <Measures>
+          <Measure name="Revenue" column="revenue" aggregator="sum"
+                   formatString="#,###"/>
+        </Measures>
+        <DimensionLinks>
+          <ForeignKeyLink dimension="Calendar" foreignKeyColumn="month_key"/>
+        </DimensionLinks>
+      </MeasureGroup>
+    </MeasureGroups>
+    <TimeCalcs>
+      <TimeCalc name="Revenue YoY"  type="yoy"     measure="Revenue"
+                timeDimension="Calendar" formatString="0.0%"/>
+      <TimeCalc name="Revenue PoP"  type="pop"     measure="Revenue"
+                timeDimension="Calendar" formatString="0.0%"/>
+      <TimeCalc name="Revenue YTD"  type="ytd"     measure="Revenue"
+                timeDimension="Calendar" formatString="#,###"/>
+      <TimeCalc name="Revenue R3"   type="rolling" measure="Revenue"
+                timeDimension="Calendar" window="3" function="avg"
+                formatString="#,###"/>
+    </TimeCalcs>
+  </Cube>
+
+</Schema>

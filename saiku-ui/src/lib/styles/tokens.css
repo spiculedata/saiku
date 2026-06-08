@@ -27,6 +27,37 @@
   --lh-tight: 1.25;
   --lh-normal: 1.5;
 
+  /* Font weight scale. Keep usage to these four steps so weight choices
+     stay deliberate instead of drifting across components. */
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Icon sizes for lucide-svelte components. Keep usage to these four steps.
+     - xs (12px): tree twisties, inline cues
+     - sm (14px): list-row actions, form-field affordances
+     - md (16px): button content, modal close
+     - lg (20px): topbar primary actions, KPI accents */
+  --icon-xs: 12px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 20px;
+
+  /* Categorical chart palette read by ChartView.svelte at runtime and
+     handed to ECharts as the `color: [...]` array. Anchored on the
+     primary --accent so charts feel cohesive with the surrounding UI
+     chrome. Dark theme overrides these below with brighter, lower-
+     saturation variants tuned for legibility on the dark background. */
+  --chart-1: #4f46e5;
+  --chart-2: #0ea5e9;
+  --chart-3: #10b981;
+  --chart-4: #f59e0b;
+  --chart-5: #ef4444;
+  --chart-6: #a855f7;
+  --chart-7: #ec4899;
+  --chart-8: #14b8a6;
+
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.16);
@@ -39,19 +70,28 @@
   --bg: #ffffff;
   --bg-muted: #f6f7f9;
   --bg-subtle: #eef0f3;
+  --bg-hover: #e2e6ec;
   --bg-overlay: rgba(15, 23, 42, 0.32);
   --fg: #0f172a;
   --fg-muted: #475569;
-  --fg-subtle: #64748b;
+  --fg-subtle: #556378;
   --border: #e2e8f0;
   --border-strong: #cbd5e1;
 
   --accent: #4f46e5;
   --accent-hover: #4338ca;
   --accent-fg: #ffffff;
+  --accent-soft: #eef2ff;
+  --accent-strong: #3730a3;
   --danger: #dc2626;
+  --danger-soft: #fef2f2;
+  --danger-strong: #991b1b;
   --success: #16a34a;
+  --success-soft: #ecfdf5;
+  --success-strong: #047857;
   --warning: #d97706;
+  --warning-soft: #fffbeb;
+  --warning-strong: #b45309;
 
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
 }
@@ -63,19 +103,37 @@
     --bg: #0b0d12;
     --bg-muted: #11141b;
     --bg-subtle: #1a1e27;
+    --bg-hover: #242935;
     --bg-overlay: rgba(0, 0, 0, 0.6);
     --fg: #e6e8ec;
     --fg-muted: #a8aeba;
-    --fg-subtle: #7a8190;
+    --fg-subtle: #8b94a3;
     --border: #242935;
     --border-strong: #333a49;
 
     --accent: #818cf8;
     --accent-hover: #a5b4fc;
     --accent-fg: #0b0d12;
+    --accent-soft: #1e1b4b;
+    --accent-strong: #c7d2fe;
     --danger: #ef4444;
+    --danger-soft: #2a1212;
+    --danger-strong: #fca5a5;
     --success: #22c55e;
+    --success-soft: #0d2a1a;
+    --success-strong: #86efac;
     --warning: #f59e0b;
+    --warning-soft: #2b1d09;
+    --warning-strong: #fcd34d;
+
+    --chart-1: #818cf8;
+    --chart-2: #38bdf8;
+    --chart-3: #34d399;
+    --chart-4: #fbbf24;
+    --chart-5: #f87171;
+    --chart-6: #c084fc;
+    --chart-7: #f472b6;
+    --chart-8: #2dd4bf;
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
     --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.6);
@@ -89,19 +147,37 @@
   --bg: #0b0d12;
   --bg-muted: #11141b;
   --bg-subtle: #1a1e27;
+  --bg-hover: #242935;
   --bg-overlay: rgba(0, 0, 0, 0.6);
   --fg: #e6e8ec;
   --fg-muted: #a8aeba;
-  --fg-subtle: #7a8190;
+  --fg-subtle: #8b94a3;
   --border: #242935;
   --border-strong: #333a49;
 
   --accent: #818cf8;
   --accent-hover: #a5b4fc;
   --accent-fg: #0b0d12;
+  --accent-soft: #1e1b4b;
+  --accent-strong: #c7d2fe;
   --danger: #ef4444;
+  --danger-soft: #2a1212;
+  --danger-strong: #fca5a5;
   --success: #22c55e;
+  --success-soft: #0d2a1a;
+  --success-strong: #86efac;
   --warning: #f59e0b;
+  --warning-soft: #2b1d09;
+  --warning-strong: #fcd34d;
+
+  --chart-1: #818cf8;
+  --chart-2: #38bdf8;
+  --chart-3: #34d399;
+  --chart-4: #fbbf24;
+  --chart-5: #f87171;
+  --chart-6: #c084fc;
+  --chart-7: #f472b6;
+  --chart-8: #2dd4bf;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.6);
@@ -114,17 +190,35 @@
   --bg: #ffffff;
   --bg-muted: #f6f7f9;
   --bg-subtle: #eef0f3;
+  --bg-hover: #e2e6ec;
   --bg-overlay: rgba(15, 23, 42, 0.32);
   --fg: #0f172a;
   --fg-muted: #475569;
-  --fg-subtle: #64748b;
+  --fg-subtle: #556378;
   --border: #e2e8f0;
   --border-strong: #cbd5e1;
 
   --accent: #4f46e5;
   --accent-hover: #4338ca;
   --accent-fg: #ffffff;
+  --accent-soft: #eef2ff;
+  --accent-strong: #3730a3;
   --danger: #dc2626;
+  --danger-soft: #fef2f2;
+  --danger-strong: #991b1b;
   --success: #16a34a;
+  --success-soft: #ecfdf5;
+  --success-strong: #047857;
   --warning: #d97706;
+  --warning-soft: #fffbeb;
+  --warning-strong: #b45309;
+
+  --chart-1: #4f46e5;
+  --chart-2: #0ea5e9;
+  --chart-3: #10b981;
+  --chart-4: #f59e0b;
+  --chart-5: #ef4444;
+  --chart-6: #a855f7;
+  --chart-7: #ec4899;
+  --chart-8: #14b8a6;
 }

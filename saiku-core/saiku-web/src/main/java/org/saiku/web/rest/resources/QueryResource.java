@@ -35,7 +35,6 @@ import java.sql.Statement;
 import java.util.*;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.saiku.olap.dto.*;
 import org.saiku.olap.dto.filter.SaikuFilter;
 import org.saiku.olap.dto.resultset.CellDataSet;
@@ -71,6 +70,15 @@ import org.slf4j.LoggerFactory;
 public class QueryResource {
 
     private static final Logger log = LoggerFactory.getLogger(QueryResource.class);
+
+    /**
+     * saiku#1165 (audit-3): generic, information-free body for error responses.
+     * The full exception is logged server-side via {@code log.error(..., e)};
+     * the wire only ever sees this string so we never leak Mondrian/SQL/path/
+     * class internals (previously this resource returned {@code entity(e)} and
+     * {@code ExceptionUtils.getRootCauseMessage(e)} straight to the client).
+     */
+    private static final String GENERIC_ERROR = "Internal error";
 
     private OlapQueryService olapQueryService;
     private ISaikuRepository repository;
@@ -128,7 +136,8 @@ public class QueryResource {
             return (Status.GONE);
         } catch (Exception e) {
             log.error("Cannot delete query (" + queryName + ")", e);
-            throw new WebApplicationException(Response.serverError().entity(e).build());
+            throw new WebApplicationException(
+                    Response.serverError().entity(GENERIC_ERROR).build());
         }
     }
 
@@ -397,7 +406,7 @@ public class QueryResource {
         } catch (Exception e) {
             log.error("Error exporting query to  PDF", e);
             return Response.serverError()
-                    .entity(e.getMessage())
+                    .entity(GENERIC_ERROR)
                     .status(Status.INTERNAL_SERVER_ERROR)
                     .build();
         }
@@ -442,7 +451,7 @@ public class QueryResource {
         } catch (Exception e) {
             log.error("Error exporting query to HTML", e);
             return Response.serverError()
-                    .entity(e.getMessage())
+                    .entity(GENERIC_ERROR)
                     .status(Status.INTERNAL_SERVER_ERROR)
                     .build();
         }
@@ -478,8 +487,9 @@ public class QueryResource {
             return RestUtil.convert(cs, limit);
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ")", e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            return new QueryResult(error);
+            // saiku#1165: detail is logged server-side above; return a generic
+            // message so Mondrian/SQL internals don't leak in QueryResult.error.
+            return new QueryResult(GENERIC_ERROR);
         }
     }
 
@@ -526,8 +536,9 @@ public class QueryResource {
             return RestUtil.convert(cs, limit);
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ") using mdx:\n" + mdx, e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            return new QueryResult(error);
+            // saiku#1165: detail is logged server-side above; return a generic
+            // message so Mondrian/SQL internals don't leak in QueryResult.error.
+            return new QueryResult(GENERIC_ERROR);
         }
     }
 
@@ -545,8 +556,9 @@ public class QueryResource {
             return executeMdx(queryName, null, mdx, limit);
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ") using mdx:\n" + mdx, e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            return new QueryResult(error);
+            // saiku#1165: detail is logged server-side above; return a generic
+            // message so Mondrian/SQL internals don't leak in QueryResult.error.
+            return new QueryResult(GENERIC_ERROR);
         }
     }
 
@@ -571,9 +583,8 @@ public class QueryResource {
                     queryName, result, dimensionName, hierarchyName, levelName, searchString, searchLimit);
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ")", e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
             throw new WebApplicationException(
-                    Response.serverError().entity(error).build());
+                    Response.serverError().entity(GENERIC_ERROR).build());
         }
     }
 
@@ -611,8 +622,8 @@ public class QueryResource {
 
         } catch (Exception e) {
             log.error("Cannot get explain plan for query (" + queryName + ")", e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            rsc = new QueryResult(error);
+            // saiku#1165: detail logged server-side above; generic to the client.
+            rsc = new QueryResult(GENERIC_ERROR);
         }
         // no need to close resultset, its an EmptyResultset
         return rsc;
@@ -652,8 +663,8 @@ public class QueryResource {
 
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ")", e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            rsc = new QueryResult(error);
+            // saiku#1165: detail logged server-side above; generic to the client.
+            rsc = new QueryResult(GENERIC_ERROR);
 
         } finally {
             if (rs != null) {
@@ -707,9 +718,8 @@ public class QueryResource {
             return olapQueryService.drillacross(queryName, cellPosition, levels);
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ")", e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
             throw new WebApplicationException(
-                    Response.serverError().entity(error).build());
+                    Response.serverError().entity(GENERIC_ERROR).build());
         }
     }
 
@@ -781,8 +791,9 @@ public class QueryResource {
             return RestUtil.convert(cs, limit);
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ")", e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            return new QueryResult(error);
+            // saiku#1165: detail is logged server-side above; return a generic
+            // message so Mondrian/SQL internals don't leak in QueryResult.error.
+            return new QueryResult(GENERIC_ERROR);
         }
     }
 
@@ -830,7 +841,7 @@ public class QueryResource {
         } catch (Exception e) {
             log.error("Cannot clear axis for query (" + queryName + ")", e);
             return Response.serverError()
-                    .entity(e.getMessage())
+                    .entity(GENERIC_ERROR)
                     .status(Status.INTERNAL_SERVER_ERROR)
                     .build();
         }
@@ -936,7 +947,7 @@ public class QueryResource {
         } catch (Exception e) {
             log.error("Cannot move dimension " + dimensionName + " for query (" + queryName + ")", e);
             return Response.serverError()
-                    .entity(e.getMessage())
+                    .entity(GENERIC_ERROR)
                     .status(Status.INTERNAL_SERVER_ERROR)
                     .build();
         }
@@ -962,7 +973,7 @@ public class QueryResource {
         } catch (Exception e) {
             log.error("Cannot remove dimension " + dimensionName + " for query (" + queryName + ")", e);
             return Response.serverError()
-                    .entity(e.getMessage())
+                    .entity(GENERIC_ERROR)
                     .status(Status.INTERNAL_SERVER_ERROR)
                     .build();
         }
@@ -1081,7 +1092,7 @@ public class QueryResource {
         } catch (Exception e) {
             log.error("Cannot updates selections for query (" + queryName + ")", e);
             return Response.serverError()
-                    .entity(e.getMessage())
+                    .entity(GENERIC_ERROR)
                     .status(Status.INTERNAL_SERVER_ERROR)
                     .build();
         }
@@ -1116,7 +1127,7 @@ public class QueryResource {
         } catch (Exception e) {
             log.error("Cannot updates selections for query (" + queryName + ")", e);
             return Response.serverError()
-                    .entity(e.getMessage())
+                    .entity(GENERIC_ERROR)
                     .status(Status.INTERNAL_SERVER_ERROR)
                     .build();
         }
@@ -1152,7 +1163,7 @@ public class QueryResource {
         } catch (Exception e) {
             log.error("Cannot include member " + dimensionName + " for query (" + queryName + ")", e);
             return Response.serverError()
-                    .entity(e.getMessage())
+                    .entity(GENERIC_ERROR)
                     .status(Status.INTERNAL_SERVER_ERROR)
                     .build();
         }
@@ -1186,7 +1197,7 @@ public class QueryResource {
         } catch (Exception e) {
             log.error("Cannot remove member " + dimensionName + " for query (" + queryName + ")", e);
             return Response.serverError()
-                    .entity(e.getMessage())
+                    .entity(GENERIC_ERROR)
                     .status(Status.INTERNAL_SERVER_ERROR)
                     .build();
         }
@@ -1215,7 +1226,7 @@ public class QueryResource {
         } catch (Exception e) {
             log.error("Cannot include children for " + dimensionName + " for query (" + queryName + ")", e);
             return Response.serverError()
-                    .entity(e.getMessage())
+                    .entity(GENERIC_ERROR)
                     .status(Status.INTERNAL_SERVER_ERROR)
                     .build();
         }
@@ -1242,7 +1253,7 @@ public class QueryResource {
         } catch (Exception e) {
             log.error("Cannot remove children for " + dimensionName + " for query (" + queryName + ")", e);
             return Response.serverError()
-                    .entity(e.getMessage())
+                    .entity(GENERIC_ERROR)
                     .status(Status.INTERNAL_SERVER_ERROR)
                     .build();
         }
@@ -1273,7 +1284,7 @@ public class QueryResource {
         } catch (Exception e) {
             log.error("Cannot include level of hierarchy " + uniqueHierarchyName + " for query (" + queryName + ")", e);
             return Response.serverError()
-                    .entity(e.getMessage())
+                    .entity(GENERIC_ERROR)
                     .status(Status.INTERNAL_SERVER_ERROR)
                     .build();
         }
@@ -1309,7 +1320,7 @@ public class QueryResource {
         } catch (Exception e) {
             log.error("Cannot include level of hierarchy " + uniqueHierarchyName + " for query (" + queryName + ")", e);
             return Response.serverError()
-                    .entity(e.getMessage())
+                    .entity(GENERIC_ERROR)
                     .status(Status.INTERNAL_SERVER_ERROR)
                     .build();
         }
@@ -1367,8 +1378,7 @@ public class QueryResource {
             return Response.ok(t).build();
         } catch (Exception e) {
             log.error("Cannot get filter for query (" + queryName + ")", e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            return Response.serverError().entity(error).build();
+            return Response.serverError().entity(GENERIC_ERROR).build();
         }
     }
 
@@ -1387,8 +1397,7 @@ public class QueryResource {
             return Response.ok(sq).build();
         } catch (Exception e) {
             log.error("Cannot activate filter for query (" + queryName + "), json:" + filterJSON, e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            return Response.serverError().entity(error).build();
+            return Response.serverError().entity(GENERIC_ERROR).build();
         }
     }
 
@@ -1404,8 +1413,7 @@ public class QueryResource {
             return Response.ok(sq).build();
         } catch (Exception e) {
             log.error("Cannot remove filter for query (" + queryName + ")", e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            return Response.serverError().entity(error).build();
+            return Response.serverError().entity(GENERIC_ERROR).build();
         }
     }
 

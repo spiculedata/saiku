@@ -180,11 +180,28 @@ public class Fat {
         if (details.getMeasures().size() > 0) {
             for (ThinMeasure m : details.getMeasures()) {
                 if (Type.CALCULATED.equals(m.getType())) {
+                    // query.getCalculatedMeasure() only returns
+                    // USER-created Saiku calc measures. Schema-defined
+                    // calc members (e.g. FoodMart Profit) were tagged
+                    // CALCULATED by older UI builds (saiku#1019) — fall
+                    // back to the regular cube-measure lookup so legacy
+                    // saved queries don't NPE on roundtrip.
                     Measure measure = query.getCalculatedMeasure(m.getName());
-                    query.getDetails().add(measure);
+                    if (measure == null) {
+                        measure = query.getMeasure(m.getName());
+                    }
+                    if (measure != null) {
+                        query.getDetails().add(measure);
+                    }
                 } else if (Type.EXACT.equals(m.getType())) {
-                    Measure measure = new MeasureAdapter(query.getMeasure(m.getName()), m);
-                    query.getDetails().add(measure);
+                    Measure inner = query.getMeasure(m.getName());
+                    // Skip rather than wrap null — MeasureAdapter
+                    // delegates getName/getUniqueName to the inner
+                    // Measure, and a null inner trips an NPE on the
+                    // first Thin.convert roundtrip.
+                    if (inner != null) {
+                        query.getDetails().add(new MeasureAdapter(inner, m));
+                    }
                 }
             }
         }

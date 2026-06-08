@@ -43,6 +43,7 @@ import org.olap4j.query.Selection;
 import org.olap4j.query.SortOrder;
 import org.saiku.olap.dto.SaikuCube;
 import org.saiku.olap.util.exception.QueryParseException;
+import org.saiku.service.util.xml.SecureXml;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xml.sax.InputSource;
@@ -71,7 +72,7 @@ public class QueryDeserializer {
 
     public IQuery unparse(String xml, OlapConnection connection) throws Exception {
         this.connection = connection;
-        SAXBuilder parser = new SAXBuilder();
+        SAXBuilder parser = SecureXml.secureSaxBuilder();
         source = new InputSource((new ByteArrayInputStream(xml.getBytes("UTF8"))));
         dom = parser.build(source);
         Element child = dom.getRootElement();
@@ -90,7 +91,7 @@ public class QueryDeserializer {
     }
 
     public SaikuCube getFakeCube(String xml) throws Exception {
-        SAXBuilder parser = new SAXBuilder();
+        SAXBuilder parser = SecureXml.secureSaxBuilder();
         InputSource source = new InputSource((new ByteArrayInputStream(xml.getBytes())));
         Document dom = parser.build(source);
 
@@ -109,7 +110,7 @@ public class QueryDeserializer {
 
     public SaikuCube getCube(String xml, OlapConnection con) throws Exception {
         this.connection = con;
-        SAXBuilder parser = new SAXBuilder();
+        SAXBuilder parser = SecureXml.secureSaxBuilder();
         source = new InputSource((new ByteArrayInputStream(xml.getBytes())));
         dom = parser.build(source);
 

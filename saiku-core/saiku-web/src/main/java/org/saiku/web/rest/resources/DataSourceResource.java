@@ -53,8 +53,13 @@ public class DataSourceResource {
      */
     @GET
     @Produces({"application/json"})
+    @RolesAllowed("ROLE_ADMIN")
     public Collection<SaikuDatasource> getDatasources() {
-        // TODO: admin security?
+        // saiku#1165: ADMIN-only. This returns full connection config (incl.
+        // credentials); the role filter below is a no-op (RepositoryDatasourceManager
+        // ignores roles), so without this gate any authenticated ROLE_USER could read
+        // every datasource's backend password. Regular users get cube metadata via
+        // /discover, not here.
         try {
             return datasourceService
                     .getDatasources(userService.getCurrentUserRoles())
@@ -90,6 +95,7 @@ public class DataSourceResource {
     @GET
     @Produces({"application/json"})
     @Path("/{id}")
+    @RolesAllowed("ROLE_ADMIN")
     @ReturnType("org.saiku.web.rest.objects.DataSourceMapper")
     public Response getDatasourceById(@PathParam("id") String id) {
         try {

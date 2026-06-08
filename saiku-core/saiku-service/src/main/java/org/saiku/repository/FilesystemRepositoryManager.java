@@ -92,108 +92,91 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
         if (session == null) {
             File f = new File(this.append, "unknown");
-            File f2 = new File(this.append, "etc");
-
             if (!f.exists()) {
                 f.mkdir();
             }
 
-            if (!f2.exists()) {
-                f2.mkdir();
-            }
-
-            File n = this.createFolder(sep + "homes");
-
-            HashMap<String, List<AclMethod>> m = new HashMap<>();
-            ArrayList<AclMethod> l = new ArrayList<>();
-            l.add(AclMethod.READ);
-            m.put(defaultRole, l);
-            AclEntry e = new AclEntry("admin", AclType.SECURED, m, null);
-
-            Acl2 acl2 = new Acl2(n);
-            acl2.addEntry(n.getPath(), e);
-            acl2.serialize(n);
-
-            this.createFolder(sep + "datasources");
-
-            m = new HashMap<>();
-            l = new ArrayList<>();
-            l.add(AclMethod.WRITE);
-            l.add(AclMethod.READ);
-            l.add(AclMethod.GRANT);
-            m.put("ROLE_ADMIN", l);
-            e = new AclEntry("admin", AclType.PUBLIC, m, null);
-
-            acl2 = new Acl2(n);
-            acl2.addEntry(n.getPath(), e);
-            acl2.serialize(n);
-
-            this.createFolder(sep + "etc");
-            if (new File(append, "etc/license.lic").exists()) {
-                try {
-                    FileUtils.copyFile(new File(append, "etc/license.lic"), this.createNode("/etc/license.lic"));
-                } catch (IOException e1) {
-                    log.debug("Failed to find license 1");
-                    try {
-                        FileUtils.copyFile(
-                                new File(append, "unknown/etc/license.lic"), this.createNode("/etc/license.lic"));
-                    } catch (IOException e2) {
-                        log.debug("failed to find any licenses. Giving up");
-                    }
-                }
-            }
-
-            this.createFolder(sep + "legacyreports");
-
-            acl2 = new Acl2(n);
-            acl2.addEntry(n.getPath(), e);
-            acl2.serialize(n);
-
-            this.createFolder(sep + "etc" + sep + "theme");
-
-            acl2 = new Acl2(n);
-            acl2.addEntry(n.getPath(), e);
-            acl2.serialize(n);
+            seedSkeleton();
 
             log.info("node added");
             this.session = "init";
         } else {
-            File n = this.createFolder(sep + "homes");
-
-            HashMap<String, List<AclMethod>> m = new HashMap<>();
-            ArrayList<AclMethod> l = new ArrayList<>();
-            l.add(AclMethod.READ);
-            m.put(defaultRole, l);
-            AclEntry e = new AclEntry("admin", AclType.SECURED, m, null);
-
-            Acl2 acl2 = new Acl2(n);
-            acl2.addEntry(n.getPath(), e);
-            acl2.serialize(n);
-
-            this.createFolder(sep + "datasources");
-
-            m = new HashMap<>();
-            l = new ArrayList<>();
-            l.add(AclMethod.WRITE);
-            l.add(AclMethod.READ);
-            l.add(AclMethod.GRANT);
-            m.put("ROLE_ADMIN", l);
-            e = new AclEntry("admin", AclType.PUBLIC, m, null);
-
-            acl2 = new Acl2(n);
-            acl2.addEntry(n.getPath(), e);
-            acl2.serialize(n);
-
-            this.createFolder(sep + "etc");
-
-            this.createFolder(sep + "etc" + sep + "theme");
-
-            acl2 = new Acl2(n);
-            acl2.addEntry(n.getPath(), e);
-            acl2.serialize(n);
+            seedSkeleton();
         }
 
         return true;
+    }
+
+    /**
+     * Seed the standard repository skeleton with sensible default ACLs.
+     *
+     * <p>Idempotent — re-running {@code start()} (e.g. on workspace bootstrap)
+     * re-applies these grants but does not destroy user content. Owner of every
+     * seeded ACL is {@code admin}.
+     *
+     * <ul>
+     *   <li><b>/homes/</b> — SECURED, defaultRole READ. Per-user PRIVATE folders
+     *       are added on first login via {@link #createUser(String)}.</li>
+     *   <li><b>/datasources/</b> — PUBLIC, ROLE_ADMIN WRITE/READ/GRANT. Authenticated
+     *       users can READ (rootMethod fallback); only admins mutate.</li>
+     *   <li><b>/dashboards/</b> — SECURED, ROLE_ADMIN WRITE/READ/GRANT. User-saved
+     *       dashboards live under {@code /homes/<user>/} where the home ACL applies;
+     *       the top-level folder is admin-only-write to prevent cross-user clobber
+     *       (closes saiku#948).</li>
+     *   <li><b>/queries/</b> — SECURED, ROLE_ADMIN WRITE/READ/GRANT. Same rationale
+     *       as {@code /dashboards/}.</li>
+     *   <li><b>/legacyreports/</b> — PUBLIC, ROLE_ADMIN WRITE/READ/GRANT. Mirrors
+     *       historical behaviour.</li>
+     * </ul>
+     *
+     * <p>Historical bug fixed inline: prior code captured one {@code File n} for
+     * {@code /homes/} and then re-serialised every subsequent folder's ACL onto
+     * that same reference — so the supposed {@code /datasources/} and
+     * {@code /legacyreports/} ACLs were silently overwriting {@code /homes/}'s
+     * {@code acl.json}. Each {@link #seedAcl} call now operates on its own folder.
+     */
+    private void seedSkeleton() throws RepositoryException {
+        seedAcl(this.createFolder(sep + "homes"), homesGrant());
+        seedAcl(this.createFolder(sep + "datasources"), publicAdminGrant());
+        seedAcl(this.createFolder(sep + "dashboards"), securedAdminGrant());
+        seedAcl(this.createFolder(sep + "queries"), securedAdminGrant());
+        seedAcl(this.createFolder(sep + "legacyreports"), publicAdminGrant());
+    }
+
+    /** Write an {@link AclEntry} to {@code folder/acl.json}. */
+    private void seedAcl(File folder, AclEntry entry) {
+        Acl2 acl2 = new Acl2(folder);
+        acl2.addEntry(folder.getPath(), entry);
+        acl2.serialize(folder);
+    }
+
+    /** {@code defaultRole} → READ; SECURED; admin owner. The {@code /homes/} default. */
+    private AclEntry homesGrant() {
+        HashMap<String, List<AclMethod>> roles = new HashMap<>();
+        ArrayList<AclMethod> grants = new ArrayList<>();
+        grants.add(AclMethod.READ);
+        roles.put(defaultRole, grants);
+        return new AclEntry("admin", AclType.SECURED, roles, null);
+    }
+
+    /** {@code ROLE_ADMIN} → WRITE/READ/GRANT; PUBLIC; admin owner. */
+    private AclEntry publicAdminGrant() {
+        return new AclEntry("admin", AclType.PUBLIC, adminGrants(), null);
+    }
+
+    /** {@code ROLE_ADMIN} → WRITE/READ/GRANT; SECURED; admin owner. */
+    private AclEntry securedAdminGrant() {
+        return new AclEntry("admin", AclType.SECURED, adminGrants(), null);
+    }
+
+    private Map<String, List<AclMethod>> adminGrants() {
+        HashMap<String, List<AclMethod>> roles = new HashMap<>();
+        ArrayList<AclMethod> grants = new ArrayList<>();
+        grants.add(AclMethod.WRITE);
+        grants.add(AclMethod.READ);
+        grants.add(AclMethod.GRANT);
+        roles.put("ROLE_ADMIN", grants);
+        return roles;
     }
 
     public void createUser(String u) throws RepositoryException {
@@ -253,7 +236,12 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     public Object saveFile(Object file, String path, String user, String type, List<String> roles)
             throws RepositoryException {
         if (file == null) {
-            // Create new folder
+            // Create new folder. saiku#895 fix: the canWrite check below was
+            // previously INVERTED (`if (canWrite) throw`), denying writes to
+            // any user who actually had permission and permitting everyone
+            // else. Branch is dead code today (no REST caller reaches it
+            // with file == null), but left in place so a future folder-
+            // create caller doesn't trip the latent footgun.
             String parent;
             if (path.contains(sep)) {
                 parent = path.substring(0, path.lastIndexOf(sep));
@@ -263,8 +251,8 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             File node = getFolder(parent);
             Acl2 acl2 = new Acl2(node);
             acl2.setAdminRoles(userService.getAdminRoles());
-            if (acl2.canWrite(node, user, roles)) {
-                throw new SaikuServiceException("Can't write to file or folder");
+            if (!acl2.canWrite(node, user, roles)) {
+                throw new SaikuServiceException("You don't have permission to write to " + path);
             }
 
             int pos = path.lastIndexOf(sep);
@@ -273,11 +261,26 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             return null;
 
         } else {
+            // saiku#895: gate the actual file write on canWrite for the
+            // parent folder. The pre-fix code constructed the Acl2 but
+            // never consulted it, letting any authenticated user overwrite
+            // any path in the repository (including other users' homes
+            // and the shared /datasources tree).
             int pos = path.lastIndexOf(sep);
             String filename = "." + sep + path.substring(pos + 1, path.length());
-            File n = getFolder(path.substring(0, pos));
-            Acl2 acl2 = new Acl2(n);
+            File parent = getFolder(path.substring(0, pos));
+            // saiku#895: gate the write on canWrite. #940: when OVERWRITING an
+            // existing file, check that file's own ACL (which inherits the
+            // parent folder when it has no per-file entry) so a per-dashboard
+            // edit/PRIVATE setting is honoured; for a NEW file, fall back to
+            // the parent folder (you need folder-write to create a child).
+            File target = getNode(path);
+            File aclNode = target.exists() ? target : parent;
+            Acl2 acl2 = new Acl2(aclNode);
             acl2.setAdminRoles(userService.getAdminRoles());
+            if (!acl2.canWrite(aclNode, user, roles)) {
+                throw new SaikuServiceException("You don't have permission to write to " + path);
+            }
 
             File check = this.getNode(filename);
             if (check.exists()) {
@@ -307,18 +310,60 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     }
 
     public void removeFile(String path, String user, List<String> roles) throws RepositoryException {
+        // saiku#896: delete used to be gated on canRead — strictly weaker
+        // than the operation being performed. canRead is true for every
+        // authenticated user on un-ACL'd nodes (the default), which made
+        // delete a universal capability. canWrite is the correct minimum;
+        // an admin retains delete via the canWrite "admin-roles" override
+        // already baked into Acl2.
         File node = getFolder(path);
         Acl2 acl2 = new Acl2(node);
         acl2.setAdminRoles(userService.getAdminRoles());
-        if (!acl2.canRead(node, user, roles)) {
-            // TODO Throw exception
-            throw new RepositoryException();
+        if (!acl2.canWrite(node, user, roles)) {
+            throw new SaikuServiceException("You don't have permission to remove " + path);
         }
 
         this.getNode(path).delete();
     }
 
-    public void moveFile(String source, String target, String user, List<String> roles) throws RepositoryException {}
+    public void moveFile(String source, String target, String user, List<String> roles) throws RepositoryException {
+        // #937: catalogue folder rename/move depends on this. It used to be an
+        // empty stub, so RepositoryDatasourceManager.moveFile always returned
+        // "Move Okay" while nothing actually moved — the move silently reverted on
+        // reload. Implement a real filesystem move with the same canWrite ACL gate
+        // removeFile uses (the node is removed from its old location) plus
+        // path-traversal safety via getNode/resolveWithinDatadir on BOTH ends.
+        File src = getNode(source);
+        if (!src.exists()) {
+            throw new RepositoryException("Cannot move: source does not exist (" + source + ")");
+        }
+        Acl2 srcAcl = new Acl2(src);
+        srcAcl.setAdminRoles(userService.getAdminRoles());
+        if (!srcAcl.canWrite(src, user, roles)) {
+            throw new SaikuServiceException("You don't have permission to move " + source);
+        }
+        File dest = getNode(target);
+        if (dest.exists()) {
+            throw new RepositoryException("Cannot move: target already exists (" + target + ")");
+        }
+        File destParent = dest.getParentFile();
+        if (destParent != null && destParent.exists()) {
+            // Writing the node into its new parent requires write on that parent.
+            Acl2 destAcl = new Acl2(destParent);
+            destAcl.setAdminRoles(userService.getAdminRoles());
+            if (!destAcl.canWrite(destParent, user, roles)) {
+                throw new SaikuServiceException("You don't have permission to write to " + target);
+            }
+        }
+        if (destParent != null && !destParent.exists() && !destParent.mkdirs()) {
+            throw new RepositoryException("Cannot move: could not create destination folder for " + target);
+        }
+        try {
+            Files.move(src.toPath(), dest.toPath());
+        } catch (IOException e) {
+            throw new RepositoryException("Failed to move " + source + " to " + target + ": " + e.getMessage());
+        }
+    }
 
     public Object saveInternalFile(Object file, String path, String type) throws RepositoryException {
         File f = null;
@@ -333,20 +378,12 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
             String filename = path;
 
-            if (filename.equals("/etc/license.lic")) {
-                File check = new File(append + filename);
-                if (check.exists()) {
-                    check.delete();
-                }
-                f = new File(append + filename);
-            } else {
-                File check = this.getNode(filename);
-                if (check.exists()) {
-                    check.delete();
-                }
-
-                f = this.createNode(filename);
+            File check = this.getNode(filename);
+            if (check.exists()) {
+                check.delete();
             }
+
+            f = this.createNode(filename);
             FileWriter fileWriter;
             try {
                 fileWriter = new FileWriter(f);
@@ -420,19 +457,11 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
     public String getInternalFile(String s) throws RepositoryException {
         byte[] encoded = new byte[0];
-        if (!s.equals("/etc/license.lic")) {
-            Path resolved = resolveWithinDatadir(s);
-            try {
-                encoded = Files.readAllBytes(resolved);
-            } catch (IOException e) {
-                log.debug("Missing file", e);
-            }
-        } else {
-            try {
-                encoded = Files.readAllBytes(Paths.get(append + s));
-            } catch (IOException e) {
-                log.debug("Missing file", e);
-            }
+        Path resolved = resolveWithinDatadir(s);
+        try {
+            encoded = Files.readAllBytes(resolved);
+        } catch (IOException e) {
+            log.debug("Missing file", e);
         }
         try {
             return new String(encoded, "UTF-8");
@@ -473,8 +502,8 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         List<MondrianSchema> schema = new ArrayList<>();
 
         for (File file : files) {
-            try {
-                Scanner scanner = new Scanner(file);
+            // try-with-resources so each Scanner (and its file handle) is closed (saiku#1191).
+            try (Scanner scanner = new Scanner(file)) {
 
                 while (scanner.hasNextLine()) {
                     String line = scanner.nextLine();
@@ -536,13 +565,18 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     private AclEntry getAclObj(String path) {
         File node = null;
         try {
-            node = (File) getFolderNode(path);
+            // getFolder → resolveWithinDatadir → the real File (the broken
+            // getFolderNode/getAllFoldersInCurrentDirectory stub returned null,
+            // so every ACL read silently produced a default entry). Key the
+            // lookup by the node's absolute path to match how entries are
+            // persisted by setACL/seedAcl and read by Acl2.getMethods (#940).
+            node = getFolder(path);
         } catch (RepositoryException e) {
             log.error("Could not get file", e);
         }
         Acl2 acl2 = new Acl2(node);
         acl2.setAdminRoles(userService.getAdminRoles());
-        AclEntry entry = acl2.getEntry(path);
+        AclEntry entry = node != null ? acl2.getEntry(node.getPath()) : null;
         if (entry == null) entry = new AclEntry();
         return entry;
     }
@@ -550,7 +584,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
     public AclEntry getACL(String object, String username, List<String> roles) {
         File node = null;
         try {
-            node = (File) getFolderNode(object);
+            node = getFolder(object);
         } catch (RepositoryException e) {
             log.error("Could not get file/folder", e);
         }
@@ -577,7 +611,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
         File node = null;
         try {
-            node = (File) getFolderNode(object);
+            node = getFolder(object);
         } catch (RepositoryException e) {
             log.error("Could not get file/folder " + object, e);
         }
@@ -587,7 +621,13 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
         if (acl2.canGrant(node, username, roles)) {
             if (node != null) {
-                acl2.addEntry(object, ae);
+                // Key by absolute path (was the relative `object`, which never
+                // matched getMethods' file.getPath() lookup) and let serialize
+                // write to the node's acl-home — its parent folder's acl.json
+                // for a file — so a per-dashboard ACL actually persists and is
+                // enforced. The constructor pre-loaded sibling entries, so this
+                // merges instead of clobbering them (#940).
+                acl2.addEntry(node.getPath(), ae);
                 acl2.serialize(node);
             }
         }
@@ -624,7 +664,17 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
         String[] extensions = new String[1];
         extensions[0] = "sds";
-        Collection<File> files = FileUtils.listFiles(new File(append), extensions, true);
+        // Workspace scoping: getDatadir() resolves to the current request's
+        // workspace subdir (e.g. <append>/<workspace>/) when workspaces=true
+        // and a session.workspace attribute is set; otherwise it falls back
+        // to <append>/unknown/ — the legacy single-tenant behaviour.
+        //
+        // Previously this listed `new File(append)` which is the ROOT of
+        // all workspaces, recursively. That made `workspaces=true` cosmetic
+        // for datasource discovery — every tenant saw every other tenant's
+        // SDS files. The fix is a one-line swap to the same path resolver
+        // every other read/write method on this class already uses.
+        Collection<File> files = FileUtils.listFiles(new File(getDatadir()), extensions, true);
 
         for (File file : files) {
             JAXBContext jaxbContext = null;
@@ -768,8 +818,16 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
                                     }
 
                                     String extension = FilenameUtils.getExtension(file.getPath());
+                                    String owner = acl.getOwner(new File(relativePath));
+                                    long modified = file.lastModified();
                                     repoObjects.add(new RepositoryFileObject(
-                                            filename, "#" + relativePath, extension, relativePath, acls));
+                                            filename,
+                                            "#" + relativePath,
+                                            extension,
+                                            relativePath,
+                                            acls,
+                                            owner,
+                                            modified));
                                 }
                             }
                         }
@@ -817,36 +875,25 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         }
     }
 
+    /**
+     * Create {@code <datadir>/<path>} (mkdirs) and return the resolved
+     * filesystem {@link File} pointing at it.
+     *
+     * <p>Historically returned {@code new File(fixPath(path))} — i.e. the
+     * unresolved repo-relative path like {@code "/homes"} — which on Unix
+     * was interpreted as a filesystem-absolute path under the root
+     * directory. Downstream {@link Acl2#serialize} calls then tried to
+     * write {@code /homes/acl.json} (the OS root) and failed silently via
+     * Jackson's catch block, leaving the supposed default ACLs absent on
+     * disk. The new return value is the actual data-dir-relative File so
+     * ACLs land where the caller expects (closes the latent bug behind
+     * saiku#948).
+     */
     private File createFolder(String path) {
         String appended = fixPath(getDatadir() + path);
-        boolean success = (new File(appended)).mkdirs();
-        if (!success) {
-            // Directory creation failed
-        }
-        return new File(fixPath(path));
-    }
-
-    private void bootstrap(String ap) {
-
-        log.debug("creating: " + ap + "/etc");
-        new File(ap + "/etc").mkdirs();
-        boolean found = false;
-        if (new File(append + "/etc/license.lic").exists()) {
-            try {
-                FileUtils.copyFile(new File(append + "/etc/license.lic"), this.createNode("/etc/license.lic"));
-                found = true;
-            } catch (IOException e1) {
-                log.debug("Failed to find license 1");
-            }
-        }
-
-        if (!found) {
-            try {
-                FileUtils.copyFile(new File(append + "/unknown/etc/license.lic"), this.createNode("/etc/license.lic"));
-            } catch (IOException e2) {
-                log.debug("failed to find any licenses. Giving up");
-            }
-        }
+        File resolved = new File(appended);
+        resolved.mkdirs();
+        return resolved;
     }
 
     private File[] getAllFoldersInCurrentDirectory(String path) {
@@ -951,7 +998,7 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
                     if (!new File(append + "/" + workspace + "/").exists()) {
                         bootstrapping = true;
                         try {
-                            this.bootstrap(append + "/" + workspace);
+                            new File(append + "/" + workspace).mkdirs();
                             this.start(userService);
                         } finally {
                             bootstrapping = false;
@@ -962,10 +1009,10 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
                     return fixPath(append + "/" + workspace + "/");
                 } else {
                     log.debug("Workspace directory set to: unknown/");
-                    if (!new File(append + "/unknown/etc").exists()) {
+                    if (!new File(append + "/unknown/homes").exists()) {
                         bootstrapping = true;
                         try {
-                            this.bootstrap(append + "/unknown");
+                            new File(append + "/unknown").mkdirs();
                             this.start(userService);
                         } finally {
                             bootstrapping = false;
@@ -981,10 +1028,10 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
 
         String basePath = fixPath(append + "/unknown");
 
-        if (!bootstrapping && !new File(fixPath(basePath + "/etc")).exists()) {
+        if (!bootstrapping && !new File(fixPath(basePath + "/homes")).exists()) {
             bootstrapping = true;
             try {
-                this.bootstrap(basePath);
+                new File(basePath).mkdirs();
                 this.start(userService);
             } catch (RepositoryException e) {
                 log.error("Error while starting the repository manager", e);

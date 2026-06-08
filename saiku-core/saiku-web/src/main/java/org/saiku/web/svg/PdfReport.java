@@ -20,10 +20,7 @@ import java.awt.print.PageFormat;
 import java.awt.print.Paper;
 import java.io.ByteArrayOutputStream;
 import java.io.StringReader;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import org.apache.batik.transcoder.TranscoderInput;
 import org.apache.batik.transcoder.print.PrintTranscoder;
 import org.apache.commons.lang3.StringUtils;
@@ -37,6 +34,14 @@ public class PdfReport {
     private static final Logger log = LoggerFactory.getLogger(PdfReport.class);
 
     public byte[] pdf(CellDataSet c, String svg) {
+        return pdf(c, svg, null);
+    }
+
+    /** Same as {@link #pdf(CellDataSet, String)} but uses the supplied
+     *  document name as the running header (with a " — Page X" suffix
+     *  to surface page numbering). 2026-06-08 — replaces the stale
+     *  "Saiku Export - dd/MM/yyyy" header. */
+    public byte[] pdf(CellDataSet c, String svg, String documentName) {
         section.setRowBody(c.getCellSetBody());
         section.setRowHeader(c.getCellSetHeaders());
 
@@ -49,10 +54,13 @@ public class PdfReport {
         try {
             PdfWriter writer = PdfWriter.getInstance(document, baos);
             document.open();
-            DateFormat dateFormat = new SimpleDateFormat("dd/MM/yyyy");
-            Date date = new Date();
-            document.setHeader(
-                    new HeaderFooter(new Phrase("Saiku Export - " + dateFormat.format(date) + " Page: "), null));
+            String header = (documentName == null || documentName.isBlank()) ? "Saiku Export" : documentName;
+            // iText's HeaderFooter takes a "numbered" flag — true appends
+            // the current page number to the Phrase, giving "<name> 1",
+            // "<name> 2", &c. with no extra layout work.
+            HeaderFooter hf = new HeaderFooter(new Phrase(header + "    Page "), true);
+            hf.setBorder(0);
+            document.setHeader(hf);
 
             ArrayList<ReportData.Section> rowGroups =
                     section.section(c.getCellSetBody(), c.getCellSetHeaders(), 0, dim, null);
@@ -61,6 +69,9 @@ public class PdfReport {
 
             // do we want to add a svg image?
             if (StringUtils.isNotBlank(svg)) {
+                // saiku#1165: reject external refs / DOCTYPE before Batik parses it
+                // (SSRF / local-file-read / XXE via user-supplied SVG).
+                SvgSecurity.requireSafe(svg);
                 document.newPage();
                 StringBuilder s1 = new StringBuilder(svg);
                 if (!svg.startsWith("<svg xmlns=\"http://www.w3.org/2000/svg\" ")) {

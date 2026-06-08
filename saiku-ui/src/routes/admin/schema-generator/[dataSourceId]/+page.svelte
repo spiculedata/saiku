@@ -309,7 +309,7 @@
   .schemagen__title h1 {
     margin: 0;
     font-size: var(--fs-lg);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
   }
   .schemagen__dsid {
     font-family: var(--font-mono);
@@ -344,7 +344,7 @@
 
   .schemagen__pill {
     font-size: var(--fs-xs);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     padding: 3px var(--space-2);
     border-radius: 999px;
     text-transform: uppercase;
@@ -397,7 +397,7 @@
     font-size: var(--fs-sm);
   }
   .schemagen__delta-icon {
-    font-weight: 700;
+    font-weight: var(--weight-bold);
   }
 
   .schemagen__error button {

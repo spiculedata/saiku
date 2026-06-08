@@ -38,15 +38,47 @@ public class AsyncQueryHandle {
     private volatile long lastAccessedAt;
     private volatile boolean resultFetched;
 
+    /**
+     * Principal name of the user who submitted this query. Used by the
+     * resource layer to enforce that only the submitting user (or an admin)
+     * may poll status, fetch the result, cancel, or drill through the handle —
+     * UUID ids are unguessable but can leak (logs, Referer), so id-only lookup
+     * is an IDOR. {@code null} means "no owner bound" (no security context at
+     * submit time, e.g. unit tests), which only matches a {@code null} caller.
+     */
+    private volatile String owner;
+
     public AsyncQueryHandle(String id, ThinQuery query) {
+        this(id, query, null);
+    }
+
+    public AsyncQueryHandle(String id, ThinQuery query, String owner) {
         this.id = id;
         this.query = query;
+        this.owner = owner;
         this.submittedAt = System.currentTimeMillis();
         this.lastAccessedAt = this.submittedAt;
     }
 
     public String getId() {
         return id;
+    }
+
+    public String getOwner() {
+        return owner;
+    }
+
+    public void setOwner(String owner) {
+        this.owner = owner;
+    }
+
+    /**
+     * True when {@code principal} is allowed to access this handle: the owner
+     * matches exactly (including both {@code null}). Admin bypass is decided by
+     * the caller, not here.
+     */
+    public boolean isOwnedBy(String principal) {
+        return java.util.Objects.equals(this.owner, principal);
     }
 
     public long getSubmittedAt() {

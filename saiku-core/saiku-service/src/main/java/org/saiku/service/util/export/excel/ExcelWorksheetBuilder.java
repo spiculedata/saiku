@@ -242,7 +242,7 @@ public class ExcelWorksheetBuilder {
                     // Measure name
                     cell = row.createCell(0);
                     cell.setCellStyle(lighterHeaderCellCS);
-                    cell.setCellValue(measure.getCaption() + ":");
+                    cell.setCellValue(formulaSafe(measure.getCaption() + ":"));
 
                     // Measure aggregator
                     cell = row.createCell(1);
@@ -280,7 +280,7 @@ public class ExcelWorksheetBuilder {
                         // Measure name
                         cell = row.createCell(0);
                         cell.setCellStyle(lighterHeaderCellCS);
-                        cell.setCellValue(measure.getCaption() + ":");
+                        cell.setCellValue(formulaSafe(measure.getCaption() + ":"));
 
                         // Measure aggregator
                         cell = row.createCell(1);
@@ -364,11 +364,11 @@ public class ExcelWorksheetBuilder {
                     for (ThinMember i : s.getSelection().getMembers()) {
                         sheetRow = summarySheet.createRow((short) row);
                         cell = sheetRow.createCell(0);
-                        cell.setCellValue(item.getCaption());
+                        cell.setCellValue(formulaSafe(item.getCaption()));
                         cell = sheetRow.createCell(1);
-                        cell.setCellValue(s.getCaption());
+                        cell.setCellValue(formulaSafe(s.getCaption()));
                         cell = sheetRow.createCell(2);
-                        cell.setCellValue(i.getCaption());
+                        cell.setCellValue(formulaSafe(i.getCaption()));
                         row++;
                     }
                 }
@@ -458,7 +458,7 @@ public class ExcelWorksheetBuilder {
                 }
 
                 cell.setCellStyle(basicCS);
-                cell.setCellValue(value);
+                cell.setCellValue(formulaSafe(value));
                 // Use rawNumber only is there is a formatString
                 if (rowsetBody[x][y] instanceof DataCell) {
                     DataCell dataCell = (DataCell) rowsetBody[x][y];
@@ -563,7 +563,7 @@ public class ExcelWorksheetBuilder {
                         // Create row totals cell
                         Cell cell = sheetRow.createCell(column);
                         String value = aggregator.getFormattedValue();
-                        cell.setCellValue(value);
+                        cell.setCellValue(formulaSafe(value));
                         cell.setCellStyle(totalsCS);
                     }
                 }
@@ -610,7 +610,7 @@ public class ExcelWorksheetBuilder {
                     for (TotalAggregator[] aggregators : aggregatorsTable) {
                         Cell cell = sheetRow.createCell(column);
                         String value = aggregators[x].getFormattedValue();
-                        cell.setCellValue(value);
+                        cell.setCellValue(formulaSafe(value));
                         cell.setCellStyle(totalsCS);
                         column++;
                     }
@@ -635,7 +635,7 @@ public class ExcelWorksheetBuilder {
         if (header) {
             fillHeaderCell(sheetRow, value, y);
         } else {
-            cell.setCellValue(value);
+            cell.setCellValue(formulaSafe(value));
             cell.setCellStyle(basicCS);
         }
     }
@@ -890,8 +890,19 @@ public class ExcelWorksheetBuilder {
 
     private void fillHeaderCell(Row sheetRow, String formattedValue, int y) {
         Cell cell = sheetRow.createCell(y);
-        cell.setCellValue(formattedValue);
+        cell.setCellValue(formulaSafe(formattedValue));
         cell.setCellStyle(lighterHeaderCellCS);
+    }
+
+    /**
+     * Defang spreadsheet-formula payloads (a leading {@code = + - @}, tab or CR) in a
+     * data-derived cell value before writing it — mirrors the CSV export hardening so an
+     * attacker-influenced cube cell or member caption can't execute as a formula when the
+     * .xlsx is opened in Excel/Sheets (CWE-1236, saiku#1274 — Excel sibling of #1271).
+     * Plain numbers are left intact; null-safe.
+     */
+    private static String formulaSafe(String value) {
+        return org.saiku.service.util.export.CsvExporter.neutralizeCsvFormula(value);
     }
 
     /**
@@ -903,6 +914,12 @@ public class ExcelWorksheetBuilder {
 
         int width = 0;
         int x = 0;
+        // Null-guard: a measures-only query (no hierarchy on COLUMNS or ROWS)
+        // can leave the cellset with a null/empty header band. NPE'd through
+        // to the export endpoint as a 500 — see saiku 2026-06 export bug.
+        if (rowsetHeader == null) {
+            return 0;
+        }
         boolean exit = (rowsetHeader.length < 1 || rowsetHeader[0][0].getRawValue() != null);
         String cellValue = null;
 
@@ -925,6 +942,11 @@ public class ExcelWorksheetBuilder {
      * @return
      */
     private int findTopLeftCornerHeight() {
+        // Same null-guard as findTopLeftCornerWidth — measures-only queries
+        // yield a null header band.
+        if (rowsetHeader == null) {
+            return 0;
+        }
         return rowsetHeader.length > 0 ? rowsetHeader.length - 1 : 0;
     }
 

@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -23,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 /**
  * Created by bugg on 01/05/14.
@@ -58,6 +60,11 @@ public class Database {
             loadFoodmart();
         } catch (Exception e) {
             log.warn("Foodmart sample data not loaded: {}", e.getMessage());
+        }
+        try {
+            loadBank();
+        } catch (Exception e) {
+            log.warn("Bank (bridge demo) sample data not loaded: {}", e.getMessage());
         }
         try {
             loadEarthquakes();
@@ -173,6 +180,71 @@ public class Database {
 
                 statement.executeQuery("select 1");
             }
+        }
+    }
+
+    /**
+     * Bridge (many-to-many) demo: the joint-accounts "Bank" schema. Its mm_*
+     * tables live in the SAME H2 database as FoodMart (distinct names, no
+     * clash), so this reuses FoodMart's url + data dir — no extra config. On
+     * first run it RUNSCRIPTs bank.sql and registers the Bank datasource
+     * (two cubes: full-count + weighted). Requires the Calcite backend.
+     */
+    private void loadBank() throws SQLException {
+        String url = servletContext.getInitParameter("foodmart.url");
+        if (url == null || url.equals("${foodmart_url}")) {
+            return;
+        }
+        JdbcDataSource ds2 = new JdbcDataSource();
+        ds2.setURL(dsm.getFoodmarturl());
+        ds2.setUser("sa");
+        ds2.setPassword("");
+
+        Connection c = ds2.getConnection();
+        DatabaseMetaData dbm = c.getMetaData();
+        // Guard on the latest table in bank.sql (mm_monthly, the monthly
+        // fixture for the Monthly Revenue cube + TimeCalc demos —
+        // mondrian-saiku#112 / saiku#1220). Upgrading from a pre-#1220
+        // demo will find this table missing and re-run the (idempotent
+        // DROP IF EXISTS / CREATE TABLE) bank.sql to add it. Older guards
+        // on mm_owner / mm_txn would short-circuit and leave Mondrian
+        // crashing on "Table 'mm_calendar' does not exist".
+        ResultSet tables = dbm.getTables(null, null, "mm_monthly", null);
+        if (tables.next()) {
+            // Already loaded.
+            return;
+        }
+        Statement statement = c.createStatement();
+        statement.execute("RUNSCRIPT FROM '" + dsm.getFoodmartdir() + "/bank.sql'");
+        statement.executeQuery("select 1");
+
+        String schema = null;
+        try {
+            schema = readFile(dsm.getFoodmartdir() + "/Bank.xml", StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            log.error("Can't read Bank schema file", e);
+        }
+        try {
+            dsm.addSchema(schema, "/datasources/bank.xml", null);
+        } catch (Exception e) {
+            log.error("Can't add Bank schema file to repo", e);
+        }
+        String catalogUri =
+                new java.io.File(dsm.getFoodmartdir() + "/Bank.xml").toURI().toString();
+        Properties p = new Properties();
+        p.setProperty("driver", "mondrian.olap4j.MondrianOlap4jDriver");
+        p.setProperty(
+                "location",
+                "jdbc:mondrian:Jdbc=jdbc:h2:" + dsm.getFoodmartdir() + "/foodmart;" + "Catalog=" + catalogUri
+                        + ";JdbcDrivers=org.h2.Driver");
+        p.setProperty("username", "sa");
+        p.setProperty("password", "");
+        p.setProperty("id", "4432dd20-fcae-11e3-a3ac-0800200c9a68");
+        SaikuDatasource ds = new SaikuDatasource("bank", SaikuDatasource.Type.OLAP, p);
+        try {
+            dsm.addDatasource(ds);
+        } catch (Exception e) {
+            log.error("Can't add Bank data source to repo", e);
         }
     }
 
@@ -313,23 +385,39 @@ public class Database {
     private void updateForEncyption() throws SQLException {
         Connection c = ds.getConnection();
 
-        Statement statement = c.createStatement();
-        statement.execute("ALTER TABLE users ALTER COLUMN password VARCHAR(100) DEFAULT NULL");
-
-        ResultSet result = statement.executeQuery("select username, password from users");
-
-        while (result.next()) {
-            statement = c.createStatement();
-
-            String pword = result.getString("password");
-            String hashedPassword = passwordEncoder.encode(pword);
-            String sql = "UPDATE users " + "SET password = '" + hashedPassword + "' WHERE username = '"
-                    + result.getString("username") + "'";
-            statement.executeUpdate(sql);
+        try (Statement statement = c.createStatement()) {
+            statement.execute("ALTER TABLE users ALTER COLUMN password VARCHAR(100) DEFAULT NULL");
         }
-        statement = c.createStatement();
 
-        statement.execute("INSERT INTO LOG(log) VALUES('update passwords');");
+        encryptUserPasswords(c, passwordEncoder);
+
+        try (Statement logStatement = c.createStatement()) {
+            logStatement.execute("INSERT INTO LOG(log) VALUES('update passwords');");
+        }
+    }
+
+    /**
+     * Bcrypt every user's stored password, binding the username + hash as
+     * PreparedStatement parameters.
+     *
+     * <p>saiku#1155: the previous implementation string-concatenated the
+     * DB-sourced {@code username} into the UPDATE, so a username containing a
+     * single quote broke the migration and a crafted value such as
+     * {@code x' OR '1'='1} rewrote EVERY row's password with one hash
+     * (CWE-89). Parameter binding closes that. Package-private + static so the
+     * security regression test exercises this exact code path.
+     */
+    static void encryptUserPasswords(Connection c, PasswordEncoder encoder) throws SQLException {
+        try (Statement read = c.createStatement();
+                ResultSet result = read.executeQuery("select username, password from users");
+                PreparedStatement update = c.prepareStatement("UPDATE users SET password = ? WHERE username = ?")) {
+            while (result.next()) {
+                String hashedPassword = encoder.encode(result.getString("password"));
+                update.setString(1, hashedPassword);
+                update.setString(2, result.getString("username"));
+                update.executeUpdate();
+            }
+        }
     }
 
     private void loadLegacyDatasources() throws SQLException {

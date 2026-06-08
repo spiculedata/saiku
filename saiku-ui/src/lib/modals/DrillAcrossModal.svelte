@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import type { SaikuCube } from "$lib/api/discover";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -12,7 +13,7 @@
   }
 
   let { targets, open, onRun, onCancel }: Props = $props();
-  let picked = $state<string>(targets[0]?.uniqueName ?? "");
+  let picked = $state<string>(untrack(() => targets[0]?.uniqueName ?? ""));
 
   $effect(() => {
     if (open) picked = targets[0]?.uniqueName ?? "";

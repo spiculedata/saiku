@@ -15,6 +15,36 @@ import { DEFAULT_CHART_OPTIONS, type ChartOptions, type ChartType } from "$lib/v
 
 export type ViewMode = "grid" | "chart" | "stats" | "sparkline" | "sparkbar";
 
+/** Per-tab snapshot of the user-visible query state. Tabs store hands
+ *  one of these around when switching tabs to preserve work in flight.
+ *  Transient flags (running, error, abortController) deliberately
+ *  excluded — we cancel any in-flight query on snapshot rather than try
+ *  to carry async state across the swap. */
+export interface QueryStateSnapshot {
+  current: ThinQuery | null;
+  result: QueryResult | null;
+  savedPath: string | null;
+  viewMode: ViewMode;
+  chartType: ChartType;
+  chartOptions: ChartOptions;
+  dirty: boolean;
+  dirtyCount: number;
+}
+
+/** Build a fresh empty snapshot — what a brand-new tab starts with. */
+export function blankSnapshot(): QueryStateSnapshot {
+  return {
+    current: null,
+    result: null,
+    savedPath: null,
+    viewMode: "grid",
+    chartType: "bar",
+    chartOptions: { ...DEFAULT_CHART_OPTIONS },
+    dirty: false,
+    dirtyCount: 0,
+  };
+}
+
 /** Ensure a hydrated/loaded ThinQuery has a name safe to embed in a REST URL
  *  path segment. Saved-query files written by older builds stored the file
  *  path as `name`, which contains `/`. Jetty 12's strict URI compliance
@@ -64,6 +94,10 @@ class QueryStore {
   result = $state<QueryResult | null>(null);
   running = $state<boolean>(false);
   error = $state<string | null>(null);
+  /** Optional raw engine message for the error callout's "Show details"
+   *  panel. Operators copy-paste this into a support ticket — users see
+   *  the friendly text in {@link error}. */
+  errorDetail = $state<string | null>(null);
   dirty = $state<boolean>(false);
   dirtyCount = $state<number>(0);
   savedPath = $state<string | null>(null);
@@ -99,6 +133,7 @@ class QueryStore {
     this.current = newQuery(cube);
     this.result = null;
     this.error = null;
+    this.errorDetail = null;
     this.dirty = false;
     this.dirtyCount = 0;
     this.savedPath = null;
@@ -109,6 +144,7 @@ class QueryStore {
     this.current = withSafeName(parsed);
     this.result = null;
     this.error = null;
+    this.errorDetail = null;
     this.dirty = false;
     this.dirtyCount = 0;
     this.savedPath = path;
@@ -120,6 +156,7 @@ class QueryStore {
     this.current = withSafeName(q);
     this.result = null;
     this.error = null;
+    this.errorDetail = null;
     this.dirty = false;
     this.dirtyCount = 0;
     this.savedPath = savedPath;
@@ -140,9 +177,54 @@ class QueryStore {
     this.current = null;
     this.result = null;
     this.error = null;
+    this.errorDetail = null;
     this.dirty = false;
     this.dirtyCount = 0;
     this.savedPath = null;
+  }
+
+  /** Capture a serialisable snapshot of all per-tab user-visible state so
+   *  the tabs store can stash it before switching to a different tab.
+   *  Excludes transient flags (running, error, runningQueryId, elapsed)
+   *  — those don't survive tab switches; we cancel any in-flight query
+   *  in {@link snapshotAndReset} before restoring. */
+  snapshot(): QueryStateSnapshot {
+    return {
+      current: this.current,
+      result: this.result,
+      savedPath: this.savedPath,
+      viewMode: this.viewMode,
+      chartType: this.chartType,
+      chartOptions: this.chartOptions,
+      dirty: this.dirty,
+      dirtyCount: this.dirtyCount,
+    };
+  }
+
+  /** Cancel any in-flight query (so its response can't land on the wrong
+   *  tab), capture state, then return it. Used by the tabs store right
+   *  before {@link restore} swaps in another tab. */
+  snapshotAndReset(): QueryStateSnapshot {
+    if (this.running) this.cancel();
+    return this.snapshot();
+  }
+
+  /** Hydrate this store from a previously-captured snapshot. Used by the
+   *  tabs store on tab switch. */
+  restore(s: QueryStateSnapshot): void {
+    if (this.running) this.cancel();
+    this.current = s.current;
+    this.result = s.result;
+    this.savedPath = s.savedPath;
+    this.viewMode = s.viewMode;
+    this.chartType = s.chartType;
+    this.chartOptions = s.chartOptions;
+    this.dirty = s.dirty;
+    this.dirtyCount = s.dirtyCount;
+    this.error = null;
+    this.running = false;
+    this.runningQueryId = null;
+    this.runningElapsedMs = 0;
   }
 
   private findAxisForHierarchy(uniqueName: string): AxisLocation | null {
@@ -247,6 +329,25 @@ class QueryStore {
     this.markDirty();
   }
 
+  /** Remove a single level from a hierarchy chip. If it was the only
+   *  level, the hierarchy itself is dropped. Mirrors what the cellset
+   *  header's "Remove Level" right-click does, so both entry points
+   *  agree on what "remove" means. */
+  removeLevel(hierarchyName: string, levelName: string): void {
+    if (!this.current?.queryModel) return;
+    const loc = this.findAxisForHierarchy(hierarchyName);
+    if (!loc) return;
+    const hier = this.current.queryModel.axes[loc].hierarchies.find((h) => h.name === hierarchyName);
+    if (!hier) return;
+    if (!(levelName in hier.levels)) return;
+    delete hier.levels[levelName];
+    if (Object.keys(hier.levels).length === 0) {
+      this.removeHierarchy(hierarchyName);
+      return;
+    }
+    this.markDirty();
+  }
+
   addMeasure(m: ThinMeasure): void {
     if (!this.current?.queryModel) return;
     const list = this.current.queryModel.details.measures;
@@ -265,6 +366,24 @@ class QueryStore {
     if (!this.current?.queryModel) return;
     const details = this.current.queryModel.details;
     details.measures = details.measures.filter((m) => m.uniqueName !== uniqueName);
+    this.markDirty();
+  }
+
+  /** Where measures are projected onto the cellset:
+   *   axis ∈ {COLUMNS, ROWS}  — which axis the measure column group sits on
+   *   location ∈ {TOP, BOTTOM} — first or last in that axis's ordering
+   *
+   *  Mirrors the four "Position" options that the pre-rewrite Backbone
+   *  UI exposed off the Measures-panel gear (see WorkspaceDropZone.js
+   *  measure_action). The model and `Fat.convertDetails` already
+   *  honour any AxisLocation here — this method just makes the
+   *  flexibility user-controllable again. */
+  setMeasuresPlacement(axis: AxisLocation, location: "TOP" | "BOTTOM"): void {
+    if (!this.current?.queryModel) return;
+    const d = this.current.queryModel.details;
+    if (d.axis === axis && d.location === location) return;
+    d.axis = axis;
+    d.location = location;
     this.markDirty();
   }
 
@@ -331,9 +450,16 @@ class QueryStore {
   }
 
   hasRunnableShape(): boolean {
-    const q = this.current?.queryModel;
+    if (!this.current) return false;
+    // MDX-mode queries (raw expression set via MDXModal.onRun or the AI
+    // Query drawer's "Edit in canvas") bypass the queryModel surface — the
+    // server runs the raw mdx string and we just need it to be non-empty.
+    if (this.current.type === "MDX") {
+      return !!this.current.mdx && this.current.mdx.trim().length > 0;
+    }
+    const q = this.current.queryModel;
     if (!q) return false;
-    // A runnable shape needs at least one measure (on COLUMNS) AND at least
+    // QUERYMODEL-mode needs at least one measure (on COLUMNS) AND at least
     // one hierarchy on ROWS or COLUMNS. Running without either produces an
     // ugly server-side MDX error, so we silently short-circuit instead.
     const hasMeasure = q.details.measures.length > 0;
@@ -353,6 +479,7 @@ class QueryStore {
     }
     this.running = true;
     this.error = null;
+    this.errorDetail = null;
     this.runningQueryId = null;
     this.runningElapsedMs = 0;
     const startedAt = Date.now();
@@ -379,6 +506,16 @@ class QueryStore {
         }
       } else {
         this.result = await executeQuery(this.current);
+      }
+      // The backend always returns HTTP 200; engine failures (Mondrian /
+      // Calcite UnsupportedTranslation, MDX parse, datasource down, etc.)
+      // ride along in QueryResult.error with a null cellset. Surface them
+      // as a callout instead of rendering an empty grid.
+      const embedded = this.result?.error;
+      if (embedded) {
+        this.error = friendlyExecuteError(embedded);
+        this.errorDetail = embedded;
+        this.result = null;
       }
     } catch (err) {
       this.error = err instanceof Error ? err.message : String(err);
@@ -426,6 +563,32 @@ class QueryStore {
  *  shapes thrown by the query API when credentials lapse. */
 function isAuthError(message: string): boolean {
   return /\b(?:execute|execute-async|status|result)\s+40[13]\b/.test(message);
+}
+
+/** True when the engine error message names a backend translation /
+ *  internal failure that the user can't fix themselves (Mondrian
+ *  UnsupportedTranslation when Calcite refuses the SQL emission,
+ *  Calcite SqlValidatorException, RolapEvaluatorException, etc.). For
+ *  these, we hide the cryptic detail behind "Show details" and lead
+ *  with a contact-support callout. Other errors (MDX parse, bad cube
+ *  name, datasource down) get the raw message — they're usually
+ *  self-explanatory or fixable. */
+function isInternalEngineError(message: string): boolean {
+  if (!message) return false;
+  return /UnsupportedTranslation|SqlValidatorException|RolapEvaluatorException|InternalError|NullPointerException|CalciteContextException|AssertionError/i.test(
+    message,
+  );
+}
+
+/** Choose the user-facing message for an engine error coming back in
+ *  {@link QueryResult.error}. Internal/translation failures get a
+ *  contact-support callout; ordinary errors (parse, bad name) keep the
+ *  raw message so the user can fix them. */
+export function friendlyExecuteError(raw: string): string {
+  if (isInternalEngineError(raw)) {
+    return "Query failed to run. Please contact support.";
+  }
+  return raw;
 }
 
 export const query = new QueryStore();

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { X } from "lucide-svelte";
 </script>
 
 <div class="toast-stack" role="status" aria-live="polite">
@@ -15,10 +16,12 @@
       </div>
       <button
         type="button"
-        class="toast__close"
+        class="icon-btn toast__close"
         aria-label="Dismiss notification"
         onclick={() => toasts.dismiss(t.id)}
-      >×</button>
+      >
+        <X size={14} />
+      </button>
     </div>
   {/each}
 </div>
@@ -48,6 +51,7 @@
     box-shadow: var(--shadow-md);
     padding: var(--space-3);
     pointer-events: auto;
+    animation: saiku-panel-in var(--duration-normal) ease;
   }
   .toast--success { border-left-color: var(--success); }
   .toast--warning { border-left-color: var(--warning); }
@@ -61,13 +65,5 @@
   }
   .toast__title { font-size: var(--fs-md); }
   .toast__text { color: var(--fg-muted); }
-  .toast__close {
-    background: transparent;
-    border: 0;
-    color: var(--fg-muted);
-    cursor: pointer;
-    font-size: 18px;
-    line-height: 1;
-  }
-  .toast__close:hover { color: var(--fg); }
+  /* .toast__close inherits its shape from the global .icon-btn class. */
 </style>

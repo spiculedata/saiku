@@ -81,8 +81,8 @@
   .stats-wrap { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--border); background: var(--bg); border-radius: 4px; }
   .stats { border-collapse: separate; border-spacing: 0; width: 100%; font-size: var(--fs-sm); }
   .stats th, .stats td { padding: 6px 12px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
-  .stats thead th { position: sticky; top: 0; background: var(--bg-muted); color: var(--fg); font-weight: 600; }
-  .stats tbody th { background: var(--bg-muted); font-weight: 500; color: var(--fg); }
+  .stats thead th { position: sticky; top: 0; background: var(--bg-muted); color: var(--fg); font-weight: var(--weight-semibold); }
+  .stats tbody th { background: var(--bg-muted); font-weight: var(--weight-medium); color: var(--fg); }
   .stats td.n { text-align: right; font-variant-numeric: tabular-nums; }
   .empty { color: var(--fg-muted); padding: var(--space-4); }
 </style>

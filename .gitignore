@@ -23,6 +23,11 @@ saiku-core/saiku-service/repository.xml
 saiku-ui/target/
 osgitests/
 
+# Launcher runtime home — materialised next to the fat-JAR on first `serve`
+# (data, repository, sessions, logs, plugins, FoodMart H2 seed). Pure runtime
+# state; never commit it. Created wherever --home points (repo root in local dev).
+saiku-home/
+
 # Created by https://www.gitignore.io/api/vim,git,node,java,linux,macos,maven,windows,webstorm,jetbrains,sublimetext,jetbrains+all,visualstudiocode,eclipse,netbeans
 
 ### Git ###
@@ -466,3 +471,6 @@ nbdist/
 # otherwise swallow the vendored JARs.
 !/lib/repo/
 !/lib/repo/**
+
+# Claude Code session worktrees / scratch (never commit)
+.claude/

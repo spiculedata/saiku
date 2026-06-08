@@ -31,12 +31,13 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
@@ -112,7 +113,12 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
         String username = sessionService.getAllSessionObjects().get("username").toString();
         List<String> roles =
                 (List<String>) sessionService.getAllSessionObjects().get("roles");
-        String[] t = type.split(",");
+        // type=null is a perfectly valid "give me everything" call — the legacy
+        // unconditional split() NPE'd whenever a Basic-auth request hit a
+        // ScopedRepo cache populated by a prior form-login (CsrfIT was the
+        // first test to expose this). The separate ScopedRepo session-bleed
+        // is filed; this just stops the resource from NPEing under it.
+        String[] t = type == null ? new String[0] : type.split(",");
         List<IRepositoryObject> l;
 
         if (path == null) {
@@ -340,25 +346,60 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
             @FormDataParam("directory") String directory) {
         String zipFile = fileDetail.getFileName();
         String output = "";
+        ZipInputStream zis = null;
         try {
             if (StringUtils.isBlank(zipFile)) throw new Exception("You must specify a zip file to upload");
 
             output = "Uploding file: " + zipFile + " ...\r\n";
-            ZipInputStream zis = new ZipInputStream(uploadedInputStream);
+            // saiku#1165 hardening: bound decompression so a zip bomb can't OOM
+            // the server. The #1157 fix validated entry NAMES; this caps entry
+            // SIZES. Limits are on UNCOMPRESSED bytes actually read (the zip
+            // header sizes are attacker-controlled, so we can't trust them),
+            // plus a total-size and entry-count cap. All tunable via
+            // -Dsaiku.repo.zip* .
+            final long maxEntryBytes = longProp("saiku.repo.zipMaxEntryBytes", 10L * 1024 * 1024);
+            final long maxTotalBytes = longProp("saiku.repo.zipMaxTotalBytes", 50L * 1024 * 1024);
+            final int maxEntries = intProp("saiku.repo.zipMaxEntries", 1000);
+            long totalBytes = 0;
+            int entryCount = 0;
+            zis = new ZipInputStream(uploadedInputStream);
             ZipEntry ze = zis.getNextEntry();
             byte[] doc = null;
             boolean isFile = false;
             if (ze == null) {
-                doc = IOUtils.toByteArray(uploadedInputStream);
+                doc = readCapped(uploadedInputStream, maxEntryBytes);
                 isFile = true;
             }
             while (ze != null || doc != null) {
                 String fileName = null;
                 if (!isFile) {
                     fileName = ze.getName();
-                    doc = IOUtils.toByteArray(zis);
+                    doc = readCapped(zis, maxEntryBytes);
                 } else {
                     fileName = zipFile;
+                }
+                if (++entryCount > maxEntries) {
+                    throw new ZipLimitExceededException("archive has too many entries (limit " + maxEntries + ")");
+                }
+                totalBytes += doc.length;
+                if (totalBytes > maxTotalBytes) {
+                    throw new ZipLimitExceededException(
+                            "archive exceeds the total uncompressed size limit (" + maxTotalBytes + " bytes)");
+                }
+
+                // saiku#1157: zip-slip defense-in-depth. Reject a traversal /
+                // absolute entry name at the zip layer BEFORE it reaches
+                // saveResource (whose resolveWithinDatadir is the primary
+                // guard) so a future regression in the path resolver can't
+                // silently re-open the hole. Fail closed with a 400 naming the
+                // offending entry; nothing further in the archive is written.
+                if (isUnsafeZipEntryName(fileName)) {
+                    log.warn("Rejected unsafe zip entry name (saiku#1157): {}", fileName);
+                    return Response.status(Status.BAD_REQUEST)
+                            .entity(output + "REJECTED: unsafe entry name '" + fileName
+                                    + "' — path traversal / absolute paths are not allowed.\r\n")
+                            .type("text/plain")
+                            .build();
                 }
 
                 output += "Saving " + fileName + "... ";
@@ -378,17 +419,114 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
 
             if (!isFile) {
                 zis.closeEntry();
-                zis.close();
             }
-            uploadedInputStream.close();
 
             output += " SUCCESSFUL!\r\n";
             return Response.ok(output).build();
 
+        } catch (ZipLimitExceededException e) {
+            // saiku#1165: a decompression-size guard tripped — treat as a bad
+            // upload (400), not a server error, and never write a partial result.
+            log.warn("Rejected oversized zip upload (saiku#1165): {}", e.getMessage());
+            return Response.status(Status.BAD_REQUEST)
+                    .entity(output + "REJECTED: " + e.getMessage() + "\r\n")
+                    .type("text/plain")
+                    .build();
         } catch (Exception e) {
             log.error("Cannot unzip resources " + zipFile, e);
             String error = ExceptionUtils.getRootCauseMessage(e);
             return Response.serverError().entity(output + "\r\n" + error).build();
+        } finally {
+            // saiku#1191: close the zip + multipart streams on every path — the success
+            // path used to do this inline, but the unsafe-entry early return and the
+            // zip-bomb/size-limit throws (saiku#1157/#1165) skipped it and leaked the
+            // upload stream. Closing the ZipInputStream also closes the wrapped
+            // uploadedInputStream; the second close is a null-safe no-op fallback for the
+            // case where an error fired before the ZipInputStream was created.
+            if (zis != null) {
+                try {
+                    zis.close();
+                } catch (IOException ignored) {
+                    // ignore
+                }
+            }
+            try {
+                uploadedInputStream.close();
+            } catch (IOException ignored) {
+                // ignore
+            }
         }
+    }
+
+    /**
+     * saiku#1165: read at most {@code max} uncompressed bytes from {@code in}
+     * (a single zip entry, or the whole non-zip upload), throwing rather than
+     * buffering an unbounded amount — the defense against a zip bomb.
+     */
+    static byte[] readCapped(InputStream in, long max) throws IOException {
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        long total = 0;
+        int n;
+        while ((n = in.read(buf)) != -1) {
+            total += n;
+            if (total > max) {
+                throw new ZipLimitExceededException(
+                        "a zip entry exceeds the per-entry uncompressed size limit (" + max + " bytes)");
+            }
+            bos.write(buf, 0, n);
+        }
+        return bos.toByteArray();
+    }
+
+    private static long longProp(String name, long def) {
+        try {
+            String v = System.getProperty(name);
+            return v == null ? def : Long.parseLong(v.trim());
+        } catch (NumberFormatException e) {
+            return def;
+        }
+    }
+
+    private static int intProp(String name, int def) {
+        try {
+            String v = System.getProperty(name);
+            return v == null ? def : Integer.parseInt(v.trim());
+        } catch (NumberFormatException e) {
+            return def;
+        }
+    }
+
+    /** Thrown when an uploaded archive breaches a decompression safety limit (saiku#1165). */
+    static final class ZipLimitExceededException extends IOException {
+        ZipLimitExceededException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * saiku#1157: defense-in-depth zip-slip guard. Returns {@code true} when a
+     * zip archive entry name could escape the target directory and must be
+     * rejected before {@code saveResource} is called. A name is unsafe when it
+     * is blank, absolute (a unix leading {@code /}, a Windows drive like
+     * {@code C:\}, or a leading backslash / UNC path), or contains a
+     * {@code ..} path segment after separator normalisation. The downstream
+     * {@code FilesystemRepositoryManager.resolveWithinDatadir} remains the
+     * primary guard; this is a second, independent layer.
+     */
+    static boolean isUnsafeZipEntryName(String name) {
+        if (StringUtils.isBlank(name)) return true;
+        String normalized = name.replace('\\', '/');
+        if (normalized.startsWith("/")) return true; // unix-absolute or leading slash (also catches UNC)
+        if (normalized.matches("(?i)^[a-z]:/.*")) return true; // Windows drive-absolute, e.g. C:/ or C:\
+        for (String segment : normalized.split("/")) {
+            if (segment.equals("..")) return true; // traversal segment
+        }
+        try {
+            if (Paths.get(name).isAbsolute()) return true; // platform-specific backstop
+        } catch (InvalidPathException e) {
+            return true; // not a legal path on this platform → reject
+        }
+        return false;
     }
 }

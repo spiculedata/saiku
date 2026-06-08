@@ -49,6 +49,21 @@ public class AiSchemaConverterTest {
         product.hierarchies.put(AiSchema.key("Product"), productH);
         schema.dimensions.put(AiSchema.key("Product"), product);
 
+        // Store + Gender — extra distinct hierarchies used by the multi-filter
+        // CROSSJOIN-of-sets characterization tests (saiku#801).
+        AiSchema.Dimension store = new AiSchema.Dimension("Store", "[Store]");
+        AiSchema.Hierarchy storeH = new AiSchema.Hierarchy("Store", "[Store].[Store]");
+        storeH.levels.put(
+                AiSchema.key("Store Country"), new AiSchema.Level("Store Country", "[Store].[Store].[Store Country]"));
+        store.hierarchies.put(AiSchema.key("Store"), storeH);
+        schema.dimensions.put(AiSchema.key("Store"), store);
+
+        AiSchema.Dimension gender = new AiSchema.Dimension("Gender", "[Gender]");
+        AiSchema.Hierarchy genderH = new AiSchema.Hierarchy("Gender", "[Gender].[Gender]");
+        genderH.levels.put(AiSchema.key("Gender"), new AiSchema.Level("Gender", "[Gender].[Gender].[Gender]"));
+        gender.hierarchies.put(AiSchema.key("Gender"), genderH);
+        schema.dimensions.put(AiSchema.key("Gender"), gender);
+
         converter = new AiSchemaConverter();
     }
 
@@ -760,6 +775,136 @@ public class AiSchemaConverterTest {
             assertTrue(e.getField(), e.getField().endsWith(".hierarchy"));
             assertTrue(e.getMessage(), e.getMessage().contains("Multiple filters target hierarchy"));
         }
+    }
+
+    /* ------- characterization: multi-filter CROSSJOIN-of-sets rewrite (saiku#801) ------- */
+
+    @Test
+    public void twoDistinctHierarchyFiltersOneSetEmitCrossjoinSlicer() {
+        // filters.size() >= 2 AND at least one filter is a set -> the bare
+        // tuple-of-sets '({set}, member)' is illegal; rewrite to a single
+        // CROSSJOIN-of-the-constituent-elements slicer (saiku#801). Filter A
+        // is a 2-member 'in' (a set); filter B is a single-member 'in' (a
+        // bare member). Distinct hierarchies (Time vs Product).
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Store", "Store", "Store Country")));
+        AiFilterSelection a = new AiFilterSelection(
+                "Time",
+                "Time By",
+                "Year",
+                Arrays.asList("[Time].[Time By].[Year].&[1997]", "[Time].[Time By].[Year].&[1998]"));
+        AiFilterSelection b = new AiFilterSelection(
+                "Product", "Product", "Department", Collections.singletonList("[Product].[Product].[Drink]"));
+        req.setFilters(Arrays.asList(a, b));
+
+        ThinQuery tq = converter.convert(req, schema);
+
+        assertTrue(
+                "two-filter set slicer must rewrite to CROSSJOIN: " + tq.getMdx(),
+                tq.getMdx()
+                        .contains(
+                                "WHERE (CROSSJOIN({[Time].[Time By].[Year].&[1997], [Time].[Time By].[Year].&[1998]}, "
+                                        + "[Product].[Product].[Drink]))"));
+    }
+
+    @Test
+    public void threeDistinctHierarchySetFiltersEmitLeftNestedCrossjoin() {
+        // Three distinct-hierarchy set filters lock the left-nested
+        // CROSSJOIN(CROSSJOIN(e1, e2), e3) shape AND splitTopLevelCommas's
+        // handling of commas inside braces. All three are 2-member 'in' sets.
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Store", "Store", "Store Country")));
+        AiFilterSelection a = new AiFilterSelection(
+                "Time",
+                "Time By",
+                "Year",
+                Arrays.asList("[Time].[Time By].[Year].&[1997]", "[Time].[Time By].[Year].&[1998]"));
+        AiFilterSelection b = new AiFilterSelection(
+                "Product",
+                "Product",
+                "Department",
+                Arrays.asList("[Product].[Product].[Drink]", "[Product].[Product].[Food]"));
+        AiFilterSelection c = new AiFilterSelection(
+                "Gender", "Gender", "Gender", Arrays.asList("[Gender].[Gender].[F]", "[Gender].[Gender].[M]"));
+        req.setFilters(Arrays.asList(a, b, c));
+
+        ThinQuery tq = converter.convert(req, schema);
+
+        assertTrue(
+                "three-filter set slicer must left-nest CROSSJOIN: " + tq.getMdx(),
+                tq.getMdx()
+                        .contains("WHERE (CROSSJOIN(CROSSJOIN("
+                                + "{[Time].[Time By].[Year].&[1997], [Time].[Time By].[Year].&[1998]}, "
+                                + "{[Product].[Product].[Drink], [Product].[Product].[Food]}), "
+                                + "{[Gender].[Gender].[F], [Gender].[Gender].[M]}))"));
+    }
+
+    @Test
+    public void twoDistinctHierarchyFiltersNoSetKeepBareTuple() {
+        // filters.size() >= 2 but NEITHER is a set (both single-member 'in')
+        // -> NO CROSSJOIN rewrite; the bare tuple form is kept.
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Store", "Store", "Store Country")));
+        AiFilterSelection a = new AiFilterSelection(
+                "Time", "Time By", "Year", Collections.singletonList("[Time].[Time By].[Year].&[1997]"));
+        AiFilterSelection b = new AiFilterSelection(
+                "Product", "Product", "Department", Collections.singletonList("[Product].[Product].[Drink]"));
+        req.setFilters(Arrays.asList(a, b));
+
+        ThinQuery tq = converter.convert(req, schema);
+
+        assertTrue(
+                "two single-member filters must keep bare tuple: " + tq.getMdx(),
+                tq.getMdx().contains("WHERE ([Time].[Time By].[Year].&[1997], [Product].[Product].[Drink])"));
+        assertTrue(
+                "no-set two-filter slicer must NOT rewrite to CROSSJOIN: " + tq.getMdx(),
+                !tq.getMdx().contains("CROSSJOIN("));
+    }
+
+    /* ------- characterization: per-filter dedupe-by-leaf (saiku#804) ------- */
+
+    @Test
+    public void inFilterTwoRefFormsSameLeafRejectedAsDuplicate() {
+        // Two ref forms ('.&[1997]' key form and '.[1997]' name form) share
+        // leaf '1997' -> resolve to the same member -> dedupe rejects the
+        // second with a field path ending '.members[1]'.
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection(
+                "Time",
+                "Time By",
+                "Year",
+                Arrays.asList("[Time].[Time By].[Year].&[1997]", "[Time].[Time By].[Year].[1997]"));
+        req.setFilters(Collections.singletonList(f));
+
+        try {
+            converter.convert(req, schema);
+            fail("expected validation error — duplicate-by-leaf within one filter");
+        } catch (AiValidationException e) {
+            assertTrue(e.getField(), e.getField().endsWith(".members[1]"));
+            assertTrue(e.getMessage(), e.getMessage().contains("resolves to the same member"));
+        }
+    }
+
+    @Test
+    public void betweenFilterDegenerateSameMemberRangeNotDeduped() {
+        // op=between SKIPS the dedupe pass — a degenerate [X]:[X] range
+        // (same start and end) is the legitimate "single-member range" form.
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Product", "Product", "Department")));
+        AiFilterSelection f = new AiFilterSelection(
+                "Time",
+                "Time By",
+                "Year",
+                Arrays.asList("[Time].[Time By].[Year].&[1997]", "[Time].[Time By].[Year].&[1997]"));
+        f.setOp("between");
+        req.setFilters(Collections.singletonList(f));
+
+        ThinQuery tq = converter.convert(req, schema);
+
+        assertTrue(
+                "degenerate between range must emit the bare range: " + tq.getMdx(),
+                tq.getMdx().contains("WHERE ({[Time].[Time By].[Year].&[1997] : [Time].[Time By].[Year].&[1997]})"));
     }
 
     /* ----------------------- saiku#777: VISUALTOTALS ----------------------- */

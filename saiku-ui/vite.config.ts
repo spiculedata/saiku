@@ -23,7 +23,6 @@ export default defineConfig({
       $lib: fileURLToPath(new URL("./src/lib", import.meta.url)),
     },
   },
-  // @ts-expect-error vitest augments Vite's UserConfig with `test`
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],

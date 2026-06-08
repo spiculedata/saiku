@@ -15,8 +15,10 @@
  */
 package org.saiku.olap.discover;
 
+import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -132,20 +134,28 @@ public class OlapMetaExplorer {
 
     public List<SaikuCube> getCubes(String connectionName) throws SaikuOlapException {
         OlapConnection olapcon = connections.getOlapConnection(connectionName);
+        // saiku#1221 Phase 3: cache the connection's catalog-XML URL once per
+        // call so we can parse TimeCalc directives per cube. Empty when the
+        // connection isn't configured with a Mondrian Catalog= URL.
+        String catalogUrl = resolveCatalogUrl(connectionName);
         List<SaikuCube> cubes = new ArrayList<>();
         if (olapcon != null) {
             try {
                 for (Catalog cat : olapcon.getOlapCatalogs()) {
                     for (Schema schem : cat.getSchemas()) {
                         for (Cube cub : schem.getCubes()) {
-                            cubes.add(new SaikuCube(
+                            SaikuCube sc = new SaikuCube(
                                     connectionName,
                                     cub.getUniqueName(),
                                     cub.getName(),
                                     cub.getCaption(),
                                     cat.getName(),
                                     schem.getName(),
-                                    cub.isVisible()));
+                                    cub.isVisible());
+                            if (catalogUrl != null) {
+                                sc.setTimeCalcs(org.saiku.olap.util.TimeCalcParser.parse(catalogUrl, cub.getName()));
+                            }
+                            cubes.add(sc);
                         }
                     }
                 }
@@ -155,6 +165,23 @@ public class OlapMetaExplorer {
         }
         Collections.sort(cubes, new SaikuCubeCaptionComparator());
         return cubes;
+    }
+
+    /** Pull the {@code Catalog=} URL out of a connection's {@code location}
+     *  property (the Mondrian connection string). Returns {@code null} when
+     *  the connection doesn't expose one — TimeCalc surfacing is a nice-to-
+     *  have, never load-bearing. */
+    private String resolveCatalogUrl(String connectionName) {
+        try {
+            org.saiku.datasources.connection.ISaikuConnection scon = connections.getConnection(connectionName);
+            if (scon == null) return null;
+            java.util.Properties props = scon.getProperties();
+            if (props == null) return null;
+            String location = props.getProperty(org.saiku.datasources.connection.ISaikuConnection.URL_KEY);
+            return org.saiku.olap.util.TimeCalcParser.extractCatalogUrl(location);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     public List<SaikuCube> getCubes(List<String> connectionNames) throws SaikuOlapException {
@@ -336,10 +363,21 @@ public class OlapMetaExplorer {
                 if (isMondrian(nativeCube)) {
                     if (SaikuMondrianHelper.hasAnnotation(l, MondrianDictionary.SQLMemberLookup)) {
                         if (search) {
+                            // getSQLMemberLookup returns a live ResultSet backed by its own JDBC
+                            // Connection + Statement (opened from the Mondrian RolapConnection's
+                            // DataSource). The helper can't close them without losing the ResultSet,
+                            // and this caller previously dropped all three — a JDBC connection leak on
+                            // every SQL member search. Materialise, then close the ResultSet and its
+                            // owning Statement + Connection (saiku#1191).
                             ResultSet rs = SaikuMondrianHelper.getSQLMemberLookup(
                                     con, MondrianDictionary.SQLMemberLookup, l, searchString);
-                            simpleMembers = ObjectUtil.convert2simple(rs);
-                            log.debug("Found " + simpleMembers.size() + " members using SQL lookup for level " + level);
+                            try {
+                                simpleMembers = ObjectUtil.convert2simple(rs);
+                                log.debug("Found " + simpleMembers.size() + " members using SQL lookup for level "
+                                        + level);
+                            } finally {
+                                closeResultSetWithOwner(rs);
+                            }
                             return simpleMembers;
                         } else {
                             return new ArrayList<>();
@@ -394,6 +432,47 @@ public class OlapMetaExplorer {
         }
 
         return new ArrayList<>();
+    }
+
+    /**
+     * Close a ResultSet returned by {@link SaikuMondrianHelper#getSQLMemberLookup} together with the
+     * JDBC Statement and Connection that own it. The lookup helper opens a fresh connection from the
+     * Mondrian DataSource and hands back only the ResultSet, so closing the ResultSet alone would
+     * leak the Statement and (pooled) Connection. Best-effort and null-safe (saiku#1191).
+     */
+    private static void closeResultSetWithOwner(ResultSet rs) {
+        if (rs == null) {
+            return;
+        }
+        Statement st = null;
+        Connection cn = null;
+        try {
+            st = rs.getStatement();
+            if (st != null) {
+                cn = st.getConnection();
+            }
+        } catch (SQLException ignored) {
+            // best-effort recovery of the owning Statement/Connection
+        }
+        try {
+            rs.close();
+        } catch (SQLException ignored) {
+            // ignore
+        }
+        if (st != null) {
+            try {
+                st.close();
+            } catch (SQLException ignored) {
+                // ignore
+            }
+        }
+        if (cn != null) {
+            try {
+                cn.close();
+            } catch (SQLException ignored) {
+                // ignore
+            }
+        }
     }
 
     public List<SaikuMember> getMemberChildren(SaikuCube cube, String uniqueMemberName) throws SaikuOlapException {

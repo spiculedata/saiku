@@ -6,9 +6,10 @@
   import SchemasAdmin from "$lib/views/admin/SchemasAdmin.svelte";
   import LogsAdmin from "$lib/views/admin/LogsAdmin.svelte";
   import StatsAdmin from "$lib/views/admin/StatsAdmin.svelte";
+  import ApiAccessAdmin from "$lib/views/admin/ApiAccessAdmin.svelte";
   import LoginForm from "$lib/views/LoginForm.svelte";
 
-  type Tab = "users" | "datasources" | "schemas" | "logs" | "stats";
+  type Tab = "users" | "datasources" | "schemas" | "logs" | "stats" | "api";
   let tab = $state<Tab>("users");
 </script>
 
@@ -23,13 +24,14 @@
   </div>
 {:else}
   <div class="admin">
-    <nav class="admin__tabs" role="tablist">
+    <div class="admin__tabs" role="tablist">
       <button type="button" role="tab" class:active={tab === "users"} onclick={() => (tab = "users")}>{i18n.t("admin.tabs.users")}</button>
       <button type="button" role="tab" class:active={tab === "datasources"} onclick={() => (tab = "datasources")}>{i18n.t("admin.tabs.datasources")}</button>
       <button type="button" role="tab" class:active={tab === "schemas"} onclick={() => (tab = "schemas")}>{i18n.t("admin.tabs.schemas")}</button>
       <button type="button" role="tab" class:active={tab === "logs"} onclick={() => (tab = "logs")}>{i18n.t("admin.tabs.logs")}</button>
       <button type="button" role="tab" class:active={tab === "stats"} onclick={() => (tab = "stats")}>{i18n.t("admin.tabs.stats")}</button>
-    </nav>
+      <button type="button" role="tab" class:active={tab === "api"} onclick={() => (tab = "api")}>API access</button>
+    </div>
     <section class="admin__body">
       {#if tab === "users"}
         <UsersAdmin />
@@ -39,8 +41,10 @@
         <SchemasAdmin />
       {:else if tab === "logs"}
         <LogsAdmin />
-      {:else}
+      {:else if tab === "stats"}
         <StatsAdmin />
+      {:else}
+        <ApiAccessAdmin defaultOpen={true} />
       {/if}
     </section>
   </div>

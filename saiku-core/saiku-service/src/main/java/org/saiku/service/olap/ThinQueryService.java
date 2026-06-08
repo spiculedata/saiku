@@ -91,6 +91,7 @@ import org.saiku.service.olap.totals.AxisInfo;
 import org.saiku.service.olap.totals.TotalNode;
 import org.saiku.service.olap.totals.TotalsListsBuilder;
 import org.saiku.service.olap.totals.aggregators.TotalAggregator;
+import org.saiku.service.user.UserService;
 import org.saiku.service.util.KeyValue;
 import org.saiku.service.util.QueryContext;
 import org.saiku.service.util.QueryContext.ObjectKey;
@@ -121,6 +122,20 @@ public class ThinQueryService implements Serializable {
     /** Optional disk-backed Arrow cache. Null (or disabled) ⇒ always execute live. */
     private SaikuQueryCache queryCache;
 
+    /** Optional in-flight query coalescer (saiku#946). Null/disabled ⇒ every
+     *  call executes independently. Dedupes concurrent identical executions. */
+    private QueryCoalescer queryCoalescer;
+
+    /**
+     * Optional — current user's Saiku role-set, mixed into the cache key so role-masked
+     * cellsets never leak across roles (saiku#1114). Null in non-Spring/standalone contexts.
+     */
+    private UserService userService;
+
+    public void setUserService(UserService userService) {
+        this.userService = userService;
+    }
+
     public void setOlapDiscoverService(OlapDiscoverService os) {
         this.olapDiscoverService = os;
     }
@@ -135,6 +150,14 @@ public class ThinQueryService implements Serializable {
 
     public SaikuQueryCache getQueryCache() {
         return queryCache;
+    }
+
+    public void setQueryCoalescer(QueryCoalescer queryCoalescer) {
+        this.queryCoalescer = queryCoalescer;
+    }
+
+    public QueryCoalescer getQueryCoalescer() {
+        return queryCoalescer;
     }
 
     /**
@@ -165,7 +188,9 @@ public class ThinQueryService implements Serializable {
         createQuery(tq);
 
         final String cubeVersion = QueryCacheKey.cubeVersion(tq);
-        final String key = QueryCacheKey.of(tq, cubeVersion);
+        // Mix the caller's role-set into the key so a role-masked cellset is never served
+        // to a different role from cache (saiku#1114). Empty role-set ⇒ same key as before.
+        final String key = cacheKeyFor(tq, cubeVersion);
 
         if (queryCache == null || !queryCache.isEnabled()) {
             CachedQueryResult r = runAndMaterialise(tq);
@@ -187,6 +212,54 @@ public class ThinQueryService implements Serializable {
                 result.rows,
                 tq.getName());
         return result;
+    }
+
+    /**
+     * Package-private seam (saiku#1114) so the role-aware cache key is unit-testable without a
+     * live olap connection: builds the cellset cache key for {@code tq} exactly as {@link
+     * #executeCached} does, mixing in the current user's Mondrian role-set via {@link
+     * #currentRolesForCacheKey()}. The original #1114 leak was the call-site omitting the
+     * role-set — this IS that call-site, so the wiring (not just {@link QueryCacheKey#of}) is
+     * pinned by {@code ThinQueryServiceCacheKeyTest}.
+     */
+    String cacheKeyFor(ThinQuery tq, String cubeVersion) {
+        return QueryCacheKey.of(tq, cubeVersion, currentRolesForCacheKey());
+    }
+
+    /**
+     * Coalescing key (saiku#946) — the SAME role-aware identity the result cache
+     * uses (cube + MDX/model + slicer + role-set), so concurrent identical
+     * executions dedupe and a role-masked result is never shared across roles
+     * (the #1114 hazard). Formatter is intentionally NOT in the key: coalescing
+     * is on the formatter-independent CellSet (Mondrian execution); each caller
+     * formats its own copy afterwards. Returns null (⇒ no coalescing) if a key
+     * can't be built, so a keying failure never breaks the query.
+     */
+    private String coalesceKey(ThinQuery tq) {
+        try {
+            return cacheKeyFor(tq, QueryCacheKey.cubeVersion(tq));
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /**
+     * The current user's Saiku role-set for cache-key isolation, or empty when it can't be
+     * resolved (no Spring/session context — boot, scheduled tasks, standalone). Never throws:
+     * a missing context must not fail the query, and an empty set hashes to the legacy key.
+     */
+    private java.util.Collection<String> currentRolesForCacheKey() {
+        if (userService == null) {
+            return java.util.Collections.emptyList();
+        }
+        try {
+            String[] roles = userService.getCurrentUserRoles();
+            return roles == null ? java.util.Collections.emptyList() : java.util.Arrays.asList(roles);
+        } catch (Exception e) {
+            // No security/session context available — degrade to an unkeyed (role-less) cache
+            // entry rather than failing the query.
+            return java.util.Collections.emptyList();
+        }
     }
 
     /** Live-execute the query and encode the CellSet to Arrow IPC bytes. */
@@ -221,14 +294,21 @@ public class ThinQueryService implements Serializable {
         }
         Map<String, Object> cubeProperties = olapDiscoverService.getProperties(tq.getCube());
         tq.getProperties().putAll(cubeProperties);
-        if (!context.containsKey(tq.getName())) {
-            //			Cube cub = olapDiscoverService.getNativeCube(tq.getCube());
-            //			Query query = new Query(tq.getName(), cub);
-            //			tq = Thin.convert(query, tq.getCube());
-            QueryContext qt = new QueryContext(Type.OLAP, tq);
-            qt.store(ObjectKey.QUERY, tq);
+        QueryContext qt = context.get(tq.getName());
+        if (qt == null) {
+            qt = new QueryContext(Type.OLAP, tq);
             this.context.put(tq.getName(), qt);
         }
+        // saiku#1131: always refresh the QUERY pointer with the inbound
+        // ThinQuery. The pre-fix code only stored on first-create, leaving
+        // a stale ThinQuery in ObjectKey.QUERY when a subsequent call
+        // reused the same queryName but changed type / mdx / queryModel
+        // (e.g. workspace flipping from QUERYMODEL to MDX after the user
+        // clicked Edit-in-canvas in the AI Query drawer). Downstream
+        // readers like ArrowCellsetWriter pull mdx from
+        // queryContext.getOlapQuery(), so the stale entry would surface
+        // the prior mdx + 0 rows even though the wire request was valid.
+        qt.store(ObjectKey.QUERY, tq);
         return tq;
     }
 
@@ -354,7 +434,26 @@ public class ThinQueryService implements Serializable {
 
             Long start = (new Date()).getTime();
             log.debug("Query Start");
-            CellSet cellSet = executeInternalQuery(tq);
+            // saiku#946: dedupe concurrent identical executions. The first caller
+            // for a (cube,MDX,slicer,role) key runs the Mondrian query; concurrent
+            // callers share its CellSet for a short window. A coalesced caller
+            // skipped executeInternalQuery (which registers per-name context), so we
+            // re-register the shared result onto THIS caller's context — otherwise
+            // drillthrough/cancel on a coalesced tile would NPE on a null context.
+            CellSet cellSet;
+            final String coalesceKey = (queryCoalescer != null && queryCoalescer.isEnabled()) ? coalesceKey(tq) : null;
+            if (coalesceKey != null) {
+                cellSet = queryCoalescer.coalesce(coalesceKey, () -> {
+                    try {
+                        return executeInternalQuery(tq);
+                    } catch (Exception e) {
+                        throw new SaikuServiceException("Can't execute query: " + tq.getName(), e);
+                    }
+                });
+                registerExternalContext(tq, cellSet);
+            } else {
+                cellSet = executeInternalQuery(tq);
+            }
             log.debug("Query End");
             String runId = "RUN#:" + ID_GENERATOR.get();
             Long exec = (new Date()).getTime();

@@ -54,10 +54,11 @@
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 6px;
-    box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+    box-shadow: var(--shadow-lg);
     padding: 4px;
     z-index: 1000;
     font-size: var(--fs-sm);
+    animation: saiku-panel-in var(--duration-fast) ease;
   }
   .ctx-menu__item {
     display: block;
@@ -73,6 +74,6 @@
   }
   .ctx-menu__item:hover:not(:disabled) { background: var(--bg-subtle); }
   .ctx-menu__item:disabled { color: var(--fg-subtle); cursor: default; }
-  .ctx-menu__item.danger { color: #e06c75; }
+  .ctx-menu__item.danger { color: var(--danger); }
   .ctx-menu__sep { height: 1px; background: var(--border); margin: 3px 0; }
 </style>

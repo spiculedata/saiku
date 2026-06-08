@@ -36,8 +36,8 @@ The MCP wrapper closes that gap. With this spec implemented:
 
 - Agents discover Saiku cubes the same way they discover filesystem or git
   resources — via `tools/list`.
-- Tool descriptions are written as LLM-facing prose ("Run an OLAP analytical
-  query…"), not endpoint docs.
+- Tool descriptions are written as LLM-facing prose ("Run a Semantic Layer
+  analytical query…"), not endpoint docs.
 - Each tool ships a few-shot example tuned to the kind of natural-language
   question a user actually asks ("top 5 product families by sales last
   quarter") rather than the REST body.
@@ -91,7 +91,7 @@ use this" prose, optimised for tool-routing decisions.
 
 #### `list_cubes`
 
-> List every OLAP cube the current user can query. Use this first when you
+> List every Semantic Layer cube the current user can query. Use this first when you
 > don't know what data is available — the response includes a one-line
 > caption per cube and the default measure, which is usually enough to pick
 > the right one without describing each cube. Returns at most a few dozen
@@ -189,7 +189,7 @@ Maps to: `GET /saiku/api/ai/members/search`.
 
 #### `run_query`
 
-> Run an OLAP analytical query and get the results as records. This is
+> Run a Semantic Layer analytical query and get the results as records. This is
 > the primary tool — most user questions land here. Build the request
 > against the cube structure from describe_cube; the server validates
 > every name and returns a 400 with a list of valid alternatives if any

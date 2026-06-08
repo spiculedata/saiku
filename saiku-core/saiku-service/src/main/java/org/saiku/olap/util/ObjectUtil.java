@@ -68,6 +68,18 @@ public class ObjectUtil {
         // saiku#818 follow-up: surface dimension-level annotations so
         // OlapAiCubeMetadataService can apply saiku.semantic.* to AiSchema.Dimension.
         sd.setAnnotations(annotationsAsStringMap(dim));
+        // saiku#1221: Mondrian-native dimension type ("TIME" / "MEASURE" /
+        // "OTHER") from <Dimension type="TIME">. Lets the SPA detect time
+        // dimensions deterministically; the caption substring match was
+        // fragile under translations and renamed hierarchies.
+        try {
+            Dimension.Type t = dim.getDimensionType();
+            if (t != null) {
+                sd.setDimensionType(t.name());
+            }
+        } catch (Throwable ignored) {
+            // Some drivers throw on getDimensionType — leave null.
+        }
         return sd;
     }
 

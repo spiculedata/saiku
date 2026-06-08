@@ -9,11 +9,11 @@
   import MeasuresModal from "$lib/modals/MeasuresModal.svelte";
   import CalculatedMemberModal, { type CalculatedMember } from "$lib/modals/CalculatedMemberModal.svelte";
   import SelectionsModal from "$lib/modals/SelectionsModal.svelte";
+  import { measuresHiddenToggle } from "$lib/stores/measuresHiddenToggle.svelte";
   import {
     Sigma,
     Folder,
     GitFork,
-    ChevronDown,
     ChevronRight,
     Settings2,
     Plus,
@@ -54,7 +54,17 @@
       name: m.name,
       uniqueName: m.uniqueName,
       caption: m.caption || m.name,
-      type: m.calculated ? "CALCULATED" : "EXACT",
+      // saiku#1019: schema-defined calc members (e.g. FoodMart Profit)
+      // show as calculated:true in /discover, but Fat.convertDetails'
+      // CALCULATED branch looks them up via query.getCalculatedMeasure()
+      // — a map that only holds USER-added Saiku calc measures, so the
+      // schema one returns null, gets added to details, and trips a
+      // NullPointerException on the next m.getName() roundtrip. Schema
+      // calc members live in cube.getMeasures() like any normal measure,
+      // so the EXACT path (query.getMeasure → cube.getMeasures lookup)
+      // resolves them correctly. The CALCULATED tag stays reserved for
+      // the modal-created measures in QueryCanvas.svelte.
+      type: "EXACT",
     };
     e.dataTransfer?.setData("application/x-saiku-measure", JSON.stringify(thin));
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
@@ -67,7 +77,17 @@
       name: m.name,
       uniqueName: m.uniqueName,
       caption: m.caption || m.name,
-      type: m.calculated ? "CALCULATED" : "EXACT",
+      // saiku#1019: schema-defined calc members (e.g. FoodMart Profit)
+      // show as calculated:true in /discover, but Fat.convertDetails'
+      // CALCULATED branch looks them up via query.getCalculatedMeasure()
+      // — a map that only holds USER-added Saiku calc measures, so the
+      // schema one returns null, gets added to details, and trips a
+      // NullPointerException on the next m.getName() roundtrip. Schema
+      // calc members live in cube.getMeasures() like any normal measure,
+      // so the EXACT path (query.getMeasure → cube.getMeasures lookup)
+      // resolves them correctly. The CALCULATED tag stays reserved for
+      // the modal-created measures in QueryCanvas.svelte.
+      type: "EXACT",
     });
   }
 
@@ -91,7 +111,12 @@
   let cubeSignature = $state<string | null>(null);
 
   function keyFor(cube: SaikuCube): string {
-    return `${cube.connection}/${cube.catalog}/${cube.schema}/${cube.name}`;
+    // Include the admin "show hidden measures" toggle (#834) in the
+    // signature so flipping it triggers a refetch instead of returning
+    // the prior visible-only metadata that's cached against the cube
+    // alone. Non-admins can't flip the toggle, so this only re-fires
+    // for admin sessions.
+    return `${cube.connection}/${cube.catalog}/${cube.schema}/${cube.name}#h=${measuresHiddenToggle.enabled ? "1" : "0"}`;
   }
 
   $effect(() => {
@@ -101,16 +126,24 @@
       cubeSignature = null;
       return;
     }
+    // `measuresHiddenToggle.enabled` is read inside keyFor() — Svelte
+    // 5 picks it up as a $effect dep so toggling triggers a refetch.
+    const includeHidden = session.isAdmin && measuresHiddenToggle.enabled;
     const sig = keyFor(cube);
     if (sig === cubeSignature && metadata) return;
     cubeSignature = sig;
     loading = true;
     error = null;
     datasources
-      .metadata(username, cube)
+      .metadata(username, cube, includeHidden)
       .then((m) => (metadata = m))
       .catch((err: unknown) => {
-        error = err instanceof Error ? err.message : String(err);
+        const msg = err instanceof Error ? err.message : String(err);
+        // Auth failures are surfaced by the global SessionExpiredBanner
+        // (#944); echoing the raw "/rest/saiku/admin/discover/... -> 401"
+        // here would both be redundant AND leak the internal admin REST
+        // path. Same suppression pattern as datasources.silenceAuth.
+        error = /->\s*40[13]\b/.test(msg) ? null : msg;
       })
       .finally(() => (loading = false));
   });
@@ -146,7 +179,17 @@
         name: m.name,
         uniqueName: m.uniqueName,
         caption: m.caption || m.name,
-        type: m.calculated ? "CALCULATED" : "EXACT",
+        // saiku#1019: schema-defined calc members (e.g. FoodMart Profit)
+      // show as calculated:true in /discover, but Fat.convertDetails'
+      // CALCULATED branch looks them up via query.getCalculatedMeasure()
+      // — a map that only holds USER-added Saiku calc measures, so the
+      // schema one returns null, gets added to details, and trips a
+      // NullPointerException on the next m.getName() roundtrip. Schema
+      // calc members live in cube.getMeasures() like any normal measure,
+      // so the EXACT path (query.getMeasure → cube.getMeasures lookup)
+      // resolves them correctly. The CALCULATED tag stays reserved for
+      // the modal-created measures in QueryCanvas.svelte.
+      type: "EXACT",
       });
     }
     query.setMeasures(next);
@@ -296,8 +339,8 @@
           {@const gid = `m:${group}`}
           <li class="tree__node">
             <button type="button" class="tree__row tree__row--group" onclick={() => toggle(gid)}>
-              <span class="tree__twisty">
-                {#if expanded[gid] === false}<ChevronRight size={12} />{:else}<ChevronDown size={12} />{/if}
+              <span class="tree__twisty" class:tree__twisty--open={expanded[gid] !== false}>
+                <ChevronRight size={12} />
               </span>
               <span class="tree__label">{group}</span>
               <span class="tree__count">{items.length}</span>
@@ -336,8 +379,8 @@
           {@const did = `d:${dim.uniqueName}`}
           <li class="tree__node">
             <button type="button" class="tree__row tree__row--dim" onclick={() => toggle(did)} title={dim.caption}>
-              <span class="tree__twisty">
-                {#if expanded[did] === false}<ChevronRight size={12} />{:else}<ChevronDown size={12} />{/if}
+              <span class="tree__twisty" class:tree__twisty--open={expanded[did] !== false}>
+                <ChevronRight size={12} />
               </span>
               <span class="tree__icon" aria-hidden="true"><Folder size={13} /></span>
               <span class="tree__label">{dim.caption || dim.name}</span>
@@ -375,8 +418,8 @@
                   {:else}
                     <li class="tree__node">
                       <button type="button" class="tree__row tree__row--hier" onclick={() => toggle(hid)}>
-                        <span class="tree__twisty">
-                          {#if expanded[hid] === false}<ChevronRight size={12} />{:else}<ChevronDown size={12} />{/if}
+                        <span class="tree__twisty" class:tree__twisty--open={expanded[hid] !== false}>
+                          <ChevronRight size={12} />
                         </span>
                         <span class="tree__icon" aria-hidden="true"><GitFork size={13} /></span>
                         <span class="tree__label">{hier.caption || hier.name}</span>
@@ -431,6 +474,7 @@
     open={measuresOpen}
     onSave={onMeasuresSave}
     onCancel={() => (measuresOpen = false)}
+    refreshing={loading}
   />
   <CalculatedMemberModal
     initial={calculatedInitial}
@@ -477,7 +521,7 @@
   }
   .panel__header {
     font-size: var(--fs-xs);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--fg-muted);
@@ -535,7 +579,12 @@
     padding-left: 0;
   }
   .tree .tree {
-    padding-left: var(--space-4);
+    /* Tighter per-level indent + a vertical guide line, file-browser
+       style. Helps deep cubes (Stores → Country → State → City → ...)
+       stay readable without consuming the whole sidebar width. */
+    padding-left: var(--space-3);
+    margin-left: var(--space-2);
+    border-left: 1px solid var(--border);
   }
   .tree__empty {
     color: var(--fg-subtle);
@@ -557,22 +606,28 @@
     border-radius: var(--radius-sm);
   }
   .tree__row:hover { background: var(--bg-subtle); }
-  .tree__row--group { font-weight: 600; }
+  .tree__row--group { font-weight: var(--weight-semibold); }
   .tree__row--measure {
-    color: #e06c75;
+    color: var(--accent);
     cursor: grab;
   }
-  .tree__row--measure .tree__icon--measure { color: #e06c75; }
+  .tree__row--measure .tree__icon--measure { color: var(--accent); }
   .tree__row--dim { color: var(--fg); }
   .tree__row--level { color: var(--fg-muted); }
   .tree__row--level .tree__drag { cursor: grab; }
-  .tree__row--hier { color: #9aa8bc; }
+  .tree__row--hier { color: var(--fg-subtle); }
   .tree__twisty {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 14px;
     color: var(--fg-subtle);
+  }
+  .tree__twisty :global(svg) {
+    transition: transform var(--duration-fast) ease;
+  }
+  .tree__twisty--open :global(svg) {
+    transform: rotate(90deg);
   }
   .tree__icon {
     display: inline-flex;

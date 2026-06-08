@@ -18,6 +18,7 @@
     Search,
     Maximize2,
     Minimize2,
+    Sparkles,
   } from "lucide-svelte";
   import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
   import SavedQueriesModal from "$lib/modals/SavedQueriesModal.svelte";
@@ -38,12 +39,58 @@
   import { i18n } from "$lib/stores/i18n.svelte";
   import { platform } from "$lib/stores/platform.svelte";
 
+  interface Props {
+    /** Open the AI Query drawer. Owned by Workspace so the drawer can overlay the canvas. */
+    onAskAi?: () => void;
+  }
+
+  let { onAskAi }: Props = $props();
+
   let nonEmpty = $state(true);
+  let visualTotals = $state(false);
 
   $effect(() => {
     if (query.current?.queryModel) {
       query.current.queryModel.axes.ROWS.nonEmpty = nonEmpty;
       query.current.queryModel.axes.COLUMNS.nonEmpty = nonEmpty;
+    }
+  });
+
+  /**
+   * saiku-cloud#612 — derived runnable state for the Run button.
+   *
+   * Mirrors `query.hasRunnableShape()` but in a $derived form so
+   * the Run button can be visually disabled + tooltipped when the
+   * shape isn't runnable. Previously the Run button stayed primary-
+   * coloured and clickable; the empty-measure failure only surfaced
+   * AFTER click, inline in the result pane (easy to miss for a
+   * customer used to other BI tools that prevent the click).
+   *
+   * Returns:
+   *   - { ok: true } when the query is runnable
+   *   - { ok: false, reason: <i18n-key>, hint: <i18n-key> } when not
+   *
+   * The two not-runnable reasons we surface explicitly: missing
+   * measure (most common — drag a measure into the Measures area)
+   * and missing hierarchy on rows + columns. The query-store's
+   * post-click error fallback still catches anything else.
+   */
+  let runnable = $derived.by((): { ok: true } | { ok: false; reasonKey: string; hintKey: string } => {
+    const q = query.current?.queryModel;
+    if (!q) return { ok: false, reasonKey: "toolbar.run.disabled.noQuery", hintKey: "toolbar.run.disabled.noQuery.hint" };
+    if (q.details.measures.length === 0) {
+      return { ok: false, reasonKey: "toolbar.run.disabled.noMeasure", hintKey: "toolbar.run.disabled.noMeasure.hint" };
+    }
+    const hasHierarchy = q.axes.COLUMNS.hierarchies.length > 0 || q.axes.ROWS.hierarchies.length > 0;
+    if (!hasHierarchy) {
+      return { ok: false, reasonKey: "toolbar.run.disabled.noHierarchy", hintKey: "toolbar.run.disabled.noHierarchy.hint" };
+    }
+    return { ok: true };
+  });
+
+  $effect(() => {
+    if (query.current?.queryModel) {
+      query.current.queryModel.visualTotals = visualTotals;
     }
   });
 
@@ -63,11 +110,20 @@
 
   let reportTitles = $state<ReportTitles>({ title: "", subtitle: "", notes: "" });
 
+  function defaultHomeFolder(): string {
+    // Anchor first-time saves to the user's home so they don't accidentally
+    // pick repository-root (saiku#878 follow-up known issue) or whichever
+    // folder happens to be first alphabetically in the dropdown. Falls back
+    // to plain "homes" if we somehow don't have a session yet.
+    const u = session.current?.username;
+    return u ? `homes/${u}` : "homes";
+  }
+
   function deriveDefaults(): { folder: string; name: string } {
     const path = query.savedPath ?? "";
-    if (!path) return { folder: "", name: "Untitled.saiku" };
+    if (!path) return { folder: defaultHomeFolder(), name: "Untitled.saiku" };
     const idx = path.lastIndexOf("/");
-    const folder = idx > 0 ? path.slice(0, idx) : "";
+    const folder = idx > 0 ? path.slice(0, idx) : defaultHomeFolder();
     const name = idx >= 0 ? path.slice(idx + 1) : path;
     return { folder, name };
   }
@@ -310,7 +366,14 @@
   <div class="toolbar__sep"></div>
   <div class="toolbar__group toolbar__menu" role="group" aria-label="Query">
     <div class="split-btn">
-      <button class="tb-btn tb-btn--primary split-btn__main" title={i18n.t("toolbar.run")} onclick={onRun}>
+      <button
+        class="tb-btn tb-btn--primary split-btn__main"
+        class:tb-btn--disabled-shape={!runnable.ok}
+        title={runnable.ok ? i18n.t("toolbar.run") : i18n.t(runnable.hintKey)}
+        aria-disabled={!runnable.ok}
+        disabled={!runnable.ok}
+        onclick={onRun}
+      >
         <Play size={18} /><span class="tb-btn__label">{i18n.t("toolbar.run")}</span>
       </button>
       <button
@@ -326,20 +389,42 @@
           <input type="checkbox" bind:checked={query.autorun} />
           <span>{i18n.t("toolbar.autorun")}</span>
         </label>
-        <label class="toolbar__check" title={i18n.t("toolbar.nonEmpty.hint")}>
-          <input type="checkbox" bind:checked={nonEmpty} />
-          <span>{i18n.t("toolbar.nonEmpty")}</span>
-        </label>
+        {#if query.current?.type !== "MDX"}
+          <label class="toolbar__check" title={i18n.t("toolbar.nonEmpty.hint")}>
+            <input type="checkbox" bind:checked={nonEmpty} />
+            <span>{i18n.t("toolbar.nonEmpty")}</span>
+          </label>
+          <label class="toolbar__check" title={i18n.t("toolbar.visualTotals.hint")}>
+            <input type="checkbox" bind:checked={visualTotals} />
+            <span>{i18n.t("toolbar.visualTotals")}</span>
+          </label>
+        {/if}
         <label class="toolbar__check" title={i18n.t("toolbar.async.hint")}>
           <input type="checkbox" bind:checked={query.async} />
           <span>{i18n.t("toolbar.async")}</span>
         </label>
       </div>
     {/if}
-    <button class="tb-btn" title={i18n.t("toolbar.swap")} aria-label={i18n.t("toolbar.swap")} onclick={() => query.swapAxes()}>
-      <ArrowLeftRight size={18} />
-    </button>
+    {#if query.current?.type !== "MDX"}
+      <button class="tb-btn" title={i18n.t("toolbar.swap")} aria-label={i18n.t("toolbar.swap")} onclick={() => query.swapAxes()}>
+        <ArrowLeftRight size={18} />
+      </button>
+    {/if}
   </div>
+  {#if onAskAi}
+    <div class="toolbar__sep"></div>
+    <div class="toolbar__group" role="group" aria-label={i18n.t("workspace.aiQuery.title")}>
+      <button
+        class="tb-btn tb-btn--ai"
+        title={i18n.t("workspace.aiQuery.open")}
+        aria-label={i18n.t("workspace.aiQuery.open")}
+        onclick={() => onAskAi?.()}
+      >
+        <Sparkles size={18} />
+        <span class="tb-btn__label">{i18n.t("workspace.aiQuery.title")}</span>
+      </button>
+    </div>
+  {/if}
   <div class="toolbar__sep"></div>
   <div class="toolbar__group toolbar__menu" role="group" aria-label="Tools">
     <button
@@ -504,7 +589,7 @@
     font: inherit;
     cursor: pointer;
   }
-  .toolbar__item:hover { background: var(--bg-subtle); }
+  .toolbar__item:hover { background: var(--bg-hover); }
   .toolbar__sep {
     width: 1px;
     height: 22px;
@@ -512,19 +597,6 @@
     margin: 0 4px;
   }
   .toolbar__spacer { flex: 1; }
-  .toolbar__toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
-    color: var(--fg-muted);
-    font-size: var(--fs-sm);
-    cursor: pointer;
-    user-select: none;
-    border-radius: 4px;
-  }
-  .toolbar__toggle:hover { background: var(--bg-subtle); color: var(--fg); }
-  .toolbar__toggle input { cursor: pointer; }
 
   .tb-btn {
     display: inline-flex;
@@ -538,7 +610,8 @@
     cursor: pointer;
     font: inherit;
   }
-  .tb-btn:hover { background: var(--bg-subtle); color: var(--fg); }
+  .tb-btn { transition: background var(--duration-fast), color var(--duration-fast); }
+  .tb-btn:hover { background: var(--bg-hover); color: var(--fg); }
   .tb-btn:active { transform: translateY(1px); }
   .tb-btn__label { font-size: var(--fs-sm); }
   .tb-btn--primary {
@@ -547,6 +620,29 @@
     border-color: var(--accent);
   }
   .tb-btn--primary:hover { filter: brightness(1.1); background: var(--accent); color: var(--bg); }
+  .tb-btn--ai {
+    background: linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 60%, #8b5cf6) 100%);
+    color: var(--bg);
+    border-color: var(--accent);
+  }
+  .tb-btn--ai:hover {
+    filter: brightness(1.08);
+    color: var(--bg);
+  }
+  /*
+   * saiku-cloud#612 — visual cue that the query shape isn't runnable yet
+   * (e.g. no measure selected). Distinct from the standard :disabled
+   * appearance because we still want the user to see WHERE the Run
+   * button is + read the tooltip explaining what's missing.
+   */
+  .tb-btn--disabled-shape,
+  .tb-btn--disabled-shape:hover {
+    background: var(--bg-muted);
+    color: var(--fg-muted);
+    border-color: var(--border);
+    filter: none;
+    cursor: not-allowed;
+  }
   .tb-btn--dirty { position: relative; }
   .tb-btn__dot {
     position: absolute;

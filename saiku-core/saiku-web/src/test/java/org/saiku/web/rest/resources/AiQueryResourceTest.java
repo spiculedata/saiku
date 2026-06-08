@@ -248,6 +248,65 @@ public class AiQueryResourceTest {
         assertEquals("Sales", body.get(0).getCubeName());
     }
 
+    /* --- saiku#915 / MCP drillthrough cross-session re-attach ---------- */
+
+    @Test
+    public void syncExecuteRegistersHandleForCrossSessionDrillthrough() {
+        // MCP smoke 2026-05-23: a follow-up drillthrough call lands on a
+        // different session than the sync run_query (JSESSIONID per
+        // request). Without the cross-session re-attach, drillthrough's
+        // resolver sees an empty per-session context and surfaces
+        // "Unknown queryId" even though the result is hot.
+        //
+        // Fix: executeAi mirrors the async-submission path — register a
+        // pre-completed AsyncQueryHandle in the cross-session
+        // AsyncQueryService so drillthrough's existing handle-fallback
+        // path can re-attach. Test pins that the handle ends up in the
+        // expected DONE state with the executed ThinQuery.
+        org.saiku.service.async.AsyncQueryService async = new org.saiku.service.async.AsyncQueryService();
+        resource.setAsyncQueryService(async);
+        // Custom stub that populates the QueryContext getOlapResult so the
+        // re-attach branch can read the CellSet. Default StubThinQueryService
+        // returns null context; this one stores a no-op CellSet via the
+        // registerExternalContext seam the production code uses too.
+        resource.setThinQueryService(new StubThinQueryService() {
+            @Override
+            public CellDataSet execute(ThinQuery tq) {
+                registerExternalContext(tq, null);
+                return buildStubCellDataSet();
+            }
+        });
+
+        Response resp = resource.executeAi(baseRequest(), "records");
+        assertEquals(200, resp.getStatus());
+
+        AiQueryResponse body = (AiQueryResponse) resp.getEntity();
+        String queryId = body.getQueryId();
+        assertNotNull("sync executeAi returns a queryId", queryId);
+
+        org.saiku.service.async.AsyncQueryHandle handle = async.get(queryId);
+        assertNotNull("sync executeAi should register a pre-completed handle for cross-session drillthrough", handle);
+        assertEquals(
+                "registered handle reports DONE so resource-layer drillthrough resolves it",
+                org.saiku.service.async.AsyncQueryHandle.Status.DONE,
+                handle.getStatus());
+        assertEquals(
+                "handle carries the executed ThinQuery so registerExternalContext re-attaches the right query",
+                queryId,
+                handle.getQuery().getName());
+    }
+
+    @Test
+    public void syncExecuteSucceedsEvenIfAsyncQueryServiceUnwired() {
+        // Back-compat: callers that don't wire asyncQueryService (older
+        // webapp configs, the JSP-only flow, tests) must still get a
+        // clean 200. The re-attach is an opt-in cross-session
+        // enhancement, not a required pre-condition.
+        resource.setAsyncQueryService(null);
+        Response resp = resource.executeAi(baseRequest(), "records");
+        assertEquals(200, resp.getStatus());
+    }
+
     /* ----------------------- Phase 4: async ---------------------------------- */
 
     @Test
@@ -441,7 +500,7 @@ public class AiQueryResourceTest {
     public void drillthroughReturns200WithRows() {
         // Override the ThinQueryService with one that has a stub drillthrough.
         resource.setThinQueryService(new StubThinQueryServiceWithDrill());
-        Response resp = resource.drillthrough("sync-query-id", 100, null, null);
+        Response resp = resource.drillthrough("sync-query-id", 100, null, null, null);
         assertEquals(200, resp.getStatus());
         @SuppressWarnings("unchecked")
         Map<String, Object> body = (Map<String, Object>) resp.getEntity();
@@ -452,7 +511,7 @@ public class AiQueryResourceTest {
     @Test
     public void drillthroughCellsAreTypedEnvelopes() {
         resource.setThinQueryService(new StubThinQueryServiceWithDrill());
-        Response resp = resource.drillthrough("sync-query-id", 100, null, null);
+        Response resp = resource.drillthrough("sync-query-id", 100, null, null, null);
         assertEquals(200, resp.getStatus());
         @SuppressWarnings("unchecked")
         Map<String, Object> body = (Map<String, Object>) resp.getEntity();
@@ -480,7 +539,7 @@ public class AiQueryResourceTest {
                 throw new RuntimeException("boom");
             }
         });
-        Response resp = resource.drillthrough("any-id", 100, null, null);
+        Response resp = resource.drillthrough("any-id", 100, null, null, null);
         assertEquals(500, resp.getStatus());
     }
 
@@ -533,9 +592,116 @@ public class AiQueryResourceTest {
                 return buildStubResultSet();
             }
         });
-        Response resp = resource.drillthrough("sync-query-id", 100, 25, null);
+        Response resp = resource.drillthrough("sync-query-id", 100, 25, null, null);
         assertEquals(200, resp.getStatus());
         assertEquals(Integer.valueOf(25), firstRowsetSeen[0]);
+    }
+
+    @Test
+    public void drillthroughWithPositionUsesCellPositionOverload() {
+        // saiku#930: a position=col:row drills the single cell via the
+        // List<Integer> cellPosition service overload (not the whole-result one).
+        final java.util.concurrent.atomic.AtomicReference<java.util.List<Integer>> posSeen =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        resource.setThinQueryService(new ThinQueryService() {
+            @Override
+            public java.sql.ResultSet drillthrough(String n, java.util.List<Integer> pos, Integer m, String r) {
+                posSeen.set(pos);
+                return buildStubResultSet();
+            }
+        });
+        Response resp = resource.drillthrough("sync-query-id", 100, null, "0:1", null);
+        assertEquals(200, resp.getStatus());
+        assertEquals(java.util.Arrays.asList(0, 1), posSeen.get());
+    }
+
+    @Test
+    public void drillthroughMalformedPositionReturns400() {
+        // saiku#930: a non-numeric position is a clean 400 (field=position),
+        // not a 500 from deep in the engine.
+        resource.setThinQueryService(new StubThinQueryServiceWithDrill());
+        Response resp = resource.drillthrough("sync-query-id", 100, null, "abc", null);
+        assertEquals(400, resp.getStatus());
+        AiQueryResponse body = (AiQueryResponse) resp.getEntity();
+        assertEquals("position", body.getField());
+    }
+
+    /* --- #1160 characterization: lock the error-translation branches ----- */
+
+    /** saiku#783: an unknown queryId leaks an NPE from the internal
+     *  QueryContext lookup; the resource must translate that to a clean 404
+     *  with the typed VALIDATION_ERROR envelope and field=queryId. */
+    @Test
+    public void drillthroughUnknownQueryIdReturns404() {
+        resource.setThinQueryService(new ThinQueryService() {
+            @Override
+            public java.sql.ResultSet drillthrough(String n, int m, Integer f, String r) {
+                throw new NullPointerException("internal QueryContext was null");
+            }
+        });
+        Response resp = resource.drillthrough("missing-id", 100, null, null, null);
+        assertEquals(404, resp.getStatus());
+        AiQueryResponse body = (AiQueryResponse) resp.getEntity();
+        assertEquals(AiQueryResponse.Status.VALIDATION_ERROR, body.getStatus());
+        assertEquals("queryId", body.getField());
+    }
+
+    /** saiku#794: drilling an empty source cellset (Mondrian throws
+     *  "Cell coordinates ... fall outside CellSet bounds ...") is surfaced as
+     *  an empty drillthrough — 200 with rowCount=0 — not a 500. */
+    @Test
+    public void drillthroughEmptyCellsetReturns200WithZeroRows() {
+        resource.setThinQueryService(new ThinQueryService() {
+            @Override
+            public java.sql.ResultSet drillthrough(String n, int m, Integer f, String r) {
+                throw new RuntimeException("Cell coordinates (0, 0) fall outside CellSet bounds (0, 0)");
+            }
+        });
+        Response resp = resource.drillthrough("sync-query-id", 100, null, null, null);
+        assertEquals(200, resp.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        assertEquals("sync-query-id", body.get("queryId"));
+        assertEquals(0, body.get("rowCount"));
+    }
+
+    /** saiku#795: a bad {@code returns=} clause surfaces from Mondrian as
+     *  "... in RETURN clause" and must lift to a 400 with field=returns. */
+    @Test
+    public void drillthroughBadReturnsClauseReturns400() {
+        resource.setThinQueryService(new ThinQueryService() {
+            @Override
+            public java.sql.ResultSet drillthrough(String n, int m, Integer f, String r) {
+                throw new RuntimeException("Mondrian Error: Can't perform drillthrough operation on unknown member"
+                        + " '[Bogus]' in RETURN clause");
+            }
+        });
+        // No cubeMetadataService context for this name, so the resolver is
+        // skipped and the raw returns value reaches the engine — exercising
+        // the 400 translation in the execute/catch branch.
+        Response resp = resource.drillthrough("sync-query-id", 100, null, null, "[Bogus]");
+        assertEquals(400, resp.getStatus());
+        AiQueryResponse body = (AiQueryResponse) resp.getEntity();
+        assertEquals(AiQueryResponse.Status.VALIDATION_ERROR, body.getStatus());
+        assertEquals("returns", body.getField());
+    }
+
+    /** saiku#800/#808: explicit columns[] are echoed in the whole-result body
+     *  alongside queryId/rowCount/rows — locks the exact JSON body key set. */
+    @Test
+    public void drillthroughBodyExposesColumnsKey() {
+        resource.setThinQueryService(new StubThinQueryServiceWithDrill());
+        Response resp = resource.drillthrough("sync-query-id", 100, null, null, null);
+        assertEquals(200, resp.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getEntity();
+        assertTrue("queryId key present", body.containsKey("queryId"));
+        assertTrue("rowCount key present", body.containsKey("rowCount"));
+        assertTrue("columns key present", body.containsKey("columns"));
+        assertTrue("rows key present", body.containsKey("rows"));
+        @SuppressWarnings("unchecked")
+        List<String> columns = (List<String>) body.get("columns");
+        assertEquals(java.util.Arrays.asList("year", "sales"), columns);
     }
 
     /* ------------------------ stub impls --------------------------------- */
