@@ -40,8 +40,19 @@ import org.slf4j.LoggerFactory;
 public class DashboardResource {
 
     private static final Logger log = LoggerFactory.getLogger(DashboardResource.class);
-    private static final ObjectMapper MAPPER =
-            new ObjectMapper().setSerializationInclusion(JsonInclude.Include.NON_NULL);
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .setSerializationInclusion(JsonInclude.Include.NON_NULL)
+            // The UI persists per-tile config (chart options / sparkline /
+            // conditional format / cascading-filter / auto-refresh) that
+            // this resource's Java DTOs don't catalogue exhaustively.
+            // Failing the load endpoint when the UI adds a field is the
+            // wrong stance — dashboards are persisted-from-UI documents,
+            // not server-authored types. Unknown fields drop silently
+            // here; DashboardTile pairs an any-getter / any-setter so
+            // they round-trip on save instead of being lost. Without
+            // BOTH, the saiku 2026-06 welcome-dashboard incident
+            // recurs every time the UI grows a field.
+            .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     /** Save-OK and remove-OK sentinels returned by {@link DatasourceService}.
      *  Re-checked here so a future signature change there gets caught locally. */
@@ -93,9 +104,23 @@ public class DashboardResource {
         if (body == null || body.isEmpty()) {
             return notFound(path, "Dashboard not found");
         }
+        // Match the save path's #1179 stance — parse as a JsonNode, do
+        // a shallow shape check, return the raw JSON. Binding to the
+        // typed Dashboard POJO and re-serialising silently dropped UI-
+        // owned fields (chartOptions / sparkline / cascading / topN /
+        // refreshInterval) that the Java model doesn't catalogue, which
+        // exploded as a 500 on welcome.saikudash 2026-06-07. Disk →
+        // wire passthrough keeps the UI as the schema authority.
         try {
-            Dashboard dash = MAPPER.readValue(body, Dashboard.class);
-            return Response.ok(dash).type(MediaType.APPLICATION_JSON).build();
+            JsonNode node = MAPPER.readTree(body);
+            if (node == null || !node.isObject()) {
+                log.error("dashboard {} is not a JSON object", path);
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity(Map.of("status", "ERROR", "error", "Stored dashboard is not a JSON object"))
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            }
+            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
         } catch (JsonProcessingException e) {
             log.error("dashboard {} is unparseable as Dashboard JSON", path, e);
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)

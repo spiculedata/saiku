@@ -11,6 +11,14 @@ import org.saiku.service.olap.ai.AiCubeRef;
  * One tile in a dashboard's grid layout. Polymorphic by {@link #type} —
  * fields irrelevant to a given type stay null and Jackson drops them on
  * serialise (via {@link JsonInclude.Include#NON_NULL}).
+ *
+ * <p>This DTO is deliberately partial. The UI persists rich per-tile
+ * config (chart options, sparkline, conditional formatting, cascading-
+ * filter config, auto-refresh interval, &amp;c.) that the back-end
+ * does not interpret — both {@code DashboardResource.load} and
+ * {@code DashboardResource.save} now round-trip dashboards as raw
+ * JsonNode so unknown fields survive the disk→wire path verbatim.
+ * Never re-serialise this typed POJO back to a client.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class DashboardTile {
