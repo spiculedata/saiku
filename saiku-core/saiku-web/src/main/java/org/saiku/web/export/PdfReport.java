@@ -160,8 +160,7 @@ public class PdfReport {
      * @param queryResultSize
      * @throws Exception
      */
-    private void populatePdf(
-            QueryResult queryResult, OutputStream pdf, Rectangle queryResultSize, String documentName)
+    private void populatePdf(QueryResult queryResult, OutputStream pdf, Rectangle queryResultSize, String documentName)
             throws Exception {
         String htmlContent = generateContentAsHtmlString(queryResult, documentName);
         org.w3c.dom.Document htmlDom = DomConverter.getDom(htmlContent);
