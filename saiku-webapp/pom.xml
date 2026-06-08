@@ -108,15 +108,30 @@
                             <goal>war</goal>
                         </goals>
                         <configuration>
-                            <!-- xerces/xalan are dragged in transitively (mondrian +
-                                 hadoop via hive-jdbc) but their META-INF/services
-                                 javax.xml.parsers.* overrides hijack JAXP. Spring 6.2's
-                                 stricter namespace validation breaks against
-                                 xerces for applicationContext.xml's
-                                 <mvc:annotation-driven/>. JDK 21 has internal
-                                 xerces+xalan that respects JAXP's resolver chain
-                                 — strip the external copies from WEB-INF/lib so
-                                 the JDK's implementation wins. -->
+                            <!-- xerces is dragged in transitively (mondrian +
+                                 hadoop via hive-jdbc) but its
+                                 META-INF/services javax.xml.parsers.* override
+                                 hijacks JAXP and Spring 6.2's stricter
+                                 namespace validation breaks against it for
+                                 applicationContext.xml's
+                                 <mvc:annotation-driven/>. JDK 21 has an
+                                 internal xerces that respects JAXP's resolver
+                                 chain — strip the external copy so the JDK's
+                                 implementation wins.
+
+                                 xalan IS bundled (was previously stripped):
+                                 JDK 21's built-in XSLTC NPEs when compiling
+                                 the xhtml2fo.xsl PDF-export stylesheet
+                                 ("Cannot invoke String.hashCode() because
+                                 this._stringRep is null" inside XSLTC.compile,
+                                 2026-06-07 demo bug). Apache Xalan's
+                                 TransformerFactory handles the XSL correctly;
+                                 its SPI registration doesn't conflict with
+                                 Spring (Spring's complaint was about Xerces's
+                                 DocumentBuilderFactory, not Xalan's
+                                 TransformerFactory). The matching serializer
+                                 jar is kept alongside xalan because xalan
+                                 calls into it. -->
                             <!-- netty-3.7.0 (from zookeeper via hive-jdbc) and
                                  netty-all-4.0.23 (from hadoop-hdfs) collide with
                                  the netty-common/buffer 4.1.117 that arrow-memory-netty
@@ -125,7 +140,7 @@
                                  UnsupportedOperationException on memoryAddress(),
                                  crashing arrow's NettyAllocationManager.<clinit>
                                  the first time a query executes. -->
-                            <packagingExcludes>WEB-INF/lib/saiku-query-${saiku-query.version}.jar,WEB-INF/lib/xercesImpl-*.jar,WEB-INF/lib/xalan-*.jar,WEB-INF/lib/serializer-*.jar,WEB-INF/lib/netty-3.*.jar,WEB-INF/lib/netty-all-*.jar</packagingExcludes>
+                            <packagingExcludes>WEB-INF/lib/saiku-query-${saiku-query.version}.jar,WEB-INF/lib/xercesImpl-*.jar,WEB-INF/lib/netty-3.*.jar,WEB-INF/lib/netty-all-*.jar</packagingExcludes>
                         </configuration>
                     </execution>
                 </executions>
