@@ -53,6 +53,24 @@ export function isChartType(kind: string): kind is ChartType {
 
 export type TrendLineMode = "none" | "linear" | "ma" | "wma";
 
+/** issue #1082: number-formatting controls for chart VALUE text — applied to
+ *  the value-axis labels, tooltip values and (when shown) series data labels.
+ *  All fields optional; an absent/empty `numberFormat` renders raw values
+ *  exactly as before (legacy charts are unchanged). The category axis is never
+ *  reformatted. */
+export interface NumberFormatOptions {
+  /** Prepended verbatim, e.g. "£", "$". */
+  prefix?: string;
+  /** Appended verbatim, e.g. "%", " ms". */
+  suffix?: string;
+  /** Fixed decimal places. null/undefined = auto (natural precision). */
+  decimals?: number | null;
+  /** Group integer digits with locale thousands separators. */
+  thousands?: boolean;
+  /** Collapse large magnitudes to k / M / B / T. */
+  abbreviate?: boolean;
+}
+
 export interface ChartOptions {
   title: string;
   xAxisLabel: string;
@@ -100,6 +118,9 @@ export interface ChartOptions {
    *  alongside {@link sortDirection} so the cleanup-after-export look
    *  persists with the tile. */
   topN: number | null;
+  /** issue #1082: optional number-formatting for VALUE text (axis labels,
+   *  tooltip values, data labels). Undefined/empty = raw values as today. */
+  numberFormat?: NumberFormatOptions;
 }
 
 /** Auto-split threshold: a series whose maximum absolute value is at
