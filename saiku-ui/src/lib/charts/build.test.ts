@@ -421,19 +421,25 @@ describe("buildChartOption — map (#1071)", () => {
 });
 
 describe("buildChartOption — dataZoom zoom + pan (#1080)", () => {
-  // The cartesian families that get x-axis zoom/pan.
-  const CARTESIAN = [
+  // Cartesian families that get the visible bottom slider when there
+  // are enough categories. Bar / line / area variants — long category
+  // axes (time series, big region lists) benefit from panning.
+  const SLIDER_CARTESIAN = [
     "bar",
     "stackedBar",
     "line",
     "stackedLine",
     "area",
     "stackedArea",
-    "scatter",
-    "bubble",
-    "waterfall",
   ] as const;
-  // Non-cartesian types must NEVER get dataZoom (it would be meaningless / break layout).
+  // Cartesian families that get ONLY inside-zoom (no visible slider).
+  // saiku 2026-06 user feedback: scatter / bubble distributions don't
+  // pan, waterfall is a single sequence, heatmap shows everything at
+  // once + the slider competed visually with the visualMap legend.
+  const INSIDE_ONLY_CARTESIAN = ["scatter", "bubble", "waterfall"] as const;
+  // Types that never get dataZoom at all (slider or inside-zoom).
+  // Heatmap was added to this group 2026-06 — the visualMap legend
+  // is the navigation, panning the matrix isn't a sensible gesture.
   const NON_CARTESIAN = ["pie", "donut", "treemap", "sunburst", "heatmap", "radar", "map"] as const;
 
   // Big enough to trip the slider gate — the screenshot bug fix only emits
@@ -447,8 +453,8 @@ describe("buildChartOption — dataZoom zoom + pan (#1080)", () => {
     return { rowCategories: rows, columnCategories: cols, matrix };
   }
 
-  test("dense cartesian (roomy) gets an inside zoom + a bottom slider", () => {
-    for (const t of CARTESIAN) {
+  test("dense bar / line / area (roomy) gets an inside zoom + a bottom slider", () => {
+    for (const t of SLIDER_CARTESIAN) {
       const opt = buildChartOption(denseSample(), t, opts(), undefined, {
         compact: false,
       }) as Record<string, unknown>;
@@ -458,16 +464,27 @@ describe("buildChartOption — dataZoom zoom + pan (#1080)", () => {
         dz.map((d) => d.type),
         `${t} has inside + slider`,
       ).toEqual(["inside", "slider"]);
-      // x-axis only — value-axis zoom fights magnitude comparison.
       expect(dz.every((d) => d.xAxisIndex === 0)).toBe(true);
     }
   });
 
-  test("sparse cartesian (roomy) hides the slider — empty track would be a UI bug", () => {
-    // sample() has 2 rows / 2 cols — well below the gate. Inside-zoom
-    // stays armed (it's invisible until used) but the visible slider
-    // is suppressed so we don't draw an empty track under the bars.
-    for (const t of CARTESIAN) {
+  test("scatter / bubble / waterfall never get the visible slider", () => {
+    // Distributions / single-sequence layouts don't pan usefully — the
+    // slider just adds clutter (user feedback 2026-06-07). Inside-zoom
+    // stays armed for mouse-wheel users.
+    for (const t of INSIDE_ONLY_CARTESIAN) {
+      for (const make of [denseSample, sample]) {
+        const opt = buildChartOption(make(), t, opts(), undefined, {
+          compact: false,
+        }) as Record<string, unknown>;
+        const dz = opt.dataZoom as Array<{ type: string }>;
+        expect(dz.map((d) => d.type), `${t} inside-only`).toEqual(["inside"]);
+      }
+    }
+  });
+
+  test("sparse bar / line / area (roomy) hides the slider — empty track would be a UI bug", () => {
+    for (const t of SLIDER_CARTESIAN) {
       const opt = buildChartOption(sample(), t, opts(), undefined, {
         compact: false,
       }) as Record<string, unknown>;
@@ -479,7 +496,7 @@ describe("buildChartOption — dataZoom zoom + pan (#1080)", () => {
   });
 
   test("every cartesian type (compact) gets an inside zoom but NO slider", () => {
-    for (const t of CARTESIAN) {
+    for (const t of [...SLIDER_CARTESIAN, ...INSIDE_ONLY_CARTESIAN]) {
       const opt = buildChartOption(denseSample(), t, opts(), undefined, {
         compact: true,
       }) as Record<string, unknown>;
