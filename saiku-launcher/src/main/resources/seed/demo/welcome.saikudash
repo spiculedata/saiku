@@ -25,7 +25,7 @@
           "cubeName": "Sales"
         },
         "kpi": {
-          "measure": "[Measures].[Unit Sales]",
+          "measure": "Unit Sales",
           "measureCaption": "Unit Sales",
           "format": "number",
           "comparison": "none",
@@ -46,7 +46,7 @@
           "cubeName": "Sales"
         },
         "kpi": {
-          "measure": "[Measures].[Store Sales]",
+          "measure": "Store Sales",
           "measureCaption": "Store Sales",
           "format": "currency",
           "comparison": "none",
