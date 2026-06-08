@@ -416,19 +416,26 @@ export function buildChartOption(
   // small); roomy mode derives the per-label width from the canvas width and
   // category count. `rotate` is only used by the compact bar branch when
   // categories crowd. The full label always shows in the axis-pointer tooltip.
-  const catCount = Math.max(rows.length, cols.length, 1);
-  const catLabelWidth = compact ? 100 : deriveAxisLabelWidth(geom.chartWidth ?? 0, catCount);
-  // Rotated labels read diagonally — they don't compete with siblings for
-  // horizontal slot width, so they can hold ~2x the chars before clipping.
-  // Without this, scatter / heatmap labels rotated 30° still truncated to
-  // "Beer..." / "Drink..." even though there was room (user feedback
-  // 2026-06-07 "x axis is unreadable").
+  // Per-axis label width: divide chart width by the count of categories
+  // ON THAT AXIS, not max(rows, cols) — the earlier max() left scatter /
+  // bubble's single-category x-axis cramped to 40px just because the
+  // y-side had 50+ series (user feedback 2026-06-07: a single "Cust…"
+  // label clipped to 5 chars on a 1400px-wide chart). Callers pass the
+  // axis-specific count explicitly via {@link catLabel}.
   const ROTATED_LABEL_WIDTH = 160;
-  const catLabel = (rotate = 0) => ({
-    color: tk.fgMuted,
-    rotate,
-    ...axisLabelConfig(rotate !== 0 ? ROTATED_LABEL_WIDTH : catLabelWidth),
-  });
+  const catLabel = (rotate = 0, axisCategoryCount = cols.length || 1) => {
+    if (rotate !== 0) {
+      return {
+        color: tk.fgMuted,
+        rotate,
+        ...axisLabelConfig(ROTATED_LABEL_WIDTH),
+      };
+    }
+    const w = compact
+      ? 100
+      : deriveAxisLabelWidth(geom.chartWidth ?? 0, axisCategoryCount);
+    return { color: tk.fgMuted, rotate, ...axisLabelConfig(w) };
+  };
 
   const legend = compact ? compactLegend(o, tk) : legendConfig(o, tk);
   const title = titleConfig(o, tk);
@@ -755,7 +762,9 @@ export function buildChartOption(
       dataZoom: dataZoomConfig(compact, rows.length, false),
       xAxis: {
         ...baseAxis,
-        axisLabel: catLabel(rows.length > 8 ? 30 : 0),
+        // waterfall's x-axis is `rows`; pass rows.length so the
+        // per-label width is computed against the right dim.
+        axisLabel: catLabel(rows.length > 8 ? 30 : 0, rows.length),
         data: rows,
         name: xName,
       },
@@ -876,11 +885,12 @@ export function buildChartOption(
     dataZoom: dataZoomConfig(compact, rows.length), // #1080: x-axis zoom + pan
     xAxis: {
       ...baseAxis,
-      // Rotate when categories crowd — same rule in roomy + compact;
-      // a 30-row scatter / bar with horizontal labels collapses to
-      // "Alcohol…" / "Breakfa…" / "Eggs / …" etc., which the user
-      // flagged as unreadable on 2026-06-07.
-      axisLabel: catLabel(rows.length > 8 ? 30 : 0),
+      // bar / line / area: x-axis is `rows`. Pass rows.length so the
+      // per-label width is computed against the right dim — the old
+      // max(rows, cols) cramped scatter / bar single-category x-axes
+      // to 40px when the y side had many series ("Cust…" / "CA /…"
+      // 2026-06-07 screenshot).
+      axisLabel: catLabel(rows.length > 8 ? 30 : 0, rows.length),
       data: rows,
       name: xName,
     },
