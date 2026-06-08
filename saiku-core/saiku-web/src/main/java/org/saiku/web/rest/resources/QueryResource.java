@@ -35,7 +35,6 @@ import java.sql.Statement;
 import java.util.*;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.saiku.olap.dto.*;
 import org.saiku.olap.dto.filter.SaikuFilter;
 import org.saiku.olap.dto.resultset.CellDataSet;
@@ -488,8 +487,9 @@ public class QueryResource {
             return RestUtil.convert(cs, limit);
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ")", e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            return new QueryResult(error);
+            // saiku#1165: detail is logged server-side above; return a generic
+            // message so Mondrian/SQL internals don't leak in QueryResult.error.
+            return new QueryResult(GENERIC_ERROR);
         }
     }
 
@@ -536,8 +536,9 @@ public class QueryResource {
             return RestUtil.convert(cs, limit);
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ") using mdx:\n" + mdx, e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            return new QueryResult(error);
+            // saiku#1165: detail is logged server-side above; return a generic
+            // message so Mondrian/SQL internals don't leak in QueryResult.error.
+            return new QueryResult(GENERIC_ERROR);
         }
     }
 
@@ -555,8 +556,9 @@ public class QueryResource {
             return executeMdx(queryName, null, mdx, limit);
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ") using mdx:\n" + mdx, e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            return new QueryResult(error);
+            // saiku#1165: detail is logged server-side above; return a generic
+            // message so Mondrian/SQL internals don't leak in QueryResult.error.
+            return new QueryResult(GENERIC_ERROR);
         }
     }
 
@@ -620,8 +622,8 @@ public class QueryResource {
 
         } catch (Exception e) {
             log.error("Cannot get explain plan for query (" + queryName + ")", e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            rsc = new QueryResult(error);
+            // saiku#1165: detail logged server-side above; generic to the client.
+            rsc = new QueryResult(GENERIC_ERROR);
         }
         // no need to close resultset, its an EmptyResultset
         return rsc;
@@ -661,8 +663,8 @@ public class QueryResource {
 
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ")", e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            rsc = new QueryResult(error);
+            // saiku#1165: detail logged server-side above; generic to the client.
+            rsc = new QueryResult(GENERIC_ERROR);
 
         } finally {
             if (rs != null) {
@@ -789,8 +791,9 @@ public class QueryResource {
             return RestUtil.convert(cs, limit);
         } catch (Exception e) {
             log.error("Cannot execute query (" + queryName + ")", e);
-            String error = ExceptionUtils.getRootCauseMessage(e);
-            return new QueryResult(error);
+            // saiku#1165: detail is logged server-side above; return a generic
+            // message so Mondrian/SQL internals don't leak in QueryResult.error.
+            return new QueryResult(GENERIC_ERROR);
         }
     }
 
