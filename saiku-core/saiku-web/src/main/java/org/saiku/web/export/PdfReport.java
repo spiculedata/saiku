@@ -10,9 +10,6 @@ import java.awt.print.PageFormat;
 import java.awt.print.Paper;
 import java.io.*;
 import java.net.URISyntaxException;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
-import java.util.Date;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.transform.Result;
@@ -51,13 +48,27 @@ public class PdfReport {
     }
 
     public byte[] createPdf(QueryResult queryResult, String svg) throws Exception {
+        return createPdf(queryResult, svg, null);
+    }
+
+    /**
+     * Render the given query result as a PDF.
+     *
+     * <p>{@code documentName}, when non-blank, is set as the HTML
+     * {@code <title>} so the FO stylesheet picks it up as the running
+     * page header. Pass the saved-query name or the user-supplied
+     * filename from the {@code ?name=} query parameter; null / blank
+     * falls back to "Saiku Export" so the header is still populated
+     * for legacy callers.
+     */
+    public byte[] createPdf(QueryResult queryResult, String svg, String documentName) throws Exception {
         Rectangle queryResultSize = getQueryResultSize(queryResult);
 
         Document document = createDocumentWithSizeToContainQueryResult(queryResultSize);
         document.open();
 
         ByteArrayOutputStream pdf = new ByteArrayOutputStream();
-        populatePdf(queryResult, pdf, queryResultSize);
+        populatePdf(queryResult, pdf, queryResultSize, documentName);
 
         // do we want to add a svg image?
         if (StringUtils.isNotBlank(svg)) {
@@ -93,6 +104,9 @@ public class PdfReport {
     }
 
     private void addSvgImage(String svg, Document document, PdfWriter pdfWriter) {
+        // saiku#1165: reject external refs / DOCTYPE before Batik parses it
+        // (SSRF / local-file-read / XXE via user-supplied SVG).
+        org.saiku.web.svg.SvgSecurity.requireSafe(svg);
         document.newPage();
         StringBuilder stringBuffer = new StringBuilder(svg);
         if (!svg.startsWith("<svg xmlns=\"http://www.w3.org/2000/svg\" ")) {
@@ -146,8 +160,9 @@ public class PdfReport {
      * @param queryResultSize
      * @throws Exception
      */
-    private void populatePdf(QueryResult queryResult, OutputStream pdf, Rectangle queryResultSize) throws Exception {
-        String htmlContent = generateContentAsHtmlString(queryResult);
+    private void populatePdf(QueryResult queryResult, OutputStream pdf, Rectangle queryResultSize, String documentName)
+            throws Exception {
+        String htmlContent = generateContentAsHtmlString(queryResult, documentName);
         org.w3c.dom.Document htmlDom = DomConverter.getDom(htmlContent);
         org.w3c.dom.Document foDoc = FoConverter.getFo(htmlDom);
 
@@ -170,19 +185,38 @@ public class PdfReport {
         }
     }
 
-    private String generateContentAsHtmlString(QueryResult queryResult) throws IOException {
+    private String generateContentAsHtmlString(QueryResult queryResult, String documentName) throws IOException {
         pdfPerformanceLogger.queryToHtmlStart();
-        String contentBeforeQueryResult = createExportedByMessage();
         String queryResultContent = JSConverter.convertToHtml(queryResult);
         pdfPerformanceLogger.setQueryToHtmlStop();
         pdfPerformanceLogger.renderStart();
-        return contentBeforeQueryResult + queryResultContent;
+        // Wrap the table HTML in a full document so xhtml2fo.xsl finds a
+        // <title> for the running header (no more "Saiku Export - <date>"
+        // banner — user feedback 2026-06-08) and so page numbering in the
+        // bottom static-content band keeps working.
+        String title = (documentName == null || documentName.isBlank()) ? "Saiku Export" : documentName;
+        return "<html><head><title>" + escapeHtml(title) + "</title></head><body>"
+                + queryResultContent
+                + "</body></html>";
     }
 
-    private String createExportedByMessage() {
-        DateFormat dateFormat = new SimpleDateFormat("dd/MM/yyyy HH:mm");
-        Date date = new Date();
-        return "<p>" + "Saiku Export - " + dateFormat.format(date) + "</p>";
+    /** Minimal escape for HTML text content — the document name comes
+     *  from a user-supplied path/filename so guard against the obvious
+     *  injection vector even though the consumer is FO, not a browser. */
+    private static String escapeHtml(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '&' -> sb.append("&amp;");
+                case '<' -> sb.append("&lt;");
+                case '>' -> sb.append("&gt;");
+                case '"' -> sb.append("&quot;");
+                case '\'' -> sb.append("&#39;");
+                default -> sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 
     private byte[] fo2Pdf(org.w3c.dom.Document foDocument, String styleSheet, Rectangle size) {
