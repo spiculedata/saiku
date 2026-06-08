@@ -286,7 +286,7 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       },
     ],
     "grid": {
-      "bottom": 36,
+      "bottom": 56,
       "left": 48,
       "right": 16,
       "top": 24,
@@ -526,8 +526,8 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#14b8a6",
     ],
     "grid": {
-      "bottom": 64,
-      "left": 120,
+      "bottom": 60,
+      "left": 96,
       "right": 16,
       "top": 24,
     },
@@ -578,15 +578,16 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       },
     },
     "visualMap": {
-      "bottom": 8,
-      "calculable": true,
-      "left": "center",
+      "calculable": false,
+      "itemHeight": 140,
       "max": 612482.65,
       "min": 266773,
-      "orient": "horizontal",
+      "orient": "vertical",
+      "right": 16,
       "textStyle": {
         "color": "#475569",
       },
+      "top": "center",
     },
     "xAxis": {
       "axisLabel": {
@@ -1004,7 +1005,7 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       },
     ],
     "grid": {
-      "bottom": 36,
+      "bottom": 56,
       "left": 48,
       "right": 16,
       "top": 24,
@@ -1731,7 +1732,7 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       },
     ],
     "grid": {
-      "bottom": 36,
+      "bottom": 56,
       "left": 48,
       "right": 16,
       "top": 24,
@@ -2151,7 +2152,7 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       },
     ],
     "grid": {
-      "bottom": 40,
+      "bottom": 56,
       "left": 60,
       "right": 40,
       "top": 40,
@@ -2390,9 +2391,9 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "#14b8a6",
     ],
     "grid": {
-      "bottom": 80,
+      "bottom": 60,
       "left": 120,
-      "right": 40,
+      "right": 96,
       "top": 40,
     },
     "series": [
@@ -2442,15 +2443,16 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       },
     },
     "visualMap": {
-      "bottom": 10,
-      "calculable": true,
-      "left": "center",
+      "calculable": false,
+      "itemHeight": 140,
       "max": 612482.65,
       "min": 266773,
-      "orient": "horizontal",
+      "orient": "vertical",
+      "right": 16,
       "textStyle": {
         "color": "#475569",
       },
+      "top": "center",
     },
     "xAxis": {
       "axisLabel": {
@@ -2867,7 +2869,7 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       },
     ],
     "grid": {
-      "bottom": 40,
+      "bottom": 56,
       "left": 60,
       "right": 40,
       "top": 40,
@@ -3593,7 +3595,7 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       },
     ],
     "grid": {
-      "bottom": 40,
+      "bottom": 56,
       "left": 60,
       "right": 40,
       "top": 30,

@@ -401,7 +401,7 @@
         <table>
           <thead>
             <tr>
-              {#each columns as col (col.caption)}
+              {#each columns as col, ci (ci)}
                 <th class:row-header={col.isRowHeader}>{col.caption}</th>
               {/each}
               {#if sparklineEnabled}
@@ -412,7 +412,7 @@
           <tbody>
             {#each rows as row, i (i)}
               <tr>
-                {#each columns as col (col.caption)}
+                {#each columns as col, ci (ci)}
                   {@const v = row[col.caption]}
                   {@const fmt = parseFormattedCell(renderCell(v))}
                   {@const cf = cellFormatFor(col.caption, v)}

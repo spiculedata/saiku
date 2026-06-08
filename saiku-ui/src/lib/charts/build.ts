@@ -235,14 +235,22 @@ function colorRampFor(ramp: ChartColorRamp | undefined): string[] {
  * `categoryCount` gates the visible slider — with one or a handful of bars the
  * slider has nothing meaningful to zoom and just steals vertical space (and
  * draws an empty track under the chart, which reads as a UI bug). The inside
- * (mouse-wheel) zoom stays armed regardless; it's invisible until used. */
+ * (mouse-wheel) zoom stays armed regardless; it's invisible until used.
+ *
+ * For scatter / bubble / heatmap / waterfall — pass {visibleSlider: false}.
+ * On those types the slider competes visually with the visualMap legend
+ * (heatmap) and adds no useful navigation (scatter / bubble don't "scroll"
+ * over time, waterfalls are single-sequence). Inside-zoom still works
+ * for mouse-wheel users. */
 const ZOOM_SLIDER_MIN_CATEGORIES = 12;
 function dataZoomConfig(
   compact: boolean,
   categoryCount: number,
+  visibleSlider = true,
 ): Record<string, unknown>[] {
   const inside = { type: "inside", xAxisIndex: 0, filterMode: "none" as const };
   if (compact) return [inside];
+  if (!visibleSlider) return [inside];
   if (categoryCount < ZOOM_SLIDER_MIN_CATEGORIES) return [inside];
   return [
     inside,
@@ -516,20 +524,42 @@ export function buildChartOption(
       ...common,
       title,
       tooltip: tooltipStyle,
+      // Reserve a little extra left padding for vertical visualMap and
+      // leave the bottom narrow now that the heatmap no longer paints
+      // a horizontal legend there. Rotated x-axis labels need ~60px
+      // bottom room.
       grid: compact
-        ? { left: 120, top: 24, right: 16, bottom: 64 }
-        : { left: 120, top: 40, right: 40, bottom: 80 },
-      xAxis: { ...baseAxis, axisLabel: catLabel(), data: cols, name: xName },
+        ? { left: 96, top: 24, right: 16, bottom: 60 }
+        : { left: 120, top: 40, right: 96, bottom: 60 },
+      xAxis: {
+        ...baseAxis,
+        // Heatmap categories had the same readability problem as scatter
+        // / bar (user feedback 2026-06-07): "Alcohol…" / "Breakfa…" /
+        // "Eggs / …" with no way to read full names. Rotate when crowded.
+        axisLabel: catLabel(cols.length > 8 ? 30 : 0),
+        data: cols,
+        name: xName,
+      },
       yAxis: { ...baseAxis, data: rows, inverse: true, name: yName },
+      // visualMap moved to the right edge (vertical, non-calculable).
+      // The horizontal `calculable: true` legend at the bottom looked
+      // like a second draggable slider next to dataZoom — the user
+      // called it "actually 2 drag bars" 2026-06-07. Vertical + on the
+      // right is the standard heatmap layout and lifts the ambiguity.
       visualMap: {
         min,
         max,
-        calculable: true,
-        orient: "horizontal",
-        left: "center",
-        bottom: compact ? 8 : 10,
+        calculable: false,
+        orient: "vertical",
+        right: 16,
+        top: "center",
+        itemHeight: 140,
         textStyle: { color: tk.fgMuted },
       },
+      // Heatmap doesn't get the bottom slider either — the colour-band
+      // already shows the full distribution at a glance and the slider
+      // adds visual noise. Inside-zoom is also off (heatmaps aren't
+      // "panned over time" like a long bar chart is).
       series: [
         { type: "heatmap", data, label: { show: false }, emphasis: { itemStyle: { shadowBlur: 10 } } },
       ],
@@ -624,16 +654,21 @@ export function buildChartOption(
       // #1080: roomy gets a slider + inside zoom; compact gets inside-only. The
       // roomy slider sits at the bottom, so reserve a little extra grid bottom.
       grid: compact
-        ? { top: 24, left: 48, right: 16, bottom: 36 }
-        : {
-            left: 60,
-            top: title ? 50 : 40,
-            right: 40,
-            bottom: cols.length >= ZOOM_SLIDER_MIN_CATEGORIES ? 76 : 40,
-          },
-      // scatter / bubble: x-axis is `cols`, so slider gate keys off cols.length.
-      dataZoom: dataZoomConfig(compact, cols.length),
-      xAxis: { ...baseAxis, axisLabel: catLabel(), data: cols, name: xName },
+        ? { top: 24, left: 48, right: 16, bottom: 56 }
+        : { left: 60, top: title ? 50 : 40, right: 40, bottom: 56 },
+      // scatter / bubble: never draw the visible slider (the points
+      // already show the full distribution and the slider added clutter
+      // per user feedback 2026-06-07). Inside-zoom stays for mouse-wheel.
+      dataZoom: dataZoomConfig(compact, cols.length, false),
+      xAxis: {
+        ...baseAxis,
+        // Rotate when categories crowd — same rule the bar branch uses
+        // and the only way to keep "Alcohol…" / "Breakfa…" readable when
+        // there are 30+ entries.
+        axisLabel: catLabel(cols.length > 8 ? 30 : 0),
+        data: cols,
+        name: xName,
+      },
       yAxis: { ...valueAxis, name: yName },
       series: rows.map((name, i) => ({
         type: "scatter",
@@ -678,16 +713,17 @@ export function buildChartOption(
       tooltip: { trigger: "axis", ...tooltipStyle },
       legend,
       grid: compact
-        ? { top: 24, left: 48, right: 16, bottom: 36 }
-        : {
-            left: 60,
-            top: title ? 50 : 30,
-            right: 40,
-            bottom: rows.length >= ZOOM_SLIDER_MIN_CATEGORIES ? 76 : 40,
-          },
-      // waterfall: x-axis is `rows`.
-      dataZoom: dataZoomConfig(compact, rows.length), // #1080: x-axis zoom + pan
-      xAxis: { ...baseAxis, axisLabel: catLabel(), data: rows, name: xName },
+        ? { top: 24, left: 48, right: 16, bottom: 56 }
+        : { left: 60, top: title ? 50 : 30, right: 40, bottom: 56 },
+      // waterfall is a single ordered sequence — no useful "zoom window"
+      // semantics. Inside-zoom stays for power users, slider hidden.
+      dataZoom: dataZoomConfig(compact, rows.length, false),
+      xAxis: {
+        ...baseAxis,
+        axisLabel: catLabel(rows.length > 8 ? 30 : 0),
+        data: rows,
+        name: xName,
+      },
       yAxis: { ...valueAxis, name: yName },
       series: [
         {
@@ -803,7 +839,16 @@ export function buildChartOption(
         },
     // bar / line / area: x-axis is `rows`.
     dataZoom: dataZoomConfig(compact, rows.length), // #1080: x-axis zoom + pan
-    xAxis: { ...baseAxis, axisLabel: catLabel(compact && rows.length > 8 ? 30 : 0), data: rows, name: xName },
+    xAxis: {
+      ...baseAxis,
+      // Rotate when categories crowd — same rule in roomy + compact;
+      // a 30-row scatter / bar with horizontal labels collapses to
+      // "Alcohol…" / "Breakfa…" / "Eggs / …" etc., which the user
+      // flagged as unreadable on 2026-06-07.
+      axisLabel: catLabel(rows.length > 8 ? 30 : 0),
+      data: rows,
+      name: xName,
+    },
     yAxis,
     series: [...base, ...trend],
   };
