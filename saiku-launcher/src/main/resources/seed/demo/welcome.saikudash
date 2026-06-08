@@ -1,0 +1,183 @@
+{
+  "id": "demo-welcome",
+  "name": "Welcome to Saiku — FoodMart overview",
+  "version": 1,
+  "tags": ["demo", "foodmart"],
+  "layout": {
+    "cols": 12,
+    "tiles": [
+      {
+        "id": "tile-welcome",
+        "x": 0, "y": 0, "w": 12, "h": 2,
+        "type": "text",
+        "title": "Welcome",
+        "text": "# Welcome to the Saiku demo\n\nThis dashboard is staged on first boot when `SAIKU_DEMO=true`. The four tiles below all run live against the bundled FoodMart cube (H2). Edit them, add new tiles from `+ Add tile`, or open the queries catalogue (`/ui/#/dashboards`) to find the standalone saved queries shipped with this demo.\n\n**Login:** `admin` / `admin`."
+      },
+      {
+        "id": "tile-kpi-units",
+        "x": 0, "y": 2, "w": 3, "h": 3,
+        "type": "kpi",
+        "title": "Total Unit Sales",
+        "cube": {
+          "connectionName": "unknown_foodmart",
+          "catalog": "FoodMart",
+          "schema": "FoodMart",
+          "cubeName": "Sales"
+        },
+        "kpi": {
+          "measure": "[Measures].[Unit Sales]",
+          "measureCaption": "Unit Sales",
+          "format": "number",
+          "comparison": "none",
+          "direction": "higher-is-better",
+          "sparkline": false,
+          "thresholds": {}
+        }
+      },
+      {
+        "id": "tile-kpi-sales",
+        "x": 3, "y": 2, "w": 3, "h": 3,
+        "type": "kpi",
+        "title": "Total Store Sales",
+        "cube": {
+          "connectionName": "unknown_foodmart",
+          "catalog": "FoodMart",
+          "schema": "FoodMart",
+          "cubeName": "Sales"
+        },
+        "kpi": {
+          "measure": "[Measures].[Store Sales]",
+          "measureCaption": "Store Sales",
+          "format": "currency",
+          "comparison": "none",
+          "direction": "higher-is-better",
+          "sparkline": false,
+          "thresholds": {}
+        }
+      },
+      {
+        "id": "tile-chart-by-city",
+        "x": 6, "y": 2, "w": 6, "h": 6,
+        "type": "chart",
+        "title": "Store Sales by City",
+        "chartType": "bar",
+        "cube": {
+          "connectionName": "unknown_foodmart",
+          "catalog": "FoodMart",
+          "schema": "FoodMart",
+          "cubeName": "Sales"
+        },
+        "query": {
+          "kind": "inline",
+          "body": {
+            "cube": {
+              "connectionName": "unknown_foodmart",
+              "catalog": "FoodMart",
+              "schema": "FoodMart",
+              "cubeName": "Sales"
+            },
+            "measures": [{ "name": "Store Sales" }],
+            "rows": [{ "dimension": "Store", "hierarchy": "Stores", "level": "Store City" }],
+            "columns": [],
+            "filters": []
+          }
+        },
+        "chartOptions": {
+          "title": "Store Sales by City",
+          "xAxisLabel": "",
+          "yAxisLabel": "",
+          "showLegend": true,
+          "legendPosition": "top",
+          "trendLine": "none",
+          "trendPeriod": 3,
+          "hideRollupRows": true,
+          "dualAxis": true,
+          "seriesAxis": {},
+          "colorRamp": "blues",
+          "mapMissing": "blank",
+          "sortDirection": "desc",
+          "topN": 10
+        }
+      },
+      {
+        "id": "tile-chart-time",
+        "x": 0, "y": 5, "w": 6, "h": 6,
+        "type": "chart",
+        "title": "Unit Sales by Quarter",
+        "chartType": "line",
+        "cube": {
+          "connectionName": "unknown_foodmart",
+          "catalog": "FoodMart",
+          "schema": "FoodMart",
+          "cubeName": "Sales"
+        },
+        "query": {
+          "kind": "inline",
+          "body": {
+            "cube": {
+              "connectionName": "unknown_foodmart",
+              "catalog": "FoodMart",
+              "schema": "FoodMart",
+              "cubeName": "Sales"
+            },
+            "measures": [{ "name": "Unit Sales" }, { "name": "Store Sales" }],
+            "rows": [{ "dimension": "Time", "hierarchy": "Time", "level": "Quarter" }],
+            "columns": [],
+            "filters": []
+          }
+        },
+        "chartOptions": {
+          "title": "Unit Sales & Store Sales by Quarter",
+          "xAxisLabel": "",
+          "yAxisLabel": "",
+          "showLegend": true,
+          "legendPosition": "top",
+          "trendLine": "none",
+          "trendPeriod": 3,
+          "hideRollupRows": true,
+          "dualAxis": true,
+          "seriesAxis": {},
+          "colorRamp": "blues",
+          "mapMissing": "blank",
+          "sortDirection": "none",
+          "topN": null
+        }
+      },
+      {
+        "id": "tile-table-product",
+        "x": 6, "y": 8, "w": 6, "h": 6,
+        "type": "table",
+        "title": "Sales by Product Family",
+        "cube": {
+          "connectionName": "unknown_foodmart",
+          "catalog": "FoodMart",
+          "schema": "FoodMart",
+          "cubeName": "Sales"
+        },
+        "query": {
+          "kind": "inline",
+          "body": {
+            "cube": {
+              "connectionName": "unknown_foodmart",
+              "catalog": "FoodMart",
+              "schema": "FoodMart",
+              "cubeName": "Sales"
+            },
+            "measures": [
+              { "name": "Unit Sales" },
+              { "name": "Store Sales" },
+              { "name": "Store Cost" },
+              { "name": "Profit" }
+            ],
+            "rows": [{ "dimension": "Product", "hierarchy": "Products", "level": "Product Family" }],
+            "columns": [],
+            "filters": []
+          }
+        },
+        "sparkline": { "enabled": true, "type": "bar" }
+      }
+    ]
+  },
+  "filters": [],
+  "filterPanel": { "collapsed": false, "filters": [] }
+}
