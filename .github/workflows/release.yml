@@ -354,12 +354,19 @@ jobs:
           git add docs-site/src/content/docs/help/changelog.mdx
           git commit -m "docs(changelog): draft entry for ${VERSION}"
           git push -u origin "$BRANCH"
-          gh pr create \
+          # Create the PR first; labels added separately so a missing
+          # label on saiku-cloud never aborts the release (v4.5.1's
+          # rebuild failed here because the `docs` label hadn't been
+          # created upstream — the PR was actually pushed fine).
+          PR_URL=$(gh pr create \
             --repo spiculedata/saiku-cloud \
             --base develop \
             --head "$BRANCH" \
             --title "docs(changelog): draft entry for ${VERSION}" \
             --body "Auto-opened by the saiku release workflow. The new section at the top of \`help/changelog.mdx\` is a draft — replace the placeholder bullet with a customer-facing summary of what changed, then merge.
 
-          See [saiku release ${VERSION}](https://github.com/${{ github.repository }}/releases/tag/${VERSION}) for the full notes." \
-            --label docs,release
+          See [saiku release ${VERSION}](https://github.com/${{ github.repository }}/releases/tag/${VERSION}) for the full notes.")
+          echo "Opened: $PR_URL"
+          # Best-effort labelling — surface a warning but don't fail.
+          gh pr edit "$PR_URL" --repo spiculedata/saiku-cloud --add-label docs --add-label release \
+            || echo "::warning::Failed to add docs/release labels to $PR_URL (probably missing on saiku-cloud — create them with: gh label create docs -R spiculedata/saiku-cloud)"
