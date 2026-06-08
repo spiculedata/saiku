@@ -157,6 +157,12 @@
     -->
     <bean id="saikuQueryCacheBean" class="org.saiku.service.cache.SaikuQueryCache"/>
 
+    <!-- saiku#946: in-flight query coalescer. SINGLETON (shared across all
+         sessions) so concurrent identical tile queries dedupe to one Mondrian
+         execution; cross-role isolation is via the role-aware key, not bean
+         scope. Default: enabled, 5s window. -->
+    <bean id="queryCoalescerBean" class="org.saiku.service.olap.QueryCoalescer"/>
+
     <bean id="thinQueryBean" scope="session"
           class="org.saiku.service.olap.ThinQueryService">
         <aop:scoped-proxy/>
@@ -164,6 +170,8 @@
         <property name="queryCache" ref="saikuQueryCacheBean"/>
         <!-- saiku#1114: role-set mixed into the cellset cache key so role-masked results never leak across roles -->
         <property name="userService" ref="userServiceBean"/>
+        <!-- saiku#946: shared in-flight coalescer (singleton) -->
+        <property name="queryCoalescer" ref="queryCoalescerBean"/>
     </bean>
 
     <bean id="platformBean" class="org.saiku.service.PlatformUtilsService">

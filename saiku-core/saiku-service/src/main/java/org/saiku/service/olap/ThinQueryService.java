@@ -122,6 +122,10 @@ public class ThinQueryService implements Serializable {
     /** Optional disk-backed Arrow cache. Null (or disabled) ⇒ always execute live. */
     private SaikuQueryCache queryCache;
 
+    /** Optional in-flight query coalescer (saiku#946). Null/disabled ⇒ every
+     *  call executes independently. Dedupes concurrent identical executions. */
+    private QueryCoalescer queryCoalescer;
+
     /**
      * Optional — current user's Saiku role-set, mixed into the cache key so role-masked
      * cellsets never leak across roles (saiku#1114). Null in non-Spring/standalone contexts.
@@ -146,6 +150,14 @@ public class ThinQueryService implements Serializable {
 
     public SaikuQueryCache getQueryCache() {
         return queryCache;
+    }
+
+    public void setQueryCoalescer(QueryCoalescer queryCoalescer) {
+        this.queryCoalescer = queryCoalescer;
+    }
+
+    public QueryCoalescer getQueryCoalescer() {
+        return queryCoalescer;
     }
 
     /**
@@ -212,6 +224,23 @@ public class ThinQueryService implements Serializable {
      */
     String cacheKeyFor(ThinQuery tq, String cubeVersion) {
         return QueryCacheKey.of(tq, cubeVersion, currentRolesForCacheKey());
+    }
+
+    /**
+     * Coalescing key (saiku#946) — the SAME role-aware identity the result cache
+     * uses (cube + MDX/model + slicer + role-set), so concurrent identical
+     * executions dedupe and a role-masked result is never shared across roles
+     * (the #1114 hazard). Formatter is intentionally NOT in the key: coalescing
+     * is on the formatter-independent CellSet (Mondrian execution); each caller
+     * formats its own copy afterwards. Returns null (⇒ no coalescing) if a key
+     * can't be built, so a keying failure never breaks the query.
+     */
+    private String coalesceKey(ThinQuery tq) {
+        try {
+            return cacheKeyFor(tq, QueryCacheKey.cubeVersion(tq));
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /**
@@ -405,7 +434,26 @@ public class ThinQueryService implements Serializable {
 
             Long start = (new Date()).getTime();
             log.debug("Query Start");
-            CellSet cellSet = executeInternalQuery(tq);
+            // saiku#946: dedupe concurrent identical executions. The first caller
+            // for a (cube,MDX,slicer,role) key runs the Mondrian query; concurrent
+            // callers share its CellSet for a short window. A coalesced caller
+            // skipped executeInternalQuery (which registers per-name context), so we
+            // re-register the shared result onto THIS caller's context — otherwise
+            // drillthrough/cancel on a coalesced tile would NPE on a null context.
+            CellSet cellSet;
+            final String coalesceKey = (queryCoalescer != null && queryCoalescer.isEnabled()) ? coalesceKey(tq) : null;
+            if (coalesceKey != null) {
+                cellSet = queryCoalescer.coalesce(coalesceKey, () -> {
+                    try {
+                        return executeInternalQuery(tq);
+                    } catch (Exception e) {
+                        throw new SaikuServiceException("Can't execute query: " + tq.getName(), e);
+                    }
+                });
+                registerExternalContext(tq, cellSet);
+            } else {
+                cellSet = executeInternalQuery(tq);
+            }
             log.debug("Query End");
             String runId = "RUN#:" + ID_GENERATOR.get();
             Long exec = (new Date()).getTime();
