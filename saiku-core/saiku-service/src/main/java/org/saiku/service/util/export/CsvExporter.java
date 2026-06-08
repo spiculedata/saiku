@@ -51,7 +51,7 @@ public class CsvExporter {
      * a number rather than being quoted into text. Applied to every emitted
      * field, BEFORE quote-doubling + enclosing.
      */
-    static String neutralizeCsvFormula(String value) {
+    public static String neutralizeCsvFormula(String value) {
         if (value == null || value.isEmpty()) {
             return value;
         }
