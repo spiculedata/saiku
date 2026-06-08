@@ -74,6 +74,18 @@ jobs:
           echo "jar_name=saiku-${VERSION}.jar" >> "$GITHUB_OUTPUT"
           echo "dist_name=saiku-dist-${VERSION}.zip" >> "$GITHUB_OUTPUT"
 
+      - name: mvn verify (fail-fast: spotless + tests)
+        # Defence in depth — branch protection SHOULD have caught any
+        # spotless / test failure on the PR before the merge that led
+        # to this tag, but the v4.5.1 release found that a red CI run
+        # on a PR could still be merged (branch protection was off).
+        # Run the full verify gate here so a busted tag fails BEFORE
+        # we spend Docker / GH-Packages cycles + post a broken release.
+        # `-DskipTests=false` is explicit so a stray `-DskipTests` in
+        # the environment can't downgrade the gate; the upstream ci.yml
+        # already established that the suite runs fast enough.
+        run: mvn -B -ntp -DskipTests=false verify
+
       - name: mvn package (launcher)
         # saiku-launcher hosts both the REST + UI on :8080 AND the native
         # MCP endpoint at /rest/saiku/api/mcp (issue #878). The standalone
