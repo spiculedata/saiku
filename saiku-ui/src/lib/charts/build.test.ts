@@ -675,3 +675,47 @@ describe("buildChartOption — high contrast (#1091)", () => {
     expect(hcPos).not.toBe(hcNeg);
   });
 });
+
+describe("buildChartOption — x-axis label width per axis", () => {
+  // saiku 2026-06-07 user feedback "thats not even fucking angled and
+  // still cut off and is literally the only value on the axis" — root
+  // cause was catLabel computing width against max(rows, cols), so a
+  // single-category x-axis got cramped to the 40px MIN clamp just
+  // because the y side had ~50 series.
+  //
+  // Each chart family asserts that the x-axis label width tracks ITS
+  // OWN category count, not the bigger of the two.
+
+  function lopsided(xCount: number, yCount: number): ChartProjection {
+    return {
+      rowCategories: Array.from({ length: yCount }, (_, i) => `r${i}`),
+      columnCategories: Array.from({ length: xCount }, (_, i) => `c${i}`),
+      matrix: Array.from({ length: yCount }, () =>
+        Array.from({ length: xCount }, (_, j) => 100 + j),
+      ),
+    };
+  }
+
+  test("scatter with 3 x-categories + 50 y-series gets a roomy x-label width", () => {
+    // chartWidth=1400, axisCategoryCount=3 → per=466 → clamped MAX 160.
+    // Old behaviour: max(3, 50) = 50, per=28, clamped MIN 40 → "CA /…".
+    const opt = buildChartOption(lopsided(3, 50), "scatter", opts(), undefined, {
+      compact: false,
+      chartWidth: 1400,
+    }) as Record<string, unknown>;
+    const xAxis = opt.xAxis as { axisLabel: { width: number } };
+    expect(xAxis.axisLabel.width).toBeGreaterThanOrEqual(120);
+  });
+
+  test("bar with 50 x-categories gets a cramped (rotated) x-label width", () => {
+    const opt = buildChartOption(lopsided(2, 50), "bar", opts(), undefined, {
+      compact: false,
+      chartWidth: 1400,
+    }) as Record<string, unknown>;
+    const xAxis = opt.xAxis as { axisLabel: { width: number; rotate: number } };
+    // Rotate kicks in past 8 categories on the x-axis; rotated labels
+    // get the 160px width budget (they read diagonally).
+    expect(xAxis.axisLabel.rotate).toBe(30);
+    expect(xAxis.axisLabel.width).toBe(160);
+  });
+});
