@@ -232,6 +232,34 @@ export interface AnomalyConfig {
 }
 /* --- end issue #907 block ------------------------------------------------- */
 
+/* --- issue #908: time-series forecast on chart tiles ---------------------
+ * Opt-in server-side statistical forecast (Tier-3, NO LLM) that extends a
+ * time-series chart with a projected horizon. When enabled the chart tile calls
+ * POST /ai/forecast instead of /ai/query; the observed data renders as usual and
+ * the horizon is appended as a dashed continuation with a confidence band. All
+ * computation is server-side. */
+
+/** Forecast method. {@code "arima"} / {@code "prophet"} are reserved — the
+ *  backend currently returns a clear "not yet supported" validation error for
+ *  them (only {@code "ets"} is implemented). */
+export type ForecastMethodConfig = "ets" | "arima" | "prophet";
+
+/** Per-tile forecast config (issue #908). Only consulted when
+ *  {@code type === "chart"} and {@link ForecastConfig.enabled} is true. */
+export interface ForecastConfig {
+  /** Master opt-in. When false / unset no forecast request is made. */
+  enabled: boolean;
+  /** Forecast method. Defaults to "ets". */
+  method?: ForecastMethodConfig;
+  /** Number of future points to project. Defaults to 6 (server clamps 1–365). */
+  horizon?: number;
+  /** Prediction-interval confidence in (0,1). Defaults to 0.95. */
+  confidence?: number;
+  /** Unique name of the time axis. Defaults to the tile's row axis when omitted. */
+  timeAxis?: string;
+}
+/* --- end issue #908 block ------------------------------------------------- */
+
 export interface DashboardTile {
   id: string;
   x: number;
@@ -251,6 +279,9 @@ export interface DashboardTile {
   /** Anomaly-detection config (issue #907). Only consulted when
    *  {@code type === "chart"} and the chart is a time-series type. */
   anomaly?: AnomalyConfig;
+  /** Forecast config (issue #908). Only consulted when
+   *  {@code type === "chart"} and the chart is a time-series type. */
+  forecast?: ForecastConfig;
   text?: string;
   target?: DashboardFilter;
   widget?: FilterWidget;
