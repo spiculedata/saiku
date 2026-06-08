@@ -91,6 +91,7 @@ import org.saiku.service.olap.totals.AxisInfo;
 import org.saiku.service.olap.totals.TotalNode;
 import org.saiku.service.olap.totals.TotalsListsBuilder;
 import org.saiku.service.olap.totals.aggregators.TotalAggregator;
+import org.saiku.service.user.UserService;
 import org.saiku.service.util.KeyValue;
 import org.saiku.service.util.QueryContext;
 import org.saiku.service.util.QueryContext.ObjectKey;
@@ -120,6 +121,16 @@ public class ThinQueryService implements Serializable {
 
     /** Optional disk-backed Arrow cache. Null (or disabled) ⇒ always execute live. */
     private SaikuQueryCache queryCache;
+
+    /**
+     * Optional — current user's Saiku role-set, mixed into the cache key so role-masked
+     * cellsets never leak across roles (saiku#1114). Null in non-Spring/standalone contexts.
+     */
+    private UserService userService;
+
+    public void setUserService(UserService userService) {
+        this.userService = userService;
+    }
 
     public void setOlapDiscoverService(OlapDiscoverService os) {
         this.olapDiscoverService = os;
@@ -165,7 +176,9 @@ public class ThinQueryService implements Serializable {
         createQuery(tq);
 
         final String cubeVersion = QueryCacheKey.cubeVersion(tq);
-        final String key = QueryCacheKey.of(tq, cubeVersion);
+        // Mix the caller's role-set into the key so a role-masked cellset is never served
+        // to a different role from cache (saiku#1114). Empty role-set ⇒ same key as before.
+        final String key = QueryCacheKey.of(tq, cubeVersion, currentRolesForCacheKey());
 
         if (queryCache == null || !queryCache.isEnabled()) {
             CachedQueryResult r = runAndMaterialise(tq);
@@ -187,6 +200,25 @@ public class ThinQueryService implements Serializable {
                 result.rows,
                 tq.getName());
         return result;
+    }
+
+    /**
+     * The current user's Saiku role-set for cache-key isolation, or empty when it can't be
+     * resolved (no Spring/session context — boot, scheduled tasks, standalone). Never throws:
+     * a missing context must not fail the query, and an empty set hashes to the legacy key.
+     */
+    private java.util.Collection<String> currentRolesForCacheKey() {
+        if (userService == null) {
+            return java.util.Collections.emptyList();
+        }
+        try {
+            String[] roles = userService.getCurrentUserRoles();
+            return roles == null ? java.util.Collections.emptyList() : java.util.Arrays.asList(roles);
+        } catch (Exception e) {
+            // No security/session context available — degrade to an unkeyed (role-less) cache
+            // entry rather than failing the query.
+            return java.util.Collections.emptyList();
+        }
     }
 
     /** Live-execute the query and encode the CellSet to Arrow IPC bytes. */

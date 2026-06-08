@@ -162,6 +162,8 @@
         <aop:scoped-proxy/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
         <property name="queryCache" ref="saikuQueryCacheBean"/>
+        <!-- saiku#1114: role-set mixed into the cellset cache key so role-masked results never leak across roles -->
+        <property name="userService" ref="userServiceBean"/>
     </bean>
 
     <bean id="platformBean" class="org.saiku.service.PlatformUtilsService">
