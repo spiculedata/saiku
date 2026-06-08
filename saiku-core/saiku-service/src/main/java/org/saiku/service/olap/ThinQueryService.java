@@ -178,7 +178,7 @@ public class ThinQueryService implements Serializable {
         final String cubeVersion = QueryCacheKey.cubeVersion(tq);
         // Mix the caller's role-set into the key so a role-masked cellset is never served
         // to a different role from cache (saiku#1114). Empty role-set ⇒ same key as before.
-        final String key = QueryCacheKey.of(tq, cubeVersion, currentRolesForCacheKey());
+        final String key = cacheKeyFor(tq, cubeVersion);
 
         if (queryCache == null || !queryCache.isEnabled()) {
             CachedQueryResult r = runAndMaterialise(tq);
@@ -200,6 +200,18 @@ public class ThinQueryService implements Serializable {
                 result.rows,
                 tq.getName());
         return result;
+    }
+
+    /**
+     * Package-private seam (saiku#1114) so the role-aware cache key is unit-testable without a
+     * live olap connection: builds the cellset cache key for {@code tq} exactly as {@link
+     * #executeCached} does, mixing in the current user's Mondrian role-set via {@link
+     * #currentRolesForCacheKey()}. The original #1114 leak was the call-site omitting the
+     * role-set — this IS that call-site, so the wiring (not just {@link QueryCacheKey#of}) is
+     * pinned by {@code ThinQueryServiceCacheKeyTest}.
+     */
+    String cacheKeyFor(ThinQuery tq, String cubeVersion) {
+        return QueryCacheKey.of(tq, cubeVersion, currentRolesForCacheKey());
     }
 
     /**
