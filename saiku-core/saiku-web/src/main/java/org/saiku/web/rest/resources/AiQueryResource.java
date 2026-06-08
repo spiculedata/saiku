@@ -207,7 +207,7 @@ public class AiQueryResource {
             tq = MAPPER.readValue(raw, ThinQuery.class);
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             log.error("saved-query {} is not a valid ThinQuery JSON", path, e);
-            return badRequest("path", "Saved query is not valid ThinQuery JSON: " + e.getMessage(), null);
+            return badRequest("path", "Saved query is not valid ThinQuery JSON", null);
         }
         // Saved queries written by older builds stored the file path in
         // tq.name, which contains slashes. Jetty 12's strict URI rules
@@ -247,7 +247,7 @@ public class AiQueryResource {
             cds = thinQueryService.execute(tq);
         } catch (RuntimeException e) {
             log.error("saved-query execution failed for {}", path, e);
-            return error("execute failed: " + describeDeepestCause(e));
+            return error("execute failed");
         }
         AiQueryResponse resp = buildResponse(tq, cds, start, "records");
         return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
@@ -279,7 +279,7 @@ public class AiQueryResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (RuntimeException e) {
             log.error("AI query validation failed", e);
-            return error("validation failed: " + e.getMessage());
+            return error("validation failed");
         }
 
         CellDataSet cds;
@@ -301,7 +301,7 @@ public class AiQueryResource {
             Response pathErr = translatePhysPathNpe(e);
             if (pathErr != null) return pathErr;
             log.error("AI query execution failed", e);
-            return error("execute failed: " + describeDeepestCause(e));
+            return error("execute failed");
         }
 
         // saiku#915 / saiku-cloud MCP smoke-test 2026-05-23: a follow-up
@@ -412,7 +412,7 @@ public class AiQueryResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (RuntimeException e) {
             log.error("AI anomaly query validation failed", e);
-            return error("validation failed: " + e.getMessage());
+            return error("validation failed");
         }
 
         CellDataSet cds;
@@ -424,7 +424,7 @@ public class AiQueryResource {
             Response pathErr = translatePhysPathNpe(e);
             if (pathErr != null) return pathErr;
             log.error("AI anomaly query execution failed", e);
-            return error("execute failed: " + describeDeepestCause(e));
+            return error("execute failed");
         }
 
         // Always build in records format — that is the shape the augmenter and
@@ -438,7 +438,7 @@ public class AiQueryResource {
             // STL stub throws AiValidationException (handled above); any other
             // failure here is a real bug in the detector — surface it as a 500.
             log.error("AI anomaly detection failed", e);
-            return error("anomaly detection failed: " + e.getMessage());
+            return error("anomaly detection failed");
         }
 
         int anomalyCount = org.saiku.service.olap.ai.anomaly.AnomalyAugmenter.countAnomalies(resp);
@@ -523,7 +523,7 @@ public class AiQueryResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (RuntimeException e) {
             log.error("AI forecast query validation failed", e);
-            return error("validation failed: " + e.getMessage());
+            return error("validation failed");
         }
 
         CellDataSet cds;
@@ -535,7 +535,7 @@ public class AiQueryResource {
             Response pathErr = translatePhysPathNpe(e);
             if (pathErr != null) return pathErr;
             log.error("AI forecast query execution failed", e);
-            return error("execute failed: " + describeDeepestCause(e));
+            return error("execute failed");
         }
 
         AiQueryResponse resp = buildResponse(tq, cds, start, "records");
@@ -549,7 +549,7 @@ public class AiQueryResource {
             // arima/prophet stubs throw AiValidationException (handled above);
             // anything else here is a real forecaster bug → 500.
             log.error("AI forecast failed", e);
-            return error("forecast failed: " + e.getMessage());
+            return error("forecast failed");
         }
         resp.setRuntimeMs(System.currentTimeMillis() - start);
 
@@ -708,7 +708,7 @@ public class AiQueryResource {
             log.warn("AI ask execution failed after successful translation", e);
             AiQueryResponse aiResp = new AiQueryResponse();
             aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.EXECUTION_ERROR);
-            aiResp.setError("execute failed: " + describeDeepestCause(e));
+            aiResp.setError("execute failed");
             aiResp.setRuntimeMs(System.currentTimeMillis() - start);
             out.setResponse(aiResp);
         }
@@ -774,22 +774,6 @@ public class AiQueryResource {
         return null;
     }
 
-    /** Walk the cause chain to the deepest exception with a non-null
-     *  message; return "ClassName: message". The Spring/JAX-RS wrappers
-     *  ({@code SaikuServiceException}, {@code OlapException},
-     *  {@code MondrianException}) all flatten to the same useless "Can't
-     *  execute query: <uuid>" surface; the real signal is at the leaf. */
-    private static String describeDeepestCause(Throwable t) {
-        Throwable deepest = t;
-        for (Throwable cur = t; cur != null; cur = cur.getCause()) {
-            if (cur.getMessage() != null && !cur.getMessage().isEmpty()) {
-                deepest = cur;
-            }
-        }
-        if (deepest == t) return t.getMessage();
-        return deepest.getClass().getSimpleName() + ": " + deepest.getMessage();
-    }
-
     /**
      * Preview-only: run the converter to produce MDX without executing.
      * Useful for cost estimation, audit logs, and "show the user what's
@@ -820,7 +804,7 @@ public class AiQueryResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (RuntimeException e) {
             log.error("AI query preview failed", e);
-            return error("preview failed: " + e.getMessage());
+            return error("preview failed");
         }
     }
 
@@ -841,7 +825,7 @@ public class AiQueryResource {
             return Response.ok(cubes).type(MediaType.APPLICATION_JSON).build();
         } catch (RuntimeException e) {
             log.error("AI cube listing failed", e);
-            return error("listing failed: " + e.getMessage());
+            return error("listing failed");
         }
     }
 
@@ -865,7 +849,7 @@ public class AiQueryResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (RuntimeException e) {
             log.error("AI schema fetch failed for {}", cubeId, e);
-            return error("schema fetch failed: " + e.getMessage());
+            return error("schema fetch failed");
         }
     }
 
@@ -904,7 +888,7 @@ public class AiQueryResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (RuntimeException e) {
             log.error("AI member search failed for {}/{}/{} q={}", dimension, hierarchy, level, q, e);
-            return error("member search failed: " + e.getMessage());
+            return error("member search failed");
         }
     }
 
@@ -944,7 +928,7 @@ public class AiQueryResource {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (RuntimeException e) {
             log.error("AI async submit validation failed", e);
-            return error("validation failed: " + e.getMessage());
+            return error("validation failed");
         }
         AsyncQueryHandle handle;
         try {
@@ -956,7 +940,7 @@ public class AiQueryResource {
             handle = asyncQueryService.submit(tq, attrs);
         } catch (RuntimeException e) {
             log.error("AI async submit failed", e);
-            return error("submit failed: " + e.getMessage());
+            return error("submit failed");
         }
         AiQueryResponse resp = new AiQueryResponse();
         resp.setQueryId(handle.getId());
@@ -1353,7 +1337,7 @@ public class AiQueryResource {
                     .build();
         }
         log.error("AI drillthrough failed for {}", queryId, e);
-        return error("drillthrough failed: " + e.getMessage());
+        return error("drillthrough failed");
     }
 
     /**
@@ -1500,7 +1484,7 @@ public class AiQueryResource {
                         .build();
             }
             log.error("AI drillthrough CSV export failed for {}", queryId, e);
-            return error("drillthrough CSV export failed: " + e.getMessage());
+            return error("drillthrough CSV export failed");
         } finally {
             JdbcCleanup.closeQuietly(rs);
         }
@@ -1559,7 +1543,7 @@ public class AiQueryResource {
                 return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
             }
             log.error("AI drillthrough column discovery failed for {}", queryId, e);
-            return error("drillthrough column discovery failed: " + e.getMessage());
+            return error("drillthrough column discovery failed");
         }
     }
 
