@@ -167,7 +167,10 @@ public class CsvExporter {
         return new byte[0];
     }
 
-    private static byte[] getCsv(CellDataSet table, String delimiter, String enclosing) {
+    // Package-private (was private) so CsvExporterWiringTest can drive the CellDataSet export
+    // path directly and prove the formula-injection neutralisation is wired in at the emission
+    // sites — behaviour unchanged.
+    static byte[] getCsv(CellDataSet table, String delimiter, String enclosing) {
         if (table != null) {
             AbstractBaseCell[][] rowData = table.getCellSetBody();
             AbstractBaseCell[][] rowHeader = table.getCellSetHeaders();
