@@ -6,7 +6,9 @@
  */
 package org.saiku.service.util.xml;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import jakarta.xml.bind.JAXBContext;
@@ -50,19 +52,28 @@ public class SecureXmlTest {
 
         JAXBContext ctx = JAXBContext.newInstance(Container.class);
         try {
-            Object result =
-                    SecureXml.secureUnmarshal(ctx, new ByteArrayInputStream(xxe.getBytes(StandardCharsets.UTF_8)));
-            // If parsing didn't blow up, the entity MUST NOT have expanded to the file contents.
-            if (result instanceof Container) {
-                String name = ((Container) result).name;
-                if (name != null && name.contains("TOP_SECRET")) {
-                    fail("XXE expansion succeeded — secure parser leaked file contents into <name>: " + name);
-                }
-            }
-        } catch (Exception expected) {
-            // Acceptable: hardened parser refuses to process DOCTYPE declarations.
-            return;
+            SecureXml.secureUnmarshal(ctx, new ByteArrayInputStream(xxe.getBytes(StandardCharsets.UTF_8)));
+            fail("secure parser must REJECT the DOCTYPE-bearing payload, not parse it");
+        } catch (Exception e) {
+            // The original test treated ANY exception as "secure" and also passed if the parse
+            // silently succeeded without leaking — so it could stay green even if the
+            // disallow-doctype-decl control broke and some unrelated error fired. Pin the
+            // mechanism instead: the secure path (disallow-doctype-decl=true) must fail BECAUSE
+            // of the DOCTYPE, and the file contents must never surface anywhere in the failure.
+            // Mirrors QueryDeserializerXxeTest's rigor on the JDOM2 parse path.
+            String trace = throwableChainText(e);
+            assertTrue(
+                    "rejection must be the disallowed DOCTYPE, was: " + trace,
+                    trace.toUpperCase(java.util.Locale.ROOT).contains("DOCTYPE"));
+            assertFalse("file contents must never appear in the failure: " + trace, trace.contains("TOP_SECRET"));
         }
+    }
+
+    /** Full message text down the cause / linked-exception chain (JAXB wraps the SAX error). */
+    private static String throwableChainText(Throwable t) {
+        java.io.StringWriter sw = new java.io.StringWriter();
+        t.printStackTrace(new java.io.PrintWriter(sw));
+        return sw.toString();
     }
 
     @Test
