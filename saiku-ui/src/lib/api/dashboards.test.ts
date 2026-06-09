@@ -13,6 +13,8 @@ import {
   cloneDashboardWithFreshIds,
   cloneTileWithFreshId,
   normaliseDashboardPath,
+  normaliseRepoPath,
+  toRepoRelative,
   type Dashboard,
   type DashboardTile,
 } from "./dashboards";
@@ -62,6 +64,51 @@ describe("normaliseDashboardPath", () => {
 
   it("allows a homes/... path even without a current user", () => {
     expect(normaliseDashboardPath("homes/other/x.saikudash", "")).toBe("homes/other/x.saikudash");
+  });
+});
+
+describe("normaliseRepoPath", () => {
+  // Regression: the user-reported 2026-06-08 dashboard URL contained
+  // a double slash (/ui/dashboards//homes/<uuid>/foo.saikudash/) and
+  // refused to refresh because SvelteKit's [...path] router couldn't
+  // make sense of it. Producer-side normalisation here keeps that
+  // URL well-formed before it ever reaches the router.
+  it("strips leading slashes", () => {
+    expect(normaliseRepoPath("/homes/admin/foo.saikudash")).toBe("homes/admin/foo.saikudash");
+  });
+
+  it("strips trailing slashes", () => {
+    expect(normaliseRepoPath("homes/admin/foo.saikudash/")).toBe("homes/admin/foo.saikudash");
+  });
+
+  it("collapses runs of slashes", () => {
+    expect(normaliseRepoPath("homes///admin//foo.saikudash")).toBe("homes/admin/foo.saikudash");
+  });
+
+  it("handles the user-reported `/homes/<uuid>/foo.saikudash/` shape", () => {
+    expect(normaliseRepoPath("/homes/771b40ff-8f4c-456e-ac69-a7dba1c88c5a/foo.saikudash/")).toBe(
+      "homes/771b40ff-8f4c-456e-ac69-a7dba1c88c5a/foo.saikudash",
+    );
+  });
+
+  it("is a no-op on already-clean paths", () => {
+    expect(normaliseRepoPath("homes/admin/foo.saikudash")).toBe("homes/admin/foo.saikudash");
+    expect(normaliseRepoPath("")).toBe("");
+  });
+});
+
+describe("toRepoRelative", () => {
+  it("normalises a leading slash after stripping the data prefix", () => {
+    // Listed JCR paths sometimes already include a leading slash on
+    // the captured remainder — the normaliser absorbs it so URL
+    // builders downstream don't end up with `/dashboards/` + `/foo`.
+    expect(
+      toRepoRelative("/Users/op/saiku-home/repository/data/unknown/homes/admin/foo.saikudash"),
+    ).toBe("homes/admin/foo.saikudash");
+  });
+
+  it("returns already-relative input cleaned up", () => {
+    expect(toRepoRelative("/homes/admin/foo.saikudash/")).toBe("homes/admin/foo.saikudash");
   });
 });
 

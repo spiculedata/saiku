@@ -37,25 +37,25 @@ jobs:
               - 'lib/repo/**'
               - 'pom.xml'
               - '**/pom.xml'
-              - '.github/workflows/ci.yml'
+              # Any workflow file edit (ci.yml, release.yml, release-prep.yml,
+              # claude.yml, …) re-runs the build so branch-protected required
+              # jobs aren't silently skipped — a workflow-only PR otherwise
+              # sits as BLOCKED waiting for required checks that never fire.
+              - '.github/workflows/**'
               - '.github/test-floors.json'
             ui:
               - 'saiku-ui/**'
-              - '.github/workflows/ci.yml'
+              - '.github/workflows/**'
             docs:
               - 'docs/**'
               - 'README.md'
               - 'CLAUDE.md'
 
   build:
-    name: build (JDK 21, ${{ matrix.os }})
+    name: build (JDK 21, ubuntu-latest)
     needs: changes
     if: needs.changes.outputs.java == 'true' || github.event_name == 'push'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK 21
@@ -203,3 +203,36 @@ jobs:
           path: saiku-dist-${{ steps.ver.outputs.version }}.zip
           if-no-files-found: error
           retention-days: 30
+
+  # Single aggregator status check. Branch protection requires only `ci`,
+  # which makes the rule stable across:
+  #   - matrix jobs whose display names interpolate ${{ matrix.os }}
+  #     (the un-expanded template name never appears as a status check)
+  #   - path-filtered jobs that legitimately skip on PRs that don't touch
+  #     their inputs (UI-only, workflow-only, docs-only)
+  # `if: always()` runs the gate regardless of upstream outcomes; the
+  # script then fails if any upstream reports anything other than
+  # success/skipped — so a real build failure still blocks the merge.
+  ci:
+    name: ci
+    needs: [changes, build, ui, dist]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify upstream jobs passed or were skipped
+        run: |
+          set -euo pipefail
+          fail=0
+          for entry in \
+            "changes=${{ needs.changes.result }}" \
+            "build=${{ needs.build.result }}" \
+            "ui=${{ needs.ui.result }}" \
+            "dist=${{ needs.dist.result }}"; do
+            name="${entry%%=*}"
+            result="${entry#*=}"
+            case "$result" in
+              success|skipped) echo "ok: $name=$result" ;;
+              *) echo "::error::$name=$result"; fail=1 ;;
+            esac
+          done
+          exit "$fail"
