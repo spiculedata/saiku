@@ -305,17 +305,6 @@
                             <arguments>run build</arguments>
                             <environmentVariables>
                                 <SAIKU_BASE_PATH>/ui</SAIKU_BASE_PATH>
-                                <!-- Vite/Rollup peak heap on this build is ~2.5GB
-                                     on the GitHub Actions macos-latest runner
-                                     (smaller default heap than ubuntu's). V8's
-                                     ~1.7GB default ceiling triggers an OOM
-                                     ("Ineffective mark-compacts near heap
-                                     limit") during `npm run build`, failing
-                                     CI intermittently even when nothing
-                                     changed. 4GB gives comfortable headroom
-                                     on every runner class without affecting
-                                     dev machines. -->
-                                <NODE_OPTIONS>--max-old-space-size=4096</NODE_OPTIONS>
                             </environmentVariables>
                         </configuration>
                     </execution>
