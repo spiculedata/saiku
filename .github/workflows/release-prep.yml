@@ -1,0 +1,62 @@
+name: release-prep
+
+# Triggered when a release branch is pushed or updated. Runs the same
+# mvn verify gate (spotless + tests + everything the release workflow
+# will run later) so the operator sees a red/green BEFORE opening the
+# release PR to main + tagging — not after the tag has already kicked
+# off downstream Docker / GH-Packages / docs work.
+#
+# Cheaper to discover a spotless break here than after a tag is
+# published and the release jobs explode (which is exactly how v4.5.1
+# went sideways).
+on:
+  push:
+    branches:
+      - 'release/*'
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: release-prep-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: mvn verify (release prep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # Same Maven settings.xml the release + CI workflows write —
+      # multi-server so the build can resolve the Spicule deps from
+      # GH Packages. Keep this snippet in sync with ci.yml / release.yml.
+      - name: Configure Maven settings.xml
+        env:
+          GH_PACKAGES_USER: ${{ github.actor }}
+          GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<EOF
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+            <servers>
+              <server><id>github-mondrian-saiku</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-olap4j-xmlaserver</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+              <server><id>github-saiku-query</id><username>${GH_PACKAGES_USER}</username><password>${GH_PACKAGES_TOKEN}</password></server>
+            </servers>
+          </settings>
+          EOF
+
+      - name: mvn verify (spotless + tests)
+        # Explicit -DskipTests=false so a stray env var can't downgrade
+        # the gate. Failing here flags the release as not-mergeable to
+        # main, which is the whole point.
+        run: mvn -B -ntp -DskipTests=false verify
