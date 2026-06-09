@@ -10,7 +10,6 @@
   import ToastStack from "$lib/components/ToastStack.svelte";
   import UpgradeBanner from "$lib/components/UpgradeBanner.svelte";
   import { LogOut, Shield, Home, LayoutDashboard, UserRound } from "lucide-svelte";
-  import Tour from "$lib/components/Tour.svelte";
   import SessionExpiredBanner from "$lib/components/SessionExpiredBanner.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { installAuthInterceptor, onAuthFailure } from "$lib/api/http";
@@ -125,7 +124,9 @@
     {@render children()}
   </main>
   <ToastStack />
-  {#if session.current}<Tour />{/if}
+  <!-- Tour mount moved to the workspace route (+page.svelte) so it
+       only fires where its target selectors actually exist
+       (#cubes-select et al). 2026-06-08 user feedback. -->
   <SessionExpiredBanner
     open={sessionError.open}
     statusLabel={sessionError.statusLabel}

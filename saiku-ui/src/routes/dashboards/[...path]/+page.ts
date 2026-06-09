@@ -9,6 +9,7 @@
  * blocking the route render.
  */
 
+import { normaliseRepoPath } from "$lib/api/dashboards";
 import type { PageLoad } from "./$types";
 
 // Dynamic route, can't be prerendered. Saiku's root layout prerenders by
@@ -17,8 +18,13 @@ export const prerender = false;
 
 export const load: PageLoad = ({ params }) => {
   // params.path is the raw rest segment — SvelteKit returns it as a single
-  // string with slashes preserved (NOT an array). Leading/trailing slashes
-  // are trimmed by the router already.
-  const path = params.path ?? "";
+  // string with slashes preserved (NOT an array). The router usually trims
+  // leading / trailing slashes, but URLs that opened from older clients can
+  // still carry `//homes/<uuid>/foo.saikudash/` (the double slash is the
+  // tell — listed JCR paths sometimes have a leading slash that the URL
+  // builder concatenated to the route prefix). Normalise defensively so
+  // refresh always lands on the same dashboard regardless of how the URL
+  // was constructed (user-reported 2026-06-08).
+  const path = normaliseRepoPath(params.path ?? "");
   return { dashboardPath: path };
 };

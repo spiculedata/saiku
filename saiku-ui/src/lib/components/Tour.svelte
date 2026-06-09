@@ -2,6 +2,7 @@
   import { browser } from "$app/environment";
   import { onMount } from "svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
+  import { session } from "$lib/stores/session.svelte";
 
   interface Step {
     selector: string;
@@ -16,7 +17,16 @@
     { selector: ".view-toggle", titleKey: "tour.gridChart.title", bodyKey: "tour.gridChart.body" },
   ];
 
-  const STORAGE_KEY = "saiku.tour.done";
+  /** Per-user storage key — a second user on the same browser should
+   *  get their own first-time experience. Falls back to a global key
+   *  for anonymous / pre-session bootstrap (which shouldn't ever
+   *  reach this code path, since the parent route gates on
+   *  session.current). 2026-06-08. */
+  const STORAGE_KEY_FALLBACK = "saiku.tour.done";
+  function storageKey(): string {
+    const u = session.current?.username;
+    return u ? `saiku.tour.done.${u}` : STORAGE_KEY_FALLBACK;
+  }
 
   let active = $state<boolean>(false);
   let stepIdx = $state<number>(0);
@@ -29,11 +39,29 @@
     anchor = el ? el.getBoundingClientRect() : null;
   }
 
+  /** The first step's target — the cubes select — only exists on the
+   *  workspace route. If it's missing the user is on a route where
+   *  the tour wouldn't anchor anywhere meaningful, so don't start. */
+  function workspaceVisible(): boolean {
+    return !!document.querySelector(STEPS[0].selector);
+  }
+
   onMount(() => {
     if (!browser) return;
-    if (localStorage.getItem(STORAGE_KEY) === "1") return;
-    active = true;
-    requestAnimationFrame(updateAnchor);
+    if (localStorage.getItem(storageKey()) === "1") return;
+    // Migration: an earlier release wrote the flag under a global key.
+    // Honour it so users who already finished the tour aren't shown it
+    // again after the per-user split lands.
+    if (localStorage.getItem(STORAGE_KEY_FALLBACK) === "1") {
+      localStorage.setItem(storageKey(), "1");
+      return;
+    }
+    // Wait a tick for the workspace render then bail if it isn't here.
+    requestAnimationFrame(() => {
+      if (!workspaceVisible()) return;
+      active = true;
+      updateAnchor();
+    });
     const onResize = () => updateAnchor();
     window.addEventListener("resize", onResize);
     window.addEventListener("scroll", onResize, true);
@@ -69,12 +97,12 @@
 
   function finish() {
     active = false;
-    if (browser) localStorage.setItem(STORAGE_KEY, "1");
+    if (browser) localStorage.setItem(storageKey(), "1");
   }
 
   export function restart() {
     if (!browser) return;
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(storageKey());
     stepIdx = 0;
     active = true;
     requestAnimationFrame(updateAnchor);
