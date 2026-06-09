@@ -207,3 +207,36 @@ jobs:
           path: saiku-dist-${{ steps.ver.outputs.version }}.zip
           if-no-files-found: error
           retention-days: 30
+
+  # Single aggregator status check. Branch protection requires only `ci`,
+  # which makes the rule stable across:
+  #   - matrix jobs whose display names interpolate ${{ matrix.os }}
+  #     (the un-expanded template name never appears as a status check)
+  #   - path-filtered jobs that legitimately skip on PRs that don't touch
+  #     their inputs (UI-only, workflow-only, docs-only)
+  # `if: always()` runs the gate regardless of upstream outcomes; the
+  # script then fails if any upstream reports anything other than
+  # success/skipped — so a real build failure still blocks the merge.
+  ci:
+    name: ci
+    needs: [changes, build, ui, dist]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify upstream jobs passed or were skipped
+        run: |
+          set -euo pipefail
+          fail=0
+          for entry in \
+            "changes=${{ needs.changes.result }}" \
+            "build=${{ needs.build.result }}" \
+            "ui=${{ needs.ui.result }}" \
+            "dist=${{ needs.dist.result }}"; do
+            name="${entry%%=*}"
+            result="${entry#*=}"
+            case "$result" in
+              success|skipped) echo "ok: $name=$result" ;;
+              *) echo "::error::$name=$result"; fail=1 ;;
+            esac
+          done
+          exit "$fail"
