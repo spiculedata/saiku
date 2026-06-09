@@ -610,9 +610,16 @@ function encodePath(path: string): string {
  *  `homes/...` pass through. Everything else gets the user's home prefixed
  *  so non-admins don't trip the saveFile ACL gate from saiku#895. */
 export function normaliseDashboardPath(rawPath: string, username: string): string {
-  const p = toRepoRelative(rawPath).trim();
+  const trimmed = rawPath.trim();
+  if (!trimmed) throw new Error("Dashboard path is required");
+  // The leading-slash signal ("this is an explicit absolute repo path,
+  // don't prefix with homes/<user>") has to be captured BEFORE the
+  // toRepoRelative + normaliseRepoPath pass strips it. Without this
+  // the per-user home-prefix path swallows the user's intent.
+  const isAbsolute = trimmed.startsWith("/");
+  const p = isAbsolute ? normaliseRepoPath(trimmed) : toRepoRelative(trimmed).trim();
   if (!p) throw new Error("Dashboard path is required");
-  if (p.startsWith("/")) return p.slice(1);
+  if (isAbsolute) return p;
   if (p.startsWith("homes/")) return p;
   if (!username) throw new Error("Cannot resolve home: no current user");
   return `homes/${username}/${p}`;
@@ -623,13 +630,28 @@ export function normaliseDashboardPath(rawPath: string, username: string): strin
  *  down to the repo-relative form the dashboards REST API expects
  *  ({@code homes/admin/foo}). Absolute paths from `listRepository(...)` need
  *  this; already-relative inputs (from the editor or hand-typed) pass
- *  through unchanged. */
+ *  through unchanged.
+ *
+ *  Also normalises any leading / trailing / duplicate slashes — some
+ *  workspace seedings include a leading `/` on the JCR path
+ *  (`/homes/<uuid>/foo.saikudash`) which downstream URL builders would
+ *  otherwise turn into `/ui/dashboards//homes/<uuid>/foo.saikudash`. The
+ *  double slash breaks SvelteKit's [...path] router on refresh
+ *  (user-reported 2026-06-08). */
 export function toRepoRelative(path: string): string {
   // Match anything up to and including `/data/<workspace>/`; the capture
   // group is the repo-relative remainder. Falls through to the input
   // when the pattern doesn't match (already-relative paths).
   const m = path.match(/^.*?\/data\/[^/]+\/(.+)$/);
-  return m ? m[1] : path;
+  const candidate = m ? m[1] : path;
+  return normaliseRepoPath(candidate);
+}
+
+/** Strip leading + trailing slashes and collapse duplicate slashes. Safe
+ *  to call on both repo paths (`homes/admin/foo.saikudash`) and the rest
+ *  segment of a URL (`/homes/admin/foo.saikudash/`). */
+export function normaliseRepoPath(path: string): string {
+  return path.replace(/\/+/g, "/").replace(/^\/+|\/+$/g, "");
 }
 
 async function readError(res: Response): Promise<string> {
