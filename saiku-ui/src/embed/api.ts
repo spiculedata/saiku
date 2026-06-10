@@ -1,4 +1,4 @@
-import type { EmbedError, EmbedQueryResponse } from "./types";
+import type { EmbedDashboardLayout, EmbedError, EmbedQueryResponse } from "./types";
 
 /**
  * Fetch a saved query through the embed surface. Sends the token via the
@@ -72,5 +72,51 @@ async function readError(resp: Response): Promise<EmbedFetchError> {
   }
   return new EmbedFetchError(resp.status, body);
 }
+
+/**
+ * Fetch the layout of a saved dashboard. Returns the raw JSON shape;
+ * the caller walks `dash.layout.tiles` and dispatches by tile type.
+ *
+ * Same header / encoding posture as {@link fetchSavedQuery}.
+ */
+export async function fetchDashboard(
+  server: string,
+  path: string,
+  token?: string | null,
+): Promise<EmbedDashboardLayout> {
+  const base = stripTrailingSlash(server);
+  const url = `${base}/rest/saiku/api/embed/dashboard/${encodePath(path)}`;
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers["X-Saiku-Embed-Token"] = token;
+  const resp = await fetch(url, { headers, credentials: "omit" });
+  if (!resp.ok) throw await readError(resp);
+  return (await resp.json()) as EmbedDashboardLayout;
+}
+
+/**
+ * Run one tile's authored query through the embed surface. The server
+ * pulls the query body from the pinned dashboard, so the client only
+ * supplies the tile id — the tile body / cube binding is never
+ * accepted from the client side.
+ */
+export async function fetchDashboardTile(
+  server: string,
+  dashboardPath: string,
+  tileId: string,
+  token?: string | null,
+): Promise<EmbedQueryResponse> {
+  const base = stripTrailingSlash(server);
+  const url =
+    `${base}/rest/saiku/api/embed/dashboard/${encodePath(dashboardPath)}` +
+    `/tile/${encodeURIComponent(tileId)}/query`;
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers["X-Saiku-Embed-Token"] = token;
+  const resp = await fetch(url, { method: "POST", headers, credentials: "omit" });
+  if (!resp.ok) throw await readError(resp);
+  return (await resp.json()) as EmbedQueryResponse;
+}
+
+/* Re-export the dashboard shape so callers don't have to dig into types.ts. */
+export type { EmbedDashboardLayout, EmbedDashboardTile } from "./types";
 
 export { EmbedFetchError };

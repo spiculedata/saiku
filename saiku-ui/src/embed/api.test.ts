@@ -5,7 +5,7 @@
  * surface so a regression in the URL or header doesn't silently 401.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { EmbedFetchError, fetchSavedQuery } from "./api";
+import { EmbedFetchError, fetchDashboard, fetchDashboardTile, fetchSavedQuery } from "./api";
 
 describe("fetchSavedQuery", () => {
   let calls: Array<{ url: string; init?: RequestInit }>;
@@ -107,5 +107,74 @@ describe("fetchSavedQuery", () => {
     expect(out.format).toBe("records");
     expect(out.data).toHaveLength(1);
     expect(out.data[0]["Store Sales"].formatted).toBe("$1,234");
+  });
+});
+
+describe("fetchDashboard", () => {
+  let calls: Array<{ url: string; init?: RequestInit }>;
+
+  beforeEach(() => {
+    calls = [];
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      const body = { id: "d-1", name: "Exec", version: 1, layout: { cols: 12, tiles: [] } };
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("hits the dashboard URL with the token header", async () => {
+    await fetchDashboard("https://demo.saiku.bi", "homes/admin/exec.saikudash", "tok-d");
+    expect(calls[0].url).toBe("https://demo.saiku.bi/rest/saiku/api/embed/dashboard/homes/admin/exec.saikudash");
+    expect((calls[0].init?.headers as Record<string, string>)["X-Saiku-Embed-Token"]).toBe("tok-d");
+  });
+
+  it("returns the parsed dashboard layout", async () => {
+    const out = await fetchDashboard("https://demo.saiku.bi", "homes/admin/exec.saikudash");
+    expect(out.id).toBe("d-1");
+    expect(out.layout.cols).toBe(12);
+  });
+});
+
+describe("fetchDashboardTile", () => {
+  let calls: Array<{ url: string; init?: RequestInit }>;
+
+  beforeEach(() => {
+    calls = [];
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return Promise.resolve(
+        new Response(JSON.stringify({ format: "records", data: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("POSTs to /tile/{id}/query with the URL-encoded tileId", async () => {
+    // tileId can contain characters (a real tile is a UUID, but a
+    // server-side rename could in principle widen this) — encode
+    // defensively.
+    await fetchDashboardTile("https://demo.saiku.bi", "homes/admin/exec.saikudash", "tile/with/slash", "tok");
+    expect(calls[0].url).toBe(
+      "https://demo.saiku.bi/rest/saiku/api/embed/dashboard/homes/admin/exec.saikudash/tile/tile%2Fwith%2Fslash/query",
+    );
+    expect(calls[0].init?.method).toBe("POST");
+    expect((calls[0].init?.headers as Record<string, string>)["X-Saiku-Embed-Token"]).toBe("tok");
+  });
+
+  it("omits the token header for anonymous public dashboards", async () => {
+    await fetchDashboardTile("https://demo.saiku.bi", "shared/public.saikudash", "tile-1");
+    const headers = (calls[0].init?.headers ?? {}) as Record<string, string>;
+    expect(headers["X-Saiku-Embed-Token"]).toBeUndefined();
   });
 });
