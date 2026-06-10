@@ -108,6 +108,20 @@
 	         full auth. Order matters: more specific patterns precede /rest/**. -->
 	    <security:intercept-url pattern="/rest/saiku/share/view/**" access="hasRole('SHARE_GUEST') or isFullyAuthenticated()" />
 	    <security:intercept-url pattern="/rest/saiku/share/**" access="isFullyAuthenticated()" />
+	    <!-- <saiku-embed/> Web Component surface. The READ prefixes (query +
+	         dashboard) admit ROLE_EMBED_GUEST (established by embedAuthFilter on
+	         a valid token OR a matching public-grant) OR a logged-in user
+	         previewing the embed. That role unlocks ONLY these prefixes —
+	         everything else stays isFullyAuthenticated() below, so an embed
+	         guest can never reach /ai/query directly, drillthrough, other
+	         resources, the repository, or the mint endpoints.
+	         The mint + public-grant surfaces (/embed/tokens, /embed/public)
+	         stay full-auth — only logged-in users with GRANT on the resource
+	         may mint or make public. Order matters: read prefixes BEFORE
+	         /embed/** so the more specific rule wins. -->
+	    <security:intercept-url pattern="/rest/saiku/api/embed/query/**" access="hasRole('EMBED_GUEST') or isFullyAuthenticated()" />
+	    <security:intercept-url pattern="/rest/saiku/api/embed/dashboard/**" access="hasRole('EMBED_GUEST') or isFullyAuthenticated()" />
+	    <security:intercept-url pattern="/rest/saiku/api/embed/**" access="isFullyAuthenticated()" />
       <!-- saiku#1165 audit-3: route-level admin gate (defense in depth). The
            admin resources already carry @RolesAllowed("ROLE_ADMIN"), but this
            ensures a future un-annotated /admin resource can't be reached by a
@@ -143,6 +157,12 @@
            security-context filter, so the guest auth is set before the
            authorization check and never persisted to the session. -->
       <security:custom-filter ref="shareTokenAuthFilter" before="PRE_AUTH_FILTER"/>
+      <!-- <saiku-embed/>: establish a request-scoped ROLE_EMBED_GUEST for
+           valid embed tokens OR matching public-grants on /api/embed/
+           {query,dashboard}/**. Same slot semantics as the share filter
+           (pre-auth, never persisted). The filter is a no-op on the mint
+           endpoint so the caller's authenticated session reaches it. -->
+      <security:custom-filter ref="embedAuthFilter" after="PRE_AUTH_FILTER"/>
       <!-- saiku#1150: force the deferred CsrfToken to resolve on every
            response so the XSRF-TOKEN cookie is written eagerly. Sits AFTER
            Spring Security's CSRF filter (BASIC_AUTH_FILTER is a stable
