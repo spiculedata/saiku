@@ -441,6 +441,63 @@
         <property name="aiQueryResource" ref="aiQueryResource"/>
     </bean>
 
+    <!-- ====================================================================
+         <saiku-embed/> Web Component surface — the framework-agnostic embed
+         flow (revival of the historical Saiku 2.x embed widget; now works in
+         React/Vue/vanilla pages identically because it ships as a custom
+         element rather than a saiku-themed iframe).
+         Parallel to the share-token flow (#941) rather than retrofitted into
+         it: embed supports queries AND dashboards, has a public-grant ACL
+         for anonymous reads (not present on share), and uses a distinct
+         auth header so the two cannot be confused by a misconfigured filter
+         chain.
+         - embedTokenStore: file-backed at ${saiku.home}/embed-tokens/<id>.json.
+         - embedPublicRegistry: file-backed at ${saiku.home}/embed-public.json
+           (single sidecar — public grants are rare and curating them lives
+           with the owner, not the resource file itself).
+         - embedAuthFilter: Spring Security custom filter on the
+           /rest/saiku/api/embed/{query,dashboard}/** read prefix. On a valid
+           token OR matching public-grant it sets a request-scoped
+           ROLE_EMBED_GUEST pinned to one resource (wired in
+           applicationContext-saiku.xml). Mint endpoint is left alone so the
+           caller's authenticated session still applies there.
+         - embedTokenResource (@ /saiku/api/embed): owner-only mint/list/
+           revoke for tokens AND grant/list/revoke for public flags;
+           mint gated on getResourceACL (canGrant) — the per-resource ACL
+           (#940), same gate share-token mint uses.
+         - embedViewResource (@ /saiku/api/embed): the ONLY guest data
+           surface for embeds; runs each tile's authored query under the
+           owner's scope via sessionService.runAs, identical pattern to
+           shareViewResource. Tile query body comes from the stored
+           dashboard, never the client.
+         ==================================================================== -->
+    <bean id="embedTokenStore" class="org.saiku.web.embed.EmbedTokenStore"/>
+
+    <bean id="embedPublicRegistry" class="org.saiku.web.embed.EmbedPublicRegistry"/>
+
+    <bean id="embedAuthFilter"
+          class="org.saiku.web.security.embed.EmbedAuthFilter">
+        <constructor-arg ref="embedTokenStore"/>
+        <constructor-arg ref="embedPublicRegistry"/>
+    </bean>
+
+    <bean id="embedTokenResource"
+          class="org.saiku.web.rest.resources.embed.EmbedTokenResource">
+        <property name="tokenStore" ref="embedTokenStore"/>
+        <property name="publicRegistry" ref="embedPublicRegistry"/>
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
+    <bean id="embedViewResource" scope="request"
+          class="org.saiku.web.rest.resources.embed.EmbedViewResource">
+        <aop:scoped-proxy/>
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
+        <property name="aiQueryResource" ref="aiQueryResource"/>
+    </bean>
+
     <!-- Per-tile dashboard comments (issue #942). commentService stores a
          per-dashboard .jsonl via the internal-file API; commentResource
          (@ /saiku/api/dashboards/comments) gates every op on the caller's
