@@ -14,11 +14,11 @@ so the host page doesn't have to know anything about Saiku internals.
 Or via npm (for React / Vue / SPA projects that bundle their own JS):
 
 ```bash
-npm install @saikuanalytics/embed
+npm install @concepttocloud/saiku-embed
 ```
 
 ```ts
-import "@saikuanalytics/embed";
+import "@concepttocloud/saiku-embed";
 ```
 
 The import has the side effect of registering the `saiku-embed` tag
