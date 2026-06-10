@@ -288,6 +288,14 @@
             <scope>test</scope>
             <type>jar</type>
         </dependency>
+        <!-- MockHttpServletRequest/Response/FilterChain for the embed auth
+             filter tests — avoids hand-rolled servlet stubs. Version is
+             pinned through the BOM (matches the runtime Spring version). -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     <reporting>
         <plugins>
