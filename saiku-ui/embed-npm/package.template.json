@@ -1,0 +1,31 @@
+{
+  "name": "@saikuanalytics/embed",
+  "version": "0.0.0-PLACEHOLDER",
+  "description": "<saiku-embed> Web Component — drop a saved Saiku query or dashboard into any page.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./saiku-embed.js",
+  "files": [
+    "saiku-embed.js",
+    "saiku-embed.js.map",
+    "README.md"
+  ],
+  "keywords": [
+    "saiku",
+    "olap",
+    "embed",
+    "web-component",
+    "custom-element",
+    "dashboard",
+    "chart"
+  ],
+  "homepage": "https://github.com/spiculedata/saiku",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/spiculedata/saiku.git",
+    "directory": "saiku-ui/src/embed"
+  },
+  "bugs": {
+    "url": "https://github.com/spiculedata/saiku/issues"
+  }
+}

@@ -13,7 +13,10 @@
     props: {
       server: { type: "String", attribute: "server", reflect: false },
       token: { type: "String", attribute: "token", reflect: false },
+      kind: { type: "String", attribute: "kind", reflect: false },
       path: { type: "String", attribute: "path", reflect: false },
+      render: { type: "String", attribute: "render", reflect: false },
+      mode: { type: "String", attribute: "mode", reflect: false },
       height: { type: "String", attribute: "height", reflect: false },
     },
   }}
@@ -24,34 +27,46 @@
    * <saiku-embed> Web Component — drops into React / Vue / vanilla HTML
    * host pages identically (Svelte 5 customElement compile target).
    *
-   * v1 attribute surface:
+   * v3 attribute surface (cumulative):
    *   server  — origin of the Saiku launcher, e.g. https://demo.saiku.bi
    *   token   — opaque embed token from POST /saiku/api/embed/tokens.
    *             Omit for anonymous public reads.
-   *   path    — repository path of the saved query, ends .saiku
+   *   kind    — "query" (default) or "dashboard"
+   *   path    — repository path; ends .saiku for kind=query,
+   *             .saikudash for kind=dashboard
+   *   render  — for kind=query only: "table" (default) or "chart"
+   *   mode    — for render=chart only: "bar" (default), "line", "pie"
    *   height  — CSS height for the rendered surface (default 400px)
    *
-   * Re-renders whenever an attribute changes (Svelte 5 custom-element
-   * machinery wires that automatically). Network is debounced via
-   * $effect's natural batching — we don't have to throttle manually.
-   *
-   * Dashboard rendering + chart mode + the AI Query kind are scheduled
-   * for PR3; the data fetch path here is intentionally
-   * resource-kind-aware so we can drop those in without rewriting the
-   * shell.
+   * The kind-aware fetch path lets dashboards walk their own tiles
+   * and chart mode swaps the table for an ECharts canvas. Everything
+   * is data-driven from $effect so attribute changes drive re-renders.
    */
   import EmbedTable from "./EmbedTable.svelte";
+  import EmbedChart from "./EmbedChart.svelte";
+  import EmbedDashboard from "./EmbedDashboard.svelte";
   import { fetchSavedQuery, EmbedFetchError } from "./api";
   import type { EmbedRow } from "./types";
 
   interface Props {
     server?: string;
     token?: string;
+    kind?: string;
     path?: string;
+    render?: string;
+    mode?: string;
     height?: string;
   }
 
-  let { server = "", token = "", path = "", height = "400px" }: Props = $props();
+  let {
+    server = "",
+    token = "",
+    kind = "query",
+    path = "",
+    render = "table",
+    mode = "bar",
+    height = "400px",
+  }: Props = $props();
 
   let rows = $state<EmbedRow[] | null>(null);
   let error = $state<string | null>(null);
@@ -59,11 +74,22 @@
 
   /* Re-fetch whenever the load-bearing inputs change. Empty server / path
    * holds the component in an idle state — useful while a host React
-   * tree is hydrating attributes asynchronously. */
+   * tree is hydrating attributes asynchronously. Dashboard kind defers
+   * to <EmbedDashboard /> which manages its own lifecycle, so we only
+   * run the query fetch here for kind=query. */
   $effect(() => {
     const s = server.trim();
     const p = path.trim();
     const t = token.trim();
+    const k = kind.trim() || "query";
+    if (k !== "query") {
+      // Dashboards manage their own fetches (one for the layout, then
+      // one per tile under runAs). Reset so a kind switch doesn't show
+      // stale query rows.
+      rows = null;
+      error = null;
+      return;
+    }
     if (!s || !p) {
       rows = null;
       error = null;
@@ -104,14 +130,22 @@
 </script>
 
 <div class="saiku-embed-root" style="min-height: {height};">
-  {#if loading}
+  {#if kind === "dashboard"}
+    <EmbedDashboard {server} {token} {path} />
+  {:else if loading}
     <div class="state">Loading…</div>
   {:else if error}
     <div class="state error" role="alert">{error}</div>
   {:else if rows !== null}
-    <EmbedTable {rows} />
+    {#if render === "chart"}
+      <EmbedChart {rows} {mode} />
+    {:else}
+      <EmbedTable {rows} />
+    {/if}
   {:else}
-    <div class="state muted">Configure the embed: <code>server</code> + <code>path</code>.</div>
+    <div class="state muted">
+      Configure the embed: <code>server</code> + <code>path</code>.
+    </div>
   {/if}
 </div>
 
@@ -126,6 +160,7 @@
   }
   .saiku-embed-root {
     width: 100%;
+    height: 100%;
     overflow: auto;
   }
   .state {

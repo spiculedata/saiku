@@ -254,6 +254,62 @@ jobs:
           draft: false
           prerelease: false
 
+  npm-embed:
+    # Publishes the <saiku-embed/> Web Component bundle to npm as
+    # @saikuanalytics/embed on every tag push. The bundle is also
+    # served at /ui/saiku-embed.js from the launcher — the npm release
+    # is the convenience path for React / Vue / SPA users who want to
+    # `npm install` it. Best-effort: a failed publish (already-released
+    # version on a re-run) skips silently rather than failing the
+    # release.
+    name: Publish @saikuanalytics/embed to npm
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: [jar]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+          cache-dependency-path: saiku-ui/package-lock.json
+      - name: Install + build embed bundle
+        working-directory: saiku-ui
+        # `npm run build` orchestrates build:app + build:embed +
+        # build:embed-npm; we only need the last two so the embed
+        # bundle is staged. Run the orchestrator anyway — it's
+        # idempotent and keeps the script surface uniform with the
+        # webapp's Maven-driven build.
+        env:
+          SAIKU_BASE_PATH: /ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+      - name: Verify staged version matches tag
+        env:
+          VERSION: ${{ needs.jar.outputs.version }}
+        run: |
+          set -euo pipefail
+          STAGED=$(node -p "require('./saiku-ui/embed-npm/package.json').version")
+          if [ "$STAGED" != "$VERSION" ]; then
+            echo "::error::embed-npm version mismatch: package.json=$STAGED tag=$VERSION"
+            exit 1
+          fi
+          echo "embed-npm version $STAGED matches tag $VERSION"
+      - name: npm publish
+        # NPM_TOKEN is an Automation token on the @saikuanalytics scope;
+        # set as a repo secret. The `|| echo` swallow keeps a re-publish
+        # of an existing version from failing the whole release — npm
+        # 409s and we just move on.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd saiku-ui/embed-npm
+          npm publish --access public || \
+            echo "::warning::npm publish skipped (likely already-published or missing NPM_TOKEN)"
+
   docs-changelog:
     name: Open docs-site changelog PR
     if: github.event_name == 'push'
