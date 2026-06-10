@@ -256,13 +256,13 @@ jobs:
 
   npm-embed:
     # Publishes the <saiku-embed/> Web Component bundle to npm as
-    # @saikuanalytics/embed on every tag push. The bundle is also
+    # @concepttocloud/saiku-embed on every tag push. The bundle is also
     # served at /ui/saiku-embed.js from the launcher — the npm release
     # is the convenience path for React / Vue / SPA users who want to
     # `npm install` it. Best-effort: a failed publish (already-released
     # version on a re-run) skips silently rather than failing the
     # release.
-    name: Publish @saikuanalytics/embed to npm
+    name: Publish @concepttocloud/saiku-embed to npm
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     needs: [jar]
