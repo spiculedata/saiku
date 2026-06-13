@@ -69,6 +69,12 @@ public class EmbedTokenResource {
     private DatasourceService datasourceService;
     private SessionService sessionService;
     private UserService userService;
+    /** saiku-cloud#940. Resolves a resource's bound cubes + walks their
+     *  AiSchemas for {@code saiku.semantic.pii=true} annotations. Optional —
+     *  when null (Spring bean missing, stub context), the PII gate is a
+     *  no-op and the surrounding GRANT check remains the load-bearing
+     *  security check. */
+    private org.saiku.web.embed.EmbedPiiInspector piiInspector;
 
     public void setTokenStore(EmbedTokenStore s) {
         this.tokenStore = s;
@@ -88,6 +94,10 @@ public class EmbedTokenResource {
 
     public void setUserService(UserService s) {
         this.userService = s;
+    }
+
+    public void setPiiInspector(org.saiku.web.embed.EmbedPiiInspector i) {
+        this.piiInspector = i;
     }
 
     /* ---------------------------- tokens ---------------------------- */
@@ -135,14 +145,35 @@ public class EmbedTokenResource {
                     .build();
         }
 
-        EmbedToken t = tokenStore.create(kind, path, username, roles, ttlHours * 3600_000L, body.label);
+        // saiku-cloud#940 mint-time PII gate. Determines the redaction
+        // posture the read path will apply. PII-touching resources get
+        // FORCE_ON so a token minted at a workspace's relaxed default tier
+        // still gets max-strength redaction on individual sensitive
+        // resources. Non-PII resources stay TENANT_DEFAULT — the surrounding
+        // tier setting controls the policy as before.
+        EmbedToken.RedactionPolicy redaction = EmbedToken.RedactionPolicy.TENANT_DEFAULT;
+        if (piiInspector != null) {
+            org.saiku.web.embed.EmbedPiiInspector.Result inspection = piiInspector.inspect(kind, path, username, roles);
+            if (inspection.referencesPii) {
+                redaction = EmbedToken.RedactionPolicy.FORCE_ON;
+                log.info(
+                        "embed-token mint elevated to FORCE_ON (PII on {}): kind={} path={} by={} cubes={}",
+                        inspection.fellOpenForUnresolvable ? "unresolvable resource" : "annotated columns",
+                        kind,
+                        path,
+                        username,
+                        inspection.cubeIds);
+            }
+        }
+        EmbedToken t = tokenStore.create(kind, path, username, roles, ttlHours * 3600_000L, body.label, redaction);
         log.info(
-                "embed-token minted token=<redacted:{}> kind={} path={} by={} ttlHours={}",
+                "embed-token minted token=<redacted:{}> kind={} path={} by={} ttlHours={} redaction={}",
                 t.token.length(),
                 kind,
                 path,
                 username,
-                ttlHours);
+                ttlHours,
+                t.redactionPolicy);
         return Response.ok(Map.of(
                         "status",
                         "OK",
@@ -152,6 +183,8 @@ public class EmbedTokenResource {
                         kind,
                         "resourcePath",
                         path,
+                        "redactionPolicy",
+                        t.redactionPolicy.name(),
                         "expiresAt",
                         t.expiresAt))
                 .type(MediaType.APPLICATION_JSON)
@@ -169,6 +202,8 @@ public class EmbedTokenResource {
         for (EmbedToken t : tokens) {
             // Owner gets back the token id (they minted it). Never return the
             // owner role snapshot — internal data-scope state, not API data.
+            // 10 entries — Map.of's max overload. New fields go through
+            // Map.ofEntries below.
             out.add(Map.of(
                     "token", t.token,
                     "resourceKind", t.resourceKind,
@@ -178,7 +213,13 @@ public class EmbedTokenResource {
                     "expiresAt", t.expiresAt,
                     "revoked", t.revoked,
                     "label", t.label == null ? "" : t.label,
-                    "active", t.isValid(System.currentTimeMillis())));
+                    "active", t.isValid(System.currentTimeMillis()),
+                    // saiku-cloud#940. So admins can audit which tokens have
+                    // FORCE_ON without re-running the inspector.
+                    "redactionPolicy",
+                            t.redactionPolicy == null
+                                    ? EmbedToken.RedactionPolicy.TENANT_DEFAULT.name()
+                                    : t.redactionPolicy.name()));
         }
         return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
     }
@@ -234,6 +275,29 @@ public class EmbedTokenResource {
         List<String> roles = currentRoles();
         if (!hasGrant(path, username, roles)) {
             return forbidden("You don't have permission to make this resource public");
+        }
+
+        // saiku-cloud#940 — refuse public grants on PII-touching resources.
+        // Anonymous-public read is the highest-blast-radius surface on the
+        // embed: a public-grant means literally anyone with the URL can
+        // read the cellset on an attacker-controlled host page. We
+        // categorically refuse rather than try to redact post-hoc.
+        if (piiInspector != null) {
+            org.saiku.web.embed.EmbedPiiInspector.Result inspection = piiInspector.inspect(kind, path, username, roles);
+            if (inspection.referencesPii) {
+                log.info(
+                        "embed-public REFUSED (PII on {}): kind={} path={} by={} cubes={}",
+                        inspection.fellOpenForUnresolvable ? "unresolvable resource" : "annotated columns",
+                        kind,
+                        path,
+                        username,
+                        inspection.cubeIds);
+                return badRequest(
+                        "resourcePath",
+                        "Resource references PII-annotated columns; public grants are forbidden. "
+                                + "Mint a scoped token (POST /tokens) instead — its redaction policy "
+                                + "is automatically elevated to FORCE_ON for PII resources.");
+            }
         }
 
         // Cap public grants per user too — leaked anonymous read is the most

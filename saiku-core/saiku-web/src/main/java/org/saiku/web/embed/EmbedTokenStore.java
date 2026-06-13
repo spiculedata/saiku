@@ -81,7 +81,10 @@ public class EmbedTokenStore {
     /**
      * Mint a new token. {@code resourceKind} must be {@code "query"} or
      * {@code "dashboard"}; anything else throws {@link IllegalArgumentException}
-     * so a malformed mint cannot land in the store.
+     * so a malformed mint cannot land in the store. Defaults the token's
+     * {@link EmbedToken#redactionPolicy} to {@code TENANT_DEFAULT} — back-
+     * compat overload kept so existing callers don't have to think about
+     * the saiku-cloud#940 policy field.
      */
     public EmbedToken create(
             String resourceKind,
@@ -90,6 +93,29 @@ public class EmbedTokenStore {
             List<String> ownerRoles,
             long ttlMillis,
             String label) {
+        return create(
+                resourceKind,
+                resourcePath,
+                createdBy,
+                ownerRoles,
+                ttlMillis,
+                label,
+                EmbedToken.RedactionPolicy.TENANT_DEFAULT);
+    }
+
+    /**
+     * saiku-cloud#940 overload — explicit redaction policy. Used by the
+     * embed-token mint when the inspector detected PII columns on the
+     * resource and the policy must be FORCE_ON.
+     */
+    public EmbedToken create(
+            String resourceKind,
+            String resourcePath,
+            String createdBy,
+            List<String> ownerRoles,
+            long ttlMillis,
+            String label,
+            EmbedToken.RedactionPolicy redactionPolicy) {
         if (resourceKind == null || !ALLOWED_KINDS.contains(resourceKind)) {
             // ALLOWED_KINDS.contains(null) throws NPE on Set.of immutables, so
             // null-check first — defends both the API and the runtime.
@@ -105,6 +131,7 @@ public class EmbedTokenStore {
         t.createdBy = createdBy;
         t.ownerRolesSnapshot = ownerRoles == null ? List.of() : new ArrayList<>(ownerRoles);
         t.createdAt = System.currentTimeMillis();
+        t.redactionPolicy = redactionPolicy == null ? EmbedToken.RedactionPolicy.TENANT_DEFAULT : redactionPolicy;
         t.expiresAt = t.createdAt + ttlMillis;
         t.revoked = false;
         t.label = label;
