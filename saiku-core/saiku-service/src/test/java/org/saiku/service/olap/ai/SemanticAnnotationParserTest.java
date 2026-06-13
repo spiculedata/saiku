@@ -154,4 +154,60 @@ public class SemanticAnnotationParserTest {
         assertTrue(SemanticAnnotationParser.GRAINS.contains("quarter"));
         assertTrue(SemanticAnnotationParser.GRAINS.contains("week"));
     }
+
+    /* ---------------------- saiku#902 PII annotation ---------------------- */
+
+    @Test
+    public void parseMeasure_pii_true_is_honoured() {
+        Map<String, String> raw = new HashMap<>();
+        raw.put("saiku.semantic.pii", "true");
+        MeasureAnnotations parsed = SemanticAnnotationParser.parseMeasure(raw);
+        assertTrue(parsed.pii);
+    }
+
+    @Test
+    public void parseLevel_pii_true_is_honoured() {
+        Map<String, String> raw = new HashMap<>();
+        raw.put("saiku.semantic.pii", "true");
+        LevelAnnotations parsed = SemanticAnnotationParser.parseLevel(raw);
+        assertTrue(parsed.pii);
+    }
+
+    @Test
+    public void parseMeasure_pii_false_is_the_conservative_default_on_garbage() {
+        // Anything other than literal "true" (case-insensitive after trim)
+        // produces false. Schema authors who mistype "yes" / "1" / "on"
+        // should NOT accidentally opt their column into redaction — the
+        // opposite-direction default (privacy-by-default) would mask
+        // working data on the slightest typo, which is the worse failure
+        // mode for an analytics product.
+        for (String bogus : new String[] {"false", "yes", "1", "on", "TRUE_BUT_NOT_QUITE", "", null}) {
+            Map<String, String> raw = new HashMap<>();
+            raw.put("saiku.semantic.pii", bogus);
+            assertEquals(
+                    "pii must default false for value: '" + bogus + "'",
+                    false,
+                    SemanticAnnotationParser.parseMeasure(raw).pii);
+            assertEquals(false, SemanticAnnotationParser.parseLevel(raw).pii);
+        }
+    }
+
+    @Test
+    public void parseMeasure_pii_true_case_insensitive_and_trimmed() {
+        // Schema files come from human hands; tolerate whitespace + case.
+        for (String trueish : new String[] {"true", "TRUE", "True", " true ", "tRuE"}) {
+            Map<String, String> raw = new HashMap<>();
+            raw.put("saiku.semantic.pii", trueish);
+            assertTrue("pii must accept: '" + trueish + "'", SemanticAnnotationParser.parseMeasure(raw).pii);
+        }
+    }
+
+    @Test
+    public void parseMeasure_pii_absent_defaults_false() {
+        // Existing schemas without the annotation must stay unchanged —
+        // the default is "no PII protection until you opt in".
+        Map<String, String> raw = new HashMap<>();
+        raw.put("saiku.semantic.description", "ordinary measure");
+        assertEquals(false, SemanticAnnotationParser.parseMeasure(raw).pii);
+    }
 }

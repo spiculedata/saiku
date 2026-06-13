@@ -78,13 +78,13 @@ public final class AiReturnsResolver {
 
         // 1. Measure direct hit.
         AiSchema.Measure m = schema.measures.get(key);
-        if (m != null) return m.uniqueName;
+        if (m != null) return checkPii(m, token, schema);
 
         // 2. Measure alias (Phase-3 enrichment displayName).
         String mAlias = schema.measureAliases.get(key);
         if (mAlias != null) {
             AiSchema.Measure aliased = schema.measures.get(mAlias);
-            if (aliased != null) return aliased.uniqueName;
+            if (aliased != null) return checkPii(aliased, token, schema);
         }
 
         // 3. Level name across every hierarchy. We walk the dimension map in
@@ -93,11 +93,11 @@ public final class AiReturnsResolver {
         for (AiSchema.Dimension dim : schema.dimensions.values()) {
             for (AiSchema.Hierarchy hier : dim.hierarchies.values()) {
                 AiSchema.Level level = hier.levels.get(key);
-                if (level != null) return level.uniqueName;
+                if (level != null) return checkPii(level, token, schema);
                 String lAlias = hier.levelAliases.get(key);
                 if (lAlias != null) {
                     AiSchema.Level aliased = hier.levels.get(lAlias);
-                    if (aliased != null) return aliased.uniqueName;
+                    if (aliased != null) return checkPii(aliased, token, schema);
                 }
             }
         }
@@ -109,14 +109,71 @@ public final class AiReturnsResolver {
                 candidates(schema));
     }
 
-    /** Build the candidate list surfaced in the validation error so an agent
-     *  can self-correct from the response without a separate schema fetch. */
+    /**
+     * saiku#902 PII gate. The resolver has matched {@code token} to a
+     * concrete measure / level; if the schema author flagged it
+     * {@code saiku.semantic.pii=true}, refuse rather than emit the
+     * uniqueName for downstream MDX.
+     *
+     * <p>The error envelope carries the same shape as a regular unknown-
+     * column error so the agent's self-correction path is uniform (look at
+     * {@code field=returns}, pick from {@code available}). The
+     * {@code available} list explicitly excludes PII columns so the agent
+     * never sees the names of redacted slots even via the error response.
+     */
+    private static String checkPii(AiSchema.Measure m, String token, AiSchema schema) {
+        if (m.pii) {
+            throw new AiPiiException(
+                    "returns",
+                    "Column '" + token + "' is annotated PII (saiku.semantic.pii=true) and cannot be "
+                            + "projected through DRILLTHROUGH ... RETURN. Pick a non-PII column from the "
+                            + "candidate list.",
+                    nonPiiCandidates(schema));
+        }
+        return m.uniqueName;
+    }
+
+    private static String checkPii(AiSchema.Level l, String token, AiSchema schema) {
+        if (l.pii) {
+            throw new AiPiiException(
+                    "returns",
+                    "Column '" + token + "' is annotated PII (saiku.semantic.pii=true) and cannot be "
+                            + "projected through DRILLTHROUGH ... RETURN. Pick a non-PII column from the "
+                            + "candidate list.",
+                    nonPiiCandidates(schema));
+        }
+        return l.uniqueName;
+    }
+
+    /** Build the candidate list surfaced in the standard validation error so
+     *  an agent can self-correct from the response without a separate schema
+     *  fetch. Includes ALL measures + levels — the standard unknown-column
+     *  path is about typos, not policy. */
     private static List<String> candidates(AiSchema schema) {
         Set<String> all = new LinkedHashSet<>();
         for (AiSchema.Measure m : schema.measures.values()) all.add(m.name);
         for (AiSchema.Dimension dim : schema.dimensions.values()) {
             for (AiSchema.Hierarchy hier : dim.hierarchies.values()) {
                 for (AiSchema.Level level : hier.levels.values()) all.add(level.name);
+            }
+        }
+        return new ArrayList<>(all);
+    }
+
+    /** Same as {@link #candidates(AiSchema)} but filters out PII-flagged
+     *  measures + levels. Used on the PII refusal path so the suggestion list
+     *  doesn't leak the names of redacted slots — even via a self-correct
+     *  fallback the agent could mine for column existence. */
+    private static List<String> nonPiiCandidates(AiSchema schema) {
+        Set<String> all = new LinkedHashSet<>();
+        for (AiSchema.Measure m : schema.measures.values()) {
+            if (!m.pii) all.add(m.name);
+        }
+        for (AiSchema.Dimension dim : schema.dimensions.values()) {
+            for (AiSchema.Hierarchy hier : dim.hierarchies.values()) {
+                for (AiSchema.Level level : hier.levels.values()) {
+                    if (!level.pii) all.add(level.name);
+                }
             }
         }
         return new ArrayList<>(all);

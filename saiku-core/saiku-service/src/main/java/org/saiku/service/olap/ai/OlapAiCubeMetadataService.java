@@ -33,6 +33,12 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
 
     private OlapDiscoverService discoverService;
     private final ConcurrentMap<String, AiSchema> schemaCache = new ConcurrentHashMap<>();
+    /** saiku#902 phase 3: per-cube cache of PiiScanner findings. Populated on
+     *  schema-build, returned by {@link #getPiiSuggestions}. Cleared in lock-step
+     *  with {@link #schemaCache} so stale annotations don't haunt the
+     *  suggestion surface after a schema reload. */
+    private final ConcurrentMap<String, List<PiiScanner.Match>> piiSuggestionsCache = new ConcurrentHashMap<>();
+
     private java.util.function.Function<AiCubeRef, AiSchemaEnrichment> enrichmentProvider;
     private final AiSchemaEnricher enricher = new AiSchemaEnricher();
     /** saiku#810: when true, schema build probes each (dim, hier, level)
@@ -63,6 +69,10 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
     /** Bump when downstream schema state changes (e.g. cube reload, draft enrichment update). */
     public void invalidateCache() {
         schemaCache.clear();
+        // Lock-step so a re-scan happens on the next describe. Otherwise an
+        // operator who fixes an annotation, reloads the cube, then hits the
+        // suggestions endpoint sees the stale finding from before the fix.
+        piiSuggestionsCache.clear();
     }
 
     /** saiku#810: enable the schema-build-time roundtrip probe that prunes
@@ -119,7 +129,37 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
             }
         }
         schemaCache.put(key, fresh);
+        // saiku#902 phase 3: pattern-scan the cube's measure + level names
+        // for likely-PII surfaces and stash the findings on the cube
+        // metadata service. Surfaced via getPiiSuggestions() →
+        // /ai/schema/{cubeId}/pii-suggestions for admin tools; the scan
+        // itself only logs WARN per finding so it shows up in the launcher
+        // log too. Scanner runs ONCE per cache fill — same lifecycle as
+        // the schema itself.
+        try {
+            piiSuggestionsCache.put(key, PiiScanner.scan(fresh));
+        } catch (RuntimeException e) {
+            // Scanner failure must never break the schema endpoint. Empty
+            // suggestion list is the right fallback — the operator just
+            // doesn't see automated hints; explicit annotations still work.
+            log.warn("PII scanner failed for {} — no suggestions surfaced", ref, e);
+            piiSuggestionsCache.put(key, java.util.Collections.emptyList());
+        }
         return fresh;
+    }
+
+    /**
+     * saiku#902 phase 3 admin surface. Returns the cached PiiScanner findings
+     * for a cube — every measure / level name that matched a PII pattern AND
+     * doesn't already have {@code saiku.semantic.pii=true} set. Empty list
+     * when the cube hasn't been seen yet (i.e. no {@link #getSchema} call
+     * resolved successfully) — call {@code getSchema} first if you need a
+     * fresh scan.
+     */
+    public List<PiiScanner.Match> getPiiSuggestions(AiCubeRef ref) {
+        if (ref == null) return java.util.Collections.emptyList();
+        List<PiiScanner.Match> cached = piiSuggestionsCache.get(cacheKey(ref));
+        return cached == null ? java.util.Collections.emptyList() : cached;
     }
 
     /**
@@ -237,6 +277,10 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
                 if (ann.unit != null) measure.unit = ann.unit;
                 if (ann.currency != null) measure.currency = ann.currency;
                 if (ann.aggregationKind != null) measure.aggregationKind = ann.aggregationKind;
+                // saiku#902: pii flag is `true` only when explicitly set; absent /
+                // typo'd values default to false (the conservative default —
+                // operator must opt in to redaction).
+                measure.pii = ann.pii;
                 schema.measures.put(AiSchema.key(n), measure);
             }
         } catch (RuntimeException e) {
@@ -400,6 +444,8 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
             if (lann.cardinality != null) l.cardinality = lann.cardinality;
             if (lann.grain != null) l.grain = lann.grain;
             if (!lann.requiredFilters.isEmpty()) l.requiredFilters = lann.requiredFilters;
+            // saiku#902: pii flag is `true` only when explicitly set.
+            l.pii = lann.pii;
         } catch (RuntimeException e) {
             log.debug("level annotations unreadable for {}/{}: {}", h.getName(), lvl.getName(), e.getMessage());
         }

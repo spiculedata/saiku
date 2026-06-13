@@ -49,6 +49,12 @@ public final class SemanticAnnotationParser {
     private static final String KEY_CARDINALITY = NAMESPACE + "cardinality";
     private static final String KEY_GRAIN = NAMESPACE + "grain";
     private static final String KEY_REQUIRED_FILTERS = NAMESPACE + "required_filters";
+    /** saiku#902. PII marker. Valid on Level + Measure. {@code true} flips the
+     *  level/measure into "structurally present but opaque" mode in the
+     *  agent-facing /ai/schema projection (captions, sample members, descriptions,
+     *  synonyms are stripped) AND blocks drillthrough returns= referencing
+     *  PII-flagged columns. */
+    private static final String KEY_PII = NAMESPACE + "pii";
 
     private SemanticAnnotationParser() {}
 
@@ -67,6 +73,9 @@ public final class SemanticAnnotationParser {
         public String unit;
         public String currency;
         public String aggregationKind;
+        /** saiku#902 PII marker. {@code true} when the schema author tagged
+         *  {@code saiku.semantic.pii=true} on the measure. */
+        public boolean pii;
     }
 
     /** Parsed level-level annotations. Fields default to {@code null} / empty list. */
@@ -76,6 +85,9 @@ public final class SemanticAnnotationParser {
         public String cardinality;
         public String grain;
         public List<AiSchema.RequiredFilter> requiredFilters = new ArrayList<>();
+        /** saiku#902 PII marker. {@code true} when the schema author tagged
+         *  {@code saiku.semantic.pii=true} on the level. */
+        public boolean pii;
     }
 
     public static DimensionAnnotations parseDimension(Map<String, String> annotations) {
@@ -99,6 +111,7 @@ public final class SemanticAnnotationParser {
         out.currency = trimToNull(annotations.get(KEY_CURRENCY));
         out.aggregationKind =
                 validateEnum(annotations.get(KEY_AGGREGATION_KIND), AGGREGATION_KINDS, "aggregation_kind");
+        out.pii = parseBoolean(annotations.get(KEY_PII));
         return out;
     }
 
@@ -112,7 +125,20 @@ public final class SemanticAnnotationParser {
         out.cardinality = validateEnum(annotations.get(KEY_CARDINALITY), CARDINALITIES, "cardinality");
         out.grain = validateEnum(annotations.get(KEY_GRAIN), GRAINS, "grain");
         out.requiredFilters = parseRequiredFilters(annotations.get(KEY_REQUIRED_FILTERS));
+        out.pii = parseBoolean(annotations.get(KEY_PII));
         return out;
+    }
+
+    /**
+     * Parse a string as a boolean. Accepts {@code "true"} / {@code "false"}
+     * case-insensitively after trimming. Anything else (including null,
+     * empty, garbage) → {@code false}. Mirrors XML attribute parsing in the
+     * Mondrian schema layer — schema authors get the conservative default if
+     * they mistype.
+     */
+    private static boolean parseBoolean(String raw) {
+        if (raw == null) return false;
+        return "true".equalsIgnoreCase(raw.trim());
     }
 
     private static String trimToNull(String raw) {
