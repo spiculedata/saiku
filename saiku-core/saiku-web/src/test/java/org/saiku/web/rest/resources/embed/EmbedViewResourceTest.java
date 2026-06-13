@@ -2,6 +2,7 @@ package org.saiku.web.rest.resources.embed;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import jakarta.ws.rs.core.Response;
@@ -135,11 +136,83 @@ public class EmbedViewResourceTest {
         assertEquals(401, r.getStatus());
     }
 
+    /* ----------------- saiku-cloud#948 force-on header ----------------- */
+
+    @Test
+    public void query_response_stamps_force_on_header_when_token_policy_is_force_on() {
+        pinGuestWithPolicy(
+                "query",
+                "/homes/admin/sales.saiku",
+                "admin",
+                List.of("ROLE_ADMIN"),
+                org.saiku.web.embed.EmbedToken.RedactionPolicy.FORCE_ON);
+
+        Response r = resource.query("homes/admin/sales.saiku");
+
+        assertEquals(200, r.getStatus());
+        assertEquals(
+                "FORCE_ON",
+                r.getHeaderString(org.saiku.web.rest.resources.embed.EmbedViewResource.REDACTION_POLICY_HEADER));
+    }
+
+    @Test
+    public void query_response_omits_header_for_tenant_default_policy() {
+        // Default policy → no header → gateway falls back to tenant tier
+        // config. Pinned so we never leak a TENANT_DEFAULT value that
+        // could confuse a gateway expecting only FORCE_ON.
+        pinGuestWithPolicy(
+                "query",
+                "/homes/admin/clean.saiku",
+                "admin",
+                List.of(),
+                org.saiku.web.embed.EmbedToken.RedactionPolicy.TENANT_DEFAULT);
+
+        Response r = resource.query("homes/admin/clean.saiku");
+
+        assertEquals(200, r.getStatus());
+        assertNull(
+                "TENANT_DEFAULT must NOT stamp the policy header",
+                r.getHeaderString(org.saiku.web.rest.resources.embed.EmbedViewResource.REDACTION_POLICY_HEADER));
+    }
+
+    @Test
+    public void dashboard_response_stamps_force_on_header() {
+        // Dashboard path covered separately from query.
+        ds.fileContent = "{\"id\":\"d-1\",\"name\":\"Exec\",\"version\":1}";
+        pinGuestWithPolicy(
+                "dashboard",
+                "/homes/admin/exec.saikudash",
+                "admin",
+                List.of("ROLE_ADMIN"),
+                org.saiku.web.embed.EmbedToken.RedactionPolicy.FORCE_ON);
+
+        Response r = resource.dashboard("homes/admin/exec.saikudash");
+
+        assertEquals(200, r.getStatus());
+        assertEquals(
+                "FORCE_ON",
+                r.getHeaderString(org.saiku.web.rest.resources.embed.EmbedViewResource.REDACTION_POLICY_HEADER));
+    }
+
     /* --------------------------- helpers ---------------------------- */
 
     private void pinGuest(String kind, String path, String user, List<String> roles) {
         EmbedGuestDetails details =
                 new EmbedGuestDetails("anonymous-token-id".equals(kind) ? null : "token-xyz", kind, path, user, roles);
+        PreAuthenticatedAuthenticationToken auth = new PreAuthenticatedAuthenticationToken(
+                "embed-guest", details, List.of(new SimpleGrantedAuthority("ROLE_EMBED_GUEST")));
+        auth.setDetails(details);
+        SecurityContextHolder.getContext().setAuthentication(auth);
+    }
+
+    /** saiku-cloud#948 — pin with an explicit redaction policy. */
+    private void pinGuestWithPolicy(
+            String kind,
+            String path,
+            String user,
+            List<String> roles,
+            org.saiku.web.embed.EmbedToken.RedactionPolicy policy) {
+        EmbedGuestDetails details = new EmbedGuestDetails("token-xyz", kind, path, user, roles, policy);
         PreAuthenticatedAuthenticationToken auth = new PreAuthenticatedAuthenticationToken(
                 "embed-guest", details, List.of(new SimpleGrantedAuthority("ROLE_EMBED_GUEST")));
         auth.setDetails(details);

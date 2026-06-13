@@ -117,7 +117,11 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
                             token.resourceKind,
                             token.resourcePath,
                             token.createdBy,
-                            token.ownerRolesSnapshot));
+                            token.ownerRolesSnapshot,
+                            // saiku-cloud#948: carry the policy forward so
+                            // the view resource can stamp the gateway-
+                            // facing redaction-policy header.
+                            token.redactionPolicy));
             return;
         }
 
@@ -249,14 +253,41 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
         public final String resourcePath;
         public final String ownerUser;
         public final List<String> ownerRoles;
+        /** saiku-cloud#948. Carries the token's redaction policy forward so
+         *  {@code EmbedViewResource} can stamp the
+         *  {@code X-Saiku-Embed-Redaction-Policy} response header for the
+         *  saiku-cloud gateway's PiiRedactor to honour. Defaults to
+         *  {@link org.saiku.web.embed.EmbedToken.RedactionPolicy#TENANT_DEFAULT}
+         *  for public-grant requests (no token to elevate from). */
+        public final org.saiku.web.embed.EmbedToken.RedactionPolicy redactionPolicy;
 
         public EmbedGuestDetails(
                 String token, String resourceKind, String resourcePath, String ownerUser, List<String> ownerRoles) {
+            this(
+                    token,
+                    resourceKind,
+                    resourcePath,
+                    ownerUser,
+                    ownerRoles,
+                    org.saiku.web.embed.EmbedToken.RedactionPolicy.TENANT_DEFAULT);
+        }
+
+        /** saiku-cloud#948 — explicit-policy constructor. */
+        public EmbedGuestDetails(
+                String token,
+                String resourceKind,
+                String resourcePath,
+                String ownerUser,
+                List<String> ownerRoles,
+                org.saiku.web.embed.EmbedToken.RedactionPolicy redactionPolicy) {
             this.token = token;
             this.resourceKind = resourceKind;
             this.resourcePath = resourcePath;
             this.ownerUser = ownerUser;
             this.ownerRoles = ownerRoles == null ? List.of() : List.copyOf(ownerRoles);
+            this.redactionPolicy = redactionPolicy == null
+                    ? org.saiku.web.embed.EmbedToken.RedactionPolicy.TENANT_DEFAULT
+                    : redactionPolicy;
         }
 
         /** True when this request reached the resource via a public grant

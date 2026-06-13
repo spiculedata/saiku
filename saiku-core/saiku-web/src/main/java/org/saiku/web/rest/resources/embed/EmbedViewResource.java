@@ -92,7 +92,7 @@ public class EmbedViewResource {
                 sreq.setPath(g.resourcePath);
                 return aiQueryResource.executeSaved(sreq);
             });
-            return harden(result);
+            return withPolicyHeader(harden(result), g);
         } catch (RuntimeException e) {
             log.warn("embed-view query execution failed for {}", g.resourcePath, e);
             return harden(Response.serverError()
@@ -125,7 +125,8 @@ public class EmbedViewResource {
                     .type(MediaType.APPLICATION_JSON)
                     .build());
         }
-        return harden(Response.ok(dash).type(MediaType.APPLICATION_JSON).build());
+        return withPolicyHeader(
+                harden(Response.ok(dash).type(MediaType.APPLICATION_JSON).build()), g);
     }
 
     /**
@@ -174,7 +175,7 @@ public class EmbedViewResource {
                         .type(MediaType.APPLICATION_JSON)
                         .build();
             });
-            return harden(result);
+            return withPolicyHeader(harden(result), g);
         } catch (RuntimeException e) {
             log.warn("embed-view tile query failed for {}/{}", g.resourcePath, tileId, e);
             return harden(Response.serverError()
@@ -224,6 +225,32 @@ public class EmbedViewResource {
                 .entity(Map.of("status", "EMBED_INVALID", "error", "Embed link is invalid or expired."))
                 .type(MediaType.APPLICATION_JSON)
                 .build());
+    }
+
+    /**
+     * saiku-cloud#948 header — signals the saiku-cloud gateway to apply
+     * max-strength redaction on the response body, regardless of the
+     * tenant's tier or per-tenant mask config. Set when the bound token has
+     * {@link org.saiku.web.embed.EmbedToken.RedactionPolicy#FORCE_ON};
+     * absent (NOT set to {@code TENANT_DEFAULT}) otherwise so the gateway
+     * has a cheap presence check rather than a value parse. The header
+     * itself is engine-emit-only — no client can synthesise it because the
+     * gateway is the only consumer and it strips trust-region headers from
+     * inbound requests.
+     *
+     * <p>Public-grant requests carry {@code TENANT_DEFAULT} (the public-
+     * grant flow has no token to elevate). Tokens that pre-date #1307
+     * deserialise to {@code TENANT_DEFAULT} too — neither gets the header,
+     * neither triggers gateway-side max-strength.
+     */
+    public static final String REDACTION_POLICY_HEADER = "X-Saiku-Embed-Redaction-Policy";
+
+    private static Response withPolicyHeader(Response r, EmbedGuestDetails g) {
+        if (g == null || g.redactionPolicy == null) return r;
+        if (g.redactionPolicy != org.saiku.web.embed.EmbedToken.RedactionPolicy.FORCE_ON) return r;
+        return Response.fromResponse(r)
+                .header(REDACTION_POLICY_HEADER, g.redactionPolicy.name())
+                .build();
     }
 
     /**
