@@ -237,6 +237,10 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
                 if (ann.unit != null) measure.unit = ann.unit;
                 if (ann.currency != null) measure.currency = ann.currency;
                 if (ann.aggregationKind != null) measure.aggregationKind = ann.aggregationKind;
+                // saiku#902: pii flag is `true` only when explicitly set; absent /
+                // typo'd values default to false (the conservative default —
+                // operator must opt in to redaction).
+                measure.pii = ann.pii;
                 schema.measures.put(AiSchema.key(n), measure);
             }
         } catch (RuntimeException e) {
@@ -400,6 +404,8 @@ public class OlapAiCubeMetadataService implements AiCubeMetadataService {
             if (lann.cardinality != null) l.cardinality = lann.cardinality;
             if (lann.grain != null) l.grain = lann.grain;
             if (!lann.requiredFilters.isEmpty()) l.requiredFilters = lann.requiredFilters;
+            // saiku#902: pii flag is `true` only when explicitly set.
+            l.pii = lann.pii;
         } catch (RuntimeException e) {
             log.debug("level annotations unreadable for {}/{}: {}", h.getName(), lvl.getName(), e.getMessage());
         }

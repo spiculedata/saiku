@@ -844,7 +844,14 @@ public class AiQueryResource {
         }
         try {
             AiSchema schema = cubeMetadataService.getSchema(ref);
-            return Response.ok(schema).type(MediaType.APPLICATION_JSON).build();
+            // saiku#902: project to the redacted agent view before serializing.
+            // The internal in-memory schema keeps captions + samples + synonyms
+            // (the validator needs them for name resolution); the JSON we hand
+            // back to the agent strips them for any level / measure tagged
+            // {@code saiku.semantic.pii=true}.
+            return Response.ok(schema.toAgentView())
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
         } catch (AiValidationException e) {
             return badRequest(e.getField(), e.getMessage(), e.getAvailable());
         } catch (RuntimeException e) {
