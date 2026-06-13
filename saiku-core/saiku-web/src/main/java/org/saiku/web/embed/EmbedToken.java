@@ -63,7 +63,28 @@ public class EmbedToken {
     /** Optional human label shown in the owner's embed list. */
     public String label;
 
+    /** Redaction posture for the read path (saiku-cloud#940 + saiku#902).
+     *  {@link RedactionPolicy#TENANT_DEFAULT} (default) defers to the
+     *  tenant's configured redaction tier; {@link RedactionPolicy#FORCE_ON}
+     *  applies max-strength redaction regardless of tenant tier — set at mint
+     *  time when the bound resource references any column annotated
+     *  {@code saiku.semantic.pii=true}. Lets a single workspace hold mixed-
+     *  sensitivity resources where some need stricter redaction than the
+     *  tenant default. */
+    public RedactionPolicy redactionPolicy = RedactionPolicy.TENANT_DEFAULT;
+
     public EmbedToken() {}
+
+    /** Embed-token redaction posture — saiku-cloud#940. */
+    public enum RedactionPolicy {
+        /** Defer to the tenant's configured redaction tier. Existing tokens
+         *  (created before #940) deserialise to this value. */
+        TENANT_DEFAULT,
+        /** Apply max-strength redaction on every read regardless of tenant
+         *  tier. Set at mint time when the resource binds to columns
+         *  annotated {@code saiku.semantic.pii=true}. */
+        FORCE_ON
+    }
 
     /** True when the token is past its expiry relative to {@code nowMs}. */
     public boolean isExpired(long nowMs) {

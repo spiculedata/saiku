@@ -324,6 +324,148 @@ public class EmbedTokenResourceTest {
         assertEquals(404, r.getStatus());
     }
 
+    /* ------------------- saiku-cloud#940 PII gate ------------------- */
+
+    @Test
+    public void mint_without_inspector_defaults_redactionPolicy_to_tenant_default() {
+        // No piiInspector wired (the existing happy-path tests already
+        // exercise this — proving the new field defaults correctly).
+        session.username = "admin";
+        ds.allow("/q.saiku");
+        EmbedTokenResource.MintRequest req = new EmbedTokenResource.MintRequest();
+        req.resourceKind = "query";
+        req.resourcePath = "/q.saiku";
+        Response r = resource.mint(req);
+        assertEquals(200, r.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) r.getEntity();
+        assertEquals("TENANT_DEFAULT", body.get("redactionPolicy"));
+        // Stored value matches the response.
+        EmbedToken stored = tokenStore.load((String) body.get("token"));
+        assertEquals(EmbedToken.RedactionPolicy.TENANT_DEFAULT, stored.redactionPolicy);
+    }
+
+    @Test
+    public void mint_with_pii_resource_elevates_redactionPolicy_to_force_on() {
+        // Inspector says PII present → mint succeeds with FORCE_ON.
+        session.username = "admin";
+        ds.allow("/sensitive.saiku");
+        StubInspector inspector = new StubInspector();
+        inspector.piiPaths.add("/sensitive.saiku");
+        resource.setPiiInspector(inspector);
+
+        EmbedTokenResource.MintRequest req = new EmbedTokenResource.MintRequest();
+        req.resourceKind = "query";
+        req.resourcePath = "/sensitive.saiku";
+        Response r = resource.mint(req);
+        assertEquals(200, r.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) r.getEntity();
+        assertEquals("FORCE_ON", body.get("redactionPolicy"));
+        EmbedToken stored = tokenStore.load((String) body.get("token"));
+        assertEquals(EmbedToken.RedactionPolicy.FORCE_ON, stored.redactionPolicy);
+    }
+
+    @Test
+    public void mint_with_non_pii_resource_keeps_tenant_default() {
+        // Inspector says clean → mint stays at TENANT_DEFAULT.
+        session.username = "admin";
+        ds.allow("/clean.saiku");
+        resource.setPiiInspector(new StubInspector()); // no PII paths
+
+        EmbedTokenResource.MintRequest req = new EmbedTokenResource.MintRequest();
+        req.resourceKind = "query";
+        req.resourcePath = "/clean.saiku";
+        Response r = resource.mint(req);
+        assertEquals(200, r.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) r.getEntity();
+        assertEquals("TENANT_DEFAULT", body.get("redactionPolicy"));
+    }
+
+    @Test
+    public void grant_public_with_pii_resource_is_refused_400() {
+        // The load-bearing test for this whole PR — public grants on PII
+        // resources must NEVER succeed.
+        session.username = "admin";
+        ds.allow("/sensitive.saikudash");
+        StubInspector inspector = new StubInspector();
+        inspector.piiPaths.add("/sensitive.saikudash");
+        resource.setPiiInspector(inspector);
+
+        EmbedTokenResource.GrantRequest req = new EmbedTokenResource.GrantRequest();
+        req.resourceKind = "dashboard";
+        req.resourcePath = "/sensitive.saikudash";
+        Response r = resource.grantPublic(req);
+        assertEquals(400, r.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) r.getEntity();
+        assertEquals("VALIDATION_ERROR", body.get("status"));
+        assertEquals("resourcePath", body.get("field"));
+        assertTrue(((String) body.get("error")).contains("PII"));
+        assertFalse(
+                "public registry must remain untouched", publicRegistry.isPublic("dashboard", "/sensitive.saikudash"));
+    }
+
+    @Test
+    public void grant_public_with_non_pii_resource_still_succeeds() {
+        // Sanity: the gate only fires for PII. A clean resource passes.
+        session.username = "admin";
+        ds.allow("/clean.saikudash");
+        resource.setPiiInspector(new StubInspector()); // no PII paths
+
+        EmbedTokenResource.GrantRequest req = new EmbedTokenResource.GrantRequest();
+        req.resourceKind = "dashboard";
+        req.resourcePath = "/clean.saikudash";
+        Response r = resource.grantPublic(req);
+        assertEquals(200, r.getStatus());
+        assertTrue(publicRegistry.isPublic("dashboard", "/clean.saikudash"));
+    }
+
+    @Test
+    public void grant_public_pii_gate_fires_AFTER_grant_check() {
+        // Order matters: someone without GRANT on the resource should get
+        // 403 even if the resource is PII — the inspector might leak
+        // structural facts about the resource via its log message if it
+        // runs first. Verify the existing FORBIDDEN path still wins.
+        session.username = "bob"; // no GRANT
+        StubInspector inspector = new StubInspector();
+        inspector.piiPaths.add("/admin-only.saikudash");
+        resource.setPiiInspector(inspector);
+
+        EmbedTokenResource.GrantRequest req = new EmbedTokenResource.GrantRequest();
+        req.resourceKind = "dashboard";
+        req.resourcePath = "/admin-only.saikudash";
+        Response r = resource.grantPublic(req);
+        assertEquals(403, r.getStatus());
+        // Inspector was never asked — it's wired but the 403 short-circuits.
+        assertEquals(0, inspector.calls);
+    }
+
+    @Test
+    public void list_tokens_surfaces_redactionPolicy_for_admin_audit() {
+        // Operator running `gh ... /tokens` needs to see WHICH tokens are
+        // elevated to FORCE_ON so an audit can spot a misconfigured
+        // tenant. The response payload must carry the field.
+        session.username = "admin";
+        ds.allow("/q.saiku");
+        StubInspector inspector = new StubInspector();
+        inspector.piiPaths.add("/q.saiku");
+        resource.setPiiInspector(inspector);
+
+        EmbedTokenResource.MintRequest req = new EmbedTokenResource.MintRequest();
+        req.resourceKind = "query";
+        req.resourcePath = "/q.saiku";
+        resource.mint(req);
+
+        Response r = resource.listTokens(false);
+        assertEquals(200, r.getStatus());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> list = (List<Map<String, Object>>) r.getEntity();
+        assertEquals(1, list.size());
+        assertEquals("FORCE_ON", list.get(0).get("redactionPolicy"));
+    }
+
     /* --------------------------- stubs ---------------------------- */
 
     /** Minimal SessionService stub. {@code username} + {@code roles} are
@@ -369,6 +511,27 @@ public class EmbedTokenResourceTest {
         @Override
         public List<String> getAdminRoles() {
             return adminRoles;
+        }
+    }
+
+    /** Stub inspector for the saiku-cloud#940 gate tests. Paths added to
+     *  {@code piiPaths} produce a {@code referencesPii=true} result; every
+     *  other path returns false. {@code calls} counts invocations so a
+     *  test can assert "the gate did NOT fire because a prior check
+     *  short-circuited" (e.g. the FORBIDDEN-vs-PII ordering test). */
+    private static class StubInspector extends org.saiku.web.embed.EmbedPiiInspector {
+        final java.util.Set<String> piiPaths = new java.util.HashSet<>();
+        int calls = 0;
+
+        StubInspector() {
+            super(null, null);
+        }
+
+        @Override
+        public Result inspect(String kind, String path, String owner, List<String> roles) {
+            calls++;
+            boolean pii = piiPaths.contains(path);
+            return new Result(pii, pii ? List.of("test-cube") : List.of(), false);
         }
     }
 }
