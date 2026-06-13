@@ -111,4 +111,117 @@ public class AiReturnsResolverTest {
         // path handles whatever the raw value produces.
         assertEquals("Year,Quarter", AiReturnsResolver.resolve("Year,Quarter", null));
     }
+
+    /* ---------------------- saiku#902 PII gate ---------------------- */
+
+    @Test
+    public void piiFlaggedMeasureRefused() {
+        // Flip the Store Sales measure into PII mode and try to drill it.
+        schema.measures.get(AiSchema.key("Store Sales")).pii = true;
+        try {
+            AiReturnsResolver.resolve("Store Sales", schema);
+            fail("expected AiPiiException for PII-flagged measure");
+        } catch (AiPiiException expected) {
+            assertEquals("returns", expected.getField());
+            assertTrue(
+                    "message must name the offending column: " + expected.getMessage(),
+                    expected.getMessage().contains("Store Sales"));
+            assertTrue(
+                    "message must reference the annotation so a CISO reading audit can confirm: "
+                            + expected.getMessage(),
+                    expected.getMessage().contains("saiku.semantic.pii"));
+            // Candidate list excludes the PII column.
+            assertTrue("Unit Sales is non-PII", expected.getAvailable().contains("Unit Sales"));
+            assertTrue("Year is non-PII", expected.getAvailable().contains("Year"));
+            for (String c : expected.getAvailable()) {
+                assertEquals(
+                        "candidates list MUST NOT contain the PII measure name (would defeat redact)",
+                        false,
+                        "Store Sales".equals(c));
+            }
+        }
+    }
+
+    @Test
+    public void piiFlaggedLevelRefused() {
+        // Flag the Year level and try a mixed drillthrough.
+        schema.dimensions
+                .get(AiSchema.key("Time"))
+                .hierarchies
+                .get(AiSchema.key("Time By"))
+                .levels
+                .get(AiSchema.key("Year"))
+                .pii = true;
+        try {
+            AiReturnsResolver.resolve("Unit Sales, Year", schema);
+            fail("expected AiPiiException for PII-flagged level");
+        } catch (AiPiiException expected) {
+            assertEquals("returns", expected.getField());
+            assertTrue(expected.getMessage().contains("Year"));
+            for (String c : expected.getAvailable()) {
+                assertEquals(false, "Year".equals(c));
+            }
+        }
+    }
+
+    @Test
+    public void piiFlaggedMeasureRefusedViaAlias() {
+        // Belt-and-braces: a PII measure reached via display-name alias must
+        // also be refused. Otherwise an agent that knows the "Revenue" alias
+        // could drill the PII slot.
+        schema.measures.get(AiSchema.key("Store Sales")).pii = true;
+        schema.measureAliases.put("revenue", AiSchema.key("Store Sales"));
+        try {
+            AiReturnsResolver.resolve("revenue", schema);
+            fail("expected AiPiiException via alias path");
+        } catch (AiPiiException expected) {
+            assertEquals("returns", expected.getField());
+        }
+    }
+
+    @Test
+    public void piiFlaggedLevelRefusedViaAlias() {
+        // Same for level aliases.
+        AiSchema.Hierarchy timeBy =
+                schema.dimensions.get(AiSchema.key("Time")).hierarchies.get(AiSchema.key("Time By"));
+        timeBy.levels.get(AiSchema.key("Year")).pii = true;
+        timeBy.levelAliases.put("annual", AiSchema.key("Year"));
+        try {
+            AiReturnsResolver.resolve("annual", schema);
+            fail("expected AiPiiException via level alias path");
+        } catch (AiPiiException expected) {
+            assertEquals("returns", expected.getField());
+        }
+    }
+
+    @Test
+    public void preBracketedMdxStillPassesThroughEvenWhenItRefersToPii() {
+        // Documented design choice: pre-bracketed tokens are passed through
+        // verbatim. If the agent already wrote MDX referencing a PII column
+        // (only possible if they already knew the structure outside the
+        // describe endpoint, which we redact), we let Mondrian's RETURN
+        // clause handle it. PII gate at the resolver layer is for the
+        // bare-caption path the agent SHOULD use — preventing a
+        // copy-from-headers exploit. Document the choice via this test so
+        // future maintainers don't change it without understanding.
+        schema.measures.get(AiSchema.key("Store Sales")).pii = true;
+        String out = AiReturnsResolver.resolve("[Measures].[Store Sales],Unit Sales", schema);
+        assertEquals("[Measures].[Store Sales],[Measures].[Unit Sales]", out);
+    }
+
+    @Test
+    public void unknownColumnStillThrowsBaseAiValidationException() {
+        // Sanity: regular validation errors are still AiValidationException
+        // (not AiPiiException). The controller's two-stage catch depends on
+        // this — AiPiiException is the more specific catch, then plain
+        // AiValidationException.
+        try {
+            AiReturnsResolver.resolve("DoesNotExist", schema);
+            fail("expected AiValidationException for unknown column");
+        } catch (AiPiiException pii) {
+            fail("PII exception should not fire for a plain unknown column");
+        } catch (AiValidationException expected) {
+            assertEquals("returns", expected.getField());
+        }
+    }
 }

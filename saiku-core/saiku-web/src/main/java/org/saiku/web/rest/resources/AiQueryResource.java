@@ -35,6 +35,7 @@ import org.saiku.service.olap.ai.AiCell;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiCubeRef;
 import org.saiku.service.olap.ai.AiCubeSummary;
+import org.saiku.service.olap.ai.AiPiiException;
 import org.saiku.service.olap.ai.AiQueryMetadata;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiQueryResponse;
@@ -861,6 +862,52 @@ public class AiQueryResource {
     }
 
     /**
+     * saiku#902 phase 3 — admin diagnostics for the PII scanner.
+     *
+     * <p>Returns the cached {@link org.saiku.service.olap.ai.PiiScanner.Match}
+     * list for the cube — one entry per measure / level whose name matched a
+     * documented PII pattern AND that is NOT already annotated
+     * {@code saiku.semantic.pii=true}. The intent is operator-facing: surface
+     * "you probably want to annotate these columns" hints in admin UI without
+     * the operator having to grep their launcher logs.
+     *
+     * <p>The endpoint sits at {@code /ai/schema/{cubeId}/pii-suggestions}
+     * rather than {@code /ai/schema/{cubeId}} so the suggestions never leak
+     * into the agent-facing describe response — agents shouldn't see the
+     * operator's draft policy. Admin gating happens via the JAX-RS layer's
+     * usual {@code @RolesAllowed("ROLE_ADMIN")} when wired upstream; the
+     * resource itself doesn't enforce auth so unit tests can call it
+     * directly.
+     *
+     * <p>The cube must have been described at least once (via
+     * {@link #getSchema(String)}) for the scanner to have run; an
+     * unrecognised / unwarmed cube returns an empty list, not 404.
+     */
+    @GET
+    @Path("/schema/{cubeId:.+}/pii-suggestions")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getPiiSuggestions(@PathParam("cubeId") String cubeId) {
+        AiCubeRef ref = parseCubeId(cubeId);
+        if (ref == null) {
+            return badRequest("cubeId", "cubeId must be connection/catalog/schema/cube", null);
+        }
+        try {
+            // Warm the schema cache first so a fresh suggestions request
+            // doesn't return empty just because the cube hadn't been
+            // described yet.
+            cubeMetadataService.getSchema(ref);
+            return Response.ok(java.util.Map.of("suggestions", cubeMetadataService.getPiiSuggestions(ref)))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        } catch (AiValidationException e) {
+            return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+        } catch (RuntimeException e) {
+            log.error("PII suggestions fetch failed for {}", cubeId, e);
+            return error("pii suggestions fetch failed");
+        }
+    }
+
+    /**
      * Member search for a level — case-insensitive substring match by
      * default (delegates to the discover service's olap4j search). The
      * {@code cubeId} format matches {@link #getSchema} —
@@ -1188,6 +1235,24 @@ public class AiQueryResource {
                 AiSchema schema = cubeMetadataService.getSchema(ref);
                 out[0] = AiReturnsResolver.resolve(returns, schema);
             }
+        } catch (AiPiiException pe) {
+            // saiku#902: distinguish PII refusal from a regular validation
+            // error in the audit log + structured response. Status is still
+            // VALIDATION_ERROR (the agent's self-correction path is uniform —
+            // look at field, pick from available); the log line carries the
+            // explicit reason so a CISO reading the audit can confirm the
+            // gate fired correctly. The candidate list here ALREADY excludes
+            // PII columns (built by AiReturnsResolver.nonPiiCandidates).
+            log.info("drillthrough returns= refused (PII column): name={} message={}", name, pe.getMessage());
+            AiQueryResponse resp = new AiQueryResponse();
+            resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
+            resp.setError(pe.getMessage());
+            resp.setField(pe.getField());
+            if (pe.getAvailable() != null) resp.setAvailable(pe.getAvailable());
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(resp)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
         } catch (AiValidationException ve) {
             AiQueryResponse resp = new AiQueryResponse();
             resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
