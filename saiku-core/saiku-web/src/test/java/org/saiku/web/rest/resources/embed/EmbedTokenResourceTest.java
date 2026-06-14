@@ -57,6 +57,25 @@ public class EmbedTokenResourceTest {
     /* ---------------------------- mint ---------------------------- */
 
     @Test
+    public void grant_public_refused_when_allowPublic_disabled() {
+        // saiku#1305 — fail closed: with the deployment switch off, no new
+        // public grant may be minted (the gate is the first check in
+        // grantPublic, before grant/PII/cap logic).
+        System.setProperty(EmbedPublicRegistry.ALLOW_PUBLIC_PROP, "false");
+        try {
+            session.username = "admin";
+            session.roles = List.of("ROLE_ADMIN");
+            EmbedTokenResource.GrantRequest req = new EmbedTokenResource.GrantRequest();
+            req.resourceKind = "dashboard";
+            req.resourcePath = "/homes/admin/exec.saikudash";
+            Response r = resource.grantPublic(req);
+            assertEquals(403, r.getStatus());
+        } finally {
+            System.clearProperty(EmbedPublicRegistry.ALLOW_PUBLIC_PROP);
+        }
+    }
+
+    @Test
     public void mint_returns_token_when_caller_can_grant() {
         session.username = "admin";
         session.roles = List.of("ROLE_ADMIN");

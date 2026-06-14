@@ -263,6 +263,12 @@ public class EmbedTokenResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response grantPublic(GrantRequest body) {
+        // saiku#1305 — fail closed: when the deployment disables anonymous public
+        // embeds (saiku.embed.allowPublic=false), refuse to mint any new public
+        // grant. Pairs with EmbedAuthFilter ignoring existing grants while off.
+        if (!EmbedPublicRegistry.publicEmbedsEnabled()) {
+            return forbidden("Public embed grants are disabled on this deployment (saiku.embed.allowPublic=false).");
+        }
         if (body == null) {
             return badRequest("body", "request body required");
         }

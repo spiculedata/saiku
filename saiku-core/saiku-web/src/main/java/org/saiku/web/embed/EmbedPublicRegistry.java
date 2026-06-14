@@ -47,6 +47,21 @@ public class EmbedPublicRegistry {
      *  public grant. */
     private final Map<String, EmbedPublicGrant> grants = new ConcurrentHashMap<>();
 
+    /** Deployment switch (saiku#1305): when {@code false}, the token-less
+     *  public-grant embed path is disabled entirely — anonymous reads fail
+     *  closed and existing {@code embed-public.json} grants are ignored.
+     *  Default {@code true} preserves single-tenant / intentional-public use. */
+    public static final String ALLOW_PUBLIC_PROP = "saiku.embed.allowPublic";
+
+    /** True when anonymous public-grant embed reads are permitted (default
+     *  {@code true}). Read live (not cached) so a deployment can flip it; the
+     *  boot log records the value seen at startup. Consulted by both
+     *  {@code EmbedAuthFilter} (read path) and {@code EmbedTokenResource}
+     *  (grant-mint path) so the switch governs every public-grant door. */
+    public static boolean publicEmbedsEnabled() {
+        return Boolean.parseBoolean(System.getProperty(ALLOW_PUBLIC_PROP, "true"));
+    }
+
     public EmbedPublicRegistry() {
         this(System.getProperty("saiku.home"));
     }
@@ -65,6 +80,29 @@ public class EmbedPublicRegistry {
         }
         this.file = f;
         load();
+        logBootPosture();
+    }
+
+    /** One-shot startup banner line so the public-embed posture is visible
+     *  alongside the frame-ancestors / default-admin lines (saiku#1305). */
+    private void logBootPosture() {
+        if (publicEmbedsEnabled()) {
+            if (grants.isEmpty()) {
+                log.info("Embed public-grant reads ENABLED ({}=true); no public grants active.", ALLOW_PUBLIC_PROP);
+            } else {
+                log.warn(
+                        "Embed public-grant reads ENABLED ({}=true) with {} active grant(s) — those resources are"
+                                + " readable anonymously. Set {}=false to fail closed for multi-tenant.",
+                        ALLOW_PUBLIC_PROP,
+                        grants.size(),
+                        ALLOW_PUBLIC_PROP);
+            }
+        } else {
+            log.info(
+                    "Embed public-grant reads DISABLED ({}=false) — anonymous embed reads fail closed; existing"
+                            + " embed-public.json grants are ignored.",
+                    ALLOW_PUBLIC_PROP);
+        }
     }
 
     /** True when {@code resourcePath} of {@code resourceKind} has an active

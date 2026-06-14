@@ -125,17 +125,27 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        // 2. Public-grant path. No token; only resources listed in the
-        //    public registry render anonymously.
-        EmbedPublicGrant grant = publicRegistry.lookup(target.kind, target.path);
-        if (grant != null) {
-            authenticate(
-                    req,
-                    resp,
-                    chain,
-                    new EmbedGuestDetails(
-                            null, grant.resourceKind, grant.resourcePath, grant.grantedBy, grant.ownerRolesSnapshot));
-            return;
+        // 2. Public-grant path. No token; only resources listed in the public
+        //    registry render anonymously — and ONLY when the deployment permits
+        //    anonymous public embeds (saiku#1305, saiku.embed.allowPublic). When
+        //    disabled, skip the lookup entirely so existing embed-public.json
+        //    grants are IGNORED (fail closed) and the request falls through to
+        //    the Spring 401, exactly as if no grant existed.
+        if (EmbedPublicRegistry.publicEmbedsEnabled()) {
+            EmbedPublicGrant grant = publicRegistry.lookup(target.kind, target.path);
+            if (grant != null) {
+                authenticate(
+                        req,
+                        resp,
+                        chain,
+                        new EmbedGuestDetails(
+                                null,
+                                grant.resourceKind,
+                                grant.resourcePath,
+                                grant.grantedBy,
+                                grant.ownerRolesSnapshot));
+                return;
+            }
         }
 
         // Neither — fall through. The Spring rules will 401 (the embed read

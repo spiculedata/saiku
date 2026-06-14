@@ -56,6 +56,7 @@ public class EmbedAuthFilterTest {
     @After
     public void tearDown() {
         SecurityContextHolder.clearContext();
+        System.clearProperty(EmbedPublicRegistry.ALLOW_PUBLIC_PROP);
     }
 
     @Test
@@ -249,6 +250,47 @@ public class EmbedAuthFilterTest {
         // request that comes through this thread (worker reuse) must NOT
         // inherit the prior guest identity.
         assertNull(SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    @Test
+    public void public_grant_ignored_when_allowPublic_disabled() throws Exception {
+        // saiku#1305 — with the deployment switch off, an EXISTING public grant
+        // must NOT serve anonymously: the filter skips the registry lookup and
+        // falls through to Spring's 401, exactly as if no grant existed.
+        // (Negative control: drop the publicEmbedsEnabled() guard and this
+        // reverts to the admit path — capturedAuth becomes non-null → RED.)
+        System.setProperty(EmbedPublicRegistry.ALLOW_PUBLIC_PROP, "false");
+        publicRegistry.grant("dashboard", "/homes/admin/exec.saikudash", "admin", List.of("ROLE_ADMIN"), "public exec");
+        MockHttpServletRequest req =
+                new MockHttpServletRequest("GET", "/rest/saiku/api/embed/dashboard/homes/admin/exec.saikudash");
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        ContextCapturingChain chain = new ContextCapturingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertTrue("must fall through to the Spring chain (which will 401)", chain.called);
+        assertNull("public grant must NOT authenticate anonymously while the switch is off", chain.capturedAuth);
+        assertNull(
+                "no guest identity set when public embeds are disabled",
+                SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    @Test
+    public void public_grant_admits_when_allowPublic_explicitly_true() throws Exception {
+        // The default path still works when the switch is explicitly on.
+        System.setProperty(EmbedPublicRegistry.ALLOW_PUBLIC_PROP, "true");
+        publicRegistry.grant("dashboard", "/homes/admin/exec.saikudash", "admin", List.of("ROLE_ADMIN"), "public exec");
+        MockHttpServletRequest req =
+                new MockHttpServletRequest("GET", "/rest/saiku/api/embed/dashboard/homes/admin/exec.saikudash");
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        ContextCapturingChain chain = new ContextCapturingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertTrue(chain.called);
+        assertNotNull("explicit allowPublic=true still admits the public grant", chain.capturedAuth);
+        EmbedGuestDetails details = (EmbedGuestDetails) chain.capturedAuth.getDetails();
+        assertTrue("public path is anonymous", details.isAnonymous());
     }
 
     /* --------------------------- helpers ---------------------------- */
