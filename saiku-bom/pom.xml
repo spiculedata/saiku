@@ -21,7 +21,7 @@
         <!-- Spring Security 6.5.x is the latest GA line paired with Spring Framework 6.2.x.
              6.5.11 is current hygiene (the 2026-06 CVE batch is in spring-framework, fixed
              transitively by the 6.2.19 bump above). 7.x deferred to a planned migration. -->
-        <spring.security.version>6.5.11</spring.security.version>
+        <spring.security.version>7.1.0</spring.security.version>
         <!-- slf4j 1.x reached EOL; 2.0.x is the maintained line. API
              (org.slf4j.Logger / LoggerFactory) is binary-compatible for
              the call surface saiku uses. Note: the slf4j → log4j-2 binding
