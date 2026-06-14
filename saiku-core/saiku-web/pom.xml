@@ -270,11 +270,11 @@
         </dependency>
 
 
-        <!-- Test -->
+        <!-- Test — version inherited from saiku-bom (4.13.2); the old hard-pin
+             at 4.8.2 carried CVE-2020-15250 (TemporaryFolder info disclosure). -->
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
-            <version>4.8.2</version>
             <scope>test</scope>
         </dependency>
         <dependency>
