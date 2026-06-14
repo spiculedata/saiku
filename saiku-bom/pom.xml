@@ -13,14 +13,15 @@
 
     <properties>
         <!-- Shared third-party versions. Child poms reference these via ${...}. -->
-        <!-- Spring Framework 6.2.x is the latest 6.x GA line (6.2.8 as of 2025-06).
-             6.2.x closes CVE-2025-41242 (path traversal) and CVE-2025-41249
-             (annotation-detection authorization). 7.x is still in milestones. -->
-        <spring.version>6.2.11</spring.version>
-        <!-- Spring Security 6.5.x is the latest GA line (6.5.1 as of 2025-06).
-             Closes CVE-2026-22732 (HTTP-headers-not-written) and CVE-2026-22746
-             (user-attribute enumeration). Pairs with Spring Framework 6.2.x. -->
-        <spring.security.version>6.5.10</spring.security.version>
+        <!-- Spring Framework 6.2.x is the latest 6.x GA line. 6.2.19 carries the
+             backported fixes for the 2026-06-01 advisory (16 CVEs, CVE-2026-41838..41855)
+             AND the older spring-webmvc CVE-2026-22737/22741/22745/22735 — staying on 6.x
+             keeps the XML-wired Spring Security working; 7.x is a separate planned migration. -->
+        <spring.version>6.2.19</spring.version>
+        <!-- Spring Security 6.5.x is the latest GA line paired with Spring Framework 6.2.x.
+             6.5.11 is current hygiene (the 2026-06 CVE batch is in spring-framework, fixed
+             transitively by the 6.2.19 bump above). 7.x deferred to a planned migration. -->
+        <spring.security.version>6.5.11</spring.security.version>
         <!-- slf4j 1.x reached EOL; 2.0.x is the maintained line. API
              (org.slf4j.Logger / LoggerFactory) is binary-compatible for
              the call surface saiku uses. Note: the slf4j → log4j-2 binding
@@ -32,7 +33,7 @@
              namespace (so existing imports keep working) but routes everything
              through log4j-core 2.x. slf4j-log4j12 likewise gets swapped for
              log4j-slf4j-impl, the slf4j-1.x → log4j2 binding. -->
-        <log4j2.version>2.24.3</log4j2.version>
+        <log4j2.version>2.25.4</log4j2.version>
         <!-- Batik 1.8 has CVE-2022-38398/40146/41704/42890/44729/44730. 1.17 fixes them. -->
         <batik.version>1.19</batik.version>
         <jersey.version>3.1.9</jersey.version>
