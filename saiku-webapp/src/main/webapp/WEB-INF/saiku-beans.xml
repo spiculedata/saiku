@@ -238,9 +238,15 @@
         <property name="probeUnqueryable" value="#{systemProperties['saiku.ai.probeUnqueryable'] ?: 'true'}"/>
     </bean>
 
+    <!-- saiku#903: AI data-exposure policy guard. Singleton constructed at
+         startup so it resolves SAIKU_AI_POLICY / ai.policy (default schema-only)
+         and FAILS FAST on an invalid value before the app serves traffic. -->
+    <bean id="aiPolicyGuard" class="org.saiku.service.olap.ai.AiPolicyGuard"/>
+
     <bean id="aiQueryResource" scope="request"
           class="org.saiku.web.rest.resources.AiQueryResource">
         <aop:scoped-proxy/>
+        <property name="aiPolicyGuard" ref="aiPolicyGuard"/>
         <property name="thinQueryService" ref="thinQueryBean"/>
         <property name="cubeMetadataService" ref="aiCubeMetadataServiceBean"/>
         <property name="asyncQueryService" ref="asyncQueryServiceBean"/>

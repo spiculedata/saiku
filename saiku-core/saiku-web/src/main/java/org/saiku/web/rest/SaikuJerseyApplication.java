@@ -31,6 +31,9 @@ public class SaikuJerseyApplication extends ResourceConfig {
         // typed AiQueryResponse 400 envelope instead of the raw text/plain
         // Jackson message that leaked class names and source location.
         register(org.saiku.web.rest.exception.JacksonValidationExceptionMapper.class);
+        // saiku#903: ai.policy violations -> typed 403 PERMISSION_DENIED envelope
+        // (specific mapper wins over the catch-all Throwable mapper below).
+        register(org.saiku.web.rest.exception.AiPolicyViolationMapper.class);
         // saiku#1165 (audit-3): global catch-all mapper. Supersedes the
         // saiku#865 GenericFailureExceptionMapper — JAX-RS allows only one
         // ExceptionMapper<Throwable>, so this single mapper carries the whole
