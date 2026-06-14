@@ -130,17 +130,46 @@ public class AiQueryResource {
         this.kAnonymityFilter = f;
     }
 
+    /** saiku#905 — matches a column caption that names a row-count measure
+     *  (e.g. "Fact Count", "Count", "Distinct Count", "Row Count") on a whole-
+     *  word boundary, so ordinary numeric measures that merely *contain* the
+     *  substring — {@code Discount}, {@code Account}, {@code Counter} — are NOT
+     *  mistaken for the count column. Keying suppression off a non-count measure
+     *  would silently leak the very small cells k-anonymity exists to mask
+     *  (SEC #1324 / QA finding). Trailing plural {@code s} is allowed
+     *  ("Counts") but {@code Discounts}/{@code Counter} stay excluded. */
+    private static final java.util.regex.Pattern COUNT_MEASURE =
+            java.util.regex.Pattern.compile("\\bcounts?\\b", java.util.regex.Pattern.CASE_INSENSITIVE);
+
     /**
      * saiku#905 v1 — apply k-anonymity small-cell suppression to a records
      * payload using an in-result count measure (a measure column whose caption
-     * contains "count", e.g. Mondrian's "Fact Count"): any row whose count is
-     * below k has all its measure cells masked. No-op when suppression is
-     * disabled, there's no count column, or the payload is empty. The
-     * shadow-count query for cubes that don't surface a count measure is the
+     * names a count on a word boundary, e.g. Mondrian's "Fact Count"): any row
+     * whose count is below k has all its measure cells masked. No-op when
+     * suppression is disabled, there's no count column, or the payload is empty.
+     * The shadow-count query for cubes that don't surface a count measure is the
      * saiku#905 follow-up. Package-private so the wiring is unit-testable
-     * without standing up a CellDataSet.
+     * without standing up a CellDataSet. Convenience overload for the records
+     * (non-matrix) path.
      */
     void applyKAnonymity(java.util.List<java.util.Map<String, Object>> records) {
+        applyKAnonymity(records, false);
+    }
+
+    /**
+     * saiku#905 v1 — as {@link #applyKAnonymity(java.util.List)}, with the
+     * output-mode gate folded in as a testable seam. When {@code matrix} is
+     * true this is a deliberate no-op: the {@code format=matrix} output is a
+     * known v1 gap (small cells are NOT suppressed there) tracked as the
+     * saiku#905-B follow-up — multi-tenant / embed deployments post-filter at
+     * the proxy in the meantime (SEC #1324). Routing the skip through this
+     * method (instead of an outer {@code if}) lets QA lock the gap contract
+     * without constructing a CellDataSet.
+     */
+    void applyKAnonymity(java.util.List<java.util.Map<String, Object>> records, boolean matrix) {
+        if (matrix) {
+            return; // saiku#905-B known gap: matrix output is not k-anon-suppressed in v1
+        }
         if (!kAnonymityFilter.enabled() || records == null || records.isEmpty()) {
             return;
         }
@@ -154,7 +183,7 @@ public class AiQueryResource {
         }
         String countKey = null;
         for (String k : measureKeys) {
-            if (k.toLowerCase(java.util.Locale.ROOT).contains("count")) {
+            if (COUNT_MEASURE.matcher(k).find()) {
                 countKey = k;
                 break;
             }
@@ -1830,9 +1859,9 @@ public class AiQueryResource {
 
             // saiku#905: k-anonymity small-cell suppression on the records
             // payload (mutates cells in place; resp already holds this list).
-            if (!useMatrix) {
-                applyKAnonymity(records);
-            }
+            // The output-mode gate lives inside the method (matrix = v1 no-op,
+            // saiku#905-B) so the skip is a unit-testable seam.
+            applyKAnonymity(records, useMatrix);
         }
         resp.setRuntimeMs(System.currentTimeMillis() - startedAt);
         return resp;
