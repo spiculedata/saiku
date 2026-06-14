@@ -44,6 +44,8 @@
   import { flatten, listRepository, type RepositoryNode } from "$lib/api/repository";
   import { repositionTile } from "$lib/dashboard/tilePlacement";
   import { DEFAULT_CHART_OPTIONS, type ChartOptions } from "$lib/views/chartTypes";
+  // #1085: which chart kinds support a brush cross-filter (gates the toggle).
+  import { BRUSHABLE_CHART_TYPES } from "$lib/charts/build";
   // #1077: reuse the workspace chart-options editor for dashboard chart tiles.
   import ChartEditorModal from "$lib/modals/ChartEditorModal.svelte";
   import TileEditorImage from "$lib/views/dashboard/TileEditorImage.svelte";
@@ -200,6 +202,8 @@
   let forecastHorizon = $state<number>(untrack(() => tile.forecast?.horizon ?? 6));
   let forecastConfidence = $state<number>(untrack(() => tile.forecast?.confidence ?? 0.95));
   let forecastTimeAxis = $state<string>(untrack(() => tile.forecast?.timeAxis ?? ""));
+  // ── Issue #1085: brush cross-filter (brushable cartesian chart tiles only) ──
+  let brushCrossFilterEnabled = $state<boolean>(untrack(() => tile.brushCrossFilter?.enabled ?? false));
   // Query source — "reference" picks a saved .saiku from the repo,
   // "inline" pastes an AiQueryRequest body. Default to "reference" so
   // non-technical authors aren't dropped into a JSON textarea on a
@@ -614,6 +618,10 @@
               timeAxis: forecastTimeAxis.trim() || undefined,
             }
           : undefined;
+      // ── Issue #1085: persist brush cross-filter config (undefined when off
+      // or on a non-brushable chart type, keeping tidy JSON). ──
+      patch.brushCrossFilter =
+        brushCrossFilterEnabled && BRUSHABLE_CHART_TYPES.has(chartType) ? { enabled: true } : undefined;
     }
 
     if (tile.type === "chart" || tile.type === "table") {
@@ -941,6 +949,23 @@
                 >
               </label>
             {/if}
+          </fieldset>
+        {/if}
+
+        <!-- ── Issue #1085: brush cross-filter (brushable cartesian charts) ── -->
+        {#if BRUSHABLE_CHART_TYPES.has(chartType)}
+          <fieldset class="anomaly">
+            <legend>{i18n.t("dashboard.crossfilter.legend", "Cross-filter")}</legend>
+            <label class="checkbox">
+              <input type="checkbox" bind:checked={brushCrossFilterEnabled} />
+              <span>{i18n.t("dashboard.crossfilter.enable", "Emit cross-filter on brush")}</span>
+            </label>
+            <span class="hint"
+              >{i18n.t(
+                "dashboard.crossfilter.hint",
+                "Drag to select a range on this chart; the other tiles filter to those members. This tile keeps full context — Esc clears it.",
+              )}</span
+            >
           </fieldset>
         {/if}
       {/if}

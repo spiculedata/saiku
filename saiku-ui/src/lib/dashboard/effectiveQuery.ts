@@ -270,5 +270,12 @@ export function effectiveQueryFor(
   const base = tile.query.body as unknown as AiQueryRequestLike;
   if (!base || typeof base !== "object") return null;
   if (!schema) return base; // can't merge without the schema — return base unchanged
-  return mergeFilters(base, activeFilters, schema);
+  // saiku#1085: a tile must NOT apply its own brush cross-filter — it keeps
+  // full context while every OTHER tile narrows. Click/panel filters still
+  // apply everywhere (unchanged), so only "cross" filters from this tile are
+  // excluded here.
+  const applicable = activeFilters.filter(
+    (af) => !(af.source.kind === "cross" && af.source.tileId === tile.id),
+  );
+  return mergeFilters(base, applicable, schema);
 }

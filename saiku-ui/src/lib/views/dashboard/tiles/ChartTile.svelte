@@ -51,6 +51,9 @@
     isSupportedChartKind,
     projectFromAiQueryResponse,
   } from "$lib/dashboard/chartOptions";
+  // #1085: brush cross-filter — the pure ECharts `brush` config + the set of
+  // chart kinds that support an x-range brush.
+  import { brushOption, BRUSHABLE_CHART_TYPES } from "$lib/charts/build";
   // #1090: accessible data-table mirror of the chart for screen readers.
   import { chartSummary } from "$lib/charts/a11y";
   // issue #1071: map tiles need the GeoJSON registered with ECharts before
@@ -81,9 +84,14 @@
   interface Props {
     tile: DashboardTile;
     onClickFilter?: (filter: DashboardFilter) => void;
+    /** #1085: emit a brush cross-filter (multi-member, on this tile's row
+     *  hierarchy). Parent wires it to activeFilters.pushCross(filter, tile.id). */
+    onCrossFilter?: (filter: DashboardFilter) => void;
+    /** #1085: clear this tile's brush cross-filter (empty brush / Esc). */
+    onClearCross?: () => void;
   }
 
-  let { tile, onClickFilter }: Props = $props();
+  let { tile, onClickFilter, onCrossFilter, onClearCross }: Props = $props();
 
   // Non-null only inside the share viewer (getContext at init); see fetch effect.
   // tile.id is stable for a tile instance and getContext must run at init, so the
@@ -150,6 +158,21 @@
       && tile.query?.kind === "inline"
       && !sharedResponse,
   );
+  /* --- issue #1085: brush cross-filter ------------------------------------
+   * When the tile opts in (tile.brushCrossFilter.enabled) AND the chart kind
+   * has a brushable category x-axis, the tile enters ECharts brush mode; a
+   * rectangular x-range selection emits a multi-member filter on the row
+   * hierarchy (the source tile excludes its own — see effectiveQueryFor).
+   * Disabled in the share viewer (read-only snapshot, no filter bus). */
+  let brushEnabled = $derived(
+    !!tile.brushCrossFilter?.enabled
+      && BRUSHABLE_CHART_TYPES.has(tile.chartType ?? "")
+      && !sharedResponse
+      // No emit callback (e.g. read-only view) → don't enter brush mode at all,
+      // so the cursor/UX isn't changed for a brush that can't do anything.
+      && !!onCrossFilter,
+  );
+
   // Forecast block (measure caption → horizon points), set by the inline fetch.
   let forecastSeries = $state<Record<string, ForecastPoint[]> | null>(null);
   // Fallback overlay colour when a series carries no explicit colour.
@@ -223,6 +246,8 @@
     const instance = echarts.init(host);
     instance.on("click", handleEChartsClick);
     instance.on("contextmenu", handleEChartsContextMenu);
+    // #1085: brushSelected fires (debounced) on every brush change incl. clear.
+    instance.on("brushSelected", handleBrushSelected);
     // Resize + bump resizeTick so the render effect recomputes the
     // aspect-aware small-multiple radius for the new canvas size (#1053).
     resizeObserver = new ResizeObserver(() => {
@@ -406,6 +431,9 @@
       if (forecastEnabled && forecastSeries) {
         applyForecastOverlay(option, forecastSeries, FORECAST_FALLBACK_COLOR);
       }
+      // #1085: attach the brush component so the user can rubber-band an x-range.
+      const brush = brushEnabled ? brushOption(kind) : null;
+      if (brush) (option as Record<string, unknown>).brush = brush;
       // #1092: capture the live zoom/brush before overwriting; only re-applied
       // when the chart type + category count are unchanged (resize / theme flip
       // / same-shape refresh), so a new query or chart-type switch starts fresh.
@@ -418,6 +446,15 @@
       chart.setOption(option, true);
       // Overlay the saved window/selection (merge so the fresh render is kept).
       if (preserved) chart.setOption(preserved, { notMerge: false });
+      // #1085: re-arm brush mode after each setOption (setOption resets the
+      // global cursor). lineX = drag an x-range; one active selection at a time.
+      if (brush) {
+        chart.dispatchAction({
+          type: "takeGlobalCursor",
+          key: "brush",
+          brushOption: { brushType: "lineX", brushMode: "single" },
+        });
+      }
     } else {
       chart.clear();
     }
@@ -551,6 +588,113 @@
       onClickFilter(filter);
     });
   }
+
+  /* --------------------------- brush cross-filter (#1085) ------------- */
+
+  // Guard counter: a slower in-flight member resolution from an earlier brush
+  // must not overwrite the cross-filter from a newer one.
+  let brushToken = 0;
+
+  /** The dim/hier/level the chart's category x-axis maps to — inline tiles read
+   *  it off the request body; reference tiles use the lazily-inferred axes.
+   *  Mirrors the resolution in handleEChartsClick. */
+  function currentRowAxis(): { dimension: string; hierarchy: string; level: string } | undefined {
+    if (!tile.query) return undefined;
+    if (tile.query.kind === "inline") {
+      const body = tile.query.body as {
+        rows?: Array<{ dimension: string; hierarchy: string; level: string }>;
+      };
+      return body.rows?.[0];
+    }
+    if (tile.query.kind === "reference") return referenceRowAxes?.[0];
+    return undefined;
+  }
+
+  /** Resolve a clicked/brushed caption to its real member uniqueName via the
+   *  shared #1166 cache (a caption like "Beer" → "[Product].[Products].[Beer]").
+   *  Returns null when the level has no matching member. */
+  function resolveMemberUniqueName(
+    cube: CubeRef,
+    axis: { dimension: string; hierarchy: string; level: string },
+    caption: string,
+  ): Promise<string | null> {
+    const { dimension, hierarchy, level } = axis;
+    const cacheKey = `${cube.connectionName}/${cube.catalog}/${cube.schema}/${cube.cubeName}|${dimension}/${hierarchy}/${level}|${caption}`;
+    let lookup = clickMemberCache.get(cacheKey);
+    if (!lookup) {
+      lookup = searchMembers(cube, dimension, hierarchy, level, caption);
+      clickMemberCache.set(cacheKey, lookup);
+    }
+    return lookup.then((hits) => {
+      const uniqueName = pickMemberUniqueName(hits, caption);
+      if (!uniqueName) clickMemberCache.delete(cacheKey); // don't cache a miss
+      return uniqueName;
+    });
+  }
+
+  /** ECharts brushSelected handler. Maps the brushed x-range's selected
+   *  category indices → captions → member uniqueNames, then emits ONE
+   *  multi-member cross-filter on the row hierarchy. An empty selection (the
+   *  user clicked off the brush, or removeOnClick fired) clears it. */
+  function handleBrushSelected(params: unknown): void {
+    if (!brushEnabled) return;
+    const r = response;
+    if (!r || r.status !== "SUCCESS") return;
+    const rowAxis = currentRowAxis();
+    const cube = resolvedCube;
+    if (!rowAxis || !cube) return;
+
+    // ECharts hands the brushSelected payload as `unknown` (untyped event) —
+    // narrow to the shape we read: batch[0].selected[].dataIndex.
+    const batch = (params as { batch?: Array<{ selected?: Array<{ dataIndex?: number[] }> }> }).batch;
+
+    // Union the selected category indices across every series in the batch.
+    const idx = new Set<number>();
+    for (const s of batch?.[0]?.selected ?? []) {
+      for (const di of s.dataIndex ?? []) idx.add(di);
+    }
+    if (idx.size === 0) {
+      onClearCross?.();
+      return;
+    }
+
+    const cats = projectFromAiQueryResponse(r).rowCategories;
+    const captions = Array.from(idx)
+      .sort((a, b) => a - b)
+      .map((i) => cats[i])
+      .filter((c): c is string => typeof c === "string" && c.length > 0);
+    if (captions.length === 0) {
+      onClearCross?.();
+      return;
+    }
+
+    const { dimension, hierarchy, level } = rowAxis;
+    const token = ++brushToken;
+    void Promise.all(captions.map((c) => resolveMemberUniqueName(cube, rowAxis, c))).then((names) => {
+      if (token !== brushToken) return; // superseded by a newer brush
+      const members = names.filter((n): n is string => !!n);
+      if (members.length === 0) {
+        onClearCross?.();
+        return;
+      }
+      onCrossFilter?.({ dimension, hierarchy, level, members });
+    });
+  }
+
+  // Esc clears the brush (visual + emitted cross-filter) while the tile is in
+  // brush mode — the issue's "reset on Esc". Click-outside is handled by the
+  // brush's removeOnClick (fires brushSelected with an empty selection).
+  $effect(() => {
+    if (!brushEnabled || !chart) return;
+    const instance = chart;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      instance.dispatchAction({ type: "brush", areas: [] });
+      onClearCross?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   /* --------------------------- drillthrough (#930) -------------------- */
 

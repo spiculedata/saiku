@@ -7,7 +7,12 @@
  */
 
 import { describe, test, expect } from "vitest";
-import { buildChartOption, type ChartProjection } from "$lib/charts/build";
+import {
+  buildChartOption,
+  brushOption,
+  BRUSHABLE_CHART_TYPES,
+  type ChartProjection,
+} from "$lib/charts/build";
 import { DEFAULT_CHART_OPTIONS, type ChartOptions } from "$lib/views/chartTypes";
 import {
   DEFAULT_THEME_TOKENS,
@@ -1081,5 +1086,30 @@ describe("buildChartOption — x-axis label width per axis", () => {
     // get the 160px width budget (they read diagonally).
     expect(xAxis.axisLabel.rotate).toBe(30);
     expect(xAxis.axisLabel.width).toBe(160);
+  });
+});
+
+describe("brushOption / BRUSHABLE_CHART_TYPES — cross-filter (#1085)", () => {
+  test("brushable cartesian kinds return a lineX single-selection brush", () => {
+    for (const kind of ["bar", "stackedBar", "line", "stackedLine", "area", "stackedArea"]) {
+      const b = brushOption(kind);
+      expect(b, kind).not.toBeNull();
+      expect(b!.brushType).toBe("lineX");
+      expect(b!.brushMode).toBe("single");
+      expect(b!.xAxisIndex).toBe(0);
+      expect(b!.removeOnClick).toBe(true); // a plain click clears the selection
+    }
+  });
+
+  test("non-brushable kinds (no single category x-axis) return null", () => {
+    for (const kind of ["pie", "donut", "treemap", "sunburst", "heatmap", "radar", "scatter", "bubble", "map", "made-up"]) {
+      expect(brushOption(kind), kind).toBeNull();
+    }
+  });
+
+  test("BRUSHABLE_CHART_TYPES membership matches brushOption non-null", () => {
+    expect(BRUSHABLE_CHART_TYPES.has("bar")).toBe(true);
+    expect(BRUSHABLE_CHART_TYPES.has("pie")).toBe(false);
+    expect(BRUSHABLE_CHART_TYPES.has("map")).toBe(false);
   });
 });
