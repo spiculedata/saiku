@@ -110,7 +110,12 @@ public class MdxEchoGoldenTest {
             fail("wrote " + target + " — inspect diff and re-run without -D" + UPDATE_PROPERTY);
         }
 
-        assertEquals("MDX differs from " + expectedResource, expected, actual);
+        // Compare on content, not byte-exact line endings: a golden checked out
+        // with CRLF (git core.autocrlf=true on Windows) must still match the
+        // LF the converter emits — otherwise these goldens flake on every
+        // Windows clone with a spurious \r\n-vs-\n diff (no .gitattributes pins
+        // the fixtures to LF).
+        assertEquals("MDX differs from " + expectedResource, normalizeEol(expected), normalizeEol(actual));
     }
 
     private static String readResource(String resource) throws IOException {
@@ -118,6 +123,11 @@ public class MdxEchoGoldenTest {
             if (in == null) return null;
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
+    }
+
+    /** Normalise CRLF/CR to LF so golden comparison is line-ending-agnostic. */
+    private static String normalizeEol(String s) {
+        return s == null ? null : s.replace("\r\n", "\n").replace('\r', '\n');
     }
 
     /**
