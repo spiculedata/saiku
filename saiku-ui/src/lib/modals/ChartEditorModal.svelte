@@ -8,8 +8,13 @@
     ChartColorRamp,
     ReferenceLine,
     ReferenceBand,
+    ChartConditionalFormat,
+    ChartCondRule,
+    ChartCondOp,
   } from "$lib/views/chartTypes";
   import { PALETTE_IDS } from "$lib/views/chartTheme";
+  // #1084: which chart kinds support conditional formatting (gates the section).
+  import { CONDITIONAL_FORMAT_CHART_TYPES } from "$lib/charts/build";
 
   interface Props {
     initial: ChartOptions;
@@ -56,6 +61,12 @@
       ...src,
       referenceLines: (src.referenceLines ?? []).map((l) => ({ ...l })),
       referenceBands: (src.referenceBands ?? []).map((b) => ({ ...b })),
+      // #1084: deep-copy the conditional-format bands + their rules so editing
+      // the working copy never mutates the caller's options.
+      conditionalFormat: (src.conditionalFormat ?? []).map((c) => ({
+        ...c,
+        rules: c.rules.map((r) => ({ ...r, value: Array.isArray(r.value) ? ([...r.value] as [number, number]) : r.value })),
+      })),
     };
   }
 
@@ -104,6 +115,61 @@
   function numVal(e: Event): number {
     const v = parseFloat((e.currentTarget as HTMLInputElement).value);
     return Number.isFinite(v) ? v : 0;
+  }
+
+  /* --- issue #1084: conditional formatting (bar / stackedBar) ------------- */
+  // Shown only for brushable bar kinds with named series to target. Each series
+  // (measure) maps to one band keyed by its index; rules recolour matching bars.
+  const showCondFormat = $derived(
+    chartType !== undefined && CONDITIONAL_FORMAT_CHART_TYPES.has(chartType) && seriesNames.length > 0,
+  );
+  const COND_OPS: { id: ChartCondOp; labelKey: string }[] = [
+    { id: "gt", labelKey: "modal.chart.cond.op.gt" },
+    { id: "gte", labelKey: "modal.chart.cond.op.gte" },
+    { id: "lt", labelKey: "modal.chart.cond.op.lt" },
+    { id: "lte", labelKey: "modal.chart.cond.op.lte" },
+    { id: "between", labelKey: "modal.chart.cond.op.between" },
+  ];
+  const COND_DEFAULT_COLOR = "#e2483d";
+
+  function condBand(mi: number): ChartConditionalFormat | undefined {
+    return (form.conditionalFormat ?? []).find((c) => c.measureIndex === mi);
+  }
+  /** Mutate (or create) the band for a measure index, then drop empty bands. */
+  function editBand(mi: number, mut: (b: ChartConditionalFormat) => ChartConditionalFormat): void {
+    const list = (form.conditionalFormat ?? []).map((c) => ({
+      ...c,
+      rules: c.rules.map((r) => ({ ...r })),
+    }));
+    const idx = list.findIndex((c) => c.measureIndex === mi);
+    const next = mut(idx >= 0 ? list[idx] : { measureIndex: mi, rules: [] });
+    if (idx >= 0) list[idx] = next;
+    else list.push(next);
+    // Tidy: keep only bands that actually carry rules or a fallback colour.
+    form.conditionalFormat = list.filter((c) => c.rules.length > 0 || !!c.fallbackColor);
+  }
+  function addCondRule(mi: number): void {
+    editBand(mi, (b) => ({ ...b, rules: [...b.rules, { op: "gt", value: 0, color: COND_DEFAULT_COLOR }] }));
+  }
+  function removeCondRule(mi: number, ri: number): void {
+    editBand(mi, (b) => ({ ...b, rules: b.rules.filter((_, i) => i !== ri) }));
+  }
+  function updateCondRule(mi: number, ri: number, patch: Partial<ChartCondRule>): void {
+    editBand(mi, (b) => ({ ...b, rules: b.rules.map((r, i) => (i === ri ? { ...r, ...patch } : r)) }));
+  }
+  /** Switching to/from `between` reshapes `value` (single number ↔ tuple). */
+  function changeCondOp(mi: number, ri: number, op: ChartCondOp): void {
+    const cur = condBand(mi)?.rules[ri];
+    let value: number | [number, number] = cur?.value ?? 0;
+    if (op === "between" && !Array.isArray(value)) value = [typeof value === "number" ? value : 0, 0];
+    if (op !== "between" && Array.isArray(value)) value = value[0] ?? 0;
+    updateCondRule(mi, ri, { op, value });
+  }
+  function setCondFallback(mi: number, color: string): void {
+    editBand(mi, (b) => ({ ...b, fallbackColor: color || undefined }));
+  }
+  function tupleAt(value: number | [number, number] | undefined, i: 0 | 1): number {
+    return Array.isArray(value) ? (value[i] ?? 0) : i === 0 && typeof value === "number" ? value : 0;
   }
 
   function axisPickFor(name: string): AxisPick {
@@ -530,6 +596,85 @@
         <button type="button" class="btn ref__add" onclick={addRefBand}>{i18n.t("modal.chart.refBands.add")}</button>
       </div>
     {/if}
+
+    <!-- issue #1084: conditional formatting — recolour bars by value. -->
+    {#if showCondFormat}
+      <div class="cond">
+        <span class="cond__title">{i18n.t("modal.chart.cond.title", "Conditional formatting")}</span>
+        <p class="hint">{i18n.t("modal.chart.cond.hint", "Recolour bars by value — the first matching rule per bar wins.")}</p>
+        {#each seriesNames as sname, mi (mi)}
+          <div class="cond__measure">
+            <span class="cond__measure-name">{sname}</span>
+            {#each condBand(mi)?.rules ?? [] as rule, ri (ri)}
+              <div class="cond__rule">
+                <select
+                  class="field__input cond__op"
+                  value={rule.op}
+                  onchange={(e) => changeCondOp(mi, ri, (e.currentTarget as HTMLSelectElement).value as ChartCondOp)}
+                  aria-label={i18n.t("modal.chart.cond.op", "Operator")}
+                >
+                  {#each COND_OPS as o}
+                    <option value={o.id}>{i18n.t(o.labelKey)}</option>
+                  {/each}
+                </select>
+                {#if rule.op === "between"}
+                  <input
+                    class="field__input cond__num"
+                    type="number"
+                    value={tupleAt(rule.value, 0)}
+                    oninput={(e) => updateCondRule(mi, ri, { value: [numVal(e), tupleAt(rule.value, 1)] })}
+                    aria-label={i18n.t("modal.chart.cond.min", "Min")}
+                  />
+                  <input
+                    class="field__input cond__num"
+                    type="number"
+                    value={tupleAt(rule.value, 1)}
+                    oninput={(e) => updateCondRule(mi, ri, { value: [tupleAt(rule.value, 0), numVal(e)] })}
+                    aria-label={i18n.t("modal.chart.cond.max", "Max")}
+                  />
+                {:else}
+                  <input
+                    class="field__input cond__num"
+                    type="number"
+                    value={typeof rule.value === "number" ? rule.value : 0}
+                    oninput={(e) => updateCondRule(mi, ri, { value: numVal(e) })}
+                    aria-label={i18n.t("modal.chart.cond.value", "Value")}
+                  />
+                {/if}
+                <input
+                  class="cond__color"
+                  type="color"
+                  value={rule.color}
+                  oninput={(e) => updateCondRule(mi, ri, { color: (e.currentTarget as HTMLInputElement).value })}
+                  aria-label={i18n.t("modal.chart.cond.color", "Colour")}
+                  title={i18n.t("modal.chart.cond.color", "Colour")}
+                />
+                <button type="button" class="btn cond__remove" onclick={() => removeCondRule(mi, ri)}>
+                  {i18n.t("modal.chart.cond.remove", "Remove")}
+                </button>
+              </div>
+            {/each}
+            <div class="cond__actions">
+              <button type="button" class="btn cond__add" onclick={() => addCondRule(mi)}>
+                {i18n.t("modal.chart.cond.add", "Add rule")}
+              </button>
+              {#if (condBand(mi)?.rules.length ?? 0) > 0}
+                <label class="cond__fallback">
+                  <span>{i18n.t("modal.chart.cond.fallback", "Fallback")}</span>
+                  <input
+                    class="cond__color"
+                    type="color"
+                    value={condBand(mi)?.fallbackColor ?? "#cccccc"}
+                    onchange={(e) => setCondFallback(mi, (e.currentTarget as HTMLInputElement).value)}
+                    aria-label={i18n.t("modal.chart.cond.fallback", "Fallback")}
+                  />
+                </label>
+              {/if}
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
     {/if}
   </div>
 
@@ -573,4 +718,16 @@
   .ref__color { width: 2.25rem; height: 2rem; flex: 0 0 auto; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; }
   .ref__remove { flex: 0 0 auto; }
   .ref__add { align-self: flex-start; }
+  /* #1084: conditional formatting */
+  .cond { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
+  .cond__title { font-size: var(--fs-sm); color: var(--fg-muted); }
+  .cond__measure { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--border); }
+  .cond__measure-name { font-size: var(--fs-sm); font-weight: 600; color: var(--fg); }
+  .cond__rule { display: flex; align-items: center; gap: var(--space-2); }
+  .cond__op { width: 7rem; flex: 0 0 auto; }
+  .cond__num { width: 5.5rem; flex: 0 0 auto; }
+  .cond__color { width: 2.25rem; height: 2rem; flex: 0 0 auto; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; cursor: pointer; }
+  .cond__remove { flex: 0 0 auto; }
+  .cond__actions { display: flex; align-items: center; gap: var(--space-3); }
+  .cond__fallback { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--fs-xs); color: var(--fg-muted); }
 </style>

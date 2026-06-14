@@ -1113,3 +1113,43 @@ describe("brushOption / BRUSHABLE_CHART_TYPES — cross-filter (#1085)", () => {
     expect(BRUSHABLE_CHART_TYPES.has("map")).toBe(false);
   });
 });
+
+describe("buildChartOption — conditional formatting (#1084)", () => {
+  // sample(): Store Sales = [565238.13, 612482.65]; Unit Sales = [266773, 282417].
+  const cf = [
+    {
+      measureIndex: 0,
+      rules: [{ op: "gt" as const, value: 600000, color: "#00ff00" }],
+      fallbackColor: "#888888",
+    },
+  ];
+
+  test("recolours matching bars on the targeted measure; fallback on the rest", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ dualAxis: false, conditionalFormat: cf })) as Record<
+      string,
+      unknown
+    >;
+    const series = opt.series as Array<{ data: unknown[] }>;
+    // Store Sales (measure 0): 565238 < 600000 → fallback grey; 612482 > 600000 → green.
+    expect(series[0].data[0]).toEqual({ value: 565238.13, itemStyle: { color: "#888888" } });
+    expect(series[0].data[1]).toEqual({ value: 612482.65, itemStyle: { color: "#00ff00" } });
+    // Unit Sales (measure 1): no band → plain numbers, untouched.
+    expect(series[1].data).toEqual([266773, 282417]);
+  });
+
+  test("no conditionalFormat → plain numeric data (unchanged)", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ dualAxis: false })) as Record<string, unknown>;
+    const series = opt.series as Array<{ data: unknown[] }>;
+    expect(series[0].data).toEqual([565238.13, 612482.65]);
+  });
+
+  test("line charts ignore conditional formatting (bar/stackedBar only in Phase 1)", () => {
+    const opt = buildChartOption(sample(), "line", opts({ dualAxis: false, conditionalFormat: cf })) as Record<
+      string,
+      unknown
+    >;
+    const series = opt.series as Array<{ data: unknown[] }>;
+    // line keeps a continuous stroke → raw numbers, no per-point itemStyle.
+    expect(series[0].data).toEqual([565238.13, 612482.65]);
+  });
+});
