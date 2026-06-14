@@ -45,6 +45,8 @@ import {
 } from "$lib/views/chartTheme";
 import { buildSparklineSvg } from "$lib/charts/sparkline";
 import { formatNumber, type NumberFormat } from "$lib/charts/numberFormat";
+// #1084: threshold-driven per-point colours.
+import { colorForValue, conditionalFormatForMeasure } from "$lib/charts/chartConditionalFormat";
 
 /** The shared, already-projected chart input both surfaces produce. Rollup
  *  rows are filtered (and parent context promoted into labels) by the caller
@@ -399,6 +401,12 @@ export const BRUSHABLE_CHART_TYPES: ReadonlySet<string> = new Set([
   "area",
   "stackedArea",
 ]);
+
+/* issue #1084: chart kinds that support threshold-driven conditional colours in
+ * Phase 1. Bar/stacked-bar map cleanly (one series per measure → per-bar colour
+ * by value). Scatter/bubble (series = rows, transposed), pie/donut (segment
+ * rules) and heatmap (visualMap) are deferred to later phases per the issue. */
+export const CONDITIONAL_FORMAT_CHART_TYPES: ReadonlySet<string> = new Set(["bar", "stackedBar"]);
 
 /** issue #1085: the ECharts `brush` option for a brushable cartesian chart, or
  * `null` for a non-brushable type. `lineX` rubber-bands an x-axis RANGE (→ a
@@ -1053,34 +1061,46 @@ export function buildChartOption(
       ]
     : { ...valueAxis, name: yName };
 
-  const base = cols.map((name, c) => ({
-    type: kindBase,
-    name,
-    // #1081: per-series colour override (by series name) wins over the cycle
-    // for this one series. ECharts honours a series-level `color` for both bar
-    // and line; absent overrides leave it off so the palette cycle drives it.
-    ...(seriesColorFor(o, name) ? { color: seriesColorFor(o, name) } : {}),
-    // Single-axis stacked → one "total" group (matches both surfaces' prior
-    // output); dual-axis stacked → separate groups per side so each axis stacks
-    // independently.
-    stack: isStacked
-      ? hasRight
-        ? seriesSides[c] === "right"
-          ? "total-right"
-          : "total-left"
-        : "total"
-      : undefined,
-    areaStyle,
-    smooth: kindBase === "line",
-    // #1091: high-contrast — thicker line strokes + bigger markers for lines,
-    // a same-bg border for bars so adjacent bars separate. No-ops when off.
-    ...(kindBase === "line" ? { ...lineStyleHC, ...markerHC } : itemStyleHC),
-    // #1082: format any displayed data labels (no-op object when nf is off).
-    ...seriesValueLabel,
-    yAxisIndex: hasRight ? (seriesSides[c] === "right" ? 1 : 0) : 0,
-    // Compact (tiles) draws missing cells as gaps; roomy (workspace) as 0.
-    data: matrix.map((row) => row[c] ?? (compact ? null : 0)),
-  }));
+  const base = cols.map((name, c) => {
+    // #1084: conditional-format band for this measure (bar/stackedBar only on
+    // this cartesian path — line/area keep a continuous stroke). A matching
+    // rule recolours the individual data point via point-level itemStyle, which
+    // ECharts merges over the series-level itemStyle (so the #1091 HC border is
+    // kept) and over the #1081 per-series colour (a threshold is more specific).
+    const cf = kindBase === "bar" ? conditionalFormatForMeasure(o.conditionalFormat, c) : undefined;
+    return {
+      type: kindBase,
+      name,
+      // #1081: per-series colour override (by series name) wins over the cycle
+      // for this one series. ECharts honours a series-level `color` for both bar
+      // and line; absent overrides leave it off so the palette cycle drives it.
+      ...(seriesColorFor(o, name) ? { color: seriesColorFor(o, name) } : {}),
+      // Single-axis stacked → one "total" group (matches both surfaces' prior
+      // output); dual-axis stacked → separate groups per side so each axis stacks
+      // independently.
+      stack: isStacked
+        ? hasRight
+          ? seriesSides[c] === "right"
+            ? "total-right"
+            : "total-left"
+          : "total"
+        : undefined,
+      areaStyle,
+      smooth: kindBase === "line",
+      // #1091: high-contrast — thicker line strokes + bigger markers for lines,
+      // a same-bg border for bars so adjacent bars separate. No-ops when off.
+      ...(kindBase === "line" ? { ...lineStyleHC, ...markerHC } : itemStyleHC),
+      // #1082: format any displayed data labels (no-op object when nf is off).
+      ...seriesValueLabel,
+      yAxisIndex: hasRight ? (seriesSides[c] === "right" ? 1 : 0) : 0,
+      // Compact (tiles) draws missing cells as gaps; roomy (workspace) as 0.
+      data: matrix.map((row) => {
+        const raw = row[c] ?? (compact ? null : 0);
+        const ccolor = cf && typeof raw === "number" ? colorForValue(raw, cf) : undefined;
+        return ccolor ? { value: raw, itemStyle: { color: ccolor } } : raw;
+      }),
+    };
+  });
   const trend =
     kindBase === "line" && cols.length > 0
       ? trendSeries(

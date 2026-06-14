@@ -93,6 +93,32 @@ export interface ReferenceBand {
   color?: string;
 }
 
+/** issue #1084: one threshold rule in a conditional-format band. First rule
+ *  whose comparison matches a data point wins, recolouring that point. */
+export type ChartCondOp = "gt" | "gte" | "lt" | "lte" | "between";
+export interface ChartCondRule {
+  op: ChartCondOp;
+  /** Comparison operand. A `[min, max]` tuple for `between` (inclusive),
+   *  a single number otherwise. */
+  value: number | [number, number];
+  /** Colour applied to a matching data point (any CSS colour). */
+  color: string;
+  /** Optional legend/label for the rule (reserved for a future legend). */
+  label?: string;
+}
+
+/** issue #1084: per-measure conditional formatting — threshold-driven colours
+ *  on a chart series' data points (e.g. red below target, green above).
+ *  Optional; legacy charts (undefined / []) render with the normal palette. */
+export interface ChartConditionalFormat {
+  /** Which measure/series (column index) the rules apply to. */
+  measureIndex: number;
+  /** Rules in priority order — first match wins per data point. */
+  rules: ChartCondRule[];
+  /** Colour for points matching no rule. Omit to keep the palette colour. */
+  fallbackColor?: string;
+}
+
 export interface ChartOptions {
   title: string;
   xAxisLabel: string;
@@ -163,6 +189,10 @@ export interface ChartOptions {
   /** issue #1079: shaded reference bands (ECharts markArea) over cartesian
    *  charts. Optional; undefined / [] adds no markArea. */
   referenceBands?: ReferenceBand[];
+  /** issue #1084: threshold-driven conditional colours per measure (bar /
+   *  stackedBar / scatter / bubble in Phase 1). Optional; undefined / [] keeps
+   *  the normal palette so legacy charts are unchanged. */
+  conditionalFormat?: ChartConditionalFormat[];
 }
 
 /** Auto-split threshold: a series whose maximum absolute value is at
@@ -196,4 +226,6 @@ export const DEFAULT_CHART_OPTIONS: ChartOptions = {
   // issue #1079: inert defaults — no reference lines/bands on legacy charts.
   referenceLines: [],
   referenceBands: [],
+  // issue #1084: inert default — no conditional colour rules on legacy charts.
+  conditionalFormat: [],
 };
