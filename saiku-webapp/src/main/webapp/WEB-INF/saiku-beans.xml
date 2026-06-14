@@ -243,10 +243,15 @@
          and FAILS FAST on an invalid value before the app serves traffic. -->
     <bean id="aiPolicyGuard" class="org.saiku.service.olap.ai.AiPolicyGuard"/>
 
+    <!-- saiku#905: k-anonymity small-cell suppression. Singleton resolving
+         ai.kAnonymity (default 5; 0 disables) + ai.kAnonymity.maskValue at boot. -->
+    <bean id="kAnonymityFilter" class="org.saiku.service.olap.ai.KAnonymityFilter"/>
+
     <bean id="aiQueryResource" scope="request"
           class="org.saiku.web.rest.resources.AiQueryResource">
         <aop:scoped-proxy/>
         <property name="aiPolicyGuard" ref="aiPolicyGuard"/>
+        <property name="kAnonymityFilter" ref="kAnonymityFilter"/>
         <property name="thinQueryService" ref="thinQueryBean"/>
         <property name="cubeMetadataService" ref="aiCubeMetadataServiceBean"/>
         <property name="asyncQueryService" ref="asyncQueryServiceBean"/>

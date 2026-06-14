@@ -37,6 +37,13 @@ public class AiCell {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private org.saiku.service.olap.ai.anomaly.AnomalyPoint anomaly;
 
+    /** saiku#905 — true when k-anonymity small-cell suppression masked this
+     *  cell because its underlying row count was below {@code ai.kAnonymity}.
+     *  {@code NON_DEFAULT} so ordinary (unsuppressed) cells stay lean on the
+     *  wire. The UI renders suppressed cells distinctively. */
+    @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+    private boolean suppressed;
+
     public AiCell() {}
 
     public AiCell(Double value, String formatted, String unit) {
@@ -90,6 +97,14 @@ public class AiCell {
 
     public void setAnomaly(org.saiku.service.olap.ai.anomaly.AnomalyPoint v) {
         this.anomaly = v;
+    }
+
+    public boolean isSuppressed() {
+        return suppressed;
+    }
+
+    public void setSuppressed(boolean v) {
+        this.suppressed = v;
     }
 
     /** Best-effort: parse a Mondrian-formatted string back into a Double,
