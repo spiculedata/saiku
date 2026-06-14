@@ -397,6 +397,28 @@ keyed by the column index as a string — but cells are still the typed
 typically ignore it. `freshness.computedAtMillis` is when the engine
 finished the query; `cached` indicates a cache-hit response.
 
+### Privacy: k-anonymity small-cell suppression (saiku#905)
+
+When `ai.kAnonymity` is set (default `5`; `0` disables), the server masks
+small-cell measure values before the result crosses the AI boundary. Any
+**records-format** row whose in-result count measure — a column whose caption
+names a count on a word boundary, e.g. Mondrian's `Fact Count` (so `Discount`
+/ `Account` are *not* mistaken for it) — falls below `k` has every measure cell
+in that row masked. A masked cell carries `suppressed: true`, a nulled `value`,
+and a `formatted` of `—` (or the configured `ai.kAnonymity.maskValue`). This is
+the standard statistical small-cell control: a "SUM of salary by department"
+stops disclosing a one-person department's salary.
+
+**v1 limits (the shadow-count follow-up is tracked as saiku#905-B):**
+
+- **`format=matrix` is NOT suppressed.** Small-cell masking applies only to
+  records output; matrix output returns the raw cells. Deployments that expose
+  matrix to untrusted callers should keep post-filtering at the proxy (or use
+  records format) until the follow-up lands.
+- **Only in-result count measures are covered.** A cube whose result carries no
+  count measure — and the `/ai/anomaly` / `/ai/forecast` surfaces — are not yet
+  suppressed.
+
 ---
 
 ## Step 4 — validation: how the API teaches the agent
