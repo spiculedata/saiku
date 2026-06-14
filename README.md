@@ -72,6 +72,16 @@ See [`docs/AI-QUERY-API.md`](docs/AI-QUERY-API.md) and
 contract and the `saiku.semantic.*` annotation namespace cubes use to
 describe themselves to agents.
 
+## Dashboards
+
+Build shareable dashboards of chart / table / KPI / text / image tiles over your
+cubes — with cross-tile filters, click- and brush-cross-filtering,
+drill-down/through, conditional formatting, combo charts, anomaly/forecast
+overlays, auto-refresh, PDF/PNG export and read-only share links. See the
+[`docs/dashboards-user-guide.md`](docs/dashboards-user-guide.md) for the full
+walkthrough, and [`saiku-ui/src/embed/README.md`](saiku-ui/src/embed/README.md)
+to embed a dashboard in your own app via the `<saiku-embed>` web component.
+
 ## Observability
 
 Saiku ships **opt-in OpenTelemetry instrumentation** via the OTel Java
