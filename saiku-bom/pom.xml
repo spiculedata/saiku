@@ -337,15 +337,16 @@
                 <artifactId>batik-ext</artifactId>
                 <version>${batik.version}</version>
             </dependency>
-            <!-- iText 4.2.0 under the old "iText:iText" groupId was never on Maven
-                 Central and the original hosting is gone. com.lowagie:itext:2.1.7
-                 is the same artifact (last OSS release before AGPL) published on
-                 Central. Saiku's PDF export code imports com.lowagie.text.* so
-                 the API surface is unchanged — only the coords. -->
+            <!-- OpenPDF 1.4.2 is the maintained fork of the abandoned
+                 com.lowagie:itext:2.1.7. It keeps the same com.lowagie.text.*
+                 package (the rename to org.openpdf is a 2.x change), so Saiku's
+                 PDF export imports are unchanged — only the coords. Closes
+                 CVE-2017-9096 (XXE in iText <= 4.2.2), which com.lowagie:itext
+                 never fixed (no patched release exists). -->
             <dependency>
-                <groupId>com.lowagie</groupId>
-                <artifactId>itext</artifactId>
-                <version>2.1.7</version>
+                <groupId>com.github.librepdf</groupId>
+                <artifactId>openpdf</artifactId>
+                <version>1.4.2</version>
             </dependency>
             <dependency>
                 <groupId>org.saikuanalytics</groupId>

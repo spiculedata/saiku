@@ -250,11 +250,11 @@
             <artifactId>xmlgraphics-commons</artifactId>
         </dependency>
 
-        <!-- Inherits version from saiku-bom (com.lowagie:itext:2.1.7,
-             Central-resolvable, same com.lowagie.text.* API). -->
+        <!-- OpenPDF (maintained com.lowagie:itext fork; same com.lowagie.text.*
+             API; fixes CVE-2017-9096). Version from saiku-bom. -->
         <dependency>
-            <groupId>com.lowagie</groupId>
-            <artifactId>itext</artifactId>
+            <groupId>com.github.librepdf</groupId>
+            <artifactId>openpdf</artifactId>
         </dependency>
         <dependency>
             <groupId>net.sourceforge.htmlcleaner</groupId>
