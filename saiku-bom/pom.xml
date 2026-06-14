@@ -269,7 +269,7 @@
             <dependency>
                 <groupId>org.hamcrest</groupId>
                 <artifactId>hamcrest-library</artifactId>
-                <version>2.2</version>
+                <version>3.0</version>
             </dependency>
             <!-- serenity-bdd 1.0.x (2014) + jbehave-core 3.9.3 (2014): 0 java
                  imports, 0 @Steps / @Given annotations across saiku source.
