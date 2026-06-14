@@ -109,6 +109,17 @@ public class AiQueryResource {
     private final org.saiku.service.olap.ai.AiRequestSchemaValidator schemaValidator =
             new org.saiku.service.olap.ai.AiRequestSchemaValidator();
 
+    /** saiku#903 — gates which data tier may leave the box. Defaults to a
+     *  permissive (FULL) no-op so existing tests / un-wired contexts behave as
+     *  before; the Spring bean (saiku-beans.xml) injects the real config-driven
+     *  guard, whose default is schema-only. */
+    private org.saiku.service.olap.ai.AiPolicyGuard aiPolicyGuard =
+            new org.saiku.service.olap.ai.AiPolicyGuard(org.saiku.service.olap.ai.AiPolicy.FULL);
+
+    public void setAiPolicyGuard(org.saiku.service.olap.ai.AiPolicyGuard g) {
+        this.aiPolicyGuard = g;
+    }
+
     public void setThinQueryService(ThinQueryService tqs) {
         this.thinQueryService = tqs;
     }
@@ -180,6 +191,7 @@ public class AiQueryResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response executeSaved(org.saiku.service.olap.ai.AiSavedQueryRequest body) {
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         if (datasourceService == null || sessionService == null) {
             return error("saved-query resolver requires repository wiring");
         }
@@ -259,6 +271,7 @@ public class AiQueryResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response executeAi(AiQueryRequest req, @QueryParam("format") @DefaultValue("records") String format) {
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         long start = System.currentTimeMillis();
         AiSchema schema;
         ThinQuery tq;
@@ -369,6 +382,7 @@ public class AiQueryResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response detectAnomalies(org.saiku.service.olap.ai.anomaly.AiAnomalyRequest body) {
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         long start = System.currentTimeMillis();
         if (body == null) {
             return badRequest("body", "request body required", null);
@@ -481,6 +495,7 @@ public class AiQueryResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response forecast(org.saiku.service.olap.ai.forecast.AiForecastRequest body) {
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         long start = System.currentTimeMillis();
         if (body == null) {
             return badRequest("body", "request body required", null);
@@ -622,6 +637,7 @@ public class AiQueryResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response ask(AiAskApi.AskRequest body) {
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         if (body == null) {
             return badRequest("body", "request body required", null);
         }
@@ -1037,6 +1053,7 @@ public class AiQueryResource {
     @Path("/query/result/{queryId}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response asyncResult(@PathParam("queryId") String queryId) {
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         if (asyncQueryService == null) return error("Async service not configured");
         AsyncQueryHandle h = asyncQueryService.getOwned(queryId, currentPrincipal(), currentUserIsAdmin());
         // Unknown id OR not owned by this caller — 404 on both (IDOR fix).
@@ -1142,6 +1159,7 @@ public class AiQueryResource {
             @QueryParam("firstRowset") Integer firstRowset,
             @QueryParam("position") String position,
             @QueryParam("returns") String returns) {
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.RAW_ROW_DATA);
         if (thinQueryService == null) return error("Query service not configured");
 
         // Stage 1: resolve the underlying ThinQuery name (async handle
@@ -1444,6 +1462,7 @@ public class AiQueryResource {
             @QueryParam("firstRowset") Integer firstRowset,
             @QueryParam("position") String position,
             @QueryParam("returns") String returns) {
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.RAW_ROW_DATA);
         if (thinQueryService == null) return error("Query service not configured");
         // Resolve async handle id -> underlying ThinQuery name, re-attaching the
         // async cellset to this session's context (saiku#862). Routed through the
@@ -1573,6 +1592,7 @@ public class AiQueryResource {
     @Path("/query/{queryId}/drillthrough/columns")
     @Produces(MediaType.APPLICATION_JSON)
     public Response drillthroughColumns(@PathParam("queryId") String queryId) {
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         if (thinQueryService == null) return error("Query service not configured");
         // saiku#862: same async-handle resolution + cross-session re-attach as
         // drillthrough() so column discovery resolves on a different session.
