@@ -11,6 +11,7 @@
     ChartConditionalFormat,
     ChartCondRule,
     ChartCondOp,
+    ComboSeriesType,
   } from "$lib/views/chartTypes";
   import { PALETTE_IDS } from "$lib/views/chartTheme";
   // #1084: which chart kinds support conditional formatting (gates the section).
@@ -170,6 +171,30 @@
   }
   function tupleAt(value: number | [number, number] | undefined, i: 0 | 1): number {
     return Array.isArray(value) ? (value[i] ?? 0) : i === 0 && typeof value === "number" ? value : 0;
+  }
+
+  // issue #1089: per-series chart-type override (combo). Only on cartesian
+  // kinds that go through the multi-series builder, and only with ≥2 series.
+  const COMBO_CHART_TYPES = new Set([
+    "bar",
+    "stackedBar",
+    "line",
+    "stackedLine",
+    "area",
+    "stackedArea",
+  ]);
+  const COMBO_TYPES: ComboSeriesType[] = ["bar", "line", "area", "scatter"];
+  const showComboTypes = $derived(
+    chartType !== undefined && COMBO_CHART_TYPES.has(chartType) && seriesNames.length >= 2,
+  );
+  function seriesTypeFor(name: string): ComboSeriesType | "default" {
+    return form.seriesType?.[name] ?? "default";
+  }
+  function setSeriesType(name: string, t: ComboSeriesType | "default"): void {
+    const next = { ...(form.seriesType ?? {}) };
+    if (t === "default") delete next[name];
+    else next[name] = t;
+    form.seriesType = next;
   }
 
   function axisPickFor(name: string): AxisPick {
@@ -379,6 +404,37 @@
               >
                 {#each AXIS_PICKS as p}
                   <option value={p}>{i18n.t(`modal.chart.axis.${p}`)}</option>
+                {/each}
+              </select>
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
+    <!-- issue #1089: per-series chart-type override (combo charts). Cartesian
+         multi-series only — pick a type per series (or "Default" = chart type). -->
+    {#if showComboTypes}
+      <div class="series-axis">
+        <span class="series-axis__title">{i18n.t("modal.chart.seriesType", "Series type (combo)")}</span>
+        <p class="hint">
+          {i18n.t(
+            "modal.chart.seriesType.hint",
+            "Give a series its own chart type — e.g. revenue as bars, growth-rate as a line.",
+          )}
+        </p>
+        <div class="series-axis__list">
+          {#each seriesNames as name, ni (ni)}
+            <div class="series-axis__row">
+              <span class="series-axis__name" title={name}>{name}</span>
+              <select
+                class="field__input series-axis__pick"
+                value={seriesTypeFor(name)}
+                onchange={(e) =>
+                  setSeriesType(name, (e.currentTarget as HTMLSelectElement).value as ComboSeriesType | "default")}
+              >
+                <option value="default">{i18n.t("modal.chart.seriesType.default", "Default")}</option>
+                {#each COMBO_TYPES as ct}
+                  <option value={ct}>{i18n.t(`modal.chart.seriesType.${ct}`, ct)}</option>
                 {/each}
               </select>
             </div>
