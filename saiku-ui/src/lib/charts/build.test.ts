@@ -1153,3 +1153,48 @@ describe("buildChartOption — conditional formatting (#1084)", () => {
     expect(series[0].data).toEqual([565238.13, 612482.65]);
   });
 });
+
+describe("buildChartOption — combo charts / per-series type (#1089)", () => {
+  // sample(): series 0 = Store Sales, series 1 = Unit Sales.
+  test("per-series type override mixes bar + line on one bar chart", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ dualAxis: false, seriesType: { "Unit Sales": "line" } }),
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ name: string; type: string }>;
+    expect(series.find((s) => s.name === "Store Sales")?.type).toBe("bar"); // default
+    expect(series.find((s) => s.name === "Unit Sales")?.type).toBe("line"); // override
+  });
+
+  test("'area' override → line type + areaStyle; 'scatter' → scatter type", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ dualAxis: false, seriesType: { "Store Sales": "area", "Unit Sales": "scatter" } }),
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ name: string; type: string; areaStyle?: object }>;
+    const ss = series.find((s) => s.name === "Store Sales")!;
+    expect(ss.type).toBe("line");
+    expect(ss.areaStyle).toBeDefined();
+    expect(series.find((s) => s.name === "Unit Sales")?.type).toBe("scatter");
+  });
+
+  test("no seriesType → all series keep the chart-level type (unchanged)", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ dualAxis: false })) as Record<string, unknown>;
+    const series = opt.series as Array<{ type: string }>;
+    expect(series.every((s) => s.type === "bar")).toBe(true);
+  });
+
+  test("combo composes with dualAxis (each axis keeps its own series + type)", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ dualAxis: false, seriesAxis: { "Unit Sales": "right" }, seriesType: { "Unit Sales": "line" } }),
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ name: string; type: string; yAxisIndex: number }>;
+    const us = series.find((s) => s.name === "Unit Sales")!;
+    expect(us.type).toBe("line");
+    expect(us.yAxisIndex).toBe(1); // right axis
+  });
+});

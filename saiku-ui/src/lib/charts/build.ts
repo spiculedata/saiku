@@ -31,6 +31,7 @@ import type {
   ChartColorRamp,
   ReferenceLine,
   ReferenceBand,
+  ComboSeriesType,
 } from "$lib/views/chartTypes";
 import { DEFAULT_CHART_OPTIONS, SERIES_AXIS_THRESHOLD, isChartType } from "$lib/views/chartTypes";
 import { aliasGeoName } from "$lib/charts/geoMatch";
@@ -1061,15 +1062,24 @@ export function buildChartOption(
       ]
     : { ...valueAxis, name: yName };
 
+  // issue #1089: the chart-level default series type (combo overrides fall back
+  // to it). "area" = a line with an areaStyle fill.
+  const chartDefaultType: ComboSeriesType = areaStyle ? "area" : kindBase;
   const base = cols.map((name, c) => {
-    // #1084: conditional-format band for this measure (bar/stackedBar only on
-    // this cartesian path — line/area keep a continuous stroke). A matching
-    // rule recolours the individual data point via point-level itemStyle, which
-    // ECharts merges over the series-level itemStyle (so the #1091 HC border is
-    // kept) and over the #1081 per-series colour (a threshold is more specific).
-    const cf = kindBase === "bar" ? conditionalFormatForMeasure(o.conditionalFormat, c) : undefined;
+    // #1089: per-series chart-type override (combo charts). Each series can be
+    // bar / line / area / scatter on the same cartesian grid; absent → the
+    // chart-level default. "area" renders as a line + areaStyle.
+    const stype: ComboSeriesType = o.seriesType?.[name] ?? chartDefaultType;
+    const echType = stype === "area" ? "line" : stype; // bar | line | scatter
+    const isLineLike = stype === "line" || stype === "area";
+    // #1084: conditional-format band for this measure — only for an EFFECTIVE
+    // bar series (line/area keep a continuous stroke; scatter is point-based but
+    // out of Phase-1 cond-format scope). A match recolours the point via
+    // point-level itemStyle, which ECharts merges over the series itemStyle (so
+    // the #1091 HC border is kept) and over the #1081 per-series colour.
+    const cf = echType === "bar" ? conditionalFormatForMeasure(o.conditionalFormat, c) : undefined;
     return {
-      type: kindBase,
+      type: echType,
       name,
       // #1081: per-series colour override (by series name) wins over the cycle
       // for this one series. ECharts honours a series-level `color` for both bar
@@ -1077,7 +1087,8 @@ export function buildChartOption(
       ...(seriesColorFor(o, name) ? { color: seriesColorFor(o, name) } : {}),
       // Single-axis stacked → one "total" group (matches both surfaces' prior
       // output); dual-axis stacked → separate groups per side so each axis stacks
-      // independently.
+      // independently. (Mixed-type stacking is out of #1089 scope; the field is
+      // ignored by ECharts for scatter and best-effort otherwise.)
       stack: isStacked
         ? hasRight
           ? seriesSides[c] === "right"
@@ -1085,11 +1096,12 @@ export function buildChartOption(
             : "total-left"
           : "total"
         : undefined,
-      areaStyle,
-      smooth: kindBase === "line",
-      // #1091: high-contrast — thicker line strokes + bigger markers for lines,
-      // a same-bg border for bars so adjacent bars separate. No-ops when off.
-      ...(kindBase === "line" ? { ...lineStyleHC, ...markerHC } : itemStyleHC),
+      // #1089: areaStyle only on an effective area series.
+      areaStyle: stype === "area" ? {} : undefined,
+      smooth: isLineLike,
+      // #1091: high-contrast — thicker line strokes + bigger markers for line-
+      // like series, a same-bg border for bars/points. No-ops when off.
+      ...(isLineLike ? { ...lineStyleHC, ...markerHC } : itemStyleHC),
       // #1082: format any displayed data labels (no-op object when nf is off).
       ...seriesValueLabel,
       yAxisIndex: hasRight ? (seriesSides[c] === "right" ? 1 : 0) : 0,

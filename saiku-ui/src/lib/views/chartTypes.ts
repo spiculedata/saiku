@@ -53,6 +53,10 @@ export function isChartType(kind: string): kind is ChartType {
 
 export type TrendLineMode = "none" | "linear" | "ma" | "wma";
 
+/** issue #1089: per-series chart type for combo charts. Cartesian kinds only —
+ *  mixing radial (pie/sunburst) into a cartesian chart isn't meaningful. */
+export type ComboSeriesType = "bar" | "line" | "area" | "scatter";
+
 /** issue #1082: number-formatting controls for chart VALUE text — applied to
  *  the value-axis labels, tooltip values and (when shown) series data labels.
  *  All fields optional; an absent/empty `numberFormat` renders raw values
@@ -148,6 +152,12 @@ export interface ChartOptions {
    *  Absent entries fall back to the auto decision (or "left" when
    *  {@link dualAxis} is off). */
   seriesAxis: Record<string, "left" | "right">;
+  /** issue #1089: per-series CHART-TYPE override (combo charts), keyed by the
+   *  same series (column-category) name as {@link seriesAxis}. Lets one series
+   *  render as bars while another is a line/area/scatter on the same cartesian
+   *  canvas. Absent entries fall back to the chart-level type. Cartesian only;
+   *  optional so legacy charts (undefined / {}) are unchanged. */
+  seriesType?: Record<string, ComboSeriesType>;
   /** issue #1071 (map only): colour ramp for the choropleth visualMap. */
   colorRamp: ChartColorRamp;
   /** issue #1071 (map only): how to render a country present in the data
@@ -215,6 +225,8 @@ export const DEFAULT_CHART_OPTIONS: ChartOptions = {
   hideRollupRows: true,
   dualAxis: true,
   seriesAxis: {},
+  // issue #1089: inert default — no per-series type overrides (uniform chart).
+  seriesType: {},
   colorRamp: "blues",
   mapMissing: "blank",
   sortDirection: "none",
