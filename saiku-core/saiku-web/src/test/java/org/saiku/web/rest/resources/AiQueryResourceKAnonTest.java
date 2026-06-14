@@ -79,4 +79,84 @@ public class AiQueryResourceKAnonTest {
         r.applyKAnonymity(records);
         assertFalse(((AiCell) records.get(0).get("Store Sales")).isSuppressed());
     }
+
+    /* --- #1324 gate: count-detection guard + matrix-gap characterization --- */
+
+    @Test
+    public void discount_alone_is_not_treated_as_the_count_column() {
+        // saiku#905 / SEC+QA #1324 guard: "Discount" merely CONTAINS "count" —
+        // it must NOT be mistaken for the row-count measure. Under the old
+        // contains() heuristic this row (Discount=2 < k, no real count) was
+        // masked off the discount value — suppression silently keyed off the
+        // wrong column. With whole-word detection there is no count column here,
+        // so nothing is suppressed. (Would go RED on the pre-fix heuristic.)
+        AiQueryResource r = new AiQueryResource();
+        r.setKAnonymityFilter(new KAnonymityFilter(5, "null"));
+
+        Map<String, Object> rec = new LinkedHashMap<>();
+        rec.put("Product Family", "Specialty");
+        rec.put("Discount", new AiCell(2.0, "2", null));
+        rec.put("Store Sales", new AiCell(12.0, "$12", null));
+        List<Map<String, Object>> records = new ArrayList<>();
+        records.add(rec);
+
+        r.applyKAnonymity(records);
+
+        assertFalse(
+                "Discount must not be treated as a count column",
+                ((AiCell) records.get(0).get("Store Sales")).isSuppressed());
+        assertFalse(
+                "the Discount cell itself must not be masked",
+                ((AiCell) records.get(0).get("Discount")).isSuppressed());
+    }
+
+    @Test
+    public void real_count_is_chosen_over_a_discount_decoy() {
+        // A genuine "Fact Count" (=9, >= k) means the row is NOT small, even
+        // though a decoy "Discount" (=2) sorts first in the row. The old
+        // contains() pick would seize "Discount" first and wrongly suppress;
+        // whole-word matching skips it and reads the real count → no suppression.
+        AiQueryResource r = new AiQueryResource();
+        r.setKAnonymityFilter(new KAnonymityFilter(5, "null"));
+
+        Map<String, Object> rec = new LinkedHashMap<>();
+        rec.put("Product Family", "Mainline");
+        rec.put("Discount", new AiCell(2.0, "2", null)); // decoy, sorts FIRST
+        rec.put("Fact Count", new AiCell(9.0, "9", null)); // the real count, >= k
+        rec.put("Store Sales", new AiCell(900.0, "$900", null));
+        List<Map<String, Object>> records = new ArrayList<>();
+        records.add(rec);
+
+        r.applyKAnonymity(records);
+
+        assertFalse(
+                "the real Fact Count (9 >= k) must drive the decision, not the Discount decoy",
+                ((AiCell) records.get(0).get("Store Sales")).isSuppressed());
+    }
+
+    @Test
+    public void matrix_output_is_not_suppressed_known_v1_gap() {
+        // saiku#905-B documented v1 known-gap (SEC #1324): the format=matrix
+        // egress path is deliberately NOT k-anon-suppressed. The seam
+        // applyKAnonymity(records, matrix) early-returns on matrix=true; this
+        // locks that contract so the day matrix suppression lands (#905-B) — or
+        // the gate accidentally moves — this test flags it. For contrast, the
+        // SAME small row IS suppressed on the records path (matrix=false).
+        AiQueryResource r = new AiQueryResource();
+        r.setKAnonymityFilter(new KAnonymityFilter(5, "null"));
+
+        List<Map<String, Object>> matrixRows = new ArrayList<>();
+        matrixRows.add(row("Specialty", 2, 12.0)); // count 2 < k
+        r.applyKAnonymity(matrixRows, true);
+        assertFalse(
+                "matrix output is a documented v1 known-gap — NOT suppressed (#905-B)",
+                ((AiCell) matrixRows.get(0).get("Store Sales")).isSuppressed());
+
+        List<Map<String, Object>> recordRows = new ArrayList<>();
+        recordRows.add(row("Specialty", 2, 12.0)); // identical small row
+        r.applyKAnonymity(recordRows, false);
+        assertTrue(
+                "the records path still suppresses the same small row",
+                ((AiCell) recordRows.get(0).get("Store Sales")).isSuppressed());
+    }
 }
