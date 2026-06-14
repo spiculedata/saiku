@@ -120,6 +120,50 @@ public class AiQueryResource {
         this.aiPolicyGuard = g;
     }
 
+    /** saiku#905 — k-anonymity small-cell suppression. Defaults to disabled
+     *  (k=0) so existing tests / un-wired contexts behave as before; the Spring
+     *  bean injects the real config-driven filter (default k=5). */
+    private org.saiku.service.olap.ai.KAnonymityFilter kAnonymityFilter =
+            new org.saiku.service.olap.ai.KAnonymityFilter(0, null);
+
+    public void setKAnonymityFilter(org.saiku.service.olap.ai.KAnonymityFilter f) {
+        this.kAnonymityFilter = f;
+    }
+
+    /**
+     * saiku#905 v1 — apply k-anonymity small-cell suppression to a records
+     * payload using an in-result count measure (a measure column whose caption
+     * contains "count", e.g. Mondrian's "Fact Count"): any row whose count is
+     * below k has all its measure cells masked. No-op when suppression is
+     * disabled, there's no count column, or the payload is empty. The
+     * shadow-count query for cubes that don't surface a count measure is the
+     * saiku#905 follow-up. Package-private so the wiring is unit-testable
+     * without standing up a CellDataSet.
+     */
+    void applyKAnonymity(java.util.List<java.util.Map<String, Object>> records) {
+        if (!kAnonymityFilter.enabled() || records == null || records.isEmpty()) {
+            return;
+        }
+        java.util.LinkedHashSet<String> measureKeys = new java.util.LinkedHashSet<>();
+        for (java.util.Map<String, Object> r : records) {
+            for (java.util.Map.Entry<String, Object> e : r.entrySet()) {
+                if (e.getValue() instanceof org.saiku.service.olap.ai.AiCell) {
+                    measureKeys.add(e.getKey());
+                }
+            }
+        }
+        String countKey = null;
+        for (String k : measureKeys) {
+            if (k.toLowerCase(java.util.Locale.ROOT).contains("count")) {
+                countKey = k;
+                break;
+            }
+        }
+        if (countKey != null) {
+            kAnonymityFilter.applyToRecords(records, countKey, measureKeys);
+        }
+    }
+
     public void setThinQueryService(ThinQueryService tqs) {
         this.thinQueryService = tqs;
     }
@@ -1783,6 +1827,12 @@ public class AiQueryResource {
             List<String> measureNames = new ArrayList<>();
             for (AiQueryMetadata.Caption c : cols) measureNames.add(c.getCaption());
             meta.setMeasures(measureNames);
+
+            // saiku#905: k-anonymity small-cell suppression on the records
+            // payload (mutates cells in place; resp already holds this list).
+            if (!useMatrix) {
+                applyKAnonymity(records);
+            }
         }
         resp.setRuntimeMs(System.currentTimeMillis() - startedAt);
         return resp;
