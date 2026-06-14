@@ -17,7 +17,7 @@
              backported fixes for the 2026-06-01 advisory (16 CVEs, CVE-2026-41838..41855)
              AND the older spring-webmvc CVE-2026-22737/22741/22745/22735 — staying on 6.x
              keeps the XML-wired Spring Security working; 7.x is a separate planned migration. -->
-        <spring.version>6.2.19</spring.version>
+        <spring.version>7.0.8</spring.version>
         <!-- Spring Security 6.5.x is the latest GA line paired with Spring Framework 6.2.x.
              6.5.11 is current hygiene (the 2026-06 CVE batch is in spring-framework, fixed
              transitively by the 6.2.19 bump above). 7.x deferred to a planned migration. -->
