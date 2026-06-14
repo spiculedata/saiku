@@ -17,7 +17,7 @@
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.6",
-    "@sveltejs/kit": "^2.8.5",
+    "@sveltejs/kit": "^2.60.1",
     "@sveltejs/vite-plugin-svelte": "^5.0.1",
     "@types/node": "^25.6.0",
     "happy-dom": "^20.9.0",
@@ -25,13 +25,13 @@
     "svelte-check": "^4.1.0",
     "typescript": "^5.7.2",
     "vite": "^6.4.2",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.6"
   },
   "dependencies": {
     "apache-arrow": "^15.0.2",
     "echarts": "^6.0.0",
     "html-to-image": "^1.11.13",
-    "jspdf": "^3.0.1",
+    "jspdf": "^4.2.1",
     "lucide-svelte": "^1.0.1",
     "monaco-editor": "^0.55.1"
   },
