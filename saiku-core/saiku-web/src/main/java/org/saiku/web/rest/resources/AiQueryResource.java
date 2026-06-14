@@ -1320,7 +1320,8 @@ public class AiQueryResource {
                 AiQueryResponse resp = new AiQueryResponse();
                 resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
                 resp.setError(
-                        "Malformed position '" + position + "'. Expected \"row:col\" cell coordinates, e.g. \"2:1\".");
+                        "Malformed position '" + position
+                                + "'. Expected \"col:row\" cell coordinates (column-axis index then row-axis index), e.g. \"2:1\".");
                 resp.setField("position");
                 return Response.status(Response.Status.BAD_REQUEST)
                         .entity(resp)
@@ -1509,8 +1510,9 @@ public class AiQueryResource {
                 } catch (NumberFormatException nfe) {
                     AiQueryResponse resp = new AiQueryResponse();
                     resp.setStatus(AiQueryResponse.Status.VALIDATION_ERROR);
-                    resp.setError("Malformed position '" + position
-                            + "'. Expected \"row:col\" cell coordinates, e.g. \"2:1\".");
+                    resp.setError(
+                            "Malformed position '" + position
+                                    + "'. Expected \"col:row\" cell coordinates (column-axis index then row-axis index), e.g. \"2:1\".");
                     resp.setField("position");
                     return Response.status(Response.Status.BAD_REQUEST)
                             .entity(resp)

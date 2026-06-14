@@ -624,6 +624,13 @@ public class AiQueryResourceTest {
         assertEquals(400, resp.getStatus());
         AiQueryResponse body = (AiQueryResponse) resp.getEntity();
         assertEquals("position", body.getField());
+        // The message must state the real contract — column-axis index first
+        // ("col:row"), matching the javadoc + AI-QUERY-API.md, NOT the inverted
+        // "row:col" the string used to claim (saiku#930 doc/error fix).
+        String err = body.getError();
+        assertNotNull(err);
+        assertTrue("error should state the col:row order", err.contains("col:row"));
+        assertFalse("error must not state the inverted row:col order", err.contains("row:col"));
     }
 
     /* --- #1160 characterization: lock the error-translation branches ----- */
