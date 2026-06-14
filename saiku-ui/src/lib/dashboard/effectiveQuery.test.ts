@@ -367,3 +367,65 @@ describe("applicableSavedFilters (reference-tile projection)", () => {
     expect(af.filter.members).toEqual(["[a]", "[b]"]);
   });
 });
+
+/* ----------------- #1085: brush cross-filter source exclusion ----------- */
+
+describe("effectiveQueryFor — #1085 cross-filter source exclusion", () => {
+  function tile(id: string): DashboardTile {
+    return {
+      id,
+      x: 0,
+      y: 0,
+      w: 6,
+      h: 4,
+      type: "chart",
+      cube: { connectionName: "foodmart", catalog: "F", schema: "F", cubeName: "Sales" },
+      query: {
+        kind: "inline",
+        body: {
+          cube: { connectionName: "foodmart", catalog: "F", schema: "F", cubeName: "Sales" },
+          measures: [{ name: "Unit Sales" }],
+          rows: [],
+          filters: [],
+        },
+      },
+    };
+  }
+
+  function cross(tileId: string, members: string[]): ActiveFilter {
+    return {
+      id: `cross-${tileId}`,
+      source: { kind: "cross", tileId },
+      filter: { dimension: "Product", hierarchy: "Products", level: "Product Family", members },
+    };
+  }
+
+  const members = ["[Product].[Products].[Drink]", "[Product].[Products].[Food]"];
+
+  test("the SOURCE tile excludes its own cross-filter (keeps full context)", () => {
+    const result = effectiveQueryFor(tile("tile-a"), [cross("tile-a", members)], sampleSchema());
+    // Excluded → base query unchanged: no Product Family filter applied.
+    expect(result?.filters).toEqual([]);
+  });
+
+  test("a DIFFERENT tile receives the cross-filter (narrows)", () => {
+    const result = effectiveQueryFor(tile("tile-b"), [cross("tile-a", members)], sampleSchema());
+    expect(result?.filters).toHaveLength(1);
+    expect(result?.filters?.[0]).toMatchObject({
+      dimension: "Product",
+      hierarchy: "Products",
+      level: "Product Family",
+      members,
+    });
+  });
+
+  test("click/panel filters from a tile are NOT excluded for that tile (unchanged #1166 behaviour)", () => {
+    const clickFromA: ActiveFilter = {
+      id: "click-a",
+      source: { kind: "click", tileId: "tile-a" },
+      filter: { dimension: "Product", hierarchy: "Products", level: "Product Family", members: [members[0]] },
+    };
+    const result = effectiveQueryFor(tile("tile-a"), [clickFromA], sampleSchema());
+    expect(result?.filters).toHaveLength(1); // click still applies to its own source
+  });
+});

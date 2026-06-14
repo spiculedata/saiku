@@ -385,6 +385,41 @@ function dataZoomConfig(
   ];
 }
 
+/* issue #1085: brush cross-filter. Chart types whose x-axis is a discrete
+ * category axis the user can rubber-band to select a contiguous range of
+ * members. Proportional (pie/donut/treemap/sunburst), matrix (heatmap/radar),
+ * point (scatter/bubble) and geo (map) charts have no single category x-axis to
+ * brush, so they're excluded — the tile editor only offers the toggle for these
+ * kinds. */
+export const BRUSHABLE_CHART_TYPES: ReadonlySet<string> = new Set([
+  "bar",
+  "stackedBar",
+  "line",
+  "stackedLine",
+  "area",
+  "stackedArea",
+]);
+
+/** issue #1085: the ECharts `brush` option for a brushable cartesian chart, or
+ * `null` for a non-brushable type. `lineX` rubber-bands an x-axis RANGE (→ a
+ * contiguous run of category members); `single` keeps one active selection;
+ * `removeOnClick` lets a plain click clear it. The component enters brush mode
+ * programmatically via `takeGlobalCursor` (no toolbox button) — see ChartTile.
+ * Pure: just shapes option JSON, like {@link dataZoomConfig}. */
+export function brushOption(chartType: string): Record<string, unknown> | null {
+  if (!BRUSHABLE_CHART_TYPES.has(chartType)) return null;
+  return {
+    xAxisIndex: 0,
+    brushType: "lineX",
+    brushMode: "single",
+    transformable: false,
+    throttleType: "debounce",
+    throttleDelay: 250,
+    removeOnClick: true,
+    brushStyle: { borderWidth: 1, color: "rgba(120,140,210,0.18)", borderColor: "rgba(120,140,210,0.65)" },
+  };
+}
+
 /* Escape HTML — the map tooltip uses an ECharts function formatter whose return
  * value is inserted as innerHTML (renderMode "html"), and the region name is
  * data-derived (an aliased cube member caption). Without escaping, a hostile

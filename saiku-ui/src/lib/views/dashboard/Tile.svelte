@@ -148,6 +148,18 @@
     activeFilters.pushClick(filter, tile.id);
   }
 
+  /** #1085: brush cross-filter capture. Pushed as a "cross" source tagged with
+   *  this tile's id so effectiveQueryFor excludes the SOURCE tile (it keeps full
+   *  context) while every other compatible tile narrows. */
+  function handleCrossFilter(filter: DashboardFilter): void {
+    activeFilters.pushCross(filter, tile.id);
+  }
+
+  /** #1085: clear this tile's brush cross-filter (empty brush / Esc). */
+  function handleClearCross(): void {
+    activeFilters.clearCrossesFrom(tile.id);
+  }
+
   // issue #915: multi-select. A click on the tile body (not a button, not
   // the chart/table click-filter affordances) toggles/extends/replaces the
   // selection depending on modifier keys. Selection is an edit-mode-only
@@ -228,7 +240,12 @@
   </header>
   <div class="tile-body">
     {#if tile.type === "chart"}
-      <ChartTile {tile} onClickFilter={readOnly ? undefined : handleClickFilter} />
+      <ChartTile
+        {tile}
+        onClickFilter={readOnly ? undefined : handleClickFilter}
+        onCrossFilter={readOnly ? undefined : handleCrossFilter}
+        onClearCross={readOnly ? undefined : handleClearCross}
+      />
     {:else if tile.type === "table"}
       <TableTile {tile} onClickFilter={readOnly ? undefined : handleClickFilter} />
     {:else if tile.type === "text"}

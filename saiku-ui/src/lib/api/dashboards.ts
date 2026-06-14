@@ -260,6 +260,18 @@ export interface ForecastConfig {
 }
 /* --- end issue #908 block ------------------------------------------------- */
 
+/* --- issue #1085: brush cross-filter on chart tiles ----------------------
+ * Opt-in. When enabled on a brushable cartesian chart tile, a rectangular
+ * x-range brush emits a (usually multi-member) dashboard filter on the tile's
+ * row hierarchy, narrowing every OTHER tile via the existing filter bus. The
+ * source tile keeps full context (effectiveQueryFor excludes its own cross).
+ * Off by default so existing dashboards are unchanged. */
+export interface BrushCrossFilterConfig {
+  /** Master opt-in. When false / unset no brush mode is entered. */
+  enabled: boolean;
+}
+/* --- end issue #1085 block ------------------------------------------------ */
+
 export interface DashboardTile {
   id: string;
   x: number;
@@ -282,6 +294,9 @@ export interface DashboardTile {
   /** Forecast config (issue #908). Only consulted when
    *  {@code type === "chart"} and the chart is a time-series type. */
   forecast?: ForecastConfig;
+  /** Brush cross-filter config (issue #1085). Only consulted when
+   *  {@code type === "chart"} and the chart type is brushable. */
+  brushCrossFilter?: BrushCrossFilterConfig;
   text?: string;
   target?: DashboardFilter;
   widget?: FilterWidget;
