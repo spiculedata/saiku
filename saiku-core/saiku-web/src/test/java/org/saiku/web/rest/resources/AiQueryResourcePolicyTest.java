@@ -81,6 +81,34 @@ public class AiQueryResourcePolicyTest {
     }
 
     @Test
+    public void drillthrough_csv_export_blocked_under_aggregated() {
+        // saiku#903 follow-up (SEC rec b): the SECOND RAW_ROW_DATA path — the CSV
+        // export at the #1284 IDOR / raw-PII site — must be gated too, not just
+        // /drillthrough. Without this, only one of the two raw-row endpoints was
+        // call-site tested.
+        AiQueryResource r = resourceWith(AiPolicy.AGGREGATED);
+        try {
+            r.drillthroughExportCsv("q", 100, null, null, null);
+            fail("aggregated must block drillthrough CSV export (raw rows)");
+        } catch (AiPolicyViolation v) {
+            assertEquals(AiDataKind.RAW_ROW_DATA, v.getKind());
+            assertEquals(AiPolicy.AGGREGATED, v.getCurrent());
+        }
+    }
+
+    @Test
+    public void drillthrough_csv_export_passes_guard_under_full() {
+        AiQueryResource r = resourceWith(AiPolicy.FULL);
+        try {
+            r.drillthroughExportCsv("q", 100, null, null, null);
+        } catch (AiPolicyViolation e) {
+            fail("FULL must permit drillthrough CSV export");
+        } catch (RuntimeException downstream) {
+            // expected — services unwired; we only assert the gate opened
+        }
+    }
+
+    @Test
     public void unwired_guard_defaults_permissive_for_back_compat() {
         // No setAiPolicyGuard() → the field defaults to a FULL no-op so existing
         // callers behave as before; the Spring bean injects the real guard.
