@@ -33,6 +33,14 @@ public class AiQueryResourceKAnonTest {
         return r;
     }
 
+    /** A matrix-format row: cells keyed by data-column INDEX (not caption). */
+    private static Map<String, AiCell> matrixRow(double count, double sales) {
+        Map<String, AiCell> r = new LinkedHashMap<>();
+        r.put("0", new AiCell(count, String.valueOf((int) count), null)); // count column
+        r.put("1", new AiCell(sales, "$" + sales, null)); // sales column
+        return r;
+    }
+
     @Test
     public void detects_count_column_and_suppresses_small_rows() {
         AiQueryResource r = new AiQueryResource();
@@ -135,28 +143,48 @@ public class AiQueryResourceKAnonTest {
     }
 
     @Test
-    public void matrix_output_is_not_suppressed_known_v1_gap() {
-        // saiku#905-B documented v1 known-gap (SEC #1324): the format=matrix
-        // egress path is deliberately NOT k-anon-suppressed. The seam
-        // applyKAnonymity(records, matrix) early-returns on matrix=true; this
-        // locks that contract so the day matrix suppression lands (#905-B) — or
-        // the gate accidentally moves — this test flags it. For contrast, the
-        // SAME small row IS suppressed on the records path (matrix=false).
+    public void matrix_output_is_now_suppressed() {
+        // saiku#1324: the format=matrix egress path is no longer a bypass.
+        // Matrix cells are index-keyed; applyKAnonymityMatrix locates the count
+        // column from the index->caption list and masks every cell in a sub-k
+        // row, exactly like the records path. (RED against the old #905-B no-op.)
         AiQueryResource r = new AiQueryResource();
         r.setKAnonymityFilter(new KAnonymityFilter(5, "null"));
 
-        List<Map<String, Object>> matrixRows = new ArrayList<>();
-        matrixRows.add(row("Specialty", 2, 12.0)); // count 2 < k
-        r.applyKAnonymity(matrixRows, true);
-        assertFalse(
-                "matrix output is a documented v1 known-gap — NOT suppressed (#905-B)",
-                ((AiCell) matrixRows.get(0).get("Store Sales")).isSuppressed());
+        List<String> cols = List.of("Fact Count", "Store Sales"); // index 0, 1
+        List<Map<String, AiCell>> matrix = new ArrayList<>();
+        matrix.add(matrixRow(2, 12.0)); // count 2 < k -> suppressed
+        matrix.add(matrixRow(9, 900.0)); // count 9 >= k -> kept
 
-        List<Map<String, Object>> recordRows = new ArrayList<>();
-        recordRows.add(row("Specialty", 2, 12.0)); // identical small row
-        r.applyKAnonymity(recordRows, false);
+        r.applyKAnonymityMatrix(matrix, cols);
+
+        assertTrue(matrix.get(0).get("1").isSuppressed());
+        assertNull(matrix.get(0).get("1").getValue());
         assertTrue(
-                "the records path still suppresses the same small row",
-                ((AiCell) recordRows.get(0).get("Store Sales")).isSuppressed());
+                "the count cell itself is disclosive and masked too",
+                matrix.get(0).get("0").isSuppressed());
+        assertFalse(matrix.get(1).get("1").isSuppressed());
+        assertEquals(Double.valueOf(900.0), matrix.get(1).get("1").getValue());
+    }
+
+    @Test
+    public void matrix_discount_decoy_is_not_the_count_column() {
+        // Parity with the records guard: a "Discount" column must not be picked
+        // as the count in matrix mode either (whole-word detection on captions).
+        AiQueryResource r = new AiQueryResource();
+        r.setKAnonymityFilter(new KAnonymityFilter(5, "null"));
+
+        List<String> cols = List.of("Discount", "Store Sales");
+        Map<String, AiCell> row = new LinkedHashMap<>();
+        row.put("0", new AiCell(2.0, "2", null)); // Discount = 2 (decoy)
+        row.put("1", new AiCell(12.0, "$12", null));
+        List<Map<String, AiCell>> matrix = new ArrayList<>();
+        matrix.add(row);
+
+        r.applyKAnonymityMatrix(matrix, cols);
+
+        assertFalse(
+                "Discount must not be treated as the count column in matrix mode",
+                matrix.get(0).get("1").isSuppressed());
     }
 }

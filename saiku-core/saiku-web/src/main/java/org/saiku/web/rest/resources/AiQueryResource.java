@@ -142,34 +142,16 @@ public class AiQueryResource {
             java.util.regex.Pattern.compile("\\bcounts?\\b", java.util.regex.Pattern.CASE_INSENSITIVE);
 
     /**
-     * saiku#905 v1 — apply k-anonymity small-cell suppression to a records
-     * payload using an in-result count measure (a measure column whose caption
-     * names a count on a word boundary, e.g. Mondrian's "Fact Count"): any row
-     * whose count is below k has all its measure cells masked. No-op when
-     * suppression is disabled, there's no count column, or the payload is empty.
-     * The shadow-count query for cubes that don't surface a count measure is the
-     * saiku#905 follow-up. Package-private so the wiring is unit-testable
-     * without standing up a CellDataSet. Convenience overload for the records
-     * (non-matrix) path.
+     * saiku#905 / #1324 — apply k-anonymity small-cell suppression to a
+     * records-format payload using an in-result count measure (a measure column
+     * whose caption names a count on a word boundary, e.g. Mondrian's "Fact
+     * Count"): any row whose count is below k has all its measure cells masked.
+     * No-op when suppression is disabled, there's no count column, or the payload
+     * is empty. The shadow-count query for cubes that don't surface a count
+     * measure is the saiku#905 follow-up. Package-private so the wiring is
+     * unit-testable without standing up a CellDataSet.
      */
     void applyKAnonymity(java.util.List<java.util.Map<String, Object>> records) {
-        applyKAnonymity(records, false);
-    }
-
-    /**
-     * saiku#905 v1 — as {@link #applyKAnonymity(java.util.List)}, with the
-     * output-mode gate folded in as a testable seam. When {@code matrix} is
-     * true this is a deliberate no-op: the {@code format=matrix} output is a
-     * known v1 gap (small cells are NOT suppressed there) tracked as the
-     * saiku#905-B follow-up — multi-tenant / embed deployments post-filter at
-     * the proxy in the meantime (SEC #1324). Routing the skip through this
-     * method (instead of an outer {@code if}) lets QA lock the gap contract
-     * without constructing a CellDataSet.
-     */
-    void applyKAnonymity(java.util.List<java.util.Map<String, Object>> records, boolean matrix) {
-        if (matrix) {
-            return; // saiku#905-B known gap: matrix output is not k-anon-suppressed in v1
-        }
         if (!kAnonymityFilter.enabled() || records == null || records.isEmpty()) {
             return;
         }
@@ -190,6 +172,38 @@ public class AiQueryResource {
         }
         if (countKey != null) {
             kAnonymityFilter.applyToRecords(records, countKey, measureKeys);
+        }
+    }
+
+    /**
+     * saiku#1324 — apply k-anonymity to the {@code format=matrix} payload,
+     * closing the egress bypass where small cells previously returned unmasked
+     * just because the caller asked for matrix output. Matrix cells are
+     * index-keyed ("0","1",…), so the count column is located via
+     * {@code columnCaptions} (index → caption, captured as the matrix is built)
+     * using the same whole-word detection as the records path; then every cell in
+     * a sub-k row is masked. No-op when disabled, empty, or there's no count
+     * column. Package-private for unit-testing without a CellDataSet.
+     */
+    void applyKAnonymityMatrix(
+            java.util.List<java.util.Map<String, AiCell>> matrix, java.util.List<String> columnCaptions) {
+        if (!kAnonymityFilter.enabled() || matrix == null || matrix.isEmpty() || columnCaptions == null) {
+            return;
+        }
+        String countKey = null;
+        java.util.LinkedHashSet<String> measureKeys = new java.util.LinkedHashSet<>();
+        for (int i = 0; i < columnCaptions.size(); i++) {
+            String key = String.valueOf(i);
+            measureKeys.add(key);
+            String caption = columnCaptions.get(i);
+            if (countKey == null
+                    && caption != null
+                    && COUNT_MEASURE.matcher(caption).find()) {
+                countKey = key;
+            }
+        }
+        if (countKey != null) {
+            kAnonymityFilter.applyToMatrix(matrix, countKey, measureKeys);
         }
     }
 
@@ -1773,6 +1787,10 @@ public class AiQueryResource {
             List<AiQueryMetadata.Caption> rows = new ArrayList<>();
             List<Map<String, AiCell>> matrix = new ArrayList<>();
             List<Map<String, Object>> records = new ArrayList<>();
+            // saiku#1324: index -> caption for the matrix payload, captured as
+            // the matrix is built, so k-anon can find the count column (matrix
+            // cells are keyed by index, not caption).
+            List<String> matrixColumnCaptions = new ArrayList<>();
 
             // Row-header column captions (e.g. ["Product Family"] or
             // ["Product Family", "Year"] for multi-axis rows). We pull
@@ -1808,6 +1826,10 @@ public class AiQueryResource {
                     Map<String, AiCell> cells = new LinkedHashMap<>();
                     for (int c = 0; c < totalWidth; c++) {
                         cells.put(String.valueOf(c), toCell(body[1][c]));
+                        if (matrixColumnCaptions.size() <= c) {
+                            String cap = body[0][c] == null ? ("col" + c) : safe(body[0][c].getFormattedValue());
+                            matrixColumnCaptions.add(cap.isEmpty() ? ("col" + c) : cap);
+                        }
                     }
                     matrix.add(cells);
                     rows.add(new AiQueryMetadata.Caption("", ""));
@@ -1829,7 +1851,12 @@ public class AiQueryResource {
                     if (useMatrix) {
                         Map<String, AiCell> cells = new LinkedHashMap<>();
                         for (int c = rowHeaderCount; c < totalWidth; c++) {
-                            cells.put(String.valueOf(c - rowHeaderCount), toCell(row[c]));
+                            int colIdx = c - rowHeaderCount;
+                            cells.put(String.valueOf(colIdx), toCell(row[c]));
+                            if (matrixColumnCaptions.size() <= colIdx) {
+                                matrixColumnCaptions.add(
+                                        colIdx < cols.size() ? cols.get(colIdx).getCaption() : ("col" + colIdx));
+                            }
                         }
                         matrix.add(cells);
                     } else {
@@ -1859,11 +1886,15 @@ public class AiQueryResource {
             for (AiQueryMetadata.Caption c : cols) measureNames.add(c.getCaption());
             meta.setMeasures(measureNames);
 
-            // saiku#905: k-anonymity small-cell suppression on the records
-            // payload (mutates cells in place; resp already holds this list).
-            // The output-mode gate lives inside the method (matrix = v1 no-op,
-            // saiku#905-B) so the skip is a unit-testable seam.
-            applyKAnonymity(records, useMatrix);
+            // saiku#905 / #1324: k-anonymity small-cell suppression on BOTH
+            // egress shapes (mutates cells in place; resp already holds the
+            // list). The matrix path was the #1324 bypass — it's now suppressed
+            // too, via the index->caption map captured above.
+            if (useMatrix) {
+                applyKAnonymityMatrix(matrix, matrixColumnCaptions);
+            } else {
+                applyKAnonymity(records);
+            }
         }
         resp.setRuntimeMs(System.currentTimeMillis() - startedAt);
         return resp;
