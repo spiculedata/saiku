@@ -249,7 +249,7 @@ public class SaikuQueryCache {
             // Write to tmp then atomic-move to avoid half-written files on crash.
             Path tmp = arrow.resolveSibling(arrow.getFileName().toString() + ".tmp");
             Files.write(tmp, r.arrowBytes);
-            Files.move(tmp, arrow, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            moveReplace(tmp, arrow);
 
             Entry e = new Entry(
                     key,
@@ -263,10 +263,15 @@ public class SaikuQueryCache {
             // would poison reindexFromDisk() / the budget walk.
             Path metaTmp = meta.resolveSibling(meta.getFileName().toString() + ".tmp");
             mapper.writerWithDefaultPrettyPrinter().writeValue(metaTmp.toFile(), e);
-            Files.move(metaTmp, meta, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            moveReplace(metaTmp, meta);
             index.put(key, e);
         } catch (IOException ex) {
-            log.warn("SaikuQueryCache.put({}) failed: {}", key, ex.toString());
+            // saiku#1337: a genuine write failure (after the moveReplace
+            // fallback) leaves the index un-updated, so the next get() is a
+            // clean miss rather than a stale hit. We log loudly rather than
+            // throw — a cache-write failure must not break the live query that
+            // produced the bytes (get() still returns the fresh result).
+            log.warn("SaikuQueryCache.put({}) failed — entry NOT cached: {}", key, ex.toString());
         } finally {
             writeLock.unlock();
         }
@@ -351,24 +356,38 @@ public class SaikuQueryCache {
     }
 
     private void evictIfOverBudget() {
-        List<Entry> all = walkMetaEntries();
-        long total = all.stream().mapToLong(e -> e.bytes).sum();
-        if (total <= maxSizeBytes) {
-            return;
-        }
-        all.sort(Comparator.comparingLong(e -> e.createdAt)); // oldest first
-        for (Entry victim : all) {
+        // saiku#1337: hold the write lock across the whole walk + evict so the
+        // eviction thread never reads a meta sidecar while a concurrent
+        // invalidate()/put() is deleting/replacing the same files. On POSIX
+        // deleting an open file is fine, but on Windows a delete that races an
+        // open read throws AccessDenied (which invalidate() then swallows),
+        // leaving the file on disk. Serialising here removes the race.
+        // invalidate() below re-acquires the same lock — safe, it's reentrant.
+        // Cache reads (get) never take this lock, so hits are never blocked by
+        // eviction; only other writers wait, and only while we're over budget.
+        writeLock.lock();
+        try {
+            List<Entry> all = walkMetaEntries();
+            long total = all.stream().mapToLong(e -> e.bytes).sum();
             if (total <= maxSizeBytes) {
-                break;
+                return;
             }
-            log.info(
-                    "SaikuQueryCache evicting {} ({} bytes, age={}ms) to stay under {} bytes",
-                    victim.key,
-                    victim.bytes,
-                    System.currentTimeMillis() - victim.createdAt,
-                    maxSizeBytes);
-            invalidate(victim.key);
-            total -= victim.bytes;
+            all.sort(Comparator.comparingLong(e -> e.createdAt)); // oldest first
+            for (Entry victim : all) {
+                if (total <= maxSizeBytes) {
+                    break;
+                }
+                log.info(
+                        "SaikuQueryCache evicting {} ({} bytes, age={}ms) to stay under {} bytes",
+                        victim.key,
+                        victim.bytes,
+                        System.currentTimeMillis() - victim.createdAt,
+                        maxSizeBytes);
+                invalidate(victim.key);
+                total -= victim.bytes;
+            }
+        } finally {
+            writeLock.unlock();
         }
     }
 
@@ -378,6 +397,40 @@ public class SaikuQueryCache {
 
     Path metaPath(String key) {
         return cacheDir.resolve(key + META_SUFFIX);
+    }
+
+    /**
+     * Move {@code tmp} onto {@code target}, replacing it. Tries an atomic move
+     * first (the safe path — a reader sees either the whole old file or the
+     * whole new file). Some filesystems, and Windows when the target already
+     * exists or is briefly locked, reject {@code ATOMIC_MOVE} with
+     * {@link java.nio.file.AtomicMoveNotSupportedException} or an
+     * AccessDenied/FileSystem error; in that case retry with a plain replace.
+     * That move is non-atomic but still safe here because the full payload was
+     * already written to {@code tmp}, so {@code target} is never left
+     * half-written — it ends up either the previous complete file or the new
+     * complete one.
+     *
+     * <p>saiku#1337: the old code only attempted the atomic move and let the
+     * exception bubble to put()'s catch, turning a perfectly recoverable cache
+     * write into a silent no-op on the affected platforms.
+     */
+    private static void moveReplace(Path tmp, Path target) throws IOException {
+        try {
+            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException atomicFailed) {
+            try {
+                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException plainFailed) {
+                // Even the plain move failed (e.g. disk full): don't leak tmp.
+                try {
+                    Files.deleteIfExists(tmp);
+                } catch (IOException ignore) {
+                    // best effort
+                }
+                throw plainFailed;
+            }
+        }
     }
 
     /**
