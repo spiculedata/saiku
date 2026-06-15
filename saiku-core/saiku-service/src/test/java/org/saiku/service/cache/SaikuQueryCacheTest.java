@@ -14,9 +14,18 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -363,5 +372,122 @@ public class SaikuQueryCacheTest {
         assertEquals(1, calls.get());
         assertTrue("null cubeVersion should hit regardless of stored version", nullVer.cacheHit);
         assertArrayEquals("first".getBytes(), nullVer.arrowBytes);
+    }
+
+    /* ---------- saiku#1337 dedicated lock-tests (cache write robustness) ---------- */
+
+    @Test
+    public void overwritingAKeyRepeatedly_alwaysPersistsTheLatestBytes() {
+        // saiku#1337 mechanism (1): put() replaces an existing .arrow via
+        // moveReplace() (atomic, falling back to a plain replace). Pre-fix the
+        // replace could silently no-op (the swallowed ATOMIC_MOVE failure),
+        // leaving a STALE value cached and the index out of step. Drive the
+        // replace-existing path repeatedly (a fresh cubeVersion each round forces
+        // invalidate-old + store-new onto the SAME filename) and prove every
+        // immediate re-read hits and returns exactly what was just stored.
+        AtomicInteger calls = new AtomicInteger();
+        String key = "rewrite";
+        for (int i = 0; i < 20; i++) {
+            byte[] payload = ("payload-" + i).getBytes();
+            CachedQueryResult miss = cache.get(key, "ver-" + i, supplierProducing(payload, i, i, calls));
+            assertFalse("a version bump is a miss + fresh store", miss.cacheHit);
+
+            // Immediate re-read MUST hit and return the just-stored bytes — pre-fix
+            // a silently-failed replace would make this a miss / return stale.
+            CachedQueryResult hit = cache.get(key, "ver-" + i, supplierProducing("STALE".getBytes(), -1, -1, calls));
+            assertTrue("re-read straight after the store must hit (the write landed)", hit.cacheHit);
+            assertArrayEquals("overwrite must persist the LATEST bytes, never a stale value", payload, hit.arrowBytes);
+        }
+        assertEquals("supplier runs once per overwrite; the hit never re-runs it", 20, calls.get());
+    }
+
+    @Test
+    public void aFailedWrite_isACleanMiss_neverAStaleHit_andLeavesNoTmp() throws IOException {
+        // saiku#1337 mechanism (1), failure path: if the arrow write genuinely
+        // cannot land, put() must leave the index un-updated so the NEXT get() is
+        // a clean miss (fresh re-fetch), never a stale/corrupt hit — and it must
+        // not leak its .tmp scratch file. Force the move to fail deterministically
+        // (cross-platform) by blocking the target path with a NON-EMPTY directory:
+        // REPLACE_EXISTING can't replace it, so both the atomic move and the plain
+        // fallback throw. get() itself must still return the live result.
+        Files.createDirectories(cacheDir);
+        Path blocker = cacheDir.resolve("blocked.arrow");
+        Files.createDirectories(blocker);
+        Files.writeString(blocker.resolve("sentinel"), "x"); // non-empty → move can never replace it
+
+        AtomicInteger calls = new AtomicInteger();
+        byte[] fresh = "fresh".getBytes();
+        CachedQueryResult r1 = cache.get("blocked", "v", supplierProducing(fresh, 1, 1, calls));
+
+        assertEquals(1, calls.get());
+        assertFalse("an uncacheable write must not masquerade as a hit", r1.cacheHit);
+        assertArrayEquals("get() still returns the live result when the cache write fails", fresh, r1.arrowBytes);
+
+        // The failed write left no index entry → the second get re-runs the supplier.
+        CachedQueryResult r2 = cache.get("blocked", "v", supplierProducing("fresh2".getBytes(), 2, 2, calls));
+        assertEquals("a failed write is a clean miss, not a stale hit", 2, calls.get());
+        assertFalse(r2.cacheHit);
+
+        assertFalse(
+                "moveReplace must delete its .tmp on hard failure",
+                Files.exists(cacheDir.resolve("blocked.arrow.tmp")));
+    }
+
+    @Test
+    public void evictionRacingInvalidate_leavesNoOrphanFilesUnderContention() throws Exception {
+        // saiku#1337 mechanism (2): evictIfOverBudget() used to walk + read meta
+        // sidecars OFF the write lock while invalidate()/put() deleted the same
+        // files — on Windows the racing delete threw AccessDenied (swallowed),
+        // orphaning files on disk. The fix holds writeLock across walk+evict.
+        // Hammer concurrent put (constant eviction under a tiny budget) +
+        // invalidate, then assert the quiescent on-disk state is consistent:
+        // every key is fully present (.arrow AND .meta) or fully absent — no
+        // orphan/half files, and no leaked .tmp.
+        SaikuQueryCache tiny = new SaikuQueryCache(cacheDir, TimeUnit.MINUTES.toMillis(30), 2_000L, true);
+        int threads = 6, perThread = 40;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<?>> futures = new ArrayList<>();
+        try {
+            for (int t = 0; t < threads; t++) {
+                final int tid = t;
+                futures.add(pool.submit(() -> {
+                    start.await();
+                    AtomicInteger c = new AtomicInteger();
+                    for (int i = 0; i < perThread; i++) {
+                        String key = "k-" + tid + "-" + i;
+                        tiny.get(key, "v", supplierProducing(new byte[300], 1, 1, c)); // 300B ≫ 2KB budget → evicts
+                        if ((i & 1) == 0) {
+                            tiny.invalidate(key); // race a delete against the eviction walk
+                        }
+                    }
+                    return null;
+                }));
+            }
+            start.countDown();
+            for (Future<?> f : futures) {
+                f.get(60, TimeUnit.SECONDS);
+            }
+            pool.shutdown();
+            tiny.flushEvictions(); // drain any queued eviction tasks before asserting
+
+            Set<String> names = new HashSet<>();
+            try (Stream<Path> s = Files.list(cacheDir)) {
+                s.forEach(p -> names.add(p.getFileName().toString()));
+            }
+            for (String n : names) {
+                assertFalse("no scratch .tmp may survive the storm: " + n, n.endsWith(".tmp"));
+                if (n.endsWith(".arrow")) {
+                    String base = n.substring(0, n.length() - ".arrow".length());
+                    assertTrue("orphan .arrow with no .meta.json sidecar: " + n, names.contains(base + ".meta.json"));
+                } else if (n.endsWith(".meta.json")) {
+                    String base = n.substring(0, n.length() - ".meta.json".length());
+                    assertTrue("orphan .meta.json with no .arrow: " + n, names.contains(base + ".arrow"));
+                }
+            }
+        } finally {
+            pool.shutdownNow();
+            tiny.shutdown();
+        }
     }
 }
