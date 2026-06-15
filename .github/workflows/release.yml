@@ -74,7 +74,7 @@ jobs:
           echo "jar_name=saiku-${VERSION}.jar" >> "$GITHUB_OUTPUT"
           echo "dist_name=saiku-dist-${VERSION}.zip" >> "$GITHUB_OUTPUT"
 
-      - name: mvn verify (fail-fast: spotless + tests)
+      - name: "mvn verify (fail-fast: spotless + tests)"
         # Defence in depth — branch protection SHOULD have caught any
         # spotless / test failure on the PR before the merge that led
         # to this tag, but the v4.5.1 release found that a red CI run
