@@ -247,6 +247,19 @@
          ai.kAnonymity (default 5; 0 disables) + ai.kAnonymity.maskValue at boot. -->
     <bean id="kAnonymityFilter" class="org.saiku.service.olap.ai.KAnonymityFilter"/>
 
+    <!-- saiku#906: AI audit log. Append-only JSONL at ${saiku.home}/logs/
+         ai-audit.jsonl; resolves ai.audit.enabled (default ON) + ai.audit.file
+         at boot. Written by aiAuditFilter, read by aiAuditResource. -->
+    <bean id="aiAuditLog" class="org.saiku.service.olap.ai.audit.AiAuditLog"/>
+
+    <!-- saiku#906: the audit backbone — a JAX-RS provider that records one entry
+         per /saiku/api/ai/* call (registered explicitly in SaikuJerseyApplication
+         since it isn't a @Path bean). Reads the active policy tier off the guard. -->
+    <bean id="aiAuditFilter" class="org.saiku.web.rest.resources.AiAuditFilter">
+        <property name="auditLog" ref="aiAuditLog"/>
+        <property name="policyGuard" ref="aiPolicyGuard"/>
+    </bean>
+
     <bean id="aiQueryResource" scope="request"
           class="org.saiku.web.rest.resources.AiQueryResource">
         <aop:scoped-proxy/>
@@ -265,6 +278,13 @@
              saiku.ai.ask.provider is set to 'anthropic' or 'openai' and the
              matching API key env var is supplied. See aiAskServiceBean below. -->
         <property name="askService" ref="aiAskServiceBean"/>
+    </bean>
+
+    <!-- saiku#906: admin-only read API over the audit log
+         (GET /saiku/admin/ai-audit). Stateless singleton; @RolesAllowed +
+         the /rest/saiku/admin/** intercept-url both gate it. -->
+    <bean id="aiAuditResource" class="org.saiku.web.rest.resources.AiAuditResource">
+        <property name="auditLog" ref="aiAuditLog"/>
     </bean>
 
     <!-- ====================================================================

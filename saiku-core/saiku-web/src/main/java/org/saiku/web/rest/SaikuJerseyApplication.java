@@ -53,5 +53,12 @@ public class SaikuJerseyApplication extends ResourceConfig {
             }
             register(ctx.getBean(name));
         }
+
+        // saiku#906: the AI audit filter writes one record per /ai/* call. It's
+        // a JAX-RS provider, not a @Path resource, so the scan above misses it —
+        // register it explicitly. Guarded so a context without it still boots.
+        if (ctx.containsBean("aiAuditFilter")) {
+            register(ctx.getBean("aiAuditFilter"));
+        }
     }
 }
