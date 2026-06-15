@@ -163,11 +163,32 @@ public class KAnonymityFilter {
      * @return number of rows suppressed
      */
     public int applyToRecords(List<Map<String, Object>> rows, String countKey, Collection<String> measureKeys) {
+        return applyToRows(rows, countKey, measureKeys);
+    }
+
+    /**
+     * saiku#1324 — matrix-format variant of {@link #applyToRecords}. The
+     * {@code format=matrix} payload is index-keyed and typed {@link AiCell}, but
+     * the suppression decision is identical: a row whose {@code countKey} cell is
+     * below k has every {@code measureKeys} cell masked. Shares the same core as
+     * the records path so the two egress shapes can never drift apart (which is
+     * how the original count-detection gap slipped in).
+     */
+    public int applyToMatrix(List<Map<String, AiCell>> rows, String countKey, Collection<String> measureKeys) {
+        return applyToRows(rows, countKey, measureKeys);
+    }
+
+    /**
+     * Shared suppression core over any String-keyed, {@link AiCell}-valued row
+     * map — records carry {@code Object} values (cell or row-header String),
+     * matrix carries {@code AiCell} directly. Reads only, masks cells in place.
+     */
+    private int applyToRows(List<? extends Map<String, ?>> rows, String countKey, Collection<String> measureKeys) {
         if (!enabled() || rows == null || countKey == null || measureKeys == null) {
             return 0;
         }
         int suppressed = 0;
-        for (Map<String, Object> row : rows) {
+        for (Map<String, ?> row : rows) {
             if (row == null) {
                 continue;
             }
