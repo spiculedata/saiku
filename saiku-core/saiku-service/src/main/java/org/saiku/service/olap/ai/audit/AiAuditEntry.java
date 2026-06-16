@@ -36,8 +36,13 @@ public class AiAuditEntry {
     public String ts;
     /** Tenant id when running multi-tenant; null on single-tenant OSS. */
     public String tenant;
-    /** Authenticated principal name, or {@code anonymous}. */
+    /** Authenticated principal name, or {@code anonymous}. For an embed-RLS
+     *  call this is the run-as owner; the end-user identity is {@link #sub}. */
     public String user;
+    /** End-user identity from an embed JWT's {@code sub} claim (saiku#1104),
+     *  so the trail shows WHO the embedder asserted, not just the run-as owner.
+     *  Null for non-embed-JWT calls. */
+    public String sub;
     /** REST path hit, e.g. {@code /saiku/api/ai/query}. */
     public String endpoint;
     /** Active data-exposure policy tier (#903): schema-only | aggregated | full. */

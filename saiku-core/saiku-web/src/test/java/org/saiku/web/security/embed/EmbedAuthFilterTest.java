@@ -6,7 +6,11 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -57,6 +61,8 @@ public class EmbedAuthFilterTest {
     public void tearDown() {
         SecurityContextHolder.clearContext();
         System.clearProperty(EmbedPublicRegistry.ALLOW_PUBLIC_PROP);
+        System.clearProperty(EmbedAuthFilter.PROP_JWT_SECRET);
+        System.clearProperty(EmbedAuthFilter.PROP_JWT_AUDIENCE);
     }
 
     @Test
@@ -291,6 +297,138 @@ public class EmbedAuthFilterTest {
         assertNotNull("explicit allowPublic=true still admits the public grant", chain.capturedAuth);
         EmbedGuestDetails details = (EmbedGuestDetails) chain.capturedAuth.getDetails();
         assertTrue("public path is anonymous", details.isAnonymous());
+    }
+
+    /* ----------------------- saiku#1104: embed JWT ----------------------- */
+
+    private static final String JWT_SECRET = "embed-rls-test-secret-at-least-32-bytes!!";
+
+    @Test
+    public void valid_jwt_pins_guest_with_sub_and_forced_filters() throws Exception {
+        System.setProperty(EmbedAuthFilter.PROP_JWT_SECRET, JWT_SECRET);
+        String jwt = mintJwt(
+                "{\"sub\":\"u_99\",\"saiku.resourceKind\":\"query\","
+                        + "\"saiku.resourcePath\":\"/homes/admin/sales.saiku\","
+                        + "\"saiku.owner\":\"admin\",\"saiku.ownerRoles\":[\"ROLE_ADMIN\"],"
+                        + "\"saiku.filters\":[{\"dimension\":\"Customer\",\"op\":\"in\",\"members\":[\"[Customer].[acme]\"]}],"
+                        + "\"exp\":" + future() + "}",
+                JWT_SECRET);
+        MockHttpServletRequest req =
+                new MockHttpServletRequest("GET", "/rest/saiku/api/embed/query/homes/admin/sales.saiku");
+        req.addHeader(EmbedAuthFilter.TOKEN_HEADER, jwt);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        ContextCapturingChain chain = new ContextCapturingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertTrue("valid JWT must reach the chain", chain.called);
+        EmbedGuestDetails d = (EmbedGuestDetails) chain.capturedAuth.getDetails();
+        assertEquals("u_99", d.jwtSub);
+        assertEquals("admin", d.ownerUser);
+        assertEquals(List.of("ROLE_ADMIN"), d.ownerRoles);
+        assertNotNull("forced filters carried forward", d.forcedFiltersJson);
+        assertTrue(d.forcedFiltersJson.contains("Customer"));
+        assertEquals("query", d.resourceKind);
+        assertEquals("/homes/admin/sales.saiku", d.resourcePath);
+    }
+
+    @Test
+    public void forged_jwt_is_invalid() throws Exception {
+        System.setProperty(EmbedAuthFilter.PROP_JWT_SECRET, JWT_SECRET);
+        // signed with a different secret than the deployment's
+        String jwt = mintJwt(
+                "{\"sub\":\"u\",\"saiku.resourceKind\":\"query\"," + "\"saiku.resourcePath\":\"/q.saiku\",\"exp\":"
+                        + future() + "}",
+                "a-totally-different-secret-key-32bytes-xx");
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/rest/saiku/api/embed/query/q.saiku");
+        req.addHeader(EmbedAuthFilter.TOKEN_HEADER, jwt);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertEquals(401, resp.getStatus());
+        assertTrue(resp.getContentAsString().contains("EMBED_INVALID"));
+        assertFalse("forged JWT must NOT reach the chain", chain.called);
+    }
+
+    @Test
+    public void expired_jwt_is_invalid() throws Exception {
+        System.setProperty(EmbedAuthFilter.PROP_JWT_SECRET, JWT_SECRET);
+        String jwt = mintJwt(
+                "{\"sub\":\"u\",\"saiku.resourceKind\":\"query\"," + "\"saiku.resourcePath\":\"/q.saiku\",\"exp\":"
+                        + past() + "}",
+                JWT_SECRET);
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/rest/saiku/api/embed/query/q.saiku");
+        req.addHeader(EmbedAuthFilter.TOKEN_HEADER, jwt);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertEquals(401, resp.getStatus());
+        assertFalse(chain.called);
+    }
+
+    @Test
+    public void jwt_for_wrong_resource_is_invalid() throws Exception {
+        // Replay: a JWT minted for sales.saiku presented against payroll.saiku.
+        System.setProperty(EmbedAuthFilter.PROP_JWT_SECRET, JWT_SECRET);
+        String jwt = mintJwt(
+                "{\"sub\":\"u\",\"saiku.resourceKind\":\"query\","
+                        + "\"saiku.resourcePath\":\"/homes/admin/sales.saiku\",\"exp\":" + future() + "}",
+                JWT_SECRET);
+        MockHttpServletRequest req =
+                new MockHttpServletRequest("GET", "/rest/saiku/api/embed/query/homes/admin/payroll.saiku");
+        req.addHeader(EmbedAuthFilter.TOKEN_HEADER, jwt);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertEquals(401, resp.getStatus());
+        assertFalse(chain.called);
+    }
+
+    @Test
+    public void jwt_rejected_when_no_secret_configured() throws Exception {
+        // No PROP_JWT_SECRET set -> a presented JWT can't be verified -> reject
+        // (fail-closed), never accept unverified input.
+        String jwt = mintJwt(
+                "{\"sub\":\"u\",\"saiku.resourceKind\":\"query\"," + "\"saiku.resourcePath\":\"/q.saiku\",\"exp\":"
+                        + future() + "}",
+                JWT_SECRET);
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/rest/saiku/api/embed/query/q.saiku");
+        req.addHeader(EmbedAuthFilter.TOKEN_HEADER, jwt);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        TrackingChain chain = new TrackingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertEquals(401, resp.getStatus());
+        assertFalse(chain.called);
+    }
+
+    private static long future() {
+        return System.currentTimeMillis() / 1000L + 3600;
+    }
+
+    private static long past() {
+        return System.currentTimeMillis() / 1000L - 3600;
+    }
+
+    private static String mintJwt(String payloadJson, String secret) {
+        Base64.Encoder b64 = Base64.getUrlEncoder().withoutPadding();
+        String h = b64.encodeToString("{\"alg\":\"HS256\",\"typ\":\"JWT\"}".getBytes(StandardCharsets.UTF_8));
+        String p = b64.encodeToString(payloadJson.getBytes(StandardCharsets.UTF_8));
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            String sig = b64.encodeToString(mac.doFinal((h + "." + p).getBytes(StandardCharsets.UTF_8)));
+            return h + "." + p + "." + sig;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /* --------------------------- helpers ---------------------------- */

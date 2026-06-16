@@ -13,7 +13,10 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiSavedQueryRequest;
+import org.saiku.service.olap.ai.audit.AiAuditEntry;
+import org.saiku.service.olap.ai.audit.AiAuditLog;
 import org.saiku.web.rest.resources.AiQueryResource;
 import org.saiku.web.security.embed.EmbedAuthFilter.EmbedGuestDetails;
 import org.saiku.web.service.SessionService;
@@ -34,6 +37,7 @@ public class EmbedViewResourceTest {
     private StubDatasourceService ds;
     private StubSessionService session;
     private StubAiQueryResource ai;
+    private StubAuditLog audit;
     private EmbedViewResource resource;
 
     @Before
@@ -41,10 +45,12 @@ public class EmbedViewResourceTest {
         ds = new StubDatasourceService();
         session = new StubSessionService();
         ai = new StubAiQueryResource();
+        audit = new StubAuditLog();
         resource = new EmbedViewResource();
         resource.setDatasourceService(ds);
         resource.setSessionService(session);
         resource.setAiQueryResource(ai);
+        resource.setAuditLog(audit);
     }
 
     @After
@@ -194,7 +200,99 @@ public class EmbedViewResourceTest {
                 r.getHeaderString(org.saiku.web.rest.resources.embed.EmbedViewResource.REDACTION_POLICY_HEADER));
     }
 
+    /* ----------------- saiku#1104: forced RLS filters + audit ----------------- */
+
+    @Test
+    public void inline_tile_injects_forced_filters() {
+        ds.fileContent = "{\"layout\":{\"tiles\":[{\"id\":\"t1\",\"query\":{\"kind\":\"inline\",\"body\":{}}}]}}";
+        pinGuestJwt(
+                "dashboard",
+                "/homes/admin/exec.saikudash",
+                "admin",
+                List.of("ROLE_ADMIN"),
+                "u_1",
+                "[{\"dimension\":\"Customer\",\"hierarchy\":\"Customer\",\"level\":\"Customer\","
+                        + "\"op\":\"in\",\"members\":[\"[Customer].[acme]\"]}]");
+
+        Response r = resource.tileQuery("homes/admin/exec.saikudash", "t1");
+
+        assertEquals(200, r.getStatus());
+        assertNotNull("executeAi was called for the inline tile", ai.lastAiRequest);
+        boolean injected = ai.lastAiRequest.getFilters().stream().anyMatch(f -> "Customer".equals(f.getDimension()));
+        assertTrue("forced RLS filter must be injected into the inline query", injected);
+    }
+
+    @Test
+    public void saved_query_with_forced_filters_is_fail_closed() {
+        // A forced-filter token can't be applied to an opaque saved query in v1.
+        // It MUST be refused, never served unfiltered (cross-tenant leak).
+        pinGuestJwt(
+                "query",
+                "/homes/admin/sales.saiku",
+                "admin",
+                List.of(),
+                "u_1",
+                "[{\"dimension\":\"Customer\",\"op\":\"in\",\"members\":[\"[Customer].[acme]\"]}]");
+
+        Response r = resource.query("homes/admin/sales.saiku");
+
+        assertEquals(403, r.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) r.getEntity();
+        assertEquals("EMBED_RLS_UNSUPPORTED", body.get("status"));
+        assertNull("a fail-closed saved query must NOT execute", ai.lastSavedRequest);
+    }
+
+    @Test
+    public void reference_tile_with_forced_filters_is_fail_closed() {
+        ds.fileContent = "{\"layout\":{\"tiles\":[{\"id\":\"t1\",\"query\":"
+                + "{\"kind\":\"reference\",\"path\":\"/homes/admin/q.saiku\"}}]}}";
+        pinGuestJwt(
+                "dashboard",
+                "/homes/admin/exec.saikudash",
+                "admin",
+                List.of(),
+                "u_1",
+                "[{\"dimension\":\"Customer\",\"op\":\"in\",\"members\":[\"[Customer].[acme]\"]}]");
+
+        Response r = resource.tileQuery("homes/admin/exec.saikudash", "t1");
+
+        assertEquals(403, r.getStatus());
+        assertNull("reference tile must NOT execute unfiltered", ai.lastSavedRequest);
+    }
+
+    @Test
+    public void embed_query_audits_the_jwt_sub() {
+        pinGuestJwt("query", "/homes/admin/sales.saiku", "admin", List.of("ROLE_ADMIN"), "u_1", null);
+
+        resource.query("homes/admin/sales.saiku");
+
+        assertEquals(1, audit.records.size());
+        AiAuditEntry e = audit.records.get(0);
+        assertEquals("u_1", e.sub);
+        assertEquals("admin", e.user);
+        assertEquals(AiAuditEntry.OUTCOME_SUCCESS, e.outcome);
+        assertTrue(e.endpoint.contains("/embed/"));
+    }
+
     /* --------------------------- helpers ---------------------------- */
+
+    private void pinGuestJwt(
+            String kind, String path, String user, List<String> roles, String sub, String forcedFiltersJson) {
+        EmbedGuestDetails details = new EmbedGuestDetails(
+                "jwt-token",
+                kind,
+                path,
+                user,
+                roles,
+                org.saiku.web.embed.EmbedToken.RedactionPolicy.TENANT_DEFAULT,
+                sub,
+                forcedFiltersJson);
+        PreAuthenticatedAuthenticationToken auth = new PreAuthenticatedAuthenticationToken(
+                "embed-guest", details, List.of(new SimpleGrantedAuthority("ROLE_EMBED_GUEST")));
+        auth.setDetails(details);
+        SecurityContextHolder.getContext().setAuthentication(auth);
+    }
 
     private void pinGuest(String kind, String path, String user, List<String> roles) {
         EmbedGuestDetails details =
@@ -259,6 +357,7 @@ public class EmbedViewResourceTest {
      *  read from pinned details, not URI params. */
     private static class StubAiQueryResource extends AiQueryResource {
         AiSavedQueryRequest lastSavedRequest;
+        AiQueryRequest lastAiRequest;
 
         @Override
         public Response executeSaved(AiSavedQueryRequest body) {
@@ -266,6 +365,28 @@ public class EmbedViewResourceTest {
             return Response.ok(Map.of("status", "OK", "cells", List.of()))
                     .type(jakarta.ws.rs.core.MediaType.APPLICATION_JSON)
                     .build();
+        }
+
+        @Override
+        public Response executeAi(AiQueryRequest body, String format) {
+            lastAiRequest = body;
+            return Response.ok(Map.of("status", "OK", "data", List.of()))
+                    .type(jakarta.ws.rs.core.MediaType.APPLICATION_JSON)
+                    .build();
+        }
+    }
+
+    /** Captures audit entries without touching disk (overrides record). */
+    private static class StubAuditLog extends AiAuditLog {
+        final List<AiAuditEntry> records = new java.util.ArrayList<>();
+
+        StubAuditLog() {
+            super(java.nio.file.Paths.get("unused-audit.jsonl"), true);
+        }
+
+        @Override
+        public void record(AiAuditEntry e) {
+            records.add(e);
         }
     }
 }
