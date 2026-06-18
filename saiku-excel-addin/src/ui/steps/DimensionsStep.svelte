@@ -1,129 +1,62 @@
 <script lang="ts">
   import type { CubeSchema, DimPick } from "../../lib/types";
+  import { buildDimensionTree } from "../../lib/dimensionsModel";
 
-  const {
-    schema,
-    selected,
-    onToggle,
-  }: {
-    schema: CubeSchema;
-    selected: DimPick[];
-    onToggle: (pick: DimPick) => void;
+  const { schema, selected, onToggle }: {
+    schema: CubeSchema; selected: DimPick[]; onToggle: (pick: DimPick) => void;
   } = $props();
 
-  function isSelected(dimension: string, hierarchy: string, level: string): boolean {
-    return selected.some(
-      (d) => d.dimension === dimension && d.hierarchy === hierarchy && d.level === level
-    );
-  }
+  let search = $state("");
+  let collapsed = $state<Record<string, boolean>>({});
+  const groups = $derived(buildDimensionTree(schema, search));
+
+  const isSelected = (p: DimPick) =>
+    selected.some((d) => d.dimension === p.dimension && d.hierarchy === p.hierarchy && d.level === p.level);
+  const toggleGroup = (dim: string) => { collapsed = { ...collapsed, [dim]: !collapsed[dim] }; };
 </script>
 
 <div class="step">
-  <p class="step-hint">Choose row dimensions to include.</p>
+  <p class="step-hint">Pick the levels to break the data down by.</p>
+  <input class="search" type="search" placeholder="Search levels…" bind:value={search} />
 
-  {#if Object.keys(schema.dimensions).length === 0}
-    <div class="empty">No dimensions found in this cube.</div>
+  {#if groups.length === 0}
+    <div class="empty">{search ? "No levels match your search." : "No dimensions found in this cube."}</div>
   {:else}
-    <ul class="dim-list">
-      {#each Object.entries(schema.dimensions) as [dimKey, dim] (dimKey)}
-        <li class="dim-group">
-          <div class="dim-name">{dimKey}</div>
-          {#each Object.entries(dim.hierarchies) as [hierKey, hier] (hierKey)}
-            <div class="hier-group">
-              <div class="hier-name">{hierKey}</div>
-              {#each Object.entries(hier.levels) as [levelKey, level] (levelKey)}
-                <label class="level-item">
-                  <input
-                    type="checkbox"
-                    checked={isSelected(dimKey, hierKey, levelKey)}
-                    onchange={() => onToggle({ dimension: dimKey, hierarchy: hierKey, level: levelKey })}
-                  />
-                  <span class="level-label">{level.name}</span>
-                  {#if level.cardinality}
-                    <span class="level-cardinality">({level.cardinality})</span>
-                  {/if}
-                </label>
-              {/each}
-            </div>
-          {/each}
-        </li>
+    <div class="tree">
+      {#each groups as g (g.dimension)}
+        <div class="dim-group">
+          <button class="dim-name" onclick={() => toggleGroup(g.dimension)} aria-expanded={!collapsed[g.dimension]}>
+            <span class="chev" class:open={!collapsed[g.dimension]}>▸</span> {g.dimension}
+          </button>
+          {#if !collapsed[g.dimension]}
+            {#each g.levels as lvl (lvl.hierarchy + lvl.level)}
+              <label class="level">
+                <input type="checkbox" checked={isSelected(lvl)} onchange={() => onToggle({ dimension: lvl.dimension, hierarchy: lvl.hierarchy, level: lvl.level })} />
+                <span class="level-label">{lvl.caption}</span>
+                {#if g.showHierarchy}<span class="hier">{lvl.hierarchy}</span>{/if}
+              </label>
+            {/each}
+          {/if}
+        </div>
       {/each}
-    </ul>
+    </div>
   {/if}
 </div>
 
 <style>
-  .step { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
-
-  .step-hint { font-size: 13px; color: #605e5c; margin: 0; }
-
-  .empty { font-size: 13px; color: #605e5c; padding: 12px 0; }
-
-  .dim-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-  }
-
-  .dim-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .dim-name {
-    font-size: 12px;
-    font-weight: 700;
-    color: #0078d4;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    padding: 2px 0;
-    border-bottom: 1px solid #edebe9;
-  }
-
-  .hier-group {
-    padding-left: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .hier-name {
-    font-size: 11px;
-    font-weight: 600;
-    color: #605e5c;
-    margin: 2px 0;
-  }
-
-  .level-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 6px;
-    padding-left: 16px;
-    border-radius: 2px;
-    cursor: pointer;
-    font-size: 13px;
-    color: #323130;
-  }
-
-  .level-item:hover { background: #f3f2f1; }
-
-  .level-label { flex: 1; }
-
-  .level-cardinality { font-size: 11px; color: #a19f9d; }
-
-  input[type="checkbox"] {
-    width: 14px;
-    height: 14px;
-    cursor: pointer;
-    accent-color: #0078d4;
-    flex-shrink: 0;
-  }
+  .step { display: flex; flex-direction: column; gap: var(--space-2); flex: 1; min-height: 0; }
+  .step-hint { font-size: var(--fs-sm); color: var(--fg-muted); margin: 0; }
+  .search { padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+            font-size: var(--fs-sm); color: var(--fg); }
+  .search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .empty { font-size: var(--fs-sm); color: var(--fg-muted); padding: var(--space-3) 0; }
+  .tree { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-1); }
+  .dim-name { display: flex; align-items: center; gap: 6px; background: none; border: none; padding: 4px 0;
+              font-weight: var(--fw-semibold); color: var(--fg); font-size: var(--fs-sm); cursor: pointer; text-align: left; }
+  .chev { display: inline-block; transition: transform .12s; color: var(--fg-subtle); }
+  .chev.open { transform: rotate(90deg); }
+  .level { display: flex; align-items: center; gap: 7px; padding: 3px 0 3px 18px; color: var(--fg); cursor: pointer; }
+  .level input { accent-color: var(--accent); }
+  .level-label { font-size: var(--fs-sm); }
+  .hier { margin-left: auto; font-size: var(--fs-xs); color: var(--fg-subtle); text-transform: uppercase; letter-spacing: .03em; }
 </style>
