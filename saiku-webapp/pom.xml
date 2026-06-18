@@ -9,6 +9,13 @@
     <version>4.5.2</version>
     <name>saiku - webapp</name>
     <packaging>war</packaging>
+    <properties>
+        <!-- Set to true via -P skip-addin for backend-only builds that do not
+             need the Excel add-in. When skipped the WAR will NOT contain
+             addin/* — that is acceptable for server-only deployments. -->
+        <skip.addin>false</skip.addin>
+    </properties>
+
     <build>
         <plugins>
             <!-- The webapp's artifact is a ~100MB war that bundles every
@@ -253,31 +260,45 @@
                             <directory>${project.basedir}/../saiku-ui/dist</directory>
                             <targetPath>ui</targetPath>
                         </resource>
+                        <!-- Excel add-in built by frontend-maven-plugin above.
+                             Absent when built with -P skip-addin. -->
+                        <resource>
+                            <directory>${project.basedir}/../saiku-excel-addin/dist</directory>
+                            <targetPath>addin</targetPath>
+                        </resource>
                     </webResources>
                 </configuration>
             </plugin>
+            <!-- Builds both saiku-ui and saiku-excel-addin frontend bundles.
+                 Maven merges multiple declarations of the same plugin, so all
+                 executions live here. Per-execution <configuration> overrides
+                 workingDirectory and installDirectory to keep the two Node
+                 installations isolated (node/ for saiku-ui, node-addin/ for
+                 the add-in). Skip the add-in executions with -P skip-addin
+                 (sets ${skip.addin}=true); in that case the WAR will not
+                 contain addin/ — acceptable for backend-only builds.
+
+                 1.15.1 fixed Node 22 tarball extraction permission errors;
+                 2.0.0 carries forward that fix + drops Maven 3.x support
+                 (we're on 3.9+ via the dist build). Goal surface unchanged. -->
             <plugin>
                 <groupId>com.github.eirslett</groupId>
                 <artifactId>frontend-maven-plugin</artifactId>
-                <!-- 1.15.1 fixed Node 22 tarball extraction permission errors;
-                     2.0.0 carries forward that fix + drops Maven 3.x support
-                     (we're on 3.9+ via the dist build). Goal surface (npm/node
-                     install + npm ci) is unchanged. -->
                 <version>2.0.0</version>
                 <configuration>
+                    <!-- Default working dir for saiku-ui executions. -->
                     <workingDirectory>${project.basedir}/../saiku-ui</workingDirectory>
                     <!-- Use saiku-webapp/target/node — local to this module,
                          no '..' traversal across module boundaries. The
-                         '..'-based path (saiku-webapp/target/../../saiku-ui/.node)
-                         triggered "Could not get write permissions for
-                         share/doc/node" on CI Linux runners because the
-                         normalisation happens during generate-resources
-                         before target/ exists, which leaves the extractor
-                         resolving against a not-yet-created directory. -->
+                         '..'-based path triggered "Could not get write
+                         permissions for share/doc/node" on CI Linux runners
+                         because normalisation happens during generate-resources
+                         before target/ exists. -->
                     <installDirectory>${project.build.directory}/node</installDirectory>
                     <nodeVersion>v20.18.0</nodeVersion>
                 </configuration>
                 <executions>
+                    <!-- ── saiku-ui ─────────────────────────────────────── -->
                     <execution>
                         <id>install-node-and-npm</id>
                         <goals>
@@ -306,6 +327,45 @@
                             <environmentVariables>
                                 <SAIKU_BASE_PATH>/ui</SAIKU_BASE_PATH>
                             </environmentVariables>
+                        </configuration>
+                    </execution>
+
+                    <!-- ── saiku-excel-addin (Svelte/Vite, base="/addin/") ─
+                         Per-execution overrides of workingDirectory and
+                         installDirectory point at the add-in source tree and
+                         a separate Node installation so neither build
+                         clobbers the other.
+                         Skipped when ${skip.addin}=true (-P skip-addin). -->
+                    <execution>
+                        <id>addin-install-node-and-npm</id>
+                        <goals><goal>install-node-and-npm</goal></goals>
+                        <phase>generate-resources</phase>
+                        <configuration>
+                            <workingDirectory>${project.basedir}/../saiku-excel-addin</workingDirectory>
+                            <installDirectory>${project.build.directory}/node-addin</installDirectory>
+                            <skip>${skip.addin}</skip>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>addin-npm-ci</id>
+                        <goals><goal>npm</goal></goals>
+                        <phase>generate-resources</phase>
+                        <configuration>
+                            <workingDirectory>${project.basedir}/../saiku-excel-addin</workingDirectory>
+                            <installDirectory>${project.build.directory}/node-addin</installDirectory>
+                            <arguments>ci --no-audit --no-fund</arguments>
+                            <skip>${skip.addin}</skip>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>addin-npm-build</id>
+                        <goals><goal>npm</goal></goals>
+                        <phase>generate-resources</phase>
+                        <configuration>
+                            <workingDirectory>${project.basedir}/../saiku-excel-addin</workingDirectory>
+                            <installDirectory>${project.build.directory}/node-addin</installDirectory>
+                            <arguments>run build</arguments>
+                            <skip>${skip.addin}</skip>
                         </configuration>
                     </execution>
                 </executions>
@@ -434,6 +494,18 @@
             <artifactId>h2</artifactId>
         </dependency>
     </dependencies>
+    <profiles>
+        <!-- Use -P skip-addin to omit the Excel add-in npm build steps.
+             The WAR will NOT contain addin/* when this profile is active —
+             suitable for backend-only CI runs and local server development. -->
+        <profile>
+            <id>skip-addin</id>
+            <properties>
+                <skip.addin>true</skip.addin>
+            </properties>
+        </profile>
+    </profiles>
+
     <reporting>
         <plugins>
             <!-- Produce Source cross references -->
