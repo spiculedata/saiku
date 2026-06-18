@@ -56,7 +56,8 @@
 </div>
 
 <style>
-  .step { display: flex; flex-direction: column; gap: 8px; }
+  /* Fill the wizard's step-content height so the list uses the whole pane. */
+  .step { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
 
   .step-hint { font-size: 13px; color: #605e5c; margin: 0; }
 
@@ -77,7 +78,8 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    max-height: 280px;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
   }
 

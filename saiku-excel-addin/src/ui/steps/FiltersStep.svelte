@@ -161,7 +161,7 @@
 </div>
 
 <style>
-  .step { display: flex; flex-direction: column; gap: 8px; }
+  .step { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
 
   .step-hint { font-size: 13px; color: #605e5c; margin: 0; }
 
@@ -171,7 +171,8 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    max-height: 320px;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
   }
 
