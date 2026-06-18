@@ -26,7 +26,7 @@
   });
 </script>
 
-<main style="font-family: var(--font); padding: 0; width: 320px; box-sizing: border-box;">
+<main style="font-family: var(--font); padding: 0; width: 100%; box-sizing: border-box;">
   <Header />
   {#if loading}
     <div style="padding: var(--space-5); text-align: center; color: var(--fg-muted);">Loading…</div>

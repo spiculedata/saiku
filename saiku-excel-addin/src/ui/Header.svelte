@@ -7,7 +7,8 @@
 </header>
 <style>
   .hd { display: flex; align-items: center; gap: var(--space-2);
-        padding: var(--space-3); background: var(--bg); border-bottom: 1px solid var(--border); }
+        padding: var(--space-3); background: var(--bg); border-bottom: 1px solid var(--border);
+        position: sticky; top: 0; z-index: 2; }
   .logo { height: 20px; width: auto; }
   .sub { color: var(--fg-muted); font-size: var(--fs-xs); }
 </style>

@@ -258,7 +258,6 @@
   .wizard {
     display: flex;
     flex-direction: column;
-    height: 100vh;
     padding: 0;
     box-sizing: border-box;
   }
@@ -324,8 +323,6 @@
   }
 
   .step-content {
-    flex: 1;
-    overflow-y: auto;
     padding: var(--space-3) var(--space-4);
     display: flex;
     flex-direction: column;
@@ -352,6 +349,10 @@
     border-top: 1px solid var(--border);
     background: var(--bg);
     flex-shrink: 0;
+    /* Stay reachable: rests right after content when the pane is tall,
+       sticks to the viewport bottom while scrolling a long list. */
+    position: sticky;
+    bottom: 0;
   }
 
   .nav-right {
