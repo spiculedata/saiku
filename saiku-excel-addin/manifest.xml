@@ -11,7 +11,6 @@
   <DisplayName DefaultValue="Saiku for Excel"/>
   <Description DefaultValue="Saiku analytics embedded in Excel as a task pane add-in."/>
 
-  <!-- TODO: replace placeholder icons with real 32×32 and 80×80 PNG assets -->
   <IconUrl DefaultValue="https://localhost:5174/addin/assets/icon-32.png"/>
   <HighResolutionIconUrl DefaultValue="https://localhost:5174/addin/assets/icon-80.png"/>
 
