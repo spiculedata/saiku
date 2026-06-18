@@ -162,3 +162,18 @@ If any checklist item fails:
    - **Windows**: F12 in the webview (if WebView2 DevTools are enabled) or attach Edge DevTools to the WebView2 process.
 3. File an issue referencing this checklist item number, the platform, and the console output.
 4. Do not mark the release as gated-pass until all CRITICAL items (1–6) are resolved.
+
+---
+
+## Branding & UX checks (added with the UX/branding polish)
+
+Verify after sideloading (record Excel build numbers):
+
+- [ ] **Branded header** renders on every screen (Login, Home, wizard) with the real Saiku logo (`/addin/assets/logo.svg`) + "for Excel".
+- [ ] **Readable under Excel dark mode** — the pane stays on Saiku's light surface (white bg, slate text); no faint/invisible text. Toggle Excel to dark mode and re-check.
+- [ ] **Manifest icons load** — no broken-image / missing-icon warnings; `icon-32.png` / `icon-80.png` resolve.
+- [ ] **Dimensions step** shows the grouped tree (dimension → level captions), a working **search** box, **collapse/expand** per dimension, indigo checkboxes, and **never** an `(All)` level.
+- [ ] **Captions, not keys** — Measures, Dimensions, Filters chips, and the Review summary show human-readable captions (e.g. "Product Family", "Year"), not raw `dimension › hierarchy › level` keys or OData property names.
+- [ ] **Measures search** filters the measure list by caption when typing.
+- [ ] **Indigo branding** — primary buttons (Insert / Next / ＋ New query) and the active stepper step use Saiku indigo (`#4f46e5`), not Fluent blue; completed steps show a green ✓.
+- [ ] **End-to-end still works** — build a query (Sales → Unit Sales → Product Family) and **Insert** writes the table; refresh works. (Polish must not have regressed the data path.)
