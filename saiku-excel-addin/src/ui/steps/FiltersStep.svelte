@@ -44,7 +44,7 @@
     searching = { ...searching, [key]: true };
     searchErrors = Object.fromEntries(Object.entries(searchErrors).filter(([k]) => k !== key));
     try {
-      const res = await searchMembers(cubeId, d.hierarchy, q);
+      const res = await searchMembers(cubeId, d, q);
       results = { ...results, [key]: res };
     } catch (e) {
       searchErrors = { ...searchErrors, [key]: e instanceof Error ? e.message : "Search failed" };
