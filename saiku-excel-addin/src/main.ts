@@ -1,3 +1,4 @@
+import "./styles/tokens.css";
 import { mount } from "svelte";
 import App from "./ui/App.svelte";
 

@@ -1,0 +1,18 @@
+:root {
+  --accent: #4f46e5; --accent-hover: #4338ca; --accent-soft: #eef2ff; --accent-strong: #3730a3;
+  --on-accent: #ffffff;
+  --success: #16a34a; --success-soft: #ecfdf5;
+  --danger: #dc2626; --danger-soft: #fef2f2;
+  --warning: #d97706;
+  --bg: #ffffff; --bg-muted: #f6f7f9; --bg-subtle: #eef0f3; --bg-hover: #e2e6ec;
+  --fg: #0f172a; --fg-muted: #475569; --fg-subtle: #556378;
+  --border: #e2e8f0; --border-strong: #cbd5e1;
+  --brand-logo: #b3170f;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px;
+  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.06); --shadow-md: 0 4px 12px rgba(0,0,0,.08);
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --fs-xs: 12px; --fs-sm: 13px; --fs-md: 14px; --fs-lg: 16px; --fs-xl: 20px;
+  --fw-normal: 400; --fw-medium: 500; --fw-semibold: 600; --fw-bold: 700;
+}
+body { font-family: var(--font); color: var(--fg); font-size: var(--fs-sm); }
