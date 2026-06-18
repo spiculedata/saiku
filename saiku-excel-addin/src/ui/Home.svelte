@@ -62,7 +62,7 @@
 
 <div class="home">
   <div class="header">
-    <h2>Saiku Queries</h2>
+    <h2>Queries</h2>
     <div class="header-actions">
       <button class="btn-icon" onclick={refreshAll} disabled={refreshingAll || queries.length === 0} title="Refresh all">
         {#if refreshingAll}<span class="spinner">⟳</span>{:else}⟳ All{/if}
@@ -105,10 +105,10 @@
 
 <style>
   .home {
-    padding: 12px 16px;
+    padding: var(--space-3) var(--space-4);
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .header {
@@ -116,14 +116,14 @@
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   h2 {
-    font-size: 15px;
-    font-weight: 700;
+    font-size: var(--fs-md);
+    font-weight: var(--fw-bold);
     margin: 0;
-    color: #323130;
+    color: var(--fg);
   }
 
   .header-actions {
@@ -134,17 +134,17 @@
 
   .empty {
     text-align: center;
-    color: #605e5c;
-    font-size: 13px;
-    padding: 24px 0;
+    color: var(--fg-muted);
+    font-size: var(--fs-sm);
+    padding: var(--space-5) 0;
   }
 
   .error {
-    font-size: 13px;
-    color: #a4262c;
+    font-size: var(--fs-sm);
+    color: var(--danger);
     padding: 6px 8px;
-    background: #fde7e9;
-    border-radius: 2px;
+    background: var(--danger-soft);
+    border-radius: var(--radius-sm);
   }
 
   .query-list {
@@ -153,17 +153,18 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .query-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 10px;
-    background: #f3f2f1;
-    border-radius: 4px;
-    gap: 8px;
+    padding: var(--space-2) 10px;
+    background: var(--bg-muted);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    gap: var(--space-2);
   }
 
   .query-info {
@@ -175,17 +176,17 @@
   }
 
   .query-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: #323130;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
+    color: var(--fg);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .query-sheet {
-    font-size: 11px;
-    color: #605e5c;
+    font-size: var(--fs-xs);
+    color: var(--fg-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -193,64 +194,65 @@
 
   .query-actions {
     display: flex;
-    gap: 4px;
+    gap: var(--space-1);
     align-items: center;
     flex-shrink: 0;
   }
 
   .btn-primary {
-    font-family: Segoe UI, system-ui, sans-serif;
-    font-size: 12px;
-    font-weight: 600;
-    color: #fff;
-    background: #0078d4;
+    font-family: var(--font);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+    color: var(--on-accent);
+    background: var(--accent);
     border: none;
-    border-radius: 2px;
+    border-radius: var(--radius-sm);
     padding: 5px 10px;
     cursor: pointer;
     white-space: nowrap;
+    box-shadow: var(--shadow-sm);
   }
 
-  .btn-primary:hover:not(:disabled) { background: #106ebe; }
-  .btn-primary:disabled { background: #c8c6c4; cursor: default; }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+  .btn-primary:disabled { background: var(--border-strong); cursor: default; }
 
   .btn-icon {
-    font-family: Segoe UI, system-ui, sans-serif;
-    font-size: 12px;
-    color: #323130;
-    background: #fff;
-    border: 1px solid #8a8886;
-    border-radius: 2px;
+    font-family: var(--font);
+    font-size: var(--fs-xs);
+    color: var(--fg);
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
     padding: 4px 8px;
     cursor: pointer;
     white-space: nowrap;
   }
 
-  .btn-icon:hover:not(:disabled) { background: #f3f2f1; }
-  .btn-icon:disabled { color: #a19f9d; cursor: default; }
+  .btn-icon:hover:not(:disabled) { background: var(--bg-muted); }
+  .btn-icon:disabled { color: var(--fg-subtle); cursor: default; }
 
   .btn-small {
-    font-family: Segoe UI, system-ui, sans-serif;
-    font-size: 11px;
-    color: #323130;
-    background: #fff;
-    border: 1px solid #8a8886;
-    border-radius: 2px;
+    font-family: var(--font);
+    font-size: var(--fs-xs);
+    color: var(--fg);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
     padding: 2px 7px;
     cursor: pointer;
   }
 
-  .btn-small:hover { background: #f3f2f1; }
+  .btn-small:hover { background: var(--bg-muted); }
 
-  .btn-icon-refresh { font-size: 13px; padding: 2px 6px; }
+  .btn-icon-refresh { font-size: var(--fs-sm); padding: 2px 6px; }
 
-  .btn-danger { color: #a4262c; border-color: #a4262c; }
-  .btn-danger:hover { background: #fde7e9; }
+  .btn-danger { color: var(--danger); border-color: var(--danger); }
+  .btn-danger:hover { background: var(--danger-soft); }
 
   .spinner { display: inline-block; animation: spin 0.8s linear infinite; }
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-  .status-busy { font-size: 13px; color: #0078d4; }
-  .status-ok { font-size: 13px; color: #107c10; }
-  .status-error { font-size: 11px; color: #a4262c; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .status-busy { font-size: var(--fs-sm); color: var(--accent); }
+  .status-ok { font-size: var(--fs-sm); color: var(--success); }
+  .status-error { font-size: var(--fs-xs); color: var(--danger); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

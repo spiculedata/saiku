@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { WizardState, CubeSchema } from "../../lib/types";
+  import type { WizardState, CubeSchema, DimPick } from "../../lib/types";
 
   const {
     wizState,
@@ -12,6 +12,20 @@
   } = $props();
 
   const cubeLabel = $derived(schema.cubeName || wizState.cubeId.split("/").pop() || wizState.cubeId);
+
+  /** Look up the human-readable level caption from the schema. Falls back to the level key. */
+  function levelCaption(d: DimPick): string {
+    try {
+      return schema.dimensions[d.dimension]?.hierarchies[d.hierarchy]?.levels[d.level]?.name ?? d.level;
+    } catch {
+      return d.level;
+    }
+  }
+
+  /** Strip MDX brackets from a member unique name to produce a readable caption. */
+  function memberCaption(uniqueName: string): string {
+    return uniqueName.split("].[").pop()?.replace(/[\[\]]/g, "") ?? uniqueName;
+  }
 </script>
 
 <div class="step">
@@ -27,7 +41,7 @@
 
   <div class="review-section">
     <div class="section-header">
-      <span class="section-title">Measures ({wizState.measures.length})</span>
+      <span class="section-title">Measures · {wizState.measures.length}</span>
       <button class="edit-link" onclick={() => onEditStep(2)}>Edit</button>
     </div>
     <div class="section-content">
@@ -45,7 +59,7 @@
 
   <div class="review-section">
     <div class="section-header">
-      <span class="section-title">Dimensions ({wizState.dimensions.length})</span>
+      <span class="section-title">Dimensions · {wizState.dimensions.length}</span>
       <button class="edit-link" onclick={() => onEditStep(3)}>Edit</button>
     </div>
     <div class="section-content">
@@ -54,7 +68,7 @@
       {:else}
         <ul class="item-list">
           {#each wizState.dimensions as d (`${d.dimension}|${d.hierarchy}|${d.level}`)}
-            <li>{d.dimension} › {d.hierarchy} › {d.level}</li>
+            <li>{levelCaption(d)}</li>
           {/each}
         </ul>
       {/if}
@@ -63,7 +77,7 @@
 
   <div class="review-section">
     <div class="section-header">
-      <span class="section-title">Filters ({wizState.filters.length})</span>
+      <span class="section-title">Filters · {wizState.filters.length}</span>
       <button class="edit-link" onclick={() => onEditStep(4)}>Edit</button>
     </div>
     <div class="section-content">
@@ -73,8 +87,8 @@
         <ul class="item-list">
           {#each wizState.filters as f (`${f.dimension}|${f.hierarchy}|${f.level}`)}
             <li>
-              <span class="filter-path">{f.dimension} › {f.hierarchy}</span>:
-              {f.members.map((m) => m.split("].[").pop()?.replace(/[\[\]]/g, "") ?? m).join(", ")}
+              <span class="filter-path">{levelCaption(f)}</span>:
+              {f.members.map(memberCaption).join(", ")}
             </li>
           {/each}
         </ul>
@@ -84,17 +98,18 @@
 </div>
 
 <style>
-  .step { display: flex; flex-direction: column; gap: 10px; }
+  .step { display: flex; flex-direction: column; gap: var(--space-3); }
 
-  .step-hint { font-size: 13px; color: #605e5c; margin: 0; }
+  .step-hint { font-size: var(--fs-sm); color: var(--fg-muted); margin: 0; }
 
   .review-section {
-    background: #f3f2f1;
-    border-radius: 4px;
-    padding: 8px 10px;
+    background: var(--bg-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-2) 10px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .section-header {
@@ -104,17 +119,17 @@
   }
 
   .section-title {
-    font-size: 12px;
-    font-weight: 700;
-    color: #323130;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-bold);
+    color: var(--fg);
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
 
   .edit-link {
-    font-family: Segoe UI, system-ui, sans-serif;
-    font-size: 12px;
-    color: #0078d4;
+    font-family: var(--font);
+    font-size: var(--fs-xs);
+    color: var(--accent);
     background: none;
     border: none;
     cursor: pointer;
@@ -122,11 +137,11 @@
     text-decoration: underline;
   }
 
-  .edit-link:hover { color: #106ebe; }
+  .edit-link:hover { color: var(--accent-hover); }
 
-  .section-content { font-size: 13px; color: #323130; }
+  .section-content { font-size: var(--fs-sm); color: var(--fg); }
 
-  .none { color: #a19f9d; font-style: italic; }
+  .none { color: var(--fg-subtle); font-style: italic; }
 
   .item-list {
     margin: 0;
@@ -136,7 +151,7 @@
     gap: 2px;
   }
 
-  .item-list li { font-size: 12px; color: #323130; }
+  .item-list li { font-size: var(--fs-xs); color: var(--fg); }
 
-  .filter-path { font-weight: 600; }
+  .filter-path { font-weight: var(--fw-semibold); }
 </style>

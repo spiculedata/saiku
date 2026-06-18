@@ -11,38 +11,69 @@
     onToggle: (name: string) => void;
   } = $props();
 
-  const measures = $derived(Object.values(schema.measures));
+  let search = $state("");
+  const allMeasures = $derived(Object.values(schema.measures));
+  const measures = $derived(
+    search.trim()
+      ? allMeasures.filter((m) => m.name.toLowerCase().includes(search.toLowerCase()))
+      : allMeasures
+  );
 </script>
 
 <div class="step">
   <p class="step-hint">Choose the measures to include.</p>
 
-  {#if measures.length === 0}
+  {#if allMeasures.length === 0}
     <div class="empty">No measures found in this cube.</div>
   {:else}
-    <ul class="measure-list">
-      {#each measures as m (m.uniqueName)}
-        <li>
-          <label class="measure-item">
-            <input
-              type="checkbox"
-              checked={selected.includes(m.name)}
-              onchange={() => onToggle(m.name)}
-            />
-            <span class="measure-name">{m.name}</span>
-          </label>
-        </li>
-      {/each}
-    </ul>
+    <input
+      class="search"
+      type="search"
+      placeholder="Search measures…"
+      bind:value={search}
+    />
+    {#if measures.length === 0}
+      <div class="empty">No measures match your search.</div>
+    {:else}
+      <ul class="measure-list">
+        {#each measures as m (m.uniqueName)}
+          <li>
+            <label class="measure-item">
+              <input
+                type="checkbox"
+                checked={selected.includes(m.name)}
+                onchange={() => onToggle(m.name)}
+              />
+              <span class="measure-name">{m.name}</span>
+            </label>
+          </li>
+        {/each}
+      </ul>
+    {/if}
   {/if}
 </div>
 
 <style>
-  .step { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+  .step { display: flex; flex-direction: column; gap: var(--space-2); flex: 1; min-height: 0; }
 
-  .step-hint { font-size: 13px; color: #605e5c; margin: 0; }
+  .step-hint { font-size: var(--fs-sm); color: var(--fg-muted); margin: 0; }
 
-  .empty { font-size: 13px; color: #605e5c; padding: 12px 0; }
+  .empty { font-size: var(--fs-sm); color: var(--fg-muted); padding: var(--space-3) 0; }
+
+  .search {
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: var(--fs-sm);
+    color: var(--fg);
+    font-family: var(--font);
+  }
+
+  .search:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
 
   .measure-list {
     list-style: none;
@@ -59,15 +90,15 @@
   .measure-item {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-2);
     padding: 6px 8px;
-    border-radius: 2px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    font-size: 13px;
-    color: #323130;
+    font-size: var(--fs-sm);
+    color: var(--fg);
   }
 
-  .measure-item:hover { background: #f3f2f1; }
+  .measure-item:hover { background: var(--bg-muted); }
 
   .measure-name { flex: 1; }
 
@@ -75,7 +106,7 @@
     width: 14px;
     height: 14px;
     cursor: pointer;
-    accent-color: #0078d4;
+    accent-color: var(--accent);
     flex-shrink: 0;
   }
 </style>

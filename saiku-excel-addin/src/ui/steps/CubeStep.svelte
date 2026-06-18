@@ -57,18 +57,18 @@
 
 <style>
   /* Fill the wizard's step-content height so the list uses the whole pane. */
-  .step { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+  .step { display: flex; flex-direction: column; gap: var(--space-2); flex: 1; min-height: 0; }
 
-  .step-hint { font-size: 13px; color: #605e5c; margin: 0; }
+  .step-hint { font-size: var(--fs-sm); color: var(--fg-muted); margin: 0; }
 
-  .loading, .empty { font-size: 13px; color: #605e5c; padding: 12px 0; }
+  .loading, .empty { font-size: var(--fs-sm); color: var(--fg-muted); padding: var(--space-3) 0; }
 
   .error {
-    font-size: 13px;
-    color: #a4262c;
+    font-size: var(--fs-sm);
+    color: var(--danger);
     padding: 6px 8px;
-    background: #fde7e9;
-    border-radius: 2px;
+    background: var(--danger-soft);
+    border-radius: var(--radius-sm);
   }
 
   .cube-list {
@@ -77,33 +77,33 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
     flex: 1;
     min-height: 0;
     overflow-y: auto;
   }
 
   .cube-item {
-    font-family: Segoe UI, system-ui, sans-serif;
+    font-family: var(--font);
     width: 100%;
     text-align: left;
-    background: #f3f2f1;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    padding: 8px 10px;
+    background: var(--bg-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) 10px;
     cursor: pointer;
     display: flex;
     flex-direction: column;
     gap: 2px;
   }
 
-  .cube-item:hover { background: #edebe9; border-color: #8a8886; }
+  .cube-item:hover { background: var(--bg-hover); border-color: var(--border-strong); }
 
   .cube-item.selected {
-    background: #deecf9;
-    border-color: #0078d4;
+    background: var(--accent-soft);
+    border-color: var(--accent);
   }
 
-  .cube-caption { font-size: 13px; font-weight: 600; color: #323130; }
-  .cube-detail { font-size: 11px; color: #605e5c; }
+  .cube-caption { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--fg); }
+  .cube-detail { font-size: var(--fs-xs); color: var(--fg-muted); }
 </style>

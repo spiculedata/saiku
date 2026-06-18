@@ -82,6 +82,14 @@
       doSearch(d);
     }
   }
+
+  // Extract the human-readable caption from an MDX unique name like [Dim].[Hier].[Level].&[Member]
+  function memberCaption(results: { uniqueName: string; caption: string }[], uniqueName: string): string {
+    const found = results.find((r) => r.uniqueName === uniqueName);
+    if (found?.caption) return found.caption;
+    // Fallback: strip MDX brackets from the last segment
+    return uniqueName.split("].[").pop()?.replace(/[\[\]]/g, "") ?? uniqueName;
+  }
 </script>
 
 <div class="step">
@@ -94,6 +102,7 @@
       {#each dimensions as d (getKey(d))}
         {@const key = getKey(d)}
         {@const members = getMembers(d)}
+        {@const dimResults = results[key] ?? []}
         <div class="filter-group">
           <div class="filter-header">
             <span class="filter-dim">{d.dimension}</span>
@@ -121,9 +130,9 @@
             <div class="error">{searchErrors[key]}</div>
           {/if}
 
-          {#if results[key]?.length}
+          {#if dimResults.length}
             <ul class="results-list">
-              {#each results[key] as r (r.uniqueName)}
+              {#each dimResults as r (r.uniqueName)}
                 <li>
                   <button
                     class="result-item"
@@ -148,7 +157,7 @@
             <div class="chips">
               {#each members as m (m)}
                 <span class="chip">
-                  <span class="chip-label" title={m}>{m.split("].[").pop()?.replace(/[\[\]]/g, "") ?? m}</span>
+                  <span class="chip-label" title={m}>{memberCaption(dimResults, m)}</span>
                   <button class="chip-remove" onclick={() => removeMember(d, m)} aria-label="Remove {m}">×</button>
                 </span>
               {/each}
@@ -161,25 +170,26 @@
 </div>
 
 <style>
-  .step { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+  .step { display: flex; flex-direction: column; gap: var(--space-2); flex: 1; min-height: 0; }
 
-  .step-hint { font-size: 13px; color: #605e5c; margin: 0; }
+  .step-hint { font-size: var(--fs-sm); color: var(--fg-muted); margin: 0; }
 
-  .empty { font-size: 13px; color: #605e5c; padding: 12px 0; }
+  .empty { font-size: var(--fs-sm); color: var(--fg-muted); padding: var(--space-3) 0; }
 
   .filter-list {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
     flex: 1;
     min-height: 0;
     overflow-y: auto;
   }
 
   .filter-group {
-    background: #f3f2f1;
-    border-radius: 4px;
-    padding: 8px 10px;
+    background: var(--bg-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-2) 10px;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -188,54 +198,56 @@
   .filter-header {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--space-1);
     flex-wrap: wrap;
   }
 
-  .filter-dim { font-size: 12px; font-weight: 700; color: #0078d4; }
-  .filter-sep { font-size: 11px; color: #a19f9d; }
-  .filter-hier { font-size: 12px; color: #323130; }
-  .filter-level { font-size: 12px; color: #605e5c; }
+  .filter-dim { font-size: var(--fs-xs); font-weight: var(--fw-bold); color: var(--accent); }
+  .filter-sep { font-size: 11px; color: var(--fg-subtle); }
+  .filter-hier { font-size: var(--fs-xs); color: var(--fg); }
+  .filter-level { font-size: var(--fs-xs); color: var(--fg-muted); }
 
   .search-row {
     display: flex;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   input[type="search"] {
-    font-family: Segoe UI, system-ui, sans-serif;
-    font-size: 12px;
+    font-family: var(--font);
+    font-size: var(--fs-xs);
     flex: 1;
     padding: 4px 6px;
-    border: 1px solid #8a8886;
-    border-radius: 2px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
     outline: none;
+    color: var(--fg);
+    background: var(--bg);
   }
 
-  input[type="search"]:focus { border-color: #0078d4; }
-  input[type="search"]:disabled { background: #edebe9; }
+  input[type="search"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  input[type="search"]:disabled { background: var(--bg-subtle); }
 
   .btn-search {
-    font-family: Segoe UI, system-ui, sans-serif;
-    font-size: 12px;
+    font-family: var(--font);
+    font-size: var(--fs-xs);
     padding: 4px 8px;
-    border: 1px solid #0078d4;
-    border-radius: 2px;
-    color: #0078d4;
-    background: #fff;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    color: var(--accent);
+    background: var(--bg);
     cursor: pointer;
     white-space: nowrap;
   }
 
-  .btn-search:hover:not(:disabled) { background: #deecf9; }
-  .btn-search:disabled { color: #a19f9d; border-color: #a19f9d; cursor: default; }
+  .btn-search:hover:not(:disabled) { background: var(--accent-soft); }
+  .btn-search:disabled { color: var(--fg-subtle); border-color: var(--border-strong); cursor: default; }
 
   .error {
     font-size: 11px;
-    color: #a4262c;
+    color: var(--danger);
     padding: 4px 6px;
-    background: #fde7e9;
-    border-radius: 2px;
+    background: var(--danger-soft);
+    border-radius: var(--radius-sm);
   }
 
   .results-list {
@@ -247,14 +259,14 @@
     gap: 1px;
     max-height: 120px;
     overflow-y: auto;
-    background: #fff;
-    border: 1px solid #edebe9;
-    border-radius: 2px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
   }
 
   .result-item {
-    font-family: Segoe UI, system-ui, sans-serif;
-    font-size: 12px;
+    font-family: var(--font);
+    font-size: var(--fs-xs);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -264,34 +276,34 @@
     border: none;
     background: transparent;
     cursor: pointer;
-    color: #323130;
+    color: var(--fg);
   }
 
-  .result-item:hover:not(:disabled) { background: #f3f2f1; }
-  .result-item:disabled { color: #a19f9d; cursor: default; }
+  .result-item:hover:not(:disabled) { background: var(--bg-muted); }
+  .result-item:disabled { color: var(--fg-subtle); cursor: default; }
 
   .result-caption { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .add-icon { color: #0078d4; font-size: 14px; flex-shrink: 0; }
-  .added-icon { color: #107c10; font-size: 12px; flex-shrink: 0; }
+  .add-icon { color: var(--accent); font-size: var(--fs-md); flex-shrink: 0; }
+  .added-icon { color: var(--success); font-size: var(--fs-xs); flex-shrink: 0; }
 
-  .no-results { font-size: 11px; color: #605e5c; padding: 4px 0; }
+  .no-results { font-size: 11px; color: var(--fg-muted); padding: 4px 0; }
 
   .chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .chip {
     display: flex;
     align-items: center;
     gap: 3px;
-    background: #deecf9;
-    border: 1px solid #0078d4;
-    border-radius: 12px;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
     padding: 2px 6px 2px 8px;
     font-size: 11px;
-    color: #0078d4;
+    color: var(--accent-strong);
     max-width: 160px;
   }
 
@@ -306,12 +318,12 @@
     background: none;
     border: none;
     cursor: pointer;
-    color: #0078d4;
-    font-size: 14px;
+    color: var(--accent);
+    font-size: var(--fs-md);
     line-height: 1;
     padding: 0;
     flex-shrink: 0;
   }
 
-  .chip-remove:hover { color: #a4262c; }
+  .chip-remove:hover { color: var(--danger); }
 </style>

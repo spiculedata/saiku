@@ -5,6 +5,7 @@
   import Login from "./Login.svelte";
   import Home from "./Home.svelte";
   import Wizard from "./Wizard.svelte";
+  import Header from "./Header.svelte";
 
   let loggedIn = $state(false);
   let view = $state<"home" | "wizard">("home");
@@ -25,9 +26,10 @@
   });
 </script>
 
-<main style="font-family: Segoe UI, system-ui, sans-serif; padding: 0; width: 320px; box-sizing: border-box;">
+<main style="font-family: var(--font); padding: 0; width: 320px; box-sizing: border-box;">
+  <Header />
   {#if loading}
-    <div style="padding: 24px; text-align: center; color: #666;">Loading…</div>
+    <div style="padding: var(--space-5); text-align: center; color: var(--fg-muted);">Loading…</div>
   {:else if !loggedIn}
     <Login onLoggedIn={() => { loggedIn = true; view = "home"; }} />
   {:else if view === "home"}

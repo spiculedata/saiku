@@ -24,14 +24,6 @@
 </script>
 
 <div class="login-container">
-  <div class="logo">
-    <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect width="32" height="32" rx="6" fill="#0078d4"/>
-      <text x="6" y="23" font-family="Segoe UI" font-size="18" font-weight="bold" fill="white">S</text>
-    </svg>
-    <span class="app-name">Saiku</span>
-  </div>
-
   <h2>Sign in</h2>
 
   <form onsubmit={handleSubmit}>
@@ -71,99 +63,89 @@
 
 <style>
   .login-container {
-    padding: 24px 20px;
+    padding: var(--space-5) var(--space-4);
     display: flex;
     flex-direction: column;
-    gap: 8px;
-  }
-
-  .logo {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-
-  .app-name {
-    font-size: 18px;
-    font-weight: 600;
-    color: #0078d4;
+    gap: var(--space-2);
   }
 
   h2 {
-    font-size: 16px;
-    font-weight: 600;
-    margin: 0 0 12px;
-    color: #323130;
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-semibold);
+    margin: 0 0 var(--space-3);
+    color: var(--fg);
   }
 
   form {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-3);
   }
 
   .field {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   label {
-    font-size: 13px;
-    font-weight: 600;
-    color: #323130;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
+    color: var(--fg);
   }
 
   input {
-    font-family: Segoe UI, system-ui, sans-serif;
-    font-size: 14px;
+    font-family: var(--font);
+    font-size: var(--fs-md);
     padding: 6px 8px;
-    border: 1px solid #8a8886;
-    border-radius: 2px;
+    border: 1px solid var(--fg-subtle);
+    border-radius: var(--radius-sm);
     outline: none;
     width: 100%;
     box-sizing: border-box;
+    color: var(--fg);
+    background: var(--bg);
   }
 
   input:focus {
-    border-color: #0078d4;
-    box-shadow: 0 0 0 1px #0078d4;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
   }
 
   input:disabled {
-    background: #f3f2f1;
-    color: #a19f9d;
+    background: var(--bg-muted);
+    color: var(--fg-subtle);
   }
 
   .error {
-    font-size: 13px;
-    color: #a4262c;
+    font-size: var(--fs-sm);
+    color: var(--danger);
     padding: 6px 8px;
-    background: #fde7e9;
-    border-radius: 2px;
+    background: var(--danger-soft);
+    border-radius: var(--radius-sm);
   }
 
   .btn-primary {
-    font-family: Segoe UI, system-ui, sans-serif;
-    font-size: 14px;
-    font-weight: 600;
-    color: #fff;
-    background: #0078d4;
+    font-family: var(--font);
+    font-size: var(--fs-md);
+    font-weight: var(--fw-semibold);
+    color: var(--on-accent);
+    background: var(--accent);
     border: none;
-    border-radius: 2px;
-    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    padding: 8px var(--space-4);
     cursor: pointer;
-    margin-top: 4px;
+    margin-top: var(--space-1);
     width: 100%;
+    box-shadow: var(--shadow-sm);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: #106ebe;
+    background: var(--accent-hover);
   }
 
   .btn-primary:disabled {
-    background: #c8c6c4;
+    background: var(--border-strong);
     cursor: default;
   }
 </style>
