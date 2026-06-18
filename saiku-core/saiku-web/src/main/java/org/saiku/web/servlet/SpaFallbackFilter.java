@@ -6,6 +6,7 @@ package org.saiku.web.servlet;
 
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
+import jakarta.servlet.FilterConfig;
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRequest;
@@ -16,7 +17,7 @@ import jakarta.servlet.http.HttpServletResponseWrapper;
 import java.io.IOException;
 
 /**
- * SPA fallback for the SvelteKit UI at {@code /ui/*}.
+ * SPA fallback for a SvelteKit SPA rooted at a configurable base path (default {@code /ui}).
  *
  * <p>The SvelteKit static adapter is configured with
  * {@code fallback: "index.html"} and routes like
@@ -45,8 +46,15 @@ import java.io.IOException;
  */
 public class SpaFallbackFilter implements Filter {
 
-    private static final String FALLBACK = "/ui/index.html";
-    private static final String BRANDING_PREFIX = "/ui/branding/";
+    private String basePath = "/ui";
+
+    @Override
+    public void init(FilterConfig config) {
+        String p = config.getInitParameter("basePath");
+        if (p != null) {
+            basePath = p.trim().replaceAll("/+$", "");
+        }
+    }
 
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
@@ -62,32 +70,43 @@ public class SpaFallbackFilter implements Filter {
             path = path.substring(ctx.length());
         }
 
-        if (!shouldFallback(path)) {
+        if (!shouldFallback(path, basePath)) {
             chain.doFilter(request, response);
             return;
         }
 
+        String fallback = basePath + "/index.html";
         StatusCapturingResponse wrapper = new StatusCapturingResponse(resp);
         chain.doFilter(request, wrapper);
 
         if (wrapper.getStatus() == HttpServletResponse.SC_NOT_FOUND && !resp.isCommitted()) {
             wrapper.discardCapturedError();
             resp.setStatus(HttpServletResponse.SC_OK);
-            RequestDispatcher dispatcher = req.getRequestDispatcher(FALLBACK);
+            RequestDispatcher dispatcher = req.getRequestDispatcher(fallback);
             dispatcher.forward(req, resp);
         }
     }
 
     /**
+     * Convenience overload using the default {@code /ui} base path.
+     * Used by unit tests and callers that have not migrated to the two-arg form.
+     */
+    static boolean shouldFallback(String path) {
+        return shouldFallback(path, "/ui");
+    }
+
+    /**
      * @return true if this request should attempt the SPA fallback on a
-     *         404. False for everything outside /ui/, for the branding
+     *         404. False for everything outside the basePath, for the branding
      *         overlay, for the fallback target itself, and for asset
      *         requests whose extension implies a real static file.
      */
-    static boolean shouldFallback(String path) {
-        if (path == null || !path.startsWith("/ui/")) return false;
-        if (path.equals(FALLBACK)) return false;
-        if (path.startsWith(BRANDING_PREFIX)) return false;
+    static boolean shouldFallback(String path, String basePath) {
+        if (path == null || !path.startsWith(basePath + "/")) return false;
+        String fallback = basePath + "/index.html";
+        String brandingPrefix = basePath + "/branding/";
+        if (path.equals(fallback)) return false;
+        if (path.startsWith(brandingPrefix)) return false;
         int dot = path.lastIndexOf('.');
         int slash = path.lastIndexOf('/');
         if (dot > slash && dot >= 0) {
