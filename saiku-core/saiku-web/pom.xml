@@ -277,6 +277,13 @@
             <version>4.8.2</version>
             <scope>test</scope>
         </dependency>
+        <!-- JUnit 5 Jupiter for new tests (e.g. AddinManifestTest).
+             Version is managed by saiku-bom (5.11.3). -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.apache.arrow</groupId>
             <artifactId>arrow-vector</artifactId>
