@@ -8,7 +8,7 @@ describe("discovery", () => {
     expect(cubes[0].cubeName).toBe("Sales");
   });
   it("fetches schema by cube id", async () => {
-    const f = vi.fn(async () => json({ cubeName: "Sales", measures: {}, dimensions: {} }));
+    const f = vi.fn<(url: string, opts?: RequestInit) => Promise<Response>>(async () => json({ cubeName: "Sales", measures: {}, dimensions: {} }));
     vi.stubGlobal("fetch", f);
     await getSchema("c/cat/s/Sales");
     expect(f.mock.calls[0][0]).toBe("/rest/saiku/api/ai/schema/c/cat/s/Sales");
