@@ -5,6 +5,20 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Saiku for Excel</title>
     <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <style>
+      /* Force a light, high-contrast surface so the pane is readable regardless of
+         Excel's (dark) theme bleeding into the webview. */
+      :root { color-scheme: light; }
+      html, body {
+        margin: 0;
+        background: #ffffff;
+        color: #201f1e;
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        font-size: 13px;
+        -webkit-font-smoothing: antialiased;
+      }
+      #app { background: #ffffff; min-height: 100vh; }
+    </style>
   </head>
   <body>
     <div id="app"></div>
