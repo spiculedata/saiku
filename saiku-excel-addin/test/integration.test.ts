@@ -27,6 +27,10 @@
 
 import { describe, it, expect } from "vitest";
 
+// This suite runs in the Node (undici) environment; declare the Node `process`
+// global locally so type-checking passes without pulling in @types/node project-wide.
+declare const process: { env: Record<string, string | undefined> };
+
 const RUN = process.env.SAIKU_IT === "1";
 const base = "http://localhost:8080";
 
