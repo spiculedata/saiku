@@ -411,6 +411,18 @@
         <url-pattern>/ui/branding/*</url-pattern>
     </servlet-mapping>
 
+    <!-- Office add-in manifest: exact-path mapping beats the default servlet,
+         dynamically injects the correct base URL for this host. -->
+    <servlet>
+      <servlet-name>addinManifest</servlet-name>
+      <servlet-class>org.saiku.web.servlet.AddinManifestServlet</servlet-class>
+      <load-on-startup>2</load-on-startup>
+    </servlet>
+    <servlet-mapping>
+      <servlet-name>addinManifest</servlet-name>
+      <url-pattern>/addin/manifest.xml</url-pattern>
+    </servlet-mapping>
+
     <!-- SvelteKit SPA fallback: any /ui/* request that the default
          servlet can't resolve to a real file (and isn't a static-asset
          extension) gets rewritten to /ui/index.html so the SPA can
@@ -423,6 +435,18 @@
     <filter-mapping>
         <filter-name>spaFallback</filter-name>
         <url-pattern>/ui/*</url-pattern>
+    </filter-mapping>
+
+    <!-- SPA fallback for the Office add-in SPA at /addin/*. Same logic as
+         spaFallback; basePath init-param routes fallbacks to /addin/index.html. -->
+    <filter>
+        <filter-name>addinSpaFallback</filter-name>
+        <filter-class>org.saiku.web.servlet.SpaFallbackFilter</filter-class>
+        <init-param><param-name>basePath</param-name><param-value>/addin</param-value></init-param>
+    </filter>
+    <filter-mapping>
+        <filter-name>addinSpaFallback</filter-name>
+        <url-pattern>/addin/*</url-pattern>
     </filter-mapping>
 
 </web-app>
