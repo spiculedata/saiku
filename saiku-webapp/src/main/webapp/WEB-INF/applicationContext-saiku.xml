@@ -35,6 +35,8 @@
     </security:http>
     <security:http pattern="/ui/**" security="none">
     </security:http>
+    <security:http pattern="/addin/**" security="none">
+    </security:http>
     <security:http pattern="/" security="none">
     </security:http>
     <security:http pattern="/index.jsp" security="none">
