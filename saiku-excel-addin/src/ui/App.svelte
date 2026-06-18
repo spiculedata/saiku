@@ -13,8 +13,10 @@
 
   onMount(async () => {
     try {
-      await session();
-      loggedIn = true;
+      // GET /session returns 200 even when anonymous ({isadmin,language} with no
+      // username), so only treat a real authenticated principal as logged in.
+      const s = await session();
+      loggedIn = !!s.username;
     } catch {
       loggedIn = false;
     } finally {
