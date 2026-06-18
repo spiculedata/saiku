@@ -53,6 +53,28 @@ public class SecurityHeadersFilter implements Filter {
             throws IOException, ServletException {
         if (response instanceof HttpServletResponse) {
             HttpServletResponse resp = (HttpServletResponse) response;
+            // Office add-in: /addin/* must be embeddable by Office hosts.
+            // Allow the specific Office frame-ancestors, keep nosniff, and
+            // skip X-Frame-Options entirely (it can't express an allow-list
+            // and would override the CSP directive in legacy browsers).
+            if (request instanceof HttpServletRequest) {
+                HttpServletRequest httpReq = (HttpServletRequest) request;
+                String reqPath = httpReq.getRequestURI();
+                String ctx = httpReq.getContextPath();
+                if (ctx != null && !ctx.isEmpty() && reqPath.startsWith(ctx)) {
+                    reqPath = reqPath.substring(ctx.length());
+                }
+                if (reqPath.startsWith("/addin/") || reqPath.equals("/addin")) {
+                    setIfAbsent(resp, "X-Content-Type-Options", "nosniff");
+                    setIfAbsent(
+                            resp,
+                            "Content-Security-Policy",
+                            "frame-ancestors 'self' https://*.officeapps.live.com https://*.office.com"
+                                    + " https://*.office365.com https://*.microsoft.com https://*.sharepoint.com");
+                    chain.doFilter(request, response);
+                    return;
+                }
+            }
             // Stop MIME-sniffing of responses (e.g. branding / uploaded content).
             setIfAbsent(resp, "X-Content-Type-Options", "nosniff");
             // Don't leak dashboard/query URLs to third parties via Referer.
