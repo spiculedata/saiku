@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:type="TaskPaneApp">
+
+  <Id>b6e9c1a2-3d4f-4a5b-8c7d-9e0f1a2b3c4d</Id>
+  <Version>0.1.0.0</Version>
+  <ProviderName>Spicule</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Saiku for Excel"/>
+  <Description DefaultValue="Saiku analytics embedded in Excel as a task pane add-in."/>
+
+  <!-- TODO: replace placeholder icons with real 32×32 and 80×80 PNG assets -->
+  <IconUrl DefaultValue="https://localhost:5174/addin/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://localhost:5174/addin/assets/icon-80.png"/>
+
+  <SupportUrl DefaultValue="https://saiku.spicule.co.uk"/>
+
+  <AppDomains>
+    <AppDomain>https://localhost:5174</AppDomain>
+  </AppDomains>
+
+  <Hosts>
+    <Host Name="Workbook"/>
+  </Hosts>
+
+  <DefaultSettings>
+    <!--
+      Dev URL: https://localhost:5174/addin/index.html
+      Prod URL: https://<saiku-host>/addin/index.html
+    -->
+    <SourceLocation DefaultValue="https://localhost:5174/addin/index.html"/>
+  </DefaultSettings>
+
+  <Permissions>ReadWriteDocument</Permissions>
+
+</OfficeApp>
