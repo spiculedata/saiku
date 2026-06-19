@@ -67,6 +67,38 @@ public class InfoResource {
     }
 
     /**
+     * Advertises which authentication schemes this Saiku deployment accepts.
+     *
+     * <p>Always includes {@code basic: true} (HTTP Basic is always enabled).
+     * If the operator has configured OIDC via {@code -Dsaiku.oidc.issuer} and
+     * {@code -Dsaiku.oidc.clientId}, an {@code oidc} block is also present so
+     * the Excel add-in can redirect the user to the provider's authorise URL
+     * without hard-coding it.
+     *
+     * <p>This endpoint is reachable pre-auth (covered by the
+     * {@code /rest/saiku/info/**} permitAll rule) so the add-in can probe it
+     * before any user is signed in.
+     */
+    @GET
+    @Path("/auth-capabilities")
+    @Produces({"application/json"})
+    public Response getAuthCapabilities() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("basic", true);
+        String issuer = System.getProperty("saiku.oidc.issuer");
+        String clientId = System.getProperty("saiku.oidc.clientId");
+        String authorizeUrl = System.getProperty("saiku.oidc.authorizeUrl");
+        if (issuer != null && !issuer.isBlank() && clientId != null && !clientId.isBlank()) {
+            Map<String, Object> oidc = new LinkedHashMap<>();
+            oidc.put("issuer", issuer);
+            oidc.put("clientId", clientId);
+            if (authorizeUrl != null && !authorizeUrl.isBlank()) oidc.put("authorizeUrl", authorizeUrl);
+            body.put("oidc", oidc);
+        }
+        return Response.ok(body).build();
+    }
+
+    /**
      * Get a list of available plugins.
      * @summary Get plugins
      * @return A response containing a list of plugins.
