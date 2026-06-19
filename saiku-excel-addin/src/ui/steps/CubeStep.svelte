@@ -3,11 +3,14 @@
   import { listCubes } from "../../lib/discovery";
   import { cubeId } from "../../lib/types";
   import type { Cube } from "../../lib/types";
+  import type { ServerCtx } from "../../lib/http";
 
   const {
+    ctx,
     selectedCubeId,
     onSelect,
   }: {
+    ctx: ServerCtx;
     selectedCubeId: string;
     onSelect: (id: string) => void;
   } = $props();
@@ -18,9 +21,13 @@
 
   onMount(async () => {
     try {
-      cubes = await listCubes();
+      cubes = await listCubes(ctx);
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to load cubes";
+      if (e instanceof TypeError) {
+        error = "Can't reach this server, or it hasn't allowed the add-in (CORS)";
+      } else {
+        error = e instanceof Error ? e.message : "Failed to load cubes";
+      }
     } finally {
       loading = false;
     }

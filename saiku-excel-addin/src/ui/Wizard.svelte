@@ -4,8 +4,10 @@
   import { buildRequest } from "../lib/queryModel";
   import { runQuery } from "../lib/executor";
   import { writeTable, buildPivot } from "../lib/sheetWriter";
-  import { saveQuery, listQueries } from "../lib/queryStore";
+  import { saveQuery, listQueries, loadRegistry } from "../lib/queryStore";
   import type { SavedQuery } from "../lib/queryStore";
+  import { activeServer } from "../lib/serverRegistry";
+  import type { ServerCtx } from "../lib/http";
   import type { CubeSchema, WizardState, DimPick, FilterPick, AiQueryRequest } from "../lib/types";
   import CubeStep from "./steps/CubeStep.svelte";
   import MeasuresStep from "./steps/MeasuresStep.svelte";
@@ -14,10 +16,12 @@
   import ReviewStep from "./steps/ReviewStep.svelte";
 
   const {
+    ctx,
     initial = null,
     onDone,
     onCancel,
   }: {
+    ctx: ServerCtx;
     initial?: SavedQuery | null;
     onDone: () => void;
     onCancel: () => void;
@@ -63,9 +67,13 @@
     schemaLoading = true;
     schemaError = null;
     try {
-      cubeSchema = await getSchema(id);
+      cubeSchema = await getSchema(ctx, id);
     } catch (e) {
-      schemaError = e instanceof Error ? e.message : "Failed to load schema";
+      if (e instanceof TypeError) {
+        schemaError = "Can't reach this server, or it hasn't allowed the add-in (CORS)";
+      } else {
+        schemaError = e instanceof Error ? e.message : "Failed to load schema";
+      }
     } finally {
       schemaLoading = false;
     }
@@ -135,10 +143,14 @@
 
     try {
       const req = buildRequest(wiz);
-      const r = await runQuery(req);
+      const r = await runQuery(ctx, req);
 
       if (!r.ok) {
-        insertError = r.error;
+        if (r.status.startsWith("HTTP_401")) {
+          insertError = "Session expired — please sign in again via the server switcher.";
+        } else {
+          insertError = r.error;
+        }
         if (r.field?.startsWith("rows")) {
           step = 3;
         } else if (r.field?.startsWith("filters")) {
@@ -165,8 +177,13 @@
         wiz.measures.slice(0, 2).join(", ") + (wiz.measures.length > 2 ? "…" : "");
       const title = `${cubePart}: ${measuresSummary}`;
 
+      // Determine the active server id from the ctx baseUrl (via registry lookup is complex in wizard;
+      // ctx is always from the active server, so we read serverId from the initial query or derive it).
+      const serverId = initial?.serverId ?? await resolveServerId();
+
       await saveQuery({
         id: initial?.id ?? crypto.randomUUID(),
+        serverId,
         title,
         sheet: sheetName,
         request: req,
@@ -174,10 +191,20 @@
 
       onDone();
     } catch (e) {
-      insertError = e instanceof Error ? e.message : "Insert failed";
+      if (e instanceof TypeError) {
+        insertError = "Can't reach this server, or it hasn't allowed the add-in (CORS)";
+      } else {
+        insertError = e instanceof Error ? e.message : "Insert failed";
+      }
     } finally {
       inserting = false;
     }
+  }
+
+  /** Look up the active server id from the registry. */
+  async function resolveServerId(): Promise<string> {
+    const reg = await loadRegistry();
+    return activeServer(reg)?.id ?? "unknown";
   }
 </script>
 
@@ -213,13 +240,14 @@
     {:else if schemaError && step > 1}
       <div class="error" role="alert">{schemaError}</div>
     {:else if step === 1}
-      <CubeStep selectedCubeId={wiz.cubeId} onSelect={handleCubeSelect} />
+      <CubeStep ctx={ctx} selectedCubeId={wiz.cubeId} onSelect={handleCubeSelect} />
     {:else if step === 2 && cubeSchema}
       <MeasuresStep schema={cubeSchema} selected={wiz.measures} onToggle={toggleMeasure} />
     {:else if step === 3 && cubeSchema}
       <DimensionsStep schema={cubeSchema} selected={wiz.dimensions} onToggle={toggleDimension} />
     {:else if step === 4}
       <FiltersStep
+        ctx={ctx}
         cubeId={wiz.cubeId}
         dimensions={wiz.dimensions}
         filters={wiz.filters}
