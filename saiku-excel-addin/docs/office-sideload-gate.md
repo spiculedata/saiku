@@ -177,3 +177,18 @@ Verify after sideloading (record Excel build numbers):
 - [ ] **Measures search** filters the measure list by caption when typing.
 - [ ] **Indigo branding** — primary buttons (Insert / Next / ＋ New query) and the active stepper step use Saiku indigo (`#4f46e5`), not Fluent blue; completed steps show a green ✓.
 - [ ] **End-to-end still works** — build a query (Sales → Unit Sales → Product Family) and **Insert** writes the table; refresh works. (Polish must not have regressed the data path.)
+
+---
+
+## Multi-server checks (cross-origin)
+
+Requires a CORS-enabled Saiku (`-Dsaiku.cors.allowedOrigins=<add-in origin>`) and, for SSO, a Saiku with `saiku.oidc.*` set + a real WorkOS app whose redirect URI is `<add-in origin>/addin/auth-callback.html`.
+
+- [ ] **First run** with an empty registry shows the **Servers** screen ("Add a server").
+- [ ] **Add a Basic server** by URL → the add-in probes `/auth-capabilities`, shows a username/password form → after sign-in the cube list loads.
+- [ ] **Add a WorkOS/OIDC server** → "Sign in with SSO" opens the Office dialog (WorkOS hosted login) → returns a bearer token → cube list loads.
+- [ ] **Switch active server** (header switcher) → the wizard's cube list re-scopes to the new server.
+- [ ] **Build + Insert** a query against each server; **Home groups saved queries by server**; **Refresh** re-runs against the correct server with its stored credential.
+- [ ] **Secret split:** save the workbook, inspect its stored settings (or reopen as a different OS user) → **server URLs/labels + query defs are present, but NO passwords/tokens** (those are in the per-user roaming store). Reopening prompts to sign in to each server.
+- [ ] **CORS error** — point at a Saiku that hasn't allow-listed the add-in origin → the add-in shows "Can't reach this server, or it hasn't allowed the add-in (CORS)" (distinct from an auth failure).
+- [ ] **Token expiry** — an expired OIDC token re-prompts (or silently refreshes) for that server only; other servers unaffected.
