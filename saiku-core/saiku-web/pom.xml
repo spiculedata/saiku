@@ -303,6 +303,14 @@
             <artifactId>spring-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Mockito for BearerTokenAuthFilterTest. Not in the BOM so version
+             is pinned here; 5.x requires JDK 11+ (we're on 21). -->
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.14.2</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     <reporting>
         <plugins>
