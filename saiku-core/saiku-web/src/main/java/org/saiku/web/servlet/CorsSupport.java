@@ -40,8 +40,10 @@ public final class CorsSupport {
         if (allowedCsv == null || allowedCsv.isBlank()) return null;
         String origin = requestOrigin.trim();
         return Arrays.stream(allowedCsv.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .anyMatch(a -> a.equals("*") || a.equals(origin)) ? origin : null;
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .anyMatch(a -> a.equals("*") || a.equals(origin))
+                ? origin
+                : null;
     }
 }

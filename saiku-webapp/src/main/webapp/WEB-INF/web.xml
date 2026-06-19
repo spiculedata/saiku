@@ -86,6 +86,26 @@
         <url-pattern>/*</url-pattern>
     </filter-mapping>
 
+    <!-- saiku#cors: CORS preflight handler for the REST API surface.
+         Runs after securityHeaders (so security headers are always present)
+         but before demoGate/Spring Security so OPTIONS preflights are
+         short-circuited without touching the auth chain.
+         Allowed origins are configured via -Dsaiku.cors.allowedOrigins=
+         (comma-separated list or * for wildcard). Omitting the property
+         leaves CORS disabled. -->
+    <filter>
+        <filter-name>cors</filter-name>
+        <filter-class>org.saiku.web.servlet.CorsFilter</filter-class>
+    </filter>
+    <filter-mapping>
+        <filter-name>cors</filter-name>
+        <url-pattern>/rest/saiku/api/*</url-pattern>
+    </filter-mapping>
+    <filter-mapping>
+        <filter-name>cors</filter-name>
+        <url-pattern>/rest/saiku/info/*</url-pattern>
+    </filter-mapping>
+
     <filter>
         <filter-name>demoGate</filter-name>
         <filter-class>org.saiku.web.servlet.DemoGateFilter</filter-class>

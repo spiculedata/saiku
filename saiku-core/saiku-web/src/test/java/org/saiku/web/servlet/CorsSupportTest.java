@@ -14,8 +14,7 @@ class CorsSupportTest {
     void echoesExactAllowedOrigin() {
         assertEquals(
                 "https://app.saiku.cloud",
-                CorsSupport.allowedOrigin(
-                        "https://app.saiku.cloud", "https://app.saiku.cloud,https://x.test"));
+                CorsSupport.allowedOrigin("https://app.saiku.cloud", "https://app.saiku.cloud,https://x.test"));
     }
 
     @Test
