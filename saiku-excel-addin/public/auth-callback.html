@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Signing in…</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script></head>
+<body><script>
+  Office.onReady(function () {
+    var p = new URLSearchParams(location.search);
+    var msg = { code: p.get("code"), state: p.get("state"), error: p.get("error") };
+    Office.context.ui.messageParent(JSON.stringify(msg));
+  });
+</script>Signing in…</body></html>
