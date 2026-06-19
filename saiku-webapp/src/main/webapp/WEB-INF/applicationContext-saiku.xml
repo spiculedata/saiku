@@ -165,6 +165,15 @@
            (pre-auth, never persisted). The filter is a no-op on the mint
            endpoint so the caller's authenticated session reaches it. -->
       <security:custom-filter ref="embedAuthFilter" after="PRE_AUTH_FILTER"/>
+      <!-- Bearer-token auth filter. Placed before ANONYMOUS_FILTER so that a
+           valid bearer token sets a fully-authenticated principal before Spring
+           Security's anonymous-user stub runs and before the CSRF materializer.
+           PRE_AUTH_FILTER is already occupied (shareTokenAuthFilter) and
+           after="PRE_AUTH_FILTER" is already occupied (embedAuthFilter), so
+           before="ANONYMOUS_FILTER" is the next free slot in document order.
+           The reject-all default validator means this is a safe no-op until a
+           real TokenValidator bean is wired. -->
+      <security:custom-filter ref="bearerTokenAuthFilter" before="ANONYMOUS_FILTER"/>
       <!-- saiku#1150: force the deferred CsrfToken to resolve on every
            response so the XSRF-TOKEN cookie is written eagerly. Sits AFTER
            Spring Security's CSRF filter (BASIC_AUTH_FILTER is a stable

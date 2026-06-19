@@ -425,6 +425,15 @@
         <constructor-arg ref="shareTokenStore"/>
     </bean>
 
+    <!-- Bearer-token authentication SPI (Task 5). The default validator rejects
+         every token (safe no-op). Replace tokenValidator with a real OIDC / JWT
+         verifier bean to enable bearer-token login without touching the filter. -->
+    <bean id="tokenValidator" class="org.saiku.web.security.token.RejectAllTokenValidator"/>
+
+    <bean id="bearerTokenAuthFilter" class="org.saiku.web.security.token.BearerTokenAuthFilter">
+        <constructor-arg ref="tokenValidator"/>
+    </bean>
+
     <bean id="shareTokenResource"
           class="org.saiku.web.rest.resources.share.ShareTokenResource">
         <property name="store" ref="shareTokenStore"/>
