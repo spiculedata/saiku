@@ -1,3 +1,11 @@
+export type AuthStrategyKind = "basic" | "oidc";
+export interface ServerEntry { id: string; label: string; baseUrl: string; strategy: AuthStrategyKind; }
+export interface BasicCredential { kind: "basic"; username: string; password: string; }
+export interface OidcCredential { kind: "oidc"; accessToken: string; refreshToken?: string; expiresAt?: number; }
+export type Credential = BasicCredential | OidcCredential;
+export interface OidcInfo { issuer: string; clientId: string; authorizeUrl?: string; }
+export interface Capabilities { basic: boolean; oidc?: OidcInfo; }
+
 export interface Cube {
   connectionName: string; catalog: string; schema: string;
   cubeName: string; cubeCaption: string; defaultMeasure?: string; measureCount?: number;
