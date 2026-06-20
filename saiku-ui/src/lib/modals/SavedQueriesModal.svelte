@@ -325,7 +325,7 @@
                 }}
                 autofocus
               />
-              <Button >commitRename()}>{i18n.t("modal.save")}</Button>
+              <Button onclick={() => commitRename()}>{i18n.t("modal.save")}</Button>
               <Button variant="outline" >(renaming = null)}>{i18n.t("modal.cancel")}</Button>
             </div>
           {:else}
@@ -383,7 +383,7 @@
       <p>{i18n.t("saved.deletePrompt").replace("{name}", confirming.name)}</p>
       <div class="saved__confirm-actions">
         <Button variant="outline" >(confirming = null)}>{i18n.t("modal.cancel")}</Button>
-        <Button variant="destructive" >commitDelete()}>{i18n.t("modal.delete")}</Button>
+        <Button variant="destructive" onclick={() => commitDelete()}>{i18n.t("modal.delete")}</Button>
       </div>
     </div>
   {/if}

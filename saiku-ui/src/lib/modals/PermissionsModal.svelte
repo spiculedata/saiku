@@ -62,7 +62,7 @@
   {/if}
   {#snippet footer()}
     <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
-    <Button >onSave(acl)}>{i18n.t("modal.save")}</Button>
+    <Button onclick={() => onSave(acl)}>{i18n.t("modal.save")}</Button>
   {/snippet}
 </Modal>
 

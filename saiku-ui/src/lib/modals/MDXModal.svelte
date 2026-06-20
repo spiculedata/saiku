@@ -33,6 +33,6 @@
   {#snippet footer()}
     <Button variant="outline" onclick={copy}>{i18n.t("modal.mdx.copy")}</Button>
     <Button variant="outline" onclick={onCancel}>{i18n.t("modal.close")}</Button>
-    <Button >onRun(buffer)}>{i18n.t("modal.mdx.run")}</Button>
+    <Button onclick={() => onRun(buffer)}>{i18n.t("modal.mdx.run")}</Button>
   {/snippet}
 </Modal>

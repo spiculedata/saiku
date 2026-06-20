@@ -85,8 +85,8 @@
   </label>
   {#snippet footer()}
     <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
-    <Button variant="outline" >onExportCsv(args())}>{i18n.t("modal.drillthrough.exportCsv")}</Button>
-    <Button >onRun(args())}>{i18n.t("toolbar.run")}</Button>
+    <Button variant="outline" onclick={() => onExportCsv(args())}>{i18n.t("modal.drillthrough.exportCsv")}</Button>
+    <Button onclick={() => onRun(args())}>{i18n.t("toolbar.run")}</Button>
   {/snippet}
 </Modal>
 

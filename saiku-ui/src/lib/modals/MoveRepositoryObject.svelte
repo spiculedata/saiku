@@ -29,7 +29,7 @@
   </label>
   {#snippet footer()}
     <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
-    <Button >onMove(target)}>{i18n.t("modal.move.action")}</Button>
+    <Button onclick={() => onMove(target)}>{i18n.t("modal.move.action")}</Button>
   {/snippet}
 </Modal>
 

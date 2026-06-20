@@ -46,6 +46,6 @@
   </label>
   {#snippet footer()}
     <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
-    <Button >onApply(axis, s)}>{i18n.t("modal.apply")}</Button>
+    <Button onclick={() => onApply(axis, s)}>{i18n.t("modal.apply")}</Button>
   {/snippet}
 </Modal>

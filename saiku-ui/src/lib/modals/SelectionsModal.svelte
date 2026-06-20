@@ -107,7 +107,7 @@
       <Button variant="outline" onclick={onOpenDateFilter}>{i18n.t("modal.selections.openDate")}</Button>
     {/if}
     <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
-    <Button >onSave(Array.from(selected), type)}>{i18n.t("modal.ok")}</Button>
+    <Button onclick={() => onSave(Array.from(selected), type)}>{i18n.t("modal.ok")}</Button>
   {/snippet}
 </Modal>
 

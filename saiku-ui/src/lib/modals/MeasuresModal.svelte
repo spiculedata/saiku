@@ -98,7 +98,7 @@
   </ul>
   {#snippet footer()}
     <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
-    <Button >onSave(Array.from(picks))}>{i18n.t("modal.save")}</Button>
+    <Button onclick={() => onSave(Array.from(picks))}>{i18n.t("modal.save")}</Button>
   {/snippet}
 </Modal>
 

@@ -106,18 +106,18 @@
           {session.current.username}
         </span>
         {#if !page.url.pathname.startsWith(`${base}/dashboards`) && !page.url.pathname.startsWith(`${base}/admin`)}
-          <a class={buttonVariants({ variant: "outline" })} href="{base}/dashboards"><LayoutDashboard size={14} /><span>Dashboards</span></a>
+          <a class={buttonVariants({ variant: "outline", size: "sm" })} href="{base}/dashboards"><LayoutDashboard size={14} /><span>Dashboards</span></a>
         {/if}
         {#if page.url.pathname.startsWith(`${base}/dashboards`)}
-          <a class={buttonVariants({ variant: "outline" })} href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
+          <a class={buttonVariants({ variant: "outline", size: "sm" })} href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
         {/if}
         {#if session.isAdmin && !page.url.pathname.startsWith(`${base}/admin`)}
-          <a class={buttonVariants({ variant: "outline" })} href="{base}/admin"><Shield size={14} /><span>{i18n.t("topbar.admin")}</span></a>
+          <a class={buttonVariants({ variant: "outline", size: "sm" })} href="{base}/admin"><Shield size={14} /><span>{i18n.t("topbar.admin")}</span></a>
         {/if}
         {#if page.url.pathname.startsWith(`${base}/admin`)}
-          <a class={buttonVariants({ variant: "outline" })} href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
+          <a class={buttonVariants({ variant: "outline", size: "sm" })} href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
         {/if}
-        <Button variant="outline" onclick={() => session.logout()}>
+        <Button variant="outline" size="sm" onclick={() => session.logout()}>
           <LogOut size={14} /><span>{i18n.t("topbar.signOut")}</span>
         </Button>
       {/if}
