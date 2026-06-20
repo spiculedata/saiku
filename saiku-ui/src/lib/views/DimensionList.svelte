@@ -12,6 +12,7 @@
   import { measuresHiddenToggle } from "$lib/stores/measuresHiddenToggle.svelte";
   import {
     Sigma,
+    FunctionSquare,
     Folder,
     GitFork,
     ChevronRight,
@@ -152,14 +153,117 @@
     expanded[id] = !(expanded[id] ?? true);
   }
 
-  function measureGroups(): Record<string, typeof metadata extends null ? never : NonNullable<typeof metadata>["measures"]> {
-    const groups: Record<string, NonNullable<typeof metadata>["measures"]> = {};
-    if (!metadata) return groups;
+  /** Fallback header used when the backend exposes no measure-group
+   *  metadata (non-Mondrian providers) or when every measure of a cube
+   *  has the same group — in both cases we render a single flat list
+   *  under this label, matching the historical UX. */
+  const DEFAULT_MEASURE_GROUP = "Measures";
+  /** Bucket for `calculated: true` measures (Mondrian CalculatedMembers
+   *  have no MeasureGroup) — separates derived KPIs from raw aggregates
+   *  visually and signals to the user that these compose underlying
+   *  measures rather than reading from a fact table. */
+  const CALCULATED_GROUP = "Calculated";
+
+  /** Compute the group label for a single measure.
+   *  Precedence:
+   *    1. Calculated members → CALCULATED_GROUP
+   *    2. Mondrian-supplied measureGroup string → that string
+   *    3. Anything else (null/empty/missing) → DEFAULT_MEASURE_GROUP
+   */
+  function groupLabel(m: SaikuMeasure): string {
+    if (m.calculated) return CALCULATED_GROUP;
+    const mg = m.measureGroup;
+    if (typeof mg === "string" && mg.length > 0) return mg;
+    return DEFAULT_MEASURE_GROUP;
+  }
+
+  /** Group measures by their resolved label, preserving the order
+   *  measures arrive in (the backend already returns them in schema
+   *  order). The Calculated bucket — when present — is always last so
+   *  derived KPIs cluster at the bottom regardless of how many base
+   *  MeasureGroups there are.
+   *
+   *  Returns an array of [label, measures] pairs (not an object) so
+   *  iteration order is preserved across Svelte renders. */
+  // Reactive bucket-by-MG of the loaded cube's measures. Recomputed
+  // whenever metadata changes; `$derived` ensures the template can
+  // reference the value directly without re-bucketing on every render.
+  const measureGroupsDerived = $derived<Array<[string, SaikuMeasure[]]>>(measureGroups());
+
+  function measureGroups(): Array<[string, SaikuMeasure[]]> {
+    if (!metadata) return [];
+    const groups = new Map<string, SaikuMeasure[]>();
     for (const m of metadata.measures) {
-      const key = "Measures";
-      (groups[key] ??= []).push(m);
+      const key = groupLabel(m);
+      const bucket = groups.get(key);
+      if (bucket) bucket.push(m);
+      else groups.set(key, [m]);
     }
-    return groups;
+    // Push CALCULATED_GROUP to the end if it exists.
+    const calc = groups.get(CALCULATED_GROUP);
+    if (calc) {
+      groups.delete(CALCULATED_GROUP);
+      groups.set(CALCULATED_GROUP, calc);
+    }
+    return Array.from(groups.entries());
+  }
+
+  // ---- Dim-applicability (saiku#TODO virtual cube UX) ----
+
+  /**
+   * Set of MeasureGroup names the currently-selected measures span. Empty
+   * when the user has no measures selected or every selected measure is
+   * calculated (calc members have no MG of their own — their applicability
+   * derives from the base measures they reference, which we don't introspect
+   * statically; treating them as no-constraint is the safe default).
+   *
+   * Rebuilt reactively from the query's measure details + the cube metadata's
+   * measure list so we can resolve a uniqueName → measureGroup without
+   * re-walking the wire.
+   */
+  const requiredMeasureGroups = $derived.by<Set<string>>(() => {
+    const out = new Set<string>();
+    const selected = query.current?.queryModel?.details.measures ?? [];
+    if (selected.length === 0 || !metadata) return out;
+    const byUniqueName = new Map<string, SaikuMeasure>();
+    for (const m of metadata.measures) byUniqueName.set(m.uniqueName, m);
+    for (const sel of selected) {
+      const m = byUniqueName.get(sel.uniqueName);
+      if (!m) continue;
+      if (m.calculated) continue;
+      const mg = m.measureGroup;
+      if (typeof mg === "string" && mg.length > 0) out.add(mg);
+    }
+    return out;
+  });
+
+  /**
+   * True when this dimension is applicable to every currently-selected base
+   * measure — i.e. it has a real (non-NoLink) join to every required MG.
+   *
+   *  - dim.measureGroups null → backend can't tell (non-Mondrian) →
+   *    assume applicable; don't mute.
+   *  - requiredMeasureGroups empty → no constraints yet → applicable.
+   *  - otherwise → applicable iff dim.measureGroups ⊇ required.
+   */
+  function dimApplicable(dim: SaikuDimension): boolean {
+    if (!dim.measureGroups) return true;
+    if (requiredMeasureGroups.size === 0) return true;
+    for (const mg of requiredMeasureGroups) {
+      if (!dim.measureGroups.includes(mg)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Human-readable list of the MGs the dim does NOT join, scoped to the
+   * currently-required set. Drives the tooltip on muted dim rows so the
+   * user sees WHY a dim is greyed out without having to inspect the schema.
+   */
+  function unjoinedMeasureGroups(dim: SaikuDimension): string[] {
+    if (!dim.measureGroups || requiredMeasureGroups.size === 0) return [];
+    const joined = new Set(dim.measureGroups);
+    return Array.from(requiredMeasureGroups).filter((mg) => !joined.has(mg));
   }
 
   // ---- Measures modal (bulk pick) + Calculated member modal ----
@@ -335,37 +439,59 @@
         </span>
       </header>
       <ul class="tree">
-        {#each Object.entries(measureGroups()) as [group, items]}
-          {@const gid = `m:${group}`}
-          <li class="tree__node">
-            <button type="button" class="tree__row tree__row--group" onclick={() => toggle(gid)}>
-              <span class="tree__twisty" class:tree__twisty--open={expanded[gid] !== false}>
-                <ChevronRight size={12} />
-              </span>
-              <span class="tree__label">{group}</span>
-              <span class="tree__count">{items.length}</span>
-            </button>
-            {#if expanded[gid] !== false}
-              <ul class="tree">
-                {#each items as measure}
-                  <li class="tree__node">
-                    <button
-                      type="button"
-                      class="tree__row tree__row--measure"
-                      draggable="true"
-                      title={measure.caption}
-                      ondragstart={(e) => onMeasureDragStart(e, measure)}
-                      onclick={() => onMeasureClick(measure)}
-                    >
-                      <span class="tree__icon tree__icon--measure" aria-hidden="true"><Sigma size={13} /></span>
-                      <span class="tree__label">{measure.caption || measure.name}</span>
-                    </button>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-          </li>
-        {/each}
+        {#if measureGroupsDerived.length <= 1}
+          {#each measureGroupsDerived[0]?.[1] ?? [] as measure}
+            <li class="tree__node">
+              <button
+                type="button"
+                class="tree__row tree__row--measure"
+                draggable="true"
+                title={measure.caption}
+                ondragstart={(e) => onMeasureDragStart(e, measure)}
+                onclick={() => onMeasureClick(measure)}
+              >
+                <span class="tree__icon tree__icon--measure" aria-hidden="true">
+                  {#if measure.calculated}<FunctionSquare size={13} />{:else}<Sigma size={13} />{/if}
+                </span>
+                <span class="tree__label">{measure.caption || measure.name}</span>
+              </button>
+            </li>
+          {/each}
+        {:else}
+          {#each measureGroupsDerived as [group, items]}
+            {@const gid = `m:${group}`}
+            <li class="tree__node">
+              <button type="button" class="tree__row tree__row--group" onclick={() => toggle(gid)}>
+                <span class="tree__twisty" class:tree__twisty--open={expanded[gid] !== false}>
+                  <ChevronRight size={12} />
+                </span>
+                <span class="tree__label">{group}</span>
+                <span class="tree__count">{items.length}</span>
+              </button>
+              {#if expanded[gid] !== false}
+                <ul class="tree">
+                  {#each items as measure}
+                    <li class="tree__node">
+                      <button
+                        type="button"
+                        class="tree__row tree__row--measure"
+                        draggable="true"
+                        title={measure.caption}
+                        ondragstart={(e) => onMeasureDragStart(e, measure)}
+                        onclick={() => onMeasureClick(measure)}
+                      >
+                        <span class="tree__icon tree__icon--measure" aria-hidden="true">
+                          {#if measure.calculated}<FunctionSquare size={13} />{:else}<Sigma size={13} />{/if}
+                        </span>
+                        <span class="tree__label">{measure.caption || measure.name}</span>
+                      </button>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </li>
+          {/each}
+        {/if}
         {#if metadata.measures.length === 0}
           <li class="tree__empty">{i18n.t("panels.noMeasures")}</li>
         {/if}
@@ -377,13 +503,25 @@
       <ul class="tree">
         {#each metadata.dimensions.filter((d) => d.name !== "Measures") as dim}
           {@const did = `d:${dim.uniqueName}`}
-          <li class="tree__node">
-            <button type="button" class="tree__row tree__row--dim" onclick={() => toggle(did)} title={dim.caption}>
+          {@const applicable = dimApplicable(dim)}
+          {@const unjoined = unjoinedMeasureGroups(dim)}
+          <li class="tree__node" class:tree__node--muted={!applicable}>
+            <button
+              type="button"
+              class="tree__row tree__row--dim"
+              onclick={() => toggle(did)}
+              title={applicable
+                ? (dim.caption ?? "")
+                : `${dim.caption || dim.name} — does not join to the ${unjoined.join(" or ")} measure group${unjoined.length > 1 ? "s" : ""}. Selecting levels here will roll those measures up to All.`}
+            >
               <span class="tree__twisty" class:tree__twisty--open={expanded[did] !== false}>
                 <ChevronRight size={12} />
               </span>
               <span class="tree__icon" aria-hidden="true"><Folder size={13} /></span>
               <span class="tree__label">{dim.caption || dim.name}</span>
+              {#if !applicable}
+                <span class="tree__badge tree__badge--warn" aria-label="not joined to selected measures">⚠</span>
+              {/if}
             </button>
             {#if expanded[did] !== false}
               <ul class="tree">
@@ -646,5 +784,24 @@
   .tree__count {
     color: var(--fg-subtle);
     font-size: var(--fs-xs);
+  }
+  /* Dim-applicability hint for virtual cubes. When a measure from a fact
+     table that doesn't join the dim is selected, the dim row (and its
+     entire subtree) is rendered at reduced opacity with a warning badge.
+     Click-through still works — this is signal, not blocking. */
+  .tree__node--muted > .tree__row { opacity: 0.45; }
+  .tree__node--muted > .tree { opacity: 0.45; }
+  .tree__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--fs-xs);
+    padding: 0 4px;
+    border-radius: var(--radius-sm);
+    line-height: 1;
+  }
+  .tree__badge--warn {
+    color: var(--warn, #d97706);
+    background: color-mix(in srgb, var(--warn, #d97706) 12%, transparent);
   }
 </style>

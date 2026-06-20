@@ -80,6 +80,9 @@ public class ObjectUtil {
         } catch (Throwable ignored) {
             // Some drivers throw on getDimensionType — leave null.
         }
+        // Per-dimension MeasureGroup link set (Mondrian only). Drives the
+        // SPA's dim-applicability hinting on virtual cubes.
+        sd.setMeasureGroups(mondrian.olap4j.SaikuMondrianHelper.getMeasureGroupsForDimension(dim));
         return sd;
     }
 
