@@ -12,8 +12,9 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run && npm run lint:tokens",
+    "test:watch": "vitest",
+    "lint:tokens": "node ./scripts/check-tokens.mjs"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.6",
