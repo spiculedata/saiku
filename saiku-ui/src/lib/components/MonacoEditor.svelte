@@ -85,13 +85,5 @@
   });
 </script>
 
-<div class="monaco" style="min-height: {minHeight}" bind:this={host}></div>
+<div class="w-full border border-border rounded-sm overflow-hidden" style="min-height: {minHeight}" bind:this={host}></div>
 
-<style>
-  .monaco {
-    width: 100%;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-  }
-</style>

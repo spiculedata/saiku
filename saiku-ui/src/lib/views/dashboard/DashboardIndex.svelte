@@ -545,7 +545,7 @@
   /* --- end issue #937 block -------------------------------------------- */
 </script>
 
-<div class="page">
+<div class="flex flex-col gap-4 p-6 flex-1 min-w-0 h-full box-border overflow-y-auto">
   <header class="head">
     <h1>Dashboards</h1>
     <Button onclick={handleNew} disabled={creating}>
@@ -629,8 +629,8 @@
     {#snippet dashboardRow(relPath: string, label: string, showMove: boolean)}
       {@const isFav = favouriteDashboards.isFavourite(relPath)}
       <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
-        <span class="name">{label}</span>
-        <span class="path">{relPath}</span>
+        <span class="font-medium">{label}</span>
+        <span class="text-xs text-fg-muted whitespace-nowrap overflow-hidden text-ellipsis">{relPath}</span>
       </a>
       <Button variant="outline" class="icon-only star {isFav ? 'star--on' : ''}" onclick={() => toggleFavourite(relPath)} title={isFav ? "Remove from favourites" : "Add to favourites"} aria-label={isFav ? "Remove from favourites" : "Add to favourites"} aria-pressed={isFav}>
         <Star size={14} fill={isFav ? "currentColor" : "none"} />
@@ -743,18 +743,7 @@
 {/if}
 
 <style>
-  .page {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    padding: 1.5rem;
-    flex: 1;
-    min-width: 0;
-    height: 100%;
-    box-sizing: border-box;
-    overflow-y: auto;
-  }
-  .head {
+.head {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -799,16 +788,6 @@
     text-decoration: none;
     color: inherit;
     min-width: 0;
-  }
-  .name {
-    font-weight: var(--weight-medium);
-  }
-  .path {
-    font-size: 0.75rem;
-    color: var(--fg-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   /* .pinned / .pinned-heading moved to DashboardCataloguePinned. */
   /* Icon-only buttons are square and sit on the same baseline as the
@@ -856,7 +835,6 @@
   .chip--on:hover {
     background: var(--accent);
   }
-
   /* #937 folder tree + #1234 pinned styles moved into their delegates
      (DashboardCatalogueTree / DashboardCataloguePinned). */
 </style>

@@ -39,7 +39,7 @@
       <Icon size={48} />
     </span>
   {/if}
-  <h3 class="empty-state__title">{title}</h3>
+  <h3 class="m-0 text-lg font-semibold text-fg">{title}</h3>
   {#if description}
     <p class="empty-state__description">{description}</p>
   {/if}
@@ -51,7 +51,7 @@
 </div>
 
 <style>
-  .empty-state {
+.empty-state {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -60,12 +60,10 @@
     padding: var(--space-8) var(--space-5);
     color: var(--fg);
   }
-
   .empty-state--compact {
     padding: var(--space-5) var(--space-3);
     gap: var(--space-2);
   }
-
   .empty-state__icon {
     display: inline-flex;
     align-items: center;
@@ -76,19 +74,10 @@
     background: var(--bg-muted);
     color: var(--fg-subtle);
   }
-
   .empty-state--compact .empty-state__icon {
     width: 48px;
     height: 48px;
   }
-
-  .empty-state__title {
-    margin: 0;
-    font-size: var(--fs-lg);
-    font-weight: var(--weight-semibold);
-    color: var(--fg);
-  }
-
   .empty-state__description {
     margin: 0;
     max-width: 32ch;

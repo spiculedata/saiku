@@ -47,7 +47,7 @@
           <tr>
             <td>{r}</td>
             {#each ["READ", "WRITE", "GRANT"] as const as m}
-              <td class="cell">
+              <td class="text-center">
                 <input
                   type="checkbox"
                   checked={(acl.roles[r] ?? []).includes(m)}
@@ -67,8 +67,7 @@
 </Modal>
 
 <style>
-  .grid { width: 100%; border-collapse: collapse; margin-top: var(--space-2); font-size: var(--fs-sm); }
+.grid { width: 100%; border-collapse: collapse; margin-top: var(--space-2); font-size: var(--fs-sm); }
   .grid th, .grid td { border: 1px solid var(--border); padding: var(--space-1) var(--space-2); text-align: left; }
   .grid th { background: var(--bg-muted); }
-  .cell { text-align: center; }
 </style>

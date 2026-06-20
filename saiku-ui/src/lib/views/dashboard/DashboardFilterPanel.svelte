@@ -714,7 +714,7 @@
                 />
               {:else if f.widget === "date-range"}
                 {@const dr = dateRangeFor(f.id)}
-                <span class="date-range">
+                <span class="inline-flex items-center gap-1">
                   <input
                     type="date"
                     class="picker-date"
@@ -723,7 +723,7 @@
                     aria-label="From"
                     onchange={(e) => setDateRange(f.id, (e.target as HTMLInputElement).value, dr.to)}
                   />
-                  <span class="date-sep" aria-hidden="true">→</span>
+                  <span class="text-fg-muted text-xs" aria-hidden="true">→</span>
                   <input
                     type="date"
                     class="picker-date"
@@ -759,7 +759,7 @@
                     aria-label="N"
                     onchange={(e) => setTopN(f.id, { n: Number((e.target as HTMLInputElement).value) })}
                   />
-                  <span class="topn-by">by</span>
+                  <span class="text-xs text-fg-muted">by</span>
                   <select
                     class="picker-select"
                     value={f.topN?.measure ?? ""}
@@ -775,7 +775,7 @@
                   {#if st?.loading}
                     <span class="topn-state">resolving…</span>
                   {:else if st?.error}
-                    <span class="topn-state topn-state--error">{st.error}</span>
+                    <span class="topn-state text-danger">{st.error}</span>
                   {:else if (f.members?.length ?? 0) > 0}
                     <span class="topn-state">{f.members.length} member(s)</span>
                   {:else if f.topN?.measure}
@@ -820,7 +820,7 @@
       {/if}
       {#if adding}
         <form
-          class="add-form"
+          class="flex flex-wrap items-end gap-2 p-2 border-t border-border bg-bg-muted"
           onsubmit={(e) => {
             e.preventDefault();
             commitAdd();
@@ -886,7 +886,7 @@
 {/if}
 
 <style>
-  .panel {
+.panel {
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--bg);
@@ -959,9 +959,6 @@
   .picker--hover {
     box-shadow: 0 0 0 2px var(--accent, color-mix(in srgb, var(--fg) 30%, transparent));
   }
-  .picker--source {
-    opacity: 0.45;
-  }
   .grip {
     cursor: grab;
     color: var(--fg-muted);
@@ -994,11 +991,6 @@
     font-size: 0.8125rem;
     max-width: 200px;
   }
-  .date-range {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
   /* issue #922: stacked cascade dropdowns moved to CascadingFilterPicker
      (saiku#1230); its styles live alongside the markup there. */
   .picker-date {
@@ -1025,20 +1017,9 @@
     font-size: 0.8125rem;
     font-family: inherit;
   }
-  .topn-by {
-    font-size: 0.75rem;
-    color: var(--fg-muted);
-  }
   .topn-state {
     font-size: 0.75rem;
     color: var(--fg-muted);
-  }
-  .topn-state--error {
-    color: var(--danger);
-  }
-  .date-sep {
-    color: var(--fg-muted);
-    font-size: 0.75rem;
   }
   .picker-remove {
     background: transparent;
@@ -1050,15 +1031,6 @@
   }
   .picker-remove:hover {
     color: var(--danger, #c00);
-  }
-  .add-form {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    gap: 0.5rem;
-    padding: 0.5rem;
-    border-top: 1px solid var(--border);
-    background: var(--bg-muted);
   }
   .add-field {
     display: flex;

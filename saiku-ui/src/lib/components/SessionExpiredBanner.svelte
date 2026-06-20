@@ -93,10 +93,10 @@
   <div class="session-banner" role="alert" aria-live="assertive">
     <div class="session-banner__row">
       <AlertTriangle size={16} class="session-banner__icon" aria-hidden="true" />
-      <span class="session-banner__message">
+      <span class="flex-1 text-fg">
         {i18n.t("session.banner.message")}{statusLabel ? ` (${statusLabel})` : ""}.
       </span>
-      <div class="session-banner__actions">
+      <div class="flex items-center gap-2">
         {#if !expanded}
           <Button size="sm" onclick={startLogin} aria-label={i18n.t("session.banner.login")}>
             {i18n.t("session.banner.login")}
@@ -115,16 +115,16 @@
     </div>
     {#if expanded}
       <form class="session-banner__form" onsubmit={onSubmit}>
-        <span class="session-banner__form-title">{i18n.t("session.banner.signInTitle")}</span>
+        <span class="font-bold text-fg">{i18n.t("session.banner.signInTitle")}</span>
         {#if err}
           <p class="session-banner__err" role="alert">{err}</p>
         {/if}
         <div class="session-banner__fields">
           <label class="session-banner__field">
-            <span class="session-banner__label">{i18n.t("login.username")}</span>
+            <span class="text-xs text-fg-muted">{i18n.t("login.username")}</span>
             <input
               bind:this={usernameInput}
-              class="session-banner__input"
+              class="py-1 px-2 bg-bg text-fg border border-border rounded-sm text-sm min-w-0"
               bind:value={username}
               autocomplete="username"
               required
@@ -132,9 +132,9 @@
             />
           </label>
           <label class="session-banner__field">
-            <span class="session-banner__label">{i18n.t("login.password")}</span>
+            <span class="text-xs text-fg-muted">{i18n.t("login.password")}</span>
             <input
-              class="session-banner__input"
+              class="py-1 px-2 bg-bg text-fg border border-border rounded-sm text-sm min-w-0"
               type="password"
               bind:value={password}
               autocomplete="current-password"
@@ -142,7 +142,7 @@
               disabled={busy}
             />
           </label>
-          <div class="session-banner__form-actions">
+          <div class="flex gap-2 justify-end">
             <Button
               variant="outline"
               size="sm"
@@ -162,7 +162,7 @@
 {/if}
 
 <style>
-  /* Pinned to the top of the viewport so it doesn't displace whatever
+/* Pinned to the top of the viewport so it doesn't displace whatever
      dashboard/tile is underneath — TV-wall layouts in particular must not
      reflow on every 401. position: fixed beats sticky here because the
      app shell uses overflow:hidden + nested flex; sticky would scroll
@@ -198,15 +198,6 @@
     color: var(--danger);
     flex-shrink: 0;
   }
-  .session-banner__message {
-    flex: 1;
-    color: var(--fg);
-  }
-  .session-banner__actions {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
   .session-banner__form {
     display: flex;
     flex-direction: column;
@@ -214,10 +205,6 @@
     padding: var(--space-3);
     border-top: 1px solid var(--border);
     background: var(--bg-muted);
-  }
-  .session-banner__form-title {
-    font-weight: var(--weight-bold);
-    color: var(--fg);
   }
   .session-banner__err {
     margin: 0;
@@ -238,30 +225,9 @@
     gap: 2px;
     min-width: 0;
   }
-  .session-banner__label {
-    font-size: var(--fs-xs);
-    color: var(--fg-muted);
-  }
-  .session-banner__input {
-    padding: 4px var(--space-2);
-    background: var(--bg);
-    color: var(--fg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    font-size: var(--fs-sm);
-    min-width: 0;
-  }
-  .session-banner__form-actions {
-    display: flex;
-    gap: var(--space-2);
-    justify-content: flex-end;
-  }
   @media (max-width: 640px) {
     .session-banner__fields {
       grid-template-columns: 1fr;
-    }
-    .session-banner__form-actions {
-      justify-content: stretch;
     }
   }
 </style>

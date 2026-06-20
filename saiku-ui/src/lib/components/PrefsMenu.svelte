@@ -32,8 +32,8 @@
   </Button>
   {#if open}
     <div class="prefs-menu__panel {placement === "down" ? 'prefs-menu__panel--down' : ''}" role="menu">
-      <div class="prefs-menu__row">
-        <span class="prefs-menu__label">{i18n.t("topbar.theme")}</span>
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-sm text-fg-muted">{i18n.t("topbar.theme")}</span>
         <Button variant="outline" size="sm" onclick={() => theme.toggle()} title={i18n.t("topbar.theme.cycle")}>
           {#if theme.theme === "dark"}
             <Moon size={14} /><span>{i18n.t("topbar.theme.dark")}</span>
@@ -44,15 +44,15 @@
           {/if}
         </Button>
       </div>
-      <div class="prefs-menu__row">
-        <span class="prefs-menu__label">{i18n.t("topbar.contrast")}</span>
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-sm text-fg-muted">{i18n.t("topbar.contrast")}</span>
         <Button variant="outline" size="sm" class={theme.colorBlindSafe ? 'btn--active' : ''} role="switch" aria-checked={theme.colorBlindSafe} onclick={() => theme.toggleColorBlindSafe()} title={i18n.t("topbar.contrast.hint")}>
           <Contrast size={14} />
           <span>{theme.colorBlindSafe ? i18n.t("topbar.contrast.on") : i18n.t("topbar.contrast.off")}</span>
         </Button>
       </div>
-      <div class="prefs-menu__row">
-        <span class="prefs-menu__label">{i18n.t("topbar.language")}</span>
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-sm text-fg-muted">{i18n.t("topbar.language")}</span>
         <LocalePicker />
       </div>
     </div>
@@ -60,7 +60,7 @@
 </div>
 
 <style>
-  .prefs-menu { position: relative; }
+.prefs-menu { position: relative; }
   .prefs-menu__panel {
     position: absolute;
     bottom: calc(100% + 6px);
@@ -83,16 +83,6 @@
     top: calc(100% + 6px);
     left: auto;
     right: 0;
-  }
-  .prefs-menu__row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-  }
-  .prefs-menu__label {
-    font-size: var(--fs-sm);
-    color: var(--fg-muted);
   }
   /* #1091: active state for the colour-blind-safe toggle. */
 </style>

@@ -106,11 +106,11 @@
 </script>
 
 <div class="pane">
-  <header class="pane__header">
+  <header class="flex justify-between items-center">
     <h2>{i18n.t("admin.tabs.stats")}</h2>
-    <div class="controls">
+    <div class="flex gap-2 items-center">
       {#if lastLoaded}
-        <span class="muted">{i18n.t("admin.stats.updatedAt")} {fmtTime(lastLoaded)}</span>
+        <span class="text-fg-muted text-sm">{i18n.t("admin.stats.updatedAt")} {fmtTime(lastLoaded)}</span>
       {/if}
       <Button variant="outline" onclick={() => (auto = !auto)} aria-pressed={auto}>
         {#if auto}
@@ -126,44 +126,44 @@
   </header>
 
   {#if !stats}
-    <p class="muted">{i18n.t("admin.stats.idle")}</p>
+    <p class="text-fg-muted text-sm">{i18n.t("admin.stats.idle")}</p>
   {:else}
     <section class="kpis">
       <div class="kpi">
         <span class="kpi__label">{i18n.t("admin.stats.kpi.cacheHitRate")}</span>
-        <span class="kpi__value">{hitRate(stats)}</span>
-        <span class="kpi__sub">{fmtNum(stats.server.cellCacheHitCount)} / {fmtNum(stats.server.cellCacheRequestCount)}</span>
+        <span class="text-2xl font-bold text-fg">{hitRate(stats)}</span>
+        <span class="text-xs text-fg-muted">{fmtNum(stats.server.cellCacheHitCount)} / {fmtNum(stats.server.cellCacheRequestCount)}</span>
       </div>
       <div class="kpi">
         <span class="kpi__label">{i18n.t("admin.stats.kpi.cellCount")}</span>
-        <span class="kpi__value">{fmtNum(stats.server.cellCount)}</span>
-        <span class="kpi__sub">{i18n.t("admin.stats.kpi.avgDim")}: {fmtFloat(stats.avgCellDimensionality)}</span>
+        <span class="text-2xl font-bold text-fg">{fmtNum(stats.server.cellCount)}</span>
+        <span class="text-xs text-fg-muted">{i18n.t("admin.stats.kpi.avgDim")}: {fmtFloat(stats.avgCellDimensionality)}</span>
       </div>
       <div class="kpi">
         <span class="kpi__label">{i18n.t("admin.stats.kpi.segments")}</span>
-        <span class="kpi__value">{fmtNum(stats.server.segmentCount)}</span>
-        <span class="kpi__sub">{i18n.t("admin.stats.kpi.created")}: {fmtNum(stats.server.segmentCreateCount)}</span>
+        <span class="text-2xl font-bold text-fg">{fmtNum(stats.server.segmentCount)}</span>
+        <span class="text-xs text-fg-muted">{i18n.t("admin.stats.kpi.created")}: {fmtNum(stats.server.segmentCreateCount)}</span>
       </div>
       <div class="kpi">
         <span class="kpi__label">{i18n.t("admin.stats.kpi.sql")}</span>
-        <span class="kpi__value">{fmtNum(stats.server.sqlStatementExecuteCount)}</span>
-        <span class="kpi__sub">{i18n.t("admin.stats.kpi.cellRequests")}: {fmtNum(stats.server.sqlStatementCellRequestCount)}</span>
+        <span class="text-2xl font-bold text-fg">{fmtNum(stats.server.sqlStatementExecuteCount)}</span>
+        <span class="text-xs text-fg-muted">{i18n.t("admin.stats.kpi.cellRequests")}: {fmtNum(stats.server.sqlStatementCellRequestCount)}</span>
       </div>
       <div class="kpi">
         <span class="kpi__label">{i18n.t("admin.stats.kpi.openConnections")}</span>
-        <span class="kpi__value">{stats.openConnectionCount ?? 0}</span>
-        <span class="kpi__sub">{stats.connections?.length ?? 0} {i18n.t("admin.stats.kpi.lifetime")}</span>
+        <span class="text-2xl font-bold text-fg">{stats.openConnectionCount ?? 0}</span>
+        <span class="text-xs text-fg-muted">{stats.connections?.length ?? 0} {i18n.t("admin.stats.kpi.lifetime")}</span>
       </div>
       <div class="kpi">
         <span class="kpi__label">{i18n.t("admin.stats.kpi.openMdx")}</span>
-        <span class="kpi__value">{stats.openMdxStatementCount ?? 0}</span>
-        <span class="kpi__sub">{i18n.t("admin.stats.kpi.executing")}: {stats.executingMdxStatementCount ?? 0}</span>
+        <span class="text-2xl font-bold text-fg">{stats.openMdxStatementCount ?? 0}</span>
+        <span class="text-xs text-fg-muted">{i18n.t("admin.stats.kpi.executing")}: {stats.executingMdxStatementCount ?? 0}</span>
       </div>
     </section>
 
-    <section class="block">
+    <section class="flex flex-col gap-2">
       <h3>{i18n.t("admin.stats.version")}</h3>
-      <p class="muted">
+      <p class="text-fg-muted text-sm">
         {stats.version?.productName ?? "Mondrian"} {stats.version?.versionString ?? ""}
         {#if stats.server.startTimeMillis}
           · {i18n.t("admin.stats.startedAt")} {fmtTime(stats.server.startTimeMillis)}
@@ -171,10 +171,10 @@
       </p>
     </section>
 
-    <section class="block">
-      <h3>{i18n.t("admin.stats.statements")} <span class="muted">({stats.statements?.length ?? 0})</span></h3>
+    <section class="flex flex-col gap-2">
+      <h3>{i18n.t("admin.stats.statements")} <span class="text-fg-muted text-sm">({stats.statements?.length ?? 0})</span></h3>
       {#if !stats.statements?.length}
-        <p class="muted">{i18n.t("admin.stats.empty")}</p>
+        <p class="text-fg-muted text-sm">{i18n.t("admin.stats.empty")}</p>
       {:else}
         <!-- Mondrian StatementInfo carries counters, not a snapshot of
              the MDX text or wall-clock timestamps — see the live JSON
@@ -185,7 +185,7 @@
              a derived state from the `executing` flag + start/end
              counters, SQL execute time as duration, cache hit ratio,
              and row-fetch / phase counts. -->
-        <div class="table-wrap">
+        <div class="overflow-auto border border-border rounded-sm">
           <table>
             <thead>
               <tr>
@@ -214,15 +214,15 @@
       {/if}
     </section>
 
-    <section class="block">
-      <h3>{i18n.t("admin.stats.connections")} <span class="muted">({stats.connections?.length ?? 0})</span></h3>
+    <section class="flex flex-col gap-2">
+      <h3>{i18n.t("admin.stats.connections")} <span class="text-fg-muted text-sm">({stats.connections?.length ?? 0})</span></h3>
       {#if !stats.connections?.length}
-        <p class="muted">{i18n.t("admin.stats.empty")}</p>
+        <p class="text-fg-muted text-sm">{i18n.t("admin.stats.empty")}</p>
       {:else}
         <!-- ConnectionInfo also carries only counters (no id / catalog
              / wall-clock). Display the activity counters instead so
              the panel actually conveys something. -->
-        <div class="table-wrap">
+        <div class="overflow-auto border border-border rounded-sm">
           <table>
             <thead>
               <tr>
@@ -250,12 +250,9 @@
 </div>
 
 <style>
-  .pane { display: flex; flex-direction: column; gap: var(--space-4); }
-  .pane__header { display: flex; justify-content: space-between; align-items: center; }
+.pane { display: flex; flex-direction: column; gap: var(--space-4); }
   h2 { margin: 0; }
   h3 { margin: 0 0 var(--space-2); font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-muted); }
-  .controls { display: flex; gap: var(--space-2); align-items: center; }
-  .muted { color: var(--fg-muted); font-size: var(--fs-sm); }
   .kpis {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -271,10 +268,6 @@
     border-radius: var(--radius);
   }
   .kpi__label { font-size: var(--fs-xs); color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-  .kpi__value { font-size: 24px; font-weight: var(--weight-bold); color: var(--fg); }
-  .kpi__sub { font-size: var(--fs-xs); color: var(--fg-muted); }
-  .block { display: flex; flex-direction: column; gap: var(--space-2); }
-  .table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
   table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
   th, td { padding: 6px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--border); }
   th { background: var(--bg-muted); font-weight: var(--weight-semibold); }

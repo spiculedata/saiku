@@ -232,9 +232,9 @@
   aria-label="Dashboard toolbar"
   bind:this={headerEl}
 >
-  <div class="title-block">
+  <div class="flex flex-col gap-1 min-w-0">
     {#if readOnly}
-      <h1 class="name-readonly">{name}</h1>
+      <h1 class="text-lg font-semibold m-0">{name}</h1>
     {:else}
       <input
         class="name"
@@ -248,14 +248,14 @@
 
     {#if readOnly}
       {#if tags.length > 0}
-        <div class="tags" aria-label="Dashboard tags">
+        <div class="flex flex-wrap gap-1 items-center pl-2" aria-label="Dashboard tags">
           {#each tags as t (t)}
             <span class="tag-chip">{t}</span>
           {/each}
         </div>
       {/if}
     {:else}
-      <div class="tags" aria-label="Dashboard tags">
+      <div class="flex flex-wrap gap-1 items-center pl-2" aria-label="Dashboard tags">
         {#each tags as t (t)}
           <span class="tag-chip">
             {t}
@@ -283,7 +283,7 @@
     {/if}
   </div>
 
-  <div class="spacer"></div>
+  <div class="flex-1"></div>
 
   <!-- #1175: wide → all actions inline; narrow → Save stays out, the rest
        (incl. Undo/Redo) collapse into a ☰ menu. Both render the SAME
@@ -317,7 +317,7 @@
 
   <!-- #929: Export the current dashboard view (PNG / PDF). A small format
        picker anchors under the button; disabled until the grid mounts. -->
-  <div class="export-wrap">
+  <div class="relative inline-flex">
     <Button variant="outline" onclick={() => (exportMenuOpen = !exportMenuOpen)} disabled={!canExport || exporting} aria-disabled={!canExport || exporting} aria-haspopup="menu" aria-expanded={exportMenuOpen} title={i18n.t("dashboard.export.title", "Export the current view as PNG or PDF")} aria-label={i18n.t("dashboard.export", "Export")}>
       <Download size={14} aria-hidden="true" />
       <span>{exporting ? i18n.t("dashboard.export.busy", "Exporting…") : i18n.t("dashboard.export", "Export")}</span>
@@ -400,25 +400,19 @@
 {#if exportError}
   <div class="export-error" role="alert">
     {i18n.t("dashboard.export.failed", "Export failed")}: {exportError}
-    <button type="button" class="export-error-dismiss" onclick={() => (exportError = null)} aria-label="Dismiss">
+    <button type="button" class="bg-none border-0 p-0 text-inherit cursor-pointer inline-flex items-center" onclick={() => (exportError = null)} aria-label="Dismiss">
       <X size={12} />
     </button>
   </div>
 {/if}
 
 <style>
-  .toolbar {
+.toolbar {
     display: flex;
     align-items: flex-start;
     gap: 0.75rem;
     padding: 0.5rem 0.25rem;
     border-bottom: 1px solid var(--border);
-  }
-  .title-block {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    min-width: 0;
   }
   .name {
     font-size: 1.125rem;
@@ -433,18 +427,6 @@
     border-color: var(--border-strong);
     background: var(--bg);
     outline: none;
-  }
-  .name-readonly {
-    font-size: 1.125rem;
-    font-weight: var(--weight-semibold);
-    margin: 0;
-  }
-  .tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem;
-    align-items: center;
-    padding-left: 0.5rem;
   }
   .tag-chip {
     display: inline-flex;
@@ -481,7 +463,6 @@
     border-color: var(--border-strong);
     outline: none;
   }
-  .spacer { flex: 1; }
   .actions {
     display: flex;
     gap: 0.5rem;
@@ -520,10 +501,6 @@
   /* #929: the export wrapper stretches full-width inside the hamburger so
      its button matches the other collapsed actions; the format dropdown
      still anchors to it. */
-  .actions-menu .export-wrap {
-    display: flex;
-    width: 100%;
-  }
   .actions-menu .undo-redo :global(.btn) {
     width: auto;
     flex: 1;
@@ -537,10 +514,6 @@
   /* #929: Export button + format picker. The wrapper anchors the dropdown;
      inside the hamburger it stretches full-width like the other collapsed
      actions (the .actions-menu :global(.btn) rule handles the button). */
-  .export-wrap {
-    position: relative;
-    display: inline-flex;
-  }
   .export-menu {
     position: absolute;
     top: 100%;
@@ -573,14 +546,5 @@
     border: 1px solid var(--danger);
     border-radius: 6px;
     font-size: 0.8125rem;
-  }
-  .export-error-dismiss {
-    background: none;
-    border: none;
-    padding: 0;
-    color: inherit;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
   }
 </style>

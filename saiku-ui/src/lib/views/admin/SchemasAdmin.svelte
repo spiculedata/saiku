@@ -66,7 +66,7 @@
 </script>
 
 <div class="pane">
-  <header class="pane__header">
+  <header class="flex justify-between items-center mb-3">
     <h2>{i18n.t("admin.tabs.schemas")}</h2>
     <Button onclick={() => (uploading = true)}>{i18n.t("admin.uploadSchema")}</Button>
   </header>
@@ -125,8 +125,7 @@
 />
 
 <style>
-  .pane__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); }
-  h2 { margin: 0; }
+h2 { margin: 0; }
   /* .data-grid / .data-grid__actions / .data-grid__empty come from app.css */
   .xml { font-family: var(--font-mono); font-size: var(--fs-sm); resize: vertical; }
 </style>

@@ -71,11 +71,11 @@
 
   {#each conditionalFormat as cfRule, i (i)}
     <div class="cf-rule">
-      <div class="cf-rule-head">
+      <div class="flex items-center justify-between">
         <span class="cf-rule-label">Rule {i + 1}</span>
         <button
           type="button"
-          class="cf-remove"
+          class="border-0 bg-transparent text-lg leading-none cursor-pointer text-fg-muted"
           aria-label="Remove rule"
           onclick={() => removeRule(i)}>×</button
         >
@@ -86,7 +86,7 @@
         <input type="text" bind:value={cfRule.column} placeholder="e.g. Unit Sales" />
       </label>
 
-      <div class="cf-row">
+      <div class="flex gap-2 items-end">
         <label class="field inline">
           <span>Format</span>
           <select bind:value={cfRule.type}>
@@ -109,7 +109,7 @@
       </div>
 
       {#if ruleUsesThresholds(cfRule)}
-        <div class="cf-row">
+        <div class="flex gap-2 items-end">
           <label class="field inline">
             <span>
               Low {cfRule.thresholdMode === "relative" ? "(percentile)" : "(value)"}
@@ -139,7 +139,7 @@
       {/if}
 
       {#if cfRule.type === "background" || cfRule.type === "font" || cfRule.type === "icon"}
-        <div class="cf-row">
+        <div class="flex gap-2 items-end">
           <label class="field inline">
             <span>Low colour</span>
             <input
@@ -187,7 +187,7 @@
 </fieldset>
 
 <style>
-  /* Duplicated from the parent TileEditorModal — Svelte's scoped CSS
+/* Duplicated from the parent TileEditorModal — Svelte's scoped CSS
      does not cross component boundaries. Co-locating the rule-card look
      here keeps the conditional-format editor self-contained. */
   .cf-section {
@@ -215,28 +215,10 @@
     padding: 0.5rem 0.625rem;
     background: var(--bg-subtle);
   }
-  .cf-rule-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
   .cf-rule-label {
     font-size: 0.75rem;
     color: var(--fg-muted);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-  }
-  .cf-remove {
-    border: none;
-    background: transparent;
-    font-size: 1.125rem;
-    line-height: 1;
-    cursor: pointer;
-    color: var(--fg-muted);
-  }
-  .cf-row {
-    display: flex;
-    gap: 0.5rem;
-    align-items: flex-end;
   }
 </style>

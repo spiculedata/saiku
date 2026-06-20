@@ -19,11 +19,11 @@
 </script>
 
 <Modal title={i18n.t("modal.datasources.title")} {open} size="lg" {onClose}>
-  <div class="bar">
+  <div class="flex justify-end mb-2">
     <Button variant="outline" onclick={refresh} disabled={datasources.loading}>⟳ {i18n.t("admin.refresh")}</Button>
   </div>
   {#if datasources.connections.length === 0}
-    <p class="hint">{i18n.t("modal.datasources.empty")}</p>
+    <p class="text-fg-muted">{i18n.t("modal.datasources.empty")}</p>
   {:else}
     <table class="grid">
       <thead>
@@ -55,9 +55,7 @@
 </Modal>
 
 <style>
-  .bar { display: flex; justify-content: flex-end; margin-bottom: var(--space-2); }
-  .grid { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.grid { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
   .grid th, .grid td { border: 1px solid var(--border); padding: var(--space-1) var(--space-2); text-align: left; }
   .grid th { background: var(--bg-muted); }
-  .hint { color: var(--fg-muted); }
 </style>

@@ -67,7 +67,7 @@
 </script>
 
 <div class="pane">
-  <header class="pane__header">
+  <header class="flex justify-between items-center mb-3">
     <h2>{i18n.t("admin.tabs.users")}</h2>
     <Button onclick={startNew}>{i18n.t("admin.addUser")}</Button>
   </header>
@@ -119,7 +119,7 @@
     <fieldset class="field">
       <legend class="field__label">Roles</legend>
       {#each ["ROLE_USER", "ROLE_ADMIN"] as r}
-        <label class="check">
+        <label class="flex items-center gap-2 py-1 px-0">
           <input type="checkbox" checked={editing.roles.includes(r)} onchange={() => toggleRole(r)} />
           {r}
         </label>
@@ -143,8 +143,6 @@
 />
 
 <style>
-  .pane__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); }
-  h2 { margin: 0; }
+h2 { margin: 0; }
   /* .data-grid / .data-grid__actions / .data-grid__empty come from app.css */
-  .check { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) 0; }
 </style>

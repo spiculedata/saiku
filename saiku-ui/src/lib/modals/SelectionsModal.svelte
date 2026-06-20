@@ -71,7 +71,7 @@
 
 <Modal title={`${i18n.t("modal.selections.title")} ${levelCaption}`} {open} size="lg" onClose={onCancel}>
   <div class="row">
-    <label class="field field--grow">
+    <label class="field flex-1">
       <span class="field__label">{i18n.t("modal.selections.filterMembers")}</span>
       <input class="field__input" bind:value={search} placeholder={i18n.t("modal.selections.searchPlaceholder")} />
     </label>
@@ -86,15 +86,15 @@
   <div class="bar">
     <Button variant="outline" onclick={selectAll}>{i18n.t("modal.selections.selectAll")}</Button>
     <Button variant="outline" onclick={clear}>{i18n.t("modal.selections.clear")}</Button>
-    <span class="count">{selected.size} {i18n.t("modal.selections.selected")}</span>
+    <span class="ml-auto text-fg-muted text-sm">{selected.size} {i18n.t("modal.selections.selected")}</span>
   </div>
   <ul class="members">
     {#each filtered as m}
       <li>
         <label>
           <input type="checkbox" checked={selected.has(m.uniqueName)} onchange={() => toggle(m.uniqueName)} />
-          <span class="name">{m.caption || m.name}</span>
-          {#if m.description}<span class="desc">{m.description}</span>{/if}
+          <span class="flex-1">{m.caption || m.name}</span>
+          {#if m.description}<span class="text-fg-subtle text-xs">{m.description}</span>{/if}
         </label>
       </li>
     {/each}
@@ -112,15 +112,13 @@
 </Modal>
 
 <style>
-  .row { display: flex; gap: var(--space-3); align-items: end; }
-  .field--grow { flex: 1; }
+.row { display: flex; gap: var(--space-3); align-items: end; }
   .bar {
     display: flex;
     align-items: center;
     gap: var(--space-2);
     margin: var(--space-3) 0;
   }
-  .count { margin-left: auto; color: var(--fg-muted); font-size: var(--fs-sm); }
   .members {
     list-style: none;
     margin: 0;
@@ -140,6 +138,4 @@
     cursor: pointer;
   }
   .members label:hover { background: var(--bg-subtle); }
-  .name { flex: 1; }
-  .desc { color: var(--fg-subtle); font-size: var(--fs-xs); }
 </style>

@@ -260,7 +260,7 @@
 <div class="workspace" class:workspace--embed={embed.active}>
   {#if !embed.active}
     <aside class="workspace__sidebar">
-      <div class="workspace__sidebar-scroll">
+      <div class="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3">
         <CubePicker username={session.username} />
         <DimensionList username={session.username} />
       </div>
@@ -284,7 +284,7 @@
             onclick={() => handleSwitchTab(i)}
           >
             <span class="tab__label">{tabLabelFor(i)}</span>
-            {#if tabDirtyFor(i)}<span class="tab__dirty" aria-label="unsaved changes">•</span>{/if}
+            {#if tabDirtyFor(i)}<span class="text-accent" aria-label="unsaved changes">•</span>{/if}
             {#if tabs.list.length > 1}
               <span
                 class="tab__close"
@@ -301,7 +301,7 @@
         {/each}
         <button
           type="button"
-          class="tab tab--new"
+          class="tab text-fg-subtle"
           aria-label={i18n.t("toast.newQuery")}
           title={i18n.t("toast.newQuery")}
           onclick={handleNewTab}
@@ -348,7 +348,7 @@
 </Modal>
 
 <style>
-  .workspace {
+.workspace {
     flex: 1;
     min-height: 0;
     display: grid;
@@ -375,15 +375,6 @@
   .workspace__sidebar {
     display: flex;
     flex-direction: column;
-  }
-  .workspace__sidebar-scroll {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
   }
   .workspace__sidebar-footer {
     padding: var(--space-3) var(--space-4);
@@ -444,9 +435,6 @@
     text-overflow: ellipsis;
     max-width: 12rem;
   }
-  .tab__dirty {
-    color: var(--accent);
-  }
   .tab__close {
     display: inline-flex;
     align-items: center;
@@ -462,8 +450,5 @@
   .tab__close:hover {
     background: color-mix(in srgb, var(--danger) 18%, transparent);
     color: var(--danger);
-  }
-  .tab--new {
-    color: var(--fg-subtle);
   }
 </style>

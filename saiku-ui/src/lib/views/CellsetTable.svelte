@@ -587,7 +587,7 @@
 {#if result.error}
   <p class="callout callout--danger">{result.error}</p>
 {:else if (result.cellset?.length ?? 0) === 0}
-  <p class="empty">{i18n.t("cellset.noRows")}</p>
+  <p class="text-fg-muted p-4">{i18n.t("cellset.noRows")}</p>
 {:else}
   <div
     class="cellset-wrap"
@@ -718,7 +718,7 @@
 
 {#if menu.open}
   <div class="cellset-ctx-menu" style="left:{menu.x}px;top:{menu.y}px" role="menu">
-    <div class="cellset-ctx-menu__header">{menu.memberCaption}</div>
+    <div class="py-1 px-3 font-semibold text-fg-muted max-w-[320px] overflow-hidden text-ellipsis whitespace-nowrap">{menu.memberCaption}</div>
     <div class="cellset-ctx-menu__sep"></div>
     <button
       type="button"
@@ -742,7 +742,7 @@
               >{lvl.caption}</button>
             {/each}
             {#if menu.levels.length === 0}
-              <div class="cellset-ctx-menu__empty">{i18n.t("cellset.menu.noLevels")}</div>
+              <div class="py-1 px-3 text-fg-subtle">{i18n.t("cellset.menu.noLevels")}</div>
             {/if}
           </div>
         {/if}
@@ -761,7 +761,7 @@
               >{lvl.caption}</button>
             {/each}
             {#if menu.levels.filter((l) => l.used).length === 0}
-              <div class="cellset-ctx-menu__empty">{i18n.t("cellset.menu.nothingToRemove")}</div>
+              <div class="py-1 px-3 text-fg-subtle">{i18n.t("cellset.menu.nothingToRemove")}</div>
             {/if}
           </div>
         {/if}
@@ -774,7 +774,7 @@
 {/if}
 
 <style>
-  .cellset-wrap {
+.cellset-wrap {
     flex: 1;
     min-height: 0;
     overflow: auto;
@@ -902,17 +902,12 @@
   .cellset tbody tr:hover th.row {
     background: var(--bg-subtle);
   }
-  .empty {
-    color: var(--fg-muted);
-    padding: var(--space-4);
-  }
   .runtime {
     color: var(--fg-subtle);
     font-size: var(--fs-xs);
     margin: var(--space-2) 0 0;
     flex: 0 0 auto;
   }
-
   .cellset-ctx-menu {
     position: fixed;
     min-width: 180px;
@@ -923,15 +918,6 @@
     padding: var(--space-1) 0;
     z-index: 1000;
     font-size: var(--fs-sm);
-  }
-  .cellset-ctx-menu__header {
-    padding: var(--space-1) var(--space-3);
-    font-weight: var(--weight-semibold);
-    color: var(--fg-muted);
-    max-width: 320px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .cellset-ctx-menu__sep {
     height: 1px;
@@ -975,9 +961,5 @@
     margin-left: var(--space-2);
     border-left: 2px solid var(--border);
     background: var(--bg-muted);
-  }
-  .cellset-ctx-menu__empty {
-    padding: 4px var(--space-3);
-    color: var(--fg-subtle);
   }
 </style>

@@ -788,9 +788,9 @@
   <div class="modal" class:modal--wide={queryEditorOpen} role="dialog" aria-label="Edit tile">
     <header class="modal-header">
       <h2>Edit {tile.type} tile</h2>
-      <button type="button" class="close" aria-label="Close" onclick={handleClose}>×</button>
+      <button type="button" class="border-0 bg-transparent text-xl cursor-pointer text-fg-muted" aria-label="Close" onclick={handleClose}>×</button>
     </header>
-    <div class="modal-body">
+    <div class="p-4 overflow-auto flex flex-col gap-3">
       <label class="field">
         <span>Title</span>
         <input type="text" bind:value={title} placeholder={`Untitled ${tile.type}`} />
@@ -1016,7 +1016,7 @@
             {/if}
             <div class="qe-embed">
               {#if session.current}
-                <aside class="qe-dims">
+                <aside class="overflow-y-auto p-2 border-r border-border bg-bg-subtle min-w-0">
                   <DimensionList username={session.current.username} />
                 </aside>
               {/if}
@@ -1024,7 +1024,7 @@
                 <QueryCanvas embedded />
               </div>
             </div>
-            <div class="qe-actions">
+            <div class="flex justify-end gap-2">
               <Button variant="outline" onclick={cancelQueryEditor}>
                 {i18n.t("tileEditor.query.collapse")}
               </Button>
@@ -1162,7 +1162,7 @@
         </label>
       {/if}
     </div>
-    <footer class="modal-footer">
+    <footer class="flex justify-end gap-2 py-3 px-4 border-t border-border">
       <Button variant="outline" onclick={handleClose} disabled={imageUploading}>Cancel</Button>
       <Button onclick={handleSave} disabled={imageUploading}>
         {imageUploading ? "Uploading…" : "Save"}
@@ -1189,7 +1189,7 @@
 {/if}
 
 <style>
-  .modal-backdrop {
+.modal-backdrop {
     position: fixed;
     inset: 0;
     background: rgba(15, 23, 42, 0.45);
@@ -1227,26 +1227,8 @@
     flex: 1;
     text-transform: capitalize;
   }
-  .close {
-    border: none;
-    background: transparent;
-    font-size: 1.25rem;
-    cursor: pointer;
-    color: var(--fg-muted);
-  }
-  .modal-body {
-    padding: 1rem;
-    overflow: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
   /* #912: when the modal is in wide (visual-editor) mode, let the body
      consume the leftover height so the embedded .qe-section can grow. */
-  .modal--wide .modal-body {
-    flex: 1;
-    min-height: 0;
-  }
   .field {
     display: flex;
     flex-direction: column;
@@ -1346,13 +1328,6 @@
     color: var(--fg-muted);
   }
   .hint.error { color: var(--danger); }
-  .modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    border-top: 1px solid var(--border);
-  }
   /* #1077, #919: chart-options + conditional-formatting styles moved
      into TileEditorChart / TileEditorTableConditional / TileEditorKpi /
      TileEditorTableSparkline (per saiku#1229). Svelte's scoped CSS
@@ -1402,13 +1377,6 @@
     border-radius: 4px;
     overflow: hidden;
   }
-  .qe-dims {
-    overflow-y: auto;
-    padding: 0.5rem;
-    border-right: 1px solid var(--border);
-    background: var(--bg-subtle);
-    min-width: 0;
-  }
   .qe-canvas {
     display: flex;
     flex-direction: column;
@@ -1420,10 +1388,5 @@
   .qe-canvas :global(.canvas) {
     flex: 1;
     min-height: 0;
-  }
-  .qe-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
   }
 </style>

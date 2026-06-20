@@ -83,18 +83,18 @@
     {#if loading}
       <p class="hist__state">Loading…</p>
     {:else if error}
-      <p class="hist__state hist__state--error">{error}</p>
+      <p class="hist__state text-danger">{error}</p>
     {:else if versions.length === 0}
       <p class="hist__state">No earlier versions yet. A version is archived each time you save.</p>
     {:else}
-      <ul class="hist__list">
+      <ul class="list-none m-0 p-0 flex flex-col">
         {#each versions as v (v.version)}
-          <li class="hist__row">
-            <div class="hist__meta">
-              <span class="hist__date">{fmtDate(v.createdAt)}</span>
+          <li class="flex items-center justify-between gap-3 py-2 px-0 border-b border-border">
+            <div class="flex flex-col gap-0.5">
+              <span class="text-sm text-fg">{fmtDate(v.createdAt)}</span>
               <span class="hist__author">by {v.author || "unknown"}</span>
             </div>
-            <div class="hist__actions">
+            <div class="flex gap-2">
               <Button variant="outline" size="sm" onclick={() => openPreview(v.version)} title="Open a read-only preview in a new tab">
                 <ExternalLink size={13} /><span>Preview</span>
               </Button>
@@ -110,7 +110,7 @@
 </Modal>
 
 <style>
-  .hist {
+.hist {
     min-width: 24rem;
     display: flex;
     flex-direction: column;
@@ -120,39 +120,8 @@
     font-size: var(--fs-sm);
     padding: var(--space-3) 0;
   }
-  .hist__state--error {
-    color: var(--danger);
-  }
-  .hist__list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-  }
-  .hist__row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    padding: var(--space-2) 0;
-    border-bottom: 1px solid var(--border);
-  }
-  .hist__meta {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-  .hist__date {
-    font-size: var(--fs-sm);
-    color: var(--fg);
-  }
   .hist__author {
     font-size: var(--fs-xs, 0.75rem);
     color: var(--fg-muted);
-  }
-  .hist__actions {
-    display: flex;
-    gap: var(--space-2);
   }
 </style>

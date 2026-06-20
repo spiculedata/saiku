@@ -24,7 +24,7 @@
 </script>
 
 <div class="pane">
-  <header class="pane__header">
+  <header class="flex justify-between items-center mb-3">
     <h2>{i18n.t("admin.tabs.logs")}</h2>
     <div class="controls">
       <select class="field__input" bind:value={name}>
@@ -41,8 +41,7 @@
 </div>
 
 <style>
-  .pane__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); }
-  h2 { margin: 0; }
+h2 { margin: 0; }
   .controls { display: flex; gap: var(--space-2); align-items: center; }
   .controls .field__input { width: 220px; }
   .log {

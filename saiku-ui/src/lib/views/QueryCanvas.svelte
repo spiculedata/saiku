@@ -851,7 +851,7 @@
   {#if !selection.cube}
     <div class="canvas__empty">
       <p>{i18n.t("canvas.noCube")}</p>
-      <p class="canvas__hint">{i18n.t("canvas.pickPrompt")}</p>
+      <p class="text-fg-subtle text-sm m-0">{i18n.t("canvas.pickPrompt")}</p>
     </div>
   {:else}
     <div
@@ -861,7 +861,7 @@
       class:canvas__body--narrow={bodyNarrow && query.current?.type !== "MDX"}
     >
     {#if query.current?.type !== "MDX"}
-    <aside class="dropzones">
+    <aside class="flex flex-col gap-2 overflow-y-auto pr-1">
       <!-- Dedicated MEASURES panel (restored from the pre-rewrite UI).
            Sits above COLUMNS/ROWS so the chip stack visually separates
            the projection (measures) from the axes (levels). Drops here
@@ -1012,11 +1012,11 @@
       </div>
     </aside>
     {/if}
-    <div class="canvas__result">
+    <div class="min-w-0 min-h-0 flex flex-col gap-2 overflow-hidden">
     {#if query.current?.type === "MDX"}
       <div class="canvas__mdx-banner" role="status" title={i18n.t("canvas.mdxBannerText")}>
         <span class="canvas__mdx-badge">MDX</span>
-        <span class="canvas__mdx-text">{i18n.t("canvas.mdxBannerShort")}</span>
+        <span class="min-w-0 overflow-hidden text-ellipsis">{i18n.t("canvas.mdxBannerShort")}</span>
       </div>
     {/if}
     <div class="view-toggle" role="tablist" aria-label={i18n.t("canvas.resultView")}>
@@ -1082,7 +1082,7 @@
     {/if}
     <div class="result-host" bind:this={resultHostEl}>
       {#if query.running && !query.result}
-        <p class="canvas__hint">{i18n.t("canvas.running")}</p>
+        <p class="text-fg-subtle text-sm m-0">{i18n.t("canvas.running")}</p>
       {:else if query.error}
         <div class="callout callout--danger" role="alert">
           <p class="callout__text">{query.error}</p>
@@ -1304,7 +1304,7 @@
 {/if}
 
 <style>
-  .canvas {
+.canvas {
     flex: 1;
     min-height: 0;
     display: flex;
@@ -1334,29 +1334,12 @@
     overflow-y: auto;
     overflow-x: hidden;
   }
-  .canvas__body--narrow .dropzones {
-    flex: 0 0 auto;
-    overflow-y: visible; /* the body scrolls; no nested scroll area */
-  }
-  .canvas__body--narrow .canvas__result {
-    /* Give the result a usable height when stacked so the chart/grid isn't a
-       sliver; the body scrolls to reach it. */
-    min-height: 65vh;
-  }
   /* MDX mode: the dropzones aside is `{#if}`-hidden, so a 260px 1fr
      grid would place the result in column 1 (260px) and leave column 2
      empty. Collapse to a single 1fr column so the result eats the
      entire freed-up horizontal space. */
   .canvas__body--mdx {
     grid-template-columns: 1fr;
-  }
-  .canvas__result {
-    min-width: 0;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    overflow: hidden;
   }
   .canvas__mdx-banner {
     display: inline-flex;
@@ -1383,11 +1366,6 @@
     font-weight: 600;
     letter-spacing: 0.04em;
   }
-  .canvas__mdx-text {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
   .canvas__empty {
     display: flex;
     flex-direction: column;
@@ -1399,14 +1377,6 @@
     border: 1px dashed var(--border-strong);
     border-radius: var(--radius-md);
   }
-  .canvas__hint { color: var(--fg-subtle); font-size: var(--fs-sm); margin: 0; }
-  .dropzones {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    overflow-y: auto;
-    padding-right: var(--space-1);
-  }
   .dropzone {
     border: 1px dashed var(--border-strong);
     border-radius: var(--radius-md);
@@ -1414,7 +1384,6 @@
     min-height: 54px;
     background: var(--bg-muted);
   }
-  .dropzone--filter { background: var(--bg-subtle); }
   .dropzone.is-dragover {
     border-style: solid;
     border-color: var(--accent);
@@ -1473,7 +1442,6 @@
     font-size: var(--fs-xs);
     overflow: hidden;
   }
-  .chip--measure { color: var(--accent); padding: 2px var(--space-2); cursor: pointer; }
   .chip:hover { background: var(--bg-subtle); }
   .chip.is-drop-before {
     box-shadow: inset 3px 0 0 0 var(--accent), 0 0 0 1px var(--accent);

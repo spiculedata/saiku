@@ -52,23 +52,23 @@
 <div class="api-access">
   <header>
     <h2>Agent API access</h2>
-    <p class="muted">
+    <p class="text-fg-muted">
       Programmatic surfaces an LLM agent (or any HTTP client) can use against this Saiku.
       All endpoints accept HTTP Basic auth with your Saiku credentials.
     </p>
   </header>
 
   {#if !platform.capabilities}
-    <p class="muted">Probing capabilities…</p>
+    <p class="text-fg-muted">Probing capabilities…</p>
   {:else}
     <details class="card" open={defaultOpen}>
       <summary>
         <h3>
           AI Query API
-          <span class="badge badge--ok">enabled</span>
+          <span class="badge bg-success-soft text-success-strong">enabled</span>
         </h3>
       </summary>
-      <p class="muted">
+      <p class="text-fg-muted">
         Typed REST surface designed for agents. Hierarchies, levels and measures are
         discoverable; a single <code>POST /ai/query</code> translates a JSON description
         into validated MDX, runs it, and returns typed <code>{`{value, formatted, unit}`}</code> cells.
@@ -101,7 +101,7 @@
   ${baseUrl}/rest/saiku/api/ai/query`}</code></pre>
       </details>
 
-      <p class="muted small">
+      <p class="text-fg-muted small">
         Full reference: <code>docs/AI-QUERY-API.md</code> in the repo.
       </p>
     </details>
@@ -111,13 +111,13 @@
         <h3>
           Model Context Protocol (MCP)
           {#if platform.capabilities.mcp.enabled}
-            <span class="badge badge--ok">enabled</span>
+            <span class="badge bg-success-soft text-success-strong">enabled</span>
           {:else}
-            <span class="badge badge--off">not exposed</span>
+            <span class="badge bg-bg-muted text-fg-muted">not exposed</span>
           {/if}
         </h3>
       </summary>
-      <p class="muted">
+      <p class="text-fg-muted">
         <code>saiku-mcp</code> wraps the AI Query API as an MCP server so Claude Desktop,
         Cursor, Cline and other agent hosts can wire to Saiku natively.
       </p>
@@ -137,7 +137,7 @@
 
         <div class="install-row">
           <strong>One-click install for Claude Desktop / Cursor</strong>
-          <span class="muted small">
+          <span class="text-fg-muted small">
             Downloads a <code>.dxt</code> bundle wired to this server's MCP URL.
             Drag it into Claude Desktop (or open with Cursor) to register the agent.
           </span>
@@ -152,7 +152,7 @@
           <button class="copy" onclick={() => copy(mcpClientConfig)}>Copy</button>
         </details>
       {:else}
-        <p class="muted small">
+        <p class="text-fg-muted small">
           The container ships <code>saiku-mcp</code> as a stdio binary at
           <code>/usr/local/bin/saiku-mcp</code>. To expose it over HTTP, run a stdio↔HTTP
           bridge (e.g. <a href="https://github.com/sparfenyuk/mcp-proxy">mcp-proxy</a>) in
@@ -165,13 +165,12 @@
 </div>
 
 <style>
-  .api-access {
+.api-access {
     display: flex;
     flex-direction: column;
     gap: var(--space-5);
     max-width: 60rem;
   }
-  .muted { color: var(--fg-muted); }
   .small { font-size: 0.85rem; }
   .card {
     background: var(--bg);
@@ -209,14 +208,6 @@
     border-radius: 999px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-  }
-  .badge--ok {
-    background: var(--success-soft);
-    color: var(--success-strong);
-  }
-  .badge--off {
-    background: var(--bg-muted);
-    color: var(--fg-muted);
   }
   .kv {
     display: flex;

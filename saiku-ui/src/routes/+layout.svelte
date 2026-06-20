@@ -90,13 +90,13 @@
     <a class="topbar__brand" href="{base}/" aria-label={i18n.t("brand")}>
       {#if brandLogo}
         <img
-          class="topbar__brand-logo"
+          class="h-[28px] max-h-[28px] w-auto block object-contain"
           src={brandLogo}
           alt={i18n.t("brand")}
           onerror={onBrandLogoError}
         />
       {:else}
-        <span class="topbar__brand-wordmark">{i18n.t("brand")}</span>
+        <span class="hidden">{i18n.t("brand")}</span>
       {/if}
     </a>
     <div class="topbar__actions">
@@ -125,7 +125,7 @@
   </header>
   {/if}
 
-  <main class="app__main">
+  <main class="flex-1 min-h-0 flex overflow-hidden">
     {@render children()}
   </main>
   <ToastStack />
@@ -142,7 +142,7 @@
 </div>
 
 <style>
-  .app {
+.app {
     display: flex;
     flex-direction: column;
     height: 100vh;
@@ -171,13 +171,6 @@
     text-decoration: none;
   }
   .topbar__brand:hover { text-decoration: none; }
-  .topbar__brand-logo {
-    height: 28px;
-    max-height: 28px;
-    width: auto;
-    display: block;
-    object-fit: contain;
-  }
   /* Wordmark — typeset Saiku next to the symbol. Falls back to text-only
      brand when no logo file ships with the deployment. Hidden on narrow
      viewports so the topbar doesn't crowd on mobile. */
@@ -188,7 +181,6 @@
     line-height: 1;
   }
   @media (max-width: 640px) {
-    .topbar__brand-wordmark { display: none; }
   }
   .topbar__actions {
     display: flex;
@@ -220,10 +212,4 @@
     font-size: var(--fs-sm);
   }
   .topbar__user :global(svg) { color: var(--fg-subtle); }
-  .app__main {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    overflow: hidden;
-  }
 </style>

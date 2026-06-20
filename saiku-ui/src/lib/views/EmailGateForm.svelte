@@ -72,7 +72,7 @@
 </script>
 
 <div class="gate">
-  <div class="gate__badge">
+  <div class="inline-flex items-center justify-center w-[40px] h-[40px] rounded-md bg-success-soft text-success-strong mb-3">
     <MailCheck size={20} />
   </div>
   <h1>{i18n.t("demoGate.title")}</h1>
@@ -149,7 +149,7 @@
 </div>
 
 <style>
-  .gate {
+.gate {
     padding: var(--space-6);
     max-width: 380px;
     width: 100%;
@@ -157,17 +157,6 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-md);
-  }
-  .gate__badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: var(--radius-md);
-    background: var(--success-soft);
-    color: var(--success-strong);
-    margin-bottom: var(--space-3);
   }
   .gate h1 {
     margin: 0 0 var(--space-1);

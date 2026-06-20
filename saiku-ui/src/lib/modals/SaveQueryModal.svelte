@@ -56,7 +56,7 @@
     onSelect={(p) => (folder = p)}
   />
 
-  <label class="field save-modal__name">
+  <label class="field mt-3">
     <span class="field__label">{i18n.t("modal.save.name")}</span>
     <input class="field__input" bind:value={name} autocomplete="off" required />
   </label>
@@ -69,12 +69,9 @@
 </Modal>
 
 <style>
-  .save-modal__intro {
+.save-modal__intro {
     margin: 0 0 var(--space-3);
     color: var(--fg-muted);
     font-size: var(--fs-sm);
-  }
-  .save-modal__name {
-    margin-top: var(--space-3);
   }
 </style>

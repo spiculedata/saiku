@@ -29,7 +29,7 @@
     {#each filtered as m}
       <li>
         <button type="button" class="row" onclick={() => onSelect(m)}>
-          <span class="name">{m.caption || m.name}</span>
+          <span class="font-medium">{m.caption || m.name}</span>
           <span class="un">{m.uniqueName}</span>
         </button>
       </li>
@@ -41,7 +41,7 @@
 </Modal>
 
 <style>
-  .list {
+.list {
     list-style: none;
     margin: var(--space-3) 0 0;
     padding: 0;
@@ -65,6 +65,5 @@
     text-align: left;
   }
   .row:hover { background: var(--bg-subtle); }
-  .name { font-weight: var(--weight-medium); }
   .un { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--fg-subtle); }
 </style>

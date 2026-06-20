@@ -77,7 +77,7 @@
   {@const isFav = favouriteDashboards.isFavourite(relPath)}
   <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
     <span class="name">{label}</span>
-    <span class="path">{relPath}</span>
+    <span class="text-fg-muted text-xs overflow-hidden text-ellipsis whitespace-nowrap">{relPath}</span>
   </a>
   <Button variant="outline" class="icon-only star {isFav ? 'star--on' : ''}" onclick={() => onToggleFavourite(relPath)} title={isFav ? "Remove from favourites" : "Add to favourites"} aria-label={isFav ? "Remove from favourites" : "Add to favourites"} aria-pressed={isFav}>
     <Star size={14} fill={isFav ? "currentColor" : "none"} />
@@ -114,7 +114,7 @@
         }
       }}
     >
-      <span class="tree-chevron" aria-hidden="true">
+      <span class="inline-flex items-center text-fg-muted flex-none" aria-hidden="true">
         {#if open}
           <ChevronDown size={14} />
         {:else}
@@ -122,7 +122,7 @@
         {/if}
       </span>
       <Folder size={15} aria-hidden="true" />
-      <span class="tree-folder-name">{node.name}</span>
+      <span class="font-semibold text-fg">{node.name}</span>
       <span class="tree-folder-count"
         >{node.folders.length + node.dashboards.length}</span
       >
@@ -136,7 +136,7 @@
       </span>
     </div>
     {#if open}
-      <ul class="tree-children">
+      <ul class="list-none m-0 p-0 flex flex-col gap-1">
         {#each node.folders as child (child.path)}
           {@render folderBranch(child, depth + 1)}
         {/each}
@@ -155,7 +155,7 @@
   </li>
 {/snippet}
 
-<ul class="list tree" aria-label={i18n.t("dashboard.view.folders")}>
+<ul class="list-none m-0 p-0 flex flex-col gap-1 tree" aria-label={i18n.t("dashboard.view.folders")}>
   {#each folderTree.dashboards as d (d.path)}
     <li class="row">
       {@render dashboardRow(d.path, d.title ?? d.basename)}
@@ -172,17 +172,9 @@
 </ul>
 
 <style>
-  /* Mirrors DashboardIndex's row + list styles plus the tree-specific
+/* Mirrors DashboardIndex's row + list styles plus the tree-specific
      overlay. Duplicated rather than inherited because Svelte scoped
      CSS does not cross component boundaries. */
-  .list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
   .row {
     display: flex;
     align-items: center;
@@ -206,13 +198,6 @@
   .name {
     font-weight: var(--weight-semibold);
     font-size: 0.9375rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .path {
-    color: var(--fg-muted);
-    font-size: 0.75rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -241,26 +226,13 @@
     outline: 2px solid var(--accent);
     outline-offset: -2px;
   }
-  .tree-folder-head--open {
-    background: var(--bg-subtle);
-  }
   .tree-folder-head:hover .tree-folder-actions,
   .tree-folder-head:focus-within .tree-folder-actions {
     opacity: 1;
   }
-  .tree-chevron {
-    display: inline-flex;
-    align-items: center;
-    color: var(--fg-muted);
-    flex: 0 0 auto;
-  }
   .tree-folder-head > :global(svg) {
     color: var(--accent);
     flex: 0 0 auto;
-  }
-  .tree-folder-name {
-    font-weight: var(--weight-semibold);
-    color: var(--fg);
   }
   .tree-folder-count {
     font-size: 0.6875rem;
@@ -275,14 +247,6 @@
     gap: 0.25rem;
     opacity: 0;
     transition: opacity 0.12s ease;
-  }
-  .tree-children {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
   }
   .tree-row {
     margin-left: calc(var(--depth, 0) * 1.25rem);

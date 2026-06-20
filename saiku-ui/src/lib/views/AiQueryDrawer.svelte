@@ -262,7 +262,7 @@
 {#if open}
   <button
     type="button"
-    class="ai-drawer__scrim"
+    class="fixed inset-0 bg-transparent border-0 p-0 z-[90] cursor-default"
     aria-label={i18n.t("workspace.aiQuery.close")}
     onclick={onClose}
   ></button>
@@ -277,7 +277,7 @@
   <header class="ai-drawer__header">
     <Sparkles size={18} aria-hidden="true" />
     <h2 id="ai-drawer-title" class="ai-drawer__title">{i18n.t("workspace.aiQuery.title")}</h2>
-    <div class="ai-drawer__header-spacer"></div>
+    <div class="flex-1"></div>
     {#if turns.length > 0}
       <button
         type="button"
@@ -307,7 +307,7 @@
     </div>
   {/if}
 
-  <div class="ai-drawer__messages" bind:this={scrollEl}>
+  <div class="flex-1 overflow-y-auto p-3.5 flex flex-col gap-2.5" bind:this={scrollEl}>
     {#if turns.length === 0}
       <div class="ai-drawer__empty">
         <p>{i18n.t("workspace.aiQuery.empty")}</p>
@@ -338,13 +338,13 @@
 
     {#each turns as turn (turn.id)}
       {#if turn.role === "user"}
-        <div class="ai-drawer__turn ai-drawer__turn--user">
+        <div class="ai-drawer__turn justify-end">
           <div class="ai-drawer__bubble ai-drawer__bubble--user">{turn.text}</div>
         </div>
       {:else if turn.role === "assistant"}
         <div class="ai-drawer__turn ai-drawer__turn--assistant">
-          <div class="ai-drawer__bubble ai-drawer__bubble--assistant">
-            <div class="ai-drawer__summary">{turn.text}</div>
+          <div class="ai-drawer__bubble bg-bg-muted border border-border">
+            <div class="font-medium">{turn.text}</div>
             {#if turn.available && turn.available.length}
               <div class="ai-drawer__candidates">
                 <div class="ai-drawer__candidates-label">
@@ -354,7 +354,7 @@
                     {i18n.t("workspace.aiQuery.didYouMeanGeneric")}
                   {/if}
                 </div>
-                <div class="ai-drawer__candidate-chips">
+                <div class="flex flex-wrap gap-1">
                   {#each turn.available as cand}
                     <button
                       type="button"
@@ -385,7 +385,7 @@
                 </button>
                 {#if turn.mdxExpanded}
                   <pre class="ai-drawer__mdx-pre"><code>{turn.mdx}</code></pre>
-                  <div class="ai-drawer__mdx-actions">
+                  <div class="flex gap-1.5 mt-1.5">
                     <button
                       type="button"
                       class="ai-drawer__small-btn"
@@ -410,7 +410,7 @@
           </div>
         </div>
       {:else}
-        <div class="ai-drawer__turn ai-drawer__turn--error">
+        <div class="ai-drawer__turn justify-start">
           <div class="ai-drawer__bubble ai-drawer__bubble--error">{turn.text}</div>
         </div>
       {/if}
@@ -418,7 +418,7 @@
 
     {#if inflight}
       <div class="ai-drawer__turn ai-drawer__turn--assistant">
-        <div class="ai-drawer__bubble ai-drawer__bubble--assistant ai-drawer__thinking">
+        <div class="ai-drawer__bubble bg-bg-muted border border-border inline-flex items-center gap-1">
           <span class="ai-drawer__dot"></span>
           <span class="ai-drawer__dot"></span>
           <span class="ai-drawer__dot"></span>
@@ -427,7 +427,7 @@
     {/if}
   </div>
 
-  <footer class="ai-drawer__footer">
+  <footer class="border-t border-border py-2.5 px-3.5 flex gap-2 items-end bg-bg shrink-0">
     <textarea
       bind:this={inputEl}
       class="ai-drawer__input"
@@ -452,17 +452,7 @@
 </aside>
 
 <style>
-  .ai-drawer__scrim {
-    position: fixed;
-    inset: 0;
-    background: transparent;
-    border: 0;
-    padding: 0;
-    z-index: 90;
-    cursor: default;
-  }
-
-  .ai-drawer {
+.ai-drawer {
     position: fixed;
     top: 0;
     right: 0;
@@ -490,7 +480,6 @@
   .ai-drawer--open {
     transform: translateX(0);
   }
-
   .ai-drawer__header {
     display: flex;
     align-items: center;
@@ -508,9 +497,6 @@
     font-size: 0.95rem;
     font-weight: 600;
   }
-  .ai-drawer__header-spacer {
-    flex: 1;
-  }
   .ai-drawer__icon-btn {
     display: inline-flex;
     align-items: center;
@@ -527,7 +513,6 @@
     border-color: var(--border);
     color: var(--fg);
   }
-
   .ai-drawer__banner {
     margin: 12px 14px 0;
     padding: 10px 12px;
@@ -544,16 +529,6 @@
     margin: 0;
     color: var(--fg-muted);
   }
-
-  .ai-drawer__messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
   .ai-drawer__empty {
     color: var(--fg-muted);
     font-size: 0.9rem;
@@ -595,18 +570,10 @@
     border-color: var(--accent);
     background: var(--bg-muted);
   }
-
   .ai-drawer__turn {
     display: flex;
   }
-  .ai-drawer__turn--user {
-    justify-content: flex-end;
-  }
   .ai-drawer__turn--assistant,
-  .ai-drawer__turn--error {
-    justify-content: flex-start;
-  }
-
   .ai-drawer__bubble {
     padding: 9px 12px;
     border-radius: 10px;
@@ -625,19 +592,11 @@
     background: var(--accent);
     color: white;
   }
-  .ai-drawer__bubble--assistant {
-    background: var(--bg-muted);
-    border: 1px solid var(--border);
-  }
   .ai-drawer__bubble--error {
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.35);
     color: #991b1b;
   }
-  .ai-drawer__summary {
-    font-weight: 500;
-  }
-
   .ai-drawer__candidates {
     margin-top: 8px;
   }
@@ -645,11 +604,6 @@
     font-size: 0.8rem;
     color: var(--fg-muted);
     margin-bottom: 4px;
-  }
-  .ai-drawer__candidate-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
   }
   .ai-drawer__chip {
     background: var(--bg);
@@ -664,7 +618,6 @@
     background: var(--bg-muted);
     border-color: var(--accent);
   }
-
   .ai-drawer__mdx {
     margin-top: 10px;
     border-top: 1px solid var(--border);
@@ -695,11 +648,6 @@
     white-space: pre-wrap;
     word-break: break-all;
   }
-  .ai-drawer__mdx-actions {
-    display: flex;
-    gap: 6px;
-    margin-top: 6px;
-  }
   .ai-drawer__small-btn {
     display: inline-flex;
     align-items: center;
@@ -724,18 +672,11 @@
     filter: brightness(0.95);
     background: var(--accent);
   }
-
   .ai-drawer__model {
     margin-top: 6px;
     font-size: 0.72rem;
     color: var(--fg-muted);
     font-style: italic;
-  }
-
-  .ai-drawer__thinking {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
   }
   .ai-drawer__dot {
     width: 6px;
@@ -760,16 +701,6 @@
       opacity: 1;
       transform: scale(1.05);
     }
-  }
-
-  .ai-drawer__footer {
-    border-top: 1px solid var(--border);
-    padding: 10px 14px;
-    display: flex;
-    gap: 8px;
-    align-items: flex-end;
-    background: var(--bg);
-    flex-shrink: 0;
   }
   .ai-drawer__input {
     flex: 1;

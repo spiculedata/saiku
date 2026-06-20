@@ -51,7 +51,7 @@
       <option value="modified-asc">Last modified ↑</option>
     </select>
   </label>
-  <div class="view-toggle" role="group" aria-label={i18n.t("dashboard.view.label")}>
+  <div class="inline-flex gap-0" role="group" aria-label={i18n.t("dashboard.view.label")}>
     <Button variant="outline" class="view-btn {viewMode === "list" ? 'view-btn--on' : ''}" aria-pressed={viewMode === "list"} onclick={() => (viewMode = "list")}>
       {i18n.t("dashboard.view.list")}
     </Button>
@@ -74,7 +74,7 @@
 </section>
 
 <style>
-  .catalogue-filters {
+.catalogue-filters {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -102,9 +102,5 @@
     border-radius: 4px;
     background: var(--bg);
     font-size: 0.8125rem;
-  }
-  .view-toggle {
-    display: inline-flex;
-    gap: 0;
   }
 </style>
