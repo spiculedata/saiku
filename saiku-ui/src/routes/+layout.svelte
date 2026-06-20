@@ -14,6 +14,10 @@
   import { i18n } from "$lib/stores/i18n.svelte";
   import { installAuthInterceptor, onAuthFailure } from "$lib/api/http";
   import "$lib/styles/tokens.css";
+  // Tailwind v4 entry — theme + utilities only (preflight skipped to
+  // preserve the existing base CSS in app.css). Must load AFTER tokens.css
+  // so the @theme bridge can reference --fg / --bg / etc.
+  import "$lib/styles/tailwind.css";
   import "$lib/styles/app.css";
 
   let { children } = $props();
