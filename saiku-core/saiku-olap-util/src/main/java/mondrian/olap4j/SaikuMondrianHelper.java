@@ -161,8 +161,7 @@ public class SaikuMondrianHelper {
      *       "no information, assume applicable" to preserve legacy UX.</li>
      * </ul>
      */
-    public static java.util.Set<String> getMeasureGroupsForDimension(
-            org.olap4j.metadata.Dimension dim) {
+    public static java.util.Set<String> getMeasureGroupsForDimension(org.olap4j.metadata.Dimension dim) {
         if (!isMondrian(dim)) {
             return null;
         }
