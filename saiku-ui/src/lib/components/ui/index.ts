@@ -6,3 +6,4 @@ export { default as CardTitle } from './card-title.svelte';
 export { default as CardDescription } from './card-description.svelte';
 export { default as CardContent } from './card-content.svelte';
 export { default as Input } from './input.svelte';
+export { default as Tooltip } from './tooltip.svelte';
