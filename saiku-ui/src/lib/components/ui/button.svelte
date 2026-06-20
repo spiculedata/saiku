@@ -9,7 +9,14 @@
 		// stays absent and only the foreground mutes. Replaces the
 		// shadcn-default `disabled:opacity-50`, which on saturated brand
 		// reds read as low-contrast brand button.
-		base: 'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none',
+		// Focus ring intentionally without ring-offset — saiku-ui's existing
+		// chrome reads as flat / single-stroke, and the shadcn-default
+		// ring-offset-2 + ring-2 combination produces a chunky "3D" outline
+		// that visually conflicts with the rest of the codebase. A flat
+		// 2px ring on the element itself is enough for keyboard a11y.
+		// `no-underline` neutralises the global `a { text-decoration }`
+		// rule for anchors styled as buttons via buttonVariants().
+		base: 'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium no-underline transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none hover:no-underline',
 		variants: {
 			variant: {
 				default:
@@ -17,10 +24,10 @@
 				destructive:
 					'bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:bg-muted disabled:text-muted-foreground',
 				outline:
-					'border border-input bg-background hover:bg-accent hover:text-accent-foreground disabled:bg-muted disabled:text-muted-foreground disabled:border-transparent',
+					'border border-input bg-background text-foreground hover:bg-accent hover:text-accent-foreground disabled:bg-muted disabled:text-muted-foreground disabled:border-transparent',
 				secondary:
 					'bg-secondary text-secondary-foreground hover:bg-secondary/80 disabled:bg-muted disabled:text-muted-foreground',
-				ghost: 'hover:bg-accent hover:text-accent-foreground disabled:text-muted-foreground',
+				ghost: 'text-foreground hover:bg-accent hover:text-accent-foreground disabled:text-muted-foreground',
 				link: 'text-primary underline-offset-4 hover:underline disabled:text-muted-foreground disabled:no-underline',
 				// "text" — looks like plain text. Foreground color, no background,
 				// no border, no padding. Underlines only on hover or keyboard focus.
