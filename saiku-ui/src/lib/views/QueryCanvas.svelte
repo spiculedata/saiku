@@ -956,9 +956,10 @@
           <div class="chips">
             {#each query.current?.queryModel?.axes[axis].hierarchies ?? [] as h}
               {@const levelNames = Object.keys(h.levels)}
+              {@const isMulti = levelNames.length > 1}
               <!-- svelte-ignore a11y_no_static_element_interactions — drag/context-menu are mouse affordances; the inner buttons (label, close) handle keyboard accessibility. -->
-              <span
-                class={"chip chip--level " +
+              <div
+                class={"chip-group " +
                   (dragOverChipKey === chipKey(axis, "hierarchy", h.name)
                     ? (dragOverChipAfter ? "is-drop-after" : "is-drop-before")
                     : "")}
@@ -969,41 +970,50 @@
                 ondrop={(e) => onChipDrop(e, axis, { kind: "hierarchy", name: h.name })}
                 oncontextmenu={(e) => openHierMenu(e, axis, h)}
               >
-                <!-- Dim caption opens the selections modal. When the chip
-                     carries multiple levels we follow with per-level pills
-                     so each can be removed individually without losing the
-                     whole hierarchy. -->
-                <button
-                  type="button"
-                  class="chip__label"
-                  onclick={() => openSelections(axis, h)}
-                  title={i18n.t("canvas.menu.editSelections")}
-                >
-                  {h.caption || h.name}
-                </button>
-                {#each levelNames as lvl, i}
-                  <span class="chip__lvl-sep">{i === 0 ? "›" : ","}</span>
-                  <span class="chip__lvl">
-                    {lvl}{#if levelNames.length > 1}<button
-                      type="button"
-                      class="chip__lvl-x"
-                      aria-label="{i18n.t('canvas.menu.removeLevel')} {lvl}"
-                      title="{i18n.t('canvas.menu.removeLevel')}: {lvl}"
-                      onclick={(e) => {
-                        e.stopPropagation();
-                        query.removeLevel(h.name, lvl);
-                        if (query.hasRunnableShape()) void query.run();
-                      }}
-                    >×</button>{/if}
-                  </span>
-                {/each}
-                <button
-                  type="button"
-                  class="chip__x"
-                  aria-label="{i18n.t('canvas.menu.removeHierarchy')} {h.caption || h.name}"
-                  onclick={() => removeHier(h.name)}
-                >×</button>
-              </span>
+                <!-- Header row — dim caption + outer × that removes the
+                     whole hierarchy. Click the caption to open the
+                     selections modal (member picker). -->
+                <div class="chip-group__head">
+                  <button
+                    type="button"
+                    class="chip-group__title"
+                    onclick={() => openSelections(axis, h)}
+                    title={i18n.t("canvas.menu.editSelections")}
+                  >
+                    {h.caption || h.name}
+                  </button>
+                  <button
+                    type="button"
+                    class="chip-group__x"
+                    aria-label="{i18n.t('canvas.menu.removeHierarchy')} {h.caption || h.name}"
+                    title={i18n.t("canvas.menu.removeHierarchy")}
+                    onclick={() => removeHier(h.name)}
+                  >×</button>
+                </div>
+                <!-- Level list — each carries its own × (only meaningful
+                     when 2+ levels; with one level the outer × already
+                     handles it). -->
+                <ul class="chip-group__levels">
+                  {#each levelNames as lvl}
+                    <li class="chip-group__level">
+                      <span class="chip-group__level-name" title={lvl}>{lvl}</span>
+                      {#if isMulti}
+                        <button
+                          type="button"
+                          class="chip-group__level-x"
+                          aria-label="{i18n.t('canvas.menu.removeLevel')} {lvl}"
+                          title={i18n.t("canvas.menu.removeLevel")}
+                          onclick={(e) => {
+                            e.stopPropagation();
+                            query.removeLevel(h.name, lvl);
+                            if (query.hasRunnableShape()) void query.run();
+                          }}
+                        >×</button>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              </div>
             {/each}
             {#if (query.current?.queryModel?.axes[axis].hierarchies.length ?? 0) === 0}
               <span class="chips__empty">{i18n.t("canvas.dropLevels")}</span>
@@ -1500,44 +1510,95 @@
     box-shadow: inset 0 -3px 0 0 var(--accent), 0 0 0 1px var(--accent);
     border-color: var(--accent);
   }
-  /* Per-level chunks inside a multi-level hierarchy chip. Goal: stay
-     visually identical to a single-level chip's "Dim › Level" form —
-     no extra chrome, no background tags, just an inline list. Each
-     level gets a tiny × that only fades in on chip-hover, so the
-     resting state is uncluttered. */
-  .chip__lvl-sep {
-    color: var(--fg-subtle);
-    padding: 0 4px;
-    user-select: none;
-    font-size: var(--fs-xs);
+  /* chip-group — vertical stack used for hierarchy chips on ROWS /
+     COLUMNS / PAGES. Always-visible × per level, predictable width
+     (bounded by the longest level name + 32px for the ×), wraps
+     gracefully when level names are long. */
+  .chip-group {
+    display: inline-flex;
+    flex-direction: column;
+    min-width: 140px;
+    max-width: 240px;
+    background: var(--bg-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    cursor: grab;
   }
-  .chip__lvl {
+  .chip-group:active { cursor: grabbing; }
+  .chip-group.is-drop-before {
+    box-shadow: 0 -2px 0 0 var(--accent), 0 0 0 1px var(--accent);
+    border-color: var(--accent);
+  }
+  .chip-group.is-drop-after {
+    box-shadow: 0 2px 0 0 var(--accent), 0 0 0 1px var(--accent);
+    border-color: var(--accent);
+  }
+  .chip-group__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: 4px 4px 4px var(--space-2);
+    background: var(--bg-subtle);
+    font-size: var(--fs-xs);
+    font-weight: var(--weight-semibold);
     color: var(--fg);
-    padding: 2px 0;
-    font-size: var(--fs-xs);
-    white-space: nowrap;
+    border-bottom: 1px solid var(--border);
   }
-  .chip__lvl-x {
+  .chip-group__title {
+    background: transparent;
+    color: inherit;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    text-align: left;
+  }
+  .chip-group__title:hover { text-decoration: underline; }
+  .chip-group__x,
+  .chip-group__level-x {
     background: transparent;
     color: var(--fg-subtle);
     border: 0;
-    padding: 0 4px;
-    margin-left: 2px;
-    font-size: 12px;
+    padding: 0 6px;
+    font-size: 14px;
     line-height: 1;
     cursor: pointer;
     border-radius: var(--radius-sm);
-    opacity: 0;
-    transition: opacity 80ms ease;
+    flex-shrink: 0;
   }
-  .chip:hover .chip__lvl-x,
-  .chip:focus-within .chip__lvl-x {
-    opacity: 0.7;
-  }
-  .chip__lvl-x:hover {
-    opacity: 1 !important;
+  .chip-group__x:hover,
+  .chip-group__level-x:hover {
     color: var(--danger);
     background: var(--bg-hover);
+  }
+  .chip-group__levels {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .chip-group__level {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: 4px var(--space-2);
+    font-size: var(--fs-xs);
+    color: var(--fg-muted);
+  }
+  .chip-group__level + .chip-group__level {
+    border-top: 1px dashed var(--border);
+  }
+  .chip-group__level-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
   }
   .chip__label {
     background: transparent;
