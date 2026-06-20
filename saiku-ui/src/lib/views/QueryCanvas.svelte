@@ -1582,13 +1582,19 @@
     padding: var(--space-2) var(--space-3);
     min-height: 54px;
     background: var(--bg-muted);
-    /* Defensive clip: at narrow widths a chip-group whose level rows
-       outgrow the dropzone would otherwise visually escape below into
-       the next dropzone (children render outside their parent box when
-       parent `overflow` is default `visible`). Clipping the dropzone
-       contains the spill; the aside above is `overflow-y-auto` so the
-       grown dropzone scrolls within the aside instead. */
-    overflow: hidden;
+    /* The aside above is `display: flex; flex-direction: column` with
+       `overflow-y-auto`, which makes each dropzone a flex item. Flex
+       items default to `flex: 0 1 auto`, so they can shrink when the
+       column runs out of room. `flex-shrink: 0` keeps each dropzone
+       at its natural content height; the aside scrolls when the column
+       overflows instead of squeezing dropzones until chip-group children
+       get cropped (the Date chip's Year/Quarter/Month/Day rows would
+       otherwise disappear at narrow widths).
+
+       Do NOT set `overflow: hidden` here: that removes the flex item's
+       implicit min-content size, which lets the dropzone shrink below
+       its `min-height: 54px` content size and clip its own children. */
+    flex-shrink: 0;
   }
   .dropzone.is-dragover {
     border-style: solid;
