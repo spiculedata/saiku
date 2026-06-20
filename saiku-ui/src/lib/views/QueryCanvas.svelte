@@ -679,6 +679,42 @@
     // mismatched kinds or different axis: let the dropzone handle as a move.
   }
 
+  /**
+   * Order the level names of a hierarchy by their position in the schema,
+   * not by the order in which the user dropped them onto the axis.
+   *
+   * `h.levels` is a Record (insertion-ordered Object) so iterating it
+   * yields levels in pick order — which produces nonsense when a user
+   * drops Year, Month, Day first and adds Quarter later: the chip
+   * would render Year, Month, Day, Quarter (Quarter at the bottom)
+   * even though the time hierarchy is Year → Quarter → Month → Day.
+   *
+   * The cube discover metadata carries the schema-defined order; we
+   * look up the hierarchy by uniqueName and sort each level by its
+   * index in the schema's `levels` array. Unknown levels (which
+   * shouldn't happen) fall to the end in their original pick order.
+   */
+  function sortLevelsBySchemaOrder(h: ThinHierarchy): string[] {
+    const picked = Object.keys(h.levels);
+    const md = cubeMetadata;
+    if (!md) return picked;
+    for (const d of md.dimensions ?? []) {
+      for (const mh of d.hierarchies ?? []) {
+        if (mh.uniqueName !== h.name) continue;
+        const schemaOrder = (mh.levels ?? []).map((l) => l.name);
+        return [...picked].sort((a, b) => {
+          const ia = schemaOrder.indexOf(a);
+          const ib = schemaOrder.indexOf(b);
+          if (ia < 0 && ib < 0) return picked.indexOf(a) - picked.indexOf(b);
+          if (ia < 0) return 1;
+          if (ib < 0) return -1;
+          return ia - ib;
+        });
+      }
+    }
+    return picked;
+  }
+
   function hierChipLabel(h: ThinHierarchy): string {
     const levelNames = Object.keys(h.levels);
     const head = h.caption || h.name;
@@ -955,7 +991,7 @@
           </header>
           <div class="chips">
             {#each query.current?.queryModel?.axes[axis].hierarchies ?? [] as h}
-              {@const levelNames = Object.keys(h.levels)}
+              {@const levelNames = sortLevelsBySchemaOrder(h)}
               {@const isMulti = levelNames.length > 1}
               <!-- svelte-ignore a11y_no_static_element_interactions — drag/context-menu are mouse affordances; the inner buttons (label, close) handle keyboard accessibility. -->
               <div
