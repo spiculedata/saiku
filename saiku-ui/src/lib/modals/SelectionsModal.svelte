@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import { Button } from "$lib/components/ui";
   import type { SaikuMember } from "$lib/api/discover";
   import { i18n } from "$lib/stores/i18n.svelte";
 
@@ -83,8 +84,8 @@
     </label>
   </div>
   <div class="bar">
-    <button type="button" class="btn" onclick={selectAll}>{i18n.t("modal.selections.selectAll")}</button>
-    <button type="button" class="btn" onclick={clear}>{i18n.t("modal.selections.clear")}</button>
+    <Button variant="outline" onclick={selectAll}>{i18n.t("modal.selections.selectAll")}</Button>
+    <Button variant="outline" onclick={clear}>{i18n.t("modal.selections.clear")}</Button>
     <span class="count">{selected.size} {i18n.t("modal.selections.selected")}</span>
   </div>
   <ul class="members">
@@ -103,10 +104,10 @@
   </ul>
   {#snippet footer()}
     {#if showDateFilter}
-      <button type="button" class="btn" onclick={onOpenDateFilter}>{i18n.t("modal.selections.openDate")}</button>
+      <Button variant="outline" onclick={onOpenDateFilter}>{i18n.t("modal.selections.openDate")}</Button>
     {/if}
-    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
-    <button type="button" class="btn btn--primary" onclick={() => onSave(Array.from(selected), type)}>{i18n.t("modal.ok")}</button>
+    <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
+    <Button >onSave(Array.from(selected), type)}>{i18n.t("modal.ok")}</Button>
   {/snippet}
 </Modal>
 

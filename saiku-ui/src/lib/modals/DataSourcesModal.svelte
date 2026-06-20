@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { Button } from "$lib/components/ui";
   import { datasources } from "$lib/stores/datasources.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
@@ -19,9 +20,7 @@
 
 <Modal title={i18n.t("modal.datasources.title")} {open} size="lg" {onClose}>
   <div class="bar">
-    <button type="button" class="btn" onclick={refresh} disabled={datasources.loading}>
-      ⟳ {i18n.t("admin.refresh")}
-    </button>
+    <Button variant="outline" onclick={refresh} disabled={datasources.loading}>⟳ {i18n.t("admin.refresh")}</Button>
   </div>
   {#if datasources.connections.length === 0}
     <p class="hint">{i18n.t("modal.datasources.empty")}</p>
@@ -51,7 +50,7 @@
     </table>
   {/if}
   {#snippet footer()}
-    <button type="button" class="btn btn--primary" onclick={onClose}>{i18n.t("modal.close")}</button>
+    <Button onclick={onClose}>{i18n.t("modal.close")}</Button>
   {/snippet}
 </Modal>
 

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import { Button } from "$lib/components/ui";
   import { i18n } from "$lib/stores/i18n.svelte";
 
   export interface CalculatedMember {
@@ -221,13 +222,11 @@ SELECT …</pre>
     </div>
   </div>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
-    <button
-      type="button"
-      class="btn btn--primary"
+    <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
+    <Button
       disabled={!valid}
       onclick={() => onSave({ ...form, name: form.name.trim(), formula: form.formula.trim() })}
-    >{i18n.t("modal.save")}</button>
+    >{i18n.t("modal.save")}</Button>
   {/snippet}
 </Modal>
 

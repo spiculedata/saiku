@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { Button } from "$lib/components/ui";
   import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/OpenDialog.js. Expects a flat
@@ -65,7 +66,7 @@
     </ul>
   {/if}
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.close")}</button>
+    <Button variant="outline" onclick={onCancel}>{i18n.t("modal.close")}</Button>
   {/snippet}
 </Modal>
 

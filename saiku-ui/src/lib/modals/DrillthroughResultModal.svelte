@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { Button } from "$lib/components/ui";
   import type { QueryResult } from "$lib/api/query";
   import { i18n } from "$lib/stores/i18n.svelte";
 
@@ -48,7 +49,7 @@
     <p class="hint">{(result.cellset.length - 1).toLocaleString()} {i18n.t("units.rows")} · {result.runtime ?? 0} {i18n.t("units.ms")}</p>
   {/if}
   {#snippet footer()}
-    <button type="button" class="btn btn--primary" onclick={onClose}>{i18n.t("modal.close")}</button>
+    <Button onclick={onClose}>{i18n.t("modal.close")}</Button>
   {/snippet}
 </Modal>
 

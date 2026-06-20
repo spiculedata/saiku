@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { Button } from "$lib/components/ui";
   import { i18n } from "$lib/stores/i18n.svelte";
   import {
     deleteSavedQuery,
@@ -324,8 +325,8 @@
                 }}
                 autofocus
               />
-              <button type="button" class="btn btn--primary" onclick={() => commitRename()}>{i18n.t("modal.save")}</button>
-              <button type="button" class="btn" onclick={() => (renaming = null)}>{i18n.t("modal.cancel")}</button>
+              <Button >commitRename()}>{i18n.t("modal.save")}</Button>
+              <Button variant="outline" >(renaming = null)}>{i18n.t("modal.cancel")}</Button>
             </div>
           {:else}
             <button
@@ -381,14 +382,14 @@
     <div class="saved__confirm">
       <p>{i18n.t("saved.deletePrompt").replace("{name}", confirming.name)}</p>
       <div class="saved__confirm-actions">
-        <button type="button" class="btn" onclick={() => (confirming = null)}>{i18n.t("modal.cancel")}</button>
-        <button type="button" class="btn btn--danger" onclick={() => commitDelete()}>{i18n.t("modal.delete")}</button>
+        <Button variant="outline" >(confirming = null)}>{i18n.t("modal.cancel")}</Button>
+        <Button variant="destructive" >commitDelete()}>{i18n.t("modal.delete")}</Button>
       </div>
     </div>
   {/if}
 
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onClose}>{i18n.t("modal.close")}</button>
+    <Button variant="outline" onclick={onClose}>{i18n.t("modal.close")}</Button>
   {/snippet}
 </Modal>
 

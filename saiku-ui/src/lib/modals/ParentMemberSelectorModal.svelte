@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { Button } from "$lib/components/ui";
   import type { SaikuMember } from "$lib/api/discover";
   import { i18n } from "$lib/stores/i18n.svelte";
 
@@ -35,7 +36,7 @@
     {/each}
   </ul>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.close")}</button>
+    <Button variant="outline" onclick={onCancel}>{i18n.t("modal.close")}</Button>
   {/snippet}
 </Modal>
 
