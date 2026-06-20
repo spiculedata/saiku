@@ -31,11 +31,14 @@
   },
   "dependencies": {
     "apache-arrow": "^15.0.2",
+    "clsx": "^2.1.1",
     "echarts": "^6.0.0",
     "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
     "lucide-svelte": "^1.0.1",
-    "monaco-editor": "^0.55.1"
+    "monaco-editor": "^0.55.1",
+    "tailwind-merge": "^3.6.0",
+    "tailwind-variants": "^3.2.2"
   },
   "overrides": {
     "dompurify": "^3.4.0",
