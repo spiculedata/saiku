@@ -143,13 +143,41 @@
   }
 
   const activeSlot = $derived(perLevel[activeLevel]);
+
+  /**
+   * Parent-path breadcrumb for disambiguation.
+   *
+   * Quarter / Month / Day levels show captions that collide across the
+   * tree — every Year has Q1/Q2/Q3/Q4, every Quarter has months 1-12,
+   * etc. Without ancestor context the picker is a wall of identical
+   * "Q4"s and the user can't tell 2024 Q4 from 2025 Q4.
+   *
+   * uniqueName for a Quarter member looks like `[Date].[Date].[2024.0].[Q4]`.
+   * We split out the bracketed segments, drop the dim + hierarchy
+   * segments at the head and the self segment at the tail, leaving the
+   * ancestor chain — "2024.0" for a Quarter, "2024.0 › Q4" for a Month,
+   * "2024.0 › Q4 › 11" for a Day. Empty for Year (no ancestors above
+   * dim+hierarchy).
+   */
+  function parentPath(uniqueName: string): string {
+    const segs =
+      uniqueName.match(/\[([^\]]+)\]/g)?.map((s) => s.slice(1, -1)) ?? [];
+    if (segs.length <= 3) return "";
+    return segs.slice(2, -1).join(" › ");
+  }
+
   const filtered = $derived.by<SaikuMember[]>(() => {
     if (!activeSlot?.members) return [];
     const q = search.toLowerCase();
     if (!q) return activeSlot.members;
-    return activeSlot.members.filter((m) =>
-      (m.caption || m.name).toLowerCase().includes(q),
-    );
+    return activeSlot.members.filter((m) => {
+      // Search matches both caption AND parent path, so typing "2024"
+      // surfaces "Q4" entries under year 2024 and typing "Q4" surfaces
+      // all four (two years × two Q4s) at once. Either is a sensible
+      // mental model for narrowing a calendar pick.
+      const hay = `${m.caption || m.name} ${parentPath(m.uniqueName)}`.toLowerCase();
+      return hay.includes(q);
+    });
   });
 
   function toggle(un: string): void {
@@ -269,6 +297,7 @@
       <li class="empty">{i18n.t("modal.selections.noMatch")}</li>
     {:else}
       {#each filtered as m}
+        {@const parents = parentPath(m.uniqueName)}
         <li>
           <label>
             <input
@@ -276,7 +305,12 @@
               checked={activeSlot?.selected.has(m.uniqueName) ?? false}
               onchange={() => toggle(m.uniqueName)}
             />
-            <span class="flex-1">{m.caption || m.name}</span>
+            <span class="flex-1 flex flex-col">
+              <span>{m.caption || m.name}</span>
+              {#if parents}
+                <span class="text-fg-subtle text-xs">{parents}</span>
+              {/if}
+            </span>
             {#if m.description}
               <span class="text-fg-subtle text-xs">{m.description}</span>
             {/if}
