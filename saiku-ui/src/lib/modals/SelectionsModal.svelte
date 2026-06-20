@@ -97,7 +97,14 @@
     perLevel = next;
     activeLevel = initialLevelName;
     search = "";
-    void ensureLoaded(initialLevelName);
+    // Defer to a microtask so ensureLoaded's reads/writes on `perLevel`
+    // happen OUTSIDE this effect's tracked scope. Calling it synchronously
+    // would subscribe the effect to perLevel and then mutate perLevel in
+    // the same tick, producing an effect_update_depth_exceeded loop (every
+    // run reads perLevel[lvl], every run writes it, Svelte bails at 128
+    // and the modal becomes inert — buttons stop working, loading hangs).
+    const seed = initialLevelName;
+    queueMicrotask(() => void ensureLoaded(seed));
   });
 
   /*

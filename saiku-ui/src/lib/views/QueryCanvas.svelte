@@ -1582,6 +1582,13 @@
     padding: var(--space-2) var(--space-3);
     min-height: 54px;
     background: var(--bg-muted);
+    /* Defensive clip: at narrow widths a chip-group whose level rows
+       outgrow the dropzone would otherwise visually escape below into
+       the next dropzone (children render outside their parent box when
+       parent `overflow` is default `visible`). Clipping the dropzone
+       contains the spill; the aside above is `overflow-y-auto` so the
+       grown dropzone scrolls within the aside instead. */
+    overflow: hidden;
   }
   .dropzone.is-dragover {
     border-style: solid;
@@ -1657,8 +1664,13 @@
   .chip-group {
     display: inline-flex;
     flex-direction: column;
-    min-width: 140px;
-    max-width: 240px;
+    /* min(140px, 100%) so the chip-group shrinks below its preferred
+       140px when the containing dropzone is narrower than that — at
+       very narrow body widths (~360px) a fixed 140px chip-group would
+       horizontally overflow its dropzone. max-width: 100% caps it
+       against the dropzone's content width in the same situation. */
+    min-width: min(140px, 100%);
+    max-width: 100%;
     background: var(--bg-muted);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
