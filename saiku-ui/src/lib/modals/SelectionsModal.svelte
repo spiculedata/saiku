@@ -12,7 +12,6 @@
    * thousands of members and would freeze the modal open if all
    * levels loaded eagerly.
    */
-  import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import { Button } from "$lib/components/ui";
   import type { SaikuMember } from "$lib/api/discover";
@@ -101,18 +100,28 @@
     void ensureLoaded(initialLevelName);
   });
 
+  /*
+   * Pure-immutable load. We never mutate the existing slot — every write
+   * is a fresh object literal assigned through the perLevel proxy. The
+   * earlier slot-mutation dance (slot.loading = true; perLevel = {...})
+   * could leave the awaited resolution writing to a stale proxy view
+   * which never propagated to activeSlot — visible to the user as a
+   * permanent "Loading members…" with no follow-up render.
+   */
   async function ensureLoaded(lvl: string): Promise<void> {
     const slot = perLevel[lvl];
     if (!slot || slot.members !== null || slot.loading) return;
-    slot.loading = true;
-    slot.error = null;
-    perLevel = { ...perLevel, [lvl]: { ...slot } };
+    perLevel[lvl] = { ...slot, loading: true, error: null };
     try {
       const members = await loadMembers(lvl);
-      perLevel[lvl] = { ...perLevel[lvl], members, loading: false };
+      const after = perLevel[lvl];
+      if (!after) return;
+      perLevel[lvl] = { ...after, members, loading: false, error: null };
     } catch (e) {
+      const after = perLevel[lvl];
+      if (!after) return;
       perLevel[lvl] = {
-        ...perLevel[lvl],
+        ...after,
         loading: false,
         error: e instanceof Error ? e.message : String(e),
       };

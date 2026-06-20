@@ -976,11 +976,25 @@
       totalSelected += lvl.selected.length;
     }
     selectionsOpen = false;
+    selectionsTarget = null;
     toasts.success(
       i18n.t("toast.saved"),
       i18n.t("toast.selectionsApplied").replace("{n}", String(totalSelected)),
     );
     if (query.hasRunnableShape()) await query.run();
+  }
+
+  /*
+   * Clearing selectionsTarget (NOT just selectionsOpen=false) on cancel
+   * unmounts the {#if selectionsTarget} block, so the modal subtree is
+   * dropped wholesale. Leaving the subtree mounted with open=false kept
+   * stale reactive state around — when the user reopened on the same
+   * hierarchy, the level cache from the previous open could survive in
+   * unpredictable ways. Full unmount is the simpler invariant.
+   */
+  function closeSelections(): void {
+    selectionsOpen = false;
+    selectionsTarget = null;
   }
 </script>
 
@@ -1338,9 +1352,9 @@
         hierarchyCaption: selectionsTarget.hierarchyCaption,
         levelName: selectionsTarget.initialLevelName,
       };
-      selectionsOpen = false;
+      closeSelections();
     }}
-    onCancel={() => (selectionsOpen = false)}
+    onCancel={closeSelections}
   />
 {/if}
 
