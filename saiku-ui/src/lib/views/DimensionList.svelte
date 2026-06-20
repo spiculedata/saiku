@@ -9,6 +9,7 @@
   import MeasuresModal from "$lib/modals/MeasuresModal.svelte";
   import CalculatedMemberModal, { type CalculatedMember } from "$lib/modals/CalculatedMemberModal.svelte";
   import SelectionsModal from "$lib/modals/SelectionsModal.svelte";
+  import { Badge } from "$lib/design-system";
   import { measuresHiddenToggle } from "$lib/stores/measuresHiddenToggle.svelte";
   import {
     Sigma,
@@ -520,7 +521,7 @@
               <span class="tree__icon" aria-hidden="true"><Folder size={13} /></span>
               <span class="tree__label">{dim.caption || dim.name}</span>
               {#if !applicable}
-                <span class="tree__badge tree__badge--warn" aria-label="not joined to selected measures">⚠</span>
+                <Badge tone="warning" shape="pill" testid="dim-applicability-warn">⚠</Badge>
               {/if}
             </button>
             {#if expanded[did] !== false}
@@ -787,21 +788,9 @@
   }
   /* Dim-applicability hint for virtual cubes. When a measure from a fact
      table that doesn't join the dim is selected, the dim row (and its
-     entire subtree) is rendered at reduced opacity with a warning badge.
-     Click-through still works — this is signal, not blocking. */
+     entire subtree) is rendered at reduced opacity. Click-through still
+     works — this is signal, not blocking. The warning badge itself is
+     a design-system Badge (tone="warning"), not bespoke CSS. */
   .tree__node--muted > .tree__row { opacity: 0.45; }
   .tree__node--muted > .tree { opacity: 0.45; }
-  .tree__badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: var(--fs-xs);
-    padding: 0 4px;
-    border-radius: var(--radius-sm);
-    line-height: 1;
-  }
-  .tree__badge--warn {
-    color: var(--warn, #d97706);
-    background: color-mix(in srgb, var(--warn, #d97706) 12%, transparent);
-  }
 </style>
