@@ -69,6 +69,8 @@
   --color-accent-strong: var(--accent-strong);
   --color-primary: var(--accent);
   --color-primary-foreground: var(--accent-fg);
+  --color-secondary: var(--bg-muted);
+  --color-secondary-foreground: var(--fg);
 
   /* ---- Status tones ---- */
   --color-success: var(--success);

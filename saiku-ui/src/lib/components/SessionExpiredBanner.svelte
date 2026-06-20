@@ -4,6 +4,7 @@
   import { hasPendingOps, notifySessionResumed } from "$lib/api/http";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { AlertTriangle, X } from "lucide-svelte";
+  import { Button } from "$lib/components/ui";
 
   /**
    * Non-modal session-expired banner (issue #944).
@@ -97,23 +98,19 @@
       </span>
       <div class="session-banner__actions">
         {#if !expanded}
-          <button
-            type="button"
-            class="btn btn--primary btn--sm"
-            onclick={startLogin}
-            aria-label={i18n.t("session.banner.login")}
-          >
+          <Button size="sm" onclick={startLogin} aria-label={i18n.t("session.banner.login")}>
             {i18n.t("session.banner.login")}
-          </button>
+          </Button>
         {/if}
-        <button
-          type="button"
-          class="session-banner__close"
+        <Button
+          variant="ghost"
+          size="icon"
           onclick={onDismiss}
           aria-label={i18n.t("session.banner.dismiss")}
+          class="h-7 w-7"
         >
           <X size={16} />
-        </button>
+        </Button>
       </div>
     </div>
     {#if expanded}
@@ -146,17 +143,17 @@
             />
           </label>
           <div class="session-banner__form-actions">
-            <button
-              type="button"
-              class="btn btn--sm"
+            <Button
+              variant="outline"
+              size="sm"
               onclick={cancelLogin}
               disabled={busy}
             >
               {i18n.t("session.banner.cancel")}
-            </button>
-            <button type="submit" class="btn btn--primary btn--sm" disabled={busy}>
+            </Button>
+            <Button type="submit" size="sm" disabled={busy}>
               {busy ? i18n.t("login.submitting") : i18n.t("login.submit")}
-            </button>
+            </Button>
           </div>
         </div>
       </form>
@@ -209,20 +206,6 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-  }
-  .session-banner__close {
-    background: transparent;
-    border: 0;
-    color: var(--fg-muted);
-    cursor: pointer;
-    padding: 4px;
-    border-radius: var(--radius-sm);
-    display: inline-flex;
-    align-items: center;
-  }
-  .session-banner__close:hover {
-    color: var(--fg);
-    background: var(--bg-muted);
   }
   .session-banner__form {
     display: flex;
