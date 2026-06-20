@@ -127,7 +127,7 @@
     // If the tab is dirty, confirm before closing.
     const dirty = tabDirtyFor(i);
     if (dirty) {
-      // eslint-disable-next-line no-alert
+       
       const ok = window.confirm(i18n.t("confirm.discardUnsaved") ?? "Discard unsaved changes?");
       if (!ok) return;
     }
@@ -206,7 +206,7 @@
       query.includeLevel("ROWS", pick.drop);
       if (query.hasRunnableShape()) void query.run();
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.warn("saiku: starter-cube hydrate failed, falling back to empty workbench", err);
     }
   }

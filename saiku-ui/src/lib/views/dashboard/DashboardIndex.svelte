@@ -248,11 +248,11 @@
     createError = null;
     try {
       const source = await loadDashboard(srcPath);
-      // eslint-disable-next-line no-alert
+       
       const rawName = window.prompt("Copy name", `${source.name} (copy)`);
       if (rawName == null) return; // cancelled
       const name = rawName.trim() || `${source.name} (copy)`;
-      // eslint-disable-next-line no-alert
+       
       const rawPath = window.prompt(
         "Repository path for the copy",
         defaultHomePath() + "/" + slugify(name) + ".saikudash",

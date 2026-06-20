@@ -20,7 +20,7 @@
     /** A lucide-svelte (or compatible) icon component class. Typed
      *  permissively because lucide's own component type carries extra
      *  generic params that a tighter signature won't accept. */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     icon?: any;
     title: string;
     description?: string;
