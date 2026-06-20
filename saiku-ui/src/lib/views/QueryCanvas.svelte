@@ -981,28 +981,22 @@
                 >
                   {h.caption || h.name}
                 </button>
-                {#if levelNames.length === 1}
-                  <span class="chip__lvl-sep">›</span>
-                  <span class="chip__lvl">{levelNames[0]}</span>
-                {:else if levelNames.length > 1}
-                  {#each levelNames as lvl}
-                    <span class="chip__lvl-sep">›</span>
-                    <span class="chip__lvl chip__lvl--removable">
-                      {lvl}
-                      <button
-                        type="button"
-                        class="chip__lvl-x"
-                        aria-label="{i18n.t('canvas.menu.removeLevel')} {lvl}"
-                        title="{i18n.t('canvas.menu.removeLevel')}: {lvl}"
-                        onclick={(e) => {
-                          e.stopPropagation();
-                          query.removeLevel(h.name, lvl);
-                          if (query.hasRunnableShape()) void query.run();
-                        }}
-                      >×</button>
-                    </span>
-                  {/each}
-                {/if}
+                {#each levelNames as lvl, i}
+                  <span class="chip__lvl-sep">{i === 0 ? "›" : ","}</span>
+                  <span class="chip__lvl">
+                    {lvl}{#if levelNames.length > 1}<button
+                      type="button"
+                      class="chip__lvl-x"
+                      aria-label="{i18n.t('canvas.menu.removeLevel')} {lvl}"
+                      title="{i18n.t('canvas.menu.removeLevel')}: {lvl}"
+                      onclick={(e) => {
+                        e.stopPropagation();
+                        query.removeLevel(h.name, lvl);
+                        if (query.hasRunnableShape()) void query.run();
+                      }}
+                    >×</button>{/if}
+                  </span>
+                {/each}
                 <button
                   type="button"
                   class="chip__x"
@@ -1506,38 +1500,42 @@
     box-shadow: inset 0 -3px 0 0 var(--accent), 0 0 0 1px var(--accent);
     border-color: var(--accent);
   }
-  /* Per-level sub-pill — surfaces individual levels inside a multi-level
-     hierarchy chip so each can be removed without dropping the whole
-     dimension. Visually a soft inline tag separated by `›` markers. */
+  /* Per-level chunks inside a multi-level hierarchy chip. Goal: stay
+     visually identical to a single-level chip's "Dim › Level" form —
+     no extra chrome, no background tags, just an inline list. Each
+     level gets a tiny × that only fades in on chip-hover, so the
+     resting state is uncluttered. */
   .chip__lvl-sep {
     color: var(--fg-subtle);
-    padding: 0 2px;
+    padding: 0 4px;
     user-select: none;
+    font-size: var(--fs-xs);
   }
   .chip__lvl {
-    padding: 2px 6px;
     color: var(--fg);
+    padding: 2px 0;
     font-size: var(--fs-xs);
     white-space: nowrap;
-  }
-  .chip__lvl--removable {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    background: var(--bg-subtle);
-    border-radius: var(--radius-sm);
   }
   .chip__lvl-x {
     background: transparent;
     color: var(--fg-subtle);
     border: 0;
     padding: 0 4px;
-    font-size: 13px;
+    margin-left: 2px;
+    font-size: 12px;
     line-height: 1;
     cursor: pointer;
     border-radius: var(--radius-sm);
+    opacity: 0;
+    transition: opacity 80ms ease;
+  }
+  .chip:hover .chip__lvl-x,
+  .chip:focus-within .chip__lvl-x {
+    opacity: 0.7;
   }
   .chip__lvl-x:hover {
+    opacity: 1 !important;
     color: var(--danger);
     background: var(--bg-hover);
   }
