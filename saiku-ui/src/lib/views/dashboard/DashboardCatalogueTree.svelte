@@ -217,41 +217,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .btn {
-    padding: 0.375rem 0.625rem;
-    border: 1px solid var(--border-strong);
-    background: var(--bg);
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.8125rem;
-    color: var(--fg);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-  .btn:hover {
-    background: var(--bg-subtle);
-  }
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .btn.icon-only {
-    padding: 0.375rem;
-  }
-  .btn.danger {
-    color: var(--danger);
-    border-color: var(--danger);
-  }
-  .btn.danger:hover {
-    background: color-mix(in srgb, var(--danger) 12%, transparent);
-  }
-  .star {
-    color: var(--fg-muted);
-  }
-  .star--on {
-    color: var(--accent);
-  }
   /* Tree-specific styles (#937) */
   .tree {
     gap: 0.25rem;

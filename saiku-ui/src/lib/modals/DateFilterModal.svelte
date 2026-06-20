@@ -419,8 +419,4 @@
     gap: var(--space-2);
     margin-top: var(--space-2);
   }
-  .btn--small {
-    font-size: var(--fs-xs);
-    padding: 4px 10px;
-  }
 </style>

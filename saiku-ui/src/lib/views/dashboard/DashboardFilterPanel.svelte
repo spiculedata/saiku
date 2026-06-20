@@ -1089,17 +1089,4 @@
     gap: 0.375rem;
     margin-left: auto;
   }
-  .btn {
-    padding: 0.25rem 0.625rem;
-    border: 1px solid var(--border-strong, var(--border));
-    background: var(--bg);
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.8125rem;
-  }
-  .btn.primary {
-    background: var(--accent, #5b6cff);
-    color: white;
-    border-color: var(--accent, #5b6cff);
-  }
 </style>

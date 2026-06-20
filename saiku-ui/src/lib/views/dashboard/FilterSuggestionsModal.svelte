@@ -278,21 +278,4 @@
     padding: 0.75rem 1rem;
     border-top: 1px solid var(--border);
   }
-  .btn {
-    padding: 0.375rem 0.75rem;
-    border: 1px solid var(--border-strong);
-    background: var(--bg);
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.875rem;
-  }
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .btn.primary {
-    background: var(--accent);
-    color: white;
-    border-color: var(--accent);
-  }
 </style>

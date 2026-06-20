@@ -490,7 +490,6 @@
   }
   /* #1175: narrow toolbar — let the name shrink so Save + ☰ always fit. */
   .toolbar--narrow .name { min-width: 0; }
-  .hamburger { padding: 0.375rem 0.5rem; }
   /* #1175: hamburger dropdown holding the collapsed secondary actions. */
   .actions-menu {
     position: absolute;
@@ -530,36 +529,11 @@
     flex: 1;
     justify-content: center;
   }
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
-    border: 1px solid var(--border-strong);
-    background: var(--bg);
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.875rem;
-  }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .undo-redo {
     display: inline-flex;
     gap: 0.25rem;
     align-items: center;
   }
-  .btn.icon-only {
-    padding: 0.375rem 0.5rem;
-  }
-  .btn.primary {
-    background: var(--accent);
-    color: white;
-    border-color: var(--accent);
-  }
-  .btn.primary:disabled {
-    /* Saved state — keep it visually distinct from a destructive disable. */
-    opacity: 0.7;
-  }
-
   /* #929: Export button + format picker. The wrapper anchors the dropdown;
      inside the hamburger it stretches full-width like the other collapsed
      actions (the .actions-menu :global(.btn) rule handles the button). */
@@ -583,10 +557,6 @@
     border-radius: 6px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
     z-index: 70;
-  }
-  .export-option {
-    width: 100%;
-    justify-content: flex-start;
   }
   .export-error {
     position: fixed;

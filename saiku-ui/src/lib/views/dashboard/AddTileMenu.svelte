@@ -93,15 +93,6 @@
   .add-tile-menu {
     position: relative;
   }
-  .btn {
-    padding: 0.375rem 0.75rem;
-    border: 1px solid var(--border-strong);
-    background: var(--bg);
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.875rem;
-  }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .menu {
     position: absolute;
     top: calc(100% + 4px);

@@ -103,34 +103,8 @@
     background: var(--bg);
     font-size: 0.8125rem;
   }
-  .btn--ghost {
-    background: transparent;
-    border-color: var(--border);
-    color: var(--fg-muted);
-    font-size: 0.8125rem;
-  }
   .view-toggle {
     display: inline-flex;
     gap: 0;
-  }
-  .view-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    border-radius: 0;
-  }
-  .view-btn:first-child {
-    border-top-left-radius: 4px;
-    border-bottom-left-radius: 4px;
-  }
-  .view-btn:last-child {
-    border-top-right-radius: 4px;
-    border-bottom-right-radius: 4px;
-    border-left: none;
-  }
-  .view-btn--on {
-    background: var(--accent);
-    color: white;
-    border-color: var(--accent);
   }
 </style>

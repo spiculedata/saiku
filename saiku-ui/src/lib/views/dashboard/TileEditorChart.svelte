@@ -41,8 +41,4 @@
 </div>
 
 <style>
-  .chart-opts-btn {
-    align-self: flex-start;
-    text-align: left;
-  }
 </style>

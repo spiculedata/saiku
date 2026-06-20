@@ -1353,19 +1353,6 @@
     padding: 0.75rem 1rem;
     border-top: 1px solid var(--border);
   }
-  .btn {
-    padding: 0.375rem 0.75rem;
-    border: 1px solid var(--border-strong);
-    background: var(--bg);
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.875rem;
-  }
-  .btn.primary {
-    background: var(--accent);
-    color: white;
-    border-color: var(--accent);
-  }
   /* #1077, #919: chart-options + conditional-formatting styles moved
      into TileEditorChart / TileEditorTableConditional / TileEditorKpi /
      TileEditorTableSparkline (per saiku#1229). Svelte's scoped CSS

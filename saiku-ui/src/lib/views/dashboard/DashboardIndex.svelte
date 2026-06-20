@@ -764,29 +764,6 @@
     margin: 0;
     font-size: 1.25rem;
   }
-  .btn {
-    padding: 0.5rem 0.875rem;
-    border: 1px solid var(--border-strong);
-    background: var(--bg);
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.875rem;
-  }
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .btn.primary {
-    background: var(--accent);
-    color: white;
-    border-color: var(--accent);
-  }
-  .btn.danger {
-    color: var(--danger);
-  }
-  .btn.danger:hover {
-    background: color-mix(in srgb, var(--danger) 12%, transparent);
-  }
   .error {
     padding: 0.5rem 0.75rem;
     background: color-mix(in srgb, var(--danger) 14%, transparent);
@@ -837,24 +814,6 @@
   /* Icon-only buttons are square and sit on the same baseline as the
      Delete button; the star colour shifts to --accent when active so
      a glance tells you which dashboards you've pinned. */
-  .btn.icon-only {
-    padding: 0.375rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .btn.star {
-    color: var(--fg-muted);
-  }
-  .btn.star:hover {
-    color: var(--fg);
-  }
-  .btn.star--on {
-    color: var(--accent);
-  }
-  .btn.star--on:hover {
-    color: var(--accent);
-  }
   /* .catalogue-filters / .view-toggle / .view-btn styles relocated to
      DashboardIndexFilters.svelte (saiku#1234) — Svelte's scoped CSS
      does not cross component boundaries. */

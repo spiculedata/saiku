@@ -239,7 +239,4 @@
     gap: 0.5rem;
     align-items: flex-end;
   }
-  .cf-add {
-    align-self: flex-start;
-  }
 </style>

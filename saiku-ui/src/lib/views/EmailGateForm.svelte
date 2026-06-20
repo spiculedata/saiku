@@ -194,17 +194,10 @@
     font-size: var(--fs-lg);
     text-align: center;
   }
-  .gate__back {
-    margin-top: var(--space-2);
-  }
   .gate__privacy {
     margin: var(--space-4) 0 0;
     font-size: var(--fs-xs);
     color: var(--fg-muted);
     line-height: var(--lh-normal);
-  }
-  .btn--wide {
-    width: 100%;
-    justify-content: center;
   }
 </style>

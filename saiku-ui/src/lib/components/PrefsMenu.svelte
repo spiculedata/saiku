@@ -95,8 +95,4 @@
     color: var(--fg-muted);
   }
   /* #1091: active state for the colour-blind-safe toggle. */
-  .btn--active {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
 </style>

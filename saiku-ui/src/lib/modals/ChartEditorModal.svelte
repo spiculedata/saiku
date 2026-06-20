@@ -769,8 +769,6 @@
   .ref__value { width: 6rem; flex: 0 0 auto; }
   .ref__label { flex: 1; min-width: 4rem; }
   .ref__color { width: 2.25rem; height: 2rem; flex: 0 0 auto; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; }
-  .ref__remove { flex: 0 0 auto; }
-  .ref__add { align-self: flex-start; }
   /* #1084: conditional formatting */
   .cond { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
   .cond__title { font-size: var(--fs-sm); color: var(--fg-muted); }
@@ -780,7 +778,6 @@
   .cond__op { width: 7rem; flex: 0 0 auto; }
   .cond__num { width: 5.5rem; flex: 0 0 auto; }
   .cond__color { width: 2.25rem; height: 2rem; flex: 0 0 auto; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; cursor: pointer; }
-  .cond__remove { flex: 0 0 auto; }
   .cond__actions { display: flex; align-items: center; gap: var(--space-3); }
   .cond__fallback { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--fs-xs); color: var(--fg-muted); }
 </style>

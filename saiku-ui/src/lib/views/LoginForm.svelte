@@ -203,18 +203,11 @@
     flex-shrink: 0;
     margin-top: 2px;
   }
-  .login__demo-button {
-    margin-top: var(--space-2);
-  }
   .login-stack__demo {
     width: 100%;
     padding: var(--space-4);
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-  }
-  .btn--wide {
-    width: 100%;
-    justify-content: center;
   }
 </style>

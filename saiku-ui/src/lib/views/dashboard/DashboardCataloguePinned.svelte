@@ -133,28 +133,4 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .btn {
-    padding: 0.375rem 0.625rem;
-    border: 1px solid var(--border-strong);
-    background: var(--bg);
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.8125rem;
-    color: var(--fg);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-  .btn:hover {
-    background: var(--bg-subtle);
-  }
-  .btn.icon-only {
-    padding: 0.375rem;
-  }
-  .star {
-    color: var(--fg-muted);
-  }
-  .star--on {
-    color: var(--accent);
-  }
 </style>
