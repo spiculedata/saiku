@@ -485,13 +485,20 @@
   }
 
   let selectionsOpen = $state(false);
-  let selectionsTarget = $state<{ axis: AxisLocation; hierarchyName: string; hierarchyCaption: string; levelName: string } | null>(null);
-  let selectionsMembers = $state<SaikuMember[]>([]);
-  let selectionsLoading = $state(false);
-  let selectionsInitial = $state<{ uniqueNames: string[]; type: "INCLUSION" | "EXCLUSION" }>({
-    uniqueNames: [],
-    type: "INCLUSION",
-  });
+  /**
+   * Per-hierarchy selections context. The modal is now hierarchy-wide
+   * (saiku#TODO): the user opens it from one level chip but can switch
+   * tabs across every level of the hierarchy in one session. Members
+   * load lazily per level when the user picks a tab.
+   */
+  let selectionsTarget = $state<{
+    axis: AxisLocation;
+    hierarchyName: string;
+    hierarchyCaption: string;
+    levelNames: string[];
+    initialLevelName: string;
+    initialPerLevel: Record<string, { selected: string[]; type: "INCLUSION" | "EXCLUSION" }>;
+  } | null>(null);
 
   const axisLabels = $derived<Record<ZoneId, string>>({
     COLUMNS: i18n.t("canvas.columns"),
@@ -749,34 +756,64 @@
     };
   }
 
-  async function openSelections(axis: AxisLocation, hier: ThinHierarchy) {
+  async function openSelections(
+    axis: AxisLocation,
+    hier: ThinHierarchy,
+    preferredLevel?: string,
+  ) {
     if (!selection.cube || !session.current) return;
-    const levelName = Object.keys(hier.levels)[0];
-    if (!levelName) return;
+    const pickedLevels = sortLevelsBySchemaOrder(hier);
+    if (pickedLevels.length === 0) return;
+    const initialLevelName = preferredLevel && pickedLevels.includes(preferredLevel)
+      ? preferredLevel
+      : pickedLevels[0];
+
+    // Seed per-level selections from the query model. Levels the user
+    // hasn't filtered before default to empty INCLUSION (= no filter).
+    const initialPerLevel: Record<
+      string,
+      { selected: string[]; type: "INCLUSION" | "EXCLUSION" }
+    > = {};
+    for (const lvl of pickedLevels) {
+      const existing = query.getLevelSelection(hier.name, lvl);
+      initialPerLevel[lvl] = {
+        selected: existing.memberUniqueNames,
+        type: existing.type,
+      };
+    }
+
     selectionsTarget = {
       axis,
       hierarchyName: hier.name,
       hierarchyCaption: hier.caption ?? hier.name,
-      levelName,
+      levelNames: pickedLevels,
+      initialLevelName,
+      initialPerLevel,
     };
-    const existing = query.getLevelSelection(hier.name, levelName);
-    selectionsInitial = { uniqueNames: existing.memberUniqueNames, type: existing.type };
     selectionsOpen = true;
-    selectionsLoading = true;
-    selectionsMembers = [];
+  }
+
+  /** Lazy-load a level's members on first tab-click in the modal. */
+  async function loadSelectionsLevelMembers(
+    hier: ThinHierarchy,
+    levelName: string,
+  ): Promise<SaikuMember[]> {
+    if (!selection.cube || !session.current) return [];
+    const dimension =
+      hier.name.split(".")[0]?.replace(/[[\]]/g, "") ?? hier.name;
     try {
-      // The dimension-name path requires just the dimension token from the hierarchy unique name.
-      const dimension = hier.name.split(".")[0]?.replace(/[[\]]/g, "") ?? hier.name;
-      selectionsMembers = await listLevelMembers(
+      return await listLevelMembers(
         session.current.username,
         selection.cube,
         dimension,
         hier.name,
         levelName,
       );
-    } catch (err) {
+    } catch {
+      // Fallback to root members for the rare case where the level path
+      // 404s — at minimum surface the hierarchy's top-level members.
       try {
-        selectionsMembers = await listRootMembers(
+        return await listRootMembers(
           session.current.username,
           selection.cube,
           hier.name,
@@ -786,9 +823,8 @@
           i18n.t("toast.loadMembersFailed"),
           err2 instanceof Error ? err2.message : String(err2),
         );
+        return [];
       }
-    } finally {
-      selectionsLoading = false;
     }
   }
 
@@ -827,15 +863,24 @@
       }>;
       const d = ce.detail;
       if (!d) return;
+      // saiku-filter-level event seam: a single-level filter request
+      // (typically from the cellset's right-click drill-into-cell flow).
+      // Bridge into the hierarchy-wide modal by seeding only that level,
+      // with the existing per-level selections passed through.
+      const existing = query.getLevelSelection(d.hierarchyName, d.levelName);
       selectionsTarget = {
         axis: d.axis,
         hierarchyName: d.hierarchyName,
         hierarchyCaption: d.hierarchyCaption,
-        levelName: d.levelName,
+        levelNames: [d.levelName],
+        initialLevelName: d.levelName,
+        initialPerLevel: {
+          [d.levelName]: {
+            selected: existing.memberUniqueNames,
+            type: existing.type,
+          },
+        },
       };
-      const existing = query.getLevelSelection(d.hierarchyName, d.levelName);
-      selectionsInitial = { uniqueNames: existing.memberUniqueNames, type: existing.type };
-      selectionsMembers = d.members;
       selectionsOpen = true;
     };
     el.addEventListener("saiku-filter-level", handler);
@@ -892,16 +937,49 @@
     datasources.metadata(session.current.username, cube).then((md) => (cubeMetadata = md)).catch(() => {});
   });
 
-  async function onSelectionsSave(uniqueNames: string[], type: "INCLUSION" | "EXCLUSION") {
+  // Legacy single-level save (still wired for the drillthrough modal seam).
+  // The selections modal proper now uses onSelectionsBulkSave below.
+  async function onSelectionsSaveSingle(
+    levelName: string,
+    uniqueNames: string[],
+    type: "INCLUSION" | "EXCLUSION",
+  ) {
     if (!selectionsTarget) return;
     query.setLevelSelection(
       selectionsTarget.hierarchyName,
-      selectionsTarget.levelName,
+      levelName,
       uniqueNames,
       type,
     );
     selectionsOpen = false;
     toasts.success(i18n.t("toast.saved"), i18n.t("toast.selectionsApplied").replace("{n}", String(uniqueNames.length)));
+    if (query.hasRunnableShape()) await query.run();
+  }
+
+  /**
+   * Hierarchy-wide save — the modal returns a per-level array. We persist
+   * each level's selections in one pass and run the query once at the end
+   * (avoids N round-trips for hierarchies with 4+ levels).
+   */
+  async function onSelectionsBulkSave(
+    perLevel: { levelName: string; selected: string[]; type: "INCLUSION" | "EXCLUSION" }[],
+  ) {
+    if (!selectionsTarget) return;
+    let totalSelected = 0;
+    for (const lvl of perLevel) {
+      query.setLevelSelection(
+        selectionsTarget.hierarchyName,
+        lvl.levelName,
+        lvl.selected,
+        lvl.type,
+      );
+      totalSelected += lvl.selected.length;
+    }
+    selectionsOpen = false;
+    toasts.success(
+      i18n.t("toast.saved"),
+      i18n.t("toast.selectionsApplied").replace("{n}", String(totalSelected)),
+    );
     if (query.hasRunnableShape()) await query.run();
   }
 </script>
@@ -1214,13 +1292,21 @@
 </div>
 
 {#if selectionsTarget}
+  {@const target = selectionsTarget}
+  {@const hier = query.current?.queryModel?.axes[target.axis].hierarchies.find(
+    (h) => h.name === target.hierarchyName,
+  )}
   <SelectionsModal
-    levelCaption={selectionsTarget.hierarchyCaption + " › " + selectionsTarget.levelName}
-    available={selectionsMembers}
-    initialSelected={selectionsInitial.uniqueNames}
-    initialType={selectionsInitial.type}
+    hierarchyCaption={target.hierarchyCaption}
+    levelNames={target.levelNames}
+    initialPerLevel={target.initialPerLevel}
+    initialLevelName={target.initialLevelName}
     open={selectionsOpen}
-    onSave={onSelectionsSave}
+    loadMembers={(lvl) =>
+      hier
+        ? loadSelectionsLevelMembers(hier, lvl)
+        : Promise.resolve([])}
+    onSave={onSelectionsBulkSave}
     showDateFilter={(() => {
       // Resolve the hierarchy's Mondrian-native type from cubeMetadata. This
       // beats the legacy caption substring match — translations and renamed
@@ -1244,16 +1330,20 @@
       // Hand off the currently-open Selections target to the date-filter
       // modal. Closing Selections first avoids stacked overlays.
       if (!selectionsTarget) return;
-      modals.dateFilter = { ...selectionsTarget };
+      // Date-filter modal expects the single-level shape — pass the
+      // currently-active tab as the levelName.
+      modals.dateFilter = {
+        axis: selectionsTarget.axis,
+        hierarchyName: selectionsTarget.hierarchyName,
+        hierarchyCaption: selectionsTarget.hierarchyCaption,
+        levelName: selectionsTarget.initialLevelName,
+      };
       selectionsOpen = false;
     }}
     onCancel={() => (selectionsOpen = false)}
   />
 {/if}
 
-{#if selectionsLoading && selectionsOpen}
-  <p class="callout">{i18n.t("canvas.loadingMembers")}</p>
-{/if}
 
 <DrillthroughModal
   dimensions={cubeMetadata?.dimensions ?? []}

@@ -626,13 +626,20 @@
 {/if}
 
 {#if dimModalOpen && dimModalTarget}
+  {@const tgt = dimModalTarget}
   <SelectionsModal
-    levelCaption={`${dimModalTarget.hierarchyCaption} › ${dimModalTarget.levelName}`}
-    available={dimModalTarget.members}
-    initialSelected={dimModalTarget.initialSelected}
-    initialType={dimModalTarget.initialType}
+    hierarchyCaption={tgt.hierarchyCaption}
+    levelNames={[tgt.levelName]}
+    initialPerLevel={{
+      [tgt.levelName]: { selected: tgt.initialSelected, type: tgt.initialType },
+    }}
+    initialLevelName={tgt.levelName}
     open={dimModalOpen}
-    onSave={onDimSelectionsSave}
+    loadMembers={() => Promise.resolve(tgt.members)}
+    onSave={(perLevel) => {
+      const first = perLevel[0];
+      if (first) onDimSelectionsSave(first.selected, first.type);
+    }}
     onOpenDateFilter={() => (dimModalOpen = false)}
     onCancel={() => (dimModalOpen = false)}
   />
