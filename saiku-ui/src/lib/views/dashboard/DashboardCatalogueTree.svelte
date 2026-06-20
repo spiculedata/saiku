@@ -13,6 +13,7 @@
    * callbacks — the parent already owns the round-trips + toasts.
    */
   import { base } from "$app/paths";
+  import { Button } from "$lib/components/ui";
   import {
     Copy,
     ShieldCheck,
@@ -78,65 +79,30 @@
     <span class="name">{label}</span>
     <span class="path">{relPath}</span>
   </a>
-  <button
-    type="button"
-    class="btn icon-only star"
-    class:star--on={isFav}
-    onclick={() => onToggleFavourite(relPath)}
-    title={isFav ? "Remove from favourites" : "Add to favourites"}
-    aria-label={isFav ? "Remove from favourites" : "Add to favourites"}
-    aria-pressed={isFav}
-  >
+  <Button variant="outline" class="icon-only star {isFav ? 'star--on' : ''}" onclick={() => onToggleFavourite(relPath)} title={isFav ? "Remove from favourites" : "Add to favourites"} aria-label={isFav ? "Remove from favourites" : "Add to favourites"} aria-pressed={isFav}>
     <Star size={14} fill={isFav ? "currentColor" : "none"} />
-  </button>
-  <button
-    type="button"
-    class="btn"
-    disabled={movingBusy}
-    onclick={() => onMove(relPath)}
-    title={i18n.t("dashboard.folder.move")}
-    aria-label={i18n.t("dashboard.folder.move")}
-  >
+  </Button>
+  <Button variant="outline" disabled={movingBusy} onclick={() => onMove(relPath)} title={i18n.t("dashboard.folder.move")} aria-label={i18n.t("dashboard.folder.move")}>
     <FolderInput size={14} />
-  </button>
+  </Button>
   {#if session.isAdmin}
-    <button
-      type="button"
-      class="btn"
-      disabled={aclLoading}
-      onclick={() => onOpenAcl(relPath)}
-      title={i18n.t("saved.permissions")}
-      aria-label={i18n.t("saved.permissions")}
-    >
+    <Button variant="outline" disabled={aclLoading} onclick={() => onOpenAcl(relPath)} title={i18n.t("saved.permissions")} aria-label={i18n.t("saved.permissions")}>
       <ShieldCheck size={14} />
-    </button>
+    </Button>
   {/if}
-  <button
-    type="button"
-    class="btn"
-    disabled={duplicatingPath === relPath}
-    onclick={() => onDuplicate(relPath)}
-    title="Duplicate"
-    aria-label="Duplicate dashboard"
-  >
+  <Button variant="outline" disabled={duplicatingPath === relPath} onclick={() => onDuplicate(relPath)} title="Duplicate" aria-label="Duplicate dashboard">
     <Copy size={14} />
-  </button>
-  <button
-    type="button"
-    class="btn danger"
-    onclick={() => onDelete(relPath)}
-    title="Delete"
-  >
+  </Button>
+  <Button variant="destructive" onclick={() => onDelete(relPath)} title="Delete">
     Delete
-  </button>
+  </Button>
 {/snippet}
 
 {#snippet folderBranch(node: FolderNode, depth: number)}
   {@const open = isExpanded(node.path)}
   <li class="tree-folder" style="--depth: {depth}">
     <div
-      class="tree-folder-head"
-      class:tree-folder-head--open={open}
+      class="tree-folder-head {open ? 'tree-folder-head--open' : ''}"
       role="button"
       tabindex="0"
       aria-expanded={open}
@@ -161,31 +127,12 @@
         >{node.folders.length + node.dashboards.length}</span
       >
       <span class="tree-folder-actions">
-        <button
-          type="button"
-          class="btn icon-only"
-          onclick={(e) => {
-            e.stopPropagation();
-            onNewFolder(node.path);
-          }}
-          title={i18n.t("dashboard.folder.new")}
-          aria-label={i18n.t("dashboard.folder.new")}
-        >
+        <Button variant="outline" class="icon-only" onclick={(e) => { e.stopPropagation(); onNewFolder(node.path); }} title={i18n.t("dashboard.folder.new")} aria-label={i18n.t("dashboard.folder.new")}>
           <FolderPlus size={14} />
-        </button>
-        <button
-          type="button"
-          class="btn icon-only"
-          disabled={movingBusy}
-          onclick={(e) => {
-            e.stopPropagation();
-            onRenameFolder(node.path);
-          }}
-          title={i18n.t("dashboard.folder.rename")}
-          aria-label={i18n.t("dashboard.folder.rename")}
-        >
+        </Button>
+        <Button variant="outline" class="icon-only" disabled={movingBusy} onclick={(e) => { e.stopPropagation(); onRenameFolder(node.path); }} title={i18n.t("dashboard.folder.rename")} aria-label={i18n.t("dashboard.folder.rename")}>
           <Pencil size={14} />
-        </button>
+        </Button>
       </span>
     </div>
     {#if open}

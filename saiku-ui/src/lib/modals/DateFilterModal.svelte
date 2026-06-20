@@ -329,14 +329,14 @@
         <p class="hint">{i18n.t("modal.dateFilter.compare.timeCalcsHint")}</p>
         <div class="timecalcs__buttons">
           {#each timeCalcs as tc}
-            <button
-              type="button"
-              class="btn btn--small"
+            <Button
+              variant="outline"
+              size="sm"
               onclick={() => onAddCalcMeasure?.(tc.name)}
               title={`${tc.type.toUpperCase()} · ${tc.measure}${tc.window ? ` · window ${tc.window}` : ""}`}
             >
               {tc.name}
-            </button>
+            </Button>
           {/each}
         </div>
       </div>

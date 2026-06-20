@@ -8,6 +8,7 @@
    * this component is the thin shell.
    */
   import { i18n } from "$lib/stores/i18n.svelte";
+  import { Button } from "$lib/components/ui";
   import { requestCode, verifyCode } from "$lib/api/demoGate";
   import { isCompleteCode, isValidEmail, normalizeCode, type GateStep } from "$lib/demo/emailGate";
   import { MailCheck } from "lucide-svelte";
@@ -116,9 +117,9 @@
           required
         />
       </label>
-      <button type="submit" class="btn btn--primary btn--wide" disabled={busy || !canSend}>
+      <Button class="w-full" type="submit" disabled={busy || !canSend}>
         {busy ? i18n.t("demoGate.sending") : i18n.t("demoGate.sendCode")}
-      </button>
+      </Button>
     </form>
   {:else}
     <form onsubmit={onVerify}>
@@ -135,12 +136,12 @@
           required
         />
       </label>
-      <button type="submit" class="btn btn--primary btn--wide" disabled={busy || !codeComplete}>
+      <Button class="w-full" type="submit" disabled={busy || !codeComplete}>
         {busy ? i18n.t("demoGate.verifying") : i18n.t("demoGate.verify")}
-      </button>
-      <button type="button" class="btn btn--wide gate__back" onclick={back} disabled={busy}>
+      </Button>
+      <Button variant="outline" class="w-full gate__back" onclick={back} disabled={busy}>
         {i18n.t("demoGate.back")}
-      </button>
+      </Button>
     </form>
   {/if}
 

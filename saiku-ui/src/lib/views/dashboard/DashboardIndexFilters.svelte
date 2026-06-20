@@ -12,6 +12,7 @@
    * applicability rule in one place.
    */
   import { Folder, FolderPlus } from "lucide-svelte";
+  import { Button } from "$lib/components/ui";
   import { i18n } from "$lib/stores/i18n.svelte";
   import type { SortKey } from "$lib/dashboard/catalogueFilter";
 
@@ -51,36 +52,24 @@
     </select>
   </label>
   <div class="view-toggle" role="group" aria-label={i18n.t("dashboard.view.label")}>
-    <button
-      type="button"
-      class="btn view-btn"
-      class:view-btn--on={viewMode === "list"}
-      aria-pressed={viewMode === "list"}
-      onclick={() => (viewMode = "list")}
-    >
+    <Button variant="outline" class="view-btn {viewMode === "list" ? 'view-btn--on' : ''}" aria-pressed={viewMode === "list"} onclick={() => (viewMode = "list")}>
       {i18n.t("dashboard.view.list")}
-    </button>
-    <button
-      type="button"
-      class="btn view-btn"
-      class:view-btn--on={viewMode === "tree"}
-      aria-pressed={viewMode === "tree"}
-      onclick={() => (viewMode = "tree")}
-    >
+    </Button>
+    <Button variant="outline" class="view-btn {viewMode === "tree" ? 'view-btn--on' : ''}" aria-pressed={viewMode === "tree"} onclick={() => (viewMode = "tree")}>
       <Folder size={14} aria-hidden="true" />
       {i18n.t("dashboard.view.folders")}
-    </button>
+    </Button>
   </div>
   {#if viewMode === "tree"}
-    <button type="button" class="btn" onclick={onNewFolder}>
+    <Button variant="outline" onclick={onNewFolder}>
       <FolderPlus size={14} aria-hidden="true" />
       {i18n.t("dashboard.folder.new")}
-    </button>
+    </Button>
   {/if}
   {#if showClearFilters}
-    <button type="button" class="btn btn--ghost" onclick={onClearFilters}>
+    <Button variant="outline" onclick={onClearFilters}>
       Clear filters
-    </button>
+    </Button>
   {/if}
 </section>
 

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { Button } from "$lib/components/ui";
   import { Folder, FolderPlus, FileText, ChevronRight, Home } from "lucide-svelte";
   import {
     flatten,
@@ -267,12 +268,7 @@
           }
         }}
       />
-      <button
-        type="button"
-        class="btn"
-        disabled={!newFolderName.trim() || creatingFolder}
-        onclick={() => void createFolder()}
-      >{i18n.t("repo.createFolder")}</button>
+      <Button variant="outline" disabled={!newFolderName.trim() || creatingFolder} onclick={() => void createFolder()}>{i18n.t("repo.createFolder")}</Button>
     </div>
   {/if}
 </div>

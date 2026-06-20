@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { Button } from "$lib/components/ui";
   import { adminSchemas, type AdminSchema } from "$lib/api/admin";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -67,7 +68,7 @@
 <div class="pane">
   <header class="pane__header">
     <h2>{i18n.t("admin.tabs.schemas")}</h2>
-    <button type="button" class="btn btn--primary" onclick={() => (uploading = true)}>{i18n.t("admin.uploadSchema")}</button>
+    <Button onclick={() => (uploading = true)}>{i18n.t("admin.uploadSchema")}</Button>
   </header>
   {#if error}<p class="callout callout--danger">{error}</p>{/if}
   {#if loading}
@@ -82,7 +83,7 @@
             <td>{s.path ?? ""}</td>
             <td>{s.type ?? ""}</td>
             <td class="data-grid__actions">
-              <button class="btn btn--danger" onclick={() => (deleting = s)}>Delete</button>
+              <Button variant="destructive" onclick={() => (deleting = s)}>Delete</Button>
             </td>
           </tr>
         {/each}
@@ -108,8 +109,8 @@
     <textarea class="field__input xml" bind:value={uploadXml} rows="10" spellcheck="false"></textarea>
   </label>
   {#snippet footer()}
-    <button class="btn" onclick={() => (uploading = false)}>Cancel</button>
-    <button class="btn btn--primary" onclick={doUpload}>Upload</button>
+    <Button variant="outline" onclick={() => (uploading = false)}>Cancel</Button>
+    <Button onclick={doUpload}>Upload</Button>
   {/snippet}
 </Modal>
 

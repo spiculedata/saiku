@@ -16,6 +16,7 @@
    */
 
   import { onMount, untrack } from "svelte";
+  import { Button } from "$lib/components/ui";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import { schemaCache } from "$lib/stores/schemaCache.svelte";
   import {
@@ -997,14 +998,9 @@
              ════════════════════════════════════════════════════════════ -->
         {#if !queryEditorOpen}
           <div class="qe-launch">
-            <button
-              type="button"
-              class="btn"
-              disabled={!cube}
-              onclick={() => void openQueryEditor()}
-            >
+            <Button variant="outline" disabled={!cube} onclick={() => void openQueryEditor()}>
               {i18n.t("tileEditor.query.editInline")}
-            </button>
+            </Button>
             <span class="hint">
               {cube ? i18n.t("tileEditor.query.editInline.hint") : i18n.t("tileEditor.query.pickCubeFirst")}
             </span>
@@ -1029,12 +1025,12 @@
               </div>
             </div>
             <div class="qe-actions">
-              <button type="button" class="btn" onclick={cancelQueryEditor}>
+              <Button variant="outline" onclick={cancelQueryEditor}>
                 {i18n.t("tileEditor.query.collapse")}
-              </button>
-              <button type="button" class="btn primary" onclick={applyQueryEditor}>
+              </Button>
+              <Button onclick={applyQueryEditor}>
                 {i18n.t("modal.apply")}
-              </button>
+              </Button>
             </div>
           </fieldset>
         {/if}
@@ -1167,10 +1163,10 @@
       {/if}
     </div>
     <footer class="modal-footer">
-      <button type="button" class="btn" onclick={handleClose} disabled={imageUploading}>Cancel</button>
-      <button type="button" class="btn primary" onclick={handleSave} disabled={imageUploading}>
+      <Button variant="outline" onclick={handleClose} disabled={imageUploading}>Cancel</Button>
+      <Button onclick={handleSave} disabled={imageUploading}>
         {imageUploading ? "Uploading…" : "Save"}
-      </button>
+      </Button>
     </footer>
   </div>
 </div>

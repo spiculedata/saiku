@@ -598,13 +598,12 @@
                 aria-label={i18n.t("modal.chart.refLines.color")}
                 title={i18n.t("modal.chart.refLines.color")}
               />
-              <button type="button" class="btn ref__remove" onclick={() => removeRefLine(i)}>
-                {i18n.t("modal.chart.refLines.remove")}
-              </button>
+              <Button variant="outline" size="sm" class="ref__remove" onclick={() => removeRefLine(i)}>{i18n.t("modal.chart.refLines.remove")}
+              </Button>
             </div>
           {/each}
         </div>
-        <button type="button" class="btn ref__add" onclick={addRefLine}>{i18n.t("modal.chart.refLines.add")}</button>
+        <Button variant="outline" size="sm" class="ref__add" onclick={addRefLine}>{i18n.t("modal.chart.refLines.add")}</Button>
 
         <span class="ref__title">{i18n.t("modal.chart.refBands")}</span>
         <p class="hint">{i18n.t("modal.chart.refBands.hint")}</p>
@@ -644,13 +643,12 @@
                 aria-label={i18n.t("modal.chart.refLines.color")}
                 title={i18n.t("modal.chart.refLines.color")}
               />
-              <button type="button" class="btn ref__remove" onclick={() => removeRefBand(i)}>
-                {i18n.t("modal.chart.refLines.remove")}
-              </button>
+              <Button variant="outline" size="sm" class="ref__remove" onclick={() => removeRefBand(i)}>{i18n.t("modal.chart.refLines.remove")}
+              </Button>
             </div>
           {/each}
         </div>
-        <button type="button" class="btn ref__add" onclick={addRefBand}>{i18n.t("modal.chart.refBands.add")}</button>
+        <Button variant="outline" size="sm" class="ref__add" onclick={addRefBand}>{i18n.t("modal.chart.refBands.add")}</Button>
       </div>
     {/if}
 
@@ -706,15 +704,13 @@
                   aria-label={i18n.t("modal.chart.cond.color", "Colour")}
                   title={i18n.t("modal.chart.cond.color", "Colour")}
                 />
-                <button type="button" class="btn cond__remove" onclick={() => removeCondRule(mi, ri)}>
-                  {i18n.t("modal.chart.cond.remove", "Remove")}
-                </button>
+                <Button variant="outline" size="sm" class="cond__remove" onclick={() => removeCondRule(mi, ri)}>{i18n.t("modal.chart.cond.remove", "Remove")}
+                </Button>
               </div>
             {/each}
             <div class="cond__actions">
-              <button type="button" class="btn cond__add" onclick={() => addCondRule(mi)}>
-                {i18n.t("modal.chart.cond.add", "Add rule")}
-              </button>
+              <Button variant="outline" size="sm" class="cond__add" onclick={() => addCondRule(mi)}>{i18n.t("modal.chart.cond.add", "Add rule")}
+              </Button>
               {#if (condBand(mi)?.rules.length ?? 0) > 0}
                 <label class="cond__fallback">
                   <span>{i18n.t("modal.chart.cond.fallback", "Fallback")}</span>

@@ -5,6 +5,7 @@
    * own (admins delete any). Mentions are parsed + stored server-side.
    */
   import { tick } from "svelte";
+  import { Button } from "$lib/components/ui";
   import Modal from "$lib/components/Modal.svelte";
   import { Trash2, Send } from "lucide-svelte";
   import { session } from "$lib/stores/session.svelte";
@@ -227,9 +228,9 @@
           </ul>
         {/if}
       </div>
-      <button type="button" class="btn primary" onclick={post} disabled={posting || !body.trim()}>
+      <Button onclick={post} disabled={posting || !body.trim()}>
         <Send size={14} /><span>{posting ? "Posting…" : "Post"}</span>
-      </button>
+      </Button>
     </div>
   </div>
 </Modal>

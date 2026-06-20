@@ -5,6 +5,7 @@
    * (token in the fragment), and lists / revokes this dashboard's active links.
    */
   import { base } from "$app/paths";
+  import { Button } from "$lib/components/ui";
   import Modal from "$lib/components/Modal.svelte";
   import { Copy, Check, Trash2 } from "lucide-svelte";
   import {
@@ -110,9 +111,9 @@
         <span>Expires in (hours)</span>
         <input type="number" min="1" max="720" bind:value={ttlHours} />
       </label>
-      <button type="button" class="btn primary" onclick={create} disabled={busy || !dashboardPath}>
+      <Button onclick={create} disabled={busy || !dashboardPath}>
         {busy ? "Creating…" : "Create link"}
-      </button>
+      </Button>
     </div>
 
     {#if error}<p class="share__error">{error}</p>{/if}
@@ -120,10 +121,10 @@
     {#if mintedUrl}
       <div class="share__result">
         <input class="share__url" readonly value={mintedUrl} aria-label="Share link" />
-        <button type="button" class="btn" onclick={copy} title="Copy link">
+        <Button variant="outline" onclick={copy} title="Copy link">
           {#if copied}<Check size={14} />{:else}<Copy size={14} />{/if}
           <span>{copied ? "Copied" : "Copy"}</span>
-        </button>
+        </Button>
       </div>
     {/if}
 
@@ -133,14 +134,9 @@
         {#each tokens as t (t.token)}
           <div class="share__row">
             <span class="share__row-meta">expires {fmtDate(t.expiresAt)}</span>
-            <button
-              type="button"
-              class="btn btn--sm danger"
-              onclick={() => revoke(t.token)}
-              title="Revoke this link"
-            >
+            <Button variant="destructive" size="sm" onclick={() => revoke(t.token)} title="Revoke this link">
               <Trash2 size={13} /><span>Revoke</span>
-            </button>
+            </Button>
           </div>
         {/each}
       </div>

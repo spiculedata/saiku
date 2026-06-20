@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Settings, Moon, Sun, Monitor, Contrast } from "lucide-svelte";
+  import { Button } from "$lib/components/ui";
   import { theme } from "$lib/stores/theme.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import LocalePicker from "$lib/components/LocalePicker.svelte";
@@ -26,27 +27,14 @@
 <svelte:window onclick={onDocumentClick} />
 
 <div class="prefs-menu">
-  <button
-    type="button"
-    class="btn"
-    aria-haspopup="menu"
-    aria-expanded={open}
-    aria-label={i18n.t("topbar.preferences")}
-    title={i18n.t("topbar.preferences")}
-    onclick={(e) => { e.stopPropagation(); open = !open; }}
-  >
+  <Button variant="outline" aria-haspopup="menu" aria-expanded={open} aria-label={i18n.t("topbar.preferences")} title={i18n.t("topbar.preferences")} onclick={(e) => { e.stopPropagation(); open = !open; }}>
     <Settings size={14} />
-  </button>
+  </Button>
   {#if open}
-    <div class="prefs-menu__panel" class:prefs-menu__panel--down={placement === "down"} role="menu">
+    <div class="prefs-menu__panel {placement === "down" ? 'prefs-menu__panel--down' : ''}" role="menu">
       <div class="prefs-menu__row">
         <span class="prefs-menu__label">{i18n.t("topbar.theme")}</span>
-        <button
-          type="button"
-          class="btn btn--sm"
-          onclick={() => theme.toggle()}
-          title={i18n.t("topbar.theme.cycle")}
-        >
+        <Button variant="outline" size="sm" onclick={() => theme.toggle()} title={i18n.t("topbar.theme.cycle")}>
           {#if theme.theme === "dark"}
             <Moon size={14} /><span>{i18n.t("topbar.theme.dark")}</span>
           {:else if theme.theme === "light"}
@@ -54,22 +42,14 @@
           {:else}
             <Monitor size={14} /><span>{i18n.t("topbar.theme.system")}</span>
           {/if}
-        </button>
+        </Button>
       </div>
       <div class="prefs-menu__row">
         <span class="prefs-menu__label">{i18n.t("topbar.contrast")}</span>
-        <button
-          type="button"
-          class="btn btn--sm"
-          class:btn--active={theme.colorBlindSafe}
-          role="switch"
-          aria-checked={theme.colorBlindSafe}
-          onclick={() => theme.toggleColorBlindSafe()}
-          title={i18n.t("topbar.contrast.hint")}
-        >
+        <Button variant="outline" size="sm" class={theme.colorBlindSafe ? 'btn--active' : ''} role="switch" aria-checked={theme.colorBlindSafe} onclick={() => theme.toggleColorBlindSafe()} title={i18n.t("topbar.contrast.hint")}>
           <Contrast size={14} />
           <span>{theme.colorBlindSafe ? i18n.t("topbar.contrast.on") : i18n.t("topbar.contrast.off")}</span>
-        </button>
+        </Button>
       </div>
       <div class="prefs-menu__row">
         <span class="prefs-menu__label">{i18n.t("topbar.language")}</span>

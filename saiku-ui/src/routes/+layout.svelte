@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { Button, buttonVariants } from "$lib/components/ui";
   import { base } from "$app/paths";
   import { page } from "$app/state";
   import { session } from "$lib/stores/session.svelte";
@@ -105,20 +106,20 @@
           {session.current.username}
         </span>
         {#if !page.url.pathname.startsWith(`${base}/dashboards`) && !page.url.pathname.startsWith(`${base}/admin`)}
-          <a class="btn" href="{base}/dashboards"><LayoutDashboard size={14} /><span>Dashboards</span></a>
+          <a class={buttonVariants({ variant: "outline" })} href="{base}/dashboards"><LayoutDashboard size={14} /><span>Dashboards</span></a>
         {/if}
         {#if page.url.pathname.startsWith(`${base}/dashboards`)}
-          <a class="btn" href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
+          <a class={buttonVariants({ variant: "outline" })} href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
         {/if}
         {#if session.isAdmin && !page.url.pathname.startsWith(`${base}/admin`)}
-          <a class="btn" href="{base}/admin"><Shield size={14} /><span>{i18n.t("topbar.admin")}</span></a>
+          <a class={buttonVariants({ variant: "outline" })} href="{base}/admin"><Shield size={14} /><span>{i18n.t("topbar.admin")}</span></a>
         {/if}
         {#if page.url.pathname.startsWith(`${base}/admin`)}
-          <a class="btn" href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
+          <a class={buttonVariants({ variant: "outline" })} href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
         {/if}
-        <button type="button" class="btn" onclick={() => session.logout()}>
+        <Button variant="outline" onclick={() => session.logout()}>
           <LogOut size={14} /><span>{i18n.t("topbar.signOut")}</span>
-        </button>
+        </Button>
       {/if}
     </div>
   </header>

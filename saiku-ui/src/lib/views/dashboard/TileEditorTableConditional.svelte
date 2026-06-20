@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from "$lib/components/ui";
   /*
    * Table-tile conditional formatting — extracted from TileEditorModal.svelte
    * (saiku#1229; original feature saiku#919). Per-column rule builder:
@@ -180,9 +181,9 @@
     </div>
   {/each}
 
-  <button type="button" class="btn cf-add" onclick={addRule}>
+  <Button variant="outline" class="cf-add" onclick={addRule}>
     + Add column rule
-  </button>
+  </Button>
 </fieldset>
 
 <style>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Button } from "$lib/components/ui";
   /*
    * Empty-state component for list views, modals, admin tables.
    *
@@ -43,9 +44,9 @@
     <p class="empty-state__description">{description}</p>
   {/if}
   {#if action}
-    <button type="button" class="btn btn--primary" onclick={action.onClick}>
+    <Button onclick={action.onClick}>
       {action.label}
-    </button>
+    </Button>
   {/if}
 </div>
 

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { buttonVariants } from "$lib/components/ui";
   import { platform } from "$lib/stores/platform.svelte";
 
   // Collapsed by default on the login page (where space is tight and a
@@ -140,7 +141,7 @@
             Downloads a <code>.dxt</code> bundle wired to this server's MCP URL.
             Drag it into Claude Desktop (or open with Cursor) to register the agent.
           </span>
-          <a class="btn btn--primary" href="/rest/saiku/info/mcp.dxt" download="saiku.dxt">
+          <a class={buttonVariants()} href="/rest/saiku/info/mcp.dxt" download="saiku.dxt">
             Download saiku.dxt
           </a>
         </div>

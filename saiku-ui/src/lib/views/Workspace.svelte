@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { Button } from "$lib/components/ui";
   import type { SaikuSession } from "$lib/api/session";
   import Modal from "$lib/components/Modal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -265,7 +266,7 @@
       </div>
       <div class="workspace__sidebar-footer">
         <PrefsMenu />
-        <button type="button" class="btn" onclick={() => (aboutOpen = true)}>{i18n.t("modal.about.title")}</button>
+        <Button variant="outline" onclick={() => (aboutOpen = true)}>{i18n.t("modal.about.title")}</Button>
       </div>
     </aside>
   {/if}
@@ -342,7 +343,7 @@
       rel="noopener noreferrer">{i18n.t("modal.about.community")}</a>
   </p>
   {#snippet footer()}
-    <button class="btn btn--primary" onclick={() => (aboutOpen = false)}>{i18n.t("modal.close")}</button>
+    <Button onclick={() => (aboutOpen = false)}>{i18n.t("modal.close")}</Button>
   {/snippet}
 </Modal>
 

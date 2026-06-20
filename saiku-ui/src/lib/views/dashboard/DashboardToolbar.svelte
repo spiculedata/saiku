@@ -13,6 +13,7 @@
    */
 
   import AddTileMenu from "$lib/views/dashboard/AddTileMenu.svelte";
+  import { Button } from "$lib/components/ui";
   import FilterSuggestionsModal from "$lib/views/dashboard/FilterSuggestionsModal.svelte";
   import PrefsMenu from "$lib/components/PrefsMenu.svelte";
   import type { TileType } from "$lib/api/dashboards";
@@ -291,17 +292,9 @@
   <div class="actions">
     {#if narrow}
       {@render saveButton()}
-      <button
-        type="button"
-        class="btn hamburger"
-        aria-label="More actions"
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        title="More actions"
-        onclick={() => (menuOpen = !menuOpen)}
-      >
+      <Button variant="outline" class="hamburger" aria-label="More actions" aria-haspopup="menu" aria-expanded={menuOpen} title="More actions" onclick={() => (menuOpen = !menuOpen)}>
         <Menu size={16} aria-hidden="true" />
-      </button>
+      </Button>
       {#if menuOpen}
         <div class="actions-menu" role="menu">
           {@render secondaryActions()}
@@ -316,121 +309,62 @@
 
 {#snippet secondaryActions()}
   {#if onPresent}
-    <button
-      type="button"
-      class="btn"
-      onclick={() => onPresent?.()}
-      title="Present — fullscreen, hide chrome (press F, Esc to exit)"
-      aria-label="Present"
-    >
+    <Button variant="outline" onclick={() => onPresent?.()} title="Present — fullscreen, hide chrome (press F, Esc to exit)" aria-label="Present">
       <Monitor size={14} aria-hidden="true" />
       <span>Present</span>
-    </button>
+    </Button>
   {/if}
 
   <!-- #929: Export the current dashboard view (PNG / PDF). A small format
        picker anchors under the button; disabled until the grid mounts. -->
   <div class="export-wrap">
-    <button
-      type="button"
-      class="btn"
-      onclick={() => (exportMenuOpen = !exportMenuOpen)}
-      disabled={!canExport || exporting}
-      aria-disabled={!canExport || exporting}
-      aria-haspopup="menu"
-      aria-expanded={exportMenuOpen}
-      title={i18n.t("dashboard.export.title", "Export the current view as PNG or PDF")}
-      aria-label={i18n.t("dashboard.export", "Export")}
-    >
+    <Button variant="outline" onclick={() => (exportMenuOpen = !exportMenuOpen)} disabled={!canExport || exporting} aria-disabled={!canExport || exporting} aria-haspopup="menu" aria-expanded={exportMenuOpen} title={i18n.t("dashboard.export.title", "Export the current view as PNG or PDF")} aria-label={i18n.t("dashboard.export", "Export")}>
       <Download size={14} aria-hidden="true" />
       <span>{exporting ? i18n.t("dashboard.export.busy", "Exporting…") : i18n.t("dashboard.export", "Export")}</span>
-    </button>
+    </Button>
     {#if exportMenuOpen}
       <div class="export-menu" role="menu" aria-label={i18n.t("dashboard.export.formatLabel", "Export format")}>
-        <button type="button" class="btn export-option" role="menuitem" onclick={() => runExport("png")}>
+        <Button variant="outline" class="export-option" role="menuitem" onclick={() => runExport("png")}>
           {i18n.t("dashboard.export.png", "PNG image")}
-        </button>
-        <button type="button" class="btn export-option" role="menuitem" onclick={() => runExport("pdf")}>
+        </Button>
+        <Button variant="outline" class="export-option" role="menuitem" onclick={() => runExport("pdf")}>
           {i18n.t("dashboard.export.pdf", "PDF document")}
-        </button>
+        </Button>
       </div>
     {/if}
   </div>
 
   {#if !readOnly}
     <div class="undo-redo" role="group" aria-label={i18n.t("dashboard.history.group", "Undo and redo")}>
-      <button
-        type="button"
-        class="btn icon-only"
-        onclick={() => onUndo?.()}
-        disabled={!canUndo || !onUndo}
-        aria-disabled={!canUndo || !onUndo}
-        title={i18n.t("dashboard.undo.title", "Undo (Ctrl/Cmd+Z)")}
-        aria-label={i18n.t("dashboard.undo", "Undo")}
-      >
+      <Button variant="outline" class="icon-only" onclick={() => onUndo?.()} disabled={!canUndo || !onUndo} aria-disabled={!canUndo || !onUndo} title={i18n.t("dashboard.undo.title", "Undo (Ctrl/Cmd+Z)")} aria-label={i18n.t("dashboard.undo", "Undo")}>
         <Undo2 size={14} aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        class="btn icon-only"
-        onclick={() => onRedo?.()}
-        disabled={!canRedo || !onRedo}
-        aria-disabled={!canRedo || !onRedo}
-        title={i18n.t("dashboard.redo.title", "Redo (Ctrl/Cmd+Shift+Z)")}
-        aria-label={i18n.t("dashboard.redo", "Redo")}
-      >
+      </Button>
+      <Button variant="outline" class="icon-only" onclick={() => onRedo?.()} disabled={!canRedo || !onRedo} aria-disabled={!canRedo || !onRedo} title={i18n.t("dashboard.redo.title", "Redo (Ctrl/Cmd+Shift+Z)")} aria-label={i18n.t("dashboard.redo", "Redo")}>
         <Redo2 size={14} aria-hidden="true" />
-      </button>
+      </Button>
     </div>
 
-    <button
-      type="button"
-      class="btn"
-      onclick={() => (suggestOpen = true)}
-      aria-haspopup="dialog"
-      title="Suggest filter widgets from dimensions your tiles already use"
-    >
+    <Button variant="outline" onclick={() => (suggestOpen = true)} aria-haspopup="dialog" title="Suggest filter widgets from dimensions your tiles already use">
       🔍 Suggest filters
-    </button>
+    </Button>
 
-    <button
-      type="button"
-      class="btn"
-      onclick={() => onResetFilters?.()}
-      disabled={!canResetFilters || !onResetFilters}
-      aria-disabled={!canResetFilters || !onResetFilters}
-      title={canResetFilters
-        ? "Clear all click-filters and restore panel filters to their saved defaults"
-        : "No active filters to reset"}
-    >
+    <Button variant="outline" onclick={() => onResetFilters?.()} disabled={!canResetFilters || !onResetFilters} aria-disabled={!canResetFilters || !onResetFilters} title={canResetFilters ? "Clear all click-filters and restore panel filters to their saved defaults" : "No active filters to reset"}>
       <RotateCcw size={14} aria-hidden="true" />
       <span>Reset filters</span>
-    </button>
+    </Button>
 
     <AddTileMenu onPick={(t) => onAddTile?.(t)} disabled={!onAddTile} />
   {/if}
 
   {#if savedPath}
-    <button
-      type="button"
-      class="btn"
-      onclick={() => (historyOpen = true)}
-      title="Version history — preview and restore earlier saves"
-      aria-haspopup="dialog"
-    >
+    <Button variant="outline" onclick={() => (historyOpen = true)} title="Version history — preview and restore earlier saves" aria-haspopup="dialog">
       <History size={14} aria-hidden="true" />
       <span>History</span>
-    </button>
-    <button
-      type="button"
-      class="btn"
-      onclick={() => (shareOpen = true)}
-      title="Share a read-only link to this dashboard"
-      aria-haspopup="dialog"
-    >
+    </Button>
+    <Button variant="outline" onclick={() => (shareOpen = true)} title="Share a read-only link to this dashboard" aria-haspopup="dialog">
       <Share2 size={14} aria-hidden="true" />
       <span>Share</span>
-    </button>
+    </Button>
   {/if}
 
   <!-- saiku#1050: theme (dark/light/system) + language control. -->
@@ -439,13 +373,7 @@
 
 {#snippet saveButton()}
   {#if !readOnly}
-    <button
-      type="button"
-      class="btn primary"
-      onclick={() => onSave?.()}
-      disabled={saving || !dirty}
-      aria-disabled={saving || !dirty}
-    >
+    <Button onclick={() => onSave?.()} disabled={saving || !dirty} aria-disabled={saving || !dirty}>
       {#if saving}
         Saving…
       {:else if dirty}
@@ -453,7 +381,7 @@
       {:else}
         Saved
       {/if}
-    </button>
+    </Button>
   {/if}
 {/snippet}
 

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { Button } from "$lib/components/ui";
   import { session } from "$lib/stores/session.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { platform } from "$lib/stores/platform.svelte";
@@ -125,18 +126,13 @@
         required
       />
     </label>
-    <button type="submit" class="btn btn--primary btn--wide" disabled={busy}>
+    <Button class="w-full" type="submit" disabled={busy}>
       {busy ? i18n.t("login.submitting") : i18n.t("login.submit")}
-    </button>
+    </Button>
     {#if showDemoPanel}
-      <button
-        type="button"
-        class="btn btn--wide login__demo-button"
-        onclick={loginAsDemo}
-        disabled={busy}
-      >
+      <Button variant="outline" class="w-full login__demo-button" onclick={loginAsDemo} disabled={busy}>
         Sign in as demo user
-      </button>
+      </Button>
     {/if}
   </form>
 

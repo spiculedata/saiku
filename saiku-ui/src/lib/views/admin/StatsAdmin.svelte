@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { Button } from "$lib/components/ui";
   import { adminStats, type MondrianStats } from "$lib/api/admin";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -111,16 +112,16 @@
       {#if lastLoaded}
         <span class="muted">{i18n.t("admin.stats.updatedAt")} {fmtTime(lastLoaded)}</span>
       {/if}
-      <button type="button" class="btn" onclick={() => (auto = !auto)} aria-pressed={auto}>
+      <Button variant="outline" onclick={() => (auto = !auto)} aria-pressed={auto}>
         {#if auto}
           <Pause size={14} /><span>{i18n.t("admin.stats.pause")}</span>
         {:else}
           <Play size={14} /><span>{i18n.t("admin.stats.resume")}</span>
         {/if}
-      </button>
-      <button type="button" class="btn btn--primary" onclick={load} disabled={loading}>
+      </Button>
+      <Button onclick={load} disabled={loading}>
         <RefreshCw size={14} /><span>{loading ? i18n.t("admin.stats.loading") : i18n.t("admin.stats.refresh")}</span>
-      </button>
+      </Button>
     </div>
   </header>
 

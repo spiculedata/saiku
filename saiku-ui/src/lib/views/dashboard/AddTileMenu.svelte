@@ -11,6 +11,7 @@
    */
 
   import type { TileType } from "$lib/api/dashboards";
+  import { Button } from "$lib/components/ui";
 
   interface Props {
     onPick: (type: TileType) => void;
@@ -43,16 +44,9 @@
 </script>
 
 <div class="add-tile-menu" bind:this={rootEl}>
-  <button
-    type="button"
-    class="btn"
-    {disabled}
-    aria-haspopup="menu"
-    aria-expanded={open}
-    onclick={() => (open = !open)}
-  >
+  <Button variant="outline" {disabled} aria-haspopup="menu" aria-expanded={open} onclick={() => (open = !open)}>
     + Add tile
-  </button>
+  </Button>
 
   {#if open}
     <div class="menu" role="menu">

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { adminLogs } from "$lib/api/admin";
+  import { Button } from "$lib/components/ui";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
@@ -31,9 +32,9 @@
           <option value={n}>{n}</option>
         {/each}
       </select>
-      <button type="button" class="btn btn--primary" onclick={load} disabled={loading}>
+      <Button onclick={load} disabled={loading}>
         {loading ? i18n.t("admin.logs.loading") : i18n.t("admin.logs.fetch")}
-      </button>
+      </Button>
     </div>
   </header>
   <pre class="log">{content || i18n.t("admin.logs.idle")}</pre>

@@ -11,6 +11,7 @@
    */
 
   import { onMount } from "svelte";
+  import { Button } from "$lib/components/ui";
   import { goto } from "$app/navigation";
   import { base } from "$app/paths";
   import {
@@ -547,9 +548,9 @@
 <div class="page">
   <header class="head">
     <h1>Dashboards</h1>
-    <button type="button" class="btn primary" onclick={handleNew} disabled={creating}>
+    <Button onclick={handleNew} disabled={creating}>
       {creating ? "Creating…" : "+ New dashboard"}
-    </button>
+    </Button>
   </header>
 
   {#if createError}
@@ -595,8 +596,7 @@
               {@const selected = selectedTags.includes(t)}
               <button
                 type="button"
-                class="chip"
-                class:chip--on={selected}
+                class="chip {selected ? 'chip--on' : ''}"
                 aria-pressed={selected}
                 onclick={() => (selectedTags = toggleSelected(selectedTags, t))}
               >
@@ -612,8 +612,7 @@
               {@const selected = selectedOwners.includes(o)}
               <button
                 type="button"
-                class="chip"
-                class:chip--on={selected}
+                class="chip {selected ? 'chip--on' : ''}"
                 aria-pressed={selected}
                 onclick={() => (selectedOwners = toggleSelected(selectedOwners, o))}
               >
@@ -633,54 +632,25 @@
         <span class="name">{label}</span>
         <span class="path">{relPath}</span>
       </a>
-      <button
-        type="button"
-        class="btn icon-only star"
-        class:star--on={isFav}
-        onclick={() => toggleFavourite(relPath)}
-        title={isFav ? "Remove from favourites" : "Add to favourites"}
-        aria-label={isFav ? "Remove from favourites" : "Add to favourites"}
-        aria-pressed={isFav}
-      >
+      <Button variant="outline" class="icon-only star {isFav ? 'star--on' : ''}" onclick={() => toggleFavourite(relPath)} title={isFav ? "Remove from favourites" : "Add to favourites"} aria-label={isFav ? "Remove from favourites" : "Add to favourites"} aria-pressed={isFav}>
         <Star size={14} fill={isFav ? "currentColor" : "none"} />
-      </button>
+      </Button>
       {#if showMove}
-        <button
-          type="button"
-          class="btn"
-          disabled={movingBusy}
-          onclick={() => openMove(relPath)}
-          title={i18n.t("dashboard.folder.move")}
-          aria-label={i18n.t("dashboard.folder.move")}
-        >
+        <Button variant="outline" disabled={movingBusy} onclick={() => openMove(relPath)} title={i18n.t("dashboard.folder.move")} aria-label={i18n.t("dashboard.folder.move")}>
           <FolderInput size={14} />
-        </button>
+        </Button>
       {/if}
       {#if session.isAdmin}
-        <button
-          type="button"
-          class="btn"
-          disabled={aclLoading}
-          onclick={() => void openAcl(relPath)}
-          title={i18n.t("saved.permissions")}
-          aria-label={i18n.t("saved.permissions")}
-        >
+        <Button variant="outline" disabled={aclLoading} onclick={() => void openAcl(relPath)} title={i18n.t("saved.permissions")} aria-label={i18n.t("saved.permissions")}>
           <ShieldCheck size={14} />
-        </button>
+        </Button>
       {/if}
-      <button
-        type="button"
-        class="btn"
-        disabled={duplicatingPath === relPath}
-        onclick={() => void handleDuplicate(relPath)}
-        title="Duplicate"
-        aria-label="Duplicate dashboard"
-      >
+      <Button variant="outline" disabled={duplicatingPath === relPath} onclick={() => void handleDuplicate(relPath)} title="Duplicate" aria-label="Duplicate dashboard">
         <Copy size={14} />
-      </button>
-      <button type="button" class="btn danger" onclick={() => handleDelete(relPath)} title="Delete">
+      </Button>
+      <Button variant="destructive" onclick={() => handleDelete(relPath)} title="Delete">
         Delete
-      </button>
+      </Button>
     {/snippet}
 
     {#if viewMode === "list"}

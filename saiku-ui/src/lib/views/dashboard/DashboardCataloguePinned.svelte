@@ -15,6 +15,7 @@
    * imported here to avoid threading the helper through a prop.
    */
   import { base } from "$app/paths";
+  import { Button } from "$lib/components/ui";
   import { Star } from "lucide-svelte";
   import { toRepoRelative } from "$lib/api/dashboards";
   import type { RepositoryNode } from "$lib/api/repository";
@@ -44,16 +45,9 @@
             <span class="name">{basename(relPath)}</span>
             <span class="path">{relPath}</span>
           </a>
-          <button
-            type="button"
-            class="btn icon-only star star--on"
-            onclick={() => onToggleFavourite(relPath)}
-            title="Remove from favourites"
-            aria-label="Remove from favourites"
-            aria-pressed="true"
-          >
+          <Button variant="outline" class="icon-only star star--on" onclick={() => onToggleFavourite(relPath)} title="Remove from favourites" aria-label="Remove from favourites" aria-pressed="true">
             <Star size={14} fill="currentColor" />
-          </button>
+          </Button>
         </li>
       {/each}
     </ul>

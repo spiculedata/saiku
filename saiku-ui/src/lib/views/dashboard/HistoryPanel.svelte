@@ -6,6 +6,7 @@
    * current state, so restore is reversible).
    */
   import { base } from "$app/paths";
+  import { Button } from "$lib/components/ui";
   import Modal from "$lib/components/Modal.svelte";
   import { RotateCcw, ExternalLink } from "lucide-svelte";
   import { getHistory, restoreHistory, type DashboardHistoryEntry } from "$lib/api/dashboards";
@@ -94,23 +95,12 @@
               <span class="hist__author">by {v.author || "unknown"}</span>
             </div>
             <div class="hist__actions">
-              <button
-                type="button"
-                class="btn btn--sm"
-                onclick={() => openPreview(v.version)}
-                title="Open a read-only preview in a new tab"
-              >
+              <Button variant="outline" size="sm" onclick={() => openPreview(v.version)} title="Open a read-only preview in a new tab">
                 <ExternalLink size={13} /><span>Preview</span>
-              </button>
-              <button
-                type="button"
-                class="btn btn--sm primary"
-                onclick={() => restore(v.version)}
-                disabled={busyVersion === v.version}
-                title="Restore this version"
-              >
+              </Button>
+              <Button size="sm" onclick={() => restore(v.version)} disabled={busyVersion === v.version} title="Restore this version">
                 <RotateCcw size={13} /><span>Restore</span>
-              </button>
+              </Button>
             </div>
           </li>
         {/each}

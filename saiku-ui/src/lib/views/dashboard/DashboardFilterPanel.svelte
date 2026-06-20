@@ -18,6 +18,7 @@
    */
 
   import { ChevronDown, ChevronRight, GripVertical, X } from "lucide-svelte";
+  import { Button } from "$lib/components/ui";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import { activeFilters, targetKey } from "$lib/stores/activeFilters.svelte";
   import { schemaCache } from "$lib/stores/schemaCache.svelte";
@@ -875,8 +876,8 @@
             <span class="add-error">{addError}</span>
           {/if}
           <div class="add-actions">
-            <button type="button" class="btn" onclick={closeAdd}>Cancel</button>
-            <button type="submit" class="btn primary">Add</button>
+            <Button variant="outline" onclick={closeAdd}>Cancel</Button>
+            <Button type="submit">Add</Button>
           </div>
         </form>
       {/if}

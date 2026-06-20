@@ -12,6 +12,7 @@
    */
 
   import { untrack } from "svelte";
+  import { Button } from "$lib/components/ui";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import type { PanelFilter } from "$lib/api/dashboards";
   import {
@@ -168,15 +169,10 @@
     {/if}
 
     <footer class="foot">
-      <button type="button" class="btn" onclick={onClose}>Cancel</button>
-      <button
-        type="button"
-        class="btn primary"
-        onclick={handleAdd}
-        disabled={suggestions.length === 0}
-      >
+      <Button variant="outline" onclick={onClose}>Cancel</Button>
+      <Button onclick={handleAdd} disabled={suggestions.length === 0}>
         Add selected
-      </button>
+      </Button>
     </footer>
   </div>
 {/if}
