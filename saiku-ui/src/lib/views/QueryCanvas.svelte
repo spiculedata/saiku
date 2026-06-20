@@ -526,6 +526,10 @@
 
   let dragOverAxis = $state<ZoneId | null>(null);
   let dragOverChipKey = $state<string | null>(null);
+  // Whether the pointer is below the target chip's mid-line (drop-after)
+  // or above (drop-before). Drives the visual drop-line indicator AND
+  // the reorderHierarchy insert-position decision in onChipDrop.
+  let dragOverChipAfter = $state<boolean>(false);
   /** Where the chip being dragged came from. Null for sidebar-originated drags
    *  (where any zone is a valid drop). Used to suppress no-op zone highlights
    *  when a chip is dragged over its own axis's empty background. */
@@ -557,14 +561,25 @@
       if (dragOverAxis === axis) dragOverAxis = null;
     }
   }
-  function clearDragOver() { dragOverAxis = null; dragOverChipKey = null; dragSourceAxis = null; }
+  function clearDragOver() { dragOverAxis = null; dragOverChipKey = null; dragOverChipAfter = false; dragSourceAxis = null; }
 
   function onChipDragOver(e: DragEvent, axis: ZoneId, kind: "hierarchy" | "measure", id: string) {
     if (!e.dataTransfer?.types?.includes("application/x-saiku-chip")) return;
     e.preventDefault();
     e.stopPropagation();
     const key = chipKey(axis, kind, id);
-    if (dragOverChipKey !== key) dragOverChipKey = key;
+    // Pick before/after based on mouse Y vs chip mid-point. Without this,
+    // every drop is "before target", which means dragging the FIRST chip
+    // onto the second produces no change (source already comes before
+    // target after the splice). With before/after detection the
+    // interaction reads symmetrically — drop above the mid-line → before,
+    // drop below → after.
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const after = e.clientY > rect.top + rect.height / 2;
+    if (dragOverChipKey !== key || dragOverChipAfter !== after) {
+      dragOverChipKey = key;
+      dragOverChipAfter = after;
+    }
     if (dragOverAxis !== null) dragOverAxis = null;
   }
   function onChipDragEnter(e: DragEvent) {
@@ -631,14 +646,24 @@
       | { kind: "measure"; axis: ZoneId; uniqueName: string };
     // Only same-axis, same-kind drops are reorders. Otherwise defer to the zone handler.
     if (payload.kind === "hierarchy" && target.kind === "hierarchy" && payload.axis === targetAxis) {
-      if (payload.name !== target.name) {
+      if (payload.name !== target.name && targetAxis !== "MEASURES") {
         e.preventDefault();
         e.stopPropagation();
+        // Decide insert position based on the drag-over Y signal captured
+        // in onChipDragOver. dropAfter → splice just after the target;
+        // dropBefore → splice just before. reorderHierarchy takes a
+        // targetName that the source lands BEFORE (or null = end), so
+        // "after target" means we pass the name of the chip AFTER target
+        // (or null when target is the last).
+        const dropAfter = dragOverChipAfter;
+        const list = query.current?.queryModel?.axes[targetAxis].hierarchies ?? [];
+        let insertBefore: string | null = target.name;
+        if (dropAfter) {
+          const tIdx = list.findIndex((h) => h.name === target.name);
+          insertBefore = tIdx >= 0 && tIdx + 1 < list.length ? list[tIdx + 1].name : null;
+        }
         clearDragOver();
-        // narrow targetAxis back to AxisLocation — reorderHierarchy only
-        // makes sense for real backend axes, and the hierarchy chip can
-        // only live in COLUMNS/ROWS/PAGES/FILTER anyway.
-        if (targetAxis !== "MEASURES") query.reorderHierarchy(targetAxis, payload.name, target.name);
+        query.reorderHierarchy(targetAxis, payload.name, insertBefore);
       }
       return;
     }
@@ -930,9 +955,13 @@
           </header>
           <div class="chips">
             {#each query.current?.queryModel?.axes[axis].hierarchies ?? [] as h}
+              {@const levelNames = Object.keys(h.levels)}
               <!-- svelte-ignore a11y_no_static_element_interactions — drag/context-menu are mouse affordances; the inner buttons (label, close) handle keyboard accessibility. -->
               <span
-                class={dragOverChipKey === chipKey(axis, "hierarchy", h.name) ? "chip chip--level is-drop-before" : "chip chip--level"}
+                class={"chip chip--level " +
+                  (dragOverChipKey === chipKey(axis, "hierarchy", h.name)
+                    ? (dragOverChipAfter ? "is-drop-after" : "is-drop-before")
+                    : "")}
                 draggable="true"
                 ondragstart={(e) => onHierChipDragStart(e, axis, h)}
                 ondragenter={onChipDragEnter}
@@ -940,14 +969,40 @@
                 ondrop={(e) => onChipDrop(e, axis, { kind: "hierarchy", name: h.name })}
                 oncontextmenu={(e) => openHierMenu(e, axis, h)}
               >
+                <!-- Dim caption opens the selections modal. When the chip
+                     carries multiple levels we follow with per-level pills
+                     so each can be removed individually without losing the
+                     whole hierarchy. -->
                 <button
                   type="button"
                   class="chip__label"
                   onclick={() => openSelections(axis, h)}
                   title={i18n.t("canvas.menu.editSelections")}
                 >
-                  {hierChipLabel(h)}
+                  {h.caption || h.name}
                 </button>
+                {#if levelNames.length === 1}
+                  <span class="chip__lvl-sep">›</span>
+                  <span class="chip__lvl">{levelNames[0]}</span>
+                {:else if levelNames.length > 1}
+                  {#each levelNames as lvl}
+                    <span class="chip__lvl-sep">›</span>
+                    <span class="chip__lvl chip__lvl--removable">
+                      {lvl}
+                      <button
+                        type="button"
+                        class="chip__lvl-x"
+                        aria-label="{i18n.t('canvas.menu.removeLevel')} {lvl}"
+                        title="{i18n.t('canvas.menu.removeLevel')}: {lvl}"
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          query.removeLevel(h.name, lvl);
+                          if (query.hasRunnableShape()) void query.run();
+                        }}
+                      >×</button>
+                    </span>
+                  {/each}
+                {/if}
                 <button
                   type="button"
                   class="chip__x"
@@ -1444,8 +1499,47 @@
   }
   .chip:hover { background: var(--bg-subtle); }
   .chip.is-drop-before {
-    box-shadow: inset 3px 0 0 0 var(--accent), 0 0 0 1px var(--accent);
+    box-shadow: inset 0 3px 0 0 var(--accent), 0 0 0 1px var(--accent);
     border-color: var(--accent);
+  }
+  .chip.is-drop-after {
+    box-shadow: inset 0 -3px 0 0 var(--accent), 0 0 0 1px var(--accent);
+    border-color: var(--accent);
+  }
+  /* Per-level sub-pill — surfaces individual levels inside a multi-level
+     hierarchy chip so each can be removed without dropping the whole
+     dimension. Visually a soft inline tag separated by `›` markers. */
+  .chip__lvl-sep {
+    color: var(--fg-subtle);
+    padding: 0 2px;
+    user-select: none;
+  }
+  .chip__lvl {
+    padding: 2px 6px;
+    color: var(--fg);
+    font-size: var(--fs-xs);
+    white-space: nowrap;
+  }
+  .chip__lvl--removable {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg-subtle);
+    border-radius: var(--radius-sm);
+  }
+  .chip__lvl-x {
+    background: transparent;
+    color: var(--fg-subtle);
+    border: 0;
+    padding: 0 4px;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+  }
+  .chip__lvl-x:hover {
+    color: var(--danger);
+    background: var(--bg-hover);
   }
   .chip__label {
     background: transparent;
