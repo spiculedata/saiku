@@ -474,3 +474,6 @@ nbdist/
 
 # Claude Code session worktrees / scratch (never commit)
 .claude/
+
+# git worktrees
+.worktrees/

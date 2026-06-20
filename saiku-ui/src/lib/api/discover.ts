@@ -90,6 +90,16 @@ export interface SaikuDimension {
    *  this so the SPA's time-filter detection has a dimension-level
    *  signal independent of caption text. */
   dimensionType?: string;
+  /** Names of the MeasureGroups this dimension has a real (non-NoLink) join
+   *  to. Populated by SaikuMondrianHelper.getMeasureGroupsForDimension on
+   *  Mondrian providers; null elsewhere.
+   *
+   *  Used in DimensionList for applicability hinting on virtual cubes —
+   *  when the user has measures selected from MGs R, a dimension is
+   *  visually muted iff measureGroups doesn't cover R. Null is treated as
+   *  "no info, assume applicable" so legacy single-MG cubes render
+   *  identically to today. */
+  measureGroups?: string[] | null;
 }
 
 export interface SaikuMeasure {
@@ -103,6 +113,14 @@ export interface SaikuMeasure {
    *  / OlapDiscoverResource.getCubeMeasures). The field is forwarded
    *  raw so admin UIs can badge "(hidden)" rows without re-checking. */
   visible?: boolean;
+  /** Mondrian-4 MeasureGroup the base measure belongs to. Populated by
+   *  SaikuMondrianHelper.getMeasureGroup; empty string for calculated
+   *  members (no MG) and null for non-Mondrian providers. Drives the
+   *  measure-tree grouping in DimensionList so virtual cubes that pull
+   *  from multiple fact tables (e.g. FoodMart's Warehouse and Sales)
+   *  render Sales / Warehouse / Calculated as separate sections instead
+   *  of one flat list. */
+  measureGroup?: string | null;
 }
 
 const REST_BASE = "/rest/saiku";

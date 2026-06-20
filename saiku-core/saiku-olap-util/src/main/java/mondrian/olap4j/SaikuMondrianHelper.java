@@ -145,6 +145,56 @@ public class SaikuMondrianHelper {
         return null;
     }
 
+    /**
+     * For a Mondrian cube dimension, return the names of every measure group
+     * the dimension has a real (non-NoLink) join to. Used by the SPA's
+     * applicability hinting in DimensionList: when the user has measures
+     * selected the SPA mutes dimensions whose link set is not a superset of
+     * the required measure groups, so virtual cubes that mix conformed and
+     * non-conformed dims surface the asymmetry instead of silently producing
+     * sparse/empty cellsets (saiku-cloud#TODO).
+     *
+     * <p>Returns:
+     * <ul>
+     *   <li>a set of MG names (possibly empty for a fully-NoLinked dim);</li>
+     *   <li>{@code null} for non-Mondrian providers — caller treats as
+     *       "no information, assume applicable" to preserve legacy UX.</li>
+     * </ul>
+     */
+    public static java.util.Set<String> getMeasureGroupsForDimension(org.olap4j.metadata.Dimension dim) {
+        if (!isMondrian(dim)) {
+            return null;
+        }
+        try {
+            MondrianOlap4jDimension odim = (MondrianOlap4jDimension) dim;
+            // getOlapElement() is protected — accessible from this same
+            // mondrian.olap4j package. Returns the wrapped Mondrian
+            // Dimension (which is a RolapCubeDimension when surfaced
+            // through Cube.getDimensions()).
+            mondrian.olap.OlapElement el = odim.getOlapElement();
+            if (!(el instanceof RolapCubeDimension)) {
+                return null;
+            }
+            RolapCubeDimension rcd = (RolapCubeDimension) el;
+            RolapCube cube = rcd.getCube();
+            java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+            // dimensionMap3 is keyed by RolapCubeDimension and only contains
+            // dims with a real (non-NoLink) join — exactly the applicability
+            // signal we want to surface to the SPA.
+            for (RolapMeasureGroup mg : cube.getMeasureGroups()) {
+                if (mg.dimensionMap3.containsKey(rcd)) {
+                    out.add(mg.getName());
+                }
+            }
+            return out;
+        } catch (Throwable t) {
+            // Defensive: never let a metadata introspection failure poison
+            // discover — the SPA treats null as "no info, assume applicable".
+            log.debug("getMeasureGroupsForDimension failed: {}", t.toString());
+            return null;
+        }
+    }
+
     private static boolean isHanger(RolapCubeDimension dimension) {
         return DimensionLookup.getHanger(dimension);
     }
