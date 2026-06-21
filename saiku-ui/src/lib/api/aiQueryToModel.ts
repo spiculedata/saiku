@@ -121,11 +121,18 @@ function applyAxisEntries(
     const hier = entry.hierarchy;
     const lvl = entry.level;
     if (!dim || !hier || !lvl) continue;
-    // The workbench keys hierarchies by their `name` which is the full
-    // bracketed unique-name (e.g. `[Date].[Date]`). The AI emits short
-    // names; we reconstruct the bracketed form. Identical to what
-    // DimensionList.svelte passes via includeLevel().
-    const hierarchyUniqueName = dim === hier ? bracket(dim) : bracket(dim, hier);
+    // Mondrian hierarchy unique names ALWAYS follow the `[dim].[hier]`
+    // form, even when the hierarchy name matches the dimension name
+    // (the Pharma cube's Date dimension has its default hierarchy also
+    // called "Date", and the unique name is `[Date].[Date]`). A previous
+    // attempt to short-circuit to just `[Date]` when dim===hier silently
+    // failed Mondrian's hierarchy lookup in Fat.java's queryModel→MDX
+    // path — the server stripped the unresolvable hierarchy from the axis
+    // and the result came back as 1 row × 2 cols (just the measure label
+    // + value, no axis content). Visible in the launcher log as
+    //   "SELECT NON EMPTY {[Measures].[Quantity]} ON COLUMNS FROM [Pharma Rx]"
+    // — no CROSSJOINs because the Geography / Date axes silently emptied.
+    const hierarchyUniqueName = bracket(dim, hier);
     const existing = model.axes[axis].hierarchies.find((h) => h.name === hierarchyUniqueName);
     const target: ThinHierarchy =
       existing ?? {
