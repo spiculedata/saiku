@@ -227,9 +227,9 @@ jobs:
         run: ls -la release-assets/
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
-          # Both files in a multi-line list. softprops/action-gh-release@v2
+          # Both files in a multi-line list. softprops/action-gh-release@v3
           # de-dupes by filename so we can list them explicitly.
           files: |
             release-assets/${{ needs.jar.outputs.jar_name }}
