@@ -74,6 +74,14 @@ export interface AskRequest {
    * LLM auto-routes wrong.
    */
   forceTool?: "auto" | "query" | "insight" | "view_change";
+  /**
+   * Snapshot of the user's currently-built AiQueryRequest (projected from the
+   * live queryModel via queryModelToAiRequest). Gives the LLM full context on
+   * what's already on screen so emit_query can EXTEND rather than REPLACE on
+   * follow-up turns — e.g. "add therapeutic class to columns" should preserve
+   * the user's existing rows/measures/filters, not nuke them.
+   */
+  currentQuery?: AiQueryRequestShape;
 }
 
 /** Markdown analysis the AI emitted when the user asked for an insight about current data. */

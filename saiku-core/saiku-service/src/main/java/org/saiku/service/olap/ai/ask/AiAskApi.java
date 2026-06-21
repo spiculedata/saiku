@@ -43,6 +43,15 @@ public final class AiAskApi {
          * segmented "Auto / Query / Insight / View" picker above the input — Auto leaves this null.
          */
         private String forceTool;
+        /**
+         * Optional snapshot of the user's current AiQueryRequest (projected from the live
+         * queryModel client-side). When present, the LLM sees the existing query as context and is
+         * instructed to PRESERVE fields the user didn't ask to change — e.g. "add therapeutic
+         * class to columns" extends the cube view rather than wiping rows / filters / measures
+         * the user already chose. Type is the raw AiQueryRequest wire shape; we deserialize it
+         * back into an AiQueryRequest below before handing to the service.
+         */
+        private AiQueryRequest currentQuery;
 
         public String getQuestion() {
             return question;
@@ -82,6 +91,14 @@ public final class AiAskApi {
 
         public void setForceTool(String v) {
             this.forceTool = v;
+        }
+
+        public AiQueryRequest getCurrentQuery() {
+            return currentQuery;
+        }
+
+        public void setCurrentQuery(AiQueryRequest v) {
+            this.currentQuery = v;
         }
 
         /** Convert the wire-shape history into the service-layer record list. */

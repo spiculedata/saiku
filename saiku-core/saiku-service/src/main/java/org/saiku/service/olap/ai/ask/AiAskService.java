@@ -108,11 +108,20 @@ public class AiAskService {
      * @param history prior turns; may be null / empty for single-shot asks
      */
     public AskOutcome ask(AiCubeRef ref, String question, List<NlAskMessage> history) {
-        return ask(ref, question, history, null, NlAskRequest.ForceTool.AUTO);
+        return ask(ref, question, history, null, NlAskRequest.ForceTool.AUTO, null);
     }
 
     public AskOutcome ask(AiCubeRef ref, String question, List<NlAskMessage> history, String cellsetDigest) {
-        return ask(ref, question, history, cellsetDigest, NlAskRequest.ForceTool.AUTO);
+        return ask(ref, question, history, cellsetDigest, NlAskRequest.ForceTool.AUTO, null);
+    }
+
+    public AskOutcome ask(
+            AiCubeRef ref,
+            String question,
+            List<NlAskMessage> history,
+            String cellsetDigest,
+            NlAskRequest.ForceTool forceTool) {
+        return ask(ref, question, history, cellsetDigest, forceTool, null);
     }
 
     /**
@@ -132,7 +141,8 @@ public class AiAskService {
             String question,
             List<NlAskMessage> history,
             String cellsetDigest,
-            NlAskRequest.ForceTool forceTool) {
+            NlAskRequest.ForceTool forceTool,
+            AiQueryRequest currentQuery) {
         if (ref == null) {
             return AskOutcome.degraded("cube ref required", null);
         }
@@ -158,6 +168,17 @@ public class AiAskService {
             return AskOutcome.degraded("schema serialisation failed", null);
         }
 
+        // Serialise the current query into JSON for the provider to embed in the prompt.
+        // Null/blank when absent — providers omit the "Current query" context block entirely
+        // rather than say "Current query: null", which would just bloat the prompt.
+        String currentQueryJson = null;
+        if (currentQuery != null) {
+            try {
+                currentQueryJson = mapper.writeValueAsString(currentQuery);
+            } catch (JsonProcessingException e) {
+                log.debug("Failed to serialise currentQuery for ask context; omitting", e);
+            }
+        }
         NlAskRequest req = new NlAskRequest(
                 ref,
                 question,
@@ -165,7 +186,8 @@ public class AiAskService {
                 requestSchemaJson,
                 history == null ? List.of() : history,
                 cellsetDigest,
-                forceTool == null ? NlAskRequest.ForceTool.AUTO : forceTool);
+                forceTool == null ? NlAskRequest.ForceTool.AUTO : forceTool,
+                currentQueryJson);
         NlAskResponse resp = provider.ask(req);
 
         if (resp.degraded()) {

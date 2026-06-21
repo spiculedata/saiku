@@ -775,7 +775,12 @@ public class AiQueryResource {
             }
         }
         AiAskService.AskOutcome outcome = askService.ask(
-                body.getCube(), body.getQuestion(), body.historyAsMessages(), body.getCellsetDigest(), force);
+                body.getCube(),
+                body.getQuestion(),
+                body.historyAsMessages(),
+                body.getCellsetDigest(),
+                force,
+                body.getCurrentQuery());
         if (outcome.degraded()) {
             AiAskApi.AskResponse out = new AiAskApi.AskResponse();
             out.setDegraded(true);

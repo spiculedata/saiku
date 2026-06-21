@@ -161,3 +161,65 @@ function applyAxisEntries(
 function bracket(...parts: string[]): string {
   return parts.map((p) => `[${p}]`).join(".");
 }
+
+/**
+ * Inverse of {@link aiRequestToQueryModel} — serialise the current chip-built
+ * query (or any prior AI-built one) into the AiQueryRequest shape the LLM was
+ * trained to emit. We feed this back into the next /ai/ask call as
+ * {@code currentQuery} so the LLM has full context on what the user already
+ * has on screen — and can EXTEND rather than REPLACE on follow-up turns like
+ * "add therapeutic class to columns".
+ *
+ * Lossy: we don't carry order/limit/visualTotals/named-sets/calculated members
+ * here — those are rarely set via chip flow and the LLM doesn't need them as
+ * context to make a sensible extension. If we find the AI is forgetting them
+ * on follow-ups, add them to this projection.
+ */
+export function queryModelToAiRequest(
+  model: unknown,
+  cube: { connectionName: string; catalog: string; schema: string; cubeName: string },
+): AiQueryRequestShape | null {
+  if (!model || typeof model !== "object") return null;
+  const m = model as {
+    axes?: Record<string, { hierarchies?: unknown[]; nonEmpty?: boolean }>;
+    details?: { measures?: { name?: string }[] };
+  };
+  const req: AiQueryRequestShape = {
+    cube,
+    measures: [],
+    rows: [],
+    columns: [],
+    filters: [],
+  };
+  for (const me of m.details?.measures ?? []) {
+    if (me?.name) req.measures!.push({ name: me.name });
+  }
+  collectAxisEntries(req.rows!, m.axes?.ROWS?.hierarchies);
+  collectAxisEntries(req.columns!, m.axes?.COLUMNS?.hierarchies);
+  collectAxisEntries(req.filters!, m.axes?.FILTER?.hierarchies);
+  req.nonEmpty = !!(m.axes?.ROWS?.nonEmpty || m.axes?.COLUMNS?.nonEmpty);
+  return req;
+}
+
+function collectAxisEntries(out: NonNullable<AiQueryRequestShape["rows"]>, hiers: unknown): void {
+  if (!Array.isArray(hiers)) return;
+  for (const h of hiers as Array<{
+    caption?: string;
+    dimension?: string;
+    levels?: Record<string, { selection?: { members?: Array<{ uniqueName?: string }> } }>;
+  }>) {
+    if (!h || !h.dimension || !h.levels) continue;
+    for (const [lvlName, lvl] of Object.entries(h.levels)) {
+      const memberUniques =
+        lvl?.selection?.members
+          ?.map((mem) => mem?.uniqueName)
+          .filter((u): u is string => !!u) ?? [];
+      out.push({
+        dimension: h.dimension,
+        hierarchy: h.caption ?? h.dimension,
+        level: lvlName,
+        members: memberUniques,
+      });
+    }
+  }
+}

@@ -145,15 +145,15 @@ public final class OpenAINlAskProvider extends AbstractNlAskProvider {
         root.put("max_tokens", config.maxTokens());
         root.put("temperature", config.temperature());
 
-        ArrayNode tools = root.putArray("tools");
-
-        // When the user explicitly picked a mode in the drawer's picker, narrow the tool list to
-        // just that one (+ refusal, always). Auto → all three. Refusal stays so even a forced
-        // intent can refuse off-topic.
+        // Mode picker — Auto leaves all three intents available; an explicit pick narrows the
+        // tool list (+ refusal, always available) so the LLM can't auto-route to a different
+        // intent. Same flags also drive the system-prompt pruning below for speed.
         NlAskRequest.ForceTool force = request.forceTool();
         boolean wantQuery = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.QUERY;
         boolean wantInsight = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.INSIGHT;
         boolean wantViewChange = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.VIEW_CHANGE;
+
+        ArrayNode tools = root.putArray("tools");
 
         if (wantQuery) {
             ObjectNode tool = tools.addObject();
@@ -219,14 +219,22 @@ public final class OpenAINlAskProvider extends AbstractNlAskProvider {
         StringBuilder sys = new StringBuilder(SYSTEM_PROMPT);
         sys.append("\n\nCube schema:\n").append(request.cubeSchemaJson());
         sys.append("\n\nCube ref to echo: ").append(cubeRefJson(request));
-        sys.append("\n\nChart-type catalog (for emit_view_change):\n").append(chartTypeCatalogText());
+        if (wantViewChange) {
+            sys.append("\n\nChart-type catalog (for emit_view_change):\n").append(chartTypeCatalogText());
+        }
         if (request.cellsetDigest() != null && !request.cellsetDigest().isBlank()) {
             sys.append("\n\nUser's current cellset (markdown digest — use for emit_insight / "
                             + "emit_view_change reasoning):\n")
                     .append(truncate(request.cellsetDigest(), 8000));
-        } else {
+        } else if (wantInsight || wantViewChange) {
             sys.append("\n\nNo current cellset on screen — emit_insight and emit_view_change are "
                     + "unavailable for this turn.");
+        }
+        if (wantQuery && request.currentQueryJson() != null && !request.currentQueryJson().isBlank()) {
+            sys.append("\n\nUser's CURRENT AiQueryRequest (preserve fields when extending — 'add X' or "
+                            + "'also break down by Y' should KEEP existing measures/rows/columns/filters "
+                            + "and add the new one; only drop a field when the user asks to remove it):\n")
+                    .append(truncate(request.currentQueryJson(), 4000));
         }
         system.put("content", sys.toString());
 

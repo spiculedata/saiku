@@ -141,30 +141,44 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
         root.put("max_tokens", config.maxTokens());
         root.put("temperature", config.temperature());
 
-        StringBuilder system = new StringBuilder(SYSTEM_PROMPT);
-        system.append("\n\nCube schema:\n").append(request.cubeSchemaJson());
-        system.append("\n\nCube ref to echo: ").append(cubeRefJson(request));
-        system.append("\n\nChart-type catalog (for emit_view_change):\n").append(chartTypeCatalogText());
-        if (request.cellsetDigest() != null && !request.cellsetDigest().isBlank()) {
-            system.append("\n\nUser's current cellset (markdown digest — use for emit_insight / "
-                            + "emit_view_change reasoning):\n")
-                    .append(truncate(request.cellsetDigest(), 8000));
-        } else {
-            system.append("\n\nNo current cellset on screen — emit_insight and emit_view_change are "
-                    + "unavailable for this turn.");
-        }
-        root.put("system", system.toString());
-
-        ArrayNode tools = root.putArray("tools");
-
-        // When the user explicitly picked a mode in the drawer's picker, narrow the tool list to
-        // just that one (+ refusal, always). Auto → emit all three so the model routes by question
-        // shape. Refusal is always available so even a forced "query" turn can refuse off-topic.
         NlAskRequest.ForceTool force = request.forceTool();
         boolean wantQuery = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.QUERY;
         boolean wantInsight = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.INSIGHT;
         boolean wantViewChange = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.VIEW_CHANGE;
 
+        StringBuilder system = new StringBuilder(SYSTEM_PROMPT);
+        system.append("\n\nCube schema:\n").append(request.cubeSchemaJson());
+        system.append("\n\nCube ref to echo: ").append(cubeRefJson(request));
+        // Chart-type catalog only matters for view-change routing. Skipping it on query/insight-only
+        // turns trims ~500 tokens off the prompt and shaves a noticeable chunk off response time.
+        if (wantViewChange) {
+            system.append("\n\nChart-type catalog (for emit_view_change):\n").append(chartTypeCatalogText());
+        }
+        if (request.cellsetDigest() != null && !request.cellsetDigest().isBlank()) {
+            system.append("\n\nUser's current cellset (markdown digest — use for emit_insight / "
+                            + "emit_view_change reasoning):\n")
+                    .append(truncate(request.cellsetDigest(), 8000));
+        } else if (wantInsight || wantViewChange) {
+            system.append("\n\nNo current cellset on screen — emit_insight and emit_view_change are "
+                    + "unavailable for this turn.");
+        }
+        // Current AiQueryRequest snapshot — gives the LLM full context on what's already on screen
+        // so emit_query can EXTEND ('add therapeutic class to columns' should preserve existing
+        // rows/measures/filters) rather than wipe-and-rewrite. Only included when query routing is
+        // possible (forceTool=auto|query) — insight/view-change don't touch the query model.
+        if (wantQuery && request.currentQueryJson() != null && !request.currentQueryJson().isBlank()) {
+            system.append("\n\nUser's CURRENT AiQueryRequest (preserve fields when extending — when the "
+                            + "user says 'add X' or 'also break down by Y', return a query that KEEPS "
+                            + "existing measures/rows/columns/filters and adds the new one. Only drop a "
+                            + "field when the user explicitly asks to remove it):\n")
+                    .append(truncate(request.currentQueryJson(), 4000));
+        }
+        root.put("system", system.toString());
+
+        ArrayNode tools = root.putArray("tools");
+
+        // wantQuery / wantInsight / wantViewChange are computed at the top of the method (where the
+        // system prompt's tool-specific sections are pruned by the same flags).
         if (wantQuery) {
             ObjectNode queryTool = tools.addObject();
             queryTool.put("name", TOOL_NAME);
