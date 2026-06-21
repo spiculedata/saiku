@@ -477,6 +477,20 @@ class QueryStore {
       this.result = null;
       return;
     }
+    /*
+     * Cancel any in-flight run before starting a new one. Two flows can
+     * race a run() against itself: the markDirty() auto-run that fires
+     * on every model mutation (autorun=true by default) AND explicit
+     * call sites in QueryCanvas. Without this guard the second run()
+     * shadows the first; the backend then sees two queries on the same
+     * name and cancels the older one, surfacing 'OlapException: Query
+     * cancelled' on what looked to the user like a single click. The
+     * AbortError from the cancelled fetch is swallowed below, so the
+     * second (winning) run gets a clean slate.
+     */
+    if (this.running) {
+      await this.cancel();
+    }
     this.running = true;
     this.error = null;
     this.errorDetail = null;
@@ -511,8 +525,17 @@ class QueryStore {
       // Calcite UnsupportedTranslation, MDX parse, datasource down, etc.)
       // ride along in QueryResult.error with a null cellset. Surface them
       // as a callout instead of rendering an empty grid.
+      //
+      // Exception: backend-side cancels (OlapException: Query cancelled
+      // / Query canceled) only happen when WE cancelled the prior run
+      // because a fresh one arrived (see the guard at the top of run()).
+      // Treat it as silent — there's a winning run already in flight
+      // (or just finished) and surfacing 'cancelled' would shadow its
+      // result with a red banner the user can't act on.
       const embedded = this.result?.error;
-      if (embedded) {
+      if (embedded && /query\s+cancel(l)?ed/i.test(embedded)) {
+        this.result = null;
+      } else if (embedded) {
         this.error = friendlyExecuteError(embedded);
         this.errorDetail = embedded;
         this.result = null;

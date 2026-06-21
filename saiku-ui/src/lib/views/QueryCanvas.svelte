@@ -291,8 +291,10 @@
       else if (id === "remove") query.removeHierarchy(m.hierarchy.name);
       else if (id.startsWith("removeLevel:")) {
         const levelName = id.substring("removeLevel:".length);
+        // No explicit run() here — query.removeLevel calls markDirty
+        // which auto-runs when autorun is on. Double-firing produced
+        // 'Query cancelled' on the first click of every chip-removal.
         query.removeLevel(m.hierarchy.name, levelName);
-        if (query.hasRunnableShape()) void query.run();
       }
       return;
     }
@@ -306,7 +308,7 @@
         const [location, axis] = arg.split("_") as ["TOP" | "BOTTOM", "COLUMNS" | "ROWS"];
         query.setMeasuresPlacement(axis, location);
       }
-      if (query.hasRunnableShape()) void query.run();
+      // setMeasuresPlacement → markDirty → auto-run; no explicit run().
       return;
     }
     if (m.kind === "axis" && m.axis) {
@@ -966,14 +968,24 @@
   ) {
     if (!selectionsTarget) return;
     let totalSelected = 0;
-    for (const lvl of perLevel) {
-      query.setLevelSelection(
-        selectionsTarget.hierarchyName,
-        lvl.levelName,
-        lvl.selected,
-        lvl.type,
-      );
-      totalSelected += lvl.selected.length;
+    // Suppress autorun during the loop. Each setLevelSelection calls
+    // markDirty which would otherwise fire a run() per iteration — N
+    // backend round-trips where the first N-1 get cancelled by the
+    // run() guard. One explicit run() at the end is what we want.
+    const wasAutorun = query.autorun;
+    query.autorun = false;
+    try {
+      for (const lvl of perLevel) {
+        query.setLevelSelection(
+          selectionsTarget.hierarchyName,
+          lvl.levelName,
+          lvl.selected,
+          lvl.type,
+        );
+        totalSelected += lvl.selected.length;
+      }
+    } finally {
+      query.autorun = wasAutorun;
     }
     selectionsOpen = false;
     selectionsTarget = null;
@@ -1133,8 +1145,13 @@
                           title={i18n.t("canvas.menu.removeLevel")}
                           onclick={(e) => {
                             e.stopPropagation();
+                            // removeLevel → markDirty → auto-run. Don't
+                            // explicitly call run() here — the double-fire
+                            // races against itself on the backend, which
+                            // cancels the older query and surfaces
+                            // 'OlapException: Query cancelled' on what
+                            // looked like a single click.
                             query.removeLevel(h.name, lvl);
-                            if (query.hasRunnableShape()) void query.run();
                           }}
                         >×</button>
                       {/if}
