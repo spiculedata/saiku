@@ -206,12 +206,20 @@ class QueryStore {
    * Apply a HistoryEntry to the live store state. Used by undo()/redo() —
    * NOT by load operations (initFor / hydrate / loadFromJson / reset), which
    * clear history rather than walk it.
+   *
+   * `entry` came from this.past / this.future which are $state arrays — their
+   * values are wrapped in Svelte 5 Proxies. `structuredClone()` throws
+   * "Proxy object could not be cloned" on those, which crashes undo / redo
+   * AND any path that triggers captureForUndo (every AI Ask rewrite, every
+   * chip mutation). $state.snapshot() unwraps the proxy first, returning a
+   * plain non-reactive copy that structuredClone (or assignment) can handle.
    */
   private applyHistory(entry: HistoryEntry): void {
-    this.current = entry.current ? structuredClone(entry.current) : null;
-    this.viewMode = entry.viewMode;
-    this.chartType = entry.chartType;
-    this.chartOptions = structuredClone(entry.chartOptions);
+    const plain = $state.snapshot(entry) as HistoryEntry;
+    this.current = plain.current ? structuredClone(plain.current) : null;
+    this.viewMode = plain.viewMode;
+    this.chartType = plain.chartType;
+    this.chartOptions = structuredClone(plain.chartOptions);
     this.dirty = true;
     this.dirtyCount++;
     // Undo/redo should auto-rerun if the restored state is runnable. We bypass
