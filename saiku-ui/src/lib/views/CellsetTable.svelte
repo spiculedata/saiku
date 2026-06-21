@@ -489,35 +489,6 @@
         const h = row.getBoundingClientRect().height;
         if (h > 0) rowH = h;
       }
-      // Measure cumulative left-offset for each row-header column on the first
-      // data row so we can apply `position: sticky; left: <offset>` to every
-      // row-header cell. Without this, only the first row-header column sticks
-      // and multi-level row dims (Age Band + Year + Day) scroll out of view
-      // entirely when the user pans right on a wide cellset.
-      if (row) {
-        const headers = row.querySelectorAll<HTMLTableCellElement>("th.row, th.row_null");
-        let cumulative = 0;
-        headers.forEach((h, i) => {
-          // First cell starts at 0; each subsequent cell's left is the sum of
-          // previous cells' widths. offsetLeft would also work but is less
-          // reliable across browsers when the table itself is offset.
-          h.style.setProperty("--saiku-row-sticky-left", `${cumulative}px`);
-          cumulative += h.getBoundingClientRect().width;
-        });
-        // Propagate the same offsets to every other row's row-header cells so
-        // they line up. Without this each row would only set its own first
-        // cell's offset (because the measurement loop above only saw `row`).
-        const allBodyRows = wrapperEl.querySelectorAll<HTMLTableRowElement>("tbody tr.vrow");
-        allBodyRows.forEach((bodyRow) => {
-          const cells = bodyRow.querySelectorAll<HTMLTableCellElement>("th.row, th.row_null");
-          let acc = 0;
-          cells.forEach((cell, i) => {
-            cell.style.setProperty("--saiku-row-sticky-left", `${acc}px`);
-            const w = headers[i]?.getBoundingClientRect().width ?? cell.getBoundingClientRect().width;
-            acc += w;
-          });
-        });
-      }
     });
   });
 
@@ -857,13 +828,18 @@
     text-align: left;
     white-space: nowrap;
     cursor: context-menu;
+    /* Only the FIRST row-header column sticks to the left when panning
+       horizontally. A previous attempt at per-column cumulative offsets
+       (measured from the first body row, written as a CSS custom property)
+       broke under virtualisation: scrolling replaced visible cells without
+       firing the measurement effect, so new cells got the default 0 offset
+       and stuck to column 1 instead of their natural column N position —
+       visible to the user as dates jumping into the wrong row-header
+       column. Reverting to single-column sticky avoids the layout chaos;
+       outer dimension columns scroll out of view at narrow widths but the
+       grid layout stays sane. */
     position: sticky;
-    /* Cumulative left offset measured per-cell by the $effect that probes the
-       first body row. Falls back to 0 for the first row-header column or
-       before measurement lands. Without this, multi-level row dimensions (Age
-       Band + Year + Day) only had the FIRST column sticky; the others scrolled
-       out of view entirely on wide cellsets. */
-    left: var(--saiku-row-sticky-left, 0);
+    left: 0;
     z-index: 1;
   }
   .cellset tbody th.row--nested { font-weight: var(--weight-medium); color: var(--fg-muted); }
@@ -873,7 +849,7 @@
   .cellset tbody th.row_null {
     background: var(--bg-muted);
     position: sticky;
-    left: var(--saiku-row-sticky-left, 0);
+    left: 0;
     z-index: 1;
   }
   .cellset td.data {
