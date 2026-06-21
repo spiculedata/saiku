@@ -166,6 +166,88 @@ class QueryStore {
     }
   }
 
+  // --- Undo / redo machinery ---
+
+  /**
+   * Build a HistoryEntry from the current store state. Uses {@code structuredClone}
+   * so the snapshot is a deep copy — mutating the live query afterwards must
+   * not bleed back into the recorded entry. Browsers we ship to all support
+   * structuredClone (Safari 15.4+, Chrome 98+, Firefox 94+).
+   */
+  private snapshotForHistory(): HistoryEntry {
+    return {
+      current: this.current ? structuredClone($state.snapshot(this.current)) : null,
+      viewMode: this.viewMode,
+      chartType: this.chartType,
+      chartOptions: structuredClone($state.snapshot(this.chartOptions)),
+    };
+  }
+
+  /**
+   * Push the CURRENT state onto the undo stack before a mutation. Every public
+   * mutator (includeLevel, removeLevel, setLevelSelection, addMeasure, etc.,
+   * plus the AI Ask handoffs in Workspace.svelte) calls this as its first
+   * line. Clears the redo stack — any forward mutation invalidates the
+   * previously-undone branch. Capped at MAX_HISTORY entries.
+   *
+   * Public because Workspace.svelte calls it from the AI Ask handlers before
+   * replacing queryModel / viewMode; everything inside this store should call
+   * it from its own mutators.
+   */
+  captureForUndo(): void {
+    this.past.push(this.snapshotForHistory());
+    if (this.past.length > QueryStore.MAX_HISTORY) {
+      this.past.shift();
+    }
+    if (this.future.length) this.future = [];
+  }
+
+  /**
+   * Apply a HistoryEntry to the live store state. Used by undo()/redo() —
+   * NOT by load operations (initFor / hydrate / loadFromJson / reset), which
+   * clear history rather than walk it.
+   */
+  private applyHistory(entry: HistoryEntry): void {
+    this.current = entry.current ? structuredClone(entry.current) : null;
+    this.viewMode = entry.viewMode;
+    this.chartType = entry.chartType;
+    this.chartOptions = structuredClone(entry.chartOptions);
+    this.dirty = true;
+    this.dirtyCount++;
+    // Undo/redo should auto-rerun if the restored state is runnable. We bypass
+    // markDirty's auto-run (which would loop with the in-flight cancel logic)
+    // and call run() directly; the run() guard handles in-flight cancellation.
+    if (this.autorun && this.hasRunnableShape()) {
+      void this.run();
+    }
+  }
+
+  /** Pop the most recent past state into present; push current to future. */
+  undo(): void {
+    if (!this.past.length) return;
+    const present = this.snapshotForHistory();
+    const prior = this.past.pop()!;
+    this.future.push(present);
+    this.applyHistory(prior);
+  }
+
+  /** Pop the most recent future state into present; push current to past. */
+  redo(): void {
+    if (!this.future.length) return;
+    const present = this.snapshotForHistory();
+    const next = this.future.pop()!;
+    this.past.push(present);
+    if (this.past.length > QueryStore.MAX_HISTORY) this.past.shift();
+    this.applyHistory(next);
+  }
+
+  /** Clear both stacks. Called by load operations that replace the whole
+   *  query (initFor, hydrate, loadFromJson, reset). */
+  private clearHistory(): void {
+    this.past = [];
+    this.future = [];
+  }
+
   initFor(cube: SaikuCube): void {
     this.current = newQuery(cube);
     this.result = null;
@@ -174,6 +256,10 @@ class QueryStore {
     this.dirty = false;
     this.dirtyCount = 0;
     this.savedPath = null;
+    // Brand-new query starts with empty undo history — there's nothing
+    // meaningful to undo back to. The user's previous tab still has its own
+    // history (per-tab stacks).
+    this.clearHistory();
   }
 
   loadFromJson(raw: string, path: string): void {
@@ -185,6 +271,7 @@ class QueryStore {
     this.dirty = false;
     this.dirtyCount = 0;
     this.savedPath = path;
+    this.clearHistory();
   }
 
   /** Replace the current query wholesale (e.g. from a deep-link hydrate or an
@@ -197,6 +284,7 @@ class QueryStore {
     this.dirty = false;
     this.dirtyCount = 0;
     this.savedPath = savedPath;
+    this.clearHistory();
   }
 
   markSaved(path: string): void {
@@ -218,6 +306,7 @@ class QueryStore {
     this.dirty = false;
     this.dirtyCount = 0;
     this.savedPath = null;
+    this.clearHistory();
   }
 
   /** Capture a serialisable snapshot of all per-tab user-visible state so
@@ -235,6 +324,10 @@ class QueryStore {
       chartOptions: this.chartOptions,
       dirty: this.dirty,
       dirtyCount: this.dirtyCount,
+      // Carry the per-tab undo stacks through tab snapshot/restore. Without
+      // this, switching tabs would wipe undo history every time.
+      past: this.past,
+      future: this.future,
     };
   }
 
@@ -262,6 +355,10 @@ class QueryStore {
     this.running = false;
     this.runningQueryId = null;
     this.runningElapsedMs = 0;
+    // Carry the per-tab undo stacks through restore. Default empty arrays
+    // for snapshots saved before this field was introduced.
+    this.past = s.past ?? [];
+    this.future = s.future ?? [];
   }
 
   private findAxisForHierarchy(uniqueName: string): AxisLocation | null {
@@ -275,6 +372,7 @@ class QueryStore {
 
   includeLevel(axis: AxisLocation, drop: LevelDrop, position = -1): void {
     if (!this.current?.queryModel) return;
+    this.captureForUndo();
     const model = this.current.queryModel;
     const existing = this.findAxisForHierarchy(drop.hierarchyUniqueName);
 
@@ -311,6 +409,7 @@ class QueryStore {
     if (!this.current?.queryModel) return;
     const fromAxis = this.findAxisForHierarchy(hierarchyName);
     if (!fromAxis || fromAxis === toAxis) return;
+    this.captureForUndo();
     const model = this.current.queryModel;
     const idx = model.axes[fromAxis].hierarchies.findIndex((h) => h.name === hierarchyName);
     if (idx < 0) return;
@@ -327,6 +426,7 @@ class QueryStore {
     const list = axisModel.hierarchies;
     const fromIdx = list.findIndex((h) => h.name === sourceName);
     if (fromIdx < 0) return;
+    this.captureForUndo();
     const [hier] = list.splice(fromIdx, 1);
     if (targetName == null) {
       list.push(hier);
@@ -346,6 +446,7 @@ class QueryStore {
     const list = details.measures;
     const fromIdx = list.findIndex((m) => m.uniqueName === sourceUniqueName);
     if (fromIdx < 0) return;
+    this.captureForUndo();
     const [m] = list.splice(fromIdx, 1);
     if (targetUniqueName == null) {
       list.push(m);
@@ -361,6 +462,7 @@ class QueryStore {
     if (!this.current?.queryModel) return;
     const loc = this.findAxisForHierarchy(hierarchyName);
     if (!loc) return;
+    this.captureForUndo();
     const axis = this.current.queryModel.axes[loc];
     axis.hierarchies = axis.hierarchies.filter((h) => h.name !== hierarchyName);
     this.markDirty();
@@ -377,10 +479,13 @@ class QueryStore {
     const hier = this.current.queryModel.axes[loc].hierarchies.find((h) => h.name === hierarchyName);
     if (!hier) return;
     if (!(levelName in hier.levels)) return;
+    this.captureForUndo();
     delete hier.levels[levelName];
     if (Object.keys(hier.levels).length === 0) {
-      this.removeHierarchy(hierarchyName);
-      return;
+      // removeHierarchy() would call captureForUndo() too — drop the redundant
+      // capture by inlining the deletion. Single-undo, not two.
+      const axis = this.current.queryModel.axes[loc];
+      axis.hierarchies = axis.hierarchies.filter((h) => h.name !== hierarchyName);
     }
     this.markDirty();
   }
@@ -389,18 +494,21 @@ class QueryStore {
     if (!this.current?.queryModel) return;
     const list = this.current.queryModel.details.measures;
     if (list.some((x) => x.uniqueName === m.uniqueName)) return;
+    this.captureForUndo();
     list.push(m);
     this.markDirty();
   }
 
   setMeasures(list: ThinMeasure[]): void {
     if (!this.current?.queryModel) return;
+    this.captureForUndo();
     this.current.queryModel.details.measures = [...list];
     this.markDirty();
   }
 
   removeMeasure(uniqueName: string): void {
     if (!this.current?.queryModel) return;
+    this.captureForUndo();
     const details = this.current.queryModel.details;
     details.measures = details.measures.filter((m) => m.uniqueName !== uniqueName);
     this.markDirty();
@@ -419,6 +527,7 @@ class QueryStore {
     if (!this.current?.queryModel) return;
     const d = this.current.queryModel.details;
     if (d.axis === axis && d.location === location) return;
+    this.captureForUndo();
     d.axis = axis;
     d.location = location;
     this.markDirty();
@@ -426,6 +535,7 @@ class QueryStore {
 
   swapAxes(): void {
     if (!this.current?.queryModel) return;
+    this.captureForUndo();
     const m = this.current.queryModel;
     const a = m.axes.ROWS;
     const b = m.axes.COLUMNS;
@@ -436,6 +546,7 @@ class QueryStore {
 
   setNonEmpty(axis: AxisLocation, nonEmpty: boolean): void {
     if (!this.current?.queryModel) return;
+    this.captureForUndo();
     this.current.queryModel.axes[axis].nonEmpty = nonEmpty;
     this.markDirty();
   }
@@ -453,6 +564,7 @@ class QueryStore {
       if (!hier) continue;
       const level = hier.levels[levelName];
       if (!level) continue;
+      this.captureForUndo();
       if (memberUniqueNames.length === 0) {
         delete level.selection;
       } else {

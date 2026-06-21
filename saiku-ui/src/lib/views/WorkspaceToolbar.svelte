@@ -19,6 +19,8 @@
     Maximize2,
     Minimize2,
     Sparkles,
+    Undo2,
+    Redo2,
   } from "lucide-svelte";
   import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
   import SavedQueriesModal from "$lib/modals/SavedQueriesModal.svelte";
@@ -361,6 +363,30 @@
     </button>
     <button class="tb-btn" title={i18n.t("toolbar.saveAs")} aria-label={i18n.t("toolbar.saveAs")} onclick={onSaveAs}>
       <Copy size={18} />
+    </button>
+  </div>
+  <div class="toolbar__sep"></div>
+  <!-- Undo / redo. Disabled-state mirrors the store's canUndo / canRedo so the
+       button visually goes inert at the end of each stack rather than no-oping
+       on click. Cmd-Z / Cmd-Shift-Z keyboard shortcuts in the wrapper below. -->
+  <div class="flex items-center gap-0.5 relative" role="group" aria-label="Undo / redo">
+    <button
+      class="tb-btn"
+      title={platform.isMac ? "Undo (⌘Z)" : "Undo (Ctrl+Z)"}
+      aria-label="Undo"
+      disabled={!query.canUndo}
+      onclick={() => query.undo()}
+    >
+      <Undo2 size={18} />
+    </button>
+    <button
+      class="tb-btn"
+      title={platform.isMac ? "Redo (⇧⌘Z)" : "Redo (Ctrl+Shift+Z)"}
+      aria-label="Redo"
+      disabled={!query.canRedo}
+      onclick={() => query.redo()}
+    >
+      <Redo2 size={18} />
     </button>
   </div>
   <div class="toolbar__sep"></div>

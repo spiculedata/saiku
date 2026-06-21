@@ -80,6 +80,9 @@
    */
   function handleApplyViewChange(vc: { viewMode: "grid" | "chart"; chartType?: string }): void {
     if (!query.current) return;
+    // Capture the current view state so the user can undo the AI's choice
+    // ("Switched to chart" → Cmd-Z → back to grid).
+    query.captureForUndo();
     query.viewMode = vc.viewMode;
     if (vc.viewMode === "chart" && vc.chartType) {
       query.chartType = vc.chartType as typeof query.chartType;
@@ -91,6 +94,10 @@
     queryModel?: unknown;
   }): Promise<void> {
     if (!query.current) return;
+    // Capture the user's current query before the AI replaces it — Cmd-Z
+    // (or the toolbar Undo button) restores their previous setup if the AI
+    // re-write isn't what they wanted.
+    query.captureForUndo();
     if (payload.queryModel) {
       query.current.queryModel = payload.queryModel as typeof query.current.queryModel;
       query.current.type = "QUERYMODEL";
@@ -212,6 +219,33 @@
     }
 
     hydrated = true;
+  });
+
+  // Cmd/Ctrl+Z → undo; Cmd/Ctrl+Shift+Z (or Ctrl+Y on Windows) → redo.
+  // Wired at window level so the shortcut works regardless of which workspace
+  // surface has focus, but skipped while the user is typing in an
+  // input/textarea/contentEditable so we don't fight native text-undo (the
+  // AI Ask drawer's textarea most notably). Registered as its own $effect so
+  // it doesn't depend on the onMount branch the user happens to land on.
+  $effect(() => {
+    if (typeof window === "undefined") return;
+    const keyHandler = (e: KeyboardEvent) => {
+      const cmd = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
+      if (!cmd || (key !== "z" && key !== "y")) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || target?.isContentEditable) return;
+      const isRedo = (key === "z" && e.shiftKey) || key === "y";
+      e.preventDefault();
+      if (isRedo) {
+        if (query.canRedo) query.redo();
+      } else {
+        if (query.canUndo) query.undo();
+      }
+    };
+    window.addEventListener("keydown", keyHandler);
+    return () => window.removeEventListener("keydown", keyHandler);
   });
 
   /** Resolve starter-cube ref → SaikuCube → metadata → query.hydrate.
