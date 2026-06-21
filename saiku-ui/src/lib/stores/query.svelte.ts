@@ -29,6 +29,23 @@ export interface QueryStateSnapshot {
   chartOptions: ChartOptions;
   dirty: boolean;
   dirtyCount: number;
+  /** Per-tab undo history. Stays attached to the tab through snapshotAndReset
+   *  / restore so tab switches don't wipe undo stacks. */
+  past?: HistoryEntry[];
+  future?: HistoryEntry[];
+}
+
+/**
+ * One slot in the undo / redo stack — a deep-clone of every queryModel + view
+ * field that the user can mutate. {@code result} is intentionally excluded;
+ * re-running the restored model is cheaper than carrying the cellset around,
+ * and stale results would mislead the user while the live query re-runs.
+ */
+export interface HistoryEntry {
+  current: ThinQuery | null;
+  viewMode: ViewMode;
+  chartType: ChartType;
+  chartOptions: ChartOptions;
 }
 
 /** Build a fresh empty snapshot — what a brand-new tab starts with. */
@@ -42,6 +59,8 @@ export function blankSnapshot(): QueryStateSnapshot {
     chartOptions: { ...DEFAULT_CHART_OPTIONS },
     dirty: false,
     dirtyCount: 0,
+    past: [],
+    future: [],
   };
 }
 
@@ -108,6 +127,24 @@ class QueryStore {
   #async = $state<boolean>(readBoolLS("saiku_async", false));
   runningQueryId = $state<string | null>(null);
   runningElapsedMs = $state<number>(0);
+
+  /**
+   * Undo / redo stacks. `past` holds states from before each mutation; the
+   * most recent push is the immediate predecessor of `current`. `future` holds
+   * states that have been undone (and can be redone). On any forward mutation
+   * (not undo/redo), `future` is cleared so we don't have stale branches.
+   *
+   * Capped at MAX_HISTORY entries each — beyond that, old entries fall off the
+   * bottom. Per-tab: the tabs store snapshot/restore carries these through.
+   */
+  past = $state<HistoryEntry[]>([]);
+  future = $state<HistoryEntry[]>([]);
+
+  /** Reactive flags for toolbar / keyboard-shortcut visibility. */
+  canUndo = $derived(this.past.length > 0);
+  canRedo = $derived(this.future.length > 0);
+
+  private static readonly MAX_HISTORY = 50;
 
   private abortController: AbortController | null = null;
   private elapsedTimer: ReturnType<typeof setInterval> | null = null;

@@ -67,6 +67,13 @@ export interface AskRequest {
    * Server-side AiPolicyGuard may strip this when AI policy is "schema-only".
    */
   cellsetDigest?: string;
+  /**
+   * Optional tool-choice override matching the drawer's mode picker. When omitted (default), the
+   * LLM picks among all four tools. When set, the server narrows the tool list to the requested
+   * intent (plus refusal, always available) so the user can force a specific behaviour when the
+   * LLM auto-routes wrong.
+   */
+  forceTool?: "auto" | "query" | "insight" | "view_change";
 }
 
 /** Markdown analysis the AI emitted when the user asked for an insight about current data. */

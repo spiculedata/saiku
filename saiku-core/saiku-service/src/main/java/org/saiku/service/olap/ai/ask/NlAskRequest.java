@@ -42,7 +42,24 @@ public record NlAskRequest(
         String cubeSchemaJson,
         String requestJsonSchema,
         List<NlAskMessage> history,
-        String cellsetDigest) {
+        String cellsetDigest,
+        ForceTool forceTool) {
+
+    /**
+     * Optional override for the tool the LLM is allowed to call. Default (null/{@code AUTO}) leaves
+     * the full four-tool picker on. Setting one of {@link #QUERY}/{@link #INSIGHT}/{@link
+     * #VIEW_CHANGE} narrows the provider's tool list to just that one + the refusal tool, so the
+     * model is forced into the user-chosen intent and can't auto-route to a different one.
+     *
+     * <p>Refusal stays available whichever mode is picked — even an explicitly-forced "query" turn
+     * should be able to refuse if the question is off-topic.
+     */
+    public enum ForceTool {
+        AUTO,
+        QUERY,
+        INSIGHT,
+        VIEW_CHANGE
+    }
 
     public NlAskRequest {
         Objects.requireNonNull(cubeRef, "cubeRef");
@@ -53,11 +70,23 @@ public record NlAskRequest(
         Objects.requireNonNull(cubeSchemaJson, "cubeSchemaJson");
         Objects.requireNonNull(requestJsonSchema, "requestJsonSchema");
         history = history == null ? List.of() : List.copyOf(history);
+        if (forceTool == null) forceTool = ForceTool.AUTO;
+    }
+
+    /** Pre-forceTool ctor — kept for callers that don't need the override. */
+    public NlAskRequest(
+            AiCubeRef cubeRef,
+            String question,
+            String cubeSchemaJson,
+            String requestJsonSchema,
+            List<NlAskMessage> history,
+            String cellsetDigest) {
+        this(cubeRef, question, cubeSchemaJson, requestJsonSchema, history, cellsetDigest, ForceTool.AUTO);
     }
 
     /**
      * Pre-multi-tool ctor — kept so call sites that don't have a cellset digest stay terse. New
-     * code passing a digest should use the 6-arg canonical ctor.
+     * code passing a digest should use the 6- or 7-arg canonical ctor.
      */
     public NlAskRequest(
             AiCubeRef cubeRef,
@@ -65,6 +94,6 @@ public record NlAskRequest(
             String cubeSchemaJson,
             String requestJsonSchema,
             List<NlAskMessage> history) {
-        this(cubeRef, question, cubeSchemaJson, requestJsonSchema, history, null);
+        this(cubeRef, question, cubeSchemaJson, requestJsonSchema, history, null, ForceTool.AUTO);
     }
 }

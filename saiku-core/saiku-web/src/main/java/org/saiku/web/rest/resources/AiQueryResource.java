@@ -762,8 +762,20 @@ public class AiQueryResource {
                     .build();
         }
 
+        // Translate the wire-shape forceTool string into the service enum. Unknown / null → AUTO so
+        // a bad client value silently degrades to auto-routing rather than 400ing the whole turn.
+        org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force =
+                org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.AUTO;
+        if (body.getForceTool() != null) {
+            try {
+                force = org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.valueOf(
+                        body.getForceTool().toUpperCase());
+            } catch (IllegalArgumentException ignored) {
+                // unknown — keep AUTO
+            }
+        }
         AiAskService.AskOutcome outcome = askService.ask(
-                body.getCube(), body.getQuestion(), body.historyAsMessages(), body.getCellsetDigest());
+                body.getCube(), body.getQuestion(), body.historyAsMessages(), body.getCellsetDigest(), force);
         if (outcome.degraded()) {
             AiAskApi.AskResponse out = new AiAskApi.AskResponse();
             out.setDegraded(true);

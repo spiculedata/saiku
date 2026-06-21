@@ -108,17 +108,31 @@ public class AiAskService {
      * @param history prior turns; may be null / empty for single-shot asks
      */
     public AskOutcome ask(AiCubeRef ref, String question, List<NlAskMessage> history) {
-        return ask(ref, question, history, null);
+        return ask(ref, question, history, null, NlAskRequest.ForceTool.AUTO);
+    }
+
+    public AskOutcome ask(AiCubeRef ref, String question, List<NlAskMessage> history, String cellsetDigest) {
+        return ask(ref, question, history, cellsetDigest, NlAskRequest.ForceTool.AUTO);
     }
 
     /**
      * Same as {@link #ask(AiCubeRef, String, List)} but accepts the user's currently-rendered
-     * cellset as a markdown digest. The digest lets the model pick {@link AskOutcome.Kind#INSIGHT}
-     * (analyse the current data) or {@link AskOutcome.Kind#VIEW_CHANGE} (pick the right chart) in
-     * addition to {@link AskOutcome.Kind#QUERY}. When {@code cellsetDigest} is null/blank, the model
-     * has no data context and can only build queries.
+     * cellset as a markdown digest AND a tool-choice override. The digest lets the model pick
+     * {@link AskOutcome.Kind#INSIGHT} (analyse the current data) or {@link
+     * AskOutcome.Kind#VIEW_CHANGE} (pick the right chart) in addition to {@link
+     * AskOutcome.Kind#QUERY}. When {@code cellsetDigest} is null/blank, the model has no data
+     * context and can only build queries.
+     *
+     * <p>{@code forceTool} narrows the provider's tool list when the user explicitly picked an
+     * intent in the drawer's mode picker. Default {@link NlAskRequest.ForceTool#AUTO} leaves all
+     * four tools available so the LLM routes by question shape.
      */
-    public AskOutcome ask(AiCubeRef ref, String question, List<NlAskMessage> history, String cellsetDigest) {
+    public AskOutcome ask(
+            AiCubeRef ref,
+            String question,
+            List<NlAskMessage> history,
+            String cellsetDigest,
+            NlAskRequest.ForceTool forceTool) {
         if (ref == null) {
             return AskOutcome.degraded("cube ref required", null);
         }
@@ -150,7 +164,8 @@ public class AiAskService {
                 schemaJson,
                 requestSchemaJson,
                 history == null ? List.of() : history,
-                cellsetDigest);
+                cellsetDigest,
+                forceTool == null ? NlAskRequest.ForceTool.AUTO : forceTool);
         NlAskResponse resp = provider.ask(req);
 
         if (resp.degraded()) {

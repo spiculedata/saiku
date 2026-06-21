@@ -82,6 +82,28 @@
   let turns = $state<ChatTurn[]>([]);
   let prompt = $state<string>("");
   let inflight = $state<boolean>(false);
+  /** Mode picker. Auto = LLM routes via question shape; the others force a single tool. */
+  type ForceTool = "auto" | "query" | "insight" | "view_change";
+  let forceTool = $state<ForceTool>("auto");
+  /** Elapsed-time indicator for in-flight requests so 5-10s Anthropic round-trips don't read as
+   *  "frozen". Ticks every 250ms; only visible while inflight. */
+  let inflightStartedAt = $state<number | null>(null);
+  let inflightElapsedMs = $state<number>(0);
+  $effect(() => {
+    if (!inflight) {
+      inflightStartedAt = null;
+      inflightElapsedMs = 0;
+      return;
+    }
+    inflightStartedAt = Date.now();
+    inflightElapsedMs = 0;
+    const id = setInterval(() => {
+      if (inflightStartedAt != null) {
+        inflightElapsedMs = Date.now() - inflightStartedAt;
+      }
+    }, 250);
+    return () => clearInterval(id);
+  });
   /** Set when the backend returns 503 — banner persists until cleared / new ask. */
   let notConfiguredBanner = $state<string | null>(null);
   let scrollEl = $state<HTMLElement | null>(null);
@@ -190,6 +212,9 @@
         },
         history,
         cellsetDigest,
+        // Only send the override when the user explicitly picked a non-Auto mode. Sending "auto"
+        // would parse identically server-side but the smaller body is preferable.
+        forceTool: forceTool === "auto" ? undefined : forceTool,
       });
     } catch (e) {
       const message = e instanceof AiAskTransportError ? e.message : (e as Error).message;
@@ -545,16 +570,38 @@
 
     {#if inflight}
       <div class="ai-drawer__turn ai-drawer__turn--assistant">
-        <div class="ai-drawer__bubble bg-bg-muted border border-border inline-flex items-center gap-1">
+        <div class="ai-drawer__bubble bg-bg-muted border border-border inline-flex items-center gap-2">
           <span class="ai-drawer__dot"></span>
           <span class="ai-drawer__dot"></span>
           <span class="ai-drawer__dot"></span>
+          <!-- Elapsed-time hint. LLM round-trips can take 5-15s with the full 4-tool prompt +
+               cellset digest; without this the dots look frozen. -->
+          {#if inflightElapsedMs > 1500}
+            <span class="ai-drawer__elapsed">{(inflightElapsedMs / 1000).toFixed(1)}s</span>
+          {/if}
         </div>
       </div>
     {/if}
   </div>
 
-  <footer class="border-t border-border py-2.5 px-3.5 flex gap-2 items-end bg-bg shrink-0">
+  <footer class="border-t border-border py-2.5 px-3.5 flex flex-col gap-2 bg-bg shrink-0">
+    <!-- Mode picker — Auto leaves the LLM to route; the explicit options narrow the tool list to
+         one intent (plus refusal). Disabled while a request is in flight so the user can't change
+         intent mid-roundtrip. -->
+    <div class="ai-drawer__mode-bar" role="radiogroup" aria-label={i18n.t("workspace.aiQuery.modeLabel")}>
+      {#each [{id:"auto",label:i18n.t("workspace.aiQuery.modeAuto")},{id:"query",label:i18n.t("workspace.aiQuery.modeQuery")},{id:"insight",label:i18n.t("workspace.aiQuery.modeInsight")},{id:"view_change",label:i18n.t("workspace.aiQuery.modeView")}] as opt (opt.id)}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={forceTool === opt.id}
+          class={"ai-drawer__mode-btn " + (forceTool === opt.id ? "ai-drawer__mode-btn--active" : "")}
+          disabled={inflight}
+          onclick={() => (forceTool = opt.id as ForceTool)}
+          title={i18n.t(`workspace.aiQuery.modeTip.${opt.id}`)}
+        >{opt.label}</button>
+      {/each}
+    </div>
+    <div class="flex gap-2 items-end">
     <textarea
       bind:this={inputEl}
       class="ai-drawer__input"
@@ -575,6 +622,7 @@
       <Send size={16} aria-hidden="true" />
       <span>{i18n.t("workspace.aiQuery.send")}</span>
     </button>
+    </div>
   </footer>
 </aside>
 
@@ -826,6 +874,47 @@
     font-size: 0.85rem;
     line-height: 1.5;
     color: var(--fg);
+  }
+  /* Mode picker — segmented control above the textarea. Pill row, active gets
+     the accent ring + bolder weight so it reads as a radio without losing the
+     tight footer height. */
+  .ai-drawer__mode-bar {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .ai-drawer__mode-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: transparent;
+    color: var(--fg-muted);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 0.72rem;
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  }
+  .ai-drawer__mode-btn:hover:not(:disabled) {
+    background: var(--bg-subtle);
+    color: var(--fg);
+  }
+  .ai-drawer__mode-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .ai-drawer__mode-btn--active {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  /* Elapsed-time label inside the in-flight bubble — appears after 1.5s so
+     short successful turns don't flash it. */
+  .ai-drawer__elapsed {
+    font-size: 0.72rem;
+    color: var(--fg-muted);
+    margin-left: 6px;
   }
   .ai-drawer__dot {
     width: 6px;

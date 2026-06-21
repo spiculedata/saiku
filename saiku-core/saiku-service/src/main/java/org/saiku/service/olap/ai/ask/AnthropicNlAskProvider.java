@@ -157,34 +157,43 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
 
         ArrayNode tools = root.putArray("tools");
 
-        // emit_query (structured AiQueryRequest). Existing path.
-        ObjectNode queryTool = tools.addObject();
-        queryTool.put("name", TOOL_NAME);
-        queryTool.put("description", "Emit a structured AiQueryRequest matching the cube schema.");
-        queryTool.set("input_schema", MAPPER.readTree(request.requestJsonSchema()));
+        // When the user explicitly picked a mode in the drawer's picker, narrow the tool list to
+        // just that one (+ refusal, always). Auto → emit all three so the model routes by question
+        // shape. Refusal is always available so even a forced "query" turn can refuse off-topic.
+        NlAskRequest.ForceTool force = request.forceTool();
+        boolean wantQuery = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.QUERY;
+        boolean wantInsight = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.INSIGHT;
+        boolean wantViewChange = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.VIEW_CHANGE;
 
-        // emit_insight — markdown analysis of the user's current cellset. No execution side effect;
-        // the drawer renders the markdown verbatim in the chat thread.
-        ObjectNode insightTool = tools.addObject();
-        insightTool.put("name", INSIGHT_TOOL_NAME);
-        insightTool.put(
-                "description",
-                "Analyse the user's CURRENT cellset (provided as a digest in the system prompt) and "
-                        + "return a markdown explanation. Use when the user asks about trends, "
-                        + "comparisons, summaries, or 'what's interesting' about the data already on screen. "
-                        + "Do not propose a new query.");
-        insightTool.set("input_schema", insightInputSchema());
+        if (wantQuery) {
+            ObjectNode queryTool = tools.addObject();
+            queryTool.put("name", TOOL_NAME);
+            queryTool.put("description", "Emit a structured AiQueryRequest matching the cube schema.");
+            queryTool.set("input_schema", MAPPER.readTree(request.requestJsonSchema()));
+        }
 
-        // emit_view_change — UI-level retarget. No execution; the workspace applies viewMode +
-        // chartType to the current query/cellset.
-        ObjectNode viewTool = tools.addObject();
-        viewTool.put("name", VIEW_CHANGE_TOOL_NAME);
-        viewTool.put(
-                "description",
-                "Change how the user's CURRENT cellset is displayed (grid vs chart, chart type). "
-                        + "Use when the user asks to switch view or pick a chart that fits the data. Do "
-                        + "not propose a new query.");
-        viewTool.set("input_schema", viewChangeInputSchema());
+        if (wantInsight) {
+            ObjectNode insightTool = tools.addObject();
+            insightTool.put("name", INSIGHT_TOOL_NAME);
+            insightTool.put(
+                    "description",
+                    "Analyse the user's CURRENT cellset (provided as a digest in the system prompt) and "
+                            + "return a markdown explanation. Use when the user asks about trends, "
+                            + "comparisons, summaries, or 'what's interesting' about the data already on screen. "
+                            + "Do not propose a new query.");
+            insightTool.set("input_schema", insightInputSchema());
+        }
+
+        if (wantViewChange) {
+            ObjectNode viewTool = tools.addObject();
+            viewTool.put("name", VIEW_CHANGE_TOOL_NAME);
+            viewTool.put(
+                    "description",
+                    "Change how the user's CURRENT cellset is displayed (grid vs chart, chart type). "
+                            + "Use when the user asks to switch view or pick a chart that fits the data. Do "
+                            + "not propose a new query.");
+            viewTool.set("input_schema", viewChangeInputSchema());
+        }
 
         // Refusal path — the model picks this when the user's question isn't
         // about the cube. Stops Saiku's AI key from becoming a free general

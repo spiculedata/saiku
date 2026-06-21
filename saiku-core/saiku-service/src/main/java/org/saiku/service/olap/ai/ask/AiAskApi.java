@@ -35,6 +35,14 @@ public final class AiAskApi {
          * server — schema-only mode strips the digest before it reaches the LLM.
          */
         private String cellsetDigest;
+        /**
+         * Optional override of the model's tool choice. When null/empty (default), the model picks
+         * among all four tools (query / insight / view_change / refusal). When set to "query" /
+         * "insight" / "view_change" the server narrows the tool list to that one + refusal, so the
+         * model can't route to a different intent for this turn. UX: the drawer surfaces this as a
+         * segmented "Auto / Query / Insight / View" picker above the input — Auto leaves this null.
+         */
+        private String forceTool;
 
         public String getQuestion() {
             return question;
@@ -66,6 +74,14 @@ public final class AiAskApi {
 
         public void setCellsetDigest(String v) {
             this.cellsetDigest = v;
+        }
+
+        public String getForceTool() {
+            return forceTool;
+        }
+
+        public void setForceTool(String v) {
+            this.forceTool = v;
         }
 
         /** Convert the wire-shape history into the service-layer record list. */

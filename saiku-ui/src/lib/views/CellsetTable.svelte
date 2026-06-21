@@ -489,6 +489,35 @@
         const h = row.getBoundingClientRect().height;
         if (h > 0) rowH = h;
       }
+      // Measure cumulative left-offset for each row-header column on the first
+      // data row so we can apply `position: sticky; left: <offset>` to every
+      // row-header cell. Without this, only the first row-header column sticks
+      // and multi-level row dims (Age Band + Year + Day) scroll out of view
+      // entirely when the user pans right on a wide cellset.
+      if (row) {
+        const headers = row.querySelectorAll<HTMLTableCellElement>("th.row, th.row_null");
+        let cumulative = 0;
+        headers.forEach((h, i) => {
+          // First cell starts at 0; each subsequent cell's left is the sum of
+          // previous cells' widths. offsetLeft would also work but is less
+          // reliable across browsers when the table itself is offset.
+          h.style.setProperty("--saiku-row-sticky-left", `${cumulative}px`);
+          cumulative += h.getBoundingClientRect().width;
+        });
+        // Propagate the same offsets to every other row's row-header cells so
+        // they line up. Without this each row would only set its own first
+        // cell's offset (because the measurement loop above only saw `row`).
+        const allBodyRows = wrapperEl.querySelectorAll<HTMLTableRowElement>("tbody tr.vrow");
+        allBodyRows.forEach((bodyRow) => {
+          const cells = bodyRow.querySelectorAll<HTMLTableCellElement>("th.row, th.row_null");
+          let acc = 0;
+          cells.forEach((cell, i) => {
+            cell.style.setProperty("--saiku-row-sticky-left", `${acc}px`);
+            const w = headers[i]?.getBoundingClientRect().width ?? cell.getBoundingClientRect().width;
+            acc += w;
+          });
+        });
+      }
     });
   });
 
@@ -780,6 +809,12 @@
     overflow: auto;
     border: 1px solid var(--border);
     background: var(--bg);
+    /* Disable scroll-snap and smooth scroll-behavior. Without this, a single
+       wheel-tick can carry the viewport multiple screens due to macOS
+       momentum interacting with the table's tall scroll height — visible as
+       'one scroll and it just keeps going'. `auto` gives 1:1 wheel mapping. */
+    scroll-behavior: auto;
+    overscroll-behavior: contain;
   }
   .cellset {
     border-collapse: separate;
@@ -823,7 +858,12 @@
     white-space: nowrap;
     cursor: context-menu;
     position: sticky;
-    left: 0;
+    /* Cumulative left offset measured per-cell by the $effect that probes the
+       first body row. Falls back to 0 for the first row-header column or
+       before measurement lands. Without this, multi-level row dimensions (Age
+       Band + Year + Day) only had the FIRST column sticky; the others scrolled
+       out of view entirely on wide cellsets. */
+    left: var(--saiku-row-sticky-left, 0);
     z-index: 1;
   }
   .cellset tbody th.row--nested { font-weight: var(--weight-medium); color: var(--fg-muted); }
@@ -833,7 +873,7 @@
   .cellset tbody th.row_null {
     background: var(--bg-muted);
     position: sticky;
-    left: 0;
+    left: var(--saiku-row-sticky-left, 0);
     z-index: 1;
   }
   .cellset td.data {

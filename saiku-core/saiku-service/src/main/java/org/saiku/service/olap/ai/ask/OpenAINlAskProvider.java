@@ -147,38 +147,49 @@ public final class OpenAINlAskProvider extends AbstractNlAskProvider {
 
         ArrayNode tools = root.putArray("tools");
 
-        // emit_query — structured AiQueryRequest.
-        ObjectNode tool = tools.addObject();
-        tool.put("type", "function");
-        ObjectNode fn = tool.putObject("function");
-        fn.put("name", TOOL_NAME);
-        fn.put("description", "Emit a structured AiQueryRequest matching the cube schema.");
-        fn.set("parameters", MAPPER.readTree(request.requestJsonSchema()));
+        // When the user explicitly picked a mode in the drawer's picker, narrow the tool list to
+        // just that one (+ refusal, always). Auto → all three. Refusal stays so even a forced
+        // intent can refuse off-topic.
+        NlAskRequest.ForceTool force = request.forceTool();
+        boolean wantQuery = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.QUERY;
+        boolean wantInsight = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.INSIGHT;
+        boolean wantViewChange = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.VIEW_CHANGE;
 
-        // emit_insight — markdown analysis of the user's current cellset.
-        ObjectNode insightTool = tools.addObject();
-        insightTool.put("type", "function");
-        ObjectNode insightFn = insightTool.putObject("function");
-        insightFn.put("name", INSIGHT_TOOL_NAME);
-        insightFn.put(
-                "description",
-                "Analyse the user's CURRENT cellset (provided as a digest in the system prompt) and "
-                        + "return a markdown explanation. Use when the user asks about trends, "
-                        + "comparisons, summaries, or 'what's interesting' about the data already on screen. "
-                        + "Do not propose a new query.");
-        insightFn.set("parameters", insightInputSchema());
+        if (wantQuery) {
+            ObjectNode tool = tools.addObject();
+            tool.put("type", "function");
+            ObjectNode fn = tool.putObject("function");
+            fn.put("name", TOOL_NAME);
+            fn.put("description", "Emit a structured AiQueryRequest matching the cube schema.");
+            fn.set("parameters", MAPPER.readTree(request.requestJsonSchema()));
+        }
 
-        // emit_view_change — viewMode + chartType.
-        ObjectNode viewTool = tools.addObject();
-        viewTool.put("type", "function");
-        ObjectNode viewFn = viewTool.putObject("function");
-        viewFn.put("name", VIEW_CHANGE_TOOL_NAME);
-        viewFn.put(
-                "description",
-                "Change how the user's CURRENT cellset is displayed (grid vs chart, chart type). "
-                        + "Use when the user asks to switch view or pick a chart that fits the data. Do "
-                        + "not propose a new query.");
-        viewFn.set("parameters", viewChangeInputSchema());
+        if (wantInsight) {
+            ObjectNode insightTool = tools.addObject();
+            insightTool.put("type", "function");
+            ObjectNode insightFn = insightTool.putObject("function");
+            insightFn.put("name", INSIGHT_TOOL_NAME);
+            insightFn.put(
+                    "description",
+                    "Analyse the user's CURRENT cellset (provided as a digest in the system prompt) and "
+                            + "return a markdown explanation. Use when the user asks about trends, "
+                            + "comparisons, summaries, or 'what's interesting' about the data already on screen. "
+                            + "Do not propose a new query.");
+            insightFn.set("parameters", insightInputSchema());
+        }
+
+        if (wantViewChange) {
+            ObjectNode viewTool = tools.addObject();
+            viewTool.put("type", "function");
+            ObjectNode viewFn = viewTool.putObject("function");
+            viewFn.put("name", VIEW_CHANGE_TOOL_NAME);
+            viewFn.put(
+                    "description",
+                    "Change how the user's CURRENT cellset is displayed (grid vs chart, chart type). "
+                            + "Use when the user asks to switch view or pick a chart that fits the data. Do "
+                            + "not propose a new query.");
+            viewFn.set("parameters", viewChangeInputSchema());
+        }
 
         // Refusal path — model picks this when the user's question isn't
         // about the cube. Stops the AI key becoming a free general LLM proxy.
