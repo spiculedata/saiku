@@ -170,6 +170,13 @@
 
   onMount(() => {
     if (typeof window === "undefined") return;
+    // Re-probe the AI Ask health on workspace mount. The store's
+    // constructor fires at module load, which can race with session
+    // cookie setup on a cold load — a 401 there latches configured=false
+    // for the session and hides the Sparkles button even after the
+    // backend is properly configured. Re-probing here guarantees we ask
+    // again with credentials in place.
+    void aiAskHealth.refresh();
     const params = new URLSearchParams(window.location.search);
     const token = params.get("q");
     if (token) {
