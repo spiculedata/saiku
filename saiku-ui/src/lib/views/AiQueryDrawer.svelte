@@ -20,6 +20,7 @@
   import { selection } from "$lib/stores/selection.svelte";
   import { askAi, AiAskTransportError, type AiInsight, type AiViewChange, type AskResponse, type NlAskMessageDto } from "$lib/api/aiAsk";
   import { buildCellsetDigest } from "$lib/api/cellsetDigest";
+  import { aiRequestToQueryModel, type AiQueryRequestShape } from "$lib/api/aiQueryToModel";
   import { query } from "$lib/stores/query.svelte";
   import { X, Send, Sparkles, ChevronDown, ChevronRight, Copy, Trash2 } from "lucide-svelte";
 
@@ -293,7 +294,14 @@
 
     const ai = resp.response;
     const mdx = resp.generatedMdx ?? ai?.metadata?.generatedMdx ?? "";
-    const queryModel = resp.queryModel;
+    // The server's AiSchemaConverter goes AiQueryRequest → MDX directly and
+    // never populates queryModel, so resp.queryModel is always null on the
+    // wire. Build the queryModel client-side from resp.request (the AI's
+    // typed AiQueryRequest) instead — same intent, surfaced as interactive
+    // chips the user can drag/drop/edit. Falls back to whatever the server
+    // sent (probably null) only if the converter rejected the request.
+    const queryModel =
+      resp.queryModel ?? (resp.request ? aiRequestToQueryModel(resp.request as AiQueryRequestShape) : null);
     if (ai && ai.status === "VALIDATION_ERROR") {
       turns = [
         ...turns,
