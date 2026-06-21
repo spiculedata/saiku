@@ -18,26 +18,58 @@
 
   import { i18n } from "$lib/stores/i18n.svelte";
   import { selection } from "$lib/stores/selection.svelte";
-  import { askAi, AiAskTransportError, type AskResponse, type NlAskMessageDto } from "$lib/api/aiAsk";
+  import { askAi, AiAskTransportError, type AiInsight, type AiViewChange, type AskResponse, type NlAskMessageDto } from "$lib/api/aiAsk";
+  import { buildCellsetDigest } from "$lib/api/cellsetDigest";
+  import { query } from "$lib/stores/query.svelte";
   import { X, Send, Sparkles, ChevronDown, ChevronRight, Copy, Trash2 } from "lucide-svelte";
+
+  /**
+   * Payload passed to the host's "edit in canvas" handler. Prefer the
+   * interactive queryModel when the server returned one (every non-degraded
+   * path since the AskResponse.queryModel surfacing); fall back to MDX only
+   * when conversion was skipped (validation error / degraded provider).
+   */
+  export interface EditInCanvasPayload {
+    mdx: string;
+    /** ThinQueryModel — interactive chip-editable structured query. */
+    queryModel?: unknown;
+  }
 
   interface Props {
     open: boolean;
     onClose: () => void;
-    /** Called when the user clicks "Edit in canvas" — Workspace runs the MDX. */
-    onEditInCanvas: (mdx: string) => void;
+    /** Workspace runs the query in the canvas behind the drawer. Pass both
+     *  the queryModel (preferred — interactive) and the mdx (fallback). */
+    onEditInCanvas: (payload: EditInCanvasPayload) => void;
+    /** Apply an AI-emitted view change (mode + chartType) to the workspace. */
+    onApplyViewChange: (vc: AiViewChange) => void;
   }
 
-  let { open, onClose, onEditInCanvas }: Props = $props();
+  let { open, onClose, onEditInCanvas, onApplyViewChange }: Props = $props();
 
   /** One displayed turn in the chat thread. */
   interface ChatTurn {
     id: string;
-    role: "user" | "assistant" | "error";
-    /** User: the question. Assistant: short summary. Error: the reason. */
+    /** kind drives the renderer:
+     *  - user: the question bubble
+     *  - assistant: a QUERY result (summary + collapsible MDX + edit-in-canvas)
+     *  - insight: AI's markdown analysis of the current cellset
+     *  - viewChange: AI's view-mode + chart-type choice (applied automatically; this is the receipt)
+     *  - error: degradation reason / refusal */
+    role: "user" | "assistant" | "insight" | "viewChange" | "error";
+    /** User: the question. Assistant/error: short summary. Insight: headline. ViewChange: rationale. */
     text: string;
     /** Assistant only: the generated MDX for collapsible display + edit. */
     mdx?: string;
+    /** Assistant only: the converted ThinQueryModel for interactive
+     *  hydration of the workbench (chip-editable). When present, "edit
+     *  in canvas" prefers this; mdx is the fallback. */
+    queryModel?: unknown;
+    /** Insight only: full markdown body the LLM emitted. Rendered as text in the bubble (we don't
+     *  pull in a markdown lib for the drawer; the LLM is instructed to keep formatting tight). */
+    insightMarkdown?: string;
+    /** ViewChange only: the applied target — drawer shows mode + chartType as a small receipt. */
+    viewChange?: AiViewChange;
     /** Assistant only: which model the backend used. */
     model?: string;
     /** Assistant only: VALIDATION_ERROR field + candidate suggestions. */
@@ -97,6 +129,18 @@
         // model is forced to emit tool_use only, so this is purely a hint
         // about what was returned last turn.
         out.push({ role: "assistant", content: t.text });
+      } else if (t.role === "insight") {
+        // Insight responses also belong in history so follow-ups like "go deeper on the regional
+        // split" land in context. Use the markdown body, not just the headline.
+        out.push({ role: "assistant", content: t.insightMarkdown ?? t.text });
+      } else if (t.role === "viewChange") {
+        // ViewChange receipts get folded in too so "now switch to a stacked bar" can reference
+        // "previous chart was a line chart on revenue".
+        const vc = t.viewChange;
+        const summary = vc
+          ? `Changed view to ${vc.viewMode}${vc.chartType ? ` (${vc.chartType})` : ""}.`
+          : t.text;
+        out.push({ role: "assistant", content: summary });
       }
     }
     return out;
@@ -132,6 +176,10 @@
 
     let resp: AskResponse;
     try {
+      // Include a markdown digest of the current cellset so the model can route to insight
+      // ("spot trends") or view-change ("switch to chart") tools. Server-side AiPolicyGuard will
+      // strip it when AI policy is "schema-only"; client just sends what it has on screen.
+      const cellsetDigest = buildCellsetDigest(query.result) || undefined;
       resp = await askAi({
         question,
         cube: {
@@ -141,6 +189,7 @@
           cubeName: cube.name,
         },
         history,
+        cellsetDigest,
       });
     } catch (e) {
       const message = e instanceof AiAskTransportError ? e.message : (e as Error).message;
@@ -180,8 +229,46 @@
       return;
     }
 
+    // Intent: insight — model produced markdown analysis of the user's current cellset.
+    // Render in the thread; no canvas mutation.
+    if (resp.insight) {
+      turns = [
+        ...turns,
+        {
+          id: nextId(),
+          role: "insight",
+          text: resp.insight.headline ?? "",
+          insightMarkdown: resp.insight.markdown,
+          model: resp.model,
+        },
+      ];
+      inflight = false;
+      return;
+    }
+
+    // Intent: view-change — model picked viewMode + chartType. Apply via host, log a receipt turn.
+    if (resp.viewChange) {
+      onApplyViewChange(resp.viewChange);
+      const target = resp.viewChange.viewMode === "chart"
+        ? `chart (${resp.viewChange.chartType ?? "?"})`
+        : "grid";
+      turns = [
+        ...turns,
+        {
+          id: nextId(),
+          role: "viewChange",
+          text: resp.viewChange.reason ?? `Switched view to ${target}.`,
+          viewChange: resp.viewChange,
+          model: resp.model,
+        },
+      ];
+      inflight = false;
+      return;
+    }
+
     const ai = resp.response;
     const mdx = resp.generatedMdx ?? ai?.metadata?.generatedMdx ?? "";
+    const queryModel = resp.queryModel;
     if (ai && ai.status === "VALIDATION_ERROR") {
       turns = [
         ...turns,
@@ -190,6 +277,7 @@
           role: "assistant",
           text: i18n.t("workspace.aiQuery.validationError").replace("{error}", ai.error ?? ""),
           mdx,
+          queryModel,
           model: resp.model,
           field: ai.field,
           available: ai.available,
@@ -211,18 +299,21 @@
         role: "assistant",
         text: summary,
         mdx,
+        queryModel,
         model: resp.model,
         mdxExpanded: false,
       },
     ];
     inflight = false;
 
-    // Auto-render the AI's MDX in the workspace canvas behind the drawer
-    // so the user sees the data immediately. The drawer stays open — each
-    // follow-up question updates the canvas in place. Edit-in-canvas
-    // becomes a no-op repeat for the user who explicitly clicks it.
-    if (mdx) {
-      onEditInCanvas(mdx);
+    // Auto-render in the canvas behind the drawer so the user sees data
+    // immediately. Prefer the queryModel payload — the workspace hydrates
+    // it into the chip builder so the canvas behind the drawer is fully
+    // interactive (drag/drop levels, add measures, change axis filters)
+    // without ever round-tripping to MDX. Falls back to MDX paste when
+    // the server didn't return a queryModel (degraded / validation error).
+    if (mdx || queryModel) {
+      onEditInCanvas({ mdx, queryModel });
     }
   }
 
@@ -252,10 +343,12 @@
     }
   }
 
-  /** Replace any "edit in canvas" placeholder behaviour with the host callback. */
-  function editInCanvas(mdx: string): void {
-    if (!mdx) return;
-    onEditInCanvas(mdx);
+  /** Per-turn "Edit in canvas" replay. Prefers the turn's queryModel so the
+   *  user lands in the interactive chip builder, not on opaque MDX. */
+  function editInCanvas(turn: ChatTurn): void {
+    const mdx = turn.mdx ?? "";
+    if (!mdx && !turn.queryModel) return;
+    onEditInCanvas({ mdx, queryModel: turn.queryModel });
   }
 </script>
 
@@ -398,10 +491,44 @@
                     <button
                       type="button"
                       class="ai-drawer__small-btn ai-drawer__small-btn--primary"
-                      onclick={() => editInCanvas(turn.mdx ?? "")}
+                      onclick={() => editInCanvas(turn)}
                     >{i18n.t("workspace.aiQuery.editInCanvas")}</button>
                   </div>
                 {/if}
+              </div>
+            {/if}
+            {#if turn.model}
+              <div class="ai-drawer__model">{i18n.t("workspace.aiQuery.viaModel").replace("{model}", turn.model)}</div>
+            {/if}
+          </div>
+        </div>
+      {:else if turn.role === "insight"}
+        <div class="ai-drawer__turn ai-drawer__turn--assistant">
+          <div class="ai-drawer__bubble bg-bg-muted border border-border">
+            <div class="ai-drawer__insight-badge">
+              <Sparkles size={12} aria-hidden="true" />
+              <span>{i18n.t("workspace.aiQuery.insightLabel")}</span>
+            </div>
+            {#if turn.text}
+              <div class="font-medium mb-1">{turn.text}</div>
+            {/if}
+            <div class="ai-drawer__insight-body">{turn.insightMarkdown}</div>
+            {#if turn.model}
+              <div class="ai-drawer__model">{i18n.t("workspace.aiQuery.viaModel").replace("{model}", turn.model)}</div>
+            {/if}
+          </div>
+        </div>
+      {:else if turn.role === "viewChange"}
+        <div class="ai-drawer__turn ai-drawer__turn--assistant">
+          <div class="ai-drawer__bubble bg-bg-muted border border-border">
+            <div class="ai-drawer__insight-badge">
+              <Sparkles size={12} aria-hidden="true" />
+              <span>{i18n.t("workspace.aiQuery.viewChangeLabel")}</span>
+            </div>
+            <div class="font-medium">{turn.text}</div>
+            {#if turn.viewChange}
+              <div class="text-fg-subtle text-xs mt-1">
+                {turn.viewChange.viewMode}{turn.viewChange.chartType ? ` · ${turn.viewChange.chartType}` : ""}
               </div>
             {/if}
             {#if turn.model}
@@ -677,6 +804,28 @@
     font-size: 0.72rem;
     color: var(--fg-muted);
     font-style: italic;
+  }
+  /* Insight / view-change badges sit above the bubble title so the user can
+     scan at a glance which tool the AI picked (vs a normal query result). */
+  .ai-drawer__insight-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--accent);
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+  /* Insight body — markdown rendered as preformatted text so paragraphs,
+     bullets, and the model's spacing survive. white-space:pre-wrap respects
+     LLM newlines without us pulling in a markdown lib for the drawer. */
+  .ai-drawer__insight-body {
+    white-space: pre-wrap;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--fg);
   }
   .ai-drawer__dot {
     width: 6px;

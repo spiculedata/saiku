@@ -578,6 +578,8 @@
   "workspace.aiQuery.copyMdx": "Copy MDX",
   "workspace.aiQuery.editInCanvas": "Edit in canvas",
   "workspace.aiQuery.viaModel": "via {model}",
+  "workspace.aiQuery.insightLabel": "Insight",
+  "workspace.aiQuery.viewChangeLabel": "View change",
   "workspace.aiQuery.resultSummary": "{rows} rows returned.",
   "workspace.aiQuery.validationError": "The model emitted a query that didn't validate: {error}",
   "workspace.aiQuery.didYouMean": "Did you mean (for {field}):",

@@ -59,17 +59,48 @@
    *  re-renders with the result and existing grid / chart / drill /
    *  export features keep working. */
   /**
-   * Push AI-generated MDX into the active workspace tab and run it.
-   * The drawer stays open so the user can keep iterating — every
-   * AI response auto-runs in the canvas behind the drawer, and the
-   * conversation thread persists. Closing the drawer is a separate
-   * user action (X or Esc).
+   * Push the AI's result into the active workspace tab and run it.
+   *
+   * Prefer the structured queryModel (chip-editable in the builder) over
+   * the MDX string (opaque to the chip UI — user can't drag/drop). Server
+   * returns both whenever the AI's request converted successfully; only
+   * degraded / VALIDATION_ERROR paths arrive MDX-only.
+   *
+   * Sets queryModel + type=QUERYMODEL so QueryCanvas renders the chip
+   * surface; clearing query.current.mdx removes any stale MDX from prior
+   * MDX-mode iterations on the same tab. The drawer stays open so the
+   * user can keep iterating — every AI response auto-runs in the canvas
+   * behind the drawer, and the conversation thread persists.
    */
-  async function handleEditInCanvas(mdx: string): Promise<void> {
+  /**
+   * Apply an AI-emitted view change to the workspace. The drawer's emit_view_change tool returns
+   * a target viewMode + chartType — we just assign them to the query store. No re-execution needed
+   * because the cellset doesn't change; the chart layer re-renders on `query.viewMode` /
+   * `query.chartType` changes. Drawer stays open so the user can iterate.
+   */
+  function handleApplyViewChange(vc: { viewMode: "grid" | "chart"; chartType?: string }): void {
     if (!query.current) return;
-    query.current.mdx = mdx;
-    query.current.type = "MDX";
-    query.current.name = "";
+    query.viewMode = vc.viewMode;
+    if (vc.viewMode === "chart" && vc.chartType) {
+      query.chartType = vc.chartType as typeof query.chartType;
+    }
+  }
+
+  async function handleEditInCanvas(payload: {
+    mdx: string;
+    queryModel?: unknown;
+  }): Promise<void> {
+    if (!query.current) return;
+    if (payload.queryModel) {
+      query.current.queryModel = payload.queryModel as typeof query.current.queryModel;
+      query.current.type = "QUERYMODEL";
+      query.current.mdx = "";
+      query.current.name = "";
+    } else {
+      query.current.mdx = payload.mdx;
+      query.current.type = "MDX";
+      query.current.name = "";
+    }
     await query.run();
   }
 
@@ -317,7 +348,8 @@
   <AiQueryDrawer
     open={aiDrawerOpen}
     onClose={() => (aiDrawerOpen = false)}
-    onEditInCanvas={(mdx) => void handleEditInCanvas(mdx)}
+    onEditInCanvas={(payload) => void handleEditInCanvas(payload)}
+    onApplyViewChange={handleApplyViewChange}
   />
 {/if}
 
