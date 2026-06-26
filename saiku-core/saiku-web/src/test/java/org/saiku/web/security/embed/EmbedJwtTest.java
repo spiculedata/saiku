@@ -163,6 +163,24 @@ public class EmbedJwtTest {
     }
 
     @Test
+    public void exp_as_a_string_is_rejected() {
+        // exp MUST be a JSON number — the verifier guards with isNumber(). A
+        // string "<future>" must NOT be honoured as an expiry, otherwise a token
+        // could dodge the eternal-token rejection by smuggling exp as text
+        // (TextNode.asLong() would happily parse it if the guard were dropped).
+        String p = "{\"sub\":\"u\",\"aud\":\"" + AUD + "\",\"exp\":\"" + FUTURE + "\"}";
+        assertRejected(mint(HS256_HEADER, p, SECRET), "exp as string (not a number)");
+    }
+
+    @Test
+    public void non_string_alg_is_rejected() {
+        // alg as a non-string must not coerce into "HS256". The header check uses
+        // asText(); a numeric 256 stringifies to "256" != "HS256" -> rejected
+        // before any signature work (defends the asText() comparison).
+        assertRejected(mint("{\"alg\":256}", validPayload(), SECRET), "alg as a number");
+    }
+
+    @Test
     public void empty_secret_is_rejected() {
         try {
             EmbedJwt.verify(mint(HS256_HEADER, validPayload(), SECRET), new byte[0], AUD, NOW);
