@@ -1,6 +1,5 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
-  import { Button } from "$lib/components/ui";
   import { i18n } from "$lib/stores/i18n.svelte";
 
   interface Props {
@@ -29,7 +28,11 @@
 <Modal {title} {open} size="sm" onClose={onCancel}>
   <p>{message}</p>
   {#snippet footer()}
-    <Button variant="outline" onclick={onCancel}>{cancelLabel}</Button>
-    <Button variant={variant === "danger" ? "destructive" : "default"} onclick={onConfirm}>{confirmLabel}</Button>
+    <button type="button" class="btn" onclick={onCancel}>{cancelLabel}</button>
+    <button
+      type="button"
+      class={variant === "danger" ? "btn btn--danger" : "btn btn--primary"}
+      onclick={onConfirm}
+    >{confirmLabel}</button>
   {/snippet}
 </Modal>

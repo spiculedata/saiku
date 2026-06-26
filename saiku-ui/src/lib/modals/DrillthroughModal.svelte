@@ -1,7 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
-  import { Button } from "$lib/components/ui";
   import type { SaikuDimension, SaikuMeasure } from "$lib/api/discover";
   import { i18n } from "$lib/stores/i18n.svelte";
 
@@ -84,9 +83,9 @@
     <input class="field__input" type="number" min="1" bind:value={rows} />
   </label>
   {#snippet footer()}
-    <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
-    <Button variant="outline" onclick={() => onExportCsv(args())}>{i18n.t("modal.drillthrough.exportCsv")}</Button>
-    <Button onclick={() => onRun(args())}>{i18n.t("toolbar.run")}</Button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
+    <button type="button" class="btn" onclick={() => onExportCsv(args())}>{i18n.t("modal.drillthrough.exportCsv")}</button>
+    <button type="button" class="btn btn--primary" onclick={() => onRun(args())}>{i18n.t("toolbar.run")}</button>
   {/snippet}
 </Modal>
 

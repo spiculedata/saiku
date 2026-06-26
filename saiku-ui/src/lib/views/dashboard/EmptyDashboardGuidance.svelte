@@ -29,9 +29,9 @@
   let { onAddTile }: Props = $props();
 </script>
 
-<div class="flex items-start justify-center py-10 px-4 flex-1 min-h-0" role="region" aria-label="Add your first tile">
+<div class="empty-state" role="region" aria-label="Add your first tile">
   <div class="card">
-    <h2 class="m-0 text-xl font-semibold text-fg">Add your first tile</h2>
+    <h2 class="title">Add your first tile</h2>
     <p class="subtitle">
       Pick a tile type to start building this dashboard. You can configure data,
       filters, and layout after the tile is dropped.
@@ -44,10 +44,10 @@
         onclick={() => onAddTile("chart")}
         aria-label="Add a chart tile"
       >
-        <span class="inline-flex items-center justify-center text-accent mb-1" aria-hidden="true">
+        <span class="cta-icon" aria-hidden="true">
           <BarChart3 size={28} strokeWidth={1.75} />
         </span>
-        <span class="font-semibold text-base">Chart</span>
+        <span class="cta-label">Chart</span>
         <span class="cta-hint">Bar, line, pie or area visualisations of your measures.</span>
       </button>
 
@@ -57,10 +57,10 @@
         onclick={() => onAddTile("table")}
         aria-label="Add a table tile"
       >
-        <span class="inline-flex items-center justify-center text-accent mb-1" aria-hidden="true">
+        <span class="cta-icon" aria-hidden="true">
           <Table2 size={28} strokeWidth={1.75} />
         </span>
-        <span class="font-semibold text-base">Table</span>
+        <span class="cta-label">Table</span>
         <span class="cta-hint">Tabular cells with row and column headers.</span>
       </button>
 
@@ -70,10 +70,10 @@
         onclick={() => onAddTile("kpi")}
         aria-label="Add a KPI tile"
       >
-        <span class="inline-flex items-center justify-center text-accent mb-1" aria-hidden="true">
+        <span class="cta-icon" aria-hidden="true">
           <Gauge size={28} strokeWidth={1.75} />
         </span>
-        <span class="font-semibold text-base">KPI</span>
+        <span class="cta-label">KPI</span>
         <span class="cta-hint">A single measure as a big number with optional comparison.</span>
       </button>
     </div>
@@ -86,7 +86,15 @@
 </div>
 
 <style>
-.card {
+  .empty-state {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 2.5rem 1rem;
+    flex: 1;
+    min-height: 0;
+  }
+  .card {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -98,6 +106,12 @@
     border-radius: 8px;
     background: var(--bg-subtle);
     text-align: center;
+  }
+  .title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: var(--weight-semibold);
+    color: var(--fg);
   }
   .subtitle {
     margin: 0;
@@ -142,6 +156,17 @@
   }
   .cta:active {
     transform: translateY(1px);
+  }
+  .cta-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+    margin-bottom: 0.25rem;
+  }
+  .cta-label {
+    font-weight: var(--weight-semibold);
+    font-size: 1rem;
   }
   .cta-hint {
     font-size: 0.75rem;

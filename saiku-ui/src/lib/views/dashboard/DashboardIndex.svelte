@@ -11,7 +11,6 @@
    */
 
   import { onMount } from "svelte";
-  import { Button } from "$lib/components/ui";
   import { goto } from "$app/navigation";
   import { base } from "$app/paths";
   import {
@@ -248,11 +247,11 @@
     createError = null;
     try {
       const source = await loadDashboard(srcPath);
-       
+      // eslint-disable-next-line no-alert
       const rawName = window.prompt("Copy name", `${source.name} (copy)`);
       if (rawName == null) return; // cancelled
       const name = rawName.trim() || `${source.name} (copy)`;
-       
+      // eslint-disable-next-line no-alert
       const rawPath = window.prompt(
         "Repository path for the copy",
         defaultHomePath() + "/" + slugify(name) + ".saikudash",
@@ -545,12 +544,12 @@
   /* --- end issue #937 block -------------------------------------------- */
 </script>
 
-<div class="flex flex-col gap-4 p-6 flex-1 min-w-0 h-full box-border overflow-y-auto">
+<div class="page">
   <header class="head">
     <h1>Dashboards</h1>
-    <Button onclick={handleNew} disabled={creating}>
+    <button type="button" class="btn primary" onclick={handleNew} disabled={creating}>
       {creating ? "Creating…" : "+ New dashboard"}
-    </Button>
+    </button>
   </header>
 
   {#if createError}
@@ -596,7 +595,8 @@
               {@const selected = selectedTags.includes(t)}
               <button
                 type="button"
-                class="chip {selected ? 'chip--on' : ''}"
+                class="chip"
+                class:chip--on={selected}
                 aria-pressed={selected}
                 onclick={() => (selectedTags = toggleSelected(selectedTags, t))}
               >
@@ -612,7 +612,8 @@
               {@const selected = selectedOwners.includes(o)}
               <button
                 type="button"
-                class="chip {selected ? 'chip--on' : ''}"
+                class="chip"
+                class:chip--on={selected}
                 aria-pressed={selected}
                 onclick={() => (selectedOwners = toggleSelected(selectedOwners, o))}
               >
@@ -629,28 +630,57 @@
     {#snippet dashboardRow(relPath: string, label: string, showMove: boolean)}
       {@const isFav = favouriteDashboards.isFavourite(relPath)}
       <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
-        <span class="font-medium">{label}</span>
-        <span class="text-xs text-fg-muted whitespace-nowrap overflow-hidden text-ellipsis">{relPath}</span>
+        <span class="name">{label}</span>
+        <span class="path">{relPath}</span>
       </a>
-      <Button variant="outline" class="icon-only star {isFav ? 'star--on' : ''}" onclick={() => toggleFavourite(relPath)} title={isFav ? "Remove from favourites" : "Add to favourites"} aria-label={isFav ? "Remove from favourites" : "Add to favourites"} aria-pressed={isFav}>
+      <button
+        type="button"
+        class="btn icon-only star"
+        class:star--on={isFav}
+        onclick={() => toggleFavourite(relPath)}
+        title={isFav ? "Remove from favourites" : "Add to favourites"}
+        aria-label={isFav ? "Remove from favourites" : "Add to favourites"}
+        aria-pressed={isFav}
+      >
         <Star size={14} fill={isFav ? "currentColor" : "none"} />
-      </Button>
+      </button>
       {#if showMove}
-        <Button variant="outline" disabled={movingBusy} onclick={() => openMove(relPath)} title={i18n.t("dashboard.folder.move")} aria-label={i18n.t("dashboard.folder.move")}>
+        <button
+          type="button"
+          class="btn"
+          disabled={movingBusy}
+          onclick={() => openMove(relPath)}
+          title={i18n.t("dashboard.folder.move")}
+          aria-label={i18n.t("dashboard.folder.move")}
+        >
           <FolderInput size={14} />
-        </Button>
+        </button>
       {/if}
       {#if session.isAdmin}
-        <Button variant="outline" disabled={aclLoading} onclick={() => void openAcl(relPath)} title={i18n.t("saved.permissions")} aria-label={i18n.t("saved.permissions")}>
+        <button
+          type="button"
+          class="btn"
+          disabled={aclLoading}
+          onclick={() => void openAcl(relPath)}
+          title={i18n.t("saved.permissions")}
+          aria-label={i18n.t("saved.permissions")}
+        >
           <ShieldCheck size={14} />
-        </Button>
+        </button>
       {/if}
-      <Button variant="outline" disabled={duplicatingPath === relPath} onclick={() => void handleDuplicate(relPath)} title="Duplicate" aria-label="Duplicate dashboard">
+      <button
+        type="button"
+        class="btn"
+        disabled={duplicatingPath === relPath}
+        onclick={() => void handleDuplicate(relPath)}
+        title="Duplicate"
+        aria-label="Duplicate dashboard"
+      >
         <Copy size={14} />
-      </Button>
-      <Button variant="destructive" onclick={() => handleDelete(relPath)} title="Delete">
+      </button>
+      <button type="button" class="btn danger" onclick={() => handleDelete(relPath)} title="Delete">
         Delete
-      </Button>
+      </button>
     {/snippet}
 
     {#if viewMode === "list"}
@@ -743,7 +773,18 @@
 {/if}
 
 <style>
-.head {
+  .page {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1.5rem;
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    box-sizing: border-box;
+    overflow-y: auto;
+  }
+  .head {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -752,6 +793,29 @@
   .head h1 {
     margin: 0;
     font-size: 1.25rem;
+  }
+  .btn {
+    padding: 0.5rem 0.875rem;
+    border: 1px solid var(--border-strong);
+    background: var(--bg);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.875rem;
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .btn.primary {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+  .btn.danger {
+    color: var(--danger);
+  }
+  .btn.danger:hover {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
   }
   .error {
     padding: 0.5rem 0.75rem;
@@ -789,10 +853,38 @@
     color: inherit;
     min-width: 0;
   }
+  .name {
+    font-weight: var(--weight-medium);
+  }
+  .path {
+    font-size: 0.75rem;
+    color: var(--fg-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   /* .pinned / .pinned-heading moved to DashboardCataloguePinned. */
   /* Icon-only buttons are square and sit on the same baseline as the
      Delete button; the star colour shifts to --accent when active so
      a glance tells you which dashboards you've pinned. */
+  .btn.icon-only {
+    padding: 0.375rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .btn.star {
+    color: var(--fg-muted);
+  }
+  .btn.star:hover {
+    color: var(--fg);
+  }
+  .btn.star--on {
+    color: var(--accent);
+  }
+  .btn.star--on:hover {
+    color: var(--accent);
+  }
   /* .catalogue-filters / .view-toggle / .view-btn styles relocated to
      DashboardIndexFilters.svelte (saiku#1234) — Svelte's scoped CSS
      does not cross component boundaries. */
@@ -835,6 +927,7 @@
   .chip--on:hover {
     background: var(--accent);
   }
+
   /* #937 folder tree + #1234 pinned styles moved into their delegates
      (DashboardCatalogueTree / DashboardCataloguePinned). */
 </style>

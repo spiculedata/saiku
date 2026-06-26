@@ -244,7 +244,7 @@ export function deserializeQueryFromHash(
     if (!parsed || parsed.v !== 1 || !parsed.q || !parsed.view) return null;
     return { query: parsed.q, view: parsed.view };
   } catch (err) {
-     
+    // eslint-disable-next-line no-console
     console.warn("saiku: failed to decode ?q= token", err);
     return null;
   }

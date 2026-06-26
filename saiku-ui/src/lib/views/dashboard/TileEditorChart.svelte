@@ -7,7 +7,6 @@
    * separate top-level overlay.
    */
   import { CHART_TYPES } from "$lib/views/chartTypes";
-  import { Button } from "$lib/components/ui";
 
   interface Props {
     chartType: string;
@@ -32,13 +31,17 @@
 <!-- #1077: per-tile chart options via the reused workspace editor. -->
 <div class="field">
   <span>Chart options</span>
-  <Button variant="outline" class="chart-opts-btn" onclick={onOpenChartOptions}>
+  <button type="button" class="btn chart-opts-btn" onclick={onOpenChartOptions}>
     Title, axes, legend, dual-axis &amp; trend…
-  </Button>
+  </button>
   <span class="hint">
     {chartOptionsTouched ? "Customised for this tile." : "Using dashboard defaults."}
   </span>
 </div>
 
 <style>
+  .chart-opts-btn {
+    align-self: flex-start;
+    text-align: left;
+  }
 </style>

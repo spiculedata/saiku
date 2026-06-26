@@ -1,6 +1,5 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
-  import { Button } from "$lib/components/ui";
   import { i18n } from "$lib/stores/i18n.svelte";
   import {
     buildRelativeMdx,
@@ -262,17 +261,17 @@
         <span class="field__label">{i18n.t("modal.dateFilter.n")}</span>
         <input class="field__input" type="number" min="1" bind:value={n} />
         {#if !applyEnabled}
-          <span class="hint text-danger">{i18n.t("modal.dateFilter.nInvalid")}</span>
+          <span class="hint hint--err">{i18n.t("modal.dateFilter.nInvalid")}</span>
         {/if}
       </label>
     {/if}
   {:else if tab === "absolute"}
-    <div class="flex gap-3">
-      <label class="field flex-1">
+    <div class="row">
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.dateFilter.from")}</span>
         <input class="field__input" type="date" bind:value={fromDate} />
       </label>
-      <label class="field flex-1">
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.dateFilter.to")}</span>
         <input class="field__input" type="date" bind:value={toDate} />
       </label>
@@ -284,21 +283,21 @@
          through. Always-NONE here keeps the local state simple. -->
     <p class="hint">{i18n.t("modal.dateFilter.compareMoved")}</p>
     {#if !applyEnabled}
-      <p class="hint text-danger">{i18n.t("modal.dateFilter.rangeInvalid")}</p>
+      <p class="hint hint--err">{i18n.t("modal.dateFilter.rangeInvalid")}</p>
     {/if}
   {:else if tab === "compare"}
-    <div class="flex gap-3">
-      <label class="field flex-1">
+    <div class="row">
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.dateFilter.from")}</span>
         <input class="field__input" type="date" bind:value={cmpFrom} />
       </label>
-      <label class="field flex-1">
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.dateFilter.to")}</span>
         <input class="field__input" type="date" bind:value={cmpTo} />
       </label>
     </div>
-    <div class="flex gap-3">
-      <label class="field flex-1">
+    <div class="row">
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.dateFilter.compare.shiftUnit")}</span>
         <select class="field__input" bind:value={cmpShiftUnit}>
           <option value="year">{i18n.t("modal.dateFilter.compare.unit.year")}</option>
@@ -308,7 +307,7 @@
           <option value="day">{i18n.t("modal.dateFilter.compare.unit.day")}</option>
         </select>
       </label>
-      <label class="field flex-1">
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.dateFilter.compare.shiftCount")}</span>
         <input class="field__input" type="number" min="1" bind:value={cmpShiftCount} />
       </label>
@@ -321,22 +320,22 @@
       {/if}
     </p>
     {#if !applyEnabled}
-      <p class="hint text-danger">{i18n.t("modal.dateFilter.rangeInvalid")}</p>
+      <p class="hint hint--err">{i18n.t("modal.dateFilter.rangeInvalid")}</p>
     {/if}
     {#if timeCalcs && timeCalcs.length > 0 && onAddCalcMeasure}
       <div class="timecalcs">
         <div class="timecalcs__label">{i18n.t("modal.dateFilter.compare.timeCalcs")}</div>
         <p class="hint">{i18n.t("modal.dateFilter.compare.timeCalcsHint")}</p>
-        <div class="flex flex-wrap gap-2 mt-2">
+        <div class="timecalcs__buttons">
           {#each timeCalcs as tc}
-            <Button
-              variant="outline"
-              size="sm"
+            <button
+              type="button"
+              class="btn btn--small"
               onclick={() => onAddCalcMeasure?.(tc.name)}
               title={`${tc.type.toUpperCase()} · ${tc.measure}${tc.window ? ` · window ${tc.window}` : ""}`}
             >
               {tc.name}
-            </Button>
+            </button>
           {/each}
         </div>
       </div>
@@ -349,13 +348,18 @@
   </div>
 
   {#snippet footer()}
-    <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
-    <Button onclick={apply} disabled={!applyEnabled}>{i18n.t("modal.apply")}</Button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
+    <button
+      type="button"
+      class="btn btn--primary"
+      disabled={!applyEnabled}
+      onclick={apply}
+    >{i18n.t("modal.apply")}</button>
   {/snippet}
 </Modal>
 
 <style>
-.tabs {
+  .tabs {
     display: flex;
     gap: var(--space-1);
     border-bottom: 1px solid var(--border);
@@ -374,7 +378,10 @@
     color: var(--accent);
     border-bottom-color: var(--accent);
   }
+  .row { display: flex; gap: var(--space-3); }
+  .field--grow { flex: 1; }
   .hint { display: block; font-size: var(--fs-xs); margin-top: 4px; color: var(--fg-subtle); }
+  .hint--err { color: var(--danger); }
   .preview {
     margin-top: var(--space-3);
     padding: var(--space-2);
@@ -409,5 +416,15 @@
     letter-spacing: 0.06em;
     color: var(--fg-muted);
     margin-bottom: 4px;
+  }
+  .timecalcs__buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+  }
+  .btn--small {
+    font-size: var(--fs-xs);
+    padding: 4px 10px;
   }
 </style>

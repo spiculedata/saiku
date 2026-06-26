@@ -350,7 +350,7 @@
 {/if}
 
 <style>
-.grid {
+  .grid {
     display: grid;
     /* Fixed N-column grid; rows auto-size to tile h × baseline row height. */
     grid-template-columns: repeat(var(--cols, 12), 1fr);
@@ -380,6 +380,10 @@
     /* Tiles render their own border / chrome; the cell is just positioning. */
     min-width: 0;
     position: relative;
+  }
+  .cell--dragging {
+    opacity: 0.45;
+    pointer-events: none;
   }
   .resize-handle {
     position: absolute;

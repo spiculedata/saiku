@@ -27,7 +27,7 @@
 </script>
 
 <article class="card" data-op={op.op} data-tier={tier}>
-  <header class="flex items-center justify-between gap-2">
+  <header class="card__head">
     <code class="card__path">{op.targetPath}</code>
     <span
       class="card__tier card__tier--{tier}"
@@ -37,15 +37,15 @@
     </span>
   </header>
 
-  <div class="flex items-center gap-2 flex-wrap">
+  <div class="card__preview">
     <span class="card__before">{described.before}</span>
-    <span class="text-fg-muted" aria-hidden="true">→</span>
-    <span class="font-semibold">{described.after}</span>
+    <span class="card__arrow" aria-hidden="true">→</span>
+    <span class="card__after">{described.after}</span>
   </div>
 
-  <p class="m-0 text-fg-muted text-xs">{described.rationale}</p>
+  <p class="card__rationale">{described.rationale}</p>
 
-  <footer class="flex gap-2 justify-end">
+  <footer class="card__actions">
     <button
       type="button"
       class="card__btn card__btn--accept"
@@ -57,7 +57,7 @@
     </button>
     <button
       type="button"
-      class="card__btn text-fg-muted"
+      class="card__btn card__btn--reject"
       onclick={onReject}
       aria-label="Reject suggestion"
     >
@@ -68,7 +68,7 @@
 </article>
 
 <style>
-.card {
+  .card {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
@@ -77,6 +77,12 @@
     border-radius: var(--radius-sm);
     background: var(--bg);
     font-size: var(--fs-sm);
+  }
+  .card__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
   }
   .card__path {
     font-family: var(--font-mono);
@@ -101,9 +107,39 @@
     background: var(--success);
     color: #fff;
   }
+  .card__tier--medium {
+    background: var(--accent);
+    color: var(--accent-fg);
+  }
+  .card__tier--low {
+    background: var(--border-strong);
+    color: var(--fg);
+  }
+  .card__preview {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
   .card__before {
     color: var(--fg-muted);
     text-decoration: line-through;
+  }
+  .card__arrow {
+    color: var(--fg-muted);
+  }
+  .card__after {
+    font-weight: var(--weight-semibold);
+  }
+  .card__rationale {
+    margin: 0;
+    color: var(--fg-muted);
+    font-size: var(--fs-xs);
+  }
+  .card__actions {
+    display: flex;
+    gap: var(--space-2);
+    justify-content: flex-end;
   }
   .card__btn {
     display: inline-flex;
@@ -132,5 +168,8 @@
   .card__btn--accept:hover {
     background: var(--success);
     color: #fff;
+  }
+  .card__btn--reject {
+    color: var(--fg-muted);
   }
 </style>

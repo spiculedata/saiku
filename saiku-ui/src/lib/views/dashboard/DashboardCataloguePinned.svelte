@@ -15,7 +15,6 @@
    * imported here to avoid threading the helper through a prop.
    */
   import { base } from "$app/paths";
-  import { Button } from "$lib/components/ui";
   import { Star } from "lucide-svelte";
   import { toRepoRelative } from "$lib/api/dashboards";
   import type { RepositoryNode } from "$lib/api/repository";
@@ -37,17 +36,24 @@
     <h2 id="favourites-heading" class="pinned-heading">
       <Star size={14} aria-hidden="true" /> Favourites
     </h2>
-    <ul class="list-none m-0 p-0 flex flex-col gap-1">
+    <ul class="list">
       {#each favourites as e (e.path)}
         {@const relPath = toRepoRelative(e.path)}
         <li class="row">
           <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
             <span class="name">{basename(relPath)}</span>
-            <span class="text-fg-muted text-xs overflow-hidden text-ellipsis whitespace-nowrap">{relPath}</span>
+            <span class="path">{relPath}</span>
           </a>
-          <Button variant="outline" class="icon-only star star--on" onclick={() => onToggleFavourite(relPath)} title="Remove from favourites" aria-label="Remove from favourites" aria-pressed="true">
+          <button
+            type="button"
+            class="btn icon-only star star--on"
+            onclick={() => onToggleFavourite(relPath)}
+            title="Remove from favourites"
+            aria-label="Remove from favourites"
+            aria-pressed="true"
+          >
             <Star size={14} fill="currentColor" />
-          </Button>
+          </button>
         </li>
       {/each}
     </ul>
@@ -57,13 +63,13 @@
 {#if recents.length > 0}
   <section class="pinned" aria-labelledby="recents-heading">
     <h2 id="recents-heading" class="pinned-heading">🕒 Recently viewed</h2>
-    <ul class="list-none m-0 p-0 flex flex-col gap-1">
+    <ul class="list">
       {#each recents as e (e.path)}
         {@const relPath = toRepoRelative(e.path)}
         <li class="row">
           <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
             <span class="name">{basename(relPath)}</span>
-            <span class="text-fg-muted text-xs overflow-hidden text-ellipsis whitespace-nowrap">{relPath}</span>
+            <span class="path">{relPath}</span>
           </a>
         </li>
       {/each}
@@ -72,7 +78,7 @@
 {/if}
 
 <style>
-/* Mirrors DashboardIndex's pinned + row styles. Duplicated because
+  /* Mirrors DashboardIndex's pinned + row styles. Duplicated because
      Svelte scoped CSS does not cross component boundaries. */
   .pinned {
     display: flex;
@@ -89,6 +95,14 @@
     margin: 0 0 0.25rem;
     display: inline-flex;
     align-items: center;
+    gap: 0.25rem;
+  }
+  .list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
     gap: 0.25rem;
   }
   .row {
@@ -117,5 +131,36 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .path {
+    color: var(--fg-muted);
+    font-size: 0.75rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .btn {
+    padding: 0.375rem 0.625rem;
+    border: 1px solid var(--border-strong);
+    background: var(--bg);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8125rem;
+    color: var(--fg);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .btn:hover {
+    background: var(--bg-subtle);
+  }
+  .btn.icon-only {
+    padding: 0.375rem;
+  }
+  .star {
+    color: var(--fg-muted);
+  }
+  .star--on {
+    color: var(--accent);
   }
 </style>

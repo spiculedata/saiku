@@ -65,10 +65,10 @@
 
 <div class="cube-picker">
   <label class="cube-picker__label" for="cubes-select">{i18n.t("cubes.label")}</label>
-  <div class="flex gap-2">
+  <div class="cube-picker__row">
     <select
       id="cubes-select"
-      class="flex-1 py-2 px-3 bg-bg text-fg border border-border-strong rounded-sm text-sm"
+      class="cube-picker__select"
       value={selectedKey}
       onchange={onChange}
       disabled={datasources.loading}
@@ -107,12 +107,12 @@
     <p class="callout callout--danger">{datasources.error}</p>
   {/if}
   {#if !datasources.loading && datasources.connections.length === 0 && !datasources.error}
-    <p class="m-0 text-sm text-fg-subtle">{i18n.t("cubes.empty")}</p>
+    <p class="cube-picker__empty">{i18n.t("cubes.empty")}</p>
   {/if}
 </div>
 
 <style>
-.cube-picker {
+  .cube-picker {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
@@ -124,6 +124,19 @@
     letter-spacing: 0.06em;
     color: var(--fg-muted);
   }
+  .cube-picker__row {
+    display: flex;
+    gap: var(--space-2);
+  }
+  .cube-picker__select {
+    flex: 1;
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    font-size: var(--fs-sm);
+  }
   .cube-picker__refresh {
     /* match the select's vertical footprint so they line up at the same height */
     width: 36px;
@@ -134,5 +147,10 @@
   }
   @keyframes cube-picker-spin {
     to { transform: rotate(360deg); }
+  }
+  .cube-picker__empty {
+    margin: 0;
+    font-size: var(--fs-sm);
+    color: var(--fg-subtle);
   }
 </style>

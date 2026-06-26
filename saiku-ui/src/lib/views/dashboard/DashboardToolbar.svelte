@@ -13,7 +13,6 @@
    */
 
   import AddTileMenu from "$lib/views/dashboard/AddTileMenu.svelte";
-  import { Button } from "$lib/components/ui";
   import FilterSuggestionsModal from "$lib/views/dashboard/FilterSuggestionsModal.svelte";
   import PrefsMenu from "$lib/components/PrefsMenu.svelte";
   import type { TileType } from "$lib/api/dashboards";
@@ -232,9 +231,9 @@
   aria-label="Dashboard toolbar"
   bind:this={headerEl}
 >
-  <div class="flex flex-col gap-1 min-w-0">
+  <div class="title-block">
     {#if readOnly}
-      <h1 class="text-lg font-semibold m-0">{name}</h1>
+      <h1 class="name-readonly">{name}</h1>
     {:else}
       <input
         class="name"
@@ -248,14 +247,14 @@
 
     {#if readOnly}
       {#if tags.length > 0}
-        <div class="flex flex-wrap gap-1 items-center pl-2" aria-label="Dashboard tags">
+        <div class="tags" aria-label="Dashboard tags">
           {#each tags as t (t)}
             <span class="tag-chip">{t}</span>
           {/each}
         </div>
       {/if}
     {:else}
-      <div class="flex flex-wrap gap-1 items-center pl-2" aria-label="Dashboard tags">
+      <div class="tags" aria-label="Dashboard tags">
         {#each tags as t (t)}
           <span class="tag-chip">
             {t}
@@ -283,7 +282,7 @@
     {/if}
   </div>
 
-  <div class="flex-1"></div>
+  <div class="spacer"></div>
 
   <!-- #1175: wide → all actions inline; narrow → Save stays out, the rest
        (incl. Undo/Redo) collapse into a ☰ menu. Both render the SAME
@@ -292,9 +291,17 @@
   <div class="actions">
     {#if narrow}
       {@render saveButton()}
-      <Button variant="outline" class="hamburger" aria-label="More actions" aria-haspopup="menu" aria-expanded={menuOpen} title="More actions" onclick={() => (menuOpen = !menuOpen)}>
+      <button
+        type="button"
+        class="btn hamburger"
+        aria-label="More actions"
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        title="More actions"
+        onclick={() => (menuOpen = !menuOpen)}
+      >
         <Menu size={16} aria-hidden="true" />
-      </Button>
+      </button>
       {#if menuOpen}
         <div class="actions-menu" role="menu">
           {@render secondaryActions()}
@@ -309,62 +316,121 @@
 
 {#snippet secondaryActions()}
   {#if onPresent}
-    <Button variant="outline" onclick={() => onPresent?.()} title="Present — fullscreen, hide chrome (press F, Esc to exit)" aria-label="Present">
+    <button
+      type="button"
+      class="btn"
+      onclick={() => onPresent?.()}
+      title="Present — fullscreen, hide chrome (press F, Esc to exit)"
+      aria-label="Present"
+    >
       <Monitor size={14} aria-hidden="true" />
       <span>Present</span>
-    </Button>
+    </button>
   {/if}
 
   <!-- #929: Export the current dashboard view (PNG / PDF). A small format
        picker anchors under the button; disabled until the grid mounts. -->
-  <div class="relative inline-flex">
-    <Button variant="outline" onclick={() => (exportMenuOpen = !exportMenuOpen)} disabled={!canExport || exporting} aria-disabled={!canExport || exporting} aria-haspopup="menu" aria-expanded={exportMenuOpen} title={i18n.t("dashboard.export.title", "Export the current view as PNG or PDF")} aria-label={i18n.t("dashboard.export", "Export")}>
+  <div class="export-wrap">
+    <button
+      type="button"
+      class="btn"
+      onclick={() => (exportMenuOpen = !exportMenuOpen)}
+      disabled={!canExport || exporting}
+      aria-disabled={!canExport || exporting}
+      aria-haspopup="menu"
+      aria-expanded={exportMenuOpen}
+      title={i18n.t("dashboard.export.title", "Export the current view as PNG or PDF")}
+      aria-label={i18n.t("dashboard.export", "Export")}
+    >
       <Download size={14} aria-hidden="true" />
       <span>{exporting ? i18n.t("dashboard.export.busy", "Exporting…") : i18n.t("dashboard.export", "Export")}</span>
-    </Button>
+    </button>
     {#if exportMenuOpen}
       <div class="export-menu" role="menu" aria-label={i18n.t("dashboard.export.formatLabel", "Export format")}>
-        <Button variant="outline" class="export-option" role="menuitem" onclick={() => runExport("png")}>
+        <button type="button" class="btn export-option" role="menuitem" onclick={() => runExport("png")}>
           {i18n.t("dashboard.export.png", "PNG image")}
-        </Button>
-        <Button variant="outline" class="export-option" role="menuitem" onclick={() => runExport("pdf")}>
+        </button>
+        <button type="button" class="btn export-option" role="menuitem" onclick={() => runExport("pdf")}>
           {i18n.t("dashboard.export.pdf", "PDF document")}
-        </Button>
+        </button>
       </div>
     {/if}
   </div>
 
   {#if !readOnly}
     <div class="undo-redo" role="group" aria-label={i18n.t("dashboard.history.group", "Undo and redo")}>
-      <Button variant="outline" class="icon-only" onclick={() => onUndo?.()} disabled={!canUndo || !onUndo} aria-disabled={!canUndo || !onUndo} title={i18n.t("dashboard.undo.title", "Undo (Ctrl/Cmd+Z)")} aria-label={i18n.t("dashboard.undo", "Undo")}>
+      <button
+        type="button"
+        class="btn icon-only"
+        onclick={() => onUndo?.()}
+        disabled={!canUndo || !onUndo}
+        aria-disabled={!canUndo || !onUndo}
+        title={i18n.t("dashboard.undo.title", "Undo (Ctrl/Cmd+Z)")}
+        aria-label={i18n.t("dashboard.undo", "Undo")}
+      >
         <Undo2 size={14} aria-hidden="true" />
-      </Button>
-      <Button variant="outline" class="icon-only" onclick={() => onRedo?.()} disabled={!canRedo || !onRedo} aria-disabled={!canRedo || !onRedo} title={i18n.t("dashboard.redo.title", "Redo (Ctrl/Cmd+Shift+Z)")} aria-label={i18n.t("dashboard.redo", "Redo")}>
+      </button>
+      <button
+        type="button"
+        class="btn icon-only"
+        onclick={() => onRedo?.()}
+        disabled={!canRedo || !onRedo}
+        aria-disabled={!canRedo || !onRedo}
+        title={i18n.t("dashboard.redo.title", "Redo (Ctrl/Cmd+Shift+Z)")}
+        aria-label={i18n.t("dashboard.redo", "Redo")}
+      >
         <Redo2 size={14} aria-hidden="true" />
-      </Button>
+      </button>
     </div>
 
-    <Button variant="outline" onclick={() => (suggestOpen = true)} aria-haspopup="dialog" title="Suggest filter widgets from dimensions your tiles already use">
+    <button
+      type="button"
+      class="btn"
+      onclick={() => (suggestOpen = true)}
+      aria-haspopup="dialog"
+      title="Suggest filter widgets from dimensions your tiles already use"
+    >
       🔍 Suggest filters
-    </Button>
+    </button>
 
-    <Button variant="outline" onclick={() => onResetFilters?.()} disabled={!canResetFilters || !onResetFilters} aria-disabled={!canResetFilters || !onResetFilters} title={canResetFilters ? "Clear all click-filters and restore panel filters to their saved defaults" : "No active filters to reset"}>
+    <button
+      type="button"
+      class="btn"
+      onclick={() => onResetFilters?.()}
+      disabled={!canResetFilters || !onResetFilters}
+      aria-disabled={!canResetFilters || !onResetFilters}
+      title={canResetFilters
+        ? "Clear all click-filters and restore panel filters to their saved defaults"
+        : "No active filters to reset"}
+    >
       <RotateCcw size={14} aria-hidden="true" />
       <span>Reset filters</span>
-    </Button>
+    </button>
 
     <AddTileMenu onPick={(t) => onAddTile?.(t)} disabled={!onAddTile} />
   {/if}
 
   {#if savedPath}
-    <Button variant="outline" onclick={() => (historyOpen = true)} title="Version history — preview and restore earlier saves" aria-haspopup="dialog">
+    <button
+      type="button"
+      class="btn"
+      onclick={() => (historyOpen = true)}
+      title="Version history — preview and restore earlier saves"
+      aria-haspopup="dialog"
+    >
       <History size={14} aria-hidden="true" />
       <span>History</span>
-    </Button>
-    <Button variant="outline" onclick={() => (shareOpen = true)} title="Share a read-only link to this dashboard" aria-haspopup="dialog">
+    </button>
+    <button
+      type="button"
+      class="btn"
+      onclick={() => (shareOpen = true)}
+      title="Share a read-only link to this dashboard"
+      aria-haspopup="dialog"
+    >
       <Share2 size={14} aria-hidden="true" />
       <span>Share</span>
-    </Button>
+    </button>
   {/if}
 
   <!-- saiku#1050: theme (dark/light/system) + language control. -->
@@ -373,7 +439,13 @@
 
 {#snippet saveButton()}
   {#if !readOnly}
-    <Button onclick={() => onSave?.()} disabled={saving || !dirty} aria-disabled={saving || !dirty}>
+    <button
+      type="button"
+      class="btn primary"
+      onclick={() => onSave?.()}
+      disabled={saving || !dirty}
+      aria-disabled={saving || !dirty}
+    >
       {#if saving}
         Saving…
       {:else if dirty}
@@ -381,7 +453,7 @@
       {:else}
         Saved
       {/if}
-    </Button>
+    </button>
   {/if}
 {/snippet}
 
@@ -400,19 +472,25 @@
 {#if exportError}
   <div class="export-error" role="alert">
     {i18n.t("dashboard.export.failed", "Export failed")}: {exportError}
-    <button type="button" class="bg-none border-0 p-0 text-inherit cursor-pointer inline-flex items-center" onclick={() => (exportError = null)} aria-label="Dismiss">
+    <button type="button" class="export-error-dismiss" onclick={() => (exportError = null)} aria-label="Dismiss">
       <X size={12} />
     </button>
   </div>
 {/if}
 
 <style>
-.toolbar {
+  .toolbar {
     display: flex;
     align-items: flex-start;
     gap: 0.75rem;
     padding: 0.5rem 0.25rem;
     border-bottom: 1px solid var(--border);
+  }
+  .title-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
   }
   .name {
     font-size: 1.125rem;
@@ -427,6 +505,18 @@
     border-color: var(--border-strong);
     background: var(--bg);
     outline: none;
+  }
+  .name-readonly {
+    font-size: 1.125rem;
+    font-weight: var(--weight-semibold);
+    margin: 0;
+  }
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    align-items: center;
+    padding-left: 0.5rem;
   }
   .tag-chip {
     display: inline-flex;
@@ -463,6 +553,7 @@
     border-color: var(--border-strong);
     outline: none;
   }
+  .spacer { flex: 1; }
   .actions {
     display: flex;
     gap: 0.5rem;
@@ -471,6 +562,7 @@
   }
   /* #1175: narrow toolbar — let the name shrink so Save + ☰ always fit. */
   .toolbar--narrow .name { min-width: 0; }
+  .hamburger { padding: 0.375rem 0.5rem; }
   /* #1175: hamburger dropdown holding the collapsed secondary actions. */
   .actions-menu {
     position: absolute;
@@ -501,19 +593,52 @@
   /* #929: the export wrapper stretches full-width inside the hamburger so
      its button matches the other collapsed actions; the format dropdown
      still anchors to it. */
+  .actions-menu .export-wrap {
+    display: flex;
+    width: 100%;
+  }
   .actions-menu .undo-redo :global(.btn) {
     width: auto;
     flex: 1;
     justify-content: center;
   }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    border: 1px solid var(--border-strong);
+    background: var(--bg);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.875rem;
+  }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .undo-redo {
     display: inline-flex;
     gap: 0.25rem;
     align-items: center;
   }
+  .btn.icon-only {
+    padding: 0.375rem 0.5rem;
+  }
+  .btn.primary {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+  .btn.primary:disabled {
+    /* Saved state — keep it visually distinct from a destructive disable. */
+    opacity: 0.7;
+  }
+
   /* #929: Export button + format picker. The wrapper anchors the dropdown;
      inside the hamburger it stretches full-width like the other collapsed
      actions (the .actions-menu :global(.btn) rule handles the button). */
+  .export-wrap {
+    position: relative;
+    display: inline-flex;
+  }
   .export-menu {
     position: absolute;
     top: 100%;
@@ -531,6 +656,10 @@
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
     z-index: 70;
   }
+  .export-option {
+    width: 100%;
+    justify-content: flex-start;
+  }
   .export-error {
     position: fixed;
     bottom: 1rem;
@@ -546,5 +675,14 @@
     border: 1px solid var(--danger);
     border-radius: 6px;
     font-size: 0.8125rem;
+  }
+  .export-error-dismiss {
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
   }
 </style>

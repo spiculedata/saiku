@@ -1,7 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
-  import { Button } from "$lib/components/ui";
   import RepositoryBrowser from "$lib/components/RepositoryBrowser.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { TEMPLATES } from "$lib/dashboard/templates";
@@ -97,8 +96,8 @@
       aria-checked={templateId === null}
       onclick={() => selectTemplate(null)}
     >
-      <span class="font-medium text-sm">{i18n.t("dashboard.new.blank")}</span>
-      <span class="text-xs text-fg-muted">{i18n.t("dashboard.new.blankDesc")}</span>
+      <span class="template-card__name">{i18n.t("dashboard.new.blank")}</span>
+      <span class="template-card__desc">{i18n.t("dashboard.new.blankDesc")}</span>
     </button>
     {#each TEMPLATES as t (t.id)}
       <button
@@ -109,8 +108,8 @@
         aria-checked={templateId === t.id}
         onclick={() => selectTemplate(t.id)}
       >
-        <span class="font-medium text-sm">{t.name}</span>
-        <span class="text-xs text-fg-muted">{t.description}</span>
+        <span class="template-card__name">{t.name}</span>
+        <span class="template-card__desc">{t.description}</span>
       </button>
     {/each}
   </div>
@@ -140,13 +139,18 @@
   </p>
 
   {#snippet footer()}
-    <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
-    <Button onclick={commit} disabled={!valid}>{i18n.t("dashboard.new.create")}</Button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
+    <button
+      type="button"
+      class="btn btn--primary"
+      disabled={!valid}
+      onclick={commit}
+    >{i18n.t("dashboard.new.create")}</button>
   {/snippet}
 </Modal>
 
 <style>
-.templates {
+  .templates {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: var(--space-2);
@@ -170,6 +174,14 @@
   .template-card--on {
     border-color: var(--accent);
     box-shadow: 0 0 0 1px var(--accent);
+  }
+  .template-card__name {
+    font-weight: var(--weight-medium);
+    font-size: var(--fs-sm);
+  }
+  .template-card__desc {
+    font-size: var(--fs-xs);
+    color: var(--fg-muted);
   }
   .path-preview {
     margin: var(--space-3) 0 0;

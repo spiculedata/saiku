@@ -468,7 +468,7 @@
         <div class="caption">{kpi.measureCaption}</div>
       {/if}
       {#if kpi.sparkline && wantsSeries}
-        <div class="w-full h-[36px] shrink-0" bind:this={sparkHost} aria-hidden="true"></div>
+        <div class="spark" bind:this={sparkHost} aria-hidden="true"></div>
       {/if}
     {/if}
     {#if autoRefreshOn && auto.lastUpdated > 0}
@@ -481,7 +481,7 @@
 {/if}
 
 <style>
-.kpi-tile {
+  .kpi-tile {
     --kpi-red: var(--danger, #c00);
     --kpi-yellow: var(--warning, #c79a00);
     --kpi-green: var(--success, #1b8a3a);
@@ -540,6 +540,11 @@
     color: var(--fg-muted);
     text-transform: uppercase;
     letter-spacing: 0.04em;
+  }
+  .spark {
+    width: 100%;
+    height: 36px;
+    flex-shrink: 0;
   }
   /* #931: auto-refresh badge — top-right of the KPI box, click-through.
      Top (not bottom) so it clears the optional sparkline along the KPI's

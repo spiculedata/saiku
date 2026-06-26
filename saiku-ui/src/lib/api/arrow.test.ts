@@ -40,7 +40,7 @@ function buildFixture(): ArrayBuffer {
     c0_fmt: vectorFromArray(["", ""]),
     c1_raw: vectorFromArray(new Float64Array([10.5, 20.5])),
     c1_fmt: vectorFromArray(["$10.50", "$20.50"]),
-     
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as unknown as Record<string, any>;
 
   const table = new Table(cells);

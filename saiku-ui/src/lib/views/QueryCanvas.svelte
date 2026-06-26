@@ -291,10 +291,8 @@
       else if (id === "remove") query.removeHierarchy(m.hierarchy.name);
       else if (id.startsWith("removeLevel:")) {
         const levelName = id.substring("removeLevel:".length);
-        // No explicit run() here — query.removeLevel calls markDirty
-        // which auto-runs when autorun is on. Double-firing produced
-        // 'Query cancelled' on the first click of every chip-removal.
         query.removeLevel(m.hierarchy.name, levelName);
+        if (query.hasRunnableShape()) void query.run();
       }
       return;
     }
@@ -308,7 +306,7 @@
         const [location, axis] = arg.split("_") as ["TOP" | "BOTTOM", "COLUMNS" | "ROWS"];
         query.setMeasuresPlacement(axis, location);
       }
-      // setMeasuresPlacement → markDirty → auto-run; no explicit run().
+      if (query.hasRunnableShape()) void query.run();
       return;
     }
     if (m.kind === "axis" && m.axis) {
@@ -487,20 +485,13 @@
   }
 
   let selectionsOpen = $state(false);
-  /**
-   * Per-hierarchy selections context. The modal is now hierarchy-wide
-   * (saiku#TODO): the user opens it from one level chip but can switch
-   * tabs across every level of the hierarchy in one session. Members
-   * load lazily per level when the user picks a tab.
-   */
-  let selectionsTarget = $state<{
-    axis: AxisLocation;
-    hierarchyName: string;
-    hierarchyCaption: string;
-    levelNames: string[];
-    initialLevelName: string;
-    initialPerLevel: Record<string, { selected: string[]; type: "INCLUSION" | "EXCLUSION" }>;
-  } | null>(null);
+  let selectionsTarget = $state<{ axis: AxisLocation; hierarchyName: string; hierarchyCaption: string; levelName: string } | null>(null);
+  let selectionsMembers = $state<SaikuMember[]>([]);
+  let selectionsLoading = $state(false);
+  let selectionsInitial = $state<{ uniqueNames: string[]; type: "INCLUSION" | "EXCLUSION" }>({
+    uniqueNames: [],
+    type: "INCLUSION",
+  });
 
   const axisLabels = $derived<Record<ZoneId, string>>({
     COLUMNS: i18n.t("canvas.columns"),
@@ -535,10 +526,6 @@
 
   let dragOverAxis = $state<ZoneId | null>(null);
   let dragOverChipKey = $state<string | null>(null);
-  // Whether the pointer is below the target chip's mid-line (drop-after)
-  // or above (drop-before). Drives the visual drop-line indicator AND
-  // the reorderHierarchy insert-position decision in onChipDrop.
-  let dragOverChipAfter = $state<boolean>(false);
   /** Where the chip being dragged came from. Null for sidebar-originated drags
    *  (where any zone is a valid drop). Used to suppress no-op zone highlights
    *  when a chip is dragged over its own axis's empty background. */
@@ -570,25 +557,14 @@
       if (dragOverAxis === axis) dragOverAxis = null;
     }
   }
-  function clearDragOver() { dragOverAxis = null; dragOverChipKey = null; dragOverChipAfter = false; dragSourceAxis = null; }
+  function clearDragOver() { dragOverAxis = null; dragOverChipKey = null; dragSourceAxis = null; }
 
   function onChipDragOver(e: DragEvent, axis: ZoneId, kind: "hierarchy" | "measure", id: string) {
     if (!e.dataTransfer?.types?.includes("application/x-saiku-chip")) return;
     e.preventDefault();
     e.stopPropagation();
     const key = chipKey(axis, kind, id);
-    // Pick before/after based on mouse Y vs chip mid-point. Without this,
-    // every drop is "before target", which means dragging the FIRST chip
-    // onto the second produces no change (source already comes before
-    // target after the splice). With before/after detection the
-    // interaction reads symmetrically — drop above the mid-line → before,
-    // drop below → after.
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const after = e.clientY > rect.top + rect.height / 2;
-    if (dragOverChipKey !== key || dragOverChipAfter !== after) {
-      dragOverChipKey = key;
-      dragOverChipAfter = after;
-    }
+    if (dragOverChipKey !== key) dragOverChipKey = key;
     if (dragOverAxis !== null) dragOverAxis = null;
   }
   function onChipDragEnter(e: DragEvent) {
@@ -655,24 +631,14 @@
       | { kind: "measure"; axis: ZoneId; uniqueName: string };
     // Only same-axis, same-kind drops are reorders. Otherwise defer to the zone handler.
     if (payload.kind === "hierarchy" && target.kind === "hierarchy" && payload.axis === targetAxis) {
-      if (payload.name !== target.name && targetAxis !== "MEASURES") {
+      if (payload.name !== target.name) {
         e.preventDefault();
         e.stopPropagation();
-        // Decide insert position based on the drag-over Y signal captured
-        // in onChipDragOver. dropAfter → splice just after the target;
-        // dropBefore → splice just before. reorderHierarchy takes a
-        // targetName that the source lands BEFORE (or null = end), so
-        // "after target" means we pass the name of the chip AFTER target
-        // (or null when target is the last).
-        const dropAfter = dragOverChipAfter;
-        const list = query.current?.queryModel?.axes[targetAxis].hierarchies ?? [];
-        let insertBefore: string | null = target.name;
-        if (dropAfter) {
-          const tIdx = list.findIndex((h) => h.name === target.name);
-          insertBefore = tIdx >= 0 && tIdx + 1 < list.length ? list[tIdx + 1].name : null;
-        }
         clearDragOver();
-        query.reorderHierarchy(targetAxis, payload.name, insertBefore);
+        // narrow targetAxis back to AxisLocation — reorderHierarchy only
+        // makes sense for real backend axes, and the hierarchy chip can
+        // only live in COLUMNS/ROWS/PAGES/FILTER anyway.
+        if (targetAxis !== "MEASURES") query.reorderHierarchy(targetAxis, payload.name, target.name);
       }
       return;
     }
@@ -686,42 +652,6 @@
       return;
     }
     // mismatched kinds or different axis: let the dropzone handle as a move.
-  }
-
-  /**
-   * Order the level names of a hierarchy by their position in the schema,
-   * not by the order in which the user dropped them onto the axis.
-   *
-   * `h.levels` is a Record (insertion-ordered Object) so iterating it
-   * yields levels in pick order — which produces nonsense when a user
-   * drops Year, Month, Day first and adds Quarter later: the chip
-   * would render Year, Month, Day, Quarter (Quarter at the bottom)
-   * even though the time hierarchy is Year → Quarter → Month → Day.
-   *
-   * The cube discover metadata carries the schema-defined order; we
-   * look up the hierarchy by uniqueName and sort each level by its
-   * index in the schema's `levels` array. Unknown levels (which
-   * shouldn't happen) fall to the end in their original pick order.
-   */
-  function sortLevelsBySchemaOrder(h: ThinHierarchy): string[] {
-    const picked = Object.keys(h.levels);
-    const md = cubeMetadata;
-    if (!md) return picked;
-    for (const d of md.dimensions ?? []) {
-      for (const mh of d.hierarchies ?? []) {
-        if (mh.uniqueName !== h.name) continue;
-        const schemaOrder = (mh.levels ?? []).map((l) => l.name);
-        return [...picked].sort((a, b) => {
-          const ia = schemaOrder.indexOf(a);
-          const ib = schemaOrder.indexOf(b);
-          if (ia < 0 && ib < 0) return picked.indexOf(a) - picked.indexOf(b);
-          if (ia < 0) return 1;
-          if (ib < 0) return -1;
-          return ia - ib;
-        });
-      }
-    }
-    return picked;
   }
 
   function hierChipLabel(h: ThinHierarchy): string {
@@ -758,64 +688,34 @@
     };
   }
 
-  async function openSelections(
-    axis: AxisLocation,
-    hier: ThinHierarchy,
-    preferredLevel?: string,
-  ) {
+  async function openSelections(axis: AxisLocation, hier: ThinHierarchy) {
     if (!selection.cube || !session.current) return;
-    const pickedLevels = sortLevelsBySchemaOrder(hier);
-    if (pickedLevels.length === 0) return;
-    const initialLevelName = preferredLevel && pickedLevels.includes(preferredLevel)
-      ? preferredLevel
-      : pickedLevels[0];
-
-    // Seed per-level selections from the query model. Levels the user
-    // hasn't filtered before default to empty INCLUSION (= no filter).
-    const initialPerLevel: Record<
-      string,
-      { selected: string[]; type: "INCLUSION" | "EXCLUSION" }
-    > = {};
-    for (const lvl of pickedLevels) {
-      const existing = query.getLevelSelection(hier.name, lvl);
-      initialPerLevel[lvl] = {
-        selected: existing.memberUniqueNames,
-        type: existing.type,
-      };
-    }
-
+    const levelName = Object.keys(hier.levels)[0];
+    if (!levelName) return;
     selectionsTarget = {
       axis,
       hierarchyName: hier.name,
       hierarchyCaption: hier.caption ?? hier.name,
-      levelNames: pickedLevels,
-      initialLevelName,
-      initialPerLevel,
+      levelName,
     };
+    const existing = query.getLevelSelection(hier.name, levelName);
+    selectionsInitial = { uniqueNames: existing.memberUniqueNames, type: existing.type };
     selectionsOpen = true;
-  }
-
-  /** Lazy-load a level's members on first tab-click in the modal. */
-  async function loadSelectionsLevelMembers(
-    hier: ThinHierarchy,
-    levelName: string,
-  ): Promise<SaikuMember[]> {
-    if (!selection.cube || !session.current) return [];
-    const dimension =
-      hier.name.split(".")[0]?.replace(/[[\]]/g, "") ?? hier.name;
+    selectionsLoading = true;
+    selectionsMembers = [];
     try {
-      return await listLevelMembers(
+      // The dimension-name path requires just the dimension token from the hierarchy unique name.
+      const dimension = hier.name.split(".")[0]?.replace(/[[\]]/g, "") ?? hier.name;
+      selectionsMembers = await listLevelMembers(
         session.current.username,
         selection.cube,
         dimension,
         hier.name,
         levelName,
       );
-    } catch {
-      // Fallback to root members for the rare case where the level path
-      // 404s — at minimum surface the hierarchy's top-level members.
+    } catch (err) {
       try {
-        return await listRootMembers(
+        selectionsMembers = await listRootMembers(
           session.current.username,
           selection.cube,
           hier.name,
@@ -825,8 +725,9 @@
           i18n.t("toast.loadMembersFailed"),
           err2 instanceof Error ? err2.message : String(err2),
         );
-        return [];
       }
+    } finally {
+      selectionsLoading = false;
     }
   }
 
@@ -865,24 +766,15 @@
       }>;
       const d = ce.detail;
       if (!d) return;
-      // saiku-filter-level event seam: a single-level filter request
-      // (typically from the cellset's right-click drill-into-cell flow).
-      // Bridge into the hierarchy-wide modal by seeding only that level,
-      // with the existing per-level selections passed through.
-      const existing = query.getLevelSelection(d.hierarchyName, d.levelName);
       selectionsTarget = {
         axis: d.axis,
         hierarchyName: d.hierarchyName,
         hierarchyCaption: d.hierarchyCaption,
-        levelNames: [d.levelName],
-        initialLevelName: d.levelName,
-        initialPerLevel: {
-          [d.levelName]: {
-            selected: existing.memberUniqueNames,
-            type: existing.type,
-          },
-        },
+        levelName: d.levelName,
       };
+      const existing = query.getLevelSelection(d.hierarchyName, d.levelName);
+      selectionsInitial = { uniqueNames: existing.memberUniqueNames, type: existing.type };
+      selectionsMembers = d.members;
       selectionsOpen = true;
     };
     el.addEventListener("saiku-filter-level", handler);
@@ -939,74 +831,17 @@
     datasources.metadata(session.current.username, cube).then((md) => (cubeMetadata = md)).catch(() => {});
   });
 
-  // Legacy single-level save (still wired for the drillthrough modal seam).
-  // The selections modal proper now uses onSelectionsBulkSave below.
-  async function onSelectionsSaveSingle(
-    levelName: string,
-    uniqueNames: string[],
-    type: "INCLUSION" | "EXCLUSION",
-  ) {
+  async function onSelectionsSave(uniqueNames: string[], type: "INCLUSION" | "EXCLUSION") {
     if (!selectionsTarget) return;
     query.setLevelSelection(
       selectionsTarget.hierarchyName,
-      levelName,
+      selectionsTarget.levelName,
       uniqueNames,
       type,
     );
     selectionsOpen = false;
     toasts.success(i18n.t("toast.saved"), i18n.t("toast.selectionsApplied").replace("{n}", String(uniqueNames.length)));
     if (query.hasRunnableShape()) await query.run();
-  }
-
-  /**
-   * Hierarchy-wide save — the modal returns a per-level array. We persist
-   * each level's selections in one pass and run the query once at the end
-   * (avoids N round-trips for hierarchies with 4+ levels).
-   */
-  async function onSelectionsBulkSave(
-    perLevel: { levelName: string; selected: string[]; type: "INCLUSION" | "EXCLUSION" }[],
-  ) {
-    if (!selectionsTarget) return;
-    let totalSelected = 0;
-    // Suppress autorun during the loop. Each setLevelSelection calls
-    // markDirty which would otherwise fire a run() per iteration — N
-    // backend round-trips where the first N-1 get cancelled by the
-    // run() guard. One explicit run() at the end is what we want.
-    const wasAutorun = query.autorun;
-    query.autorun = false;
-    try {
-      for (const lvl of perLevel) {
-        query.setLevelSelection(
-          selectionsTarget.hierarchyName,
-          lvl.levelName,
-          lvl.selected,
-          lvl.type,
-        );
-        totalSelected += lvl.selected.length;
-      }
-    } finally {
-      query.autorun = wasAutorun;
-    }
-    selectionsOpen = false;
-    selectionsTarget = null;
-    toasts.success(
-      i18n.t("toast.saved"),
-      i18n.t("toast.selectionsApplied").replace("{n}", String(totalSelected)),
-    );
-    if (query.hasRunnableShape()) await query.run();
-  }
-
-  /*
-   * Clearing selectionsTarget (NOT just selectionsOpen=false) on cancel
-   * unmounts the {#if selectionsTarget} block, so the modal subtree is
-   * dropped wholesale. Leaving the subtree mounted with open=false kept
-   * stale reactive state around — when the user reopened on the same
-   * hierarchy, the level cache from the previous open could survive in
-   * unpredictable ways. Full unmount is the simpler invariant.
-   */
-  function closeSelections(): void {
-    selectionsOpen = false;
-    selectionsTarget = null;
   }
 </script>
 
@@ -1016,7 +851,7 @@
   {#if !selection.cube}
     <div class="canvas__empty">
       <p>{i18n.t("canvas.noCube")}</p>
-      <p class="text-fg-subtle text-sm m-0">{i18n.t("canvas.pickPrompt")}</p>
+      <p class="canvas__hint">{i18n.t("canvas.pickPrompt")}</p>
     </div>
   {:else}
     <div
@@ -1026,7 +861,7 @@
       class:canvas__body--narrow={bodyNarrow && query.current?.type !== "MDX"}
     >
     {#if query.current?.type !== "MDX"}
-    <aside class="flex flex-col gap-2 overflow-y-auto pr-1">
+    <aside class="dropzones">
       <!-- Dedicated MEASURES panel (restored from the pre-rewrite UI).
            Sits above COLUMNS/ROWS so the chip stack visually separates
            the projection (measures) from the axes (levels). Drops here
@@ -1095,14 +930,9 @@
           </header>
           <div class="chips">
             {#each query.current?.queryModel?.axes[axis].hierarchies ?? [] as h}
-              {@const levelNames = sortLevelsBySchemaOrder(h)}
-              {@const isMulti = levelNames.length > 1}
               <!-- svelte-ignore a11y_no_static_element_interactions — drag/context-menu are mouse affordances; the inner buttons (label, close) handle keyboard accessibility. -->
-              <div
-                class={"chip-group " +
-                  (dragOverChipKey === chipKey(axis, "hierarchy", h.name)
-                    ? (dragOverChipAfter ? "is-drop-after" : "is-drop-before")
-                    : "")}
+              <span
+                class={dragOverChipKey === chipKey(axis, "hierarchy", h.name) ? "chip chip--level is-drop-before" : "chip chip--level"}
                 draggable="true"
                 ondragstart={(e) => onHierChipDragStart(e, axis, h)}
                 ondragenter={onChipDragEnter}
@@ -1110,55 +940,21 @@
                 ondrop={(e) => onChipDrop(e, axis, { kind: "hierarchy", name: h.name })}
                 oncontextmenu={(e) => openHierMenu(e, axis, h)}
               >
-                <!-- Header row — dim caption + outer × that removes the
-                     whole hierarchy. Click the caption to open the
-                     selections modal (member picker). -->
-                <div class="chip-group__head">
-                  <button
-                    type="button"
-                    class="chip-group__title"
-                    onclick={() => openSelections(axis, h)}
-                    title={i18n.t("canvas.menu.editSelections")}
-                  >
-                    {h.caption || h.name}
-                  </button>
-                  <button
-                    type="button"
-                    class="chip-group__x"
-                    aria-label="{i18n.t('canvas.menu.removeHierarchy')} {h.caption || h.name}"
-                    title={i18n.t("canvas.menu.removeHierarchy")}
-                    onclick={() => removeHier(h.name)}
-                  >×</button>
-                </div>
-                <!-- Level list — each carries its own × (only meaningful
-                     when 2+ levels; with one level the outer × already
-                     handles it). -->
-                <ul class="chip-group__levels">
-                  {#each levelNames as lvl}
-                    <li class="chip-group__level">
-                      <span class="chip-group__level-name" title={lvl}>{lvl}</span>
-                      {#if isMulti}
-                        <button
-                          type="button"
-                          class="chip-group__level-x"
-                          aria-label="{i18n.t('canvas.menu.removeLevel')} {lvl}"
-                          title={i18n.t("canvas.menu.removeLevel")}
-                          onclick={(e) => {
-                            e.stopPropagation();
-                            // removeLevel → markDirty → auto-run. Don't
-                            // explicitly call run() here — the double-fire
-                            // races against itself on the backend, which
-                            // cancels the older query and surfaces
-                            // 'OlapException: Query cancelled' on what
-                            // looked like a single click.
-                            query.removeLevel(h.name, lvl);
-                          }}
-                        >×</button>
-                      {/if}
-                    </li>
-                  {/each}
-                </ul>
-              </div>
+                <button
+                  type="button"
+                  class="chip__label"
+                  onclick={() => openSelections(axis, h)}
+                  title={i18n.t("canvas.menu.editSelections")}
+                >
+                  {hierChipLabel(h)}
+                </button>
+                <button
+                  type="button"
+                  class="chip__x"
+                  aria-label="{i18n.t('canvas.menu.removeHierarchy')} {h.caption || h.name}"
+                  onclick={() => removeHier(h.name)}
+                >×</button>
+              </span>
             {/each}
             {#if (query.current?.queryModel?.axes[axis].hierarchies.length ?? 0) === 0}
               <span class="chips__empty">{i18n.t("canvas.dropLevels")}</span>
@@ -1216,11 +1012,11 @@
       </div>
     </aside>
     {/if}
-    <div class="min-w-0 min-h-0 flex flex-col gap-2 overflow-hidden">
+    <div class="canvas__result">
     {#if query.current?.type === "MDX"}
       <div class="canvas__mdx-banner" role="status" title={i18n.t("canvas.mdxBannerText")}>
         <span class="canvas__mdx-badge">MDX</span>
-        <span class="min-w-0 overflow-hidden text-ellipsis">{i18n.t("canvas.mdxBannerShort")}</span>
+        <span class="canvas__mdx-text">{i18n.t("canvas.mdxBannerShort")}</span>
       </div>
     {/if}
     <div class="view-toggle" role="tablist" aria-label={i18n.t("canvas.resultView")}>
@@ -1286,7 +1082,7 @@
     {/if}
     <div class="result-host" bind:this={resultHostEl}>
       {#if query.running && !query.result}
-        <p class="text-fg-subtle text-sm m-0">{i18n.t("canvas.running")}</p>
+        <p class="canvas__hint">{i18n.t("canvas.running")}</p>
       {:else if query.error}
         <div class="callout callout--danger" role="alert">
           <p class="callout__text">{query.error}</p>
@@ -1323,21 +1119,13 @@
 </div>
 
 {#if selectionsTarget}
-  {@const target = selectionsTarget}
-  {@const hier = query.current?.queryModel?.axes[target.axis].hierarchies.find(
-    (h) => h.name === target.hierarchyName,
-  )}
   <SelectionsModal
-    hierarchyCaption={target.hierarchyCaption}
-    levelNames={target.levelNames}
-    initialPerLevel={target.initialPerLevel}
-    initialLevelName={target.initialLevelName}
+    levelCaption={selectionsTarget.hierarchyCaption + " › " + selectionsTarget.levelName}
+    available={selectionsMembers}
+    initialSelected={selectionsInitial.uniqueNames}
+    initialType={selectionsInitial.type}
     open={selectionsOpen}
-    loadMembers={(lvl) =>
-      hier
-        ? loadSelectionsLevelMembers(hier, lvl)
-        : Promise.resolve([])}
-    onSave={onSelectionsBulkSave}
+    onSave={onSelectionsSave}
     showDateFilter={(() => {
       // Resolve the hierarchy's Mondrian-native type from cubeMetadata. This
       // beats the legacy caption substring match — translations and renamed
@@ -1361,20 +1149,16 @@
       // Hand off the currently-open Selections target to the date-filter
       // modal. Closing Selections first avoids stacked overlays.
       if (!selectionsTarget) return;
-      // Date-filter modal expects the single-level shape — pass the
-      // currently-active tab as the levelName.
-      modals.dateFilter = {
-        axis: selectionsTarget.axis,
-        hierarchyName: selectionsTarget.hierarchyName,
-        hierarchyCaption: selectionsTarget.hierarchyCaption,
-        levelName: selectionsTarget.initialLevelName,
-      };
-      closeSelections();
+      modals.dateFilter = { ...selectionsTarget };
+      selectionsOpen = false;
     }}
-    onCancel={closeSelections}
+    onCancel={() => (selectionsOpen = false)}
   />
 {/if}
 
+{#if selectionsLoading && selectionsOpen}
+  <p class="callout">{i18n.t("canvas.loadingMembers")}</p>
+{/if}
 
 <DrillthroughModal
   dimensions={cubeMetadata?.dimensions ?? []}
@@ -1520,7 +1304,7 @@
 {/if}
 
 <style>
-.canvas {
+  .canvas {
     flex: 1;
     min-height: 0;
     display: flex;
@@ -1550,12 +1334,29 @@
     overflow-y: auto;
     overflow-x: hidden;
   }
+  .canvas__body--narrow .dropzones {
+    flex: 0 0 auto;
+    overflow-y: visible; /* the body scrolls; no nested scroll area */
+  }
+  .canvas__body--narrow .canvas__result {
+    /* Give the result a usable height when stacked so the chart/grid isn't a
+       sliver; the body scrolls to reach it. */
+    min-height: 65vh;
+  }
   /* MDX mode: the dropzones aside is `{#if}`-hidden, so a 260px 1fr
      grid would place the result in column 1 (260px) and leave column 2
      empty. Collapse to a single 1fr column so the result eats the
      entire freed-up horizontal space. */
   .canvas__body--mdx {
     grid-template-columns: 1fr;
+  }
+  .canvas__result {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    overflow: hidden;
   }
   .canvas__mdx-banner {
     display: inline-flex;
@@ -1582,6 +1383,11 @@
     font-weight: 600;
     letter-spacing: 0.04em;
   }
+  .canvas__mdx-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .canvas__empty {
     display: flex;
     flex-direction: column;
@@ -1593,26 +1399,22 @@
     border: 1px dashed var(--border-strong);
     border-radius: var(--radius-md);
   }
+  .canvas__hint { color: var(--fg-subtle); font-size: var(--fs-sm); margin: 0; }
+  .dropzones {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    overflow-y: auto;
+    padding-right: var(--space-1);
+  }
   .dropzone {
     border: 1px dashed var(--border-strong);
     border-radius: var(--radius-md);
     padding: var(--space-2) var(--space-3);
     min-height: 54px;
     background: var(--bg-muted);
-    /* The aside above is `display: flex; flex-direction: column` with
-       `overflow-y-auto`, which makes each dropzone a flex item. Flex
-       items default to `flex: 0 1 auto`, so they can shrink when the
-       column runs out of room. `flex-shrink: 0` keeps each dropzone
-       at its natural content height; the aside scrolls when the column
-       overflows instead of squeezing dropzones until chip-group children
-       get cropped (the Date chip's Year/Quarter/Month/Day rows would
-       otherwise disappear at narrow widths).
-
-       Do NOT set `overflow: hidden` here: that removes the flex item's
-       implicit min-content size, which lets the dropzone shrink below
-       its `min-height: 54px` content size and clip its own children. */
-    flex-shrink: 0;
   }
+  .dropzone--filter { background: var(--bg-subtle); }
   .dropzone.is-dragover {
     border-style: solid;
     border-color: var(--accent);
@@ -1671,109 +1473,11 @@
     font-size: var(--fs-xs);
     overflow: hidden;
   }
+  .chip--measure { color: var(--accent); padding: 2px var(--space-2); cursor: pointer; }
   .chip:hover { background: var(--bg-subtle); }
   .chip.is-drop-before {
-    box-shadow: inset 0 3px 0 0 var(--accent), 0 0 0 1px var(--accent);
+    box-shadow: inset 3px 0 0 0 var(--accent), 0 0 0 1px var(--accent);
     border-color: var(--accent);
-  }
-  .chip.is-drop-after {
-    box-shadow: inset 0 -3px 0 0 var(--accent), 0 0 0 1px var(--accent);
-    border-color: var(--accent);
-  }
-  /* chip-group — vertical stack used for hierarchy chips on ROWS /
-     COLUMNS / PAGES. Always-visible × per level, predictable width
-     (bounded by the longest level name + 32px for the ×), wraps
-     gracefully when level names are long. */
-  .chip-group {
-    display: inline-flex;
-    flex-direction: column;
-    /* min(140px, 100%) so the chip-group shrinks below its preferred
-       140px when the containing dropzone is narrower than that — at
-       very narrow body widths (~360px) a fixed 140px chip-group would
-       horizontally overflow its dropzone. max-width: 100% caps it
-       against the dropzone's content width in the same situation. */
-    min-width: min(140px, 100%);
-    max-width: 100%;
-    background: var(--bg-muted);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-    cursor: grab;
-  }
-  .chip-group:active { cursor: grabbing; }
-  .chip-group.is-drop-before {
-    box-shadow: 0 -2px 0 0 var(--accent), 0 0 0 1px var(--accent);
-    border-color: var(--accent);
-  }
-  .chip-group.is-drop-after {
-    box-shadow: 0 2px 0 0 var(--accent), 0 0 0 1px var(--accent);
-    border-color: var(--accent);
-  }
-  .chip-group__head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-    padding: 4px 4px 4px var(--space-2);
-    background: var(--bg-subtle);
-    font-size: var(--fs-xs);
-    font-weight: var(--weight-semibold);
-    color: var(--fg);
-    border-bottom: 1px solid var(--border);
-  }
-  .chip-group__title {
-    background: transparent;
-    color: inherit;
-    border: 0;
-    padding: 0;
-    font: inherit;
-    cursor: pointer;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-    text-align: left;
-  }
-  .chip-group__title:hover { text-decoration: underline; }
-  .chip-group__x,
-  .chip-group__level-x {
-    background: transparent;
-    color: var(--fg-subtle);
-    border: 0;
-    padding: 0 6px;
-    font-size: 14px;
-    line-height: 1;
-    cursor: pointer;
-    border-radius: var(--radius-sm);
-    flex-shrink: 0;
-  }
-  .chip-group__x:hover,
-  .chip-group__level-x:hover {
-    color: var(--danger);
-    background: var(--bg-hover);
-  }
-  .chip-group__levels {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  .chip-group__level {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-    padding: 4px var(--space-2);
-    font-size: var(--fs-xs);
-    color: var(--fg-muted);
-  }
-  .chip-group__level + .chip-group__level {
-    border-top: 1px dashed var(--border);
-  }
-  .chip-group__level-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
   }
   .chip__label {
     background: transparent;

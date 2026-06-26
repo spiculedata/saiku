@@ -37,11 +37,11 @@
 
 <div class="tile-refresh" title={label}>
   <RefreshCw size={11} class={spinning ? "tile-refresh__icon spin" : "tile-refresh__icon"} aria-hidden="true" />
-  <span class="overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
+  <span class="tile-refresh__text">{label}</span>
 </div>
 
 <style>
-.tile-refresh {
+  .tile-refresh {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
@@ -51,6 +51,11 @@
     pointer-events: none;
     max-width: 100%;
     overflow: hidden;
+  }
+  .tile-refresh__text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   /* lucide renders an <svg>; target it via :global since the class is passed
      through the icon component's `class` prop. */

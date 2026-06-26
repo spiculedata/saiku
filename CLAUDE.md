@@ -31,14 +31,8 @@ For the SvelteKit UI (`saiku-ui/`, version-tracked independently as 3.17.0):
 cd saiku-ui && npm install && npm run dev     # vite dev server
 npm run check                                 # svelte-check + tsc
 npm test                                      # vitest
-npm run lint                                  # ESLint flat config (token-only rule)
-npm run storybook                             # Storybook 10.4 design-system catalogue
 npm run build                                 # static build → saiku-ui/dist
 ```
-
-The UI is **Tailwind v4 + design-system primitives + Storybook**. Token bridge at `src/lib/styles/tailwind.css` uses `@theme inline` to map the 169 saiku-ui tokens (in `src/lib/styles/tokens.css`) onto Tailwind's namespace; primitives live at `src/lib/components/ui/` (shadcn-style with `tailwind-variants` + `bits-ui` Tooltip) and reusable widgets at `src/lib/design-system/` (14 primitives + 19 stories). ESLint bans raw tone classes (`bg-emerald-*`, `text-red-*`, `bg-amber-*`, `rose`, `orange`) outside `src/lib/design-system/` — token utilities only.
-
-**Cascade-layer discipline (load-bearing):** every type-selector rule in `app.css` MUST live in `@layer base` so Tailwind utilities (in `@layer utilities`) can override them. Unlayered rules win against ALL layered rules regardless of specificity — that's the CSS cascade-layers spec, and the saiku-ui legacy `a { color: var(--accent) }` ate `text-primary-foreground` on every anchor-as-button until the wrap landed. Only the `*, *::before, *::after { box-sizing }` reset and the `html, body { height/margin }` root zeroing stay unlayered.
 
 Live AI Query API regression suite against a running launcher: `saiku-launcher/test-ai-live.sh` (expects `./run.sh` already started; auth defaults `admin/admin`).
 
@@ -81,8 +75,6 @@ Saiku depends on four Spicule-published artifacts hosted on **GitHub Packages, w
 - **Commit message format**: `#<issue> - <description>` per `CONTRIBUTING.md`. Default branch is `development`; PRs go there, not `master`. The repo uses `jgitflow` (`mvn jgitflow:feature-start`, `release-start`, `hotfix-start`).
 - **Branching strategy: Gitflow.** All new work goes on a `feature/<name>` branch off `development`. Hotfixes branch off `main` as `hotfix/<name>` and merge back to both `main` and `development`. Release prep happens on `release/<version>` branches off `development`, which then merge to `main` (tagged) and back to `development`. Never push directly to `main` or `development` — always PR. Chores and refactors that don't fit `feature/` use `chore/<name>`. Stick to Gitflow conventions; the `mvn jgitflow:*` commands enforce them automatically when used.
 - **Planning docs**: `docs/plans/` holds the Phase 1–7 modernisation plans (build hygiene, FS repo, YAML semantic layer, SvelteKit port, Arrow IPC / async cache, full Svelte rewrite, platform features). The Phase 0 dependency audit is at `docs/phase-0/dependency-audit.md`. Read these before invasive changes.
-- **Svelte 5 effect discipline**: never call a state-writing helper synchronously from inside `$effect` if the helper also reads the same `$state`. The effect's dep-tracking captures the read, the write inside the same tick re-queues the effect, and Svelte bails after 128 iterations with `effect_update_depth_exceeded` — visible to the user as a stuck UI state AND every event handler in the component going inert (the whole reactivity graph tears down). Defer with `queueMicrotask(() => fn(...))` or wrap in `untrack(() => ...)` from `svelte`. Diagnostic signal: if multiple buttons in one modal/panel stop working at once, check the browser console for that error code before debugging the buttons individually.
-- **Mondrian 4 virtual cubes**: when adding a MeasureGroup to a virtual cube, declare `<NoLink dimension="X"/>` for every dim that doesn't apply — Mondrian doesn't infer it, the cube fails to load with "No link for dimension X in measure group Y". When changing the canonical FoodMart schema, mirror the change between `saiku-home/data/FoodMart4.xml` (runtime) AND `saiku-launcher/src/main/resources/seed/FoodMart4.xml` (launcher bundle source).
 
 Wiki subfolder: saiku
 Wiki consult: before architectural, library, or tooling decisions, check pages/decisions/ in this project's wiki via the llmwiki skill. Capture new decisions with /wiki-note.

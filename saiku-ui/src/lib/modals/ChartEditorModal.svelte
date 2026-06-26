@@ -1,7 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
-  import { Button } from "$lib/components/ui";
   import { i18n } from "$lib/stores/i18n.svelte";
   import type {
     ChartOptions,
@@ -266,7 +265,7 @@
 </script>
 
 <Modal title={i18n.t("modal.chart.title")} {open} size="md" onClose={onCancel}>
-  <div class="flex flex-col gap-3">
+  <div class="grid">
     <label class="field">
       <span class="field__label">{i18n.t("modal.chart.chartTitle")}</span>
       <input class="field__input" bind:value={form.title} placeholder={i18n.t("modal.chart.chartTitlePlaceholder")} />
@@ -276,9 +275,9 @@
       <!-- issue #1071: map-only options. Place names come from the row
            hierarchy; the active (first) measure drives the colour. -->
       <div class="map-opts">
-        <span class="text-sm text-fg-muted">{i18n.t("modal.chart.map.title")}</span>
-        <div class="flex gap-3">
-          <label class="field flex-1">
+        <span class="map-opts__title">{i18n.t("modal.chart.map.title")}</span>
+        <div class="row">
+          <label class="field field--grow">
             <span class="field__label">{i18n.t("modal.chart.map.colorRamp")}</span>
             <select class="field__input" bind:value={form.colorRamp}>
               {#each COLOR_RAMP_IDS as r}
@@ -286,7 +285,7 @@
               {/each}
             </select>
           </label>
-          <label class="field flex-1">
+          <label class="field field--grow">
             <span class="field__label">{i18n.t("modal.chart.map.missing")}</span>
             <select class="field__input" bind:value={form.mapMissing}>
               <option value="blank">{i18n.t("modal.chart.map.missing.blank")}</option>
@@ -294,29 +293,29 @@
             </select>
           </label>
         </div>
-        <p class="text-fg-subtle text-xs m-0">{i18n.t("modal.chart.map.hint")}</p>
+        <p class="hint">{i18n.t("modal.chart.map.hint")}</p>
       </div>
     {/if}
 
     {#if chartType !== "map"}
-    <div class="flex gap-3">
-      <label class="field flex-1">
+    <div class="row">
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.chart.xAxis")}</span>
         <input class="field__input" bind:value={form.xAxisLabel} />
       </label>
-      <label class="field flex-1">
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.chart.yAxis")}</span>
         <input class="field__input" bind:value={form.yAxisLabel} />
       </label>
     </div>
-    <div class="flex gap-3">
-      <label class="field flex-1">
+    <div class="row">
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.chart.legend")}</span>
-        <label class="inline-flex gap-2 items-center text-fg">
+        <label class="toggle">
           <input type="checkbox" bind:checked={form.showLegend} /> {i18n.t("modal.chart.showLegend")}
         </label>
       </label>
-      <label class="field flex-1">
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.chart.legendPosition")}</span>
         <select class="field__input" bind:value={form.legendPosition} disabled={!form.showLegend}>
           {#each LEGEND_POSITIONS as p}
@@ -326,8 +325,8 @@
       </label>
     </div>
     <div class="colours">
-      <span class="text-sm text-fg-muted">{i18n.t("modal.chart.colours")}</span>
-      <label class="field flex-1">
+      <span class="colours__title">{i18n.t("modal.chart.colours")}</span>
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.chart.palette")}</span>
         <select class="field__input" bind:value={form.palette}>
           {#each PALETTES as p}
@@ -336,11 +335,11 @@
         </select>
       </label>
       {#if seriesNames.length > 0}
-        <p class="text-fg-subtle text-xs m-0">{i18n.t("modal.chart.seriesColors.hint")}</p>
-        <div class="flex flex-col gap-2">
+        <p class="hint">{i18n.t("modal.chart.seriesColors.hint")}</p>
+        <div class="colours__list">
           {#each seriesNames as name (name)}
-            <div class="flex items-center gap-3">
-              <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-fg text-sm" title={name}>{name}</span>
+            <div class="colours__row">
+              <span class="colours__name" title={name}>{name}</span>
               <input
                 type="color"
                 class="colours__pick"
@@ -362,10 +361,10 @@
         </div>
       {/if}
     </div>
-    <div class="flex gap-3">
-      <label class="field flex-1">
+    <div class="row">
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.chart.rollupRows")}</span>
-        <label class="inline-flex gap-2 items-center text-fg" title={i18n.t("modal.chart.hideRollupRows.hint")}>
+        <label class="toggle" title={i18n.t("modal.chart.hideRollupRows.hint")}>
           <input type="checkbox" bind:checked={form.hideRollupRows} /> {i18n.t("modal.chart.hideRollupRows")}
         </label>
       </label>
@@ -374,10 +373,10 @@
          split to the right axis); hide the toggle in that case rather
          than letting users tick a no-op. -->
     {#if seriesNames.length >= 2}
-      <div class="flex gap-3">
-        <label class="field flex-1">
+      <div class="row">
+        <label class="field field--grow">
           <span class="field__label">{i18n.t("modal.chart.yAxes")}</span>
-          <label class="inline-flex gap-2 items-center text-fg" title={i18n.t("modal.chart.dualAxis.hint")}>
+          <label class="toggle" title={i18n.t("modal.chart.dualAxis.hint")}>
             <input type="checkbox" bind:checked={form.dualAxis} /> {i18n.t("modal.chart.dualAxis")}
           </label>
         </label>
@@ -388,16 +387,16 @@
          so the section is hidden rather than dangled as a useless picker. -->
     {#if seriesNames.length >= 2}
       <div class="series-axis">
-        <span class="text-sm text-fg-muted">{i18n.t("modal.chart.seriesAxis")}</span>
-        <p class="text-fg-subtle text-xs m-0">{i18n.t("modal.chart.seriesAxis.hint")}</p>
-        <div class="flex flex-col gap-2">
+        <span class="series-axis__title">{i18n.t("modal.chart.seriesAxis")}</span>
+        <p class="hint">{i18n.t("modal.chart.seriesAxis.hint")}</p>
+        <div class="series-axis__list">
           <!-- Defensive: use index keys because seriesNames is derived
                from cellset columnCategories which can hold duplicates
                when a query has multi-measure × multi-hierarchy cols
                (Svelte 5 hard-fails on each_key_duplicate). -->
           {#each seriesNames as name, ni (ni)}
-            <div class="flex items-center gap-3">
-              <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-fg text-sm" title={name}>{name}</span>
+            <div class="series-axis__row">
+              <span class="series-axis__name" title={name}>{name}</span>
               <select
                 class="field__input series-axis__pick"
                 value={axisPickFor(name)}
@@ -416,17 +415,17 @@
          multi-series only — pick a type per series (or "Default" = chart type). -->
     {#if showComboTypes}
       <div class="series-axis">
-        <span class="text-sm text-fg-muted">{i18n.t("modal.chart.seriesType", "Series type (combo)")}</span>
-        <p class="text-fg-subtle text-xs m-0">
+        <span class="series-axis__title">{i18n.t("modal.chart.seriesType", "Series type (combo)")}</span>
+        <p class="hint">
           {i18n.t(
             "modal.chart.seriesType.hint",
             "Give a series its own chart type — e.g. revenue as bars, growth-rate as a line.",
           )}
         </p>
-        <div class="flex flex-col gap-2">
+        <div class="series-axis__list">
           {#each seriesNames as name, ni (ni)}
-            <div class="flex items-center gap-3">
-              <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-fg text-sm" title={name}>{name}</span>
+            <div class="series-axis__row">
+              <span class="series-axis__name" title={name}>{name}</span>
               <select
                 class="field__input series-axis__pick"
                 value={seriesTypeFor(name)}
@@ -443,8 +442,8 @@
         </div>
       </div>
     {/if}
-    <div class="flex gap-3">
-      <label class="field flex-1">
+    <div class="row">
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.chart.trendLine")}</span>
         <select class="field__input" bind:value={form.trendLine}>
           {#each TREND_MODES as m}
@@ -452,7 +451,7 @@
           {/each}
         </select>
       </label>
-      <label class="field flex-1">
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.chart.period")}</span>
         <input
           class="field__input"
@@ -464,13 +463,13 @@
         />
       </label>
     </div>
-    <p class="text-fg-subtle text-xs m-0">{i18n.t("modal.chart.trendHint")}</p>
+    <p class="hint">{i18n.t("modal.chart.trendHint")}</p>
     <!-- #1083 (relocated 2026-06-07): client-side category sort + top-N.
          Reordering / trimming happens on the projection without re-querying;
          lives in chart options so the choice persists with the tile rather
          than reverting on reload. -->
-    <div class="flex gap-3">
-      <label class="field flex-1">
+    <div class="row">
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.chart.sort")}</span>
         <select class="field__input" bind:value={form.sortDirection}>
           <option value="none">{i18n.t("modal.chart.sort.none")}</option>
@@ -478,7 +477,7 @@
           <option value="desc">{i18n.t("modal.chart.sort.desc")}</option>
         </select>
       </label>
-      <label class="field flex-1">
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.chart.topN")}</span>
         <select
           class="field__input"
@@ -500,9 +499,9 @@
     <!-- issue #1082: number formatting for value text (axis labels, tooltip
          values, data labels). All controls optional; blank/off = raw values. -->
     <div class="number-format">
-      <span class="text-sm text-fg-muted">{i18n.t("modal.chart.numberFormat")}</span>
-      <div class="flex gap-3">
-        <label class="field flex-1">
+      <span class="number-format__title">{i18n.t("modal.chart.numberFormat")}</span>
+      <div class="row">
+        <label class="field field--grow">
           <span class="field__label">{i18n.t("modal.chart.numberFormat.prefix")}</span>
           <input
             class="field__input"
@@ -511,7 +510,7 @@
             oninput={(e) => setNumberFormat({ prefix: (e.currentTarget as HTMLInputElement).value })}
           />
         </label>
-        <label class="field flex-1">
+        <label class="field field--grow">
           <span class="field__label">{i18n.t("modal.chart.numberFormat.suffix")}</span>
           <input
             class="field__input"
@@ -520,7 +519,7 @@
             oninput={(e) => setNumberFormat({ suffix: (e.currentTarget as HTMLInputElement).value })}
           />
         </label>
-        <label class="field flex-1">
+        <label class="field field--grow">
           <span class="field__label">{i18n.t("modal.chart.numberFormat.decimals")}</span>
           <input
             class="field__input"
@@ -533,9 +532,9 @@
           />
         </label>
       </div>
-      <div class="flex gap-3">
-        <label class="field flex-1">
-          <label class="inline-flex gap-2 items-center text-fg">
+      <div class="row">
+        <label class="field field--grow">
+          <label class="toggle">
             <input
               type="checkbox"
               checked={nfThousands}
@@ -544,8 +543,8 @@
             {i18n.t("modal.chart.numberFormat.thousands")}
           </label>
         </label>
-        <label class="field flex-1">
-          <label class="inline-flex gap-2 items-center text-fg" title={i18n.t("modal.chart.numberFormat.abbreviate.hint")}>
+        <label class="field field--grow">
+          <label class="toggle" title={i18n.t("modal.chart.numberFormat.abbreviate.hint")}>
             <input
               type="checkbox"
               checked={nfAbbreviate}
@@ -555,16 +554,16 @@
           </label>
         </label>
       </div>
-      <p class="text-fg-subtle text-xs m-0">{i18n.t("modal.chart.numberFormat.hint")}</p>
+      <p class="hint">{i18n.t("modal.chart.numberFormat.hint")}</p>
     </div>
 
     {#if showRefSection}
       <div class="ref">
-        <span class="text-sm text-fg-muted">{i18n.t("modal.chart.refLines")}</span>
-        <p class="text-fg-subtle text-xs m-0">{i18n.t("modal.chart.refLines.hint")}</p>
-        <div class="flex flex-col gap-2">
+        <span class="ref__title">{i18n.t("modal.chart.refLines")}</span>
+        <p class="hint">{i18n.t("modal.chart.refLines.hint")}</p>
+        <div class="ref__list">
           {#each form.referenceLines ?? [] as line, i (i)}
-            <div class="flex items-center gap-2">
+            <div class="ref__row">
               <select
                 class="field__input ref__axis"
                 value={line.axis}
@@ -598,18 +597,19 @@
                 aria-label={i18n.t("modal.chart.refLines.color")}
                 title={i18n.t("modal.chart.refLines.color")}
               />
-              <Button variant="outline" size="sm" class="ref__remove" onclick={() => removeRefLine(i)}>{i18n.t("modal.chart.refLines.remove")}
-              </Button>
+              <button type="button" class="btn ref__remove" onclick={() => removeRefLine(i)}>
+                {i18n.t("modal.chart.refLines.remove")}
+              </button>
             </div>
           {/each}
         </div>
-        <Button variant="outline" size="sm" class="ref__add" onclick={addRefLine}>{i18n.t("modal.chart.refLines.add")}</Button>
+        <button type="button" class="btn ref__add" onclick={addRefLine}>{i18n.t("modal.chart.refLines.add")}</button>
 
-        <span class="text-sm text-fg-muted">{i18n.t("modal.chart.refBands")}</span>
-        <p class="text-fg-subtle text-xs m-0">{i18n.t("modal.chart.refBands.hint")}</p>
-        <div class="flex flex-col gap-2">
+        <span class="ref__title">{i18n.t("modal.chart.refBands")}</span>
+        <p class="hint">{i18n.t("modal.chart.refBands.hint")}</p>
+        <div class="ref__list">
           {#each form.referenceBands ?? [] as band, i (i)}
-            <div class="flex items-center gap-2">
+            <div class="ref__row">
               <select
                 class="field__input ref__axis"
                 value={band.axis}
@@ -643,25 +643,26 @@
                 aria-label={i18n.t("modal.chart.refLines.color")}
                 title={i18n.t("modal.chart.refLines.color")}
               />
-              <Button variant="outline" size="sm" class="ref__remove" onclick={() => removeRefBand(i)}>{i18n.t("modal.chart.refLines.remove")}
-              </Button>
+              <button type="button" class="btn ref__remove" onclick={() => removeRefBand(i)}>
+                {i18n.t("modal.chart.refLines.remove")}
+              </button>
             </div>
           {/each}
         </div>
-        <Button variant="outline" size="sm" class="ref__add" onclick={addRefBand}>{i18n.t("modal.chart.refBands.add")}</Button>
+        <button type="button" class="btn ref__add" onclick={addRefBand}>{i18n.t("modal.chart.refBands.add")}</button>
       </div>
     {/if}
 
     <!-- issue #1084: conditional formatting — recolour bars by value. -->
     {#if showCondFormat}
       <div class="cond">
-        <span class="text-sm text-fg-muted">{i18n.t("modal.chart.cond.title", "Conditional formatting")}</span>
-        <p class="text-fg-subtle text-xs m-0">{i18n.t("modal.chart.cond.hint", "Recolour bars by value — the first matching rule per bar wins.")}</p>
+        <span class="cond__title">{i18n.t("modal.chart.cond.title", "Conditional formatting")}</span>
+        <p class="hint">{i18n.t("modal.chart.cond.hint", "Recolour bars by value — the first matching rule per bar wins.")}</p>
         {#each seriesNames as sname, mi (mi)}
           <div class="cond__measure">
-            <span class="text-sm font-semibold text-fg">{sname}</span>
+            <span class="cond__measure-name">{sname}</span>
             {#each condBand(mi)?.rules ?? [] as rule, ri (ri)}
-              <div class="flex items-center gap-2">
+              <div class="cond__rule">
                 <select
                   class="field__input cond__op"
                   value={rule.op}
@@ -704,15 +705,17 @@
                   aria-label={i18n.t("modal.chart.cond.color", "Colour")}
                   title={i18n.t("modal.chart.cond.color", "Colour")}
                 />
-                <Button variant="outline" size="sm" class="cond__remove" onclick={() => removeCondRule(mi, ri)}>{i18n.t("modal.chart.cond.remove", "Remove")}
-                </Button>
+                <button type="button" class="btn cond__remove" onclick={() => removeCondRule(mi, ri)}>
+                  {i18n.t("modal.chart.cond.remove", "Remove")}
+                </button>
               </div>
             {/each}
-            <div class="flex items-center gap-3">
-              <Button variant="outline" size="sm" class="cond__add" onclick={() => addCondRule(mi)}>{i18n.t("modal.chart.cond.add", "Add rule")}
-              </Button>
+            <div class="cond__actions">
+              <button type="button" class="btn cond__add" onclick={() => addCondRule(mi)}>
+                {i18n.t("modal.chart.cond.add", "Add rule")}
+              </button>
               {#if (condBand(mi)?.rules.length ?? 0) > 0}
-                <label class="inline-flex items-center gap-2 text-xs text-fg-muted">
+                <label class="cond__fallback">
                   <span>{i18n.t("modal.chart.cond.fallback", "Fallback")}</span>
                   <input
                     class="cond__color"
@@ -732,29 +735,55 @@
   </div>
 
   {#snippet footer()}
-    <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
-    <Button onclick={() => onSave({ ...form })}>{i18n.t("modal.save")}</Button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
+    <button type="button" class="btn btn--primary" onclick={() => onSave({ ...form })}>{i18n.t("modal.save")}</button>
   {/snippet}
 </Modal>
 
 <style>
-.map-opts { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
+  .grid { display: flex; flex-direction: column; gap: var(--space-3); }
+  .row { display: flex; gap: var(--space-3); }
+  .field--grow { flex: 1; }
+  .toggle { display: inline-flex; gap: var(--space-2); align-items: center; color: var(--fg); }
+  .hint { color: var(--fg-subtle); font-size: var(--fs-xs); margin: 0; }
+  .map-opts { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
+  .map-opts__title { font-size: var(--fs-sm); color: var(--fg-muted); }
   .series-axis { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
+  .series-axis__title { font-size: var(--fs-sm); color: var(--fg-muted); }
+  .series-axis__list { display: flex; flex-direction: column; gap: var(--space-2); }
+  .series-axis__row { display: flex; align-items: center; gap: var(--space-3); }
+  .series-axis__name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-size: var(--fs-sm); }
   .series-axis__pick { width: 8rem; flex: 0 0 auto; }
   .number-format { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
+  .number-format__title { font-size: var(--fs-sm); color: var(--fg-muted); }
   .colours { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
+  .colours__title { font-size: var(--fs-sm); color: var(--fg-muted); }
+  .colours__list { display: flex; flex-direction: column; gap: var(--space-2); }
+  .colours__row { display: flex; align-items: center; gap: var(--space-3); }
+  .colours__name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-size: var(--fs-sm); }
   .colours__pick { flex: 0 0 auto; width: 2.5rem; height: 1.75rem; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; cursor: pointer; }
   .colours__reset { flex: 0 0 auto; font-size: var(--fs-xs); }
   .colours__reset:disabled { opacity: 0.4; cursor: default; }
   .ref { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
+  .ref__title { font-size: var(--fs-sm); color: var(--fg-muted); }
+  .ref__list { display: flex; flex-direction: column; gap: var(--space-2); }
+  .ref__row { display: flex; align-items: center; gap: var(--space-2); }
   .ref__axis { width: 8.5rem; flex: 0 0 auto; }
   .ref__value { width: 6rem; flex: 0 0 auto; }
   .ref__label { flex: 1; min-width: 4rem; }
   .ref__color { width: 2.25rem; height: 2rem; flex: 0 0 auto; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; }
+  .ref__remove { flex: 0 0 auto; }
+  .ref__add { align-self: flex-start; }
   /* #1084: conditional formatting */
   .cond { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
+  .cond__title { font-size: var(--fs-sm); color: var(--fg-muted); }
   .cond__measure { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--border); }
+  .cond__measure-name { font-size: var(--fs-sm); font-weight: 600; color: var(--fg); }
+  .cond__rule { display: flex; align-items: center; gap: var(--space-2); }
   .cond__op { width: 7rem; flex: 0 0 auto; }
   .cond__num { width: 5.5rem; flex: 0 0 auto; }
   .cond__color { width: 2.25rem; height: 2rem; flex: 0 0 auto; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; cursor: pointer; }
+  .cond__remove { flex: 0 0 auto; }
+  .cond__actions { display: flex; align-items: center; gap: var(--space-3); }
+  .cond__fallback { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--fs-xs); color: var(--fg-muted); }
 </style>
