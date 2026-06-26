@@ -337,6 +337,22 @@
                 <artifactId>batik-ext</artifactId>
                 <version>${batik.version}</version>
             </dependency>
+            <!-- batik-script + batik-extension aren't pulled by the managed
+                 coords above, so without an explicit pin they float to old
+                 transitive versions (batik-script resolved to 1.7 — CVE-2022-44730,
+                 fixed 1.17; batik-extension to 1.18). Pin both to ${batik.version}
+                 so the whole Batik set is aligned at 1.19 and CVE-2022-44730 is
+                 closed. -->
+            <dependency>
+                <groupId>org.apache.xmlgraphics</groupId>
+                <artifactId>batik-script</artifactId>
+                <version>${batik.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.xmlgraphics</groupId>
+                <artifactId>batik-extension</artifactId>
+                <version>${batik.version}</version>
+            </dependency>
             <!-- OpenPDF 1.4.2 is the maintained fork of the abandoned
                  com.lowagie:itext:2.1.7. It keeps the same com.lowagie.text.*
                  package (the rename to org.openpdf is a 2.x change), so Saiku's
