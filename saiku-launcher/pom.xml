@@ -15,7 +15,7 @@
     <description>Executable Saiku distribution: Picocli CLI + embedded Jetty serving the Saiku webapp.</description>
 
     <properties>
-        <jetty.version>12.0.32</jetty.version>
+        <jetty.version>12.1.10</jetty.version>
         <picocli.version>4.7.6</picocli.version>
         <maven.compiler.release>21</maven.compiler.release>
     </properties>
