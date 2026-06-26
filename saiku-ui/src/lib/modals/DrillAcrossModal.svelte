@@ -1,7 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
-  import { Button } from "$lib/components/ui";
   import type { SaikuCube } from "$lib/api/discover";
   import { i18n } from "$lib/stores/i18n.svelte";
 
@@ -31,10 +30,10 @@
     </select>
   </label>
   {#snippet footer()}
-    <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
-    <Button onclick={() => {
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
+    <button type="button" class="btn btn--primary" onclick={() => {
       const t = targets.find((x) => x.uniqueName === picked);
       if (t) onRun(t);
-    }}>{i18n.t("toolbar.run")}</Button>
+    }}>{i18n.t("toolbar.run")}</button>
   {/snippet}
 </Modal>

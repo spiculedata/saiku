@@ -20,7 +20,7 @@ describe("buildSparklineSvg", () => {
   });
 
   it("returns empty string for null / empty / single-point series", () => {
-     
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(buildSparklineSvg(null as any)).toBe("");
     expect(buildSparklineSvg([])).toBe("");
     expect(buildSparklineSvg([5])).toBe("");

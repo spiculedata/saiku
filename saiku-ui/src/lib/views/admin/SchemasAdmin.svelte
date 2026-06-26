@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Button } from "$lib/components/ui";
   import { adminSchemas, type AdminSchema } from "$lib/api/admin";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -66,9 +65,9 @@
 </script>
 
 <div class="pane">
-  <header class="flex justify-between items-center mb-3">
+  <header class="pane__header">
     <h2>{i18n.t("admin.tabs.schemas")}</h2>
-    <Button onclick={() => (uploading = true)}>{i18n.t("admin.uploadSchema")}</Button>
+    <button type="button" class="btn btn--primary" onclick={() => (uploading = true)}>{i18n.t("admin.uploadSchema")}</button>
   </header>
   {#if error}<p class="callout callout--danger">{error}</p>{/if}
   {#if loading}
@@ -83,7 +82,7 @@
             <td>{s.path ?? ""}</td>
             <td>{s.type ?? ""}</td>
             <td class="data-grid__actions">
-              <Button variant="destructive" onclick={() => (deleting = s)}>Delete</Button>
+              <button class="btn btn--danger" onclick={() => (deleting = s)}>Delete</button>
             </td>
           </tr>
         {/each}
@@ -109,8 +108,8 @@
     <textarea class="field__input xml" bind:value={uploadXml} rows="10" spellcheck="false"></textarea>
   </label>
   {#snippet footer()}
-    <Button variant="outline" onclick={() => (uploading = false)}>Cancel</Button>
-    <Button onclick={doUpload}>Upload</Button>
+    <button class="btn" onclick={() => (uploading = false)}>Cancel</button>
+    <button class="btn btn--primary" onclick={doUpload}>Upload</button>
   {/snippet}
 </Modal>
 
@@ -125,7 +124,8 @@
 />
 
 <style>
-h2 { margin: 0; }
+  .pane__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); }
+  h2 { margin: 0; }
   /* .data-grid / .data-grid__actions / .data-grid__empty come from app.css */
   .xml { font-family: var(--font-mono); font-size: var(--fs-sm); resize: vertical; }
 </style>

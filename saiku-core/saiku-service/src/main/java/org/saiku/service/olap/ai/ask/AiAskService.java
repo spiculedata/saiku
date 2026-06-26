@@ -62,87 +62,26 @@ public class AiAskService {
         return provider.isConfigured();
     }
 
-    /**
-     * Result of an {@link #ask(AiCubeRef, String, List)} call.
-     *
-     * <p>Exactly one of {@code request} / {@code insight} / {@code viewChange} is non-null on
-     * success (matched to {@link #kind()}); all are null on degraded.
-     */
-    public record AskOutcome(
-            Kind kind,
-            boolean degraded,
-            String reason,
-            AiQueryRequest request,
-            AiInsight insight,
-            AiViewChange viewChange,
-            String model) {
-
-        public enum Kind {
-            QUERY,
-            INSIGHT,
-            VIEW_CHANGE
-        }
-
+    /** Result of an {@link #ask(AiCubeRef, String, List)} call. */
+    public record AskOutcome(boolean degraded, String reason, AiQueryRequest request, String model) {
         public static AskOutcome ok(AiQueryRequest request, String model) {
-            return new AskOutcome(Kind.QUERY, false, null, request, null, null, model);
-        }
-
-        public static AskOutcome okInsight(AiInsight insight, String model) {
-            return new AskOutcome(Kind.INSIGHT, false, null, null, insight, null, model);
-        }
-
-        public static AskOutcome okViewChange(AiViewChange viewChange, String model) {
-            return new AskOutcome(Kind.VIEW_CHANGE, false, null, null, null, viewChange, model);
+            return new AskOutcome(false, null, request, model);
         }
 
         public static AskOutcome degraded(String reason, String model) {
-            return new AskOutcome(null, true, reason, null, null, null, model);
+            return new AskOutcome(true, reason, null, model);
         }
     }
 
     /**
-     * Translate a natural-language question against the cube pointed to by {@code ref}.
+     * Translate a natural-language question into an {@link AiQueryRequest} grounded on the cube
+     * pointed to by {@code ref}.
      *
      * @param ref cube to target; must be non-null and have a non-null cubeName
      * @param question free-form English question; must be non-blank
      * @param history prior turns; may be null / empty for single-shot asks
      */
     public AskOutcome ask(AiCubeRef ref, String question, List<NlAskMessage> history) {
-        return ask(ref, question, history, null, NlAskRequest.ForceTool.AUTO, null);
-    }
-
-    public AskOutcome ask(AiCubeRef ref, String question, List<NlAskMessage> history, String cellsetDigest) {
-        return ask(ref, question, history, cellsetDigest, NlAskRequest.ForceTool.AUTO, null);
-    }
-
-    public AskOutcome ask(
-            AiCubeRef ref,
-            String question,
-            List<NlAskMessage> history,
-            String cellsetDigest,
-            NlAskRequest.ForceTool forceTool) {
-        return ask(ref, question, history, cellsetDigest, forceTool, null);
-    }
-
-    /**
-     * Same as {@link #ask(AiCubeRef, String, List)} but accepts the user's currently-rendered
-     * cellset as a markdown digest AND a tool-choice override. The digest lets the model pick
-     * {@link AskOutcome.Kind#INSIGHT} (analyse the current data) or {@link
-     * AskOutcome.Kind#VIEW_CHANGE} (pick the right chart) in addition to {@link
-     * AskOutcome.Kind#QUERY}. When {@code cellsetDigest} is null/blank, the model has no data
-     * context and can only build queries.
-     *
-     * <p>{@code forceTool} narrows the provider's tool list when the user explicitly picked an
-     * intent in the drawer's mode picker. Default {@link NlAskRequest.ForceTool#AUTO} leaves all
-     * four tools available so the LLM routes by question shape.
-     */
-    public AskOutcome ask(
-            AiCubeRef ref,
-            String question,
-            List<NlAskMessage> history,
-            String cellsetDigest,
-            NlAskRequest.ForceTool forceTool,
-            AiQueryRequest currentQuery) {
         if (ref == null) {
             return AskOutcome.degraded("cube ref required", null);
         }
@@ -168,64 +107,20 @@ public class AiAskService {
             return AskOutcome.degraded("schema serialisation failed", null);
         }
 
-        // Serialise the current query into JSON for the provider to embed in the prompt.
-        // Null/blank when absent — providers omit the "Current query" context block entirely
-        // rather than say "Current query: null", which would just bloat the prompt.
-        String currentQueryJson = null;
-        if (currentQuery != null) {
-            try {
-                currentQueryJson = mapper.writeValueAsString(currentQuery);
-            } catch (JsonProcessingException e) {
-                log.debug("Failed to serialise currentQuery for ask context; omitting", e);
-            }
-        }
-        NlAskRequest req = new NlAskRequest(
-                ref,
-                question,
-                schemaJson,
-                requestSchemaJson,
-                history == null ? List.of() : history,
-                cellsetDigest,
-                forceTool == null ? NlAskRequest.ForceTool.AUTO : forceTool,
-                currentQueryJson);
+        NlAskRequest req =
+                new NlAskRequest(ref, question, schemaJson, requestSchemaJson, history == null ? List.of() : history);
         NlAskResponse resp = provider.ask(req);
 
         if (resp.degraded()) {
             return AskOutcome.degraded(resp.reason(), resp.model());
         }
 
-        // Route by which tool the provider's model picked.
         try {
-            NlAskResponse.Kind kind = resp.kind();
-            if (kind == NlAskResponse.Kind.QUERY) {
-                AiQueryRequest parsed = mapper.readValue(resp.payloadJson(), AiQueryRequest.class);
-                return AskOutcome.ok(parsed, resp.model());
-            }
-            if (kind == NlAskResponse.Kind.INSIGHT) {
-                AiInsight insight = mapper.readValue(resp.payloadJson(), AiInsight.class);
-                if (insight == null || insight.getMarkdown() == null || insight.getMarkdown().isBlank()) {
-                    return AskOutcome.degraded("provider emitted empty insight", resp.model());
-                }
-                return AskOutcome.okInsight(insight, resp.model());
-            }
-            if (kind == NlAskResponse.Kind.VIEW_CHANGE) {
-                AiViewChange vc = mapper.readValue(resp.payloadJson(), AiViewChange.class);
-                if (vc == null || vc.getViewMode() == null || !AiViewChangeCatalog.VIEW_MODES.contains(vc.getViewMode())) {
-                    return AskOutcome.degraded("provider emitted invalid viewMode", resp.model());
-                }
-                if (vc.getChartType() != null
-                        && !vc.getChartType().isBlank()
-                        && !AiViewChangeCatalog.CHART_TYPE_IDS.contains(vc.getChartType())) {
-                    return AskOutcome.degraded(
-                            "provider emitted unknown chartType '" + vc.getChartType() + "'", resp.model());
-                }
-                return AskOutcome.okViewChange(vc, resp.model());
-            }
-            return AskOutcome.degraded("provider returned unexpected kind: " + kind, resp.model());
+            AiQueryRequest parsed = mapper.readValue(resp.aiQueryRequestJson(), AiQueryRequest.class);
+            return AskOutcome.ok(parsed, resp.model());
         } catch (JsonProcessingException e) {
-            log.warn("Provider returned invalid JSON for kind={}: {}", resp.kind(), e.getMessage());
-            return AskOutcome.degraded(
-                    "provider emitted invalid JSON for " + resp.kind() + ": " + e.getMessage(), resp.model());
+            log.warn("Provider returned non-AiQueryRequest JSON: {}", e.getMessage());
+            return AskOutcome.degraded("provider emitted invalid AiQueryRequest JSON: " + e.getMessage(), resp.model());
         }
     }
 

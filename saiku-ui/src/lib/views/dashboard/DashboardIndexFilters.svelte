@@ -12,7 +12,6 @@
    * applicability rule in one place.
    */
   import { Folder, FolderPlus } from "lucide-svelte";
-  import { Button } from "$lib/components/ui";
   import { i18n } from "$lib/stores/i18n.svelte";
   import type { SortKey } from "$lib/dashboard/catalogueFilter";
 
@@ -51,30 +50,42 @@
       <option value="modified-asc">Last modified ↑</option>
     </select>
   </label>
-  <div class="inline-flex gap-0" role="group" aria-label={i18n.t("dashboard.view.label")}>
-    <Button variant="outline" class="view-btn {viewMode === "list" ? 'view-btn--on' : ''}" aria-pressed={viewMode === "list"} onclick={() => (viewMode = "list")}>
+  <div class="view-toggle" role="group" aria-label={i18n.t("dashboard.view.label")}>
+    <button
+      type="button"
+      class="btn view-btn"
+      class:view-btn--on={viewMode === "list"}
+      aria-pressed={viewMode === "list"}
+      onclick={() => (viewMode = "list")}
+    >
       {i18n.t("dashboard.view.list")}
-    </Button>
-    <Button variant="outline" class="view-btn {viewMode === "tree" ? 'view-btn--on' : ''}" aria-pressed={viewMode === "tree"} onclick={() => (viewMode = "tree")}>
+    </button>
+    <button
+      type="button"
+      class="btn view-btn"
+      class:view-btn--on={viewMode === "tree"}
+      aria-pressed={viewMode === "tree"}
+      onclick={() => (viewMode = "tree")}
+    >
       <Folder size={14} aria-hidden="true" />
       {i18n.t("dashboard.view.folders")}
-    </Button>
+    </button>
   </div>
   {#if viewMode === "tree"}
-    <Button variant="outline" onclick={onNewFolder}>
+    <button type="button" class="btn" onclick={onNewFolder}>
       <FolderPlus size={14} aria-hidden="true" />
       {i18n.t("dashboard.folder.new")}
-    </Button>
+    </button>
   {/if}
   {#if showClearFilters}
-    <Button variant="outline" onclick={onClearFilters}>
+    <button type="button" class="btn btn--ghost" onclick={onClearFilters}>
       Clear filters
-    </Button>
+    </button>
   {/if}
 </section>
 
 <style>
-.catalogue-filters {
+  .catalogue-filters {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -102,5 +113,35 @@
     border-radius: 4px;
     background: var(--bg);
     font-size: 0.8125rem;
+  }
+  .btn--ghost {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--fg-muted);
+    font-size: 0.8125rem;
+  }
+  .view-toggle {
+    display: inline-flex;
+    gap: 0;
+  }
+  .view-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 0;
+  }
+  .view-btn:first-child {
+    border-top-left-radius: 4px;
+    border-bottom-left-radius: 4px;
+  }
+  .view-btn:last-child {
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+    border-left: none;
+  }
+  .view-btn--on {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
   }
 </style>

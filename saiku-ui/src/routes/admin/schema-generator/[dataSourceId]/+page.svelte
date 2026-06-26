@@ -178,7 +178,7 @@
 </script>
 
 <div class="schemagen">
-  <header class="flex items-center justify-between gap-4 py-3 px-6 border-b border-border bg-bg-muted">
+  <header class="schemagen__header">
     <div class="schemagen__title">
       <h1>Schema Generator</h1>
       <code class="schemagen__dsid">{data.dataSourceId}</code>
@@ -201,7 +201,7 @@
         Save
       </button>
       {#if cancelVisible}
-        <button type="button" class="text-fg-muted" onclick={handleCancel}>
+        <button type="button" class="schemagen__cancel" onclick={handleCancel}>
           Cancel
         </button>
       {/if}
@@ -225,15 +225,15 @@
 
   {#if showDeltaBanner}
     <div class="schemagen__delta" role="status" data-testid="delta-banner">
-      <span class="font-bold" aria-hidden="true">ℹ</span>
+      <span class="schemagen__delta-icon" aria-hidden="true">ℹ</span>
       <span>{deltaBannerText(deltaCounts)}</span>
     </div>
   {/if}
 
   <main class="schemagen__main">
-    <aside class="schemagen__pane border-r border-border bg-bg" aria-label="Schema tree">
+    <aside class="schemagen__pane schemagen__pane--left" aria-label="Schema tree">
       {#if store.draft === null}
-        <p class="p-4 text-fg-muted">
+        <p class="schemagen__empty">
           {store.sessionId === null
             ? "Click Start to introspect this data source."
             : "Loading draft…"}
@@ -243,7 +243,7 @@
       {/if}
     </aside>
 
-    <section class="schemagen__pane bg-bg" aria-label="Suggestions">
+    <section class="schemagen__pane schemagen__pane--right" aria-label="Suggestions">
       <SuggestionsFeed
         suggestions={store.suggestions}
         onAccept={(op) => {
@@ -282,7 +282,7 @@
 </div>
 
 <style>
-.schemagen {
+  .schemagen {
     display: flex;
     flex-direction: column;
     flex: 1;
@@ -290,6 +290,16 @@
     font-family: var(--font-sans);
     color: var(--fg);
     background: var(--bg);
+  }
+
+  .schemagen__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-5);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-muted);
   }
   .schemagen__title {
     display: flex;
@@ -306,6 +316,7 @@
     font-size: var(--fs-xs);
     color: var(--fg-muted);
   }
+
   .schemagen__actions {
     display: flex;
     align-items: center;
@@ -327,6 +338,10 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
+  .schemagen__cancel {
+    color: var(--fg-muted);
+  }
+
   .schemagen__pill {
     font-size: var(--fs-xs);
     font-weight: var(--weight-semibold);
@@ -353,6 +368,7 @@
     background: var(--danger, #c0392b);
     color: #fff;
   }
+
   .schemagen__failure,
   .schemagen__error {
     display: flex;
@@ -380,6 +396,10 @@
     border-bottom: 1px solid var(--border);
     font-size: var(--fs-sm);
   }
+  .schemagen__delta-icon {
+    font-weight: var(--weight-bold);
+  }
+
   .schemagen__error button {
     background: transparent;
     border: 0;
@@ -389,6 +409,7 @@
     cursor: pointer;
     color: inherit;
   }
+
   .schemagen__main {
     position: relative;
     flex: 1;
@@ -401,6 +422,18 @@
     min-height: 0;
     overflow: auto;
   }
+  .schemagen__pane--left {
+    border-right: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .schemagen__pane--right {
+    background: var(--bg);
+  }
+  .schemagen__empty {
+    padding: var(--space-4);
+    color: var(--fg-muted);
+  }
+
   .schemagen__drawer {
     position: absolute;
     top: 0;

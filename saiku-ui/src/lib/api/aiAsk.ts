@@ -59,42 +59,6 @@ export interface AskRequest {
   question: string;
   cube: AiCubeRef;
   history?: NlAskMessageDto[];
-  /**
-   * Markdown digest of the user's currently-rendered cellset, built client-side from
-   * `query.result`. Lets the AI reason about the data on screen so it can route to insight
-   * ("spot trends") or pick a sensible chart for view-change ("switch to chart"). Omit when no
-   * results are on screen — the AI will then only have schema context and can only build queries.
-   * Server-side AiPolicyGuard may strip this when AI policy is "schema-only".
-   */
-  cellsetDigest?: string;
-  /**
-   * Optional tool-choice override matching the drawer's mode picker. When omitted (default), the
-   * LLM picks among all four tools. When set, the server narrows the tool list to the requested
-   * intent (plus refusal, always available) so the user can force a specific behaviour when the
-   * LLM auto-routes wrong.
-   */
-  forceTool?: "auto" | "query" | "insight" | "view_change";
-  /**
-   * Snapshot of the user's currently-built AiQueryRequest (projected from the
-   * live queryModel via queryModelToAiRequest). Gives the LLM full context on
-   * what's already on screen so emit_query can EXTEND rather than REPLACE on
-   * follow-up turns — e.g. "add therapeutic class to columns" should preserve
-   * the user's existing rows/measures/filters, not nuke them.
-   */
-  currentQuery?: AiQueryRequestShape;
-}
-
-/** Markdown analysis the AI emitted when the user asked for an insight about current data. */
-export interface AiInsight {
-  markdown: string;
-  headline?: string;
-}
-
-/** View-target the AI emitted when the user asked to change how current data is displayed. */
-export interface AiViewChange {
-  viewMode: "grid" | "chart";
-  chartType?: string;
-  reason?: string;
 }
 
 /** The AiQueryRequest the model emitted. Opaque to the client — handed back
@@ -111,20 +75,6 @@ export interface AskResponse {
   response?: AiQueryResponse;
   /** Convenience mirror of {@code response.metadata.generatedMdx}. */
   generatedMdx?: string;
-  /**
-   * The structured ThinQueryModel the server's AiSchemaConverter produced
-   * from the AI's request — the same shape the workbench chip UI manipulates.
-   * Present whenever conversion succeeded (i.e. on every non-degraded,
-   * non-VALIDATION_ERROR path). When present, "edit in canvas" hydrates the
-   * workspace builder directly so the user gets interactive chips instead of
-   * an opaque MDX paste. Typed as unknown here to avoid pulling the query
-   * store type into the API layer; consumers cast at the boundary.
-   */
-  queryModel?: unknown;
-  /** Set when the model picked the insight intent. Mutually exclusive with request/queryModel/viewChange. */
-  insight?: AiInsight;
-  /** Set when the model picked the view-change intent. Mutually exclusive with the other intents. */
-  viewChange?: AiViewChange;
 }
 
 /** Error thrown only on transport / non-JSON failures. The "not configured"

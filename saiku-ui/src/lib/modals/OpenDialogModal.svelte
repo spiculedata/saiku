@@ -1,6 +1,5 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
-  import { Button } from "$lib/components/ui";
   import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/OpenDialog.js. Expects a flat
@@ -57,21 +56,21 @@
             disabled={entry.type === "folder"}
             onclick={() => onSelect(entry)}
           >
-            <span class="w-[20px] text-center">{entry.type === "folder" ? "📁" : "📄"}</span>
-            <span class="flex-1">{entry.name}</span>
-            <span class="text-fg-subtle text-sm">{entry.path}</span>
+            <span class="repo__icon">{entry.type === "folder" ? "📁" : "📄"}</span>
+            <span class="repo__name">{entry.name}</span>
+            <span class="repo__path">{entry.path}</span>
           </button>
         </li>
       {/each}
     </ul>
   {/if}
   {#snippet footer()}
-    <Button variant="outline" onclick={onCancel}>{i18n.t("modal.close")}</Button>
+    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.close")}</button>
   {/snippet}
 </Modal>
 
 <style>
-.hint { color: var(--fg-muted); font-size: var(--fs-sm); margin: var(--space-2) 0; }
+  .hint { color: var(--fg-muted); font-size: var(--fs-sm); margin: var(--space-2) 0; }
   .repo {
     list-style: none;
     margin: 0;
@@ -97,4 +96,7 @@
   }
   .repo__row:hover:not(:disabled) { background: var(--bg-subtle); }
   .repo__row:disabled { color: var(--fg-muted); cursor: default; }
+  .repo__icon { width: 20px; text-align: center; }
+  .repo__name { flex: 1; }
+  .repo__path { color: var(--fg-subtle); font-size: var(--fs-sm); }
 </style>

@@ -14,11 +14,11 @@
 </script>
 
 {#if session.loading}
-  <div class="m-auto text-fg-muted">{i18n.t("cubes.loading")}</div>
+  <div class="loading">{i18n.t("cubes.loading")}</div>
 {:else if !session.current}
   <LoginForm />
 {:else if !session.isAdmin}
-  <div class="m-auto text-center">
+  <div class="forbidden">
     <h1>{i18n.t("admin.notAllowed")}</h1>
     <p>Your account does not have the <code>ROLE_ADMIN</code> grant.</p>
   </div>
@@ -32,7 +32,7 @@
       <button type="button" role="tab" class:active={tab === "stats"} onclick={() => (tab = "stats")}>{i18n.t("admin.tabs.stats")}</button>
       <button type="button" role="tab" class:active={tab === "api"} onclick={() => (tab = "api")}>API access</button>
     </div>
-    <section class="flex-1 p-6 overflow-auto">
+    <section class="admin__body">
       {#if tab === "users"}
         <UsersAdmin />
       {:else if tab === "datasources"}
@@ -51,7 +51,7 @@
 {/if}
 
 <style>
-.admin {
+  .admin {
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -76,4 +76,11 @@
     color: var(--fg);
     border-bottom-color: var(--accent);
   }
+  .admin__body {
+    flex: 1;
+    padding: var(--space-5);
+    overflow: auto;
+  }
+  .forbidden { margin: auto; text-align: center; }
+  .loading { margin: auto; color: var(--fg-muted); }
 </style>

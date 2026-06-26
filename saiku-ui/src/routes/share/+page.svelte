@@ -59,25 +59,39 @@
   {#if loading}
     <div class="share-view__state">Loading shared dashboard…</div>
   {:else if error}
-    <div class="share-view__state text-danger">{error}</div>
+    <div class="share-view__state share-view__state--error">{error}</div>
   {:else if ready}
-    <header class="flex items-center justify-between gap-3 py-3 px-6 border-b border-border bg-bg-muted">
-      <span class="font-bold text-lg text-fg">{name}</span>
+    <header class="share-view__header">
+      <span class="share-view__title">{name}</span>
       <span class="share-view__badge">Read-only shared view</span>
     </header>
-    <div class="flex-1 min-h-0 overflow-auto p-4">
+    <div class="share-view__grid">
       <DashboardGrid readOnly={true} />
     </div>
   {/if}
 </div>
 
 <style>
-.share-view {
+  .share-view {
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
     background: var(--bg);
+  }
+  .share-view__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-5);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-muted);
+  }
+  .share-view__title {
+    font-weight: var(--weight-bold);
+    font-size: var(--fs-lg);
+    color: var(--fg);
   }
   .share-view__badge {
     font-size: var(--fs-sm);
@@ -87,6 +101,12 @@
     border-radius: 999px;
     background: var(--bg-subtle);
   }
+  .share-view__grid {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: var(--space-4);
+  }
   .share-view__state {
     flex: 1;
     display: flex;
@@ -94,5 +114,8 @@
     justify-content: center;
     color: var(--fg-muted);
     font-size: var(--fs-md);
+  }
+  .share-view__state--error {
+    color: var(--danger);
   }
 </style>

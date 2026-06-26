@@ -1,6 +1,5 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { Button } from "$lib/components/ui";
   import { Folder, FolderPlus, FileText, ChevronRight, Home } from "lucide-svelte";
   import {
     flatten,
@@ -194,7 +193,7 @@
 </script>
 
 <div class="repo-browser">
-  <nav class="flex items-center flex-wrap gap-0.5 py-2 px-3 bg-bg-subtle border border-border rounded-sm text-sm" aria-label={i18n.t("repo.breadcrumb")}>
+  <nav class="repo-browser__crumbs" aria-label={i18n.t("repo.breadcrumb")}>
     {#each breadcrumbs as crumb, i (crumb.path)}
       {#if i > 0}<ChevronRight size={12} class="repo-browser__crumb-sep" />{/if}
       <button
@@ -212,16 +211,16 @@
   <div class="repo-browser__search">
     <input
       type="text"
-      class="w-full py-1.5 px-3 bg-bg text-fg border border-border-strong rounded-sm text-sm"
+      class="repo-browser__search-input"
       placeholder={i18n.t("repo.searchPlaceholder")}
       bind:value={search}
     />
   </div>
 
   {#if repository.loading}
-    <p class="m-0 p-6 text-fg-subtle text-sm text-center bg-bg border border-border rounded-sm">{i18n.t("modal.open.loading")}</p>
+    <p class="repo-browser__empty">{i18n.t("modal.open.loading")}</p>
   {:else if visibleRows.length === 0}
-    <p class="m-0 p-6 text-fg-subtle text-sm text-center bg-bg border border-border rounded-sm">
+    <p class="repo-browser__empty">
       {search ? i18n.t("saved.noMatches") : i18n.t("repo.folderEmpty")}
     </p>
   {:else}
@@ -236,16 +235,16 @@
             ondblclick={() => onRowDoubleClick(node)}
             onkeydown={(e) => onRowKey(e, node)}
           >
-            <span class="text-fg-muted inline-flex">
+            <span class="repo-browser__icon">
               {#if node.type === "FOLDER"}
                 <Folder size={14} />
               {:else}
                 <FileText size={14} />
               {/if}
             </span>
-            <span class="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{node.name}</span>
+            <span class="repo-browser__name">{node.name}</span>
             {#if filtered && node.type === "FILE"}
-              <span class="text-fg-subtle text-xs">{node.path}</span>
+              <span class="repo-browser__path">{node.path}</span>
             {/if}
           </button>
         </li>
@@ -268,17 +267,34 @@
           }
         }}
       />
-      <Button variant="outline" disabled={!newFolderName.trim() || creatingFolder} onclick={() => void createFolder()}>{i18n.t("repo.createFolder")}</Button>
+      <button
+        type="button"
+        class="btn"
+        disabled={!newFolderName.trim() || creatingFolder}
+        onclick={() => void createFolder()}
+      >{i18n.t("repo.createFolder")}</button>
     </div>
   {/if}
 </div>
 
 <style>
-.repo-browser {
+  .repo-browser {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
     min-height: 360px;
+  }
+
+  .repo-browser__crumbs {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: var(--fs-sm);
   }
   .repo-browser__crumb {
     display: inline-flex;
@@ -297,6 +313,17 @@
   /* Applied via class={} on a lucide-svelte icon — needs :global so the
      scoped-style hash doesn't suppress it on the child component's root. */
   :global(.repo-browser__crumb-sep) { color: var(--fg-subtle); }
+
+  .repo-browser__search-input {
+    width: 100%;
+    padding: 6px var(--space-3);
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    font-size: var(--fs-sm);
+  }
+
   .repo-browser__list {
     flex: 1;
     list-style: none;
@@ -329,6 +356,22 @@
     background: var(--accent-soft);
     color: var(--accent-strong);
   }
+  .repo-browser__icon { color: var(--fg-muted); display: inline-flex; }
+  .repo-browser__row.is-selected .repo-browser__icon { color: var(--accent-strong); }
+  .repo-browser__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .repo-browser__path { color: var(--fg-subtle); font-size: var(--fs-xs); }
+
+  .repo-browser__empty {
+    margin: 0;
+    padding: var(--space-5);
+    color: var(--fg-subtle);
+    font-size: var(--fs-sm);
+    text-align: center;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+
   .repo-browser__new-folder {
     display: flex;
     align-items: center;

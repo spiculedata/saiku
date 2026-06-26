@@ -20,7 +20,7 @@
   let { message = null, filtered = false, onReset }: Props = $props();
 </script>
 
-<div class="h-full w-full box-border flex flex-col items-center justify-center gap-2 p-3 text-center text-fg-muted">
+<div class="tile-empty">
   <Inbox size={22} aria-hidden="true" />
   <p class="msg">
     {message ??
@@ -37,7 +37,20 @@
 </div>
 
 <style>
-.msg {
+  .tile-empty {
+    height: 100%;
+    width: 100%;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    text-align: center;
+    color: var(--fg-muted);
+  }
+  .msg {
     margin: 0;
     font-size: 0.8125rem;
     max-width: 100%;

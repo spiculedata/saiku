@@ -42,7 +42,7 @@
 
 {#if visible}
   <div class="bulk-bar" role="toolbar" aria-label={i18n.t("dashboard.bulk.label")}>
-    <span class="text-sm font-medium text-fg-muted pr-1">{i18n.t("dashboard.bulk.selected").replace("{n}", String(count))}</span>
+    <span class="bulk-bar__count">{i18n.t("dashboard.bulk.selected").replace("{n}", String(count))}</span>
     <button type="button" class="bulk-bar__btn" onclick={handleDuplicate}>
       <Copy size={14} aria-hidden="true" />
       <span>{i18n.t("dashboard.bulk.duplicate")}</span>
@@ -64,7 +64,7 @@
 {/if}
 
 <style>
-.bulk-bar {
+  .bulk-bar {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
@@ -80,6 +80,12 @@
     bottom: 1.25rem;
     transform: translateX(-50%);
     z-index: 40;
+  }
+  .bulk-bar__count {
+    font-size: 0.8125rem;
+    font-weight: var(--weight-medium);
+    color: var(--fg-muted);
+    padding-right: 0.25rem;
   }
   .bulk-bar__btn {
     display: inline-flex;

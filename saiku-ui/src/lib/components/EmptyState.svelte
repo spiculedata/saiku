@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { Button } from "$lib/components/ui";
   /*
    * Empty-state component for list views, modals, admin tables.
    *
@@ -20,7 +19,7 @@
     /** A lucide-svelte (or compatible) icon component class. Typed
      *  permissively because lucide's own component type carries extra
      *  generic params that a tighter signature won't accept. */
-     
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     icon?: any;
     title: string;
     description?: string;
@@ -39,19 +38,19 @@
       <Icon size={48} />
     </span>
   {/if}
-  <h3 class="m-0 text-lg font-semibold text-fg">{title}</h3>
+  <h3 class="empty-state__title">{title}</h3>
   {#if description}
     <p class="empty-state__description">{description}</p>
   {/if}
   {#if action}
-    <Button onclick={action.onClick}>
+    <button type="button" class="btn btn--primary" onclick={action.onClick}>
       {action.label}
-    </Button>
+    </button>
   {/if}
 </div>
 
 <style>
-.empty-state {
+  .empty-state {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -60,10 +59,12 @@
     padding: var(--space-8) var(--space-5);
     color: var(--fg);
   }
+
   .empty-state--compact {
     padding: var(--space-5) var(--space-3);
     gap: var(--space-2);
   }
+
   .empty-state__icon {
     display: inline-flex;
     align-items: center;
@@ -74,10 +75,19 @@
     background: var(--bg-muted);
     color: var(--fg-subtle);
   }
+
   .empty-state--compact .empty-state__icon {
     width: 48px;
     height: 48px;
   }
+
+  .empty-state__title {
+    margin: 0;
+    font-size: var(--fs-lg);
+    font-weight: var(--weight-semibold);
+    color: var(--fg);
+  }
+
   .empty-state__description {
     margin: 0;
     max-width: 32ch;

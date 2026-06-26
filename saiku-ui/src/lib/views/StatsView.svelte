@@ -45,9 +45,9 @@
 {#if result.error}
   <p class="callout callout--danger">{result.error}</p>
 {:else if !result.cellset || result.cellset.length === 0}
-  <p class="text-fg-muted p-4">{i18n.t("cellset.noRows")}</p>
+  <p class="empty">{i18n.t("cellset.noRows")}</p>
 {:else}
-  <div class="flex-1 min-h-0 overflow-auto border border-border bg-bg rounded-sm">
+  <div class="stats-wrap">
     <table class="stats">
       <thead>
         <tr>
@@ -78,9 +78,11 @@
 {/if}
 
 <style>
-.stats { border-collapse: separate; border-spacing: 0; width: 100%; font-size: var(--fs-sm); }
+  .stats-wrap { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--border); background: var(--bg); border-radius: 4px; }
+  .stats { border-collapse: separate; border-spacing: 0; width: 100%; font-size: var(--fs-sm); }
   .stats th, .stats td { padding: 6px 12px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
   .stats thead th { position: sticky; top: 0; background: var(--bg-muted); color: var(--fg); font-weight: var(--weight-semibold); }
   .stats tbody th { background: var(--bg-muted); font-weight: var(--weight-medium); color: var(--fg); }
   .stats td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--fg-muted); padding: var(--space-4); }
 </style>

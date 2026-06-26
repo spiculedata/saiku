@@ -1,6 +1,5 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
-  import { Button } from "$lib/components/ui";
   import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/WarningModal.js. */
@@ -17,6 +16,6 @@
 <Modal {title} {open} size="sm" {onClose}>
   <p class="callout callout--danger">{message}</p>
   {#snippet footer()}
-    <Button onclick={onClose}>{i18n.t("modal.ok")}</Button>
+    <button type="button" class="btn btn--primary" onclick={onClose}>{i18n.t("modal.ok")}</button>
   {/snippet}
 </Modal>

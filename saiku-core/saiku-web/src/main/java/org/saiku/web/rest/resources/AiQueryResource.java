@@ -762,25 +762,7 @@ public class AiQueryResource {
                     .build();
         }
 
-        // Translate the wire-shape forceTool string into the service enum. Unknown / null → AUTO so
-        // a bad client value silently degrades to auto-routing rather than 400ing the whole turn.
-        org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force =
-                org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.AUTO;
-        if (body.getForceTool() != null) {
-            try {
-                force = org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.valueOf(
-                        body.getForceTool().toUpperCase());
-            } catch (IllegalArgumentException ignored) {
-                // unknown — keep AUTO
-            }
-        }
-        AiAskService.AskOutcome outcome = askService.ask(
-                body.getCube(),
-                body.getQuestion(),
-                body.historyAsMessages(),
-                body.getCellsetDigest(),
-                force,
-                body.getCurrentQuery());
+        AiAskService.AskOutcome outcome = askService.ask(body.getCube(), body.getQuestion(), body.historyAsMessages());
         if (outcome.degraded()) {
             AiAskApi.AskResponse out = new AiAskApi.AskResponse();
             out.setDegraded(true);
@@ -795,24 +777,10 @@ public class AiQueryResource {
                     .build();
         }
 
+        AiQueryRequest req = outcome.request();
         AiAskApi.AskResponse out = new AiAskApi.AskResponse();
         out.setDegraded(false);
         out.setModel(outcome.model());
-
-        // Insight and view-change intents skip the converter / execution entirely — the model already
-        // produced the final artefact (markdown analysis / view target). Return immediately so the
-        // drawer can render the result without going through ThinQuery → MDX → backend round-trip.
-        if (outcome.kind() == AiAskService.AskOutcome.Kind.INSIGHT) {
-            out.setInsight(outcome.insight());
-            return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
-        }
-        if (outcome.kind() == AiAskService.AskOutcome.Kind.VIEW_CHANGE) {
-            out.setViewChange(outcome.viewChange());
-            return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
-        }
-
-        // Default branch: QUERY intent — convert + execute as before.
-        AiQueryRequest req = outcome.request();
         out.setRequest(req);
 
         // Execute the produced request through the same path /ai/query uses. Errors are translated
@@ -824,10 +792,6 @@ public class AiQueryResource {
             schemaValidator.assertValid(MAPPER.valueToTree(req));
             AiSchema schema = cubeMetadataService.getSchema(req.getCube());
             ThinQuery tq = converter.convert(req, schema);
-            // Surface the converted ThinQueryModel so the UI's "edit in canvas" can hydrate the
-            // workbench's chip builder directly (interactive query) instead of pasting MDX (opaque
-            // to the chip UI — user can't drag/drop). Same shape the workspace builder manipulates.
-            out.setQueryModel(tq.getQueryModel());
             CellDataSet cds = thinQueryService.execute(tq);
             AiQueryResponse aiResp = buildResponse(tq, cds, start, "records");
             out.setResponse(aiResp);

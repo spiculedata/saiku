@@ -18,7 +18,7 @@ function buildFixture(): ArrayBuffer {
     name: vectorFromArray(["Widget", "Gadget", "Sprocket"]),
     qty: vectorFromArray(new Float64Array([3, 7, 12])),
     price: vectorFromArray(new Float64Array([9.99, 19.5, 5.0])),
-     
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as unknown as Record<string, any>;
 
   const table = new Table(cells);

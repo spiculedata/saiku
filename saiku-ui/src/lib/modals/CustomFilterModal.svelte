@@ -43,8 +43,8 @@
 </script>
 
 <Modal title={`${i18n.t("modal.customFilter.title")} ${measureCaption}`} {open} size="md" onClose={onCancel}>
-  <div class="flex gap-3">
-    <label class="field flex-1">
+  <div class="row">
+    <label class="field field--grow">
       <span class="field__label">{i18n.t("modal.customFilter.operator")}</span>
       <select class="field__input" bind:value={op}>
         {#each OPERATORS as o}
@@ -52,12 +52,12 @@
         {/each}
       </select>
     </label>
-    <label class="field flex-1">
+    <label class="field field--grow">
       <span class="field__label">{i18n.t("modal.customFilter.value")}</span>
       <input class="field__input" type="number" bind:value />
     </label>
     {#if needsSecond}
-      <label class="field flex-1">
+      <label class="field field--grow">
         <span class="field__label">{i18n.t("modal.customFilter.and")}</span>
         <input class="field__input" type="number" bind:value={value2} />
       </label>
@@ -72,3 +72,7 @@
   {/snippet}
 </Modal>
 
+<style>
+  .row { display: flex; gap: var(--space-3); }
+  .field--grow { flex: 1; }
+</style>

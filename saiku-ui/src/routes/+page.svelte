@@ -11,7 +11,7 @@
 </script>
 
 {#if session.loading}
-  <div class="m-auto text-fg-muted">Loading…</div>
+  <div class="loading">Loading…</div>
 {:else if session.current}
   <Workspace session={session.current} />
   <Tour />
@@ -19,3 +19,9 @@
   <LoginForm />
 {/if}
 
+<style>
+  .loading {
+    margin: auto;
+    color: var(--fg-muted);
+  }
+</style>

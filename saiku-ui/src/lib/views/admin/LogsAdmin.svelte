@@ -1,6 +1,5 @@
 <script lang="ts">
   import { adminLogs } from "$lib/api/admin";
-  import { Button } from "$lib/components/ui";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
@@ -24,7 +23,7 @@
 </script>
 
 <div class="pane">
-  <header class="flex justify-between items-center mb-3">
+  <header class="pane__header">
     <h2>{i18n.t("admin.tabs.logs")}</h2>
     <div class="controls">
       <select class="field__input" bind:value={name}>
@@ -32,16 +31,17 @@
           <option value={n}>{n}</option>
         {/each}
       </select>
-      <Button onclick={load} disabled={loading}>
+      <button type="button" class="btn btn--primary" onclick={load} disabled={loading}>
         {loading ? i18n.t("admin.logs.loading") : i18n.t("admin.logs.fetch")}
-      </Button>
+      </button>
     </div>
   </header>
   <pre class="log">{content || i18n.t("admin.logs.idle")}</pre>
 </div>
 
 <style>
-h2 { margin: 0; }
+  .pane__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); }
+  h2 { margin: 0; }
   .controls { display: flex; gap: var(--space-2); align-items: center; }
   .controls .field__input { width: 220px; }
   .log {

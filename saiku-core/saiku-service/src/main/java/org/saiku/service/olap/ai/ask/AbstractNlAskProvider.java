@@ -5,7 +5,6 @@
 package org.saiku.service.olap.ai.ask;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
 import java.net.URI;
@@ -33,25 +32,11 @@ import java.time.Duration;
  */
 abstract class AbstractNlAskProvider implements NlAskProvider {
 
-    /** Name of the query-building tool. Picks when the user wants new data / a new breakdown. */
+    /** Name of the structured-output tool/function both providers ask the model to call. */
     protected static final String TOOL_NAME = "emit_query";
 
     /** Name of the off-topic refusal tool/function — the scope guardrail (security control). */
     protected static final String REFUSAL_TOOL_NAME = "refuse_off_topic";
-
-    /**
-     * Name of the insight tool — picks when the user asks for analysis of the currently-rendered
-     * cellset ("spot trends", "what's interesting", "summarise this"). No query is built; the model
-     * just returns markdown commentary on the cellset digest it was given.
-     */
-    protected static final String INSIGHT_TOOL_NAME = "emit_insight";
-
-    /**
-     * Name of the view-change tool — picks when the user asks to change how the existing cellset is
-     * displayed ("switch to chart", "show this as a bar chart", "back to grid"). No query is built;
-     * the UI applies viewMode + chartType.
-     */
-    protected static final String VIEW_CHANGE_TOOL_NAME = "emit_view_change";
 
     /** Prefix on the degraded reason when the model refuses an off-topic question. */
     protected static final String REFUSAL_REASON_PREFIX = "OFF_TOPIC: ";
@@ -147,102 +132,5 @@ abstract class AbstractNlAskProvider implements NlAskProvider {
             return "";
         }
         return s.length() <= max ? s : s.substring(0, max) + "...";
-    }
-
-    /**
-     * Builds the JSON Schema for the {@code emit_insight} tool's input. Provider-agnostic — both
-     * Anthropic and OpenAI consume the same {@code {"type":"object", "properties":...}} shape under
-     * their respective tool/function definitions.
-     *
-     * <p>Two fields: {@code markdown} (required, the analysis body) and {@code headline} (optional
-     * 1-line summary the drawer can render above the body).
-     */
-    protected static ObjectNode insightInputSchema() {
-        ObjectNode root = MAPPER.createObjectNode();
-        root.put("type", "object");
-        ObjectNode props = root.putObject("properties");
-        ObjectNode markdown = props.putObject("markdown");
-        markdown.put("type", "string");
-        markdown.put(
-                "description",
-                "The analysis itself as markdown — paragraphs, bullets, optional small tables. "
-                        + "Keep it tight: 3-8 sentences for trend questions, 1-2 paragraphs for deeper "
-                        + "asks. Reference specific row/column captions and figures from the cellset "
-                        + "digest provided as context. Do NOT include the user's question back to them, "
-                        + "do NOT prefix with 'Here is an analysis'.");
-        ObjectNode headline = props.putObject("headline");
-        headline.put("type", "string");
-        headline.put(
-                "description",
-                "Optional 1-line headline (<=80 chars) shown above the markdown body in the drawer. "
-                        + "Example: 'Revenue concentrated in Q4; CA leads by 38%.'");
-        root.putArray("required").add("markdown");
-        return root;
-    }
-
-    /**
-     * Builds the JSON Schema for the {@code emit_view_change} tool's input. {@code viewMode} +
-     * {@code chartType} are constrained to the canonical catalog in {@link AiViewChangeCatalog}; the
-     * routing layer rejects any value outside the enum lists.
-     *
-     * <p>The tool description (per-provider, not here) enumerates the chart-type catalog with hints
-     * so the model has enough context to pick well.
-     */
-    protected static ObjectNode viewChangeInputSchema() {
-        ObjectNode root = MAPPER.createObjectNode();
-        root.put("type", "object");
-        ObjectNode props = root.putObject("properties");
-
-        ObjectNode viewMode = props.putObject("viewMode");
-        viewMode.put("type", "string");
-        ArrayNode viewEnum = viewMode.putArray("enum");
-        for (String v : AiViewChangeCatalog.VIEW_MODES) {
-            viewEnum.add(v);
-        }
-        viewMode.put("description", "Target view mode: 'grid' for tabular cellset, 'chart' for a chart render.");
-
-        ObjectNode chartType = props.putObject("chartType");
-        chartType.put("type", "string");
-        ArrayNode chartEnum = chartType.putArray("enum");
-        for (String id : AiViewChangeCatalog.CHART_TYPE_IDS) {
-            chartEnum.add(id);
-        }
-        chartType.put(
-                "description",
-                "Chart-type id. Only meaningful when viewMode='chart'. Pick the one that fits the "
-                        + "cellset shape: line/area for time series, bar/stackedBar for categorical "
-                        + "comparisons, pie/donut/treemap for part-to-whole with few categories, "
-                        + "heatmap for matrix views, map for geo dims. See the per-id hints above.");
-
-        ObjectNode reason = props.putObject("reason");
-        reason.put("type", "string");
-        reason.put(
-                "description",
-                "Optional 1-sentence rationale shown in the drawer "
-                        + "('Time-series → line chart fits best.', 'Few categories → pie.').");
-
-        root.putArray("required").add("viewMode");
-        return root;
-    }
-
-    /**
-     * Build a human-readable enumeration of the chart-type catalog suitable for inclusion in the
-     * tool description. Each line: {@code "- <id> (<label>, <group>): <hint>"}. The LLM reads this
-     * once to learn what each id maps to so it picks sensibly.
-     */
-    protected static String chartTypeCatalogText() {
-        StringBuilder sb = new StringBuilder();
-        for (java.util.Map<String, String> entry : AiViewChangeCatalog.CHART_TYPES) {
-            sb.append("- ")
-                    .append(entry.get("id"))
-                    .append(" (")
-                    .append(entry.get("label"))
-                    .append(", ")
-                    .append(entry.get("group"))
-                    .append("): ")
-                    .append(entry.get("hint"))
-                    .append('\n');
-        }
-        return sb.toString();
     }
 }

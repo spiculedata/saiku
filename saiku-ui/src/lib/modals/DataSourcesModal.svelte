@@ -1,6 +1,5 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
-  import { Button } from "$lib/components/ui";
   import { datasources } from "$lib/stores/datasources.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
@@ -19,11 +18,13 @@
 </script>
 
 <Modal title={i18n.t("modal.datasources.title")} {open} size="lg" {onClose}>
-  <div class="flex justify-end mb-2">
-    <Button variant="outline" onclick={refresh} disabled={datasources.loading}>⟳ {i18n.t("admin.refresh")}</Button>
+  <div class="bar">
+    <button type="button" class="btn" onclick={refresh} disabled={datasources.loading}>
+      ⟳ {i18n.t("admin.refresh")}
+    </button>
   </div>
   {#if datasources.connections.length === 0}
-    <p class="text-fg-muted">{i18n.t("modal.datasources.empty")}</p>
+    <p class="hint">{i18n.t("modal.datasources.empty")}</p>
   {:else}
     <table class="grid">
       <thead>
@@ -50,12 +51,14 @@
     </table>
   {/if}
   {#snippet footer()}
-    <Button onclick={onClose}>{i18n.t("modal.close")}</Button>
+    <button type="button" class="btn btn--primary" onclick={onClose}>{i18n.t("modal.close")}</button>
   {/snippet}
 </Modal>
 
 <style>
-.grid { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+  .bar { display: flex; justify-content: flex-end; margin-bottom: var(--space-2); }
+  .grid { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
   .grid th, .grid td { border: 1px solid var(--border); padding: var(--space-1) var(--space-2); text-align: left; }
   .grid th { background: var(--bg-muted); }
+  .hint { color: var(--fg-muted); }
 </style>

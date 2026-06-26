@@ -122,7 +122,7 @@
   <div class="state error" role="alert">{error}</div>
 {:else if dashboard}
   <div
-    class="grid gap-3 p-3 w-full box-border"
+    class="grid"
     style="
       grid-template-columns: repeat({gridCols}, minmax(0, 1fr));
       grid-auto-rows: {ROW_HEIGHT_PX}px;
@@ -165,7 +165,14 @@
 {/if}
 
 <style>
-.tile {
+  .grid {
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .tile {
     background: var(--saiku-embed-tile-bg, #ffffff);
     border: 1px solid var(--saiku-embed-border, #e5e7eb);
     border-radius: 8px;

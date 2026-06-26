@@ -27,9 +27,9 @@
 <Modal title={i18n.t("modal.growth.title")} {open} size="md" onClose={onCancel}>
   <fieldset class="field">
     <legend class="field__label">{i18n.t("modal.growth.compareAgainst")}</legend>
-    <label class="flex items-center gap-2 py-1 px-0 cursor-pointer"><input type="radio" name="basis" value="previous" bind:group={basis} /> {i18n.t("modal.growth.previousPeriod")}</label>
-    <label class="flex items-center gap-2 py-1 px-0 cursor-pointer"><input type="radio" name="basis" value="first" bind:group={basis} /> {i18n.t("modal.growth.firstPeriod")}</label>
-    <label class="flex items-center gap-2 py-1 px-0 cursor-pointer"><input type="radio" name="basis" value="specific" bind:group={basis} /> {i18n.t("modal.growth.specificMember")}</label>
+    <label class="radio"><input type="radio" name="basis" value="previous" bind:group={basis} /> {i18n.t("modal.growth.previousPeriod")}</label>
+    <label class="radio"><input type="radio" name="basis" value="first" bind:group={basis} /> {i18n.t("modal.growth.firstPeriod")}</label>
+    <label class="radio"><input type="radio" name="basis" value="specific" bind:group={basis} /> {i18n.t("modal.growth.specificMember")}</label>
   </fieldset>
   {#if basis === "specific"}
     <label class="field">
@@ -46,3 +46,12 @@
   {/snippet}
 </Modal>
 
+<style>
+  .radio {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) 0;
+    cursor: pointer;
+  }
+</style>
