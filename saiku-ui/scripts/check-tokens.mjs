@@ -18,9 +18,8 @@
  *   - src/lib/design-system/   — definition site of TONE_CLASSES
  */
 
-import { execSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join, resolve, relative, sep } from 'node:path';
 
 const here = resolve(import.meta.dirname, '..');
 process.chdir(here);
@@ -37,30 +36,37 @@ function isExempt(path) {
 	return EXEMPT.some((e) => path === e || path.startsWith(e));
 }
 
-const pattern = `\\b(text|bg|border|hover:bg|hover:text)-(${FORBIDDEN_TONES.join('|')})-[0-9]+`;
-const includes = ['*.svelte', '*.ts'].map((p) => `--include=${p}`).join(' ');
-const dirs = SEARCH_DIRS.filter((d) => existsSync(join(here, d))).join(' ');
+const pattern = new RegExp(`\\b(text|bg|border|hover:bg|hover:text)-(${FORBIDDEN_TONES.join('|')})-[0-9]+`);
+const EXTENSIONS = ['.svelte', '.ts'];
 
-let raw;
-try {
-	raw = execSync(`grep -rnE '${pattern}' ${dirs} ${includes}`, {
-		encoding: 'utf8',
-		stdio: ['ignore', 'pipe', 'ignore']
-	});
-} catch (e) {
-	// grep exits 1 when no matches. That's the success case for this check.
-	if (e.status === 1) {
-		console.log('✓ No raw status-tone Tailwind utilities found.');
-		process.exit(0);
+// Node-native recursive scan — no shell-out to `grep`, so the check runs the
+// same on Windows / macOS / Linux (the old execSync(`grep …`) crashed on
+// Windows where grep isn't a command; saiku#1362 follow-up). Emits the same
+// `relPath:lineNo:lineText` shape grep -rnE produced, so the logic below is
+// unchanged.
+function scan(dir, out) {
+	for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+		const full = join(dir, entry.name);
+		if (entry.isDirectory()) {
+			scan(full, out);
+		} else if (EXTENSIONS.some((e) => entry.name.endsWith(e))) {
+			const rel = relative(here, full).split(sep).join('/'); // posix-style for isExempt
+			const fileLines = readFileSync(full, 'utf8').split(/\r?\n/);
+			fileLines.forEach((text, i) => {
+				if (pattern.test(text)) out.push(`${rel}:${i + 1}:${text}`);
+			});
+		}
 	}
-	throw e;
 }
 
-const lines = raw.trim().split('\n');
-const violations = lines.filter((line) => {
-	const path = line.split(':')[0];
-	return !isExempt(path);
-});
+const matches = [];
+for (const d of SEARCH_DIRS) {
+	const abs = join(here, d);
+	if (existsSync(abs)) scan(abs, matches);
+}
+
+const violations = matches.filter((line) => !isExempt(line.split(':')[0]));
 
 if (violations.length === 0) {
 	console.log('✓ No raw status-tone Tailwind utilities found outside allowed paths.');
