@@ -4,6 +4,7 @@
  */
 package org.saiku.web.security.embed;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,11 +12,14 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import org.saiku.web.embed.EmbedPublicGrant;
 import org.saiku.web.embed.EmbedPublicRegistry;
 import org.saiku.web.embed.EmbedToken;
 import org.saiku.web.embed.EmbedTokenStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.preauth.PreAuthenticatedAuthenticationToken;
@@ -48,6 +52,17 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
 
     public static final String GUEST_ROLE = "ROLE_EMBED_GUEST";
     public static final String TOKEN_HEADER = "X-Saiku-Embed-Token";
+
+    private static final Logger LOG = LoggerFactory.getLogger(EmbedAuthFilter.class);
+
+    /** saiku#1104 — embed JWT (RLS) config. Env wins over system property; the
+     *  JWT path is inert until a secret is configured (a presented JWT is then
+     *  rejected, not accepted unverified). */
+    public static final String ENV_JWT_SECRET = "SAIKU_EMBED_JWT_SECRET";
+
+    public static final String PROP_JWT_SECRET = "saiku.embed.jwt.secret";
+    public static final String ENV_JWT_AUDIENCE = "SAIKU_EMBED_JWT_AUDIENCE";
+    public static final String PROP_JWT_AUDIENCE = "saiku.embed.jwt.audience";
 
     /** Read surface — query + dashboard. The mint surface lives elsewhere
      *  and goes through the normal authenticated chain. */
@@ -97,6 +112,16 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
         // 1. Token path.
         String tokenId = extractToken(req);
         if (tokenId != null && !tokenId.isEmpty()) {
+            // saiku#1104: an embed JWT (3 segments) carries its own RLS scope +
+            // resource pin. Verified + mapped here; opaque tokens fall through.
+            if (EmbedJwt.looksLikeJwt(tokenId)) {
+                EmbedGuestDetails jwtGuest = authenticateJwt(tokenId, target, resp);
+                if (jwtGuest == null) {
+                    return; // writeInvalid already sent (fail-closed)
+                }
+                authenticate(req, resp, chain, jwtGuest);
+                return;
+            }
             EmbedToken token = tokenStore.load(tokenId);
             if (token == null || !token.isValid(System.currentTimeMillis())) {
                 writeInvalid(resp);
@@ -167,6 +192,98 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
         } finally {
             SecurityContextHolder.clearContext();
         }
+    }
+
+    /**
+     * saiku#1104 — verify an embed JWT and map its claims to a guest identity,
+     * or send the opaque {@code EMBED_INVALID} response and return null on ANY
+     * failure (fail-closed). The JWT must pin the same resource the URL targets
+     * (replay protection), exactly like the opaque token.
+     */
+    private EmbedGuestDetails authenticateJwt(String compact, ResourceTarget target, HttpServletResponse resp)
+            throws IOException {
+        byte[] secret = jwtSecret();
+        if (secret == null) {
+            // A JWT was presented but no secret is configured — we cannot verify
+            // it, so reject rather than accept unverified input.
+            writeInvalid(resp);
+            return null;
+        }
+        JsonNode claims;
+        try {
+            claims = EmbedJwt.verify(compact, secret, jwtAudience(), System.currentTimeMillis());
+        } catch (EmbedJwt.EmbedJwtException e) {
+            LOG.debug("embed JWT rejected: {}", e.getMessage());
+            writeInvalid(resp);
+            return null;
+        }
+        String claimKind = text(claims, "saiku.resourceKind");
+        String claimPath = normalizePath(text(claims, "saiku.resourcePath"));
+        if (claimKind == null
+                || claimPath == null
+                || !claimKind.equals(target.kind)
+                || !claimPath.equals(target.path)) {
+            // Token not minted for this resource — refuse (replay protection).
+            writeInvalid(resp);
+            return null;
+        }
+        JsonNode filters = claims.get("saiku.filters");
+        String forcedFiltersJson =
+                (filters != null && !filters.isNull() && !filters.isMissingNode()) ? filters.toString() : null;
+        return new EmbedGuestDetails(
+                compact,
+                claimKind,
+                claimPath,
+                text(claims, "saiku.owner"),
+                stringArray(claims, "saiku.ownerRoles"),
+                org.saiku.web.embed.EmbedToken.RedactionPolicy.TENANT_DEFAULT,
+                text(claims, "sub"),
+                forcedFiltersJson);
+    }
+
+    /** Embed JWT secret (env &gt; system property); null when unset/blank so the
+     *  JWT path stays inert until a deployment opts in. */
+    private static byte[] jwtSecret() {
+        String s = System.getenv(ENV_JWT_SECRET);
+        if (s == null || s.isBlank()) {
+            s = System.getProperty(PROP_JWT_SECRET);
+        }
+        return (s == null || s.isBlank()) ? null : s.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static String jwtAudience() {
+        String a = System.getenv(ENV_JWT_AUDIENCE);
+        if (a == null || a.isBlank()) {
+            a = System.getProperty(PROP_JWT_AUDIENCE);
+        }
+        return (a == null || a.isBlank()) ? null : a.trim();
+    }
+
+    private static String text(JsonNode claims, String field) {
+        JsonNode n = claims.get(field);
+        return (n != null && n.isTextual()) ? n.asText() : null;
+    }
+
+    private static List<String> stringArray(JsonNode claims, String field) {
+        JsonNode n = claims.get(field);
+        if (n == null || !n.isArray()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        for (JsonNode e : n) {
+            if (e.isTextual()) {
+                out.add(e.asText());
+            }
+        }
+        return out;
+    }
+
+    /** Mirror parseTarget's leading-slash normalization for claim paths. */
+    private static String normalizePath(String p) {
+        if (p == null) {
+            return null;
+        }
+        return p.startsWith("/") ? p : "/" + p;
     }
 
     /** Parse a sub-path like {@code "query/homes/admin/q.saiku"} into the
@@ -270,6 +387,14 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
          *  {@link org.saiku.web.embed.EmbedToken.RedactionPolicy#TENANT_DEFAULT}
          *  for public-grant requests (no token to elevate from). */
         public final org.saiku.web.embed.EmbedToken.RedactionPolicy redactionPolicy;
+        /** saiku#1104 — end-user identity from the embed JWT's {@code sub}
+         *  claim; null for opaque-token / public-grant requests. Audited so the
+         *  trail shows who the embedder asserted. */
+        public final String jwtSub;
+        /** saiku#1104 — the JWT's {@code saiku.filters} claim serialised as a
+         *  JSON array (AiFilterSelection shape). The forced RLS slicer the view
+         *  injects before execution. Null when no forced filters are present. */
+        public final String forcedFiltersJson;
 
         public EmbedGuestDetails(
                 String token, String resourceKind, String resourcePath, String ownerUser, List<String> ownerRoles) {
@@ -290,6 +415,19 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
                 String ownerUser,
                 List<String> ownerRoles,
                 org.saiku.web.embed.EmbedToken.RedactionPolicy redactionPolicy) {
+            this(token, resourceKind, resourcePath, ownerUser, ownerRoles, redactionPolicy, null, null);
+        }
+
+        /** saiku#1104 — full constructor including the embed-JWT claims. */
+        public EmbedGuestDetails(
+                String token,
+                String resourceKind,
+                String resourcePath,
+                String ownerUser,
+                List<String> ownerRoles,
+                org.saiku.web.embed.EmbedToken.RedactionPolicy redactionPolicy,
+                String jwtSub,
+                String forcedFiltersJson) {
             this.token = token;
             this.resourceKind = resourceKind;
             this.resourcePath = resourcePath;
@@ -298,6 +436,8 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
             this.redactionPolicy = redactionPolicy == null
                     ? org.saiku.web.embed.EmbedToken.RedactionPolicy.TENANT_DEFAULT
                     : redactionPolicy;
+            this.jwtSub = jwtSub;
+            this.forcedFiltersJson = forcedFiltersJson;
         }
 
         /** True when this request reached the resource via a public grant

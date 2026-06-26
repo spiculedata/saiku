@@ -12,9 +12,14 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import java.util.Arrays;
 import java.util.Map;
 import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.olap.ai.AiFilterSelection;
+import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiSavedQueryRequest;
+import org.saiku.service.olap.ai.audit.AiAuditEntry;
+import org.saiku.service.olap.ai.audit.AiAuditLog;
 import org.saiku.web.rest.resources.AiQueryResource;
 import org.saiku.web.rest.resources.dashboards.Dashboard;
 import org.saiku.web.rest.resources.dashboards.DashboardTile;
@@ -52,6 +57,7 @@ public class EmbedViewResource {
     private DatasourceService datasourceService;
     private SessionService sessionService;
     private AiQueryResource aiQueryResource;
+    private AiAuditLog auditLog;
 
     public void setDatasourceService(DatasourceService s) {
         this.datasourceService = s;
@@ -63,6 +69,10 @@ public class EmbedViewResource {
 
     public void setAiQueryResource(AiQueryResource r) {
         this.aiQueryResource = r;
+    }
+
+    public void setAuditLog(AiAuditLog auditLog) {
+        this.auditLog = auditLog;
     }
 
     /* ---------------------------- query ---------------------------- */
@@ -86,15 +96,23 @@ public class EmbedViewResource {
         if (g.resourcePath == null || !g.resourcePath.endsWith(".saiku")) {
             return invalid();
         }
+        // saiku#1104: a saved query can't have RLS forced-filters injected in
+        // Phase 1 — fail closed rather than serve unfiltered rows.
+        if (g.forcedFiltersJson != null) {
+            audit(g, "/saiku/api/embed/query", AiAuditEntry.OUTCOME_DENIED);
+            return forcedFilterUnsupported();
+        }
         try {
             Response result = sessionService.runAs(g.ownerUser, g.ownerRoles, () -> {
                 AiSavedQueryRequest sreq = new AiSavedQueryRequest();
                 sreq.setPath(g.resourcePath);
                 return aiQueryResource.executeSaved(sreq);
             });
+            audit(g, "/saiku/api/embed/query", AiAuditEntry.OUTCOME_SUCCESS);
             return withPolicyHeader(harden(result), g);
         } catch (RuntimeException e) {
             log.warn("embed-view query execution failed for {}", g.resourcePath, e);
+            audit(g, "/saiku/api/embed/query", AiAuditEntry.OUTCOME_ERROR);
             return harden(Response.serverError()
                     .entity(Map.of("status", "ERROR", "error", "Query execution failed"))
                     .type(MediaType.APPLICATION_JSON)
@@ -164,8 +182,17 @@ public class EmbedViewResource {
         try {
             Response result = sessionService.runAs(g.ownerUser, g.ownerRoles, () -> {
                 if ("inline".equals(q.kind) && q.body != null) {
+                    // saiku#1104: inject the JWT's forced RLS filters into the
+                    // inline query before execution; they ride the standard
+                    // (validated) slicer path in AiSchemaConverter.
+                    injectForcedFilters(q.body, g);
                     return aiQueryResource.executeAi(q.body, "records");
                 } else if ("reference".equals(q.kind) && q.path != null) {
+                    if (g.forcedFiltersJson != null) {
+                        // Can't force-filter a saved/reference tile in Phase 1 —
+                        // fail closed rather than serve unfiltered rows.
+                        return forcedFilterUnsupported();
+                    }
                     AiSavedQueryRequest sreq = new AiSavedQueryRequest();
                     sreq.setPath(q.path);
                     return aiQueryResource.executeSaved(sreq);
@@ -175,9 +202,11 @@ public class EmbedViewResource {
                         .type(MediaType.APPLICATION_JSON)
                         .build();
             });
+            audit(g, "/saiku/api/embed/dashboard/tile", outcomeFor(result.getStatus()));
             return withPolicyHeader(harden(result), g);
         } catch (RuntimeException e) {
             log.warn("embed-view tile query failed for {}/{}", g.resourcePath, tileId, e);
+            audit(g, "/saiku/api/embed/dashboard/tile", AiAuditEntry.OUTCOME_ERROR);
             return harden(Response.serverError()
                     .entity(Map.of("status", "ERROR", "error", "Tile query failed"))
                     .type(MediaType.APPLICATION_JSON)
@@ -225,6 +254,66 @@ public class EmbedViewResource {
                 .entity(Map.of("status", "EMBED_INVALID", "error", "Embed link is invalid or expired."))
                 .type(MediaType.APPLICATION_JSON)
                 .build());
+    }
+
+    /**
+     * saiku#1104 — append the JWT's forced RLS filters to an inline query. They
+     * ride the standard validated slicer path (AiSchemaConverter), so a forced
+     * filter can't inject bad MDX. A malformed claim must NOT degrade to an
+     * unfiltered query — a parse failure throws, and the caller fails closed.
+     */
+    private void injectForcedFilters(AiQueryRequest body, EmbedGuestDetails g) {
+        if (g.forcedFiltersJson == null || body == null) {
+            return;
+        }
+        try {
+            AiFilterSelection[] forced = MAPPER.readValue(g.forcedFiltersJson, AiFilterSelection[].class);
+            body.getFilters().addAll(Arrays.asList(forced));
+        } catch (Exception e) {
+            throw new IllegalStateException("invalid embed forced-filters claim", e);
+        }
+    }
+
+    private static Response forcedFilterUnsupported() {
+        return harden(Response.status(Response.Status.FORBIDDEN)
+                .entity(Map.of(
+                        "status",
+                        "EMBED_RLS_UNSUPPORTED",
+                        "error",
+                        "This embed enforces row-level filters that cannot be applied to a saved query."))
+                .type(MediaType.APPLICATION_JSON)
+                .build());
+    }
+
+    /** saiku#906/#1104 — record an embed query against the audit log, carrying
+     *  the JWT {@code sub} (end-user) when present. Embed queries run via direct
+     *  method calls, so they bypass the /ai/ AiAuditFilter — auditing here closes
+     *  that gap for the embed surface. */
+    private void audit(EmbedGuestDetails g, String endpoint, String outcome) {
+        if (auditLog == null || g == null) {
+            return;
+        }
+        AiAuditEntry e = new AiAuditEntry();
+        e.endpoint = endpoint;
+        e.user = g.ownerUser;
+        e.sub = g.jwtSub;
+        e.outcome = outcome;
+        e.policyDecision =
+                AiAuditEntry.OUTCOME_DENIED.equals(outcome) ? AiAuditEntry.DECISION_DENY : AiAuditEntry.DECISION_ALLOW;
+        auditLog.record(e);
+    }
+
+    private static String outcomeFor(int status) {
+        if (status >= 200 && status < 300) {
+            return AiAuditEntry.OUTCOME_SUCCESS;
+        }
+        if (status == 400) {
+            return AiAuditEntry.OUTCOME_VALIDATION_ERROR;
+        }
+        if (status == 403) {
+            return AiAuditEntry.OUTCOME_DENIED;
+        }
+        return AiAuditEntry.OUTCOME_ERROR;
     }
 
     /**
