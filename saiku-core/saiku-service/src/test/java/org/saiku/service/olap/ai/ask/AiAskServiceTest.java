@@ -114,6 +114,47 @@ public class AiAskServiceTest {
         assertTrue(captured.requestJsonSchema().contains("AiQueryRequest"));
     }
 
+    /* ---- saiku#1365 view-change allowlist (the LLM can't inject an arbitrary view) ---- */
+
+    @Test
+    public void acceptsAViewChangeWithAnAllowlistedChartType() {
+        // A view-change whose chartType is in AiViewChangeCatalog.CHART_TYPE_IDS is
+        // accepted (not degraded) and surfaced for the UI to apply.
+        String json = "{\"viewMode\":\"chart\",\"chartType\":\"bar\",\"reason\":\"trend over time\"}";
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(emptySchema()), stub(NlAskResponse.okViewChange(json, "claude-x", 1, 1)));
+        AiAskService.AskOutcome out = svc.ask(CUBE, "make it a bar chart", List.of());
+        assertFalse(out.degraded());
+        assertNotNull(out.viewChange());
+        assertEquals("chart", out.viewChange().getViewMode());
+        assertEquals("bar", out.viewChange().getChartType());
+    }
+
+    @Test
+    public void rejectsAHallucinatedChartType() {
+        // The guardrail: anything outside the chartType allowlist is rejected
+        // (degraded), so a hallucinated id can never reach the UI render path.
+        // RED if the !CHART_TYPE_IDS.contains() guard at AiAskService were dropped.
+        String json = "{\"viewMode\":\"chart\",\"chartType\":\"totally-made-up-3d-globe\"}";
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(emptySchema()), stub(NlAskResponse.okViewChange(json, "claude-x", 1, 1)));
+        AiAskService.AskOutcome out = svc.ask(CUBE, "switch view", List.of());
+        assertTrue(out.degraded());
+        assertTrue(out.reason().contains("unknown chartType"));
+        assertNull("a rejected view-change must not surface to the UI", out.viewChange());
+    }
+
+    @Test
+    public void rejectsAnInvalidViewMode() {
+        // viewMode is likewise allowlisted (grid | chart) — a bogus mode degrades.
+        String json = "{\"viewMode\":\"hologram\",\"chartType\":\"bar\"}";
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(emptySchema()), stub(NlAskResponse.okViewChange(json, "claude-x", 1, 1)));
+        AiAskService.AskOutcome out = svc.ask(CUBE, "switch view", List.of());
+        assertTrue(out.degraded());
+        assertTrue(out.reason().contains("invalid viewMode"));
+    }
+
     // ---------- helpers ----------
 
     private static AiCubeMetadataService fixedSchemaService(AiSchema schema) {
