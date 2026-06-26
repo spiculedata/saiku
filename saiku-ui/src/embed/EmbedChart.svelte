@@ -22,8 +22,11 @@
     TooltipComponent,
   } from "echarts/components";
   import { CanvasRenderer } from "echarts/renderers";
-  import type { EChartsType, ECBasicOption } from "echarts/types/dist/shared";
+  import type { EChartsType } from "echarts/types/dist/shared";
   import type { EmbedRow } from "./types";
+  // #1103: host-page chart theming via CSS custom properties.
+  import { readEmbedChartTheme, type EmbedChartTheme } from "./embedChartTheme";
+  import { buildEmbedChartOption } from "./embedChartOption";
 
   // Register modules once at module scope. ECharts dedupes a repeat
   // `use()` so this is safe across many <saiku-embed> instances.
@@ -69,90 +72,16 @@
    * shifts (e.g. a column appearing / disappearing). */
   $effect(() => {
     if (!chart) return;
-    const opt = buildOption(rows, mode);
+    // #1103: resolve host-set chart theming from CSS vars on this element
+    // (custom properties inherit through the shadow boundary). Unstyled →
+    // empty theme → ECharts defaults (back-compat).
+    const el = container;
+    const theme: EmbedChartTheme = el
+      ? readEmbedChartTheme((n) => getComputedStyle(el).getPropertyValue(n))
+      : { palette: [] };
+    const opt = buildEmbedChartOption(rows, mode, theme);
     chart.setOption(opt, { notMerge: true });
   });
-
-  function isNumericColumn(rs: EmbedRow[], col: string): boolean {
-    for (const r of rs) {
-      const v = r[col]?.value;
-      if (v === null || v === undefined) continue;
-      if (typeof v !== "number" || Number.isNaN(v)) return false;
-    }
-    return true;
-  }
-
-  function buildOption(rs: EmbedRow[], chartMode: string): ECBasicOption {
-    if (rs.length === 0) {
-      return {
-        title: { text: "No data", left: "center", top: "middle", textStyle: { fontSize: 12 } },
-      };
-    }
-    const cols = Object.keys(rs[0]);
-    const numericCols = cols.filter((c) => isNumericColumn(rs, c));
-    const categoryCol = cols.find((c) => !isNumericColumn(rs, c)) ?? cols[0];
-    const categories = rs.map((r) => r[categoryCol]?.formatted ?? "");
-
-    if (chartMode === "pie") {
-      // Pie uses the FIRST numeric column only — falls back to a bar
-      // chart if there isn't one.
-      const valCol = numericCols[0];
-      if (!valCol) return { title: { text: "No numeric series" } };
-      return {
-        tooltip: { trigger: "item" },
-        legend: { bottom: 0 },
-        series: [
-          {
-            type: "pie",
-            radius: ["40%", "70%"],
-            label: { show: true, formatter: "{b}: {d}%" },
-            data: rs.map((r) => ({
-              name: r[categoryCol]?.formatted ?? "",
-              value: r[valCol]?.value ?? 0,
-            })),
-          },
-        ],
-      };
-    }
-
-    return {
-      tooltip: {
-        trigger: "axis",
-        // ECharts default tooltip is bare numbers; replace with the
-        // pre-formatted cells from the server so the host page sees
-        // the same caption the workbench would. The trigger fires
-        // once per category with all series, so we walk the params.
-        formatter: (params: unknown) => {
-          const arr = Array.isArray(params) ? params : [params];
-          // arr[0].axisValue is the category caption; per-series .seriesName + .dataIndex
-          const cat = (arr[0] as { axisValue?: string }).axisValue ?? "";
-          const lines = arr
-            .map((p) => {
-              const idx = (p as { dataIndex: number }).dataIndex;
-              const name = (p as { seriesName: string }).seriesName;
-              const cell = rs[idx]?.[name];
-              const disp = cell?.formatted ?? String((p as { value: unknown }).value ?? "");
-              return `${name}: ${disp}`;
-            })
-            .join("<br/>");
-          return `<b>${cat}</b><br/>${lines}`;
-        },
-      },
-      legend: { bottom: 0 },
-      grid: { left: 40, right: 16, top: 24, bottom: 36, containLabel: true },
-      xAxis: {
-        type: "category",
-        data: categories,
-        axisLabel: { interval: 0, rotate: categories.length > 8 ? -30 : 0 },
-      },
-      yAxis: { type: "value" },
-      series: numericCols.map((c) => ({
-        name: c,
-        type: chartMode === "line" ? ("line" as const) : ("bar" as const),
-        data: rs.map((r) => r[c]?.value ?? null),
-      })),
-    };
-  }
 </script>
 
 <div bind:this={container} class="w-full h-full min-h-[240px]" role="img" aria-label="Saiku embed chart"></div>

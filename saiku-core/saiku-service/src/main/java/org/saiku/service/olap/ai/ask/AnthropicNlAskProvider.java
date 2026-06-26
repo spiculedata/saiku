@@ -166,7 +166,9 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
         // so emit_query can EXTEND ('add therapeutic class to columns' should preserve existing
         // rows/measures/filters) rather than wipe-and-rewrite. Only included when query routing is
         // possible (forceTool=auto|query) — insight/view-change don't touch the query model.
-        if (wantQuery && request.currentQueryJson() != null && !request.currentQueryJson().isBlank()) {
+        if (wantQuery
+                && request.currentQueryJson() != null
+                && !request.currentQueryJson().isBlank()) {
             system.append("\n\nUser's CURRENT AiQueryRequest (preserve fields when extending — when the "
                             + "user says 'add X' or 'also break down by Y', return a query that KEEPS "
                             + "existing measures/rows/columns/filters and adds the new one. Only drop a "

@@ -28,6 +28,7 @@ import org.saiku.service.olap.ai.ask.AiAskApi;
 import org.saiku.service.olap.ai.ask.AiAskService;
 import org.saiku.service.olap.ai.ask.NlAskMessage;
 import org.saiku.service.olap.ai.ask.NlAskProvider;
+import org.saiku.service.olap.ai.ask.NlAskRequest;
 import org.saiku.service.olap.ai.ask.NlAskResponse;
 
 /** Resource-level tests for {@code POST /saiku/api/ai/ask}. No network. */
@@ -71,8 +72,17 @@ public class AiQueryResourceAskTest {
     /** Wire a fake askService that returns a fixed outcome. */
     private void wireAskService(AiAskService.AskOutcome outcome) {
         resource.setAskService(new AiAskService(ref -> schema, stubProvider("")) {
+            // The resource calls the six-arg overload (cellset digest + tool-choice + current
+            // query); the narrower overloads all delegate to it, so overriding this one catches
+            // every code path the resource can take.
             @Override
-            public AskOutcome ask(AiCubeRef ref, String question, List<NlAskMessage> history) {
+            public AskOutcome ask(
+                    AiCubeRef ref,
+                    String question,
+                    List<NlAskMessage> history,
+                    String cellsetDigest,
+                    NlAskRequest.ForceTool forceTool,
+                    AiQueryRequest currentQuery) {
                 return outcome;
             }
         });

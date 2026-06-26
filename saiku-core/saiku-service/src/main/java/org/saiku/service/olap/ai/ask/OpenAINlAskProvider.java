@@ -230,7 +230,9 @@ public final class OpenAINlAskProvider extends AbstractNlAskProvider {
             sys.append("\n\nNo current cellset on screen — emit_insight and emit_view_change are "
                     + "unavailable for this turn.");
         }
-        if (wantQuery && request.currentQueryJson() != null && !request.currentQueryJson().isBlank()) {
+        if (wantQuery
+                && request.currentQueryJson() != null
+                && !request.currentQueryJson().isBlank()) {
             sys.append("\n\nUser's CURRENT AiQueryRequest (preserve fields when extending — 'add X' or "
                             + "'also break down by Y' should KEEP existing measures/rows/columns/filters "
                             + "and add the new one; only drop a field when the user asks to remove it):\n")

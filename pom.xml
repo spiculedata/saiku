@@ -33,7 +33,7 @@
         <jersey.version>3.1.9</jersey.version>
         <maven.build.timestamp.format>yyyyMMdd-HHmm</maven.build.timestamp.format>
         <saiku-query.version>0.4-SNAPSHOT</saiku-query.version>
-        <jackson.version>2.18.6</jackson.version>
+        <jackson.version>2.18.8</jackson.version>
     </properties>
     <repositories>
         <!-- In-tree Maven file-repo for vendored deps that aren't reachable on
