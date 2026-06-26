@@ -575,7 +575,10 @@ public class ThinQueryService implements Serializable {
         return old;
     }
 
-    private ThinQuery removeDupSelections(ThinQuery old) {
+    // Package-private + static (uses only its argument, no instance state) so the
+    // null-selection guard below is unit-testable without standing up the bean
+    // (saiku#1362 — the AI edit-in-canvas NPE regression).
+    static ThinQuery removeDupSelections(ThinQuery old) {
         // Pure-MDX queries (e.g. those built by AiSchemaConverter) carry no
         // queryModel — there are no model-side selections to deduplicate.
         if (old == null || old.getQueryModel() == null) return old;
