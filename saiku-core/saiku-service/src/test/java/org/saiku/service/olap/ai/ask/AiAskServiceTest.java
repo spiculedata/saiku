@@ -66,7 +66,7 @@ public class AiAskServiceTest {
                 fixedSchemaService(emptySchema()), stub(NlAskResponse.ok("not-valid-json", "claude-x", 1, 1)));
         AiAskService.AskOutcome out = svc.ask(CUBE, "show sales", List.of());
         assertTrue(out.degraded());
-        assertTrue(out.reason().contains("invalid AiQueryRequest JSON"));
+        assertTrue(out.reason().contains("provider emitted invalid JSON"));
         assertEquals("claude-x", out.model());
     }
 
