@@ -44,7 +44,7 @@
     "tailwindcss": "^4.3.1",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.61.1",
-    "vite": "^6.4.2",
+    "vite": "^6.4.3",
     "vitest": "^3.2.6"
   },
   "dependencies": {
@@ -61,6 +61,7 @@
   },
   "overrides": {
     "dompurify": "^3.4.0",
-    "cookie": "^0.7.2"
+    "cookie": "^0.7.2",
+    "ws": "^8.21.0"
   }
 }
