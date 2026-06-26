@@ -51,10 +51,10 @@
 
 <aside class="drawer" aria-label="Node detail">
   {#if !resolved || !node}
-    <p class="drawer__empty">Select a node in the tree to edit it.</p>
+    <p class="text-fg-muted">Select a node in the tree to edit it.</p>
   {:else}
-    <header class="drawer__header">
-      <h3 class="drawer__title">{node.caption ?? node.name}</h3>
+    <header class="flex flex-col gap-0.5 pb-2 border-b border-border">
+      <h3 class="m-0 text-lg font-semibold">{node.caption ?? node.name}</h3>
       <p class="drawer__kind">{kind}</p>
       {#if node.provenance}
         <span
@@ -63,13 +63,13 @@
         >
           {provenanceBadgeLabel(node.provenance.source)}
           {#if node.provenance.ruleId}
-            <span class="drawer__badge-rule"> · {node.provenance.ruleId}</span>
+            <span class="normal-case font-normal opacity-85"> · {node.provenance.ruleId}</span>
           {/if}
         </span>
       {/if}
     </header>
 
-    <label class="drawer__field">
+    <label class="flex flex-col gap-1">
       <span class="drawer__label">Caption</span>
       <input
         type="text"
@@ -80,7 +80,7 @@
       />
     </label>
 
-    <label class="drawer__field">
+    <label class="flex flex-col gap-1">
       <span class="drawer__label">Description</span>
       <textarea
         class="drawer__textarea"
@@ -91,7 +91,7 @@
     </label>
 
     {#if resolved.kind === "measure"}
-      <label class="drawer__field">
+      <label class="flex flex-col gap-1">
         <span class="drawer__label">Aggregator</span>
         <select
           class="drawer__input"
@@ -115,7 +115,7 @@
 </aside>
 
 <style>
-  .drawer {
+.drawer {
     font-family: var(--font-sans);
     font-size: var(--fs-sm);
     color: var(--fg);
@@ -124,21 +124,6 @@
     flex-direction: column;
     gap: var(--space-3);
     overflow: auto;
-  }
-  .drawer__empty {
-    color: var(--fg-muted);
-  }
-  .drawer__header {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding-bottom: var(--space-2);
-    border-bottom: 1px solid var(--border);
-  }
-  .drawer__title {
-    margin: 0;
-    font-size: var(--fs-lg);
-    font-weight: var(--weight-semibold);
   }
   .drawer__kind {
     margin: 0;
@@ -161,27 +146,9 @@
     background: var(--fg-subtle);
     color: var(--accent-fg);
   }
-  .drawer__badge--rule {
-    background: var(--border-strong);
-    color: var(--fg);
-  }
-  .drawer__badge--llm {
-    background: var(--accent);
-    color: var(--accent-fg);
-  }
   .drawer__badge--user {
     background: var(--success);
     color: #fff;
-  }
-  .drawer__badge-rule {
-    text-transform: none;
-    font-weight: var(--weight-normal);
-    opacity: 0.85;
-  }
-  .drawer__field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
   }
   .drawer__label {
     font-size: var(--fs-xs);

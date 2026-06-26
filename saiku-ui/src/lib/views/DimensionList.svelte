@@ -9,6 +9,7 @@
   import MeasuresModal from "$lib/modals/MeasuresModal.svelte";
   import CalculatedMemberModal, { type CalculatedMember } from "$lib/modals/CalculatedMemberModal.svelte";
   import SelectionsModal from "$lib/modals/SelectionsModal.svelte";
+  import { Badge } from "$lib/design-system";
   import { measuresHiddenToggle } from "$lib/stores/measuresHiddenToggle.svelte";
   import {
     Sigma,
@@ -427,9 +428,9 @@
     <p class="callout callout--danger">{error}</p>
   {:else if metadata}
     <section class="panel">
-      <header class="panel__header panel__header--row">
+      <header class="panel__header flex items-center justify-between">
         <span>{i18n.t("panels.measures")}</span>
-        <span class="panel__actions">
+        <span class="inline-flex gap-1">
           <button type="button" class="panel__action" title={i18n.t("panels.manageMeasures")} aria-label={i18n.t("panels.manageMeasures")} onclick={openMeasuresModal}>
             <Settings2 size={14} />
           </button>
@@ -453,7 +454,7 @@
                 <span class="tree__icon tree__icon--measure" aria-hidden="true">
                   {#if measure.calculated}<FunctionSquare size={13} />{:else}<Sigma size={13} />{/if}
                 </span>
-                <span class="tree__label">{measure.caption || measure.name}</span>
+                <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{measure.caption || measure.name}</span>
               </button>
             </li>
           {/each}
@@ -461,12 +462,12 @@
           {#each measureGroupsDerived as [group, items]}
             {@const gid = `m:${group}`}
             <li class="tree__node">
-              <button type="button" class="tree__row tree__row--group" onclick={() => toggle(gid)}>
+              <button type="button" class="tree__row font-semibold" onclick={() => toggle(gid)}>
                 <span class="tree__twisty" class:tree__twisty--open={expanded[gid] !== false}>
                   <ChevronRight size={12} />
                 </span>
-                <span class="tree__label">{group}</span>
-                <span class="tree__count">{items.length}</span>
+                <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{group}</span>
+                <span class="text-fg-subtle text-xs">{items.length}</span>
               </button>
               {#if expanded[gid] !== false}
                 <ul class="tree">
@@ -483,7 +484,7 @@
                         <span class="tree__icon tree__icon--measure" aria-hidden="true">
                           {#if measure.calculated}<FunctionSquare size={13} />{:else}<Sigma size={13} />{/if}
                         </span>
-                        <span class="tree__label">{measure.caption || measure.name}</span>
+                        <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{measure.caption || measure.name}</span>
                       </button>
                     </li>
                   {/each}
@@ -493,7 +494,7 @@
           {/each}
         {/if}
         {#if metadata.measures.length === 0}
-          <li class="tree__empty">{i18n.t("panels.noMeasures")}</li>
+          <li class="text-fg-subtle text-sm p-2">{i18n.t("panels.noMeasures")}</li>
         {/if}
       </ul>
     </section>
@@ -508,7 +509,7 @@
           <li class="tree__node" class:tree__node--muted={!applicable}>
             <button
               type="button"
-              class="tree__row tree__row--dim"
+              class="tree__row text-fg"
               onclick={() => toggle(did)}
               title={applicable
                 ? (dim.caption ?? "")
@@ -518,9 +519,9 @@
                 <ChevronRight size={12} />
               </span>
               <span class="tree__icon" aria-hidden="true"><Folder size={13} /></span>
-              <span class="tree__label">{dim.caption || dim.name}</span>
+              <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{dim.caption || dim.name}</span>
               {#if !applicable}
-                <span class="tree__badge tree__badge--warn" aria-label="not joined to selected measures">⚠</span>
+                <Badge tone="warning" shape="pill" testid="dim-applicability-warn">⚠</Badge>
               {/if}
             </button>
             {#if expanded[did] !== false}
@@ -540,8 +541,8 @@
                             ondragstart={(e) => onLevelDragStart(e, dim, hier, lvl)}
                             onclick={() => onLevelClick(dim, hier, lvl)}
                           >
-                            <span class="tree__icon tree__icon--level" aria-hidden="true"><Minus size={11} /></span>
-                            <span class="tree__label">{lvl.caption || lvl.name}</span>
+                            <span class="tree__icon text-fg-subtle" aria-hidden="true"><Minus size={11} /></span>
+                            <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{lvl.caption || lvl.name}</span>
                           </button>
                           <button
                             type="button"
@@ -555,12 +556,12 @@
                     {/each}
                   {:else}
                     <li class="tree__node">
-                      <button type="button" class="tree__row tree__row--hier" onclick={() => toggle(hid)}>
+                      <button type="button" class="tree__row text-fg-subtle" onclick={() => toggle(hid)}>
                         <span class="tree__twisty" class:tree__twisty--open={expanded[hid] !== false}>
                           <ChevronRight size={12} />
                         </span>
                         <span class="tree__icon" aria-hidden="true"><GitFork size={13} /></span>
-                        <span class="tree__label">{hier.caption || hier.name}</span>
+                        <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{hier.caption || hier.name}</span>
                       </button>
                       {#if expanded[hid] !== false}
                         <ul class="tree">
@@ -575,8 +576,8 @@
                                   ondragstart={(e) => onLevelDragStart(e, dim, hier, lvl)}
                                   onclick={() => onLevelClick(dim, hier, lvl)}
                                 >
-                                  <span class="tree__icon tree__icon--level" aria-hidden="true"><Minus size={11} /></span>
-                                  <span class="tree__label">{lvl.caption || lvl.name}</span>
+                                  <span class="tree__icon text-fg-subtle" aria-hidden="true"><Minus size={11} /></span>
+                                  <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{lvl.caption || lvl.name}</span>
                                 </button>
                                 <button
                                   type="button"
@@ -598,7 +599,7 @@
           </li>
         {/each}
         {#if metadata.dimensions.length === 0}
-          <li class="tree__empty">{i18n.t("panels.noDimensions")}</li>
+          <li class="text-fg-subtle text-sm p-2">{i18n.t("panels.noDimensions")}</li>
         {/if}
       </ul>
     </section>
@@ -625,13 +626,20 @@
 {/if}
 
 {#if dimModalOpen && dimModalTarget}
+  {@const tgt = dimModalTarget}
   <SelectionsModal
-    levelCaption={`${dimModalTarget.hierarchyCaption} › ${dimModalTarget.levelName}`}
-    available={dimModalTarget.members}
-    initialSelected={dimModalTarget.initialSelected}
-    initialType={dimModalTarget.initialType}
+    hierarchyCaption={tgt.hierarchyCaption}
+    levelNames={[tgt.levelName]}
+    initialPerLevel={{
+      [tgt.levelName]: { selected: tgt.initialSelected, type: tgt.initialType },
+    }}
+    initialLevelName={tgt.levelName}
     open={dimModalOpen}
-    onSave={onDimSelectionsSave}
+    loadMembers={() => Promise.resolve(tgt.members)}
+    onSave={(perLevel) => {
+      const first = perLevel[0];
+      if (first) onDimSelectionsSave(first.selected, first.type);
+    }}
     onOpenDateFilter={() => (dimModalOpen = false)}
     onCancel={() => (dimModalOpen = false)}
   />
@@ -641,7 +649,7 @@
 {/if}
 
 <style>
-  .panels {
+.panels {
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
@@ -665,12 +673,6 @@
     color: var(--fg-muted);
     margin-bottom: var(--space-2);
   }
-  .panel__header--row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .panel__actions { display: inline-flex; gap: 4px; }
   .panel__action {
     display: inline-flex;
     align-items: center;
@@ -724,11 +726,6 @@
     margin-left: var(--space-2);
     border-left: 1px solid var(--border);
   }
-  .tree__empty {
-    color: var(--fg-subtle);
-    font-size: var(--fs-sm);
-    padding: var(--space-2);
-  }
   .tree__row {
     display: flex;
     width: 100%;
@@ -744,16 +741,13 @@
     border-radius: var(--radius-sm);
   }
   .tree__row:hover { background: var(--bg-subtle); }
-  .tree__row--group { font-weight: var(--weight-semibold); }
   .tree__row--measure {
     color: var(--accent);
     cursor: grab;
   }
   .tree__row--measure .tree__icon--measure { color: var(--accent); }
-  .tree__row--dim { color: var(--fg); }
   .tree__row--level { color: var(--fg-muted); }
   .tree__row--level .tree__drag { cursor: grab; }
-  .tree__row--hier { color: var(--fg-subtle); }
   .tree__twisty {
     display: inline-flex;
     align-items: center;
@@ -774,34 +768,11 @@
     width: 16px;
     color: var(--fg-subtle);
   }
-  .tree__icon--level { color: var(--fg-subtle); }
-  .tree__label {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .tree__count {
-    color: var(--fg-subtle);
-    font-size: var(--fs-xs);
-  }
   /* Dim-applicability hint for virtual cubes. When a measure from a fact
      table that doesn't join the dim is selected, the dim row (and its
-     entire subtree) is rendered at reduced opacity with a warning badge.
-     Click-through still works — this is signal, not blocking. */
+     entire subtree) is rendered at reduced opacity. Click-through still
+     works — this is signal, not blocking. The warning badge itself is
+     a design-system Badge (tone="warning"), not bespoke CSS. */
   .tree__node--muted > .tree__row { opacity: 0.45; }
   .tree__node--muted > .tree { opacity: 0.45; }
-  .tree__badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: var(--fs-xs);
-    padding: 0 4px;
-    border-radius: var(--radius-sm);
-    line-height: 1;
-  }
-  .tree__badge--warn {
-    color: var(--warn, #d97706);
-    background: color-mix(in srgb, var(--warn, #d97706) 12%, transparent);
-  }
 </style>

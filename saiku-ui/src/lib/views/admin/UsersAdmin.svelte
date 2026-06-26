@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { Button } from "$lib/components/ui";
   import { users, type AdminUser } from "$lib/api/admin";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -66,9 +67,9 @@
 </script>
 
 <div class="pane">
-  <header class="pane__header">
+  <header class="flex justify-between items-center mb-3">
     <h2>{i18n.t("admin.tabs.users")}</h2>
-    <button type="button" class="btn btn--primary" onclick={startNew}>{i18n.t("admin.addUser")}</button>
+    <Button onclick={startNew}>{i18n.t("admin.addUser")}</Button>
   </header>
   {#if error}<p class="callout callout--danger">{error}</p>{/if}
   {#if loading}
@@ -88,8 +89,8 @@
             <td>{u.email ?? ""}</td>
             <td>{u.roles.join(", ")}</td>
             <td class="data-grid__actions">
-              <button class="btn" onclick={() => (editing = { ...u, password: "" })}>{i18n.t("admin.edit")}</button>
-              <button class="btn btn--danger" onclick={() => (deleting = u)}>{i18n.t("admin.delete")}</button>
+              <Button variant="outline" onclick={() => (editing = { ...u, password: "" })}>{i18n.t("admin.edit")}</Button>
+              <Button variant="destructive" onclick={() => (deleting = u)}>{i18n.t("admin.delete")}</Button>
             </td>
           </tr>
         {/each}
@@ -118,7 +119,7 @@
     <fieldset class="field">
       <legend class="field__label">Roles</legend>
       {#each ["ROLE_USER", "ROLE_ADMIN"] as r}
-        <label class="check">
+        <label class="flex items-center gap-2 py-1 px-0">
           <input type="checkbox" checked={editing.roles.includes(r)} onchange={() => toggleRole(r)} />
           {r}
         </label>
@@ -126,8 +127,8 @@
     </fieldset>
   {/if}
   {#snippet footer()}
-    <button class="btn" onclick={() => (editing = null)}>{i18n.t("modal.cancel")}</button>
-    <button class="btn btn--primary" onclick={save}>{i18n.t("modal.save")}</button>
+    <Button variant="outline" onclick={() => (editing = null)}>{i18n.t("modal.cancel")}</Button>
+    <Button onclick={save}>{i18n.t("modal.save")}</Button>
   {/snippet}
 </Modal>
 
@@ -142,8 +143,6 @@
 />
 
 <style>
-  .pane__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); }
-  h2 { margin: 0; }
+h2 { margin: 0; }
   /* .data-grid / .data-grid__actions / .data-grid__empty come from app.css */
-  .check { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) 0; }
 </style>

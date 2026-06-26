@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import { Button } from "$lib/components/ui";
   import { i18n } from "$lib/stores/i18n.svelte";
 
   export interface CalculatedMember {
@@ -106,7 +107,7 @@
 
 <Modal title={i18n.t("modal.calc.title")} {open} size="lg" onClose={onCancel}>
   <div class="wizard">
-    <div class="wizard__left">
+    <div class="flex flex-col gap-3 min-w-0">
       <label class="field">
         <span class="field__label">{i18n.t("modal.calc.name")}</span>
         <input
@@ -116,7 +117,7 @@
           aria-invalid={form.name.trim().length > 0 && !validName}
         />
         {#if form.name.trim().length > 0 && !validName}
-          <span class="field__error">{i18n.t("modal.calc.nameError")}</span>
+          <span class="text-danger text-xs">{i18n.t("modal.calc.nameError")}</span>
         {/if}
       </label>
 
@@ -127,7 +128,7 @@
             <option value={h}>{h}</option>
           {/each}
         </select>
-        <span class="field__hint">{i18n.t("modal.calc.parentHint")}</span>
+        <span class="text-fg-subtle text-xs">{i18n.t("modal.calc.parentHint")}</span>
       </label>
 
       <label class="field">
@@ -146,7 +147,7 @@
         <div class="format-row">
           <input class="field__input" bind:value={form.formatString} />
           <select
-            class="field__input format-row__preset"
+            class="field__input max-w-[220px]"
             onchange={(e) => {
               const v = (e.target as HTMLSelectElement).value;
               if (v) form.formatString = v;
@@ -169,15 +170,15 @@ SELECT …</pre>
       </div>
     </div>
 
-    <div class="wizard__right">
+    <div class="flex flex-col gap-3 min-w-0">
       <div class="palette">
         <div class="palette__title">{i18n.t("panels.measures")}</div>
         <input
-          class="field__input palette__filter"
+          class="field__input m-0"
           bind:value={measureFilter}
           placeholder={i18n.t("modal.calc.filterMeasures")}
         />
-        <ul class="palette__list">
+        <ul class="list-none p-0 m-0 max-h-[220px] overflow-y-auto">
           {#each filteredMeasures as m}
             <li>
               <button
@@ -205,7 +206,7 @@ SELECT …</pre>
 
       <div class="palette">
         <div class="palette__title">{i18n.t("modal.calc.functions")}</div>
-        <ul class="palette__list">
+        <ul class="list-none p-0 m-0 max-h-[220px] overflow-y-auto">
           {#each FUNCTION_TEMPLATES as fn}
             <li>
               <button
@@ -221,31 +222,26 @@ SELECT …</pre>
     </div>
   </div>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
-    <button
-      type="button"
-      class="btn btn--primary"
+    <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
+    <Button
       disabled={!valid}
       onclick={() => onSave({ ...form, name: form.name.trim(), formula: form.formula.trim() })}
-    >{i18n.t("modal.save")}</button>
+    >{i18n.t("modal.save")}</Button>
   {/snippet}
 </Modal>
 
 <style>
-  .wizard {
+.wizard {
     display: grid;
     grid-template-columns: minmax(0, 1.4fr) minmax(220px, 1fr);
     gap: var(--space-4);
   }
-  .wizard__left { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
-  .wizard__right { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
   .formula {
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: var(--fs-sm);
     resize: vertical;
   }
   .format-row { display: flex; gap: var(--space-2); }
-  .format-row__preset { max-width: 220px; }
   .preview {
     background: var(--bg-muted);
     border: 1px solid var(--border);
@@ -269,8 +265,6 @@ SELECT …</pre>
     gap: var(--space-1);
   }
   .palette__title { font-size: var(--fs-xs); color: var(--fg-subtle); text-transform: uppercase; letter-spacing: 0.06em; }
-  .palette__filter { margin: 0; }
-  .palette__list { list-style: none; padding: 0; margin: 0; max-height: 220px; overflow-y: auto; }
   .palette__btn {
     width: 100%;
     text-align: left;
@@ -299,6 +293,4 @@ SELECT …</pre>
     cursor: pointer;
   }
   .palette__chip:hover { background: var(--bg-subtle); }
-  .field__error { color: var(--danger); font-size: var(--fs-xs); }
-  .field__hint { color: var(--fg-subtle); font-size: var(--fs-xs); }
 </style>

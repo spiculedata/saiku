@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import { Button } from "$lib/components/ui";
   import MonacoEditor from "$lib/components/MonacoEditor.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
@@ -30,8 +31,8 @@
     <MonacoEditor value={buffer} language="mdx" minHeight="320px" onChange={(v) => (buffer = v)} />
   {/if}
   {#snippet footer()}
-    <button type="button" class="btn" onclick={copy}>{i18n.t("modal.mdx.copy")}</button>
-    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.close")}</button>
-    <button type="button" class="btn btn--primary" onclick={() => onRun(buffer)}>{i18n.t("modal.mdx.run")}</button>
+    <Button variant="outline" onclick={copy}>{i18n.t("modal.mdx.copy")}</Button>
+    <Button variant="outline" onclick={onCancel}>{i18n.t("modal.close")}</Button>
+    <Button onclick={() => onRun(buffer)}>{i18n.t("modal.mdx.run")}</Button>
   {/snippet}
 </Modal>

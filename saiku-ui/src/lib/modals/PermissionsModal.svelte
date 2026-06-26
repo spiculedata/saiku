@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import { Button } from "$lib/components/ui";
   import { i18n } from "$lib/stores/i18n.svelte";
   import type { AclEntry, AclMethod } from "$lib/api/repository";
 
@@ -46,7 +47,7 @@
           <tr>
             <td>{r}</td>
             {#each ["READ", "WRITE", "GRANT"] as const as m}
-              <td class="cell">
+              <td class="text-center">
                 <input
                   type="checkbox"
                   checked={(acl.roles[r] ?? []).includes(m)}
@@ -60,14 +61,13 @@
     </table>
   {/if}
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
-    <button type="button" class="btn btn--primary" onclick={() => onSave(acl)}>{i18n.t("modal.save")}</button>
+    <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
+    <Button onclick={() => onSave(acl)}>{i18n.t("modal.save")}</Button>
   {/snippet}
 </Modal>
 
 <style>
-  .grid { width: 100%; border-collapse: collapse; margin-top: var(--space-2); font-size: var(--fs-sm); }
+.grid { width: 100%; border-collapse: collapse; margin-top: var(--space-2); font-size: var(--fs-sm); }
   .grid th, .grid td { border: 1px solid var(--border); padding: var(--space-1) var(--space-2); text-align: left; }
   .grid th { background: var(--bg-muted); }
-  .cell { text-align: center; }
 </style>
