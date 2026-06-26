@@ -48,6 +48,11 @@ public final class EmbedJwt {
     /** Allowed clock skew when checking {@code exp}/{@code nbf} (seconds). */
     private static final long CLOCK_SKEW_SECONDS = 60;
 
+    /** Minimum HS256 secret length. The security of HMAC-SHA256 rests on a key
+     *  at least as long as the hash output (256 bits = 32 bytes); a shorter
+     *  secret is brute-forceable offline. */
+    static final int MIN_SECRET_BYTES = 32;
+
     /** A JWT is three base64url segments separated by dots. */
     static boolean looksLikeJwt(String token) {
         if (token == null) {
@@ -84,6 +89,11 @@ public final class EmbedJwt {
             // Misconfiguration: no secret means we cannot verify anything, so we
             // must reject rather than accept unsigned input. Fail closed.
             throw new EmbedJwtException("no signing secret configured");
+        }
+        if (secret.length < MIN_SECRET_BYTES) {
+            // A short HS256 secret is brute-forceable offline — reject rather
+            // than accept a weak-key signature (SEC + QA #1104 flag).
+            throw new EmbedJwtException("signing secret too short (HS256 needs >= 32 bytes)");
         }
         String[] parts = compact.split("\\.", -1);
         if (parts.length != 3 || parts[0].isEmpty() || parts[1].isEmpty() || parts[2].isEmpty()) {

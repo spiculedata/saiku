@@ -173,6 +173,35 @@ public class EmbedJwtTest {
     }
 
     @Test
+    public void short_secret_is_rejected() {
+        // A < 32-byte secret is brute-forceable offline — even a token correctly
+        // signed with that weak secret must be refused (SEC + QA #1104 flag).
+        byte[] weak = "too-short-31-bytes-secret-aaaaa".getBytes(StandardCharsets.UTF_8); // 31 bytes
+        String token = mint(HS256_HEADER, validPayload(), weak);
+        try {
+            EmbedJwt.verify(token, weak, AUD, NOW);
+            fail("a sub-32-byte secret must fail closed");
+        } catch (EmbedJwtException expected) {
+            // good
+        }
+    }
+
+    @Test
+    public void exp_as_string_is_rejected() {
+        // Claim-type confusion: exp must be numeric; a string exp is not a valid
+        // expiry and must be treated as missing -> rejected (locks isNumber()).
+        String p = "{\"sub\":\"u\",\"aud\":\"" + AUD + "\",\"exp\":\"" + FUTURE + "\"}";
+        assertRejected(mint(HS256_HEADER, p, SECRET), "exp as string");
+    }
+
+    @Test
+    public void alg_as_number_is_rejected() {
+        // alg must be the textual "HS256"; a numeric alg must not slip past the
+        // header check (locks the asText()/equals guard).
+        assertRejected(mint("{\"alg\":256}", validPayload(), SECRET), "alg as number");
+    }
+
+    @Test
     public void looksLikeJwt_distinguishes_jwt_from_opaque() {
         assertTrue(EmbedJwt.looksLikeJwt("aaa.bbb.ccc"));
         assertFalse("opaque UUID token", EmbedJwt.looksLikeJwt("8f3a2b1c-1234-5678-9abc-def012345678"));
