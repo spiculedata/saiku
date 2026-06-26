@@ -626,8 +626,7 @@
             {#if turn.text}
               <div class="font-medium mb-1">{turn.text}</div>
             {/if}
-            <!-- eslint-disable-next-line svelte/no-at-html-tags — the renderer escapes all
-                 untrusted text before emitting any HTML tags (see tinyMarkdown.ts). -->
+            <!-- eslint-disable-next-line svelte/no-at-html-tags — renderer escapes untrusted text before emitting any tags (tinyMarkdown.ts) -->
             <div class="ai-drawer__insight-body">{@html renderTinyMarkdown(turn.insightMarkdown ?? "")}</div>
             {#if turn.model}
               <div class="ai-drawer__model">{i18n.t("workspace.aiQuery.viaModel").replace("{model}", turn.model)}</div>
