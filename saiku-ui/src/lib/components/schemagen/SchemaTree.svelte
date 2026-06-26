@@ -44,7 +44,7 @@
       data-path={node.path}
       onclick={() => handleSelect(node.path)}
     >
-      <span class="tree__label">{node.label}</span>
+      <span class="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{node.label}</span>
       {#if node.provenance}
         <span
           class="tree__badge tree__badge--{node.provenance.toLowerCase()}"
@@ -55,7 +55,7 @@
       {/if}
     </button>
     {#if node.children.length > 0}
-      <ul class="tree__children">
+      <ul class="list-none m-0 p-0">
         {#each node.children as child (child.path)}
           {@render renderNode(child)}
         {/each}
@@ -66,7 +66,7 @@
 
 <nav class="tree" aria-label="Schema draft">
   {#if tree.length === 0}
-    <p class="tree__empty">No draft loaded.</p>
+    <p class="text-fg-muted p-3">No draft loaded.</p>
   {:else}
     <ul class="tree__root">
       {#each tree as node (node.path)}
@@ -77,23 +77,14 @@
 </nav>
 
 <style>
-  .tree {
+.tree {
     font-family: var(--font-sans);
     font-size: var(--fs-sm);
     color: var(--fg);
     padding: var(--space-2);
     overflow: auto;
   }
-  .tree__empty {
-    color: var(--fg-muted);
-    padding: var(--space-3);
-  }
   .tree__root,
-  .tree__children {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
   .tree__children {
     padding-left: var(--space-4);
     border-left: 1px dashed var(--border);
@@ -119,20 +110,9 @@
   .tree__row:hover {
     background: var(--bg-muted);
   }
-  .tree__row--selected {
-    background: var(--bg-subtle);
-    font-weight: var(--weight-semibold);
-  }
   .tree__row:focus-visible {
     outline: none;
     box-shadow: var(--focus-ring);
-  }
-  .tree__label {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .tree__badge {
     font-size: 10px;
@@ -144,14 +124,6 @@
     text-transform: uppercase;
     color: var(--accent-fg);
     background: var(--fg-subtle);
-  }
-  .tree__badge--rule {
-    background: var(--border-strong);
-    color: var(--fg);
-  }
-  .tree__badge--llm {
-    background: var(--accent);
-    color: var(--accent-fg);
   }
   .tree__badge--user {
     background: var(--success);

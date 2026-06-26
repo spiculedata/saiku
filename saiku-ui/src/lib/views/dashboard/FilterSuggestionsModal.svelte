@@ -12,6 +12,7 @@
    */
 
   import { untrack } from "svelte";
+  import { Button } from "$lib/components/ui";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import type { PanelFilter } from "$lib/api/dashboards";
   import {
@@ -123,7 +124,7 @@
   <div class="modal" role="dialog" aria-modal="true" aria-label="Suggest filter widgets">
     <header class="head">
       <h2>Suggest filter widgets</h2>
-      <button type="button" class="close" aria-label="Close" onclick={onClose}>×</button>
+      <button type="button" class="border-0 bg-transparent cursor-pointer text-xl leading-none text-fg-muted" aria-label="Close" onclick={onClose}>×</button>
     </header>
 
     {#if loading}
@@ -145,7 +146,7 @@
         <span class="sep">·</span>
         <button type="button" class="link" onclick={selectNone}>Select none</button>
       </div>
-      <ul class="list">
+      <ul class="list-none m-0 py-2 px-0 overflow-y-auto flex-1 min-h-0">
         {#each suggestions as s (s.id)}
           <li class="item">
             <label>
@@ -167,22 +168,17 @@
       </ul>
     {/if}
 
-    <footer class="foot">
-      <button type="button" class="btn" onclick={onClose}>Cancel</button>
-      <button
-        type="button"
-        class="btn primary"
-        onclick={handleAdd}
-        disabled={suggestions.length === 0}
-      >
+    <footer class="flex gap-2 justify-end py-3 px-4 border-t border-border">
+      <Button variant="outline" onclick={onClose}>Cancel</Button>
+      <Button onclick={handleAdd} disabled={suggestions.length === 0}>
         Add selected
-      </button>
+      </Button>
     </footer>
   </div>
 {/if}
 
 <style>
-  .backdrop {
+.backdrop {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.4);
@@ -215,14 +211,6 @@
     font-size: 1rem;
     font-weight: var(--weight-semibold);
   }
-  .close {
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    font-size: 1.25rem;
-    line-height: 1;
-    color: var(--fg-muted);
-  }
   .hint, .empty {
     padding: 0.75rem 1rem 0;
     color: var(--fg-muted);
@@ -245,14 +233,6 @@
   .sep {
     margin: 0 0.375rem;
   }
-  .list {
-    list-style: none;
-    margin: 0;
-    padding: 0.5rem 0;
-    overflow-y: auto;
-    flex: 1;
-    min-height: 0;
-  }
   .item {
     padding: 0.375rem 1rem;
   }
@@ -274,29 +254,5 @@
   .path, .meta {
     font-size: 0.75rem;
     color: var(--fg-muted);
-  }
-  .foot {
-    display: flex;
-    gap: 0.5rem;
-    justify-content: flex-end;
-    padding: 0.75rem 1rem;
-    border-top: 1px solid var(--border);
-  }
-  .btn {
-    padding: 0.375rem 0.75rem;
-    border: 1px solid var(--border-strong);
-    background: var(--bg);
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.875rem;
-  }
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .btn.primary {
-    background: var(--accent);
-    color: white;
-    border-color: var(--accent);
   }
 </style>

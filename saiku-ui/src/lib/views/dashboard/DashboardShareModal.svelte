@@ -5,6 +5,7 @@
    * (token in the fragment), and lists / revokes this dashboard's active links.
    */
   import { base } from "$app/paths";
+  import { Button } from "$lib/components/ui";
   import Modal from "$lib/components/Modal.svelte";
   import { Copy, Check, Trash2 } from "lucide-svelte";
   import {
@@ -100,47 +101,42 @@
 
 <Modal title="Share dashboard" {open} size="md" {onClose}>
   <div class="share">
-    <p class="share__hint">
+    <p class="text-fg-muted text-sm m-0">
       Anyone with the link can <strong>view</strong> this dashboard read-only — no Saiku
       account needed. Links expire and can be revoked.
     </p>
 
-    <div class="share__create">
+    <div class="flex items-end gap-3">
       <label class="share__ttl">
         <span>Expires in (hours)</span>
         <input type="number" min="1" max="720" bind:value={ttlHours} />
       </label>
-      <button type="button" class="btn primary" onclick={create} disabled={busy || !dashboardPath}>
+      <Button onclick={create} disabled={busy || !dashboardPath}>
         {busy ? "Creating…" : "Create link"}
-      </button>
+      </Button>
     </div>
 
-    {#if error}<p class="share__error">{error}</p>{/if}
+    {#if error}<p class="text-danger text-sm m-0">{error}</p>{/if}
 
     {#if mintedUrl}
-      <div class="share__result">
+      <div class="flex gap-2 items-center">
         <input class="share__url" readonly value={mintedUrl} aria-label="Share link" />
-        <button type="button" class="btn" onclick={copy} title="Copy link">
+        <Button variant="outline" onclick={copy} title="Copy link">
           {#if copied}<Check size={14} />{:else}<Copy size={14} />{/if}
           <span>{copied ? "Copied" : "Copy"}</span>
-        </button>
+        </Button>
       </div>
     {/if}
 
     {#if tokens.length > 0}
       <div class="share__list">
-        <span class="share__list-title">Active links</span>
+        <span class="text-sm text-fg-muted font-bold">Active links</span>
         {#each tokens as t (t.token)}
           <div class="share__row">
-            <span class="share__row-meta">expires {fmtDate(t.expiresAt)}</span>
-            <button
-              type="button"
-              class="btn btn--sm danger"
-              onclick={() => revoke(t.token)}
-              title="Revoke this link"
-            >
+            <span class="text-sm text-fg-muted">expires {fmtDate(t.expiresAt)}</span>
+            <Button variant="destructive" size="sm" onclick={() => revoke(t.token)} title="Revoke this link">
               <Trash2 size={13} /><span>Revoke</span>
-            </button>
+            </Button>
           </div>
         {/each}
       </div>
@@ -149,21 +145,11 @@
 </Modal>
 
 <style>
-  .share {
+.share {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
     min-width: 22rem;
-  }
-  .share__hint {
-    color: var(--fg-muted);
-    font-size: var(--fs-sm);
-    margin: 0;
-  }
-  .share__create {
-    display: flex;
-    align-items: flex-end;
-    gap: var(--space-3);
   }
   .share__ttl {
     display: flex;
@@ -175,20 +161,10 @@
   .share__ttl input {
     width: 6rem;
   }
-  .share__result {
-    display: flex;
-    gap: var(--space-2);
-    align-items: center;
-  }
   .share__url {
     flex: 1;
     font-family: var(--font-mono, monospace);
     font-size: var(--fs-sm);
-  }
-  .share__error {
-    color: var(--danger);
-    font-size: var(--fs-sm);
-    margin: 0;
   }
   .share__list {
     display: flex;
@@ -197,19 +173,10 @@
     border-top: 1px solid var(--border);
     padding-top: var(--space-2);
   }
-  .share__list-title {
-    font-size: var(--fs-sm);
-    color: var(--fg-muted);
-    font-weight: var(--weight-bold);
-  }
   .share__row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-2);
-  }
-  .share__row-meta {
-    font-size: var(--fs-sm);
-    color: var(--fg-muted);
   }
 </style>

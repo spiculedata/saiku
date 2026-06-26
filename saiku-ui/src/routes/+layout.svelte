@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { Button, buttonVariants } from "$lib/components/ui";
   import { base } from "$app/paths";
   import { page } from "$app/state";
   import { session } from "$lib/stores/session.svelte";
@@ -14,6 +15,10 @@
   import { i18n } from "$lib/stores/i18n.svelte";
   import { installAuthInterceptor, onAuthFailure } from "$lib/api/http";
   import "$lib/styles/tokens.css";
+  // Tailwind v4 entry — theme + utilities only (preflight skipped to
+  // preserve the existing base CSS in app.css). Must load AFTER tokens.css
+  // so the @theme bridge can reference --fg / --bg / etc.
+  import "$lib/styles/tailwind.css";
   import "$lib/styles/app.css";
 
   let { children } = $props();
@@ -85,13 +90,13 @@
     <a class="topbar__brand" href="{base}/" aria-label={i18n.t("brand")}>
       {#if brandLogo}
         <img
-          class="topbar__brand-logo"
+          class="h-[28px] max-h-[28px] w-auto block object-contain"
           src={brandLogo}
           alt={i18n.t("brand")}
           onerror={onBrandLogoError}
         />
       {:else}
-        <span class="topbar__brand-wordmark">{i18n.t("brand")}</span>
+        <span class="hidden">{i18n.t("brand")}</span>
       {/if}
     </a>
     <div class="topbar__actions">
@@ -101,26 +106,26 @@
           {session.current.username}
         </span>
         {#if !page.url.pathname.startsWith(`${base}/dashboards`) && !page.url.pathname.startsWith(`${base}/admin`)}
-          <a class="btn" href="{base}/dashboards"><LayoutDashboard size={14} /><span>Dashboards</span></a>
+          <a class={buttonVariants({ variant: "outline", size: "sm" })} href="{base}/dashboards"><LayoutDashboard size={14} /><span>Dashboards</span></a>
         {/if}
         {#if page.url.pathname.startsWith(`${base}/dashboards`)}
-          <a class="btn" href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
+          <a class={buttonVariants({ variant: "outline", size: "sm" })} href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
         {/if}
         {#if session.isAdmin && !page.url.pathname.startsWith(`${base}/admin`)}
-          <a class="btn" href="{base}/admin"><Shield size={14} /><span>{i18n.t("topbar.admin")}</span></a>
+          <a class={buttonVariants({ variant: "outline", size: "sm" })} href="{base}/admin"><Shield size={14} /><span>{i18n.t("topbar.admin")}</span></a>
         {/if}
         {#if page.url.pathname.startsWith(`${base}/admin`)}
-          <a class="btn" href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
+          <a class={buttonVariants({ variant: "outline", size: "sm" })} href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
         {/if}
-        <button type="button" class="btn" onclick={() => session.logout()}>
+        <Button variant="outline" size="sm" onclick={() => session.logout()}>
           <LogOut size={14} /><span>{i18n.t("topbar.signOut")}</span>
-        </button>
+        </Button>
       {/if}
     </div>
   </header>
   {/if}
 
-  <main class="app__main">
+  <main class="flex-1 min-h-0 flex overflow-hidden">
     {@render children()}
   </main>
   <ToastStack />
@@ -137,7 +142,7 @@
 </div>
 
 <style>
-  .app {
+.app {
     display: flex;
     flex-direction: column;
     height: 100vh;
@@ -166,13 +171,6 @@
     text-decoration: none;
   }
   .topbar__brand:hover { text-decoration: none; }
-  .topbar__brand-logo {
-    height: 28px;
-    max-height: 28px;
-    width: auto;
-    display: block;
-    object-fit: contain;
-  }
   /* Wordmark — typeset Saiku next to the symbol. Falls back to text-only
      brand when no logo file ships with the deployment. Hidden on narrow
      viewports so the topbar doesn't crowd on mobile. */
@@ -183,7 +181,6 @@
     line-height: 1;
   }
   @media (max-width: 640px) {
-    .topbar__brand-wordmark { display: none; }
   }
   .topbar__actions {
     display: flex;
@@ -215,10 +212,4 @@
     font-size: var(--fs-sm);
   }
   .topbar__user :global(svg) { color: var(--fg-subtle); }
-  .app__main {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    overflow: hidden;
-  }
 </style>

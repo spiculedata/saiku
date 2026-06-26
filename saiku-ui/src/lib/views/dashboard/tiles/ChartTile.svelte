@@ -725,7 +725,7 @@
 </script>
 
 {#if !tile.query}
-  <div class="placeholder">Tile has no query binding — open ⚙ to set one.</div>
+  <div class="p-4 text-fg-muted text-sm">Tile has no query binding — open ⚙ to set one.</div>
 {:else}
   <div class="chart-tile">
     <!-- #1090: the canvas is decorative to assistive tech; the sr-only table is
@@ -781,7 +781,7 @@
 <TileDrillthrough bind:this={drill} cube={resolvedCube} />
 
 <style>
-  .chart-tile {
+.chart-tile {
     position: relative;
     height: 100%;
     width: 100%;
@@ -827,11 +827,6 @@
     background: var(--bg);
     pointer-events: auto;
     padding: 0;
-  }
-  .placeholder {
-    padding: 1rem;
-    color: var(--fg-muted);
-    font-size: 0.8125rem;
   }
   /* #931: auto-refresh badge — top-right, above the canvas, click-through.
      Top (not bottom) so it clears the ECharts legend + x-axis labels that
