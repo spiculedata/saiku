@@ -24,6 +24,8 @@
   import { CanvasRenderer } from "echarts/renderers";
   import type { EChartsType, ECBasicOption } from "echarts/types/dist/shared";
   import type { EmbedRow } from "./types";
+  // #1103: host-page chart theming via CSS custom properties.
+  import { readEmbedChartTheme, type EmbedChartTheme } from "./embedChartTheme";
 
   // Register modules once at module scope. ECharts dedupes a repeat
   // `use()` so this is safe across many <saiku-embed> instances.
@@ -69,7 +71,14 @@
    * shifts (e.g. a column appearing / disappearing). */
   $effect(() => {
     if (!chart) return;
-    const opt = buildOption(rows, mode);
+    // #1103: resolve host-set chart theming from CSS vars on this element
+    // (custom properties inherit through the shadow boundary). Unstyled →
+    // empty theme → ECharts defaults (back-compat).
+    const el = container;
+    const theme: EmbedChartTheme = el
+      ? readEmbedChartTheme((n) => getComputedStyle(el).getPropertyValue(n))
+      : { palette: [] };
+    const opt = buildOption(rows, mode, theme);
     chart.setOption(opt, { notMerge: true });
   });
 
@@ -82,10 +91,19 @@
     return true;
   }
 
-  function buildOption(rs: EmbedRow[], chartMode: string): ECBasicOption {
+  function buildOption(rs: EmbedRow[], chartMode: string, theme: EmbedChartTheme): ECBasicOption {
+    const fg = theme.fg;
+    const axisColor = theme.axisLine;
+    // #1103: host-set series palette → ECharts `color` cycle. Spread so an
+    // unstyled embed emits no `color` key (output byte-identical to pre-#1103).
+    const colorOpt: ECBasicOption = theme.palette.length ? { color: theme.palette } : {};
+    const legendOpt = { bottom: 0, ...(fg ? { textStyle: { color: fg } } : {}) };
+    const fgText = fg ? { color: fg } : {};
+    const axisLineOpt = axisColor ? { axisLine: { lineStyle: { color: axisColor } } } : {};
+
     if (rs.length === 0) {
       return {
-        title: { text: "No data", left: "center", top: "middle", textStyle: { fontSize: 12 } },
+        title: { text: "No data", left: "center", top: "middle", textStyle: { fontSize: 12, ...fgText } },
       };
     }
     const cols = Object.keys(rs[0]);
@@ -97,15 +115,16 @@
       // Pie uses the FIRST numeric column only — falls back to a bar
       // chart if there isn't one.
       const valCol = numericCols[0];
-      if (!valCol) return { title: { text: "No numeric series" } };
+      if (!valCol) return { title: { text: "No numeric series", textStyle: { ...fgText } } };
       return {
+        ...colorOpt,
         tooltip: { trigger: "item" },
-        legend: { bottom: 0 },
+        legend: legendOpt,
         series: [
           {
             type: "pie",
             radius: ["40%", "70%"],
-            label: { show: true, formatter: "{b}: {d}%" },
+            label: { show: true, formatter: "{b}: {d}%", ...fgText },
             data: rs.map((r) => ({
               name: r[categoryCol]?.formatted ?? "",
               value: r[valCol]?.value ?? 0,
@@ -116,6 +135,7 @@
     }
 
     return {
+      ...colorOpt,
       tooltip: {
         trigger: "axis",
         // ECharts default tooltip is bare numbers; replace with the
@@ -138,14 +158,20 @@
           return `<b>${cat}</b><br/>${lines}`;
         },
       },
-      legend: { bottom: 0 },
+      legend: legendOpt,
       grid: { left: 40, right: 16, top: 24, bottom: 36, containLabel: true },
       xAxis: {
         type: "category",
         data: categories,
-        axisLabel: { interval: 0, rotate: categories.length > 8 ? -30 : 0 },
+        axisLabel: { interval: 0, rotate: categories.length > 8 ? -30 : 0, ...fgText },
+        ...axisLineOpt,
       },
-      yAxis: { type: "value" },
+      yAxis: {
+        type: "value",
+        ...(fg ? { axisLabel: { color: fg } } : {}),
+        ...axisLineOpt,
+        ...(axisColor ? { splitLine: { lineStyle: { color: axisColor } } } : {}),
+      },
       series: numericCols.map((c) => ({
         name: c,
         type: chartMode === "line" ? ("line" as const) : ("bar" as const),

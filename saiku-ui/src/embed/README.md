@@ -161,6 +161,28 @@ saiku-embed {
 }
 ```
 
+### Theming the chart itself
+
+The variables above style the embed **chrome** (frame, header, table). To brand
+the **chart series + axes**, set these (custom properties inherit through the
+shadow boundary, so the canvas chart picks them up):
+
+```css
+saiku-embed {
+  /* Series colour cycle — set as many as you need, 1..8, contiguously.
+     Any unset → the chart falls back to the built-in palette. */
+  --saiku-embed-chart-1: #2563eb;
+  --saiku-embed-chart-2: #16a34a;
+  --saiku-embed-chart-3: #dc2626;
+  /* …up to --saiku-embed-chart-8 */
+
+  /* Axis labels / legend / titles use --saiku-embed-fg;
+     axis + split lines use --saiku-embed-muted (both shared with the chrome). */
+}
+```
+
+An embed with none of these set renders exactly as before (ECharts defaults).
+
 ## Security model
 
 - **Header-only token transport.** The token travels as
