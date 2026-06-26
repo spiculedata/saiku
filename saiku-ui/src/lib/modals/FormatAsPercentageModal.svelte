@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import { Button } from "$lib/components/ui";
   import { i18n } from "$lib/stores/i18n.svelte";
 
   /** Port of saiku-ui-legacy/js/saiku/views/FormatAsPercentageModal.js. */
@@ -44,7 +45,7 @@
     </select>
   </label>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
-    <button type="button" class="btn btn--primary" onclick={() => onApply(axis, s)}>{i18n.t("modal.apply")}</button>
+    <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
+    <Button onclick={() => onApply(axis, s)}>{i18n.t("modal.apply")}</Button>
   {/snippet}
 </Modal>

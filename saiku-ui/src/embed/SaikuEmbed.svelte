@@ -129,7 +129,7 @@
   }
 </script>
 
-<div class="saiku-embed-root" style="min-height: {height};">
+<div class="w-full h-full overflow-auto" style="min-height: {height};">
   {#if kind === "dashboard"}
     <EmbedDashboard {server} {token} {path} />
   {:else if loading}
@@ -150,18 +150,13 @@
 </div>
 
 <style>
-  /* Shadow-DOM scoped — host page CSS can't leak in and vice versa.
+/* Shadow-DOM scoped — host page CSS can't leak in and vice versa.
    * Host page can recolour via the --saiku-embed-* CSS variables we
    * surface on :host. */
   :host {
     display: block;
     color: var(--saiku-embed-fg, #1f2937);
     background: var(--saiku-embed-bg, transparent);
-  }
-  .saiku-embed-root {
-    width: 100%;
-    height: 100%;
-    overflow: auto;
   }
   .state {
     padding: 16px;

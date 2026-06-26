@@ -386,7 +386,7 @@
 </script>
 
 {#if !tile.query}
-  <div class="placeholder">Tile has no query binding — open ⚙ to set one.</div>
+  <div class="p-4 text-fg-muted text-sm">Tile has no query binding — open ⚙ to set one.</div>
 {:else}
   <div class="table-tile" role="region" aria-label="Table tile">
     {#if loading && !response}
@@ -442,7 +442,7 @@
                       }
                     }}
                   >
-                    {#if cf.icon}<span class="cf-icon" aria-hidden="true">{cf.icon}</span>{/if}{fmt.display}
+                    {#if cf.icon}<span class="inline-block mr-1 font-semibold" aria-hidden="true">{cf.icon}</span>{/if}{fmt.display}
                   </td>
                 {/each}
                 {#if sparklineEnabled}
@@ -484,7 +484,7 @@
                         {/if}
                       </svg>
                     {:else}
-                      <span class="spark-empty" aria-hidden="true">—</span>
+                      <span class="text-fg-muted" aria-hidden="true">—</span>
                     {/if}
                   </td>
                 {/if}
@@ -506,7 +506,7 @@
 <TileDrillthrough bind:this={drill} cube={resolvedCube} />
 
 <style>
-  .table-tile {
+.table-tile {
     height: 100%;
     overflow: auto;
     padding: 0.25rem 0.5rem;
@@ -526,11 +526,6 @@
     padding: 0.0625rem 0.25rem;
     pointer-events: none;
     max-width: calc(100% - 0.5rem);
-  }
-  .placeholder {
-    padding: 1rem;
-    color: var(--fg-muted);
-    font-size: 0.8125rem;
   }
   table {
     width: 100%;
@@ -563,11 +558,6 @@
     outline-offset: -2px;
   }
   /* Issue #919 — conditional-format icon glyph prepended to a cell. */
-  .cf-icon {
-    display: inline-block;
-    margin-right: 0.25rem;
-    font-weight: var(--weight-semibold);
-  }
   /* Issue #920 — inline sparkline column. */
   th.spark-header {
     text-align: center;
@@ -582,8 +572,5 @@
     width: 64px;
     height: 18px;
     color: var(--accent);
-  }
-  .spark-empty {
-    color: var(--fg-muted);
   }
 </style>

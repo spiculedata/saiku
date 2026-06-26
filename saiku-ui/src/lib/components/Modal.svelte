@@ -1,7 +1,29 @@
 <script lang="ts">
+  /**
+   * Modal — focus-trapped dialog with backdrop, panel, header, body, footer.
+   *
+   * Reused 25+ times across the codebase (every saved-query / drillthrough
+   * / chart-editor / format / permissions modal etc.). Behaviour is
+   * load-bearing:
+   *
+   *   - Focus moves into the panel on open, lands on the first focusable
+   *     that ISN'T the × close button so users hit a useful target.
+   *   - Tab / Shift+Tab wrap inside the panel (focus trap).
+   *   - Escape calls onClose (stops propagation so nested handlers
+   *     don't see it twice).
+   *   - Focus restores to the previously-focused element on close.
+   *
+   * Visual layer (styling) is Tailwind utility classes resolving through
+   * the @theme bridge (bg-bg-overlay → var(--bg-overlay), etc.).
+   * Two custom animation classes (.saiku-overlay-in / .saiku-panel-in)
+   * reference @keyframes defined globally in app.css — those stay vanilla
+   * CSS because @keyframes don't compose cleanly with Tailwind 4's
+   * arbitrary-value escape hatch.
+   */
   import type { Snippet } from "svelte";
   import { tick } from "svelte";
   import { X } from "lucide-svelte";
+  import { Button } from "$lib/components/ui";
 
   interface Props {
     title: string;
@@ -18,6 +40,16 @@
   let previouslyFocused: HTMLElement | null = null;
   // Unique id for aria-labelledby (module-level counter; ok in the browser).
   const titleId = `saiku-modal-title-${Math.random().toString(36).slice(2, 9)}`;
+
+  // Tailwind doesn't tree-shake conditional class strings, so we map the
+  // size prop to a literal lookup. Each entry is a separate class string
+  // so PurgeCSS sees every one in the source.
+  const sizeClass = {
+    sm: "w-[360px]",
+    md: "w-[520px]",
+    lg: "w-[760px]",
+    xl: "w-[960px]",
+  } as const;
 
   function focusableIn(root: HTMLElement): HTMLElement[] {
     const nodes = root.querySelectorAll<HTMLElement>(
@@ -36,7 +68,9 @@
     void tick().then(() => {
       if (!panelEl) return;
       const items = focusableIn(panelEl);
-      const preferred = items.find((el) => !el.classList.contains("modal__close"));
+      const preferred = items.find(
+        (el) => !el.dataset.modalClose,
+      );
       (preferred ?? items[0] ?? panelEl).focus();
     });
     return () => {
@@ -83,7 +117,7 @@
 
 {#if open}
   <div
-    class="modal"
+    class="fixed inset-0 z-[1000] grid place-items-center"
     role="dialog"
     tabindex="-1"
     aria-modal="true"
@@ -92,27 +126,43 @@
   >
     <button
       type="button"
-      class="modal__backdrop"
+      class="absolute inset-0 cursor-pointer border-0 bg-bg-overlay saiku-overlay-in"
       aria-label="Close dialog"
       tabindex="-1"
       onclick={onClose}
     ></button>
     <div
-      class="modal__panel modal__panel--{size}"
+      class="relative flex max-h-[calc(100vh-48px)] min-w-[320px] flex-col overflow-hidden rounded-lg border border-border bg-bg text-fg shadow-lg saiku-panel-in focus:outline-none {sizeClass[size]}"
       bind:this={panelEl}
       tabindex="-1"
     >
-      <header class="modal__header">
-        <h2 class="modal__title" id={titleId}>{title}</h2>
-        <button type="button" class="icon-btn modal__close" aria-label="Close" onclick={onClose}>
+      <header
+        class="flex items-center justify-between gap-3 border-b border-border px-5 py-4"
+      >
+        <h2
+          class="m-0 text-lg font-semibold"
+          id={titleId}
+        >
+          {title}
+        </h2>
+        <Button
+          variant="ghost"
+          size="icon"
+          class="h-7 w-7"
+          aria-label="Close"
+          data-modal-close="true"
+          onclick={onClose}
+        >
           <X size={16} />
-        </button>
+        </Button>
       </header>
-      <div class="modal__body">
+      <div class="overflow-auto p-5">
         {@render children?.()}
       </div>
       {#if footer}
-        <footer class="modal__footer">
+        <footer
+          class="flex justify-end gap-2 border-t border-border bg-bg-muted px-5 py-4"
+        >
           {@render footer()}
         </footer>
       {/if}
@@ -121,65 +171,13 @@
 {/if}
 
 <style>
-  .modal {
-    position: fixed;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    z-index: 1000;
-  }
-  .modal__backdrop {
-    position: absolute;
-    inset: 0;
-    background: var(--bg-overlay);
-    border: 0;
-    cursor: pointer;
+  /* Animation hooks for the @keyframes defined in app.css. Tailwind 4's
+     arbitrary-value escape `animate-[saiku-overlay-in_120ms_ease]` would
+     work too but the named classes here are clearer in DevTools. */
+  .saiku-overlay-in {
     animation: saiku-overlay-in var(--duration-fast) ease;
   }
-  .modal__panel {
-    position: relative;
-    background: var(--bg);
-    color: var(--fg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-lg);
-    max-height: calc(100vh - 48px);
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    min-width: 320px;
+  .saiku-panel-in {
     animation: saiku-panel-in var(--duration-normal) ease;
-  }
-  .modal__panel:focus { outline: none; }
-  .modal__panel--sm { width: 360px; }
-  .modal__panel--md { width: 520px; }
-  .modal__panel--lg { width: 760px; }
-  .modal__panel--xl { width: 960px; }
-  .modal__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    padding: var(--space-4) var(--space-5);
-    border-bottom: 1px solid var(--border);
-  }
-  .modal__title {
-    margin: 0;
-    font-size: var(--fs-lg);
-    font-weight: var(--weight-semibold);
-  }
-  /* .modal__close inherits its shape from the global .icon-btn class;
-     this rule remains as a placeholder for modal-specific tweaks. */
-  .modal__body {
-    padding: var(--space-5);
-    overflow: auto;
-  }
-  .modal__footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-2);
-    padding: var(--space-4) var(--space-5);
-    border-top: 1px solid var(--border);
-    background: var(--bg-muted);
   }
 </style>

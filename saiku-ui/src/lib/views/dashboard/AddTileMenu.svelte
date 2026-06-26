@@ -11,6 +11,7 @@
    */
 
   import type { TileType } from "$lib/api/dashboards";
+  import { Button } from "$lib/components/ui";
 
   interface Props {
     onPick: (type: TileType) => void;
@@ -42,52 +43,45 @@
   let rootEl = $state<HTMLDivElement | null>(null);
 </script>
 
-<div class="add-tile-menu" bind:this={rootEl}>
-  <button
-    type="button"
-    class="btn"
-    {disabled}
-    aria-haspopup="menu"
-    aria-expanded={open}
-    onclick={() => (open = !open)}
-  >
+<div class="relative" bind:this={rootEl}>
+  <Button variant="outline" {disabled} aria-haspopup="menu" aria-expanded={open} onclick={() => (open = !open)}>
     + Add tile
-  </button>
+  </Button>
 
   {#if open}
     <div class="menu" role="menu">
       <button type="button" class="menu-item" role="menuitem" onclick={() => pick("chart")}>
         <span class="icon" aria-hidden="true">📊</span>
         <span>
-          <span class="label">Chart</span>
+          <span class="block font-medium">Chart</span>
           <span class="hint">Render measures as bar / line / pie / area.</span>
         </span>
       </button>
       <button type="button" class="menu-item" role="menuitem" onclick={() => pick("table")}>
         <span class="icon" aria-hidden="true">🧮</span>
         <span>
-          <span class="label">Table</span>
+          <span class="block font-medium">Table</span>
           <span class="hint">Records of measure cells with row headers.</span>
         </span>
       </button>
       <button type="button" class="menu-item" role="menuitem" onclick={() => pick("kpi")}>
         <span class="icon" aria-hidden="true">📈</span>
         <span>
-          <span class="label">KPI</span>
+          <span class="block font-medium">KPI</span>
           <span class="hint">A single measure as a big number, with optional comparison + sparkline.</span>
         </span>
       </button>
       <button type="button" class="menu-item" role="menuitem" onclick={() => pick("text")}>
         <span class="icon" aria-hidden="true">📝</span>
         <span>
-          <span class="label">Text / note</span>
+          <span class="block font-medium">Text / note</span>
           <span class="hint">Markdown annotation; no data.</span>
         </span>
       </button>
       <button type="button" class="menu-item" role="menuitem" onclick={() => pick("image")}>
         <span class="icon" aria-hidden="true">🖼️</span>
         <span>
-          <span class="label">Image</span>
+          <span class="block font-medium">Image</span>
           <span class="hint">A logo, diagram or screenshot from a URL or upload.</span>
         </span>
       </button>
@@ -96,19 +90,7 @@
 </div>
 
 <style>
-  .add-tile-menu {
-    position: relative;
-  }
-  .btn {
-    padding: 0.375rem 0.75rem;
-    border: 1px solid var(--border-strong);
-    background: var(--bg);
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.875rem;
-  }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .menu {
+.menu {
     position: absolute;
     top: calc(100% + 4px);
     right: 0;
@@ -141,10 +123,6 @@
     font-size: 1.125rem;
     line-height: 1;
     padding-top: 0.125rem;
-  }
-  .label {
-    display: block;
-    font-weight: var(--weight-medium);
   }
   .hint {
     display: block;

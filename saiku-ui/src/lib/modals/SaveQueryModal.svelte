@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import { Button } from "$lib/components/ui";
   import RepositoryBrowser from "$lib/components/RepositoryBrowser.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
 
@@ -55,29 +56,22 @@
     onSelect={(p) => (folder = p)}
   />
 
-  <label class="field save-modal__name">
+  <label class="field mt-3">
     <span class="field__label">{i18n.t("modal.save.name")}</span>
     <input class="field__input" bind:value={name} autocomplete="off" required />
   </label>
 
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
-    <button
-      type="button"
-      class="btn btn--primary"
-      disabled={!valid}
-      onclick={() => onSave(normalizeFolder(folder), name.trim())}
-    >{i18n.t("modal.save")}</button>
+    <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
+    <Button disabled={!valid}>onSave(normalizeFolder(folder), name.trim())}
+    >{i18n.t("modal.save")}</Button>
   {/snippet}
 </Modal>
 
 <style>
-  .save-modal__intro {
+.save-modal__intro {
     margin: 0 0 var(--space-3);
     color: var(--fg-muted);
     font-size: var(--fs-sm);
-  }
-  .save-modal__name {
-    margin-top: var(--space-3);
   }
 </style>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { browser } from "$app/environment";
+  import { Button } from "$lib/components/ui";
   import { onMount } from "svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { session } from "$lib/stores/session.svelte";
@@ -134,15 +135,15 @@
       </header>
       <p>{i18n.t(STEPS[stepIdx].bodyKey)}</p>
       <footer>
-        <button type="button" class="btn" onclick={skip}>
+        <Button variant="outline" onclick={skip}>
           {i18n.t("tour.skip")}
-        </button>
+        </Button>
         {#if stepIdx > 0}
-          <button type="button" class="btn" onclick={prev}>{i18n.t("tour.back")}</button>
+          <Button variant="outline" onclick={prev}>{i18n.t("tour.back")}</Button>
         {/if}
-        <button type="button" class="btn btn--primary" onclick={next}>
+        <Button onclick={next}>
           {stepIdx === STEPS.length - 1 ? i18n.t("tour.done") : i18n.t("tour.next")}
-        </button>
+        </Button>
       </footer>
     </div>
   </div>

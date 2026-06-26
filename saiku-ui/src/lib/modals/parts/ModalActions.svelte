@@ -7,8 +7,13 @@
    *
    * Caller picks the primary label via i18n key (defaults to "modal.ok",
    * but Apply / Save / Apply-and-close variants are common).
+   *
+   * Migrated to the design-system Button primitive so every modal
+   * using ModalActions automatically inherits the typed variant /
+   * size / disabled treatment without per-modal style drift.
    */
   import { i18n } from "$lib/stores/i18n.svelte";
+  import { Button } from "$lib/components/ui";
 
   interface Props {
     onCancel: () => void;
@@ -27,14 +32,9 @@
   }: Props = $props();
 </script>
 
-<button type="button" class="btn" onclick={onCancel}>
+<Button variant="outline" onclick={onCancel}>
   {i18n.t("modal.cancel")}
-</button>
-<button
-  type="button"
-  class="btn btn--primary"
-  disabled={!enabled}
-  onclick={onApply}
->
+</Button>
+<Button disabled={!enabled} onclick={onApply}>
   {i18n.t(primaryKey)}
-</button>
+</Button>

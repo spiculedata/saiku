@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
+  import { Button } from "$lib/components/ui";
   import type { SaikuMeasure } from "$lib/api/discover";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { session } from "$lib/stores/session.svelte";
@@ -72,10 +73,10 @@
         checked={measuresHiddenToggle.enabled}
         onchange={onHiddenToggleChange}
       />
-      <span class="hidden-toggle__label">
+      <span class="text-sm font-medium">
         {i18n.t("modal.measures.showHidden")}
       </span>
-      <span class="hidden-toggle__hint">
+      <span class="text-xs text-fg-muted">
         {i18n.t("modal.measures.showHiddenHint")}
       </span>
     </label>
@@ -88,7 +89,7 @@
       <li>
         <label>
           <input type="checkbox" checked={picks.has(m.uniqueName)} onchange={() => toggle(m.uniqueName)} />
-          <span class="name">{m.caption || m.name}</span>
+          <span class="flex-1">{m.caption || m.name}</span>
           {#if m.calculated}<span class="badge">{i18n.t("modal.measures.calcBadge")}</span>{/if}
           {#if m.visible === false}<span class="badge badge--hidden">{i18n.t("modal.measures.hiddenBadge")}</span>{/if}
         </label>
@@ -96,13 +97,13 @@
     {/each}
   </ul>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.cancel")}</button>
-    <button type="button" class="btn btn--primary" onclick={() => onSave(Array.from(picks))}>{i18n.t("modal.save")}</button>
+    <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
+    <Button onclick={() => onSave(Array.from(picks))}>{i18n.t("modal.save")}</Button>
   {/snippet}
 </Modal>
 
 <style>
-  .list {
+.list {
     list-style: none;
     margin: var(--space-3) 0 0;
     padding: 0;
@@ -131,8 +132,6 @@
     color: var(--fg-muted);
     border-color: var(--fg-muted);
   }
-  .name { flex: 1; }
-
   .hidden-toggle {
     display: grid;
     grid-template-columns: auto 1fr;
@@ -147,14 +146,6 @@
   }
   .hidden-toggle:hover { background: var(--bg-subtle); }
   .hidden-toggle input { grid-row: 1 / span 2; }
-  .hidden-toggle__label {
-    font-size: var(--fs-sm);
-    font-weight: var(--weight-medium);
-  }
-  .hidden-toggle__hint {
-    font-size: var(--fs-xs);
-    color: var(--fg-muted);
-  }
   .hidden-toggle__loading {
     margin: var(--space-2) 0 0;
     font-size: var(--fs-xs);

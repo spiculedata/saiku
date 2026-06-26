@@ -584,8 +584,19 @@ public class ThinQueryService implements Serializable {
             for (ThinHierarchy h : entry.getValue().getHierarchies()) {
                 Map<String, ThinLevel> map2 = h.getLevels();
                 for (Map.Entry<String, ThinLevel> levelentry : map2.entrySet()) {
-                    List<ThinMember> members =
-                            levelentry.getValue().getSelection().getMembers();
+                    // Levels without a selection (the AI-built queryModel path
+                    // produces these — e.g. an axis-only Date.(All) with no
+                    // member filter) have nothing to deduplicate. Skipping
+                    // them avoids the NPE that surfaced when the AI Ask
+                    // 'edit in canvas' re-executed an AI-built model client-
+                    // side: the dedupe pass assumed every level carried a
+                    // non-null selection, which holds for chip-built queries
+                    // (every level gets a selection from the picker) but not
+                    // for AI-built ones (the converter only sets selection
+                    // when the AiQueryRequest names members).
+                    ThinSelection selection = levelentry.getValue().getSelection();
+                    if (selection == null) continue;
+                    List<ThinMember> members = selection.getMembers();
 
                     List<ThinMember> uniqueMembers = new ArrayList<>();
                     Map<String, ThinMember> temp = new HashMap<>();

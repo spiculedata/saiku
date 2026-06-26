@@ -84,16 +84,11 @@
   });
 </script>
 
-<div bind:this={container} class="chart" role="img" aria-label="Saiku embed chart"></div>
+<div bind:this={container} class="w-full h-full min-h-[240px]" role="img" aria-label="Saiku embed chart"></div>
 
 <style>
-  /* The chart needs a concrete height to render — ECharts measures
+/* The chart needs a concrete height to render — ECharts measures
    * its container synchronously. The :host's min-height in
    * SaikuEmbed.svelte already supplies one for the outer shell; we
    * just fill it. */
-  .chart {
-    width: 100%;
-    height: 100%;
-    min-height: 240px;
-  }
 </style>
