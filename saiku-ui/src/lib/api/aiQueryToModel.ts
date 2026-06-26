@@ -37,6 +37,10 @@ export interface AiQueryRequestShape {
   limit?: number;
   visualTotals?: boolean;
   nonEmpty?: boolean;
+  // Index signature so this narrowed shape stays assignable to aiAsk.ts's
+  // loose `AiQueryRequestShape = Record<string, unknown>` (the /ai/ask
+  // currentQuery field) — an interface without one isn't.
+  [key: string]: unknown;
 }
 
 /**
@@ -57,6 +61,11 @@ export function aiRequestToQueryModel(req: AiQueryRequestShape): ThinQueryModel 
     visualTotals: !!req.visualTotals,
     visualTotalsPattern: null,
     lowestLevelsOnly: false,
+    // Required ThinQueryModel fields — details.measures is filled in below once
+    // the measure list is built; no calculated measures/members from the AI.
+    details: { axis: "COLUMNS", location: "TOP", measures: [] },
+    calculatedMeasures: [],
+    calculatedMembers: [],
   } as ThinQueryModel;
 
   // Measures go into details. Each entry's `name` is the measure caption
