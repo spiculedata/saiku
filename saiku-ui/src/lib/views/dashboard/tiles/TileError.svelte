@@ -17,7 +17,7 @@
   let { message = null, onRetry }: Props = $props();
 </script>
 
-<div class="tile-error" role="alert">
+<div class="h-full w-full box-border flex flex-col items-center justify-center gap-2 p-3 text-center text-danger" role="alert">
   <TriangleAlert size={22} aria-hidden="true" />
   <p class="msg">{message ?? i18n.t("tile.error", "Something went wrong loading this tile.")}</p>
   {#if onRetry}
@@ -29,20 +29,7 @@
 </div>
 
 <style>
-  .tile-error {
-    height: 100%;
-    width: 100%;
-    box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem;
-    text-align: center;
-    color: var(--danger);
-  }
-  .msg {
+.msg {
     margin: 0;
     font-size: 0.8125rem;
     /* Long backend errors shouldn't blow out the tile. */

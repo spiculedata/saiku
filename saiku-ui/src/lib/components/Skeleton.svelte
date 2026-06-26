@@ -18,50 +18,43 @@
   }
 
   let { rows = 5, variant = "list" }: Props = $props();
+
+  // Map list/table rows to distinct Tailwind class strings so PurgeCSS
+  // catches both at build time. $derived so the variant prop reactively
+  // re-resolves if the parent re-renders with a new value.
+  const rowClass = $derived(
+    variant === "list"
+      ? "flex flex-col gap-1.5 border-b border-border px-3 py-2 last:border-b-0"
+      : "grid grid-cols-[2fr_1fr_1fr] gap-3 border-b border-border p-3",
+  );
 </script>
 
-<div class="skeleton skeleton--{variant}" aria-busy="true" aria-live="polite">
+<div
+  class="flex flex-col gap-2 py-3"
+  aria-busy="true"
+  aria-live="polite"
+>
   {#each Array(rows) as _, i (i)}
-    <div class="skeleton__row">
+    <div class={rowClass}>
       {#if variant === "list"}
-        <div class="skeleton__bar skeleton__bar--title"></div>
-        <div class="skeleton__bar skeleton__bar--meta"></div>
+        <div class="skeleton-bar h-3 w-[60%]"></div>
+        <div class="skeleton-bar h-[9px] w-[35%]"></div>
       {:else}
-        <div class="skeleton__bar skeleton__bar--cell"></div>
-        <div class="skeleton__bar skeleton__bar--cell"></div>
-        <div class="skeleton__bar skeleton__bar--cell"></div>
+        <div class="skeleton-bar h-[10px] w-[80%]"></div>
+        <div class="skeleton-bar h-[10px] w-[80%]"></div>
+        <div class="skeleton-bar h-[10px] w-[80%]"></div>
       {/if}
     </div>
   {/each}
 </div>
 
 <style>
-  .skeleton {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    padding: var(--space-3) 0;
-  }
-
-  .skeleton--list .skeleton__row {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: var(--space-2) var(--space-3);
-    border-bottom: 1px solid var(--border);
-  }
-  .skeleton--list .skeleton__row:last-child { border-bottom: 0; }
-
-  .skeleton--table .skeleton__row {
-    display: grid;
-    grid-template-columns: 2fr 1fr 1fr;
-    gap: var(--space-3);
-    padding: var(--space-3);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .skeleton__bar {
-    height: 10px;
+  /* Shimmer gradient + keyframe stay vanilla CSS — Tailwind 4's
+     arbitrary-animation escape (`animate-[…]`) can't define keyframes
+     inline, and a single shared `@keyframes` doesn't compose into
+     utility classes. The colour stops are the bridged tokens so light
+     + dark mode still flip correctly. */
+  .skeleton-bar {
     border-radius: var(--radius-sm);
     background: linear-gradient(
       90deg,
@@ -73,17 +66,13 @@
     animation: skeleton-shimmer 1.4s ease-in-out infinite;
   }
 
-  .skeleton__bar--title { width: 60%; height: 12px; }
-  .skeleton__bar--meta { width: 35%; height: 9px; }
-  .skeleton__bar--cell { width: 80%; }
-
   @keyframes skeleton-shimmer {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .skeleton__bar {
+    .skeleton-bar {
       animation: none;
       background: var(--bg-subtle);
     }

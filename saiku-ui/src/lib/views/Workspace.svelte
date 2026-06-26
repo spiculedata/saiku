@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { Button } from "$lib/components/ui";
   import type { SaikuSession } from "$lib/api/session";
   import Modal from "$lib/components/Modal.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -58,17 +59,55 @@
    *  re-renders with the result and existing grid / chart / drill /
    *  export features keep working. */
   /**
-   * Push AI-generated MDX into the active workspace tab and run it.
-   * The drawer stays open so the user can keep iterating — every
-   * AI response auto-runs in the canvas behind the drawer, and the
-   * conversation thread persists. Closing the drawer is a separate
-   * user action (X or Esc).
+   * Push the AI's result into the active workspace tab and run it.
+   *
+   * Prefer the structured queryModel (chip-editable in the builder) over
+   * the MDX string (opaque to the chip UI — user can't drag/drop). Server
+   * returns both whenever the AI's request converted successfully; only
+   * degraded / VALIDATION_ERROR paths arrive MDX-only.
+   *
+   * Sets queryModel + type=QUERYMODEL so QueryCanvas renders the chip
+   * surface; clearing query.current.mdx removes any stale MDX from prior
+   * MDX-mode iterations on the same tab. The drawer stays open so the
+   * user can keep iterating — every AI response auto-runs in the canvas
+   * behind the drawer, and the conversation thread persists.
    */
-  async function handleEditInCanvas(mdx: string): Promise<void> {
+  /**
+   * Apply an AI-emitted view change to the workspace. The drawer's emit_view_change tool returns
+   * a target viewMode + chartType — we just assign them to the query store. No re-execution needed
+   * because the cellset doesn't change; the chart layer re-renders on `query.viewMode` /
+   * `query.chartType` changes. Drawer stays open so the user can iterate.
+   */
+  function handleApplyViewChange(vc: { viewMode: "grid" | "chart"; chartType?: string }): void {
     if (!query.current) return;
-    query.current.mdx = mdx;
-    query.current.type = "MDX";
-    query.current.name = "";
+    // Capture the current view state so the user can undo the AI's choice
+    // ("Switched to chart" → Cmd-Z → back to grid).
+    query.captureForUndo();
+    query.viewMode = vc.viewMode;
+    if (vc.viewMode === "chart" && vc.chartType) {
+      query.chartType = vc.chartType as typeof query.chartType;
+    }
+  }
+
+  async function handleEditInCanvas(payload: {
+    mdx: string;
+    queryModel?: unknown;
+  }): Promise<void> {
+    if (!query.current) return;
+    // Capture the user's current query before the AI replaces it — Cmd-Z
+    // (or the toolbar Undo button) restores their previous setup if the AI
+    // re-write isn't what they wanted.
+    query.captureForUndo();
+    if (payload.queryModel) {
+      query.current.queryModel = payload.queryModel as typeof query.current.queryModel;
+      query.current.type = "QUERYMODEL";
+      query.current.mdx = "";
+      query.current.name = "";
+    } else {
+      query.current.mdx = payload.mdx;
+      query.current.type = "MDX";
+      query.current.name = "";
+    }
     await query.run();
   }
 
@@ -126,7 +165,7 @@
     // If the tab is dirty, confirm before closing.
     const dirty = tabDirtyFor(i);
     if (dirty) {
-      // eslint-disable-next-line no-alert
+       
       const ok = window.confirm(i18n.t("confirm.discardUnsaved") ?? "Discard unsaved changes?");
       if (!ok) return;
     }
@@ -138,6 +177,13 @@
 
   onMount(() => {
     if (typeof window === "undefined") return;
+    // Re-probe the AI Ask health on workspace mount. The store's
+    // constructor fires at module load, which can race with session
+    // cookie setup on a cold load — a 401 there latches configured=false
+    // for the session and hides the Sparkles button even after the
+    // backend is properly configured. Re-probing here guarantees we ask
+    // again with credentials in place.
+    void aiAskHealth.refresh();
     const params = new URLSearchParams(window.location.search);
     const token = params.get("q");
     if (token) {
@@ -175,6 +221,33 @@
     hydrated = true;
   });
 
+  // Cmd/Ctrl+Z → undo; Cmd/Ctrl+Shift+Z (or Ctrl+Y on Windows) → redo.
+  // Wired at window level so the shortcut works regardless of which workspace
+  // surface has focus, but skipped while the user is typing in an
+  // input/textarea/contentEditable so we don't fight native text-undo (the
+  // AI Ask drawer's textarea most notably). Registered as its own $effect so
+  // it doesn't depend on the onMount branch the user happens to land on.
+  $effect(() => {
+    if (typeof window === "undefined") return;
+    const keyHandler = (e: KeyboardEvent) => {
+      const cmd = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
+      if (!cmd || (key !== "z" && key !== "y")) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || target?.isContentEditable) return;
+      const isRedo = (key === "z" && e.shiftKey) || key === "y";
+      e.preventDefault();
+      if (isRedo) {
+        if (query.canRedo) query.redo();
+      } else {
+        if (query.canUndo) query.undo();
+      }
+    };
+    window.addEventListener("keydown", keyHandler);
+    return () => window.removeEventListener("keydown", keyHandler);
+  });
+
   /** Resolve starter-cube ref → SaikuCube → metadata → query.hydrate.
    *  Every failure falls through silently: a malformed or missing cube
    *  must not show an error toast, just leave the empty workbench
@@ -205,7 +278,7 @@
       query.includeLevel("ROWS", pick.drop);
       if (query.hasRunnableShape()) void query.run();
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.warn("saiku: starter-cube hydrate failed, falling back to empty workbench", err);
     }
   }
@@ -259,13 +332,13 @@
 <div class="workspace" class:workspace--embed={embed.active}>
   {#if !embed.active}
     <aside class="workspace__sidebar">
-      <div class="workspace__sidebar-scroll">
+      <div class="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3">
         <CubePicker username={session.username} />
         <DimensionList username={session.username} />
       </div>
       <div class="workspace__sidebar-footer">
         <PrefsMenu />
-        <button type="button" class="btn" onclick={() => (aboutOpen = true)}>{i18n.t("modal.about.title")}</button>
+        <Button variant="outline" onclick={() => (aboutOpen = true)}>{i18n.t("modal.about.title")}</Button>
       </div>
     </aside>
   {/if}
@@ -283,7 +356,7 @@
             onclick={() => handleSwitchTab(i)}
           >
             <span class="tab__label">{tabLabelFor(i)}</span>
-            {#if tabDirtyFor(i)}<span class="tab__dirty" aria-label="unsaved changes">•</span>{/if}
+            {#if tabDirtyFor(i)}<span class="text-accent" aria-label="unsaved changes">•</span>{/if}
             {#if tabs.list.length > 1}
               <span
                 class="tab__close"
@@ -300,7 +373,7 @@
         {/each}
         <button
           type="button"
-          class="tab tab--new"
+          class="tab text-fg-subtle"
           aria-label={i18n.t("toast.newQuery")}
           title={i18n.t("toast.newQuery")}
           onclick={handleNewTab}
@@ -316,7 +389,8 @@
   <AiQueryDrawer
     open={aiDrawerOpen}
     onClose={() => (aiDrawerOpen = false)}
-    onEditInCanvas={(mdx) => void handleEditInCanvas(mdx)}
+    onEditInCanvas={(payload) => void handleEditInCanvas(payload)}
+    onApplyViewChange={handleApplyViewChange}
   />
 {/if}
 
@@ -342,12 +416,12 @@
       rel="noopener noreferrer">{i18n.t("modal.about.community")}</a>
   </p>
   {#snippet footer()}
-    <button class="btn btn--primary" onclick={() => (aboutOpen = false)}>{i18n.t("modal.close")}</button>
+    <Button onclick={() => (aboutOpen = false)}>{i18n.t("modal.close")}</Button>
   {/snippet}
 </Modal>
 
 <style>
-  .workspace {
+.workspace {
     flex: 1;
     min-height: 0;
     display: grid;
@@ -374,15 +448,6 @@
   .workspace__sidebar {
     display: flex;
     flex-direction: column;
-  }
-  .workspace__sidebar-scroll {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
   }
   .workspace__sidebar-footer {
     padding: var(--space-3) var(--space-4);
@@ -443,9 +508,6 @@
     text-overflow: ellipsis;
     max-width: 12rem;
   }
-  .tab__dirty {
-    color: var(--accent);
-  }
   .tab__close {
     display: inline-flex;
     align-items: center;
@@ -461,8 +523,5 @@
   .tab__close:hover {
     background: color-mix(in srgb, var(--danger) 18%, transparent);
     color: var(--danger);
-  }
-  .tab--new {
-    color: var(--fg-subtle);
   }
 </style>

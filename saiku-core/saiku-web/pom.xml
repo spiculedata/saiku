@@ -237,7 +237,9 @@
         <dependency>
             <groupId>org.apache.xmlgraphics</groupId>
             <artifactId>batik-script</artifactId>
-            <version>1.7</version>
+            <!-- version inherited from saiku-bom (${batik.version}=1.19); the old
+                 hard-pin to 1.7 was CVE-2022-44730 (XSS, fixed 1.17) and left the
+                 Batik set version-skewed. -->
             <exclusions>
                 <exclusion>
                     <groupId>org.apache.xmlgraphics</groupId>

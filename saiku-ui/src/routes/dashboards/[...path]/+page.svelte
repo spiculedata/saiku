@@ -17,7 +17,7 @@
 </script>
 
 {#if session.loading}
-  <div class="loading">Loading…</div>
+  <div class="m-auto text-fg-muted">Loading…</div>
 {:else if session.current}
   {#if !data.dashboardPath}
     <DashboardIndex />
@@ -28,9 +28,3 @@
   <LoginForm />
 {/if}
 
-<style>
-  .loading {
-    margin: auto;
-    color: var(--fg-muted);
-  }
-</style>

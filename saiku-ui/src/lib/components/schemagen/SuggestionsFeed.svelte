@@ -65,7 +65,7 @@
 
 <section class="feed" aria-label="Enrichment suggestions">
   {#if suggestions === null}
-    <p class="feed__empty">No suggestions loaded.</p>
+    <p class="text-fg-muted">No suggestions loaded.</p>
   {:else}
     {#if suggestions.degraded}
       <div class="feed__banner" role="status">
@@ -74,14 +74,14 @@
     {/if}
 
     {#if groups.length === 0}
-      <p class="feed__empty">No suggestions to review.</p>
+      <p class="text-fg-muted">No suggestions to review.</p>
     {:else}
       {#each groups as group (group.type)}
         <section class="feed__group" data-group={group.type}>
-          <header class="feed__group-head">
-            <h3 class="feed__group-title">
+          <header class="flex items-center justify-between gap-2 pb-1 border-b border-border">
+            <h3 class="m-0 text-sm font-semibold inline-flex items-baseline gap-2">
               {group.title}
-              <span class="feed__count">{group.ops.length}</span>
+              <span class="text-xs font-normal text-fg-muted">{group.ops.length}</span>
             </h3>
             {#if highCount(group.ops) > 0}
               <button
@@ -95,7 +95,7 @@
             {/if}
           </header>
 
-          <ul class="feed__list">
+          <ul class="list-none m-0 p-0 flex flex-col gap-2">
             {#each group.ops as op (opKey(op))}
               <li>
                 <SuggestionCard
@@ -113,7 +113,7 @@
 </section>
 
 <style>
-  .feed {
+.feed {
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
@@ -122,9 +122,6 @@
     font-size: var(--fs-sm);
     color: var(--fg);
     overflow: auto;
-  }
-  .feed__empty {
-    color: var(--fg-muted);
   }
   .feed__banner {
     padding: var(--space-2) var(--space-3);
@@ -138,27 +135,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
-  }
-  .feed__group-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-    padding-bottom: var(--space-1);
-    border-bottom: 1px solid var(--border);
-  }
-  .feed__group-title {
-    margin: 0;
-    font-size: var(--fs-sm);
-    font-weight: var(--weight-semibold);
-    display: inline-flex;
-    align-items: baseline;
-    gap: var(--space-2);
-  }
-  .feed__count {
-    font-size: var(--fs-xs);
-    font-weight: var(--weight-normal);
-    color: var(--fg-muted);
   }
   .feed__bulk {
     font: inherit;
@@ -176,13 +152,5 @@
   .feed__bulk:focus-visible {
     outline: none;
     box-shadow: var(--focus-ring);
-  }
-  .feed__list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
   }
 </style>

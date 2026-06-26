@@ -183,7 +183,7 @@
 
 <div class="dashboard-editor" class:presentation={presentation.active}>
   {#if dashboardStore.loading}
-    <div class="loading">Loading dashboard…</div>
+    <div class="text-fg-muted py-8 px-4">Loading dashboard…</div>
   {:else if dashboardStore.current}
     {#if !presentation.active}
       <DashboardToolbar
@@ -206,7 +206,7 @@
         {gridElement}
       />
       {#if dashboardStore.loadError}
-        <div class="notice">{dashboardStore.loadError}</div>
+        <div class="py-2 px-3 bg-bg-muted rounded-sm text-fg-muted text-sm">{dashboardStore.loadError}</div>
       {/if}
       {#if dashboardStore.saveError}
         <div class="error">Save failed: {dashboardStore.saveError}</div>
@@ -242,7 +242,7 @@
 </div>
 
 <style>
-  .dashboard-editor {
+.dashboard-editor {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
@@ -255,17 +255,6 @@
     height: 100%;
     box-sizing: border-box;
   }
-  .loading {
-    color: var(--fg-muted);
-    padding: 2rem 1rem;
-  }
-  .notice {
-    padding: 0.5rem 0.75rem;
-    background: var(--bg-muted);
-    border-radius: 4px;
-    color: var(--fg-muted);
-    font-size: 0.875rem;
-  }
   .error {
     padding: 0.5rem 0.75rem;
     background: color-mix(in srgb, var(--danger) 14%, transparent);
@@ -273,7 +262,6 @@
     border-radius: 4px;
     font-size: 0.875rem;
   }
-
   /* Presentation mode (saiku#928): full-bleed tiles, no editor padding, and
      flatten per-tile chrome (borders, shadows, edit affordances) for a clean
      TV-wall surface. Tile classes are global selectors because they live in

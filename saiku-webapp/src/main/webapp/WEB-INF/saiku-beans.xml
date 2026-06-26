@@ -527,6 +527,8 @@
         <property name="datasourceService" ref="datasourceServiceBean"/>
         <property name="sessionService" ref="sessionService"/>
         <property name="aiQueryResource" ref="aiQueryResource"/>
+        <!-- saiku#1104/#906: audit embed queries (carries the JWT sub). -->
+        <property name="auditLog" ref="aiAuditLog"/>
     </bean>
 
     <!-- Per-tile dashboard comments (issue #942). commentService stores a
