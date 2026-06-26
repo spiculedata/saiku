@@ -47,7 +47,10 @@ public class AiAskServiceTest {
                 stub(NlAskResponse.ok("{}", "m", 0, 0)));
         AiAskService.AskOutcome out = svc.ask(CUBE, "show sales", List.of());
         assertTrue(out.degraded());
-        assertTrue(out.reason().contains("cube not found"));
+        // #1282-class hardening: the client-facing reason is generic; the raw exception detail
+        // ("cube not found", which can carry datasource / JDBC text) is logged server-side only.
+        assertTrue(out.reason().contains("failed to load cube schema"));
+        assertFalse(out.reason().contains("cube not found"));
     }
 
     @Test

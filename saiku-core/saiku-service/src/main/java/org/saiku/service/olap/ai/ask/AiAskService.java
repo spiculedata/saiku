@@ -155,7 +155,9 @@ public class AiAskService {
             schema = metadataService.getSchema(ref);
         } catch (RuntimeException e) {
             log.warn("Failed to load schema for {} — cannot ask AI", ref, e);
-            return AskOutcome.degraded("failed to load cube schema: " + e.getMessage(), null);
+            // Generic client-facing reason — the exception detail (datasource / JDBC error text)
+            // is logged above, never echoed to the caller (#1282-class info-leak hardening).
+            return AskOutcome.degraded("failed to load cube schema", null);
         }
 
         String schemaJson;
@@ -228,8 +230,9 @@ public class AiAskService {
             return AskOutcome.degraded("provider returned unexpected kind: " + kind, resp.model());
         } catch (JsonProcessingException e) {
             log.warn("Provider returned invalid JSON for kind={}: {}", resp.kind(), e.getMessage());
-            return AskOutcome.degraded(
-                    "provider emitted invalid JSON for " + resp.kind() + ": " + e.getMessage(), resp.model());
+            // Generic client-facing reason — the parser detail is logged above, not echoed
+            // to the caller (#1282-class info-leak hardening). Kind is a safe enum.
+            return AskOutcome.degraded("provider emitted invalid JSON for " + resp.kind(), resp.model());
         }
     }
 
