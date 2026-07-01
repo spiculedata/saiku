@@ -27,7 +27,7 @@
              the call surface saiku uses. Note: the slf4j → log4j-2 binding
              changes name in 2.x — log4j-slf4j-impl (slf4j-1.x) becomes
              log4j-slf4j2-impl (slf4j-2.x). -->
-        <slf4j.version>2.0.16</slf4j.version>
+        <slf4j.version>2.0.18</slf4j.version>
         <!-- log4j 1.x has 12 open CVEs and is EOL. Drop in the log4j-1.2-api
              compatibility bridge which preserves the org.apache.log4j.* package
              namespace (so existing imports keep working) but routes everything
