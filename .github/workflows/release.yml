@@ -159,7 +159,7 @@ jobs:
       # the Maven container). Instead it COPYs the pre-built launcher JAR
       # that the jar job produced.
       - name: Download saiku-jar
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: saiku-jar
           path: build-context
@@ -214,12 +214,12 @@ jobs:
       # Pull both artifacts the jar job uploaded — the bare versioned JAR
       # and the runnable saiku-dist zip. Both get attached to the release.
       - name: Download saiku-jar
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: saiku-jar
           path: release-assets
       - name: Download saiku-dist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: saiku-dist
           path: release-assets
@@ -269,7 +269,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Set up Node 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
