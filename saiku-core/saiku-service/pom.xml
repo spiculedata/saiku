@@ -232,6 +232,15 @@
 			<artifactId>jackson-databind</artifactId>
 			<scope>compile</scope>
 		</dependency>
+		<!-- YAML output for the Ossie exporter (saiku#1384). Jackson's YAML
+		     module reuses the same @JsonProperty / @JsonInclude annotations as
+		     the JSON path, so the model classes serialise as either format
+		     without duplicate annotations. -->
+		<dependency>
+			<groupId>com.fasterxml.jackson.dataformat</groupId>
+			<artifactId>jackson-dataformat-yaml</artifactId>
+			<scope>compile</scope>
+		</dependency>
 		<dependency>
 			<groupId>org.apache.poi</groupId>
 			<artifactId>poi</artifactId>
