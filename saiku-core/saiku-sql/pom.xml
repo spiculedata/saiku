@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.saikuanalytics</groupId>
+        <artifactId>saiku-core</artifactId>
+        <version>4.6.0</version>
+    </parent>
+
+    <artifactId>saiku-sql</artifactId>
+    <packaging>jar</packaging>
+    <name>saiku - sql layer</name>
+    <description>Apache Calcite SchemaFactory + JDBC driver that speaks SQL over Apache Ossie
+        semantic models. Sits alongside Mondrian: SQL clients (BI tools, LLM code paths, dbt) get a
+        first-class semantic query surface; Mondrian keeps handling MDX / cube / hierarchy queries.
+        See parent tracking issue saiku#1387.</description>
+
+    <properties>
+        <maven.compiler.release>21</maven.compiler.release>
+    </properties>
+
+    <dependencies>
+        <!-- Ossie model + YAML round-trip live in saiku-service; the SchemaFactory
+             reads the same POJO tree the Mondrian->Ossie exporter produces. -->
+        <dependency>
+            <groupId>org.saikuanalytics</groupId>
+            <artifactId>saiku-service</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Apache Calcite - the SQL parser, planner, and virtual-schema adapter
+             framework the entire module builds on. Version pinned to match the
+             Mondrian fork's transitive calcite-core (bumping this requires
+             coordinating with mondrian-saiku's calcite dep). -->
+        <dependency>
+            <groupId>org.apache.calcite</groupId>
+            <artifactId>calcite-core</artifactId>
+            <version>1.41.0</version>
+        </dependency>
+
+        <!-- Jackson for reading Ossie YAML back into the POJO tree. Same version
+             as the writer path in saiku-service so we can't drift. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+        </dependency>
+
+        <!-- SLF4J API only; the runtime binding is provided by whatever consumer
+             embeds this module (launcher ships slf4j-simple, webapp ships log4j2). -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+
+        <!-- Test scope: JUnit + H2 (in-JVM warehouse for the SelectPushdown IT). -->
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <!-- Root pom pins compiler-plugin 3.1 + source/target 1.6 which
+                     doesn't understand the modern <release> flag. Pin 3.13.0
+                     locally (matches saiku-service) so Calcite 1.41 and our
+                     Java 21 features compile cleanly. Don't 'fix' the root
+                     pom — other modules deliberately stay on the old surface. -->
+                <version>3.13.0</version>
+                <configuration>
+                    <release>${maven.compiler.release}</release>
+                    <encoding>UTF-8</encoding>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
