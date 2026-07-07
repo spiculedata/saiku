@@ -110,6 +110,12 @@ public class OssieSchemaFactory implements SchemaFactory {
             jdbc = JdbcSchema.create(parentSchema, hiddenName, ds, null, null);
             parentSchema.add(hiddenName, jdbc);
         }
-        return new OssieSchema(chosen, jdbc, hiddenName);
+        OssieSchema schema = new OssieSchema(chosen, jdbc, hiddenName);
+        // Metric-view SQL qualifies dataset references as "<name>"."<dataset>" so Calcite's
+        // parser resolves them across schemas. The factory's own name arg is the authoritative
+        // source — Calcite hasn't installed the sub-schema yet at this point, so we can't read
+        // it from parentSchema.
+        schema.bindSchemaName(name);
+        return schema;
     }
 }

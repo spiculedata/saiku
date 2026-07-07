@@ -6,6 +6,7 @@ package org.saiku.sql;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -94,7 +95,25 @@ public class SelectPushdownIT {
                 + "    from: ORDERS\n"
                 + "    to: CUSTOMERS\n"
                 + "    from_columns: [CUSTOMER_ID]\n"
-                + "    to_columns: [ID]\n";
+                + "    to_columns: [ID]\n"
+                + "  metrics:\n"
+                + "  - name: TOTAL_REVENUE\n"
+                + "    expression:\n"
+                + "      dialects:\n"
+                + "      - dialect: ANSI_SQL\n"
+                + "        expression: SUM(ORDERS.AMOUNT)\n"
+                + "      - dialect: MDX\n"
+                + "        expression: \"[Measures].[Total Revenue]\"\n"
+                + "  - name: ORDER_COUNT\n"
+                + "    expression:\n"
+                + "      dialects:\n"
+                + "      - dialect: ANSI_SQL\n"
+                + "        expression: COUNT(ORDERS.ORDER_ID)\n"
+                + "  - name: MDX_ONLY_METRIC\n"
+                + "    expression:\n"
+                + "      dialects:\n"
+                + "      - dialect: MDX\n"
+                + "        expression: \"[Measures].[X] / [Measures].[Y]\"\n";
         Files.writeString(ossieYaml, yaml);
     }
 
@@ -139,6 +158,45 @@ public class SelectPushdownIT {
             assertTrue(rs.next());
             assertEquals("West", rs.getString(1));
             assertEquals(25.00, rs.getBigDecimal(2).doubleValue(), 0.001);
+        }
+    }
+
+    @Test
+    public void metricSelectExpandsAnsiAggregate() throws Exception {
+        // TOTAL_REVENUE expands to SUM(ORDERS.AMOUNT); Calcite treats the OssieMetricViewTable
+        // as a scalar view, so SELECT * from it returns one row with the grand total (450.00).
+        try (Connection calcite = openCalcite();
+                Statement s = calcite.createStatement();
+                ResultSet rs = s.executeQuery("SELECT * FROM SALES.TOTAL_REVENUE")) {
+            assertTrue(rs.next());
+            assertEquals(450.00, rs.getBigDecimal(1).doubleValue(), 0.001);
+            assertTrue("expected exactly one row for a scalar metric", !rs.next());
+        }
+    }
+
+    @Test
+    public void countMetricReturnsBigInt() throws Exception {
+        try (Connection calcite = openCalcite();
+                Statement s = calcite.createStatement();
+                ResultSet rs = s.executeQuery("SELECT * FROM SALES.ORDER_COUNT")) {
+            assertTrue(rs.next());
+            assertEquals(5, rs.getLong(1));
+        }
+    }
+
+    @Test
+    public void mdxOnlyMetricIsSkipped() throws Exception {
+        // MDX-only metrics (calculated members) don't get exposed on the SQL surface — trying to
+        // SELECT from them should fail with a "table not found" style error.
+        try (Connection calcite = openCalcite();
+                Statement s = calcite.createStatement()) {
+            try {
+                s.executeQuery("SELECT * FROM SALES.MDX_ONLY_METRIC");
+                fail("expected MDX-only metric to be invisible on the SQL surface");
+            } catch (java.sql.SQLException expected) {
+                // Message wording varies across Calcite versions; the important thing is that
+                // the query didn't succeed.
+            }
         }
     }
 
