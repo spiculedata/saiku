@@ -17,20 +17,32 @@ import org.apache.calcite.schema.impl.AbstractSchema;
 import org.saiku.service.schema.ossie.model.Dataset;
 import org.saiku.service.schema.ossie.model.DialectExpression;
 import org.saiku.service.schema.ossie.model.Metric;
+import org.saiku.service.schema.ossie.model.Relationship;
 import org.saiku.service.schema.ossie.model.SemanticModel;
 
 /**
  * Calcite {@link Schema} projection of one Ossie {@link SemanticModel}.
  *
- * <p>Each Ossie {@code dataset} becomes one Calcite {@link Table} named after the dataset. When a
- * JDBC connection URL is supplied, the table delegates to Calcite's {@link JdbcSchema} so
- * SELECT/WHERE/GROUP BY get pushed down as warehouse-native SQL. Without a JDBC URL the tables
- * still register (schema introspection works — BI tools can list them) but queries return zero
- * rows because there's no underlying data source.
+ * <p>Three kinds of tables land here:
  *
- * <p>Metrics land as computed views in a follow-up commit on this branch — the first slice keeps
- * the boundary narrow: datasets → tables, with join semantics driven by explicit SQL {@code
- * JOIN}s. Auto-injection of Ossie relationships and metric-expression expansion come next.
+ * <ul>
+ *   <li><b>Datasets</b> — one Calcite {@link Table} per Ossie dataset. When JDBC is wired, this
+ *       delegates directly to the underlying {@link org.apache.calcite.adapter.jdbc.JdbcSchema}
+ *       so SELECT / WHERE / GROUP BY / JOIN push down to the warehouse as native SQL. Without
+ *       JDBC (schema-only mode), a placeholder {@link OssieDatasetTable} keeps introspection
+ *       working but scans return zero rows.
+ *   <li><b>Metrics</b> — one {@link OssieMetricViewTable} per Ossie metric that carries an
+ *       ANSI_SQL dialect. Users write {@code SELECT * FROM SALES.TOTAL_REVENUE} to get the
+ *       scalar aggregate over its home dataset. MDX-only metrics (calculated members) skip;
+ *       they live in Mondrian, not on the SQL surface.
+ *   <li><b>Join views</b> — one {@link OssieRelationshipViewTable} per Ossie {@code
+ *       relationship}, named {@code <from>_JOIN_<to>}. Materialises the JOIN predicate from
+ *       the YAML so users can query pre-joined data with a single {@code SELECT}.
+ * </ul>
+ *
+ * <p>Auto-injected joins via a proper Calcite planner rule (so users can write {@code SELECT c.x,
+ * SUM(o.y) FROM ORDERS o, CUSTOMERS c} without any JOIN clause and have the predicate injected
+ * from Ossie relationships) is the next follow-up on the parent epic.
  */
 public class OssieSchema extends AbstractSchema {
 
@@ -100,7 +112,58 @@ public class OssieSchema extends AbstractSchema {
             OssieMetricViewTable view = buildMetricView(metric);
             if (view != null) tables.put(metric.getName(), view);
         }
+        // Register one pre-joined view per Ossie relationship. Named `<from>_JOIN_<to>`.
+        // Users get a flat rowtype of both underlying tables' columns and Calcite pushes the
+        // JOIN down to the warehouse — no runtime overhead over writing JOIN ... ON ... by hand.
+        // Skips relationships whose from/to don't resolve to registered datasets (defensive,
+        // should never happen for a well-formed Ossie doc).
+        for (Relationship rel : model.getRelationships()) {
+            String viewName = joinViewName(rel);
+            if (tables.containsKey(viewName)) continue;
+            OssieRelationshipViewTable view = buildJoinView(rel);
+            if (view != null) tables.put(viewName, view);
+        }
         return ImmutableMap.copyOf(tables);
+    }
+
+    /** Public for the schema-only mode too — kept short so it never collides with a dataset. */
+    static String joinViewName(Relationship rel) {
+        return rel.getFrom() + "_JOIN_" + rel.getTo();
+    }
+
+    /**
+     * Build a pre-joined view for an Ossie relationship. Returns null when either side doesn't
+     * resolve to a registered dataset or the relationship has zero join columns.
+     */
+    private OssieRelationshipViewTable buildJoinView(Relationship rel) {
+        if (rel.getFrom() == null || rel.getTo() == null) return null;
+        if (rel.getFromColumns().isEmpty() || rel.getToColumns().isEmpty()) return null;
+        if (rel.getFromColumns().size() != rel.getToColumns().size()) return null;
+        Dataset fromDs = findDataset(rel.getFrom());
+        Dataset toDs = findDataset(rel.getTo());
+        if (fromDs == null || toDs == null) return null;
+        String effectiveSchemaName = selfSchemaName != null ? selfSchemaName : model.getName();
+        // Build "a.<col> = b.<col> AND ..." predicate.
+        StringBuilder predicate = new StringBuilder();
+        for (int i = 0; i < rel.getFromColumns().size(); i++) {
+            if (i > 0) predicate.append(" AND ");
+            predicate.append("a.\"").append(rel.getFromColumns().get(i)).append("\" = ");
+            predicate.append("b.\"").append(rel.getToColumns().get(i)).append("\"");
+        }
+        String viewSql = "SELECT * FROM \"" + effectiveSchemaName + "\".\"" + fromDs.getName() + "\" a "
+                + "JOIN \"" + effectiveSchemaName + "\".\"" + toDs.getName() + "\" b "
+                + "ON " + predicate;
+        String fromSource = lastDot(fromDs.getSource() == null ? fromDs.getName() : fromDs.getSource());
+        String toSource = lastDot(toDs.getSource() == null ? toDs.getName() : toDs.getSource());
+        return new OssieRelationshipViewTable(
+                joinViewName(rel), viewSql, List.of(effectiveSchemaName), jdbcSchema, fromSource, toSource);
+    }
+
+    private Dataset findDataset(String name) {
+        for (Dataset d : model.getDatasets()) {
+            if (d.getName().equals(name)) return d;
+        }
+        return null;
     }
 
     /**

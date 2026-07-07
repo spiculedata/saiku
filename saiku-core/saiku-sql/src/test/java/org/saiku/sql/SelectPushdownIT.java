@@ -201,6 +201,44 @@ public class SelectPushdownIT {
     }
 
     @Test
+    public void relationshipJoinViewPreservesJoinPredicate() throws Exception {
+        // Users query ORDERS_JOIN_CUSTOMERS as if it were a single table; the Ossie
+        // relationship's ON clause is materialised in the view SQL. Aggregating over the joined
+        // rows should give the same per-region totals as writing the JOIN by hand
+        // (joinAcrossDatasetsSumsRevenueByRegion above).
+        try (Connection calcite = openCalcite();
+                Statement s = calcite.createStatement();
+                ResultSet rs = s.executeQuery("SELECT REGION, SUM(AMOUNT) AS TOTAL FROM SALES.ORDERS_JOIN_CUSTOMERS "
+                        + "GROUP BY REGION ORDER BY REGION")) {
+            assertTrue(rs.next());
+            assertEquals("North", rs.getString(1));
+            assertEquals(225.00, rs.getBigDecimal(2).doubleValue(), 0.001);
+            assertTrue(rs.next());
+            assertEquals("South", rs.getString(1));
+            assertEquals(200.00, rs.getBigDecimal(2).doubleValue(), 0.001);
+            assertTrue(rs.next());
+            assertEquals("West", rs.getString(1));
+            assertEquals(25.00, rs.getBigDecimal(2).doubleValue(), 0.001);
+        }
+    }
+
+    @Test
+    public void relationshipJoinViewAppearsInMetadata() throws Exception {
+        try (Connection calcite = openCalcite();
+                ResultSet rs = calcite.getMetaData().getTables(null, null, "%", null)) {
+            java.util.List<String> qualified = new java.util.ArrayList<>();
+            while (rs.next()) {
+                if ("SALES".equals(rs.getString("TABLE_SCHEM"))) {
+                    qualified.add(rs.getString("TABLE_NAME"));
+                }
+            }
+            assertTrue(
+                    "expected auto-join view ORDERS_JOIN_CUSTOMERS in SALES metadata: " + qualified,
+                    qualified.contains("ORDERS_JOIN_CUSTOMERS"));
+        }
+    }
+
+    @Test
     public void jdbcMetadataListsOssieDatasets() throws Exception {
         // Uses standard JDBC DatabaseMetaData rather than Calcite's metadata schema — matches
         // how every BI tool (Tableau, Power BI, DBeaver, dbt) enumerates schemas for its
