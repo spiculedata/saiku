@@ -241,6 +241,18 @@
 			<artifactId>jackson-dataformat-yaml</artifactId>
 			<scope>compile</scope>
 		</dependency>
+		<!-- Calcite JDBC driver (jdbc:calcite:...) for the Ossie datasource path.
+		     SaikuOssieConnection opens Calcite connections directly; the actual
+		     OssieSchemaFactory implementation lives in saiku-sql and gets
+		     discovered via Class.forName reflection driven by the connect model.
+		     Version pinned to match the saiku-sql module (bumping requires
+		     coordinating both). -->
+		<dependency>
+			<groupId>org.apache.calcite</groupId>
+			<artifactId>calcite-core</artifactId>
+			<version>1.41.0</version>
+			<scope>compile</scope>
+		</dependency>
 		<dependency>
 			<groupId>org.apache.poi</groupId>
 			<artifactId>poi</artifactId>

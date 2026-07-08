@@ -274,7 +274,10 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
             String name = ds.getName();
 
             // Adding the connection before refreshing it
-            SaikuDatasource sds = new SaikuDatasource(name, SaikuDatasource.Type.OLAP, datasource.getProperties());
+            // Preserve the incoming type (OLAP/OSSIE) rather than hard-coding OLAP — Ossie
+            // datasources need their type carried through so the connection factory picks the
+            // right ISaikuConnection subclass.
+            SaikuDatasource sds = new SaikuDatasource(name, datasource.getType(), datasource.getProperties());
             datasourcesForCurrentWorkspace().put(ds.getName(), sds);
 
             // In a workspace environment it is necessary to prefix the datasource name with the workspace name
@@ -1054,6 +1057,18 @@ public class RepositoryDatasourceManager implements IDatasourceManager, Applicat
 
         if (file.getPropertyKey() != null) {
             props.put("propertykey", file.getPropertyKey());
+        }
+
+        // Ossie-only property: path to the YAML file. Read straight from the DTO — no
+        // externalparameters override support today; a future slice can add
+        // datasource.<key>.ossieYaml if operators need it.
+        if (file.getOssieYaml() != null) {
+            props.put("ossieYaml", file.getOssieYaml());
+        }
+        // schema captures the Ossie model name for OSSIE datasources — same semantic as
+        // Mondrian's catalog. Existing load path drops it on the floor.
+        if (file.getSchema() != null) {
+            props.put("schema", file.getSchema());
         }
 
         if (datasourceProcessor != null) {

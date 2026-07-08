@@ -50,9 +50,31 @@ public class DataSourceMapper {
     private String propertyKey;
     private String csv;
 
+    /** Path to the Ossie YAML file. Only set when {@link #connectiontype} is {@code "OSSIE"}. */
+    private String ossieYaml;
+
     public DataSourceMapper() {}
 
     public DataSourceMapper(SaikuDatasource ds) {
+        // Ossie datasources bypass the Mondrian URL-parsing dance entirely — location is a
+        // plain warehouse JDBC URL and the Ossie YAML path rides in the properties bag.
+        if (ds.getType() == SaikuDatasource.Type.OSSIE) {
+            this.connectiontype = "OSSIE";
+            this.connectionname = ds.getName();
+            this.jdbcurl = ds.getProperties().getProperty("location");
+            this.username = ds.getProperties().getProperty("username");
+            this.password = ds.getProperties().getProperty("password");
+            this.id = ds.getProperties().getProperty("id");
+            this.path = ds.getProperties().getProperty("path");
+            this.ossieYaml = ds.getProperties().getProperty("ossieYaml");
+            // "schema" holds the Ossie model name for OSSIE datasources — same semantic as
+            // Mondrian's catalog/schema field, which the admin UI already exposes.
+            this.schema = ds.getProperties().getProperty("schema");
+            if (ds.getProperties().containsKey("enabled")) {
+                this.enabled = ds.getProperties().getProperty("enabled");
+            }
+            return;
+        }
         if ((!ds.getProperties().containsKey("advanced") && !ds.getProperties().containsKey("csv"))
                 || (ds.getProperties().containsKey("advanced")
                         && ds.getProperties().getProperty("advanced").equals("false"))) {
@@ -154,6 +176,38 @@ public class DataSourceMapper {
 
     public SaikuDatasource toSaikuDataSource() {
         Properties props = new Properties();
+        // Ossie datasource branch: skip the Mondrian URL wrapping. location=warehouse JDBC URL,
+        // schema=Ossie model name, ossieYaml=path to the YAML. The JDBC URL still goes through
+        // JdbcUrlValidator to defeat the H2 INIT/RUNSCRIPT/ALIAS RCE class.
+        if (connectiontype != null && connectiontype.equals("OSSIE")) {
+            if (this.ossieYaml == null || this.ossieYaml.isBlank()) {
+                throw new IllegalArgumentException("Ossie datasource requires an ossieYaml path");
+            }
+            if (this.jdbcurl != null) {
+                JdbcUrlValidator.validate(this.jdbcurl);
+                props.setProperty("location", this.jdbcurl);
+            }
+            props.setProperty("ossieYaml", this.ossieYaml);
+            if (this.schema != null) {
+                props.setProperty("schema", this.schema);
+            }
+            if (this.username != null) {
+                props.setProperty("username", this.username);
+            }
+            if (this.password != null) {
+                props.setProperty("password", this.password);
+            }
+            if (this.id != null) {
+                props.setProperty("id", this.id);
+            } else {
+                props.setProperty("id", UUID.randomUUID().toString());
+            }
+            if (this.path != null) {
+                props.setProperty("path", this.path);
+            }
+            props.setProperty("advanced", "false");
+            return new SaikuDatasource(this.getConnectionname(), SaikuDatasource.Type.OSSIE, props);
+        }
         if (advanced == null && csv == null) {
             String location;
             if (connectiontype.equals("MONDRIAN")) {
@@ -374,5 +428,13 @@ public class DataSourceMapper {
 
     public void setCsv(String csv) {
         this.csv = csv;
+    }
+
+    public String getOssieYaml() {
+        return ossieYaml;
+    }
+
+    public void setOssieYaml(String ossieYaml) {
+        this.ossieYaml = ossieYaml;
     }
 }

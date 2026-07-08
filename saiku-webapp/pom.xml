@@ -321,6 +321,20 @@
             <groupId>org.saikuanalytics</groupId>
             <artifactId>saiku-service</artifactId>
         </dependency>
+        <!-- saiku-sql brings OssieSchemaFactory + the Calcite Ossie adapter
+             to the runtime classpath. saiku-service's SaikuOssieConnection
+             constructs 'jdbc:calcite:model=...' URLs that reference
+             'org.saiku.sql.adapter.OssieSchemaFactory' by fully-qualified
+             name, so the class must be loadable when the connection opens.
+             Runtime scope because saiku-service doesn't have a compile-time
+             reference (and creating one would be a Maven cycle since
+             saiku-sql already depends on saiku-service). -->
+        <dependency>
+            <groupId>org.saikuanalytics</groupId>
+            <artifactId>saiku-sql</artifactId>
+            <version>${project.version}</version>
+            <scope>runtime</scope>
+        </dependency>
         <dependency>
             <groupId>org.apache.hive</groupId>
             <artifactId>hive-jdbc</artifactId>
