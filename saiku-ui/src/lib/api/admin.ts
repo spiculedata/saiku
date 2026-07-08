@@ -14,11 +14,28 @@ export interface AdminDatasource {
   connectionName?: string;
   driver?: string;
   location?: string;
+  /**
+   * Legacy client-side type dropdown ("OLAP" | "RELATIONAL"). Not read by the backend
+   * DataSourceMapper — the wire discriminator is {@link connectiontype}. Kept for
+   * backward compatibility with existing saved forms; new code should key off
+   * {@link connectiontype}.
+   */
   type?: string;
+  /**
+   * Wire discriminator on the server-side DataSourceMapper: `"MONDRIAN" | "XMLA" | "OSSIE"`.
+   * Selects which branch of `toSaikuDataSource()` runs — Mondrian URL wrapping, XMLA URL
+   * wrapping, or Ossie semantic-model wrapping.
+   */
+  connectiontype?: string;
   username?: string;
   password?: string;
   properties?: Record<string, string>;
   schemaName?: string | null;
+  /**
+   * Path to the Ossie YAML file. Only meaningful when {@link connectiontype} is `"OSSIE"`;
+   * ignored otherwise. Server persists it in the `.sds` XML as an `<ossieYaml>` element.
+   */
+  ossieYaml?: string | null;
 }
 
 export interface AdminSchema {

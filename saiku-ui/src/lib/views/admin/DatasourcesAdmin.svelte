@@ -37,10 +37,54 @@
       driver: "mondrian.olap4j.MondrianOlap4jDriver",
       location: "",
       type: "OLAP",
+      connectiontype: "MONDRIAN",
       username: "",
       password: "",
       schemaName: "",
+      ossieYaml: "",
     };
+  }
+
+  /**
+   * True when the currently-edited datasource is Ossie-typed. Drives the field-swap so the
+   * form shows the YAML path + warehouse fields instead of the Mondrian driver / catalog
+   * ones. Kept as a $derived so flipping the Type dropdown auto-updates the visible fields.
+   */
+  const isOssie = $derived(editing?.connectiontype === "OSSIE" || editing?.type === "OSSIE");
+
+  /**
+   * Keep {@link AdminDatasource.connectiontype} in sync with the Type dropdown value so the
+   * server's DataSourceMapper picks the right branch: OLAP → MONDRIAN, RELATIONAL → XMLA,
+   * OSSIE → OSSIE. Called from the dropdown's onchange rather than a $effect to avoid the
+   * effect-write-tracking pitfall (CLAUDE.md's Svelte 5 effect-discipline note).
+   */
+  /**
+   * Materialise the form's `editing` state from an existing datasource. The wire carries
+   * {@link AdminDatasource.connectiontype} as the persisted discriminator; the form's dropdown
+   * binds to `type`, so we back-fill `type` from `connectiontype` here so opening an
+   * OSSIE-typed datasource for edit lands on the OSSIE branch instead of defaulting to OLAP.
+   */
+  function openForEdit(ds: AdminDatasource): AdminDatasource {
+    const copy: AdminDatasource = { ...ds };
+    if (copy.connectiontype === "OSSIE") copy.type = "OSSIE";
+    else if (copy.connectiontype === "XMLA") copy.type = "RELATIONAL";
+    else if (copy.connectiontype === "MONDRIAN") copy.type = "OLAP";
+    return copy;
+  }
+
+  function onTypeChange() {
+    if (!editing) return;
+    if (editing.type === "OSSIE") {
+      editing.connectiontype = "OSSIE";
+      // Driver is unused for OSSIE — the backend derives everything from the Ossie YAML.
+      // We clear it so the on-disk .sds doesn't carry a misleading Mondrian driver hint.
+      editing.driver = "";
+    } else if (editing.type === "RELATIONAL") {
+      editing.connectiontype = "XMLA";
+    } else {
+      editing.connectiontype = "MONDRIAN";
+      if (!editing.driver) editing.driver = "mondrian.olap4j.MondrianOlap4jDriver";
+    }
   }
 
   async function save() {
@@ -106,7 +150,7 @@
                 {generateSchemaLabel(ds)}
               </a>
               <Button variant="outline" onclick={() => refreshDs(ds)}>{i18n.t("admin.refresh")}</Button>
-              <Button variant="outline" onclick={() => (editing = { ...ds })}>{i18n.t("admin.edit")}</Button>
+              <Button variant="outline" onclick={() => (editing = openForEdit(ds))}>{i18n.t("admin.edit")}</Button>
               <Button variant="destructive" onclick={() => (deleting = ds)}>{i18n.t("admin.delete")}</Button>
             </td>
           </tr>
@@ -131,24 +175,52 @@
       <input class="field__input" bind:value={editing.name} />
     </label>
     <label class="field">
-      <span class="field__label">Driver</span>
-      <input class="field__input" bind:value={editing.driver} />
-    </label>
-    <label class="field">
-      <span class="field__label">Location (JDBC url)</span>
-      <input class="field__input" bind:value={editing.location} />
-    </label>
-    <label class="field">
       <span class="field__label">Type</span>
-      <select class="field__input" bind:value={editing.type}>
+      <select class="field__input" bind:value={editing.type} onchange={onTypeChange}>
         <option value="OLAP">Semantic Layer (Mondrian)</option>
         <option value="RELATIONAL">Relational</option>
+        <option value="OSSIE">Ossie (SQL semantic model)</option>
       </select>
     </label>
-    <label class="field">
-      <span class="field__label">Schema name</span>
-      <input class="field__input" bind:value={editing.schemaName} />
-    </label>
+    {#if isOssie}
+      <label class="field">
+        <span class="field__label">Ossie YAML path</span>
+        <input
+          class="field__input"
+          placeholder="/saiku-home/data/ossie/pharma.ossie.yaml"
+          bind:value={editing.ossieYaml}
+        />
+      </label>
+      <label class="field">
+        <span class="field__label">Warehouse JDBC URL</span>
+        <input
+          class="field__input"
+          placeholder="jdbc:postgresql://localhost:5432/warehouse"
+          bind:value={editing.location}
+        />
+      </label>
+      <label class="field">
+        <span class="field__label">Ossie model name</span>
+        <input
+          class="field__input"
+          placeholder="Semantic model name inside the YAML (defaults to datasource name)"
+          bind:value={editing.schemaName}
+        />
+      </label>
+    {:else}
+      <label class="field">
+        <span class="field__label">Driver</span>
+        <input class="field__input" bind:value={editing.driver} />
+      </label>
+      <label class="field">
+        <span class="field__label">Location (JDBC url)</span>
+        <input class="field__input" bind:value={editing.location} />
+      </label>
+      <label class="field">
+        <span class="field__label">Schema name</span>
+        <input class="field__input" bind:value={editing.schemaName} />
+      </label>
+    {/if}
     <div class="flex gap-3">
       <label class="field flex-1">
         <span class="field__label">Username</span>
