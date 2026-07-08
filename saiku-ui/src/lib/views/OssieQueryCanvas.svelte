@@ -9,6 +9,7 @@
   import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
   import OssieLoadModal from "$lib/modals/OssieLoadModal.svelte";
   import { foldersOnly, listRepository } from "$lib/api/repository";
+  import { pivotResult } from "$lib/ossie/pivot";
 
   const FIELD_MIME = "application/x-saiku-ossie-field";
   const METRIC_MIME = "application/x-saiku-ossie-metric";
@@ -225,6 +226,22 @@
   }
 
   const runnable = $derived(ossieQuery.hasRunnableShape());
+
+  /**
+   * Pivoted view of the current result — non-null only when the user has entries on the
+   * Columns shelf. The renderer picks between the crosstab grid and the flat table by
+   * looking at this value.
+   */
+  const pivot = $derived.by(() => {
+    const q = ossieQuery.current;
+    const r = ossieQuery.result;
+    if (!q || !r) return null;
+    if (q.columns.length === 0) return null;
+    const rowLabels = q.rows.map((f) => `${f.dataset}.${f.field}`);
+    const colLabels = q.columns.map((f) => `${f.dataset}.${f.field}`);
+    const valLabels = q.values.map((v) => v.metric);
+    return pivotResult(rowLabels, colLabels, valLabels, r);
+  });
 </script>
 
 <div class="ossie-canvas">
@@ -403,7 +420,40 @@
   </div>
 
   <div class="ossie-canvas__result">
-    {#if ossieQuery.result}
+    {#if ossieQuery.result && pivot}
+      <!-- Crosstab render: Columns shelf has entries so the flat rowset pivots into a
+           real row × col grid. Multi-level columns collapse via colspan; missing
+           intersections render as empty cells. -->
+      <table class="ossie-result">
+        <thead>
+          {#each pivot.headerRows as headerRow}
+            <tr>
+              {#each headerRow as h}
+                <th colspan={h.colspan ?? 1}>{h.formatted}</th>
+              {/each}
+            </tr>
+          {/each}
+        </thead>
+        <tbody>
+          {#each pivot.bodyRows as row}
+            <tr>
+              {#each row as c, i}
+                {#if c.isHeader && i < pivot.rowHeaderCount}
+                  <th class="ossie-result__row-header">{c.formatted}</th>
+                {:else}
+                  <td class:ossie-result__num={c.isNumeric}>{c.formatted}</td>
+                {/if}
+              {/each}
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+      {#if pivot.bodyRows.length === 0}
+        <p class="ossie-canvas__empty">Query returned no rows.</p>
+      {/if}
+    {:else if ossieQuery.result}
+      <!-- Long-form fallback: no Columns shelf entries → one column per shelf field
+           straight from the server, no pivot. -->
       <table class="ossie-result">
         <thead>
           <tr>
@@ -605,6 +655,12 @@
   .ossie-result__num {
     text-align: right;
     font-variant-numeric: tabular-nums;
+  }
+  .ossie-result__row-header {
+    background: transparent;
+    font-weight: var(--weight-medium);
+    text-align: left;
+    position: static;
   }
   .ossie-canvas__hint,
   .ossie-canvas__empty {

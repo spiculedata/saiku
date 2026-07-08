@@ -127,6 +127,69 @@ test.describe("Ossie workbench (mocked backend)", () => {
     // job here is to prove the modal → API pipeline reaches the server correctly.
   });
 
+  test("Rows × Columns × Values renders a crosstab", async ({ page }) => {
+    // Override the execute fixture: return a 2×2×1 shelf state's flat rowset so the
+    // client-side pivot has something to reshape. Registered before selection so the
+    // route's added handler intercepts before the fixture's baseline responder runs.
+    await page.route("**/rest/saiku/api/query/execute", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          runtime: 15,
+          width: 3,
+          height: 4,
+          cellset: [
+            [
+              { value: "product.brand", type: "COLUMN_HEADER" },
+              { value: "payer.channel", type: "COLUMN_HEADER" },
+              { value: "net_revenue", type: "COLUMN_HEADER" },
+            ],
+            [
+              { value: "Alfa", type: "ROW_HEADER" },
+              { value: "Commercial", type: "ROW_HEADER" },
+              { value: "250.00", type: "DATA_CELL", properties: { raw: "250" } },
+            ],
+            [
+              { value: "Alfa", type: "ROW_HEADER" },
+              { value: "Medicare", type: "ROW_HEADER" },
+              { value: "400.00", type: "DATA_CELL", properties: { raw: "400" } },
+            ],
+            [
+              { value: "Beta", type: "ROW_HEADER" },
+              { value: "Commercial", type: "ROW_HEADER" },
+              { value: "155.00", type: "DATA_CELL", properties: { raw: "155" } },
+            ],
+            [
+              { value: "Beta", type: "ROW_HEADER" },
+              { value: "Medicare", type: "ROW_HEADER" },
+              { value: "556.00", type: "DATA_CELL", properties: { raw: "556" } },
+            ],
+          ],
+        }),
+      });
+    });
+
+    await page.locator("#cubes-select").selectOption("ossie:SALES");
+    await expect(page.locator(".ossie-tree").getByText("region")).toBeVisible();
+
+    await dropOssieField(page, "customers", "region", '[aria-label="Rows shelf"]');
+    await dropOssieField(page, "customers", "region", '[aria-label="Columns shelf"]');
+    await dropOssieMetric(page, "revenue", '[aria-label="Values shelf"]');
+
+    await page.locator(".ossie-canvas").getByRole("button", { name: /^Run/ }).click();
+
+    // Crosstab render: two header cells across (Commercial + Medicare), two row headers
+    // down (Alfa + Beta), and four data cells filled from the fixture.
+    await expect(page.locator(".ossie-result th").filter({ hasText: "Commercial" })).toBeVisible();
+    await expect(page.locator(".ossie-result th").filter({ hasText: "Medicare" })).toBeVisible();
+    await expect(page.locator(".ossie-result th").filter({ hasText: "Alfa" })).toBeVisible();
+    await expect(page.locator(".ossie-result th").filter({ hasText: "Beta" })).toBeVisible();
+    // Data cells appear as numeric right-aligned entries in the body.
+    await expect(page.locator(".ossie-result td").filter({ hasText: "250.00" })).toBeVisible();
+    await expect(page.locator(".ossie-result td").filter({ hasText: "556.00" })).toBeVisible();
+  });
+
   test("Run posts shelf state and renders the result grid", async ({ page }) => {
     await page.locator("#cubes-select").selectOption("ossie:SALES");
     await expect(page.locator(".ossie-tree").getByText("region")).toBeVisible();
