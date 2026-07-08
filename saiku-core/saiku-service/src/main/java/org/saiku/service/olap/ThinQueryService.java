@@ -115,6 +115,17 @@ public class ThinQueryService implements Serializable {
 
     private OlapDiscoverService olapDiscoverService;
 
+    /**
+     * Optional Ossie-flavoured executor. Only invoked for {@code ThinQuery} instances with
+     * {@code queryType=OSSIE}; null in non-Ossie deployments (existing MDX-only setups continue
+     * to work unchanged).
+     */
+    private org.saiku.service.ossie.OssieQueryService ossieQueryService;
+
+    public void setOssieQueryService(org.saiku.service.ossie.OssieQueryService s) {
+        this.ossieQueryService = s;
+    }
+
     private CellSetFormatterFactory cff = new CellSetFormatterFactory();
 
     private final Map<String, QueryContext> context = new HashMap<>();
@@ -400,6 +411,20 @@ public class ThinQueryService implements Serializable {
     }
 
     public CellDataSet execute(ThinQuery tq) {
+        // OSSIE queries take a completely separate execution path — no MDX, no olap4j, no
+        // formatter. Dispatch before the Mondrian-flavoured branch so we never touch
+        // olapDiscoverService.getNativeConnection (which would blow up on an OSSIE connection).
+        if ("OSSIE".equalsIgnoreCase(tq.getQueryType())) {
+            if (ossieQueryService == null) {
+                throw new SaikuServiceException(
+                        "OSSIE query submitted but OssieQueryService is not wired — check spring config");
+            }
+            try {
+                return ossieQueryService.execute(tq);
+            } catch (Exception e) {
+                throw new SaikuServiceException("Failed to execute OSSIE query: " + tq.getName(), e);
+            }
+        }
         if (tq.getProperties().containsKey("saiku.olap.result.formatter")) {
             return execute(
                     tq, tq.getProperties().get("saiku.olap.result.formatter").toString());

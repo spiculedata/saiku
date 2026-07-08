@@ -46,6 +46,17 @@ public class OlapDiscoverService implements Serializable {
         metaExplorer = new OlapMetaExplorer(ds.getConnectionManager());
     }
 
+    /**
+     * Expose the underlying {@link org.saiku.datasources.connection.IConnectionManager} so the
+     * Ossie query path (which speaks JDBC, not olap4j) can acquire its {@link
+     * org.saiku.datasources.connection.ISaikuConnection} directly. The existing MDX path uses
+     * {@link #getNativeConnection} which unwraps the olap4j {@code OlapConnection}; that unwrap
+     * fails for OSSIE-typed connections.
+     */
+    public org.saiku.datasources.connection.IConnectionManager getConnectionManager() {
+        return datasourceService.getConnectionManager();
+    }
+
     public List<SaikuCube> getAllCubes() throws SaikuOlapException {
         return metaExplorer.getAllCubes();
     }

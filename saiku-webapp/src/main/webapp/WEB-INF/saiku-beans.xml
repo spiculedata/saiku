@@ -178,6 +178,16 @@
         <property name="userService" ref="userServiceBean"/>
         <!-- saiku#946: shared in-flight coalescer (singleton) -->
         <property name="queryCoalescer" ref="queryCoalescerBean"/>
+        <!-- Ossie query executor: takes over when ThinQuery.queryType = "OSSIE". -->
+        <property name="ossieQueryService" ref="ossieQueryServiceBean"/>
+    </bean>
+
+    <!-- Ossie query executor. Consults OssieDiscoverService for the semantic model
+         and OlapDiscoverService.getConnectionManager() for the underlying Calcite
+         JDBC connection. -->
+    <bean id="ossieQueryServiceBean" class="org.saiku.service.ossie.OssieQueryService">
+        <property name="ossieDiscoverService" ref="ossieDiscoverServiceBean"/>
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
     </bean>
 
     <bean id="platformBean" class="org.saiku.service.PlatformUtilsService">

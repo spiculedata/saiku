@@ -22,6 +22,13 @@ public class ThinQuery implements ISaikuQuery {
 
     private String queryType = "OLAP";
 
+    /**
+     * Ossie shelf-state payload. Populated when {@link #queryType} is {@code "OSSIE"}; ignored
+     * otherwise. Kept alongside {@link #queryModel} rather than replacing it so the wire remains
+     * backward-compatible for MDX queries.
+     */
+    private OssieQueryModel ossieQueryModel;
+
     public enum Type {
         MDX,
         QUERYMODEL
@@ -245,5 +252,13 @@ public class ThinQuery implements ISaikuQuery {
     @JsonIgnore
     public ThinLevel getLevel(String name) {
         return this.getQueryModel().getLevel(name);
+    }
+
+    public OssieQueryModel getOssieQueryModel() {
+        return ossieQueryModel;
+    }
+
+    public void setOssieQueryModel(OssieQueryModel ossieQueryModel) {
+        this.ossieQueryModel = ossieQueryModel;
     }
 }
