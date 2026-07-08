@@ -296,6 +296,17 @@
         <property name="askService" ref="aiAskServiceBean"/>
     </bean>
 
+    <!-- Ossie AI Query API (#1394) — parallel to aiQueryResource but for semantic-YAML
+         Ossie models. Three-endpoint R1 core: GET /ai/ossie/models, GET
+         /ai/ossie/schema/{connection}/{model}, POST /ai/ossie/query. All three
+         collaborators are already provisioned upstream. -->
+    <bean id="aiOssieResource" class="org.saiku.web.rest.resources.AiOssieResource">
+        <property name="ossieDiscoverService" ref="ossieDiscoverServiceBean"/>
+        <property name="ossieQueryService" ref="ossieQueryServiceBean"/>
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <property name="datasourceManager" ref="repositoryDsManager"/>
+    </bean>
+
     <!-- saiku#906: admin-only read API over the audit log
          (GET /saiku/admin/ai-audit). Stateless singleton; @RolesAllowed +
          the /rest/saiku/admin/** intercept-url both gate it. -->
