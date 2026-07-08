@@ -345,16 +345,23 @@ describe("run", () => {
   test("runs and stores the result on success", async () => {
     ossieQuery.addRow({ dataset: "customers", field: "region" });
     ossieQuery.addValue({ metric: "revenue" });
+    // Server envelope: QueryResult shape (Query2Resource → RestUtil.convert(CellDataSet)).
+    // Header rows tagged COLUMN_HEADER, body rows tagged ROW_HEADER / DATA_CELL. Numeric
+    // values ride in properties.raw.
     const responseEnv = {
-      cellSetHeaders: [
-        [{ formattedValue: "customers.region" }, { formattedValue: "revenue" }],
+      cellset: [
+        [
+          { value: "customers.region", type: "COLUMN_HEADER" },
+          { value: "revenue", type: "COLUMN_HEADER" },
+        ],
+        [
+          { value: "North", type: "ROW_HEADER" },
+          { value: "350.0", type: "DATA_CELL", properties: { raw: "350.0" } },
+        ],
       ],
-      cellSetBody: [
-        [{ formattedValue: "North" }, { formattedValue: "350.0", rawNumber: 350.0 }],
-      ],
+      runtime: 12,
       width: 2,
       height: 1,
-      runtime: 12,
     };
     mockFetch(async () => new Response(JSON.stringify(responseEnv), { status: 200 }));
     await ossieQuery.run();

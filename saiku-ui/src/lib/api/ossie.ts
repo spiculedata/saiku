@@ -114,7 +114,7 @@ export interface OssieSortRef {
   direction: "ASC" | "DESC";
 }
 
-/** One cell from the server's CellDataSet envelope. Discriminated by presence of rawNumber. */
+/** One cell in the Ossie result envelope, post-projection. */
 export interface OssieResultCell {
   formattedValue?: string;
   rawValue?: string;
@@ -127,6 +127,30 @@ export interface OssieQueryResult {
   width: number;
   height: number;
   runtime?: number;
+}
+
+/**
+ * Shape of the shared `/query/execute` response after Query2Resource routes through
+ * {@code RestUtil.convert(CellDataSet)}. Header rows are prepended to the same 2D array
+ * as body rows, discriminated by {@code type=COLUMN_HEADER} vs {@code ROW_HEADER}/{@code
+ * DATA_CELL}. Numeric values live in {@code properties.raw}.
+ *
+ * We consume this shape so both MDX and Ossie flow through the same wire envelope on
+ * the server — the workbench splits it into headers + body client-side.
+ */
+interface WireCellSetCell {
+  value: string;
+  type: "COLUMN_HEADER" | "ROW_HEADER" | "DATA_CELL" | "EMPTY" | "UNKNOWN" | "ERROR";
+  properties?: Record<string, string>;
+}
+
+interface WireQueryResult {
+  cellset?: WireCellSetCell[][];
+  runtime?: number;
+  error?: string;
+  width?: number;
+  height?: number;
+  topOffset?: number;
 }
 
 /**
@@ -177,7 +201,43 @@ export async function executeOssieQuery(
     const text = await res.text();
     throw new Error(`Ossie query failed (${res.status}): ${text || res.statusText}`);
   }
-  return (await res.json()) as OssieQueryResult;
+  const wire = (await res.json()) as WireQueryResult;
+  if (wire.error) throw new Error(wire.error);
+  return projectWireToOssieResult(wire);
+}
+
+/**
+ * Convert the shared `/query/execute` wire envelope into the header/body split the Ossie
+ * canvas renders. Header rows are the leading N rows tagged {@code COLUMN_HEADER}; the
+ * rest are body rows with a mix of {@code ROW_HEADER} (dimension cells) and
+ * {@code DATA_CELL} (metric cells). Numeric values ride in {@code properties.raw}.
+ */
+function projectWireToOssieResult(wire: WireQueryResult): OssieQueryResult {
+  const cellset = wire.cellset ?? [];
+  const headerRows: OssieResultCell[][] = [];
+  const bodyRows: OssieResultCell[][] = [];
+  for (const row of cellset) {
+    if (row.length === 0) continue;
+    const isHeader = row.every((c) => c.type === "COLUMN_HEADER");
+    const projected = row.map<OssieResultCell>((c) => {
+      const rawNum = c.properties?.raw ? Number(c.properties.raw) : undefined;
+      return {
+        formattedValue: c.value,
+        rawValue: c.value,
+        rawNumber: rawNum !== undefined && !Number.isNaN(rawNum) ? rawNum : undefined,
+      };
+    });
+    if (isHeader) headerRows.push(projected);
+    else bodyRows.push(projected);
+  }
+  const width = wire.width ?? headerRows[0]?.length ?? 0;
+  return {
+    cellSetHeaders: headerRows,
+    cellSetBody: bodyRows,
+    width,
+    height: bodyRows.length,
+    runtime: wire.runtime,
+  };
 }
 
 /**

@@ -180,20 +180,24 @@ const FIXTURE_MODEL = {
   ],
 };
 
+/**
+ * Server-side envelope for `/query/execute`. Query2Resource routes CellDataSet through
+ * RestUtil.convert which flattens headers + body into a single `cellset` array with
+ * per-row type discriminators. The Ossie client (api/ossie.ts) re-splits this into the
+ * header/body shape the canvas renders.
+ */
 const FIXTURE_RESULT = {
+  runtime: 42,
   width: 2,
   height: 1,
-  runtime: 42,
-  cellSetHeaders: [
+  cellset: [
     [
-      { formattedValue: "customers.region", rawValue: "customers.region" },
-      { formattedValue: "revenue", rawValue: "revenue" },
+      { value: "customers.region", type: "COLUMN_HEADER" },
+      { value: "revenue", type: "COLUMN_HEADER" },
     ],
-  ],
-  cellSetBody: [
     [
-      { formattedValue: "North", rawValue: "North" },
-      { formattedValue: "350.0", rawValue: "350.0", rawNumber: 350.0 },
+      { value: "North", type: "ROW_HEADER" },
+      { value: "350.0", type: "DATA_CELL", properties: { raw: "350.0" } },
     ],
   ],
 };
