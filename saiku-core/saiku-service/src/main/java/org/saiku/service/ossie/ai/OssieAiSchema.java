@@ -195,6 +195,12 @@ public class OssieAiSchema {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class Field {
         private String name;
+        /**
+         * Human-readable label from Ossie {@code field.label} (spec 0.2.0.dev0). Nullable —
+         * consumers fall back to {@link #name}. Surfaces "Net Revenue" alongside {@code NETREVENUE}.
+         */
+        private String label;
+
         private String type;
         private String description;
         private String unit;
@@ -214,6 +220,14 @@ public class OssieAiSchema {
 
         public void setName(String v) {
             this.name = v;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public void setLabel(String v) {
+            this.label = v;
         }
 
         public String getType() {

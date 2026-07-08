@@ -109,6 +109,7 @@ public final class OssieAiSchemaProjector {
                 if (f.isPii()) continue; // saiku#902 parity — PII fields never enter the AI view.
                 OssieAiSchema.Field out_field = new OssieAiSchema.Field();
                 out_field.setName(f.getName());
+                out_field.setLabel(f.getLabel());
                 out_field.setDescription(f.getDescription());
                 // Type + samples come from the warehouse. Best-effort: swallow failures so
                 // the schema still projects when the warehouse is offline (agent still sees

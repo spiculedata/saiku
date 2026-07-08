@@ -1018,13 +1018,13 @@ public class AiOssieResource {
         int dimIdx = 0;
         for (OssieAiQueryRequest.FieldRef r : req.getRows()) {
             OssieAiQueryResponse.Column col = new OssieAiQueryResponse.Column(
-                    r.getDataset() + "." + r.getField(), headerLabel(header, dimIdx, r.getField()), "dimension");
+                    r.getDataset() + "." + r.getField(), dimensionLabel(schema, r, header, dimIdx), "dimension");
             out.getColumns().add(col);
             dimIdx++;
         }
         for (OssieAiQueryRequest.FieldRef c : req.getColumns()) {
             OssieAiQueryResponse.Column col = new OssieAiQueryResponse.Column(
-                    c.getDataset() + "." + c.getField(), headerLabel(header, dimIdx, c.getField()), "dimension");
+                    c.getDataset() + "." + c.getField(), dimensionLabel(schema, c, header, dimIdx), "dimension");
             out.getColumns().add(col);
             dimIdx++;
         }
@@ -1223,6 +1223,25 @@ public class AiOssieResource {
             sup.put("reason", "k-anonymity threshold k=" + kAnonymityFilter.threshold());
             body.put("suppressed", sup);
         }
+    }
+
+    /**
+     * Column label for a dimension: prefers the field's Ossie {@code label} (spec 0.2.0.dev0
+     * — surfaces "Net Revenue" alongside {@code NETREVENUE}), else the CellDataSet header, else
+     * the raw field name. Same fallback chain the MDX AI response uses.
+     */
+    private String dimensionLabel(
+            OssieAiSchema schema, OssieAiQueryRequest.FieldRef ref, AbstractBaseCell[] header, int idx) {
+        OssieAiSchema.Dataset ds = schema.getDatasets()
+                .get(ref.getDataset() == null ? "" : ref.getDataset().toLowerCase(java.util.Locale.ROOT));
+        if (ds != null) {
+            OssieAiSchema.Field f = ds.getFields()
+                    .get(ref.getField() == null ? "" : ref.getField().toLowerCase(java.util.Locale.ROOT));
+            if (f != null && f.getLabel() != null && !f.getLabel().isBlank()) {
+                return f.getLabel();
+            }
+        }
+        return headerLabel(header, idx, ref.getField());
     }
 
     private String headerLabel(AbstractBaseCell[] header, int idx, String fallback) {
