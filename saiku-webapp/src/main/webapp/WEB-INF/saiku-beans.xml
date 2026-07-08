@@ -297,14 +297,20 @@
     </bean>
 
     <!-- Ossie AI Query API (#1394) — parallel to aiQueryResource but for semantic-YAML
-         Ossie models. Three-endpoint R1 core: GET /ai/ossie/models, GET
-         /ai/ossie/schema/{connection}/{model}, POST /ai/ossie/query. All three
-         collaborators are already provisioned upstream. -->
+         Ossie models. R2 endpoints: GET /ai/ossie/models, GET /ai/ossie/schema/{c}/{m},
+         POST /ai/ossie/query (+ ?format=matrix), POST /ai/ossie/query/preview, GET
+         /ai/ossie/values/search, POST /ai/ossie/query/execute-async + status/result/cancel. -->
+    <bean id="ossieAsyncQueryServiceBean" class="org.saiku.service.ossie.ai.OssieAsyncQueryService"
+          destroy-method="shutdown">
+        <constructor-arg ref="ossieQueryServiceBean"/>
+    </bean>
     <bean id="aiOssieResource" class="org.saiku.web.rest.resources.AiOssieResource">
         <property name="ossieDiscoverService" ref="ossieDiscoverServiceBean"/>
         <property name="ossieQueryService" ref="ossieQueryServiceBean"/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
         <property name="datasourceManager" ref="repositoryDsManager"/>
+        <property name="asyncQueryService" ref="ossieAsyncQueryServiceBean"/>
+        <property name="kAnonymityFilter" ref="kAnonymityFilter"/>
     </bean>
 
     <!-- saiku#906: admin-only read API over the audit log

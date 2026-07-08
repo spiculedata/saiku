@@ -204,11 +204,13 @@ public final class OssieAiSchemaProjector {
             out_field.setType(cached.type);
             return;
         }
-        String sourceTable = ds.getSource() != null && !ds.getSource().isBlank() ? ds.getSource() : ds.getName();
-        String col = f.getExpression() != null && !f.getExpression().isBlank() ? f.getExpression() : f.getName();
-        // We deliberately don't schema-qualify — the SaikuOssieConnection typically opens with a
-        // default schema so unqualified refs resolve. If a warehouse ends up needing a
-        // qualifier, add it once here; the fuzz suite catches broken SQL immediately.
+        // Ossie's Calcite schema exposes tables under the DATASET name — not the source table
+        // name — so query against ds.getName() not ds.getSource(). Quote it so case-insensitive
+        // resolution stays predictable across dialects. Fact tables happened to work with source
+        // names when the underlying warehouse used the same identifier, but dim tables (e.g.
+        // DIM_PAYER) never did — silently returning empty sample lists.
+        String sourceTable = "\"" + ds.getName() + "\"";
+        String col = f.getName();
         String sql = "SELECT DISTINCT " + col + " FROM " + sourceTable + " LIMIT " + (SAMPLE_LIMIT + 1);
 
         List<String> values = new ArrayList<>();

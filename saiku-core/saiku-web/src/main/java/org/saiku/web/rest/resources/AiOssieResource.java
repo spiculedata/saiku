@@ -32,6 +32,7 @@ import org.saiku.olap.query2.OssieQueryModel;
 import org.saiku.olap.query2.ThinQuery;
 import org.saiku.service.datasource.IDatasourceManager;
 import org.saiku.service.olap.OlapDiscoverService;
+import org.saiku.service.olap.ai.KAnonymityFilter;
 import org.saiku.service.ossie.OssieDiscoverService;
 import org.saiku.service.ossie.OssieModelDto;
 import org.saiku.service.ossie.OssieQueryService;
@@ -41,6 +42,7 @@ import org.saiku.service.ossie.ai.OssieAiSchema;
 import org.saiku.service.ossie.ai.OssieAiSchemaProjector;
 import org.saiku.service.ossie.ai.OssieAiValidationException;
 import org.saiku.service.ossie.ai.OssieAiValidator;
+import org.saiku.service.ossie.ai.OssieAsyncQueryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -76,6 +78,13 @@ public class AiOssieResource {
     private OssieQueryService ossieQueryService;
     private OlapDiscoverService olapDiscoverService;
     private IDatasourceManager datasourceManager;
+    private OssieAsyncQueryService asyncQueryService;
+    /**
+     * Optional k-anonymity filter. When set + enabled, records-format responses suppress metric
+     * values on rows whose count-shaped metric falls below the configured k. Kept null in unit
+     * tests so behaviour is opt-in.
+     */
+    private KAnonymityFilter kAnonymityFilter;
 
     private final OssieAiSchemaProjector projector = new OssieAiSchemaProjector();
     private final OssieAiValidator validator = new OssieAiValidator();
@@ -94,6 +103,14 @@ public class AiOssieResource {
 
     public void setDatasourceManager(IDatasourceManager m) {
         this.datasourceManager = m;
+    }
+
+    public void setAsyncQueryService(OssieAsyncQueryService s) {
+        this.asyncQueryService = s;
+    }
+
+    public void setKAnonymityFilter(KAnonymityFilter f) {
+        this.kAnonymityFilter = f;
     }
 
     // -------------------------------------------------------------------
@@ -199,7 +216,7 @@ public class AiOssieResource {
     @Path("/query")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response executeAi(OssieAiQueryRequest req) {
+    public Response executeAi(OssieAiQueryRequest req, @jakarta.ws.rs.QueryParam("format") String format) {
         try {
             if (req == null) {
                 return badRequest("body", "request body required", List.of());
@@ -238,6 +255,10 @@ public class AiOssieResource {
             CellDataSet cds = ossieQueryService.execute(tq);
             long runtime = System.currentTimeMillis() - t0;
 
+            if ("matrix".equalsIgnoreCase(format)) {
+                Map<String, Object> body = toMatrixResponse(tq.getName(), runtime, cds);
+                return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+            }
             OssieAiQueryResponse resp = toRecordsResponse(tq.getName(), runtime, cds, schema, req);
             return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
         } catch (OssieAiValidationException e) {
@@ -248,6 +269,374 @@ public class AiOssieResource {
             log.error("Ossie AI query failed", e);
             return error("query failed: " + e.getMessage());
         }
+    }
+
+    // -------------------------------------------------------------------
+    // Async — /query/execute-async, /query/status/{id}, /query/result/{id}, DELETE /query/{id}
+    // -------------------------------------------------------------------
+
+    /**
+     * Submit a shelf-state query for background execution. Validation runs synchronously so 400s
+     * come back immediately; execution runs on the {@link OssieAsyncQueryService}'s pool.
+     */
+    @POST
+    @Path("/query/execute-async")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response executeAsync(OssieAiQueryRequest req) {
+        if (asyncQueryService == null) {
+            return error("async service not configured");
+        }
+        try {
+            if (req == null || req.getConnection() == null) {
+                return badRequest("connection", "connection is required", List.of());
+            }
+            OssieModelDto semantic = ossieDiscoverService.getModel(req.getConnection());
+            if (req.getModel() == null || req.getModel().isBlank()) req.setModel(semantic.getName());
+            OssieAiSchema schema = projector.project(req.getConnection(), semantic, null);
+            validator.validate(req, schema);
+            OssieQueryModel internal = toInternal(req, semantic);
+            ThinQuery tq = new ThinQuery();
+            tq.setName("ossie-ai-" + UUID.randomUUID().toString().substring(0, 8));
+            tq.setQueryType("OSSIE");
+            internal.setConnection(req.getConnection());
+            internal.setModel(req.getModel());
+            tq.setOssieQueryModel(internal);
+            OssieAsyncQueryService.Handle h = asyncQueryService.submit(tq, currentPrincipal());
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("queryId", h.getId());
+            body.put("status", h.getStatus().name());
+            return Response.status(Response.Status.ACCEPTED)
+                    .entity(body)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        } catch (OssieAiValidationException e) {
+            return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+        } catch (Exception e) {
+            log.error("Ossie AI async submit failed", e);
+            return error("submit failed: " + e.getMessage());
+        }
+    }
+
+    @GET
+    @Path("/query/status/{queryId}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response asyncStatus(@PathParam("queryId") String queryId) {
+        if (asyncQueryService == null) return error("async service not configured");
+        OssieAsyncQueryService.Handle h = asyncQueryService.getOwned(queryId, currentPrincipal(), currentUserIsAdmin());
+        if (h == null) return Response.status(Response.Status.NOT_FOUND).build();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("queryId", queryId);
+        body.put("status", h.getStatus().name());
+        if (h.getErrorMessage() != null) body.put("error", h.getErrorMessage());
+        return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    @GET
+    @Path("/query/result/{queryId}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response asyncResult(
+            @PathParam("queryId") String queryId, @jakarta.ws.rs.QueryParam("format") String format) {
+        if (asyncQueryService == null) return error("async service not configured");
+        OssieAsyncQueryService.Handle h = asyncQueryService.getOwned(queryId, currentPrincipal(), currentUserIsAdmin());
+        if (h == null) return Response.status(Response.Status.NOT_FOUND).build();
+        switch (h.getStatus()) {
+            case PENDING:
+            case RUNNING:
+                Map<String, Object> pending = new LinkedHashMap<>();
+                pending.put("queryId", queryId);
+                pending.put("status", h.getStatus().name());
+                return Response.status(Response.Status.ACCEPTED)
+                        .entity(pending)
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            case FAILED:
+            case CANCELLED:
+                Map<String, Object> fail = new LinkedHashMap<>();
+                fail.put("queryId", queryId);
+                fail.put("status", h.getStatus().name());
+                fail.put(
+                        "error",
+                        h.getErrorMessage() != null
+                                ? h.getErrorMessage()
+                                : h.getStatus().name());
+                return Response.ok(fail).type(MediaType.APPLICATION_JSON).build();
+            case DONE:
+                try {
+                    CellDataSet cds = h.getResult();
+                    long runtime = h.getCompletedAt() != null && h.getSubmittedAt() != null
+                            ? java.time.Duration.between(h.getSubmittedAt(), h.getCompletedAt())
+                                    .toMillis()
+                            : 0L;
+                    if ("matrix".equalsIgnoreCase(format)) {
+                        Map<String, Object> matrix = toMatrixResponse(queryId, runtime, cds);
+                        return Response.ok(matrix)
+                                .type(MediaType.APPLICATION_JSON)
+                                .build();
+                    }
+                    OssieAiQueryRequest submitted =
+                            translateBackToAiRequest(h.getQuery().getOssieQueryModel());
+                    OssieModelDto semantic = ossieDiscoverService.getModel(submitted.getConnection());
+                    OssieAiSchema schema = projector.project(submitted.getConnection(), semantic, null);
+                    OssieAiQueryResponse resp = toRecordsResponse(queryId, runtime, cds, schema, submitted);
+                    return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
+                } catch (Exception e) {
+                    log.error("async result serialisation failed for {}", queryId, e);
+                    return error("result serialisation failed");
+                }
+            default:
+                return error("unexpected status: " + h.getStatus());
+        }
+    }
+
+    @jakarta.ws.rs.DELETE
+    @Path("/query/{queryId}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response asyncCancel(@PathParam("queryId") String queryId) {
+        if (asyncQueryService == null) return error("async service not configured");
+        boolean ok = asyncQueryService.cancel(queryId, currentPrincipal(), currentUserIsAdmin());
+        if (!ok) return Response.status(Response.Status.NOT_FOUND).build();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("queryId", queryId);
+        body.put("status", "CANCELLED");
+        return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
+     * Rehydrate the AI-facing request from the internal ThinQuery so async result serialisation
+     * can label columns the same way sync serialisation does. Same-order fields; we don't lose
+     * anything here because the AI → internal translation is 1:1.
+     */
+    private OssieAiQueryRequest translateBackToAiRequest(OssieQueryModel internal) {
+        OssieAiQueryRequest req = new OssieAiQueryRequest();
+        req.setConnection(internal.getConnection());
+        req.setModel(internal.getModel());
+        for (OssieQueryModel.FieldRef r : internal.getRows()) {
+            OssieAiQueryRequest.FieldRef out = new OssieAiQueryRequest.FieldRef();
+            out.setDataset(r.getDataset());
+            out.setField(r.getField());
+            req.getRows().add(out);
+        }
+        for (OssieQueryModel.FieldRef c : internal.getColumns()) {
+            OssieAiQueryRequest.FieldRef out = new OssieAiQueryRequest.FieldRef();
+            out.setDataset(c.getDataset());
+            out.setField(c.getField());
+            req.getColumns().add(out);
+        }
+        for (OssieQueryModel.MetricRef v : internal.getValues()) {
+            OssieAiQueryRequest.MetricRef out = new OssieAiQueryRequest.MetricRef();
+            out.setMetric(v.getMetric());
+            out.setAggregation(v.getAggregation());
+            req.getValues().add(out);
+        }
+        req.setLimit(internal.getLimit());
+        return req;
+    }
+
+    /** Current Spring Security principal name, or null if unauthenticated. */
+    private String currentPrincipal() {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext()
+                        .getAuthentication();
+        if (auth == null) return null;
+        return auth.getName();
+    }
+
+    /** Whether the current caller has ROLE_ADMIN. Used by async ownership checks. */
+    private boolean currentUserIsAdmin() {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext()
+                        .getAuthentication();
+        if (auth == null) return false;
+        for (org.springframework.security.core.GrantedAuthority ga : auth.getAuthorities()) {
+            if ("ROLE_ADMIN".equals(ga.getAuthority())) return true;
+        }
+        return false;
+    }
+
+    // -------------------------------------------------------------------
+    // POST /query/preview  — compile to SQL without executing
+    // -------------------------------------------------------------------
+
+    /**
+     * Validate + translate the request into SQL without executing it. Same self-correcting
+     * VALIDATION_ERROR envelope as {@code POST /query} when a name is wrong. Response:
+     *
+     * <pre>{@code
+     * { queryId: "ossie-ai-...", status: "PREVIEW", generatedSql: "SELECT ..." }
+     * }</pre>
+     *
+     * <p>Uses {@link OssieQueryService#previewSql} which runs the same translator the executor
+     * runs — so what you see here is 1:1 what {@code POST /query} would dispatch.
+     */
+    @POST
+    @Path("/query/preview")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response previewAi(OssieAiQueryRequest req) {
+        try {
+            if (req == null) {
+                return badRequest("body", "request body required", List.of());
+            }
+            if (req.getConnection() == null || req.getConnection().isBlank()) {
+                return badRequest("connection", "connection is required", List.of());
+            }
+            OssieModelDto semantic = ossieDiscoverService.getModel(req.getConnection());
+            if (req.getModel() == null || req.getModel().isBlank()) req.setModel(semantic.getName());
+            OssieAiSchema schema = projector.project(req.getConnection(), semantic, null);
+            validator.validate(req, schema);
+
+            OssieQueryModel internal = toInternal(req, semantic);
+            String sql = ossieQueryService.previewSql(internal);
+
+            String previewId =
+                    "ossie-ai-preview-" + UUID.randomUUID().toString().substring(0, 8);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("queryId", previewId);
+            body.put("status", "PREVIEW");
+            body.put("generatedSql", sql);
+            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+        } catch (OssieAiValidationException e) {
+            return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+        } catch (IllegalArgumentException e) {
+            return badRequest("body", e.getMessage(), List.of());
+        } catch (Exception e) {
+            log.error("Ossie AI query preview failed", e);
+            return error("preview failed: " + e.getMessage());
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // GET /values/search — substring match over distinct field values
+    // -------------------------------------------------------------------
+
+    /**
+     * Substring lookup of distinct values on a field. Ossie counterpart of MDX's
+     * {@code /ai/members/search}. Runs a {@code SELECT DISTINCT <field> FROM <src>
+     * WHERE <field> LIKE '%q%' LIMIT n} on the warehouse and returns whatever matches.
+     *
+     * <p>Query params:
+     *
+     * <ul>
+     *   <li>{@code connection} (required) — Ossie connection name.
+     *   <li>{@code model} (optional) — model name; defaults to the connection's model.
+     *   <li>{@code dataset} (required) — dataset containing the field.
+     *   <li>{@code field} (required) — field to search.
+     *   <li>{@code q} (optional) — substring to filter by; omit for the first N values.
+     *   <li>{@code limit} (optional, default 20, max 200) — cap on returned matches.
+     * </ul>
+     */
+    @GET
+    @Path("/values/search")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response searchValues(
+            @jakarta.ws.rs.QueryParam("connection") String connectionName,
+            @jakarta.ws.rs.QueryParam("model") String modelName,
+            @jakarta.ws.rs.QueryParam("dataset") String datasetName,
+            @jakarta.ws.rs.QueryParam("field") String fieldName,
+            @jakarta.ws.rs.QueryParam("q") String q,
+            @jakarta.ws.rs.QueryParam("limit") Integer limit) {
+        try {
+            if (connectionName == null || connectionName.isBlank()) {
+                return badRequest("connection", "connection is required", List.of());
+            }
+            if (datasetName == null || datasetName.isBlank()) {
+                return badRequest("dataset", "dataset is required", List.of());
+            }
+            if (fieldName == null || fieldName.isBlank()) {
+                return badRequest("field", "field is required", List.of());
+            }
+            int cap = limit == null ? 20 : Math.max(1, Math.min(limit, 200));
+
+            OssieModelDto semantic = ossieDiscoverService.getModel(connectionName);
+            if (modelName != null && !modelName.isBlank() && !modelName.equalsIgnoreCase(semantic.getName())) {
+                return badRequest("model", "unknown model '" + modelName + "'", List.of(semantic.getName()));
+            }
+            OssieModelDto.Dataset ds = null;
+            for (OssieModelDto.Dataset d : semantic.getDatasets()) {
+                if (d.getName().equalsIgnoreCase(datasetName)) {
+                    ds = d;
+                    break;
+                }
+            }
+            if (ds == null) {
+                List<String> avail = new ArrayList<>();
+                for (OssieModelDto.Dataset d : semantic.getDatasets()) avail.add(d.getName());
+                return badRequest("dataset", "unknown dataset '" + datasetName + "'", avail);
+            }
+            OssieModelDto.Field field = null;
+            for (OssieModelDto.Field f : ds.getFields()) {
+                if (f.isPii()) continue; // PII: same policy as schema view — cannot search across masked fields.
+                if (f.getName().equalsIgnoreCase(fieldName)) {
+                    field = f;
+                    break;
+                }
+            }
+            if (field == null) {
+                List<String> avail = new ArrayList<>();
+                for (OssieModelDto.Field f : ds.getFields()) if (!f.isPii()) avail.add(f.getName());
+                return badRequest(
+                        "field", "unknown field '" + fieldName + "' on dataset '" + ds.getName() + "'", avail);
+            }
+
+            Connection jdbc = openWarehouseConnection(connectionName);
+            if (jdbc == null) {
+                return error("could not open warehouse connection for '" + connectionName + "'");
+            }
+            try {
+                List<String> matches = runValuesSearch(jdbc, ds, field, q, cap);
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("connection", connectionName);
+                body.put("model", semantic.getName());
+                body.put("dataset", ds.getName());
+                body.put("field", field.getName());
+                body.put("q", q);
+                body.put("limit", cap);
+                body.put("matches", matches);
+                return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+            } finally {
+                try {
+                    jdbc.close();
+                } catch (Exception ignored) {
+                }
+            }
+        } catch (IllegalArgumentException e) {
+            return badRequest("body", e.getMessage(), List.of());
+        } catch (Exception e) {
+            log.error("Ossie AI values-search failed", e);
+            return error("values-search failed: " + e.getMessage());
+        }
+    }
+
+    private List<String> runValuesSearch(
+            Connection jdbc, OssieModelDto.Dataset ds, OssieModelDto.Field field, String q, int cap) throws Exception {
+        // Ossie's Calcite schema exposes tables under their DATASET name (e.g. "payer"), not
+        // their raw source name (e.g. "DIM_PAYER"). Quote it so caseSensitive=false doesn't
+        // matter; column stays unquoted so we get the same case-insensitive resolution the
+        // projector's sample-value query relies on.
+        String src = "\"" + ds.getName() + "\"";
+        String col = field.getName();
+        // Inlined literal — Calcite's parameter binding on the JDBC adapter drops the
+        // binding at plan time for LIKE with UPPER/CAST wrapping, so we hand-escape the
+        // filter value here. Safe: q is user-supplied but we single-quote-escape per SQL
+        // standard and the col + src are validated against the model before we get here.
+        String sql;
+        if (q == null || q.isBlank()) {
+            sql = "SELECT DISTINCT " + col + " FROM " + src + " LIMIT " + cap;
+        } else {
+            String escaped = q.toUpperCase(java.util.Locale.ROOT).replace("'", "''");
+            sql = "SELECT DISTINCT " + col + " FROM " + src + " WHERE UPPER(CAST(" + col + " AS VARCHAR)) LIKE '%"
+                    + escaped + "%' LIMIT " + cap;
+        }
+        List<String> out = new ArrayList<>();
+        try (java.sql.Statement st = jdbc.createStatement();
+                java.sql.ResultSet rs = st.executeQuery(sql)) {
+            while (rs.next()) {
+                Object v = rs.getObject(1);
+                out.add(v == null ? null : String.valueOf(v));
+            }
+        }
+        return out;
     }
 
     // -------------------------------------------------------------------
@@ -382,8 +771,103 @@ public class AiOssieResource {
             }
         }
         out.getMeta().setRowCount(out.getRecords().size());
-        // truncated + suppressed are R2 concerns; leave them at defaults.
+        applyKAnonymity(out);
         return out;
+    }
+
+    /**
+     * Suppress metric values on rows whose count-shaped metric falls below k. Uses the same
+     * {@link KAnonymityFilter} the MDX AI path uses so the threshold + mask are configured in
+     * one place (env {@code SAIKU_AI_KANONYMITY_K}, or property
+     * {@code saiku.ai.kanonymity.k}).
+     *
+     * <p>Detection heuristic: a column is a "count-shaped metric" when its
+     * {@code aggregationKind} is {@code count}. That covers both {@code COUNT(*)} metrics
+     * declared in the YAML and metrics whose expression parses to a count. For non-count
+     * shelves the filter is a no-op — semantically we can't decide what "backing count" means
+     * for e.g. AVG(price), so we leave those responses unchanged rather than silently
+     * suppress everything.
+     */
+    private void applyKAnonymity(OssieAiQueryResponse resp) {
+        if (kAnonymityFilter == null || !kAnonymityFilter.enabled()) return;
+        List<String> countKeys = new ArrayList<>();
+        for (OssieAiQueryResponse.Column c : resp.getColumns()) {
+            if ("count".equalsIgnoreCase(c.getAggregationKind())) countKeys.add(c.getKey());
+        }
+        if (countKeys.isEmpty()) return;
+        int suppressed = 0;
+        for (Map<String, Object> rec : resp.getRecords()) {
+            int max = 0;
+            for (String key : countKeys) {
+                Object v = rec.get(key);
+                if (v instanceof OssieAiQueryResponse.CellValue cv && cv.getValue() instanceof Number n) {
+                    max = Math.max(max, n.intValue());
+                }
+            }
+            if (kAnonymityFilter.shouldSuppress(max)) {
+                for (OssieAiQueryResponse.Column c : resp.getColumns()) {
+                    if (!"metric".equals(c.getType())) continue;
+                    OssieAiQueryResponse.CellValue masked =
+                            new OssieAiQueryResponse.CellValue(null, kAnonymityFilter.maskValue(), c.getUnit());
+                    rec.put(c.getKey(), masked);
+                }
+                suppressed++;
+            }
+        }
+        if (suppressed > 0) {
+            OssieAiQueryResponse.Suppressed s = new OssieAiQueryResponse.Suppressed();
+            s.setCount(suppressed);
+            s.setReason("k-anonymity threshold k=" + kAnonymityFilter.threshold());
+            resp.getMeta().setSuppressed(s);
+        }
+    }
+
+    /**
+     * Matrix-format response — 1:1 the CellDataSet envelope the MDX matrix path uses so
+     * downstream consumers that already render OLAP results work unchanged on Ossie. Header
+     * cells serialise as {@code {value, type}}; body cells add {@code raw} when a numeric parse
+     * survives.
+     */
+    private Map<String, Object> toMatrixResponse(String queryId, long runtime, CellDataSet cds) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("queryId", queryId);
+        body.put("runtime", runtime);
+        body.put("format", "matrix");
+        List<List<Map<String, Object>>> headers = new ArrayList<>();
+        if (cds != null && cds.getCellSetHeaders() != null) {
+            for (AbstractBaseCell[] row : cds.getCellSetHeaders()) {
+                List<Map<String, Object>> outRow = new ArrayList<>();
+                for (AbstractBaseCell c : row) {
+                    Map<String, Object> cell = new LinkedHashMap<>();
+                    cell.put("value", c.getFormattedValue());
+                    cell.put("type", "COLUMN_HEADER");
+                    outRow.add(cell);
+                }
+                headers.add(outRow);
+            }
+        }
+        List<List<Map<String, Object>>> bodyRows = new ArrayList<>();
+        if (cds != null && cds.getCellSetBody() != null) {
+            for (AbstractBaseCell[] row : cds.getCellSetBody()) {
+                List<Map<String, Object>> outRow = new ArrayList<>();
+                for (AbstractBaseCell c : row) {
+                    Map<String, Object> cell = new LinkedHashMap<>();
+                    cell.put("value", c.getFormattedValue());
+                    if (c instanceof DataCell dc) {
+                        cell.put("type", "DATA_CELL");
+                        Object raw = dc.getRawNumber();
+                        if (raw != null) cell.put("raw", raw);
+                    } else {
+                        cell.put("type", "ROW_HEADER");
+                    }
+                    outRow.add(cell);
+                }
+                bodyRows.add(outRow);
+            }
+        }
+        body.put("cellSetHeaders", headers);
+        body.put("cellSetBody", bodyRows);
+        return body;
     }
 
     private String headerLabel(AbstractBaseCell[] header, int idx, String fallback) {
