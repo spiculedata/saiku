@@ -2,21 +2,29 @@
   import { ossieQuery } from "$lib/stores/ossieQuery.svelte";
   import { selection } from "$lib/stores/selection.svelte";
   import { session } from "$lib/stores/session.svelte";
-  import { Button } from "$lib/components/ui";
   import { toasts } from "$lib/stores/toasts.svelte";
   import {
     ArrowLeftRight,
     ArrowDown,
     ArrowUp,
     BarChart3,
+    Braces,
+    ChevronDown,
+    Copy,
     Download,
-    FileCode,
+    FilePlus2,
+    FileSpreadsheet,
+    FileText,
+    FileType,
     FolderOpen,
+    Maximize2,
+    Minimize2,
     Play,
     Redo2,
     Save,
     Table as TableIcon,
     Undo2,
+    Wrench,
     X,
   } from "lucide-svelte";
   import ChartView from "$lib/views/ChartView.svelte";
@@ -24,6 +32,7 @@
   import Modal from "$lib/components/Modal.svelte";
   import { previewOssieSql } from "$lib/api/ossie";
   import { downloadCsv, ossieResultToCsv } from "$lib/ossie/exportCsv";
+  import { platform } from "$lib/stores/platform.svelte";
   import type { OssieFieldRef, OssieFilterExpr, OssieMetricRef } from "$lib/api/ossie";
   import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
   import OssieLoadModal from "$lib/modals/OssieLoadModal.svelte";
@@ -308,6 +317,39 @@
   }
 
   // ------------------------------------------------------------------
+  // New — clear the shelf state back to an empty query for the current
+  // model. Called from the leftmost toolbar button (matches MDX's FilePlus2).
+  // ------------------------------------------------------------------
+  function onNew() {
+    if (!ossieQuery.current) return;
+    // No confirm-if-dirty prompt yet; MDX has one gated on query.dirty. Follow-up if
+    // users start losing work.
+    ossieQuery.captureForUndo();
+    ossieQuery.current = {
+      ...ossieQuery.current,
+      rows: [],
+      columns: [],
+      values: [],
+      filters: [],
+      sorts: [],
+    };
+    ossieQuery.result = null;
+    ossieQuery.rawResult = null;
+  }
+
+  // ------------------------------------------------------------------
+  // Dropdown menus (Tools / Export) — mirror MDX toolbar behaviour.
+  // Only one dropdown open at a time; clicking outside closes them.
+  // ------------------------------------------------------------------
+  let toolsMenuOpen = $state(false);
+  let exportMenuOpen = $state(false);
+
+  function handleBodyClick() {
+    toolsMenuOpen = false;
+    exportMenuOpen = false;
+  }
+
+  // ------------------------------------------------------------------
   // Show SQL — server-side preview so what we display matches what the
   // executor actually runs (rather than duplicating translation logic).
   // ------------------------------------------------------------------
@@ -394,56 +436,134 @@
   });
 </script>
 
+<svelte:window onclick={handleBodyClick} />
+
 <div class="ossie-canvas">
-  <header class="ossie-canvas__toolbar">
-    <Button
-      onclick={runQuery}
-      disabled={!runnable || ossieQuery.running}
-    >
-      <Play size={14} />
-      {ossieQuery.running ? "Running…" : "Run"}
-    </Button>
-    <Button variant="outline" onclick={openSaveModal} disabled={!ossieQuery.current}>
-      <Save size={14} />
-      Save
-    </Button>
-    <Button variant="outline" onclick={openLoadModal}>
-      <FolderOpen size={14} />
-      Load
-    </Button>
-    <Button
-      variant="outline"
-      onclick={() => ossieQuery.undo()}
-      disabled={!ossieQuery.canUndo}
-      title="Undo (Cmd/Ctrl+Z)"
-    >
-      <Undo2 size={14} />
-    </Button>
-    <Button
-      variant="outline"
-      onclick={() => ossieQuery.redo()}
-      disabled={!ossieQuery.canRedo}
-      title="Redo (Shift+Cmd/Ctrl+Z)"
-    >
-      <Redo2 size={14} />
-    </Button>
-    <Button
-      variant="outline"
-      onclick={onSwapAxes}
-      disabled={!ossieQuery.current || (ossieQuery.current.rows.length === 0 && ossieQuery.current.columns.length === 0)}
-      title="Swap Rows and Columns"
-    >
-      <ArrowLeftRight size={14} />
-      Swap
-    </Button>
-    <Button variant="outline" onclick={onExportCsv} disabled={!ossieQuery.result} title="Download result as CSV">
-      <Download size={14} />
-      CSV
-    </Button>
-    <Button variant="outline" onclick={onShowSql} disabled={!ossieQuery.current} title="Preview the SQL this shelf state generates">
-      <FileCode size={14} />
-      SQL
-    </Button>
+  <!-- Toolbar mirrors WorkspaceToolbar structurally: file group / undo-redo / run+swap /
+       tools / grow / view-toggle+chart-type / export. Ossie-only bits use the same
+       tb-btn styling so the two toolbars read as siblings, not as different products. -->
+  <div class="toolbar" role="toolbar" aria-label="Ossie workbench toolbar">
+    <div class="flex items-center gap-0.5 relative" role="group" aria-label="File">
+      <button
+        class="tb-btn"
+        title="New"
+        aria-label="New"
+        onclick={onNew}
+        disabled={!ossieQuery.current}
+      >
+        <FilePlus2 size={18} />
+      </button>
+      <button class="tb-btn" title="Open" aria-label="Open" onclick={openLoadModal}>
+        <FolderOpen size={18} />
+      </button>
+      <button
+        class="tb-btn"
+        title="Save"
+        aria-label="Save"
+        onclick={openSaveModal}
+        disabled={!ossieQuery.current}
+      >
+        <Save size={18} />
+      </button>
+      <button
+        class="tb-btn"
+        title="Save as"
+        aria-label="Save as"
+        onclick={openSaveModal}
+        disabled={!ossieQuery.current}
+      >
+        <Copy size={18} />
+      </button>
+    </div>
+    <div class="toolbar__sep"></div>
+    <div class="flex items-center gap-0.5 relative" role="group" aria-label="Undo / redo">
+      <button
+        class="tb-btn"
+        title={platform.isMac ? "Undo (⌘Z)" : "Undo (Ctrl+Z)"}
+        aria-label="Undo"
+        disabled={!ossieQuery.canUndo}
+        onclick={() => ossieQuery.undo()}
+      >
+        <Undo2 size={18} />
+      </button>
+      <button
+        class="tb-btn"
+        title={platform.isMac ? "Redo (⇧⌘Z)" : "Redo (Ctrl+Shift+Z)"}
+        aria-label="Redo"
+        disabled={!ossieQuery.canRedo}
+        onclick={() => ossieQuery.redo()}
+      >
+        <Redo2 size={18} />
+      </button>
+    </div>
+    <div class="toolbar__sep"></div>
+    <div class="flex items-center gap-0.5 relative" role="group" aria-label="Query">
+      <button
+        class="tb-btn tb-btn--primary"
+        class:tb-btn--disabled-shape={!runnable}
+        title={runnable ? "Run" : "Drop fields on Rows/Columns and a metric on Values first"}
+        aria-disabled={!runnable}
+        disabled={!runnable || ossieQuery.running}
+        onclick={runQuery}
+      >
+        <Play size={18} /><span class="text-sm">{ossieQuery.running ? "Running…" : "Run"}</span>
+      </button>
+      <button
+        class="tb-btn"
+        title="Swap Rows and Columns"
+        aria-label="Swap axes"
+        onclick={onSwapAxes}
+        disabled={!ossieQuery.current
+          || (ossieQuery.current.rows.length === 0 && ossieQuery.current.columns.length === 0)}
+      >
+        <ArrowLeftRight size={18} />
+      </button>
+    </div>
+    <div class="toolbar__sep"></div>
+    <div class="flex items-center gap-0.5 relative" role="group" aria-label="Tools">
+      <button
+        class="tb-btn"
+        onclick={(e) => {
+          e.stopPropagation();
+          toolsMenuOpen = !toolsMenuOpen;
+          exportMenuOpen = false;
+        }}
+        title="Tools"
+      >
+        <Wrench size={18} /><span class="text-sm">Tools</span><ChevronDown size={14} />
+      </button>
+      {#if toolsMenuOpen}
+        <div class="toolbar__dropdown">
+          <button
+            type="button"
+            class="toolbar__item"
+            onclick={() => {
+              toolsMenuOpen = false;
+              void onShowSql();
+            }}
+            disabled={!ossieQuery.current}
+          >
+            <Braces size={16} /> <span>Show SQL…</span>
+          </button>
+          <button
+            type="button"
+            class="toolbar__item"
+            onclick={() => {
+              toolsMenuOpen = false;
+              platform.toggleFullscreen();
+            }}
+            aria-pressed={platform.fullscreen}
+          >
+            {#if platform.fullscreen}
+              <Minimize2 size={16} /> <span>Exit fullscreen</span>
+            {:else}
+              <Maximize2 size={16} /> <span>Enter fullscreen</span>
+            {/if}
+          </button>
+        </div>
+      {/if}
+    </div>
+    <div class="toolbar__sep"></div>
     <label class="ossie-canvas__limit" title="Cap the emitted SQL with LIMIT N (blank = no limit)">
       <span class="ossie-canvas__limit-label">LIMIT</span>
       <input
@@ -456,29 +576,36 @@
         onchange={commitLimit}
       />
     </label>
-    <!-- View toggle + chart-type picker. Mirrors the MDX QueryCanvas' Grid/Chart tabs. -->
-    <div class="ossie-canvas__viewtoggle" role="tablist" aria-label="View mode">
+    {#if ossieQuery.savedName}
+      <span class="ossie-canvas__saved-name">{ossieQuery.savedName}</span>
+    {/if}
+    {#if ossieQuery.error}
+      <span class="ossie-canvas__error">{ossieQuery.error}</span>
+    {/if}
+    {#if ossieQuery.result?.runtime !== undefined}
+      <span class="ossie-canvas__runtime">{ossieQuery.result.runtime}ms</span>
+    {/if}
+    <div class="flex-1"></div>
+    <div class="flex items-center gap-0.5" role="tablist" aria-label="View mode">
       <button
         type="button"
         role="tab"
         aria-selected={ossieQuery.viewMode === "grid"}
-        class="ossie-canvas__viewtab"
-        class:ossie-canvas__viewtab--active={ossieQuery.viewMode === "grid"}
+        class="tb-btn"
+        class:tb-btn--primary={ossieQuery.viewMode === "grid"}
         onclick={() => (ossieQuery.viewMode = "grid")}
       >
-        <TableIcon size={12} />
-        <span>Grid</span>
+        <TableIcon size={16} /><span class="text-sm">Grid</span>
       </button>
       <button
         type="button"
         role="tab"
         aria-selected={ossieQuery.viewMode === "chart"}
-        class="ossie-canvas__viewtab"
-        class:ossie-canvas__viewtab--active={ossieQuery.viewMode === "chart"}
+        class="tb-btn"
+        class:tb-btn--primary={ossieQuery.viewMode === "chart"}
         onclick={() => (ossieQuery.viewMode = "chart")}
       >
-        <BarChart3 size={12} />
-        <span>Chart</span>
+        <BarChart3 size={16} /><span class="text-sm">Chart</span>
       </button>
     </div>
     {#if ossieQuery.viewMode === "chart"}
@@ -492,16 +619,51 @@
         {/each}
       </select>
     {/if}
-    {#if ossieQuery.savedName}
-      <span class="ossie-canvas__saved-name">{ossieQuery.savedName}</span>
-    {/if}
-    {#if ossieQuery.error}
-      <span class="ossie-canvas__error">{ossieQuery.error}</span>
-    {/if}
-    {#if ossieQuery.result?.runtime !== undefined}
-      <span class="ossie-canvas__runtime">{ossieQuery.result.runtime}ms</span>
-    {/if}
-  </header>
+    <div class="flex items-center gap-0.5 relative" role="group" aria-label="Export">
+      <button
+        class="tb-btn"
+        onclick={(e) => {
+          e.stopPropagation();
+          exportMenuOpen = !exportMenuOpen;
+          toolsMenuOpen = false;
+        }}
+        title="Export"
+        disabled={!ossieQuery.result}
+      >
+        <Download size={18} /><span class="text-sm">Export</span><ChevronDown size={14} />
+      </button>
+      {#if exportMenuOpen}
+        <div class="toolbar__dropdown left-auto right-0">
+          <button
+            type="button"
+            class="toolbar__item"
+            onclick={() => {
+              exportMenuOpen = false;
+              onExportCsv();
+            }}
+          >
+            <FileText size={16} /> <span>CSV</span>
+          </button>
+          <button
+            type="button"
+            class="toolbar__item"
+            disabled
+            title="XLS export coming next"
+          >
+            <FileSpreadsheet size={16} /> <span>XLS (coming soon)</span>
+          </button>
+          <button
+            type="button"
+            class="toolbar__item"
+            disabled
+            title="PDF export coming next"
+          >
+            <FileType size={16} /> <span>PDF (coming soon)</span>
+          </button>
+        </div>
+      {/if}
+    </div>
+  </div>
 
   <div class="ossie-canvas__shelves">
     <div
@@ -781,14 +943,104 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    padding: var(--space-3);
-    gap: var(--space-3);
   }
-  .ossie-canvas__toolbar {
+  /* Toolbar styles ported from WorkspaceToolbar.svelte so the Ossie toolbar mirrors
+     the MDX one visually. Any change here or there should be mirrored to the other. */
+  .toolbar {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
+    gap: 6px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-muted);
     flex-wrap: wrap;
+  }
+  .toolbar__dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+    padding: 4px;
+    z-index: 50;
+    min-width: 220px;
+  }
+  .toolbar__dropdown.left-auto {
+    left: auto;
+  }
+  .toolbar__dropdown.right-0 {
+    right: 0;
+  }
+  .toolbar__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    padding: 7px 12px;
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    color: var(--fg);
+    font: inherit;
+    cursor: pointer;
+  }
+  .toolbar__item:hover {
+    background: var(--bg-hover);
+  }
+  .toolbar__item:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .toolbar__sep {
+    width: 1px;
+    height: 22px;
+    background: var(--border);
+    margin: 0 4px;
+  }
+  .tb-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    color: var(--fg-muted);
+    cursor: pointer;
+    font: inherit;
+    transition: background var(--duration-fast), color var(--duration-fast);
+  }
+  .tb-btn:hover {
+    background: var(--bg-hover);
+    color: var(--fg);
+  }
+  .tb-btn:active {
+    transform: translateY(1px);
+  }
+  .tb-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .tb-btn--primary {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+  }
+  .tb-btn--primary:hover {
+    filter: brightness(1.1);
+    background: var(--accent);
+    color: var(--bg);
+  }
+  .tb-btn--disabled-shape,
+  .tb-btn--disabled-shape:hover {
+    background: var(--bg-muted);
+    color: var(--fg-muted);
+    border-color: var(--border);
+    filter: none;
+    cursor: not-allowed;
   }
   .ossie-canvas__error {
     color: var(--danger-fg, #b91c1c);
@@ -809,10 +1061,10 @@
     align-items: center;
     gap: 6px;
     padding: 0 8px;
-    border: 1px solid var(--border-strong);
-    border-radius: 4px;
-    background: var(--bg);
-    height: 40px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: transparent;
+    height: 32px;
   }
   .ossie-canvas__limit-label {
     font-size: var(--fs-xs);
@@ -854,39 +1106,14 @@
   .ossie-result__sort-btn--active {
     color: var(--accent);
   }
-  .ossie-canvas__viewtoggle {
-    display: inline-flex;
-    border: 1px solid var(--border-strong);
-    border-radius: 4px;
-    height: 40px;
-    overflow: hidden;
-  }
-  .ossie-canvas__viewtab {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    background: transparent;
-    color: var(--fg-muted);
-    border: none;
-    padding: 0 10px;
-    font-size: var(--fs-sm);
-    cursor: pointer;
-  }
-  .ossie-canvas__viewtab--active {
-    background: var(--bg-hover);
-    color: var(--fg);
-  }
-  .ossie-canvas__viewtab:not(:last-child) {
-    border-right: 1px solid var(--border-strong);
-  }
   .ossie-canvas__charttype {
     padding: 6px 8px;
-    background: var(--bg);
-    border: 1px solid var(--border-strong);
-    border-radius: 4px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 5px;
     color: var(--fg);
     font-size: var(--fs-sm);
-    height: 40px;
+    height: 32px;
   }
   .ossie-canvas__sql {
     background: var(--bg-hover);
@@ -927,6 +1154,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
+    padding: var(--space-3) var(--space-3) 0;
   }
   .ossie-shelf {
     display: flex;
@@ -1004,6 +1232,8 @@
     border: 1px solid var(--border);
     border-radius: 4px;
     padding: var(--space-2);
+    margin: var(--space-3);
+    margin-top: var(--space-3);
   }
   .ossie-result {
     width: 100%;

@@ -44,14 +44,12 @@ test.describe("Ossie workbench (mocked backend)", () => {
     await page.locator("#cubes-select").selectOption("ossie:SALES");
     await expect(page.locator(".ossie-canvas")).toBeVisible();
 
-    // MDX toolbar buttons: assert they're not in the DOM anywhere. The MDX toolbar's
-    // Show-MDX button carries a distinctive title / aria-label; if any of these
-    // resolve, hiding regressed.
+    // MDX toolbar buttons that DON'T map to Ossie should not appear anywhere. Note:
+    // 'Swap axes' IS legitimate in Ossie mode (rows ↔ columns), so it's not tested.
+    // 'Show MDX' and 'Ask AI' are MDX-only and should be absent.
     const showMdx = page.getByRole("button", { name: /show mdx/i });
-    const swapAxes = page.getByRole("button", { name: /swap axes/i });
     const askAi = page.getByRole("button", { name: /ask ai/i });
     await expect(showMdx).toHaveCount(0);
-    await expect(swapAxes).toHaveCount(0);
     await expect(askAi).toHaveCount(0);
   });
 
@@ -95,7 +93,8 @@ test.describe("Ossie workbench (mocked backend)", () => {
     const saveName = "my-ossie";
     const savePath = `/homes/home:admin/${saveName}.saiku`;
     // Open the Save modal from the canvas toolbar.
-    await page.locator(".ossie-canvas").getByRole("button", { name: /^Save/ }).click();
+    // The toolbar's Save button is icon-only with aria-label="Save".
+    await page.locator(".toolbar").getByRole("button", { name: "Save", exact: true }).click();
     // Modal renders with the default folder (user's home) pre-selected and a name field.
     // Fill in our chosen name and confirm — scope to the modal so we don't grab the
     // toolbar's Save button too.
@@ -133,7 +132,7 @@ test.describe("Ossie workbench (mocked backend)", () => {
 
     await dropOssieField(page, "customers", "region", '[aria-label="Rows shelf"]');
     await dropOssieMetric(page, "revenue", '[aria-label="Values shelf"]');
-    await page.locator(".ossie-canvas").getByRole("button", { name: /^Run/ }).click();
+    await page.locator(".toolbar").getByRole("button", { name: /^Run/ }).click();
     await expect(page.locator(".ossie-result th").filter({ hasText: "customers.region" })).toBeVisible();
 
     // First click: sorts ASC — assert the ArrowUp icon appears next to the header text.
@@ -161,13 +160,13 @@ test.describe("Ossie workbench (mocked backend)", () => {
     const limitInput = page.locator(".ossie-canvas__limit-input");
     await limitInput.fill("25");
     await limitInput.dispatchEvent("change");
-    await page.locator(".ossie-canvas").getByRole("button", { name: /^Run/ }).click();
+    await page.locator(".toolbar").getByRole("button", { name: /^Run/ }).click();
     // Server received a payload with limit=25.
     const posted = backend.getLastExecuteBody() as { ossieQueryModel?: { limit?: number } } | null;
     expect(posted?.ossieQueryModel?.limit).toBe(25);
 
     // Swap Axes moves the region chip from Rows → Columns.
-    await page.locator(".ossie-canvas").getByRole("button", { name: /^Swap/ }).click();
+    await page.locator(".toolbar").getByRole("button", { name: "Swap axes" }).click();
     await expect(
       page.locator('[aria-label="Columns shelf"] .ossie-chip').filter({ hasText: "customers.region" }),
     ).toBeVisible();
@@ -179,7 +178,7 @@ test.describe("Ossie workbench (mocked backend)", () => {
     await expect(page.locator(".ossie-tree").getByText("region")).toBeVisible();
     await dropOssieField(page, "customers", "region", '[aria-label="Rows shelf"]');
     await dropOssieMetric(page, "revenue", '[aria-label="Values shelf"]');
-    await page.locator(".ossie-canvas").getByRole("button", { name: /^Run/ }).click();
+    await page.locator(".toolbar").getByRole("button", { name: /^Run/ }).click();
 
     // Grid mode is default; the result table is visible.
     await expect(page.locator(".ossie-result")).toBeVisible();
@@ -192,8 +191,8 @@ test.describe("Ossie workbench (mocked backend)", () => {
     await expect(page.locator(".ossie-result")).toHaveCount(0);
 
     // Flip back to Grid and confirm the table re-mounts + chart affordances go away.
-    // Scope the click to the viewtoggle container so ECharts' overlays don't intercept it.
-    await page.locator(".ossie-canvas__viewtoggle").getByRole("tab", { name: /^Grid$/ }).click();
+    // Scope the click to the view-toggle group so ECharts' overlays don't intercept it.
+    await page.locator('[role="tablist"][aria-label="View mode"]').getByRole("tab", { name: /^Grid$/ }).click();
     await expect(page.locator(".ossie-canvas__charttype")).toHaveCount(0);
     await expect(page.locator(".ossie-result")).toBeVisible();
   });
@@ -207,11 +206,11 @@ test.describe("Ossie workbench (mocked backend)", () => {
     ).toBeVisible();
 
     // Undo (via toolbar) drops the chip.
-    await page.locator(".ossie-canvas").getByRole("button", { name: "Undo (Cmd/Ctrl+Z)" }).click();
+    await page.locator(".toolbar").getByRole("button", { name: "Undo" }).click();
     await expect(page.locator('[aria-label="Rows shelf"] .ossie-chip')).toHaveCount(0);
 
     // Redo replays the chip.
-    await page.locator(".ossie-canvas").getByRole("button", { name: "Redo (Shift+Cmd/Ctrl+Z)" }).click();
+    await page.locator(".toolbar").getByRole("button", { name: "Redo" }).click();
     await expect(
       page.locator('[aria-label="Rows shelf"] .ossie-chip').filter({ hasText: "customers.region" }),
     ).toBeVisible();
@@ -231,8 +230,9 @@ test.describe("Ossie workbench (mocked backend)", () => {
     await expect(page.locator(".ossie-tree").getByText("region")).toBeVisible();
     await dropOssieField(page, "customers", "region", '[aria-label="Rows shelf"]');
 
-    // Click the SQL button — modal opens, fetches preview, shows the SQL.
-    await page.locator(".ossie-canvas").getByRole("button", { name: /^SQL/ }).click();
+    // Show SQL now lives inside the Tools dropdown.
+    await page.locator(".toolbar").getByRole("button", { name: /Tools/ }).click();
+    await page.getByRole("button", { name: /Show SQL/ }).click();
     await expect(page.getByText("Generated SQL")).toBeVisible();
     await expect(page.locator(".ossie-canvas__sql")).toContainText('SELECT COUNT(*) FROM "customers"');
   });
@@ -287,7 +287,7 @@ test.describe("Ossie workbench (mocked backend)", () => {
     await dropOssieField(page, "customers", "region", '[aria-label="Columns shelf"]');
     await dropOssieMetric(page, "revenue", '[aria-label="Values shelf"]');
 
-    await page.locator(".ossie-canvas").getByRole("button", { name: /^Run/ }).click();
+    await page.locator(".toolbar").getByRole("button", { name: /^Run/ }).click();
 
     // Crosstab render: two header cells across (Commercial + Medicare), two row headers
     // down (Alfa + Beta), and four data cells filled from the fixture.
@@ -309,7 +309,7 @@ test.describe("Ossie workbench (mocked backend)", () => {
 
     // Fact dataset is auto-picked as customers by the store (first field's dataset).
     // Scope to the Ossie canvas so we don't hit the MDX toolbar's Run split-button.
-    await page.locator(".ossie-canvas").getByRole("button", { name: /^Run/ }).click();
+    await page.locator(".toolbar").getByRole("button", { name: /^Run/ }).click();
 
     await expect(page.locator(".ossie-result").getByText("customers.region")).toBeVisible();
     await expect(page.locator(".ossie-result").getByText("North")).toBeVisible();
