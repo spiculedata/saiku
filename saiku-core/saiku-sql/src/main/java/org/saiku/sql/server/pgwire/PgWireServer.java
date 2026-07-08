@@ -307,6 +307,8 @@ public class PgWireServer implements AutoCloseable {
             sendCommandComplete(out, "SET");
             return;
         }
+        if (maybeInterceptCatalogQuery(sql, out)) return;
+        sql = stripPostgresCasts(sql);
         try (Statement stmt = calcite.createStatement();
                 ResultSet rs = stmt.executeQuery(sql)) {
             ResultSetMetaData meta = rs.getMetaData();
@@ -320,6 +322,82 @@ public class PgWireServer implements AutoCloseable {
         } catch (SQLException e) {
             sendErrorResponse(out, "42000", e.getMessage() == null ? "query failed" : e.getMessage());
         }
+    }
+
+    /**
+     * Strip Postgres-specific {@code ::type} cast syntax from the SQL text. pgjdbc's simple-mode
+     * PreparedStatement path substitutes parameters as {@code ('value'::int4)} etc., which
+     * Calcite doesn't understand. Not a full expression-level rewrite — just a targeted
+     * regex that drops {@code ::identifier} sequences. Safe for the common shapes; a query
+     * that legitimately uses {@code ::} for something else would need proper parsing.
+     */
+    private static final java.util.regex.Pattern PG_CAST_PATTERN =
+            java.util.regex.Pattern.compile("::\\s*[a-zA-Z_][a-zA-Z0-9_]*(?:\\s*\\([^)]*\\))?");
+
+    private static String stripPostgresCasts(String sql) {
+        return PG_CAST_PATTERN.matcher(sql).replaceAll("");
+    }
+
+    /**
+     * Detect Postgres system-catalog introspection queries and short-circuit them with an empty
+     * result. BI-tool clients (DBeaver, pgAdmin, Tableau) fire these at connection time to warm
+     * up their type registries — {@code SELECT ... FROM pg_catalog.pg_type}, {@code
+     * information_schema.tables}, and friends. Calcite doesn't have these system tables so
+     * dispatching would error out, blocking the connection before the user can run any real
+     * query.
+     *
+     * <p>We reply with a 0-row result carrying a placeholder single-column row description. Most
+     * clients accept this because they read introspection results by column name; missing
+     * columns just show as null/empty. Some features that depend on catalog data (type-directed
+     * autocomplete, "browse schemas" tree) will be blank — but querying the actual Ossie
+     * datasets works. A proper stub {@code pg_catalog} schema in Calcite is a follow-up.
+     */
+    private boolean maybeInterceptCatalogQuery(String sql, DataOutputStream out) throws IOException {
+        String lower = sql.toLowerCase();
+        if (lower.contains("pg_catalog.")
+                || lower.contains(" pg_type")
+                || lower.contains(" pg_class")
+                || lower.contains(" pg_namespace")
+                || lower.contains(" pg_attribute")
+                || lower.contains(" pg_description")
+                || lower.contains(" pg_proc")
+                || lower.contains(" pg_am")
+                || lower.contains(" pg_index")
+                || lower.contains("information_schema.")) {
+            sendSyntheticEmptyResult(out);
+            return true;
+        }
+        // Standalone version() / current_schema() etc.
+        if (lower.startsWith("select version()")
+                || lower.startsWith("select current_schema")
+                || lower.startsWith("show ")) {
+            sendSyntheticEmptyResult(out);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Emit a synthetic empty result: RowDescription with one placeholder TEXT column, zero
+     * DataRows, CommandComplete "SELECT 0". Used for introspection queries we can't answer.
+     */
+    private void sendSyntheticEmptyResult(DataOutputStream out) throws IOException {
+        byte[] colName = "?column?".getBytes(StandardCharsets.UTF_8);
+        // Per-field cost: name + null + 4+2+4+2+4+2 = 18 bytes
+        int payload = 2 + colName.length + 1 + 18;
+        out.writeByte('T');
+        out.writeInt(4 + payload);
+        out.writeShort(1); // one column
+        out.write(colName);
+        out.writeByte(0);
+        out.writeInt(0); // table oid
+        out.writeShort(0); // column attribute number
+        out.writeInt(PgType.TEXT);
+        out.writeShort(-1); // type size
+        out.writeInt(-1); // type modifier
+        out.writeShort(0); // text format
+        sendCommandComplete(out, "SELECT 0");
+        out.flush();
     }
 
     private void sendRowDescription(DataOutputStream out, ResultSetMetaData meta) throws IOException, SQLException {
@@ -509,6 +587,25 @@ public class PgWireServer implements AutoCloseable {
                 sendErrorResponse(out, "34000", "no portal named '" + name + "'");
                 return;
             }
+            // Describe on a catalog-intercepted portal: send NoData rather than executing the
+            // portal SQL (which would fail against Calcite). The follow-up Execute will emit
+            // the synthetic empty result via maybeInterceptCatalogQuery.
+            String lower = p.sql.toLowerCase();
+            if (lower.contains("pg_catalog.")
+                    || lower.contains(" pg_type")
+                    || lower.contains(" pg_class")
+                    || lower.contains(" pg_namespace")
+                    || lower.contains(" pg_attribute")
+                    || lower.contains(" pg_description")
+                    || lower.contains(" pg_proc")
+                    || lower.contains(" pg_am")
+                    || lower.contains(" pg_index")
+                    || lower.contains("information_schema.")) {
+                out.writeByte('n');
+                out.writeInt(4);
+                out.flush();
+                return;
+            }
             try (Statement stmt = calcite.createStatement();
                     ResultSet rs = stmt.executeQuery(p.sql)) {
                 sendRowDescription(out, rs.getMetaData());
@@ -545,8 +642,10 @@ public class PgWireServer implements AutoCloseable {
             sendCommandComplete(out, "SET");
             return;
         }
+        if (maybeInterceptCatalogQuery(p.sql, out)) return;
+        String effectiveSql = stripPostgresCasts(p.sql);
         try (Statement stmt = calcite.createStatement();
-                ResultSet rs = stmt.executeQuery(p.sql)) {
+                ResultSet rs = stmt.executeQuery(effectiveSql)) {
             ResultSetMetaData meta = rs.getMetaData();
             int rowCount = 0;
             while (rs.next()) {

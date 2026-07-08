@@ -171,14 +171,23 @@ public class OssieAutoJoinRule extends RelOptRule {
                     break;
                 }
             }
-            if (foundIdx < 0) return; // shouldn't happen — original columns must appear in the joined row
-            projections.add(
-                    rex.makeInputRef(joinedRow.getFieldList().get(foundIdx).getType(), foundIdx));
+            if (foundIdx < 0) {
+                // Column not found by name — Calcite's projection pushdown has stripped the
+                // original columns and replaced them with synthetic ones (typically "DUMMY"
+                // when the outer query is COUNT(*) with no column references). Substitute a
+                // zero literal of the expected type so downstream shape-matches; the value is
+                // never actually read for aggregate-only queries. Zero (not NULL) because
+                // Calcite's DUMMY columns are declared NOT NULL and transformTo rejects
+                // nullability mismatches.
+                projections.add(rex.makeZeroLiteral(original.getType()));
+            } else {
+                projections.add(
+                        rex.makeInputRef(joinedRow.getFieldList().get(foundIdx).getType(), foundIdx));
+            }
             projectionNames.add(original.getName());
         }
         builder.project(projections, projectionNames);
         RelNode rewritten = builder.build();
-
         log.debug(
                 "OssieAutoJoinRule: injecting relationship '{}' predicate into Cartesian join {}↔{}",
                 relationship.getName(),
@@ -292,9 +301,14 @@ public class OssieAutoJoinRule extends RelOptRule {
                     break;
                 }
             }
-            if (foundIdx < 0) return;
-            projections.add(
-                    rex.makeInputRef(joinedRow.getFieldList().get(foundIdx).getType(), foundIdx));
+            if (foundIdx < 0) {
+                // Same fix as the two-way path: substitute a zero literal so downstream shape
+                // matches. See two-way rewrite for the DUMMY-column rationale.
+                projections.add(rex.makeZeroLiteral(original.getType()));
+            } else {
+                projections.add(
+                        rex.makeInputRef(joinedRow.getFieldList().get(foundIdx).getType(), foundIdx));
+            }
             projectionNames.add(original.getName());
         }
         builder.project(projections, projectionNames);
@@ -328,6 +342,15 @@ public class OssieAutoJoinRule extends RelOptRule {
         if (cursor instanceof org.apache.calcite.rel.core.Project) {
             return collectAllTableScans(
                     ((org.apache.calcite.rel.core.Project) cursor).getInput(), outScans, outNames, schemaHolder);
+        }
+        if (cursor instanceof org.apache.calcite.rel.core.Filter) {
+            // Calcite pushes WHERE predicates down into per-arm Filter nodes ahead of the join.
+            // Walk past them the same way we walk past Projects — the underlying TableScan still
+            // reflects the raw dataset shape; the Filter's predicate (which our rebuild
+            // preserves via projection pushdown re-running after transformTo) is orthogonal to
+            // the join-key rewrite.
+            return collectAllTableScans(
+                    ((org.apache.calcite.rel.core.Filter) cursor).getInput(), outScans, outNames, schemaHolder);
         }
         if (cursor instanceof org.apache.calcite.rel.core.Join) {
             org.apache.calcite.rel.core.Join innerJoin = (org.apache.calcite.rel.core.Join) cursor;
