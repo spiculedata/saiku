@@ -570,8 +570,8 @@ public class SaikuLauncher implements Callable<Integer> {
          * @param dsName the datasource name written into the .sds; matches the value
          *               the discover endpoint exposes.
          */
-        private static void stageOneOssieDemo(
-                Path saikuHome, Path dataDir, Path dsDir, String slug, String dsName) throws Exception {
+        private static void stageOneOssieDemo(Path saikuHome, Path dataDir, Path dsDir, String slug, String dsName)
+                throws Exception {
             // 1. YAML — copy from classpath to <home>/data/.
             stageResource("/seed/" + slug + ".ossie.yaml", dataDir.resolve(slug + ".ossie.yaml"));
 
@@ -580,8 +580,8 @@ public class SaikuLauncher implements Callable<Integer> {
             if (!Files.exists(h2File)) {
                 try (InputStream in = SaikuLauncher.class.getResourceAsStream("/seed/" + slug + "-seed.sql")) {
                     if (in == null) {
-                        System.out.println("Warning: no /seed/" + slug + "-seed.sql on classpath; skipping H2 seed for "
-                                + dsName);
+                        System.out.println(
+                                "Warning: no /seed/" + slug + "-seed.sql on classpath; skipping H2 seed for " + dsName);
                     } else {
                         String sql = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
                         String jdbcUrl = "jdbc:h2:" + dataDir.resolve(slug) + ";MODE=PostgreSQL";
