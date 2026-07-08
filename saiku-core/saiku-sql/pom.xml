@@ -40,6 +40,21 @@
             <version>1.41.0</version>
         </dependency>
 
+        <!-- Apache Avatica server. The 'saiku sql-serve' CLI subcommand starts a
+             HttpServer that wraps a JdbcMeta pointing at a Calcite connection —
+             any Avatica-aware client (avatica-server JDBC driver, native Python
+             / Go clients) connects to the resulting HTTP+protobuf endpoint and
+             executes SQL against the Ossie semantic model.
+
+             Version pinned to avatica 1.27 (transitively used by calcite-core).
+             Bumping requires coordinating with calcite-core's transitive
+             avatica-core version to avoid classpath drift. -->
+        <dependency>
+            <groupId>org.apache.calcite.avatica</groupId>
+            <artifactId>avatica-server</artifactId>
+            <version>1.27.0</version>
+        </dependency>
+
         <!-- Jackson for reading Ossie YAML back into the POJO tree. Same version
              as the writer path in saiku-service so we can't drift. -->
         <dependency>

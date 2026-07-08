@@ -40,6 +40,15 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- Compile-scope dep on saiku-sql so the SqlServeCommand can boot the
+             Avatica endpoint. Pulls calcite-core + avatica-server transitively
+             into the shaded fat-JAR — the CLI needs both at runtime. -->
+        <dependency>
+            <groupId>org.saikuanalytics</groupId>
+            <artifactId>saiku-sql</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>info.picocli</groupId>
             <artifactId>picocli</artifactId>
