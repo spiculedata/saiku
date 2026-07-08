@@ -83,7 +83,12 @@ public class OssieSqlServer implements AutoCloseable {
             Path modelPath = Files.createTempFile("ossie-sql-server-model-", ".json");
             modelPath.toFile().deleteOnExit();
             Files.writeString(modelPath, modelJson);
-            return "jdbc:calcite:model=" + modelPath;
+            // caseSensitive=false matches how every BI tool casts identifiers — most warehouses
+            // are case-insensitive on unquoted names, and Calcite defaults to case-sensitive
+            // which surprises users. Default lex (ORACLE) keeps double-quoted identifiers
+            // (needed for spaced-name Ossie schemas like "Pharma Rx") while treating unquoted
+            // ones case-insensitively.
+            return "jdbc:calcite:model=" + modelPath + ";caseSensitive=false";
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to stage Calcite model.json", e);
         }

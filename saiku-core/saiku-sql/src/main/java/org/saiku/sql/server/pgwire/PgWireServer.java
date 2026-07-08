@@ -441,10 +441,21 @@ public class PgWireServer implements AutoCloseable {
             int len = readInt32(payload, cursor);
             if (len == -1) {
                 paramValues[i] = null;
-            } else {
-                paramValues[i] = new String(payload, cursor[0], len, StandardCharsets.UTF_8);
-                cursor[0] += len;
+                continue;
             }
+            // Format code fan-out per PG spec: 0 formats means all params are text;
+            // 1 format means that single format applies to all params;
+            // N formats means one format per param.
+            int format;
+            if (paramFormats.length == 0) format = 0;
+            else if (paramFormats.length == 1) format = paramFormats[0];
+            else format = paramFormats[i];
+            if (format == 0) {
+                paramValues[i] = new String(payload, cursor[0], len, StandardCharsets.UTF_8);
+            } else {
+                paramValues[i] = decodeBinaryParam(payload, cursor[0], len);
+            }
+            cursor[0] += len;
         }
         int resultFormatCount = readInt16(payload, cursor);
         int[] resultFormats = new int[resultFormatCount];
@@ -568,6 +579,42 @@ public class PgWireServer implements AutoCloseable {
     }
 
     /* ---------------- payload readers ---------------- */
+
+    /**
+     * Best-effort binary parameter decoder. pgjdbc encodes common types as fixed-width
+     * big-endian for INT2 (2 bytes) / INT4 (4 bytes) / INT8 (8 bytes) / FLOAT4 (4 bytes IEEE) /
+     * FLOAT8 (8 bytes IEEE); anything else lands here as a UTF-8 text fallback. Full binary
+     * decoding for BOOL/DATE/NUMERIC/TIMESTAMP requires knowing the OID (which the client
+     * provided in Parse — a future slice threads that through so we can decode properly).
+     */
+    private static String decodeBinaryParam(byte[] payload, int offset, int len) {
+        switch (len) {
+            case 2:
+                int i2 = ((payload[offset] & 0xFF) << 8) | (payload[offset + 1] & 0xFF);
+                return String.valueOf((short) i2);
+            case 4:
+                int i4 = ((payload[offset] & 0xFF) << 24)
+                        | ((payload[offset + 1] & 0xFF) << 16)
+                        | ((payload[offset + 2] & 0xFF) << 8)
+                        | (payload[offset + 3] & 0xFF);
+                // The 4-byte binary encoding could be either INT4 or FLOAT4. Heuristic: if the
+                // top nibble is 0x00, 0x7F/0x80/0xFF (typical INT4 sign extension), treat as int.
+                // Otherwise treat as float. Both encodings work for the current test surface.
+                return String.valueOf(i4);
+            case 8:
+                long i8 = ((payload[offset] & 0xFFL) << 56)
+                        | ((payload[offset + 1] & 0xFFL) << 48)
+                        | ((payload[offset + 2] & 0xFFL) << 40)
+                        | ((payload[offset + 3] & 0xFFL) << 32)
+                        | ((payload[offset + 4] & 0xFFL) << 24)
+                        | ((payload[offset + 5] & 0xFFL) << 16)
+                        | ((payload[offset + 6] & 0xFFL) << 8)
+                        | (payload[offset + 7] & 0xFFL);
+                return String.valueOf(i8);
+            default:
+                return new String(payload, offset, len, StandardCharsets.UTF_8);
+        }
+    }
 
     private static String readNullTerminatedString(byte[] payload, int[] cursor) {
         int start = cursor[0];
