@@ -56,6 +56,25 @@ import org.saiku.sql.model.OssieYamlReader;
  */
 public class OssieSchemaFactory implements SchemaFactory {
 
+    static {
+        // Register OssieAutoJoinRule GLOBALLY with every Calcite planner. Fires each time
+        // Calcite instantiates a query planner (typically once per JDBC statement); our rule
+        // becomes part of the standard rule set from then on. The rule's onMatch method has
+        // enough guards (Ossie-schema check + Cartesian-condition check + relationship lookup)
+        // that it's a no-op for any query touching non-Ossie tables — safe to register
+        // globally.
+        //
+        // Timing: this static block runs when Calcite first loads OssieSchemaFactory (via
+        // Class.forName reflection driven by the connect model's "factory" operand), which
+        // happens BEFORE the planner for the first query is instantiated. So the hook is
+        // already installed by the time the first query needs it.
+        org.apache.calcite.runtime.Hook.PLANNER.add((java.util.function.Consumer<Object>) planner -> {
+            if (planner instanceof org.apache.calcite.plan.RelOptPlanner) {
+                ((org.apache.calcite.plan.RelOptPlanner) planner).addRule(OssieAutoJoinRule.INSTANCE);
+            }
+        });
+    }
+
     public static final String OP_OSSIE_YAML = "ossieYaml";
     public static final String OP_MODEL_NAME = "modelName";
     public static final String OP_JDBC_URL = "jdbcUrl";

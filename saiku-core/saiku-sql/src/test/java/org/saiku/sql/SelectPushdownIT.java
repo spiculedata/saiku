@@ -239,6 +239,56 @@ public class SelectPushdownIT {
     }
 
     @Test
+    public void autoJoinInjectsOssieRelationshipPredicate() throws Exception {
+        // No JOIN keyword — just FROM ORDERS o, CUSTOMERS c. OssieAutoJoinRule detects the
+        // Cartesian join between two Ossie datasets, finds the relationship, and rewrites the
+        // condition to o.CUSTOMER_ID = c.ID. Result should match the hand-rolled JOIN version.
+        try (Connection calcite = openCalcite();
+                Statement s = calcite.createStatement();
+                ResultSet rs = s.executeQuery("SELECT c.REGION, SUM(o.AMOUNT) AS TOTAL "
+                        + "FROM SALES.ORDERS o, SALES.CUSTOMERS c "
+                        + "GROUP BY c.REGION ORDER BY c.REGION")) {
+            assertTrue(rs.next());
+            assertEquals("North", rs.getString(1));
+            assertEquals(225.00, rs.getBigDecimal(2).doubleValue(), 0.001);
+            assertTrue(rs.next());
+            assertEquals("South", rs.getString(1));
+            assertEquals(200.00, rs.getBigDecimal(2).doubleValue(), 0.001);
+            assertTrue(rs.next());
+            assertEquals("West", rs.getString(1));
+            assertEquals(25.00, rs.getBigDecimal(2).doubleValue(), 0.001);
+        }
+    }
+
+    @Test
+    public void autoJoinBailsWhenNoRelationshipExists() throws Exception {
+        // Build a fresh Ossie YAML with two datasets and NO relationship. The rule should
+        // leave the Cartesian join intact — user gets what they asked for (probably a bad time).
+        Path plainYaml = Files.createTempFile("ossie-no-rel-", ".yaml");
+        try {
+            Files.writeString(
+                    plainYaml,
+                    "version: 0.2.0.dev0\n"
+                            + "semantic_model:\n"
+                            + "- name: PLAIN\n"
+                            + "  datasets:\n"
+                            + "  - name: CUSTOMERS\n"
+                            + "    source: CUSTOMERS\n"
+                            + "  - name: ORDERS\n"
+                            + "    source: ORDERS\n");
+            try (Connection calcite = openCalciteWith(plainYaml, "PLAIN");
+                    Statement s = calcite.createStatement();
+                    ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM PLAIN.ORDERS, PLAIN.CUSTOMERS")) {
+                assertTrue(rs.next());
+                // Cartesian: 5 orders × 4 customers = 20 rows total.
+                assertEquals(20L, rs.getLong(1));
+            }
+        } finally {
+            Files.deleteIfExists(plainYaml);
+        }
+    }
+
+    @Test
     public void jdbcMetadataListsOssieDatasets() throws Exception {
         // Uses standard JDBC DatabaseMetaData rather than Calcite's metadata schema — matches
         // how every BI tool (Tableau, Power BI, DBeaver, dbt) enumerates schemas for its
@@ -261,16 +311,20 @@ public class SelectPushdownIT {
     }
 
     private Connection openCalcite() throws Exception {
+        return openCalciteWith(ossieYaml, "SALES");
+    }
+
+    private Connection openCalciteWith(Path yamlPath, String schemaName) throws Exception {
         // Build the connect-model JSON inline so the test is hermetic.
         String modelJson = "{\n"
                 + "  \"version\": \"1.0\",\n"
-                + "  \"defaultSchema\": \"SALES\",\n"
+                + "  \"defaultSchema\": \"" + schemaName + "\",\n"
                 + "  \"schemas\": [{\n"
-                + "    \"name\": \"SALES\",\n"
+                + "    \"name\": \"" + schemaName + "\",\n"
                 + "    \"type\": \"custom\",\n"
                 + "    \"factory\": \"org.saiku.sql.adapter.OssieSchemaFactory\",\n"
                 + "    \"operand\": {\n"
-                + "      \"ossieYaml\": \"" + ossieYaml.toString().replace("\\", "\\\\") + "\",\n"
+                + "      \"ossieYaml\": \"" + yamlPath.toString().replace("\\", "\\\\") + "\",\n"
                 + "      \"jdbcUrl\": \"jdbc:h2:mem:selectpushdown;DB_CLOSE_DELAY=-1;MODE=PostgreSQL\",\n"
                 + "      \"jdbcUser\": \"sa\",\n"
                 + "      \"jdbcPassword\": \"\"\n"

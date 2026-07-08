@@ -57,15 +57,39 @@ public class OssieSchema extends AbstractSchema {
      *  Falls back to the Ossie model name (usually the same). */
     private volatile String selfSchemaName;
 
+    /**
+     * Registry of live OssieSchema instances keyed by the name Calcite registered them under.
+     * Populated by {@link OssieSchemaFactory#create} via {@link #register}. Consulted by
+     * {@link OssieAutoJoinRule} when it needs to identify whether a TableScan is Ossie-backed —
+     * {@code RelOptTable.unwrap(OssieSchema.class)} doesn't work because our datasets surface as
+     * {@link JdbcSchema}-owned tables, so the direct unwrap path finds JdbcSchema not OssieSchema.
+     * A name-based registry is the pragmatic fallback.
+     *
+     * <p>Static state is unfortunate but acceptable: Calcite's own JdbcSchema uses similar
+     * process-wide caches. Multiple factories creating a schema with the same name → last-wins
+     * (config error the user needs to fix upstream).
+     */
+    private static final java.util.concurrent.ConcurrentMap<String, OssieSchema> REGISTRY =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     public OssieSchema(SemanticModel model, JdbcSchema jdbcSchema, String jdbcSubSchemaName) {
         this.model = model;
         this.jdbcSchema = jdbcSchema;
         this.jdbcSubSchemaName = jdbcSubSchemaName;
     }
 
-    /** Called by {@link OssieSchemaFactory} immediately after construction. */
+    /** Called by {@link OssieSchemaFactory} immediately after construction. Also registers this
+     *  schema in the process-wide registry so {@link OssieAutoJoinRule} can look it up by name. */
     void bindSchemaName(String name) {
         this.selfSchemaName = name;
+        REGISTRY.put(name, this);
+    }
+
+    /** Look up a registered OssieSchema by the name it was registered under. Used by
+     *  {@link OssieAutoJoinRule} to identify Ossie-backed TableScans without unwrapping through
+     *  {@link JdbcSchema}. Returns null when no OssieSchema is registered under {@code name}. */
+    static OssieSchema lookupRegistered(String name) {
+        return REGISTRY.get(name);
     }
 
     public SemanticModel model() {
