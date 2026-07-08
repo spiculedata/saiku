@@ -14,3 +14,7 @@ embed-npm/saiku-embed.js
 embed-npm/saiku-embed.js.map
 embed-npm/README.md
 storybook-static/
+# Playwright artifacts
+test-results/
+playwright-report/
+playwright/.cache/

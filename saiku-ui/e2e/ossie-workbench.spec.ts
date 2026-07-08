@@ -1,0 +1,131 @@
+import { expect, test, type Page } from "@playwright/test";
+import { registerOssieBackend, type OssieBackendHandle } from "./fixtures/ossieBackend";
+
+/**
+ * End-to-end coverage for the Ossie analytics workbench with a mocked backend. Verifies:
+ *
+ * 1. Ossie datasource appears in the CubePicker with the correct type badge.
+ * 2. Picking it loads the model tree in the sidebar.
+ * 3. Drag-and-drop drops a field on Rows / metric on Values (via low-level event dispatch —
+ *    Playwright's dragTo doesn't reliably ferry the {@code application/x-saiku-ossie-field}
+ *    MIME type through native HTML5 DnD on all browsers).
+ * 4. Run posts the expected shelf-state payload and renders the result grid.
+ */
+test.describe("Ossie workbench (mocked backend)", () => {
+  let backend: OssieBackendHandle;
+
+  test.beforeEach(async ({ page }) => {
+    backend = registerOssieBackend(page);
+    // Suppress the first-run tour dialog — it intercepts pointer events on the workspace
+    // and blocks the Run button click. Storage-key format matches Tour.svelte's session
+    // scheme (username-scoped + fallback).
+    await page.addInitScript(() => {
+      window.localStorage.setItem("saiku.tour.done", "1");
+      window.localStorage.setItem("saiku.tour.done.admin", "1");
+    });
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
+  });
+
+  test("Ossie connection appears in the picker", async ({ page }) => {
+    const select = page.locator("#cubes-select");
+    await expect(select).toBeVisible();
+    const optionValues = await select.locator("option").evaluateAll((els) =>
+      (els as HTMLOptionElement[]).map((o) => o.value),
+    );
+    expect(optionValues).toContain("ossie:SALES");
+  });
+
+  test("selecting Ossie renders the schema tree", async ({ page }) => {
+    await page.locator("#cubes-select").selectOption("ossie:SALES");
+    // Section headers live in <header class="ossie-tree__label"> — key off the class so
+    // we don't collide with the canvas hint text or the "Metrics reference…" paragraph.
+    const labels = page.locator(".ossie-tree__label");
+    await expect(labels.filter({ hasText: "Fact dataset" })).toBeVisible();
+    await expect(labels.filter({ hasText: "Datasets" })).toBeVisible();
+    await expect(labels.filter({ hasText: "Metrics" })).toBeVisible();
+    // Field / metric entries live in their own class-scoped nodes; use those to avoid
+    // colliding with the fact-dataset <option> or the schema tree's group-name row.
+    await expect(page.locator(".ossie-tree__group-name").filter({ hasText: "customers" })).toBeVisible();
+    await expect(page.locator(".ossie-tree__field").filter({ hasText: "region" })).toBeVisible();
+    await expect(page.locator(".ossie-tree__metric").filter({ hasText: "revenue" })).toBeVisible();
+  });
+
+  test("dropping a field on Rows and a metric on Values adds chips", async ({ page }) => {
+    await page.locator("#cubes-select").selectOption("ossie:SALES");
+    await expect(page.locator(".ossie-tree").getByText("region")).toBeVisible();
+
+    await dropOssieField(page, "customers", "region", '[aria-label="Rows shelf"]');
+    await dropOssieMetric(page, "revenue", '[aria-label="Values shelf"]');
+
+    await expect(
+      page.locator('[aria-label="Rows shelf"] .ossie-chip').filter({ hasText: "customers.region" }),
+    ).toBeVisible();
+    await expect(
+      page.locator('[aria-label="Values shelf"] .ossie-chip').filter({ hasText: "revenue" }),
+    ).toBeVisible();
+  });
+
+  test("Run posts shelf state and renders the result grid", async ({ page }) => {
+    await page.locator("#cubes-select").selectOption("ossie:SALES");
+    await expect(page.locator(".ossie-tree").getByText("region")).toBeVisible();
+
+    await dropOssieField(page, "customers", "region", '[aria-label="Rows shelf"]');
+    await dropOssieMetric(page, "revenue", '[aria-label="Values shelf"]');
+
+    // Fact dataset is auto-picked as customers by the store (first field's dataset).
+    // Scope to the Ossie canvas so we don't hit the MDX toolbar's Run split-button.
+    await page.locator(".ossie-canvas").getByRole("button", { name: /^Run/ }).click();
+
+    await expect(page.locator(".ossie-result").getByText("customers.region")).toBeVisible();
+    await expect(page.locator(".ossie-result").getByText("North")).toBeVisible();
+    await expect(page.locator(".ossie-result").getByText("350.0")).toBeVisible();
+
+    // Server body sanity: queryType flipped to OSSIE and shelf state serialised as expected.
+    const posted = backend.getLastExecuteBody() as { queryType?: string; ossieQueryModel?: unknown } | null;
+    expect(posted).not.toBeNull();
+    expect(posted?.queryType).toBe("OSSIE");
+    expect(posted?.ossieQueryModel).toMatchObject({
+      connection: "SALES",
+      model: "SALES",
+      factDataset: "customers",
+      rows: [{ dataset: "customers", field: "region" }],
+      values: [{ metric: "revenue" }],
+    });
+  });
+});
+
+/**
+ * Simulate a native HTML5 drag-and-drop for one Ossie field payload. Playwright's built-in
+ * dragTo doesn't reliably ferry a specific dataTransfer MIME type through to the drop
+ * handler, so we dispatch the events by hand with a real DataTransfer object.
+ */
+async function dropOssieField(page: Page, dataset: string, field: string, targetSelector: string) {
+  await page.evaluate(
+    ([mime, payload, target]) => {
+      const dt = new DataTransfer();
+      dt.setData(mime, payload);
+      const el = document.querySelector(target);
+      if (!el) throw new Error(`missing target: ${target}`);
+      const opts = { bubbles: true, cancelable: true, dataTransfer: dt } as DragEventInit;
+      el.dispatchEvent(new DragEvent("dragover", opts));
+      el.dispatchEvent(new DragEvent("drop", opts));
+    },
+    ["application/x-saiku-ossie-field", JSON.stringify({ dataset, field }), targetSelector],
+  );
+}
+
+async function dropOssieMetric(page: Page, metric: string, targetSelector: string) {
+  await page.evaluate(
+    ([mime, payload, target]) => {
+      const dt = new DataTransfer();
+      dt.setData(mime, payload);
+      const el = document.querySelector(target);
+      if (!el) throw new Error(`missing target: ${target}`);
+      const opts = { bubbles: true, cancelable: true, dataTransfer: dt } as DragEventInit;
+      el.dispatchEvent(new DragEvent("dragover", opts));
+      el.dispatchEvent(new DragEvent("drop", opts));
+    },
+    ["application/x-saiku-ossie-metric", JSON.stringify({ metric }), targetSelector],
+  );
+}
