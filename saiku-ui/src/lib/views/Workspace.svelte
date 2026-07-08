@@ -6,6 +6,8 @@
   import { i18n } from "$lib/stores/i18n.svelte";
   import CubePicker from "$lib/views/CubePicker.svelte";
   import DimensionList from "$lib/views/DimensionList.svelte";
+  import OssieSchemaTree from "$lib/views/OssieSchemaTree.svelte";
+  import OssieQueryCanvas from "$lib/views/OssieQueryCanvas.svelte";
   import WorkspaceToolbar from "$lib/views/WorkspaceToolbar.svelte";
   import QueryCanvas from "$lib/views/QueryCanvas.svelte";
   import AiQueryDrawer from "$lib/views/AiQueryDrawer.svelte";
@@ -334,7 +336,14 @@
     <aside class="workspace__sidebar">
       <div class="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3">
         <CubePicker username={session.username} />
-        <DimensionList username={session.username} />
+        <!-- Sidebar body branches on selection.mode. Picking a cube surfaces the existing
+             MDX schema tree; picking an Ossie connection surfaces the semantic-model tree
+             (datasets / metrics / relationships) instead. -->
+        {#if selection.mode === "ossie"}
+          <OssieSchemaTree username={session.username} />
+        {:else}
+          <DimensionList username={session.username} />
+        {/if}
       </div>
       <div class="workspace__sidebar-footer">
         <PrefsMenu />
@@ -381,7 +390,15 @@
       </div>
       <WorkspaceToolbar onAskAi={aiAskHealth.configured ? () => (aiDrawerOpen = true) : undefined} />
     {/if}
-    <QueryCanvas />
+    <!-- Canvas branches on selection.mode too so the workbench renders the SQL-flavoured
+         shelves + result table when an Ossie connection is picked, and the existing MDX
+         canvas otherwise. Toolbar / tabset above stay shared so the user experience is
+         uniform across both. -->
+    {#if selection.mode === "ossie"}
+      <OssieQueryCanvas />
+    {:else}
+      <QueryCanvas />
+    {/if}
   </section>
 </div>
 

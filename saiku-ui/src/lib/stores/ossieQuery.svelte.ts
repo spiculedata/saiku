@@ -1,0 +1,200 @@
+import {
+  executeOssieQuery,
+  fetchOssieModel,
+  newOssieQueryModel,
+  type OssieFieldRef,
+  type OssieFilterExpr,
+  type OssieMetricRef,
+  type OssieModel,
+  type OssieQueryModel,
+  type OssieQueryResult,
+  type OssieSortRef,
+} from "$lib/api/ossie";
+
+/**
+ * State for the Ossie-flavoured workbench. Owns the currently-loaded semantic model, the
+ * user's shelf-state edits, and the last query result. Kept as a single class-instance so
+ * it plays nicely with the workspace's tab store (which snapshots + restores state on tab
+ * switch).
+ *
+ * Not extending {@link OssieQueryModel} directly because a few of its fields (rows,
+ * columns, etc.) surface through mutation helpers that use immutable-copy semantics —
+ * exposing the raw arrays would tempt callers to push directly, which would break Svelte 5
+ * reactivity (mutating a $state array doesn't trigger dependent effects reliably in every
+ * Svelte 5 minor).
+ */
+class OssieQueryStore {
+  /**
+   * Currently-loaded Ossie model. Null until the workbench receives a
+   * `selection.selectOssie` and the schema tree fires {@link loadModel}.
+   */
+  model = $state<OssieModel | null>(null);
+
+  /** True while the discover fetch is in flight. */
+  loading = $state(false);
+
+  /** Sticky error surface from either load or execute. */
+  error = $state<string | null>(null);
+
+  /** Shelf-state payload. Reset whenever a new model loads. */
+  current = $state<OssieQueryModel | null>(null);
+
+  /** True while an execute call is in flight. */
+  running = $state(false);
+
+  /** Most recent successful result — kept so the result grid can render across shelf edits. */
+  result = $state<OssieQueryResult | null>(null);
+
+  /**
+   * Bookkeeping: last-loaded connection so re-selecting the same one doesn't refetch.
+   */
+  private loadedConnection: string | null = null;
+
+  /**
+   * Load the semantic model for `connection` (via the discover endpoint). Idempotent:
+   * calling again with the same connection is a no-op after the first successful load —
+   * pass `force: true` to bypass and refetch.
+   */
+  async loadModel(username: string, connection: string, modelName: string, force = false): Promise<void> {
+    if (!force && this.loadedConnection === connection && this.model) return;
+    this.loading = true;
+    this.error = null;
+    try {
+      const m = await fetchOssieModel(username, connection);
+      this.model = m;
+      // Reset shelf state: the previous model's dataset / metric names are no longer valid.
+      this.current = newOssieQueryModel(connection, modelName);
+      this.result = null;
+      this.loadedConnection = connection;
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e);
+      this.model = null;
+      this.current = null;
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  /**
+   * True when the shelf state has enough content to translate to SQL — at minimum a fact
+   * dataset (auto-picked from the first Values-shelf metric's associated dataset when the
+   * user hasn't set it explicitly) plus one value or one row/column.
+   */
+  hasRunnableShape(): boolean {
+    const q = this.current;
+    if (!q) return false;
+    if (!q.factDataset) return false;
+    return q.values.length > 0 || q.rows.length > 0 || q.columns.length > 0;
+  }
+
+  /**
+   * Set the anchor dataset every metric references. When the user drops their first field
+   * or metric we auto-pick the fact via `guessFactDataset` but they can override anytime
+   * from the sidebar.
+   */
+  setFactDataset(name: string): void {
+    if (!this.current) return;
+    this.current = { ...this.current, factDataset: name };
+  }
+
+  addRow(ref: OssieFieldRef): void {
+    if (!this.current) return;
+    if (this.current.rows.some((r) => r.dataset === ref.dataset && r.field === ref.field)) return;
+    this.current = { ...this.current, rows: [...this.current.rows, ref] };
+    this.maybeSeedFact(ref.dataset);
+  }
+
+  addColumn(ref: OssieFieldRef): void {
+    if (!this.current) return;
+    if (this.current.columns.some((r) => r.dataset === ref.dataset && r.field === ref.field)) return;
+    this.current = { ...this.current, columns: [...this.current.columns, ref] };
+    this.maybeSeedFact(ref.dataset);
+  }
+
+  addValue(ref: OssieMetricRef): void {
+    if (!this.current) return;
+    if (this.current.values.some((v) => v.metric === ref.metric)) return;
+    this.current = { ...this.current, values: [...this.current.values, ref] };
+    // Fact-dataset auto-pick: the first metric's associated dataset (inferred from any
+    // existing row/column entry, else left unset for the user to set explicitly).
+    if (!this.current.factDataset && this.current.rows[0]) {
+      this.setFactDataset(this.current.rows[0].dataset);
+    } else if (!this.current.factDataset && this.current.columns[0]) {
+      this.setFactDataset(this.current.columns[0].dataset);
+    }
+  }
+
+  addFilter(expr: OssieFilterExpr): void {
+    if (!this.current) return;
+    this.current = { ...this.current, filters: [...this.current.filters, expr] };
+    if (expr.dataset) this.maybeSeedFact(expr.dataset);
+  }
+
+  removeRow(idx: number): void {
+    if (!this.current) return;
+    this.current = { ...this.current, rows: this.current.rows.filter((_, i) => i !== idx) };
+  }
+
+  removeColumn(idx: number): void {
+    if (!this.current) return;
+    this.current = { ...this.current, columns: this.current.columns.filter((_, i) => i !== idx) };
+  }
+
+  removeValue(idx: number): void {
+    if (!this.current) return;
+    this.current = { ...this.current, values: this.current.values.filter((_, i) => i !== idx) };
+  }
+
+  removeFilter(idx: number): void {
+    if (!this.current) return;
+    this.current = { ...this.current, filters: this.current.filters.filter((_, i) => i !== idx) };
+  }
+
+  setSorts(sorts: OssieSortRef[]): void {
+    if (!this.current) return;
+    this.current = { ...this.current, sorts };
+  }
+
+  /**
+   * Execute the current shelf state and store the result. No-op when the shape isn't
+   * runnable — the caller (canvas) should key its Run button off `hasRunnableShape` to
+   * avoid awkward toasts.
+   */
+  async run(): Promise<void> {
+    if (!this.current) return;
+    if (!this.hasRunnableShape()) return;
+    this.running = true;
+    this.error = null;
+    try {
+      const name = `ossie-${Date.now().toString(36)}`;
+      this.result = await executeOssieQuery(name, this.current);
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e);
+      this.result = null;
+    } finally {
+      this.running = false;
+    }
+  }
+
+  /**
+   * Wipe every field back to first-load state. Called by the workspace shell on tab
+   * change when the destination tab is Ossie-flavoured with no captured state.
+   */
+  reset(): void {
+    this.model = null;
+    this.current = null;
+    this.result = null;
+    this.error = null;
+    this.running = false;
+    this.loading = false;
+    this.loadedConnection = null;
+  }
+
+  private maybeSeedFact(candidate: string): void {
+    if (!this.current) return;
+    if (this.current.factDataset) return;
+    this.current = { ...this.current, factDataset: candidate };
+  }
+}
+
+export const ossieQuery = new OssieQueryStore();
