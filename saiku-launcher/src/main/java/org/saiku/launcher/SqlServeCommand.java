@@ -7,6 +7,7 @@ package org.saiku.launcher;
 import java.nio.file.Path;
 import java.util.concurrent.Callable;
 import org.saiku.sql.server.OssieSqlServer;
+import org.saiku.sql.server.pgwire.PgWireServer;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
@@ -63,22 +64,54 @@ public class SqlServeCommand implements Callable<Integer> {
 
     @Option(
             names = {"-p", "--port"},
-            description = "TCP port to bind. Use 0 for an OS-assigned port.",
+            description =
+                    "Avatica HTTP port. Set to 0 to disable the Avatica endpoint; use --pg-port for pg-wire only.",
             defaultValue = "8765")
     int port;
 
+    @Option(
+            names = "--pg-port",
+            description = "Postgres wire port. When set, opens a native PG-wire endpoint alongside Avatica so "
+                    + "psql / pgAdmin / Tableau / DBeaver / dbt-postgres can connect. Set to 0 to disable.",
+            defaultValue = "0")
+    int pgPort;
+
     @Override
     public Integer call() throws Exception {
-        try (OssieSqlServer server = new OssieSqlServer(port, ossieYaml, schemaName, jdbcUrl, jdbcUser, jdbcPassword)) {
-            System.out.println("sql-serve: listening on " + server.getUrl());
-            System.out.println("sql-serve: connect via jdbc:avatica:remote:url=" + server.getUrl()
-                    + " with serialization=protobuf");
+        // The Avatica server owns the Calcite connect string wiring — reuse it for both
+        // endpoints so the two servers dispatch queries to the same JdbcMeta backend.
+        String calciteConnectString =
+                OssieSqlServer.buildCalciteConnectString(ossieYaml, schemaName, jdbcUrl, jdbcUser, jdbcPassword);
+
+        OssieSqlServer avatica = null;
+        PgWireServer pgWire = null;
+        try {
+            if (port > 0) {
+                avatica = new OssieSqlServer(port, ossieYaml, schemaName, jdbcUrl, jdbcUser, jdbcPassword);
+                System.out.println("sql-serve: Avatica endpoint listening on " + avatica.getUrl());
+                System.out.println("sql-serve:   client → jdbc:avatica:remote:url=" + avatica.getUrl()
+                        + " (serialization=protobuf)");
+            }
+            if (pgPort > 0) {
+                pgWire = new PgWireServer(pgPort, calciteConnectString);
+                int actual = pgWire.getPort();
+                System.out.println("sql-serve: Postgres wire endpoint listening on port " + actual);
+                System.out.println("sql-serve:   client → jdbc:postgresql://localhost:" + actual
+                        + "/saiku?sslmode=disable&preferQueryMode=simple");
+                System.out.println("sql-serve:   psql  → PGSSLMODE=disable psql -h localhost -p " + actual + " saiku");
+            }
+            if (avatica == null && pgWire == null) {
+                System.err.println("sql-serve: both endpoints disabled (--port 0 --pg-port 0). Nothing to do.");
+                return 1;
+            }
             System.out.println("sql-serve: Ctrl+C to stop");
-            // Block forever. Avatica's HttpServer runs in its own thread pool; the main thread
-            // just needs to stay alive until interrupted so the try-with-resources close()
-            // fires on shutdown.
+            // Block forever. Both servers run in their own threads; the main thread just needs
+            // to stay alive until interrupted so the finally clause tears them down cleanly.
             Thread.currentThread().join();
             return 0;
+        } finally {
+            if (pgWire != null) pgWire.close();
+            if (avatica != null) avatica.close();
         }
     }
 }

@@ -47,7 +47,8 @@ public class OssieSqlServer implements AutoCloseable {
      * literal semicolons that break the parser. Writing the model to a temp file and passing
      * {@code model=<path>} sidesteps the issue entirely.
      */
-    static String buildCalciteConnectString(
+    /** Package-visible for the PgWire IT which reuses the same connect model. */
+    public static String buildCalciteConnectString(
             Path ossieYaml,
             String schemaName,
             String warehouseJdbcUrl,

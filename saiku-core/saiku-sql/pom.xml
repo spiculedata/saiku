@@ -84,6 +84,15 @@
             <artifactId>h2</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- pgjdbc: speaks the native Postgres wire protocol. Used by the
+             PgWireServerIT to prove our server accepts real PG-wire clients
+             (not just clients that share codec code with us). Version comes
+             from saiku-bom. -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
