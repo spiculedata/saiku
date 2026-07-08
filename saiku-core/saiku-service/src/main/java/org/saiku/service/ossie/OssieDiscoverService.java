@@ -84,7 +84,7 @@ public class OssieDiscoverService {
         } catch (IOException e) {
             throw new IllegalArgumentException("Failed to read Ossie YAML at " + yamlPath + ": " + e.getMessage(), e);
         }
-        if (doc.getSemanticModel().isEmpty()) {
+        if (doc.getEffectiveSemanticModels().isEmpty()) {
             throw new IllegalArgumentException("Ossie YAML at " + yamlPath + " has zero semantic models");
         }
         // Pick the requested model or default to the first entry. schema and OSSIE_MODEL_KEY
@@ -96,7 +96,7 @@ public class OssieDiscoverService {
         }
         SemanticModel picked = null;
         if (modelName != null && !modelName.isBlank()) {
-            for (SemanticModel m : doc.getSemanticModel()) {
+            for (SemanticModel m : doc.getEffectiveSemanticModels()) {
                 if (modelName.equals(m.getName())) {
                     picked = m;
                     break;
@@ -107,13 +107,13 @@ public class OssieDiscoverService {
                         "Ossie datasource '{}' asked for model '{}' but YAML only has {} — falling back to first",
                         connectionName,
                         modelName,
-                        doc.getSemanticModel().stream()
+                        doc.getEffectiveSemanticModels().stream()
                                 .map(SemanticModel::getName)
                                 .toList());
             }
         }
         if (picked == null) {
-            picked = doc.getSemanticModel().get(0);
+            picked = doc.getEffectiveSemanticModels().get(0);
         }
         return project(connectionName, picked);
     }

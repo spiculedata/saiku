@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+    Flights demo Ossie datasource — auto-provisioned by saiku-launcher on
+    first start. Uses the ontology_mappings envelope YAML shape (exercises
+    the reader's nested-semantic_model handling).
+-->
+<dataSource>
+    <id>flights-ossie-01</id>
+    <name>Flights</name>
+    <type>OSSIE</type>
+    <ossieYaml>@SAIKU_HOME@/data/flights.ossie.yaml</ossieYaml>
+    <location>jdbc:h2:@SAIKU_HOME@/data/flights;MODE=PostgreSQL;AUTO_SERVER=TRUE</location>
+    <schema>Flights</schema>
+    <username>sa</username>
+    <password></password>
+    <advanced>false</advanced>
+    <enabled>true</enabled>
+</dataSource>
