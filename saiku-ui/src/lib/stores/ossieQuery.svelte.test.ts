@@ -394,6 +394,67 @@ describe("sort / limit / swap axes (P1)", () => {
   });
 });
 
+describe("undo / redo (P3)", () => {
+  beforeEach(async () => {
+    mockFetch(async () => new Response(JSON.stringify(fakeModel), { status: 200 }));
+    await ossieQuery.loadModel("admin", "SALES", "SALES");
+  });
+
+  test("addRow captures for undo; undo reverses; redo replays", () => {
+    expect(ossieQuery.canUndo).toBe(false);
+    ossieQuery.addRow({ dataset: "customers", field: "region" });
+    expect(ossieQuery.canUndo).toBe(true);
+    expect(ossieQuery.current?.rows.length).toBe(1);
+    ossieQuery.undo();
+    expect(ossieQuery.current?.rows.length).toBe(0);
+    expect(ossieQuery.canRedo).toBe(true);
+    ossieQuery.redo();
+    expect(ossieQuery.current?.rows.length).toBe(1);
+  });
+
+  test("multi-mutation history walks back one step at a time", () => {
+    ossieQuery.addRow({ dataset: "customers", field: "region" });
+    ossieQuery.addValue({ metric: "revenue" });
+    ossieQuery.setLimit(50);
+    expect(ossieQuery.current?.limit).toBe(50);
+    ossieQuery.undo(); // undo limit
+    expect(ossieQuery.current?.limit).toBeUndefined();
+    expect(ossieQuery.current?.values.length).toBe(1);
+    ossieQuery.undo(); // undo addValue
+    expect(ossieQuery.current?.values.length).toBe(0);
+    ossieQuery.undo(); // undo addRow
+    expect(ossieQuery.current?.rows.length).toBe(0);
+    expect(ossieQuery.canUndo).toBe(false);
+  });
+
+  test("forward mutation after undo clears the redo stack", () => {
+    ossieQuery.addRow({ dataset: "customers", field: "region" });
+    ossieQuery.undo();
+    expect(ossieQuery.canRedo).toBe(true);
+    ossieQuery.addValue({ metric: "revenue" });
+    // A new mutation invalidates the previously-undone branch.
+    expect(ossieQuery.canRedo).toBe(false);
+  });
+
+  test("loadModel clears history so Cmd-Z can't step into a stale-model state", async () => {
+    ossieQuery.addRow({ dataset: "customers", field: "region" });
+    expect(ossieQuery.canUndo).toBe(true);
+    // Different connection to bypass the memoisation.
+    mockFetch(async () => new Response(JSON.stringify({ ...fakeModel, name: "OTHER" }), { status: 200 }));
+    await ossieQuery.loadModel("admin", "OTHER", "OTHER");
+    expect(ossieQuery.canUndo).toBe(false);
+  });
+
+  test("history is capped at 50 entries", () => {
+    for (let i = 0; i < 60; i++) {
+      ossieQuery.setLimit(i + 1);
+    }
+    // 60 mutations → history capped at 50. First 10 mutations get shifted out.
+    expect(ossieQuery.past.length).toBe(50);
+    expect(ossieQuery.current?.limit).toBe(60);
+  });
+});
+
 describe("run", () => {
   beforeEach(async () => {
     mockFetch(async () => new Response(JSON.stringify(fakeModel), { status: 200 }));

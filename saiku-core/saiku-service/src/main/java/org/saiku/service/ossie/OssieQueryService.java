@@ -59,6 +59,21 @@ public class OssieQueryService {
     }
 
     /**
+     * Translate {@code model} into the SQL string that {@link #execute} would dispatch, without
+     * touching the connection or running anything. Powers the workbench's "Show SQL" affordance
+     * so users can inspect the SQL their shelf state produces.
+     */
+    public String previewSql(OssieQueryModel model) {
+        if (model == null) throw new IllegalArgumentException("OssieQueryModel is required");
+        String connectionName = model.getConnection();
+        if (connectionName == null || connectionName.isBlank()) {
+            throw new IllegalArgumentException("OssieQueryModel.connection is required");
+        }
+        OssieModelDto semantic = discoverService.getModel(connectionName);
+        return translator.translate(model, semantic);
+    }
+
+    /**
      * Execute the OSSIE-typed query on {@code tq}. Callers guarantee {@code tq.queryType == OSSIE}
      * and that {@code tq.ossieQueryModel} is populated.
      */

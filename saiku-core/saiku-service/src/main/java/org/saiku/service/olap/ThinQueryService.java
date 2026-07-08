@@ -126,6 +126,15 @@ public class ThinQueryService implements Serializable {
         this.ossieQueryService = s;
     }
 
+    /**
+     * Exposed for {@code Query2Resource}'s "Show SQL" endpoint. Delegates to
+     * {@link org.saiku.service.ossie.OssieQueryService#previewSql} so the workbench can render
+     * the SQL its shelf state produces without dispatching an execution.
+     */
+    public org.saiku.service.ossie.OssieQueryService getOssieQueryService() {
+        return ossieQueryService;
+    }
+
     private CellSetFormatterFactory cff = new CellSetFormatterFactory();
 
     private final Map<String, QueryContext> context = new HashMap<>();

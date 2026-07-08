@@ -9,14 +9,21 @@
     ArrowDown,
     ArrowUp,
     BarChart3,
+    Download,
+    FileCode,
     FolderOpen,
     Play,
+    Redo2,
     Save,
     Table as TableIcon,
+    Undo2,
     X,
   } from "lucide-svelte";
   import ChartView from "$lib/views/ChartView.svelte";
   import { CHART_TYPES, type ChartType } from "$lib/views/chartTypes";
+  import Modal from "$lib/components/Modal.svelte";
+  import { previewOssieSql } from "$lib/api/ossie";
+  import { downloadCsv, ossieResultToCsv } from "$lib/ossie/exportCsv";
   import type { OssieFieldRef, OssieFilterExpr, OssieMetricRef } from "$lib/api/ossie";
   import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
   import OssieLoadModal from "$lib/modals/OssieLoadModal.svelte";
@@ -291,6 +298,65 @@
     if (ossieQuery.result) void ossieQuery.run();
   }
 
+  // ------------------------------------------------------------------
+  // Export CSV
+  // ------------------------------------------------------------------
+  function onExportCsv() {
+    if (!ossieQuery.result) return;
+    const base = ossieQuery.savedName ?? "ossie-query";
+    downloadCsv(`${base}.csv`, ossieResultToCsv(ossieQuery.result));
+  }
+
+  // ------------------------------------------------------------------
+  // Show SQL — server-side preview so what we display matches what the
+  // executor actually runs (rather than duplicating translation logic).
+  // ------------------------------------------------------------------
+  let showSqlOpen = $state(false);
+  let showSqlText = $state<string>("");
+  let showSqlLoading = $state(false);
+  let showSqlError = $state<string | null>(null);
+
+  async function onShowSql() {
+    if (!ossieQuery.current) return;
+    showSqlText = "";
+    showSqlError = null;
+    showSqlOpen = true;
+    showSqlLoading = true;
+    try {
+      showSqlText = await previewOssieSql(ossieQuery.current);
+    } catch (e) {
+      showSqlError = e instanceof Error ? e.message : String(e);
+    } finally {
+      showSqlLoading = false;
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Undo / redo + Cmd-Z shortcut
+  // ------------------------------------------------------------------
+
+  /**
+   * Global Cmd-Z / Shift-Cmd-Z listener. Registered while the Ossie canvas is mounted;
+   * skips when the target is an input / textarea / contenteditable so the shortcut
+   * doesn't fight text editing. Matches the MDX Workspace-level binding.
+   */
+  $effect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable) return;
+      }
+      const meta = e.metaKey || e.ctrlKey;
+      if (!meta || e.key.toLowerCase() !== "z") return;
+      e.preventDefault();
+      if (e.shiftKey) ossieQuery.redo();
+      else ossieQuery.undo();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  });
+
   /**
    * Map a header index in the long-form result grid back to its sort target. The
    * column order matches OssieShelfSqlTranslator's SELECT list: `rows` first, then
@@ -347,12 +413,36 @@
     </Button>
     <Button
       variant="outline"
+      onclick={() => ossieQuery.undo()}
+      disabled={!ossieQuery.canUndo}
+      title="Undo (Cmd/Ctrl+Z)"
+    >
+      <Undo2 size={14} />
+    </Button>
+    <Button
+      variant="outline"
+      onclick={() => ossieQuery.redo()}
+      disabled={!ossieQuery.canRedo}
+      title="Redo (Shift+Cmd/Ctrl+Z)"
+    >
+      <Redo2 size={14} />
+    </Button>
+    <Button
+      variant="outline"
       onclick={onSwapAxes}
       disabled={!ossieQuery.current || (ossieQuery.current.rows.length === 0 && ossieQuery.current.columns.length === 0)}
       title="Swap Rows and Columns"
     >
       <ArrowLeftRight size={14} />
       Swap
+    </Button>
+    <Button variant="outline" onclick={onExportCsv} disabled={!ossieQuery.result} title="Download result as CSV">
+      <Download size={14} />
+      CSV
+    </Button>
+    <Button variant="outline" onclick={onShowSql} disabled={!ossieQuery.current} title="Preview the SQL this shelf state generates">
+      <FileCode size={14} />
+      SQL
     </Button>
     <label class="ossie-canvas__limit" title="Cap the emitted SQL with LIMIT N (blank = no limit)">
       <span class="ossie-canvas__limit-label">LIMIT</span>
@@ -676,6 +766,16 @@
   onCancel={() => (loadModalOpen = false)}
 />
 
+<Modal title="Generated SQL" open={showSqlOpen} size="lg" onClose={() => (showSqlOpen = false)}>
+  {#if showSqlLoading}
+    <p class="ossie-canvas__hint">Loading…</p>
+  {:else if showSqlError}
+    <p class="callout callout--danger">{showSqlError}</p>
+  {:else}
+    <pre class="ossie-canvas__sql">{showSqlText}</pre>
+  {/if}
+</Modal>
+
 <style>
   .ossie-canvas {
     display: flex;
@@ -688,6 +788,7 @@
     display: flex;
     align-items: center;
     gap: var(--space-3);
+    flex-wrap: wrap;
   }
   .ossie-canvas__error {
     color: var(--danger-fg, #b91c1c);
@@ -786,6 +887,18 @@
     color: var(--fg);
     font-size: var(--fs-sm);
     height: 40px;
+  }
+  .ossie-canvas__sql {
+    background: var(--bg-hover);
+    padding: 12px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: var(--fs-sm);
+    color: var(--fg);
+    white-space: pre-wrap;
+    max-height: 60vh;
+    overflow: auto;
+    margin: 0;
   }
   .ossie-chip__and {
     color: var(--fg-subtle);

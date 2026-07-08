@@ -192,9 +192,49 @@ test.describe("Ossie workbench (mocked backend)", () => {
     await expect(page.locator(".ossie-result")).toHaveCount(0);
 
     // Flip back to Grid and confirm the table re-mounts + chart affordances go away.
-    await page.getByRole("tab", { name: /^Grid$/ }).click();
+    // Scope the click to the viewtoggle container so ECharts' overlays don't intercept it.
+    await page.locator(".ossie-canvas__viewtoggle").getByRole("tab", { name: /^Grid$/ }).click();
     await expect(page.locator(".ossie-canvas__charttype")).toHaveCount(0);
     await expect(page.locator(".ossie-result")).toBeVisible();
+  });
+
+  test("Undo/Redo walks back and forward through shelf mutations", async ({ page }) => {
+    await page.locator("#cubes-select").selectOption("ossie:SALES");
+    await expect(page.locator(".ossie-tree").getByText("region")).toBeVisible();
+    await dropOssieField(page, "customers", "region", '[aria-label="Rows shelf"]');
+    await expect(
+      page.locator('[aria-label="Rows shelf"] .ossie-chip').filter({ hasText: "customers.region" }),
+    ).toBeVisible();
+
+    // Undo (via toolbar) drops the chip.
+    await page.locator(".ossie-canvas").getByRole("button", { name: "Undo (Cmd/Ctrl+Z)" }).click();
+    await expect(page.locator('[aria-label="Rows shelf"] .ossie-chip')).toHaveCount(0);
+
+    // Redo replays the chip.
+    await page.locator(".ossie-canvas").getByRole("button", { name: "Redo (Shift+Cmd/Ctrl+Z)" }).click();
+    await expect(
+      page.locator('[aria-label="Rows shelf"] .ossie-chip').filter({ hasText: "customers.region" }),
+    ).toBeVisible();
+  });
+
+  test("Show SQL modal fetches the preview endpoint", async ({ page }) => {
+    // Fixture the preview-sql endpoint to return a canned SQL string.
+    await page.route("**/rest/saiku/api/query/preview-sql", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ sql: "SELECT COUNT(*) FROM \"customers\"" }),
+      });
+    });
+
+    await page.locator("#cubes-select").selectOption("ossie:SALES");
+    await expect(page.locator(".ossie-tree").getByText("region")).toBeVisible();
+    await dropOssieField(page, "customers", "region", '[aria-label="Rows shelf"]');
+
+    // Click the SQL button — modal opens, fetches preview, shows the SQL.
+    await page.locator(".ossie-canvas").getByRole("button", { name: /^SQL/ }).click();
+    await expect(page.getByText("Generated SQL")).toBeVisible();
+    await expect(page.locator(".ossie-canvas__sql")).toContainText('SELECT COUNT(*) FROM "customers"');
   });
 
   test("Rows × Columns × Values renders a crosstab", async ({ page }) => {

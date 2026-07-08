@@ -121,6 +121,19 @@ public class ThinQueryServiceOssieBranchTest {
         }
     }
 
+    @Test
+    public void previewSqlGoesThroughOssieServiceUnchanged() {
+        RecordingOssieQueryService recording = new RecordingOssieQueryService() {
+            @Override
+            public String previewSql(OssieQueryModel model) {
+                return "SELECT 42";
+            }
+        };
+        svc.setOssieQueryService(recording);
+        assertNotNull(svc.getOssieQueryService());
+        assert svc.getOssieQueryService().previewSql(new OssieQueryModel()).equals("SELECT 42");
+    }
+
     /** Non-network test double for OssieQueryService. Returns a canned CellDataSet. */
     private static class RecordingOssieQueryService extends OssieQueryService {
         final CellDataSet stubResult = new CellDataSet(0, 0);

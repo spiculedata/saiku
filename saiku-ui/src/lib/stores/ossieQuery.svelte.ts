@@ -18,6 +18,20 @@ import type { ChartOptions, ChartType } from "$lib/views/chartTypes";
 import { DEFAULT_CHART_OPTIONS } from "$lib/views/chartTypes";
 
 /**
+ * One entry on the Ossie undo/redo stack. Mirrors the MDX `HistoryEntry` shape but
+ * carries Ossie-specific state (shelf model + savedPath/savedName). No result field —
+ * undo triggers a re-run rather than restoring a stale result envelope.
+ */
+export interface OssieHistoryEntry {
+  current: OssieQueryModel | null;
+  viewMode: "grid" | "chart";
+  chartType: ChartType;
+  chartOptions: ChartOptions;
+  savedPath: string | null;
+  savedName: string | null;
+}
+
+/**
  * State for the Ossie-flavoured workbench. Owns the currently-loaded semantic model, the
  * user's shelf-state edits, and the last query result. Kept as a single class-instance so
  * it plays nicely with the workspace's tab store (which snapshots + restores state on tab
@@ -76,6 +90,84 @@ class OssieQueryStore {
    */
   chartOptions = $state<ChartOptions>({ ...DEFAULT_CHART_OPTIONS });
 
+  // ------------------------------------------------------------------
+  // Undo / redo — mirrors the MDX QueryStore's machinery. Same
+  // structuredClone($state.snapshot(...)) pattern, same 50-cap, same
+  // captureForUndo() first-line contract on every mutator.
+  // ------------------------------------------------------------------
+
+  past = $state<OssieHistoryEntry[]>([]);
+  future = $state<OssieHistoryEntry[]>([]);
+  canUndo = $derived(this.past.length > 0);
+  canRedo = $derived(this.future.length > 0);
+  private static readonly MAX_HISTORY = 50;
+
+  private snapshotForHistory(): OssieHistoryEntry {
+    return {
+      current: this.current ? structuredClone($state.snapshot(this.current)) : null,
+      viewMode: this.viewMode,
+      chartType: this.chartType,
+      chartOptions: structuredClone($state.snapshot(this.chartOptions)),
+      savedPath: this.savedPath,
+      savedName: this.savedName,
+    };
+  }
+
+  /**
+   * Push the CURRENT state onto the undo stack before a mutation. Every public shelf
+   * mutator (addRow / removeValue / setFactDataset / cycleSort / setLimit / swapAxes)
+   * calls this as its first line so the user can Cmd-Z back to any prior shelf state.
+   * Clears the redo stack — any forward mutation invalidates the previously-undone
+   * branch.
+   */
+  captureForUndo(): void {
+    this.past.push(this.snapshotForHistory());
+    if (this.past.length > OssieQueryStore.MAX_HISTORY) this.past.shift();
+    if (this.future.length) this.future = [];
+  }
+
+  /**
+   * Apply a {@link OssieHistoryEntry} to the live state. Used by undo() / redo(); loads
+   * (loadModel / load) clear history rather than walk it. Uses `$state.snapshot` to
+   * unwrap Svelte proxies before structuredClone so we don't hit "Proxy could not be
+   * cloned" the way the MDX store did prior to saiku#XXX.
+   */
+  private applyHistory(entry: OssieHistoryEntry): void {
+    const plain = $state.snapshot(entry) as OssieHistoryEntry;
+    this.current = plain.current ? structuredClone(plain.current) : null;
+    this.viewMode = plain.viewMode;
+    this.chartType = plain.chartType;
+    this.chartOptions = structuredClone(plain.chartOptions);
+    this.savedPath = plain.savedPath;
+    this.savedName = plain.savedName;
+  }
+
+  undo(): void {
+    const prev = this.past.pop();
+    if (!prev) return;
+    // Snapshot current onto the redo stack BEFORE restoring — a subsequent redo brings
+    // us back to where undo() was invoked from.
+    this.future.push(this.snapshotForHistory());
+    this.applyHistory(prev);
+    // Auto re-run the restored shelf state so the result grid follows the undo. Skips
+    // when the restored state isn't runnable (e.g. undone all the way back to an empty
+    // shelf).
+    if (this.hasRunnableShape()) void this.run();
+  }
+
+  redo(): void {
+    const next = this.future.pop();
+    if (!next) return;
+    this.past.push(this.snapshotForHistory());
+    this.applyHistory(next);
+    if (this.hasRunnableShape()) void this.run();
+  }
+
+  clearHistory(): void {
+    this.past = [];
+    this.future = [];
+  }
+
   /**
    * Repository path this query is saved to. Null for unsaved / new queries; set on save
    * and on load. Used by the canvas toolbar's Save button to pick between "save-in-place"
@@ -116,6 +208,10 @@ class OssieQueryStore {
       // fields so the toolbar's "Save" doesn't overwrite the previously-opened file.
       this.savedPath = null;
       this.savedName = null;
+      // Reset undo/redo — the prior shelf state referenced a different model's
+      // datasets, so keeping those history entries would let the user Cmd-Z into an
+      // invalid state.
+      this.clearHistory();
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
       this.model = null;
@@ -189,12 +285,14 @@ class OssieQueryStore {
    */
   setFactDataset(name: string): void {
     if (!this.current) return;
+    this.captureForUndo();
     this.current = { ...this.current, factDataset: name };
   }
 
   addRow(ref: OssieFieldRef): void {
     if (!this.current) return;
     if (this.current.rows.some((r) => r.dataset === ref.dataset && r.field === ref.field)) return;
+    this.captureForUndo();
     this.current = { ...this.current, rows: [...this.current.rows, ref] };
     this.maybeSeedFact(ref.dataset);
   }
@@ -202,6 +300,7 @@ class OssieQueryStore {
   addColumn(ref: OssieFieldRef): void {
     if (!this.current) return;
     if (this.current.columns.some((r) => r.dataset === ref.dataset && r.field === ref.field)) return;
+    this.captureForUndo();
     this.current = { ...this.current, columns: [...this.current.columns, ref] };
     this.maybeSeedFact(ref.dataset);
   }
@@ -209,44 +308,53 @@ class OssieQueryStore {
   addValue(ref: OssieMetricRef): void {
     if (!this.current) return;
     if (this.current.values.some((v) => v.metric === ref.metric)) return;
+    this.captureForUndo();
     this.current = { ...this.current, values: [...this.current.values, ref] };
     // Fact-dataset auto-pick: the first metric's associated dataset (inferred from any
     // existing row/column entry, else left unset for the user to set explicitly).
     if (!this.current.factDataset && this.current.rows[0]) {
-      this.setFactDataset(this.current.rows[0].dataset);
+      // Note: this branch bypasses captureForUndo intentionally — a fact-dataset
+      // auto-seed is part of the same user action that just captured for the metric add.
+      this.current = { ...this.current, factDataset: this.current.rows[0].dataset };
     } else if (!this.current.factDataset && this.current.columns[0]) {
-      this.setFactDataset(this.current.columns[0].dataset);
+      this.current = { ...this.current, factDataset: this.current.columns[0].dataset };
     }
   }
 
   addFilter(expr: OssieFilterExpr): void {
     if (!this.current) return;
+    this.captureForUndo();
     this.current = { ...this.current, filters: [...this.current.filters, expr] };
     if (expr.dataset) this.maybeSeedFact(expr.dataset);
   }
 
   removeRow(idx: number): void {
     if (!this.current) return;
+    this.captureForUndo();
     this.current = { ...this.current, rows: this.current.rows.filter((_, i) => i !== idx) };
   }
 
   removeColumn(idx: number): void {
     if (!this.current) return;
+    this.captureForUndo();
     this.current = { ...this.current, columns: this.current.columns.filter((_, i) => i !== idx) };
   }
 
   removeValue(idx: number): void {
     if (!this.current) return;
+    this.captureForUndo();
     this.current = { ...this.current, values: this.current.values.filter((_, i) => i !== idx) };
   }
 
   removeFilter(idx: number): void {
     if (!this.current) return;
+    this.captureForUndo();
     this.current = { ...this.current, filters: this.current.filters.filter((_, i) => i !== idx) };
   }
 
   setSorts(sorts: OssieSortRef[]): void {
     if (!this.current) return;
+    this.captureForUndo();
     this.current = { ...this.current, sorts };
   }
 
@@ -263,6 +371,7 @@ class OssieQueryStore {
    */
   cycleSort(target: OssieSortRef, additive = false): void {
     if (!this.current) return;
+    this.captureForUndo();
     const matches = (a: OssieSortRef, b: OssieSortRef): boolean =>
       a.metric === b.metric && a.dataset === b.dataset && a.field === b.field;
     const existing = this.current.sorts.find((s) => matches(s, target));
@@ -285,6 +394,7 @@ class OssieQueryStore {
   /** Set the LIMIT clause on the emitted SQL. Pass null / 0 / negative to remove it. */
   setLimit(limit: number | null | undefined): void {
     if (!this.current) return;
+    this.captureForUndo();
     const next: OssieQueryModel = { ...this.current };
     if (limit == null || limit <= 0) {
       delete next.limit;
@@ -300,6 +410,7 @@ class OssieQueryStore {
    */
   swapAxes(): void {
     if (!this.current) return;
+    this.captureForUndo();
     this.current = {
       ...this.current,
       rows: this.current.columns,
@@ -339,12 +450,14 @@ class OssieQueryStore {
     this.model = null;
     this.current = null;
     this.result = null;
+    this.rawResult = null;
     this.error = null;
     this.running = false;
     this.loading = false;
     this.loadedConnection = null;
     this.savedPath = null;
     this.savedName = null;
+    this.clearHistory();
   }
 
   private maybeSeedFact(candidate: string): void {

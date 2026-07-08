@@ -336,6 +336,33 @@ export async function loadOssieQuery(path: string): Promise<SavedOssieQuery | nu
   return p as SavedOssieQuery;
 }
 
+/**
+ * Ask the server for the SQL a given shelf state would produce, without executing it.
+ * Powers the workbench's "Show SQL" affordance.
+ */
+export async function previewOssieSql(model: OssieQueryModel): Promise<string> {
+  const body = {
+    name: "preview",
+    queryType: "OSSIE",
+    ossieQueryModel: model,
+    parameters: {},
+    properties: {},
+  };
+  const res = await fetch("/rest/saiku/api/query/preview-sql", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Preview SQL failed (${res.status}): ${text || res.statusText}`);
+  }
+  const parsed = (await res.json()) as { sql?: string; error?: string };
+  if (parsed.error) throw new Error(parsed.error);
+  return parsed.sql ?? "";
+}
+
 /** Return an empty shelf-state seed for a newly-picked model. */
 export function newOssieQueryModel(connection: string, modelName: string): OssieQueryModel {
   return {
