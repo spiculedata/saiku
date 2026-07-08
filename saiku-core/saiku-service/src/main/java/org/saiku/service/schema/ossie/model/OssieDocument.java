@@ -4,6 +4,7 @@
  */
 package org.saiku.service.schema.ossie.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
@@ -39,6 +40,17 @@ public class OssieDocument {
     @JsonInclude(JsonInclude.Include.ALWAYS)
     private List<SemanticModel> semanticModel = new ArrayList<>();
 
+    /**
+     * Ontology-mapping envelopes as defined by Apache Ossie's flights example. Each mapping
+     * carries a nested {@code semantic_model:} — a common shape when the document originates
+     * from an ontology-first modelling tool. Saiku doesn't process the ontology block itself
+     * (concepts / relationships / verbalizes are out of scope for the SQL surface), but the
+     * nested semantic_model is a valid Ossie model and we surface it via
+     * {@link #getEffectiveSemanticModels()}.
+     */
+    @JsonProperty("ontology_mappings")
+    private List<OntologyMapping> ontologyMappings = new ArrayList<>();
+
     public String getVersion() {
         return version;
     }
@@ -53,5 +65,62 @@ public class OssieDocument {
 
     public void setSemanticModel(List<SemanticModel> v) {
         this.semanticModel = v == null ? new ArrayList<>() : v;
+    }
+
+    public List<OntologyMapping> getOntologyMappings() {
+        return ontologyMappings;
+    }
+
+    public void setOntologyMappings(List<OntologyMapping> v) {
+        this.ontologyMappings = v == null ? new ArrayList<>() : v;
+    }
+
+    /**
+     * Return every semantic model the document publishes — the top-level {@code semantic_model:}
+     * entries plus any nested inside {@code ontology_mappings[*].semantic_model:}. Consumers
+     * (discover service, YAML reader) should use this rather than {@link #getSemanticModel()}
+     * so ontology-nested Ossie docs round-trip cleanly.
+     */
+    @JsonIgnore
+    public List<SemanticModel> getEffectiveSemanticModels() {
+        List<SemanticModel> out = new ArrayList<>(semanticModel);
+        for (OntologyMapping m : ontologyMappings) {
+            if (m.getSemanticModel() != null) out.add(m.getSemanticModel());
+        }
+        return out;
+    }
+
+    /** Envelope for one entry under {@code ontology_mappings:}. */
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public static class OntologyMapping {
+        private String name;
+        private String description;
+
+        @JsonProperty("semantic_model")
+        private SemanticModel semanticModel;
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String v) {
+            this.name = v;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+
+        public void setDescription(String v) {
+            this.description = v;
+        }
+
+        public SemanticModel getSemanticModel() {
+            return semanticModel;
+        }
+
+        public void setSemanticModel(SemanticModel v) {
+            this.semanticModel = v;
+        }
     }
 }

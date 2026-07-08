@@ -140,6 +140,12 @@ public class SaikuLauncher implements Callable<Integer> {
             stageSeedAssets(dataDir);
             stageBrandingSample(brandingDir);
             stageDefaultDatasource(saikuHome);
+            // #1394 demos: TPC-DS + Flights Ossie datasources with H2 fixtures.
+            // Auto-provisioned on first boot so a fresh container has three Ossie
+            // datasources ready to poke at via /ai/ossie/models. Idempotent —
+            // stageResource + stageOssieDemoDatasource both no-op when the target
+            // exists, so operator edits survive container restarts.
+            stageOssieDemoDatasources(saikuHome);
             // saiku#1245: in demo mode, also stage a "Welcome" dashboard
             // under /dashboards/ so a fresh demo container has something
             // ready-to-look-at at first login instead of an empty list.
@@ -503,6 +509,119 @@ public class SaikuLauncher implements Callable<Integer> {
                 String resolved = body.replace("@SAIKU_HOME@", saikuHome.toString());
                 Files.writeString(target, resolved, java.nio.charset.StandardCharsets.UTF_8);
                 System.out.println("Seeded: " + target);
+            }
+        }
+
+        /**
+         * Strip leading {@code -- comment} lines from a SQL statement so a header comment
+         * doesn't cause the whole statement to be skipped. Idempotent — passes any statement
+         * whose first non-blank line isn't a {@code --} comment through unchanged.
+         */
+        static String stripLeadingSqlComments(String stmt) {
+            if (stmt == null) return "";
+            String[] lines = stmt.split("\\r?\\n");
+            int firstReal = 0;
+            for (int i = 0; i < lines.length; i++) {
+                String l = lines[i].trim();
+                if (l.isEmpty() || l.startsWith("--")) {
+                    firstReal = i + 1;
+                } else {
+                    break;
+                }
+            }
+            if (firstReal == 0) return stmt;
+            StringBuilder sb = new StringBuilder();
+            for (int i = firstReal; i < lines.length; i++) {
+                if (sb.length() > 0) sb.append('\n');
+                sb.append(lines[i]);
+            }
+            return sb.toString();
+        }
+
+        /**
+         * Stage the two Ossie demo datasources — TPC-DS and Flights (#1394 demo pass).
+         *
+         * <p>For each: stage the .ossie.yaml to {@code <home>/data/}, execute the seed
+         * SQL against a fresh H2 database in the same directory, and materialise the
+         * {@code .sds} descriptor. All three writes are idempotent — a repeat boot with
+         * an existing H2 file, YAML, or .sds skips the corresponding step. Failures are
+         * logged and the launcher continues so a broken fixture doesn't block the boot.
+         */
+        private static void stageOssieDemoDatasources(Path saikuHome) throws Exception {
+            Path dataDir = saikuHome.resolve("data");
+            Path dsDir = saikuHome
+                    .resolve("repository")
+                    .resolve("data")
+                    .resolve("unknown")
+                    .resolve("datasources");
+            Files.createDirectories(dataDir);
+            Files.createDirectories(dsDir);
+
+            stageOneOssieDemo(saikuHome, dataDir, dsDir, "tpcds", "TPCDS");
+            stageOneOssieDemo(saikuHome, dataDir, dsDir, "flights", "Flights");
+        }
+
+        /**
+         * Stage one Ossie demo dataset: YAML + H2 fixture + .sds descriptor.
+         *
+         * @param slug   filename slug — matches {@code <slug>.ossie.yaml},
+         *               {@code <slug>-seed.sql}, {@code <slug>-ossie.sds.template} on
+         *               the launcher's classpath.
+         * @param dsName the datasource name written into the .sds; matches the value
+         *               the discover endpoint exposes.
+         */
+        private static void stageOneOssieDemo(Path saikuHome, Path dataDir, Path dsDir, String slug, String dsName)
+                throws Exception {
+            // 1. YAML — copy from classpath to <home>/data/.
+            stageResource("/seed/" + slug + ".ossie.yaml", dataDir.resolve(slug + ".ossie.yaml"));
+
+            // 2. H2 fixture — one .mv.db per demo. Skip if it already exists (idempotent).
+            Path h2File = dataDir.resolve(slug + ".mv.db");
+            if (!Files.exists(h2File)) {
+                try (InputStream in = SaikuLauncher.class.getResourceAsStream("/seed/" + slug + "-seed.sql")) {
+                    if (in == null) {
+                        System.out.println(
+                                "Warning: no /seed/" + slug + "-seed.sql on classpath; skipping H2 seed for " + dsName);
+                    } else {
+                        String sql = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                        String jdbcUrl = "jdbc:h2:" + dataDir.resolve(slug) + ";MODE=PostgreSQL";
+                        // Load H2 driver via reflection — the launcher's fat-JAR pins h2 via
+                        // saiku-service, but we don't want a compile-time coupling from this
+                        // package to h2.
+                        Class.forName("org.h2.Driver");
+                        try (java.sql.Connection c = java.sql.DriverManager.getConnection(jdbcUrl, "sa", "");
+                                java.sql.Statement st = c.createStatement()) {
+                            for (String statement : sql.split(";\\s*\\r?\\n")) {
+                                // Strip leading comment lines. A trimmed chunk that STARTS with
+                                // `-- comment` but has an actual statement after may look like
+                                // "-- header\nINSERT INTO ..." — the naive startsWith("--") skip
+                                // would drop the whole INSERT.
+                                String body = stripLeadingSqlComments(statement).trim();
+                                if (body.isEmpty()) continue;
+                                st.execute(body);
+                            }
+                        }
+                        System.out.println("Seeded H2 fixture: " + h2File);
+                    }
+                } catch (Exception e) {
+                    System.out.println(
+                            "Warning: seeding " + dsName + " fixture failed (" + e.getMessage() + "); continuing.");
+                }
+            }
+
+            // 3. .sds descriptor — substitute @SAIKU_HOME@ same way stageDefaultDatasource
+            //    does for the foodmart datasource.
+            Path sdsTarget = dsDir.resolve(slug + "-ossie.sds");
+            if (!Files.exists(sdsTarget)) {
+                try (InputStream in =
+                        SaikuLauncher.class.getResourceAsStream("/seed/" + slug + "-ossie.sds.template")) {
+                    if (in != null) {
+                        String body = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                        String resolved = body.replace("@SAIKU_HOME@", saikuHome.toString());
+                        Files.writeString(sdsTarget, resolved, java.nio.charset.StandardCharsets.UTF_8);
+                        System.out.println("Seeded: " + sdsTarget);
+                    }
+                }
             }
         }
 

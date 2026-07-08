@@ -1,0 +1,157 @@
+# Flights demo — trimmed from
+# https://github.com/apache/ossie/blob/main/examples/flights.yaml
+# Original has 11 datasets under ontology_mappings.semantic_model with no
+# metrics. This trim keeps 4 core datasets (Aircraft, Airport, Flight, Carrier)
+# with the most useful subset of fields, adds three metrics for the AI
+# analytics demos, and declares the 3 relationships that hold everything
+# together.
+# The YAML uses the ontology_mappings envelope so we exercise the reader
+# extension (issue #TBD — nested semantic_model support).
+version: 0.2.0.dev0
+name: flights
+description: US on-time flight-performance data — carriers, aircraft, airports, flights.
+
+ontology_mappings:
+- name: flights_map
+  description: Flat semantic model over the flights fact + 3 dims.
+  semantic_model:
+    name: Flights
+    description: Flights, carriers, airports, aircraft — small BTS-shaped fixture.
+    ai_context:
+      instructions: |
+        Flight-performance analytics. Fact table is FLIGHT with one row per
+        scheduled flight; joins to CARRIER by carrier_id, ORIGIN airport by
+        origin_airport_id, DEST airport by dest_airport_id, and AIRCRAFT by
+        tail_num. Metrics cover flight_count, avg departure delay, avg arrival
+        delay. Time axis is the scheduled_date_month field on FLIGHT.
+
+    datasets:
+    - name: flight
+      source: FLIGHT
+      primary_key: [FLIGHT_ID]
+      description: One row per scheduled flight.
+      fields:
+      - name: flight_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: FLIGHT_ID}]}
+      - name: carrier_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: CARRIER_ID}]}
+      - name: tail_num
+        expression: {dialects: [{dialect: ANSI_SQL, expression: TAIL_NUM}]}
+      - name: origin_airport_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: ORIGIN_AIRPORT_ID}]}
+      - name: dest_airport_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: DEST_AIRPORT_ID}]}
+      - name: scheduled_date_month
+        expression: {dialects: [{dialect: ANSI_SQL, expression: SCHEDULED_DATE_MONTH}]}
+      - name: dep_delay_min
+        expression: {dialects: [{dialect: ANSI_SQL, expression: DEP_DELAY_MIN}]}
+      - name: arr_delay_min
+        expression: {dialects: [{dialect: ANSI_SQL, expression: ARR_DELAY_MIN}]}
+      - name: cancelled
+        expression: {dialects: [{dialect: ANSI_SQL, expression: CANCELLED}]}
+      - name: distance_miles
+        expression: {dialects: [{dialect: ANSI_SQL, expression: DISTANCE_MILES}]}
+
+    - name: carrier
+      source: CARRIER
+      primary_key: [CARRIER_ID]
+      description: Air carriers (airlines).
+      fields:
+      - name: carrier_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: CARRIER_ID}]}
+      - name: iata_code
+        expression: {dialects: [{dialect: ANSI_SQL, expression: IATA_CODE}]}
+      - name: carrier_name
+        expression: {dialects: [{dialect: ANSI_SQL, expression: CARRIER_NAME}]}
+      - name: hub_state
+        expression: {dialects: [{dialect: ANSI_SQL, expression: HUB_STATE}]}
+
+    - name: airport
+      source: AIRPORT
+      primary_key: [AIRPORT_ID]
+      description: Airports with location + state.
+      fields:
+      - name: airport_id
+        expression: {dialects: [{dialect: ANSI_SQL, expression: AIRPORT_ID}]}
+      - name: airport_code
+        expression: {dialects: [{dialect: ANSI_SQL, expression: AIRPORT_CODE}]}
+      - name: airport_name
+        expression: {dialects: [{dialect: ANSI_SQL, expression: AIRPORT_NAME}]}
+      - name: airport_city
+        expression: {dialects: [{dialect: ANSI_SQL, expression: AIRPORT_CITY}]}
+      - name: airport_state
+        expression: {dialects: [{dialect: ANSI_SQL, expression: AIRPORT_STATE}]}
+
+    - name: aircraft
+      source: AIRCRAFT
+      primary_key: [TAIL_NUM]
+      description: Aircraft — one row per registered tail number.
+      fields:
+      - name: tail_num
+        expression: {dialects: [{dialect: ANSI_SQL, expression: TAIL_NUM}]}
+      - name: manufacturer
+        expression: {dialects: [{dialect: ANSI_SQL, expression: MANUFACTURER}]}
+      - name: model
+        expression: {dialects: [{dialect: ANSI_SQL, expression: MODEL}]}
+      - name: number_of_seats
+        expression: {dialects: [{dialect: ANSI_SQL, expression: NUMBER_OF_SEATS}]}
+      - name: year_mfr
+        expression: {dialects: [{dialect: ANSI_SQL, expression: YEAR_MFR}]}
+
+    metrics:
+    - name: flight_count
+      description: Total scheduled flights.
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: COUNT(*)
+      aggregation_kind: count
+
+    - name: avg_dep_delay
+      description: Average departure delay in minutes.
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: AVG("flight"."DEP_DELAY_MIN")
+      aggregation_kind: avg
+
+    - name: avg_arr_delay
+      description: Average arrival delay in minutes.
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: AVG("flight"."ARR_DELAY_MIN")
+      aggregation_kind: avg
+
+    - name: cancelled_count
+      description: Number of cancelled flights (CANCELLED = 1).
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: SUM("flight"."CANCELLED")
+      aggregation_kind: sum
+
+    - name: total_miles
+      description: Total scheduled miles flown.
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: SUM("flight"."DISTANCE_MILES")
+      aggregation_kind: sum
+
+    relationships:
+    - name: flight_to_carrier
+      from: flight
+      to: carrier
+      from_columns: [CARRIER_ID]
+      to_columns: [CARRIER_ID]
+    - name: flight_to_origin_airport
+      from: flight
+      to: airport
+      from_columns: [ORIGIN_AIRPORT_ID]
+      to_columns: [AIRPORT_ID]
+    - name: flight_to_aircraft
+      from: flight
+      to: aircraft
+      from_columns: [TAIL_NUM]
+      to_columns: [TAIL_NUM]

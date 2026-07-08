@@ -99,7 +99,7 @@ public class OssieSchemaFactory implements SchemaFactory {
                     "OssieSchemaFactory: failed to read Ossie YAML at " + ossieYaml + ": " + e.getMessage(), e);
         }
 
-        var models = doc.getSemanticModel();
+        var models = doc.getEffectiveSemanticModels();
         if (models.isEmpty()) {
             throw new IllegalStateException("OssieSchemaFactory: Ossie document at " + ossieYaml
                     + " has zero semantic models — check the exporter didn't skip every cube");
