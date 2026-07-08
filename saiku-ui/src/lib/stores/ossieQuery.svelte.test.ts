@@ -169,6 +169,129 @@ describe("hasRunnableShape", () => {
   });
 });
 
+describe("save / load", () => {
+  beforeEach(async () => {
+    mockFetch(async () => new Response(JSON.stringify(fakeModel), { status: 200 }));
+    await ossieQuery.loadModel("admin", "SALES", "SALES");
+  });
+
+  test("save posts JSON and tracks savedPath / savedName", async () => {
+    ossieQuery.addRow({ dataset: "customers", field: "region" });
+    ossieQuery.addValue({ metric: "revenue" });
+    let seen: RequestInit | undefined;
+    globalThis.fetch = (async (
+      _input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      seen = init;
+      return new Response("", { status: 200 });
+    }) as unknown as typeof fetch;
+    await ossieQuery.save("/homes/home:admin/my-query.saiku", "my-query");
+    expect(ossieQuery.savedPath).toBe("/homes/home:admin/my-query.saiku");
+    expect(ossieQuery.savedName).toBe("my-query");
+    // The body is content=<url-encoded JSON>. Decode it back to a JSON payload so we
+    // can assert on the shape without brittle string-matching.
+    const encoded = String(seen?.body ?? "");
+    expect(encoded.startsWith("content=")).toBe(true);
+    const decoded = decodeURIComponent(encoded.slice("content=".length));
+    const parsed = JSON.parse(decoded);
+    expect(parsed).toMatchObject({
+      name: "my-query",
+      queryType: "OSSIE",
+      saikuOssieVersion: 1,
+      ossieQueryModel: {
+        connection: "SALES",
+        model: "SALES",
+        factDataset: "customers",
+        rows: [{ dataset: "customers", field: "region" }],
+        values: [{ metric: "revenue" }],
+      },
+    });
+  });
+
+  test("save surfaces an error and rethrows on non-2xx", async () => {
+    ossieQuery.addRow({ dataset: "customers", field: "region" });
+    mockFetch(async () => new Response("nope", { status: 500 }));
+    await expect(ossieQuery.save("/x.saiku", "x")).rejects.toBeInstanceOf(Error);
+    expect(ossieQuery.error).toMatch(/500/);
+  });
+
+  test("load hydrates savedPath / savedName + current from a valid file", async () => {
+    const saved = {
+      name: "my-query",
+      queryType: "OSSIE",
+      saikuOssieVersion: 1,
+      ossieQueryModel: {
+        connection: "SALES",
+        model: "SALES",
+        factDataset: "customers",
+        rows: [{ dataset: "customers", field: "region" }],
+        columns: [],
+        values: [{ metric: "revenue" }],
+        filters: [],
+        sorts: [],
+      },
+    };
+    mockFetch(async () => new Response(JSON.stringify(saved), { status: 200 }));
+    const loaded = await ossieQuery.load("/homes/home:admin/my-query.saiku");
+    expect(loaded).not.toBeNull();
+    expect(ossieQuery.savedPath).toBe("/homes/home:admin/my-query.saiku");
+    expect(ossieQuery.savedName).toBe("my-query");
+    expect(ossieQuery.current?.factDataset).toBe("customers");
+    expect(ossieQuery.current?.values).toEqual([{ metric: "revenue" }]);
+  });
+
+  test("load returns null when the file is MDX-shaped, leaves store alone", async () => {
+    // Simulate an MDX .saiku file — carries queryType='OLAP' and a queryModel field.
+    const mdx = { name: "MDX Q", queryType: "OLAP", queryModel: { axes: {} } };
+    mockFetch(async () => new Response(JSON.stringify(mdx), { status: 200 }));
+    const before = ossieQuery.current;
+    const loaded = await ossieQuery.load("/homes/home:admin/mdx.saiku");
+    expect(loaded).toBeNull();
+    expect(ossieQuery.current).toBe(before);
+    expect(ossieQuery.savedPath).toBeNull();
+  });
+
+  test("load returns null on empty response body", async () => {
+    mockFetch(async () => new Response("", { status: 200 }));
+    const loaded = await ossieQuery.load("/x.saiku");
+    expect(loaded).toBeNull();
+  });
+
+  test("load surfaces an error and rethrows on non-2xx", async () => {
+    mockFetch(async () => new Response("gone", { status: 404 }));
+    await expect(ossieQuery.load("/missing.saiku")).rejects.toBeInstanceOf(Error);
+    expect(ossieQuery.error).toMatch(/404/);
+  });
+
+  test("loadModel clears savedPath so save-in-place doesn't overwrite the prior file", async () => {
+    // Precondition: loaded a file so savedPath is set.
+    const saved = {
+      name: "prior",
+      queryType: "OSSIE",
+      saikuOssieVersion: 1,
+      ossieQueryModel: {
+        connection: "SALES",
+        model: "SALES",
+        factDataset: "customers",
+        rows: [],
+        columns: [],
+        values: [],
+        filters: [],
+        sorts: [],
+      },
+    };
+    mockFetch(async () => new Response(JSON.stringify(saved), { status: 200 }));
+    await ossieQuery.load("/x.saiku");
+    expect(ossieQuery.savedPath).toBe("/x.saiku");
+    // Model refetch (force:true so we don't hit the memoisation short-circuit).
+    mockFetch(async () => new Response(JSON.stringify(fakeModel), { status: 200 }));
+    await ossieQuery.loadModel("admin", "SALES", "SALES", true);
+    expect(ossieQuery.savedPath).toBeNull();
+    expect(ossieQuery.savedName).toBeNull();
+  });
+});
+
 describe("run", () => {
   beforeEach(async () => {
     mockFetch(async () => new Response(JSON.stringify(fakeModel), { status: 200 }));

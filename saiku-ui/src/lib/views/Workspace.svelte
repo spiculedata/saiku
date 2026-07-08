@@ -388,7 +388,14 @@
           onclick={handleNewTab}
         >+</button>
       </div>
-      <WorkspaceToolbar onAskAi={aiAskHealth.configured ? () => (aiDrawerOpen = true) : undefined} />
+      <!-- MDX toolbar carries dozens of MDX-flavoured affordances (Show MDX, Swap Axes,
+           Non-empty toggle, Chart-type buttons, Ask AI, Export). None of them make sense
+           for Ossie shelf-state queries; hide the whole toolbar when Ossie mode is
+           active so the user can't click into confused states. The Ossie canvas below
+           carries its own minimal toolbar (Save / Load / Run). -->
+      {#if selection.mode !== "ossie"}
+        <WorkspaceToolbar onAskAi={aiAskHealth.configured ? () => (aiDrawerOpen = true) : undefined} />
+      {/if}
     {/if}
     <!-- Canvas branches on selection.mode too so the workbench renders the SQL-flavoured
          shelves + result table when an Ossie connection is picked, and the existing MDX
@@ -402,7 +409,10 @@
   </section>
 </div>
 
-{#if !embed.active && aiAskHealth.configured}
+{#if !embed.active && aiAskHealth.configured && selection.mode !== "ossie"}
+  <!-- AI drawer speaks MDX/olap4j — hide it in Ossie mode so an Ossie user can't open a
+       drawer that would generate an invalid query for their selected connection. Once
+       the AI query surface learns SQL over Ossie models this guard can drop. -->
   <AiQueryDrawer
     open={aiDrawerOpen}
     onClose={() => (aiDrawerOpen = false)}

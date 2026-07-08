@@ -1,7 +1,9 @@
 import {
   executeOssieQuery,
   fetchOssieModel,
+  loadOssieQuery,
   newOssieQueryModel,
+  saveOssieQuery,
   type OssieFieldRef,
   type OssieFilterExpr,
   type OssieMetricRef,
@@ -9,6 +11,7 @@ import {
   type OssieQueryModel,
   type OssieQueryResult,
   type OssieSortRef,
+  type SavedOssieQuery,
 } from "$lib/api/ossie";
 
 /**
@@ -46,6 +49,16 @@ class OssieQueryStore {
   result = $state<OssieQueryResult | null>(null);
 
   /**
+   * Repository path this query is saved to. Null for unsaved / new queries; set on save
+   * and on load. Used by the canvas toolbar's Save button to pick between "save-in-place"
+   * and "save-as" (open a picker).
+   */
+  savedPath = $state<string | null>(null);
+
+  /** Name last associated with the file — surfaced in the canvas toolbar and .saiku file. */
+  savedName = $state<string | null>(null);
+
+  /**
    * Bookkeeping: last-loaded connection so re-selecting the same one doesn't refetch.
    */
   private loadedConnection: string | null = null;
@@ -66,12 +79,61 @@ class OssieQueryStore {
       this.current = newOssieQueryModel(connection, modelName);
       this.result = null;
       this.loadedConnection = connection;
+      // A fresh model load starts with an unsaved shelf state — clear the persistence
+      // fields so the toolbar's "Save" doesn't overwrite the previously-opened file.
+      this.savedPath = null;
+      this.savedName = null;
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
       this.model = null;
       this.current = null;
     } finally {
       this.loading = false;
+    }
+  }
+
+  /**
+   * Persist the current shelf state to a `.saiku` file at {@code path}. Set {@code name}
+   * so the file carries its display name (surfaced in the RepositoryBrowser). No-op with
+   * a null error surface if there's no shelf state to save.
+   */
+  async save(path: string, name: string): Promise<void> {
+    if (!this.current) return;
+    this.error = null;
+    try {
+      await saveOssieQuery(path, name, this.current);
+      this.savedPath = path;
+      this.savedName = name;
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e);
+      throw e;
+    }
+  }
+
+  /**
+   * Reload a previously-saved Ossie query from the repository. Returns the loaded shape
+   * so the workbench shell can drive its selection update (selection.selectOssie with the
+   * connection/model the query targets) before this store's state is hydrated.
+   *
+   * Returns `null` when the file is an MDX-flavoured query — caller falls through to the
+   * MDX load path in that case.
+   */
+  async load(path: string): Promise<SavedOssieQuery | null> {
+    this.error = null;
+    try {
+      const loaded = await loadOssieQuery(path);
+      if (!loaded) return null;
+      // Model reload is the caller's responsibility (needs username + selection update);
+      // here we just hydrate the shelf state so the canvas chips reflect the file
+      // contents.
+      this.current = loaded.ossieQueryModel;
+      this.result = null;
+      this.savedPath = path;
+      this.savedName = loaded.name;
+      return loaded;
+    } catch (e) {
+      this.error = e instanceof Error ? e.message : String(e);
+      throw e;
     }
   }
 
@@ -188,6 +250,8 @@ class OssieQueryStore {
     this.running = false;
     this.loading = false;
     this.loadedConnection = null;
+    this.savedPath = null;
+    this.savedName = null;
   }
 
   private maybeSeedFact(candidate: string): void {

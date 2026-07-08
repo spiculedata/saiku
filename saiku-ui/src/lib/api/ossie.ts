@@ -178,6 +178,84 @@ export async function executeOssieQuery(
   return (await res.json()) as OssieQueryResult;
 }
 
+/**
+ * On-disk shape of a saved Ossie query. Stored as JSON to a `.saiku` file via the shared
+ * repository endpoint — same file extension as MDX queries, distinguished by the
+ * {@code queryType} discriminator on load. Keeps the RepositoryBrowser catalog simple: one
+ * file type surfaces both flavours.
+ */
+export interface SavedOssieQuery {
+  name: string;
+  queryType: "OSSIE";
+  ossieQueryModel: OssieQueryModel;
+  /** Version stamp so future load-side migrations can branch. Bump when the shape breaks. */
+  saikuOssieVersion: 1;
+}
+
+/**
+ * Persist a shelf-state query as a `.saiku` file in the shared repository. Same endpoint as
+ * MDX queries so listings and folder navigation just work — no separate CRUD surface.
+ */
+export async function saveOssieQuery(
+  path: string,
+  name: string,
+  model: OssieQueryModel,
+): Promise<void> {
+  const payload: SavedOssieQuery = {
+    name,
+    queryType: "OSSIE",
+    ossieQueryModel: model,
+    saikuOssieVersion: 1,
+  };
+  const res = await fetch(
+    `/rest/saiku/api/repository/resource?file=${encodeURIComponent(path)}`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: `content=${encodeURIComponent(JSON.stringify(payload))}`,
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Ossie save failed (${res.status}): ${text || res.statusText}`);
+  }
+}
+
+/**
+ * Read a `.saiku` file back and return it if it's Ossie-shaped. Returns `null` when the
+ * file is an MDX query — the caller (workbench shell) then falls through to the MDX
+ * load path so mixing OLAP + Ossie queries in the same folder Just Works.
+ */
+export async function loadOssieQuery(path: string): Promise<SavedOssieQuery | null> {
+  const res = await fetch(
+    `/rest/saiku/api/repository/resource?file=${encodeURIComponent(path)}`,
+    {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Ossie load failed (${res.status}): ${text || res.statusText}`);
+  }
+  const raw = await res.text();
+  if (!raw) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const p = parsed as Partial<SavedOssieQuery>;
+  if (p.queryType !== "OSSIE" || !p.ossieQueryModel) return null;
+  return p as SavedOssieQuery;
+}
+
 /** Return an empty shelf-state seed for a newly-picked model. */
 export function newOssieQueryModel(connection: string, modelName: string): OssieQueryModel {
   return {

@@ -10,7 +10,7 @@ import type { Page, Route } from "@playwright/test";
  * shelf-state payload that reached the server.
  */
 export function registerOssieBackend(page: Page): OssieBackendHandle {
-  const state: OssieBackendState = { lastExecuteBody: null };
+  const state: OssieBackendState = { lastExecuteBody: null, savedFiles: new Map() };
 
   const routes: Array<[string | RegExp, (route: Route) => Promise<void> | void]> = [
     // Session: a signed-in admin so <Workspace> mounts.
@@ -84,6 +84,27 @@ export function registerOssieBackend(page: Page): OssieBackendHandle {
       },
     ],
 
+    // Repository resource endpoint used by save/load. Persist in-memory so the
+    // save→reload round-trip works.
+    [
+      "**/rest/saiku/api/repository/resource*",
+      async (route) => {
+        const url = new URL(route.request().url());
+        const file = url.searchParams.get("file") ?? "";
+        if (route.request().method() === "POST") {
+          const raw = route.request().postData() ?? "";
+          // Body is content=<url-encoded JSON>. Decode and persist.
+          const encoded = raw.startsWith("content=") ? raw.slice("content=".length) : raw;
+          state.savedFiles.set(file, decodeURIComponent(encoded));
+          await route.fulfill({ status: 200, contentType: "text/plain", body: "" });
+        } else if (route.request().method() === "GET") {
+          const body = state.savedFiles.get(file) ?? "";
+          await route.fulfill({ status: 200, contentType: "application/json", body });
+        } else {
+          await route.fulfill({ status: 405, body: "" });
+        }
+      },
+    ],
     // Other endpoints the app hits at boot. Return empty so nothing errors out.
     [
       "**/rest/saiku/version",
@@ -94,7 +115,7 @@ export function registerOssieBackend(page: Page): OssieBackendHandle {
       async (route) => route.fulfill({ status: 200, contentType: "application/json", body: "{}" }),
     ],
     [
-      "**/rest/saiku/api/repository**",
+      "**/rest/saiku/api/repository",
       async (route) => route.fulfill({ status: 200, contentType: "application/json", body: "[]" }),
     ],
   ];
@@ -104,15 +125,21 @@ export function registerOssieBackend(page: Page): OssieBackendHandle {
   }
   return {
     getLastExecuteBody: () => state.lastExecuteBody,
+    getSavedFile: (path: string) => state.savedFiles.get(path) ?? null,
+    listSavedPaths: () => Array.from(state.savedFiles.keys()),
   };
 }
 
 export interface OssieBackendHandle {
   getLastExecuteBody: () => unknown;
+  getSavedFile: (path: string) => string | null;
+  listSavedPaths: () => string[];
 }
 
 interface OssieBackendState {
   lastExecuteBody: unknown;
+  /** In-memory `.saiku` file store: repository path → serialised JSON. */
+  savedFiles: Map<string, string>;
 }
 
 const FIXTURE_MODEL = {

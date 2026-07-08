@@ -36,6 +36,25 @@ test.describe("Ossie workbench (mocked backend)", () => {
     expect(optionValues).toContain("ossie:SALES");
   });
 
+  test("MDX-only affordances are hidden in Ossie mode", async ({ page }) => {
+    // Pre-condition: on load with no cube selected, the MDX toolbar is visible.
+    // Selecting the Ossie connection must hide it so the user can't click MDX-specific
+    // buttons that don't work for shelf queries (Show MDX, Swap Axes, Ask AI, chart
+    // types, non-empty, visual totals, exports).
+    await page.locator("#cubes-select").selectOption("ossie:SALES");
+    await expect(page.locator(".ossie-canvas")).toBeVisible();
+
+    // MDX toolbar buttons: assert they're not in the DOM anywhere. The MDX toolbar's
+    // Show-MDX button carries a distinctive title / aria-label; if any of these
+    // resolve, hiding regressed.
+    const showMdx = page.getByRole("button", { name: /show mdx/i });
+    const swapAxes = page.getByRole("button", { name: /swap axes/i });
+    const askAi = page.getByRole("button", { name: /ask ai/i });
+    await expect(showMdx).toHaveCount(0);
+    await expect(swapAxes).toHaveCount(0);
+    await expect(askAi).toHaveCount(0);
+  });
+
   test("selecting Ossie renders the schema tree", async ({ page }) => {
     await page.locator("#cubes-select").selectOption("ossie:SALES");
     // Section headers live in <header class="ossie-tree__label"> — key off the class so
@@ -64,6 +83,62 @@ test.describe("Ossie workbench (mocked backend)", () => {
     await expect(
       page.locator('[aria-label="Values shelf"] .ossie-chip').filter({ hasText: "revenue" }),
     ).toBeVisible();
+  });
+
+  test("Save then Load round-trips the shelf state to a .saiku file", async ({ page }) => {
+    await page.locator("#cubes-select").selectOption("ossie:SALES");
+    await expect(page.locator(".ossie-tree").getByText("region")).toBeVisible();
+
+    await dropOssieField(page, "customers", "region", '[aria-label="Rows shelf"]');
+    await dropOssieMetric(page, "revenue", '[aria-label="Values shelf"]');
+
+    const savePath = "/homes/home:admin/my-ossie.saiku";
+    const saveName = "my-ossie";
+    // Save flow triggers two prompts (name → path); Load flow triggers one (path). Use a
+    // single persistent dialog handler with a shared queue so page.reload() below doesn't
+    // leave a stale second listener hanging around to double-accept the next dialog.
+    const answers: string[] = [saveName, savePath];
+    page.on("dialog", async (dialog) => {
+      const next = answers.shift();
+      await dialog.accept(next);
+    });
+    await page.locator(".ossie-canvas").getByRole("button", { name: /^Save/ }).click();
+
+    // Wait for the toast that fires on successful save so we don't race the fixture's
+    // write-through.
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+    const written = backend.getSavedFile(savePath);
+    expect(written).not.toBeNull();
+    const parsed = JSON.parse(written!);
+    expect(parsed).toMatchObject({
+      name: saveName,
+      queryType: "OSSIE",
+      saikuOssieVersion: 1,
+      ossieQueryModel: {
+        connection: "SALES",
+        model: "SALES",
+        factDataset: "customers",
+      },
+    });
+
+    // Reload the whole page to wipe every in-memory store, then re-mount the workbench,
+    // re-pick the connection, and verify Load repopulates the shelves from the .saiku
+    // file we just wrote. Cleaner than trying to reset store state through the UI
+    // because store singletons survive selection changes by design.
+    await page.reload();
+    await page.waitForLoadState("networkidle");
+    await page.locator("#cubes-select").selectOption("ossie:SALES");
+    await expect(page.locator(".ossie-tree").getByText("region")).toBeVisible();
+    await expect(page.locator('[aria-label="Rows shelf"] .ossie-chip')).toHaveCount(0);
+
+    // Load button drives one prompt (path). Re-arm the shared queue's answer list — the
+    // handler installed above is still bound to the (same) Page across the reload.
+    answers.push(savePath);
+    await page.locator(".ossie-canvas").getByRole("button", { name: /^Load/ }).click();
+
+    await expect(page.getByText("Loaded", { exact: true })).toBeVisible();
+    await expect(page.locator('[aria-label="Rows shelf"] .ossie-chip').filter({ hasText: "customers.region" })).toBeVisible();
+    await expect(page.locator('[aria-label="Values shelf"] .ossie-chip').filter({ hasText: "revenue" })).toBeVisible();
   });
 
   test("Run posts shelf state and renders the result grid", async ({ page }) => {

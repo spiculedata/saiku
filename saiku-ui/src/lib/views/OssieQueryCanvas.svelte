@@ -1,7 +1,10 @@
 <script lang="ts">
   import { ossieQuery } from "$lib/stores/ossieQuery.svelte";
+  import { selection } from "$lib/stores/selection.svelte";
+  import { session } from "$lib/stores/session.svelte";
   import { Button } from "$lib/components/ui";
-  import { Play, X } from "lucide-svelte";
+  import { toasts } from "$lib/stores/toasts.svelte";
+  import { FolderOpen, Play, Save, X } from "lucide-svelte";
   import type { OssieFieldRef, OssieFilterExpr, OssieMetricRef } from "$lib/api/ossie";
 
   const FIELD_MIME = "application/x-saiku-ossie-field";
@@ -64,6 +67,56 @@
     await ossieQuery.run();
   }
 
+  /**
+   * Prompt for a repository path + name and persist the current shelf state as a `.saiku`
+   * file. Uses browser prompt() rather than the fancier SaveQueryModal because the Ossie
+   * shell is intentionally minimal (F4 MVP). Full RepositoryBrowser integration is a
+   * follow-up when the MDX ↔ Ossie save modal gets unified.
+   */
+  async function saveQuery() {
+    if (!ossieQuery.current) return;
+    const defaultName = ossieQuery.savedName ?? "untitled-ossie-query";
+    const name = window.prompt("Save as (name)", defaultName);
+    if (!name) return;
+    const defaultPath = ossieQuery.savedPath ?? `/homes/home:${session.current?.username ?? "admin"}/${name}.saiku`;
+    const path = window.prompt("Save to path", defaultPath);
+    if (!path) return;
+    try {
+      await ossieQuery.save(path, name);
+      toasts.success("Saved", path);
+    } catch (e) {
+      toasts.danger("Save failed", e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  /**
+   * Prompt for a saved-query path, load it, and re-select the connection so the sidebar
+   * reflects the loaded model. Falls back with a friendly toast when the file is
+   * MDX-shaped — the user picked from a mixed folder, we can't hydrate it here.
+   */
+  async function loadQuery() {
+    const path = window.prompt("Load from path");
+    if (!path) return;
+    try {
+      const loaded = await ossieQuery.load(path);
+      if (!loaded) {
+        toasts.danger("Not an Ossie query", "This file is a Mondrian/MDX query. Open it from the MDX workbench.");
+        return;
+      }
+      const conn = loaded.ossieQueryModel.connection;
+      const model = loaded.ossieQueryModel.model;
+      // Flip the selection so the sidebar reloads the semantic model tree matching what
+      // the saved shelf state references. loadModel is memoised on connection name so a
+      // reload of the current connection is a no-op.
+      selection.selectOssie({ connectionName: conn, modelName: model });
+      const user = session.current?.username;
+      if (user) await ossieQuery.loadModel(user, conn, model);
+      toasts.success("Loaded", loaded.name);
+    } catch (e) {
+      toasts.danger("Load failed", e instanceof Error ? e.message : String(e));
+    }
+  }
+
   function updateFilterOp(idx: number, op: OssieFilterExpr["op"]) {
     if (!ossieQuery.current) return;
     const filters = ossieQuery.current.filters.map((f, i) => (i === idx ? { ...f, op } : f));
@@ -88,6 +141,17 @@
       <Play size={14} />
       {ossieQuery.running ? "Running…" : "Run"}
     </Button>
+    <Button variant="outline" onclick={saveQuery} disabled={!ossieQuery.current}>
+      <Save size={14} />
+      Save
+    </Button>
+    <Button variant="outline" onclick={loadQuery}>
+      <FolderOpen size={14} />
+      Load
+    </Button>
+    {#if ossieQuery.savedName}
+      <span class="ossie-canvas__saved-name">{ossieQuery.savedName}</span>
+    {/if}
     {#if ossieQuery.error}
       <span class="ossie-canvas__error">{ossieQuery.error}</span>
     {/if}
@@ -260,6 +324,11 @@
     color: var(--fg-subtle);
     font-size: var(--fs-xs);
     margin-left: auto;
+  }
+  .ossie-canvas__saved-name {
+    color: var(--fg-muted);
+    font-size: var(--fs-xs);
+    font-family: monospace;
   }
   .ossie-canvas__shelves {
     display: flex;
