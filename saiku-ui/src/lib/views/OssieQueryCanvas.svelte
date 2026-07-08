@@ -5,6 +5,7 @@
   import { toasts } from "$lib/stores/toasts.svelte";
   import {
     ArrowLeftRight,
+    Sparkles,
     ArrowDown,
     ArrowUp,
     BarChart3,
@@ -30,7 +31,16 @@
   import ChartView from "$lib/views/ChartView.svelte";
   import { CHART_TYPES, type ChartType } from "$lib/views/chartTypes";
   import Modal from "$lib/components/Modal.svelte";
-  import { previewOssieSql, OSSIE_AGGREGATIONS } from "$lib/api/ossie";
+  import {
+    previewOssieSql,
+    OSSIE_AGGREGATIONS,
+    fetchOssieAskHealth,
+    detectOssieAnomalies,
+    forecastOssie,
+    fetchOssieRowDetail,
+  } from "$lib/api/ossie";
+  import OssieAskAiModal from "$lib/modals/OssieAskAiModal.svelte";
+  import { onMount } from "svelte";
   import { downloadCsv, ossieResultToCsv } from "$lib/ossie/exportCsv";
   import { platform } from "$lib/stores/platform.svelte";
   import type { OssieFieldRef, OssieFilterExpr, OssieMetricRef } from "$lib/api/ossie";
@@ -410,6 +420,82 @@
   // Only one dropdown open at a time; clicking outside closes them.
   // ------------------------------------------------------------------
   let toolsMenuOpen = $state(false);
+  // #1400 — natural-language ask affordance. Hidden when /ai/ossie/ask/health returns
+  // configured=false so users don't see a button that always errors out.
+  let askConfigured = $state(false);
+  let askOpen = $state(false);
+  onMount(async () => {
+    try {
+      const health = await fetchOssieAskHealth();
+      askConfigured = health.configured;
+    } catch {
+      askConfigured = false;
+    }
+  });
+
+  /**
+   * Sparkline / plain-analytics helpers. On menu-click we look at the current shelf to
+   * decide the timeAxis: prefer a row-shelf field whose sample values look datelike, else
+   * fall back to the first row-shelf field. Errors surface via toast.
+   */
+  async function runAnomaly() {
+    toolsMenuOpen = false;
+    const q = ossieQuery.current;
+    if (!q) return;
+    const timeAxis = pickTimeAxis(q);
+    if (!timeAxis) {
+      toasts.danger("Anomaly detection needs at least one row-shelf field.", "");
+      return;
+    }
+    try {
+      const resp = await detectOssieAnomalies(q, timeAxis, "zscore", 1.5);
+      const n = resp.anomaly?.anomalyCount ?? 0;
+      toasts.success(
+        `${n} anomalies flagged`,
+        resp.anomaly ? `${resp.anomaly.method} threshold=${resp.anomaly.threshold}` : "",
+      );
+    } catch (e: unknown) {
+      toasts.danger("Anomaly detection failed", e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function runForecast() {
+    toolsMenuOpen = false;
+    const q = ossieQuery.current;
+    if (!q) return;
+    const timeAxis = pickTimeAxis(q);
+    if (!timeAxis) {
+      toasts.danger("Forecast needs at least one row-shelf field.", "");
+      return;
+    }
+    try {
+      const resp = await forecastOssie(q, timeAxis, "ets", 4);
+      const points = resp.forecast ? Object.values(resp.forecast)[0]?.points?.length ?? 0 : 0;
+      toasts.success(`${points} forecast points projected`, "ets, horizon=4");
+    } catch (e: unknown) {
+      toasts.danger("Forecast failed", e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function runRowDetail() {
+    toolsMenuOpen = false;
+    const q = ossieQuery.current;
+    if (!q) return;
+    try {
+      const resp = await fetchOssieRowDetail(q, 100);
+      toasts.success(`${resp.records.length} rows fetched`, resp.meta?.truncated ? "truncated" : "");
+    } catch (e: unknown) {
+      toasts.danger("Row detail failed", e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  function pickTimeAxis(q: import("$lib/api/ossie").OssieQueryModel): string | null {
+    const timeCand = q.rows.find((r) => /date|time|month|year|day/i.test(r.field));
+    if (timeCand) return `${timeCand.dataset}.${timeCand.field}`;
+    if (q.rows.length > 0) return `${q.rows[0].dataset}.${q.rows[0].field}`;
+    if (q.columns.length > 0) return `${q.columns[0].dataset}.${q.columns[0].field}`;
+    return null;
+  }
   let exportMenuOpen = $state(false);
 
   function handleBodyClick() {
@@ -937,6 +1023,20 @@
       >
         <ArrowLeftRight size={18} />
       </button>
+      {#if askConfigured}
+        <!-- #1400: Ask AI is only rendered when /ai/ossie/ask/health returned configured=true.
+             The button opens a natural-language modal that returns an OssieQueryModel the
+             workbench applies to the shelves. -->
+        <button
+          class="tb-btn tb-btn--ai"
+          title="Ask a natural-language question"
+          aria-label="Ask AI"
+          onclick={() => (askOpen = true)}
+          disabled={!ossieQuery.model}
+        >
+          <Sparkles size={18} /><span class="text-sm">Ask AI</span>
+        </button>
+      {/if}
     </div>
     <div class="toolbar__sep"></div>
     <div class="flex items-center gap-0.5 relative" role="group" aria-label="Tools">
@@ -963,6 +1063,35 @@
             disabled={!ossieQuery.current}
           >
             <Braces size={16} /> <span>Show SQL…</span>
+          </button>
+          <!-- #1400: AI analytics affordances. All three run against the current
+               shelf state; results are surfaced via toast. -->
+          <button
+            type="button"
+            class="toolbar__item"
+            onclick={runAnomaly}
+            disabled={!ossieQuery.current || !ossieQuery.result}
+            title="Flag anomalous points along the primary time axis"
+          >
+            <span>Detect anomalies</span>
+          </button>
+          <button
+            type="button"
+            class="toolbar__item"
+            onclick={runForecast}
+            disabled={!ossieQuery.current || !ossieQuery.result}
+            title="Project future points using ETS forecasting"
+          >
+            <span>Forecast (ETS, horizon=4)</span>
+          </button>
+          <button
+            type="button"
+            class="toolbar__item"
+            onclick={runRowDetail}
+            disabled={!ossieQuery.current}
+            title="Fetch raw underlying rows for the current shelf"
+          >
+            <span>Row detail…</span>
           </button>
           <button
             type="button"
@@ -1525,6 +1654,22 @@
     <pre class="ossie-canvas__sql">{showSqlText}</pre>
   {/if}
 </Modal>
+
+{#if askOpen && ossieQuery.model}
+  <!-- #1400: Natural-language ask modal. Applied query drops into the shelf state via
+       the store's applyModel helper so the user can tweak it before re-running. -->
+  <OssieAskAiModal
+    open={askOpen}
+    connection={ossieQuery.model.connection}
+    modelName={ossieQuery.model.name}
+    onApplyQuery={(q) => {
+      ossieQuery.captureForUndo();
+      ossieQuery.current = q;
+      void ossieQuery.run();
+    }}
+    onClose={() => (askOpen = false)}
+  />
+{/if}
 
 <style>
   .ossie-canvas {

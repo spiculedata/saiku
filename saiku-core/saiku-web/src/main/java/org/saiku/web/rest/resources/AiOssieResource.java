@@ -186,7 +186,10 @@ public class AiOssieResource {
     @GET
     @Path("/schema/{connection}/{model}")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response getSchema(@PathParam("connection") String connectionName, @PathParam("model") String modelName) {
+    public Response getSchema(
+            @PathParam("connection") String connectionName,
+            @PathParam("model") String modelName,
+            @jakarta.ws.rs.QueryParam("refresh") Boolean refresh) {
         if (ossieDiscoverService == null) {
             return error("Ossie discover not wired");
         }
@@ -197,6 +200,11 @@ public class AiOssieResource {
                         "model",
                         "model '" + modelName + "' not found on connection '" + connectionName + "'",
                         List.of(semantic.getName()));
+            }
+            // #1404 — ?refresh=true drops the projector's cached samples for this model so the
+            // next fetch re-runs the SELECT DISTINCTs against the warehouse.
+            if (Boolean.TRUE.equals(refresh)) {
+                projector.invalidateSampleCache(connectionName, semantic.getName());
             }
             Connection jdbc = openWarehouseConnection(connectionName);
             OssieAiSchema schema = projector.project(connectionName, semantic, jdbc);
@@ -262,7 +270,7 @@ public class AiOssieResource {
             long runtime = System.currentTimeMillis() - t0;
 
             if ("matrix".equalsIgnoreCase(format)) {
-                Map<String, Object> body = toMatrixResponse(tq.getName(), runtime, cds);
+                Map<String, Object> body = toMatrixResponse(tq.getName(), runtime, cds, schema, req);
                 return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
             }
             OssieAiQueryResponse resp = toRecordsResponse(tq.getName(), runtime, cds, schema, req);
@@ -329,8 +337,22 @@ public class AiOssieResource {
             if (modelName == null || modelName.isBlank()) modelName = semantic.getName();
             OssieAiSchema schema = projector.project(connection, semantic, openWarehouseConnection(connection));
 
+            // #1398 — accept optional history: [{role, content}] for multi-turn conversations.
+            List<org.saiku.service.ossie.ai.OssieAiAskService.ChatTurn> history = new ArrayList<>();
+            Object rawHistory = body.get("history");
+            if (rawHistory instanceof List<?> hlist) {
+                for (Object h : hlist) {
+                    if (h instanceof Map<?, ?> hmap) {
+                        String role = strOr(hmap.get("role"));
+                        String content = strOr(hmap.get("content"));
+                        if (role != null && content != null) {
+                            history.add(new org.saiku.service.ossie.ai.OssieAiAskService.ChatTurn(role, content));
+                        }
+                    }
+                }
+            }
             org.saiku.service.ossie.ai.OssieAiAskService.AskResult ar =
-                    askService.ask(question, schema, connection, modelName);
+                    askService.ask(question, schema, connection, modelName, history);
             if (ar.error() != null) {
                 Map<String, Object> err = new LinkedHashMap<>();
                 err.put("error", "ASK_FAILED");
@@ -400,6 +422,12 @@ public class AiOssieResource {
                 return badRequest("threshold", "threshold must be a positive number", List.of());
             }
             OssieAiQueryRequest qreq = body.getQuery();
+            // Validate timeAxis against schema + query shape (#1399) before we execute — the
+            // augmenter would silently sort by a phantom key otherwise.
+            OssieModelDto anomSemantic = ossieDiscoverService.getModel(qreq.getConnection());
+            if (qreq.getModel() == null || qreq.getModel().isBlank()) qreq.setModel(anomSemantic.getName());
+            OssieAiSchema anomSchema = projector.project(qreq.getConnection(), anomSemantic, null);
+            validator.validateTimeAxis(body.getTimeAxis(), qreq, anomSchema);
             OssieAiQueryResponse resp = runInternalQuery(qreq, start);
             org.saiku.service.ossie.ai.OssieAiAnomalyAugmenter.augment(resp, detector, threshold, body.getTimeAxis());
             return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
@@ -444,7 +472,13 @@ public class AiOssieResource {
             if (confidence <= 0 || confidence >= 1) {
                 return badRequest("interval", "interval must be in (0,1)", List.of());
             }
-            OssieAiQueryResponse resp = runInternalQuery(body.getQuery(), start);
+            OssieAiQueryRequest fqreq = body.getQuery();
+            // Validate timeAxis (#1399) before we execute.
+            OssieModelDto fSemantic = ossieDiscoverService.getModel(fqreq.getConnection());
+            if (fqreq.getModel() == null || fqreq.getModel().isBlank()) fqreq.setModel(fSemantic.getName());
+            OssieAiSchema fSchema = projector.project(fqreq.getConnection(), fSemantic, null);
+            validator.validateTimeAxis(body.getTimeAxis(), fqreq, fSchema);
+            OssieAiQueryResponse resp = runInternalQuery(fqreq, start);
             org.saiku.service.ossie.ai.OssieAiForecastAugmenter.augment(
                     resp, forecaster, horizon, confidence, body.getTimeAxis());
             return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
@@ -623,16 +657,16 @@ public class AiOssieResource {
                             ? java.time.Duration.between(h.getSubmittedAt(), h.getCompletedAt())
                                     .toMillis()
                             : 0L;
-                    if ("matrix".equalsIgnoreCase(format)) {
-                        Map<String, Object> matrix = toMatrixResponse(queryId, runtime, cds);
-                        return Response.ok(matrix)
-                                .type(MediaType.APPLICATION_JSON)
-                                .build();
-                    }
                     OssieAiQueryRequest submitted =
                             translateBackToAiRequest(h.getQuery().getOssieQueryModel());
                     OssieModelDto semantic = ossieDiscoverService.getModel(submitted.getConnection());
                     OssieAiSchema schema = projector.project(submitted.getConnection(), semantic, null);
+                    if ("matrix".equalsIgnoreCase(format)) {
+                        Map<String, Object> matrix = toMatrixResponse(queryId, runtime, cds, schema, submitted);
+                        return Response.ok(matrix)
+                                .type(MediaType.APPLICATION_JSON)
+                                .build();
+                    }
                     OssieAiQueryResponse resp = toRecordsResponse(queryId, runtime, cds, schema, submitted);
                     return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
                 } catch (Exception e) {
@@ -1083,7 +1117,8 @@ public class AiOssieResource {
      * cells serialise as {@code {value, type}}; body cells add {@code raw} when a numeric parse
      * survives.
      */
-    private Map<String, Object> toMatrixResponse(String queryId, long runtime, CellDataSet cds) {
+    private Map<String, Object> toMatrixResponse(
+            String queryId, long runtime, CellDataSet cds, OssieAiSchema schema, OssieAiQueryRequest req) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("queryId", queryId);
         body.put("runtime", runtime);
@@ -1122,7 +1157,72 @@ public class AiOssieResource {
         }
         body.put("cellSetHeaders", headers);
         body.put("cellSetBody", bodyRows);
+        applyKAnonymityMatrix(body, schema, req);
         return body;
+    }
+
+    /**
+     * K-anonymity suppression for the matrix-format response (#1402). Same detection
+     * heuristic as the records-format path: any column whose metric declares an aggregation
+     * kind of {@code count} is treated as the row's backing count. When the count falls
+     * below k, every DATA_CELL on that row is replaced with the mask, and a top-level
+     * {@code suppressed} block records the count + reason.
+     *
+     * <p>Column index alignment: the header row emits row-shelf then column-shelf then
+     * metrics — same order the records-format path uses to build column descriptors —
+     * so we can identify metric column positions purely from the request shape.
+     */
+    @SuppressWarnings("unchecked")
+    private void applyKAnonymityMatrix(Map<String, Object> body, OssieAiSchema schema, OssieAiQueryRequest req) {
+        if (kAnonymityFilter == null || !kAnonymityFilter.enabled()) return;
+        if (schema == null || req == null) return;
+        int nRows = req.getRows().size();
+        int nCols = req.getColumns().size();
+        int nDims = nRows + nCols;
+        // Discover which metric columns are count-shaped so we know which cell indexes to
+        // treat as backing counts.
+        List<Integer> countCols = new ArrayList<>();
+        List<Integer> metricCols = new ArrayList<>();
+        for (int i = 0; i < req.getValues().size(); i++) {
+            OssieAiSchema.Metric m =
+                    schema.getMetrics().get(req.getValues().get(i).getMetric());
+            int colIdx = nDims + i;
+            metricCols.add(colIdx);
+            String agg = req.getValues().get(i).getAggregation();
+            String effectiveAgg = agg != null ? agg.toLowerCase() : (m != null ? m.getAggregationKind() : null);
+            if ("count".equalsIgnoreCase(effectiveAgg)) countCols.add(colIdx);
+        }
+        if (countCols.isEmpty()) return;
+
+        List<List<Map<String, Object>>> rows = (List<List<Map<String, Object>>>) body.get("cellSetBody");
+        if (rows == null) return;
+        int suppressed = 0;
+        for (List<Map<String, Object>> row : rows) {
+            int rowMax = 0;
+            for (int ci : countCols) {
+                if (ci >= row.size()) continue;
+                Map<String, Object> cell = row.get(ci);
+                Object raw = cell.get("raw");
+                if (raw instanceof Number n) {
+                    rowMax = Math.max(rowMax, n.intValue());
+                }
+            }
+            if (kAnonymityFilter.shouldSuppress(rowMax)) {
+                for (int mi : metricCols) {
+                    if (mi >= row.size()) continue;
+                    Map<String, Object> cell = row.get(mi);
+                    cell.put("value", kAnonymityFilter.maskValue());
+                    cell.remove("raw");
+                }
+                suppressed++;
+            }
+        }
+        if (suppressed > 0) {
+            Map<String, Object> sup = new LinkedHashMap<>();
+            sup.put("count", suppressed);
+            sup.put("reason", "k-anonymity threshold k=" + kAnonymityFilter.threshold());
+            body.put("suppressed", sup);
+        }
     }
 
     private String headerLabel(AbstractBaseCell[] header, int idx, String fallback) {

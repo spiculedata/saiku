@@ -200,6 +200,12 @@ public class OssieAiSchema {
         private String unit;
         private String currency;
         private String cardinality;
+        /**
+         * Best-effort distinct-count estimate — populated from
+         * {@code APPROX_COUNT_DISTINCT} on warehouses that support it, else null (#1405).
+         */
+        private Long estimatedDistinct;
+
         private List<String> sampleValues = new ArrayList<>();
 
         public String getName() {
@@ -256,6 +262,14 @@ public class OssieAiSchema {
 
         public void setSampleValues(List<String> v) {
             this.sampleValues = v == null ? new ArrayList<>() : v;
+        }
+
+        public Long getEstimatedDistinct() {
+            return estimatedDistinct;
+        }
+
+        public void setEstimatedDistinct(Long v) {
+            this.estimatedDistinct = v;
         }
     }
 

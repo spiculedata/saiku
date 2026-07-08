@@ -249,7 +249,7 @@ public class McpResource {
                 requireOssie();
                 String connection = requiredString(args, "connection");
                 String model = requiredString(args, "model");
-                return unwrap(aiOssieResource.getSchema(connection, model));
+                return unwrap(aiOssieResource.getSchema(connection, model, null));
             }
             case "search_field_values": {
                 requireOssie();

@@ -54,8 +54,27 @@ public final class OssieAiSchemaProjector {
     /** Cap on the sample-value list per field. */
     static final int SAMPLE_LIMIT = 12;
 
-    /** TTL for the sample-value cache. Refresh on the first schema fetch after expiry. */
-    static final Duration SAMPLE_TTL = Duration.ofMinutes(5);
+    /**
+     * Default TTL for the sample-value cache. Overridable via env
+     * {@code SAIKU_AI_OSSIE_SAMPLES_TTL_MINUTES} or property
+     * {@code saiku.ai.ossie.samples.ttl.minutes} (#1404). Real deployments will see wildly
+     * different cardinality profiles — this default balances FoodMart-sized dims (sub-second
+     * refresh fine) against billion-row warehouse dims (5 min too aggressive).
+     */
+    static final Duration SAMPLE_TTL = resolveTtl();
+
+    private static Duration resolveTtl() {
+        String raw = System.getProperty("saiku.ai.ossie.samples.ttl.minutes");
+        if (raw == null || raw.isBlank()) raw = System.getenv("SAIKU_AI_OSSIE_SAMPLES_TTL_MINUTES");
+        if (raw == null || raw.isBlank()) return Duration.ofMinutes(5);
+        try {
+            long m = Long.parseLong(raw.trim());
+            if (m < 0) return Duration.ofMinutes(5);
+            return Duration.ofMinutes(m);
+        } catch (NumberFormatException e) {
+            return Duration.ofMinutes(5);
+        }
+    }
 
     /**
      * Aggregation kinds the translator's {@code swapAggregation} will actually rewrite.
@@ -202,6 +221,7 @@ public final class OssieAiSchemaProjector {
             out_field.setSampleValues(cached.values);
             out_field.setCardinality(cached.cardinality);
             out_field.setType(cached.type);
+            out_field.setEstimatedDistinct(cached.estimatedDistinct);
             return;
         }
         // Ossie's Calcite schema exposes tables under the DATASET name — not the source table
@@ -222,16 +242,31 @@ public final class OssieAiSchemaProjector {
                 Object v = rs.getObject(1);
                 values.add(v == null ? null : String.valueOf(v));
             }
-            // If we got to the LIMIT+1 row the field is "high cardinality" — more values than we
-            // asked for. Otherwise the count tells us low/medium.
+            // Coarse cardinality bucket from the sample query alone (LIMIT+1 heuristic).
             String cardinality;
             if (rs.next()) cardinality = "high";
             else if (values.size() <= 6) cardinality = "low";
             else cardinality = "medium";
+
+            // #1405 refinement: when the coarse bucket says "high", ask the warehouse for a
+            // better estimate via APPROX_COUNT_DISTINCT (Calcite exposes it on most dialects;
+            // BigQuery/Snowflake/Postgres 9.5+/Redshift all support the identifier). Fall back
+            // to COUNT DISTINCT on a 1000-row sample when the function isn't available.
+            Long distinctEstimate = null;
+            if ("high".equals(cardinality)) {
+                distinctEstimate = tryEstimateDistinct(jdbc, sourceTable, col);
+                if (distinctEstimate != null) {
+                    if (distinctEstimate < 20) cardinality = "low";
+                    else if (distinctEstimate < 200) cardinality = "medium";
+                    else if (distinctEstimate < 2000) cardinality = "medium-high";
+                    else cardinality = "high";
+                }
+            }
             out_field.setSampleValues(values);
             out_field.setCardinality(cardinality);
             out_field.setType(type);
-            sampleCache.put(cacheKey, new SampleEntry(Instant.now(), values, cardinality, type));
+            out_field.setEstimatedDistinct(distinctEstimate);
+            sampleCache.put(cacheKey, new SampleEntry(Instant.now(), values, cardinality, type, distinctEstimate));
         } catch (Exception e) {
             // Common in unit tests + when a warehouse column doesn't quote cleanly. Log at debug
             // — the agent still gets the field's identity, just without samples.
@@ -412,7 +447,35 @@ public final class OssieAiSchemaProjector {
         }
     }
 
-    private record SampleEntry(Instant cachedAt, List<String> values, String cardinality, String type) {
+    /**
+     * Attempt an APPROX_COUNT_DISTINCT (or COUNT(DISTINCT ...) fallback) for a field. Returns
+     * null when neither works — the caller keeps the coarse bucket then.
+     */
+    private Long tryEstimateDistinct(Connection jdbc, String sourceTable, String col) {
+        // First try APPROX_COUNT_DISTINCT — supported by BigQuery, Snowflake, Postgres 9.5+,
+        // Redshift, Databricks, Presto/Trino. Not on H2, HSQLDB, SQLite.
+        String approx = "SELECT APPROX_COUNT_DISTINCT(" + col + ") FROM " + sourceTable;
+        try (Statement st = jdbc.createStatement();
+                ResultSet rs = st.executeQuery(approx)) {
+            if (rs.next()) return rs.getLong(1);
+        } catch (Exception e) {
+            log.debug("APPROX_COUNT_DISTINCT failed, trying COUNT DISTINCT on sample: {}", e.getMessage());
+        }
+        // Fallback: COUNT DISTINCT on a 1000-row sample. Cheap on H2 (the fuzz fixture); on real
+        // warehouses this is bounded, so it's safe by construction.
+        String countDistinct =
+                "SELECT COUNT(DISTINCT " + col + ") FROM (SELECT " + col + " FROM " + sourceTable + " LIMIT 1000)";
+        try (Statement st = jdbc.createStatement();
+                ResultSet rs = st.executeQuery(countDistinct)) {
+            if (rs.next()) return rs.getLong(1);
+        } catch (Exception e) {
+            log.debug("COUNT DISTINCT sample failed: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    private record SampleEntry(
+            Instant cachedAt, List<String> values, String cardinality, String type, Long estimatedDistinct) {
         boolean freshFor(Duration ttl) {
             return Duration.between(cachedAt, Instant.now()).compareTo(ttl) < 0;
         }
@@ -421,5 +484,15 @@ public final class OssieAiSchemaProjector {
     /** Test hook — clears the sample cache. */
     void clearSampleCache() {
         sampleCache.clear();
+    }
+
+    /**
+     * Public API for {@code /schema/{c}/{m}?refresh=true} (#1404). Invalidates every cached
+     * sample entry whose key starts with the {@code connectionName|modelName|} prefix so the
+     * next projection re-runs the SELECT DISTINCTs.
+     */
+    public void invalidateSampleCache(String connectionName, String modelName) {
+        String prefix = connectionName + "|" + modelName + "|";
+        sampleCache.keySet().removeIf(k -> k.startsWith(prefix));
     }
 }

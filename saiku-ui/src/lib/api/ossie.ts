@@ -372,6 +372,143 @@ export async function previewOssieSql(model: OssieQueryModel): Promise<string> {
   return parsed.sql ?? "";
 }
 
+// ---------------------------------------------------------------------
+// AI endpoint clients (#1400) — wrap the /ai/ossie/* REST surface with
+// typed helpers so the workbench doesn't hand-roll fetch calls per
+// affordance.
+// ---------------------------------------------------------------------
+
+/** Wire shape returned by /ai/ossie/ask/health. */
+export interface OssieAskHealth {
+  configured: boolean;
+  provider: string;
+}
+
+/** Health probe for the natural-language ask layer. Powers the Ask AI button gating. */
+export async function fetchOssieAskHealth(): Promise<OssieAskHealth> {
+  const res = await fetch("/rest/saiku/api/ai/ossie/ask/health", { credentials: "include" });
+  if (!res.ok) return { configured: false, provider: "unavailable" };
+  return (await res.json()) as OssieAskHealth;
+}
+
+/** Response shape from /ai/ossie/ask — the LLM's query + the executed result. */
+export interface OssieAskResponse {
+  question: string;
+  connection: string;
+  model: string;
+  queryUsed: OssieQueryModel;
+  rawLlmResponse?: string;
+  response: OssieAiRecordsResponse;
+}
+
+/**
+ * Post a natural-language question. Returns the LLM's generated query + the executed result.
+ * Throws on 503 (ask not configured) or 400 (bad query / off-topic).
+ */
+export async function askOssieAi(
+  connection: string,
+  modelName: string,
+  question: string,
+  history: Array<{ role: string; content: string }> = [],
+): Promise<OssieAskResponse> {
+  const res = await fetch("/rest/saiku/api/ai/ossie/ask", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ connection, model: modelName, question, history }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `ask failed with HTTP ${res.status}`);
+  }
+  return (await res.json()) as OssieAskResponse;
+}
+
+/** Records-format response from /ai/ossie/query and its variants (/anomaly, /forecast). */
+export interface OssieAiRecordsResponse {
+  queryId: string;
+  runtime?: number;
+  columns: Array<{
+    key: string;
+    label?: string;
+    type: "dimension" | "metric";
+    aggregationKind?: string;
+    unit?: string;
+  }>;
+  records: Array<Record<string, unknown>>;
+  meta?: {
+    rowCount?: number;
+    truncated?: boolean;
+    suppressed?: { count: number; reason: string };
+  };
+  anomaly?: {
+    method: string;
+    threshold: number;
+    anomalyCount: number;
+    timeAxis: string;
+  };
+  forecast?: Record<
+    string,
+    {
+      method: string;
+      horizon: number;
+      confidence: number;
+      points: Array<{ index: number; value: number; lower: number; upper: number }>;
+    }
+  >;
+}
+
+/** Post to /ai/ossie/anomaly. Requires timeAxis to be a dataset.field key from rows[] or columns[]. */
+export async function detectOssieAnomalies(
+  query: OssieQueryModel,
+  timeAxis: string,
+  method: "zscore" | "mad" | "stl" = "zscore",
+  threshold?: number,
+): Promise<OssieAiRecordsResponse> {
+  const res = await fetch("/rest/saiku/api/ai/ossie/anomaly", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ query, timeAxis, method, threshold }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()) as OssieAiRecordsResponse;
+}
+
+/** Post to /ai/ossie/forecast. */
+export async function forecastOssie(
+  query: OssieQueryModel,
+  timeAxis: string,
+  method: "ets" | "arima" | "prophet" = "ets",
+  horizon = 4,
+  interval = 0.95,
+): Promise<OssieAiRecordsResponse> {
+  const res = await fetch("/rest/saiku/api/ai/ossie/forecast", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ query, timeAxis, method, horizon, interval }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()) as OssieAiRecordsResponse;
+}
+
+/** Post to /ai/ossie/row-detail. Re-runs the shelf as a raw rowset (no metrics, LIMIT maxrows). */
+export async function fetchOssieRowDetail(
+  query: OssieQueryModel,
+  maxrows = 100,
+): Promise<OssieAiRecordsResponse> {
+  const url = `/rest/saiku/api/ai/ossie/row-detail?maxrows=${maxrows}`;
+  const res = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(query),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()) as OssieAiRecordsResponse;
+}
+
 /** Return an empty shelf-state seed for a newly-picked model. */
 export function newOssieQueryModel(connection: string, modelName: string): OssieQueryModel {
   return {

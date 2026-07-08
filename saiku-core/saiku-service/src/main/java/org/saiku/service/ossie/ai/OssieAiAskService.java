@@ -46,6 +46,32 @@ public class OssieAiAskService {
     private static final Logger log = LoggerFactory.getLogger(OssieAiAskService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    /**
+     * JSON Schema for the tool the model is forced to call. Same shape as the request-body
+     * schema published on {@code GET /ai/ossie/schema/{c}/{m}} but stripped of the model
+     * validation (the server re-validates every name after execution). Kept as a raw string
+     * because both Anthropic ({@code input_schema}) and OpenAI ({@code function.parameters})
+     * accept the JSON-in-JSON as a nested object.
+     */
+    private static final String EMIT_QUERY_TOOL_SCHEMA = "{"
+            + "\"type\":\"object\","
+            + "\"properties\":{"
+            + "\"connection\":{\"type\":\"string\"},"
+            + "\"model\":{\"type\":\"string\"},"
+            + "\"rows\":{\"type\":\"array\","
+            + "\"items\":{\"type\":\"object\",\"required\":[\"dataset\",\"field\"],"
+            + "\"properties\":{\"dataset\":{\"type\":\"string\"},\"field\":{\"type\":\"string\"}}}},"
+            + "\"columns\":{\"type\":\"array\","
+            + "\"items\":{\"type\":\"object\",\"required\":[\"dataset\",\"field\"],"
+            + "\"properties\":{\"dataset\":{\"type\":\"string\"},\"field\":{\"type\":\"string\"}}}},"
+            + "\"values\":{\"type\":\"array\","
+            + "\"items\":{\"type\":\"object\",\"required\":[\"metric\"],"
+            + "\"properties\":{\"metric\":{\"type\":\"string\"},\"aggregation\":{\"type\":\"string\"}}}},"
+            + "\"filters\":{\"type\":\"array\"},"
+            + "\"sorts\":{\"type\":\"array\"},"
+            + "\"limit\":{\"type\":\"integer\"}"
+            + "}}";
+
     private static final String SYSTEM_PROMPT = "You are a data analyst assistant scoped to a "
             + "single Ossie semantic model. When the user asks a question about the data, translate "
             + "it into a JSON OssieAiQueryRequest that the server will execute. Rules:\n"
@@ -97,11 +123,28 @@ public class OssieAiAskService {
     }
 
     /**
-     * Ask the LLM to translate {@code question} into an {@link OssieAiQueryRequest} against
-     * {@code schema}. Returns null when the model rejects the request as off-topic or when the
-     * provider is unconfigured — the resource layer maps null → 503 / 400 as appropriate.
+     * Backward-compatible single-turn ask. Delegates to the history-aware overload with an empty
+     * conversation.
      */
     public AskResult ask(String question, OssieAiSchema schema, String connectionName, String modelName) {
+        return ask(question, schema, connectionName, modelName, java.util.List.of());
+    }
+
+    /**
+     * Ask the LLM to translate {@code question} into an {@link OssieAiQueryRequest} against
+     * {@code schema}. When {@code history} is non-empty it's prepended to the messages so the
+     * LLM has context for follow-up questions like "what about by channel?" (#1398).
+     *
+     * <p>Each history entry is {@link ChatTurn} with a {@code role} (user|assistant) and text
+     * {@code content}. Callers are responsible for turn ordering — the service passes them
+     * through verbatim in the order supplied.
+     */
+    public AskResult ask(
+            String question,
+            OssieAiSchema schema,
+            String connectionName,
+            String modelName,
+            java.util.List<ChatTurn> history) {
         if (!config.isConfigured()) {
             return new AskResult(null, null, "provider not configured", null);
         }
@@ -123,9 +166,9 @@ public class OssieAiAskService {
         try {
             String rawJson;
             if ("anthropic".equalsIgnoreCase(config.provider)) {
-                rawJson = callAnthropic(userMessage);
+                rawJson = callAnthropic(userMessage, history);
             } else if ("openai".equalsIgnoreCase(config.provider)) {
-                rawJson = callOpenAiCompatible(userMessage);
+                rawJson = callOpenAiCompatible(userMessage, history);
             } else {
                 return new AskResult(null, null, "unknown provider: " + config.provider, null);
             }
@@ -157,14 +200,44 @@ public class OssieAiAskService {
      */
     public record AskResult(OssieAiQueryRequest request, String narration, String error, String rawResponse) {}
 
+    /**
+     * One turn in an ask conversation. {@code role} is {@code user} or {@code assistant};
+     * {@code content} is the raw prose that turn produced. History is passed to the LLM in
+     * order so it can resolve follow-up references ("what about by channel?").
+     */
+    public record ChatTurn(String role, String content) {}
+
     // ---------------- Provider transports ----------------
 
-    private String callAnthropic(String userMessage) throws IOException, InterruptedException {
+    private String callAnthropic(String userMessage, java.util.List<ChatTurn> history)
+            throws IOException, InterruptedException {
         ObjectNode body = MAPPER.createObjectNode();
         body.put("model", config.model);
         body.put("max_tokens", 4096);
         body.put("system", SYSTEM_PROMPT);
+
+        // #1397 — force structured output via tool_use. The tool's input_schema mirrors the
+        // OssieAiQueryRequest wire shape; tool_choice locks the model into calling it. No
+        // fence-stripping needed — the response arrives as a JSON object in tool_use.input.
+        ArrayNode tools = body.putArray("tools");
+        ObjectNode tool = tools.addObject();
+        tool.put("name", "emit_ossie_query");
+        tool.put("description", "Emit an OssieAiQueryRequest for the executor to run.");
+        try {
+            tool.set("input_schema", MAPPER.readTree(EMIT_QUERY_TOOL_SCHEMA));
+        } catch (Exception e) {
+            throw new IOException("emit_ossie_query schema unparseable", e);
+        }
+        ObjectNode toolChoice = body.putObject("tool_choice");
+        toolChoice.put("type", "tool");
+        toolChoice.put("name", "emit_ossie_query");
+
         ArrayNode messages = body.putArray("messages");
+        for (ChatTurn t : history) {
+            ObjectNode h = messages.addObject();
+            h.put("role", t.role());
+            h.put("content", t.content());
+        }
         ObjectNode m = messages.addObject();
         m.put("role", "user");
         m.put("content", userMessage);
@@ -181,26 +254,60 @@ public class OssieAiAskService {
             throw new IOException("anthropic HTTP " + resp.statusCode() + ": " + resp.body());
         }
         JsonNode parsed = MAPPER.readTree(resp.body());
+        // Walk content blocks for the tool_use block. tool_choice forces the model to emit it.
         JsonNode content = parsed.path("content");
-        if (content.isArray() && !content.isEmpty()) {
-            JsonNode first = content.get(0);
-            String text = first.path("text").asText();
-            return extractJson(text);
+        if (content.isArray()) {
+            for (JsonNode block : content) {
+                if ("tool_use".equals(block.path("type").asText())) {
+                    JsonNode input = block.path("input");
+                    if (input.isObject()) return MAPPER.writeValueAsString(input);
+                }
+            }
+            // Refusal path: model emitted a text block instead of tool_use. That happens when
+            // the question is genuinely off-topic — treat as OFF_TOPIC error.
+            if (!content.isEmpty() && "text".equals(content.get(0).path("type").asText())) {
+                ObjectNode refuse = MAPPER.createObjectNode();
+                refuse.put("error", "OFF_TOPIC");
+                refuse.put("message", content.get(0).path("text").asText("(no reason)"));
+                return refuse.toString();
+            }
         }
         return null;
     }
 
-    private String callOpenAiCompatible(String userMessage) throws IOException, InterruptedException {
+    private String callOpenAiCompatible(String userMessage, java.util.List<ChatTurn> history)
+            throws IOException, InterruptedException {
         ObjectNode body = MAPPER.createObjectNode();
         body.put("model", config.model);
         body.put("temperature", 0);
-        // JSON-mode: force JSON-formatted output.
-        ObjectNode fmt = body.putObject("response_format");
-        fmt.put("type", "json_object");
+
+        // #1397 — force structured output via tool_choice: required. The function tool's
+        // parameters mirror the OssieAiQueryRequest wire shape; the model must emit them.
+        ArrayNode tools = body.putArray("tools");
+        ObjectNode toolWrap = tools.addObject();
+        toolWrap.put("type", "function");
+        ObjectNode fn = toolWrap.putObject("function");
+        fn.put("name", "emit_ossie_query");
+        fn.put("description", "Emit an OssieAiQueryRequest for the executor to run.");
+        try {
+            fn.set("parameters", MAPPER.readTree(EMIT_QUERY_TOOL_SCHEMA));
+        } catch (Exception e) {
+            throw new IOException("emit_ossie_query schema unparseable", e);
+        }
+        ObjectNode choiceObj = body.putObject("tool_choice");
+        choiceObj.put("type", "function");
+        ObjectNode choiceFn = choiceObj.putObject("function");
+        choiceFn.put("name", "emit_ossie_query");
+
         ArrayNode messages = body.putArray("messages");
         ObjectNode sys = messages.addObject();
         sys.put("role", "system");
         sys.put("content", SYSTEM_PROMPT);
+        for (ChatTurn t : history) {
+            ObjectNode h = messages.addObject();
+            h.put("role", t.role());
+            h.put("content", t.content());
+        }
         ObjectNode user = messages.addObject();
         user.put("role", "user");
         user.put("content", userMessage);
@@ -219,26 +326,23 @@ public class OssieAiAskService {
         JsonNode parsed = MAPPER.readTree(resp.body());
         JsonNode choices = parsed.path("choices");
         if (choices.isArray() && !choices.isEmpty()) {
-            return choices.get(0).path("message").path("content").asText();
+            JsonNode msg = choices.get(0).path("message");
+            JsonNode toolCalls = msg.path("tool_calls");
+            if (toolCalls.isArray() && !toolCalls.isEmpty()) {
+                String argJson =
+                        toolCalls.get(0).path("function").path("arguments").asText();
+                if (argJson != null && !argJson.isBlank()) return argJson;
+            }
+            // Fallback: refusal via message.content — same OFF_TOPIC shape as Anthropic.
+            String refuseText = msg.path("content").asText(null);
+            if (refuseText != null && !refuseText.isBlank()) {
+                ObjectNode refuse = MAPPER.createObjectNode();
+                refuse.put("error", "OFF_TOPIC");
+                refuse.put("message", refuseText);
+                return refuse.toString();
+            }
         }
         return null;
-    }
-
-    /**
-     * Extract the JSON object from a possibly-code-fenced response. LLMs sometimes wrap the
-     * object in ```json ...``` even when told not to.
-     */
-    private String extractJson(String text) {
-        if (text == null) return null;
-        String trimmed = text.trim();
-        // ``` -> ``` fence stripping
-        if (trimmed.startsWith("```")) {
-            int firstNewline = trimmed.indexOf('\n');
-            if (firstNewline > 0) trimmed = trimmed.substring(firstNewline + 1);
-            int lastFence = trimmed.lastIndexOf("```");
-            if (lastFence >= 0) trimmed = trimmed.substring(0, lastFence);
-        }
-        return trimmed.trim();
     }
 
     // ---------------- Config resolution ----------------

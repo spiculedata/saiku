@@ -165,6 +165,74 @@ public final class OssieAiValidator {
         }
     }
 
+    /**
+     * Validate a {@code timeAxis} reference for the anomaly / forecast endpoints (#1399). The
+     * ref must be {@code <dataset>.<field>} where the field exists on the model AND the
+     * dataset+field pair appears in the query's {@code rows[]} or {@code columns[]} — you
+     * can't order a result set by a column that isn't in the SELECT.
+     */
+    public void validateTimeAxis(String timeAxis, OssieAiQueryRequest query, OssieAiSchema schema) {
+        if (timeAxis == null || timeAxis.isBlank()) {
+            throw new OssieAiValidationException("timeAxis", "timeAxis is required", List.of());
+        }
+        int dot = timeAxis.indexOf('.');
+        if (dot <= 0 || dot >= timeAxis.length() - 1) {
+            throw new OssieAiValidationException(
+                    "timeAxis", "timeAxis must be '<dataset>.<field>' (got '" + timeAxis + "')", axisCandidates(query));
+        }
+        String dataset = timeAxis.substring(0, dot);
+        String field = timeAxis.substring(dot + 1);
+
+        OssieAiSchema.Dataset ds = schema.getDatasets().get(dataset.toLowerCase(Locale.ROOT));
+        if (ds == null) {
+            throw new OssieAiValidationException(
+                    "timeAxis",
+                    "unknown dataset '" + dataset + "' in timeAxis",
+                    new ArrayList<>(schema.getDatasets().keySet()));
+        }
+        if (!ds.getFields().containsKey(field.toLowerCase(Locale.ROOT))) {
+            throw new OssieAiValidationException(
+                    "timeAxis",
+                    "unknown field '" + field + "' on dataset '" + ds.getName() + "'",
+                    new ArrayList<>(ds.getFields().keySet()));
+        }
+
+        boolean inQuery = false;
+        for (OssieAiQueryRequest.FieldRef r : query.getRows()) {
+            if (dataset.equalsIgnoreCase(r.getDataset()) && field.equalsIgnoreCase(r.getField())) {
+                inQuery = true;
+                break;
+            }
+        }
+        if (!inQuery) {
+            for (OssieAiQueryRequest.FieldRef c : query.getColumns()) {
+                if (dataset.equalsIgnoreCase(c.getDataset()) && field.equalsIgnoreCase(c.getField())) {
+                    inQuery = true;
+                    break;
+                }
+            }
+        }
+        if (!inQuery) {
+            throw new OssieAiValidationException(
+                    "timeAxis",
+                    "timeAxis '" + timeAxis + "' is not in rows[] or columns[]. "
+                            + "Add it to the query's shelf so it appears as a result column.",
+                    axisCandidates(query));
+        }
+    }
+
+    /** Collect the set of valid {@code dataset.field} refs from a query's rows + columns. */
+    private List<String> axisCandidates(OssieAiQueryRequest query) {
+        List<String> out = new ArrayList<>();
+        for (OssieAiQueryRequest.FieldRef r : query.getRows()) {
+            if (r.getDataset() != null && r.getField() != null) out.add(r.getDataset() + "." + r.getField());
+        }
+        for (OssieAiQueryRequest.FieldRef c : query.getColumns()) {
+            if (c.getDataset() != null && c.getField() != null) out.add(c.getDataset() + "." + c.getField());
+        }
+        return out;
+    }
+
     private void validateSort(OssieAiQueryRequest.SortRef sort, String path, OssieAiSchema schema) {
         if (sort == null) {
             throw new OssieAiValidationException(path, "sort must not be null", List.of());

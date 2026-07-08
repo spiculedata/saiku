@@ -158,6 +158,67 @@ public class OssieAiValidatorTest {
         validator.validate(req, schema);
     }
 
+    // ---- timeAxis validation (#1399) ----
+
+    @Test
+    public void validateTimeAxisRejectsMissingDot() {
+        OssieAiQueryRequest req = new OssieAiQueryRequest();
+        req.setModel("Pharma");
+        req.getRows().add(fieldRef("customers", "region"));
+        try {
+            validator.validateTimeAxis("region", req, schema);
+            fail("expected validation error on malformed timeAxis");
+        } catch (OssieAiValidationException e) {
+            assertEquals("timeAxis", e.getField());
+        }
+    }
+
+    @Test
+    public void validateTimeAxisRejectsUnknownDataset() {
+        OssieAiQueryRequest req = new OssieAiQueryRequest();
+        req.setModel("Pharma");
+        req.getRows().add(fieldRef("customers", "region"));
+        try {
+            validator.validateTimeAxis("orders.month", req, schema);
+            fail();
+        } catch (OssieAiValidationException e) {
+            assertEquals("timeAxis", e.getField());
+            assertTrue(e.getMessage().contains("unknown dataset"));
+        }
+    }
+
+    @Test
+    public void validateTimeAxisRejectsAxisNotInQuery() {
+        OssieAiQueryRequest req = new OssieAiQueryRequest();
+        req.setModel("Pharma");
+        req.getRows().add(fieldRef("customers", "region"));
+        // 'state' exists on the schema but isn't in rows[] or columns[].
+        try {
+            validator.validateTimeAxis("customers.state", req, schema);
+            fail();
+        } catch (OssieAiValidationException e) {
+            assertEquals("timeAxis", e.getField());
+            assertTrue(e.getMessage().contains("not in rows[]"));
+            assertEquals(List.of("customers.region"), e.getAvailable());
+        }
+    }
+
+    @Test
+    public void validateTimeAxisAcceptsAxisFromRows() {
+        OssieAiQueryRequest req = new OssieAiQueryRequest();
+        req.setModel("Pharma");
+        req.getRows().add(fieldRef("customers", "region"));
+        validator.validateTimeAxis("customers.region", req, schema);
+    }
+
+    @Test
+    public void validateTimeAxisAcceptsAxisFromColumns() {
+        OssieAiQueryRequest req = new OssieAiQueryRequest();
+        req.setModel("Pharma");
+        req.getColumns().add(fieldRef("customers", "region"));
+        validator.validateTimeAxis("customers.region", req, schema);
+    }
+
     private static OssieAiQueryRequest.FieldRef fieldRef(String dataset, String field) {
         OssieAiQueryRequest.FieldRef f = new OssieAiQueryRequest.FieldRef();
         f.setDataset(dataset);
