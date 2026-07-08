@@ -56,12 +56,16 @@ import org.slf4j.LoggerFactory;
  *       {@link AmbiguousJoinException} so silent-wrong-results never happens.
  * </ol>
  *
+ * <p>N-way joins ({@code FROM A, B, C, …}) — the rule handles these by walking down through
+ * nested Joins to reach every raw {@link TableScan} in the outer subtree, then rebuilding a
+ * left-deep join chain against them using Ossie relationships to derive each pair's predicate.
+ * Requires exactly one relationship for each successive link — ambiguity between the same pair
+ * of datasets bails.
+ *
  * <p>Non-goals for this first slice, tracked as follow-ups:
  *
  * <ul>
  *   <li>Cross-schema joins (Ossie + non-Ossie tables).
- *   <li>Deeper subtree walk — today we only recognise a direct {@link TableScan} child of the
- *       Join, or a {@link org.apache.calcite.rel.logical.LogicalProject} wrapper thereof.
  *   <li>Self-joins ({@code FROM A a, A b}) — the rule bails when both sides resolve to the same
  *       dataset.
  * </ul>
@@ -92,7 +96,14 @@ public class OssieAutoJoinRule extends RelOptRule {
         // Guard 2: both sides must land on an Ossie-backed TableScan.
         OssieTableRef left = findOssieTable(join.getLeft());
         OssieTableRef right = findOssieTable(join.getRight());
-        if (left == null || right == null) return;
+        if (left == null || right == null) {
+            // N-way case: at least one side is a nested Join. Handle via the compound-rebuild
+            // path — collect every raw TableScan reachable in either subtree and build a fresh
+            // left-deep join chain against them. Same tree-rebuild pattern as the two-way case,
+            // just extended to N tables and N-1 relationships.
+            tryCompoundRewrite(call, join);
+            return;
+        }
         if (left.schema != right.schema) return;
         if (left.datasetName.equals(right.datasetName)) return; // self-join — bail
 
@@ -174,6 +185,169 @@ public class OssieAutoJoinRule extends RelOptRule {
                 left.datasetName,
                 right.datasetName);
         call.transformTo(rewritten);
+    }
+
+    /**
+     * Rewrite path for N-way Cartesian joins. Calcite parses {@code FROM A, B, C} as
+     * {@code Join(Join(A, B), C)} with both joins having {@code condition=true}. The two-way
+     * rebuild path handles the inner one. This path handles the outer by walking down to
+     * <b>all</b> raw TableScans in the subtree (traversing nested Joins) and building a fresh
+     * left-deep join chain against them, using Ossie relationships to derive each pair's ON
+     * predicate. The outer Project restricts to the original output columns.
+     *
+     * <p>Ambiguity guard: if the collected TableScans include tables with multiple Ossie
+     * relationships between the same pair, we don't guess — the rewrite bails and the user
+     * gets an explicit-ON error. Same policy as the two-way {@link AmbiguousJoinException}
+     * case.
+     */
+    private void tryCompoundRewrite(RelOptRuleCall call, LogicalJoin join) {
+        // Collect all raw TableScans reachable in either subtree — walking past LogicalProject,
+        // RelSubset, and nested Joins.
+        List<TableScan> scans = new ArrayList<>();
+        List<String> datasetNames = new ArrayList<>();
+        OssieSchema[] schemaHolder = new OssieSchema[1];
+        boolean ok = collectAllTableScans(join.getLeft(), scans, datasetNames, schemaHolder);
+        if (!ok || !collectAllTableScans(join.getRight(), scans, datasetNames, schemaHolder)) return;
+        if (schemaHolder[0] == null || scans.size() < 3) return;
+        // Deduplicate — same TableScan can appear multiple times if the plan is exploring
+        // alternative shapes. Preserve first-seen order for deterministic joining.
+        java.util.LinkedHashSet<String> uniqueNames = new java.util.LinkedHashSet<>();
+        List<TableScan> uniqueScans = new ArrayList<>();
+        for (int i = 0; i < scans.size(); i++) {
+            if (uniqueNames.add(datasetNames.get(i))) {
+                uniqueScans.add(scans.get(i));
+            }
+        }
+        if (uniqueScans.size() < 3) return;
+        SemanticModel model = schemaHolder[0].model();
+
+        // Build the join chain. Start with the first scan; for each subsequent scan, find a
+        // relationship linking it to some already-joined dataset, then join with that predicate.
+        RelBuilder builder = call.builder();
+        RexBuilder rex = builder.getRexBuilder();
+        List<String> joinedNames = new ArrayList<>();
+        List<Integer> baseOffsets = new ArrayList<>(); // starting column position of each joined table
+
+        TableScan firstScan = uniqueScans.get(0);
+        String firstName = uniqueNames.iterator().next();
+        builder.push(firstScan);
+        joinedNames.add(firstName);
+        baseOffsets.add(0);
+        int totalFields = firstScan.getRowType().getFieldCount();
+
+        for (int i = 1; i < uniqueScans.size(); i++) {
+            TableScan next = uniqueScans.get(i);
+            String nextName = List.copyOf(uniqueNames).get(i);
+            Relationship relationship = null;
+            String linkedName = null;
+            for (String candidate : joinedNames) {
+                Relationship r = pickRelationshipSafe(model, candidate, nextName);
+                if (r != null) {
+                    if (relationship != null) {
+                        // Multiple candidates linking the next table into the joined set —
+                        // ambiguous, bail.
+                        return;
+                    }
+                    relationship = r;
+                    linkedName = candidate;
+                }
+            }
+            if (relationship == null) return; // no relationship — can't extend the chain
+            int linkedOffset = baseOffsets.get(joinedNames.indexOf(linkedName));
+            TableScan linkedScan = uniqueScans.get(joinedNames.indexOf(linkedName));
+            RelDataType linkedRow = linkedScan.getRowType();
+            RelDataType nextRow = next.getRowType();
+            boolean sameDirection = relationship.getFrom().equals(linkedName);
+            List<String> linkedCols = sameDirection ? relationship.getFromColumns() : relationship.getToColumns();
+            List<String> nextCols = sameDirection ? relationship.getToColumns() : relationship.getFromColumns();
+            if (linkedCols.isEmpty() || linkedCols.size() != nextCols.size()) return;
+            List<RexNode> conjuncts = new ArrayList<>();
+            for (int k = 0; k < linkedCols.size(); k++) {
+                Integer li = fieldOrdinal(linkedRow, linkedCols.get(k));
+                Integer ni = fieldOrdinal(nextRow, nextCols.get(k));
+                if (li == null || ni == null) return;
+                RexNode l = rex.makeInputRef(linkedRow.getFieldList().get(li).getType(), linkedOffset + li);
+                RexNode r = rex.makeInputRef(nextRow.getFieldList().get(ni).getType(), totalFields + ni);
+                conjuncts.add(rex.makeCall(SqlStdOperatorTable.EQUALS, l, r));
+            }
+            RexNode condition =
+                    conjuncts.size() == 1 ? conjuncts.get(0) : rex.makeCall(SqlStdOperatorTable.AND, conjuncts);
+            builder.push(next);
+            builder.join(org.apache.calcite.rel.core.JoinRelType.INNER, condition);
+            baseOffsets.add(totalFields);
+            totalFields += nextRow.getFieldCount();
+            joinedNames.add(nextName);
+        }
+
+        // Outer Project restricting to the columns the current outer Join was producing.
+        RelDataType originalRow = join.getRowType();
+        RelDataType joinedRow = builder.peek().getRowType();
+        List<RexNode> projections = new ArrayList<>();
+        List<String> projectionNames = new ArrayList<>();
+        for (RelDataTypeField original : originalRow.getFieldList()) {
+            int foundIdx = -1;
+            for (int j = 0; j < joinedRow.getFieldCount(); j++) {
+                if (joinedRow.getFieldList().get(j).getName().equalsIgnoreCase(original.getName())) {
+                    foundIdx = j;
+                    break;
+                }
+            }
+            if (foundIdx < 0) return;
+            projections.add(
+                    rex.makeInputRef(joinedRow.getFieldList().get(foundIdx).getType(), foundIdx));
+            projectionNames.add(original.getName());
+        }
+        builder.project(projections, projectionNames);
+        RelNode rewritten = builder.build();
+
+        log.debug("OssieAutoJoinRule: n-way rebuild over datasets {} — outer Cartesian → chained Joins", joinedNames);
+        call.transformTo(rewritten);
+    }
+
+    /**
+     * Wraps {@link #pickRelationship} to return null instead of throwing on ambiguity. The
+     * n-way builder handles ambiguity by bailing at the caller level with more context (which
+     * links to which).
+     */
+    private Relationship pickRelationshipSafe(SemanticModel model, String a, String b) {
+        try {
+            return pickRelationship(model, a, b);
+        } catch (AmbiguousJoinException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Walk a RelNode subtree collecting every reachable Ossie-backed TableScan. Recognises
+     * TableScan, LogicalProject, Project, and Join (both sides). Returns false if any scan
+     * isn't Ossie-backed or if multiple schemas appear.
+     */
+    private boolean collectAllTableScans(
+            RelNode rel, List<TableScan> outScans, List<String> outNames, OssieSchema[] schemaHolder) {
+        RelNode cursor = unwrapSubset(rel);
+        if (cursor instanceof org.apache.calcite.rel.core.Project) {
+            return collectAllTableScans(
+                    ((org.apache.calcite.rel.core.Project) cursor).getInput(), outScans, outNames, schemaHolder);
+        }
+        if (cursor instanceof org.apache.calcite.rel.core.Join) {
+            org.apache.calcite.rel.core.Join innerJoin = (org.apache.calcite.rel.core.Join) cursor;
+            return collectAllTableScans(innerJoin.getLeft(), outScans, outNames, schemaHolder)
+                    && collectAllTableScans(innerJoin.getRight(), outScans, outNames, schemaHolder);
+        }
+        if (cursor instanceof TableScan) {
+            TableScan scan = (TableScan) cursor;
+            RelOptTable table = scan.getTable();
+            List<String> qualifiedName = table.getQualifiedName();
+            if (qualifiedName.isEmpty()) return false;
+            OssieSchema schema = unwrapOssieSchema(table);
+            if (schema == null) return false;
+            if (schemaHolder[0] == null) schemaHolder[0] = schema;
+            else if (schemaHolder[0] != schema) return false;
+            outScans.add(scan);
+            outNames.add(qualifiedName.get(qualifiedName.size() - 1));
+            return true;
+        }
+        return false;
     }
 
     /**

@@ -184,19 +184,19 @@ public class PharmaEndToEndIT {
     }
 
     @Test
-    public void explicitJoin_netRevenueByRegionAndChannel_pgWire() throws Exception {
-        // The showcase: three datasets from the real Pharma schema, JOINs via the wire, over
-        // PG wire via the actual pgjdbc driver. Auto-join covers the two-dataset Cartesian case;
-        // three-way auto-injection (nested Join rewrite) is a follow-up on saiku#1391 so this
-        // test uses explicit ON clauses to prove the wire path handles multi-dim SQL.
+    public void autoJoin_netRevenueByRegionAndChannel_pgWire() throws Exception {
+        // The showcase: three datasets from the real Pharma schema, NO JOIN clauses, over PG
+        // wire via the actual pgjdbc driver. The auto-join rule fires twice: once for the inner
+        // two-table Cartesian (rebuilt tree), once for the outer Cartesian with a nested Join
+        // input (compound-side predicate injection).
         String calciteConnect = OssieSqlServer.buildCalciteConnectString(ossieYaml, "Pharma Rx", h2Url, "sa", "");
         try (PgWireServer server = new PgWireServer(0, calciteConnect);
                 Connection remote = openPgWire(server.getPort());
                 Statement s = remote.createStatement();
                 ResultSet rs = s.executeQuery("SELECT g.region, p.channel, SUM(f.netrevenue) AS total "
-                        + "FROM \"Pharma Rx\".fact_pharma f "
-                        + "JOIN \"Pharma Rx\".Geography g ON f.geokey = g.geokey "
-                        + "JOIN \"Pharma Rx\".Payer p ON f.payerkey = p.payerkey "
+                        + "FROM \"Pharma Rx\".fact_pharma f, "
+                        + "     \"Pharma Rx\".Geography g, "
+                        + "     \"Pharma Rx\".Payer p "
                         + "GROUP BY g.region, p.channel "
                         + "ORDER BY g.region, p.channel")) {
             int rows = 0;
