@@ -124,6 +124,11 @@
         <property name="datasourceService" ref="datasourceServiceBean"/>
     </bean>
 
+    <!-- Ossie-side discover: reads the semantic model YAML for OSSIE datasources -->
+    <bean id="ossieDiscoverServiceBean" class="org.saiku.service.ossie.OssieDiscoverService">
+        <property name="datasourceManager" ref="repositoryDsManager"/>
+    </bean>
+
     <bean id="olapQueryBean" scope="session" class="org.saiku.service.olap.OlapQueryService" destroy-method="destroy">
         <aop:scoped-proxy/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
@@ -139,6 +144,7 @@
           class="org.saiku.web.rest.resources.OlapDiscoverResource">
         <aop:scoped-proxy/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <property name="ossieDiscoverService" ref="ossieDiscoverServiceBean"/>
     </bean>
 
 

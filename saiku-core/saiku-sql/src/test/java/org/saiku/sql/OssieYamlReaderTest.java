@@ -9,8 +9,8 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
+import org.saiku.service.schema.ossie.OssieYamlReader;
 import org.saiku.service.schema.ossie.model.OssieDocument;
-import org.saiku.sql.model.OssieYamlReader;
 
 /**
  * Round-trip validation: the same YAML produced by {@code OssieYamlWriter} in saiku-service must

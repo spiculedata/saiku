@@ -31,6 +31,8 @@ import java.util.List;
 import java.util.Map;
 import org.saiku.olap.dto.*;
 import org.saiku.service.olap.OlapDiscoverService;
+import org.saiku.service.ossie.OssieDiscoverService;
+import org.saiku.service.ossie.OssieModelDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,10 +46,17 @@ public class OlapDiscoverResource implements Serializable {
 
     private OlapDiscoverService olapDiscoverService;
 
+    private OssieDiscoverService ossieDiscoverService;
+
     private static final Logger log = LoggerFactory.getLogger(OlapDiscoverResource.class);
 
     public void setOlapDiscoverService(OlapDiscoverService olapds) {
         olapDiscoverService = olapds;
+    }
+
+    /** Wired via Spring in the same context that provides {@code olapDiscoverService}. */
+    public void setOssieDiscoverService(OssieDiscoverService s) {
+        this.ossieDiscoverService = s;
     }
 
     /**
@@ -62,6 +71,36 @@ public class OlapDiscoverResource implements Serializable {
         } catch (Exception e) {
             log.error(this.getClass().getName(), e);
             return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Return the Ossie semantic-model tree for an OSSIE-typed connection. The connection listing
+     * endpoint above surfaces OSSIE connections with empty catalogs and a {@code type} field of
+     * {@code "OSSIE"}; the workbench then calls this endpoint to populate its schema browser
+     * (datasets / metrics / relationships) before the user starts dragging fields onto shelves.
+     *
+     * @summary Get the Ossie model for a connection.
+     */
+    @GET
+    @Produces(MediaType.APPLICATION_JSON)
+    @Path("/{connection}/ossie-model")
+    public Response getOssieModel(@PathParam("connection") String connectionName) {
+        try {
+            if (ossieDiscoverService == null) {
+                return Response.status(Response.Status.NOT_IMPLEMENTED)
+                        .entity("OssieDiscoverService not wired")
+                        .build();
+            }
+            OssieModelDto model = ossieDiscoverService.getModel(connectionName);
+            return Response.ok(model).build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(e.getMessage())
+                    .build();
+        } catch (Exception e) {
+            log.error("Failed to resolve Ossie model for connection " + connectionName, e);
+            return Response.serverError().entity(e.getMessage()).build();
         }
     }
 
