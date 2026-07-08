@@ -149,6 +149,28 @@
   async function doOpen(entry: SavedQueryFile) {
     try {
       const q = await readSavedQuery(entry.path);
+      // Ossie queries share the .saiku extension so mixed folders are the norm. Detect
+      // OSSIE-flavoured payloads here and re-route through the Ossie load path — the
+      // canvas store hydrates the shelf state and flips selection.mode to 'ossie',
+      // which swaps the workbench sidebar + canvas to the Ossie shell. Falling through
+      // to onOpenQuery with an OSSIE payload would give the MDX QueryCanvas a
+      // ThinQuery with no cube/mdx/queryModel and render nothing.
+      if ((q as { queryType?: string })?.queryType === "OSSIE") {
+        const ossieMod = await import("$lib/stores/ossieQuery.svelte");
+        const selMod = await import("$lib/stores/selection.svelte");
+        const sessMod = await import("$lib/stores/session.svelte");
+        const loaded = await ossieMod.ossieQuery.load(entry.path);
+        if (loaded) {
+          const conn = loaded.ossieQueryModel.connection;
+          const model = loaded.ossieQueryModel.model;
+          selMod.selection.selectOssie({ connectionName: conn, modelName: model });
+          const user = sessMod.session.current?.username;
+          if (user) await ossieMod.ossieQuery.loadModel(user, conn, model);
+          toasts.success(i18n.t("toast.opened"), loaded.name);
+          onClose();
+        }
+        return;
+      }
       onOpenQuery(entry.path, q);
     } catch (err) {
       toasts.danger(i18n.t("toast.openFailed"), err instanceof Error ? err.message : String(err));

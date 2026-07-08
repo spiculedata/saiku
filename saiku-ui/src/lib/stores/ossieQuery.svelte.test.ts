@@ -60,9 +60,21 @@ describe("ossieQuery.loadModel", () => {
     await ossieQuery.loadModel("admin", "SALES", "SALES");
     expect(ossieQuery.model?.name).toBe("SALES");
     expect(ossieQuery.current?.connection).toBe("SALES");
-    expect(ossieQuery.current?.factDataset).toBe("");
+    // The store now pre-populates factDataset from the relationship graph: 'orders'
+    // appears as the `from` end so it's the inferred fact table. The old contract of
+    // an empty factDataset on load has moved to the case with no relationships.
+    expect(ossieQuery.current?.factDataset).toBe("orders");
     expect(ossieQuery.error).toBeNull();
     expect(ossieQuery.loading).toBe(false);
+  });
+
+  test("factDataset is empty when the model has no relationships", async () => {
+    // Fresh model with an empty relationships array — no signal to infer a fact from,
+    // so factDataset stays empty and the sidebar prompts the user to pick one.
+    const flat = { ...fakeModel, relationships: [] };
+    mockFetch(async () => new Response(JSON.stringify(flat), { status: 200 }));
+    await ossieQuery.loadModel("admin", "SALES", "SALES");
+    expect(ossieQuery.current?.factDataset).toBe("");
   });
 
   test("second call for the same connection is a no-op", async () => {
@@ -96,9 +108,24 @@ describe("shelf mutations", () => {
     await ossieQuery.loadModel("admin", "SALES", "SALES");
   });
 
-  test("addRow appends immutably and seeds the fact dataset", () => {
+  test("addRow appends immutably and (when relationships are absent) seeds the fact dataset", () => {
+    // Precondition: relationship-graph inference already pre-set factDataset to 'orders'
+    // via loadModel. Override to empty so we exercise the addRow seeding path.
+    ossieQuery.setFactDataset("");
     ossieQuery.addRow({ dataset: "customers", field: "region" });
     expect(ossieQuery.current?.rows).toEqual([{ dataset: "customers", field: "region" }]);
+    // With the relationship graph present, addRow's seeder prefers the inferred fact
+    // ('orders' — from the relationship) over the row's dataset ('customers'). The
+    // fallback to the row's dataset only kicks in when the graph has no signal.
+    expect(ossieQuery.current?.factDataset).toBe("orders");
+  });
+
+  test("addRow seeds fact from the row's dataset when relationships are absent", async () => {
+    const flat = { ...fakeModel, relationships: [] };
+    mockFetch(async () => new Response(JSON.stringify(flat), { status: 200 }));
+    await ossieQuery.loadModel("admin", "SALES", "SALES", true);
+    expect(ossieQuery.current?.factDataset).toBe("");
+    ossieQuery.addRow({ dataset: "customers", field: "region" });
     expect(ossieQuery.current?.factDataset).toBe("customers");
   });
 
@@ -123,7 +150,7 @@ describe("shelf mutations", () => {
     ossieQuery.addRow({ dataset: "customers", field: "region" });
     ossieQuery.addRow({ dataset: "customers", field: "signup_date" });
     ossieQuery.addValue({ metric: "revenue" });
-    ossieQuery.addFilter({ dataset: "customers", field: "region", op: "EQ", value: "NA" });
+    ossieQuery.addFilter({ dataset: "customers", field: "region", op: "EQ", value: "NA", values: [] });
 
     ossieQuery.removeRow(0);
     expect(ossieQuery.current?.rows).toEqual([{ dataset: "customers", field: "signup_date" }]);
@@ -151,8 +178,13 @@ describe("hasRunnableShape", () => {
   });
 
   test("false with shelves but no fact dataset", () => {
-    ossieQuery.current = { ...ossieQuery.current!, rows: [{ dataset: "customers", field: "region" }] };
-    // fact stays empty because we bypassed the addRow helper.
+    // Clear the fact-dataset the model load auto-picked so we test the runnable-shape
+    // guard directly.
+    ossieQuery.current = {
+      ...ossieQuery.current!,
+      factDataset: "",
+      rows: [{ dataset: "customers", field: "region" }],
+    };
     expect(ossieQuery.current?.factDataset).toBe("");
     expect(ossieQuery.hasRunnableShape()).toBe(false);
   });
@@ -202,7 +234,9 @@ describe("save / load", () => {
       ossieQueryModel: {
         connection: "SALES",
         model: "SALES",
-        factDataset: "customers",
+        // Relationship-graph inference picks 'orders' as the fact — orders → customers
+        // is the only relationship, so orders is the from-side (leaf, many-to-one).
+        factDataset: "orders",
         rows: [{ dataset: "customers", field: "region" }],
         values: [{ metric: "revenue" }],
       },

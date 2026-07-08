@@ -76,7 +76,12 @@ class OssieQueryStore {
       const m = await fetchOssieModel(username, connection);
       this.model = m;
       // Reset shelf state: the previous model's dataset / metric names are no longer valid.
-      this.current = newOssieQueryModel(connection, modelName);
+      const seed = newOssieQueryModel(connection, modelName);
+      // Pre-populate the fact dataset from the relationship graph so the sidebar
+      // dropdown lands on a sensible default (the user can override before dragging).
+      const inferred = this.guessFactDataset();
+      if (inferred) seed.factDataset = inferred;
+      this.current = seed;
       this.result = null;
       this.loadedConnection = connection;
       // A fresh model load starts with an unsaved shelf state — clear the persistence
@@ -257,7 +262,36 @@ class OssieQueryStore {
   private maybeSeedFact(candidate: string): void {
     if (!this.current) return;
     if (this.current.factDataset) return;
-    this.current = { ...this.current, factDataset: candidate };
+    // Prefer a smart pick: if the model exposes relationships, the "fact" side is the
+    // dataset that appears most often as the `from` end (that's the many-to-one leaf
+    // in the semantic-model convention). If our candidate isn't that pick, use the
+    // candidate anyway — the user can always override in the sidebar.
+    const preferred = this.guessFactDataset();
+    this.current = { ...this.current, factDataset: preferred ?? candidate };
+  }
+
+  /**
+   * Best-effort inference of the "fact" dataset from the loaded semantic model. The
+   * dataset that appears most often as the {@code from} end of a relationship is almost
+   * always the fact table (dims are joined out via foreign keys pointing at their PKs).
+   * Returns null when the model has no relationships (rare — usually flat lookup models).
+   */
+  private guessFactDataset(): string | null {
+    if (!this.model) return null;
+    const counts = new Map<string, number>();
+    for (const r of this.model.relationships) {
+      counts.set(r.from, (counts.get(r.from) ?? 0) + 1);
+    }
+    if (counts.size === 0) return null;
+    let best: string | null = null;
+    let bestCount = 0;
+    for (const [name, count] of counts) {
+      if (count > bestCount) {
+        best = name;
+        bestCount = count;
+      }
+    }
+    return best;
   }
 }
 

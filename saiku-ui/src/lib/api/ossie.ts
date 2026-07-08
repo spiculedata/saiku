@@ -102,7 +102,9 @@ export interface OssieFilterExpr {
   field: string;
   op: OssieFilterOp;
   value?: string;
-  values?: string[];
+  /** Multi-value slot for IN / BETWEEN. Always an array (possibly empty) so callers
+   *  don't have to null-check before iterating. */
+  values: string[];
 }
 
 export interface OssieSortRef {

@@ -6,6 +6,9 @@
   import { toasts } from "$lib/stores/toasts.svelte";
   import { FolderOpen, Play, Save, X } from "lucide-svelte";
   import type { OssieFieldRef, OssieFilterExpr, OssieMetricRef } from "$lib/api/ossie";
+  import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
+  import OssieLoadModal from "$lib/modals/OssieLoadModal.svelte";
+  import { foldersOnly, listRepository } from "$lib/api/repository";
 
   const FIELD_MIME = "application/x-saiku-ossie-field";
   const METRIC_MIME = "application/x-saiku-ossie-metric";
@@ -48,7 +51,13 @@
         else if (shelf === "filters") {
           // Filters need an operator + value; drop-and-fill mini-form comes next iteration.
           // MVP: drop creates an EQ-with-empty-value filter the user then edits inline.
-          const expr: OssieFilterExpr = { dataset: ref.dataset, field: ref.field, op: "EQ", value: "" };
+          const expr: OssieFilterExpr = {
+            dataset: ref.dataset,
+            field: ref.field,
+            op: "EQ",
+            value: "",
+            values: [],
+          };
           ossieQuery.addFilter(expr);
         }
         return;
@@ -67,20 +76,50 @@
     await ossieQuery.run();
   }
 
+  // ------------------------------------------------------------------
+  // Save modal state
+  // ------------------------------------------------------------------
+  let saveModalOpen = $state(false);
+  let saveFolders = $state<string[]>([]);
+  let saveDefaultFolder = $state("");
+  let saveDefaultName = $state("");
+
   /**
-   * Prompt for a repository path + name and persist the current shelf state as a `.saiku`
-   * file. Uses browser prompt() rather than the fancier SaveQueryModal because the Ossie
-   * shell is intentionally minimal (F4 MVP). Full RepositoryBrowser integration is a
-   * follow-up when the MDX ↔ Ossie save modal gets unified.
+   * Prepare the SaveQueryModal state and open it. Loads the folder tree up-front so the
+   * modal's browser has something to render; defaults the target folder to the previously-
+   * saved location (or the user's home) and the name to the previously-saved value.
    */
-  async function saveQuery() {
+  async function openSaveModal() {
     if (!ossieQuery.current) return;
-    const defaultName = ossieQuery.savedName ?? "untitled-ossie-query";
-    const name = window.prompt("Save as (name)", defaultName);
-    if (!name) return;
-    const defaultPath = ossieQuery.savedPath ?? `/homes/home:${session.current?.username ?? "admin"}/${name}.saiku`;
-    const path = window.prompt("Save to path", defaultPath);
-    if (!path) return;
+    try {
+      const tree = await listRepository(["saiku"]);
+      saveFolders = foldersOnly(tree);
+    } catch (e) {
+      // If the folder list can't load, still let the user save into their home — the
+      // browser degrades to typed-only input for the folder.
+      saveFolders = [];
+      toasts.warning?.("Repository listing failed", e instanceof Error ? e.message : String(e));
+    }
+    const priorPath = ossieQuery.savedPath;
+    if (priorPath) {
+      const idx = priorPath.lastIndexOf("/");
+      saveDefaultFolder = idx > 0 ? priorPath.substring(0, idx) : "";
+    } else {
+      saveDefaultFolder = `/homes/home:${session.current?.username ?? "admin"}`;
+    }
+    saveDefaultName = ossieQuery.savedName ?? "untitled-ossie-query";
+    saveModalOpen = true;
+  }
+
+  /**
+   * Persist the current shelf state to the folder + name the modal returned. Path
+   * assembly uses the same convention as the MDX side: `<folder>/<name>.saiku`.
+   */
+  async function onModalSave(folder: string, name: string) {
+    if (!ossieQuery.current) return;
+    const cleanFolder = folder ? (folder.startsWith("/") ? folder : `/${folder}`) : "";
+    const path = `${cleanFolder}/${name}.saiku`.replace(/\/{2,}/g, "/");
+    saveModalOpen = false;
     try {
       await ossieQuery.save(path, name);
       toasts.success("Saved", path);
@@ -89,18 +128,30 @@
     }
   }
 
+  // ------------------------------------------------------------------
+  // Load modal state
+  // ------------------------------------------------------------------
+  let loadModalOpen = $state(false);
+
+  function openLoadModal() {
+    loadModalOpen = true;
+  }
+
   /**
-   * Prompt for a saved-query path, load it, and re-select the connection so the sidebar
-   * reflects the loaded model. Falls back with a friendly toast when the file is
-   * MDX-shaped — the user picked from a mixed folder, we can't hydrate it here.
+   * Called by the modal when the user picks + confirms a file. Hands off to the store's
+   * load and re-selects the connection so the sidebar refreshes. Falls back with a
+   * friendly toast when the file is MDX-shaped — the user picked from a mixed folder,
+   * they need to open it from the MDX workbench.
    */
-  async function loadQuery() {
-    const path = window.prompt("Load from path");
-    if (!path) return;
+  async function onModalLoad(path: string) {
+    loadModalOpen = false;
     try {
       const loaded = await ossieQuery.load(path);
       if (!loaded) {
-        toasts.danger("Not an Ossie query", "This file is a Mondrian/MDX query. Open it from the MDX workbench.");
+        toasts.danger(
+          "Not an Ossie query",
+          "This file is a Mondrian/MDX query. Open it from the MDX workbench.",
+        );
         return;
       }
       const conn = loaded.ossieQueryModel.connection;
@@ -119,13 +170,57 @@
 
   function updateFilterOp(idx: number, op: OssieFilterExpr["op"]) {
     if (!ossieQuery.current) return;
-    const filters = ossieQuery.current.filters.map((f, i) => (i === idx ? { ...f, op } : f));
+    const filters = ossieQuery.current.filters.map((f, i) => {
+      if (i !== idx) return f;
+      // When switching to a multi-value op (BETWEEN / IN), seed values from the current
+      // single-value input so the user doesn't lose what they typed. Conversely, when
+      // switching back to a single-value op, pull the first entry from values[].
+      const isMulti = op === "BETWEEN" || op === "IN";
+      const values = isMulti ? (f.values.length ? f.values : f.value ? [f.value] : []) : f.values;
+      const value = !isMulti && f.value === undefined && values.length ? values[0] : f.value;
+      return { ...f, op, values, value };
+    });
     ossieQuery.current = { ...ossieQuery.current, filters };
   }
 
   function updateFilterValue(idx: number, value: string) {
     if (!ossieQuery.current) return;
     const filters = ossieQuery.current.filters.map((f, i) => (i === idx ? { ...f, value } : f));
+    ossieQuery.current = { ...ossieQuery.current, filters };
+  }
+
+  /**
+   * Update one entry in a filter's multi-value list (BETWEEN slot 0/1, IN nth entry).
+   * Immutable copy so Svelte 5 dependency-tracking fires. Grows the array with empty
+   * strings if the index is past the end so subsequent inputs land in the right slot.
+   */
+  function updateFilterValueAt(idx: number, valueIdx: number, value: string) {
+    if (!ossieQuery.current) return;
+    const filters = ossieQuery.current.filters.map((f, i) => {
+      if (i !== idx) return f;
+      const values = [...f.values];
+      while (values.length <= valueIdx) values.push("");
+      values[valueIdx] = value;
+      return { ...f, values };
+    });
+    ossieQuery.current = { ...ossieQuery.current, filters };
+  }
+
+  function addFilterValue(idx: number) {
+    if (!ossieQuery.current) return;
+    const filters = ossieQuery.current.filters.map((f, i) => {
+      if (i !== idx) return f;
+      return { ...f, values: [...f.values, ""] };
+    });
+    ossieQuery.current = { ...ossieQuery.current, filters };
+  }
+
+  function removeFilterValue(idx: number, valueIdx: number) {
+    if (!ossieQuery.current) return;
+    const filters = ossieQuery.current.filters.map((f, i) => {
+      if (i !== idx) return f;
+      return { ...f, values: f.values.filter((_, j) => j !== valueIdx) };
+    });
     ossieQuery.current = { ...ossieQuery.current, filters };
   }
 
@@ -141,11 +236,11 @@
       <Play size={14} />
       {ossieQuery.running ? "Running…" : "Run"}
     </Button>
-    <Button variant="outline" onclick={saveQuery} disabled={!ossieQuery.current}>
+    <Button variant="outline" onclick={openSaveModal} disabled={!ossieQuery.current}>
       <Save size={14} />
       Save
     </Button>
-    <Button variant="outline" onclick={loadQuery}>
+    <Button variant="outline" onclick={openLoadModal}>
       <FolderOpen size={14} />
       Load
     </Button>
@@ -246,10 +341,49 @@
             <option value="LTE">≤</option>
             <option value="GT">&gt;</option>
             <option value="GTE">≥</option>
+            <option value="BETWEEN">between</option>
+            <option value="IN">in</option>
             <option value="IS_NULL">is null</option>
             <option value="IS_NOT_NULL">is not null</option>
           </select>
-          {#if f.op !== "IS_NULL" && f.op !== "IS_NOT_NULL"}
+          {#if f.op === "BETWEEN"}
+            <input
+              class="ossie-chip__value"
+              value={f.values?.[0] ?? ""}
+              oninput={(e) => updateFilterValueAt(i, 0, (e.currentTarget as HTMLInputElement).value)}
+              placeholder="from"
+            />
+            <span class="ossie-chip__and">and</span>
+            <input
+              class="ossie-chip__value"
+              value={f.values?.[1] ?? ""}
+              oninput={(e) => updateFilterValueAt(i, 1, (e.currentTarget as HTMLInputElement).value)}
+              placeholder="to"
+            />
+          {:else if f.op === "IN"}
+            {#each f.values ?? [] as v, vi (vi)}
+              <span class="ossie-chip__in-slot">
+                <input
+                  class="ossie-chip__value"
+                  value={v}
+                  oninput={(e) => updateFilterValueAt(i, vi, (e.currentTarget as HTMLInputElement).value)}
+                  placeholder="value"
+                />
+                <button
+                  type="button"
+                  class="ossie-chip__x"
+                  aria-label="Remove value"
+                  onclick={() => removeFilterValue(i, vi)}
+                ><X size={10} /></button>
+              </span>
+            {/each}
+            <button
+              type="button"
+              class="ossie-chip__add-value"
+              aria-label="Add value"
+              onclick={() => addFilterValue(i)}
+            >+</button>
+          {:else if f.op !== "IS_NULL" && f.op !== "IS_NOT_NULL"}
             <input
               class="ossie-chip__value"
               value={f.value ?? ""}
@@ -303,6 +437,22 @@
   </div>
 </div>
 
+<SaveQueryModal
+  open={saveModalOpen}
+  defaultName={saveDefaultName}
+  defaultFolder={saveDefaultFolder}
+  folders={saveFolders}
+  onSave={onModalSave}
+  onCancel={() => (saveModalOpen = false)}
+/>
+
+<OssieLoadModal
+  open={loadModalOpen}
+  initialPath={ossieQuery.savedPath ?? ""}
+  onOpen={onModalLoad}
+  onCancel={() => (loadModalOpen = false)}
+/>
+
 <style>
   .ossie-canvas {
     display: flex;
@@ -329,6 +479,29 @@
     color: var(--fg-muted);
     font-size: var(--fs-xs);
     font-family: monospace;
+  }
+  .ossie-chip__and {
+    color: var(--fg-subtle);
+    font-size: var(--fs-xs);
+    padding: 0 2px;
+  }
+  .ossie-chip__in-slot {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .ossie-chip__add-value {
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--fg-subtle);
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-size: var(--fs-xs);
+    cursor: pointer;
+  }
+  .ossie-chip__add-value:hover {
+    color: var(--fg);
+    border-color: var(--border-strong);
   }
   .ossie-canvas__shelves {
     display: flex;
