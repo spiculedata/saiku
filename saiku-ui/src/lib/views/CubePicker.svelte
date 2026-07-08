@@ -30,7 +30,24 @@
     }
   });
 
-  let selectedKey = $derived(selection.cube ? cubeKey(selection.cube) : "");
+  /**
+   * Encode an OSSIE-typed connection as a picker option value so we can round-trip through
+   * the same <select> the OLAP path uses. The `ossie:` prefix distinguishes from OLAP cube
+   * keys (which don't start with a scheme).
+   */
+  const OSSIE_PREFIX = "ossie:";
+
+  let selectedKey = $derived(
+    selection.mode === "ossie" && selection.ossie
+      ? `${OSSIE_PREFIX}${selection.ossie.connectionName}`
+      : selection.cube
+        ? cubeKey(selection.cube)
+        : "",
+  );
+
+  // Keep the Ossie-connection list handy for the dropdown; they have empty catalogs so the
+  // OLAP nested-loop below skips them entirely.
+  let ossieConnections = $derived(datasources.connections.filter((c) => c.type === "OSSIE"));
 
   // Build a flat cube index so the dropdown value can resolve back to the cube object.
   let cubeIndex = $derived(() => {
@@ -51,6 +68,15 @@
     const key = (e.currentTarget as HTMLSelectElement).value;
     if (!key) {
       selection.clear();
+      return;
+    }
+    if (key.startsWith(OSSIE_PREFIX)) {
+      const connectionName = key.substring(OSSIE_PREFIX.length);
+      // Ossie datasources are one-model-per-connection for the MVP shape; the model name
+      // (used to pick a semantic_model[] entry inside the YAML) defaults to the connection
+      // name. F3's OssieSchemaTree can override this later if multi-model YAML support
+      // lands.
+      selection.selectOssie({ connectionName, modelName: connectionName });
       return;
     }
     const cube = cubeIndex().get(key);
@@ -91,6 +117,13 @@
           {/each}
         {/each}
       {/each}
+      {#if ossieConnections.length > 0}
+        <optgroup label="Ossie semantic models">
+          {#each ossieConnections as conn}
+            <option value="{OSSIE_PREFIX}{conn.name}">{conn.name}</option>
+          {/each}
+        </optgroup>
+      {/if}
     </select>
     <button
       type="button"

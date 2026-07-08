@@ -44,6 +44,16 @@ export interface SaikuCatalog {
 export interface SaikuConnection {
   name: string;
   catalogs: SaikuCatalog[];
+  /**
+   * Datasource kind exposed by the server so the workbench can pick the right sidebar
+   * without a second round-trip. `"OLAP"` (default) → Mondrian catalog/schema/cube tree.
+   * `"OSSIE"` → the workbench should call `/discover/{name}/ossie-model` for a
+   * dataset/metric/relationship tree; {@link catalogs} is empty for these.
+   *
+   * Older servers may omit the field entirely; treat missing as `"OLAP"` for backwards
+   * compatibility.
+   */
+  type?: "OLAP" | "OSSIE";
 }
 
 export interface SaikuMember {
