@@ -174,6 +174,29 @@ test.describe("Ossie workbench (mocked backend)", () => {
     await expect(page.locator('[aria-label="Rows shelf"] .ossie-chip').filter({ hasText: "customers.region" })).toHaveCount(0);
   });
 
+  test("view toggle swaps between Grid and Chart", async ({ page }) => {
+    await page.locator("#cubes-select").selectOption("ossie:SALES");
+    await expect(page.locator(".ossie-tree").getByText("region")).toBeVisible();
+    await dropOssieField(page, "customers", "region", '[aria-label="Rows shelf"]');
+    await dropOssieMetric(page, "revenue", '[aria-label="Values shelf"]');
+    await page.locator(".ossie-canvas").getByRole("button", { name: /^Run/ }).click();
+
+    // Grid mode is default; the result table is visible.
+    await expect(page.locator(".ossie-result")).toBeVisible();
+
+    // Flip to Chart mode. ChartView mounts an ECharts canvas + hidden a11y summary; the
+    // chart-type <select> becomes visible in the toolbar.
+    await page.getByRole("tab", { name: /^Chart$/ }).click();
+    await expect(page.locator(".ossie-canvas__charttype")).toBeVisible();
+    // Grid table hides while chart is showing.
+    await expect(page.locator(".ossie-result")).toHaveCount(0);
+
+    // Flip back to Grid and confirm the table re-mounts + chart affordances go away.
+    await page.getByRole("tab", { name: /^Grid$/ }).click();
+    await expect(page.locator(".ossie-canvas__charttype")).toHaveCount(0);
+    await expect(page.locator(".ossie-result")).toBeVisible();
+  });
+
   test("Rows × Columns × Values renders a crosstab", async ({ page }) => {
     // Override the execute fixture: return a 2×2×1 shelf state's flat rowset so the
     // client-side pivot has something to reshape. Registered before selection so the

@@ -13,6 +13,9 @@ import {
   type OssieSortRef,
   type SavedOssieQuery,
 } from "$lib/api/ossie";
+import type { QueryResult } from "$lib/api/query";
+import type { ChartOptions, ChartType } from "$lib/views/chartTypes";
+import { DEFAULT_CHART_OPTIONS } from "$lib/views/chartTypes";
 
 /**
  * State for the Ossie-flavoured workbench. Owns the currently-loaded semantic model, the
@@ -47,6 +50,31 @@ class OssieQueryStore {
 
   /** Most recent successful result — kept so the result grid can render across shelf edits. */
   result = $state<OssieQueryResult | null>(null);
+
+  /**
+   * Raw {@link QueryResult} envelope the server returned — same shape the MDX side sees.
+   * Kept alongside the projected {@link result} so the shared {@code ChartView} component
+   * can consume it directly (its {@code parseCellset} helper is what turns the flat
+   * `cellset[][]` back into a `{rows, cols, matrix}` projection). Populated by
+   * {@link OssieQueryStore.run}.
+   */
+  rawResult = $state<QueryResult | null>(null);
+
+  /**
+   * View mode: whether the canvas shows the grid or the chart. Mirrors the MDX-side
+   * `query.viewMode` but with the smaller set of choices the Ossie workbench supports.
+   */
+  viewMode = $state<"grid" | "chart">("grid");
+
+  /** Chart type when viewMode is 'chart'. Uses the shared MDX ChartType union. */
+  chartType = $state<ChartType>("bar");
+
+  /**
+   * Chart options — reuses the same {@link ChartOptions} shape as the MDX side so all
+   * existing chart-editor features (titles, sort, top-N, palette, ref lines, etc.) work
+   * unchanged.
+   */
+  chartOptions = $state<ChartOptions>({ ...DEFAULT_CHART_OPTIONS });
 
   /**
    * Repository path this query is saved to. Null for unsaved / new queries; set on save
@@ -291,10 +319,13 @@ class OssieQueryStore {
     this.error = null;
     try {
       const name = `ossie-${Date.now().toString(36)}`;
-      this.result = await executeOssieQuery(name, this.current);
+      const both = await executeOssieQuery(name, this.current);
+      this.result = both;
+      this.rawResult = both.raw ?? null;
     } catch (e) {
       this.error = e instanceof Error ? e.message : String(e);
       this.result = null;
+      this.rawResult = null;
     } finally {
       this.running = false;
     }

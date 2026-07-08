@@ -4,7 +4,19 @@
   import { session } from "$lib/stores/session.svelte";
   import { Button } from "$lib/components/ui";
   import { toasts } from "$lib/stores/toasts.svelte";
-  import { ArrowLeftRight, ArrowDown, ArrowUp, FolderOpen, Play, Save, X } from "lucide-svelte";
+  import {
+    ArrowLeftRight,
+    ArrowDown,
+    ArrowUp,
+    BarChart3,
+    FolderOpen,
+    Play,
+    Save,
+    Table as TableIcon,
+    X,
+  } from "lucide-svelte";
+  import ChartView from "$lib/views/ChartView.svelte";
+  import { CHART_TYPES, type ChartType } from "$lib/views/chartTypes";
   import type { OssieFieldRef, OssieFilterExpr, OssieMetricRef } from "$lib/api/ossie";
   import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
   import OssieLoadModal from "$lib/modals/OssieLoadModal.svelte";
@@ -354,6 +366,42 @@
         onchange={commitLimit}
       />
     </label>
+    <!-- View toggle + chart-type picker. Mirrors the MDX QueryCanvas' Grid/Chart tabs. -->
+    <div class="ossie-canvas__viewtoggle" role="tablist" aria-label="View mode">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={ossieQuery.viewMode === "grid"}
+        class="ossie-canvas__viewtab"
+        class:ossie-canvas__viewtab--active={ossieQuery.viewMode === "grid"}
+        onclick={() => (ossieQuery.viewMode = "grid")}
+      >
+        <TableIcon size={12} />
+        <span>Grid</span>
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={ossieQuery.viewMode === "chart"}
+        class="ossie-canvas__viewtab"
+        class:ossie-canvas__viewtab--active={ossieQuery.viewMode === "chart"}
+        onclick={() => (ossieQuery.viewMode = "chart")}
+      >
+        <BarChart3 size={12} />
+        <span>Chart</span>
+      </button>
+    </div>
+    {#if ossieQuery.viewMode === "chart"}
+      <select
+        class="ossie-canvas__charttype"
+        bind:value={ossieQuery.chartType}
+        aria-label="Chart type"
+      >
+        {#each CHART_TYPES as t (t.id)}
+          <option value={t.id}>{t.label}</option>
+        {/each}
+      </select>
+    {/if}
     {#if ossieQuery.savedName}
       <span class="ossie-canvas__saved-name">{ossieQuery.savedName}</span>
     {/if}
@@ -513,7 +561,20 @@
   </div>
 
   <div class="ossie-canvas__result">
-    {#if ossieQuery.result && pivot}
+    {#if ossieQuery.viewMode === "chart" && ossieQuery.rawResult && ossieQuery.result && (ossieQuery.result.cellSetBody?.length ?? 0) > 0}
+      <!-- Chart view uses the shared ECharts wrapper. It expects the raw QueryResult
+           envelope; the store keeps it alongside the pivot-friendly projection. Chart
+           options + sort/limit/palette all come from the same ChartOptions type the
+           MDX side uses, so the whole existing chart-editor modal will Just Work
+           once P3 wires the gear button. -->
+      <ChartView
+        result={ossieQuery.rawResult}
+        type={ossieQuery.chartType}
+        options={ossieQuery.chartOptions}
+      />
+    {:else if ossieQuery.viewMode === "chart" && ossieQuery.result && (ossieQuery.result.cellSetBody?.length ?? 0) === 0}
+      <p class="ossie-canvas__empty">Query returned no rows.</p>
+    {:else if ossieQuery.result && pivot}
       <!-- Crosstab render: Columns shelf has entries so the flat rowset pivots into a
            real row × col grid. Multi-level columns collapse via colspan; missing
            intersections render as empty cells. -->
@@ -691,6 +752,40 @@
   }
   .ossie-result__sort-btn--active {
     color: var(--accent);
+  }
+  .ossie-canvas__viewtoggle {
+    display: inline-flex;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    height: 40px;
+    overflow: hidden;
+  }
+  .ossie-canvas__viewtab {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: transparent;
+    color: var(--fg-muted);
+    border: none;
+    padding: 0 10px;
+    font-size: var(--fs-sm);
+    cursor: pointer;
+  }
+  .ossie-canvas__viewtab--active {
+    background: var(--bg-hover);
+    color: var(--fg);
+  }
+  .ossie-canvas__viewtab:not(:last-child) {
+    border-right: 1px solid var(--border-strong);
+  }
+  .ossie-canvas__charttype {
+    padding: 6px 8px;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    color: var(--fg);
+    font-size: var(--fs-sm);
+    height: 40px;
   }
   .ossie-chip__and {
     color: var(--fg-subtle);

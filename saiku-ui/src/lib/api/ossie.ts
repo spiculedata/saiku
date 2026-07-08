@@ -127,6 +127,12 @@ export interface OssieQueryResult {
   width: number;
   height: number;
   runtime?: number;
+  /**
+   * Raw `/query/execute` envelope from the server. Kept so the shared MDX ChartView
+   * can consume the same shape it always has (`{cellset: CellEntry[][], ...}`) without
+   * having to re-project through our OssieResultCell type.
+   */
+  raw?: import("$lib/api/query").QueryResult;
 }
 
 /**
@@ -213,6 +219,18 @@ export async function executeOssieQuery(
  * {@code DATA_CELL} (metric cells). Numeric values ride in {@code properties.raw}.
  */
 export function projectWireToOssieResult(wire: WireQueryResult): OssieQueryResult {
+  const raw: import("$lib/api/query").QueryResult = {
+    cellset: (wire.cellset ?? []) as import("$lib/api/query").CellEntry[][],
+    runtime: wire.runtime,
+    width: wire.width,
+    height: wire.height,
+    topOffset: wire.topOffset,
+  };
+  const projected = projectWireBody(wire);
+  return { ...projected, raw };
+}
+
+function projectWireBody(wire: WireQueryResult): OssieQueryResult {
   const cellset = wire.cellset ?? [];
   const headerRows: OssieResultCell[][] = [];
   const bodyRows: OssieResultCell[][] = [];

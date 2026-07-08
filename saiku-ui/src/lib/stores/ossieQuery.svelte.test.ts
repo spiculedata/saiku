@@ -410,6 +410,31 @@ describe("run", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  test("stores rawResult alongside the projected result", async () => {
+    ossieQuery.addRow({ dataset: "customers", field: "region" });
+    ossieQuery.addValue({ metric: "revenue" });
+    const responseEnv = {
+      cellset: [
+        [
+          { value: "customers.region", type: "COLUMN_HEADER" },
+          { value: "revenue", type: "COLUMN_HEADER" },
+        ],
+        [
+          { value: "North", type: "ROW_HEADER" },
+          { value: "350.0", type: "DATA_CELL", properties: { raw: "350.0" } },
+        ],
+      ],
+      runtime: 12,
+      width: 2,
+      height: 1,
+    };
+    mockFetch(async () => new Response(JSON.stringify(responseEnv), { status: 200 }));
+    await ossieQuery.run();
+    // rawResult surfaces the wire envelope so ChartView can consume it unchanged.
+    expect(ossieQuery.rawResult?.cellset?.length).toBe(2);
+    expect(ossieQuery.rawResult?.cellset?.[0]?.[0]?.value).toBe("customers.region");
+  });
+
   test("runs and stores the result on success", async () => {
     ossieQuery.addRow({ dataset: "customers", field: "region" });
     ossieQuery.addValue({ metric: "revenue" });
