@@ -477,3 +477,4 @@ nbdist/
 
 # git worktrees
 .worktrees/
+.pi/

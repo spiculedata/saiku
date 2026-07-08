@@ -30,7 +30,7 @@ import picocli.CommandLine.Option;
         mixinStandardHelpOptions = true,
         version = "saiku 3.17",
         description = "Saiku Semantic Layer server.",
-        subcommands = {SaikuLauncher.ServeCommand.class})
+        subcommands = {SaikuLauncher.ServeCommand.class, OssieExportCommand.class})
 public class SaikuLauncher implements Callable<Integer> {
 
     public static void main(String[] args) {
