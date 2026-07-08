@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.Properties;
@@ -121,16 +122,47 @@ public class PgWireServerIT {
         }
     }
 
+    @Test
+    public void extendedQueryModeParameterisedSelect() throws Exception {
+        // pgjdbc's default is extended query mode — Parse/Bind/Execute rather than simple 'Q'.
+        // Uses PreparedStatement so pgjdbc actually sends parameters via Bind (not text-inlined).
+        try (Connection remote = openPgClientExtended();
+                PreparedStatement ps =
+                        remote.prepareStatement("SELECT COUNT(*) FROM SALES.CUSTOMERS WHERE REGION = ?")) {
+            ps.setString(1, "North");
+            try (ResultSet rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                assertEquals(2, rs.getInt(1));
+            }
+            ps.setString(1, "West");
+            try (ResultSet rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                assertEquals(1, rs.getInt(1));
+            }
+        }
+    }
+
     private Connection openPgClient() throws Exception {
         Class.forName("org.postgresql.Driver");
         Properties p = new Properties();
         p.setProperty("user", "saiku");
         p.setProperty("password", "");
         p.setProperty("sslmode", "disable");
-        // preferQueryMode=simple keeps pgjdbc from trying extended-mode Parse/Bind/Execute
-        // (which we don't yet support). Simple mode is enough for BI tools that don't use
-        // parameterised queries.
+        // preferQueryMode=simple opts out of extended-mode Parse/Bind/Execute for the two tests
+        // that don't need to exercise parameterised queries. simple mode maps stmt.executeQuery
+        // to a single 'Q' message.
         p.setProperty("preferQueryMode", "simple");
+        return DriverManager.getConnection("jdbc:postgresql://localhost:" + server.getPort() + "/saiku", p);
+    }
+
+    private Connection openPgClientExtended() throws Exception {
+        Class.forName("org.postgresql.Driver");
+        Properties p = new Properties();
+        p.setProperty("user", "saiku");
+        p.setProperty("password", "");
+        p.setProperty("sslmode", "disable");
+        // No preferQueryMode override — pgjdbc uses its default. PreparedStatement.executeQuery
+        // maps to the extended Parse/Bind/Execute/Sync sequence.
         return DriverManager.getConnection("jdbc:postgresql://localhost:" + server.getPort() + "/saiku", p);
     }
 }

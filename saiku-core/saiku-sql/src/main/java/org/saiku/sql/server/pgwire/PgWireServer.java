@@ -30,28 +30,32 @@ import org.slf4j.LoggerFactory;
  * the Postgres protocol version 3 — enough for {@code psql}, DBeaver's native Postgres driver,
  * Tableau, and {@code dbt-postgres} to connect and execute SELECT queries.
  *
- * <p>What ships in this first slice:
+ * <p>What ships:
  *
  * <ul>
  *   <li><b>Startup + trust auth.</b> SSL requests are refused (server replies {@code 'N'}); the
  *       client falls back to plaintext. Trust auth means we accept any username; SCRAM comes in
  *       a follow-up.
- *   <li><b>Simple query mode</b> ({@code Q} messages). Every incoming SQL statement dispatches to
- *       a fresh Calcite {@link Statement} via a pooled JDBC connection.
+ *   <li><b>Simple query mode</b> ({@code Q} messages). Every SQL statement dispatches to a fresh
+ *       Calcite {@link Statement} via a pooled JDBC connection.
+ *   <li><b>Extended query mode</b> ({@code P}/{@code B}/{@code D}/{@code E}/{@code S} messages).
+ *       Prepared statements + portals cached per connection. Parameters substituted at Bind by
+ *       naive text-quoting {@code $1}/{@code $2}/… against the client's Bind-supplied values.
  *   <li><b>RowDescription + DataRow + CommandComplete + ReadyForQuery.</b> Common PG type OIDs
  *       for BOOL/INT/BIGINT/FLOAT/NUMERIC/VARCHAR/DATE/TIMESTAMP. Anything else serialises as
  *       TEXT — clients still get the string form and coerce.
- *   <li><b>Terminate</b> ({@code X}) closes the connection cleanly.
+ *   <li><b>Close + Flush + Terminate.</b>
  * </ul>
  *
- * <p>What doesn't ship yet — filed as follow-ups on saiku#1392:
+ * <p>What doesn't ship yet — filed as follow-ups on saiku#1387 (epic):
  *
  * <ul>
- *   <li>Extended query mode (Parse/Bind/Execute). Most drivers auto-fall-back to simple mode.
- *   <li>SSL/TLS. We answer 'N' to SSL requests; clients configured to REQUIRE SSL fail. Users
- *       set {@code sslmode=disable}.
+ *   <li>Binary format parameters/results. We treat binary as UTF-8 text at Bind — mostly OK for
+ *       common types but breaks binary-only encodings.
+ *   <li>Portal suspension (server never returns PortalSuspended; Execute runs all rows).
+ *   <li>SSL/TLS. We answer 'N' to SSL requests; clients configured to REQUIRE SSL fail.
  *   <li>SCRAM-SHA-256 auth.
- *   <li>COPY, cursors, prepared statements.
+ *   <li>COPY protocol, cursors as first-class portals.
  * </ul>
  *
  * <p>Implementation is plain JDK sockets with one thread per connection — MVP shape. Netty comes
@@ -123,6 +127,13 @@ public class PgWireServer implements AutoCloseable {
             sendParameterStatus(out, "DateStyle", "ISO, MDY");
             sendReadyForQuery(out);
 
+            // Per-connection state for extended query mode. Portals hold the fully-substituted
+            // SQL text for a Bound statement plus the client's requested result-format codes.
+            // Both maps use an empty string as the "unnamed" statement/portal — Postgres protocol
+            // convention for the anonymous slot pgjdbc uses by default.
+            Map<String, String> statements = new HashMap<>();
+            Map<String, Portal> portals = new HashMap<>();
+
             // Query loop. Read one message at a time until Terminate or connection close.
             while (running.get()) {
                 int msgType = in.read();
@@ -130,8 +141,29 @@ public class PgWireServer implements AutoCloseable {
                 int length = in.readInt(); // includes the length field itself
                 byte[] payload = in.readNBytes(length - 4);
                 switch (msgType) {
-                    case 'Q':
+                    case 'Q': // Simple query
                         handleSimpleQuery(payload, out, calcite);
+                        sendReadyForQuery(out);
+                        break;
+                    case 'P': // Parse
+                        handleParse(payload, out, statements);
+                        break;
+                    case 'B': // Bind
+                        handleBind(payload, out, statements, portals);
+                        break;
+                    case 'D': // Describe (statement 'S' or portal 'P')
+                        handleDescribe(payload, out, calcite, statements, portals);
+                        break;
+                    case 'E': // Execute
+                        handleExecute(payload, out, calcite, portals);
+                        break;
+                    case 'C': // Close (statement 'S' or portal 'P')
+                        handleClose(payload, out, statements, portals);
+                        break;
+                    case 'H': // Flush — no-op, we flush after each message anyway
+                        out.flush();
+                        break;
+                    case 'S': // Sync — end extended-mode transaction group
                         sendReadyForQuery(out);
                         break;
                     case 'X': // Terminate
@@ -144,6 +176,18 @@ public class PgWireServer implements AutoCloseable {
             }
         } catch (Exception e) {
             log.debug("Connection handler ended: {}", e.getMessage());
+        }
+    }
+
+    /** Portal state — after Bind, holds the fully substituted SQL and the client's result format
+     *  code preferences. Execute uses these to run the query. */
+    private static final class Portal {
+        final String sql;
+        final int[] resultFormats;
+
+        Portal(String sql, int[] resultFormats) {
+            this.sql = sql;
+            this.resultFormats = resultFormats;
         }
     }
 
@@ -348,6 +392,205 @@ public class PgWireServer implements AutoCloseable {
                 out.write(values[i]);
             }
         }
+    }
+
+    /* ---------------- extended query mode ---------------- */
+
+    /**
+     * Parse ('P'): client declares a statement. Payload is {@code statementName\0 sql\0
+     * paramCount(int16) [paramTypeOid(int32)]*}. We ignore the client-supplied parameter type
+     * OIDs — Calcite figures out types at plan time — and just cache the SQL text under the
+     * statement name for later Bind.
+     */
+    private void handleParse(byte[] payload, DataOutputStream out, Map<String, String> statements) throws IOException {
+        int[] cursor = {0};
+        String name = readNullTerminatedString(payload, cursor);
+        String sql = readNullTerminatedString(payload, cursor);
+        statements.put(name, sql);
+        // Respond ParseComplete ('1').
+        out.writeByte('1');
+        out.writeInt(4);
+        out.flush();
+    }
+
+    /**
+     * Bind ('B'): client provides parameter values for a Parsed statement. Payload:
+     * {@code portalName\0 statementName\0 paramFormatCount(int16) [paramFormat(int16)]*
+     * paramCount(int16) [paramLength(int32) paramValue(bytes)]* resultFormatCount(int16)
+     * [resultFormat(int16)]*}. We do naive text substitution of {@code $N} placeholders with
+     * the client's provided text values (single-quote-quoting embedded quotes). Binary format
+     * parameters are decoded as UTF-8 text — safe for most types but a known limitation.
+     */
+    private void handleBind(
+            byte[] payload, DataOutputStream out, Map<String, String> statements, Map<String, Portal> portals)
+            throws IOException {
+        int[] cursor = {0};
+        String portalName = readNullTerminatedString(payload, cursor);
+        String stmtName = readNullTerminatedString(payload, cursor);
+        String sql = statements.get(stmtName);
+        if (sql == null) {
+            sendErrorResponse(out, "26000", "no prepared statement named '" + stmtName + "'");
+            return;
+        }
+        int paramFormatCount = readInt16(payload, cursor);
+        int[] paramFormats = new int[paramFormatCount];
+        for (int i = 0; i < paramFormatCount; i++) paramFormats[i] = readInt16(payload, cursor);
+        int paramCount = readInt16(payload, cursor);
+        String[] paramValues = new String[paramCount];
+        for (int i = 0; i < paramCount; i++) {
+            int len = readInt32(payload, cursor);
+            if (len == -1) {
+                paramValues[i] = null;
+            } else {
+                paramValues[i] = new String(payload, cursor[0], len, StandardCharsets.UTF_8);
+                cursor[0] += len;
+            }
+        }
+        int resultFormatCount = readInt16(payload, cursor);
+        int[] resultFormats = new int[resultFormatCount];
+        for (int i = 0; i < resultFormatCount; i++) resultFormats[i] = readInt16(payload, cursor);
+
+        // Substitute $1, $2, ... with the actual parameter values. Text format only. Any
+        // numeric-looking value goes in unquoted; anything else gets single-quote wrapped with
+        // internal quotes doubled — the SQL92 way of escaping. This is naive and safe only for
+        // BI-tool prepared statements (which supply typed values); it's not a bulletproof
+        // parameter-binding scheme.
+        String substituted = sql;
+        for (int i = 0; i < paramValues.length; i++) {
+            String placeholder = "\\$" + (i + 1) + "\\b";
+            String v = paramValues[i];
+            String rendered;
+            if (v == null) {
+                rendered = "NULL";
+            } else if (v.matches("-?\\d+(?:\\.\\d+)?")) {
+                rendered = v;
+            } else {
+                rendered = "'" + v.replace("'", "''") + "'";
+            }
+            substituted = substituted.replaceAll(placeholder, java.util.regex.Matcher.quoteReplacement(rendered));
+        }
+        portals.put(portalName, new Portal(substituted, resultFormats));
+        // Respond BindComplete ('2').
+        out.writeByte('2');
+        out.writeInt(4);
+        out.flush();
+    }
+
+    /**
+     * Describe ('D'): client asks for the row shape of a statement or portal. Payload:
+     * {@code kind(byte) name\0}. For portals we prepare the SQL, run it once, and send
+     * RowDescription. For statements we send NoData because we don't try to know the row shape
+     * without executing (Calcite-level parse-without-run is possible but adds complexity).
+     */
+    private void handleDescribe(
+            byte[] payload,
+            DataOutputStream out,
+            Connection calcite,
+            Map<String, String> statements,
+            Map<String, Portal> portals)
+            throws IOException {
+        char kind = (char) payload[0];
+        int[] cursor = {1};
+        String name = readNullTerminatedString(payload, cursor);
+        if (kind == 'P') {
+            Portal p = portals.get(name);
+            if (p == null) {
+                sendErrorResponse(out, "34000", "no portal named '" + name + "'");
+                return;
+            }
+            try (Statement stmt = calcite.createStatement();
+                    ResultSet rs = stmt.executeQuery(p.sql)) {
+                sendRowDescription(out, rs.getMetaData());
+                out.flush();
+            } catch (SQLException e) {
+                sendErrorResponse(out, "42000", e.getMessage() == null ? "describe failed" : e.getMessage());
+            }
+        } else {
+            // Statement Describe → we haven't executed yet, so send NoData ('n'). Some clients
+            // will follow up with a Bind + Portal Describe.
+            out.writeByte('n');
+            out.writeInt(4);
+            out.flush();
+        }
+    }
+
+    /**
+     * Execute ('E'): client asks to run a Bound portal. Payload: {@code portalName\0
+     * maxRows(int32)}. We ignore maxRows for this slice — return all rows and CommandComplete.
+     * Portal suspension via PortalSuspended is a follow-up.
+     */
+    private void handleExecute(byte[] payload, DataOutputStream out, Connection calcite, Map<String, Portal> portals)
+            throws IOException {
+        int[] cursor = {0};
+        String portalName = readNullTerminatedString(payload, cursor);
+        // int maxRows = readInt32(payload, cursor);  // ignored for now
+        Portal p = portals.get(portalName);
+        if (p == null) {
+            sendErrorResponse(out, "34000", "no portal named '" + portalName + "'");
+            return;
+        }
+        String upper = p.sql.toUpperCase().trim();
+        if (upper.startsWith("SET ") || upper.equals("SET")) {
+            sendCommandComplete(out, "SET");
+            return;
+        }
+        try (Statement stmt = calcite.createStatement();
+                ResultSet rs = stmt.executeQuery(p.sql)) {
+            ResultSetMetaData meta = rs.getMetaData();
+            int rowCount = 0;
+            while (rs.next()) {
+                sendDataRow(out, rs, meta);
+                rowCount++;
+            }
+            sendCommandComplete(out, "SELECT " + rowCount);
+            out.flush();
+        } catch (SQLException e) {
+            sendErrorResponse(out, "42000", e.getMessage() == null ? "execute failed" : e.getMessage());
+        }
+    }
+
+    /**
+     * Close ('C'): client asks to drop a cached statement or portal. Payload:
+     * {@code kind(byte) name\0}.
+     */
+    private void handleClose(
+            byte[] payload, DataOutputStream out, Map<String, String> statements, Map<String, Portal> portals)
+            throws IOException {
+        char kind = (char) payload[0];
+        int[] cursor = {1};
+        String name = readNullTerminatedString(payload, cursor);
+        if (kind == 'S') statements.remove(name);
+        else if (kind == 'P') portals.remove(name);
+        // Respond CloseComplete ('3').
+        out.writeByte('3');
+        out.writeInt(4);
+        out.flush();
+    }
+
+    /* ---------------- payload readers ---------------- */
+
+    private static String readNullTerminatedString(byte[] payload, int[] cursor) {
+        int start = cursor[0];
+        int end = start;
+        while (end < payload.length && payload[end] != 0) end++;
+        String s = new String(payload, start, end - start, StandardCharsets.UTF_8);
+        cursor[0] = end + 1;
+        return s;
+    }
+
+    private static int readInt16(byte[] payload, int[] cursor) {
+        int v = ((payload[cursor[0]] & 0xFF) << 8) | (payload[cursor[0] + 1] & 0xFF);
+        cursor[0] += 2;
+        return (short) v;
+    }
+
+    private static int readInt32(byte[] payload, int[] cursor) {
+        int v = ((payload[cursor[0]] & 0xFF) << 24)
+                | ((payload[cursor[0] + 1] & 0xFF) << 16)
+                | ((payload[cursor[0] + 2] & 0xFF) << 8)
+                | (payload[cursor[0] + 3] & 0xFF);
+        cursor[0] += 4;
+        return v;
     }
 
     private void sendCommandComplete(DataOutputStream out, String tag) throws IOException {
