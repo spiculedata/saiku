@@ -170,9 +170,11 @@ public final class OssieShelfSqlTranslator {
             }
         }
         if (depth != 0) return expr;
-        // COUNT(x) may or may not be the correct override for a SUM-based metric — but
-        // the caller opted into it explicitly by picking COUNT from the menu. Preserve
-        // the argument as-is; the user knows what they're asking for.
+        // Only COUNT accepts `*` as its argument in ANSI SQL — SUM(*), AVG(*), MIN(*),
+        // MAX(*) are all parse errors. If the declared metric is COUNT(*) and the
+        // override isn't COUNT, don't rewrite: preserve the declared aggregation rather
+        // than emit broken SQL. Caught by OssieFuzzIT combinatorial pass 2026-07-08.
+        if ("*".equals(inner.trim()) && !"COUNT".equals(override)) return expr;
         return override + "(" + inner + ")";
     }
 

@@ -243,6 +243,19 @@ public class OssieShelfSqlTranslatorTest {
     }
 
     @Test
+    public void swapAggregationRefusesStarArgWhenOverrideIsntCount() {
+        // Regression for OssieFuzzIT combinatorial fuzz 2026-07-08: overriding COUNT(*)
+        // with SUM / AVG / MIN / MAX emits invalid SQL. The translator now keeps the
+        // declared aggregation for the star-arg edge case.
+        assertEquals("COUNT(*)", OssieShelfSqlTranslator.swapAggregation("COUNT(*)", "SUM"));
+        assertEquals("COUNT(*)", OssieShelfSqlTranslator.swapAggregation("COUNT(*)", "AVG"));
+        assertEquals("COUNT(*)", OssieShelfSqlTranslator.swapAggregation("COUNT(*)", "MIN"));
+        assertEquals("COUNT(*)", OssieShelfSqlTranslator.swapAggregation("COUNT(*)", "MAX"));
+        // COUNT → COUNT is a no-op-shaped rewrite but valid.
+        assertEquals("COUNT(*)", OssieShelfSqlTranslator.swapAggregation("COUNT(*)", "COUNT"));
+    }
+
+    @Test
     public void aggregationOverrideAppearsInEmittedSql() {
         OssieQueryModel m = new OssieQueryModel();
         m.setConnection("SALES");
