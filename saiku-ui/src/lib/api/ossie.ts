@@ -212,7 +212,7 @@ export async function executeOssieQuery(
  * rest are body rows with a mix of {@code ROW_HEADER} (dimension cells) and
  * {@code DATA_CELL} (metric cells). Numeric values ride in {@code properties.raw}.
  */
-function projectWireToOssieResult(wire: WireQueryResult): OssieQueryResult {
+export function projectWireToOssieResult(wire: WireQueryResult): OssieQueryResult {
   const cellset = wire.cellset ?? [];
   const headerRows: OssieResultCell[][] = [];
   const bodyRows: OssieResultCell[][] = [];

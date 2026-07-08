@@ -11,6 +11,7 @@ mvn verify                                    # compile + unit tests + spotless:
 mvn spotless:apply                            # auto-format Java (Palantir Java Format, bound in root pom)
 mvn -pl saiku-core/saiku-service -am test     # one module's tests
 mvn -pl saiku-core/saiku-service test -Dtest=RepositoryDatasourceManagerTest  # single test class
+mvn -pl saiku-webapp,saiku-launcher clean                     # WIPE stale UI bundles before rebuilding — CRITICAL for UI changes
 mvn -pl saiku-launcher -am -Dmaven.test.skip=true package    # build the runnable fat-JAR
 mvn -P security verify                        # OWASP dependency-check (opt-in)
 ./scripts/install-hooks.sh                    # one-time: install pre-commit spotless hook
@@ -39,6 +40,8 @@ npm run build                                 # static build → saiku-ui/dist
 The UI is **Tailwind v4 + design-system primitives + Storybook**. Token bridge at `src/lib/styles/tailwind.css` uses `@theme inline` to map the 169 saiku-ui tokens (in `src/lib/styles/tokens.css`) onto Tailwind's namespace; primitives live at `src/lib/components/ui/` (shadcn-style with `tailwind-variants` + `bits-ui` Tooltip) and reusable widgets at `src/lib/design-system/` (14 primitives + 19 stories). ESLint bans raw tone classes (`bg-emerald-*`, `text-red-*`, `bg-amber-*`, `rose`, `orange`) outside `src/lib/design-system/` — token utilities only.
 
 **Cascade-layer discipline (load-bearing):** every type-selector rule in `app.css` MUST live in `@layer base` so Tailwind utilities (in `@layer utilities`) can override them. Unlayered rules win against ALL layered rules regardless of specificity — that's the CSS cascade-layers spec, and the saiku-ui legacy `a { color: var(--accent) }` ate `text-primary-foreground` on every anchor-as-button until the wrap landed. Only the `*, *::before, *::after { box-sizing }` reset and the `html, body { height/margin }` root zeroing stay unlayered.
+
+**Stale-bundle gotcha with the launcher fat-JAR (bit us twice):** `saiku-webapp`'s maven-war-plugin overlays `saiku-ui/dist/` into `webapp/saiku.war` inside the launcher fat-JAR, but it does NOT purge stale files from `target/`. SvelteKit generates hashed filenames like `_app/immutable/nodes/2.<hash>.js` — every `npm run build` produces new hashes, and every `mvn package` that skips `clean` leaves the old hashes AND the new hashes both in the war. The server's `index.html` points at the new hashes; the old bundle files sit there dead. But if you're debugging via `unzip -l` you can miss which one is live. Fix: `mvn -pl saiku-webapp,saiku-launcher clean` before any UI rebuild — never trust an incremental package on top of an existing `target/` when saiku-ui bundles have changed.
 
 Live AI Query API regression suite against a running launcher: `saiku-launcher/test-ai-live.sh` (expects `./run.sh` already started; auth defaults `admin/admin`).
 

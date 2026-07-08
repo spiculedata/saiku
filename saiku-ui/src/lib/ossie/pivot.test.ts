@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { pivotResult } from "./pivot";
+import { projectWireToOssieResult } from "$lib/api/ossie";
 import type { OssieQueryResult } from "$lib/api/ossie";
 
 /**
@@ -24,6 +25,107 @@ function makeResult(rows: Array<Array<string | number>>): OssieQueryResult {
     height: rows.length,
   };
 }
+
+describe("full projection → pivot chain (regression for the empty-body bug)", () => {
+  test("wire envelope with 10 body rows survives projection and pivots correctly", () => {
+    // Exact wire shape the server produces for a 2-row × 1-col × 1-value shelf state.
+    // Header row cells all typed COLUMN_HEADER; body row cells mix ROW_HEADER (dim
+    // cells from the flat rowset's row-shelf prefix + column-shelf value) + DATA_CELL
+    // for the metric.
+    const wire = {
+      runtime: 42,
+      width: 4,
+      height: 10,
+      cellset: [
+        [
+          { value: "product.brand", type: "COLUMN_HEADER" as const },
+          { value: "product.molecule", type: "COLUMN_HEADER" as const },
+          { value: "geography.region", type: "COLUMN_HEADER" as const },
+          { value: "net_revenue", type: "COLUMN_HEADER" as const },
+        ],
+        ...(
+          [
+            ["Alfa", "atorvastatin", "Midwest", 590.75],
+            ["Alfa", "atorvastatin", "Northeast", 250.0],
+            ["Alfa", "atorvastatin", "South", 210.0],
+            ["Beta", "metformin", "Northeast", 120.5],
+            ["Beta", "metformin", "South", 95.5],
+            ["Beta", "metformin", "West", 495.75],
+            ["Gamma", "sertraline", "Midwest", 85.0],
+            ["Gamma", "sertraline", "Northeast", 175.0],
+            ["Gamma", "sertraline", "South", 220.5],
+            ["Gamma", "sertraline", "West", 60.25],
+          ] as Array<Array<string | number>>
+        ).map((row) => [
+          { value: String(row[0]), type: "ROW_HEADER" as const },
+          { value: String(row[1]), type: "ROW_HEADER" as const },
+          { value: String(row[2]), type: "ROW_HEADER" as const },
+          {
+            value: (row[3] as number).toFixed(2),
+            type: "DATA_CELL" as const,
+            properties: { raw: String(row[3]) },
+          },
+        ]),
+      ],
+    };
+    const projected = projectWireToOssieResult(wire);
+    expect(projected.cellSetBody.length).toBe(10);
+    const grid = pivotResult(
+      ["product.brand", "product.molecule"],
+      ["geography.region"],
+      ["net_revenue"],
+      projected,
+    );
+    expect(grid).not.toBeNull();
+    expect(grid!.bodyRows.length).toBe(3);
+    // Beta has no Midwest row; that cell must stay empty.
+    expect(grid!.bodyRows[1][2].formatted).toBe("");
+  });
+});
+
+describe("live-shape scenario (regression for 2-row × 1-col × 1-value crosstab)", () => {
+  test("pivots 10 body rows with 2 row shelves + 1 column shelf", () => {
+    // Simulates the exact scenario that renders 'Query returned no rows' in the browser:
+    // Rows=[product.brand, product.molecule], Columns=[geography.region], Values=[net_revenue].
+    // The server responds with 10 flat rows; the pivot must produce a 3×4 crosstab.
+    const r = makeResult([
+      ["Alfa", "atorvastatin", "Midwest", 590.75],
+      ["Alfa", "atorvastatin", "Northeast", 250.0],
+      ["Alfa", "atorvastatin", "South", 210.0],
+      ["Beta", "metformin", "Northeast", 120.5],
+      ["Beta", "metformin", "South", 95.5],
+      ["Beta", "metformin", "West", 495.75],
+      ["Gamma", "sertraline", "Midwest", 85.0],
+      ["Gamma", "sertraline", "Northeast", 175.0],
+      ["Gamma", "sertraline", "South", 220.5],
+      ["Gamma", "sertraline", "West", 60.25],
+    ]);
+    const grid = pivotResult(
+      ["product.brand", "product.molecule"],
+      ["geography.region"],
+      ["net_revenue"],
+      r,
+    );
+    expect(grid).not.toBeNull();
+    expect(grid!.rowHeaderCount).toBe(2);
+    expect(grid!.bodyRows.length).toBe(3);
+    expect(grid!.bodyRows[0][0].formatted).toBe("Alfa");
+    expect(grid!.bodyRows[0][1].formatted).toBe("atorvastatin");
+    expect(grid!.headerRows[0].slice(2).map((c) => c.formatted)).toEqual([
+      "Midwest",
+      "Northeast",
+      "South",
+      "West",
+    ]);
+    // Alfa/atorvastatin has values for Midwest / Northeast / South but not West.
+    expect(grid!.bodyRows[0].slice(2).map((c) => c.formatted)).toEqual([
+      "590.75",
+      "250.00",
+      "210.00",
+      "",
+    ]);
+  });
+});
 
 describe("pivotResult", () => {
   test("returns null when there are no Columns shelf entries", () => {
