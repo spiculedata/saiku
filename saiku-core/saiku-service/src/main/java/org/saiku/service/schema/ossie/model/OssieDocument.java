@@ -4,6 +4,7 @@
  */
 package org.saiku.service.schema.ossie.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
@@ -80,6 +81,7 @@ public class OssieDocument {
      * (discover service, YAML reader) should use this rather than {@link #getSemanticModel()}
      * so ontology-nested Ossie docs round-trip cleanly.
      */
+    @JsonIgnore
     public List<SemanticModel> getEffectiveSemanticModels() {
         List<SemanticModel> out = new ArrayList<>(semanticModel);
         for (OntologyMapping m : ontologyMappings) {
