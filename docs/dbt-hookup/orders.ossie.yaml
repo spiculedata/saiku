@@ -1,0 +1,126 @@
+version: 0.2.0.dev0
+semantic_model:
+- name: Orders
+  description: "Orders demo \u2014 converted from dbt MetricFlow YAML"
+  datasets:
+  - name: orders
+    source: FCT_ORDERS
+    fields:
+    - name: ordered_at
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: ORDERED_AT
+    - name: is_food_order
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: IS_FOOD_ORDER
+      label: Food order
+    - name: order_status
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: STATUS
+      label: Status
+    - name: order_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: ID
+    - name: customer_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: CUSTOMER_ID
+    - name: location_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: LOCATION_ID
+    primary_key:
+    - ID
+    description: "One row per completed order \u2014 the fact table."
+  - name: customers
+    source: DIM_CUSTOMERS
+    fields:
+    - name: customer_type
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: CUSTOMER_TYPE
+      label: Customer type
+    - name: customer_country
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: COUNTRY
+      label: Country
+    - name: customer_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: ID
+    primary_key:
+    - ID
+    description: Customer dimension.
+  - name: locations
+    source: DIM_LOCATIONS
+    fields:
+    - name: location_name
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: NAME
+      label: Location
+    - name: location_region
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: REGION
+      label: Region
+    - name: location_id
+      expression:
+        dialects:
+        - dialect: ANSI_SQL
+          expression: ID
+    primary_key:
+    - ID
+    description: Store locations.
+  metrics:
+  - name: total_revenue
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM("orders"."order_total")
+    aggregation_kind: sum
+    description: Sum of order totals across the fact table.
+  - name: order_count
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: COUNT(*)
+    aggregation_kind: count
+    description: Number of orders.
+  - name: avg_order_value
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: (SUM("orders"."order_total")) / NULLIF(COUNT(*), 0)
+    aggregation_kind: ratio
+    description: Average order total (total_revenue / order_count).
+  relationships:
+  - name: orders_to_customers
+    from: orders
+    to: customers
+    from_columns:
+    - CUSTOMER_ID
+    to_columns:
+    - ID
+  - name: orders_to_locations
+    from: orders
+    to: locations
+    from_columns:
+    - LOCATION_ID
+    to_columns:
+    - ID

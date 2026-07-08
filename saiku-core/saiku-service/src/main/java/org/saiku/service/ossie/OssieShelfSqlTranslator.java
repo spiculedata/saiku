@@ -59,12 +59,12 @@ public final class OssieShelfSqlTranslator {
         List<String> selectCols = new ArrayList<>();
         List<String> groupByCols = new ArrayList<>();
         for (OssieQueryModel.FieldRef f : model.getRows()) {
-            String qref = qualifiedField(f);
+            String qref = qualifiedField(f, semantic);
             selectCols.add(qref + " AS " + quoteAlias(f.getDataset() + "." + f.getField()));
             groupByCols.add(qref);
         }
         for (OssieQueryModel.FieldRef f : model.getColumns()) {
-            String qref = qualifiedField(f);
+            String qref = qualifiedField(f, semantic);
             selectCols.add(qref + " AS " + quoteAlias(f.getDataset() + "." + f.getField()));
             groupByCols.add(qref);
         }
@@ -99,7 +99,7 @@ public final class OssieShelfSqlTranslator {
         // --- WHERE ---
         List<String> whereClauses = new ArrayList<>();
         for (OssieQueryModel.FilterExpr f : model.getFilters()) {
-            whereClauses.add(filterToSql(f));
+            whereClauses.add(filterToSql(f, semantic));
         }
         if (!whereClauses.isEmpty()) {
             sql.append(" WHERE ").append(String.join(" AND ", whereClauses));
@@ -119,7 +119,9 @@ public final class OssieShelfSqlTranslator {
                     // Aggregate columns can be referenced by alias in ORDER BY (Calcite handles this).
                     ref = quoteRef(s.getMetric());
                 } else {
-                    ref = quoteRef(s.getDataset()) + "." + quoteRef(s.getField());
+                    String colExpr = lookupFieldExpression(semantic, s.getDataset(), s.getField());
+                    String col = (colExpr != null && !colExpr.isBlank()) ? quoteRef(colExpr) : quoteRef(s.getField());
+                    ref = quoteRef(s.getDataset()) + "." + col;
                 }
                 orderCols.add(ref + " " + normalizedDirection(s.getDirection()));
             }
@@ -178,11 +180,36 @@ public final class OssieShelfSqlTranslator {
         return override + "(" + inner + ")";
     }
 
-    private String qualifiedField(OssieQueryModel.FieldRef f) {
+    /**
+     * Resolve a shelf {@link OssieQueryModel.FieldRef} to its qualified SQL expression.
+     *
+     * <p>When the model declares an ANSI_SQL expression on the field, we use it — this covers
+     * converters like the dbt/MetricFlow bridge that give fields agent-friendly names
+     * ({@code customer_country}) mapped to raw columns ({@code COUNTRY}). When no expression
+     * is declared, fall back to the field's name itself; that's the shape our Pharma / TPCDS /
+     * Flights demo YAMLs use where the field name IS the underlying column.
+     */
+    private String qualifiedField(OssieQueryModel.FieldRef f, OssieModelDto semantic) {
         if (f.getDataset() == null || f.getField() == null) {
             throw new IllegalArgumentException("FieldRef requires both dataset and field");
         }
-        return quoteRef(f.getDataset()) + "." + quoteRef(f.getField());
+        String columnExpr = lookupFieldExpression(semantic, f.getDataset(), f.getField());
+        String col = (columnExpr != null && !columnExpr.isBlank()) ? quoteRef(columnExpr) : quoteRef(f.getField());
+        return quoteRef(f.getDataset()) + "." + col;
+    }
+
+    /** Walk the semantic model for a field's ANSI_SQL expression. Returns null when absent. */
+    private String lookupFieldExpression(OssieModelDto semantic, String datasetName, String fieldName) {
+        if (semantic == null || datasetName == null || fieldName == null) return null;
+        for (OssieModelDto.Dataset ds : semantic.getDatasets()) {
+            if (!datasetName.equalsIgnoreCase(ds.getName())) continue;
+            for (OssieModelDto.Field field : ds.getFields()) {
+                if (fieldName.equalsIgnoreCase(field.getName())) {
+                    return field.getExpression();
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -203,10 +230,12 @@ public final class OssieShelfSqlTranslator {
                 "Ossie metric '" + metricName + "' not found in semantic model '" + semantic.getName() + "'");
     }
 
-    private String filterToSql(OssieQueryModel.FilterExpr f) {
+    private String filterToSql(OssieQueryModel.FilterExpr f, OssieModelDto semantic) {
         String col;
         if (f.getDataset() != null && !f.getDataset().isBlank()) {
-            col = quoteRef(f.getDataset()) + "." + quoteRef(f.getField());
+            String colExpr = lookupFieldExpression(semantic, f.getDataset(), f.getField());
+            String colName = (colExpr != null && !colExpr.isBlank()) ? colExpr : f.getField();
+            col = quoteRef(f.getDataset()) + "." + quoteRef(colName);
         } else {
             col = quoteRef(f.getField());
         }

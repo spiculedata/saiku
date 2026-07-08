@@ -1,0 +1,110 @@
+# Sample dbt MetricFlow semantic model + metrics. This is the shape a real
+# dbt project would emit in its models/ directory. Referenced by the
+# metricflow_to_ossie.py converter that produces an Ossie-format YAML the
+# Saiku launcher can register as a datasource.
+#
+# Docs: https://docs.getdbt.com/docs/build/semantic-models
+
+semantic_models:
+  - name: orders
+    description: "One row per completed order — the fact table."
+    model: ref('fct_orders')
+    defaults:
+      agg_time_dimension: ordered_at
+
+    entities:
+      - name: order_id
+        type: primary
+        expr: id
+      - name: customer_id
+        type: foreign
+        expr: customer_id
+      - name: location_id
+        type: foreign
+        expr: location_id
+
+    dimensions:
+      - name: ordered_at
+        type: time
+        expr: ordered_at
+        type_params:
+          time_granularity: day
+      - name: is_food_order
+        type: categorical
+        expr: is_food_order
+        label: "Food order"
+      - name: order_status
+        type: categorical
+        expr: status
+        label: "Status"
+
+    measures:
+      - name: order_total
+        description: "Sum of order totals in USD."
+        agg: sum
+        expr: order_total
+      - name: order_count
+        description: "Count of orders."
+        agg: count
+        expr: 1
+
+  - name: customers
+    description: "Customer dimension."
+    model: ref('dim_customers')
+
+    entities:
+      - name: customer_id
+        type: primary
+        expr: id
+
+    dimensions:
+      - name: customer_type
+        type: categorical
+        expr: customer_type
+        label: "Customer type"
+      - name: customer_country
+        type: categorical
+        expr: country
+        label: "Country"
+
+  - name: locations
+    description: "Store locations."
+    model: ref('dim_locations')
+
+    entities:
+      - name: location_id
+        type: primary
+        expr: id
+
+    dimensions:
+      - name: location_name
+        type: categorical
+        expr: name
+        label: "Location"
+      - name: location_region
+        type: categorical
+        expr: region
+        label: "Region"
+
+metrics:
+  - name: total_revenue
+    description: "Sum of order totals across the fact table."
+    type: simple
+    label: "Total revenue"
+    type_params:
+      measure: order_total
+
+  - name: order_count
+    description: "Number of orders."
+    type: simple
+    label: "Order count"
+    type_params:
+      measure: order_count
+
+  - name: avg_order_value
+    description: "Average order total (total_revenue / order_count)."
+    type: ratio
+    label: "Avg order value"
+    type_params:
+      numerator: total_revenue
+      denominator: order_count
