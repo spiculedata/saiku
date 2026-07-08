@@ -127,6 +127,53 @@ test.describe("Ossie workbench (mocked backend)", () => {
     // job here is to prove the modal → API pipeline reaches the server correctly.
   });
 
+  test("clicking a result column header cycles the sort direction", async ({ page }) => {
+    await page.locator("#cubes-select").selectOption("ossie:SALES");
+    await expect(page.locator(".ossie-tree").getByText("region")).toBeVisible();
+
+    await dropOssieField(page, "customers", "region", '[aria-label="Rows shelf"]');
+    await dropOssieMetric(page, "revenue", '[aria-label="Values shelf"]');
+    await page.locator(".ossie-canvas").getByRole("button", { name: /^Run/ }).click();
+    await expect(page.locator(".ossie-result th").filter({ hasText: "customers.region" })).toBeVisible();
+
+    // First click: sorts ASC — assert the ArrowUp icon appears next to the header text.
+    const regionHeaderBtn = page
+      .locator(".ossie-result th")
+      .filter({ hasText: "customers.region" })
+      .locator(".ossie-result__sort-btn");
+    await regionHeaderBtn.click();
+    await expect(regionHeaderBtn.locator("svg")).toBeVisible();
+    // Second click: DESC (icon still present).
+    await regionHeaderBtn.click();
+    await expect(regionHeaderBtn.locator("svg")).toBeVisible();
+    // Third click: clears the sort — no arrow icon on the button anymore.
+    await regionHeaderBtn.click();
+    await expect(regionHeaderBtn.locator("svg")).toHaveCount(0);
+  });
+
+  test("LIMIT input caps the shelf state and Swap Axes flips rows ↔ columns", async ({ page }) => {
+    await page.locator("#cubes-select").selectOption("ossie:SALES");
+    await expect(page.locator(".ossie-tree").getByText("region")).toBeVisible();
+    await dropOssieField(page, "customers", "region", '[aria-label="Rows shelf"]');
+    await dropOssieMetric(page, "revenue", '[aria-label="Values shelf"]');
+
+    // LIMIT input writes to the shelf state on change.
+    const limitInput = page.locator(".ossie-canvas__limit-input");
+    await limitInput.fill("25");
+    await limitInput.dispatchEvent("change");
+    await page.locator(".ossie-canvas").getByRole("button", { name: /^Run/ }).click();
+    // Server received a payload with limit=25.
+    const posted = backend.getLastExecuteBody() as { ossieQueryModel?: { limit?: number } } | null;
+    expect(posted?.ossieQueryModel?.limit).toBe(25);
+
+    // Swap Axes moves the region chip from Rows → Columns.
+    await page.locator(".ossie-canvas").getByRole("button", { name: /^Swap/ }).click();
+    await expect(
+      page.locator('[aria-label="Columns shelf"] .ossie-chip').filter({ hasText: "customers.region" }),
+    ).toBeVisible();
+    await expect(page.locator('[aria-label="Rows shelf"] .ossie-chip').filter({ hasText: "customers.region" })).toHaveCount(0);
+  });
+
   test("Rows × Columns × Values renders a crosstab", async ({ page }) => {
     // Override the execute fixture: return a 2×2×1 shelf state's flat rowset so the
     // client-side pivot has something to reshape. Registered before selection so the

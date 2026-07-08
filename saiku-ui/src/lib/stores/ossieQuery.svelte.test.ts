@@ -326,6 +326,74 @@ describe("save / load", () => {
   });
 });
 
+describe("sort / limit / swap axes (P1)", () => {
+  beforeEach(async () => {
+    mockFetch(async () => new Response(JSON.stringify(fakeModel), { status: 200 }));
+    await ossieQuery.loadModel("admin", "SALES", "SALES");
+  });
+
+  test("cycleSort not-sorted → ASC → DESC → cleared", () => {
+    const target = { dataset: "customers", field: "region", direction: "ASC" as const };
+    ossieQuery.cycleSort(target);
+    expect(ossieQuery.current?.sorts).toEqual([{ dataset: "customers", field: "region", direction: "ASC" }]);
+    ossieQuery.cycleSort(target);
+    expect(ossieQuery.current?.sorts).toEqual([{ dataset: "customers", field: "region", direction: "DESC" }]);
+    ossieQuery.cycleSort(target);
+    expect(ossieQuery.current?.sorts).toEqual([]);
+  });
+
+  test("cycleSort replaces prior single-column sort by default", () => {
+    ossieQuery.cycleSort({ dataset: "customers", field: "region", direction: "ASC" });
+    ossieQuery.cycleSort({ metric: "revenue", direction: "ASC" });
+    // Non-additive → the region sort was replaced by the metric sort.
+    expect(ossieQuery.current?.sorts).toEqual([{ metric: "revenue", direction: "ASC" }]);
+  });
+
+  test("cycleSort additive appends when the target is new", () => {
+    ossieQuery.cycleSort({ dataset: "customers", field: "region", direction: "ASC" });
+    ossieQuery.cycleSort({ metric: "revenue", direction: "ASC" }, true);
+    expect(ossieQuery.current?.sorts).toEqual([
+      { dataset: "customers", field: "region", direction: "ASC" },
+      { metric: "revenue", direction: "ASC" },
+    ]);
+  });
+
+  test("cycleSort additive flips just the matching entry", () => {
+    ossieQuery.cycleSort({ dataset: "customers", field: "region", direction: "ASC" });
+    ossieQuery.cycleSort({ metric: "revenue", direction: "ASC" }, true);
+    // Second click on region flips it to DESC, revenue stays ASC.
+    ossieQuery.cycleSort({ dataset: "customers", field: "region", direction: "ASC" }, true);
+    expect(ossieQuery.current?.sorts).toEqual([
+      { dataset: "customers", field: "region", direction: "DESC" },
+      { metric: "revenue", direction: "ASC" },
+    ]);
+  });
+
+  test("setLimit stores positive values, clears on null / 0 / negative", () => {
+    ossieQuery.setLimit(50);
+    expect(ossieQuery.current?.limit).toBe(50);
+    ossieQuery.setLimit(null);
+    expect(ossieQuery.current?.limit).toBeUndefined();
+    ossieQuery.setLimit(100);
+    expect(ossieQuery.current?.limit).toBe(100);
+    ossieQuery.setLimit(0);
+    expect(ossieQuery.current?.limit).toBeUndefined();
+    ossieQuery.setLimit(200);
+    ossieQuery.setLimit(-1);
+    expect(ossieQuery.current?.limit).toBeUndefined();
+  });
+
+  test("swapAxes swaps rows and columns arrays", () => {
+    ossieQuery.addRow({ dataset: "customers", field: "region" });
+    ossieQuery.addColumn({ dataset: "customers", field: "signup_date" });
+    expect(ossieQuery.current?.rows).toEqual([{ dataset: "customers", field: "region" }]);
+    expect(ossieQuery.current?.columns).toEqual([{ dataset: "customers", field: "signup_date" }]);
+    ossieQuery.swapAxes();
+    expect(ossieQuery.current?.rows).toEqual([{ dataset: "customers", field: "signup_date" }]);
+    expect(ossieQuery.current?.columns).toEqual([{ dataset: "customers", field: "region" }]);
+  });
+});
+
 describe("run", () => {
   beforeEach(async () => {
     mockFetch(async () => new Response(JSON.stringify(fakeModel), { status: 200 }));

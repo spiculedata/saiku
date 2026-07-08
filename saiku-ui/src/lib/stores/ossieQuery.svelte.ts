@@ -223,6 +223,63 @@ class OssieQueryStore {
   }
 
   /**
+   * Cycle the sort direction for a target column. Called by the result grid's header-click
+   * handler. States (per column):
+   *   - not sorted → ASC
+   *   - ASC       → DESC
+   *   - DESC      → not sorted (removed from the sorts list)
+   *
+   * Single-column sort semantics: setting a new sort replaces any existing sort. Callers
+   * that want additive multi-column sort can pass `additive: true` (matches the Shift-click
+   * pattern the MDX side uses).
+   */
+  cycleSort(target: OssieSortRef, additive = false): void {
+    if (!this.current) return;
+    const matches = (a: OssieSortRef, b: OssieSortRef): boolean =>
+      a.metric === b.metric && a.dataset === b.dataset && a.field === b.field;
+    const existing = this.current.sorts.find((s) => matches(s, target));
+    let sorts: OssieSortRef[];
+    if (!existing) {
+      const seed: OssieSortRef = { ...target, direction: "ASC" };
+      sorts = additive ? [...this.current.sorts, seed] : [seed];
+    } else if (existing.direction === "ASC") {
+      const flipped: OssieSortRef = { ...existing, direction: "DESC" };
+      sorts = additive
+        ? this.current.sorts.map((s) => (matches(s, target) ? flipped : s))
+        : [flipped];
+    } else {
+      // Third click removes the sort entirely.
+      sorts = additive ? this.current.sorts.filter((s) => !matches(s, target)) : [];
+    }
+    this.current = { ...this.current, sorts };
+  }
+
+  /** Set the LIMIT clause on the emitted SQL. Pass null / 0 / negative to remove it. */
+  setLimit(limit: number | null | undefined): void {
+    if (!this.current) return;
+    const next: OssieQueryModel = { ...this.current };
+    if (limit == null || limit <= 0) {
+      delete next.limit;
+    } else {
+      next.limit = limit;
+    }
+    this.current = next;
+  }
+
+  /**
+   * Swap the Rows and Columns shelves. Mirrors the MDX workbench's "Swap axes" button.
+   * When the grid renders a crosstab, this flips it 90°.
+   */
+  swapAxes(): void {
+    if (!this.current) return;
+    this.current = {
+      ...this.current,
+      rows: this.current.columns,
+      columns: this.current.rows,
+    };
+  }
+
+  /**
    * Execute the current shelf state and store the result. No-op when the shape isn't
    * runnable — the caller (canvas) should key its Run button off `hasRunnableShape` to
    * avoid awkward toasts.

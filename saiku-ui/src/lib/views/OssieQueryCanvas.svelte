@@ -4,7 +4,7 @@
   import { session } from "$lib/stores/session.svelte";
   import { Button } from "$lib/components/ui";
   import { toasts } from "$lib/stores/toasts.svelte";
-  import { FolderOpen, Play, Save, X } from "lucide-svelte";
+  import { ArrowLeftRight, ArrowDown, ArrowUp, FolderOpen, Play, Save, X } from "lucide-svelte";
   import type { OssieFieldRef, OssieFilterExpr, OssieMetricRef } from "$lib/api/ossie";
   import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
   import OssieLoadModal from "$lib/modals/OssieLoadModal.svelte";
@@ -228,6 +228,78 @@
   const runnable = $derived(ossieQuery.hasRunnableShape());
 
   /**
+   * Header-click sort dispatcher. Maps an on-screen header column back to its shelf entry
+   * so the store can cycle its sort direction.
+   *
+   * - Row-shelf header → sort by { dataset, field } (matches OssieShelfSqlTranslator's
+   *   field expression on the same fully-qualified column).
+   * - Column-shelf value header (top row in a crosstab) → currently ignored; sorting a
+   *   pivoted column-value would require a per-metric sort which we skip in P1.
+   * - Metric header → sort by metric name.
+   */
+  function onSortHeaderClick(target: import("$lib/api/ossie").OssieSortRef, e: MouseEvent) {
+    ossieQuery.cycleSort(target, e.shiftKey);
+    // Fire a re-run so the user sees the sort take effect immediately.
+    void ossieQuery.run();
+  }
+
+  /**
+   * Look up an active sort entry by matching (dataset, field) or metric — used to render
+   * the up/down arrow indicator on column headers.
+   */
+  function activeSortDirection(
+    target: import("$lib/api/ossie").OssieSortRef,
+  ): "ASC" | "DESC" | null {
+    const sort = ossieQuery.current?.sorts.find(
+      (s) => s.metric === target.metric && s.dataset === target.dataset && s.field === target.field,
+    );
+    return sort?.direction ?? null;
+  }
+
+  // ------------------------------------------------------------------
+  // Toolbar affordances (P1): LIMIT + Swap Axes
+  // ------------------------------------------------------------------
+
+  /** LIMIT input value. Bound directly to a number input; `null` when the field is blank. */
+  let limitInput = $state<number | null>(null);
+
+  // Two-way sync between the store's shelf state and the input: reflect any external change
+  // (Load, Undo/Redo) into the input, and vice-versa. Using an $effect for the store→input
+  // direction; a direct on:change handler for the input→store direction.
+  $effect(() => {
+    limitInput = ossieQuery.current?.limit ?? null;
+  });
+
+  function commitLimit() {
+    ossieQuery.setLimit(limitInput);
+  }
+
+  function onSwapAxes() {
+    ossieQuery.swapAxes();
+    if (ossieQuery.result) void ossieQuery.run();
+  }
+
+  /**
+   * Map a header index in the long-form result grid back to its sort target. The
+   * column order matches OssieShelfSqlTranslator's SELECT list: `rows` first, then
+   * `columns`, then `values`. Long-form only renders when `columns` is empty, so the
+   * split is just `rows.length` metric columns follow the row-shelf ones.
+   */
+  function longFormSortTarget(columnIndex: number): import("$lib/api/ossie").OssieSortRef | null {
+    const q = ossieQuery.current;
+    if (!q) return null;
+    const rowCount = q.rows.length;
+    if (columnIndex < rowCount) {
+      const ref = q.rows[columnIndex];
+      return { dataset: ref.dataset, field: ref.field, direction: "ASC" };
+    }
+    const valueIndex = columnIndex - rowCount;
+    const metric = q.values[valueIndex];
+    if (!metric) return null;
+    return { metric: metric.metric, direction: "ASC" };
+  }
+
+  /**
    * Pivoted view of the current result — non-null only when the user has entries on the
    * Columns shelf. The renderer picks between the crosstab grid and the flat table by
    * looking at this value.
@@ -261,6 +333,27 @@
       <FolderOpen size={14} />
       Load
     </Button>
+    <Button
+      variant="outline"
+      onclick={onSwapAxes}
+      disabled={!ossieQuery.current || (ossieQuery.current.rows.length === 0 && ossieQuery.current.columns.length === 0)}
+      title="Swap Rows and Columns"
+    >
+      <ArrowLeftRight size={14} />
+      Swap
+    </Button>
+    <label class="ossie-canvas__limit" title="Cap the emitted SQL with LIMIT N (blank = no limit)">
+      <span class="ossie-canvas__limit-label">LIMIT</span>
+      <input
+        type="number"
+        min="1"
+        step="1"
+        class="ossie-canvas__limit-input"
+        placeholder="—"
+        bind:value={limitInput}
+        onchange={commitLimit}
+      />
+    </label>
     {#if ossieQuery.savedName}
       <span class="ossie-canvas__saved-name">{ossieQuery.savedName}</span>
     {/if}
@@ -453,12 +546,31 @@
       {/if}
     {:else if ossieQuery.result}
       <!-- Long-form fallback: no Columns shelf entries → one column per shelf field
-           straight from the server, no pivot. -->
+           straight from the server, no pivot. Header cells are clickable to cycle the
+           sort direction on that shelf entry / metric. -->
       <table class="ossie-result">
         <thead>
           <tr>
-            {#each ossieQuery.result.cellSetHeaders?.[0] ?? [] as h}
-              <th>{h.formattedValue ?? h.rawValue ?? ""}</th>
+            {#each ossieQuery.result.cellSetHeaders?.[0] ?? [] as h, i}
+              {@const headerTarget = longFormSortTarget(i)}
+              <th>
+                {#if headerTarget}
+                  {@const dir = activeSortDirection(headerTarget)}
+                  <button
+                    type="button"
+                    class="ossie-result__sort-btn"
+                    class:ossie-result__sort-btn--active={dir !== null}
+                    onclick={(e) => onSortHeaderClick(headerTarget, e)}
+                    title="Click to sort (Shift-click to add a secondary sort)"
+                  >
+                    <span>{h.formattedValue ?? h.rawValue ?? ""}</span>
+                    {#if dir === "ASC"}<ArrowUp size={12} />{/if}
+                    {#if dir === "DESC"}<ArrowDown size={12} />{/if}
+                  </button>
+                {:else}
+                  {h.formattedValue ?? h.rawValue ?? ""}
+                {/if}
+              </th>
             {/each}
           </tr>
         </thead>
@@ -529,6 +641,56 @@
     color: var(--fg-muted);
     font-size: var(--fs-xs);
     font-family: monospace;
+  }
+  .ossie-canvas__limit {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--bg);
+    height: 40px;
+  }
+  .ossie-canvas__limit-label {
+    font-size: var(--fs-xs);
+    color: var(--fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .ossie-canvas__limit-input {
+    background: transparent;
+    border: none;
+    color: var(--fg);
+    font-size: var(--fs-sm);
+    width: 60px;
+    padding: 0;
+  }
+  .ossie-canvas__limit-input:focus {
+    outline: none;
+  }
+  .ossie-canvas__limit-input::-webkit-inner-spin-button,
+  .ossie-canvas__limit-input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .ossie-result__sort-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: transparent;
+    border: none;
+    color: inherit;
+    font: inherit;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+  }
+  .ossie-result__sort-btn:hover {
+    color: var(--fg);
+  }
+  .ossie-result__sort-btn--active {
+    color: var(--accent);
   }
   .ossie-chip__and {
     color: var(--fg-subtle);
