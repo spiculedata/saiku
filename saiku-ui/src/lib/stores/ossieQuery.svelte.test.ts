@@ -425,6 +425,37 @@ describe("addFilter via context-menu action shapes (P4)", () => {
   });
 });
 
+describe("removeRow / removeColumn / removeValue (P4 follow-up)", () => {
+  beforeEach(async () => {
+    mockFetch(async () => new Response(JSON.stringify(fakeModel), { status: 200 }));
+    await ossieQuery.loadModel("admin", "SALES", "SALES");
+  });
+
+  test("removeRow captures for undo so Cmd-Z restores the removed chip", () => {
+    ossieQuery.addRow({ dataset: "customers", field: "region" });
+    ossieQuery.addRow({ dataset: "customers", field: "signup_date" });
+    expect(ossieQuery.current?.rows.length).toBe(2);
+    ossieQuery.removeRow(0);
+    expect(ossieQuery.current?.rows).toEqual([{ dataset: "customers", field: "signup_date" }]);
+    ossieQuery.undo();
+    expect(ossieQuery.current?.rows.length).toBe(2);
+  });
+
+  test("removeColumn / removeValue capture for undo the same way", () => {
+    ossieQuery.addColumn({ dataset: "customers", field: "region" });
+    ossieQuery.removeColumn(0);
+    expect(ossieQuery.current?.columns).toEqual([]);
+    ossieQuery.undo();
+    expect(ossieQuery.current?.columns).toEqual([{ dataset: "customers", field: "region" }]);
+
+    ossieQuery.addValue({ metric: "revenue" });
+    ossieQuery.removeValue(0);
+    expect(ossieQuery.current?.values).toEqual([]);
+    ossieQuery.undo();
+    expect(ossieQuery.current?.values).toEqual([{ metric: "revenue" }]);
+  });
+});
+
 describe("undo / redo (P3)", () => {
   beforeEach(async () => {
     mockFetch(async () => new Response(JSON.stringify(fakeModel), { status: 200 }));

@@ -57,20 +57,52 @@
     return shelf === "values";
   }
 
-  function onDragOver(e: DragEvent, shelf: Shelf) {
-    if (!e.dataTransfer) return;
-    const types = e.dataTransfer.types;
+  /**
+   * Which shelf the pointer is currently over during a drag. Drives the .is-dragover
+   * highlight styling, mirroring the MDX QueryCanvas' `dragOverAxis` state.
+   * Null when no drag is in progress or when the pointer is over a non-accepting shelf.
+   */
+  let dragOverShelf = $state<Shelf | null>(null);
+
+  function acceptsFor(shelf: Shelf, types: readonly string[]): boolean {
     const fieldOk = acceptsField(shelf) && types.includes(FIELD_MIME);
     const metricOk = acceptsMetric(shelf) && types.includes(METRIC_MIME);
-    if (fieldOk || metricOk) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "copy";
-    }
+    return fieldOk || metricOk;
+  }
+
+  function onDragOver(e: DragEvent, shelf: Shelf) {
+    if (!e.dataTransfer) return;
+    if (!acceptsFor(shelf, e.dataTransfer.types)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }
+
+  /**
+   * Enter/leave the shelf's hover state. Copies the MDX pattern:
+   *   - enter → mark this shelf as the dragOverShelf
+   *   - leave → only clear if the pointer is truly leaving the shelf's bounding box
+   *     (dragging over a child chip fires a leave then an enter on the parent, which
+   *     would otherwise flicker the highlight off then back on).
+   */
+  function onDragEnter(e: DragEvent, shelf: Shelf) {
+    if (!e.dataTransfer) return;
+    if (!acceptsFor(shelf, e.dataTransfer.types)) return;
+    dragOverShelf = shelf;
+  }
+
+  function onDragLeave(e: DragEvent, shelf: Shelf) {
+    const target = e.currentTarget as HTMLElement | null;
+    const related = e.relatedTarget as Node | null;
+    // If the pointer moved to a descendant of the shelf, don't clear — that's a chip
+    // reorder crossing, not a shelf exit.
+    if (target && related && target.contains(related)) return;
+    if (dragOverShelf === shelf) dragOverShelf = null;
   }
 
   function onDrop(e: DragEvent, shelf: Shelf) {
     if (!e.dataTransfer) return;
     e.preventDefault();
+    dragOverShelf = null;
     if (acceptsField(shelf)) {
       const raw = e.dataTransfer.getData(FIELD_MIME);
       if (raw) {
@@ -422,6 +454,26 @@
 
   function ctxFilterTo() {
     if (!ctxMenu.field || ctxMenu.value === undefined) return;
+    // If an IN filter already exists for the same (dataset, field), extend it with the
+    // clicked value instead of stacking a second EQ. Users generally want "keep A, B,
+    // and now C" not "= A AND = C" (which would return zero rows).
+    const q = ossieQuery.current;
+    const existing = q?.filters.findIndex(
+      (f) => f.dataset === ctxMenu.dataset && f.field === ctxMenu.field && f.op === "IN",
+    );
+    if (q && existing !== undefined && existing >= 0) {
+      const target = q.filters[existing];
+      if (!target.values.includes(ctxMenu.value)) {
+        const filters = q.filters.map((f, i) =>
+          i === existing ? { ...f, values: [...f.values, ctxMenu.value!] } : f,
+        );
+        ossieQuery.captureForUndo();
+        ossieQuery.current = { ...q, filters };
+        closeCtxMenu();
+        if (ossieQuery.result) void ossieQuery.run();
+        return;
+      }
+    }
     ossieQuery.addFilter({
       dataset: ctxMenu.dataset,
       field: ctxMenu.field,
@@ -429,6 +481,47 @@
       value: ctxMenu.value,
       values: [],
     });
+    closeCtxMenu();
+    if (ossieQuery.result) void ossieQuery.run();
+  }
+
+  /**
+   * Shift-click on a "Filter to <value>" entry adds the value to an IN list on the same
+   * column instead of the default EQ. If no filter exists yet, this creates a fresh IN
+   * filter seeded with the clicked value.
+   */
+  function ctxAddToIn() {
+    if (!ctxMenu.field || ctxMenu.value === undefined) return;
+    const q = ossieQuery.current;
+    if (!q) return;
+    ossieQuery.captureForUndo();
+    const existing = q.filters.findIndex(
+      (f) => f.dataset === ctxMenu.dataset && f.field === ctxMenu.field && f.op === "IN",
+    );
+    if (existing >= 0) {
+      const target = q.filters[existing];
+      if (target.values.includes(ctxMenu.value)) {
+        closeCtxMenu();
+        return;
+      }
+      const filters = q.filters.map((f, i) =>
+        i === existing ? { ...f, values: [...f.values, ctxMenu.value!] } : f,
+      );
+      ossieQuery.current = { ...q, filters };
+    } else {
+      ossieQuery.current = {
+        ...q,
+        filters: [
+          ...q.filters,
+          {
+            dataset: ctxMenu.dataset,
+            field: ctxMenu.field,
+            op: "IN",
+            values: [ctxMenu.value],
+          },
+        ],
+      };
+    }
     closeCtxMenu();
     if (ossieQuery.result) void ossieQuery.run();
   }
@@ -498,6 +591,103 @@
     } else if (shelf.kind === "metric" && shelf.metric) {
       openMetricMenu(e, shelf.metric, cellValue);
     }
+  }
+
+  /**
+   * Right-click on a crosstab row-header cell. `rowShelfIndex` is the ordinal within
+   * the Rows shelf; `cellValue` is the actual dimension value at this row.
+   */
+  function onPivotRowHeaderContext(e: MouseEvent, rowShelfIndex: number, cellValue: string) {
+    const q = ossieQuery.current;
+    if (!q) return;
+    const ref = q.rows[rowShelfIndex];
+    if (!ref) return;
+    openDimensionMenu(e, ref.dataset, ref.field, cellValue);
+  }
+
+  /**
+   * Right-click on a crosstab body cell. Metrics rotate across columns per column-key
+   * group — index within the row (minus the row-header columns) modulo the number of
+   * metrics tells us which one. When there's only one metric it's trivial; when there
+   * are several the menu is scoped to the one the user actually clicked on.
+   */
+  /**
+   * Right-click on a table column header (long-form). Opens a menu targeted at the
+   * SHELF ENTRY the header represents, not the cell value under it. Actions:
+   *   - Sort ASC / DESC
+   *   - Remove from shelf
+   */
+  function onLongFormHeaderContext(e: MouseEvent, columnIndex: number) {
+    e.preventDefault();
+    const shelf = longFormShelfAt(columnIndex);
+    if (!shelf) return;
+    if (shelf.kind === "dimension" && shelf.dataset && shelf.field) {
+      ctxMenu = {
+        open: true,
+        x: e.clientX,
+        y: e.clientY,
+        kind: "dimension",
+        dataset: shelf.dataset,
+        field: shelf.field,
+        value: undefined,
+      };
+    } else if (shelf.kind === "metric" && shelf.metric) {
+      ctxMenu = {
+        open: true,
+        x: e.clientX,
+        y: e.clientY,
+        kind: "metric",
+        metric: shelf.metric,
+        value: undefined,
+      };
+    }
+  }
+
+  /**
+   * Remove the currently-context-menued shelf entry. Which shelf we look in depends on
+   * the menu's kind: dimension entries live on Rows or Columns; metric entries live on
+   * Values.
+   */
+  function ctxRemoveFromShelf() {
+    const q = ossieQuery.current;
+    if (!q) {
+      closeCtxMenu();
+      return;
+    }
+    if (ctxMenu.kind === "metric" && ctxMenu.metric) {
+      const idx = q.values.findIndex((v) => v.metric === ctxMenu.metric);
+      if (idx >= 0) ossieQuery.removeValue(idx);
+    } else if (ctxMenu.field) {
+      const rowIdx = q.rows.findIndex(
+        (r) => r.dataset === ctxMenu.dataset && r.field === ctxMenu.field,
+      );
+      if (rowIdx >= 0) {
+        ossieQuery.removeRow(rowIdx);
+      } else {
+        const colIdx = q.columns.findIndex(
+          (r) => r.dataset === ctxMenu.dataset && r.field === ctxMenu.field,
+        );
+        if (colIdx >= 0) ossieQuery.removeColumn(colIdx);
+      }
+    }
+    closeCtxMenu();
+    if (ossieQuery.result) void ossieQuery.run();
+  }
+
+  function onPivotBodyContext(
+    e: MouseEvent,
+    colIndexInRow: number,
+    rowHeaderCount: number,
+    metricCount: number,
+    cellValue: string,
+  ) {
+    const q = ossieQuery.current;
+    if (!q || metricCount === 0) return;
+    const withinMetrics = colIndexInRow - rowHeaderCount;
+    if (withinMetrics < 0) return;
+    const metric = q.values[withinMetrics % metricCount];
+    if (!metric) return;
+    openMetricMenu(e, metric.metric, cellValue);
   }
 
   $effect(() => {
@@ -786,7 +976,10 @@
   <div class="ossie-canvas__shelves">
     <div
       class="ossie-shelf"
+      class:ossie-shelf--dragover={dragOverShelf === "rows"}
       ondragover={(e) => onDragOver(e, "rows")}
+      ondragenter={(e) => onDragEnter(e, "rows")}
+      ondragleave={(e) => onDragLeave(e, "rows")}
       ondrop={(e) => onDrop(e, "rows")}
       role="group"
       aria-label="Rows shelf"
@@ -807,7 +1000,10 @@
 
     <div
       class="ossie-shelf"
+      class:ossie-shelf--dragover={dragOverShelf === "columns"}
       ondragover={(e) => onDragOver(e, "columns")}
+      ondragenter={(e) => onDragEnter(e, "columns")}
+      ondragleave={(e) => onDragLeave(e, "columns")}
       ondrop={(e) => onDrop(e, "columns")}
       role="group"
       aria-label="Columns shelf"
@@ -828,7 +1024,10 @@
 
     <div
       class="ossie-shelf"
+      class:ossie-shelf--dragover={dragOverShelf === "values"}
       ondragover={(e) => onDragOver(e, "values")}
+      ondragenter={(e) => onDragEnter(e, "values")}
+      ondragleave={(e) => onDragLeave(e, "values")}
       ondrop={(e) => onDrop(e, "values")}
       role="group"
       aria-label="Values shelf"
@@ -849,7 +1048,10 @@
 
     <div
       class="ossie-shelf"
+      class:ossie-shelf--dragover={dragOverShelf === "filters"}
       ondragover={(e) => onDragOver(e, "filters")}
+      ondragenter={(e) => onDragEnter(e, "filters")}
+      ondragleave={(e) => onDragLeave(e, "filters")}
       ondrop={(e) => onDrop(e, "filters")}
       role="group"
       aria-label="Filters shelf"
@@ -963,9 +1165,16 @@
             <tr>
               {#each row as c, i}
                 {#if c.isHeader && i < pivot.rowHeaderCount}
-                  <th class="ossie-result__row-header">{c.formatted}</th>
+                  <th
+                    class="ossie-result__row-header"
+                    oncontextmenu={(e) => onPivotRowHeaderContext(e, i, c.formatted)}
+                  >{c.formatted}</th>
                 {:else}
-                  <td class:ossie-result__num={c.isNumeric}>{c.formatted}</td>
+                  <td
+                    class:ossie-result__num={c.isNumeric}
+                    oncontextmenu={(e) =>
+                      onPivotBodyContext(e, i, pivot.rowHeaderCount, pivot.metricCount, c.formatted)}
+                  >{c.formatted}</td>
                 {/if}
               {/each}
             </tr>
@@ -984,7 +1193,7 @@
           <tr>
             {#each ossieQuery.result.cellSetHeaders?.[0] ?? [] as h, i}
               {@const headerTarget = longFormSortTarget(i)}
-              <th>
+              <th oncontextmenu={(e) => onLongFormHeaderContext(e, i)}>
                 {#if headerTarget}
                   {@const dir = activeSortDirection(headerTarget)}
                   <button
@@ -992,7 +1201,7 @@
                     class="ossie-result__sort-btn"
                     class:ossie-result__sort-btn--active={dir !== null}
                     onclick={(e) => onSortHeaderClick(headerTarget, e)}
-                    title="Click to sort (Shift-click to add a secondary sort)"
+                    title="Click to sort (Shift-click adds a secondary sort). Right-click for more."
                   >
                     <span>{h.formattedValue ?? h.rawValue ?? ""}</span>
                     {#if dir === "ASC"}<ArrowUp size={12} />{/if}
@@ -1057,16 +1266,34 @@
     role="menu"
     aria-label="Cell actions"
   >
-    <div class="ossie-ctx-menu__header" title={ctxMenu.value}>{ctxMenu.value}</div>
+    <div class="ossie-ctx-menu__header" title={ctxMenu.value ?? ""}>
+      {#if ctxMenu.value !== undefined}
+        {ctxMenu.value}
+      {:else if ctxMenu.kind === "metric"}
+        Σ {ctxMenu.metric}
+      {:else}
+        {ctxMenu.dataset ?? ""}.{ctxMenu.field ?? ""}
+      {/if}
+    </div>
     <div class="ossie-ctx-menu__sep"></div>
     {#if ctxMenu.kind === "dimension"}
-      <button type="button" class="ossie-ctx-menu__item" onclick={ctxFilterTo}>
-        <span>Filter to <em>{ctxMenu.value}</em></span>
-      </button>
-      <button type="button" class="ossie-ctx-menu__item" onclick={ctxExcludeValue}>
-        <span>Exclude <em>{ctxMenu.value}</em></span>
-      </button>
-      <div class="ossie-ctx-menu__sep"></div>
+      {#if ctxMenu.value !== undefined}
+        <button type="button" class="ossie-ctx-menu__item" onclick={ctxFilterTo}>
+          <span>Filter to <em>{ctxMenu.value}</em></span>
+        </button>
+        <button
+          type="button"
+          class="ossie-ctx-menu__item"
+          onclick={ctxAddToIn}
+          title="Add to an existing IN filter (or create one) on this column"
+        >
+          <span>Add <em>{ctxMenu.value}</em> to allowed values</span>
+        </button>
+        <button type="button" class="ossie-ctx-menu__item" onclick={ctxExcludeValue}>
+          <span>Exclude <em>{ctxMenu.value}</em></span>
+        </button>
+        <div class="ossie-ctx-menu__sep"></div>
+      {/if}
       <button type="button" class="ossie-ctx-menu__item" onclick={() => ctxSort("ASC")}>
         <ArrowUp size={14} /> <span>Sort ascending</span>
       </button>
@@ -1082,9 +1309,17 @@
       </button>
     {/if}
     <div class="ossie-ctx-menu__sep"></div>
-    <button type="button" class="ossie-ctx-menu__item" onclick={ctxCopyValue}>
-      <span>Copy value</span>
-    </button>
+    {#if ctxMenu.value !== undefined}
+      <button type="button" class="ossie-ctx-menu__item" onclick={ctxCopyValue}>
+        <span>Copy value</span>
+      </button>
+    {:else}
+      <!-- No value means the menu was opened from a column header, not a cell. Show the
+           shelf-entry actions instead. -->
+      <button type="button" class="ossie-ctx-menu__item" onclick={ctxRemoveFromShelf}>
+        <span>Remove from shelf</span>
+      </button>
+    {/if}
   </div>
 {/if}
 
@@ -1373,6 +1608,18 @@
     background: var(--bg-subtle, var(--bg-hover));
     border: 1px dashed var(--border-strong);
     border-radius: 4px;
+    transition:
+      background var(--duration-fast),
+      border-color var(--duration-fast),
+      box-shadow var(--duration-fast);
+  }
+  /* Mirrors the MDX .dropzone.is-dragover — solid accent border, tinted background,
+     and a 2px accent shadow ring so hovered shelves stand out at a glance. */
+  .ossie-shelf--dragover {
+    border-style: solid;
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-subtle, var(--bg-hover)));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
   }
   .ossie-shelf__label {
     font-size: var(--fs-xs);

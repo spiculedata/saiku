@@ -270,6 +270,33 @@ test.describe("Ossie workbench (mocked backend)", () => {
     expect(posted?.ossieQueryModel?.filters?.[0]?.value).toBe("North");
   });
 
+  test("drop-zone highlights while a field is being dragged over it", async ({ page }) => {
+    await page.locator("#cubes-select").selectOption("ossie:SALES");
+    await expect(page.locator(".ossie-tree").getByText("region")).toBeVisible();
+
+    // Fire dragenter on the Rows shelf with a matching MIME type and assert the
+    // dragover modifier class lands (visible cue for the user). Then fire dragleave
+    // and confirm the highlight clears.
+    const shelf = page.locator('[aria-label="Rows shelf"]');
+    await expect(shelf).not.toHaveClass(/ossie-shelf--dragover/);
+    await page.evaluate(() => {
+      const el = document.querySelector('[aria-label="Rows shelf"]');
+      if (!el) throw new Error("shelf missing");
+      const dt = new DataTransfer();
+      dt.setData("application/x-saiku-ossie-field", JSON.stringify({ dataset: "customers", field: "region" }));
+      const opts = { bubbles: true, cancelable: true, dataTransfer: dt } as DragEventInit;
+      el.dispatchEvent(new DragEvent("dragenter", opts));
+      el.dispatchEvent(new DragEvent("dragover", opts));
+    });
+    await expect(shelf).toHaveClass(/ossie-shelf--dragover/);
+    await page.evaluate(() => {
+      const el = document.querySelector('[aria-label="Rows shelf"]');
+      if (!el) return;
+      el.dispatchEvent(new DragEvent("dragleave", { bubbles: true, cancelable: true }));
+    });
+    await expect(shelf).not.toHaveClass(/ossie-shelf--dragover/);
+  });
+
   test("Rows × Columns × Values renders a crosstab", async ({ page }) => {
     // Override the execute fixture: return a 2×2×1 shelf state's flat rowset so the
     // client-side pivot has something to reshape. Registered before selection so the
