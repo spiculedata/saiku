@@ -33,6 +33,17 @@ public class OssieAiQueryResponse {
     private List<Column> columns = new ArrayList<>();
     private List<Map<String, Object>> records = new ArrayList<>();
     private Meta meta = new Meta();
+    /**
+     * Optional anomaly-detection summary (method, threshold, anomalyCount, timeAxis) when the
+     * response was produced by {@code POST /ai/ossie/anomaly}. Null on plain {@code /query}
+     * responses so serialization stays clean.
+     */
+    private Map<String, Object> anomalySummary;
+    /**
+     * Optional forecast block keyed by metric name; each entry carries the projected points +
+     * confidence intervals. Null on non-forecast responses.
+     */
+    private Map<String, Object> forecast;
 
     public String getQueryId() {
         return queryId;
@@ -80,6 +91,23 @@ public class OssieAiQueryResponse {
 
     public void setMeta(Meta v) {
         this.meta = v == null ? new Meta() : v;
+    }
+
+    @com.fasterxml.jackson.annotation.JsonProperty("anomaly")
+    public Map<String, Object> getAnomalySummary() {
+        return anomalySummary;
+    }
+
+    public void setAnomalySummary(Map<String, Object> v) {
+        this.anomalySummary = v;
+    }
+
+    public Map<String, Object> getForecast() {
+        return forecast;
+    }
+
+    public void setForecast(Map<String, Object> v) {
+        this.forecast = v;
     }
 
     /** Column descriptor — the schema of one output column. */

@@ -311,7 +311,11 @@
         <property name="datasourceManager" ref="repositoryDsManager"/>
         <property name="asyncQueryService" ref="ossieAsyncQueryServiceBean"/>
         <property name="kAnonymityFilter" ref="kAnonymityFilter"/>
+        <property name="askService" ref="ossieAiAskServiceBean"/>
     </bean>
+    <!-- R5: Ossie natural-language ask. Reads saiku.ai.ask.provider + API key from env/props;
+         disabled by default (health returns configured=false; /ask returns 503). -->
+    <bean id="ossieAiAskServiceBean" class="org.saiku.service.ossie.ai.OssieAiAskService"/>
 
     <!-- saiku#906: admin-only read API over the audit log
          (GET /saiku/admin/ai-audit). Stateless singleton; @RolesAllowed +
@@ -373,6 +377,9 @@
           class="org.saiku.web.rest.resources.mcp.McpResource">
         <aop:scoped-proxy/>
         <property name="aiQueryResource" ref="aiQueryResource"/>
+        <!-- Ossie AI tools (#1394 R3). Bean is a singleton (unlike aiQueryResource
+             which is request-scoped) — no scoped-proxy needed. -->
+        <property name="aiOssieResource" ref="aiOssieResource"/>
         <property name="sessionStore" ref="mcpSessionStore"/>
     </bean>
 

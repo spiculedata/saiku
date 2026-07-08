@@ -85,6 +85,8 @@ public class AiOssieResource {
      * tests so behaviour is opt-in.
      */
     private KAnonymityFilter kAnonymityFilter;
+    /** R5: natural-language ask layer. Null when the deployment hasn't wired one — /ask returns 503. */
+    private org.saiku.service.ossie.ai.OssieAiAskService askService;
 
     private final OssieAiSchemaProjector projector = new OssieAiSchemaProjector();
     private final OssieAiValidator validator = new OssieAiValidator();
@@ -111,6 +113,10 @@ public class AiOssieResource {
 
     public void setKAnonymityFilter(KAnonymityFilter f) {
         this.kAnonymityFilter = f;
+    }
+
+    public void setAskService(org.saiku.service.ossie.ai.OssieAiAskService s) {
+        this.askService = s;
     }
 
     // -------------------------------------------------------------------
@@ -269,6 +275,255 @@ public class AiOssieResource {
             log.error("Ossie AI query failed", e);
             return error("query failed: " + e.getMessage());
         }
+    }
+
+    // -------------------------------------------------------------------
+    // R5: /ask + /ask/health — natural-language ask layer
+    // -------------------------------------------------------------------
+
+    /**
+     * Signals whether the ask layer is configured. Enabled when {@code askService.isConfigured()}
+     * is true — the ClaudeDesktop-style UIs use this to hide the ask button on servers that
+     * haven't wired an LLM key.
+     */
+    @GET
+    @Path("/ask/health")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response askHealth() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        boolean ok = askService != null && askService.isConfigured();
+        body.put("configured", ok);
+        body.put("provider", askService != null ? askService.describe() : "not wired");
+        return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
+     * Natural-language endpoint. Body: {@code {connection, model, question}}. The LLM produces a
+     * JSON {@link OssieAiQueryRequest}; the resource executes it and returns the records with a
+     * copy of the LLM's structured output so callers can trace what happened.
+     */
+    @POST
+    @Path("/ask")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response ask(Map<String, Object> body) {
+        if (askService == null || !askService.isConfigured()) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity(
+                            Map.of(
+                                    "error",
+                                    "NOT_CONFIGURED",
+                                    "message",
+                                    "The Ossie ask layer is not configured. Set saiku.ai.ask.provider (anthropic|openai) and the matching API key."))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        if (body == null) return badRequest("body", "request body required", List.of());
+        String connection = strOr(body.get("connection"));
+        String modelName = strOr(body.get("model"));
+        String question = strOr(body.get("question"));
+        if (connection == null) return badRequest("connection", "connection is required", List.of());
+        if (question == null) return badRequest("question", "question is required", List.of());
+        try {
+            OssieModelDto semantic = ossieDiscoverService.getModel(connection);
+            if (modelName == null || modelName.isBlank()) modelName = semantic.getName();
+            OssieAiSchema schema = projector.project(connection, semantic, openWarehouseConnection(connection));
+
+            org.saiku.service.ossie.ai.OssieAiAskService.AskResult ar =
+                    askService.ask(question, schema, connection, modelName);
+            if (ar.error() != null) {
+                Map<String, Object> err = new LinkedHashMap<>();
+                err.put("error", "ASK_FAILED");
+                err.put("message", ar.error());
+                if (ar.rawResponse() != null) err.put("rawResponse", ar.rawResponse());
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity(err)
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            }
+            OssieAiQueryRequest req = ar.request();
+            long t0 = System.currentTimeMillis();
+            OssieAiQueryResponse resp = runInternalQuery(req, t0);
+            Map<String, Object> wrapped = new LinkedHashMap<>();
+            wrapped.put("question", question);
+            wrapped.put("connection", connection);
+            wrapped.put("model", modelName);
+            wrapped.put("queryUsed", req);
+            wrapped.put("rawLlmResponse", ar.rawResponse());
+            wrapped.put("response", resp);
+            return Response.ok(wrapped).type(MediaType.APPLICATION_JSON).build();
+        } catch (OssieAiValidationException e) {
+            return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+        } catch (Exception e) {
+            log.error("Ossie AI ask failed", e);
+            return error("ask failed: " + e.getMessage());
+        }
+    }
+
+    private static String strOr(Object v) {
+        if (v == null) return null;
+        String s = v.toString();
+        return s.isBlank() ? null : s;
+    }
+
+    // -------------------------------------------------------------------
+    // R4: /anomaly, /forecast, /row-detail
+    // -------------------------------------------------------------------
+
+    /**
+     * Anomaly detection over an Ossie query. Runs the query, extracts each metric series along
+     * the requested time axis, applies the selected detector, and attaches
+     * {@code anomaly:{score, expected, direction}} to each flagged cell.
+     */
+    @POST
+    @Path("/anomaly")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response detectAnomalies(org.saiku.service.ossie.ai.OssieAiAnomalyRequest body) {
+        long start = System.currentTimeMillis();
+        try {
+            if (body == null) return badRequest("body", "request body required", List.of());
+            if (body.getQuery() == null) {
+                return badRequest("query", "query (OssieAiQueryRequest) is required", List.of());
+            }
+            if (body.getTimeAxis() == null || body.getTimeAxis().isBlank()) {
+                return badRequest("timeAxis", "timeAxis (dataset.field key) is required", List.of());
+            }
+            org.saiku.service.olap.ai.anomaly.AnomalyDetector detector;
+            try {
+                detector = org.saiku.service.olap.ai.anomaly.AnomalyDetectors.forMethod(body.getMethod());
+            } catch (org.saiku.service.olap.ai.AiValidationException e) {
+                return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+            }
+            double threshold = body.getThreshold() != null ? body.getThreshold() : detector.defaultThreshold();
+            if (threshold <= 0 || Double.isNaN(threshold) || Double.isInfinite(threshold)) {
+                return badRequest("threshold", "threshold must be a positive number", List.of());
+            }
+            OssieAiQueryRequest qreq = body.getQuery();
+            OssieAiQueryResponse resp = runInternalQuery(qreq, start);
+            org.saiku.service.ossie.ai.OssieAiAnomalyAugmenter.augment(resp, detector, threshold, body.getTimeAxis());
+            return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
+        } catch (OssieAiValidationException e) {
+            return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+        } catch (Exception e) {
+            log.error("Ossie AI anomaly failed", e);
+            return error("anomaly detection failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Forecast projections over an Ossie query. Runs the query, extracts each metric series
+     * along the requested time axis, and returns projected points + confidence intervals in the
+     * top-level {@code forecast} block.
+     */
+    @POST
+    @Path("/forecast")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response forecast(org.saiku.service.ossie.ai.OssieAiForecastRequest body) {
+        long start = System.currentTimeMillis();
+        try {
+            if (body == null) return badRequest("body", "request body required", List.of());
+            if (body.getQuery() == null) {
+                return badRequest("query", "query (OssieAiQueryRequest) is required", List.of());
+            }
+            if (body.getTimeAxis() == null || body.getTimeAxis().isBlank()) {
+                return badRequest("timeAxis", "timeAxis (dataset.field key) is required", List.of());
+            }
+            org.saiku.service.olap.ai.forecast.Forecaster forecaster;
+            try {
+                forecaster = org.saiku.service.olap.ai.forecast.Forecasters.forMethod(body.getMethod());
+            } catch (org.saiku.service.olap.ai.AiValidationException e) {
+                return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+            }
+            int horizon = body.getHorizon() != null ? body.getHorizon() : 4;
+            if (horizon <= 0 || horizon > 200) {
+                return badRequest("horizon", "horizon must be 1..200", List.of());
+            }
+            double confidence = body.getInterval() != null ? body.getInterval() : 0.95;
+            if (confidence <= 0 || confidence >= 1) {
+                return badRequest("interval", "interval must be in (0,1)", List.of());
+            }
+            OssieAiQueryResponse resp = runInternalQuery(body.getQuery(), start);
+            org.saiku.service.ossie.ai.OssieAiForecastAugmenter.augment(
+                    resp, forecaster, horizon, confidence, body.getTimeAxis());
+            return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
+        } catch (OssieAiValidationException e) {
+            return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+        } catch (Exception e) {
+            log.error("Ossie AI forecast failed", e);
+            return error("forecast failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Row-detail (Ossie's answer to MDX drillthrough). Re-runs the shelf state with the values
+     * shelf emptied so the executor emits a raw rowset instead of an aggregate. LIMIT is
+     * capped at {@code maxrows} (default 100, max 10_000) to keep this endpoint bounded.
+     */
+    @POST
+    @Path("/row-detail")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response rowDetail(OssieAiQueryRequest req, @jakarta.ws.rs.QueryParam("maxrows") Integer maxrows) {
+        try {
+            if (req == null) return badRequest("body", "request body required", List.of());
+            if (req.getConnection() == null) {
+                return badRequest("connection", "connection is required", List.of());
+            }
+            int cap = maxrows == null ? 100 : Math.max(1, Math.min(maxrows, 10_000));
+            // Force the raw-rowset shape: keep the dim fields on rows/columns, strip metrics,
+            // apply the row-detail cap.
+            req.setValues(new ArrayList<>());
+            req.setLimit(cap);
+            OssieModelDto semantic = ossieDiscoverService.getModel(req.getConnection());
+            if (req.getModel() == null || req.getModel().isBlank()) req.setModel(semantic.getName());
+            OssieAiSchema schema = projector.project(req.getConnection(), semantic, null);
+            validator.validate(req, schema);
+
+            OssieQueryModel internal = toInternal(req, semantic);
+            ThinQuery tq = new ThinQuery();
+            tq.setName("ossie-ai-rowdetail-" + UUID.randomUUID().toString().substring(0, 8));
+            tq.setQueryType("OSSIE");
+            internal.setConnection(req.getConnection());
+            internal.setModel(req.getModel());
+            tq.setOssieQueryModel(internal);
+            long t0 = System.currentTimeMillis();
+            CellDataSet cds = ossieQueryService.execute(tq);
+            long runtime = System.currentTimeMillis() - t0;
+            OssieAiQueryResponse resp = toRecordsResponse(tq.getName(), runtime, cds, schema, req);
+            resp.getMeta().setTruncated(resp.getRecords().size() >= cap);
+            return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
+        } catch (OssieAiValidationException e) {
+            return badRequest(e.getField(), e.getMessage(), e.getAvailable());
+        } catch (Exception e) {
+            log.error("Ossie AI row-detail failed", e);
+            return error("row-detail failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Shared internal-query runner used by /anomaly and /forecast — validates, executes, and
+     * produces a records-format response ready for augmentation.
+     */
+    private OssieAiQueryResponse runInternalQuery(OssieAiQueryRequest req, long start) throws Exception {
+        if (req.getConnection() == null) {
+            throw new OssieAiValidationException("query.connection", "connection is required", List.of());
+        }
+        OssieModelDto semantic = ossieDiscoverService.getModel(req.getConnection());
+        if (req.getModel() == null || req.getModel().isBlank()) req.setModel(semantic.getName());
+        OssieAiSchema schema = projector.project(req.getConnection(), semantic, null);
+        validator.validate(req, schema);
+        OssieQueryModel internal = toInternal(req, semantic);
+        ThinQuery tq = new ThinQuery();
+        tq.setName("ossie-ai-" + UUID.randomUUID().toString().substring(0, 8));
+        tq.setQueryType("OSSIE");
+        internal.setConnection(req.getConnection());
+        internal.setModel(req.getModel());
+        tq.setOssieQueryModel(internal);
+        CellDataSet cds = ossieQueryService.execute(tq);
+        long runtime = System.currentTimeMillis() - start;
+        return toRecordsResponse(tq.getName(), runtime, cds, schema, req);
     }
 
     // -------------------------------------------------------------------

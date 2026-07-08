@@ -64,10 +64,15 @@ public class McpResource {
     private static final int RPC_INTERNAL_ERROR = -32603;
 
     private AiQueryResource aiQueryResource;
+    private org.saiku.web.rest.resources.AiOssieResource aiOssieResource;
     private McpSessionStore sessionStore;
 
     public void setAiQueryResource(AiQueryResource r) {
         this.aiQueryResource = r;
+    }
+
+    public void setAiOssieResource(org.saiku.web.rest.resources.AiOssieResource r) {
+        this.aiOssieResource = r;
     }
 
     public void setSessionStore(McpSessionStore s) {
@@ -234,8 +239,64 @@ public class McpResource {
                 // behaviour; per-cell position is the dashboard UI path, saiku#930).
                 return unwrap(aiQueryResource.drillthrough(queryId, maxrows, firstRowset, null, returns));
             }
+                // -------- Ossie tools --------
+            case "list_ossie_models": {
+                requireOssie();
+                // AiOssieResource.listModels returns a List<Map>; wrap for MCP structuredContent.
+                return wrapList("models", unwrap(aiOssieResource.listModels()));
+            }
+            case "describe_ossie_model": {
+                requireOssie();
+                String connection = requiredString(args, "connection");
+                String model = requiredString(args, "model");
+                return unwrap(aiOssieResource.getSchema(connection, model));
+            }
+            case "search_field_values": {
+                requireOssie();
+                String connection = requiredString(args, "connection");
+                String model = optionalString(args, "model");
+                String dataset = requiredString(args, "dataset");
+                String field = requiredString(args, "field");
+                String q = optionalString(args, "q");
+                Integer limit = optionalIntOrNull(args, "limit");
+                return unwrap(aiOssieResource.searchValues(connection, model, dataset, field, q, limit));
+            }
+            case "run_ossie_query": {
+                requireOssie();
+                String format = optionalString(args, "format");
+                org.saiku.service.ossie.ai.OssieAiQueryRequest req = toOssieAiQueryRequest(args);
+                return unwrap(aiOssieResource.executeAi(req, format != null ? format : "records"));
+            }
+            case "preview_ossie_query": {
+                requireOssie();
+                org.saiku.service.ossie.ai.OssieAiQueryRequest req = toOssieAiQueryRequest(args);
+                return unwrap(aiOssieResource.previewAi(req));
+            }
             default:
                 throw new UnknownToolException("Unknown tool: " + name);
+        }
+    }
+
+    /**
+     * Fail loudly when a caller invokes an Ossie tool but the resource isn't wired. Should
+     * never fire in production because {@link #buildToolsList} gates the tool advertisement
+     * on the same field — but a malicious client could send a raw tools/call with a name it
+     * knows exists; treat that as a NOT_FOUND-shaped error rather than an NPE.
+     */
+    private void requireOssie() {
+        if (aiOssieResource == null) {
+            throw new IllegalStateException("Ossie AI resource not wired");
+        }
+    }
+
+    /** Bind a JSON args object to {@link org.saiku.service.ossie.ai.OssieAiQueryRequest}. */
+    private org.saiku.service.ossie.ai.OssieAiQueryRequest toOssieAiQueryRequest(JsonNode args) {
+        ObjectNode copy = args.isObject() ? ((ObjectNode) args).deepCopy() : MAPPER.createObjectNode();
+        copy.remove("format");
+        try {
+            return MAPPER.treeToValue(copy, org.saiku.service.ossie.ai.OssieAiQueryRequest.class);
+        } catch (JsonProcessingException e) {
+            throw new InvalidArgsException("invalid ossie query arguments: " + e.getMessage());
         }
     }
 
@@ -322,6 +383,69 @@ public class McpResource {
             + "\"visualTotals\":{\"type\":\"boolean\"},\"nonEmpty\":{\"type\":\"boolean\"}"
             + "},\"additionalProperties\":true}";
 
+    // ---- Ossie tool schemas (parallel to the MDX ones above) ----
+
+    private static final String LIST_OSSIE_MODELS_SCHEMA =
+            "{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}";
+
+    private static final String DESCRIBE_OSSIE_MODEL_SCHEMA = "{\"type\":\"object\","
+            + "\"required\":[\"connection\",\"model\"],"
+            + "\"properties\":{"
+            + "\"connection\":{\"type\":\"string\","
+            + "\"description\":\"Ossie connection name from list_ossie_models.\"},"
+            + "\"model\":{\"type\":\"string\","
+            + "\"description\":\"Semantic-model name from list_ossie_models.\"}"
+            + "},\"additionalProperties\":false}";
+
+    private static final String SEARCH_FIELD_VALUES_SCHEMA = "{\"type\":\"object\","
+            + "\"required\":[\"connection\",\"dataset\",\"field\"],"
+            + "\"properties\":{"
+            + "\"connection\":{\"type\":\"string\"},"
+            + "\"model\":{\"type\":\"string\","
+            + "\"description\":\"Optional; defaults to the connection's model.\"},"
+            + "\"dataset\":{\"type\":\"string\"},"
+            + "\"field\":{\"type\":\"string\"},"
+            + "\"q\":{\"type\":\"string\","
+            + "\"description\":\"Optional substring filter (case-insensitive). Omit to list first N values.\"},"
+            + "\"limit\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":200,\"default\":20}"
+            + "},\"additionalProperties\":false}";
+
+    private static final String RUN_OSSIE_QUERY_SCHEMA = "{\"type\":\"object\","
+            + "\"required\":[\"connection\"],"
+            + "\"properties\":{"
+            + "\"connection\":{\"type\":\"string\"},"
+            + "\"model\":{\"type\":\"string\"},"
+            + "\"rows\":{\"type\":\"array\","
+            + "\"items\":{\"type\":\"object\","
+            + "\"required\":[\"dataset\",\"field\"],"
+            + "\"properties\":{\"dataset\":{\"type\":\"string\"},\"field\":{\"type\":\"string\"}}}},"
+            + "\"columns\":{\"type\":\"array\","
+            + "\"items\":{\"type\":\"object\","
+            + "\"required\":[\"dataset\",\"field\"],"
+            + "\"properties\":{\"dataset\":{\"type\":\"string\"},\"field\":{\"type\":\"string\"}}}},"
+            + "\"values\":{\"type\":\"array\","
+            + "\"items\":{\"type\":\"object\","
+            + "\"required\":[\"metric\"],"
+            + "\"properties\":{\"metric\":{\"type\":\"string\"},\"aggregation\":{\"type\":\"string\"}}}},"
+            + "\"filters\":{\"type\":\"array\"},"
+            + "\"sorts\":{\"type\":\"array\"},"
+            + "\"limit\":{\"type\":\"integer\"},"
+            + "\"format\":{\"type\":\"string\",\"enum\":[\"records\",\"matrix\"],\"default\":\"records\"}"
+            + "},\"additionalProperties\":false}";
+
+    private static final String PREVIEW_OSSIE_QUERY_SCHEMA = "{\"type\":\"object\","
+            + "\"required\":[\"connection\"],"
+            + "\"properties\":{"
+            + "\"connection\":{\"type\":\"string\"},"
+            + "\"model\":{\"type\":\"string\"},"
+            + "\"rows\":{\"type\":\"array\"},"
+            + "\"columns\":{\"type\":\"array\"},"
+            + "\"values\":{\"type\":\"array\"},"
+            + "\"filters\":{\"type\":\"array\"},"
+            + "\"sorts\":{\"type\":\"array\"},"
+            + "\"limit\":{\"type\":\"integer\"}"
+            + "},\"additionalProperties\":false}";
+
     private static final String DRILLTHROUGH_SCHEMA = "{\"type\":\"object\",\"required\":[\"queryId\"],"
             + "\"properties\":{"
             + "\"queryId\":{\"type\":\"string\","
@@ -381,6 +505,45 @@ public class McpResource {
                         + "Pass the queryId returned by an earlier run_query call. Cells in the response are the "
                         + "same typed envelope as run_query — numeric warehouse columns get a parsed value.",
                 DRILLTHROUGH_SCHEMA));
+        // Ossie tools — only advertise when the resource is wired (deployments that
+        // don't ship any Ossie datasources shouldn't see them in tools/list).
+        if (aiOssieResource != null) {
+            tools.add(tool(
+                    "list_ossie_models",
+                    "List every Ossie semantic model the current user can query. Use this first when the user "
+                            + "asks about semantic-YAML models rather than OLAP cubes. Each entry has the connection "
+                            + "name, model name, description, fact dataset, and dataset/metric counts.",
+                    LIST_OSSIE_MODELS_SCHEMA));
+            tools.add(tool(
+                    "describe_ossie_model",
+                    "Get the complete queryable structure of one Ossie model: datasets with fields (each carrying "
+                            + "sample values, cardinality, and SQL type), metrics with their expressions + supported "
+                            + "aggregation overrides, and relationships. Always call before run_ossie_query so you "
+                            + "know which names resolve. Includes ready-made example bodies (simpleGroupBy, crosstab, "
+                            + "topN) you can copy directly.",
+                    DESCRIBE_OSSIE_MODEL_SCHEMA));
+            tools.add(tool(
+                    "search_field_values",
+                    "Find distinct values of an Ossie field by substring match. Use when describe_ossie_model's "
+                            + "sampleValues covered fewer than the user needs (searching for a specific state, brand, "
+                            + "customer), or when the user says \"filter by Medicare\" and you want to confirm the "
+                            + "exact spelling. Returns up to limit matches.",
+                    SEARCH_FIELD_VALUES_SCHEMA));
+            tools.add(tool(
+                    "run_ossie_query",
+                    "Run an Ossie shelf-state query. Primary tool for semantic-model queries. Build the request "
+                            + "against describe_ossie_model's schema; the server validates every name and returns a "
+                            + "VALIDATION_ERROR with an alternative list if any name is wrong. Records-format is "
+                            + "default; pass format:\"matrix\" for the cellSetHeaders/cellSetBody envelope.",
+                    RUN_OSSIE_QUERY_SCHEMA));
+            tools.add(tool(
+                    "preview_ossie_query",
+                    "Compile a shelf-state query to SQL without executing. Use to show the user what the query "
+                            + "will do, audit a generated query, or estimate cost. Validation runs the same as "
+                            + "run_ossie_query — preview returns the same VALIDATION_ERROR shape if names don't "
+                            + "resolve.",
+                    PREVIEW_OSSIE_QUERY_SCHEMA));
+        }
         ObjectNode result = MAPPER.createObjectNode();
         result.set("tools", tools);
         return result;
