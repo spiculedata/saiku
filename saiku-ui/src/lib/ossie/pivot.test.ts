@@ -246,4 +246,37 @@ describe("pivotResult", () => {
       "Medicare",
     ]);
   });
+
+  test("exposes column-key values so callers can resolve body cells → col-shelf values", () => {
+    const r = makeResult([
+      ["Alfa", "Commercial", 250],
+      ["Alfa", "Medicare", 400],
+      ["Beta", "Commercial", 155],
+    ]);
+    const grid = pivotResult(["product.brand"], ["payer.channel"], ["net_revenue"], r)!;
+    // colKeyValues array — one entry per unique column-key, each an array with one string
+    // per Columns shelf entry (nCol == 1 here).
+    expect(grid.colKeyValues).toEqual([["Commercial"], ["Medicare"]]);
+  });
+
+  test("multi-level columns expose values-per-level in colKeyValues", () => {
+    const r = makeResult([
+      ["Alfa", "Commercial", "2024", 100],
+      ["Alfa", "Commercial", "2025", 200],
+      ["Alfa", "Medicare", "2024", 300],
+    ]);
+    const grid = pivotResult(
+      ["product.brand"],
+      ["payer.channel", "date.year"],
+      ["net_revenue"],
+      r,
+    )!;
+    // Each entry has two levels; sorted by JSON.stringify(key) so the pair sequence is
+    // Commercial-2024, Commercial-2025, Medicare-2024.
+    expect(grid.colKeyValues).toEqual([
+      ["Commercial", "2024"],
+      ["Commercial", "2025"],
+      ["Medicare", "2024"],
+    ]);
+  });
 });

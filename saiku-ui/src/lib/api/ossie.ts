@@ -83,7 +83,16 @@ export interface OssieFieldRef {
 
 export interface OssieMetricRef {
   metric: string;
+  /**
+   * Optional aggregation override. When set, the server-side translator rewrites the
+   * outer aggregation function on the metric's declared expression to this one. Valid
+   * values: SUM | AVG | MIN | MAX | COUNT. Anything else is ignored server-side.
+   */
+  aggregation?: OssieAggregation;
 }
+
+export type OssieAggregation = "SUM" | "AVG" | "MIN" | "MAX" | "COUNT";
+export const OSSIE_AGGREGATIONS: OssieAggregation[] = ["SUM", "AVG", "MIN", "MAX", "COUNT"];
 
 export type OssieFilterOp =
   | "EQ"

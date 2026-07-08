@@ -30,7 +30,7 @@
   import ChartView from "$lib/views/ChartView.svelte";
   import { CHART_TYPES, type ChartType } from "$lib/views/chartTypes";
   import Modal from "$lib/components/Modal.svelte";
-  import { previewOssieSql } from "$lib/api/ossie";
+  import { previewOssieSql, OSSIE_AGGREGATIONS } from "$lib/api/ossie";
   import { downloadCsv, ossieResultToCsv } from "$lib/ossie/exportCsv";
   import { platform } from "$lib/stores/platform.svelte";
   import type { OssieFieldRef, OssieFilterExpr, OssieMetricRef } from "$lib/api/ossie";
@@ -41,6 +41,8 @@
 
   const FIELD_MIME = "application/x-saiku-ossie-field";
   const METRIC_MIME = "application/x-saiku-ossie-metric";
+  /** MIME for chip-to-chip reorder drags. Payload = JSON {shelf, fromIdx}. */
+  const CHIP_MIME = "application/x-saiku-ossie-chip";
 
   /**
    * Which shelf a drop should land on. Filters accept fields; Values accept metrics;
@@ -67,7 +69,8 @@
   function acceptsFor(shelf: Shelf, types: readonly string[]): boolean {
     const fieldOk = acceptsField(shelf) && types.includes(FIELD_MIME);
     const metricOk = acceptsMetric(shelf) && types.includes(METRIC_MIME);
-    return fieldOk || metricOk;
+    const chipOk = types.includes(CHIP_MIME);
+    return fieldOk || metricOk || chipOk;
   }
 
   function onDragOver(e: DragEvent, shelf: Shelf) {
@@ -90,6 +93,35 @@
     dragOverShelf = shelf;
   }
 
+  /**
+   * Start a chip drag. Writes the chip's shelf + index into the dataTransfer so the
+   * drop target can splice it out and re-insert. Uses the CHIP MIME to distinguish
+   * from field/metric drops off the sidebar tree.
+   */
+  function onChipDragStart(e: DragEvent, shelf: Shelf, fromIdx: number) {
+    if (!e.dataTransfer) return;
+    e.dataTransfer.setData(CHIP_MIME, JSON.stringify({ shelf, fromIdx }));
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  /**
+   * Handle a chip drop within a shelf. Silently ignores drops from a different shelf
+   * (only same-shelf reorder is supported in D2 — cross-shelf move is a follow-up).
+   */
+  function tryChipReorder(e: DragEvent, targetShelf: Shelf, insertBefore: number): boolean {
+    if (!e.dataTransfer) return false;
+    const raw = e.dataTransfer.getData(CHIP_MIME);
+    if (!raw) return false;
+    try {
+      const { shelf: sourceShelf, fromIdx } = JSON.parse(raw) as { shelf: Shelf; fromIdx: number };
+      if (sourceShelf !== targetShelf) return false;
+      ossieQuery.reorderShelf(targetShelf, fromIdx, insertBefore);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function onDragLeave(e: DragEvent, shelf: Shelf) {
     const target = e.currentTarget as HTMLElement | null;
     const related = e.relatedTarget as Node | null;
@@ -103,6 +135,10 @@
     if (!e.dataTransfer) return;
     e.preventDefault();
     dragOverShelf = null;
+    // Try chip reorder first — payload lives under a distinct MIME so it doesn't
+    // collide with a sidebar-field drop.
+    const chipCount = ossieQuery.current?.[shelf].length ?? 0;
+    if (tryChipReorder(e, shelf, chipCount)) return;
     if (acceptsField(shelf)) {
       const raw = e.dataTransfer.getData(FIELD_MIME);
       if (raw) {
@@ -434,6 +470,12 @@
     metric?: string;
     /** Cell value the user right-clicked on. Filters reference this. */
     value?: string;
+    /**
+     * For crosstab body cells only: the column-shelf values that this cell belongs to,
+     * one per Columns shelf entry (in the same order as `ossieQuery.current.columns`).
+     * When present, the menu offers a "Filter to <col-value>" item per entry.
+     */
+    colKeyValues?: string[];
   }
 
   let ctxMenu = $state<ContextMenuState>({ open: false, x: 0, y: 0, kind: "dimension" });
@@ -547,6 +589,22 @@
     }
     closeCtxMenu();
     if (ossieQuery.result) void ossieQuery.run();
+  }
+
+  function ctxSetAggregation(agg: import("$lib/api/ossie").OssieAggregation | null) {
+    if (!ctxMenu.metric) return;
+    ossieQuery.setMetricAggregation(ctxMenu.metric, agg);
+    closeCtxMenu();
+    if (ossieQuery.result) void ossieQuery.run();
+  }
+
+  /**
+   * Look up the current aggregation override (if any) for the currently-menued metric.
+   * Returns null when there's no override — the metric will use its declared aggregation.
+   */
+  function currentAggregationFor(metricName: string): import("$lib/api/ossie").OssieAggregation | null {
+    const v = ossieQuery.current?.values.find((m) => m.metric === metricName);
+    return v?.aggregation ?? null;
   }
 
   async function ctxCopyValue() {
@@ -674,20 +732,73 @@
     if (ossieQuery.result) void ossieQuery.run();
   }
 
+  /**
+   * Right-click on a crosstab body cell. Metrics rotate across columns per column-key
+   * group — index within the row (minus the row-header columns) modulo the number of
+   * metrics tells us which one. Also stashes the column-shelf resolution on the menu
+   * state so the popover can offer "Filter to <col-value>" items.
+   */
   function onPivotBodyContext(
     e: MouseEvent,
     colIndexInRow: number,
     rowHeaderCount: number,
     metricCount: number,
+    colKeyValues: string[][],
     cellValue: string,
   ) {
+    e.preventDefault();
     const q = ossieQuery.current;
     if (!q || metricCount === 0) return;
     const withinMetrics = colIndexInRow - rowHeaderCount;
     if (withinMetrics < 0) return;
     const metric = q.values[withinMetrics % metricCount];
     if (!metric) return;
-    openMetricMenu(e, metric.metric, cellValue);
+    const groupIdx = Math.floor(withinMetrics / metricCount);
+    ctxMenu = {
+      open: true,
+      x: e.clientX,
+      y: e.clientY,
+      kind: "metric",
+      metric: metric.metric,
+      value: cellValue,
+      colKeyValues: colKeyValues[groupIdx] ?? [],
+    };
+  }
+
+  /**
+   * Add a Filter-to filter on one of the crosstab's Columns shelf entries. Called by
+   * the "Filter to <col-value>" menu items generated per crosstab body-cell right-click.
+   */
+  function ctxCrosstabFilter(colIdx: number) {
+    const q = ossieQuery.current;
+    if (!q) return;
+    const colRef = q.columns[colIdx];
+    if (!colRef) return;
+    const value = ctxMenu.colKeyValues?.[colIdx];
+    if (value === undefined) return;
+    const existing = q.filters.findIndex(
+      (f) => f.dataset === colRef.dataset && f.field === colRef.field && f.op === "IN",
+    );
+    if (existing >= 0) {
+      const target = q.filters[existing];
+      if (!target.values.includes(value)) {
+        const filters = q.filters.map((f, i) =>
+          i === existing ? { ...f, values: [...f.values, value] } : f,
+        );
+        ossieQuery.captureForUndo();
+        ossieQuery.current = { ...q, filters };
+      }
+    } else {
+      ossieQuery.addFilter({
+        dataset: colRef.dataset,
+        field: colRef.field,
+        op: "EQ",
+        value,
+        values: [],
+      });
+    }
+    closeCtxMenu();
+    if (ossieQuery.result) void ossieQuery.run();
   }
 
   $effect(() => {
@@ -986,7 +1097,23 @@
     >
       <span class="ossie-shelf__label">Rows</span>
       {#each ossieQuery.current?.rows ?? [] as f, i}
-        <span class="ossie-chip">
+        <span
+          class="ossie-chip"
+          role="button"
+          tabindex="0"
+          draggable="true"
+          ondragstart={(e) => onChipDragStart(e, "rows", i)}
+          ondrop={(e) => {
+            if (tryChipReorder(e, "rows", i)) {
+              e.preventDefault();
+              e.stopPropagation();
+              dragOverShelf = null;
+            }
+          }}
+          ondragover={(e) => {
+            if (e.dataTransfer?.types.includes(CHIP_MIME)) e.preventDefault();
+          }}
+        >
           {f.dataset}.{f.field}
           <button
             type="button"
@@ -1010,7 +1137,23 @@
     >
       <span class="ossie-shelf__label">Columns</span>
       {#each ossieQuery.current?.columns ?? [] as f, i}
-        <span class="ossie-chip">
+        <span
+          class="ossie-chip"
+          role="button"
+          tabindex="0"
+          draggable="true"
+          ondragstart={(e) => onChipDragStart(e, "columns", i)}
+          ondrop={(e) => {
+            if (tryChipReorder(e, "columns", i)) {
+              e.preventDefault();
+              e.stopPropagation();
+              dragOverShelf = null;
+            }
+          }}
+          ondragover={(e) => {
+            if (e.dataTransfer?.types.includes(CHIP_MIME)) e.preventDefault();
+          }}
+        >
           {f.dataset}.{f.field}
           <button
             type="button"
@@ -1034,7 +1177,23 @@
     >
       <span class="ossie-shelf__label">Values</span>
       {#each ossieQuery.current?.values ?? [] as v, i}
-        <span class="ossie-chip ossie-chip--metric">
+        <span
+          class="ossie-chip ossie-chip--metric"
+          role="button"
+          tabindex="0"
+          draggable="true"
+          ondragstart={(e) => onChipDragStart(e, "values", i)}
+          ondrop={(e) => {
+            if (tryChipReorder(e, "values", i)) {
+              e.preventDefault();
+              e.stopPropagation();
+              dragOverShelf = null;
+            }
+          }}
+          ondragover={(e) => {
+            if (e.dataTransfer?.types.includes(CHIP_MIME)) e.preventDefault();
+          }}
+        >
           Σ {v.metric}
           <button
             type="button"
@@ -1173,7 +1332,14 @@
                   <td
                     class:ossie-result__num={c.isNumeric}
                     oncontextmenu={(e) =>
-                      onPivotBodyContext(e, i, pivot.rowHeaderCount, pivot.metricCount, c.formatted)}
+                      onPivotBodyContext(
+                        e,
+                        i,
+                        pivot.rowHeaderCount,
+                        pivot.metricCount,
+                        pivot.colKeyValues,
+                        c.formatted,
+                      )}
                   >{c.formatted}</td>
                 {/if}
               {/each}
@@ -1301,12 +1467,39 @@
         <ArrowDown size={14} /> <span>Sort descending</span>
       </button>
     {:else}
+      {#if ctxMenu.colKeyValues && ctxMenu.colKeyValues.length > 0 && ossieQuery.current?.columns.length}
+        <!-- Crosstab body cell: offer "Filter to <col-value>" for each Columns shelf entry
+             the cell sits under. Small menu; a follow-up could group these under an
+             "Include column" submenu if we start having many columns. -->
+        {#each ossieQuery.current.columns as colRef, colIdx (colIdx)}
+          {@const val = ctxMenu.colKeyValues[colIdx]}
+          {#if val !== undefined}
+            <button type="button" class="ossie-ctx-menu__item" onclick={() => ctxCrosstabFilter(colIdx)}>
+              <span>Filter {colRef.dataset}.{colRef.field} to <em>{val}</em></span>
+            </button>
+          {/if}
+        {/each}
+        <div class="ossie-ctx-menu__sep"></div>
+      {/if}
       <button type="button" class="ossie-ctx-menu__item" onclick={() => ctxSort("ASC")}>
         <ArrowUp size={14} /> <span>Sort by {ctxMenu.metric} ↑</span>
       </button>
       <button type="button" class="ossie-ctx-menu__item" onclick={() => ctxSort("DESC")}>
         <ArrowDown size={14} /> <span>Sort by {ctxMenu.metric} ↓</span>
       </button>
+      <div class="ossie-ctx-menu__sep"></div>
+      <div class="ossie-ctx-menu__header ossie-ctx-menu__header--sub">Aggregate as</div>
+      {#each OSSIE_AGGREGATIONS as agg (agg)}
+        {@const active = currentAggregationFor(ctxMenu.metric!) === agg}
+        <button
+          type="button"
+          class="ossie-ctx-menu__item"
+          class:ossie-ctx-menu__item--active={active}
+          onclick={() => ctxSetAggregation(active ? null : agg)}
+        >
+          <span>Σ {agg}{active ? "  ✓" : ""}</span>
+        </button>
+      {/each}
     {/if}
     <div class="ossie-ctx-menu__sep"></div>
     {#if ctxMenu.value !== undefined}
@@ -1556,6 +1749,16 @@
     height: 1px;
     background: var(--border);
     margin: 4px 0;
+  }
+  .ossie-ctx-menu__header--sub {
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    padding-bottom: 2px;
+  }
+  .ossie-ctx-menu__item--active {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
   }
   .ossie-canvas__sql {
     background: var(--bg-hover);

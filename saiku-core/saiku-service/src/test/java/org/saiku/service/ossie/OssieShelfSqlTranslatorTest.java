@@ -5,6 +5,7 @@
 package org.saiku.service.ossie;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.util.List;
@@ -218,6 +219,43 @@ public class OssieShelfSqlTranslatorTest {
         m.setFactDataset("orders");
         m.setValues(List.of(metric("does_not_exist")));
         translator.translate(m, semantic);
+    }
+
+    @Test
+    public void swapAggregationRewritesSumToAvg() {
+        assertEquals(
+                "AVG(\"orders\".\"amount\")",
+                OssieShelfSqlTranslator.swapAggregation("SUM(\"orders\".\"amount\")", "AVG"));
+    }
+
+    @Test
+    public void swapAggregationLeavesUnknownOverrideAlone() {
+        assertEquals(
+                "SUM(\"orders\".\"amount\")",
+                OssieShelfSqlTranslator.swapAggregation("SUM(\"orders\".\"amount\")", "MEDIAN"));
+    }
+
+    @Test
+    public void swapAggregationDoesNotWreckCompoundExpressions() {
+        // Two-clause expression → outer isn't a single aggregate call. Regex would
+        // greedily match, so the depth check bails.
+        assertEquals("SUM(x) + AVG(y)", OssieShelfSqlTranslator.swapAggregation("SUM(x) + AVG(y)", "MAX"));
+    }
+
+    @Test
+    public void aggregationOverrideAppearsInEmittedSql() {
+        OssieQueryModel m = new OssieQueryModel();
+        m.setConnection("SALES");
+        m.setModel("SALES");
+        m.setFactDataset("orders");
+        OssieQueryModel.MetricRef mr = metric("revenue");
+        mr.setAggregation("AVG");
+        m.setValues(java.util.List.of(mr));
+        String sql = translator.translate(m, semantic);
+        // The 'revenue' metric was declared as SUM("orders"."amount"); override rewrites
+        // the outer SUM to AVG in the emitted SQL.
+        assertTrue("expected AVG in emitted SQL, got: " + sql, sql.contains("AVG(\"orders\".\"amount\")"));
+        assertTrue("original SUM should be gone", !sql.contains("SUM(\"orders\".\"amount\")"));
     }
 
     private static OssieQueryModel.FieldRef fieldRef(String dataset, String field) {

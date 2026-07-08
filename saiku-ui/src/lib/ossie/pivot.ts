@@ -24,6 +24,16 @@ export interface PivotedGrid {
   metricCount: number;
   /** How many left-header columns precede the metric grid. */
   rowHeaderCount: number;
+  /**
+   * Parallel array to each body row's columns starting at index {@link rowHeaderCount}.
+   * Entry `i` is the column-shelf values that this body-column belongs to, as an array
+   * of strings (one per Columns shelf entry). Enables the canvas' context-menu to
+   * offer "Filter to <col-value>" on any crosstab body cell.
+   *
+   * The array's length equals the number of unique column-key combinations. Body-column
+   * `i` (0-indexed within the metric grid) maps to `colKeyValues[Math.floor(i / metricCount)]`.
+   */
+  colKeyValues: string[][];
 }
 
 /** One rendered cell — text + optional colspan + numeric flag for right-align. */
@@ -159,11 +169,15 @@ export function pivotResult(
     bodyRows.push(cells);
   }
 
+  // Expose the resolved column-key values so the canvas can offer "Filter to <col-value>"
+  // on any crosstab body cell without re-parsing headerRows or the JSON keys.
+  const colKeyValues = sortedColKeys.map((key) => colLabels.get(key) ?? []);
   return {
     headerRows,
     bodyRows,
     metricCount: nVal,
     rowHeaderCount: nRow,
+    colKeyValues,
   };
 }
 

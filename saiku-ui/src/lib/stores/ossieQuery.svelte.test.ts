@@ -456,6 +456,77 @@ describe("removeRow / removeColumn / removeValue (P4 follow-up)", () => {
   });
 });
 
+describe("setMetricAggregation (D1)", () => {
+  beforeEach(async () => {
+    mockFetch(async () => new Response(JSON.stringify(fakeModel), { status: 200 }));
+    await ossieQuery.loadModel("admin", "SALES", "SALES");
+  });
+
+  test("sets an aggregation override on the matching value shelf entry", () => {
+    ossieQuery.addValue({ metric: "revenue" });
+    ossieQuery.setMetricAggregation("revenue", "AVG");
+    expect(ossieQuery.current?.values[0].aggregation).toBe("AVG");
+  });
+
+  test("clearing via null drops the field entirely (not just sets undefined)", () => {
+    ossieQuery.addValue({ metric: "revenue" });
+    ossieQuery.setMetricAggregation("revenue", "AVG");
+    ossieQuery.setMetricAggregation("revenue", null);
+    expect("aggregation" in ossieQuery.current!.values[0]).toBe(false);
+  });
+
+  test("no-op when the metric isn't on the Values shelf", () => {
+    ossieQuery.addValue({ metric: "revenue" });
+    ossieQuery.setMetricAggregation("does-not-exist", "SUM");
+    expect(ossieQuery.current?.values[0].aggregation).toBeUndefined();
+  });
+
+  test("captures for undo", () => {
+    ossieQuery.addValue({ metric: "revenue" });
+    ossieQuery.setMetricAggregation("revenue", "MAX");
+    ossieQuery.undo();
+    expect(ossieQuery.current?.values[0].aggregation).toBeUndefined();
+  });
+});
+
+describe("reorderShelf (D2)", () => {
+  beforeEach(async () => {
+    mockFetch(async () => new Response(JSON.stringify(fakeModel), { status: 200 }));
+    await ossieQuery.loadModel("admin", "SALES", "SALES");
+  });
+
+  test("moves a rows-shelf chip forward one slot", () => {
+    ossieQuery.addRow({ dataset: "customers", field: "region" });
+    ossieQuery.addRow({ dataset: "customers", field: "signup_date" });
+    ossieQuery.reorderShelf("rows", 0, 2); // move region to end
+    expect(ossieQuery.current?.rows.map((r) => r.field)).toEqual(["signup_date", "region"]);
+  });
+
+  test("moves a values-shelf chip backward one slot", () => {
+    ossieQuery.addValue({ metric: "revenue" });
+    ossieQuery.addValue({ metric: "order_count" });
+    ossieQuery.reorderShelf("values", 1, 0);
+    expect(ossieQuery.current?.values.map((v) => v.metric)).toEqual(["order_count", "revenue"]);
+  });
+
+  test("no-op when from == to", () => {
+    ossieQuery.addRow({ dataset: "customers", field: "region" });
+    const before = ossieQuery.current?.rows;
+    const historyLen = ossieQuery.past.length;
+    ossieQuery.reorderShelf("rows", 0, 0);
+    expect(ossieQuery.current?.rows).toBe(before);
+    expect(ossieQuery.past.length).toBe(historyLen);
+  });
+
+  test("captures for undo", () => {
+    ossieQuery.addRow({ dataset: "customers", field: "region" });
+    ossieQuery.addRow({ dataset: "customers", field: "signup_date" });
+    ossieQuery.reorderShelf("rows", 0, 2);
+    ossieQuery.undo();
+    expect(ossieQuery.current?.rows.map((r) => r.field)).toEqual(["region", "signup_date"]);
+  });
+});
+
 describe("undo / redo (P3)", () => {
   beforeEach(async () => {
     mockFetch(async () => new Response(JSON.stringify(fakeModel), { status: 200 }));

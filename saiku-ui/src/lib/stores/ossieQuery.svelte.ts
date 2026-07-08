@@ -408,6 +408,56 @@ class OssieQueryStore {
    * Swap the Rows and Columns shelves. Mirrors the MDX workbench's "Swap axes" button.
    * When the grid renders a crosstab, this flips it 90°.
    */
+  /**
+   * Override the aggregation function for a metric on the Values shelf. Pass null to
+   * clear the override (falls back to the metric's declared aggregation). Called from
+   * the metric-header context menu.
+   */
+  setMetricAggregation(metricName: string, agg: import("$lib/api/ossie").OssieAggregation | null): void {
+    if (!this.current) return;
+    const idx = this.current.values.findIndex((v) => v.metric === metricName);
+    if (idx < 0) return;
+    this.captureForUndo();
+    const values = this.current.values.map((v, i) => {
+      if (i !== idx) return v;
+      if (agg === null) {
+        const { aggregation: _drop, ...rest } = v;
+        return rest;
+      }
+      return { ...v, aggregation: agg };
+    });
+    this.current = { ...this.current, values };
+  }
+
+  /**
+   * Reorder a chip within the same shelf. Called by the canvas' chip-drag handler when
+   * the user drops a chip onto a sibling position. No-ops if `from === to` or either
+   * index is out of range. Captures for undo so Cmd-Z restores the prior order.
+   *
+   * @param shelf   Which shelf to reorder — "rows" / "columns" / "values" / "filters".
+   * @param from    Source index (0-based).
+   * @param to      Destination index (0-based, before the chip currently at `to`).
+   */
+  reorderShelf(shelf: "rows" | "columns" | "values" | "filters", from: number, to: number): void {
+    if (!this.current) return;
+    if (from === to) return;
+    const q = this.current;
+    const target = q[shelf];
+    if (from < 0 || from >= target.length) return;
+    if (to < 0 || to > target.length) return;
+    this.captureForUndo();
+    // Splice-based move. Use `as` casts because TypeScript doesn't narrow q[shelf]'s
+    // element type from the union across all four shelf keys — the runtime shape is
+    // uniform enough that a single array manipulation works.
+    const clone = [...(target as ReadonlyArray<unknown>)];
+    const [moved] = clone.splice(from, 1);
+    // `to` is measured against the original list; if we moved a chip from before `to`
+    // then the destination index shifts down by one after the splice.
+    const insertAt = from < to ? to - 1 : to;
+    clone.splice(insertAt, 0, moved);
+    this.current = { ...q, [shelf]: clone } as OssieQueryModel;
+  }
+
   swapAxes(): void {
     if (!this.current) return;
     this.captureForUndo();

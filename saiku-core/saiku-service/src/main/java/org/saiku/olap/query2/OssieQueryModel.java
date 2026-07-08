@@ -137,12 +137,29 @@ public class OssieQueryModel {
     public static class MetricRef {
         private String metric;
 
+        /**
+         * Optional aggregation override for this metric on this shelf state. When set,
+         * the SQL translator swaps the outer aggregate function in the metric's declared
+         * expression (SUM/AVG/MIN/MAX/COUNT) with this one. Null leaves the metric's
+         * own expression unchanged. Valid values: {@code SUM|AVG|MIN|MAX|COUNT} — anything
+         * else is silently ignored (the translator falls back to the declared expression).
+         */
+        private String aggregation;
+
         public String getMetric() {
             return metric;
         }
 
         public void setMetric(String v) {
             this.metric = v;
+        }
+
+        public String getAggregation() {
+            return aggregation;
+        }
+
+        public void setAggregation(String v) {
+            this.aggregation = v;
         }
     }
 

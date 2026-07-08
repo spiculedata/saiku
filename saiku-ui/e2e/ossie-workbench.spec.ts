@@ -297,6 +297,26 @@ test.describe("Ossie workbench (mocked backend)", () => {
     await expect(shelf).not.toHaveClass(/ossie-shelf--dragover/);
   });
 
+  test("aggregation override on a metric header re-runs with the new agg", async ({ page }) => {
+    await page.locator("#cubes-select").selectOption("ossie:SALES");
+    await expect(page.locator(".ossie-tree").getByText("region")).toBeVisible();
+    await dropOssieField(page, "customers", "region", '[aria-label="Rows shelf"]');
+    await dropOssieMetric(page, "revenue", '[aria-label="Values shelf"]');
+    await page.locator(".toolbar").getByRole("button", { name: /^Run/ }).click();
+    await expect(page.locator(".ossie-result")).toBeVisible();
+
+    // Right-click on the metric header ('revenue') → menu shows Aggregate as options.
+    await page.locator(".ossie-result th").filter({ hasText: "revenue" }).click({ button: "right" });
+    await expect(page.locator(".ossie-ctx-menu")).toBeVisible();
+    // Click "Σ AVG" — override applied, re-run fires with aggregation=AVG on the wire.
+    await page.getByRole("button").filter({ hasText: /^Σ AVG/ }).click();
+    await page.waitForTimeout(200);
+    const posted = backend.getLastExecuteBody() as {
+      ossieQueryModel?: { values?: Array<{ metric?: string; aggregation?: string }> };
+    } | null;
+    expect(posted?.ossieQueryModel?.values?.[0]?.aggregation).toBe("AVG");
+  });
+
   test("Rows × Columns × Values renders a crosstab", async ({ page }) => {
     // Override the execute fixture: return a 2×2×1 shelf state's flat rowset so the
     // client-side pivot has something to reshape. Registered before selection so the

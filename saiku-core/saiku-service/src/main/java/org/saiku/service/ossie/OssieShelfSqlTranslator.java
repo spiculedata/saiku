@@ -70,6 +70,10 @@ public final class OssieShelfSqlTranslator {
         }
         for (OssieQueryModel.MetricRef v : model.getValues()) {
             String expr = lookupMetricExpression(semantic, v.getMetric());
+            String override = v.getAggregation();
+            if (override != null && !override.isBlank()) {
+                expr = swapAggregation(expr, override.toUpperCase());
+            }
             selectCols.add(expr + " AS " + quoteAlias(v.getMetric()));
         }
         if (selectCols.isEmpty()) throw new IllegalArgumentException("OssieQueryModel has no columns to select");
@@ -127,6 +131,49 @@ public final class OssieShelfSqlTranslator {
         }
 
         return sql.toString();
+    }
+
+    /** The aggregation function names the workbench UI's picker exposes. */
+    private static final java.util.Set<String> KNOWN_AGGS = java.util.Set.of("SUM", "AVG", "MIN", "MAX", "COUNT");
+
+    /**
+     * Regex matching a simple {@code AGG(expr)} outer wrapper on a metric expression.
+     * Captures group 1 = the aggregation function name; group 2 = everything between the
+     * outermost parens. Doesn't handle nested aggregates in the outer position — those
+     * expressions bypass the override and stay as-declared in the YAML.
+     */
+    private static final java.util.regex.Pattern OUTER_AGG =
+            java.util.regex.Pattern.compile("^\\s*(SUM|AVG|MIN|MAX|COUNT)\\s*\\((.*)\\)\\s*$");
+
+    /**
+     * Rewrite the outer aggregation function on a metric expression. Only fires when the
+     * expression looks like {@code AGG(...)} at the top level AND the override is one of
+     * the known aggregations; otherwise the expression is returned unchanged (silent
+     * pass-through, no exception — so weird expressions like {@code SUM(x) + SUM(y)} keep
+     * working with their declared aggregation).
+     */
+    static String swapAggregation(String expr, String override) {
+        if (expr == null || override == null || !KNOWN_AGGS.contains(override)) return expr;
+        java.util.regex.Matcher m = OUTER_AGG.matcher(expr);
+        if (!m.matches()) return expr;
+        String inner = m.group(2);
+        // Fast sanity check on balanced parens so we don't rewrite something like
+        //   SUM(x) + AVG(y)
+        // which the outer regex would greedily consume up to the last close-paren.
+        int depth = 0;
+        for (int i = 0; i < inner.length(); i++) {
+            char c = inner.charAt(i);
+            if (c == '(') depth++;
+            else if (c == ')') {
+                depth--;
+                if (depth < 0) return expr;
+            }
+        }
+        if (depth != 0) return expr;
+        // COUNT(x) may or may not be the correct override for a SUM-based metric — but
+        // the caller opted into it explicitly by picking COUNT from the menu. Preserve
+        // the argument as-is; the user knows what they're asking for.
+        return override + "(" + inner + ")";
     }
 
     private String qualifiedField(OssieQueryModel.FieldRef f) {
