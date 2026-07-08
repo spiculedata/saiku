@@ -42,14 +42,19 @@ ontology_mappings:
       - name: dest_airport_id
         expression: {dialects: [{dialect: ANSI_SQL, expression: DEST_AIRPORT_ID}]}
       - name: scheduled_date_month
+        label: Month
         expression: {dialects: [{dialect: ANSI_SQL, expression: SCHEDULED_DATE_MONTH}]}
       - name: dep_delay_min
+        label: Departure delay (min)
         expression: {dialects: [{dialect: ANSI_SQL, expression: DEP_DELAY_MIN}]}
       - name: arr_delay_min
+        label: Arrival delay (min)
         expression: {dialects: [{dialect: ANSI_SQL, expression: ARR_DELAY_MIN}]}
       - name: cancelled
+        label: Cancelled
         expression: {dialects: [{dialect: ANSI_SQL, expression: CANCELLED}]}
       - name: distance_miles
+        label: Distance (miles)
         expression: {dialects: [{dialect: ANSI_SQL, expression: DISTANCE_MILES}]}
 
     - name: carrier
@@ -60,10 +65,13 @@ ontology_mappings:
       - name: carrier_id
         expression: {dialects: [{dialect: ANSI_SQL, expression: CARRIER_ID}]}
       - name: iata_code
+        label: IATA code
         expression: {dialects: [{dialect: ANSI_SQL, expression: IATA_CODE}]}
       - name: carrier_name
+        label: Carrier
         expression: {dialects: [{dialect: ANSI_SQL, expression: CARRIER_NAME}]}
       - name: hub_state
+        label: Hub state
         expression: {dialects: [{dialect: ANSI_SQL, expression: HUB_STATE}]}
 
     - name: airport
@@ -74,12 +82,16 @@ ontology_mappings:
       - name: airport_id
         expression: {dialects: [{dialect: ANSI_SQL, expression: AIRPORT_ID}]}
       - name: airport_code
+        label: Airport code
         expression: {dialects: [{dialect: ANSI_SQL, expression: AIRPORT_CODE}]}
       - name: airport_name
+        label: Airport
         expression: {dialects: [{dialect: ANSI_SQL, expression: AIRPORT_NAME}]}
       - name: airport_city
+        label: City
         expression: {dialects: [{dialect: ANSI_SQL, expression: AIRPORT_CITY}]}
       - name: airport_state
+        label: State
         expression: {dialects: [{dialect: ANSI_SQL, expression: AIRPORT_STATE}]}
 
     - name: aircraft
@@ -90,12 +102,16 @@ ontology_mappings:
       - name: tail_num
         expression: {dialects: [{dialect: ANSI_SQL, expression: TAIL_NUM}]}
       - name: manufacturer
+        label: Manufacturer
         expression: {dialects: [{dialect: ANSI_SQL, expression: MANUFACTURER}]}
       - name: model
+        label: Model
         expression: {dialects: [{dialect: ANSI_SQL, expression: MODEL}]}
       - name: number_of_seats
+        label: Seats
         expression: {dialects: [{dialect: ANSI_SQL, expression: NUMBER_OF_SEATS}]}
       - name: year_mfr
+        label: Year built
         expression: {dialects: [{dialect: ANSI_SQL, expression: YEAR_MFR}]}
 
     metrics:

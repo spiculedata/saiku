@@ -45,10 +45,13 @@ semantic_model:
     - name: d_date
       expression: {dialects: [{dialect: ANSI_SQL, expression: D_DATE}]}
     - name: d_year
+      label: Year
       expression: {dialects: [{dialect: ANSI_SQL, expression: D_YEAR}]}
     - name: d_quarter
+      label: Quarter
       expression: {dialects: [{dialect: ANSI_SQL, expression: D_QUARTER_NAME}]}
     - name: d_month
+      label: Month
       expression: {dialects: [{dialect: ANSI_SQL, expression: D_MONTH_NAME}]}
 
   - name: customer
@@ -61,12 +64,16 @@ semantic_model:
     - name: c_customer_id
       expression: {dialects: [{dialect: ANSI_SQL, expression: C_CUSTOMER_ID}]}
     - name: c_first_name
+      label: First name
       expression: {dialects: [{dialect: ANSI_SQL, expression: C_FIRST_NAME}]}
     - name: c_last_name
+      label: Last name
       expression: {dialects: [{dialect: ANSI_SQL, expression: C_LAST_NAME}]}
     - name: c_email
+      label: Email address
       expression: {dialects: [{dialect: ANSI_SQL, expression: C_EMAIL_ADDRESS}]}
     - name: c_state
+      label: State
       expression: {dialects: [{dialect: ANSI_SQL, expression: C_STATE}]}
 
   - name: item
@@ -79,12 +86,16 @@ semantic_model:
     - name: i_item_id
       expression: {dialects: [{dialect: ANSI_SQL, expression: I_ITEM_ID}]}
     - name: i_item_desc
+      label: Description
       expression: {dialects: [{dialect: ANSI_SQL, expression: I_ITEM_DESC}]}
     - name: i_brand
+      label: Brand
       expression: {dialects: [{dialect: ANSI_SQL, expression: I_BRAND}]}
     - name: i_category
+      label: Category
       expression: {dialects: [{dialect: ANSI_SQL, expression: I_CATEGORY}]}
     - name: i_current_price
+      label: Current price
       expression: {dialects: [{dialect: ANSI_SQL, expression: I_CURRENT_PRICE}]}
 
   - name: store
@@ -97,12 +108,16 @@ semantic_model:
     - name: s_store_id
       expression: {dialects: [{dialect: ANSI_SQL, expression: S_STORE_ID}]}
     - name: s_store_name
+      label: Store name
       expression: {dialects: [{dialect: ANSI_SQL, expression: S_STORE_NAME}]}
     - name: s_city
+      label: City
       expression: {dialects: [{dialect: ANSI_SQL, expression: S_CITY}]}
     - name: s_state
+      label: State
       expression: {dialects: [{dialect: ANSI_SQL, expression: S_STATE}]}
     - name: s_number_employees
+      label: Employees
       expression: {dialects: [{dialect: ANSI_SQL, expression: S_NUMBER_EMPLOYEES}]}
 
   metrics:
