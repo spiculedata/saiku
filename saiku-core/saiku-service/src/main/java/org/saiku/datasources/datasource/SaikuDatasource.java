@@ -32,7 +32,19 @@ public class SaikuDatasource {
     }
 
     public enum Type {
-        OLAP
+        /** Legacy Mondrian/OLAP datasource. Location is a Mondrian JDBC URL, driver is
+         *  {@code mondrian.olap4j.MondrianOlap4jDriver}. Connection surfaces as
+         *  {@code SaikuOlapConnection}. */
+        OLAP,
+
+        /** Apache Ossie semantic-model datasource. The datasource's {@code properties} carry
+         *  {@code ossieYaml=<path>} (path to the Ossie YAML file); {@code location} holds the
+         *  underlying warehouse JDBC URL; {@code username}/{@code password} carry warehouse
+         *  credentials; the {@code schema} property (matching a {@code semantic_model[].name} in
+         *  the YAML) picks which model to expose when the document carries multiple. Connection
+         *  surfaces as {@code SaikuOssieConnection}, a thin wrapper around a Calcite JDBC
+         *  connection wired via {@code OssieSchemaFactory}. */
+        OSSIE
     }
 
     public String getName() {

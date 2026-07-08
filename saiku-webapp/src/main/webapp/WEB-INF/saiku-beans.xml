@@ -124,6 +124,11 @@
         <property name="datasourceService" ref="datasourceServiceBean"/>
     </bean>
 
+    <!-- Ossie-side discover: reads the semantic model YAML for OSSIE datasources -->
+    <bean id="ossieDiscoverServiceBean" class="org.saiku.service.ossie.OssieDiscoverService">
+        <property name="datasourceManager" ref="repositoryDsManager"/>
+    </bean>
+
     <bean id="olapQueryBean" scope="session" class="org.saiku.service.olap.OlapQueryService" destroy-method="destroy">
         <aop:scoped-proxy/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
@@ -139,6 +144,7 @@
           class="org.saiku.web.rest.resources.OlapDiscoverResource">
         <aop:scoped-proxy/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <property name="ossieDiscoverService" ref="ossieDiscoverServiceBean"/>
     </bean>
 
 
@@ -172,6 +178,16 @@
         <property name="userService" ref="userServiceBean"/>
         <!-- saiku#946: shared in-flight coalescer (singleton) -->
         <property name="queryCoalescer" ref="queryCoalescerBean"/>
+        <!-- Ossie query executor: takes over when ThinQuery.queryType = "OSSIE". -->
+        <property name="ossieQueryService" ref="ossieQueryServiceBean"/>
+    </bean>
+
+    <!-- Ossie query executor. Consults OssieDiscoverService for the semantic model
+         and OlapDiscoverService.getConnectionManager() for the underlying Calcite
+         JDBC connection. -->
+    <bean id="ossieQueryServiceBean" class="org.saiku.service.ossie.OssieQueryService">
+        <property name="ossieDiscoverService" ref="ossieDiscoverServiceBean"/>
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
     </bean>
 
     <bean id="platformBean" class="org.saiku.service.PlatformUtilsService">
@@ -280,6 +296,27 @@
         <property name="askService" ref="aiAskServiceBean"/>
     </bean>
 
+    <!-- Ossie AI Query API (#1394) — parallel to aiQueryResource but for semantic-YAML
+         Ossie models. R2 endpoints: GET /ai/ossie/models, GET /ai/ossie/schema/{c}/{m},
+         POST /ai/ossie/query (+ ?format=matrix), POST /ai/ossie/query/preview, GET
+         /ai/ossie/values/search, POST /ai/ossie/query/execute-async + status/result/cancel. -->
+    <bean id="ossieAsyncQueryServiceBean" class="org.saiku.service.ossie.ai.OssieAsyncQueryService"
+          destroy-method="shutdown">
+        <constructor-arg ref="ossieQueryServiceBean"/>
+    </bean>
+    <bean id="aiOssieResource" class="org.saiku.web.rest.resources.AiOssieResource">
+        <property name="ossieDiscoverService" ref="ossieDiscoverServiceBean"/>
+        <property name="ossieQueryService" ref="ossieQueryServiceBean"/>
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <property name="datasourceManager" ref="repositoryDsManager"/>
+        <property name="asyncQueryService" ref="ossieAsyncQueryServiceBean"/>
+        <property name="kAnonymityFilter" ref="kAnonymityFilter"/>
+        <property name="askService" ref="ossieAiAskServiceBean"/>
+    </bean>
+    <!-- R5: Ossie natural-language ask. Reads saiku.ai.ask.provider + API key from env/props;
+         disabled by default (health returns configured=false; /ask returns 503). -->
+    <bean id="ossieAiAskServiceBean" class="org.saiku.service.ossie.ai.OssieAiAskService"/>
+
     <!-- saiku#906: admin-only read API over the audit log
          (GET /saiku/admin/ai-audit). Stateless singleton; @RolesAllowed +
          the /rest/saiku/admin/** intercept-url both gate it. -->
@@ -340,6 +377,9 @@
           class="org.saiku.web.rest.resources.mcp.McpResource">
         <aop:scoped-proxy/>
         <property name="aiQueryResource" ref="aiQueryResource"/>
+        <!-- Ossie AI tools (#1394 R3). Bean is a singleton (unlike aiQueryResource
+             which is request-scoped) — no scoped-proxy needed. -->
+        <property name="aiOssieResource" ref="aiOssieResource"/>
         <property name="sessionStore" ref="mcpSessionStore"/>
     </bean>
 

@@ -13,8 +13,8 @@ import org.apache.calcite.adapter.jdbc.JdbcSchema;
 import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.SchemaFactory;
 import org.apache.calcite.schema.SchemaPlus;
+import org.saiku.service.schema.ossie.OssieYamlReader;
 import org.saiku.service.schema.ossie.model.OssieDocument;
-import org.saiku.sql.model.OssieYamlReader;
 
 /**
  * Calcite entry point for the Ossie semantic layer.

@@ -19,7 +19,21 @@ import java.util.List;
 
 public class SaikuConnection extends AbstractSaikuObject {
 
+    /** Well-known type strings surfaced to the client. Kept as strings (not an enum) so the
+     *  wire format matches the existing {@code SaikuDatasource.Type} names 1:1 without a
+     *  Jackson mapping layer. */
+    public static final String TYPE_OLAP = "OLAP";
+
+    public static final String TYPE_OSSIE = "OSSIE";
+
     private List<SaikuCatalog> catalogs;
+
+    /**
+     * Datasource type discriminator for the client. {@code OLAP} means the connection surfaces
+     * a Mondrian catalog/schema/cube tree; {@code OSSIE} means catalogs is empty and the client
+     * should call {@code /discover/{connection}/ossie-model} for a semantic-model tree.
+     */
+    private String type = TYPE_OLAP;
 
     public SaikuConnection() {
         super(null, null);
@@ -31,7 +45,17 @@ public class SaikuConnection extends AbstractSaikuObject {
         this.catalogs = catalogs;
     }
 
+    public SaikuConnection(String connectionName, List<SaikuCatalog> catalogs, String type) {
+        super(connectionName, connectionName);
+        this.catalogs = catalogs;
+        this.type = type;
+    }
+
     public List<SaikuCatalog> getCatalogs() {
         return catalogs;
+    }
+
+    public String getType() {
+        return type;
     }
 }

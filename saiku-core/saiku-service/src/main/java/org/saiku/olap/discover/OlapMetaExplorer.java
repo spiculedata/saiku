@@ -32,6 +32,7 @@ import org.olap4j.mdx.IdentifierNode;
 import org.olap4j.mdx.IdentifierSegment;
 import org.olap4j.metadata.*;
 import org.saiku.datasources.connection.IConnectionManager;
+import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.olap.dto.*;
 import org.saiku.olap.util.ObjectUtil;
 import org.saiku.olap.util.SaikuCubeCaptionComparator;
@@ -52,6 +53,13 @@ public class OlapMetaExplorer {
     }
 
     public SaikuConnection getConnection(String connectionName) throws SaikuOlapException {
+        // Ossie connections don't have OLAP catalogs/schemas/cubes — surface an empty list with
+        // type=OSSIE so the client tree renders the connection but knows to fetch the semantic
+        // model separately via /discover/{connection}/ossie-model.
+        ISaikuConnection any = connections.getConnection(connectionName);
+        if (any != null && ISaikuConnection.OSSIE_DATASOURCE.equals(any.getDatasourceType())) {
+            return new SaikuConnection(connectionName, new ArrayList<>(), SaikuConnection.TYPE_OSSIE);
+        }
         OlapConnection olapcon = connections.getOlapConnection(connectionName);
         SaikuConnection connection;
         if (olapcon != null) {
@@ -125,7 +133,10 @@ public class OlapMetaExplorer {
 
     public List<SaikuConnection> getAllConnections() throws SaikuOlapException {
         List<SaikuConnection> cubesList = new ArrayList<>();
-        for (String connectionName : connections.getAllOlapConnections().keySet()) {
+        // Iterate ALL registered connections (OLAP + OSSIE), not just olap4j ones —
+        // getConnection() handles per-type projection. Was getAllOlapConnections which silently
+        // dropped Ossie datasources from the SPA's connection list.
+        for (String connectionName : connections.getAllConnections().keySet()) {
             cubesList.add(getConnection(connectionName));
         }
         Collections.sort(cubesList);

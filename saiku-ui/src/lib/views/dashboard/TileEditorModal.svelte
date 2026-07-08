@@ -226,7 +226,10 @@
   let queryEditorError = $state<string | null>(null);
   // Saved workspace store state, restored on close.
   let savedQuerySnapshot: QueryStateSnapshot | null = null;
-  let savedCube: SaikuCube | null = null;
+  // Selection snapshot around the tile-editor lifecycle. SelectionSnapshot is the
+  // discriminated union that carries either an MDX cube or an Ossie selection — dashboards
+  // stay OLAP-only for MVP but the store returns the wider type, so track it here too.
+  let savedCube: import("$lib/stores/selection.svelte").SelectionSnapshot | null = null;
   // The body the embed was seeded from — passed back to thinQueryToBody so
   // unmanaged passthrough fields (order / limit / …) survive the round-trip.
   let seedBody: InlineQueryBody | null = null;

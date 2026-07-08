@@ -20,16 +20,18 @@ import org.saiku.datasources.datasource.SaikuDatasource;
 public class SaikuConnectionFactory {
 
     public static ISaikuConnection getConnection(SaikuDatasource datasource) throws Exception {
-        if (datasource != null) {
-            switch (datasource.getType()) {
-                case OLAP:
-                    ISaikuConnection con = new SaikuOlapConnection(datasource.getName(), datasource.getProperties());
-                    if (con.connect()) {
-                        return con;
-                    }
-                    break;
-            }
+        if (datasource == null) return null;
+        ISaikuConnection con;
+        switch (datasource.getType()) {
+            case OLAP:
+                con = new SaikuOlapConnection(datasource.getName(), datasource.getProperties());
+                break;
+            case OSSIE:
+                con = new SaikuOssieConnection(datasource.getName(), datasource.getProperties());
+                break;
+            default:
+                return null;
         }
-        return null;
+        return con.connect() ? con : null;
     }
 }

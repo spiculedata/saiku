@@ -42,11 +42,44 @@
 
         <!-- Compile-scope dep on saiku-sql so the SqlServeCommand can boot the
              Avatica endpoint. Pulls calcite-core + avatica-server transitively
-             into the shaded fat-JAR — the CLI needs both at runtime. -->
+             into the shaded fat-JAR — the CLI needs both at runtime.
+
+             Exclude avatica-server's transitive Jetty 9 pull-in: the SqlServeCommand
+             actually uses the JDK's com.sun.net.httpserver.HttpServer to host the
+             Avatica RPC endpoint (see SqlServeCommand — no Jetty on that path), while
+             the `serve` command's embedded Jetty 12 collides with Jetty 9 in the shade
+             (Jetty 9's AbstractLifeCycle wins by classpath order, then Jetty 12's
+             server-startup path fails on a missing StopException inner class). -->
         <dependency>
             <groupId>org.saikuanalytics</groupId>
             <artifactId>saiku-sql</artifactId>
             <version>${project.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.eclipse.jetty</groupId>
+                    <artifactId>jetty-security</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.eclipse.jetty</groupId>
+                    <artifactId>jetty-server</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.eclipse.jetty</groupId>
+                    <artifactId>jetty-servlet</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.eclipse.jetty</groupId>
+                    <artifactId>jetty-http</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.eclipse.jetty</groupId>
+                    <artifactId>jetty-util</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.eclipse.jetty</groupId>
+                    <artifactId>jetty-io</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>

@@ -63,7 +63,9 @@
 
   {#snippet footer()}
     <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
-    <Button disabled={!valid}>onSave(normalizeFolder(folder), name.trim())}
+    <Button
+      disabled={!valid}
+      onclick={() => onSave(normalizeFolder(folder), name.trim())}
     >{i18n.t("modal.save")}</Button>
   {/snippet}
 </Modal>

@@ -2,7 +2,7 @@
  *   Copyright 2026 Spicule Ltd
  *   Apache License, Version 2.0.
  */
-package org.saiku.sql.model;
+package org.saiku.service.schema.ossie;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -17,11 +17,10 @@ import org.saiku.service.schema.ossie.model.OssieDocument;
 /**
  * Load an {@link OssieDocument} from Ossie-flavoured YAML.
  *
- * <p>Symmetric with {@code OssieYamlWriter} in saiku-service — the pair is the read side of the
- * same round-trip. Kept in the saiku-sql module because that's where read-side Ossie needs live
- * (the Calcite adapter needs the tree; the exporter only produces it). Once we have a use-case
- * for reading Ossie from other layers we can promote this back to saiku-service alongside the
- * writer.
+ * <p>Symmetric with {@code OssieYamlWriter} — the pair is the round-trip. Lives in
+ * saiku-service alongside the writer + POJOs so any module can consume it (previously kept in
+ * saiku-sql; promoted here when {@code OssieDiscoverService} in this module needed to read the
+ * same YAML the Calcite adapter loads).
  *
  * <p>{@link DeserializationFeature#FAIL_ON_UNKNOWN_PROPERTIES} is disabled so Ossie documents that
  * carry vendor extensions or future spec keys we don't yet model won't blow up the loader — the
