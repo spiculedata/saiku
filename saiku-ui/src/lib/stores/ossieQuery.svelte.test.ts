@@ -394,6 +394,37 @@ describe("sort / limit / swap axes (P1)", () => {
   });
 });
 
+describe("addFilter via context-menu action shapes (P4)", () => {
+  beforeEach(async () => {
+    mockFetch(async () => new Response(JSON.stringify(fakeModel), { status: 200 }));
+    await ossieQuery.loadModel("admin", "SALES", "SALES");
+  });
+
+  test("EQ filter builds and captures for undo", () => {
+    ossieQuery.addRow({ dataset: "customers", field: "region" });
+    expect(ossieQuery.canUndo).toBe(true);
+    const beforeUndoCount = ossieQuery.past.length;
+    ossieQuery.addFilter({ dataset: "customers", field: "region", op: "EQ", value: "North", values: [] });
+    expect(ossieQuery.current?.filters).toEqual([
+      { dataset: "customers", field: "region", op: "EQ", value: "North", values: [] },
+    ]);
+    // Undo → the EQ filter disappears; undo again → the row disappears.
+    expect(ossieQuery.past.length).toBe(beforeUndoCount + 1);
+    ossieQuery.undo();
+    expect(ossieQuery.current?.filters).toEqual([]);
+    ossieQuery.undo();
+    expect(ossieQuery.current?.rows).toEqual([]);
+  });
+
+  test("NEQ filter (exclude) applies the same way", () => {
+    ossieQuery.addRow({ dataset: "customers", field: "region" });
+    ossieQuery.addFilter({ dataset: "customers", field: "region", op: "NEQ", value: "North", values: [] });
+    expect(ossieQuery.current?.filters).toEqual([
+      { dataset: "customers", field: "region", op: "NEQ", value: "North", values: [] },
+    ]);
+  });
+});
+
 describe("undo / redo (P3)", () => {
   beforeEach(async () => {
     mockFetch(async () => new Response(JSON.stringify(fakeModel), { status: 200 }));

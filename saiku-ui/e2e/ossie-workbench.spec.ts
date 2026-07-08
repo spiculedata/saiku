@@ -237,6 +237,39 @@ test.describe("Ossie workbench (mocked backend)", () => {
     await expect(page.locator(".ossie-canvas__sql")).toContainText('SELECT COUNT(*) FROM "customers"');
   });
 
+  test("right-click on a dimension cell adds a Filter to <value>", async ({ page }) => {
+    // Backend fixture returns 3 rows; after 'Filter to Alfa' we run again and assert
+    // the outbound payload carries an EQ filter on customers.region = Alfa.
+    await page.locator("#cubes-select").selectOption("ossie:SALES");
+    await expect(page.locator(".ossie-tree").getByText("region")).toBeVisible();
+    await dropOssieField(page, "customers", "region", '[aria-label="Rows shelf"]');
+    await dropOssieMetric(page, "revenue", '[aria-label="Values shelf"]');
+
+    // Run — fixture returns North row with revenue.
+    await page.locator(".toolbar").getByRole("button", { name: /^Run/ }).click();
+    await expect(page.locator(".ossie-result")).toBeVisible();
+
+    // Right-click on a dimension cell (customers.region = 'North' per fixture).
+    await page.locator(".ossie-result tbody tr td").first().click({ button: "right" });
+    await expect(page.locator(".ossie-ctx-menu")).toBeVisible();
+    // Filter-to writes an EQ filter and re-runs; the fixture backend captures the payload.
+    await page.getByRole("menuitem").filter({ hasText: /Filter to/ }).or(
+      page.getByRole("button").filter({ hasText: /Filter to/ }),
+    ).first().click();
+    // Post-filter re-run: the outbound body carries the filter.
+    // Small wait for the async run to complete.
+    await page.waitForTimeout(200);
+    const posted = backend.getLastExecuteBody() as {
+      ossieQueryModel?: {
+        filters?: Array<{ dataset?: string; field?: string; op?: string; value?: string }>;
+      };
+    } | null;
+    expect(posted?.ossieQueryModel?.filters?.[0]?.op).toBe("EQ");
+    expect(posted?.ossieQueryModel?.filters?.[0]?.dataset).toBe("customers");
+    expect(posted?.ossieQueryModel?.filters?.[0]?.field).toBe("region");
+    expect(posted?.ossieQueryModel?.filters?.[0]?.value).toBe("North");
+  });
+
   test("Rows × Columns × Values renders a crosstab", async ({ page }) => {
     // Override the execute fixture: return a 2×2×1 shelf state's flat rowset so the
     // client-side pivot has something to reshape. Registered before selection so the

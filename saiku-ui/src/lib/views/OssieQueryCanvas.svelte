@@ -347,6 +347,7 @@
   function handleBodyClick() {
     toolsMenuOpen = false;
     exportMenuOpen = false;
+    if (ctxMenu.open) closeCtxMenu();
   }
 
   // ------------------------------------------------------------------
@@ -382,6 +383,123 @@
    * skips when the target is an input / textarea / contenteditable so the shortcut
    * doesn't fight text editing. Matches the MDX Workspace-level binding.
    */
+  // ------------------------------------------------------------------
+  // Right-click context menu on result cells — MDX-parity table interactions.
+  // Dimension cells (row headers, column headers) get Filter to / Exclude /
+  // Sort ↑ / Sort ↓ / Copy value. Metric cells get Sort ↑ / Sort ↓ / Copy
+  // value only (no Filter — filters run against dimensions, not aggregates).
+  // ------------------------------------------------------------------
+
+  type MenuKind = "dimension" | "metric";
+  interface ContextMenuState {
+    open: boolean;
+    x: number;
+    y: number;
+    kind: MenuKind;
+    /** For dimensions: shelf entry (dataset+field). For metrics: metric name. */
+    dataset?: string;
+    field?: string;
+    metric?: string;
+    /** Cell value the user right-clicked on. Filters reference this. */
+    value?: string;
+  }
+
+  let ctxMenu = $state<ContextMenuState>({ open: false, x: 0, y: 0, kind: "dimension" });
+
+  function closeCtxMenu() {
+    ctxMenu = { ...ctxMenu, open: false };
+  }
+
+  function openDimensionMenu(e: MouseEvent, dataset: string, field: string, value: string) {
+    e.preventDefault();
+    ctxMenu = { open: true, x: e.clientX, y: e.clientY, kind: "dimension", dataset, field, value };
+  }
+
+  function openMetricMenu(e: MouseEvent, metric: string, value: string) {
+    e.preventDefault();
+    ctxMenu = { open: true, x: e.clientX, y: e.clientY, kind: "metric", metric, value };
+  }
+
+  function ctxFilterTo() {
+    if (!ctxMenu.field || ctxMenu.value === undefined) return;
+    ossieQuery.addFilter({
+      dataset: ctxMenu.dataset,
+      field: ctxMenu.field,
+      op: "EQ",
+      value: ctxMenu.value,
+      values: [],
+    });
+    closeCtxMenu();
+    if (ossieQuery.result) void ossieQuery.run();
+  }
+
+  function ctxExcludeValue() {
+    if (!ctxMenu.field || ctxMenu.value === undefined) return;
+    ossieQuery.addFilter({
+      dataset: ctxMenu.dataset,
+      field: ctxMenu.field,
+      op: "NEQ",
+      value: ctxMenu.value,
+      values: [],
+    });
+    closeCtxMenu();
+    if (ossieQuery.result) void ossieQuery.run();
+  }
+
+  function ctxSort(direction: "ASC" | "DESC") {
+    if (ctxMenu.kind === "metric" && ctxMenu.metric) {
+      ossieQuery.setSorts([{ metric: ctxMenu.metric, direction }]);
+    } else if (ctxMenu.field) {
+      ossieQuery.setSorts([{ dataset: ctxMenu.dataset, field: ctxMenu.field, direction }]);
+    }
+    closeCtxMenu();
+    if (ossieQuery.result) void ossieQuery.run();
+  }
+
+  async function ctxCopyValue() {
+    if (ctxMenu.value === undefined) return;
+    try {
+      await navigator.clipboard.writeText(ctxMenu.value);
+      toasts.success("Copied", ctxMenu.value);
+    } catch {
+      toasts.danger("Copy failed", "clipboard API rejected");
+    }
+    closeCtxMenu();
+  }
+
+  /**
+   * Look up the shelf entry for a data-row body cell by column index. Long-form only:
+   * the crosstab pivot has its own per-cell semantics that the P4 first cut skips.
+   */
+  function longFormShelfAt(columnIndex: number): {
+    kind: MenuKind;
+    dataset?: string;
+    field?: string;
+    metric?: string;
+  } | null {
+    const q = ossieQuery.current;
+    if (!q) return null;
+    const rowCount = q.rows.length;
+    if (columnIndex < rowCount) {
+      const ref = q.rows[columnIndex];
+      return { kind: "dimension", dataset: ref.dataset, field: ref.field };
+    }
+    const valueIdx = columnIndex - rowCount;
+    const metric = q.values[valueIdx];
+    if (!metric) return null;
+    return { kind: "metric", metric: metric.metric };
+  }
+
+  function onLongFormCellContext(e: MouseEvent, columnIndex: number, cellValue: string) {
+    const shelf = longFormShelfAt(columnIndex);
+    if (!shelf) return;
+    if (shelf.kind === "dimension" && shelf.dataset && shelf.field) {
+      openDimensionMenu(e, shelf.dataset, shelf.field, cellValue);
+    } else if (shelf.kind === "metric" && shelf.metric) {
+      openMetricMenu(e, shelf.metric, cellValue);
+    }
+  }
+
   $effect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -890,8 +1008,12 @@
         <tbody>
           {#each ossieQuery.result.cellSetBody ?? [] as row}
             <tr>
-              {#each row as c}
-                <td class:ossie-result__num={c.rawNumber !== undefined}>
+              {#each row as c, colIdx}
+                <td
+                  class:ossie-result__num={c.rawNumber !== undefined}
+                  oncontextmenu={(e) =>
+                    onLongFormCellContext(e, colIdx, c.formattedValue ?? c.rawValue ?? "")}
+                >
                   {c.formattedValue ?? c.rawValue ?? ""}
                 </td>
               {/each}
@@ -927,6 +1049,44 @@
   onOpen={onModalLoad}
   onCancel={() => (loadModalOpen = false)}
 />
+
+{#if ctxMenu.open}
+  <div
+    class="ossie-ctx-menu"
+    style="left:{ctxMenu.x}px;top:{ctxMenu.y}px"
+    role="menu"
+    aria-label="Cell actions"
+  >
+    <div class="ossie-ctx-menu__header" title={ctxMenu.value}>{ctxMenu.value}</div>
+    <div class="ossie-ctx-menu__sep"></div>
+    {#if ctxMenu.kind === "dimension"}
+      <button type="button" class="ossie-ctx-menu__item" onclick={ctxFilterTo}>
+        <span>Filter to <em>{ctxMenu.value}</em></span>
+      </button>
+      <button type="button" class="ossie-ctx-menu__item" onclick={ctxExcludeValue}>
+        <span>Exclude <em>{ctxMenu.value}</em></span>
+      </button>
+      <div class="ossie-ctx-menu__sep"></div>
+      <button type="button" class="ossie-ctx-menu__item" onclick={() => ctxSort("ASC")}>
+        <ArrowUp size={14} /> <span>Sort ascending</span>
+      </button>
+      <button type="button" class="ossie-ctx-menu__item" onclick={() => ctxSort("DESC")}>
+        <ArrowDown size={14} /> <span>Sort descending</span>
+      </button>
+    {:else}
+      <button type="button" class="ossie-ctx-menu__item" onclick={() => ctxSort("ASC")}>
+        <ArrowUp size={14} /> <span>Sort by {ctxMenu.metric} ↑</span>
+      </button>
+      <button type="button" class="ossie-ctx-menu__item" onclick={() => ctxSort("DESC")}>
+        <ArrowDown size={14} /> <span>Sort by {ctxMenu.metric} ↓</span>
+      </button>
+    {/if}
+    <div class="ossie-ctx-menu__sep"></div>
+    <button type="button" class="ossie-ctx-menu__item" onclick={ctxCopyValue}>
+      <span>Copy value</span>
+    </button>
+  </div>
+{/if}
 
 <Modal title="Generated SQL" open={showSqlOpen} size="lg" onClose={() => (showSqlOpen = false)}>
   {#if showSqlLoading}
@@ -1114,6 +1274,53 @@
     color: var(--fg);
     font-size: var(--fs-sm);
     height: 32px;
+  }
+  .ossie-ctx-menu {
+    position: fixed;
+    z-index: 1000;
+    min-width: 220px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+    padding: 4px;
+  }
+  .ossie-ctx-menu__header {
+    padding: 6px 12px;
+    font-size: var(--fs-xs);
+    color: var(--fg-muted);
+    font-weight: var(--weight-semibold);
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ossie-ctx-menu__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    padding: 7px 12px;
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    color: var(--fg);
+    font: inherit;
+    cursor: pointer;
+  }
+  .ossie-ctx-menu__item:hover {
+    background: var(--bg-hover);
+  }
+  .ossie-ctx-menu__item em {
+    font-style: normal;
+    font-weight: var(--weight-semibold);
+    color: var(--accent);
+  }
+  .ossie-ctx-menu__sep {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
   }
   .ossie-canvas__sql {
     background: var(--bg-hover);
