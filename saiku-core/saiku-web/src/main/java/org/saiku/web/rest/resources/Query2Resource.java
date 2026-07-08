@@ -260,8 +260,15 @@ public class Query2Resource {
             }
 
             QueryResult qr = RestUtil.convert(thinQueryService.execute(tq));
-            ThinQuery tqAfter = thinQueryService.getContext(tq.getName()).getOlapQuery();
-            qr.setQuery(tqAfter);
+            // OSSIE queries don't register a QueryContext (the Ossie service goes straight
+            // from JDBC to CellDataSet). Skip the ThinQuery attachment in that case — the
+            // client already has the shelf state locally.
+            org.saiku.service.util.QueryContext ctx = thinQueryService.getContext(tq.getName());
+            if (ctx != null) {
+                qr.setQuery(ctx.getOlapQuery());
+            } else {
+                qr.setQuery(tq);
+            }
             return Response.ok(qr).type(MediaType.APPLICATION_JSON).build();
         } catch (Exception e) {
             log.error("Cannot execute query (" + tq + ")", e);

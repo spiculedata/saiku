@@ -78,9 +78,19 @@ public final class OssieShelfSqlTranslator {
         sql.append("SELECT ").append(String.join(", ", selectCols));
 
         // --- FROM ---
+        // Emit datasets unqualified — Calcite's defaultSchema (set to the Ossie model
+        // name in the connect JSON) resolves them. We tried schema-qualifying earlier
+        // ("Pharma"."fact_pharma") but Calcite reports "Object 'Pharma' not found" even
+        // though the schema is registered by that name; probable interaction with the
+        // caseSensitive=false connect flag. For single-schema-per-connection (the MVP
+        // one-model-per-datasource shape) the unqualified form always resolves. If we
+        // ever wire cross-schema queries the qualifier will need to come back with a
+        // different case-handling story.
         List<String> fromRefs = new ArrayList<>();
-        for (String ds : datasets) fromRefs.add(quoteRef(schema) + "." + quoteRef(ds));
+        for (String ds : datasets) fromRefs.add(quoteRef(ds));
         sql.append(" FROM ").append(String.join(", ", fromRefs));
+        // schema is currently unreferenced but kept for the follow-up. Silence "unused".
+        if (schema == null) throw new IllegalStateException("schema null after guard");
 
         // --- WHERE ---
         List<String> whereClauses = new ArrayList<>();

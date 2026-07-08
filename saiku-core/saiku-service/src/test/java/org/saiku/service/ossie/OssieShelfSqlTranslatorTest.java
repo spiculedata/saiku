@@ -50,7 +50,7 @@ public class OssieShelfSqlTranslatorTest {
         assertEquals(
                 "SELECT \"customers\".\"region\" AS \"customers.region\","
                         + " SUM(\"orders\".\"amount\") AS \"revenue\""
-                        + " FROM \"SALES\".\"orders\", \"SALES\".\"customers\""
+                        + " FROM \"orders\", \"customers\""
                         + " GROUP BY \"customers\".\"region\"",
                 translator.translate(m, semantic));
     }
@@ -73,7 +73,7 @@ public class OssieShelfSqlTranslatorTest {
                         + " \"dates\".\"year\" AS \"dates.year\","
                         + " SUM(\"orders\".\"amount\") AS \"revenue\","
                         + " COUNT(*) AS \"order_count\""
-                        + " FROM \"SALES\".\"orders\", \"SALES\".\"customers\", \"SALES\".\"dates\""
+                        + " FROM \"orders\", \"customers\", \"dates\""
                         + " GROUP BY \"customers\".\"region\", \"dates\".\"year\"",
                 sql);
     }
@@ -105,7 +105,7 @@ public class OssieShelfSqlTranslatorTest {
         assertEquals(
                 "SELECT \"customers\".\"region\" AS \"customers.region\","
                         + " SUM(\"orders\".\"amount\") AS \"revenue\""
-                        + " FROM \"SALES\".\"orders\", \"SALES\".\"customers\", \"SALES\".\"dates\""
+                        + " FROM \"orders\", \"customers\", \"dates\""
                         + " WHERE \"customers\".\"region\" = 'NA' AND \"dates\".\"year\" IN (2024, 2025)"
                         + " GROUP BY \"customers\".\"region\"",
                 sql);
@@ -137,7 +137,7 @@ public class OssieShelfSqlTranslatorTest {
         assertEquals(
                 "SELECT \"customers\".\"region\" AS \"customers.region\","
                         + " SUM(\"orders\".\"amount\") AS \"revenue\""
-                        + " FROM \"SALES\".\"orders\", \"SALES\".\"customers\""
+                        + " FROM \"orders\", \"customers\""
                         + " WHERE \"orders\".\"amount\" BETWEEN 100 AND 500"
                         + " GROUP BY \"customers\".\"region\""
                         + " ORDER BY \"revenue\" DESC"
@@ -164,7 +164,7 @@ public class OssieShelfSqlTranslatorTest {
         assertEquals(
                 "SELECT \"customers\".\"region\" AS \"customers.region\","
                         + " SUM(\"orders\".\"amount\") AS \"revenue\""
-                        + " FROM \"SALES\".\"orders\", \"SALES\".\"customers\""
+                        + " FROM \"orders\", \"customers\""
                         + " WHERE 1 = 0"
                         + " GROUP BY \"customers\".\"region\"",
                 sql);
@@ -190,7 +190,7 @@ public class OssieShelfSqlTranslatorTest {
         assertEquals(
                 "SELECT \"customers\".\"region\" AS \"customers.region\","
                         + " SUM(\"orders\".\"amount\") AS \"revenue\""
-                        + " FROM \"SALES\".\"orders\", \"SALES\".\"customers\""
+                        + " FROM \"orders\", \"customers\""
                         + " WHERE \"customers\".\"name\" = 'O''Brien'"
                         + " GROUP BY \"customers\".\"region\"",
                 sql);

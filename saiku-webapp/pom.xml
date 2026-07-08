@@ -334,6 +334,21 @@
             <artifactId>saiku-sql</artifactId>
             <version>${project.version}</version>
             <scope>runtime</scope>
+            <exclusions>
+                <!-- avatica-server pulls Jetty 9.4 (its own embedded HTTP surface for
+                     the Avatica RPC endpoint). We don't need that inside the launcher —
+                     the OSSIE workbench uses Calcite via jdbc:calcite: (in-process); the
+                     external Avatica JDBC endpoint is only wired by the standalone
+                     'sql-serve' subcommand and packages its own classpath. Including
+                     avatica-server here collides with Jetty 12 that the launcher itself
+                     depends on: Jetty 9's AbstractLifeCycle wins the shade, and Jetty
+                     12's server-startup path then explodes on a missing StopException
+                     inner class. -->
+                <exclusion>
+                    <groupId>org.apache.calcite.avatica</groupId>
+                    <artifactId>avatica-server</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.hive</groupId>

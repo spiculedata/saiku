@@ -96,10 +96,22 @@ public class SaikuOssieConnection implements ISaikuConnection {
         if (passwordEnc != null && passwordEnc.equals("true") && password != null) {
             password = decrypt(password);
         }
-        // Default the Ossie model name to the datasource name when the operator hasn't picked
-        // one — one-model-per-datasource is the MVP shape; explicit picking is for future
-        // multi-model YAML files.
-        String modelName = props.getProperty(OSSIE_MODEL_KEY, name);
+        // Pick the Ossie semantic_model to expose. Precedence:
+        //   1. Explicit OSSIE_MODEL_KEY property (future multi-model YAML use).
+        //   2. The datasource's `schema` property — this is what the .sds
+        //      writes and what the admin form binds to. It's the operator's
+        //      declared intent about which semantic_model in the YAML this
+        //      datasource surfaces, and it must match the SQL translator's
+        //      schema-qualified refs (which use the semantic_model name).
+        //   3. Fall back to the connection name for the one-model-per-datasource
+        //      MVP shape where nothing is set.
+        String modelName = props.getProperty(OSSIE_MODEL_KEY);
+        if (modelName == null || modelName.isBlank()) {
+            modelName = props.getProperty("schema");
+        }
+        if (modelName == null || modelName.isBlank()) {
+            modelName = name;
+        }
 
         String calciteUrl = buildCalciteConnectString(Path.of(ossieYaml), modelName, warehouseUrl, user, password);
         // The Calcite driver reads the model + operand from the URL — no user/pass params
