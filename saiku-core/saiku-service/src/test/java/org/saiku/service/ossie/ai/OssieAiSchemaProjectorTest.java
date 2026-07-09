@@ -85,6 +85,58 @@ public class OssieAiSchemaProjectorTest {
         assertFalse(simple.getValues().isEmpty());
     }
 
+    // ---- alias map + custom_extensions passthrough (#1408 / #1409) ----
+
+    @Test
+    public void aliasMapsCarryThroughFromDto() {
+        OssieModelDto semantic = buildFixture();
+        semantic.getFieldAliases().put("state", "customers.region");
+        semantic.getMetricAliases().put("revenue", "net_revenue");
+        semantic.getDatasetAliases().put("clients", "customers");
+
+        OssieAiSchema schema = new OssieAiSchemaProjector().project("Pharma", semantic, null);
+        assertEquals("customers.region", schema.getFieldAliases().get("state"));
+        assertEquals("net_revenue", schema.getMetricAliases().get("revenue"));
+        assertEquals("customers", schema.getDatasetAliases().get("clients"));
+    }
+
+    @Test
+    public void customExtensionsCarryThroughOnField() {
+        OssieModelDto semantic = buildFixture();
+        // Attach an ext to the fact_pharma.NETREVENUE field.
+        org.saiku.service.ossie.CustomExtensionDto ext = new org.saiku.service.ossie.CustomExtensionDto();
+        ext.setVendorName("SAIKU");
+        semantic.getDatasets().get(0).getFields().get(0).getCustomExtensions().add(ext);
+
+        OssieAiSchema schema = new OssieAiSchemaProjector().project("Pharma", semantic, null);
+        var field = schema.getDatasets().get("fact_pharma").getFields().get("netrevenue");
+        assertEquals(1, field.getCustomExtensions().size());
+        assertEquals("SAIKU", field.getCustomExtensions().get(0).getVendorName());
+    }
+
+    @Test
+    public void customExtensionsCarryThroughOnDatasetAndMetric() {
+        OssieModelDto semantic = buildFixture();
+        org.saiku.service.ossie.CustomExtensionDto dsExt = new org.saiku.service.ossie.CustomExtensionDto();
+        dsExt.setVendorName("SAIKU");
+        semantic.getDatasets().get(0).getCustomExtensions().add(dsExt);
+
+        org.saiku.service.ossie.CustomExtensionDto mExt = new org.saiku.service.ossie.CustomExtensionDto();
+        mExt.setVendorName("DBT");
+        semantic.getMetrics().get(0).getCustomExtensions().add(mExt);
+
+        OssieAiSchema schema = new OssieAiSchemaProjector().project("Pharma", semantic, null);
+        assertEquals(
+                1, schema.getDatasets().get("fact_pharma").getCustomExtensions().size());
+        assertEquals(
+                "DBT",
+                schema.getMetrics()
+                        .get("net_revenue")
+                        .getCustomExtensions()
+                        .get(0)
+                        .getVendorName());
+    }
+
     private OssieModelDto buildFixture() {
         OssieModelDto semantic = new OssieModelDto();
         semantic.setName("Pharma");

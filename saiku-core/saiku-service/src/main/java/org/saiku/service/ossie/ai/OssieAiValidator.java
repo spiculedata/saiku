@@ -92,7 +92,15 @@ public final class OssieAiValidator {
                     "dataset is required",
                     new ArrayList<>(schema.getDatasets().keySet()));
         }
-        OssieAiSchema.Dataset ds = schema.getDatasets().get(ref.getDataset().toLowerCase(Locale.ROOT));
+        // Dataset synonyms — rewrite the request to the canonical name before lookup so downstream
+        // code (translator, sample generation) sees canonical names only.
+        String datasetKey = ref.getDataset().toLowerCase(Locale.ROOT);
+        String datasetAlias = schema.getDatasetAliases().get(datasetKey);
+        if (datasetAlias != null) {
+            ref.setDataset(datasetAlias);
+            datasetKey = datasetAlias.toLowerCase(Locale.ROOT);
+        }
+        OssieAiSchema.Dataset ds = schema.getDatasets().get(datasetKey);
         if (ds == null) {
             throw new OssieAiValidationException(
                     path + ".dataset",
@@ -104,6 +112,19 @@ public final class OssieAiValidator {
                     path + ".field",
                     "field is required",
                     new ArrayList<>(ds.getFields().keySet()));
+        }
+        // Field synonyms — index values are "<dataset>.<field>" so we only accept an alias if it
+        // resolves to a field on the SAME dataset the caller asked for. Cross-dataset synonym hits
+        // are ambiguous ("state" could be customers.state or stores.state) so we reject rather
+        // than guess.
+        if (!ds.getFields().containsKey(ref.getField().toLowerCase(Locale.ROOT))) {
+            String fieldAlias = schema.getFieldAliases().get(ref.getField().toLowerCase(Locale.ROOT));
+            if (fieldAlias != null) {
+                int dot = fieldAlias.indexOf('.');
+                if (dot > 0 && ds.getName().equalsIgnoreCase(fieldAlias.substring(0, dot))) {
+                    ref.setField(fieldAlias.substring(dot + 1));
+                }
+            }
         }
         if (!ds.getFields().containsKey(ref.getField().toLowerCase(Locale.ROOT))) {
             throw new OssieAiValidationException(
@@ -123,7 +144,16 @@ public final class OssieAiValidator {
                     "metric is required",
                     new ArrayList<>(schema.getMetrics().keySet()));
         }
+        // Metric synonyms — same rewrite pattern as datasets. Rewritten to canonical so the
+        // executor sees the metric name declared in the YAML.
         OssieAiSchema.Metric metric = schema.getMetrics().get(ref.getMetric());
+        if (metric == null) {
+            String metricAlias = schema.getMetricAliases().get(ref.getMetric().toLowerCase(Locale.ROOT));
+            if (metricAlias != null) {
+                ref.setMetric(metricAlias);
+                metric = schema.getMetrics().get(metricAlias);
+            }
+        }
         if (metric == null) {
             throw new OssieAiValidationException(
                     path + ".metric",

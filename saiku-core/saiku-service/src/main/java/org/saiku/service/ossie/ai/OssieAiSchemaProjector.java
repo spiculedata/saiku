@@ -97,6 +97,12 @@ public final class OssieAiSchemaProjector {
         out.setDescription(semantic.getDescription());
         out.setModelId(connectionName + "/" + semantic.getName());
 
+        // Alias maps are pre-computed by OssieDiscoverService via bi.saiku.ossie.OssieSynonymIndex.
+        // Copying them straight across preserves case-normalisation + first-declared-wins semantics.
+        out.setFieldAliases(semantic.getFieldAliases());
+        out.setMetricAliases(semantic.getMetricAliases());
+        out.setDatasetAliases(semantic.getDatasetAliases());
+
         // ---- Datasets + fields ----
         String factCandidate = null;
         for (OssieModelDto.Dataset ds : semantic.getDatasets()) {
@@ -105,12 +111,14 @@ public final class OssieAiSchemaProjector {
             out_ds.setSource(ds.getSource());
             out_ds.setDescription(ds.getDescription());
             out_ds.setPrimaryKey(new ArrayList<>(ds.getPrimaryKey()));
+            out_ds.setCustomExtensions(new ArrayList<>(ds.getCustomExtensions()));
             for (OssieModelDto.Field f : ds.getFields()) {
                 if (f.isPii()) continue; // saiku#902 parity — PII fields never enter the AI view.
                 OssieAiSchema.Field out_field = new OssieAiSchema.Field();
                 out_field.setName(f.getName());
                 out_field.setLabel(f.getLabel());
                 out_field.setDescription(f.getDescription());
+                out_field.setCustomExtensions(new ArrayList<>(f.getCustomExtensions()));
                 // Type + samples come from the warehouse. Best-effort: swallow failures so
                 // the schema still projects when the warehouse is offline (agent still sees
                 // field names, just without samples).
@@ -141,6 +149,7 @@ public final class OssieAiSchemaProjector {
             out_m.setExpression(m.getExpression());
             out_m.setAggregationKind(deriveAggregationKind(m));
             out_m.setSupportedOverrides(deriveSupportedOverrides(m));
+            out_m.setCustomExtensions(new ArrayList<>(m.getCustomExtensions()));
             out.getMetrics().put(m.getName(), out_m);
         }
 

@@ -305,6 +305,49 @@ Fields marked `pii: true` in the Ossie YAML are stripped entirely
 from the schema view. Callers can't reference them; a query that does
 returns `VALIDATION_ERROR` naming the field as "unknown".
 
+### AI-context synonyms (#1408)
+
+Every dataset, field, and metric in the Ossie YAML can declare
+`ai_context.synonyms`. Those synonyms are surfaced on the schema view
+as three lowercased-alias → canonical-name maps:
+
+```jsonc
+{
+  "fieldAliases":   { "state": "customers.region", "geo": "customers.region" },
+  "metricAliases":  { "revenue": "net_revenue", "turnover": "net_revenue", "top-line": "net_revenue" },
+  "datasetAliases": { "clients": "customers", "buyers": "customers" }
+}
+```
+
+At request time, the validator resolves synonyms before rejecting a
+name. A `POST /query` with `values: [{metric: "revenue"}]` gets
+rewritten in place to `values: [{metric: "net_revenue"}]`; the executor
++ SQL translator never see the alias. Cross-dataset field synonyms are
+deliberately not auto-rewritten — a request for `customers.geo` where
+`geo` aliases `stores.state` returns `VALIDATION_ERROR` rather than
+silently pointing at the wrong dataset.
+
+### Custom extensions passthrough (#1409)
+
+The Ossie `custom_extensions[]` list on any dataset, field, or metric
+carries through to the schema view as `customExtensions[]` on the
+matching AI schema element. Data payloads are parsed once into JSON so
+consumers don't re-parse.
+
+Extensions whose data payload declares `"visibility": "internal"` are
+filtered out entirely — that flag is the standard escape hatch for
+tooling-private metadata (Saiku's own internal annotations, dbt's
+tool-only bookkeeping, etc.) that shouldn't reach an agent-facing view.
+
+```yaml
+# In the YAML
+custom_extensions:
+- vendor_name: PUBLIC         # ← passes through
+  data: '{"note":"visible"}'
+- vendor_name: INTERNAL       # ← filtered, never reaches the AI view
+  data: '{"visibility":"internal","secret":true}'
+```
+
 ---
 
 ## Step 4 — validation: how the API teaches the agent

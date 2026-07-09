@@ -164,6 +164,83 @@ public class OssieDiscoverServiceTest {
         service.getModel("SALES");
     }
 
+    // ---- synonym + custom_extensions passthrough (#1408 / #1409) ----
+
+    @Test
+    public void synonymAliasesPopulatedFromAiContext() throws Exception {
+        Path yamlWithSynonyms = Files.createTempFile("ossie-syn-", ".yaml");
+        Files.writeString(
+                yamlWithSynonyms,
+                "version: 0.2.0.dev0\n"
+                        + "semantic_model:\n"
+                        + "- name: T\n"
+                        + "  datasets:\n"
+                        + "  - name: customers\n"
+                        + "    source: s.c\n"
+                        + "    ai_context:\n"
+                        + "      synonyms: [clients, buyers]\n"
+                        + "    fields:\n"
+                        + "    - name: region\n"
+                        + "      expression:\n"
+                        + "        dialects: [{dialect: ANSI_SQL, expression: r}]\n"
+                        + "      ai_context:\n"
+                        + "        synonyms: [state, geo]\n"
+                        + "  metrics:\n"
+                        + "  - name: net_revenue\n"
+                        + "    expression:\n"
+                        + "      dialects: [{dialect: ANSI_SQL, expression: SUM(x)}]\n"
+                        + "    ai_context:\n"
+                        + "      synonyms: [revenue, turnover, top-line]\n");
+        try {
+            datasourceManager.put(
+                    "T", ossieDatasource("T", propsOf(ISaikuConnection.OSSIE_YAML_KEY, yamlWithSynonyms.toString())));
+            OssieModelDto dto = service.getModel("T");
+            assertEquals("net_revenue", dto.getMetricAliases().get("revenue"));
+            assertEquals("net_revenue", dto.getMetricAliases().get("turnover"));
+            assertEquals("net_revenue", dto.getMetricAliases().get("top-line"));
+            assertEquals("customers", dto.getDatasetAliases().get("clients"));
+            assertEquals("customers.region", dto.getFieldAliases().get("state"));
+            assertEquals("customers.region", dto.getFieldAliases().get("geo"));
+        } finally {
+            Files.deleteIfExists(yamlWithSynonyms);
+        }
+    }
+
+    @Test
+    public void internalVisibilityExtensionsGetFiltered() throws Exception {
+        Path yamlWithInternal = Files.createTempFile("ossie-ext-", ".yaml");
+        Files.writeString(
+                yamlWithInternal,
+                "version: 0.2.0.dev0\n"
+                        + "semantic_model:\n"
+                        + "- name: T\n"
+                        + "  datasets:\n"
+                        + "  - name: d\n"
+                        + "    source: s.d\n"
+                        + "    fields:\n"
+                        + "    - name: f\n"
+                        + "      expression:\n"
+                        + "        dialects: [{dialect: ANSI_SQL, expression: c}]\n"
+                        + "      custom_extensions:\n"
+                        + "      - vendor_name: PUBLIC\n"
+                        + "        data: '{\"note\":\"visible\"}'\n"
+                        + "      - vendor_name: INTERNAL\n"
+                        + "        data: '{\"visibility\":\"internal\",\"secret\":true}'\n");
+        try {
+            datasourceManager.put(
+                    "T", ossieDatasource("T", propsOf(ISaikuConnection.OSSIE_YAML_KEY, yamlWithInternal.toString())));
+            OssieModelDto dto = service.getModel("T");
+            var ext = dto.getDatasets().get(0).getFields().get(0).getCustomExtensions();
+            // INTERNAL extension filtered out; PUBLIC remains.
+            assertEquals(1, ext.size());
+            assertEquals("PUBLIC", ext.get(0).getVendorName());
+            assertNotNull(ext.get(0).getData());
+            assertEquals("visible", ext.get(0).getData().get("note").asText());
+        } finally {
+            Files.deleteIfExists(yamlWithInternal);
+        }
+    }
+
     @Test
     public void descriptionsSurviveProjection() {
         // Belt-and-braces regression guard: a field with a description but no PII extension

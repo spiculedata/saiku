@@ -184,6 +184,22 @@ public class OssieAiSchema {
         /** Fields keyed by lower-case field name. */
         private Map<String, Field> fields = new LinkedHashMap<>();
 
+        /**
+         * Passed-through Ossie {@code custom_extensions[]}. Populated from the DTO layer; anything
+         * with {@code visibility: internal} is filtered upstream. Empty for datasets without
+         * extensions.
+         */
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        private List<org.saiku.service.ossie.CustomExtensionDto> customExtensions = new ArrayList<>();
+
+        public List<org.saiku.service.ossie.CustomExtensionDto> getCustomExtensions() {
+            return customExtensions;
+        }
+
+        public void setCustomExtensions(List<org.saiku.service.ossie.CustomExtensionDto> v) {
+            this.customExtensions = v == null ? new ArrayList<>() : v;
+        }
+
         public String getName() {
             return name;
         }
@@ -246,6 +262,21 @@ public class OssieAiSchema {
         private Long estimatedDistinct;
 
         private List<String> sampleValues = new ArrayList<>();
+
+        /**
+         * Passed-through Ossie {@code custom_extensions[]}. See
+         * {@link Dataset#getCustomExtensions()}.
+         */
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        private List<org.saiku.service.ossie.CustomExtensionDto> customExtensions = new ArrayList<>();
+
+        public List<org.saiku.service.ossie.CustomExtensionDto> getCustomExtensions() {
+            return customExtensions;
+        }
+
+        public void setCustomExtensions(List<org.saiku.service.ossie.CustomExtensionDto> v) {
+            this.customExtensions = v == null ? new ArrayList<>() : v;
+        }
 
         public String getName() {
             return name;
@@ -329,6 +360,21 @@ public class OssieAiSchema {
         private String aggregationKind;
         private String unit;
         private List<String> supportedOverrides = new ArrayList<>();
+
+        /**
+         * Passed-through Ossie {@code custom_extensions[]}. See
+         * {@link Dataset#getCustomExtensions()}.
+         */
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        private List<org.saiku.service.ossie.CustomExtensionDto> customExtensions = new ArrayList<>();
+
+        public List<org.saiku.service.ossie.CustomExtensionDto> getCustomExtensions() {
+            return customExtensions;
+        }
+
+        public void setCustomExtensions(List<org.saiku.service.ossie.CustomExtensionDto> v) {
+            this.customExtensions = v == null ? new ArrayList<>() : v;
+        }
 
         public String getName() {
             return name;
