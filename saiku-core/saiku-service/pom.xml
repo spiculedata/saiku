@@ -129,6 +129,18 @@
         </plugins>
     </build>
 	<dependencies>
+		<!-- Ossie DTOs + YAML/JSON reader/writer extracted to ossie-core
+		     (saiku#1396 L1). MondrianToOssieConverter stays in this module
+		     because it depends on Mondrian; the pure-Jackson parser layer
+		     lives in ossie-core so downstream consumers (saiku-sql, and
+		     eventually external tools) can pull it without dragging in
+		     Mondrian or Spring. -->
+		<dependency>
+			<groupId>org.saikuanalytics</groupId>
+			<artifactId>ossie-core</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+
 		<!-- @NotNull / @Nullable annotations used in ObjectUtil + Acl2.
 		     Was previously dragged in transitively (probably via a removed
 		     pentaho-platform-* or serenity transitive); now explicit. -->

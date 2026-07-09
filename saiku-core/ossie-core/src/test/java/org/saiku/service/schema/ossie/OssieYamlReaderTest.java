@@ -2,21 +2,19 @@
  *   Copyright 2026 Spicule Ltd
  *   Apache License, Version 2.0.
  */
-package org.saiku.sql;
+package org.saiku.service.schema.ossie;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.Test;
-import org.saiku.service.schema.ossie.OssieYamlReader;
+import org.junit.jupiter.api.Test;
 import org.saiku.service.schema.ossie.model.OssieDocument;
 
 /**
- * Round-trip validation: the same YAML produced by {@code OssieYamlWriter} in saiku-service must
- * deserialise cleanly through the read side that saiku-sql owns. If this test breaks, either the
- * writer changed its shape (spec bump) or the reader forgot a {@code @JsonProperty} annotation on
- * a setter.
+ * Round-trip validation: the same YAML shape emitted by {@link OssieYamlWriter} must deserialise
+ * cleanly through {@link OssieYamlReader}. If this breaks, either the writer changed its shape
+ * (spec bump) or the reader forgot a {@code @JsonProperty} annotation on a setter.
  */
 public class OssieYamlReaderTest {
 
