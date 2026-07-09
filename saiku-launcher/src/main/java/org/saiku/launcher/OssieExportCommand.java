@@ -4,6 +4,8 @@
  */
 package org.saiku.launcher;
 
+import bi.saiku.ossie.OssieYamlWriter;
+import bi.saiku.ossie.model.OssieDocument;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -17,8 +19,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.concurrent.Callable;
 import org.saiku.service.schema.ossie.MondrianToOssieConverter;
-import bi.saiku.ossie.OssieYamlWriter;
-import bi.saiku.ossie.model.OssieDocument;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
