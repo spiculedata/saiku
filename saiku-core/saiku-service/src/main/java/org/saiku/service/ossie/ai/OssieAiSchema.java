@@ -39,8 +39,25 @@ public class OssieAiSchema {
     /** Relationships as a flat list — order preserved from the YAML. */
     private List<Relationship> relationships = new ArrayList<>();
 
-    /** {@code synonym → canonicalKey}. Empty in R1 (source YAML doesn't declare synonyms). */
+    /**
+     * {@code lowercased-synonym → "<dataset>.<field>"}. Populated from every field's
+     * {@code ai_context.synonyms} in the source YAML. Callers that receive a caller-supplied
+     * field name can resolve it against this map first: an unknown name that appears here is a
+     * synonym and gets rewritten to the canonical key. Empty when no field declares synonyms.
+     */
     private Map<String, String> fieldAliases = new LinkedHashMap<>();
+
+    /**
+     * {@code lowercased-synonym → canonical-metric-name}. Same shape as {@link #fieldAliases}
+     * but for metrics (which are model-scoped in the OSI spec, so no dataset qualifier).
+     */
+    private Map<String, String> metricAliases = new LinkedHashMap<>();
+
+    /**
+     * {@code lowercased-synonym → canonical-dataset-name}. Same shape as {@link #fieldAliases}
+     * but for datasets.
+     */
+    private Map<String, String> datasetAliases = new LinkedHashMap<>();
 
     /**
      * JSON Schema for the request body. Kept as a raw {@link ObjectNode} because the doc is
@@ -121,6 +138,22 @@ public class OssieAiSchema {
 
     public void setFieldAliases(Map<String, String> v) {
         this.fieldAliases = v == null ? new LinkedHashMap<>() : v;
+    }
+
+    public Map<String, String> getMetricAliases() {
+        return metricAliases;
+    }
+
+    public void setMetricAliases(Map<String, String> v) {
+        this.metricAliases = v == null ? new LinkedHashMap<>() : v;
+    }
+
+    public Map<String, String> getDatasetAliases() {
+        return datasetAliases;
+    }
+
+    public void setDatasetAliases(Map<String, String> v) {
+        this.datasetAliases = v == null ? new LinkedHashMap<>() : v;
     }
 
     public ObjectNode getRequestSchema() {

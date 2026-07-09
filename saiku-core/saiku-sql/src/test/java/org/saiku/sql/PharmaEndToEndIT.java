@@ -347,7 +347,7 @@ public class PharmaEndToEndIT {
                 + "  \"schemas\": [{\n"
                 + "    \"name\": \"Pharma Rx\",\n"
                 + "    \"type\": \"custom\",\n"
-                + "    \"factory\": \"org.saiku.sql.adapter.OssieSchemaFactory\",\n"
+                + "    \"factory\": \"bi.saiku.ossie.sql.internal.OssieSchemaFactory\",\n"
                 + "    \"operand\": {\n"
                 + "      \"ossieYaml\": \"" + ossieYaml.toString().replace("\\", "\\\\") + "\",\n"
                 + "      \"jdbcUrl\": \"" + h2Url + "\",\n"

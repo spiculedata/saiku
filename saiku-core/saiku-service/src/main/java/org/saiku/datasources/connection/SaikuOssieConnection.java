@@ -20,7 +20,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Saiku connection wrapper for an Apache Ossie semantic-model datasource. Wraps a plain JDBC
  * connection acquired from Calcite's {@code jdbc:calcite:} driver, wired to an
- * {@link org.saiku.sql.adapter.OssieSchemaFactory} that reads the Ossie YAML declared in the
+ * {@link bi.saiku.ossie.sql.internal.OssieSchemaFactory} that reads the Ossie YAML declared in the
  * datasource properties. Every SQL query dispatched by {@code OssieQueryService} runs through
  * this connection.
  *
@@ -199,7 +199,7 @@ public class SaikuOssieConnection implements ISaikuConnection {
                 + "  \"schemas\": [{\n"
                 + "    \"name\": \"" + schemaName + "\",\n"
                 + "    \"type\": \"custom\",\n"
-                + "    \"factory\": \"org.saiku.sql.adapter.OssieSchemaFactory\",\n"
+                + "    \"factory\": \"bi.saiku.ossie.sql.internal.OssieSchemaFactory\",\n"
                 + "    \"operand\": {" + operand + "}\n"
                 + "  }]\n"
                 + "}";

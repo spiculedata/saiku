@@ -32,6 +32,20 @@
             <artifactId>ossie-core</artifactId>
             <version>${ossie.version}</version>
         </dependency>
+
+        <!-- Calcite adapter + shelf-state query engine, extracted from this
+             module to bi.saiku.ossie:ossie-sql in saiku#1396 Path 1. All
+             adapter classes previously under org.saiku.sql.adapter now
+             live under bi.saiku.ossie.sql.internal — SaikuOssieConnection
+             and OssieSqlServer construct jdbc:calcite:model URLs that
+             point at the library's OssieSchemaFactory by
+             fully-qualified name, so the compile-time dep here means the
+             class is loadable at runtime. -->
+        <dependency>
+            <groupId>bi.saiku.ossie</groupId>
+            <artifactId>ossie-sql</artifactId>
+            <version>${ossie.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.saikuanalytics</groupId>
             <artifactId>saiku-service</artifactId>

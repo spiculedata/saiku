@@ -35,7 +35,7 @@ import org.saiku.service.olap.OlapDiscoverService;
 
 /**
  * End-to-end integration test: shelf state → SQL → live H2 warehouse via
- * {@link org.saiku.sql.adapter.OssieSchemaFactory} → {@link CellDataSet}.
+ * {@link bi.saiku.ossie.sql.internal.OssieSchemaFactory} → {@link CellDataSet}.
  *
  * <p>Lives in {@code saiku-sql} rather than {@code saiku-service} so the Calcite adapter class
  * is on the test classpath — pulling {@code saiku-sql} into {@code saiku-service}'s tests would

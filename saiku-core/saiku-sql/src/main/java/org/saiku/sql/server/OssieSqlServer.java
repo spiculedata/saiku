@@ -75,7 +75,7 @@ public class OssieSqlServer implements AutoCloseable {
                 + "  \"schemas\": [{\n"
                 + "    \"name\": \"" + schemaName + "\",\n"
                 + "    \"type\": \"custom\",\n"
-                + "    \"factory\": \"org.saiku.sql.adapter.OssieSchemaFactory\",\n"
+                + "    \"factory\": \"bi.saiku.ossie.sql.internal.OssieSchemaFactory\",\n"
                 + "    \"operand\": {" + operand + "}\n"
                 + "  }]\n"
                 + "}";
