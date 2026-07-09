@@ -381,6 +381,58 @@ The same shape covers:
 
 ---
 
+## Step 4b — inspect the ontology block (#1410)
+
+Some OSI documents carry a top-level `ontology:` block alongside the
+SQL-adjacent `semantic_model:` — a knowledge-graph view of the
+entities (concepts) in the domain and the relationships between them
+(attributes, associations, derived relationships). See the [Apache
+Ossie flights example](https://github.com/apache/ossie/blob/main/examples/flights.yaml)
+for the canonical shape.
+
+```http
+GET /rest/saiku/api/ai/ossie/ontology/{connection}/{model}
+```
+
+Response body:
+
+```json
+{
+  "connection": "unknown_Flights",
+  "model": "Flights",
+  "ontology": [
+    {
+      "concept": {
+        "name": "Example_Runway",
+        "type": "EntityType",
+        "identify_by": ["id"]
+      },
+      "relationships": [
+        {"name": "id",
+         "roles": [{"concept": "String"}],
+         "verbalizes": ["{Example_Runway} id {String}"],
+         "multiplicity": "ManyToOne"},
+        {"name": "airports",
+         "roles": [{"concept": "Example_Airport"}],
+         "verbalizes": ["{Example_Runway} airports {Example_Airport}"],
+         "multiplicity": "ManyToOne",
+         "derived_by": ["Example_Runway.airportid == Example_Airport.airportid"]}
+      ]
+    }
+  ]
+}
+```
+
+Documents without an ontology block return `{"ontology": []}`. Same
+authentication + connection-validation semantics as the other
+endpoints.
+
+Use the same shape as the input to a `describe_ossie_ontology` MCP
+call (see [MCP integration](#mcp-integration) below) — the tool
+wraps this endpoint.
+
+---
+
 ## Step 5 — preview
 
 ```http
@@ -663,13 +715,14 @@ narration attached.
 
 ## MCP integration
 
-The five Ossie tools are exposed via `POST /saiku/api/mcp` alongside
+The six Ossie tools are exposed via `POST /saiku/api/mcp` alongside
 the six MDX tools. Each wraps the corresponding REST endpoint:
 
 | MCP tool | REST equivalent |
 | --- | --- |
 | `list_ossie_models` | `GET /ai/ossie/models` |
 | `describe_ossie_model` | `GET /ai/ossie/schema/{c}/{m}` |
+| `describe_ossie_ontology` | `GET /ai/ossie/ontology/{c}/{m}` |
 | `search_field_values` | `GET /ai/ossie/values/search` |
 | `run_ossie_query` | `POST /ai/ossie/query` |
 | `preview_ossie_query` | `POST /ai/ossie/query/preview` |

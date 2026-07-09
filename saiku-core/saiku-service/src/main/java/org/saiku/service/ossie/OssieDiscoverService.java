@@ -59,10 +59,23 @@ public class OssieDiscoverService {
     }
 
     /**
-     * Return the Ossie model tree for a connection. Throws {@link IllegalArgumentException} if
-     * the connection isn't OSSIE-typed or the YAML file is missing / unreadable.
+     * Return the ontology block from the Ossie document associated with a connection. Empty when
+     * the document has no {@code ontology:} section. Same connection-validation rules as
+     * {@link #getModel(String)} — throws {@link IllegalArgumentException} on unknown / non-Ossie
+     * datasources or missing YAML.
      */
-    public OssieModelDto getModel(String connectionName) {
+    public List<bi.saiku.ossie.model.ontology.OntologyEntry> getOntology(String connectionName) {
+        OssieDocument doc = readDocument(connectionName);
+        return doc.getOntology();
+    }
+
+    /**
+     * Load and parse the underlying {@link OssieDocument} for a connection. Kept package-private
+     * because callers should prefer the projected {@link OssieModelDto} — direct document access
+     * exists for the ontology surface (which has no OssieModelDto equivalent) and future spec
+     * blocks that don't fit the semantic-model projection.
+     */
+    OssieDocument readDocument(String connectionName) {
         SaikuDatasource ds = datasourceManager.getDatasource(connectionName);
         if (ds == null) {
             throw new IllegalArgumentException("No datasource named '" + connectionName + "'");
@@ -80,15 +93,23 @@ public class OssieDiscoverService {
         if (!Files.isReadable(yaml)) {
             throw new IllegalArgumentException("Ossie YAML not readable at " + yamlPath);
         }
-        OssieDocument doc;
         try {
-            doc = new OssieYamlReader().read(yaml);
+            return new OssieYamlReader().read(yaml);
         } catch (IOException e) {
             throw new IllegalArgumentException("Failed to read Ossie YAML at " + yamlPath + ": " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Return the Ossie model tree for a connection. Throws {@link IllegalArgumentException} if
+     * the connection isn't OSSIE-typed or the YAML file is missing / unreadable.
+     */
+    public OssieModelDto getModel(String connectionName) {
+        OssieDocument doc = readDocument(connectionName);
         if (doc.getEffectiveSemanticModels().isEmpty()) {
-            throw new IllegalArgumentException("Ossie YAML at " + yamlPath + " has zero semantic models");
+            throw new IllegalArgumentException("Ossie YAML for '" + connectionName + "' has zero semantic models");
         }
+        SaikuDatasource ds = datasourceManager.getDatasource(connectionName);
         // Pick the requested model or default to the first entry. schema and OSSIE_MODEL_KEY
         // both mean "which semantic_model[] to pick"; schema is what the .sds writes, the
         // constant is the wire-level property key.

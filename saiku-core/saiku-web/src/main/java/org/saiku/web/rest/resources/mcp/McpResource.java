@@ -251,6 +251,12 @@ public class McpResource {
                 String model = requiredString(args, "model");
                 return unwrap(aiOssieResource.getSchema(connection, model, null));
             }
+            case "describe_ossie_ontology": {
+                requireOssie();
+                String connection = requiredString(args, "connection");
+                String model = requiredString(args, "model");
+                return unwrap(aiOssieResource.getOntology(connection, model));
+            }
             case "search_field_values": {
                 requireOssie();
                 String connection = requiredString(args, "connection");
@@ -397,6 +403,8 @@ public class McpResource {
             + "\"description\":\"Semantic-model name from list_ossie_models.\"}"
             + "},\"additionalProperties\":false}";
 
+    private static final String DESCRIBE_OSSIE_ONTOLOGY_SCHEMA = DESCRIBE_OSSIE_MODEL_SCHEMA;
+
     private static final String SEARCH_FIELD_VALUES_SCHEMA = "{\"type\":\"object\","
             + "\"required\":[\"connection\",\"dataset\",\"field\"],"
             + "\"properties\":{"
@@ -522,6 +530,14 @@ public class McpResource {
                             + "know which names resolve. Includes ready-made example bodies (simpleGroupBy, crosstab, "
                             + "topN) you can copy directly.",
                     DESCRIBE_OSSIE_MODEL_SCHEMA));
+            tools.add(tool(
+                    "describe_ossie_ontology",
+                    "Get the OSI ontology block for an Ossie model — a knowledge-graph view of the entities "
+                            + "(concepts) and the relationships between them (attributes, associations, derived). Use "
+                            + "when the user asks about the model at the entity level (\"what concepts exist?\", "
+                            + "\"what's connected to Airport?\") rather than the SQL-adjacent dataset level. Empty "
+                            + "{ontology:[]} when the document doesn't declare one.",
+                    DESCRIBE_OSSIE_ONTOLOGY_SCHEMA));
             tools.add(tool(
                     "search_field_values",
                     "Find distinct values of an Ossie field by substring match. Use when describe_ossie_model's "
