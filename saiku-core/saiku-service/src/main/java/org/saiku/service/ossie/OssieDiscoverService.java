@@ -4,6 +4,7 @@
  */
 package org.saiku.service.ossie;
 
+import bi.saiku.ossie.OssieSynonymIndex;
 import bi.saiku.ossie.OssieYamlReader;
 import bi.saiku.ossie.model.CustomExtension;
 import bi.saiku.ossie.model.Dataset;
@@ -13,6 +14,7 @@ import bi.saiku.ossie.model.Metric;
 import bi.saiku.ossie.model.OssieDocument;
 import bi.saiku.ossie.model.Relationship;
 import bi.saiku.ossie.model.SemanticModel;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
@@ -132,6 +134,13 @@ public class OssieDiscoverService {
         for (Relationship r : src.getRelationships()) {
             out.getRelationships().add(projectRelationship(r));
         }
+        // Synonym indices come from bi.saiku.ossie:ossie-core so every consumer of the AI schema
+        // (agents, validators, workbench "did you mean" hints) reads canonicalisation off the DTO
+        // rather than rewalking the source. Populated once at DTO-build time — cheap enough that
+        // an empty synonyms case doesn't need a fast path.
+        out.setFieldAliases(OssieSynonymIndex.buildFieldIndex(src));
+        out.setMetricAliases(OssieSynonymIndex.buildMetricIndex(src));
+        out.setDatasetAliases(OssieSynonymIndex.buildDatasetIndex(src));
         return out;
     }
 
@@ -141,6 +150,7 @@ public class OssieDiscoverService {
         d.setSource(src.getSource());
         d.setDescription(src.getDescription());
         d.setPrimaryKey(new ArrayList<>(src.getPrimaryKey()));
+        d.setCustomExtensions(projectCustomExtensions(src.getCustomExtensions()));
         for (Field f : src.getFields()) {
             d.getFields().add(projectField(f));
         }
@@ -157,6 +167,7 @@ public class OssieDiscoverService {
         f.setTime(src.getDimension() != null
                 && Boolean.TRUE.equals(src.getDimension().getIsTime()));
         f.setPii(readPii(src.getCustomExtensions()));
+        f.setCustomExtensions(projectCustomExtensions(src.getCustomExtensions()));
         return f;
     }
 
@@ -167,7 +178,47 @@ public class OssieDiscoverService {
                 src.getExpression() == null ? List.of() : src.getExpression().getDialects()));
         m.setDescription(src.getDescription());
         m.setAggregationKind(readAggregationKind(src.getCustomExtensions()));
+        m.setCustomExtensions(projectCustomExtensions(src.getCustomExtensions()));
         return m;
+    }
+
+    /**
+     * Copy an OSI {@code custom_extensions[]} list into the DTO shape, parsing each entry's opaque
+     * JSON {@code data} into a {@link JsonNode} so downstream consumers walk it structurally
+     * without re-parsing.
+     *
+     * <p>Extensions whose payload declares {@code "visibility":"internal"} are dropped — that flag
+     * is the standard escape hatch for tooling-private metadata that shouldn't reach an
+     * agent-facing view (saiku#1409). Vendor-private extensions that omit the flag stay in.
+     */
+    private List<CustomExtensionDto> projectCustomExtensions(List<CustomExtension> src) {
+        List<CustomExtensionDto> out = new ArrayList<>();
+        if (src == null) return out;
+        for (CustomExtension ext : src) {
+            if (ext == null) continue;
+            CustomExtensionDto dto = new CustomExtensionDto();
+            dto.setVendorName(ext.getVendorName());
+            JsonNode data = null;
+            if (ext.getData() != null && !ext.getData().isBlank()) {
+                try {
+                    data = json.readTree(ext.getData());
+                } catch (IOException e) {
+                    log.debug(
+                            "custom_extensions[{}].data is not valid JSON — dropping to null on the DTO: {}",
+                            ext.getVendorName(),
+                            e.getMessage());
+                }
+            }
+            if (data != null) {
+                JsonNode visibility = data.get("visibility");
+                if (visibility != null && visibility.isTextual() && "internal".equals(visibility.asText())) {
+                    continue;
+                }
+                dto.setData(data);
+            }
+            out.add(dto);
+        }
+        return out;
     }
 
     private OssieModelDto.Relationship projectRelationship(Relationship src) {

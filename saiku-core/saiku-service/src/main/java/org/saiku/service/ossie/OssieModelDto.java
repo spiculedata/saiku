@@ -4,18 +4,25 @@
  */
 package org.saiku.service.ossie;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Client-facing view of one Ossie {@code semantic_model} — the tree the analytics workbench
  * renders in the schema browser and drags fields/metrics from.
  *
  * <p>Structurally a slimmed-down projection of {@link bi.saiku.ossie.model.SemanticModel}:
- * we drop {@code ai_context}, {@code custom_extensions.data} payloads, and any dialect other
+ * we drop {@code ai_context.instructions}, {@code custom_extensions.data} payloads, and any dialect other
  * than the primary ANSI SQL one so the on-wire JSON stays small. The write-side (metric
  * annotations, PII vendor extensions) still lives in the YAML — the workbench only needs enough
  * to power drag-drop + display.
+ *
+ * <p>Synonym maps ({@link #getFieldAliases()} etc.) are pre-computed at DTO-build time via
+ * {@code bi.saiku.ossie.OssieSynonymIndex} so downstream consumers (the AI schema projector,
+ * validators) don't rewalk the source tree.
  */
 public class OssieModelDto {
 
@@ -25,6 +32,15 @@ public class OssieModelDto {
     private List<Dataset> datasets = new ArrayList<>();
     private List<Metric> metrics = new ArrayList<>();
     private List<Relationship> relationships = new ArrayList<>();
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private Map<String, String> fieldAliases = new LinkedHashMap<>();
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private Map<String, String> metricAliases = new LinkedHashMap<>();
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private Map<String, String> datasetAliases = new LinkedHashMap<>();
 
     public String getConnection() {
         return connection;
@@ -74,6 +90,30 @@ public class OssieModelDto {
         this.relationships = v == null ? new ArrayList<>() : v;
     }
 
+    public Map<String, String> getFieldAliases() {
+        return fieldAliases;
+    }
+
+    public void setFieldAliases(Map<String, String> v) {
+        this.fieldAliases = v == null ? new LinkedHashMap<>() : v;
+    }
+
+    public Map<String, String> getMetricAliases() {
+        return metricAliases;
+    }
+
+    public void setMetricAliases(Map<String, String> v) {
+        this.metricAliases = v == null ? new LinkedHashMap<>() : v;
+    }
+
+    public Map<String, String> getDatasetAliases() {
+        return datasetAliases;
+    }
+
+    public void setDatasetAliases(Map<String, String> v) {
+        this.datasetAliases = v == null ? new LinkedHashMap<>() : v;
+    }
+
     /** One Ossie dataset — a queryable table. */
     public static class Dataset {
         private String name;
@@ -81,6 +121,17 @@ public class OssieModelDto {
         private String description;
         private List<Field> fields = new ArrayList<>();
         private List<String> primaryKey = new ArrayList<>();
+
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        private List<CustomExtensionDto> customExtensions = new ArrayList<>();
+
+        public List<CustomExtensionDto> getCustomExtensions() {
+            return customExtensions;
+        }
+
+        public void setCustomExtensions(List<CustomExtensionDto> v) {
+            this.customExtensions = v == null ? new ArrayList<>() : v;
+        }
 
         public String getName() {
             return name;
@@ -131,6 +182,17 @@ public class OssieModelDto {
         private String description;
         private boolean isTime;
         private boolean pii;
+
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        private List<CustomExtensionDto> customExtensions = new ArrayList<>();
+
+        public List<CustomExtensionDto> getCustomExtensions() {
+            return customExtensions;
+        }
+
+        public void setCustomExtensions(List<CustomExtensionDto> v) {
+            this.customExtensions = v == null ? new ArrayList<>() : v;
+        }
 
         public String getName() {
             return name;
@@ -187,6 +249,17 @@ public class OssieModelDto {
         private String expression;
         private String description;
         private String aggregationKind;
+
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        private List<CustomExtensionDto> customExtensions = new ArrayList<>();
+
+        public List<CustomExtensionDto> getCustomExtensions() {
+            return customExtensions;
+        }
+
+        public void setCustomExtensions(List<CustomExtensionDto> v) {
+            this.customExtensions = v == null ? new ArrayList<>() : v;
+        }
 
         public String getName() {
             return name;
