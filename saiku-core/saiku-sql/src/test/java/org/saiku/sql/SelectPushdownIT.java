@@ -322,7 +322,7 @@ public class SelectPushdownIT {
                 + "  \"schemas\": [{\n"
                 + "    \"name\": \"" + schemaName + "\",\n"
                 + "    \"type\": \"custom\",\n"
-                + "    \"factory\": \"org.saiku.sql.adapter.OssieSchemaFactory\",\n"
+                + "    \"factory\": \"bi.saiku.ossie.sql.internal.OssieSchemaFactory\",\n"
                 + "    \"operand\": {\n"
                 + "      \"ossieYaml\": \"" + yamlPath.toString().replace("\\", "\\\\") + "\",\n"
                 + "      \"jdbcUrl\": \"jdbc:h2:mem:selectpushdown;DB_CLOSE_DELAY=-1;MODE=PostgreSQL\",\n"
