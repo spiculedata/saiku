@@ -11,7 +11,7 @@ import java.util.List;
  * Client-facing view of one Ossie {@code semantic_model} — the tree the analytics workbench
  * renders in the schema browser and drags fields/metrics from.
  *
- * <p>Structurally a slimmed-down projection of {@link org.saiku.service.schema.ossie.model.SemanticModel}:
+ * <p>Structurally a slimmed-down projection of {@link bi.saiku.ossie.model.SemanticModel}:
  * we drop {@code ai_context}, {@code custom_extensions.data} payloads, and any dialect other
  * than the primary ANSI SQL one so the on-wire JSON stays small. The write-side (metric
  * annotations, PII vendor extensions) still lives in the YAML — the workbench only needs enough

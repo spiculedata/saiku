@@ -4,6 +4,7 @@
  */
 package org.saiku.sql.adapter;
 
+import bi.saiku.ossie.model.Metric;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
@@ -19,7 +20,6 @@ import org.apache.calcite.schema.Table;
 import org.apache.calcite.schema.TranslatableTable;
 import org.apache.calcite.schema.impl.AbstractTable;
 import org.apache.calcite.sql.type.SqlTypeName;
-import org.saiku.service.schema.ossie.model.Metric;
 
 /**
  * Calcite {@link TranslatableTable} that expands an Ossie {@link Metric} into a scalar SELECT

@@ -4,6 +4,16 @@
  */
 package org.saiku.service.schema.ossie;
 
+import bi.saiku.ossie.model.AiContext;
+import bi.saiku.ossie.model.CustomExtension;
+import bi.saiku.ossie.model.Dataset;
+import bi.saiku.ossie.model.DimensionMeta;
+import bi.saiku.ossie.model.Expression;
+import bi.saiku.ossie.model.Field;
+import bi.saiku.ossie.model.Metric;
+import bi.saiku.ossie.model.OssieDocument;
+import bi.saiku.ossie.model.Relationship;
+import bi.saiku.ossie.model.SemanticModel;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -17,16 +27,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import javax.xml.parsers.ParserConfigurationException;
-import org.saiku.service.schema.ossie.model.AiContext;
-import org.saiku.service.schema.ossie.model.CustomExtension;
-import org.saiku.service.schema.ossie.model.Dataset;
-import org.saiku.service.schema.ossie.model.DimensionMeta;
-import org.saiku.service.schema.ossie.model.Expression;
-import org.saiku.service.schema.ossie.model.Field;
-import org.saiku.service.schema.ossie.model.Metric;
-import org.saiku.service.schema.ossie.model.OssieDocument;
-import org.saiku.service.schema.ossie.model.Relationship;
-import org.saiku.service.schema.ossie.model.SemanticModel;
 import org.saiku.service.util.xml.SecureXml;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;

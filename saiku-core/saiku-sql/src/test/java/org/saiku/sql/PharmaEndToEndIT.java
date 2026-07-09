@@ -8,6 +8,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import bi.saiku.ossie.OssieYamlWriter;
+import bi.saiku.ossie.model.OssieDocument;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -22,8 +24,6 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.saiku.service.schema.ossie.MondrianToOssieConverter;
-import org.saiku.service.schema.ossie.OssieYamlWriter;
-import org.saiku.service.schema.ossie.model.OssieDocument;
 import org.saiku.sql.server.OssieSqlServer;
 import org.saiku.sql.server.pgwire.PgWireServer;
 

@@ -4,6 +4,8 @@
  */
 package org.saiku.sql.adapter;
 
+import bi.saiku.ossie.model.Dataset;
+import bi.saiku.ossie.model.Field;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.calcite.DataContext;
@@ -20,8 +22,6 @@ import org.apache.calcite.schema.Table;
 import org.apache.calcite.schema.TranslatableTable;
 import org.apache.calcite.schema.impl.AbstractTable;
 import org.apache.calcite.sql.type.SqlTypeName;
-import org.saiku.service.schema.ossie.model.Dataset;
-import org.saiku.service.schema.ossie.model.Field;
 
 /**
  * Calcite {@link Table} projection of a single Ossie {@link Dataset}.

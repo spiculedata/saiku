@@ -9,6 +9,8 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import bi.saiku.ossie.OssieYamlWriter;
+import bi.saiku.ossie.model.OssieDocument;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
@@ -22,7 +24,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
 import org.junit.Test;
-import org.saiku.service.schema.ossie.model.OssieDocument;
 
 /**
  * Round-trip validation: build a Mondrian schema fragment, run the converter, serialise via

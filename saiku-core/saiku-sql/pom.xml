@@ -22,15 +22,15 @@
     </properties>
 
     <dependencies>
-        <!-- Ossie DTOs + YAML/JSON reader/writer, extracted to ossie-core so
-             saiku-sql only depends on the parser layer, not on the full
-             saiku-service (Mondrian, Spring, JAX-RS). Tests still need
-             saiku-service for the SaikuOssieConnection wrapper — pulled in
-             below with test scope. Tracking issue: saiku#1396 L1. -->
+        <!-- Ossie DTOs + YAML/JSON reader/writer, external library at
+             github.com/spiculedata/ossie (bi.saiku.ossie:ossie-core).
+             Tests still need saiku-service for the SaikuOssieConnection
+             wrapper — pulled in below with test scope. Tracking issue:
+             saiku#1396 L2/L3. -->
         <dependency>
-            <groupId>org.saikuanalytics</groupId>
+            <groupId>bi.saiku.ossie</groupId>
             <artifactId>ossie-core</artifactId>
-            <version>${project.version}</version>
+            <version>${ossie.version}</version>
         </dependency>
         <dependency>
             <groupId>org.saikuanalytics</groupId>
