@@ -251,6 +251,66 @@ public class McpResourceTest {
     }
 
     /** Minimal stub — captures arguments and returns canned responses. */
+    /* --------------------- Ossie tools (saiku#1410) -------------------- */
+
+    @Test
+    public void ossieOntologyToolAdvertisedWhenResourceWired() throws Exception {
+        StubAiOssieResource stubOssie = new StubAiOssieResource();
+        resource.setAiOssieResource(stubOssie);
+        String sid = openSession();
+        Response list = resource.handle(rpc("tools/list", 2, MAPPER.createObjectNode()), sid);
+        JsonNode listBody = MAPPER.valueToTree(list.getEntity());
+        List<String> toolNames = new java.util.ArrayList<>();
+        listBody.path("result")
+                .path("tools")
+                .forEach(t -> toolNames.add(t.path("name").asText()));
+        // 6 OLAP tools + 6 Ossie tools (list, describe, describe_ontology, search, run, preview)
+        assertEquals(12, toolNames.size());
+        assertTrue("describe_ossie_ontology should be advertised", toolNames.contains("describe_ossie_ontology"));
+    }
+
+    @Test
+    public void describeOssieOntologyDelegatesToResource() throws Exception {
+        StubAiOssieResource stubOssie = new StubAiOssieResource();
+        stubOssie.ontologyResponse =
+                Response.ok(java.util.Map.of("ontology", List.of())).build();
+        resource.setAiOssieResource(stubOssie);
+        String sid = openSession();
+        ObjectNode args = MAPPER.createObjectNode();
+        args.put("connection", "Pharma");
+        args.put("model", "Pharma");
+        Response resp = resource.handle(rpc("tools/call", 3, callParams("describe_ossie_ontology", args)), sid);
+        assertEquals(200, resp.getStatus());
+        assertEquals("Pharma", stubOssie.ontologyConnection.get());
+        assertEquals("Pharma", stubOssie.ontologyModel.get());
+    }
+
+    private String openSession() throws Exception {
+        Response init = resource.handle(rpc("initialize", 1, MAPPER.createObjectNode()), null);
+        return init.getHeaderString(SESSION_HEADER);
+    }
+
+    private ObjectNode callParams(String tool, ObjectNode args) {
+        ObjectNode params = MAPPER.createObjectNode();
+        params.put("name", tool);
+        params.set("arguments", args);
+        return params;
+    }
+
+    private static final class StubAiOssieResource extends org.saiku.web.rest.resources.AiOssieResource {
+        Response ontologyResponse =
+                Response.ok(java.util.Map.of("ontology", List.of())).build();
+        final AtomicReference<String> ontologyConnection = new AtomicReference<>();
+        final AtomicReference<String> ontologyModel = new AtomicReference<>();
+
+        @Override
+        public Response getOntology(String connection, String model) {
+            ontologyConnection.set(connection);
+            ontologyModel.set(model);
+            return ontologyResponse;
+        }
+    }
+
     private static final class StubAiQueryResource extends AiQueryResource {
         Response cubesResponse = Response.ok(List.of()).build();
         Response executeResponse = Response.ok(new AiQueryResponse()).build();

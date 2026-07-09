@@ -218,6 +218,51 @@ public class AiOssieResource {
     }
 
     // -------------------------------------------------------------------
+    // GET /ontology
+    // -------------------------------------------------------------------
+
+    /**
+     * Return the OSI {@code ontology:} block for a connection's document — the knowledge-graph
+     * shape (concepts + relationships) that some Ossie documents declare alongside the
+     * SQL-adjacent {@code semantic_model:}. Empty response body {@code {"ontology": []}} when
+     * the document has none.
+     *
+     * <p>Same shape agents get through the {@code describe_ossie_ontology} MCP tool — the tool
+     * wraps this endpoint.
+     */
+    @GET
+    @Path("/ontology/{connection}/{model}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getOntology(@PathParam("connection") String connectionName, @PathParam("model") String modelName) {
+        if (ossieDiscoverService == null) {
+            return error("Ossie discover not wired");
+        }
+        try {
+            // modelName is currently informational — the ontology block sits at the document
+            // level, not the semantic-model level. Kept as a path param for parity with /schema
+            // and to leave room for future spec revisions that scope ontologies per model.
+            OssieModelDto semantic = ossieDiscoverService.getModel(connectionName);
+            if (semantic.getName() == null || !semantic.getName().equalsIgnoreCase(modelName)) {
+                return badRequest(
+                        "model",
+                        "model '" + modelName + "' not found on connection '" + connectionName + "'",
+                        List.of(semantic.getName()));
+            }
+            var ontology = ossieDiscoverService.getOntology(connectionName);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("connection", connectionName);
+            body.put("model", modelName);
+            body.put("ontology", ontology);
+            return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest("connection", e.getMessage(), List.of());
+        } catch (Exception e) {
+            log.error("Ossie ontology fetch failed for {}/{}", connectionName, modelName, e);
+            return error("ontology fetch failed");
+        }
+    }
+
+    // -------------------------------------------------------------------
     // POST /query
     // -------------------------------------------------------------------
 
