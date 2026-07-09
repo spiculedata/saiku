@@ -4,6 +4,8 @@
  */
 package org.saiku.sql.adapter;
 
+import bi.saiku.ossie.model.Relationship;
+import bi.saiku.ossie.model.SemanticModel;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.calcite.plan.RelOptRule;
@@ -19,8 +21,6 @@ import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.tools.RelBuilder;
-import org.saiku.service.schema.ossie.model.Relationship;
-import org.saiku.service.schema.ossie.model.SemanticModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

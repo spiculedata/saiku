@@ -4,6 +4,15 @@
  */
 package org.saiku.service.ossie;
 
+import bi.saiku.ossie.OssieYamlReader;
+import bi.saiku.ossie.model.CustomExtension;
+import bi.saiku.ossie.model.Dataset;
+import bi.saiku.ossie.model.DialectExpression;
+import bi.saiku.ossie.model.Field;
+import bi.saiku.ossie.model.Metric;
+import bi.saiku.ossie.model.OssieDocument;
+import bi.saiku.ossie.model.Relationship;
+import bi.saiku.ossie.model.SemanticModel;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
@@ -14,15 +23,6 @@ import java.util.List;
 import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.datasource.IDatasourceManager;
-import org.saiku.service.schema.ossie.OssieYamlReader;
-import org.saiku.service.schema.ossie.model.CustomExtension;
-import org.saiku.service.schema.ossie.model.Dataset;
-import org.saiku.service.schema.ossie.model.DialectExpression;
-import org.saiku.service.schema.ossie.model.Field;
-import org.saiku.service.schema.ossie.model.Metric;
-import org.saiku.service.schema.ossie.model.OssieDocument;
-import org.saiku.service.schema.ossie.model.Relationship;
-import org.saiku.service.schema.ossie.model.SemanticModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;

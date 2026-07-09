@@ -4,6 +4,11 @@
  */
 package org.saiku.sql.adapter;
 
+import bi.saiku.ossie.model.Dataset;
+import bi.saiku.ossie.model.DialectExpression;
+import bi.saiku.ossie.model.Metric;
+import bi.saiku.ossie.model.Relationship;
+import bi.saiku.ossie.model.SemanticModel;
 import com.google.common.collect.ImmutableMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,11 +19,6 @@ import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.schema.Table;
 import org.apache.calcite.schema.impl.AbstractSchema;
-import org.saiku.service.schema.ossie.model.Dataset;
-import org.saiku.service.schema.ossie.model.DialectExpression;
-import org.saiku.service.schema.ossie.model.Metric;
-import org.saiku.service.schema.ossie.model.Relationship;
-import org.saiku.service.schema.ossie.model.SemanticModel;
 
 /**
  * Calcite {@link Schema} projection of one Ossie {@link SemanticModel}.

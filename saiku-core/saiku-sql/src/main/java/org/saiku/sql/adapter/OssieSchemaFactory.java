@@ -4,6 +4,8 @@
  */
 package org.saiku.sql.adapter;
 
+import bi.saiku.ossie.OssieYamlReader;
+import bi.saiku.ossie.model.OssieDocument;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Map;
@@ -13,8 +15,6 @@ import org.apache.calcite.adapter.jdbc.JdbcSchema;
 import org.apache.calcite.schema.Schema;
 import org.apache.calcite.schema.SchemaFactory;
 import org.apache.calcite.schema.SchemaPlus;
-import org.saiku.service.schema.ossie.OssieYamlReader;
-import org.saiku.service.schema.ossie.model.OssieDocument;
 
 /**
  * Calcite entry point for the Ossie semantic layer.

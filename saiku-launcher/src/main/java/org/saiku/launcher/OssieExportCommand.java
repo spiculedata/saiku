@@ -17,8 +17,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.concurrent.Callable;
 import org.saiku.service.schema.ossie.MondrianToOssieConverter;
-import org.saiku.service.schema.ossie.OssieYamlWriter;
-import org.saiku.service.schema.ossie.model.OssieDocument;
+import bi.saiku.ossie.OssieYamlWriter;
+import bi.saiku.ossie.model.OssieDocument;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 

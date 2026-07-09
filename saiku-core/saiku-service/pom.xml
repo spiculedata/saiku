@@ -129,16 +129,21 @@
         </plugins>
     </build>
 	<dependencies>
-		<!-- Ossie DTOs + YAML/JSON reader/writer extracted to ossie-core
-		     (saiku#1396 L1). MondrianToOssieConverter stays in this module
-		     because it depends on Mondrian; the pure-Jackson parser layer
-		     lives in ossie-core so downstream consumers (saiku-sql, and
-		     eventually external tools) can pull it without dragging in
-		     Mondrian or Spring. -->
+		<!-- Ossie DTOs + YAML/JSON reader/writer, published as a
+		     standalone library at github.com/spiculedata/ossie
+		     (saiku#1396 L2/L3). MondrianToOssieConverter stays in this
+		     module because it depends on Mondrian; the pure-Jackson
+		     parser layer is external so any JVM tool — Superset,
+		     Metabase, Trino wrappers — can pull it without dragging
+		     in Mondrian or Spring.
+
+		     SNAPSHOTs resolve from GitHub Packages (see the
+		     github-ossie repo definition in the root pom); release
+		     versions will land on Maven Central. -->
 		<dependency>
-			<groupId>org.saikuanalytics</groupId>
+			<groupId>bi.saiku.ossie</groupId>
 			<artifactId>ossie-core</artifactId>
-			<version>${project.version}</version>
+			<version>${ossie.version}</version>
 		</dependency>
 
 		<!-- @NotNull / @Nullable annotations used in ObjectUtil + Acl2.
