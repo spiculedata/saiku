@@ -135,6 +135,15 @@ public class SaikuLauncher implements Callable<Integer> {
             if (isDemoModeRequested() && System.getProperty("spring.profiles.active") == null) {
                 System.setProperty("spring.profiles.active", "demo");
             }
+            // Demo dashboards ship KPI + chart tiles that hit /ai/query for
+            // aggregated result values. Relax the AiPolicy default to
+            // AGGREGATED in demo mode — see resolveDemoAiPolicyDefault for
+            // the decision logic + rationale.
+            String demoAiPolicy = resolveDemoAiPolicyDefault(
+                    isDemoModeRequested(), System.getenv("SAIKU_AI_POLICY"), System.getProperty("ai.policy"));
+            if (demoAiPolicy != null) {
+                System.setProperty("ai.policy", demoAiPolicy);
+            }
             System.out.println("Saiku home: " + saikuHome);
 
             stageSeedAssets(dataDir);
@@ -421,6 +430,36 @@ public class SaikuLauncher implements Callable<Integer> {
          *  intent at each call site is unambiguous. */
         private static boolean isDemoModeActive() {
             return isDemoModeRequested();
+        }
+
+        /**
+         * Decide the {@code ai.policy} default under demo mode.
+         *
+         * <p>{@link org.saiku.service.olap.ai.AiPolicy} defaults to
+         * {@code SCHEMA_ONLY} — the fail-closed safe posture for production. That's the wrong
+         * default for the demo container: the welcome dashboard ships KPI + chart tiles that
+         * call {@code /ai/query} for aggregated result values, and SCHEMA_ONLY blocks them with
+         * an in-tile "AI policy 'schema-only' does not permit sending AGGREGATED_RESULT_VALUES"
+         * error. Demo mode has no real PII and no leak risk (bundled FoodMart cube, H2), so we
+         * relax the default to {@code aggregated} whenever demo mode is on.
+         *
+         * <p>Operators keep both escape hatches: an explicit {@code SAIKU_AI_POLICY} env var OR
+         * an explicit {@code -Dai.policy=...} JVM flag ALWAYS wins over this defaulting — this
+         * helper returns null when either is set. Empty / whitespace values count as unset so a
+         * caller with {@code SAIKU_AI_POLICY=} in their env (e.g. Kubernetes ConfigMap with the
+         * key present but blank) still gets the relaxed default.
+         *
+         * @param demoMode   whether demo mode is active (from {@link #isDemoModeRequested()})
+         * @param envValue   current value of {@code SAIKU_AI_POLICY} env var (may be null)
+         * @param propValue  current value of the {@code ai.policy} system property (may be null)
+         * @return {@code "aggregated"} when demo mode should provide the relaxed default;
+         *         {@code null} to leave {@code ai.policy} untouched
+         */
+        static String resolveDemoAiPolicyDefault(boolean demoMode, String envValue, String propValue) {
+            if (!demoMode) return null;
+            if (envValue != null && !envValue.isBlank()) return null;
+            if (propValue != null && !propValue.isBlank()) return null;
+            return "aggregated";
         }
 
         private static void stageSeedAssets(Path dataDir) throws Exception {
