@@ -70,6 +70,7 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
 
     static final String QUERY_SEGMENT = "query/";
     static final String DASHBOARD_SEGMENT = "dashboard/";
+    static final String AI_SEGMENT = "ai/";
 
     /** Mint surface — explicitly skipped so a real user's session auth still
      *  applies. */
@@ -301,6 +302,9 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
         } else if (tail.startsWith(DASHBOARD_SEGMENT)) {
             kind = "dashboard";
             rest = tail.substring(DASHBOARD_SEGMENT.length());
+        } else if (tail.startsWith(AI_SEGMENT)) {
+            kind = "ai";
+            rest = tail.substring(AI_SEGMENT.length());
         } else {
             return null;
         }
@@ -309,6 +313,11 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
         int tileAt = rest.indexOf("/tile/");
         if (tileAt > 0) {
             rest = rest.substring(0, tileAt);
+        }
+        // Strip the /ask suffix so an ask call still maps to the parent AI cube
+        // token. Same pattern as tile-strip above.
+        if (rest.endsWith("/ask")) {
+            rest = rest.substring(0, rest.length() - "/ask".length());
         }
         if (rest.isEmpty()) {
             return null;

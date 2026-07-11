@@ -31,10 +31,11 @@
    *   server  — origin of the Saiku launcher, e.g. https://demo.saiku.bi
    *   token   — opaque embed token from POST /saiku/api/embed/tokens.
    *             Omit for anonymous public reads.
-   *   kind    — "query" (default) or "dashboard"
-   *   path    — repository path; ends .saiku for kind=query,
-   *             .saikudash for kind=dashboard
-   *   render  — for kind=query only: "table" (default) or "chart"
+   *   kind    — "query" (default), "dashboard", or "ai"
+   *   path    — kind="query": repository path ending .saiku
+   *             kind="dashboard": path ending .saikudash
+   *             kind="ai": cube ref connection/catalog/schema/cubeName
+   *   render  — for kind=query only: "table" (default), "matrix", or "chart"
    *   mode    — for render=chart only: "bar" (default), "line", "pie"
    *   height  — CSS height for the rendered surface (default 400px)
    *
@@ -45,8 +46,10 @@
   import EmbedTable from "./EmbedTable.svelte";
   import EmbedChart from "./EmbedChart.svelte";
   import EmbedDashboard from "./EmbedDashboard.svelte";
+  import EmbedMatrix from "./EmbedMatrix.svelte";
+  import EmbedAsk from "./EmbedAsk.svelte";
   import { fetchSavedQuery, EmbedFetchError } from "./api";
-  import type { EmbedRow } from "./types";
+  import type { EmbedCaption, EmbedMatrixRow, EmbedRow } from "./types";
 
   interface Props {
     server?: string;
@@ -69,6 +72,9 @@
   }: Props = $props();
 
   let rows = $state<EmbedRow[] | null>(null);
+  let matrixRows = $state<EmbedMatrixRow[] | null>(null);
+  let matrixRowCaptions = $state<EmbedCaption[]>([]);
+  let matrixColumnCaptions = $state<EmbedCaption[]>([]);
   let error = $state<string | null>(null);
   let loading = $state(false);
 
@@ -82,31 +88,43 @@
     const p = path.trim();
     const t = token.trim();
     const k = kind.trim() || "query";
+    const r = (render || "").trim().toLowerCase();
     if (k !== "query") {
-      // Dashboards manage their own fetches (one for the layout, then
-      // one per tile under runAs). Reset so a kind switch doesn't show
-      // stale query rows.
+      // Dashboards + AI ask both manage their own fetches. Reset so a kind
+      // switch doesn't show stale query rows.
       rows = null;
+      matrixRows = null;
       error = null;
       return;
     }
     if (!s || !p) {
       rows = null;
+      matrixRows = null;
       error = null;
       return;
     }
     let cancelled = false;
     loading = true;
     error = null;
-    fetchSavedQuery(s, p, t || undefined)
+    const wantMatrix = r === "matrix";
+    fetchSavedQuery(s, p, t || undefined, wantMatrix ? "matrix" : "records")
       .then((resp) => {
         if (cancelled) return;
-        rows = resp.data ?? [];
+        if (wantMatrix) {
+          matrixRows = resp.matrix ?? [];
+          matrixRowCaptions = resp.metadata?.rows ?? [];
+          matrixColumnCaptions = resp.metadata?.columns ?? [];
+          rows = null;
+        } else {
+          rows = resp.data ?? [];
+          matrixRows = null;
+        }
       })
       .catch((e: unknown) => {
         if (cancelled) return;
         error = friendlyError(e);
         rows = null;
+        matrixRows = null;
       })
       .finally(() => {
         if (!cancelled) loading = false;
@@ -132,10 +150,18 @@
 <div class="w-full h-full overflow-auto" style="min-height: {height};">
   {#if kind === "dashboard"}
     <EmbedDashboard {server} {token} {path} />
+  {:else if kind === "ai"}
+    <EmbedAsk {server} {token} cubeId={path} />
   {:else if loading}
     <div class="state">Loading…</div>
   {:else if error}
     <div class="state error" role="alert">{error}</div>
+  {:else if matrixRows !== null}
+    <EmbedMatrix
+      rows={matrixRows}
+      rowCaptions={matrixRowCaptions}
+      columnCaptions={matrixColumnCaptions}
+    />
   {:else if rows !== null}
     {#if render === "chart"}
       <EmbedChart {rows} {mode} />

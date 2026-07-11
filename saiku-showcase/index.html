@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Saiku — Live embed, AI API, and GraphQL showcase</title>
+  <meta name="description" content="A live playground for Saiku's three developer surfaces — the &lt;saiku-embed&gt; web component, the typed AI Query REST API, and the schema-per-cube GraphQL API. Hits the FoodMart cube on demo.saiku.bi.">
+  <link rel="canonical" href="https://showcase.saiku.bi/">
+  <meta property="og:title" content="Saiku showcase — embed, AI, GraphQL">
+  <meta property="og:description" content="Interactive playground for the three developer surfaces Saiku ships. All live against demo.saiku.bi.">
+  <meta property="og:type" content="website">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <!--
+    The <saiku-embed> web component. Same script demo.saiku.bi's UI
+    ships; loading it registers the custom element globally.
+  -->
+  <script type="module" src="https://demo.saiku.bi/ui/saiku-embed.js"></script>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --text: #0a0a0a;
+      --muted: #555;
+      --rule: #e8e6e3;
+      --brand: #b3170f;
+      --brand-dark: #8E1322;
+      --code-bg: #1a1a1a;
+      --code-fg: #f4f1ed;
+      --panel-bg: #f9fafb;
+      --panel-border: #e5e7eb;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.55;
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+    code, pre { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+    a { color: var(--brand); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    header.site {
+      border-bottom: 1px solid var(--rule);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header.site .brand {
+      font-weight: 800;
+      font-size: 18px;
+      color: var(--text);
+      letter-spacing: -0.3px;
+    }
+    header.site nav { display: flex; gap: 18px; font-size: 14px; }
+    header.site nav a { color: var(--muted); font-weight: 500; }
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 48px 24px 96px;
+    }
+    .hero {
+      margin-bottom: 56px;
+    }
+    .hero .eyebrow {
+      color: var(--brand);
+      font-weight: 600;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-bottom: 14px;
+    }
+    .hero h1 {
+      font-size: 40px;
+      line-height: 1.15;
+      font-weight: 800;
+      margin: 0 0 18px;
+      letter-spacing: -0.7px;
+    }
+    .hero p {
+      font-size: 18px;
+      color: var(--muted);
+      max-width: 700px;
+      margin: 0 0 16px;
+    }
+    section.showcase {
+      margin-bottom: 72px;
+      scroll-margin-top: 24px;
+    }
+    section.showcase h2 {
+      font-size: 28px;
+      font-weight: 800;
+      margin: 0 0 8px;
+      letter-spacing: -0.5px;
+    }
+    section.showcase .sub {
+      color: var(--muted);
+      margin: 0 0 24px;
+    }
+    .panel {
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--bg);
+    }
+    .panel-title {
+      padding: 10px 16px;
+      background: var(--panel-bg);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      border-bottom: 1px solid var(--panel-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .panel-body {
+      padding: 16px;
+    }
+    .panel-body.tight { padding: 0; }
+    pre {
+      margin: 0;
+      background: var(--code-bg);
+      color: var(--code-fg);
+      padding: 16px 18px;
+      overflow-x: auto;
+      font-size: 12.5px;
+      line-height: 1.6;
+      border-radius: 8px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+    @media (min-width: 900px) {
+      .grid.two { grid-template-columns: 1fr 1fr; }
+    }
+    label.inline {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      display: block;
+      margin-bottom: 6px;
+    }
+    input[type="text"], textarea, select {
+      width: 100%;
+      font: inherit;
+      font-size: 14px;
+      padding: 8px 10px;
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: inherit;
+    }
+    textarea { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px; min-height: 200px; resize: vertical; }
+    input[type="text"]:focus, textarea:focus, select:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
+    button.primary {
+      padding: 8px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      background: var(--brand);
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button.primary:hover { background: var(--brand-dark); }
+    button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .result {
+      min-height: 60px;
+      max-height: 460px;
+      overflow: auto;
+    }
+    .status-line {
+      color: var(--muted);
+      font-size: 12.5px;
+      margin: 6px 0 0;
+    }
+    footer.site {
+      border-top: 1px solid var(--rule);
+      padding: 24px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    footer.site a { color: var(--muted); }
+    .caveat {
+      background: #fbeff1;
+      border-left: 4px solid var(--brand);
+      padding: 12px 16px;
+      border-radius: 6px;
+      font-size: 13.5px;
+      color: #6a1a1a;
+      margin: 18px 0 24px;
+    }
+    .caveat code { background: rgba(0, 0, 0, 0.06); padding: 1px 5px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <header class="site">
+    <span class="brand">Saiku showcase</span>
+    <nav>
+      <a href="#embed">Embed</a>
+      <a href="#ai">AI Query API</a>
+      <a href="#graphql">GraphQL</a>
+      <a href="https://saiku.bi">saiku.bi ↗</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="eyebrow">Live playground</div>
+      <h1>Three surfaces. One cube. Real requests.</h1>
+      <p>
+        Every widget on this page hits a live Saiku instance at
+        <a href="https://demo.saiku.bi">demo.saiku.bi</a> against the bundled FoodMart
+        cube. Nothing is stubbed. If it renders here, it works.
+      </p>
+      <p>
+        Three sections showcase Saiku's developer surfaces —
+        <a href="#embed"><code>&lt;saiku-embed&gt;</code> web component</a>,
+        the <a href="#ai">typed AI Query REST API</a>, and the
+        <a href="#graphql">schema-per-cube GraphQL API</a>.
+      </p>
+      <div class="caveat">
+        Some endpoints require CORS-friendly access from this origin. If a section
+        reports a network error, the demo instance may be temporarily locked down or
+        rate-limited. Refresh, or fall back to <code>curl</code> against
+        <code>demo.saiku.bi</code> directly.
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="showcase" id="embed">
+      <h2>1. &lt;saiku-embed&gt; web component</h2>
+      <p class="sub">
+        One custom element, three modes — table, matrix, chart. Same tag works in
+        React, Vue, Svelte, or vanilla HTML. Public-grant demo instance, no token
+        needed.
+      </p>
+
+      <div class="grid two">
+        <div class="panel">
+          <div class="panel-title">Render <code>=table</code></div>
+          <div class="panel-body tight">
+            <saiku-embed
+              server="https://demo.saiku.bi"
+              path="homes/admin/Examples/Trend.saiku"
+              render="table"
+              height="360px"
+            ></saiku-embed>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">Render <code>=chart</code> (bar)</div>
+          <div class="panel-body tight">
+            <saiku-embed
+              server="https://demo.saiku.bi"
+              path="homes/admin/Examples/Trend.saiku"
+              render="chart"
+              mode="bar"
+              height="360px"
+            ></saiku-embed>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid" style="margin-top: 20px;">
+        <div class="panel">
+          <div class="panel-title">Render <code>=matrix</code> — hierarchical cellset (new in this branch)</div>
+          <div class="panel-body tight">
+            <saiku-embed
+              server="https://demo.saiku.bi"
+              path="homes/admin/Examples/Trend.saiku"
+              render="matrix"
+              height="360px"
+            ></saiku-embed>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: 24px;">
+        <div class="panel">
+          <div class="panel-title">The exact code above</div>
+          <div class="panel-body">
+<pre>&lt;script type="module" src="https://demo.saiku.bi/ui/saiku-embed.js"&gt;&lt;/script&gt;
+
+&lt;saiku-embed
+  server="https://demo.saiku.bi"
+  path="homes/admin/Examples/Trend.saiku"
+  render="matrix"      &lt;!-- also: "table" | "chart" --&gt;
+  height="360px"
+&gt;&lt;/saiku-embed&gt;</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="showcase" id="ai">
+      <h2>2. AI Query API — typed, schema-validated</h2>
+      <p class="sub">
+        Every measure and dimension resolves against the live cube. Names that
+        don't exist come back as a structured <code>VALIDATION_ERROR</code> with an
+        <code>available</code> list — LLMs (and humans) self-correct from that.
+      </p>
+
+      <div class="grid two">
+        <div>
+          <label class="inline" for="ai-request">Request body (POST /rest/saiku/api/ai/query)</label>
+          <textarea id="ai-request" spellcheck="false">{
+  "cube": {
+    "connectionName": "foodmart",
+    "catalog": "FoodMart",
+    "schema": "FoodMart",
+    "cubeName": "Sales"
+  },
+  "measures": [{ "name": "Store Sales" }, { "name": "Unit Sales" }],
+  "rows": [
+    { "dimension": "Product", "hierarchy": "Product", "level": "Product Family" }
+  ]
+}</textarea>
+          <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">
+            <button class="primary" id="ai-run">Run</button>
+            <span class="status-line" id="ai-status">Idle</span>
+          </div>
+        </div>
+
+        <div>
+          <label class="inline">Response</label>
+          <div class="panel">
+            <div class="panel-body">
+              <pre class="result" id="ai-result">// Click Run</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="showcase" id="graphql">
+      <h2>3. GraphQL — schema-per-cube typed access</h2>
+      <p class="sub">
+        Every cube shows up as its own typed Query field with enum-typed measure and
+        level inputs. Point Apollo / URQL / graphql-codegen at
+        <code>/rest/saiku/api/graphql/schema.graphql</code> and get typed clients.
+      </p>
+
+      <div class="grid two">
+        <div>
+          <label class="inline" for="gql-query">Query (POST /rest/saiku/api/graphql)</label>
+          <textarea id="gql-query" spellcheck="false">{
+  serverInfo { version mdxEnabled }
+  cubes { cubeName catalog }
+}</textarea>
+          <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">
+            <button class="primary" id="gql-run">Run</button>
+            <button class="primary" style="background:#555" id="gql-introspect" title="Fetch the SDL">Fetch SDL</button>
+            <span class="status-line" id="gql-status">Idle</span>
+          </div>
+        </div>
+
+        <div>
+          <label class="inline">Response</label>
+          <div class="panel">
+            <div class="panel-body">
+              <pre class="result" id="gql-result">// Click Run</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site">
+    <div>
+      Built on top of live <a href="https://demo.saiku.bi">demo.saiku.bi</a>.
+      Source: <a href="https://github.com/spiculedata/saiku">github.com/spiculedata/saiku</a> ·
+      Learn more at <a href="https://saiku.bi">saiku.bi</a>.
+    </div>
+  </footer>
+
+  <script>
+    // ---- Shared session bootstrap ----
+    // The demo runs with admin/admin. To keep the SPA self-contained we log
+    // in on load and let subsequent fetches ride the resulting session cookie.
+    // This means every visitor to this page shares the same anonymous demo
+    // session — fine for a public showcase, not fine for a production deploy.
+    const DEMO_ORIGIN = "https://demo.saiku.bi";
+    let sessionReady = false;
+    async function ensureSession() {
+      if (sessionReady) return;
+      try {
+        const body = new URLSearchParams();
+        body.set("username", "admin");
+        body.set("password", "admin");
+        await fetch(`${DEMO_ORIGIN}/rest/saiku/session/`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: body.toString(),
+        });
+        sessionReady = true;
+      } catch {
+        // Silently ignore — the AI + GraphQL fetches will surface the failure.
+      }
+    }
+
+    async function withCsrf(headers) {
+      // Saiku expects an XSRF token echoed on state-changing requests. Read from
+      // the cookie set by the session bootstrap.
+      const m = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+      if (m) headers["X-XSRF-TOKEN"] = decodeURIComponent(m[1]);
+      return headers;
+    }
+
+    // ---- AI Query section ----
+    document.getElementById("ai-run").addEventListener("click", async () => {
+      const request = document.getElementById("ai-request");
+      const result = document.getElementById("ai-result");
+      const status = document.getElementById("ai-status");
+      result.textContent = "";
+      status.textContent = "Running…";
+      try {
+        await ensureSession();
+        const body = JSON.parse(request.value);
+        const started = performance.now();
+        const resp = await fetch(`${DEMO_ORIGIN}/rest/saiku/api/ai/query`, {
+          method: "POST",
+          credentials: "include",
+          headers: await withCsrf({ "Content-Type": "application/json", Accept: "application/json" }),
+          body: JSON.stringify(body),
+        });
+        const elapsed = Math.round(performance.now() - started);
+        const json = await resp.json();
+        result.textContent = JSON.stringify(json, null, 2);
+        status.textContent = `HTTP ${resp.status} — ${elapsed} ms`;
+      } catch (e) {
+        result.textContent = "";
+        status.textContent = `Error: ${e && e.message ? e.message : e}`;
+      }
+    });
+
+    // ---- GraphQL section ----
+    async function runGraphQl(query, statusEl, resultEl) {
+      resultEl.textContent = "";
+      statusEl.textContent = "Running…";
+      try {
+        await ensureSession();
+        const started = performance.now();
+        const resp = await fetch(`${DEMO_ORIGIN}/rest/saiku/api/graphql`, {
+          method: "POST",
+          credentials: "include",
+          headers: await withCsrf({ "Content-Type": "application/json", Accept: "application/json" }),
+          body: JSON.stringify({ query }),
+        });
+        const elapsed = Math.round(performance.now() - started);
+        const json = await resp.json();
+        resultEl.textContent = JSON.stringify(json, null, 2);
+        statusEl.textContent = `HTTP ${resp.status} — ${elapsed} ms`;
+      } catch (e) {
+        resultEl.textContent = "";
+        statusEl.textContent = `Error: ${e && e.message ? e.message : e}`;
+      }
+    }
+
+    document.getElementById("gql-run").addEventListener("click", () => {
+      const query = document.getElementById("gql-query").value;
+      const status = document.getElementById("gql-status");
+      const result = document.getElementById("gql-result");
+      runGraphQl(query, status, result);
+    });
+
+    document.getElementById("gql-introspect").addEventListener("click", async () => {
+      const status = document.getElementById("gql-status");
+      const result = document.getElementById("gql-result");
+      result.textContent = "";
+      status.textContent = "Fetching SDL…";
+      try {
+        await ensureSession();
+        const resp = await fetch(`${DEMO_ORIGIN}/rest/saiku/api/graphql/schema.graphql`, {
+          credentials: "include",
+        });
+        const text = await resp.text();
+        result.textContent = text;
+        status.textContent = `HTTP ${resp.status}`;
+      } catch (e) {
+        status.textContent = `Error: ${e && e.message ? e.message : e}`;
+      }
+    });
+
+    // Warm the session on load so first-click latency isn't dominated by /login.
+    ensureSession();
+  </script>
+</body>
+</html>

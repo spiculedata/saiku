@@ -106,7 +106,31 @@ describe("fetchSavedQuery", () => {
     const out = await fetchSavedQuery("https://demo.saiku.bi", "homes/admin/x.saiku", "tok");
     expect(out.format).toBe("records");
     expect(out.data).toHaveLength(1);
-    expect(out.data[0]["Store Sales"].formatted).toBe("$1,234");
+    expect(out.data![0]["Store Sales"].formatted).toBe("$1,234");
+  });
+
+  it("appends ?format=matrix when matrix mode is requested", async () => {
+    resolveBody = {
+      format: "matrix",
+      matrix: [{ "0": { value: 1, formatted: "1" } }],
+      metadata: { rows: [], columns: [] },
+    };
+    const out = await fetchSavedQuery(
+      "https://demo.saiku.bi",
+      "homes/admin/x.saiku",
+      "tok",
+      "matrix",
+    );
+    expect(calls[0].url).toBe(
+      "https://demo.saiku.bi/rest/saiku/api/embed/query/homes/admin/x.saiku?format=matrix",
+    );
+    expect(out.format).toBe("matrix");
+    expect(out.matrix).toHaveLength(1);
+  });
+
+  it("defaults to records mode with no query-string suffix", async () => {
+    await fetchSavedQuery("https://demo.saiku.bi", "homes/admin/x.saiku", "tok");
+    expect(calls[0].url).not.toContain("format=");
   });
 });
 

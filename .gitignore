@@ -478,3 +478,7 @@ nbdist/
 # git worktrees
 .worktrees/
 .pi/
+
+# Runtime artifacts from Playwright / Claude MCP sessions
+.playwright-mcp/
+welcome-demo-fixed.png
