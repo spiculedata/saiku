@@ -1170,110 +1170,20 @@ public class AiQueryResource {
         }
         final org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool forceFinal = force;
 
+        final AiAskApi.AskRequest bodyFinal = body;
         jakarta.ws.rs.core.StreamingOutput stream = outputStream -> {
             java.io.Writer writer =
                     new java.io.OutputStreamWriter(outputStream, java.nio.charset.StandardCharsets.UTF_8);
             SseWriter sse = new SseWriter(writer);
             try {
                 AiAskService.AskOutcome outcome = askService.ask(
-                        body.getCube(),
-                        body.getQuestion(),
-                        body.historyAsMessages(),
-                        body.getCellsetDigest(),
+                        bodyFinal.getCube(),
+                        bodyFinal.getQuestion(),
+                        bodyFinal.historyAsMessages(),
+                        bodyFinal.getCellsetDigest(),
                         forceFinal,
-                        body.getCurrentQuery());
-
-                // model event — always fired first so the client can show which backend answered.
-                if (outcome.model() != null) {
-                    sse.event("model", MAPPER.writeValueAsString(java.util.Map.of("model", outcome.model())));
-                }
-
-                if (outcome.degraded()) {
-                    // Degraded path — emit an error event with the provider's reason, then a final.
-                    sse.event(
-                            "error",
-                            MAPPER.writeValueAsString(
-                                    java.util.Map.of("reason", outcome.reason() == null ? "" : outcome.reason())));
-                    AiAskApi.AskResponse out = new AiAskApi.AskResponse();
-                    out.setDegraded(true);
-                    out.setReason(outcome.reason());
-                    if (outcome.model() != null) out.setModel(outcome.model());
-                    sse.event("final", MAPPER.writeValueAsString(out));
-                    return;
-                }
-
-                sse.event(
-                        "intent",
-                        MAPPER.writeValueAsString(java.util.Map.of(
-                                "kind",
-                                outcome.kind() == null ? "" : outcome.kind().name())));
-
-                AiAskApi.AskResponse out = new AiAskApi.AskResponse();
-                out.setDegraded(false);
-                out.setModel(outcome.model());
-
-                if (outcome.kind() == AiAskService.AskOutcome.Kind.INSIGHT) {
-                    // Chunk the insight markdown into word-sized deltas so the client sees a
-                    // progressive stream. Fake-stream today; wire-stable for real LLM streaming later.
-                    out.setInsight(outcome.insight());
-                    String markdown =
-                            outcome.insight() == null ? "" : outcome.insight().getMarkdown();
-                    if (markdown != null && !markdown.isEmpty()) {
-                        emitChunks(sse, markdown);
-                    }
-                    sse.event("final", MAPPER.writeValueAsString(out));
-                    return;
-                }
-
-                if (outcome.kind() == AiAskService.AskOutcome.Kind.VIEW_CHANGE) {
-                    // View change carries an optional reason string worth streaming — the caller
-                    // reads it as "why did the LLM pick this chart".
-                    out.setViewChange(outcome.viewChange());
-                    String reason = outcome.viewChange() == null
-                            ? null
-                            : outcome.viewChange().getReason();
-                    if (reason != null && !reason.isEmpty()) {
-                        emitChunks(sse, reason);
-                    }
-                    sse.event("final", MAPPER.writeValueAsString(out));
-                    return;
-                }
-
-                // QUERY intent — no prose to stream; the query itself IS the artefact. Execute the
-                // same way the sync endpoint does and emit the final envelope in one event so the
-                // client accumulates a complete AskResponse. We keep the SSE frame here (rather than
-                // a single JSON POST response) so the client's stream reader is uniform across intents.
-                AiQueryRequest req = outcome.request();
-                out.setRequest(req);
-                long start = System.currentTimeMillis();
-                try {
-                    schemaValidator.assertValid(MAPPER.valueToTree(req));
-                    AiSchema schema = cubeMetadataService.getSchema(req.getCube());
-                    ThinQuery tq = converter.convert(req, schema);
-                    out.setQueryModel(tq.getQueryModel());
-                    CellDataSet cds = thinQueryService.execute(tq);
-                    AiQueryResponse aiResp = buildResponse(tq, cds, start, "records");
-                    out.setResponse(aiResp);
-                    if (aiResp != null && aiResp.getMetadata() != null) {
-                        out.setGeneratedMdx(aiResp.getMetadata().getGeneratedMdx());
-                    }
-                } catch (AiValidationException e) {
-                    AiQueryResponse aiResp = new AiQueryResponse();
-                    aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.VALIDATION_ERROR);
-                    aiResp.setError(e.getMessage());
-                    aiResp.setField(e.getField());
-                    aiResp.setAvailable(e.getAvailable() == null ? null : new java.util.ArrayList<>(e.getAvailable()));
-                    aiResp.setRuntimeMs(System.currentTimeMillis() - start);
-                    out.setResponse(aiResp);
-                } catch (RuntimeException e) {
-                    log.warn("AI ask (streaming) execution failed after successful translation", e);
-                    AiQueryResponse aiResp = new AiQueryResponse();
-                    aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.EXECUTION_ERROR);
-                    aiResp.setError("execute failed");
-                    aiResp.setRuntimeMs(System.currentTimeMillis() - start);
-                    out.setResponse(aiResp);
-                }
-                sse.event("final", MAPPER.writeValueAsString(out));
+                        bodyFinal.getCurrentQuery());
+                streamOutcomeAsSse(outcome, sse);
             } catch (java.io.IOException ioe) {
                 // Client disconnected — nothing to do, the connection is already dead.
                 log.debug("AI ask (streaming) client disconnected: {}", ioe.getMessage());
@@ -1292,6 +1202,192 @@ public class AiQueryResource {
                 .header("Cache-Control", "no-cache")
                 .header("X-Accel-Buffering", "no") // Nginx: disable buffering so events flush.
                 .build();
+    }
+
+    /**
+     * Space-scoped streaming ask (saiku#1440 + #1433). Same wire format as {@link
+     * #askStream(AiAskApi.AskRequest)} — the events are indistinguishable to the client — but
+     * routes through {@link AiAskService#askInSpace} so the persona's system prompt, cube
+     * allowlist, and skill filter apply. A caller who wants both space scoping AND progressive
+     * chat UX uses this endpoint; the two features were always meant to compose.
+     *
+     * <p>Same rate limit + size cap + policy gate + auth as the classic {@code
+     * /spaces/{id}/ask}. Space-not-found + FORBIDDEN outcomes surface as {@code error} events
+     * followed by a degraded {@code final} — the client sees the same SSE shape regardless of
+     * whether the failure was provider-side or scope-side.
+     */
+    @POST
+    @Path("/spaces/{id}/ask/stream")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces("text/event-stream")
+    public Response askInSpaceStream(@PathParam("id") String spaceId, AiAskApi.AskRequest body) {
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
+        if (body == null) {
+            return badRequest("body", "request body required", null);
+        }
+        if (body.getQuestion() == null || body.getQuestion().isBlank()) {
+            return badRequest("question", "question must be non-blank", null);
+        }
+        org.saiku.web.security.ratelimit.AiAskGuard.Violation sizeViolation =
+                org.saiku.web.security.ratelimit.AiAskGuard.checkSize(body);
+        if (sizeViolation != null) {
+            return askLimitResponse(sizeViolation.isPayloadTooLarge() ? 413 : 400, sizeViolation.getMessage());
+        }
+        if (!askRateLimiter.tryAcquire(askRateKey())) {
+            return askLimitResponse(
+                    429,
+                    "Too many AI ask requests — limit is " + askRateLimiter.getMaxCalls() + " per "
+                            + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.");
+        }
+        if (askService == null) {
+            AiAskApi.AskResponse notConfigured = new AiAskApi.AskResponse();
+            notConfigured.setDegraded(true);
+            notConfigured.setReason("AI ask is not configured.");
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity(notConfigured)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+
+        org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force =
+                org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.AUTO;
+        if (body.getForceTool() != null) {
+            try {
+                force = org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.valueOf(
+                        body.getForceTool().toUpperCase());
+            } catch (IllegalArgumentException ignored) {
+                // unknown value — keep AUTO
+            }
+        }
+        final org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool forceFinal = force;
+        final AiAskApi.AskRequest bodyFinal = body;
+
+        jakarta.ws.rs.core.StreamingOutput stream = outputStream -> {
+            java.io.Writer writer =
+                    new java.io.OutputStreamWriter(outputStream, java.nio.charset.StandardCharsets.UTF_8);
+            SseWriter sse = new SseWriter(writer);
+            try {
+                AiAskService.AskOutcome outcome = askService.askInSpace(
+                        spaceId,
+                        bodyFinal.getCube(),
+                        bodyFinal.getQuestion(),
+                        bodyFinal.historyAsMessages(),
+                        bodyFinal.getCellsetDigest(),
+                        forceFinal,
+                        bodyFinal.getCurrentQuery());
+                streamOutcomeAsSse(outcome, sse);
+            } catch (java.io.IOException ioe) {
+                log.debug("AI ask-in-space (streaming) client disconnected: {}", ioe.getMessage());
+            } catch (RuntimeException e) {
+                log.warn("AI ask-in-space (streaming) unexpected failure", e);
+                try {
+                    sse.event("error", MAPPER.writeValueAsString(java.util.Map.of("reason", "internal error")));
+                } catch (java.io.IOException swallow) {
+                    // best-effort
+                }
+            }
+        };
+
+        return Response.ok(stream)
+                .type("text/event-stream")
+                .header("Cache-Control", "no-cache")
+                .header("X-Accel-Buffering", "no")
+                .build();
+    }
+
+    /**
+     * Translate one ask outcome into the SSE event sequence documented on {@link
+     * #askStream(AiAskApi.AskRequest)}: {@code model} → {@code intent} → 0+ {@code chunk} → {@code
+     * final}, or {@code model} → {@code error} → degraded-{@code final} when the provider failed.
+     *
+     * <p>Package-visible for unit testing. Called by both {@link #askStream} and {@link
+     * #askInSpaceStream}; the two endpoints differ only in which {@code AiAskService} entry
+     * point they invoke.
+     */
+    void streamOutcomeAsSse(AiAskService.AskOutcome outcome, SseWriter sse) throws java.io.IOException {
+        // model event — always fired first so the client can show which backend answered.
+        if (outcome.model() != null) {
+            sse.event("model", MAPPER.writeValueAsString(java.util.Map.of("model", outcome.model())));
+        }
+
+        if (outcome.degraded()) {
+            // Degraded path — emit an error event with the provider's reason, then a final.
+            sse.event(
+                    "error",
+                    MAPPER.writeValueAsString(
+                            java.util.Map.of("reason", outcome.reason() == null ? "" : outcome.reason())));
+            AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+            out.setDegraded(true);
+            out.setReason(outcome.reason());
+            if (outcome.model() != null) out.setModel(outcome.model());
+            sse.event("final", MAPPER.writeValueAsString(out));
+            return;
+        }
+
+        sse.event(
+                "intent",
+                MAPPER.writeValueAsString(java.util.Map.of(
+                        "kind", outcome.kind() == null ? "" : outcome.kind().name())));
+
+        AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+        out.setDegraded(false);
+        out.setModel(outcome.model());
+
+        if (outcome.kind() == AiAskService.AskOutcome.Kind.INSIGHT) {
+            out.setInsight(outcome.insight());
+            String markdown = outcome.insight() == null ? "" : outcome.insight().getMarkdown();
+            if (markdown != null && !markdown.isEmpty()) {
+                emitChunks(sse, markdown);
+            }
+            sse.event("final", MAPPER.writeValueAsString(out));
+            return;
+        }
+
+        if (outcome.kind() == AiAskService.AskOutcome.Kind.VIEW_CHANGE) {
+            out.setViewChange(outcome.viewChange());
+            String reason =
+                    outcome.viewChange() == null ? null : outcome.viewChange().getReason();
+            if (reason != null && !reason.isEmpty()) {
+                emitChunks(sse, reason);
+            }
+            sse.event("final", MAPPER.writeValueAsString(out));
+            return;
+        }
+
+        // QUERY intent — no prose to stream; the query itself IS the artefact. Execute the same
+        // way the sync endpoint does and emit the final envelope in one event so the client
+        // accumulates a complete AskResponse.
+        AiQueryRequest req = outcome.request();
+        out.setRequest(req);
+        long start = System.currentTimeMillis();
+        try {
+            schemaValidator.assertValid(MAPPER.valueToTree(req));
+            AiSchema schema = cubeMetadataService.getSchema(req.getCube());
+            ThinQuery tq = converter.convert(req, schema);
+            out.setQueryModel(tq.getQueryModel());
+            CellDataSet cds = thinQueryService.execute(tq);
+            AiQueryResponse aiResp = buildResponse(tq, cds, start, "records");
+            out.setResponse(aiResp);
+            if (aiResp != null && aiResp.getMetadata() != null) {
+                out.setGeneratedMdx(aiResp.getMetadata().getGeneratedMdx());
+            }
+        } catch (AiValidationException e) {
+            AiQueryResponse aiResp = new AiQueryResponse();
+            aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.VALIDATION_ERROR);
+            aiResp.setError(e.getMessage());
+            aiResp.setField(e.getField());
+            aiResp.setAvailable(e.getAvailable() == null ? null : new java.util.ArrayList<>(e.getAvailable()));
+            aiResp.setRuntimeMs(System.currentTimeMillis() - start);
+            out.setResponse(aiResp);
+        } catch (RuntimeException e) {
+            log.warn("AI ask (streaming) execution failed after successful translation", e);
+            AiQueryResponse aiResp = new AiQueryResponse();
+            aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.EXECUTION_ERROR);
+            aiResp.setError("execute failed");
+            aiResp.setRuntimeMs(System.currentTimeMillis() - start);
+            out.setResponse(aiResp);
+        }
+        sse.event("final", MAPPER.writeValueAsString(out));
     }
 
     /**

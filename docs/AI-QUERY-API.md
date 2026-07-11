@@ -1511,6 +1511,11 @@ falls through as a raw ask.
   UI when editing a persona).
 - `POST /rest/saiku/api/ai/spaces/{id}/ask` — space-scoped ask. Body
   shape mirrors `/ai/ask` but `cube` is optional.
+- `POST /rest/saiku/api/ai/spaces/{id}/ask/stream` — SSE streaming
+  variant. Same event schema as [`/ai/ask/stream`](#streaming-variant--post-aiaskstream-saiku1433)
+  (`model` → `intent` → `chunk` → `final`), but the persona scoping
+  from the space applies — the client sees identical wire events
+  whether they hit `/ai/ask/stream` or the space-scoped mirror.
 - `POST /rest/saiku/api/ai/spaces/refresh` — force a rescan.
 
 ### Bundled examples
