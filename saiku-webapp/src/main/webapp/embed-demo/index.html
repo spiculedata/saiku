@@ -465,7 +465,30 @@ const CFG = {
   cube: { connectionName:'unknown_foodmart', catalog:'FoodMart', schema:'FoodMart', cubeName:'Sales' }
 };
 let LIVE = false;                 // did the last live probe succeed?
+let sessionReady = false;
 const history = [];               // [{role, content}]
+
+/* Warm an admin/admin session so anonymous demo visitors' same-origin API calls
+   authenticate — mirrors the /showcase demo bootstrap. Harmless off the demo host
+   (the fetch just fails and we fall back to demo data). */
+async function ensureSession() {
+  if (sessionReady) return;
+  try {
+    const body = new URLSearchParams({ username: 'admin', password: 'admin' });
+    await fetch((CFG.base||'') + '/rest/saiku/session/', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    });
+    sessionReady = true;
+  } catch { /* surfaced by the API fetch that follows */ }
+}
+/* Saiku echoes an XSRF token on state-changing requests. */
+function withCsrf(headers) {
+  const m = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+  if (m) headers['X-XSRF-TOKEN'] = decodeURIComponent(m[1]);
+  return headers;
+}
 const money = n => '$' + Math.round(n).toLocaleString();
 const moneyK = n => '$' + (n/1000).toFixed(1) + 'k';
 const el = (h) => { const t = document.createElement('template'); t.innerHTML = h.trim(); return t.content.firstChild; };
@@ -599,10 +622,11 @@ function fmt(s){
    Saiku client — live SSE with graceful mock fallback
    ============================================================ */
 async function askLive(question, onChunk) {
+  await ensureSession();
   const url = (CFG.base||'') + '/rest/saiku/api/ai/spaces/' + encodeURIComponent(CFG.space) + '/ask/stream';
   const res = await fetch(url, {
-    method:'POST', credentials:'same-origin',
-    headers:{'Content-Type':'application/json','Accept':'text/event-stream'},
+    method:'POST', credentials:'include',
+    headers: withCsrf({'Content-Type':'application/json','Accept':'text/event-stream'}),
     body: JSON.stringify({ question, cube: CFG.cube, history })
   });
   if (!res.ok || !res.body) throw new Error('HTTP '+res.status);
@@ -767,8 +791,9 @@ function setConn(live){
 async function probeLive(){
   if(!CFG.base && location.protocol==='file:') { setConn(false); return; }  // file:// can't do same-origin API
   try {
+    await ensureSession();
     const url=(CFG.base||'')+'/rest/saiku/api/ai/spaces';
-    const r = await fetch(url, {credentials:'same-origin', headers:{'Accept':'application/json'}});
+    const r = await fetch(url, {credentials:'include', headers:{'Accept':'application/json'}});
     setConn(r.ok);
   } catch { setConn(false); }
 }
