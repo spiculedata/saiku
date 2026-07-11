@@ -256,6 +256,92 @@ public class OssieDiscoverServiceTest {
         assertEquals("Sales region", region.getDescription());
     }
 
+    // ---- well-known extensions (saiku#1409): display, roles, graded pii ----
+
+    @Test
+    public void wellKnownExtensionsProjectOntoFields() throws Exception {
+        Path wkYaml = Files.createTempFile("ossie-wk-", ".yaml");
+        Files.writeString(
+                wkYaml,
+                "version: 0.2.0.dev0\n"
+                        + "semantic_model:\n"
+                        + "- name: T\n"
+                        + "  datasets:\n"
+                        + "  - name: d\n"
+                        + "    source: s.d\n"
+                        + "    fields:\n"
+                        + "    - name: revenue\n"
+                        + "      expression:\n"
+                        + "        dialects: [{dialect: ANSI_SQL, expression: r}]\n"
+                        + "      custom_extensions:\n"
+                        + "      - vendor_name: SAIKU\n"
+                        + "        data: '{\"display\":{\"caption\":\"Net Revenue\",\"format\":\"$#,##0.00\",\"unit\":\"USD\"}}'\n"
+                        + "    - name: ssn\n"
+                        + "      expression:\n"
+                        + "        dialects: [{dialect: ANSI_SQL, expression: ssn}]\n"
+                        + "      custom_extensions:\n"
+                        + "      - vendor_name: SAIKU\n"
+                        + "        data: '{\"pii\":{\"level\":\"hash\"}}'\n"
+                        + "    - name: internal_flag\n"
+                        + "      expression:\n"
+                        + "        dialects: [{dialect: ANSI_SQL, expression: f}]\n"
+                        + "      custom_extensions:\n"
+                        + "      - vendor_name: SAIKU\n"
+                        + "        data: '{\"display\":{\"hidden\":true},\"roles\":{\"allow\":[\"ROLE_ADMIN\"]}}'\n");
+        try {
+            datasourceManager.put(
+                    "T", ossieDatasource("T", propsOf(ISaikuConnection.OSSIE_YAML_KEY, wkYaml.toString())));
+            OssieModelDto dto = service.getModel("T");
+
+            OssieModelDto.Field revenue = dto.getDatasets().get(0).getFields().get(0);
+            assertEquals("Net Revenue", revenue.getDisplayCaption());
+            assertEquals("$#,##0.00", revenue.getDisplayFormat());
+            assertEquals("USD", revenue.getDisplayUnit());
+            assertFalse("no hidden flag", revenue.isDisplayHidden());
+
+            OssieModelDto.Field ssn = dto.getDatasets().get(0).getFields().get(1);
+            assertEquals("HASH", ssn.getPiiLevel());
+            assertTrue("graded pii still flips the legacy boolean", ssn.isPii());
+
+            OssieModelDto.Field internal = dto.getDatasets().get(0).getFields().get(2);
+            assertTrue("hidden flag survives", internal.isDisplayHidden());
+            assertEquals(List.of("ROLE_ADMIN"), internal.getAllowRoles());
+            assertTrue("no deny roles set", internal.getDenyRoles().isEmpty());
+        } finally {
+            Files.deleteIfExists(wkYaml);
+        }
+    }
+
+    @Test
+    public void wellKnownExtensionsProjectOntoMetrics() throws Exception {
+        Path wkYaml = Files.createTempFile("ossie-wk-m-", ".yaml");
+        Files.writeString(
+                wkYaml,
+                "version: 0.2.0.dev0\n"
+                        + "semantic_model:\n"
+                        + "- name: T\n"
+                        + "  datasets: [{name: d, source: s.d, fields: []}]\n"
+                        + "  metrics:\n"
+                        + "  - name: revenue\n"
+                        + "    expression:\n"
+                        + "      dialects: [{dialect: ANSI_SQL, expression: SUM(x)}]\n"
+                        + "    custom_extensions:\n"
+                        + "    - vendor_name: SAIKU\n"
+                        + "      data: '{\"display\":{\"caption\":\"Net Revenue\",\"unit\":\"USD\"},\"roles\":{\"deny\":[\"ROLE_EMBED_GUEST\"]}}'\n");
+        try {
+            datasourceManager.put(
+                    "T", ossieDatasource("T", propsOf(ISaikuConnection.OSSIE_YAML_KEY, wkYaml.toString())));
+            OssieModelDto dto = service.getModel("T");
+            OssieModelDto.Metric revenue = dto.getMetrics().get(0);
+            assertEquals("Net Revenue", revenue.getDisplayCaption());
+            assertEquals("USD", revenue.getDisplayUnit());
+            assertTrue("no allow roles set", revenue.getAllowRoles().isEmpty());
+            assertEquals(List.of("ROLE_EMBED_GUEST"), revenue.getDenyRoles());
+        } finally {
+            Files.deleteIfExists(wkYaml);
+        }
+    }
+
     private static SaikuDatasource ossieDatasource(String name, Properties props) {
         return new SaikuDatasource(name, SaikuDatasource.Type.OSSIE, props);
     }

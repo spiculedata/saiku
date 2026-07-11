@@ -114,10 +114,21 @@ public final class OssieAiSchemaProjector {
             out_ds.setCustomExtensions(new ArrayList<>(ds.getCustomExtensions()));
             for (OssieModelDto.Field f : ds.getFields()) {
                 if (f.isPii()) continue; // saiku#902 parity — PII fields never enter the AI view.
+                // saiku#1409 — `saiku.display.hidden: true` strips the field from the AI schema
+                // response too. Different from PII (PII strips because it's sensitive; hidden
+                // strips because the operator doesn't want the AI to see it).
+                if (f.isDisplayHidden()) continue;
                 OssieAiSchema.Field out_field = new OssieAiSchema.Field();
                 out_field.setName(f.getName());
-                out_field.setLabel(f.getLabel());
+                // saiku#1409 display caption overrides the raw label. Operators write
+                // `saiku.display.caption` to give the AI a business-friendly name;
+                // the label falls through when no caption is set.
+                out_field.setLabel(f.getDisplayCaption() != null ? f.getDisplayCaption() : f.getLabel());
                 out_field.setDescription(f.getDescription());
+                // saiku#1409 unit overlay — the display extension overrides any type-inferred unit.
+                if (f.getDisplayUnit() != null) {
+                    out_field.setUnit(f.getDisplayUnit());
+                }
                 out_field.setCustomExtensions(new ArrayList<>(f.getCustomExtensions()));
                 // Type + samples come from the warehouse. Best-effort: swallow failures so
                 // the schema still projects when the warehouse is offline (agent still sees
@@ -143,12 +154,24 @@ public final class OssieAiSchemaProjector {
 
         // ---- Metrics ----
         for (OssieModelDto.Metric m : semantic.getMetrics()) {
+            // saiku#1409 — `saiku.display.hidden: true` strips the metric from the AI schema.
+            if (m.isDisplayHidden()) continue;
             OssieAiSchema.Metric out_m = new OssieAiSchema.Metric();
             out_m.setName(m.getName());
+            // saiku#1409 display caption overrides the raw name as the displayName; the schema
+            // response has `name` (the canonical key the AI uses in a query body) and
+            // `displayName` (what the AI can echo back to the user).
+            if (m.getDisplayCaption() != null) {
+                out_m.setDisplayName(m.getDisplayCaption());
+            }
             out_m.setDescription(m.getDescription());
             out_m.setExpression(m.getExpression());
             out_m.setAggregationKind(deriveAggregationKind(m));
             out_m.setSupportedOverrides(deriveSupportedOverrides(m));
+            // saiku#1409 unit overlay for metrics.
+            if (m.getDisplayUnit() != null) {
+                out_m.setUnit(m.getDisplayUnit());
+            }
             out_m.setCustomExtensions(new ArrayList<>(m.getCustomExtensions()));
             out.getMetrics().put(m.getName(), out_m);
         }
