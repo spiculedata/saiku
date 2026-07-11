@@ -1457,3 +1457,70 @@ Broken skills don't take down the catalogue: a `ParseException` on one
 file discards that one entry and leaves the rest intact. Every failure
 carries a stable code — see the full table in
 [docs/SKILLS-SPEC.md](./SKILLS-SPEC.md#errors).
+
+## Agent Spaces — persona layer over `/ai/ask` (saiku#1440)
+
+Where skills codify individual workflows, **spaces** codify a persona:
+a named viewpoint that scopes an ask surface. Each space bundles a
+system prompt, a cube allowlist, a skill allowlist, and a suggested-
+prompts list. Persisted as JSON under `saiku-home/agent-spaces/`; the
+launcher scans lazily with the same mtime-signature model as skills.
+Full reference: [docs/AGENT-SPACES-SPEC.md](./AGENT-SPACES-SPEC.md).
+
+Two things make a space genuinely enforce scope:
+
+- **Cube allowlist.** `POST /ai/spaces/{id}/ask` refuses any cube ref
+  outside the allowlist with a 403 `FORBIDDEN`. When the body omits
+  `cube`, the space's first allowlisted ref is used as the default.
+- **System prompt injection.** The space's `systemPrompt` is prepended
+  to the built-in `SYSTEM_PROMPT` on the provider side. Users can't
+  override it through `history` or `question`.
+
+The skill catalogue seen by the LLM is filtered to the space's
+`skillAllowlist` too — a slash-command for a skill outside the space
+falls through as a raw ask.
+
+### On-disk shape
+
+```json title="saiku-home/agent-spaces/foodmart-sales-analyst.json"
+{
+  "id": "foodmart-sales-analyst",
+  "name": "FoodMart Sales Analyst",
+  "description": "Weekly and monthly sales rollups over FoodMart.",
+  "systemPrompt": "You are the FoodMart Sales Analyst. Prefer weekly grain...",
+  "cubeAllowlist": [
+    {"connectionName": "unknown_foodmart", "catalog": "FoodMart", "schema": "FoodMart", "cubeName": "Sales"}
+  ],
+  "skillAllowlist": ["weekly-foodmart-rollup"],
+  "suggestedPrompts": [
+    "How did Store Sales track last week vs the prior week?",
+    "/weekly-foodmart-rollup"
+  ]
+}
+```
+
+### REST surface
+
+- `GET /rest/saiku/api/ai/spaces` — catalogue (compact summaries —
+  `id`, `name`, `description`, `suggestedPrompts`). The `systemPrompt`
+  and `cubeAllowlist` are omitted so an unauthenticated embed can't
+  scrape the routing.
+- `GET /rest/saiku/api/ai/spaces?errors=true` — same, plus parse
+  errors.
+- `GET /rest/saiku/api/ai/spaces/{id}` — full record (for the admin
+  UI when editing a persona).
+- `POST /rest/saiku/api/ai/spaces/{id}/ask` — space-scoped ask. Body
+  shape mirrors `/ai/ask` but `cube` is optional.
+- `POST /rest/saiku/api/ai/spaces/refresh` — force a rescan.
+
+### Bundled examples
+
+Fresh launcher installs stage two personas:
+
+- **FoodMart Sales Analyst** — analytical, brief, numbers-first;
+  `weekly-foodmart-rollup` in its skill allowlist.
+- **FoodMart Finance Ops** — cautious, precise, margin-focused;
+  empty skill allowlist = all skills allowed.
+
+See `saiku-launcher/src/main/resources/seed/agent-spaces/`. A fresh
+demo has personas ready to click without any operator authoring.
