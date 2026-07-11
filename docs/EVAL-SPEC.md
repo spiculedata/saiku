@@ -191,17 +191,32 @@ a wrong answer":
 - **Structural diff on the emitted AiQueryRequest** (as opposed to the
   executed row-set) — multiple structurally-different requests can
   produce the same rows, so row-diff is a better ground truth.
+- **Matrix-mode + measures-only cellset extraction in the live adapter.**
+  The current flattening handles the records-with-row-headers shape
+  every real query produces; two edge cases from the resource's
+  `buildResponse` (matrix mode; single-row measures-only queries) are
+  deliberately skipped as v1 scope. Follow-up if a real suite hits
+  either shape.
 
 ## CI integration
 
-The runner is a plain Java class:
+The runner is a plain Java class. The production adapter that plugs
+into `AiAskService` + query execution ships as
+[`LiveEvalAskAdapter`](../saiku-core/saiku-service/src/main/java/org/saiku/service/olap/ai/eval/LiveEvalAskAdapter.java):
 
 ```java
 import org.saiku.service.olap.ai.eval.*;
 
 EvalSuite suite = EvalYamlReader.read(new FileReader("saiku-home/evals/foodmart-sales.eval.yaml"),
     "foodmart-sales.eval.yaml");
-EvalAskAdapter live = new LiveAskAdapter(askService, thinQueryService); // wire your ask + execute
+
+// Production adapter — call AiAskService, execute any produced query, flatten to records.
+EvalAskAdapter live = new LiveEvalAskAdapter(
+    askService,          // org.saiku.service.olap.ai.ask.AiAskService
+    metadataService,     // org.saiku.service.olap.ai.AiCubeMetadataService
+    converter,           // org.saiku.service.olap.ai.AiSchemaConverter
+    thinQueryService);   // org.saiku.service.olap.ThinQueryService
+
 EvalReport report = new AgentEvalRunner(live).run(suite);
 
 System.out.println(EvalReportWriter.toText(report));
@@ -209,6 +224,21 @@ if (!report.allPassed()) {
   System.exit(1); // fail the CI job on any FAIL or DEGRADED outcome
 }
 ```
+
+The adapter routes each intent to the right output:
+
+| Intent | What lands in `EvalAskResult`                                                                     |
+|-------|-----------------------------------------------------------------------------------------------------|
+| QUERY | Ask → convert → execute → flatten cellset to `List<Map<String, Object>>` for the row comparator.    |
+| INSIGHT | Ask outcome's `insight.markdown` as-is for substring match.                                        |
+| VIEW_CHANGE | Ask outcome's `viewChange.viewMode`.                                                            |
+| REFUSED | `OFF_TOPIC:` reason mapped back to `EvalAskResult.forRefusal(...)`.                                 |
+| DEGRADED | Provider failures + adapter-thrown exceptions surface as degraded outcomes; the run continues.     |
+
+The cellset → records flattening deliberately skips the resource's
+matrix mode + measures-only special case + k-anonymity suppression —
+the eval framework wants the raw ground truth, and k-anonymity is a
+response-shaping concern for user-facing responses, not eval CI.
 
 A GitHub Actions workflow that runs on PR:
 
