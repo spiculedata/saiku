@@ -189,6 +189,7 @@ public class OssieDiscoverService {
                 && Boolean.TRUE.equals(src.getDimension().getIsTime()));
         f.setPii(readPii(src.getCustomExtensions()));
         f.setCustomExtensions(projectCustomExtensions(src.getCustomExtensions()));
+        applyWellKnownExtensionsToField(f, src.getCustomExtensions());
         return f;
     }
 
@@ -200,7 +201,48 @@ public class OssieDiscoverService {
         m.setDescription(src.getDescription());
         m.setAggregationKind(readAggregationKind(src.getCustomExtensions()));
         m.setCustomExtensions(projectCustomExtensions(src.getCustomExtensions()));
+        applyWellKnownExtensionsToMetric(m, src.getCustomExtensions());
         return m;
+    }
+
+    /**
+     * Overlay the {@code saiku.display}, {@code saiku.roles}, and {@code saiku.pii} well-knowns
+     * (saiku#1409) onto a projected field. Absent extensions leave the field unchanged.
+     */
+    private static void applyWellKnownExtensionsToField(OssieModelDto.Field f, List<CustomExtension> src) {
+        SaikuWellKnownExtensions.Parsed w = SaikuWellKnownExtensions.read(src);
+        if (w.isEmpty()) return;
+        if (w.display() != null) {
+            f.setDisplayCaption(w.display().caption());
+            f.setDisplayFormat(w.display().format());
+            f.setDisplayUnit(w.display().unit());
+            f.setDisplayHidden(w.display().hidden());
+        }
+        if (w.roles() != null) {
+            f.setAllowRoles(new ArrayList<>(w.roles().allow()));
+            f.setDenyRoles(new ArrayList<>(w.roles().deny()));
+        }
+        if (w.pii() != null) {
+            f.setPiiLevel(w.pii().name());
+            // The legacy `pii` boolean stays true for any level — the graded form is additive.
+            if (!f.isPii()) f.setPii(true);
+        }
+    }
+
+    /** Same overlay for metrics. Metrics don't carry a pii boolean, so the pii level lands nowhere. */
+    private static void applyWellKnownExtensionsToMetric(OssieModelDto.Metric m, List<CustomExtension> src) {
+        SaikuWellKnownExtensions.Parsed w = SaikuWellKnownExtensions.read(src);
+        if (w.isEmpty()) return;
+        if (w.display() != null) {
+            m.setDisplayCaption(w.display().caption());
+            m.setDisplayFormat(w.display().format());
+            m.setDisplayUnit(w.display().unit());
+            m.setDisplayHidden(w.display().hidden());
+        }
+        if (w.roles() != null) {
+            m.setAllowRoles(new ArrayList<>(w.roles().allow()));
+            m.setDenyRoles(new ArrayList<>(w.roles().deny()));
+        }
     }
 
     /**

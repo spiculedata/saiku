@@ -348,6 +348,100 @@ custom_extensions:
   data: '{"visibility":"internal","secret":true}'
 ```
 
+### Well-known Saiku extensions (#1409)
+
+The `vendor_name: SAIKU` blob is the reserved namespace for Saiku's own
+well-known keys. Three are defined in v4.7; the namespace is
+deliberately extensible — unknown keys under the SAIKU vendor
+round-trip untouched so future well-knowns don't require a coordinated
+release.
+
+#### `saiku.display` — presentation overrides
+
+```yaml
+custom_extensions:
+- vendor_name: SAIKU
+  data: |
+    {
+      "display": {
+        "caption": "Net Revenue",
+        "format": "$#,##0.00",
+        "unit": "USD",
+        "hidden": false
+      }
+    }
+```
+
+- **`caption`** overrides the field / metric label in the AI schema
+  response. Wins over any Phase-3 `<datasource>.generated.json` rename
+  for the same object.
+- **`format`** is a number-format pattern (`DecimalFormat` syntax) the
+  workbench applies when rendering values.
+- **`unit`** is free text (`"USD"`, `"hours"`, `"%"`) — same field the
+  legacy MDX schema exposes.
+- **`hidden: true`** strips the field / metric from the AI schema
+  response entirely. Different from `pii` — hidden means the operator
+  doesn't want the AI to see it at all; PII means the data is sensitive
+  and the value gets redacted at query time.
+
+#### `saiku.roles` — role-based visibility
+
+```yaml
+custom_extensions:
+- vendor_name: SAIKU
+  data: |
+    {
+      "roles": {
+        "allow": ["ROLE_SALES", "ROLE_ANALYST"],
+        "deny": ["ROLE_EMBED_GUEST"]
+      }
+    }
+```
+
+- Empty / missing **`allow`** = allow all callers.
+- Non-empty **`allow`** = caller must have at least one matching role.
+- **`deny`** overrides `allow`.
+- Full enforcement (filtering the schema + query response against the
+  caller's Spring Security authorities) is tracked with the Ossie RLS
+  work in [saiku#1393](https://github.com/spiculedata/saiku/issues/1393).
+  This slice defines the annotation and exposes it on the projected
+  DTO; the runtime filter lands with #1393.
+
+#### `saiku.pii` — graded PII
+
+```yaml
+custom_extensions:
+- vendor_name: SAIKU
+  data: |
+    {
+      "pii": {"level": "hash"}
+    }
+```
+
+Extends the legacy `"pii": true` boolean into a graded shape. Three
+levels:
+
+| Level     | Behaviour                                                                            |
+|-----------|--------------------------------------------------------------------------------------|
+| `redact`  | Value is `null` on the wire. Same as the legacy `"pii": true` boolean.               |
+| `mask`    | Value is replaced with a fixed mask token (e.g. `"***"`) preserving row shape.        |
+| `hash`    | Value is replaced with a deterministic keyed-hash hex prefix, preserving joinability. |
+
+The legacy boolean form stays supported — `"pii": true` and
+`"pii": {"level": "redact"}` are equivalent.
+
+### Extension namespace convention
+
+`saiku.*` (nested under `vendor_name: SAIKU`) is reserved for
+Saiku-authored well-knowns. Third-party integrators SHOULD use their
+own vendor name (`vendor_name: DBT`, `vendor_name: PREFECT`, etc.);
+unknown vendor names round-trip unchanged through the AI schema so
+downstream consumers can read them without a coordinated release.
+
+Within the SAIKU blob, unknown keys are ignored (not rejected) — a
+future well-known key can be authored by a newer exporter without
+breaking older consumers.
+
 ---
 
 ## Step 4 — validation: how the API teaches the agent

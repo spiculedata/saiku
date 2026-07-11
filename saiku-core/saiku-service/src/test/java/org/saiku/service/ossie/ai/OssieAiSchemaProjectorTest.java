@@ -114,6 +114,78 @@ public class OssieAiSchemaProjectorTest {
         assertEquals("SAIKU", field.getCustomExtensions().get(0).getVendorName());
     }
 
+    // ---- saiku#1409 well-known display extensions on the AI schema ----
+
+    @Test
+    public void hiddenFieldStrippedFromAiSchema() {
+        OssieModelDto semantic = buildFixture();
+        OssieModelDto.Field region = semantic.getDatasets().get(1).getFields().get(0);
+        region.setDisplayHidden(true);
+
+        OssieAiSchema schema = new OssieAiSchemaProjector().project("Pharma", semantic, null);
+
+        // `region` is the only non-PII field on the `customers` dataset; hidden strips it
+        // just like PII does — the dataset ends up with no queryable fields.
+        assertNull(
+                "region should not appear on the AI schema when hidden",
+                schema.getDatasets().get("customers").getFields().get("region"));
+    }
+
+    @Test
+    public void hiddenMetricStrippedFromAiSchema() {
+        OssieModelDto semantic = buildFixture();
+        semantic.getMetrics().get(1).setDisplayHidden(true); // line_count
+
+        OssieAiSchema schema = new OssieAiSchemaProjector().project("Pharma", semantic, null);
+
+        assertNotNull("net_revenue survives", schema.getMetrics().get("net_revenue"));
+        assertNull(
+                "line_count is hidden and shouldn't project",
+                schema.getMetrics().get("line_count"));
+    }
+
+    @Test
+    public void displayCaptionOverridesFieldLabel() {
+        OssieModelDto semantic = buildFixture();
+        OssieModelDto.Field netrev = semantic.getDatasets().get(0).getFields().get(0);
+        netrev.setLabel("Net Revenue (raw)");
+        netrev.setDisplayCaption("Net Revenue");
+
+        OssieAiSchema schema = new OssieAiSchemaProjector().project("Pharma", semantic, null);
+        assertEquals(
+                "display caption wins over the raw label",
+                "Net Revenue",
+                schema.getDatasets()
+                        .get("fact_pharma")
+                        .getFields()
+                        .get("netrevenue")
+                        .getLabel());
+    }
+
+    @Test
+    public void displayCaptionOverridesMetricDisplayName() {
+        OssieModelDto semantic = buildFixture();
+        semantic.getMetrics().get(0).setDisplayCaption("Net Revenue $");
+
+        OssieAiSchema schema = new OssieAiSchemaProjector().project("Pharma", semantic, null);
+        assertEquals("Net Revenue $", schema.getMetrics().get("net_revenue").getDisplayName());
+    }
+
+    @Test
+    public void displayUnitOverlaidOnAiField() {
+        OssieModelDto semantic = buildFixture();
+        semantic.getDatasets().get(0).getFields().get(0).setDisplayUnit("USD");
+
+        OssieAiSchema schema = new OssieAiSchemaProjector().project("Pharma", semantic, null);
+        assertEquals(
+                "USD",
+                schema.getDatasets()
+                        .get("fact_pharma")
+                        .getFields()
+                        .get("netrevenue")
+                        .getUnit());
+    }
+
     @Test
     public void customExtensionsCarryThroughOnDatasetAndMetric() {
         OssieModelDto semantic = buildFixture();

@@ -183,6 +183,28 @@ public class OssieModelDto {
         private boolean isTime;
         private boolean pii;
 
+        // saiku#1409 well-known extensions. All null when the operator hasn't authored one.
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private String displayCaption;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private String displayFormat;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private String displayUnit;
+
+        @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+        private boolean displayHidden;
+
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        private List<String> allowRoles = new ArrayList<>();
+
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        private List<String> denyRoles = new ArrayList<>();
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private String piiLevel;
+
         @JsonInclude(JsonInclude.Include.NON_EMPTY)
         private List<CustomExtensionDto> customExtensions = new ArrayList<>();
 
@@ -241,6 +263,62 @@ public class OssieModelDto {
         public void setPii(boolean v) {
             this.pii = v;
         }
+
+        public String getDisplayCaption() {
+            return displayCaption;
+        }
+
+        public void setDisplayCaption(String v) {
+            this.displayCaption = v;
+        }
+
+        public String getDisplayFormat() {
+            return displayFormat;
+        }
+
+        public void setDisplayFormat(String v) {
+            this.displayFormat = v;
+        }
+
+        public String getDisplayUnit() {
+            return displayUnit;
+        }
+
+        public void setDisplayUnit(String v) {
+            this.displayUnit = v;
+        }
+
+        public boolean isDisplayHidden() {
+            return displayHidden;
+        }
+
+        public void setDisplayHidden(boolean v) {
+            this.displayHidden = v;
+        }
+
+        public List<String> getAllowRoles() {
+            return allowRoles;
+        }
+
+        public void setAllowRoles(List<String> v) {
+            this.allowRoles = v == null ? new ArrayList<>() : v;
+        }
+
+        public List<String> getDenyRoles() {
+            return denyRoles;
+        }
+
+        public void setDenyRoles(List<String> v) {
+            this.denyRoles = v == null ? new ArrayList<>() : v;
+        }
+
+        public String getPiiLevel() {
+            return piiLevel;
+        }
+
+        public void setPiiLevel(String v) {
+            this.piiLevel = v;
+        }
     }
 
     /** Ossie metric — expands to an aggregate expression at query time. */
@@ -249,6 +327,25 @@ public class OssieModelDto {
         private String expression;
         private String description;
         private String aggregationKind;
+
+        // saiku#1409 well-known extensions — same shape as Field.
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private String displayCaption;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private String displayFormat;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private String displayUnit;
+
+        @JsonInclude(JsonInclude.Include.NON_DEFAULT)
+        private boolean displayHidden;
+
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        private List<String> allowRoles = new ArrayList<>();
+
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        private List<String> denyRoles = new ArrayList<>();
 
         @JsonInclude(JsonInclude.Include.NON_EMPTY)
         private List<CustomExtensionDto> customExtensions = new ArrayList<>();
@@ -291,6 +388,54 @@ public class OssieModelDto {
 
         public void setAggregationKind(String v) {
             this.aggregationKind = v;
+        }
+
+        public String getDisplayCaption() {
+            return displayCaption;
+        }
+
+        public void setDisplayCaption(String v) {
+            this.displayCaption = v;
+        }
+
+        public String getDisplayFormat() {
+            return displayFormat;
+        }
+
+        public void setDisplayFormat(String v) {
+            this.displayFormat = v;
+        }
+
+        public String getDisplayUnit() {
+            return displayUnit;
+        }
+
+        public void setDisplayUnit(String v) {
+            this.displayUnit = v;
+        }
+
+        public boolean isDisplayHidden() {
+            return displayHidden;
+        }
+
+        public void setDisplayHidden(boolean v) {
+            this.displayHidden = v;
+        }
+
+        public List<String> getAllowRoles() {
+            return allowRoles;
+        }
+
+        public void setAllowRoles(List<String> v) {
+            this.allowRoles = v == null ? new ArrayList<>() : v;
+        }
+
+        public List<String> getDenyRoles() {
+            return denyRoles;
+        }
+
+        public void setDenyRoles(List<String> v) {
+            this.denyRoles = v == null ? new ArrayList<>() : v;
         }
     }
 
