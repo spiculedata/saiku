@@ -124,4 +124,18 @@ export interface EmbedDashboardTile {
   /** Text-tile body — plain string in v1, markdown rendered as
    *  paragraphs (no `marked` import to keep the bundle tight). */
   text?: string;
+  /** Filter-tile axis binding — which dimension/hierarchy/level the widget
+   *  drives. Null for non-filter tiles. Server-authored; the guest never
+   *  overrides it (that would defeat the purpose of pinning). */
+  target?: EmbedFilterTarget;
+  /** Filter widget subtype: "single-select" | "multi-select". Defaults to
+   *  multi-select if omitted. */
+  widget?: string;
+}
+
+/** Filter-tile axis binding. Mirrors the server-side {@code DashboardFilter}. */
+export interface EmbedFilterTarget {
+  dimension: string;
+  hierarchy?: string;
+  level: string;
 }

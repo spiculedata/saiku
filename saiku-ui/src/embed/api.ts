@@ -106,6 +106,7 @@ export async function fetchDashboardTile(
   dashboardPath: string,
   tileId: string,
   token?: string | null,
+  overrides?: EmbedFilterOverride[],
 ): Promise<EmbedQueryResponse> {
   const base = stripTrailingSlash(server);
   const url =
@@ -113,9 +114,61 @@ export async function fetchDashboardTile(
     `/tile/${encodeURIComponent(tileId)}/query`;
   const headers: Record<string, string> = { Accept: "application/json" };
   if (token) headers["X-Saiku-Embed-Token"] = token;
-  const resp = await fetch(url, { method: "POST", headers, credentials: "omit" });
+  const body = overrides && overrides.length > 0 ? JSON.stringify({ filters: overrides }) : undefined;
+  if (body) headers["Content-Type"] = "application/json";
+  const resp = await fetch(url, { method: "POST", headers, credentials: "omit", body });
   if (!resp.ok) throw await readError(resp);
   return (await resp.json()) as EmbedQueryResponse;
+}
+
+/**
+ * Fetch the distinct member captions available for a filter tile's declared
+ * dimension/hierarchy/level. Guest supplies only the tile id — the target axis
+ * comes from the pinned dashboard, so a guest can't fish for arbitrary members.
+ */
+export async function fetchTileMembers(
+  server: string,
+  dashboardPath: string,
+  tileId: string,
+  token?: string | null,
+  q?: string,
+  limit = 50,
+): Promise<EmbedMember[]> {
+  const base = stripTrailingSlash(server);
+  const qs = new URLSearchParams();
+  if (q) qs.set("q", q);
+  qs.set("limit", String(limit));
+  const url =
+    `${base}/rest/saiku/api/embed/dashboard/${encodePath(dashboardPath)}` +
+    `/tile/${encodeURIComponent(tileId)}/members?${qs.toString()}`;
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers["X-Saiku-Embed-Token"] = token;
+  const resp = await fetch(url, { headers, credentials: "omit" });
+  if (!resp.ok) throw await readError(resp);
+  return (await resp.json()) as EmbedMember[];
+}
+
+/**
+ * Filter override sent to the tile query endpoint — matches the server's
+ * {@code AiFilterSelection} shape. Dimension + hierarchy + level identify which
+ * axis the filter drives; empty {@code members} clears the filter.
+ */
+export interface EmbedFilterOverride {
+  dimension: string;
+  hierarchy?: string | null;
+  level: string;
+  members: string[];
+}
+
+/**
+ * One entry in the members list returned by {@link fetchTileMembers}. Mirrors
+ * the AI Query API's SimpleCubeElement — {@code caption} is the display name and
+ * {@code uniqueName} is what the server expects back in an override's {@code members}.
+ */
+export interface EmbedMember {
+  name: string;
+  caption: string;
+  uniqueName: string;
 }
 
 /* Re-export the dashboard shape so callers don't have to dig into types.ts. */

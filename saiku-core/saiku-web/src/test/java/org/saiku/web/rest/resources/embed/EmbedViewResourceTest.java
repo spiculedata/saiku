@@ -214,7 +214,7 @@ public class EmbedViewResourceTest {
                 "[{\"dimension\":\"Customer\",\"hierarchy\":\"Customer\",\"level\":\"Customer\","
                         + "\"op\":\"in\",\"members\":[\"[Customer].[acme]\"]}]");
 
-        Response r = resource.tileQuery("homes/admin/exec.saikudash", "t1");
+        Response r = resource.tileQuery("homes/admin/exec.saikudash", "t1", null);
 
         assertEquals(200, r.getStatus());
         assertNotNull("executeAi was called for the inline tile", ai.lastAiRequest);
@@ -255,7 +255,7 @@ public class EmbedViewResourceTest {
                 "u_1",
                 "[{\"dimension\":\"Customer\",\"op\":\"in\",\"members\":[\"[Customer].[acme]\"]}]");
 
-        Response r = resource.tileQuery("homes/admin/exec.saikudash", "t1");
+        Response r = resource.tileQuery("homes/admin/exec.saikudash", "t1", null);
 
         assertEquals(403, r.getStatus());
         assertNull("reference tile must NOT execute unfiltered", ai.lastSavedRequest);

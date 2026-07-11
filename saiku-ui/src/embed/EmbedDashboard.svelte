@@ -14,9 +14,10 @@
    *   other  — friendly placeholder so a server-side tile-type addition
    *            doesn't break this bundle
    */
-  import { fetchDashboard, fetchDashboardTile, EmbedFetchError } from "./api";
+  import { fetchDashboard, fetchDashboardTile, EmbedFetchError, type EmbedFilterOverride } from "./api";
   import type { EmbedDashboardLayout, EmbedDashboardTile, EmbedRow } from "./types";
   import EmbedChart from "./EmbedChart.svelte";
+  import EmbedFilterTile from "./EmbedFilterTile.svelte";
 
   interface Props {
     server: string;
@@ -32,6 +33,14 @@
 
   /** tile.id → query result (chart / kpi tiles only). null = pending. */
   let tileData = $state<Record<string, EmbedRow[] | null>>({});
+
+  /** Filter-tile bus. Each filter tile posts its current selection here
+   *  (or clears with null); dependent tiles refetch with the merged overrides. */
+  let filterOverrides = $state<Record<string, EmbedFilterOverride | null>>({});
+
+  let mergedOverrides = $derived(
+    Object.values(filterOverrides).filter((o): o is EmbedFilterOverride => o !== null),
+  );
 
   $effect(() => {
     const s = server.trim();
@@ -51,20 +60,7 @@
       .then((dash) => {
         if (cancelled) return;
         dashboard = dash;
-        // Kick off one tile fetch per queryable tile in parallel — no
-        // dependencies between them.
-        for (const tile of dash.layout?.tiles ?? []) {
-          if (!isQueryable(tile)) continue;
-          fetchDashboardTile(s, p, tile.id, t || undefined)
-            .then((res) => {
-              if (cancelled) return;
-              tileData = { ...tileData, [tile.id]: res.data ?? [] };
-            })
-            .catch(() => {
-              if (cancelled) return;
-              tileData = { ...tileData, [tile.id]: [] };
-            });
-        }
+        loadQueryableTiles(dash, s, p, t, cancelled, []);
       })
       .catch((e: unknown) => {
         if (cancelled) return;
@@ -80,6 +76,56 @@
 
   function isQueryable(t: EmbedDashboardTile): boolean {
     return t.type === "chart" || t.type === "kpi";
+  }
+
+  /** Kick off one tile fetch per queryable tile — parallel, no cross-tile
+   *  dependency. Called both on initial dashboard load and whenever the
+   *  filter override set changes. */
+  function loadQueryableTiles(
+    dash: EmbedDashboardLayout,
+    s: string,
+    p: string,
+    t: string,
+    cancelled: boolean,
+    overrides: EmbedFilterOverride[],
+  ): void {
+    for (const tile of dash.layout?.tiles ?? []) {
+      if (!isQueryable(tile)) continue;
+      tileData = { ...tileData, [tile.id]: null };
+      fetchDashboardTile(s, p, tile.id, t || undefined, overrides)
+        .then((res) => {
+          if (cancelled) return;
+          tileData = { ...tileData, [tile.id]: res.data ?? [] };
+        })
+        .catch(() => {
+          if (cancelled) return;
+          tileData = { ...tileData, [tile.id]: [] };
+        });
+    }
+  }
+
+  /** Re-fetch every queryable tile whenever the merged override set changes.
+   *  We deliberately don't chain this off the initial dashboard-load $effect
+   *  above — that one runs once per (server, path, token); this one runs on
+   *  every filter selection change once the dashboard is loaded. */
+  $effect(() => {
+    // Read mergedOverrides so Svelte picks up the dep.
+    const overrides = mergedOverrides;
+    const s = server.trim();
+    const p = path.trim();
+    const t = token.trim();
+    if (!dashboard || !s || !p) return;
+    // Skip the initial "empty overrides" re-fire — the dashboard-load effect
+    // already fetched every tile with no overrides.
+    if (overrides.length === 0 && !hasEverFilteredRef.current) return;
+    hasEverFilteredRef.current = hasEverFilteredRef.current || overrides.length > 0;
+    loadQueryableTiles(dashboard, s, p, t, false, overrides);
+  });
+
+  const hasEverFilteredRef = { current: false };
+
+  function onFilterChange(tileId: string, override: EmbedFilterOverride | null): void {
+    filterOverrides = { ...filterOverrides, [tileId]: override };
   }
 
   function friendlyError(e: unknown): string {
@@ -153,8 +199,13 @@
               <EmbedChart rows={tileData[tile.id]!} mode={tile.chartType ?? "bar"} />
             {/if}
           {:else if tile.type === "filter"}
-            <!-- Filter tiles are a workbench-only UI concept in v1;
-                 the dashboard renders without them. -->
+            <EmbedFilterTile
+              {server}
+              {token}
+              dashboardPath={path}
+              {tile}
+              onChange={(o) => onFilterChange(tile.id, o)}
+            />
           {:else}
             <div class="state muted">Unsupported tile</div>
           {/if}

@@ -158,8 +158,10 @@ public class EmbedViewResource {
      */
     @POST
     @Path("/dashboard/{path:.+}/tile/{tileId}/query")
+    @jakarta.ws.rs.Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response tileQuery(@PathParam("path") String pathParam, @PathParam("tileId") String tileId) {
+    public Response tileQuery(
+            @PathParam("path") String pathParam, @PathParam("tileId") String tileId, TileQueryOverrides overrides) {
         EmbedGuestDetails g = guest();
         if (g == null || !"dashboard".equals(g.resourceKind)) {
             return invalid();
@@ -182,6 +184,11 @@ public class EmbedViewResource {
                     .build());
         }
         final TileQuery q = tile.query;
+        // Runtime filter overrides from filter tiles. Guest supplies only the filter payload
+        // (dimension/hierarchy/level/members) — the tile's authored query is untouched; we
+        // splice the overrides into the request Filters via the same validated path.
+        final java.util.List<AiFilterSelection> filterOverrides =
+                overrides == null || overrides.filters == null ? java.util.Collections.emptyList() : overrides.filters;
         try {
             Response result = sessionService.runAs(g.ownerUser, g.ownerRoles, () -> {
                 if ("inline".equals(q.kind) && q.body != null) {
@@ -189,6 +196,9 @@ public class EmbedViewResource {
                     // inline query before execution; they ride the standard
                     // (validated) slicer path in AiSchemaConverter.
                     injectForcedFilters(q.body, g);
+                    // Filter-tile overrides splice on top of any authored / forced filters. If a
+                    // filter tile drives the same dimension as an authored filter, the override wins.
+                    mergeFilterOverrides(q.body, filterOverrides);
                     return aiQueryResource.executeAi(q.body, "records");
                 } else if ("reference".equals(q.kind) && q.path != null) {
                     if (g.forcedFiltersJson != null) {
@@ -198,6 +208,11 @@ public class EmbedViewResource {
                     }
                     AiSavedQueryRequest sreq = new AiSavedQueryRequest();
                     sreq.setPath(q.path);
+                    // Filter-tile overrides ride the AiSavedQueryRequest.filters channel — the
+                    // AI query resource merges these via ThinQueryFilterMerge before execute.
+                    if (!filterOverrides.isEmpty()) {
+                        sreq.setFilters(filterOverrides);
+                    }
                     // Dashboard tiles always render as records — tile renderers consume caption-keyed rows.
                     return aiQueryResource.executeSaved(sreq, "records");
                 }
@@ -218,7 +233,122 @@ public class EmbedViewResource {
         }
     }
 
+    /* ------------------------- filter members ---------------------- */
+
+    /**
+     * Return the distinct member captions available for a filter tile's declared
+     * dimension/hierarchy/level. Called by the embed bundle when it renders a
+     * &lt;EmbedFilterTile&gt; to populate the dropdown; the tile then POSTs the picked
+     * members to {@link #tileQuery} as filter overrides.
+     *
+     * <p>Guest supplies only the tile id — the target dimension+hierarchy+level comes from the
+     * pinned dashboard, so a guest can't fish for arbitrary members off the cube.
+     */
+    @GET
+    @Path("/dashboard/{path:.+}/tile/{tileId}/members")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response tileMembers(
+            @PathParam("path") String pathParam,
+            @PathParam("tileId") String tileId,
+            @jakarta.ws.rs.QueryParam("q") String q,
+            @jakarta.ws.rs.QueryParam("limit") @jakarta.ws.rs.DefaultValue("50") int limit) {
+        EmbedGuestDetails g = guest();
+        if (g == null || !"dashboard".equals(g.resourceKind)) {
+            return invalid();
+        }
+        Dashboard dash = loadDashboard(g);
+        if (dash == null || dash.layout == null || dash.layout.tiles == null) {
+            return invalid();
+        }
+        DashboardTile tile = null;
+        for (DashboardTile t : dash.layout.tiles) {
+            if (tileId.equals(t.id)) {
+                tile = t;
+                break;
+            }
+        }
+        if (tile == null || !"filter".equals(tile.type) || tile.target == null || tile.cube == null) {
+            return harden(Response.status(Response.Status.NOT_FOUND)
+                    .entity(Map.of("status", "NOT_FOUND", "error", "No such filter tile"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build());
+        }
+        final DashboardTile pinned = tile;
+        try {
+            Response result = sessionService.runAs(g.ownerUser, g.ownerRoles, () -> {
+                String cubeId = pinned.cube.getConnectionName() + "/" + pinned.cube.getCatalog() + "/"
+                        + pinned.cube.getSchema() + "/" + pinned.cube.getCubeName();
+                return aiQueryResource.searchMembers(
+                        cubeId,
+                        pinned.target.dimension,
+                        pinned.target.hierarchy,
+                        pinned.target.level,
+                        q,
+                        Math.max(1, Math.min(limit, 500)));
+            });
+            audit(g, "/saiku/api/embed/dashboard/tile/members", outcomeFor(result.getStatus()));
+            return withPolicyHeader(harden(result), g);
+        } catch (RuntimeException e) {
+            log.warn("embed-view tile members failed for {}/{}", g.resourcePath, tileId, e);
+            audit(g, "/saiku/api/embed/dashboard/tile/members", AiAuditEntry.OUTCOME_ERROR);
+            return harden(Response.serverError()
+                    .entity(Map.of("status", "ERROR", "error", "Members lookup failed"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build());
+        }
+    }
+
     /* --------------------------- helpers ---------------------------- */
+
+    /**
+     * Body accepted by {@link #tileQuery}. Optional filter list from filter tiles — merged onto
+     * the tile's authored query before execution. Any other client-supplied field is ignored so
+     * a guest can't pivot the cube or swap in an inline query.
+     */
+    public static class TileQueryOverrides {
+        public java.util.List<AiFilterSelection> filters;
+    }
+
+    /**
+     * Splice runtime filter overrides onto an AiQueryRequest before executeAi. For each
+     * override, replace an existing filter that targets the same dimension/hierarchy/level
+     * (case-insensitive); append if no match. Empty-members overrides are pruned before the
+     * merge so a "clear filter" from a filter tile removes the corresponding slicer entirely.
+     */
+    private static void mergeFilterOverrides(AiQueryRequest req, java.util.List<AiFilterSelection> overrides) {
+        if (req == null || overrides == null || overrides.isEmpty()) return;
+        java.util.List<AiFilterSelection> current = req.getFilters();
+        if (current == null) current = new java.util.ArrayList<>();
+        for (AiFilterSelection o : overrides) {
+            if (o == null || o.getDimension() == null) continue;
+            java.util.Iterator<AiFilterSelection> it = current.iterator();
+            while (it.hasNext()) {
+                AiFilterSelection existing = it.next();
+                if (existing == null) {
+                    it.remove();
+                    continue;
+                }
+                if (sameAxis(existing, o)) {
+                    it.remove();
+                }
+            }
+            // A filter with no members = "no restriction"; skip appending.
+            if (o.getMembers() == null || o.getMembers().isEmpty()) continue;
+            current.add(o);
+        }
+        req.setFilters(current);
+    }
+
+    private static boolean sameAxis(AiFilterSelection a, AiFilterSelection b) {
+        return eqIgnoreCase(a.getDimension(), b.getDimension())
+                && eqIgnoreCase(a.getHierarchy(), b.getHierarchy())
+                && eqIgnoreCase(a.getLevel(), b.getLevel());
+    }
+
+    private static boolean eqIgnoreCase(String x, String y) {
+        if (x == null) return y == null;
+        return x.equalsIgnoreCase(y);
+    }
 
     private Dashboard loadDashboard(EmbedGuestDetails g) {
         if (g.resourcePath == null || !g.resourcePath.endsWith(".saikudash")) {
