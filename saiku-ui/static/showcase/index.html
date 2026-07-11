@@ -428,7 +428,7 @@
       const request = document.getElementById("ai-request");
       const result = document.getElementById("ai-result");
       const status = document.getElementById("ai-status");
-      result.textContent = "http://localhost:8080";
+      result.textContent = "";
       status.textContent = "Running…";
       try {
         await ensureSession();
@@ -445,14 +445,14 @@
         result.textContent = JSON.stringify(json, null, 2);
         status.textContent = `HTTP ${resp.status} — ${elapsed} ms`;
       } catch (e) {
-        result.textContent = "http://localhost:8080";
+        result.textContent = "";
         status.textContent = `Error: ${e && e.message ? e.message : e}`;
       }
     });
 
     // ---- GraphQL section ----
     async function runGraphQl(query, statusEl, resultEl) {
-      resultEl.textContent = "http://localhost:8080";
+      resultEl.textContent = "";
       statusEl.textContent = "Running…";
       try {
         await ensureSession();
@@ -468,7 +468,7 @@
         resultEl.textContent = JSON.stringify(json, null, 2);
         statusEl.textContent = `HTTP ${resp.status} — ${elapsed} ms`;
       } catch (e) {
-        resultEl.textContent = "http://localhost:8080";
+        resultEl.textContent = "";
         statusEl.textContent = `Error: ${e && e.message ? e.message : e}`;
       }
     }
@@ -483,7 +483,7 @@
     document.getElementById("gql-introspect").addEventListener("click", async () => {
       const status = document.getElementById("gql-status");
       const result = document.getElementById("gql-result");
-      result.textContent = "http://localhost:8080";
+      result.textContent = "";
       status.textContent = "Fetching SDL…";
       try {
         await ensureSession();
