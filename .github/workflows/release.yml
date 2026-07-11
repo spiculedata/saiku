@@ -287,18 +287,28 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm run build
-      - name: Verify staged version matches tag
+      - name: Verify staged versions match tag
         env:
           VERSION: ${{ needs.jar.outputs.version }}
         run: |
           set -euo pipefail
-          STAGED=$(node -p "require('./saiku-ui/embed-npm/package.json').version")
-          if [ "$STAGED" != "$VERSION" ]; then
-            echo "::error::embed-npm version mismatch: package.json=$STAGED tag=$VERSION"
+          BASE=$(node -p "require('./saiku-ui/embed-npm/package.json').version")
+          REACT=$(node -p "require('./saiku-ui/embed-react-npm/package.json').version")
+          REACT_DEP=$(node -p "require('./saiku-ui/embed-react-npm/package.json').dependencies['@concepttocloud/saiku-embed']")
+          if [ "$BASE" != "$VERSION" ]; then
+            echo "::error::embed-npm version mismatch: package.json=$BASE tag=$VERSION"
             exit 1
           fi
-          echo "embed-npm version $STAGED matches tag $VERSION"
-      - name: npm publish
+          if [ "$REACT" != "$VERSION" ]; then
+            echo "::error::embed-react-npm version mismatch: package.json=$REACT tag=$VERSION"
+            exit 1
+          fi
+          if [ "$REACT_DEP" != "$VERSION" ]; then
+            echo "::error::embed-react-npm depends on saiku-embed@$REACT_DEP but tag is $VERSION"
+            exit 1
+          fi
+          echo "embed-npm=$BASE embed-react-npm=$REACT (dep=$REACT_DEP) all match tag $VERSION"
+      - name: npm publish base bundle
         # NPM_TOKEN is an Automation token on the @saikuanalytics scope;
         # set as a repo secret. The `|| echo` swallow keeps a re-publish
         # of an existing version from failing the whole release — npm
@@ -308,7 +318,17 @@ jobs:
         run: |
           cd saiku-ui/embed-npm
           npm publish --access public || \
-            echo "::warning::npm publish skipped (likely already-published or missing NPM_TOKEN)"
+            echo "::warning::npm publish (base) skipped (likely already-published or missing NPM_TOKEN)"
+      - name: npm publish React SDK
+        # Publishes @concepttocloud/saiku-embed-react (saiku#1432) with a
+        # runtime dep pinned to the base bundle at the same version, so
+        # a consumer can never accidentally mix majors across the two.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd saiku-ui/embed-react-npm
+          npm publish --access public || \
+            echo "::warning::npm publish (react) skipped (likely already-published or missing NPM_TOKEN)"
 
   docs-changelog:
     name: Open docs-site changelog PR
