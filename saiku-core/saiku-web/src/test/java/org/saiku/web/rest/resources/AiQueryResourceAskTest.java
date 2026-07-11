@@ -184,6 +184,76 @@ public class AiQueryResourceAskTest {
                 body.getResponse().getField().startsWith("measures"));
     }
 
+    /* ---- saiku#1455: sync /spaces/{id}/ask must return the full answer, not just {model,request} ---- */
+
+    /** Wire a fake askService whose {@code askInSpace} returns a fixed outcome. */
+    private void wireSpaceAskService(AiAskService.AskOutcome outcome) {
+        resource.setAskService(new AiAskService(ref -> schema, stubProvider("")) {
+            @Override
+            public AskOutcome askInSpace(
+                    String spaceId,
+                    AiCubeRef ref,
+                    String question,
+                    List<NlAskMessage> history,
+                    String cellsetDigest,
+                    NlAskRequest.ForceTool forceTool,
+                    AiQueryRequest currentQuery) {
+                return outcome;
+            }
+        });
+    }
+
+    @Test
+    public void spaceSyncExecutesQueryOutcome() {
+        wireSpaceAskService(AiAskService.AskOutcome.ok(baseEmittedRequest(), "claude-x"));
+
+        Response resp = resource.askInSpace("sales-analyst", validBody());
+        assertEquals(200, resp.getStatus());
+
+        AiAskApi.AskResponse body = (AiAskApi.AskResponse) resp.getEntity();
+        assertFalse(body.isDegraded());
+        assertNotNull("QUERY outcome must be executed on the sync space endpoint, not just echoed", body.getResponse());
+        assertEquals(AiQueryResponse.Status.SUCCESS, body.getResponse().getStatus());
+        assertNotNull("generated MDX surfaced like the classic /ai/ask", body.getGeneratedMdx());
+        assertTrue(body.getGeneratedMdx().contains("FROM [Sales]"));
+    }
+
+    @Test
+    public void spaceSyncMapsForbiddenDenialTo403RegardlessOfReasonWording() {
+        // saiku#1465: the 403 mapping keys off the typed denial code, not a reason prefix. A
+        // FORBIDDEN outcome whose reason does NOT start with "FORBIDDEN" must still be a 403 —
+        // RED against the old reason.startsWith("FORBIDDEN") logic, which would have returned 200.
+        wireSpaceAskService(AiAskService.AskOutcome.degraded(
+                "Cube not permitted for this persona", null, AiAskService.SpaceAccess.FORBIDDEN));
+        Response resp = resource.askInSpace("sales-analyst", validBody());
+        assertEquals(403, resp.getStatus());
+    }
+
+    @Test
+    public void spaceSyncMapsProviderDegradeTo200() {
+        wireSpaceAskService(AiAskService.AskOutcome.degraded("HTTP 503: upstream offline", "claude-x"));
+        Response resp = resource.askInSpace("sales-analyst", validBody());
+        assertEquals(200, resp.getStatus());
+        AiAskApi.AskResponse body = (AiAskApi.AskResponse) resp.getEntity();
+        assertTrue(body.isDegraded());
+        assertEquals("HTTP 503: upstream offline", body.getReason());
+    }
+
+    @Test
+    public void spaceSyncSurfacesInsightOutcome() {
+        org.saiku.service.olap.ai.ask.AiInsight insight =
+                new org.saiku.service.olap.ai.ask.AiInsight("Store sales trended up 12%.", "Sales up");
+        wireSpaceAskService(AiAskService.AskOutcome.okInsight(insight, "claude-x"));
+
+        Response resp = resource.askInSpace("sales-analyst", validBody());
+        assertEquals(200, resp.getStatus());
+
+        AiAskApi.AskResponse body = (AiAskApi.AskResponse) resp.getEntity();
+        assertFalse(body.isDegraded());
+        assertNotNull("INSIGHT answer must not be dropped on the sync space endpoint", body.getInsight());
+        assertEquals("Store sales trended up 12%.", body.getInsight().getMarkdown());
+    }
+
     // ---------- stubs ----------
 
     private static NlAskProvider stubProvider(String emittedJson) {

@@ -878,44 +878,9 @@ public class AiQueryResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response askInSpace(@PathParam("id") String spaceId, AiAskApi.AskRequest body) {
-        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
-        if (body == null) {
-            return badRequest("body", "request body required", null);
-        }
-        if (body.getQuestion() == null || body.getQuestion().isBlank()) {
-            return badRequest("question", "question must be non-blank", null);
-        }
-        // Same size + rate guard as /ask — the space endpoint routes to the same LLM provider, so
-        // it has to carry the same cost-DoS protection.
-        org.saiku.web.security.ratelimit.AiAskGuard.Violation sizeViolation =
-                org.saiku.web.security.ratelimit.AiAskGuard.checkSize(body);
-        if (sizeViolation != null) {
-            return askLimitResponse(sizeViolation.isPayloadTooLarge() ? 413 : 400, sizeViolation.getMessage());
-        }
-        if (!askRateLimiter.tryAcquire(askRateKey())) {
-            return askLimitResponse(
-                    429,
-                    "Too many AI ask requests — limit is " + askRateLimiter.getMaxCalls() + " per "
-                            + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.");
-        }
-        if (askService == null) {
-            AiAskApi.AskResponse out = new AiAskApi.AskResponse();
-            out.setDegraded(true);
-            out.setReason("AI ask is not configured. Set saiku.ai.ask.provider to enable the feature.");
-            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
-                    .entity(out)
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
-        }
-        org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force =
-                org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.AUTO;
-        if (body.getForceTool() != null) {
-            try {
-                force = org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.valueOf(
-                        body.getForceTool().toUpperCase());
-            } catch (IllegalArgumentException ignored) {
-                // unknown value — keep AUTO
-            }
+        Response pre = validateAskPreamble(body, false);
+        if (pre != null) {
+            return pre;
         }
         AiAskService.AskOutcome outcome = askService.askInSpace(
                 spaceId,
@@ -923,29 +888,27 @@ public class AiQueryResource {
                 body.getQuestion(),
                 body.historyAsMessages(),
                 body.getCellsetDigest(),
-                force,
+                parseForceTool(body.getForceTool()),
                 body.getCurrentQuery());
         if (outcome.degraded()) {
+            // Map scope denials by the outcome's typed denial code (saiku#1465) rather than by
+            // prefix-matching the prose reason — a wording change in the service can no longer
+            // silently downgrade a 403 to a 200. A plain provider degrade (denial == OK) falls
+            // through to a 200 with degraded:true, same as the classic /ask.
+            Response denial = mapSpaceAccessDenial(outcome.denial(), spaceId);
+            if (denial != null) {
+                return denial;
+            }
             AiAskApi.AskResponse out = new AiAskApi.AskResponse();
             out.setDegraded(true);
             out.setReason(outcome.reason());
-            // FORBIDDEN / space-not-found → 403; provider degrade → 200 with degraded:true (same
-            // as classic /ask).
-            String reason = outcome.reason() == null ? "" : outcome.reason();
-            int status = reason.startsWith("FORBIDDEN")
-                            || reason.startsWith("space not found")
-                            || reason.startsWith("space has no cubes")
-                    ? 403
-                    : 200;
-            return Response.status(status)
-                    .entity(out)
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+            out.setModel(outcome.model());
+            return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
         }
-        AiAskApi.AskResponse out = new AiAskApi.AskResponse();
-        out.setModel(outcome.model());
-        out.setRequest(outcome.request());
-        return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+        // Mirror the classic /ai/ask success handling (saiku#1455): branch on the outcome kind so
+        // INSIGHT / VIEW_CHANGE surface their artefact and QUERY is actually executed — previously
+        // this path echoed only {model, request} and silently dropped insight/view-change answers.
+        return buildAskSuccessResponse(outcome);
     }
 
     @POST
@@ -953,62 +916,16 @@ public class AiQueryResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response ask(AiAskApi.AskRequest body) {
-        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
-        if (body == null) {
-            return badRequest("body", "request body required", null);
-        }
-        if (body.getQuestion() == null || body.getQuestion().isBlank()) {
-            return badRequest("question", "question must be non-blank", null);
-        }
-        if (body.getCube() == null || body.getCube().getCubeName() == null) {
-            return badRequest("cube", "cube ref required", null);
-        }
-        // saiku#1151: cap request size + call rate before reaching the paid LLM
-        // provider. Oversize questions/histories inflate per-call token spend;
-        // unbounded call frequency is a cost-DoS. The logic lives in AiAskGuard /
-        // AiRateLimiter so it stays unit-testable and this resource keeps a thin
-        // touch.
-        org.saiku.web.security.ratelimit.AiAskGuard.Violation sizeViolation =
-                org.saiku.web.security.ratelimit.AiAskGuard.checkSize(body);
-        if (sizeViolation != null) {
-            return askLimitResponse(sizeViolation.isPayloadTooLarge() ? 413 : 400, sizeViolation.getMessage());
-        }
-        if (!askRateLimiter.tryAcquire(askRateKey())) {
-            return askLimitResponse(
-                    429,
-                    "Too many AI ask requests — limit is " + askRateLimiter.getMaxCalls() + " per "
-                            + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.");
-        }
-        if (askService == null) {
-            AiAskApi.AskResponse out = new AiAskApi.AskResponse();
-            out.setDegraded(true);
-            out.setReason("AI ask is not configured. Set saiku.ai.ask.provider to 'anthropic' "
-                    + "or 'openai' and supply the matching API key (env: ANTHROPIC_API_KEY or "
-                    + "OPENAI_API_KEY) to enable the feature.");
-            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
-                    .entity(out)
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
-        }
-
-        // Translate the wire-shape forceTool string into the service enum. Unknown / null → AUTO so
-        // a bad client value silently degrades to auto-routing rather than 400ing the whole turn.
-        org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force =
-                org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.AUTO;
-        if (body.getForceTool() != null) {
-            try {
-                force = org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.valueOf(
-                        body.getForceTool().toUpperCase());
-            } catch (IllegalArgumentException ignored) {
-                // unknown — keep AUTO
-            }
+        Response pre = validateAskPreamble(body, true);
+        if (pre != null) {
+            return pre;
         }
         AiAskService.AskOutcome outcome = askService.ask(
                 body.getCube(),
                 body.getQuestion(),
                 body.historyAsMessages(),
                 body.getCellsetDigest(),
-                force,
+                parseForceTool(body.getForceTool()),
                 body.getCurrentQuery());
         if (outcome.degraded()) {
             AiAskApi.AskResponse out = new AiAskApi.AskResponse();
@@ -1024,64 +941,7 @@ public class AiQueryResource {
                     .build();
         }
 
-        AiAskApi.AskResponse out = new AiAskApi.AskResponse();
-        out.setDegraded(false);
-        out.setModel(outcome.model());
-
-        // Insight and view-change intents skip the converter / execution entirely — the model already
-        // produced the final artefact (markdown analysis / view target). Return immediately so the
-        // drawer can render the result without going through ThinQuery → MDX → backend round-trip.
-        if (outcome.kind() == AiAskService.AskOutcome.Kind.INSIGHT) {
-            out.setInsight(outcome.insight());
-            return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
-        }
-        if (outcome.kind() == AiAskService.AskOutcome.Kind.VIEW_CHANGE) {
-            out.setViewChange(outcome.viewChange());
-            return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
-        }
-
-        // Default branch: QUERY intent — convert + execute as before.
-        AiQueryRequest req = outcome.request();
-        out.setRequest(req);
-
-        // Execute the produced request through the same path /ai/query uses. Errors are translated
-        // back into a 200 with the {request, model} echoed so the UI can still show "the model
-        // proposed this, but it failed at <stage>" — much more useful than a 500.
-        long start = System.currentTimeMillis();
-        try {
-            // Phase 2 shape-validate before the converter sees the request — same as /ai/query.
-            schemaValidator.assertValid(MAPPER.valueToTree(req));
-            AiSchema schema = cubeMetadataService.getSchema(req.getCube());
-            ThinQuery tq = converter.convert(req, schema);
-            // Surface the converted ThinQueryModel so the UI's "edit in canvas" can hydrate the
-            // workbench's chip builder directly (interactive query) instead of pasting MDX (opaque
-            // to the chip UI — user can't drag/drop). Same shape the workspace builder manipulates.
-            out.setQueryModel(tq.getQueryModel());
-            CellDataSet cds = thinQueryService.execute(tq);
-            AiQueryResponse aiResp = buildResponse(tq, cds, start, "records");
-            out.setResponse(aiResp);
-            if (aiResp != null && aiResp.getMetadata() != null) {
-                out.setGeneratedMdx(aiResp.getMetadata().getGeneratedMdx());
-            }
-        } catch (AiValidationException e) {
-            // Surface the converter's structured validation as the response envelope so the UI
-            // can render candidate-list suggestions just like a direct /ai/query call would.
-            AiQueryResponse aiResp = new AiQueryResponse();
-            aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.VALIDATION_ERROR);
-            aiResp.setError(e.getMessage());
-            aiResp.setField(e.getField());
-            aiResp.setAvailable(e.getAvailable() == null ? null : new java.util.ArrayList<>(e.getAvailable()));
-            aiResp.setRuntimeMs(System.currentTimeMillis() - start);
-            out.setResponse(aiResp);
-        } catch (RuntimeException e) {
-            log.warn("AI ask execution failed after successful translation", e);
-            AiQueryResponse aiResp = new AiQueryResponse();
-            aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.EXECUTION_ERROR);
-            aiResp.setError("execute failed");
-            aiResp.setRuntimeMs(System.currentTimeMillis() - start);
-            out.setResponse(aiResp);
-        }
-        return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+        return buildAskSuccessResponse(outcome);
     }
 
     /**
@@ -1126,172 +986,128 @@ public class AiQueryResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces("text/event-stream")
     public Response askStream(AiAskApi.AskRequest body) {
-        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
-        if (body == null) {
-            return badRequest("body", "request body required", null);
+        Response pre = validateAskPreamble(body, true);
+        if (pre != null) {
+            return pre;
         }
-        if (body.getQuestion() == null || body.getQuestion().isBlank()) {
-            return badRequest("question", "question must be non-blank", null);
-        }
-        if (body.getCube() == null || body.getCube().getCubeName() == null) {
-            return badRequest("cube", "cube ref required", null);
-        }
-        org.saiku.web.security.ratelimit.AiAskGuard.Violation sizeViolation =
-                org.saiku.web.security.ratelimit.AiAskGuard.checkSize(body);
-        if (sizeViolation != null) {
-            return askLimitResponse(sizeViolation.isPayloadTooLarge() ? 413 : 400, sizeViolation.getMessage());
-        }
-        if (!askRateLimiter.tryAcquire(askRateKey())) {
-            return askLimitResponse(
-                    429,
-                    "Too many AI ask requests — limit is " + askRateLimiter.getMaxCalls() + " per "
-                            + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.");
-        }
-        if (askService == null) {
-            AiAskApi.AskResponse notConfigured = new AiAskApi.AskResponse();
-            notConfigured.setDegraded(true);
-            notConfigured.setReason(
-                    "AI ask is not configured. Set saiku.ai.ask.provider to 'anthropic' or 'openai' and supply the matching API key.");
-            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
-                    .entity(notConfigured)
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
-        }
-
-        org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force =
-                org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.AUTO;
-        if (body.getForceTool() != null) {
-            try {
-                force = org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.valueOf(
-                        body.getForceTool().toUpperCase());
-            } catch (IllegalArgumentException ignored) {
-                // Unknown value — keep AUTO, same as the sync endpoint.
-            }
-        }
-        final org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool forceFinal = force;
-
-        jakarta.ws.rs.core.StreamingOutput stream = outputStream -> {
-            java.io.Writer writer =
-                    new java.io.OutputStreamWriter(outputStream, java.nio.charset.StandardCharsets.UTF_8);
-            SseWriter sse = new SseWriter(writer);
-            try {
-                AiAskService.AskOutcome outcome = askService.ask(
+        org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force = parseForceTool(body.getForceTool());
+        return streamAsk(
+                () -> askService.ask(
                         body.getCube(),
                         body.getQuestion(),
                         body.historyAsMessages(),
                         body.getCellsetDigest(),
-                        forceFinal,
-                        body.getCurrentQuery());
+                        force,
+                        body.getCurrentQuery()),
+                "AI ask (streaming)");
+    }
 
-                // model event — always fired first so the client can show which backend answered.
-                if (outcome.model() != null) {
-                    sse.event("model", MAPPER.writeValueAsString(java.util.Map.of("model", outcome.model())));
-                }
+    /**
+     * Space-scoped streaming ask (saiku#1440 + #1433). Same wire format as {@link
+     * #askStream(AiAskApi.AskRequest)} — the events are indistinguishable to the client — but
+     * routes through {@link AiAskService#askInSpace} so the persona's system prompt, cube
+     * allowlist, and skill filter apply. A caller who wants both space scoping AND progressive
+     * chat UX uses this endpoint; the two features were always meant to compose.
+     *
+     * <p>Same rate limit + size cap + policy gate + auth as the classic {@code
+     * /spaces/{id}/ask}. Space-not-found + FORBIDDEN outcomes surface as {@code error} events
+     * followed by a degraded {@code final} — the client sees the same SSE shape regardless of
+     * whether the failure was provider-side or scope-side.
+     */
+    @POST
+    @Path("/spaces/{id}/ask/stream")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces("text/event-stream")
+    public Response askInSpaceStream(@PathParam("id") String spaceId, AiAskApi.AskRequest body) {
+        Response pre = validateAskPreamble(body, false);
+        if (pre != null) {
+            return pre;
+        }
+        // Pre-flight the persona scope BEFORE committing to a 200 event-stream, so a scope denial
+        // maps to a real 403/404/503 rather than a 200 carrying an in-band SSE error (saiku#1454).
+        // The post-LLM re-check of the model's emitted cube (saiku#1453) still runs in askInSpace.
+        Response scopeDenial = mapSpaceAccessDenial(askService.checkSpaceAccess(spaceId, body.getCube()), spaceId);
+        if (scopeDenial != null) {
+            return scopeDenial;
+        }
+        org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force = parseForceTool(body.getForceTool());
+        return streamAsk(
+                () -> askService.askInSpace(
+                        spaceId,
+                        body.getCube(),
+                        body.getQuestion(),
+                        body.historyAsMessages(),
+                        body.getCellsetDigest(),
+                        force,
+                        body.getCurrentQuery()),
+                "AI ask-in-space (streaming)");
+    }
 
-                if (outcome.degraded()) {
-                    // Degraded path — emit an error event with the provider's reason, then a final.
-                    sse.event(
-                            "error",
-                            MAPPER.writeValueAsString(
-                                    java.util.Map.of("reason", outcome.reason() == null ? "" : outcome.reason())));
-                    AiAskApi.AskResponse out = new AiAskApi.AskResponse();
-                    out.setDegraded(true);
-                    out.setReason(outcome.reason());
-                    if (outcome.model() != null) out.setModel(outcome.model());
-                    sse.event("final", MAPPER.writeValueAsString(out));
-                    return;
-                }
+    /**
+     * Translate one ask outcome into the SSE event sequence documented on {@link
+     * #askStream(AiAskApi.AskRequest)}: {@code model} → {@code intent} → 0+ {@code chunk} → {@code
+     * final}, or {@code model} → {@code error} → degraded-{@code final} when the provider failed.
+     *
+     * <p>Package-visible for unit testing. Called by both {@link #askStream} and {@link
+     * #askInSpaceStream}; the two endpoints differ only in which {@code AiAskService} entry
+     * point they invoke.
+     */
+    void streamOutcomeAsSse(AiAskService.AskOutcome outcome, SseWriter sse) throws java.io.IOException {
+        // model event — always fired first so the client can show which backend answered.
+        if (outcome.model() != null) {
+            sse.event("model", MAPPER.writeValueAsString(java.util.Map.of("model", outcome.model())));
+        }
 
-                sse.event(
-                        "intent",
-                        MAPPER.writeValueAsString(java.util.Map.of(
-                                "kind",
-                                outcome.kind() == null ? "" : outcome.kind().name())));
+        if (outcome.degraded()) {
+            // Degraded path — emit an error event with the provider's reason, then a final.
+            sse.event(
+                    "error",
+                    MAPPER.writeValueAsString(
+                            java.util.Map.of("reason", outcome.reason() == null ? "" : outcome.reason())));
+            AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+            out.setDegraded(true);
+            out.setReason(outcome.reason());
+            if (outcome.model() != null) out.setModel(outcome.model());
+            sse.event("final", MAPPER.writeValueAsString(out));
+            return;
+        }
 
-                AiAskApi.AskResponse out = new AiAskApi.AskResponse();
-                out.setDegraded(false);
-                out.setModel(outcome.model());
+        sse.event(
+                "intent",
+                MAPPER.writeValueAsString(java.util.Map.of(
+                        "kind", outcome.kind() == null ? "" : outcome.kind().name())));
 
-                if (outcome.kind() == AiAskService.AskOutcome.Kind.INSIGHT) {
-                    // Chunk the insight markdown into word-sized deltas so the client sees a
-                    // progressive stream. Fake-stream today; wire-stable for real LLM streaming later.
-                    out.setInsight(outcome.insight());
-                    String markdown =
-                            outcome.insight() == null ? "" : outcome.insight().getMarkdown();
-                    if (markdown != null && !markdown.isEmpty()) {
-                        emitChunks(sse, markdown);
-                    }
-                    sse.event("final", MAPPER.writeValueAsString(out));
-                    return;
-                }
+        AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+        out.setDegraded(false);
+        out.setModel(outcome.model());
 
-                if (outcome.kind() == AiAskService.AskOutcome.Kind.VIEW_CHANGE) {
-                    // View change carries an optional reason string worth streaming — the caller
-                    // reads it as "why did the LLM pick this chart".
-                    out.setViewChange(outcome.viewChange());
-                    String reason = outcome.viewChange() == null
-                            ? null
-                            : outcome.viewChange().getReason();
-                    if (reason != null && !reason.isEmpty()) {
-                        emitChunks(sse, reason);
-                    }
-                    sse.event("final", MAPPER.writeValueAsString(out));
-                    return;
-                }
-
-                // QUERY intent — no prose to stream; the query itself IS the artefact. Execute the
-                // same way the sync endpoint does and emit the final envelope in one event so the
-                // client accumulates a complete AskResponse. We keep the SSE frame here (rather than
-                // a single JSON POST response) so the client's stream reader is uniform across intents.
-                AiQueryRequest req = outcome.request();
-                out.setRequest(req);
-                long start = System.currentTimeMillis();
-                try {
-                    schemaValidator.assertValid(MAPPER.valueToTree(req));
-                    AiSchema schema = cubeMetadataService.getSchema(req.getCube());
-                    ThinQuery tq = converter.convert(req, schema);
-                    out.setQueryModel(tq.getQueryModel());
-                    CellDataSet cds = thinQueryService.execute(tq);
-                    AiQueryResponse aiResp = buildResponse(tq, cds, start, "records");
-                    out.setResponse(aiResp);
-                    if (aiResp != null && aiResp.getMetadata() != null) {
-                        out.setGeneratedMdx(aiResp.getMetadata().getGeneratedMdx());
-                    }
-                } catch (AiValidationException e) {
-                    AiQueryResponse aiResp = new AiQueryResponse();
-                    aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.VALIDATION_ERROR);
-                    aiResp.setError(e.getMessage());
-                    aiResp.setField(e.getField());
-                    aiResp.setAvailable(e.getAvailable() == null ? null : new java.util.ArrayList<>(e.getAvailable()));
-                    aiResp.setRuntimeMs(System.currentTimeMillis() - start);
-                    out.setResponse(aiResp);
-                } catch (RuntimeException e) {
-                    log.warn("AI ask (streaming) execution failed after successful translation", e);
-                    AiQueryResponse aiResp = new AiQueryResponse();
-                    aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.EXECUTION_ERROR);
-                    aiResp.setError("execute failed");
-                    aiResp.setRuntimeMs(System.currentTimeMillis() - start);
-                    out.setResponse(aiResp);
-                }
-                sse.event("final", MAPPER.writeValueAsString(out));
-            } catch (java.io.IOException ioe) {
-                // Client disconnected — nothing to do, the connection is already dead.
-                log.debug("AI ask (streaming) client disconnected: {}", ioe.getMessage());
-            } catch (RuntimeException e) {
-                log.warn("AI ask (streaming) unexpected failure", e);
-                try {
-                    sse.event("error", MAPPER.writeValueAsString(java.util.Map.of("reason", "internal error")));
-                } catch (java.io.IOException swallow) {
-                    // best-effort — the client is already gone.
-                }
+        if (outcome.kind() == AiAskService.AskOutcome.Kind.INSIGHT) {
+            out.setInsight(outcome.insight());
+            String markdown = outcome.insight() == null ? "" : outcome.insight().getMarkdown();
+            if (markdown != null && !markdown.isEmpty()) {
+                emitChunks(sse, markdown);
             }
-        };
+            sse.event("final", MAPPER.writeValueAsString(out));
+            return;
+        }
 
-        return Response.ok(stream)
-                .type("text/event-stream")
-                .header("Cache-Control", "no-cache")
-                .header("X-Accel-Buffering", "no") // Nginx: disable buffering so events flush.
-                .build();
+        if (outcome.kind() == AiAskService.AskOutcome.Kind.VIEW_CHANGE) {
+            out.setViewChange(outcome.viewChange());
+            String reason =
+                    outcome.viewChange() == null ? null : outcome.viewChange().getReason();
+            if (reason != null && !reason.isEmpty()) {
+                emitChunks(sse, reason);
+            }
+            sse.event("final", MAPPER.writeValueAsString(out));
+            return;
+        }
+
+        // QUERY intent — no prose to stream; the query itself IS the artefact. Execute the same way
+        // the sync endpoint does (shared helper — saiku#1455/#1460) and emit the final envelope in
+        // one event so the client accumulates a complete AskResponse.
+        out.setRequest(outcome.request());
+        executeQueryIntoResponse(out, outcome.request());
+        sse.event("final", MAPPER.writeValueAsString(out));
     }
 
     /**
@@ -2632,6 +2448,230 @@ public class AiQueryResource {
                 .entity(out)
                 .type(MediaType.APPLICATION_JSON)
                 .build();
+    }
+
+    /** Standard client-facing reason for a 503 when no LLM provider is wired. */
+    private static final String ASK_NOT_CONFIGURED_REASON =
+            "AI ask is not configured. Set saiku.ai.ask.provider to 'anthropic' or 'openai' and "
+                    + "supply the matching API key (env: ANTHROPIC_API_KEY or OPENAI_API_KEY) to "
+                    + "enable the feature.";
+
+    /**
+     * Shared validation preamble for every ask endpoint (sync + streaming, classic + space).
+     * Runs the policy gate, shape checks, size cap, rate limit and provider-configured check in
+     * one place so a guard change can't drift across the four copies (saiku#1460). Returns a
+     * ready-to-send error {@link Response} to short-circuit, or {@code null} when the request may
+     * proceed.
+     *
+     * @param requireCube true for the classic endpoints (cube ref mandatory); false for space
+     *     endpoints, where the cube is optional and defaults to the persona's default cube.
+     */
+    private Response validateAskPreamble(AiAskApi.AskRequest body, boolean requireCube) {
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
+        if (body == null) {
+            return badRequest("body", "request body required", null);
+        }
+        if (body.getQuestion() == null || body.getQuestion().isBlank()) {
+            return badRequest("question", "question must be non-blank", null);
+        }
+        if (requireCube && (body.getCube() == null || body.getCube().getCubeName() == null)) {
+            return badRequest("cube", "cube ref required", null);
+        }
+        // saiku#1151: cap request size + call rate before reaching the paid LLM provider. Oversize
+        // questions/histories inflate per-call token spend; unbounded call frequency is a cost-DoS.
+        org.saiku.web.security.ratelimit.AiAskGuard.Violation sizeViolation =
+                org.saiku.web.security.ratelimit.AiAskGuard.checkSize(body);
+        if (sizeViolation != null) {
+            return askLimitResponse(sizeViolation.isPayloadTooLarge() ? 413 : 400, sizeViolation.getMessage());
+        }
+        if (!askRateLimiter.tryAcquire(askRateKey())) {
+            return askLimitResponse(
+                    429,
+                    "Too many AI ask requests — limit is " + askRateLimiter.getMaxCalls() + " per "
+                            + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.");
+        }
+        if (askService == null) {
+            AiAskApi.AskResponse notConfigured = new AiAskApi.AskResponse();
+            notConfigured.setDegraded(true);
+            notConfigured.setReason(ASK_NOT_CONFIGURED_REASON);
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity(notConfigured)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        return null;
+    }
+
+    /**
+     * Build the success response envelope for a non-degraded ask outcome, shared by the sync
+     * classic ({@link #ask}) and space ({@link #askInSpace}) endpoints so every ask surface returns
+     * the same shape (saiku#1455). INSIGHT and VIEW_CHANGE short-circuit with the model's artefact;
+     * QUERY is converted + executed the same way {@code /ai/query} does.
+     */
+    private Response buildAskSuccessResponse(AiAskService.AskOutcome outcome) {
+        AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+        out.setDegraded(false);
+        out.setModel(outcome.model());
+
+        // Insight and view-change intents skip the converter / execution entirely — the model
+        // already produced the final artefact (markdown analysis / view target).
+        if (outcome.kind() == AiAskService.AskOutcome.Kind.INSIGHT) {
+            out.setInsight(outcome.insight());
+            return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+        }
+        if (outcome.kind() == AiAskService.AskOutcome.Kind.VIEW_CHANGE) {
+            out.setViewChange(outcome.viewChange());
+            return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+        }
+
+        // QUERY intent — convert + execute.
+        out.setRequest(outcome.request());
+        executeQueryIntoResponse(out, outcome.request());
+        return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
+     * Convert + execute the model's {@link AiQueryRequest} through the same path {@code /ai/query}
+     * uses, folding the result (or a structured validation / execution error) into {@code out}.
+     * Shared by the sync success path ({@link #buildAskSuccessResponse}) and the streaming QUERY
+     * branch ({@link #streamOutcomeAsSse}) so the two can't diverge. Errors are captured into the
+     * response envelope rather than thrown, so the UI can show "the model proposed this, but it
+     * failed at &lt;stage&gt;" instead of a 500.
+     */
+    private void executeQueryIntoResponse(AiAskApi.AskResponse out, AiQueryRequest req) {
+        long start = System.currentTimeMillis();
+        try {
+            // Phase 2 shape-validate before the converter sees the request — same as /ai/query.
+            schemaValidator.assertValid(MAPPER.valueToTree(req));
+            AiSchema schema = cubeMetadataService.getSchema(req.getCube());
+            ThinQuery tq = converter.convert(req, schema);
+            // Surface the converted ThinQueryModel so the UI's "edit in canvas" can hydrate the
+            // workbench's chip builder directly instead of pasting opaque MDX.
+            out.setQueryModel(tq.getQueryModel());
+            CellDataSet cds = thinQueryService.execute(tq);
+            AiQueryResponse aiResp = buildResponse(tq, cds, start, "records");
+            out.setResponse(aiResp);
+            if (aiResp != null && aiResp.getMetadata() != null) {
+                out.setGeneratedMdx(aiResp.getMetadata().getGeneratedMdx());
+            }
+        } catch (AiValidationException e) {
+            // Surface the converter's structured validation as the response envelope so the UI can
+            // render candidate-list suggestions just like a direct /ai/query call would.
+            AiQueryResponse aiResp = new AiQueryResponse();
+            aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.VALIDATION_ERROR);
+            aiResp.setError(e.getMessage());
+            aiResp.setField(e.getField());
+            aiResp.setAvailable(e.getAvailable() == null ? null : new java.util.ArrayList<>(e.getAvailable()));
+            aiResp.setRuntimeMs(System.currentTimeMillis() - start);
+            out.setResponse(aiResp);
+        } catch (RuntimeException e) {
+            log.warn("AI ask execution failed after successful translation", e);
+            AiQueryResponse aiResp = new AiQueryResponse();
+            aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.EXECUTION_ERROR);
+            aiResp.setError("execute failed");
+            aiResp.setRuntimeMs(System.currentTimeMillis() - start);
+            out.setResponse(aiResp);
+        }
+    }
+
+    /**
+     * Translate the wire-shape {@code forceTool} string into the service enum. Unknown / null →
+     * {@link org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool#AUTO} so a bad client value
+     * silently degrades to auto-routing rather than 400ing the whole turn. Uses {@link Locale#ROOT}
+     * so the uppercase is locale-independent — a tr-TR JVM must not turn {@code "insight"} into
+     * {@code "İNSİGHT"} and drop the user's explicit pick (saiku#1458).
+     */
+    static org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool parseForceTool(String raw) {
+        if (raw == null) {
+            return org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.AUTO;
+        }
+        try {
+            return org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.valueOf(raw.toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            return org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.AUTO;
+        }
+    }
+
+    /**
+     * Map a space-access pre-flight (saiku#1454) to an HTTP error {@link Response}, or {@code null}
+     * when access is granted. Lets the streaming space endpoint return a real 403/404/503
+     * <em>before</em> it commits to a 200 event-stream, honouring the documented "cube refs outside
+     * the allowlist return 403 FORBIDDEN" contract instead of burying the denial in an SSE event.
+     */
+    private Response mapSpaceAccessDenial(AiAskService.SpaceAccess access, String spaceId) {
+        switch (access) {
+            case OK:
+                return null;
+            case SPACES_NOT_CONFIGURED:
+                return askLimitResponse(503, "agent spaces are not configured on this instance");
+            case SPACE_NOT_FOUND:
+                return askLimitResponse(404, "space not found: " + spaceId);
+            case FORBIDDEN:
+                return askLimitResponse(403, "FORBIDDEN: requested cube is not in space '" + spaceId + "' allowlist");
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Shared SSE runner for the streaming ask endpoints (saiku#1460). Builds the WHATWG SSE stream,
+     * invokes {@code outcomeSupplier} to produce the outcome (the only thing that differs between
+     * {@link #askStream} and {@link #askInSpaceStream}), and pipes it through {@link
+     * #streamOutcomeAsSse}. Centralises the failure handling so both endpoints get identical,
+     * correct behaviour:
+     *
+     * <ul>
+     *   <li>{@link com.fasterxml.jackson.core.JsonProcessingException} (a serialisation failure of
+     *       the outcome payload) is caught <em>before</em> the {@link java.io.IOException} branch —
+     *       it is NOT a client disconnect, so it must surface as an error to the still-connected
+     *       client, not vanish at DEBUG (saiku#1457).
+     *   <li>Every error path emits an {@code error} event <em>followed by</em> a terminal degraded
+     *       {@code final} event, matching the documented wire contract (saiku#1456).
+     * </ul>
+     */
+    private Response streamAsk(java.util.function.Supplier<AiAskService.AskOutcome> outcomeSupplier, String logLabel) {
+        jakarta.ws.rs.core.StreamingOutput stream = outputStream -> {
+            java.io.Writer writer =
+                    new java.io.OutputStreamWriter(outputStream, java.nio.charset.StandardCharsets.UTF_8);
+            SseWriter sse = new SseWriter(writer);
+            try {
+                streamOutcomeAsSse(outcomeSupplier.get(), sse);
+            } catch (com.fasterxml.jackson.core.JsonProcessingException jpe) {
+                // Serialising the outcome failed — the client is still connected. Surface an error
+                // (NOT the disconnect branch below, which JsonProcessingException would fall into
+                // as an IOException subclass) so the turn terminates visibly. (saiku#1457)
+                log.warn("{}: failed to serialise SSE payload", logLabel, jpe);
+                emitStreamError(sse);
+            } catch (java.io.IOException ioe) {
+                // Genuine client disconnect — the connection is already dead, nothing to emit.
+                log.debug("{}: client disconnected: {}", logLabel, ioe.getMessage());
+            } catch (RuntimeException e) {
+                log.warn("{}: unexpected failure", logLabel, e);
+                emitStreamError(sse);
+            }
+        };
+        return Response.ok(stream)
+                .type("text/event-stream")
+                .header("Cache-Control", "no-cache")
+                .header("X-Accel-Buffering", "no") // Nginx: disable buffering so events flush.
+                .build();
+    }
+
+    /**
+     * Emit the terminal error pair — an {@code error} event followed by a degraded {@code final} —
+     * so a client keying completion on {@code final} (per the documented contract) never hangs
+     * (saiku#1456). Best-effort: if even this write fails the client is already gone.
+     */
+    private static void emitStreamError(SseWriter sse) {
+        try {
+            sse.event("error", MAPPER.writeValueAsString(java.util.Map.of("reason", "internal error")));
+            AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+            out.setDegraded(true);
+            out.setReason("internal error");
+            sse.event("final", MAPPER.writeValueAsString(out));
+        } catch (java.io.IOException swallow) {
+            // best-effort — the client is already gone.
+        }
     }
 
     /**

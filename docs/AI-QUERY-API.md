@@ -1471,7 +1471,11 @@ Two things make a space genuinely enforce scope:
 
 - **Cube allowlist.** `POST /ai/spaces/{id}/ask` refuses any cube ref
   outside the allowlist with a 403 `FORBIDDEN`. When the body omits
-  `cube`, the space's first allowlisted ref is used as the default.
+  `cube`, the space's first allowlisted ref is used as the default. The
+  check runs twice: on the caller-supplied ref before the model call,
+  and again on the cube the model emits in its generated query — so a
+  prompt-injected cross-cube query can't escape the persona's scope
+  (saiku#1453).
 - **System prompt injection.** The space's `systemPrompt` is prepended
   to the built-in `SYSTEM_PROMPT` on the provider side. Users can't
   override it through `history` or `question`.
@@ -1511,6 +1515,14 @@ falls through as a raw ask.
   UI when editing a persona).
 - `POST /rest/saiku/api/ai/spaces/{id}/ask` — space-scoped ask. Body
   shape mirrors `/ai/ask` but `cube` is optional.
+- `POST /rest/saiku/api/ai/spaces/{id}/ask/stream` — SSE streaming
+  variant. Same event schema as [`/ai/ask/stream`](#streaming-variant--post-aiaskstream-saiku1433)
+  (`model` → `intent` → `chunk` → `final`), but the persona scoping
+  from the space applies — the client sees identical wire events
+  whether they hit `/ai/ask/stream` or the space-scoped mirror. The
+  scope check is a pre-flight: a cube outside the allowlist returns a
+  real `403` (an unknown space `404`) *before* the event-stream opens,
+  not a `200` carrying an in-band error event.
 - `POST /rest/saiku/api/ai/spaces/refresh` — force a rescan.
 
 ### Bundled examples
