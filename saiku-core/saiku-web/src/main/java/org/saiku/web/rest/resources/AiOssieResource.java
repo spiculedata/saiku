@@ -950,18 +950,7 @@ public class AiOssieResource {
         // projector's sample-value query relies on.
         String src = "\"" + ds.getName() + "\"";
         String col = field.getName();
-        // Inlined literal — Calcite's parameter binding on the JDBC adapter drops the
-        // binding at plan time for LIKE with UPPER/CAST wrapping, so we hand-escape the
-        // filter value here. Safe: q is user-supplied but we single-quote-escape per SQL
-        // standard and the col + src are validated against the model before we get here.
-        String sql;
-        if (q == null || q.isBlank()) {
-            sql = "SELECT DISTINCT " + col + " FROM " + src + " LIMIT " + cap;
-        } else {
-            String escaped = q.toUpperCase(java.util.Locale.ROOT).replace("'", "''");
-            sql = "SELECT DISTINCT " + col + " FROM " + src + " WHERE UPPER(CAST(" + col + " AS VARCHAR)) LIKE '%"
-                    + escaped + "%' LIMIT " + cap;
-        }
+        String sql = buildValuesSearchSql(col, src, q, cap);
         List<String> out = new ArrayList<>();
         try (java.sql.Statement st = jdbc.createStatement();
                 java.sql.ResultSet rs = st.executeQuery(sql)) {
@@ -971,6 +960,26 @@ public class AiOssieResource {
             }
         }
         return out;
+    }
+
+    /**
+     * Build the DISTINCT-value SELECT emitted by {@code /ai/ossie/values/search}. Package-private
+     * so the SQL construction is fuzz-testable in isolation from the JDBC path.
+     *
+     * <p>Inlined literal — Calcite's parameter binding on the JDBC adapter drops the binding at
+     * plan time for {@code LIKE} with {@code UPPER}/{@code CAST} wrapping, so we hand-escape the
+     * filter value here. Safety: {@code q} is user-supplied but we single-quote-escape per SQL
+     * standard; {@code col} and {@code src} are validated against the model before we get here.
+     * The invariant that the emitted string always leaves the state machine OUTSIDE any quoted
+     * region is asserted by {@code SearchValuesSqlFuzzTest}.
+     */
+    static String buildValuesSearchSql(String col, String src, String q, int cap) {
+        if (q == null || q.isBlank()) {
+            return "SELECT DISTINCT " + col + " FROM " + src + " LIMIT " + cap;
+        }
+        String escaped = q.toUpperCase(java.util.Locale.ROOT).replace("'", "''");
+        return "SELECT DISTINCT " + col + " FROM " + src + " WHERE UPPER(CAST(" + col + " AS VARCHAR)) LIKE '%"
+                + escaped + "%' LIMIT " + cap;
     }
 
     // -------------------------------------------------------------------

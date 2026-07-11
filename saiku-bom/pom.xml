@@ -46,6 +46,22 @@
              before the converter's domain-resolution layer runs. Apache 2.0,
              ~200KB, no heavy transitives. Pairs with Jackson 2.18.x. -->
         <jsonSchemaValidator.version>1.5.8</jsonSchemaValidator.version>
+        <!-- Spring GraphQL 1.4.x is the current release line paired with Spring
+             Framework 6.2.x. Provides the GraphQlSource / GraphQlHttpHandler
+             plumbing that we hang the /rest/saiku/api/graphql endpoint off.
+             We use it standalone (not via Spring Boot autoconfig) because the
+             saiku-webapp is XML-wired Spring, not Boot. -->
+        <springGraphQl.version>1.4.1</springGraphQl.version>
+        <!-- graphql-java is spring-graphql's transitive engine. Pinning here so
+             we control the version rather than inherit whatever spring-graphql
+             1.4.1 defaults to. 24.3 is the last stable in the 24.x line;
+             25+ is fine but the Jackson-json-node integration on 24.x is well
+             exercised. -->
+        <graphqlJava.version>24.3</graphqlJava.version>
+        <!-- graphql-java-extended-scalars supplies the JSON, DateTime, Object
+             scalars we need to type Ossie filter payloads + typed cell values.
+             Version tracks the graphql-java major line. -->
+        <graphqlJavaExtendedScalars.version>24.0</graphqlJavaExtendedScalars.version>
     </properties>
 
     <dependencyManagement>
@@ -736,6 +752,23 @@
                 <groupId>com.networknt</groupId>
                 <artifactId>json-schema-validator</artifactId>
                 <version>${jsonSchemaValidator.version}</version>
+            </dependency>
+
+            <!-- Spring GraphQL — /rest/saiku/api/graphql endpoint machinery -->
+            <dependency>
+                <groupId>org.springframework.graphql</groupId>
+                <artifactId>spring-graphql</artifactId>
+                <version>${springGraphQl.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.graphql-java</groupId>
+                <artifactId>graphql-java</artifactId>
+                <version>${graphqlJava.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.graphql-java</groupId>
+                <artifactId>graphql-java-extended-scalars</artifactId>
+                <version>${graphqlJavaExtendedScalars.version}</version>
             </dependency>
         </dependencies>
 
