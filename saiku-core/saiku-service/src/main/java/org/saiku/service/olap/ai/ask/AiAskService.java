@@ -50,6 +50,12 @@ public class AiAskService {
      */
     private AgentSkillRegistry skills;
 
+    /**
+     * Agent-space catalogue (saiku#1440). Same wiring model as skills — optional, injected via
+     * setter so the classic ask path stays working when spaces aren't configured.
+     */
+    private AgentSpaceRegistry spaces;
+
     public AiAskService(AiCubeMetadataService metadataService, NlAskProvider provider) {
         this(metadataService, provider, defaultMapper());
     }
@@ -71,6 +77,16 @@ public class AiAskService {
      */
     public AgentSkillRegistry skills() {
         return skills;
+    }
+
+    /** Spring setter — wired to {@code agentSpaceRegistryBean} in {@code saiku-beans.xml}. */
+    public void setSpaces(AgentSpaceRegistry spaces) {
+        this.spaces = spaces;
+    }
+
+    /** Agent-space catalogue, or {@code null} if the operator hasn't configured one. */
+    public AgentSpaceRegistry spaces() {
+        return spaces;
     }
 
     /**
@@ -163,6 +179,62 @@ public class AiAskService {
             String cellsetDigest,
             NlAskRequest.ForceTool forceTool,
             AiQueryRequest currentQuery) {
+        return askInternal(ref, question, history, cellsetDigest, forceTool, currentQuery, null);
+    }
+
+    /**
+     * Space-scoped ask (saiku#1440). The persona referenced by {@code spaceId} pins the cube
+     * allowlist, filters the skill catalogue, and prepends its {@code systemPrompt} to the LLM
+     * system message. Callers can't escape the persona by injecting a cube ref outside the
+     * allowlist — the enforcement is server-side.
+     *
+     * <p>When {@code ref} is null, the space's {@link AgentSpace#defaultCube() default cube} is
+     * used. When both are set, {@code ref} must be in the allowlist or the call returns
+     * {@code degraded("FORBIDDEN: …")}. When the space doesn't exist, returns
+     * {@code degraded("space not found: …")}.
+     */
+    public AskOutcome askInSpace(
+            String spaceId,
+            AiCubeRef ref,
+            String question,
+            List<NlAskMessage> history,
+            String cellsetDigest,
+            NlAskRequest.ForceTool forceTool,
+            AiQueryRequest currentQuery) {
+        if (spaces == null) {
+            return AskOutcome.degraded("agent spaces are not configured on this instance", null);
+        }
+        if (spaceId == null || spaceId.isBlank()) {
+            return AskOutcome.degraded("space id required", null);
+        }
+        java.util.Optional<AgentSpace> maybe = spaces.get(spaceId);
+        if (maybe.isEmpty()) {
+            return AskOutcome.degraded("space not found: " + spaceId, null);
+        }
+        AgentSpace space = maybe.get();
+        AiCubeRef effectiveRef = ref != null ? ref : space.defaultCube();
+        if (effectiveRef == null) {
+            return AskOutcome.degraded("space has no cubes in its allowlist", null);
+        }
+        if (!space.allowsCube(effectiveRef)) {
+            // Persona guardrail — the caller tried to point the space at a cube outside its
+            // allowlist. Deny loudly rather than silently rewrite to the default; a UI that hands
+            // us a stale cube ref should get corrected, not silently reinterpreted.
+            return AskOutcome.degraded(
+                    "FORBIDDEN: cube " + effectiveRef.getCubeName() + " is not in space '" + spaceId + "' allowlist",
+                    null);
+        }
+        return askInternal(effectiveRef, question, history, cellsetDigest, forceTool, currentQuery, space);
+    }
+
+    private AskOutcome askInternal(
+            AiCubeRef ref,
+            String question,
+            List<NlAskMessage> history,
+            String cellsetDigest,
+            NlAskRequest.ForceTool forceTool,
+            AiQueryRequest currentQuery,
+            AgentSpace space) {
         if (ref == null) {
             return AskOutcome.degraded("cube ref required", null);
         }
@@ -204,16 +276,28 @@ public class AiAskService {
         // Slash-command routing: when the ask starts with `/<skill-name>` and that skill exists,
         // prefix the user's remaining ask with the skill body. The LLM then sees both the skill
         // steps and the user's follow-up (e.g. `/weekly-rollup last quarter instead of this week`)
-        // and can adapt. Skills whose slug doesn't match fall through unchanged.
-        String effectiveQuestion = maybeExpandSlashCommand(question);
+        // and can adapt. Skills whose slug doesn't match fall through unchanged. When routing
+        // through a space, the space's skillAllowlist gates which skills the slash-router (and the
+        // catalogue below) can reach — a user asking `/weekly-rollup` in a space that doesn't
+        // allowlist that skill falls through as a raw ask, same as if the skill didn't exist.
+        String effectiveQuestion = maybeExpandSlashCommand(question, space);
         String skillsFragment = null;
         if (skills != null) {
             List<AgentSkill> catalog = skills.list();
+            if (space != null) {
+                catalog = catalog.stream()
+                        .filter(s -> space.allowsSkill(s.name()))
+                        .toList();
+            }
             skillsFragment = AgentSkill.catalogPromptFragment(catalog);
             if (skillsFragment == null || skillsFragment.isBlank()) {
                 skillsFragment = null;
             }
         }
+        // Space system prompt is prepended by the provider to the built-in SYSTEM_PROMPT — the
+        // persona voice ("You are the FoodMart Sales Analyst…") without giving up the tool-choice
+        // rails that make the ask surface safe.
+        String spaceSystemPrompt = space != null ? space.systemPrompt() : null;
 
         NlAskRequest req = new NlAskRequest(
                 ref,
@@ -224,7 +308,8 @@ public class AiAskService {
                 cellsetDigest,
                 forceTool == null ? NlAskRequest.ForceTool.AUTO : forceTool,
                 currentQueryJson,
-                skillsFragment);
+                skillsFragment,
+                spaceSystemPrompt);
         NlAskResponse resp = provider.ask(req);
 
         if (resp.degraded()) {
@@ -274,15 +359,19 @@ public class AiAskService {
     /**
      * If {@code question} starts with {@code /<skill-name>} (kebab-case, up to whitespace), and
      * the registry knows that skill, expand it to {@code <skill body> + <remainder of question>}.
-     * Otherwise return the question unchanged.
+     * When {@code space} is non-null the skill must also be in the space's allowlist — otherwise
+     * the slash falls through unchanged so the LLM sees the raw ask.
      */
-    private String maybeExpandSlashCommand(String question) {
+    private String maybeExpandSlashCommand(String question, AgentSpace space) {
         if (skills == null || question == null || !question.startsWith("/")) {
             return question;
         }
         int split = question.indexOf(' ');
         String slug = split < 0 ? question.substring(1) : question.substring(1, split);
         if (slug.isBlank()) {
+            return question;
+        }
+        if (space != null && !space.allowsSkill(slug)) {
             return question;
         }
         return skills.get(slug)

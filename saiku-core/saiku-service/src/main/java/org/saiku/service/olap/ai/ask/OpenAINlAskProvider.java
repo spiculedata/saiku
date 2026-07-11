@@ -221,6 +221,12 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
         ObjectNode system = messages.addObject();
         system.put("role", "system");
         StringBuilder sys = new StringBuilder(SYSTEM_PROMPT);
+        // Agent-space persona voice (saiku#1440). Prepended before the cube schema so the LLM
+        // reads the "you are the FoodMart Sales Analyst" framing before it sees the raw dims and
+        // measures.
+        if (request.spaceSystemPrompt() != null && !request.spaceSystemPrompt().isBlank()) {
+            sys.append("\n\nAgent space persona:\n").append(request.spaceSystemPrompt());
+        }
         sys.append("\n\nCube schema:\n").append(request.cubeSchemaJson());
         sys.append("\n\nCube ref to echo: ").append(cubeRefJson(request));
         // Admin-authored skills (see AgentSkillRegistry). Rendered as a bulleted list of

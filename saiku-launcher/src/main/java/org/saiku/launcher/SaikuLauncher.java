@@ -709,6 +709,18 @@ public class SaikuLauncher implements Callable<Integer> {
             Path skillsDir = saikuHome.resolve("skills");
             Files.createDirectories(skillsDir);
             stageResource("/seed/skills/weekly-foodmart-rollup.md", skillsDir.resolve("weekly-foodmart-rollup.md"));
+
+            // Seed the agent-spaces catalogue (saiku#1440) with two personas: FoodMart Sales
+            // Analyst (analytical, brief) + FoodMart Finance Ops (cautious, margin-focused). A
+            // fresh launcher demo has personas ready to click without any operator authoring.
+            Path spacesDir = saikuHome.resolve("agent-spaces");
+            Files.createDirectories(spacesDir);
+            stageResource(
+                    "/seed/agent-spaces/foodmart-sales-analyst.json",
+                    spacesDir.resolve("foodmart-sales-analyst.json"));
+            stageResource(
+                    "/seed/agent-spaces/foodmart-finance-ops.json",
+                    spacesDir.resolve("foodmart-finance-ops.json"));
         }
 
         /**

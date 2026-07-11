@@ -796,6 +796,158 @@ public class AiQueryResource {
                 .build();
     }
 
+    /**
+     * Agent-space catalogue (saiku#1440). Returned as compact summaries — id, name, description,
+     * suggested prompts. The system prompt and cube allowlist are deliberately omitted so an
+     * unauthenticated embed can't scrape the persona routing.
+     */
+    @GET
+    @Path("/spaces")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listSpaces(@QueryParam("errors") @DefaultValue("false") boolean includeErrors) {
+        if (askService == null || askService.spaces() == null) {
+            return Response.ok(java.util.Map.of("spaces", List.of()))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        var registry = askService.spaces();
+        java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+        List<Object> out = new ArrayList<>();
+        for (var space : registry.list()) {
+            out.add(space.asSummary());
+        }
+        body.put("spaces", out);
+        if (includeErrors) {
+            body.put("errors", registry.errors());
+        }
+        return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
+     * One space's full record — used by the admin UI when editing a persona. Includes the system
+     * prompt and cube allowlist that {@link #listSpaces} omits.
+     */
+    @GET
+    @Path("/spaces/{id}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getSpace(@PathParam("id") String id) {
+        if (askService == null || askService.spaces() == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(java.util.Map.of("error", "space not found"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        return askService
+                .spaces()
+                .get(id)
+                .<Response>map(space ->
+                        Response.ok(space).type(MediaType.APPLICATION_JSON).build())
+                .orElseGet(() -> Response.status(Response.Status.NOT_FOUND)
+                        .entity(java.util.Map.of("error", "space '" + id + "' not found"))
+                        .type(MediaType.APPLICATION_JSON)
+                        .build());
+    }
+
+    @POST
+    @Path("/spaces/refresh")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response refreshSpaces() {
+        if (askService == null || askService.spaces() == null) {
+            return Response.ok(java.util.Map.of("spaces", 0, "errors", 0))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        var registry = askService.spaces();
+        registry.forceRefresh();
+        return Response.ok(java.util.Map.of(
+                        "spaces", registry.list().size(),
+                        "errors", registry.errors().size()))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    /**
+     * Space-scoped ask: same envelope as {@link #ask}, but the persona referenced by {@code
+     * spaceId} pins the cube allowlist, filters the skill catalogue, and injects the system
+     * prompt. Body's {@code cube} field is optional — the space's default cube is used when it's
+     * omitted; when provided, it must match one of the space's allowlisted refs or the call
+     * returns 403.
+     */
+    @POST
+    @Path("/spaces/{id}/ask")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response askInSpace(@PathParam("id") String spaceId, AiAskApi.AskRequest body) {
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
+        if (body == null) {
+            return badRequest("body", "request body required", null);
+        }
+        if (body.getQuestion() == null || body.getQuestion().isBlank()) {
+            return badRequest("question", "question must be non-blank", null);
+        }
+        // Same size + rate guard as /ask — the space endpoint routes to the same LLM provider, so
+        // it has to carry the same cost-DoS protection.
+        org.saiku.web.security.ratelimit.AiAskGuard.Violation sizeViolation =
+                org.saiku.web.security.ratelimit.AiAskGuard.checkSize(body);
+        if (sizeViolation != null) {
+            return askLimitResponse(sizeViolation.isPayloadTooLarge() ? 413 : 400, sizeViolation.getMessage());
+        }
+        if (!askRateLimiter.tryAcquire(askRateKey())) {
+            return askLimitResponse(
+                    429,
+                    "Too many AI ask requests — limit is " + askRateLimiter.getMaxCalls() + " per "
+                            + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.");
+        }
+        if (askService == null) {
+            AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+            out.setDegraded(true);
+            out.setReason("AI ask is not configured. Set saiku.ai.ask.provider to enable the feature.");
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity(out)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force =
+                org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.AUTO;
+        if (body.getForceTool() != null) {
+            try {
+                force = org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.valueOf(
+                        body.getForceTool().toUpperCase());
+            } catch (IllegalArgumentException ignored) {
+                // unknown value — keep AUTO
+            }
+        }
+        AiAskService.AskOutcome outcome = askService.askInSpace(
+                spaceId,
+                body.getCube(),
+                body.getQuestion(),
+                body.historyAsMessages(),
+                body.getCellsetDigest(),
+                force,
+                body.getCurrentQuery());
+        if (outcome.degraded()) {
+            AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+            out.setDegraded(true);
+            out.setReason(outcome.reason());
+            // FORBIDDEN / space-not-found → 403; provider degrade → 200 with degraded:true (same
+            // as classic /ask).
+            String reason = outcome.reason() == null ? "" : outcome.reason();
+            int status = reason.startsWith("FORBIDDEN")
+                            || reason.startsWith("space not found")
+                            || reason.startsWith("space has no cubes")
+                    ? 403
+                    : 200;
+            return Response.status(status)
+                    .entity(out)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+        out.setModel(outcome.model());
+        out.setRequest(outcome.request());
+        return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+    }
+
     @POST
     @Path("/ask")
     @Consumes(MediaType.APPLICATION_JSON)

@@ -825,6 +825,20 @@ instance, and any skill whose YAML frontmatter names an Ossie-side cube
 ref (e.g. `pharma/Pharma/Pharma/Sales`) is naturally scoped by that ref
 when routed through the Ossie ask.
 
+### Agent Spaces — persona layer (#1440)
+
+Spaces layer a persona on top of an ask surface — system prompt, cube
+allowlist, skill allowlist, suggested prompts. Persisted as JSON under
+`saiku-home/agent-spaces/`. Full reference:
+[docs/AGENT-SPACES-SPEC.md](./AGENT-SPACES-SPEC.md); REST surface
+documented in
+[AI-QUERY-API.md](./AI-QUERY-API.md#agent-spaces--persona-layer-over-aiask-saiku1440).
+
+The MDX endpoint is `POST /ai/spaces/{id}/ask`. Space definitions whose
+`cubeAllowlist` names an Ossie ref (e.g. `pharma/Pharma/Pharma/Sales`)
+route to the Ossie side of the ask stack automatically — same persona
+plumbing, different execution engine.
+
 ---
 
 ## MCP integration
@@ -877,6 +891,7 @@ Or for natural-language flows: skip 4–7 entirely and use `/ask`.
 - Library extraction follow-up: #1396 (Maven Central + package rename)
 - MDX AI Query API: [`AI-QUERY-API.md`](AI-QUERY-API.md)
 - Agent skills spec: [`SKILLS-SPEC.md`](SKILLS-SPEC.md)
+- Agent spaces spec: [`AGENT-SPACES-SPEC.md`](AGENT-SPACES-SPEC.md)
 
 ## Closed since last publish (2026-07-11)
 
