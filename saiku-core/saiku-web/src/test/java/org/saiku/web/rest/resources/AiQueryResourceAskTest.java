@@ -219,6 +219,27 @@ public class AiQueryResourceAskTest {
     }
 
     @Test
+    public void spaceSyncMapsForbiddenDenialTo403RegardlessOfReasonWording() {
+        // saiku#1465: the 403 mapping keys off the typed denial code, not a reason prefix. A
+        // FORBIDDEN outcome whose reason does NOT start with "FORBIDDEN" must still be a 403 —
+        // RED against the old reason.startsWith("FORBIDDEN") logic, which would have returned 200.
+        wireSpaceAskService(AiAskService.AskOutcome.degraded(
+                "Cube not permitted for this persona", null, AiAskService.SpaceAccess.FORBIDDEN));
+        Response resp = resource.askInSpace("sales-analyst", validBody());
+        assertEquals(403, resp.getStatus());
+    }
+
+    @Test
+    public void spaceSyncMapsProviderDegradeTo200() {
+        wireSpaceAskService(AiAskService.AskOutcome.degraded("HTTP 503: upstream offline", "claude-x"));
+        Response resp = resource.askInSpace("sales-analyst", validBody());
+        assertEquals(200, resp.getStatus());
+        AiAskApi.AskResponse body = (AiAskApi.AskResponse) resp.getEntity();
+        assertTrue(body.isDegraded());
+        assertEquals("HTTP 503: upstream offline", body.getReason());
+    }
+
+    @Test
     public void spaceSyncSurfacesInsightOutcome() {
         org.saiku.service.olap.ai.ask.AiInsight insight =
                 new org.saiku.service.olap.ai.ask.AiInsight("Store sales trended up 12%.", "Sales up");

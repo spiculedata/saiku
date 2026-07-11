@@ -111,7 +111,8 @@ public class AiAskService {
             AiQueryRequest request,
             AiInsight insight,
             AiViewChange viewChange,
-            String model) {
+            String model,
+            SpaceAccess denial) {
 
         public enum Kind {
             QUERY,
@@ -120,19 +121,28 @@ public class AiAskService {
         }
 
         public static AskOutcome ok(AiQueryRequest request, String model) {
-            return new AskOutcome(Kind.QUERY, false, null, request, null, null, model);
+            return new AskOutcome(Kind.QUERY, false, null, request, null, null, model, SpaceAccess.OK);
         }
 
         public static AskOutcome okInsight(AiInsight insight, String model) {
-            return new AskOutcome(Kind.INSIGHT, false, null, null, insight, null, model);
+            return new AskOutcome(Kind.INSIGHT, false, null, null, insight, null, model, SpaceAccess.OK);
         }
 
         public static AskOutcome okViewChange(AiViewChange viewChange, String model) {
-            return new AskOutcome(Kind.VIEW_CHANGE, false, null, null, null, viewChange, model);
+            return new AskOutcome(Kind.VIEW_CHANGE, false, null, null, null, viewChange, model, SpaceAccess.OK);
         }
 
+        /** Provider-side degrade (transport/parse/refusal) — carries no space-scope denial. */
         public static AskOutcome degraded(String reason, String model) {
-            return new AskOutcome(null, true, reason, null, null, null, model);
+            return new AskOutcome(null, true, reason, null, null, null, model, SpaceAccess.OK);
+        }
+
+        /**
+         * Space-scope denial (saiku#1465). The {@code denial} code lets the web layer map to a real
+         * HTTP status without prose-prefix matching on {@link #reason()}.
+         */
+        public static AskOutcome degraded(String reason, String model, SpaceAccess denial) {
+            return new AskOutcome(null, true, reason, null, null, null, model, denial);
         }
     }
 
@@ -202,19 +212,20 @@ public class AiAskService {
             NlAskRequest.ForceTool forceTool,
             AiQueryRequest currentQuery) {
         if (spaces == null) {
-            return AskOutcome.degraded("agent spaces are not configured on this instance", null);
+            return AskOutcome.degraded(
+                    "agent spaces are not configured on this instance", null, SpaceAccess.SPACES_NOT_CONFIGURED);
         }
         if (spaceId == null || spaceId.isBlank()) {
-            return AskOutcome.degraded("space id required", null);
+            return AskOutcome.degraded("space id required", null, SpaceAccess.SPACE_NOT_FOUND);
         }
         java.util.Optional<AgentSpace> maybe = spaces.get(spaceId);
         if (maybe.isEmpty()) {
-            return AskOutcome.degraded("space not found: " + spaceId, null);
+            return AskOutcome.degraded("space not found: " + spaceId, null, SpaceAccess.SPACE_NOT_FOUND);
         }
         AgentSpace space = maybe.get();
         AiCubeRef effectiveRef = ref != null ? ref : space.defaultCube();
         if (effectiveRef == null) {
-            return AskOutcome.degraded("space has no cubes in its allowlist", null);
+            return AskOutcome.degraded("space has no cubes in its allowlist", null, SpaceAccess.FORBIDDEN);
         }
         if (!space.allowsCube(effectiveRef)) {
             // Persona guardrail — the caller tried to point the space at a cube outside its
@@ -222,7 +233,8 @@ public class AiAskService {
             // us a stale cube ref should get corrected, not silently reinterpreted.
             return AskOutcome.degraded(
                     "FORBIDDEN: cube " + effectiveRef.getCubeName() + " is not in space '" + spaceId + "' allowlist",
-                    null);
+                    null,
+                    SpaceAccess.FORBIDDEN);
         }
         return askInternal(effectiveRef, question, history, cellsetDigest, forceTool, currentQuery, space);
     }
@@ -376,7 +388,8 @@ public class AiAskService {
                             cubeName);
                     return AskOutcome.degraded(
                             "FORBIDDEN: cube " + cubeName + " is not in space '" + space.id() + "' allowlist",
-                            resp.model());
+                            resp.model(),
+                            SpaceAccess.FORBIDDEN);
                 }
                 return AskOutcome.ok(parsed, resp.model());
             }

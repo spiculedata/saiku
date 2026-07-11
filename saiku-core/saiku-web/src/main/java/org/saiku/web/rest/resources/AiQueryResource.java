@@ -891,21 +891,19 @@ public class AiQueryResource {
                 parseForceTool(body.getForceTool()),
                 body.getCurrentQuery());
         if (outcome.degraded()) {
+            // Map scope denials by the outcome's typed denial code (saiku#1465) rather than by
+            // prefix-matching the prose reason — a wording change in the service can no longer
+            // silently downgrade a 403 to a 200. A plain provider degrade (denial == OK) falls
+            // through to a 200 with degraded:true, same as the classic /ask.
+            Response denial = mapSpaceAccessDenial(outcome.denial(), spaceId);
+            if (denial != null) {
+                return denial;
+            }
             AiAskApi.AskResponse out = new AiAskApi.AskResponse();
             out.setDegraded(true);
             out.setReason(outcome.reason());
-            // FORBIDDEN / space-not-found → 403; provider degrade → 200 with degraded:true (same
-            // as classic /ask).
-            String reason = outcome.reason() == null ? "" : outcome.reason();
-            int status = reason.startsWith("FORBIDDEN")
-                            || reason.startsWith("space not found")
-                            || reason.startsWith("space has no cubes")
-                    ? 403
-                    : 200;
-            return Response.status(status)
-                    .entity(out)
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+            out.setModel(outcome.model());
+            return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
         }
         // Mirror the classic /ai/ask success handling (saiku#1455): branch on the outcome kind so
         // INSIGHT / VIEW_CHANGE surface their artefact and QUERY is actually executed — previously

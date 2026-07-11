@@ -119,6 +119,59 @@ public class AiOssieResource {
         this.askService = s;
     }
 
+    /**
+     * saiku#1459: the same cost-DoS + policy guards the MDX ask endpoints carry. Without these the
+     * Ossie {@code /ask} was a bypass surface — a client 429'd or 413'd on {@code /ai/ask} could
+     * switch to {@code /ai/ossie/ask} and reach the paid LLM provider unbounded. Defaults mirror
+     * {@link AiQueryResource} so the guard is on even before Spring wires the shared beans.
+     */
+    private org.saiku.service.olap.ai.AiPolicyGuard aiPolicyGuard =
+            new org.saiku.service.olap.ai.AiPolicyGuard(org.saiku.service.olap.ai.AiPolicy.FULL);
+
+    private org.saiku.web.security.ratelimit.AiRateLimiter askRateLimiter =
+            new org.saiku.web.security.ratelimit.AiRateLimiter();
+
+    public void setAiPolicyGuard(org.saiku.service.olap.ai.AiPolicyGuard g) {
+        this.aiPolicyGuard = g;
+    }
+
+    public void setAskRateLimiter(org.saiku.web.security.ratelimit.AiRateLimiter l) {
+        this.askRateLimiter = l;
+    }
+
+    /** A degraded JSON error at the given status (413 oversize, 400 bad shape, 429 rate). */
+    private Response askLimitResponse(int status, String reason) {
+        String code = status == 429 ? "RATE_LIMITED" : status == 413 ? "REQUEST_TOO_LARGE" : "BAD_REQUEST";
+        return Response.status(status)
+                .entity(Map.of("error", code, "message", reason))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    /**
+     * Rate-limit identity = caller principal + client IP, matching {@link AiQueryResource} so a
+     * client's spend across the MDX and Ossie ask endpoints shares one budget when the same
+     * limiter bean is wired into both. Falls back to a constant when no request is bound (tests).
+     */
+    private String askRateKey() {
+        jakarta.servlet.http.HttpServletRequest req = null;
+        org.springframework.web.context.request.RequestAttributes attrs =
+                org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes) {
+            req = ((org.springframework.web.context.request.ServletRequestAttributes) attrs).getRequest();
+        }
+        String user = null;
+        String ip = null;
+        if (req != null) {
+            user = req.getRemoteUser();
+            if (user == null && req.getUserPrincipal() != null) {
+                user = req.getUserPrincipal().getName();
+            }
+            ip = req.getRemoteAddr();
+        }
+        return (user == null ? "anon" : user) + ":" + (ip == null ? "unknown" : ip);
+    }
+
     // -------------------------------------------------------------------
     // GET /models
     // -------------------------------------------------------------------
@@ -360,6 +413,9 @@ public class AiOssieResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response ask(Map<String, Object> body) {
+        // saiku#1459: same policy gate the MDX ask endpoints carry — this reaches the same paid LLM
+        // provider and must not be a bypass surface for the AGGREGATED_RESULT_VALUES data policy.
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         if (askService == null || !askService.isConfigured()) {
             return Response.status(Response.Status.SERVICE_UNAVAILABLE)
                     .entity(
@@ -377,6 +433,30 @@ public class AiOssieResource {
         String question = strOr(body.get("question"));
         if (connection == null) return badRequest("connection", "connection is required", List.of());
         if (question == null) return badRequest("question", "question is required", List.of());
+
+        // saiku#1459: cap request size + call rate before reaching the paid LLM provider, same as
+        // /ai/ask. Extract the history contents up front so an oversize payload is rejected before
+        // any model call.
+        List<String> historyContents = new ArrayList<>();
+        Object rawHistoryForSize = body.get("history");
+        if (rawHistoryForSize instanceof List<?> hlist) {
+            for (Object h : hlist) {
+                if (h instanceof Map<?, ?> hmap) {
+                    historyContents.add(strOr(hmap.get("content")));
+                }
+            }
+        }
+        org.saiku.web.security.ratelimit.AiAskGuard.Violation sizeViolation =
+                org.saiku.web.security.ratelimit.AiAskGuard.checkSize(question, historyContents);
+        if (sizeViolation != null) {
+            return askLimitResponse(sizeViolation.isPayloadTooLarge() ? 413 : 400, sizeViolation.getMessage());
+        }
+        if (!askRateLimiter.tryAcquire(askRateKey())) {
+            return askLimitResponse(
+                    429,
+                    "Too many AI ask requests — limit is " + askRateLimiter.getMaxCalls() + " per "
+                            + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.");
+        }
         try {
             OssieModelDto semantic = ossieDiscoverService.getModel(connection);
             if (modelName == null || modelName.isBlank()) modelName = semantic.getName();
