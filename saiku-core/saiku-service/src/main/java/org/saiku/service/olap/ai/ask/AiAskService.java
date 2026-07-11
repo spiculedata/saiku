@@ -321,6 +321,24 @@ public class AiAskService {
             NlAskResponse.Kind kind = resp.kind();
             if (kind == NlAskResponse.Kind.QUERY) {
                 AiQueryRequest parsed = mapper.readValue(resp.payloadJson(), AiQueryRequest.class);
+                // Persona guardrail (saiku#1453/#1463): the pre-LLM check at askInSpace validated
+                // only the INPUT ref. The model's emitted query names its own cube, which a
+                // prompt-injected question can push outside the allowlist. Re-validate the executed
+                // cube here — this is the only place it can live, because AskOutcome carries no
+                // space context, so a downstream resource (e.g. the streaming endpoint that
+                // executes the query) cannot re-check it.
+                if (space != null && !space.allowsCube(parsed.getCube())) {
+                    String cubeName = parsed.getCube() == null
+                            ? "(none)"
+                            : parsed.getCube().getCubeName();
+                    log.warn(
+                            "Space '{}' scope violation: model emitted a query against non-allowlisted cube {}",
+                            space.id(),
+                            cubeName);
+                    return AskOutcome.degraded(
+                            "FORBIDDEN: cube " + cubeName + " is not in space '" + space.id() + "' allowlist",
+                            resp.model());
+                }
                 return AskOutcome.ok(parsed, resp.model());
             }
             if (kind == NlAskResponse.Kind.INSIGHT) {

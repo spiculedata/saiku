@@ -264,9 +264,16 @@ public class AiAskServiceTest {
     @Test
     public void spaceScopedAskEnforcesAllowlist() throws Exception {
         AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        // Emit the full 4-coordinate cube the real model returns (AiRequestJsonSchema marks all
+        // four required) so the post-LLM allowlist re-check (saiku#1453) sees an allowlisted cube.
         NlAskProvider capturing = req -> {
             seen.set(req);
-            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+            return NlAskResponse.ok(
+                    "{\"cube\":{\"connectionName\":\"conn\",\"catalog\":\"cat\",\"schema\":\"sch\",\"cubeName\":\"Sales\"},"
+                            + "\"measures\":[]}",
+                    "m",
+                    0,
+                    0);
         };
         AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
         java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("spaces");
@@ -295,11 +302,76 @@ public class AiAskServiceTest {
     }
 
     @Test
+    public void spaceScopedAskRejectsLlmQueryAgainstNonAllowlistedCube() throws Exception {
+        // saiku#1453/#1463 — the input ref is allowlisted (passes the pre-LLM check), but the
+        // provider's emitted QUERY names a DIFFERENT cube outside the allowlist (as a prompt
+        // injection would coax it to). The executed cube must be re-validated: the outcome has to
+        // degrade FORBIDDEN, not surface a query the streaming endpoint would then execute against
+        // the foreign cube.
+        String foreignCubeJson = "{"
+                + "\"cube\":{\"connectionName\":\"conn\",\"catalog\":\"cat\",\"schema\":\"sch\",\"cubeName\":\"HR\"},"
+                + "\"measures\":[{\"name\":\"Salary\"}]"
+                + "}";
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(emptySchema()), stub(NlAskResponse.ok(foreignCubeJson, "claude-x", 10, 5)));
+        java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("spaces");
+        java.nio.file.Files.writeString(
+                tmp.resolve("sales.json"),
+                "{\"id\":\"sales-analyst\",\"name\":\"Sales Analyst\","
+                        + "\"cubeAllowlist\":["
+                        + "{\"connectionName\":\"conn\",\"catalog\":\"cat\",\"schema\":\"sch\",\"cubeName\":\"Sales\"}"
+                        + "]}");
+        svc.setSpaces(new AgentSpaceRegistry(tmp));
+
+        // CUBE (Sales) is allowlisted, so the pre-LLM check passes; the model then emits an HR query.
+        AiAskService.AskOutcome out =
+                svc.askInSpace("sales-analyst", CUBE, "show sales", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertTrue("LLM-chosen cube outside the allowlist must be refused", out.degraded());
+        assertTrue(
+                "denial must carry the FORBIDDEN prefix so the 403 mapping applies: " + out.reason(),
+                out.reason().startsWith("FORBIDDEN"));
+        assertNull("a forbidden cross-cube query must not surface an executable request", out.request());
+    }
+
+    @Test
+    public void spaceScopedAskAllowsLlmQueryAgainstAllowlistedCube() throws Exception {
+        // Companion to the bypass test: when the emitted QUERY names an allowlisted cube, the
+        // re-check is transparent — the request surfaces normally.
+        String allowedCubeJson = "{"
+                + "\"cube\":{\"connectionName\":\"conn\",\"catalog\":\"cat\",\"schema\":\"sch\",\"cubeName\":\"Sales\"},"
+                + "\"measures\":[{\"name\":\"Store Sales\"}]"
+                + "}";
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(emptySchema()), stub(NlAskResponse.ok(allowedCubeJson, "claude-x", 10, 5)));
+        java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("spaces");
+        java.nio.file.Files.writeString(
+                tmp.resolve("sales.json"),
+                "{\"id\":\"sales-analyst\",\"name\":\"Sales Analyst\","
+                        + "\"cubeAllowlist\":["
+                        + "{\"connectionName\":\"conn\",\"catalog\":\"cat\",\"schema\":\"sch\",\"cubeName\":\"Sales\"}"
+                        + "]}");
+        svc.setSpaces(new AgentSpaceRegistry(tmp));
+
+        AiAskService.AskOutcome out =
+                svc.askInSpace("sales-analyst", CUBE, "show sales", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertFalse(out.degraded());
+        assertNotNull(out.request());
+        assertEquals("Sales", out.request().getCube().getCubeName());
+    }
+
+    @Test
     public void spaceScopedAskUsesDefaultCubeWhenAbsent() throws Exception {
         AtomicReference<NlAskRequest> seen = new AtomicReference<>();
         NlAskProvider capturing = req -> {
             seen.set(req);
-            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+            return NlAskResponse.ok(
+                    "{\"cube\":{\"connectionName\":\"conn\",\"catalog\":\"cat\",\"schema\":\"sch\",\"cubeName\":\"Sales\"},"
+                            + "\"measures\":[]}",
+                    "m",
+                    0,
+                    0);
         };
         AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
         java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("spaces");
