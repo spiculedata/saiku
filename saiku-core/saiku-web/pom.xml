@@ -128,6 +128,23 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
+
+        <!-- Spring GraphQL — /rest/saiku/api/graphql. Uses spring-graphql's
+             GraphQlHttpHandler + WebGraphQlHandler bound behind our own
+             Jersey resource; we do NOT use Spring Boot autoconfig, because
+             the saiku-webapp is XML-wired Spring. -->
+        <dependency>
+            <groupId>org.springframework.graphql</groupId>
+            <artifactId>spring-graphql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.graphql-java</groupId>
+            <artifactId>graphql-java</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.graphql-java</groupId>
+            <artifactId>graphql-java-extended-scalars</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.qmino</groupId>
             <artifactId>miredot-annotations</artifactId>

@@ -1,0 +1,157 @@
+# Saiku GraphQL API — SDL
+#
+# Every request Saiku exposes over REST is also reachable here. Inputs are strongly
+# typed so codegen + autocomplete work; outputs use a JSON scalar for cube/model
+# shapes and query results. The trade-off keeps the schema stable when cubes change
+# and lets clients reuse the same envelopes they already know from /rest/saiku/api/ai/*.
+#
+# See docs.saiku.bi/api/graphql/ for the JSON payload each JSON-valued field returns.
+
+scalar JSON
+
+type Query {
+    # ------------------------------------------------------------
+    # Metadata — no query execution, safe to introspect widely
+    # ------------------------------------------------------------
+
+    "Basic server metadata: version + which query surfaces are enabled."
+    serverInfo: ServerInfo!
+
+    "List every MDX cube the current session can see."
+    cubes: [CubeSummary!]!
+
+    "Describe one cube. Returns the AiSchema shape as JSON — measures, dimensions, hierarchies, levels, sample members."
+    cube(
+        connectionName: String!
+        catalog: String!
+        schema: String!
+        cubeName: String!
+    ): JSON
+
+    "List every Ossie semantic model the current session can see."
+    ossieModels: [OssieModelSummary!]!
+
+    "Describe one Ossie model. Returns the OssieModelDto shape as JSON."
+    ossieModel(connection: String!): JSON
+
+    # ------------------------------------------------------------
+    # Execution — same envelopes as /ai/query and /ai/ossie/query
+    # ------------------------------------------------------------
+
+    "Execute an MDX query. Payload shape mirrors POST /rest/saiku/api/ai/query."
+    executeMdx(input: MdxQueryInput!): JSON!
+
+    "Execute an Ossie query. Payload shape mirrors POST /rest/saiku/api/ai/ossie/query."
+    executeOssie(input: OssieQueryInput!): JSON!
+}
+
+# ------------------------------------------------------------
+# Metadata output types
+# ------------------------------------------------------------
+
+type ServerInfo {
+    version: String!
+    mdxEnabled: Boolean!
+    ossieEnabled: Boolean!
+}
+
+type CubeSummary {
+    connectionName: String!
+    catalog: String!
+    schema: String!
+    cubeName: String!
+}
+
+type OssieModelSummary {
+    connectionName: String!
+    modelName: String
+    factDataset: String
+    datasetCount: Int
+    metricCount: Int
+}
+
+# ------------------------------------------------------------
+# MDX execution input — field names mirror AiQueryRequest so Jackson can marshal directly
+# ------------------------------------------------------------
+
+input MdxQueryInput {
+    "Which cube. All four segments are required."
+    cube: CubeRefInput!
+
+    "Measures to project — required. Each entry names a measure (canonical or display) with optional aggregators."
+    measures: [MeasureSelectionInput!]!
+
+    "Row axis — dimension/hierarchy/level selections. Empty for a rows-free query."
+    rows: [AxisSelectionInput!]
+
+    "Column axis — dimension/hierarchy/level selections. Empty for a columns-free query."
+    columns: [AxisSelectionInput!]
+
+    "Slicer filters. Passed through as JSON — see the AiFilterSelection docs for the exact shape."
+    filters: [JSON!]
+
+    "Order clauses. Passed through as JSON — see AiOrderBy for the shape."
+    order: [JSON!]
+
+    "Named sets. Passed through as JSON."
+    namedSets: [JSON!]
+
+    "Optional row cap. 0 or omitted means no cap."
+    limit: Int
+
+    "If true, wrap subtotals in Mondrian VisualTotals. Defaults to false."
+    visualTotals: Boolean
+
+    "If true (default), apply NON EMPTY to both axes."
+    nonEmpty: Boolean
+}
+
+input CubeRefInput {
+    connectionName: String!
+    catalog: String!
+    schema: String!
+    cubeName: String!
+}
+
+input MeasureSelectionInput {
+    name: String!
+    aggregators: [String!]
+}
+
+input AxisSelectionInput {
+    dimension: String
+    hierarchy: String
+    level: String
+    members: [String!]
+}
+
+# ------------------------------------------------------------
+# Ossie execution input — field names mirror OssieAiQueryRequest
+# ------------------------------------------------------------
+
+input OssieQueryInput {
+    connection: String!
+    model: String!
+
+    rows: [OssieFieldRefInput!]
+    columns: [OssieFieldRefInput!]
+    values: [OssieMetricRefInput!]!
+
+    "Filter expressions. Passed through as JSON — see OssieAiQueryRequest.FilterExpr."
+    filters: [JSON!]
+
+    "Sort clauses. Passed through as JSON — see OssieAiQueryRequest.SortRef."
+    sorts: [JSON!]
+
+    limit: Int
+}
+
+input OssieFieldRefInput {
+    dataset: String!
+    field: String!
+}
+
+input OssieMetricRefInput {
+    metric: String!
+    aggregation: String
+}

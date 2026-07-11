@@ -317,6 +317,37 @@
          disabled by default (health returns configured=false; /ask returns 503). -->
     <bean id="ossieAiAskServiceBean" class="org.saiku.service.ossie.ai.OssieAiAskService"/>
 
+    <!-- ====================================================================
+         GraphQL API (POST /saiku/api/graphql + GET /schema.graphql).
+
+         Loads the SDL from classpath:graphql/saiku.graphqls once at boot and
+         wires resolvers that delegate to the existing MDX + Ossie services.
+         Same auth surface as the REST endpoints (Spring Security session).
+
+         The fetchers hold a scoped proxy to aiQueryResource so the request
+         scope is available when a GraphQL executeMdx runs. aiOssieResource
+         is singleton, so no proxy needed there.
+         ==================================================================== -->
+    <bean id="saikuGraphQlFetchers" class="org.saiku.web.graphql.SaikuGraphQlFetchers">
+        <constructor-arg>
+            <bean class="com.fasterxml.jackson.databind.ObjectMapper"/>
+        </constructor-arg>
+        <property name="cubeMetadataService" ref="aiCubeMetadataServiceBean"/>
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <property name="ossieDiscoverService" ref="ossieDiscoverServiceBean"/>
+        <property name="aiQueryResource" ref="aiQueryResource"/>
+        <property name="aiOssieResource" ref="aiOssieResource"/>
+        <property name="serverVersion" value="${saiku.version:4.6.0}"/>
+    </bean>
+
+    <bean id="saikuGraphQlService" class="org.saiku.web.graphql.SaikuGraphQlService">
+        <property name="fetchers" ref="saikuGraphQlFetchers"/>
+    </bean>
+
+    <bean id="graphQlResource" class="org.saiku.web.graphql.GraphQlResource">
+        <property name="graphQlService" ref="saikuGraphQlService"/>
+    </bean>
+
     <!-- saiku#906: admin-only read API over the audit log
          (GET /saiku/admin/ai-audit). Stateless singleton; @RolesAllowed +
          the /rest/saiku/admin/** intercept-url both gate it. -->
