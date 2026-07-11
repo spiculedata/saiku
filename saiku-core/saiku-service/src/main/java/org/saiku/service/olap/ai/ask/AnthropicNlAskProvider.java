@@ -147,6 +147,12 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
         boolean wantViewChange = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.VIEW_CHANGE;
 
         StringBuilder system = new StringBuilder(SYSTEM_PROMPT);
+        // Agent-space persona voice (saiku#1440). Prepended before the cube schema so the LLM
+        // reads the "you are the FoodMart Sales Analyst" framing before it sees the raw dims and
+        // measures — matches the way admins author it.
+        if (request.spaceSystemPrompt() != null && !request.spaceSystemPrompt().isBlank()) {
+            system.append("\n\nAgent space persona:\n").append(request.spaceSystemPrompt());
+        }
         system.append("\n\nCube schema:\n").append(request.cubeSchemaJson());
         system.append("\n\nCube ref to echo: ").append(cubeRefJson(request));
         // Admin-authored skills (see AgentSkillRegistry). Rendered as a bulleted list of

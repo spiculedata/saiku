@@ -238,6 +238,120 @@ public class AiAskServiceTest {
         assertNull(seen.get().skillsFragment());
     }
 
+    /* ---- saiku#1440 agent-space scope enforcement ---- */
+
+    @Test
+    public void spaceScopedAskDegradesWithoutRegistry() throws Exception {
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), stub(NlAskResponse.ok("{}", "m", 0, 0)));
+        AiAskService.AskOutcome out =
+                svc.askInSpace("sales-analyst", CUBE, "show sales", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+        assertTrue(out.degraded());
+        assertTrue(out.reason().contains("agent spaces are not configured"));
+    }
+
+    @Test
+    public void spaceScopedAskDegradesForMissingSpace() throws Exception {
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), stub(NlAskResponse.ok("{}", "m", 0, 0)));
+        java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("spaces");
+        svc.setSpaces(new AgentSpaceRegistry(tmp));
+
+        AiAskService.AskOutcome out = svc.askInSpace(
+                "does-not-exist", CUBE, "show sales", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+        assertTrue(out.degraded());
+        assertTrue(out.reason().contains("space not found"));
+    }
+
+    @Test
+    public void spaceScopedAskEnforcesAllowlist() throws Exception {
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        NlAskProvider capturing = req -> {
+            seen.set(req);
+            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
+        java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("spaces");
+        java.nio.file.Files.writeString(
+                tmp.resolve("sales.json"),
+                "{\"id\":\"sales-analyst\",\"name\":\"Sales Analyst\","
+                        + "\"systemPrompt\":\"You are the Sales Analyst.\","
+                        + "\"cubeAllowlist\":["
+                        + "{\"connectionName\":\"conn\",\"catalog\":\"cat\",\"schema\":\"sch\",\"cubeName\":\"Sales\"}"
+                        + "]}");
+        svc.setSpaces(new AgentSpaceRegistry(tmp));
+
+        // In-allowlist ref: allowed.
+        AiAskService.AskOutcome allowed =
+                svc.askInSpace("sales-analyst", CUBE, "show sales", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+        assertFalse(allowed.degraded());
+        assertNotNull(seen.get());
+        assertEquals("You are the Sales Analyst.", seen.get().spaceSystemPrompt());
+
+        // Ref outside the allowlist: FORBIDDEN.
+        AiCubeRef other = new AiCubeRef("conn", "cat", "sch", "Different");
+        AiAskService.AskOutcome forbidden = svc.askInSpace(
+                "sales-analyst", other, "show sales", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+        assertTrue(forbidden.degraded());
+        assertTrue(forbidden.reason().startsWith("FORBIDDEN"));
+    }
+
+    @Test
+    public void spaceScopedAskUsesDefaultCubeWhenAbsent() throws Exception {
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        NlAskProvider capturing = req -> {
+            seen.set(req);
+            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
+        java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("spaces");
+        java.nio.file.Files.writeString(
+                tmp.resolve("sales.json"),
+                "{\"id\":\"sales-analyst\",\"name\":\"Sales Analyst\","
+                        + "\"cubeAllowlist\":["
+                        + "{\"connectionName\":\"conn\",\"catalog\":\"cat\",\"schema\":\"sch\",\"cubeName\":\"Sales\"}"
+                        + "]}");
+        svc.setSpaces(new AgentSpaceRegistry(tmp));
+
+        AiAskService.AskOutcome out =
+                svc.askInSpace("sales-analyst", null, "show sales", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+        assertFalse(out.degraded());
+        assertEquals("Sales", seen.get().cubeRef().getCubeName());
+    }
+
+    @Test
+    public void spaceFiltersSkillCatalogueToAllowlist() throws Exception {
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        NlAskProvider capturing = req -> {
+            seen.set(req);
+            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
+        java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("skills");
+        java.nio.file.Files.writeString(
+                tmp.resolve("allowed.md"),
+                "---\nname: allowed-skill\ndescription: Allowed skill for this space\n---\n\nbody\n");
+        java.nio.file.Files.writeString(
+                tmp.resolve("blocked.md"),
+                "---\nname: blocked-skill\ndescription: Blocked skill for this space\n---\n\nbody\n");
+        svc.setSkills(new AgentSkillRegistry(tmp));
+
+        java.nio.file.Path spacesTmp = java.nio.file.Files.createTempDirectory("spaces");
+        java.nio.file.Files.writeString(
+                spacesTmp.resolve("sales.json"),
+                "{\"id\":\"sales\",\"name\":\"Sales\","
+                        + "\"skillAllowlist\":[\"allowed-skill\"],"
+                        + "\"cubeAllowlist\":["
+                        + "{\"connectionName\":\"conn\",\"catalog\":\"cat\",\"schema\":\"sch\",\"cubeName\":\"Sales\"}"
+                        + "]}");
+        svc.setSpaces(new AgentSpaceRegistry(spacesTmp));
+
+        svc.askInSpace("sales", CUBE, "show sales", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        String fragment = seen.get().skillsFragment();
+        assertNotNull(fragment);
+        assertTrue("allowed skill should surface: " + fragment, fragment.contains("/allowed-skill"));
+        assertFalse("blocked skill must not surface: " + fragment, fragment.contains("/blocked-skill"));
+    }
+
     // ---------- helpers ----------
 
     private static AiCubeMetadataService fixedSchemaService(AiSchema schema) {

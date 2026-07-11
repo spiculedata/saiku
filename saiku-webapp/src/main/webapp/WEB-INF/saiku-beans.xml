@@ -392,6 +392,7 @@
         <constructor-arg ref="aiCubeMetadataServiceBean"/>
         <constructor-arg ref="aiAskProviderBean"/>
         <property name="skills" ref="agentSkillRegistryBean"/>
+        <property name="spaces" ref="agentSpaceRegistryBean"/>
     </bean>
 
     <!-- Skill catalogue (saiku#1426). Markdown files with YAML frontmatter under
@@ -401,6 +402,14 @@
     <bean id="agentSkillRegistryBean"
           class="org.saiku.service.olap.ai.ask.AgentSkillRegistry">
         <constructor-arg type="java.lang.String" value="${saiku.home:./saiku-home}/skills"/>
+    </bean>
+
+    <!-- Agent-space catalogue (saiku#1440). JSON personas under saiku-home/agent-spaces/
+         pin cube allowlist + skill allowlist + system prompt + suggested prompts.
+         POST /ai/spaces/{id}/ask enforces those scopes server-side. -->
+    <bean id="agentSpaceRegistryBean"
+          class="org.saiku.service.olap.ai.ask.AgentSpaceRegistry">
+        <constructor-arg type="java.lang.String" value="${saiku.home:./saiku-home}/agent-spaces"/>
     </bean>
 
     <!-- ====================================================================

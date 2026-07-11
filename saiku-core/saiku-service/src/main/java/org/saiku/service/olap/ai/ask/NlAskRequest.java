@@ -45,7 +45,8 @@ public record NlAskRequest(
         String cellsetDigest,
         ForceTool forceTool,
         String currentQueryJson,
-        String skillsFragment) {
+        String skillsFragment,
+        String spaceSystemPrompt) {
 
     /**
      * Optional override for the tool the LLM is allowed to call. Default (null/{@code AUTO}) leaves
@@ -75,6 +76,30 @@ public record NlAskRequest(
         if (forceTool == null) forceTool = ForceTool.AUTO;
     }
 
+    /** Pre-space ctor — kept for callers that don't scope by AgentSpace. */
+    public NlAskRequest(
+            AiCubeRef cubeRef,
+            String question,
+            String cubeSchemaJson,
+            String requestJsonSchema,
+            List<NlAskMessage> history,
+            String cellsetDigest,
+            ForceTool forceTool,
+            String currentQueryJson,
+            String skillsFragment) {
+        this(
+                cubeRef,
+                question,
+                cubeSchemaJson,
+                requestJsonSchema,
+                history,
+                cellsetDigest,
+                forceTool,
+                currentQueryJson,
+                skillsFragment,
+                null);
+    }
+
     /** Pre-skills ctor — kept for callers that don't have a skills catalogue. */
     public NlAskRequest(
             AiCubeRef cubeRef,
@@ -94,6 +119,7 @@ public record NlAskRequest(
                 cellsetDigest,
                 forceTool,
                 currentQueryJson,
+                null,
                 null);
     }
 
@@ -117,7 +143,7 @@ public record NlAskRequest(
             List<NlAskMessage> history,
             String cellsetDigest,
             ForceTool forceTool) {
-        this(cubeRef, question, cubeSchemaJson, requestJsonSchema, history, cellsetDigest, forceTool, null, null);
+        this(cubeRef, question, cubeSchemaJson, requestJsonSchema, history, cellsetDigest, forceTool, null, null, null);
     }
 
     /**

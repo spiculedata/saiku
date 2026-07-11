@@ -104,6 +104,22 @@ public class AgentSkillParserTest {
     }
 
     @Test
+    public void coercesYamlBooleanDescriptions() throws Exception {
+        // YAML gotcha (saiku#1440 debug): `description: Yes` (unquoted) parses as boolean true.
+        // Authors writing natural English shouldn't get burned — the parser coerces.
+        AgentSkill yes = AgentSkillParser.parse("s.md", "---\nname: skill-yes\ndescription: Yes\n---\n\nbody\n");
+        assertEquals("true", yes.description());
+        // Numbers coerce too — a raw number is silly for a description but at least parses.
+        AgentSkill num = AgentSkillParser.parse("s.md", "---\nname: skill-num\ndescription: 42\n---\n\nbody\n");
+        assertEquals("42", num.description());
+        // Plain sentence starting with "Yes" — the quoted form works trivially, this is the
+        // reason we coerce: the unquoted form is what real authors write.
+        AgentSkill sentence = AgentSkillParser.parse(
+                "s.md", "---\nname: skill-sentence\ndescription: \"Yes, this is a sentence.\"\n---\n\nbody\n");
+        assertEquals("Yes, this is a sentence.", sentence.description());
+    }
+
+    @Test
     public void rejectsUnknownField() {
         assertParseCode("---\nname: x\ndescription: y\ndescripton: typo\n---\n\nbody\n", "UNKNOWN_FIELD");
     }

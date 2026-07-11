@@ -77,7 +77,10 @@ public final class AgentSkillParser {
                             + name
                             + "' must match [a-z][a-z0-9-]{0,63} (kebab-case, start with lowercase letter, 1-64 chars)");
         }
-        String description = requireStringField(node, "description", source);
+        // YAML gotcha: `description: Yes` (unquoted) parses as boolean true — a common trap for
+        // authors writing natural English. Coerce the scalar via asText so booleans and numbers
+        // survive without a confusing TYPE_MISMATCH ("Yes." vs "Yes: absolutely" both work).
+        String description = requireScalarField(node, "description", source);
         String cube = optionalStringField(node, "cube");
 
         // Reject unknown top-level keys so typos surface loudly.
@@ -102,6 +105,30 @@ public final class AgentSkillParser {
         }
         if (!v.isTextual()) {
             throw new ParseException("TYPE_MISMATCH", source, "frontmatter field '" + field + "' must be a string");
+        }
+        String s = v.asText();
+        if (s.isBlank()) {
+            throw new ParseException("BLANK_FIELD", source, "frontmatter field '" + field + "' must be non-blank");
+        }
+        return s;
+    }
+
+    /**
+     * Like {@link #requireStringField} but coerces booleans and numbers to their text form via
+     * {@link JsonNode#asText()}. Used for the {@code description} field where authors writing
+     * unquoted natural English shouldn't trip on YAML's boolean literals ({@code Yes}, {@code No},
+     * {@code On}, {@code Off}).
+     */
+    private static String requireScalarField(JsonNode node, String field, String source) throws ParseException {
+        JsonNode v = node.get(field);
+        if (v == null || v.isNull()) {
+            throw new ParseException("MISSING_FIELD", source, "required frontmatter field '" + field + "' is missing");
+        }
+        if (!v.isTextual() && !v.isBoolean() && !v.isNumber()) {
+            throw new ParseException(
+                    "TYPE_MISMATCH",
+                    source,
+                    "frontmatter field '" + field + "' must be a string (or a scalar coercible to one)");
         }
         String s = v.asText();
         if (s.isBlank()) {
