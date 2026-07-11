@@ -44,7 +44,8 @@ public record NlAskRequest(
         List<NlAskMessage> history,
         String cellsetDigest,
         ForceTool forceTool,
-        String currentQueryJson) {
+        String currentQueryJson,
+        String skillsFragment) {
 
     /**
      * Optional override for the tool the LLM is allowed to call. Default (null/{@code AUTO}) leaves
@@ -74,6 +75,28 @@ public record NlAskRequest(
         if (forceTool == null) forceTool = ForceTool.AUTO;
     }
 
+    /** Pre-skills ctor — kept for callers that don't have a skills catalogue. */
+    public NlAskRequest(
+            AiCubeRef cubeRef,
+            String question,
+            String cubeSchemaJson,
+            String requestJsonSchema,
+            List<NlAskMessage> history,
+            String cellsetDigest,
+            ForceTool forceTool,
+            String currentQueryJson) {
+        this(
+                cubeRef,
+                question,
+                cubeSchemaJson,
+                requestJsonSchema,
+                history,
+                cellsetDigest,
+                forceTool,
+                currentQueryJson,
+                null);
+    }
+
     /** Pre-forceTool ctor — kept for callers that don't need the override. */
     public NlAskRequest(
             AiCubeRef cubeRef,
@@ -82,7 +105,7 @@ public record NlAskRequest(
             String requestJsonSchema,
             List<NlAskMessage> history,
             String cellsetDigest) {
-        this(cubeRef, question, cubeSchemaJson, requestJsonSchema, history, cellsetDigest, ForceTool.AUTO, null);
+        this(cubeRef, question, cubeSchemaJson, requestJsonSchema, history, cellsetDigest, ForceTool.AUTO, null, null);
     }
 
     /** Pre-currentQueryJson ctor — for callers that don't have a current-query snapshot. */
@@ -94,7 +117,7 @@ public record NlAskRequest(
             List<NlAskMessage> history,
             String cellsetDigest,
             ForceTool forceTool) {
-        this(cubeRef, question, cubeSchemaJson, requestJsonSchema, history, cellsetDigest, forceTool, null);
+        this(cubeRef, question, cubeSchemaJson, requestJsonSchema, history, cellsetDigest, forceTool, null, null);
     }
 
     /**
@@ -107,6 +130,6 @@ public record NlAskRequest(
             String cubeSchemaJson,
             String requestJsonSchema,
             List<NlAskMessage> history) {
-        this(cubeRef, question, cubeSchemaJson, requestJsonSchema, history, null, ForceTool.AUTO, null);
+        this(cubeRef, question, cubeSchemaJson, requestJsonSchema, history, null, ForceTool.AUTO, null, null);
     }
 }

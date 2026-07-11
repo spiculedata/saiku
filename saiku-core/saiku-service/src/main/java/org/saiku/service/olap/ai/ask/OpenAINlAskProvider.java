@@ -219,6 +219,11 @@ public final class OpenAINlAskProvider extends AbstractNlAskProvider {
         StringBuilder sys = new StringBuilder(SYSTEM_PROMPT);
         sys.append("\n\nCube schema:\n").append(request.cubeSchemaJson());
         sys.append("\n\nCube ref to echo: ").append(cubeRefJson(request));
+        // Admin-authored skills (see AgentSkillRegistry). Rendered as a bulleted list of
+        // `/<name>: <description>` — the model treats these as first-class routes.
+        if (request.skillsFragment() != null && !request.skillsFragment().isBlank()) {
+            sys.append("\n\n").append(request.skillsFragment());
+        }
         if (wantViewChange) {
             sys.append("\n\nChart-type catalog (for emit_view_change):\n").append(chartTypeCatalogText());
         }

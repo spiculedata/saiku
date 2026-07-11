@@ -702,6 +702,13 @@ public class SaikuLauncher implements Callable<Integer> {
             // <saiku-embed> widgets anonymously. Idempotent: if the operator already
             // manages embed-public.json we merge our entry in without touching theirs.
             grantFoodMartTrendPublic(saikuHome);
+
+            // Seed the agent-skills catalogue (saiku#1426) with a working example. Operators
+            // add their own alongside; this one demonstrates the frontmatter shape and gives
+            // the DimSum widget something in the /ai/skills catalogue on a fresh install.
+            Path skillsDir = saikuHome.resolve("skills");
+            Files.createDirectories(skillsDir);
+            stageResource("/seed/skills/weekly-foodmart-rollup.md", skillsDir.resolve("weekly-foodmart-rollup.md"));
         }
 
         /**

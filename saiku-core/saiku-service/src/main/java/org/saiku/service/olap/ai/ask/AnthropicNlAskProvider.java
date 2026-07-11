@@ -149,6 +149,11 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
         StringBuilder system = new StringBuilder(SYSTEM_PROMPT);
         system.append("\n\nCube schema:\n").append(request.cubeSchemaJson());
         system.append("\n\nCube ref to echo: ").append(cubeRefJson(request));
+        // Admin-authored skills (see AgentSkillRegistry). Rendered as a bulleted list of
+        // `/<name>: <description>` — the model treats these as first-class routes.
+        if (request.skillsFragment() != null && !request.skillsFragment().isBlank()) {
+            system.append("\n\n").append(request.skillsFragment());
+        }
         // Chart-type catalog only matters for view-change routing. Skipping it on query/insight-only
         // turns trims ~500 tokens off the prompt and shaves a noticeable chunk off response time.
         if (wantViewChange) {

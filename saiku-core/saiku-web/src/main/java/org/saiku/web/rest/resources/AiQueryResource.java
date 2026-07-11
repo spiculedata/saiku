@@ -721,6 +721,81 @@ public class AiQueryResource {
         return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
     }
 
+    /**
+     * Skill catalogue (saiku#1426): admin-authored markdown workflows under {@code
+     * saiku-home/skills/}. Returned as compact summaries so a site with dozens of skills stays
+     * light on the wire. Pass {@code ?errors=true} to include parse failures so operators can fix
+     * bad frontmatter without reading server logs.
+     */
+    @GET
+    @Path("/skills")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listSkills(@QueryParam("errors") @DefaultValue("false") boolean includeErrors) {
+        if (askService == null || askService.skills() == null) {
+            return Response.ok(java.util.Map.of("skills", List.of()))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        var registry = askService.skills();
+        java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+        List<Object> out = new ArrayList<>();
+        for (var skill : registry.list()) {
+            out.add(skill.asSummary());
+        }
+        body.put("skills", out);
+        if (includeErrors) {
+            body.put("errors", registry.errors());
+        }
+        return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
+     * One skill's full body — used by the UI when the user picks a slash-menu entry so it can
+     * preview the workflow before dispatching.
+     */
+    @GET
+    @Path("/skills/{name}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getSkill(@PathParam("name") String name) {
+        if (askService == null || askService.skills() == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(java.util.Map.of("error", "skill not found"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        return askService
+                .skills()
+                .get(name)
+                .<Response>map(skill ->
+                        Response.ok(skill).type(MediaType.APPLICATION_JSON).build())
+                .orElseGet(() -> Response.status(Response.Status.NOT_FOUND)
+                        .entity(java.util.Map.of("error", "skill '" + name + "' not found"))
+                        .type(MediaType.APPLICATION_JSON)
+                        .build());
+    }
+
+    /**
+     * Force-refresh the skill catalogue. Called by admin/refresh (or manually while iterating on
+     * skills). Returns the fresh catalogue counts so operators can eyeball the reload.
+     */
+    @POST
+    @Path("/skills/refresh")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response refreshSkills() {
+        if (askService == null || askService.skills() == null) {
+            return Response.ok(java.util.Map.of("skills", 0, "errors", 0))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        var registry = askService.skills();
+        registry.forceRefresh();
+        return Response.ok(java.util.Map.of(
+                        "skills", registry.list().size(),
+                        "errors", registry.errors().size()))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
     @POST
     @Path("/ask")
     @Consumes(MediaType.APPLICATION_JSON)
