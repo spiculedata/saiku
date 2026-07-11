@@ -1,0 +1,224 @@
+- generic [ref=f1e3]:
+  - banner [ref=f1e4]:
+    - link "saiku" [ref=f1e5] [cursor=pointer]:
+      - /url: /ui/
+      - img "saiku" [ref=f1e6]
+    - generic [ref=f1e7]:
+      - generic "Signed in as admin" [ref=f1e8]: admin
+      - link "Query Editor" [ref=f1e10] [cursor=pointer]:
+        - /url: /ui/
+      - link "Admin" [ref=f1e13] [cursor=pointer]:
+        - /url: /ui/admin
+      - button "Sign out" [ref=f1e16]
+  - main [ref=f1e19]:
+    - generic [ref=f1e20]:
+      - toolbar "Dashboard toolbar" [ref=f1e21]:
+        - generic [ref=f1e22]:
+          - textbox "Dashboard name" [ref=f1e23]:
+            - /placeholder: Untitled dashboard
+            - text: Welcome to Saiku — FoodMart overview
+          - generic "Dashboard tags" [ref=f1e24]:
+            - generic [ref=f1e25]:
+              - text: demo
+              - button "Remove tag demo" [ref=f1e26] [cursor=pointer]
+            - generic [ref=f1e28]:
+              - text: foodmart
+              - button "Remove tag foodmart" [ref=f1e29] [cursor=pointer]
+            - textbox "Add tag" [ref=f1e31]
+        - generic [ref=f1e32]:
+          - button "Present" [ref=f1e33]
+          - button "Export" [ref=f1e37]
+          - group "Undo and redo" [ref=f1e40]:
+            - button "Undo" [disabled]
+            - button "Redo" [disabled]
+          - button "🔍 Suggest filters" [ref=f1e41]
+          - button "Reset filters" [disabled]
+          - button "+ Add tile" [ref=f1e43]
+          - button "History" [ref=f1e44]
+          - button "Share" [ref=f1e47]
+          - button "Preferences" [ref=f1e51]
+          - button "Saved" [disabled]
+      - region "Dashboard filter panel" [ref=f1e53]:
+        - generic [ref=f1e54]:
+          - button "Filters" [expanded] [ref=f1e55] [cursor=pointer]
+          - button "+ Add filter" [ref=f1e58] [cursor=pointer]
+        - paragraph [ref=f1e59]:
+          - text: No filters yet — click
+          - emphasis [ref=f1e60]: + Add filter
+          - text: to register one, or use
+          - emphasis [ref=f1e61]: Suggest filters
+          - text: in the toolbar.
+      - region "Dashboard tiles" [ref=f1e62]:
+        - generic [ref=f1e63]:
+          - generic [ref=f1e64]:
+            - generic [ref=f1e65]:
+              - generic [ref=f1e66]: Welcome
+              - button "Comments" [ref=f1e67] [cursor=pointer]
+              - generic [ref=f1e69]:
+                - button "Edit tile" [ref=f1e70] [cursor=pointer]
+                - button "Tile actions" [ref=f1e72] [cursor=pointer]
+                - button "Remove tile" [ref=f1e74] [cursor=pointer]
+            - generic [ref=f1e76]: "# Welcome to the Saiku demo This dashboard is staged on first boot when `SAIKU_DEMO=true`. The four tiles below all run live against the bundled FoodMart cube (H2). Edit them, add new tiles from `+ Add tile`, or open the queries catalogue (`/ui/#/dashboards`) to find the standalone saved queries shipped with this demo. **Login:** `admin` / `admin`."
+          - generic "Resize tile" [ref=f1e78]
+        - generic [ref=f1e79]:
+          - generic [ref=f1e80]:
+            - generic [ref=f1e81]:
+              - generic [ref=f1e82]: Total Unit Sales
+              - button "Comments" [ref=f1e83] [cursor=pointer]
+              - generic [ref=f1e85]:
+                - button "Edit tile" [ref=f1e86] [cursor=pointer]
+                - button "Tile actions" [ref=f1e88] [cursor=pointer]
+                - button "Remove tile" [ref=f1e90] [cursor=pointer]
+            - generic [ref=f1e93]:
+              - generic [ref=f1e94]: 266,773
+              - generic [ref=f1e95]: Unit Sales
+          - generic "Resize tile" [ref=f1e96]
+        - generic [ref=f1e97]:
+          - generic [ref=f1e98]:
+            - generic [ref=f1e99]:
+              - generic [ref=f1e100]: Total Store Sales
+              - button "Comments" [ref=f1e101] [cursor=pointer]
+              - generic [ref=f1e103]:
+                - button "Edit tile" [ref=f1e104] [cursor=pointer]
+                - button "Tile actions" [ref=f1e106] [cursor=pointer]
+                - button "Remove tile" [ref=f1e108] [cursor=pointer]
+            - generic [ref=f1e111]:
+              - generic [ref=f1e112]: US$565,238
+              - generic [ref=f1e113]: Store Sales
+          - generic "Resize tile" [ref=f1e114]
+        - generic [ref=f1e115]:
+          - generic [ref=f1e116]:
+            - generic [ref=f1e117]:
+              - generic [ref=f1e118]: Store Sales by City
+              - button "Comments" [ref=f1e119] [cursor=pointer]
+              - generic [ref=f1e121]:
+                - button "Edit tile" [ref=f1e122] [cursor=pointer]
+                - button "Tile actions" [ref=f1e124] [cursor=pointer]
+                - button "Remove tile" [ref=f1e126] [cursor=pointer]
+            - table [ref=f1e133]:
+              - caption [ref=f1e134]: "“Store Sales by City”: Bar chart of Store Sales across 13 categories."
+              - rowgroup [ref=f1e135]:
+                - row [ref=f1e136]:
+                  - columnheader [ref=f1e137]
+                  - columnheader "Store Sales" [ref=f1e138]
+              - rowgroup [ref=f1e139]:
+                - row [ref=f1e140]:
+                  - rowheader "Beverly Hills" [ref=f1e141]
+                  - cell "45,750.24" [ref=f1e142]
+                - row [ref=f1e143]:
+                  - rowheader "Los Angeles" [ref=f1e144]
+                  - cell "54,545.28" [ref=f1e145]
+                - row [ref=f1e146]:
+                  - rowheader "San Diego" [ref=f1e147]
+                  - cell "54,431.14" [ref=f1e148]
+                - row [ref=f1e149]:
+                  - rowheader "San Francisco" [ref=f1e150]
+                  - cell "4,441.18" [ref=f1e151]
+                - row [ref=f1e152]:
+                  - rowheader "Portland" [ref=f1e153]
+                  - cell "55,058.79" [ref=f1e154]
+                - row [ref=f1e155]:
+                  - rowheader "Salem" [ref=f1e156]
+                  - cell "87,218.28" [ref=f1e157]
+                - row [ref=f1e158]:
+                  - rowheader "Bellingham" [ref=f1e159]
+                  - cell "4,739.23" [ref=f1e160]
+                - row [ref=f1e161]:
+                  - rowheader "Bremerton" [ref=f1e162]
+                  - cell "52,896.3" [ref=f1e163]
+                - row [ref=f1e164]:
+                  - rowheader "Seattle" [ref=f1e165]
+                  - cell "52,644.07" [ref=f1e166]
+                - row [ref=f1e167]:
+                  - rowheader "Spokane" [ref=f1e168]
+                  - cell "49,634.46" [ref=f1e169]
+                - row [ref=f1e170]:
+                  - rowheader "Tacoma" [ref=f1e171]
+                  - cell "74,843.96" [ref=f1e172]
+                - row [ref=f1e173]:
+                  - rowheader "Walla Walla" [ref=f1e174]
+                  - cell "4,705.97" [ref=f1e175]
+                - row [ref=f1e176]:
+                  - rowheader "Yakima" [ref=f1e177]
+                  - cell "24,329.23" [ref=f1e178]
+          - generic "Resize tile" [ref=f1e179]
+        - generic [ref=f1e180]:
+          - generic [ref=f1e181]:
+            - generic [ref=f1e182]:
+              - generic [ref=f1e183]: Unit Sales by Quarter
+              - button "Comments" [ref=f1e184] [cursor=pointer]
+              - generic [ref=f1e186]:
+                - button "Edit tile" [ref=f1e187] [cursor=pointer]
+                - button "Tile actions" [ref=f1e189] [cursor=pointer]
+                - button "Remove tile" [ref=f1e191] [cursor=pointer]
+            - table [ref=f1e198]:
+              - caption [ref=f1e199]: "“Unit Sales by Quarter”: Line chart of Unit Sales, Store Sales across 4 categories."
+              - rowgroup [ref=f1e200]:
+                - row [ref=f1e201]:
+                  - columnheader [ref=f1e202]
+                  - columnheader "Unit Sales" [ref=f1e203]
+                  - columnheader "Store Sales" [ref=f1e204]
+              - rowgroup [ref=f1e205]:
+                - row [ref=f1e206]:
+                  - rowheader "Q1" [ref=f1e207]
+                  - cell "66,291" [ref=f1e208]
+                  - cell "139,628.35" [ref=f1e209]
+                - row [ref=f1e210]:
+                  - rowheader "Q2" [ref=f1e211]
+                  - cell "62,610" [ref=f1e212]
+                  - cell "132,666.27" [ref=f1e213]
+                - row [ref=f1e214]:
+                  - rowheader "Q3" [ref=f1e215]
+                  - cell "65,848" [ref=f1e216]
+                  - cell "140,271.89" [ref=f1e217]
+                - row [ref=f1e218]:
+                  - rowheader "Q4" [ref=f1e219]
+                  - cell "72,024" [ref=f1e220]
+                  - cell "152,671.62" [ref=f1e221]
+          - generic "Resize tile" [ref=f1e222]
+        - generic [ref=f1e223]:
+          - generic [ref=f1e224]:
+            - generic [ref=f1e225]:
+              - generic [ref=f1e226]: Sales by Product Family
+              - button "Comments" [ref=f1e227] [cursor=pointer]
+              - generic [ref=f1e229]:
+                - button "Edit tile" [ref=f1e230] [cursor=pointer]
+                - button "Tile actions" [ref=f1e232] [cursor=pointer]
+                - button "Remove tile" [ref=f1e234] [cursor=pointer]
+            - region "Table tile" [ref=f1e237]:
+              - table [ref=f1e238]:
+                - rowgroup [ref=f1e239]:
+                  - row [ref=f1e240]:
+                    - columnheader "Product Family" [ref=f1e241]
+                    - columnheader "Unit Sales" [ref=f1e242]
+                    - columnheader "Store Sales" [ref=f1e243]
+                    - columnheader "Store Cost" [ref=f1e244]
+                    - columnheader "Profit" [ref=f1e245]
+                    - columnheader "Trend" [ref=f1e246]
+                - rowgroup [ref=f1e247]:
+                  - row [ref=f1e248]:
+                    - button "Drink" [ref=f1e249] [cursor=pointer]
+                    - cell "24,597" [ref=f1e250]
+                    - cell "48,836.21" [ref=f1e251]
+                    - cell "19,477.23" [ref=f1e252]
+                    - cell "29,358.98 €" [ref=f1e253]
+                    - cell [ref=f1e254]:
+                      - img "Trend across 4 measures, min 19477.2346, max 48836.21" [ref=f1e255]
+                  - row [ref=f1e260]:
+                    - button "Food" [ref=f1e261] [cursor=pointer]
+                    - cell "191,940" [ref=f1e262]
+                    - cell "409,035.59" [ref=f1e263]
+                    - cell "163,270.72" [ref=f1e264]
+                    - cell "245,764.87 €" [ref=f1e265]
+                    - cell [ref=f1e266]:
+                      - img "Trend across 4 measures, min 163270.7235, max 409035.59" [ref=f1e267]
+                  - row [ref=f1e272]:
+                    - button "Non-Consumable" [ref=f1e273] [cursor=pointer]
+                    - cell "50,236" [ref=f1e274]
+                    - cell "107,366.33" [ref=f1e275]
+                    - cell "42,879.28" [ref=f1e276]
+                    - cell "64,487.05 €" [ref=f1e277]
+                    - cell [ref=f1e278]:
+                      - img "Trend across 4 measures, min 42879.2755, max 107366.33" [ref=f1e279]
+          - generic "Resize tile" [ref=f1e284]
+  - status

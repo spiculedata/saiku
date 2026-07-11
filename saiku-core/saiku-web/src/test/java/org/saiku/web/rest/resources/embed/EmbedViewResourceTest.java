@@ -64,7 +64,7 @@ public class EmbedViewResourceTest {
     public void query_executes_saved_request_with_pinned_path() {
         pinGuest("query", "/homes/admin/sales.saiku", "admin", List.of("ROLE_ADMIN"));
 
-        Response r = resource.query("homes/admin/sales.saiku");
+        Response r = resource.query("homes/admin/sales.saiku", null);
 
         assertEquals(200, r.getStatus());
         // executeSaved received the resource path verbatim from the
@@ -80,7 +80,7 @@ public class EmbedViewResourceTest {
     @Test
     public void query_with_no_guest_returns_401() {
         // No SecurityContext set up at all.
-        Response r = resource.query("homes/admin/x.saiku");
+        Response r = resource.query("homes/admin/x.saiku", null);
         assertEquals(401, r.getStatus());
         assertHardenedHeaders(r);
     }
@@ -92,7 +92,7 @@ public class EmbedViewResourceTest {
         // resource boundary protects against a future filter regression.
         pinGuest("dashboard", "/homes/admin/exec.saikudash", "admin", List.of());
 
-        Response r = resource.query("homes/admin/exec.saikudash");
+        Response r = resource.query("homes/admin/exec.saikudash", null);
         assertEquals(401, r.getStatus());
     }
 
@@ -102,7 +102,7 @@ public class EmbedViewResourceTest {
         // store with a wrong-suffix path, the resource refuses to execute.
         pinGuest("query", "/homes/admin/wrong.saikudash", "admin", List.of());
 
-        Response r = resource.query("homes/admin/wrong.saikudash");
+        Response r = resource.query("homes/admin/wrong.saikudash", null);
         assertEquals(401, r.getStatus());
     }
 
@@ -153,7 +153,7 @@ public class EmbedViewResourceTest {
                 List.of("ROLE_ADMIN"),
                 org.saiku.web.embed.EmbedToken.RedactionPolicy.FORCE_ON);
 
-        Response r = resource.query("homes/admin/sales.saiku");
+        Response r = resource.query("homes/admin/sales.saiku", null);
 
         assertEquals(200, r.getStatus());
         assertEquals(
@@ -173,7 +173,7 @@ public class EmbedViewResourceTest {
                 List.of(),
                 org.saiku.web.embed.EmbedToken.RedactionPolicy.TENANT_DEFAULT);
 
-        Response r = resource.query("homes/admin/clean.saiku");
+        Response r = resource.query("homes/admin/clean.saiku", null);
 
         assertEquals(200, r.getStatus());
         assertNull(
@@ -234,7 +234,7 @@ public class EmbedViewResourceTest {
                 "u_1",
                 "[{\"dimension\":\"Customer\",\"op\":\"in\",\"members\":[\"[Customer].[acme]\"]}]");
 
-        Response r = resource.query("homes/admin/sales.saiku");
+        Response r = resource.query("homes/admin/sales.saiku", null);
 
         assertEquals(403, r.getStatus());
         @SuppressWarnings("unchecked")
@@ -265,7 +265,7 @@ public class EmbedViewResourceTest {
     public void embed_query_audits_the_jwt_sub() {
         pinGuestJwt("query", "/homes/admin/sales.saiku", "admin", List.of("ROLE_ADMIN"), "u_1", null);
 
-        resource.query("homes/admin/sales.saiku");
+        resource.query("homes/admin/sales.saiku", null);
 
         assertEquals(1, audit.records.size());
         AiAuditEntry e = audit.records.get(0);
@@ -357,12 +357,14 @@ public class EmbedViewResourceTest {
      *  read from pinned details, not URI params. */
     private static class StubAiQueryResource extends AiQueryResource {
         AiSavedQueryRequest lastSavedRequest;
+        String lastSavedFormat;
         AiQueryRequest lastAiRequest;
 
         @Override
-        public Response executeSaved(AiSavedQueryRequest body) {
+        public Response executeSaved(AiSavedQueryRequest body, String format) {
             lastSavedRequest = body;
-            return Response.ok(Map.of("status", "OK", "cells", List.of()))
+            lastSavedFormat = format;
+            return Response.ok(Map.of("status", "OK", "cells", List.of(), "format", format))
                     .type(jakarta.ws.rs.core.MediaType.APPLICATION_JSON)
                     .build();
         }

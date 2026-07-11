@@ -86,7 +86,7 @@ public class EmbedViewResource {
     @GET
     @Path("/query/{path:.+}")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response query(@PathParam("path") String pathParam) {
+    public Response query(@PathParam("path") String pathParam, @jakarta.ws.rs.QueryParam("format") String formatParam) {
         EmbedGuestDetails g = guest();
         if (g == null || !"query".equals(g.resourceKind)) {
             return invalid();
@@ -102,11 +102,14 @@ public class EmbedViewResource {
             audit(g, "/saiku/api/embed/query", AiAuditEntry.OUTCOME_DENIED);
             return forcedFilterUnsupported();
         }
+        // Whitelist embed output formats — records (default) or matrix. Any other value falls
+        // back to records rather than propagating an untrusted string to buildResponse.
+        final String format = "matrix".equalsIgnoreCase(formatParam) ? "matrix" : "records";
         try {
             Response result = sessionService.runAs(g.ownerUser, g.ownerRoles, () -> {
                 AiSavedQueryRequest sreq = new AiSavedQueryRequest();
                 sreq.setPath(g.resourcePath);
-                return aiQueryResource.executeSaved(sreq);
+                return aiQueryResource.executeSaved(sreq, format);
             });
             audit(g, "/saiku/api/embed/query", AiAuditEntry.OUTCOME_SUCCESS);
             return withPolicyHeader(harden(result), g);
@@ -195,7 +198,8 @@ public class EmbedViewResource {
                     }
                     AiSavedQueryRequest sreq = new AiSavedQueryRequest();
                     sreq.setPath(q.path);
-                    return aiQueryResource.executeSaved(sreq);
+                    // Dashboard tiles always render as records — tile renderers consume caption-keyed rows.
+                    return aiQueryResource.executeSaved(sreq, "records");
                 }
                 return Response.status(Response.Status.BAD_REQUEST)
                         .entity(Map.of("status", "VALIDATION_ERROR", "error", "Tile has no runnable query"))

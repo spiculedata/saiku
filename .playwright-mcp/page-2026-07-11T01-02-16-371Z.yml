@@ -1,0 +1,366 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - link "saiku" [ref=e5] [cursor=pointer]:
+      - /url: /ui/
+      - img "saiku" [ref=e6]
+    - generic [ref=e20]:
+      - generic "Signed in as admin" [ref=e21]: admin
+      - link "Dashboards" [ref=e23] [cursor=pointer]:
+        - /url: /ui/dashboards
+      - link "Admin" [ref=e26] [cursor=pointer]:
+        - /url: /ui/admin
+      - button "Sign out" [ref=e29]
+  - main [ref=e7]:
+    - generic [ref=e32]:
+      - complementary [ref=e33]:
+        - generic [ref=e34]:
+          - generic [ref=e35]:
+            - generic [ref=e36]: Cubes
+            - generic [ref=e37]:
+              - combobox "Cubes" [ref=e38]:
+                - option "Select a cube"
+                - option "Account Statistics"
+                - option "Accounts"
+                - option "Joint Accounts (Full Count)"
+                - option "Joint Accounts (Weighted)"
+                - option "Monthly Revenue"
+                - option "Transactions"
+                - option "HR"
+                - option "Sales" [selected]
+                - option "Sales 2"
+                - option "Store"
+                - option "Warehouse"
+                - option "Warehouse and Sales"
+                - option "unknown_Flights"
+                - option "unknown_TPCDS"
+              - button "Refresh cubes" [ref=e39] [cursor=pointer]
+          - generic [ref=e41]:
+            - generic [ref=e147]:
+              - generic [ref=e148]:
+                - generic [ref=e149]: Measures
+                - generic [ref=e150]:
+                  - button "Manage measures" [ref=e151] [cursor=pointer]
+                  - button "New calculated measure" [ref=e153] [cursor=pointer]
+              - list [ref=e155]:
+                - listitem [ref=e156]:
+                  - button "Sales 6" [ref=e157] [cursor=pointer]:
+                    - generic [ref=e160]: Sales
+                    - generic [ref=e161]: "6"
+                  - list [ref=e162]:
+                    - listitem [ref=e163]:
+                      - button "Unit Sales" [ref=e164]
+                    - listitem [ref=e168]:
+                      - button "Store Cost" [ref=e169]
+                    - listitem [ref=e173]:
+                      - button "Store Sales" [active] [ref=e174]
+                    - listitem [ref=e178]:
+                      - button "Sales Count" [ref=e179]
+                    - listitem [ref=e183]:
+                      - button "Customer Count" [ref=e184]
+                    - listitem [ref=e188]:
+                      - button "Promotion Sales" [ref=e189]
+                - listitem [ref=e193]:
+                  - button "Calculated 2" [ref=e194] [cursor=pointer]:
+                    - generic [ref=e197]: Calculated
+                    - generic [ref=e198]: "2"
+                  - list [ref=e199]:
+                    - listitem [ref=e200]:
+                      - button "Profit" [ref=e201]
+                    - listitem [ref=e205]:
+                      - button "Gewinn-Wachstum" [ref=e206]
+            - generic [ref=e210]:
+              - generic [ref=e211]: Dimensions
+              - list [ref=e212]:
+                - listitem [ref=e213]:
+                  - button "Customer" [ref=e214] [cursor=pointer]
+                  - list [ref=e220]:
+                    - listitem [ref=e221]:
+                      - button "Customers" [ref=e222] [cursor=pointer]
+                      - list [ref=e228]:
+                        - listitem [ref=e229]:
+                          - generic [ref=e230] [cursor=pointer]:
+                            - button "(All)" [ref=e231]
+                            - button "Filter members…" [ref=e235]
+                        - listitem [ref=e237]:
+                          - generic [ref=e238] [cursor=pointer]:
+                            - button "Country" [ref=e239]
+                            - button "Filter members…" [ref=e243]
+                        - listitem [ref=e245]:
+                          - generic [ref=e246] [cursor=pointer]:
+                            - button "State Province" [ref=e247]
+                            - button "Filter members…" [ref=e251]
+                        - listitem [ref=e253]:
+                          - generic [ref=e254] [cursor=pointer]:
+                            - button "City" [ref=e255]
+                            - button "Filter members…" [ref=e259]
+                        - listitem [ref=e261]:
+                          - generic [ref=e262] [cursor=pointer]:
+                            - button "Name" [ref=e263]
+                            - button "Filter members…" [ref=e267]
+                    - listitem [ref=e269]:
+                      - button "Education Level" [ref=e270] [cursor=pointer]
+                      - list [ref=e276]:
+                        - listitem [ref=e277]:
+                          - generic [ref=e278] [cursor=pointer]:
+                            - button "(All)" [ref=e279]
+                            - button "Filter members…" [ref=e283]
+                        - listitem [ref=e285]:
+                          - generic [ref=e286] [cursor=pointer]:
+                            - button "Education Level" [ref=e287]
+                            - button "Filter members…" [ref=e291]
+                    - listitem [ref=e293]:
+                      - button "Customer - Gender" [ref=e294] [cursor=pointer]
+                      - list [ref=e300]:
+                        - listitem [ref=e301]:
+                          - generic [ref=e302] [cursor=pointer]:
+                            - button "(All)" [ref=e303]
+                            - button "Filter members…" [ref=e307]
+                        - listitem [ref=e309]:
+                          - generic [ref=e310] [cursor=pointer]:
+                            - button "Gender" [ref=e311]
+                            - button "Filter members…" [ref=e315]
+                    - listitem [ref=e317]:
+                      - button "Customer - Marital Status" [ref=e318] [cursor=pointer]
+                      - list [ref=e324]:
+                        - listitem [ref=e325]:
+                          - generic [ref=e326] [cursor=pointer]:
+                            - button "(All)" [ref=e327]
+                            - button "Filter members…" [ref=e331]
+                        - listitem [ref=e333]:
+                          - generic [ref=e334] [cursor=pointer]:
+                            - button "Marital Status" [ref=e335]
+                            - button "Filter members…" [ref=e339]
+                    - listitem [ref=e341]:
+                      - button "Customer - Yearly Income" [ref=e342] [cursor=pointer]
+                      - list [ref=e348]:
+                        - listitem [ref=e349]:
+                          - generic [ref=e350] [cursor=pointer]:
+                            - button "(All)" [ref=e351]
+                            - button "Filter members…" [ref=e355]
+                        - listitem [ref=e357]:
+                          - generic [ref=e358] [cursor=pointer]:
+                            - button "Yearly Income" [ref=e359]
+                            - button "Filter members…" [ref=e363]
+                - listitem [ref=e365]:
+                  - button "Performance Season Day" [ref=e366] [cursor=pointer]
+                  - list [ref=e372]:
+                    - listitem [ref=e373]:
+                      - generic [ref=e374] [cursor=pointer]:
+                        - button "(All)" [ref=e375]
+                        - button "Filter members…" [ref=e379]
+                    - listitem [ref=e381]:
+                      - generic [ref=e382] [cursor=pointer]:
+                        - button "Performance Season Day" [ref=e383]
+                        - button "Filter members…" [ref=e387]
+                - listitem [ref=e389]:
+                  - button "Product" [ref=e390] [cursor=pointer]
+                  - list [ref=e396]:
+                    - listitem [ref=e397]:
+                      - generic [ref=e398] [cursor=pointer]:
+                        - button "(All)" [ref=e399]
+                        - button "Filter members…" [ref=e403]
+                    - listitem [ref=e405]:
+                      - generic [ref=e406] [cursor=pointer]:
+                        - button "Product Family" [ref=e407]
+                        - button "Filter members…" [ref=e411]
+                    - listitem [ref=e413]:
+                      - generic [ref=e414] [cursor=pointer]:
+                        - button "Product Department" [ref=e415]
+                        - button "Filter members…" [ref=e419]
+                    - listitem [ref=e421]:
+                      - generic [ref=e422] [cursor=pointer]:
+                        - button "Product Category" [ref=e423]
+                        - button "Filter members…" [ref=e427]
+                    - listitem [ref=e429]:
+                      - generic [ref=e430] [cursor=pointer]:
+                        - button "Product Subcategory" [ref=e431]
+                        - button "Filter members…" [ref=e435]
+                    - listitem [ref=e437]:
+                      - generic [ref=e438] [cursor=pointer]:
+                        - button "Brand Name" [ref=e439]
+                        - button "Filter members…" [ref=e443]
+                    - listitem [ref=e445]:
+                      - generic [ref=e446] [cursor=pointer]:
+                        - button "Product Name" [ref=e447]
+                        - button "Filter members…" [ref=e451]
+                - listitem [ref=e453]:
+                  - button "Promotion" [ref=e454] [cursor=pointer]
+                  - list [ref=e460]:
+                    - listitem [ref=e461]:
+                      - button "Media Type" [ref=e462] [cursor=pointer]
+                      - list [ref=e468]:
+                        - listitem [ref=e469]:
+                          - generic [ref=e470] [cursor=pointer]:
+                            - button "(All)" [ref=e471]
+                            - button "Filter members…" [ref=e475]
+                        - listitem [ref=e477]:
+                          - generic [ref=e478] [cursor=pointer]:
+                            - button "Media Type" [ref=e479]
+                            - button "Filter members…" [ref=e483]
+                    - listitem [ref=e485]:
+                      - button "Promotions" [ref=e486] [cursor=pointer]
+                      - list [ref=e492]:
+                        - listitem [ref=e493]:
+                          - generic [ref=e494] [cursor=pointer]:
+                            - button "(All)" [ref=e495]
+                            - button "Filter members…" [ref=e499]
+                        - listitem [ref=e501]:
+                          - generic [ref=e502] [cursor=pointer]:
+                            - button "Promotion Name" [ref=e503]
+                            - button "Filter members…" [ref=e507]
+                - listitem [ref=e509]:
+                  - button "Store" [ref=e510] [cursor=pointer]
+                  - list [ref=e516]:
+                    - listitem [ref=e517]:
+                      - button "Stores" [ref=e518] [cursor=pointer]
+                      - list [ref=e524]:
+                        - listitem [ref=e525]:
+                          - generic [ref=e526] [cursor=pointer]:
+                            - button "(All)" [ref=e527]
+                            - button "Filter members…" [ref=e531]
+                        - listitem [ref=e533]:
+                          - generic [ref=e534] [cursor=pointer]:
+                            - button "Store Country" [ref=e535]
+                            - button "Filter members…" [ref=e539]
+                        - listitem [ref=e541]:
+                          - generic [ref=e542] [cursor=pointer]:
+                            - button "Store State" [ref=e543]
+                            - button "Filter members…" [ref=e547]
+                        - listitem [ref=e549]:
+                          - generic [ref=e550] [cursor=pointer]:
+                            - button "Store City" [ref=e551]
+                            - button "Filter members…" [ref=e555]
+                        - listitem [ref=e557]:
+                          - generic [ref=e558] [cursor=pointer]:
+                            - button "Store Name" [ref=e559]
+                            - button "Filter members…" [ref=e563]
+                    - listitem [ref=e565]:
+                      - button "Store Size in SQFT" [ref=e566] [cursor=pointer]
+                      - list [ref=e572]:
+                        - listitem [ref=e573]:
+                          - generic [ref=e574] [cursor=pointer]:
+                            - button "(All)" [ref=e575]
+                            - button "Filter members…" [ref=e579]
+                        - listitem [ref=e581]:
+                          - generic [ref=e582] [cursor=pointer]:
+                            - button "Store Sqft" [ref=e583]
+                            - button "Filter members…" [ref=e587]
+                    - listitem [ref=e589]:
+                      - button "Store - Store Type" [ref=e590] [cursor=pointer]
+                      - list [ref=e596]:
+                        - listitem [ref=e597]:
+                          - generic [ref=e598] [cursor=pointer]:
+                            - button "(All)" [ref=e599]
+                            - button "Filter members…" [ref=e603]
+                        - listitem [ref=e605]:
+                          - generic [ref=e606] [cursor=pointer]:
+                            - button "Store Type" [ref=e607]
+                            - button "Filter members…" [ref=e611]
+                - listitem [ref=e613]:
+                  - button "Time" [ref=e614] [cursor=pointer]
+                  - list [ref=e620]:
+                    - listitem [ref=e621]:
+                      - button "Time" [ref=e622] [cursor=pointer]
+                      - list [ref=e628]:
+                        - listitem [ref=e629]:
+                          - generic [ref=e630] [cursor=pointer]:
+                            - button "Year" [ref=e631]
+                            - button "Filter members…" [ref=e635]
+                        - listitem [ref=e637]:
+                          - generic [ref=e638] [cursor=pointer]:
+                            - button "Quarter" [ref=e639]
+                            - button "Filter members…" [ref=e643]
+                        - listitem [ref=e645]:
+                          - generic [ref=e646] [cursor=pointer]:
+                            - button "Month" [ref=e647]
+                            - button "Filter members…" [ref=e651]
+                    - listitem [ref=e653]:
+                      - button "Weekly" [ref=e654] [cursor=pointer]
+                      - list [ref=e660]:
+                        - listitem [ref=e661]:
+                          - generic [ref=e662] [cursor=pointer]:
+                            - button "(All)" [ref=e663]
+                            - button "Filter members…" [ref=e667]
+                        - listitem [ref=e669]:
+                          - generic [ref=e670] [cursor=pointer]:
+                            - button "Year" [ref=e671]
+                            - button "Filter members…" [ref=e675]
+                        - listitem [ref=e677]:
+                          - generic [ref=e678] [cursor=pointer]:
+                            - button "Week" [ref=e679]
+                            - button "Filter members…" [ref=e683]
+                        - listitem [ref=e685]:
+                          - generic [ref=e686] [cursor=pointer]:
+                            - button "Day" [ref=e687]
+                            - button "Filter members…" [ref=e691]
+                    - listitem [ref=e693]:
+                      - button "Date Only" [ref=e694] [cursor=pointer]
+                      - list [ref=e700]:
+                        - listitem [ref=e701]:
+                          - generic [ref=e702] [cursor=pointer]:
+                            - button "(All)" [ref=e703]
+                            - button "Filter members…" [ref=e707]
+                        - listitem [ref=e709]:
+                          - generic [ref=e710] [cursor=pointer]:
+                            - button "Date String" [ref=e711]
+                            - button "Filter members…" [ref=e715]
+        - generic [ref=e43]:
+          - button "Preferences" [ref=e45]
+          - button "About Saiku" [ref=e47]
+      - generic [ref=e48]:
+        - tablist [ref=e49]:
+          - tab "Unsaved query unsaved changes" [selected] [ref=e717] [cursor=pointer]:
+            - generic [ref=e51]: Unsaved query
+            - generic "unsaved changes" [ref=e718]: •
+          - button "New query" [ref=e52] [cursor=pointer]: +
+        - toolbar "Workspace toolbar" [ref=e53]:
+          - group "File" [ref=e54]:
+            - button "New" [ref=e55] [cursor=pointer]
+            - button "Open" [ref=e57] [cursor=pointer]
+            - button "Save" [ref=e59] [cursor=pointer]
+            - button "Save As…" [ref=e61] [cursor=pointer]
+          - group "Undo / redo" [ref=e64]:
+            - button "Undo" [ref=e65] [cursor=pointer]
+            - button "Redo" [disabled] [ref=e67] [cursor=pointer]
+          - group "Query" [ref=e70]:
+            - generic [ref=e71]:
+              - button "Run" [disabled] [ref=e72]
+              - button "Run options" [ref=e75] [cursor=pointer]
+            - button "Swap axes" [ref=e77] [cursor=pointer]
+          - group "Tools" [ref=e80]:
+            - button "Tools" [ref=e81] [cursor=pointer]
+          - group "Export" [ref=e85]:
+            - button "Export" [ref=e86] [cursor=pointer]
+        - generic [ref=e103]:
+          - complementary [ref=e104]:
+            - region "Measures" [ref=e105]:
+              - generic [ref=e106]:
+                - generic [ref=e107]: Measures
+                - button "Position" [ref=e108] [cursor=pointer]
+              - generic [ref=e720]:
+                - generic "Right-click for options" [ref=e721] [cursor=pointer]: Σ Store Sales
+                - button "Remove measure Store Sales" [ref=e722] [cursor=pointer]: ×
+            - region "Columns" [ref=e112]:
+              - generic [ref=e113]:
+                - generic [ref=e114]: Columns
+                - button "Axis options" [ref=e115] [cursor=pointer]
+              - generic [ref=e117]: Drop levels here
+            - region "Rows" [ref=e119]:
+              - generic [ref=e120]:
+                - generic [ref=e121]: Rows
+                - button "Axis options" [ref=e122] [cursor=pointer]
+              - generic [ref=e124]: Drop levels here
+            - region "Filter" [ref=e126]:
+              - generic [ref=e127]:
+                - generic [ref=e128]: Filter
+                - button "Axis options" [ref=e129] [cursor=pointer]
+              - generic [ref=e131]: Drop filters here
+          - generic [ref=e133]:
+            - tablist "Result view" [ref=e134]:
+              - tab "Grid" [ref=e135] [cursor=pointer]
+              - tab "Chart" [ref=e136] [cursor=pointer]
+              - tab "More" [ref=e138] [cursor=pointer]
+            - generic [ref=e142]:
+              - heading "Build a query" [level=3] [ref=e145]
+              - paragraph [ref=e146]: Drop levels onto Rows/Columns and measures onto Columns, then hit Run.
+  - status

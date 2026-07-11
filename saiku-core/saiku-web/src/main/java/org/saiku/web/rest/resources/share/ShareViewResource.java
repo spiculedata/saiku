@@ -119,7 +119,7 @@ public class ShareViewResource {
                 } else if ("reference".equals(q.kind) && q.path != null) {
                     AiSavedQueryRequest sreq = new AiSavedQueryRequest();
                     sreq.setPath(q.path);
-                    return aiQueryResource.executeSaved(sreq);
+                    return aiQueryResource.executeSaved(sreq, "records");
                 }
                 return Response.status(Response.Status.BAD_REQUEST)
                         .entity(Map.of("status", "VALIDATION_ERROR", "error", "Tile has no runnable query"))

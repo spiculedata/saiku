@@ -277,7 +277,9 @@ public class AiQueryResource {
     @Path("/query/saved")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response executeSaved(org.saiku.service.olap.ai.AiSavedQueryRequest body) {
+    public Response executeSaved(
+            org.saiku.service.olap.ai.AiSavedQueryRequest body,
+            @QueryParam("format") @DefaultValue("records") String format) {
         aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
         if (datasourceService == null || sessionService == null) {
             return error("saved-query resolver requires repository wiring");
@@ -349,7 +351,7 @@ public class AiQueryResource {
             log.error("saved-query execution failed for {}", path, e);
             return error("execute failed");
         }
-        AiQueryResponse resp = buildResponse(tq, cds, start, "records");
+        AiQueryResponse resp = buildResponse(tq, cds, start, format);
         return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
     }
 

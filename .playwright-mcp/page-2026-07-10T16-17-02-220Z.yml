@@ -1,0 +1,77 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - link "saiku" [ref=e5] [cursor=pointer]:
+        - /url: /ui/
+        - img "saiku" [ref=e6]
+      - generic [ref=e20]:
+        - generic "Signed in as admin" [ref=e21]: admin
+        - link "Dashboards" [ref=e23] [cursor=pointer]:
+          - /url: /ui/dashboards
+        - link "Admin" [ref=e26] [cursor=pointer]:
+          - /url: /ui/admin
+        - button "Sign out" [ref=e29]
+    - main [ref=e7]:
+      - generic [ref=e32]:
+        - complementary [ref=e33]:
+          - generic [ref=e34]:
+            - generic [ref=e35]:
+              - generic [ref=e36]: Cubes
+              - generic [ref=e37]:
+                - combobox "Cubes" [ref=e38]:
+                  - option "Select a cube" [selected]
+                  - option "Account Statistics"
+                  - option "Accounts"
+                  - option "Joint Accounts (Full Count)"
+                  - option "Joint Accounts (Weighted)"
+                  - option "Monthly Revenue"
+                  - option "Transactions"
+                  - option "HR"
+                  - option "Sales"
+                  - option "Sales 2"
+                  - option "Store"
+                  - option "Warehouse"
+                  - option "Warehouse and Sales"
+                  - option "unknown_Flights"
+                  - option "unknown_TPCDS"
+                - button "Refresh cubes" [ref=e39] [cursor=pointer]
+            - paragraph [ref=e42]: Select a cube to browse its measures and dimensions.
+          - generic [ref=e43]:
+            - button "Preferences" [ref=e45]
+            - button "About Saiku" [ref=e47]
+        - generic [ref=e48]:
+          - tablist [ref=e49]:
+            - tab "Unsaved query" [selected] [ref=e50] [cursor=pointer]
+            - button "New query" [ref=e52] [cursor=pointer]: +
+          - toolbar "Workspace toolbar" [ref=e53]:
+            - group "File" [ref=e54]:
+              - button "New" [ref=e55] [cursor=pointer]
+              - button "Open" [ref=e57] [cursor=pointer]
+              - button "Save" [ref=e59] [cursor=pointer]
+              - button "Save As…" [ref=e61] [cursor=pointer]
+            - group "Undo / redo" [ref=e64]:
+              - button "Undo" [disabled] [ref=e65] [cursor=pointer]
+              - button "Redo" [disabled] [ref=e67] [cursor=pointer]
+            - group "Query" [ref=e70]:
+              - generic [ref=e71]:
+                - button "Run" [disabled] [ref=e72]
+                - button "Run options" [ref=e75] [cursor=pointer]
+              - button "Swap axes" [ref=e77] [cursor=pointer]
+            - group "Tools" [ref=e80]:
+              - button "Tools" [ref=e81] [cursor=pointer]
+            - group "Export" [ref=e85]:
+              - button "Export" [ref=e86] [cursor=pointer]
+          - generic [ref=e91]:
+            - paragraph [ref=e92]: No cube selected.
+            - paragraph [ref=e93]: Pick a cube in the sidebar to start building a query.
+      - dialog "Pick a cube":
+        - generic [ref=e94]:
+          - generic [ref=e95]:
+            - strong [ref=e96]: Pick a cube
+            - generic [ref=e97]: 1 / 4
+          - paragraph [ref=e98]: Datasources and cubes live here. Pick one to browse its measures and dimensions.
+          - generic [ref=e99]:
+            - button "Skip" [ref=e100]
+            - button "Next" [ref=e101]
+    - status
+  - generic [ref=e19]: Saiku

@@ -9,14 +9,23 @@
  */
 
 /**
- * Records-mode payload from the embed query endpoint. Each row is a
- * {column-caption → cell} map.
+ * Payload from the embed query endpoint. Two shapes:
+ *
+ * - `format="records"` (default) — `data` populated, each row is a
+ *   {column-caption → cell} map.
+ * - `format="matrix"` — `matrix` populated, each row is a {column-index → cell}
+ *   map, and `metadata` carries the row/column captions the client needs to
+ *   render headers.
  */
 export interface EmbedQueryResponse {
-  /** "records" — only mode we render in v1. */
+  /** "records" or "matrix". */
   format: string;
-  /** One {column-caption → cell} per data row. */
-  data: EmbedRow[];
+  /** Records format: one {column-caption → cell} per data row. */
+  data?: EmbedRow[];
+  /** Matrix format: one {"0" → cell, "1" → cell, …} per row. */
+  matrix?: EmbedMatrixRow[];
+  /** Matrix format only: row + column headers. */
+  metadata?: EmbedQueryMetadata;
   /** Echoed by the AI Query API; useful for client-side debugging but
    *  the bundle doesn't render it. */
   queryId?: string;
@@ -24,6 +33,25 @@ export interface EmbedQueryResponse {
 
 /** {column-caption → cell} for one row. */
 export type EmbedRow = Record<string, EmbedCell>;
+
+/** {column-index (string) → cell} for one row in matrix mode. */
+export type EmbedMatrixRow = Record<string, EmbedCell>;
+
+/**
+ * Matrix-mode header captions. `rows[i]` is the header for the i-th matrix
+ * row (row-axis member caption); `columns[j]` is the header for column index
+ * j (the value the client puts on that column of the emitted table).
+ */
+export interface EmbedQueryMetadata {
+  rows: EmbedCaption[];
+  columns: EmbedCaption[];
+}
+
+/** Mondrian name/caption pair — captions are already localised on the server. */
+export interface EmbedCaption {
+  name: string;
+  caption: string;
+}
 
 /**
  * One records-mode cell. Mirrors the AI Query API's typed cell:

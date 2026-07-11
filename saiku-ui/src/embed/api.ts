@@ -21,9 +21,11 @@ export async function fetchSavedQuery(
   server: string,
   path: string,
   token?: string | null,
+  format: "records" | "matrix" = "records",
 ): Promise<EmbedQueryResponse> {
   const base = stripTrailingSlash(server);
-  const url = `${base}/rest/saiku/api/embed/query/${encodePath(path)}`;
+  const suffix = format === "matrix" ? "?format=matrix" : "";
+  const url = `${base}/rest/saiku/api/embed/query/${encodePath(path)}${suffix}`;
   const headers: Record<string, string> = { Accept: "application/json" };
   if (token) {
     headers["X-Saiku-Embed-Token"] = token;
