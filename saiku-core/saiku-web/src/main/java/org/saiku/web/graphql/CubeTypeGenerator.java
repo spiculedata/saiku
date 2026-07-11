@@ -123,13 +123,13 @@ final class CubeTypeGenerator {
         }
         StringBuilder sb = new StringBuilder();
         sb.append("# Cube: ")
-                .append(summary.getConnectionName())
+                .append(safeComment(summary.getConnectionName()))
                 .append(" / ")
-                .append(summary.getCatalog())
+                .append(safeComment(summary.getCatalog()))
                 .append(" / ")
-                .append(summary.getSchema())
+                .append(safeComment(summary.getSchema()))
                 .append(" / ")
-                .append(summary.getCubeName())
+                .append(safeComment(summary.getCubeName()))
                 .append('\n');
 
         sb.append("enum ").append(typePrefix).append("Measure {\n");
@@ -277,14 +277,28 @@ final class CubeTypeGenerator {
     // Sanitisation
     // ------------------------------------------------------------
 
+    /**
+     * GraphQL identifiers are restricted to ASCII {@code [_A-Za-z][_0-9A-Za-z]*} — the JVM's
+     * {@link Character#isLetterOrDigit} accepts CJK, Cyrillic, and other Unicode letter
+     * categories which parse as tokens in Java but not in GraphQL. Everything outside the ASCII
+     * subset gets treated as a word break.
+     */
+    private static boolean isAsciiLetterOrDigit(char c) {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+    }
+
+    private static boolean isAsciiUpper(char c) {
+        return c >= 'A' && c <= 'Z';
+    }
+
     static String screamingSnake(String raw) {
         if (raw == null || raw.isBlank()) return "UNKNOWN";
         StringBuilder sb = new StringBuilder(raw.length());
         boolean prevBreak = true;
         for (int i = 0; i < raw.length(); i++) {
             char c = raw.charAt(i);
-            if (Character.isLetterOrDigit(c)) {
-                if (Character.isUpperCase(c) && !prevBreak && sb.length() > 0) {
+            if (isAsciiLetterOrDigit(c)) {
+                if (isAsciiUpper(c) && !prevBreak && sb.length() > 0) {
                     char last = sb.charAt(sb.length() - 1);
                     if (last != '_') {
                         sb.append('_');
@@ -306,7 +320,7 @@ final class CubeTypeGenerator {
         String out = sb.substring(start, end);
         if (out.isBlank()) return "UNKNOWN";
         // Ensure it starts with a letter — GraphQL enum values may not start with a digit
-        if (Character.isDigit(out.charAt(0))) return "_" + out;
+        if (out.charAt(0) >= '0' && out.charAt(0) <= '9') return "_" + out;
         return out;
     }
 
@@ -317,7 +331,7 @@ final class CubeTypeGenerator {
         boolean seenLetter = false;
         for (int i = 0; i < raw.length(); i++) {
             char c = raw.charAt(i);
-            if (Character.isLetterOrDigit(c)) {
+            if (isAsciiLetterOrDigit(c)) {
                 if (!seenLetter) {
                     sb.append(Character.toLowerCase(c));
                     seenLetter = true;
@@ -333,7 +347,7 @@ final class CubeTypeGenerator {
         }
         String out = sb.toString();
         if (out.isBlank()) return "unknown";
-        if (Character.isDigit(out.charAt(0))) return "_" + out;
+        if (out.charAt(0) >= '0' && out.charAt(0) <= '9') return "_" + out;
         return out;
     }
 
@@ -341,6 +355,15 @@ final class CubeTypeGenerator {
         String camel = camelCase(raw);
         if (camel.isEmpty()) return "Unknown";
         return Character.toUpperCase(camel.charAt(0)) + camel.substring(1);
+    }
+
+    /**
+     * Comment-safe text for the SDL header. Strips newlines / carriage returns so a hostile
+     * cube name can't break the schema by injecting invalid GraphQL after {@code #}.
+     */
+    private static String safeComment(String raw) {
+        if (raw == null) return "";
+        return raw.replace('\n', ' ').replace('\r', ' ');
     }
 
     private static String uniqueScreamingSnake(java.util.Set<String> existing, String basis) {
