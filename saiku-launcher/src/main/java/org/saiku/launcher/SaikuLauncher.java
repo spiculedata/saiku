@@ -716,11 +716,9 @@ public class SaikuLauncher implements Callable<Integer> {
             Path spacesDir = saikuHome.resolve("agent-spaces");
             Files.createDirectories(spacesDir);
             stageResource(
-                    "/seed/agent-spaces/foodmart-sales-analyst.json",
-                    spacesDir.resolve("foodmart-sales-analyst.json"));
+                    "/seed/agent-spaces/foodmart-sales-analyst.json", spacesDir.resolve("foodmart-sales-analyst.json"));
             stageResource(
-                    "/seed/agent-spaces/foodmart-finance-ops.json",
-                    spacesDir.resolve("foodmart-finance-ops.json"));
+                    "/seed/agent-spaces/foodmart-finance-ops.json", spacesDir.resolve("foodmart-finance-ops.json"));
         }
 
         /**
