@@ -1,0 +1,69 @@
+# Ground-truth eval cases for the FoodMart Sales cube (saiku#1424).
+#
+# Runs against the AI ask layer to catch regressions when the LLM
+# provider changes, the schema changes, or the prompt changes. See
+# docs/EVAL-SPEC.md for the file format reference.
+#
+# Numbers in expectedRows are from the seeded FoodMart HSQL database;
+# they'll be off if the FoodMart schema is rebuilt with different data,
+# in which case rerun the queries manually and update this file.
+
+name: foodmart-sales-evals
+description: >
+  Ground-truth cases for the FoodMart Sales cube. Baseline for AI ask
+  regressions when the LLM provider, model, prompt, or schema changes.
+
+cube:
+  connectionName: unknown_foodmart
+  catalog: FoodMart
+  schema: FoodMart
+  cubeName: Sales
+
+cases:
+
+  # -----------------------------------------------------------------
+  # QUERY intent — routes to emit_query, executes, compares row-set.
+  # -----------------------------------------------------------------
+
+  - name: store-sales-by-country
+    question: Show store sales broken down by country.
+    expectedIntent: QUERY
+    expectedRows:
+      - {country: "Canada", storeSales:  57197.83}
+      - {country: "Mexico", storeSales: 132720.19}
+      - {country: "USA",    storeSales: 375691.60}
+    tolerance:
+      relative: 0.001  # 0.1% — masks warehouse floating-point drift
+    orderMatters: false
+
+  - name: unit-sales-by-product-family
+    question: Break down unit sales by Product Family.
+    expectedIntent: QUERY
+    expectedRows:
+      - {productFamily: "Drink",          unitSales:  24597}
+      - {productFamily: "Food",           unitSales: 191940}
+      - {productFamily: "Non-Consumable", unitSales:  50236}
+    orderMatters: false
+
+  # -----------------------------------------------------------------
+  # INSIGHT intent — no new query; markdown must reference key figures.
+  # -----------------------------------------------------------------
+
+  - name: what-drove-sales
+    question: what's driving store sales this quarter?
+    expectedIntent: INSIGHT
+    expectedInsightContains:
+      - Store Sales
+
+  # -----------------------------------------------------------------
+  # REFUSED intent — off-topic must decline with a matching reason.
+  # -----------------------------------------------------------------
+
+  - name: refuse-general-knowledge
+    question: What's the capital of France?
+    expectedIntent: REFUSED
+    expectedRefusalContains: cube
+
+  - name: refuse-coding-help
+    question: Write me a Python function that sorts a list.
+    expectedIntent: REFUSED
