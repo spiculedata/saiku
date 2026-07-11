@@ -155,6 +155,89 @@ public class AiAskServiceTest {
         assertTrue(out.reason().contains("invalid viewMode"));
     }
 
+    /* ---- saiku#1426 skill catalogue + slash-command expansion ---- */
+
+    @Test
+    public void injectsSkillsFragmentIntoRequest() throws Exception {
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        NlAskProvider capturing = req -> {
+            seen.set(req);
+            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
+        svc.setSkills(new AgentSkillRegistry(java.nio.file.Path.of("/does/not/exist")));
+        // Force a non-empty registry by pointing at a real tmp dir with one skill.
+        java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("skills");
+        java.nio.file.Files.writeString(
+                tmp.resolve("weekly-rollup.md"), "---\nname: weekly-rollup\ndescription: Weekly rollup\n---\n\nbody\n");
+        svc.setSkills(new AgentSkillRegistry(tmp));
+
+        svc.ask(CUBE, "show sales", List.of());
+
+        NlAskRequest captured = seen.get();
+        assertNotNull(captured);
+        assertNotNull(captured.skillsFragment());
+        assertTrue(captured.skillsFragment().contains("/weekly-rollup"));
+        assertTrue(captured.skillsFragment().contains("Weekly rollup"));
+    }
+
+    @Test
+    public void expandsSlashCommandIntoQuestion() throws Exception {
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        NlAskProvider capturing = req -> {
+            seen.set(req);
+            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
+        java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("skills");
+        java.nio.file.Files.writeString(
+                tmp.resolve("weekly-rollup.md"),
+                "---\nname: weekly-rollup\ndescription: Weekly rollup\n---\n\n1. Query totals.\n2. Compare.\n");
+        svc.setSkills(new AgentSkillRegistry(tmp));
+
+        svc.ask(CUBE, "/weekly-rollup for Q4 instead", List.of());
+
+        NlAskRequest captured = seen.get();
+        assertNotNull(captured);
+        assertTrue(captured.question().contains("Skill: weekly-rollup"));
+        assertTrue(captured.question().contains("Query totals"));
+        assertTrue(captured.question().contains("User follow-up: for Q4 instead"));
+    }
+
+    @Test
+    public void slashCommandFallsThroughWhenSkillMissing() throws Exception {
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        NlAskProvider capturing = req -> {
+            seen.set(req);
+            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
+        java.nio.file.Path tmp = java.nio.file.Files.createTempDirectory("skills");
+        svc.setSkills(new AgentSkillRegistry(tmp));
+
+        svc.ask(CUBE, "/nonexistent-skill for Q4", List.of());
+
+        NlAskRequest captured = seen.get();
+        assertNotNull(captured);
+        // Unchanged — the slash prefix survives so the LLM can interpret it as a raw ask.
+        assertEquals("/nonexistent-skill for Q4", captured.question());
+    }
+
+    @Test
+    public void skillsFragmentNullWhenNoRegistry() throws Exception {
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        NlAskProvider capturing = req -> {
+            seen.set(req);
+            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
+        // No setSkills() call — legacy path.
+
+        svc.ask(CUBE, "show sales", List.of());
+
+        assertNull(seen.get().skillsFragment());
+    }
+
     // ---------- helpers ----------
 
     private static AiCubeMetadataService fixedSchemaService(AiSchema schema) {

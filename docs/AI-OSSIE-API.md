@@ -805,6 +805,26 @@ parsing, no fence-stripping. Off-topic questions come back as
 `{"error": "OFF_TOPIC", "message": "…"}` and surface as 400 with the
 narration attached.
 
+### Skills — admin-authored workflows (#1426)
+
+Admin-authored markdown workflows under `saiku-home/skills/` are
+discoverable from both `/ai/ask` (MDX) and `/ai/ossie/ask` (Ossie).
+Full file-format reference in [docs/SKILLS-SPEC.md](./SKILLS-SPEC.md);
+API surface documented in
+[AI-QUERY-API.md](./AI-QUERY-API.md#skills--admin-authored-workflows-for-aiask-saiku1426).
+Two invocation paths:
+
+- Prefix the question with `/<skill-name>` and the skill body is
+  expanded verbatim before the LLM sees it.
+- Or ask naturally; the catalogue is in the system prompt so the model
+  can route to a matching skill on its own.
+
+The catalogue is the same catalogue served at
+`GET /rest/saiku/api/ai/skills` — there's one skill store per launcher
+instance, and any skill whose YAML frontmatter names an Ossie-side cube
+ref (e.g. `pharma/Pharma/Pharma/Sales`) is naturally scoped by that ref
+when routed through the Ossie ask.
+
 ---
 
 ## MCP integration
@@ -852,6 +872,24 @@ Or for natural-language flows: skip 4–7 entirely and use `/ask`.
 - Fuzz suite: `OssieFuzzIT` covers 6961 shelf-state combinations
   (49 hand-crafted + 6912 combinatorial) against a live Calcite +
   Ossie + H2 warehouse
-- Role-based security follow-up: #1393
-- Library extraction follow-up: #1396
+- Role-based security follow-up: #1393 (RLS / row_predicates on
+  `OssieShelfSqlTranslator` — enterprise multi-tenant blocker)
+- Library extraction follow-up: #1396 (Maven Central + package rename)
 - MDX AI Query API: [`AI-QUERY-API.md`](AI-QUERY-API.md)
+- Agent skills spec: [`SKILLS-SPEC.md`](SKILLS-SPEC.md)
+
+## Closed since last publish (2026-07-11)
+
+All shipped and verified against source:
+
+- #1385 — Calcite SQL adapter over Ossie
+- #1397 — Anthropic tool_use + OpenAI tool_choice (structured output)
+- #1398 — `/ai/ossie/ask` history threading (multi-turn)
+- #1399 — timeAxis validation on `/anomaly` + `/forecast`
+- #1400 — UI hooks (Ask AI / Anomalies / Forecast / Row detail)
+- #1401 — this cookbook (763-line parity with `AI-QUERY-API.md`)
+- #1403 — `OssieAsyncQueryService` IDOR tests
+- #1404 — sample-value cache TTL + `?refresh=true`
+- #1405 — cardinality classification via `APPROX_COUNT_DISTINCT`
+- #1408 — `ai_context.synonyms` on datasets / fields / metrics
+- #1410 — ontology block + `/ai/ossie/ontology` + MCP tool

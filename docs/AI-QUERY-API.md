@@ -1255,3 +1255,82 @@ The model never sees:
 
 This is the same isolation model the existing `/ai/query` agent surface
 uses, applied one layer earlier.
+
+## Skills — admin-authored workflows for `/ai/ask` (saiku#1426)
+
+Skills are markdown files with YAML frontmatter that land under
+`saiku-home/skills/`. The launcher scans them lazily (mtime-based
+signature check — no watcher thread) and injects the catalogue into the
+LLM system prompt every ask. Full file-format reference is in
+[docs/SKILLS-SPEC.md](./SKILLS-SPEC.md).
+
+Two invocation paths, both routing through the same `POST /ai/ask`
+endpoint documented above:
+
+- **Slash-command:** `POST /ai/ask` with a question that starts
+  `/<skill-name>`. If the skill exists, the ask service expands the
+  skill's body verbatim as the question, appended with the user's
+  refinement. The LLM sees the workflow AND the follow-up together, so
+  `/weekly-rollup for Q4 instead of this week` works exactly as an
+  operator would hope.
+- **Natural language:** the skill catalogue lands in the LLM system
+  prompt as a bulleted list of `/<name>: <description>` — the model
+  picks a matching skill on its own when the user's ask lines up with a
+  description. No explicit slash needed.
+
+### File format
+
+```markdown
+---
+name: weekly-foodmart-rollup
+description: |
+  Weekly revenue rollup for the FoodMart Sales cube: total Store Sales
+  by Product Family for the last 7 days, compared to the prior 7 days.
+cube: unknown_foodmart/FoodMart/FoodMart/Sales
+---
+
+## Steps
+
+1. Query total `[Measures].[Store Sales]` by `[Product].[Product Family]`
+   for the last 7 days.
+2. Query the same for the prior 7 days.
+3. Flag any family whose delta swings by more than 20%.
+```
+
+- `name` — kebab-case, `[a-z][a-z0-9-]{0,63}`. Used as the slash slug.
+- `description` — required. Fed to the LLM as the routing hint.
+- `cube` — optional `connection/catalog/schema/cubeName` ref. Scopes the
+  skill.
+
+Unknown top-level frontmatter keys are **rejected** so a typo
+(`descripton`) surfaces as a structured error rather than a silent
+nameless skill.
+
+### REST surface
+
+- `GET /rest/saiku/api/ai/skills` — catalogue of `{name, description,
+  cube}` summaries.
+- `GET /rest/saiku/api/ai/skills?errors=true` — same, plus the list of
+  files that failed to parse this scan, each with a stable machine
+  code (`EMPTY_SKILL`, `MISSING_FRONTMATTER`, `MALFORMED_YAML`,
+  `INVALID_NAME`, `DUPLICATE_NAME`, `UNKNOWN_FIELD`, …). Operators fix
+  frontmatter from this endpoint without reading server logs.
+- `GET /rest/saiku/api/ai/skills/{name}` — full body of one skill.
+  Handy for a UI slash-menu preview.
+- `POST /rest/saiku/api/ai/skills/refresh` — force a rescan (bypasses
+  the mtime signature check).
+
+### Bundled example
+
+Fresh installs stage `weekly-foodmart-rollup.md` into
+`saiku-home/skills/` on first boot — see
+`saiku-launcher/src/main/resources/seed/skills/`. The DimSum widget's
+`/ai/skills` catalogue has something to return immediately without an
+operator editing a file.
+
+### Error surfacing
+
+Broken skills don't take down the catalogue: a `ParseException` on one
+file discards that one entry and leaves the rest intact. Every failure
+carries a stable code — see the full table in
+[docs/SKILLS-SPEC.md](./SKILLS-SPEC.md#errors).

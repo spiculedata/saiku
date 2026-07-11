@@ -391,6 +391,16 @@
           class="org.saiku.service.olap.ai.ask.AiAskService">
         <constructor-arg ref="aiCubeMetadataServiceBean"/>
         <constructor-arg ref="aiAskProviderBean"/>
+        <property name="skills" ref="agentSkillRegistryBean"/>
+    </bean>
+
+    <!-- Skill catalogue (saiku#1426). Markdown files with YAML frontmatter under
+         saiku-home/skills/ are scanned lazily and injected into the LLM system
+         prompt so the ask flow can route slash commands + natural-language asks
+         to admin-authored workflows. -->
+    <bean id="agentSkillRegistryBean"
+          class="org.saiku.service.olap.ai.ask.AgentSkillRegistry">
+        <constructor-arg type="java.lang.String" value="${saiku.home:./saiku-home}/skills"/>
     </bean>
 
     <!-- ====================================================================

@@ -43,6 +43,13 @@ public class AiAskService {
     private final NlAskProvider provider;
     private final ObjectMapper mapper;
 
+    /**
+     * Skill catalogue used by this service. Injected by Spring via {@link #setSkills} — kept as a
+     * mutable field (not a ctor arg) so existing wiring (two-arg ctor) can stay unchanged, and so
+     * tests can install a null registry to exercise the un-skilled code path.
+     */
+    private AgentSkillRegistry skills;
+
     public AiAskService(AiCubeMetadataService metadataService, NlAskProvider provider) {
         this(metadataService, provider, defaultMapper());
     }
@@ -51,6 +58,19 @@ public class AiAskService {
         this.metadataService = Objects.requireNonNull(metadataService, "metadataService");
         this.provider = Objects.requireNonNull(provider, "provider");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
+    }
+
+    /** Spring setter — wired to {@code skillRegistryBean} in {@code saiku-beans.xml}. */
+    public void setSkills(AgentSkillRegistry skills) {
+        this.skills = skills;
+    }
+
+    /**
+     * Skill catalogue used by this service, if wired. May be {@code null} on legacy setups without
+     * skills configured — the REST resource guards on that before delegating.
+     */
+    public AgentSkillRegistry skills() {
+        return skills;
     }
 
     /**
@@ -181,15 +201,30 @@ public class AiAskService {
                 log.debug("Failed to serialise currentQuery for ask context; omitting", e);
             }
         }
+        // Slash-command routing: when the ask starts with `/<skill-name>` and that skill exists,
+        // prefix the user's remaining ask with the skill body. The LLM then sees both the skill
+        // steps and the user's follow-up (e.g. `/weekly-rollup last quarter instead of this week`)
+        // and can adapt. Skills whose slug doesn't match fall through unchanged.
+        String effectiveQuestion = maybeExpandSlashCommand(question);
+        String skillsFragment = null;
+        if (skills != null) {
+            List<AgentSkill> catalog = skills.list();
+            skillsFragment = AgentSkill.catalogPromptFragment(catalog);
+            if (skillsFragment == null || skillsFragment.isBlank()) {
+                skillsFragment = null;
+            }
+        }
+
         NlAskRequest req = new NlAskRequest(
                 ref,
-                question,
+                effectiveQuestion,
                 schemaJson,
                 requestSchemaJson,
                 history == null ? List.of() : history,
                 cellsetDigest,
                 forceTool == null ? NlAskRequest.ForceTool.AUTO : forceTool,
-                currentQueryJson);
+                currentQueryJson,
+                skillsFragment);
         NlAskResponse resp = provider.ask(req);
 
         if (resp.degraded()) {
@@ -234,6 +269,35 @@ public class AiAskService {
             // to the caller (#1282-class info-leak hardening). Kind is a safe enum.
             return AskOutcome.degraded("provider emitted invalid JSON for " + resp.kind(), resp.model());
         }
+    }
+
+    /**
+     * If {@code question} starts with {@code /<skill-name>} (kebab-case, up to whitespace), and
+     * the registry knows that skill, expand it to {@code <skill body> + <remainder of question>}.
+     * Otherwise return the question unchanged.
+     */
+    private String maybeExpandSlashCommand(String question) {
+        if (skills == null || question == null || !question.startsWith("/")) {
+            return question;
+        }
+        int split = question.indexOf(' ');
+        String slug = split < 0 ? question.substring(1) : question.substring(1, split);
+        if (slug.isBlank()) {
+            return question;
+        }
+        return skills.get(slug)
+                .map(skill -> {
+                    String remainder =
+                            split < 0 ? "" : question.substring(split).trim();
+                    StringBuilder out = new StringBuilder();
+                    out.append("Skill: ").append(skill.name()).append('\n');
+                    out.append(skill.body().trim());
+                    if (!remainder.isEmpty()) {
+                        out.append("\n\nUser follow-up: ").append(remainder);
+                    }
+                    return out.toString();
+                })
+                .orElse(question);
     }
 
     private static ObjectMapper defaultMapper() {
