@@ -1,0 +1,52 @@
+# ADOT collector config for Saiku:
+#   receive OTLP from Saiku → export metrics to CloudWatch (EMF), traces
+#   to X-Ray, logs to CloudWatch Logs.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+
+  # X-Ray requires trace IDs in its own format. This processor is a
+  # no-op on payloads that already carry compatible IDs (ADOT SDK) and
+  # the necessary rewrite otherwise (vanilla OTel SDK, which is what
+  # Saiku uses).
+  resourcedetection:
+    detectors: [ec2, ecs, eks, env]
+    override: false
+
+exporters:
+  awsemf:
+    namespace: Saiku
+    log_group_name: "/aws/otel/saiku/metrics"
+    dimension_rollup_option: NoDimensionRollup
+
+  awsxray:
+    # No config needed — uses ambient AWS creds + region.
+
+  awscloudwatchlogs:
+    log_group_name: "/aws/otel/saiku/logs"
+    log_stream_name: "otlp"
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [resourcedetection, batch]
+      exporters: [awsxray]
+    metrics:
+      receivers: [otlp]
+      processors: [resourcedetection, batch]
+      exporters: [awsemf]
+    logs:
+      receivers: [otlp]
+      processors: [resourcedetection, batch]
+      exporters: [awscloudwatchlogs]
