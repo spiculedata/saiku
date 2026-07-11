@@ -103,7 +103,14 @@ Parse failures surface via `GET /rest/saiku/api/ai/spaces?errors=true`:
   admin UI when editing a persona.
 - `POST /rest/saiku/api/ai/spaces/{id}/ask` — space-scoped ask. Body
   shape mirrors `/ai/ask` but `cube` is optional (falls back to the
-  space default).
+  space default). A cube ref outside the allowlist returns `403`; an
+  unknown space returns `404`.
+- `POST /rest/saiku/api/ai/spaces/{id}/ask/stream` — SSE streaming
+  variant of the above (saiku#1440 + #1433). Same event schema as
+  [`/ai/ask/stream`](AI-QUERY-API.md) (`model` → `intent` → `chunk` →
+  `final`) with the persona scoping applied. The scope pre-flight runs
+  before the stream opens, so a denied ask returns a real `403`/`404`
+  rather than a `200` carrying an in-band error event.
 - `POST /rest/saiku/api/ai/spaces/refresh` — force a rescan.
 
 ## Bundled examples

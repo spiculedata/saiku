@@ -154,6 +154,56 @@ public class AiAskSpaceStreamTest {
                 frame.indexOf("event: final") > frame.indexOf("event: error"));
     }
 
+    // ---- saiku#1461: direct coverage of streamOutcomeAsSse (the "package-visible for testing" seam) ----
+
+    private String streamOutcome(AiAskService.AskOutcome outcome) throws Exception {
+        java.io.StringWriter sw = new java.io.StringWriter();
+        AiQueryResource.SseWriter sse = new AiQueryResource.SseWriter(sw);
+        resource.streamOutcomeAsSse(outcome, sse);
+        return sw.toString();
+    }
+
+    @Test
+    public void streamOutcomeAsSseEmitsModelIntentFinalForInsight() throws Exception {
+        org.saiku.service.olap.ai.ask.AiInsight insight =
+                new org.saiku.service.olap.ai.ask.AiInsight("Store sales trended up.", "Sales up");
+        String frame = streamOutcome(AiAskService.AskOutcome.okInsight(insight, "claude-x"));
+        assertTrue(frame.contains("event: model"));
+        assertTrue(frame.contains("event: intent"));
+        assertTrue("INSIGHT intent surfaced: " + frame, frame.contains("INSIGHT"));
+        assertTrue("prose chunked: " + frame, frame.contains("event: chunk"));
+        assertTrue(frame.contains("event: final"));
+        assertTrue("model precedes final", frame.indexOf("event: model") < frame.indexOf("event: final"));
+    }
+
+    @Test
+    public void streamOutcomeAsSseEmitsErrorThenFinalForDegraded() throws Exception {
+        String frame = streamOutcome(AiAskService.AskOutcome.degraded("HTTP 503: upstream offline", "claude-x"));
+        assertTrue("error event on degrade: " + frame, frame.contains("event: error"));
+        assertTrue("terminal final still fires: " + frame, frame.contains("event: final"));
+        assertTrue(frame.indexOf("event: final") > frame.indexOf("event: error"));
+    }
+
+    @Test
+    public void streamOutcomeAsSseExecutesQueryBranch() throws Exception {
+        resource.setThinQueryService(new org.saiku.service.olap.ThinQueryService() {
+            @Override
+            public org.saiku.olap.dto.resultset.CellDataSet execute(org.saiku.olap.query2.ThinQuery tq) {
+                return AiQueryResourceTest.buildStubCellDataSet();
+            }
+        });
+        org.saiku.service.olap.ai.AiQueryRequest req = new org.saiku.service.olap.ai.AiQueryRequest();
+        req.setCube(ALLOWED);
+        req.setMeasures(java.util.List.of(new org.saiku.service.olap.ai.AiMeasureSelection("Store Sales")));
+        // schema needs the measure so validation passes
+        schema.measures.put(
+                AiSchema.key("Store Sales"), new AiSchema.Measure("Store Sales", "[Measures].[Store Sales]"));
+
+        String frame = streamOutcome(AiAskService.AskOutcome.ok(req, "claude-x"));
+        assertTrue("QUERY intent surfaced: " + frame, frame.contains("QUERY"));
+        assertTrue("final envelope emitted after execution: " + frame, frame.contains("event: final"));
+    }
+
     // ---- saiku#1458: forceTool parsing is locale-independent ----
 
     @Test
