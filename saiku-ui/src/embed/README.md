@@ -50,6 +50,40 @@ globally — no further setup.
 ></saiku-embed>
 ```
 
+### A saved query, rendered as a hierarchical matrix (v3.19)
+
+Matrix mode preserves the row / column axis structure — measures on
+columns, dimension members on rows — instead of flattening to a single
+row-key map like `render="table"` does. Useful for pivot-style reports.
+
+```html
+<saiku-embed
+  server="..."
+  token="..."
+  path="homes/admin/Examples/Sales.saiku"
+  render="matrix"
+  height="500px"
+></saiku-embed>
+```
+
+### An AI ask widget over a cube (v3.19, `kind="ai"`)
+
+Point the token at a cube (rather than a saved query) and drop in a
+plain-English ask box. Behind the scenes it POSTs to
+`/rest/saiku/api/embed/ai/{cubeId}/ask`, which runs the question through
+the server's configured LLM provider under the pinned owner's data
+scope. Requires an AI-kind token (see "Minting an AI token" below).
+
+```html
+<saiku-embed
+  server="..."
+  token="..."
+  kind="ai"
+  path="foodmart/FoodMart/FoodMart/Sales"
+  height="200px"
+></saiku-embed>
+```
+
 ### A saved dashboard
 
 ```html
@@ -79,11 +113,11 @@ If the resource is marked publicly embeddable on the server
 
 | Attribute | Default     | Notes                                                                  |
 |-----------|-------------|------------------------------------------------------------------------|
-| `server`  | _(required)_| Origin of the Saiku launcher, e.g. `https://demo.saiku.bi`            |
-| `path`    | _(required)_| Repository path of the saved query (`.saiku`) or dashboard (`.saikudash`) |
-| `kind`    | `query`     | `query` or `dashboard`                                                 |
+| `server`  | _(optional)_| Origin of the Saiku launcher, e.g. `https://demo.saiku.bi`. Leave empty for same-origin (v3.19+) |
+| `path`    | _(required)_| `kind=query`: saved query path (`.saiku`) — `kind=dashboard`: dashboard path (`.saikudash`) — `kind=ai`: cube ref `connection/catalog/schema/cubeName` |
+| `kind`    | `query`     | `query`, `dashboard`, or `ai`                                          |
 | `token`   | _(none)_    | Embed token from `POST /saiku/api/embed/tokens`. Omit for public reads |
-| `render`  | `table`     | For `kind=query`: `table` or `chart`                                  |
+| `render`  | `table`     | For `kind=query`: `table`, `matrix`, or `chart`                        |
 | `mode`    | `bar`       | For `render=chart`: `bar`, `line`, or `pie`                            |
 | `height`  | `400px`     | CSS height of the rendered surface                                     |
 
@@ -107,6 +141,28 @@ curl -X POST 'https://YOUR-SAIKU/rest/saiku/api/embed/tokens' \
   }'
 # → { "status": "OK", "token": "tx-...", "expiresAt": ... }
 ```
+
+### Minting an AI token (v3.19)
+
+For `kind="ai"` embeds. `resourcePath` is a cube ref rather than a
+file path. Mint is admin-only for v1 (cube-level ACLs are a follow-up).
+
+```bash
+curl -X POST 'https://YOUR-SAIKU/rest/saiku/api/embed/tokens' \
+  -u admin:admin \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "resourceKind": "ai",
+    "resourcePath": "foodmart/FoodMart/FoodMart/Sales",
+    "ttlHours": 72,
+    "label": "DimSum widget on marketing site"
+  }'
+```
+
+Server-side, an AI ask requires the launcher to have an LLM provider
+configured (`saiku.ai.ask.provider = anthropic | openai` plus the
+matching API key). Without it, the widget renders a degraded message
+rather than an error.
 
 Paste the `token` into the host page's `<saiku-embed token="...">`.
 Tokens are server-authoritative — revoke any time via:
