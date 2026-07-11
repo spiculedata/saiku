@@ -40,6 +40,18 @@
          demo mode's warm-session bootstrap). -->
     <security:http pattern="/showcase/**" security="none">
     </security:http>
+    <!-- Embeddability demo (embed-demo/) — the "FoodMart Ops" white-label OEM portal.
+         Public static page; its same-origin fetches to /rest/saiku/api/ai/* warm an
+         admin/admin session the same way the showcase does. The AI endpoints stay
+         behind /rest/** auth + the ask rate-limiter/policy guard — the page being
+         public does not open the LLM to anonymous unbounded use.
+         The bare "/embed-demo" (no trailing slash) needs its own permit — the Ant
+         matcher's "/**" suffix does not cover it — so the container's redirect to
+         "/embed-demo/" isn't swallowed by the authenticated /** rule as a 403. -->
+    <security:http pattern="/embed-demo" security="none">
+    </security:http>
+    <security:http pattern="/embed-demo/**" security="none">
+    </security:http>
     <security:http pattern="/" security="none">
     </security:http>
     <security:http pattern="/index.jsp" security="none">

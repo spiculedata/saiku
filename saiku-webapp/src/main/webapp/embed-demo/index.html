@@ -1,0 +1,877 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FoodMart Ops — Store Intelligence</title>
+<style>
+  /* ============================================================
+     FoodMart Ops — a fictional OEM retail-ops portal.
+     Saiku is embedded white-label as the "Ask FoodMart" assistant.
+     Aesthetic: refined editorial-grocer. Deep spinach + warm coral
+     on a cream canvas, serif wordmark, data-product density.
+     Self-contained: no CDN, hand-rolled SVG charts.
+     ============================================================ */
+  :root {
+    --spinach: #1f3d2b;
+    --spinach-700: #2b5238;
+    --spinach-500: #3f6b4c;
+    --coral: #e2623c;
+    --coral-soft: #f4a58a;
+    --amber: #d99a2b;
+    --cream: #f6f2e9;
+    --cream-2: #efe9db;
+    --paper: #fdfbf6;
+    --ink: #1c1b17;
+    --ink-2: #55524a;
+    --ink-3: #8a877d;
+    --line: #e2dccd;
+    --line-2: #d3ccb9;
+    --good: #2f7d54;
+    --bad: #c0492e;
+    --shadow: 0 1px 2px rgba(31,61,43,.06), 0 8px 24px rgba(31,61,43,.07);
+    --shadow-lg: 0 2px 6px rgba(31,61,43,.08), 0 24px 60px rgba(31,61,43,.14);
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, ui-serif, serif;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --mono: "SF Mono", ui-monospace, "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
+    --rail: 68px;
+    --aside: 396px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: var(--sans);
+    color: var(--ink);
+    background:
+      radial-gradient(1200px 600px at 82% -10%, rgba(226,98,60,.06), transparent 60%),
+      radial-gradient(900px 500px at -5% 110%, rgba(31,61,43,.07), transparent 55%),
+      var(--cream);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-size: 14px;
+  }
+  ::selection { background: var(--coral-soft); color: var(--spinach); }
+
+  .app {
+    display: grid;
+    grid-template-columns: var(--rail) 1fr var(--aside);
+    grid-template-rows: 100vh;
+    overflow: hidden;
+  }
+
+  /* ---------- left nav rail ---------- */
+  .rail {
+    background: var(--spinach);
+    color: #dfe7db;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 16px 0 14px; gap: 6px;
+    box-shadow: inset -1px 0 0 rgba(0,0,0,.15);
+  }
+  .rail .mark {
+    width: 40px; height: 40px; border-radius: 12px;
+    background: linear-gradient(150deg, var(--coral), #c74a28);
+    display: grid; place-items: center; margin-bottom: 14px;
+    font-family: var(--serif); font-weight: 700; font-size: 20px; color: #fff;
+    box-shadow: 0 6px 16px rgba(226,98,60,.35);
+  }
+  .rail button {
+    width: 44px; height: 44px; border: 0; border-radius: 12px; cursor: pointer;
+    background: transparent; color: #b9c8b6; display: grid; place-items: center;
+    transition: background .18s ease, color .18s ease, transform .18s ease;
+  }
+  .rail button svg { width: 21px; height: 21px; }
+  .rail button:hover { background: rgba(255,255,255,.08); color: #fff; transform: translateY(-1px); }
+  .rail button.active { background: rgba(255,255,255,.14); color: #fff; box-shadow: inset 2px 0 0 var(--coral); }
+  .rail .sp { flex: 1; }
+  .rail .avatar {
+    width: 34px; height: 34px; border-radius: 50%; margin-top: 6px;
+    background: linear-gradient(160deg, #e9d7a6, #cdb06a); color: var(--spinach);
+    display: grid; place-items: center; font-weight: 700; font-size: 12px;
+  }
+
+  /* ---------- main column ---------- */
+  .main { display: flex; flex-direction: column; min-width: 0; }
+
+  .topbar {
+    display: flex; align-items: center; gap: 18px;
+    padding: 16px 26px; border-bottom: 1px solid var(--line);
+    background: linear-gradient(var(--paper), rgba(253,251,246,.72));
+    backdrop-filter: blur(6px);
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand .name { font-family: var(--serif); font-size: 23px; font-weight: 700; letter-spacing: .1px; color: var(--spinach); }
+  .brand .name em { font-style: italic; color: var(--coral); }
+  .brand .tag {
+    font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-3); border-left: 1px solid var(--line-2); padding-left: 10px;
+  }
+  .topbar .spacer { flex: 1; }
+
+  .selector {
+    display: flex; align-items: center; gap: 9px; cursor: pointer;
+    background: var(--paper); border: 1px solid var(--line); border-radius: 11px;
+    padding: 7px 13px; box-shadow: var(--shadow); transition: border-color .15s, box-shadow .15s;
+    position: relative;
+  }
+  .selector:hover { border-color: var(--coral-soft); }
+  .selector .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px rgba(47,125,84,.15); }
+  .selector .lbl { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+  .selector .val { font-weight: 650; color: var(--ink); }
+  .selector select {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    font-size: 16px; /* avoid iOS zoom */
+  }
+  .selector .chev { color: var(--ink-3); }
+
+  .conn {
+    display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--ink-2);
+    padding: 6px 11px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--paper); cursor: pointer;
+  }
+  .conn .led { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+  .conn.live .led { background: var(--good); box-shadow: 0 0 0 3px rgba(47,125,84,.16); }
+  .conn.demo .led { background: var(--amber); box-shadow: 0 0 0 3px rgba(217,154,43,.16); }
+
+  .content { padding: 24px 26px 30px; overflow-y: auto; flex: 1; }
+  .content::-webkit-scrollbar { width: 10px; }
+  .content::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 10px; border: 3px solid var(--cream); }
+
+  .pagehead { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 18px; }
+  .pagehead h1 { font-family: var(--serif); font-weight: 700; font-size: 27px; margin: 0; color: var(--ink); letter-spacing: .2px; }
+  .pagehead .sub { color: var(--ink-2); font-size: 13px; margin-top: 4px; }
+  .pagehead .date { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+
+  /* ---------- KPI row ---------- */
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+  .kpi {
+    background: var(--paper); border: 1px solid var(--line); border-radius: 15px;
+    padding: 15px 16px 14px; box-shadow: var(--shadow); position: relative; overflow: hidden;
+  }
+  .kpi::after {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--k, var(--coral));
+  }
+  .kpi .cap { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+  .kpi .num { font-family: var(--mono); font-size: 26px; font-weight: 600; letter-spacing: -.5px; margin-top: 8px; color: var(--ink); }
+  .kpi .num small { font-size: 15px; color: var(--ink-3); font-weight: 500; }
+  .kpi .delta { display: inline-flex; align-items: center; gap: 4px; margin-top: 9px; font-size: 12px; font-weight: 650; }
+  .kpi .delta.up { color: var(--good); }
+  .kpi .delta.down { color: var(--bad); }
+  .kpi .delta .vs { color: var(--ink-3); font-weight: 500; margin-left: 3px; }
+  .kpi .spark { position: absolute; right: 12px; bottom: 12px; width: 74px; height: 30px; opacity: .9; }
+
+  /* ---------- cards / charts ---------- */
+  .grid2 { display: grid; grid-template-columns: 1.55fr 1fr; gap: 16px; }
+  .card {
+    background: var(--paper); border: 1px solid var(--line); border-radius: 16px;
+    box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column;
+  }
+  .card .head { display: flex; align-items: center; justify-content: space-between; padding: 15px 18px 8px; }
+  .card .head .t { font-weight: 650; font-size: 14.5px; color: var(--ink); }
+  .card .head .t small { display:block; font-weight: 500; font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+  .card .head .by {
+    font-size: 10.5px; color: var(--coral); background: rgba(226,98,60,.1);
+    border: 1px solid rgba(226,98,60,.22); padding: 3px 8px; border-radius: 999px;
+    display: none; align-items: center; gap: 5px;
+  }
+  .card .head .by.show { display: inline-flex; animation: pop .4s ease; }
+  .card .body { padding: 6px 14px 16px; }
+  .seg { display: inline-flex; background: var(--cream-2); border-radius: 9px; padding: 3px; gap: 2px; }
+  .seg button {
+    border: 0; background: transparent; cursor: pointer; font: inherit; font-size: 12px;
+    padding: 4px 10px; border-radius: 7px; color: var(--ink-2); transition: .15s;
+  }
+  .seg button.on { background: var(--paper); color: var(--spinach); box-shadow: var(--shadow); font-weight: 600; }
+
+  svg .grid-line { stroke: var(--line); stroke-width: 1; }
+  svg .axis-t { fill: var(--ink-3); font-size: 10.5px; font-family: var(--sans); }
+  .bar { transition: width .6s cubic-bezier(.2,.8,.2,1); }
+  .barrow { display: grid; grid-template-columns: 130px 1fr auto; align-items: center; gap: 12px; padding: 7px 4px; }
+  .barrow .nm { font-size: 13px; color: var(--ink); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .barrow .track { height: 12px; background: var(--cream-2); border-radius: 7px; overflow: hidden; }
+  .barrow .fill { height: 100%; border-radius: 7px; width: 0; transition: width .7s cubic-bezier(.2,.8,.2,1); }
+  .barrow .v { font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); text-align: right; min-width: 78px; }
+  .barrow .v b { color: var(--ink); font-weight: 600; }
+
+  .listcard .row { display: flex; align-items: center; gap: 12px; padding: 9px 4px; border-top: 1px dashed var(--line); }
+  .listcard .row:first-child { border-top: 0; }
+  .listcard .rank { font-family: var(--serif); font-style: italic; font-size: 15px; color: var(--ink-3); width: 20px; }
+  .listcard .nm { flex: 1; font-weight: 550; }
+  .listcard .mom { font-family: var(--mono); font-size: 12.5px; font-weight: 600; }
+  .listcard .mom.up { color: var(--good); } .listcard .mom.down { color: var(--bad); }
+
+  /* ---------- assistant aside ---------- */
+  .aside {
+    background: linear-gradient(180deg, #21402d, #1a3324);
+    color: #e7ede2; display: flex; flex-direction: column; min-width: 0;
+    box-shadow: inset 1px 0 0 rgba(0,0,0,.2);
+  }
+  .aside .ahead { padding: 18px 20px 14px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .aside .ahead .row { display: flex; align-items: center; gap: 10px; }
+  .aside .ahead .glyph {
+    width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center;
+    background: linear-gradient(150deg, var(--coral), #c74a28); color: #fff;
+    box-shadow: 0 6px 16px rgba(226,98,60,.4);
+  }
+  .aside .ahead .ttl { font-family: var(--serif); font-size: 17px; font-weight: 700; }
+  .aside .ahead .ttl em { font-style: italic; color: var(--coral-soft); }
+  .aside .ahead .persona {
+    margin-top: 12px; display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #a9bba7;
+  }
+  .aside .ahead .persona .chip {
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12);
+    padding: 4px 10px; border-radius: 999px; color: #dfe7db; font-weight: 600; letter-spacing: .01em;
+  }
+
+  .thread { flex: 1; overflow-y: auto; padding: 18px 18px 8px; display: flex; flex-direction: column; gap: 14px; }
+  .thread::-webkit-scrollbar { width: 8px; }
+  .thread::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 8px; }
+
+  .msg { max-width: 92%; }
+  .msg.user { align-self: flex-end; }
+  .msg.user .b {
+    background: linear-gradient(150deg, var(--coral), #cf5230); color: #fff;
+    padding: 10px 14px; border-radius: 14px 14px 4px 14px; font-size: 13.5px; line-height: 1.5;
+    box-shadow: 0 6px 18px rgba(226,98,60,.28);
+  }
+  .msg.bot .who { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: #8ba389; margin: 0 0 5px 3px; display: flex; gap: 7px; align-items: center; }
+  .msg.bot .who .mdl { color: #cdb06a; font-family: var(--mono); text-transform: none; letter-spacing: 0; }
+  .msg.bot .b {
+    background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.09);
+    padding: 12px 14px; border-radius: 4px 14px 14px 14px; font-size: 13.5px; line-height: 1.62; color: #e9efe4;
+  }
+  .msg.bot .b strong { color: #fff; }
+  .msg.bot .b .fig { font-family: var(--mono); color: #f0c98a; font-weight: 600; }
+  .msg.bot .b .drove {
+    margin-top: 10px; display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: #9ab098;
+    border-top: 1px solid rgba(255,255,255,.08); padding-top: 9px;
+  }
+  .msg.bot .b .drove svg { width: 14px; height: 14px; color: var(--coral-soft); }
+  .caret { display: inline-block; width: 7px; height: 15px; background: var(--coral-soft); margin-left: 2px; border-radius: 1px; transform: translateY(2px); animation: blink 1s steps(2) infinite; }
+  .thinking { display: inline-flex; gap: 4px; padding: 2px 0; }
+  .thinking i { width: 6px; height: 6px; border-radius: 50%; background: #8ba389; animation: bob 1.1s ease-in-out infinite; }
+  .thinking i:nth-child(2){ animation-delay:.16s } .thinking i:nth-child(3){ animation-delay:.32s }
+
+  .chips { padding: 4px 18px 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips .lbl { width: 100%; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #7f9880; margin-bottom: 2px; }
+  .chip-s {
+    font: inherit; font-size: 12px; cursor: pointer; text-align: left;
+    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.11); color: #dbe4d7;
+    padding: 8px 11px; border-radius: 10px; transition: .16s; line-height: 1.35;
+  }
+  .chip-s:hover { background: rgba(226,98,60,.16); border-color: var(--coral-soft); color: #fff; transform: translateY(-1px); }
+  .chip-s.skill { color: #f0c98a; }
+  .chip-s.skill::before { content: "⌘ "; opacity: .7; }
+
+  .composer { padding: 12px 16px 16px; border-top: 1px solid rgba(255,255,255,.08); }
+  .composer .box {
+    display: flex; align-items: flex-end; gap: 8px; background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.13); border-radius: 14px; padding: 8px 8px 8px 14px;
+    transition: border-color .15s;
+  }
+  .composer .box:focus-within { border-color: var(--coral-soft); }
+  .composer textarea {
+    flex: 1; border: 0; background: transparent; color: #eef3ea; font: inherit; font-size: 13.5px;
+    resize: none; outline: none; max-height: 120px; line-height: 1.5; padding: 3px 0;
+  }
+  .composer textarea::placeholder { color: #7f9880; }
+  .composer .send {
+    width: 36px; height: 36px; border-radius: 10px; border: 0; cursor: pointer; flex: none;
+    background: linear-gradient(150deg, var(--coral), #c74a28); color: #fff; display: grid; place-items: center;
+    box-shadow: 0 4px 12px rgba(226,98,60,.35); transition: transform .15s, opacity .15s;
+  }
+  .composer .send:hover { transform: translateY(-1px); }
+  .composer .send:disabled { opacity: .45; cursor: default; transform: none; }
+  .composer .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding: 0 3px; }
+  .composer .foot .hint { font-size: 10.5px; color: #7f9880; }
+  .composer .foot .powered { font-size: 10.5px; color: #6f886f; }
+  .composer .foot .powered b { color: #9ab098; font-weight: 600; }
+
+  /* ---------- misc ---------- */
+  .fade-up { opacity: 0; transform: translateY(10px); animation: fadeUp .55s cubic-bezier(.2,.8,.2,1) forwards; }
+  .modal-back { position: fixed; inset: 0; background: rgba(28,27,23,.4); backdrop-filter: blur(3px); display: none; place-items: center; z-index: 40; }
+  .modal-back.show { display: grid; }
+  .modal {
+    background: var(--paper); border-radius: 16px; box-shadow: var(--shadow-lg); width: 440px; max-width: 92vw;
+    padding: 22px; border: 1px solid var(--line);
+  }
+  .modal h3 { font-family: var(--serif); margin: 0 0 4px; font-size: 19px; color: var(--ink); }
+  .modal p { color: var(--ink-2); font-size: 13px; margin: 0 0 16px; line-height: 1.55; }
+  .modal label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); display: block; margin: 12px 0 6px; }
+  .modal input {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit;
+    font-size: 13px; background: var(--cream); color: var(--ink);
+  }
+  .modal .actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
+  .modal button { font: inherit; font-size: 13px; font-weight: 600; padding: 9px 16px; border-radius: 10px; cursor: pointer; border: 1px solid var(--line); background: var(--paper); color: var(--ink-2); }
+  .modal button.primary { background: var(--spinach); color: #fff; border-color: var(--spinach); }
+
+  @keyframes fadeUp { to { opacity: 1; transform: none; } }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  @keyframes bob { 0%,100%{transform:translateY(0);opacity:.5} 50%{transform:translateY(-4px);opacity:1} }
+  @keyframes pop { 0%{transform:scale(.8);opacity:0} 60%{transform:scale(1.05)} 100%{transform:scale(1);opacity:1} }
+  @media (max-width: 1080px) { :root { --aside: 340px; } .grid2 { grid-template-columns: 1fr; } .kpis { grid-template-columns: repeat(2,1fr); } }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- nav rail -->
+  <nav class="rail">
+    <div class="mark">F</div>
+    <button class="active" title="Overview" aria-label="Overview">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+    </button>
+    <button title="Sales" aria-label="Sales">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5"/><path d="M4 19h16"/><rect x="7" y="11" width="3" height="5"/><rect x="12" y="8" width="3" height="8"/><rect x="17" y="13" width="3" height="3"/></svg>
+    </button>
+    <button title="Inventory" aria-label="Inventory">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>
+    </button>
+    <button title="Staffing" aria-label="Staffing">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/><path d="M16 4a3 3 0 010 6"/><path d="M21 20c0-2-1.5-3.5-3.5-4.2"/></svg>
+    </button>
+    <div class="sp"></div>
+    <button title="Settings" aria-label="Settings" id="cog">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.1-1l2-1.6-2-3.4-2.4 1a7 7 0 00-1.7-1L14.5 2h-4l-.3 2.4a7 7 0 00-1.7 1l-2.4-1-2 3.4 2 1.6a7 7 0 000 2l-2 1.6 2 3.4 2.4-1a7 7 0 001.7 1l.3 2.6h4l.3-2.6a7 7 0 001.7-1l2.4 1 2-3.4-2-1.6a7 7 0 00.1-1z"/></svg>
+    </button>
+    <div class="avatar">RM</div>
+  </nav>
+
+  <!-- main -->
+  <div class="main">
+    <div class="topbar">
+      <div class="brand">
+        <span class="name">Food<em>Mart</em> Ops</span>
+        <span class="tag">Store Intelligence</span>
+      </div>
+      <div class="spacer"></div>
+      <div class="selector" title="Change store">
+        <span class="dot"></span>
+        <div>
+          <div class="lbl">Store</div>
+          <div class="val" id="storeVal">Portland&nbsp;#14</div>
+        </div>
+        <span class="chev">▾</span>
+        <select id="storeSel">
+          <option value="pdx14">Portland #14 · Pacific NW</option>
+          <option value="sea3">Seattle #3 · Pacific NW</option>
+          <option value="sf22">San Francisco #22 · Bay Area</option>
+          <option value="den9">Denver #9 · Mountain</option>
+          <option value="all">All stores · National</option>
+        </select>
+      </div>
+      <div class="conn demo" id="conn" title="Data source">
+        <span class="led"></span><span id="connText">Demo data</span>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="pagehead">
+        <div>
+          <h1 id="pageTitle">Portland #14 · Today</h1>
+          <div class="sub">Regional manager view · <span id="pageStore">Pacific Northwest</span></div>
+        </div>
+        <div class="date" id="today">Thu · Week 41</div>
+      </div>
+
+      <!-- KPIs -->
+      <div class="kpis" id="kpis"></div>
+
+      <!-- charts -->
+      <div class="grid2">
+        <div class="card fade-up" style="animation-delay:.12s">
+          <div class="head">
+            <div class="t" id="mainTitle">Store Sales — this view
+              <small id="mainSub">Weekly trend · last 8 weeks</small>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center">
+              <span class="by" id="mainBy"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg> Ask FoodMart</span>
+              <div class="seg" id="chartSeg">
+                <button data-k="area" class="on">Trend</button>
+                <button data-k="bar">Breakdown</button>
+              </div>
+            </div>
+          </div>
+          <div class="body"><div id="mainChart"></div></div>
+        </div>
+
+        <div class="card listcard fade-up" style="animation-delay:.2s">
+          <div class="head"><div class="t">Movers <small>Product department · MoM</small></div></div>
+          <div class="body" id="movers"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- assistant -->
+  <aside class="aside">
+    <div class="ahead">
+      <div class="row">
+        <div class="glyph">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v3M12 18v3M5 12H2M22 12h-3"/><circle cx="12" cy="12" r="4.5"/></svg>
+        </div>
+        <div class="ttl">Ask <em>FoodMart</em></div>
+      </div>
+      <div class="persona">
+        <span>Persona</span>
+        <span class="chip" id="persona">Sales Analyst</span>
+        <span>· scoped to your stores</span>
+      </div>
+    </div>
+
+    <div class="thread" id="thread"></div>
+
+    <div class="chips" id="chips"><div class="lbl">Try asking</div></div>
+
+    <div class="composer">
+      <div class="box">
+        <textarea id="input" rows="1" placeholder="Ask about sales, products, trends…"></textarea>
+        <button class="send" id="send" title="Send">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 12h15M13 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+      <div class="foot">
+        <span class="hint">↵ to send · ⇧↵ new line</span>
+        <span class="powered">powered by <b>Saiku</b></span>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- settings modal -->
+<div class="modal-back" id="modalBack">
+  <div class="modal">
+    <h3>Connect to Saiku</h3>
+    <p>By default this portal talks to Saiku on the same origin (how a real OEM embeds — same host or reverse proxy). Point it at a running launcher to stream live AI answers, or leave blank to explore with demo data.</p>
+    <label>Saiku base URL</label>
+    <input id="baseUrl" placeholder="e.g. http://localhost:8080  (blank = same origin)" />
+    <label>Agent space</label>
+    <input id="spaceId" value="foodmart-sales-analyst" />
+    <div class="actions">
+      <button id="modalCancel">Cancel</button>
+      <button class="primary" id="modalSave">Save &amp; test</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   Config + state
+   ============================================================ */
+const CFG = {
+  base: localStorage.getItem('fm.base') || '',            // '' = same origin
+  space: localStorage.getItem('fm.space') || 'foodmart-sales-analyst',
+  cube: { connectionName:'unknown_foodmart', catalog:'FoodMart', schema:'FoodMart', cubeName:'Sales' }
+};
+let LIVE = false;                 // did the last live probe succeed?
+let sessionReady = false;
+const history = [];               // [{role, content}]
+
+/* Warm an admin/admin session so anonymous demo visitors' same-origin API calls
+   authenticate — mirrors the /showcase demo bootstrap. Harmless off the demo host
+   (the fetch just fails and we fall back to demo data). */
+async function ensureSession() {
+  if (sessionReady) return;
+  try {
+    const body = new URLSearchParams({ username: 'admin', password: 'admin' });
+    await fetch((CFG.base||'') + '/rest/saiku/session/', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString()
+    });
+    sessionReady = true;
+  } catch { /* surfaced by the API fetch that follows */ }
+}
+/* Saiku echoes an XSRF token on state-changing requests. */
+function withCsrf(headers) {
+  const m = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
+  if (m) headers['X-XSRF-TOKEN'] = decodeURIComponent(m[1]);
+  return headers;
+}
+const money = n => '$' + Math.round(n).toLocaleString();
+const moneyK = n => '$' + (n/1000).toFixed(1) + 'k';
+const el = (h) => { const t = document.createElement('template'); t.innerHTML = h.trim(); return t.content.firstChild; };
+const $ = (s) => document.querySelector(s);
+
+/* ============================================================
+   FoodMart-shaped seed data (classic Sales cube proportions)
+   ============================================================ */
+const STORES = {
+  pdx14:{ name:'Portland #14', region:'Pacific Northwest', mult:1.00, salesToday:48210, aov:28.40, units:1697, baskets:1412, dow:6.2 },
+  sea3 :{ name:'Seattle #3',   region:'Pacific Northwest', mult:1.31, salesToday:63140, aov:31.10, units:2031, baskets:1690, dow:3.4 },
+  sf22 :{ name:'San Francisco #22', region:'Bay Area',     mult:1.58, salesToday:76220, aov:34.75, units:2193, baskets:1802, dow:8.9 },
+  den9 :{ name:'Denver #9',    region:'Mountain',          mult:0.86, salesToday:41560, aov:26.20, units:1586, baskets:1330, dow:-1.8 },
+  all  :{ name:'All stores',   region:'National',          mult:9.42, salesToday:454300, aov:30.05, units:15117,baskets:12604,dow:4.1 }
+};
+const WEEKS = [118.2,124.6,120.9,133.1,128.4,126.0,130.3,138.4]; // $k weekly Store Sales
+const FAMILY = [['Food',409035],['Drink',105509],['Non-Consumable',50236]];
+const DEPT_MOM = [ ['Produce',22.6],['Dairy',-8.4],['Beverages',14.1],['Snack Foods',9.7],['Frozen Foods',-3.2],['Baking Goods',6.0] ];
+
+/* ============================================================
+   Rendering: KPIs
+   ============================================================ */
+function sparkline(vals, color) {
+  const w=74,h=30,max=Math.max(...vals),min=Math.min(...vals),rng=(max-min)||1;
+  const pts = vals.map((v,i)=>`${(i/(vals.length-1))*w},${h-((v-min)/rng)*(h-6)-3}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}"><polyline fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="${pts}"/></svg>`;
+}
+function renderKpis() {
+  const s = STORES[currentStore];
+  const cards = [
+    { cap:'Sales today', num: moneyK(s.salesToday), k:'var(--coral)', d:s.dow, vs:'vs last Thu', spark:WEEKS.slice(-6) },
+    { cap:'Avg basket', num:'$'+s.aov.toFixed(2), k:'var(--spinach-500)', d:2.1, vs:'vs 4-wk avg', spark:[26,27,26.5,28,27.6,28.4] },
+    { cap:'Units sold', num: s.units.toLocaleString(), k:'var(--amber)', d:4.4, vs:'vs last Thu', spark:[1500,1560,1520,1610,1640,1697] },
+    { cap:'Baskets', num: s.baskets.toLocaleString(), k:'var(--spinach)', d:-1.2, vs:'vs last Thu', spark:[1450,1430,1460,1440,1425,1412] },
+  ];
+  $('#kpis').innerHTML = cards.map((c,i)=>{
+    const up = c.d>=0;
+    return `<div class="kpi fade-up" style="--k:${c.k}; animation-delay:${i*60}ms">
+      <div class="cap">${c.cap}</div>
+      <div class="num">${c.num}</div>
+      <div class="delta ${up?'up':'down'}">${up?'▲':'▼'} ${Math.abs(c.d).toFixed(1)}%<span class="vs">${c.vs}</span></div>
+      ${sparkline(c.spark, up?'#2f7d54':'#c0492e')}
+    </div>`;
+  }).join('');
+}
+
+/* ============================================================
+   Rendering: main chart (area trend / bar breakdown)
+   ============================================================ */
+let mainMode = 'area';
+let barData = FAMILY.map(([n,v])=>({name:n, value:v}));   // current bar dataset (AI can replace)
+
+function renderMain() {
+  if (mainMode === 'area') renderArea(); else renderBars();
+  document.querySelectorAll('#chartSeg button').forEach(b=>b.classList.toggle('on', b.dataset.k===mainMode));
+}
+function renderArea() {
+  const s = STORES[currentStore];
+  const vals = WEEKS.map(v=>v*s.mult);
+  const w=560,h=210,pl=44,pr=12,pt=14,pb=26, iw=w-pl-pr, ih=h-pt-pb;
+  const max=Math.max(...vals)*1.08, min=Math.min(...vals)*0.86, rng=max-min;
+  const x=i=>pl+(i/(vals.length-1))*iw, y=v=>pt+ih-((v-min)/rng)*ih;
+  const line = vals.map((v,i)=>`${x(i)},${y(v)}`).join(' ');
+  const area = `${pl},${pt+ih} ${line} ${pl+iw},${pt+ih}`;
+  const grid = [0,.25,.5,.75,1].map(f=>{const yy=pt+ih*f; const val=max-rng*f; return `<line class="grid-line" x1="${pl}" y1="${yy}" x2="${pl+iw}" y2="${yy}"/><text class="axis-t" x="${pl-8}" y="${yy+3}" text-anchor="end">${'$'+Math.round(val)+'k'}</text>`;}).join('');
+  const labels = ['W34','W35','W36','W37','W38','W39','W40','W41'].map((l,i)=>`<text class="axis-t" x="${x(i)}" y="${h-8}" text-anchor="middle">${l}</text>`).join('');
+  const dots = vals.map((v,i)=>`<circle cx="${x(i)}" cy="${y(v)}" r="${i===vals.length-1?4:2.5}" fill="${i===vals.length-1?'#e2623c':'#3f6b4c'}"/>`).join('');
+  $('#mainChart').innerHTML =
+    `<svg viewBox="0 0 ${w} ${h}" width="100%" preserveAspectRatio="xMidYMid meet" style="max-height:230px">
+      <defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#3f6b4c" stop-opacity="0.32"/><stop offset="1" stop-color="#3f6b4c" stop-opacity="0"/>
+      </linearGradient></defs>
+      ${grid}
+      <polygon points="${area}" fill="url(#ag)"/>
+      <polyline points="${line}" fill="none" stroke="#2b5238" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      ${dots}${labels}
+    </svg>`;
+}
+function renderBars() {
+  const max = Math.max(...barData.map(d=>d.value)) || 1;
+  const palette = ['linear-gradient(90deg,#2b5238,#3f6b4c)','linear-gradient(90deg,#e2623c,#eb8a5f)','linear-gradient(90deg,#d99a2b,#e8b95a)','linear-gradient(90deg,#3f6b4c,#6b9b70)','linear-gradient(90deg,#b6532f,#e2623c)','linear-gradient(90deg,#8a6d1f,#d99a2b)'];
+  const total = barData.reduce((a,d)=>a+d.value,0);
+  $('#mainChart').innerHTML = barData.map((d,i)=>{
+    const pct = (d.value/max)*100, share = total? (d.value/total*100):0;
+    return `<div class="barrow">
+      <div class="nm" title="${d.name}">${d.name}</div>
+      <div class="track"><div class="fill" style="background:${palette[i%palette.length]}" data-w="${pct}"></div></div>
+      <div class="v"><b>${money(d.value)}</b> · ${share.toFixed(0)}%</div>
+    </div>`;
+  }).join('');
+  requestAnimationFrame(()=>document.querySelectorAll('#mainChart .fill').forEach(f=>f.style.width=f.dataset.w+'%'));
+}
+
+/* ============================================================
+   Rendering: movers list
+   ============================================================ */
+function renderMovers() {
+  $('#movers').innerHTML = DEPT_MOM.map((d,i)=>{
+    const up=d[1]>=0;
+    return `<div class="row"><span class="rank">${i+1}</span><span class="nm">${d[0]}</span>
+      <span class="mom ${up?'up':'down'}">${up?'+':''}${d[1].toFixed(1)}%</span></div>`;
+  }).join('');
+}
+
+/* ============================================================
+   Assistant thread
+   ============================================================ */
+function addUser(text) {
+  $('#thread').appendChild(el(`<div class="msg user fade-up"><div class="b">${escapeHtml(text)}</div></div>`));
+  scrollThread();
+}
+function addBot() {
+  const node = el(`<div class="msg bot fade-up">
+    <div class="who">FoodMart Analyst <span class="mdl" id="mdl"></span></div>
+    <div class="b"><span class="thinking"><i></i><i></i><i></i></span></div>
+  </div>`);
+  $('#thread').appendChild(node); scrollThread();
+  return node.querySelector('.b');
+}
+function scrollThread(){ const t=$('#thread'); t.scrollTop = t.scrollHeight; }
+function escapeHtml(s){ return s.replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+// light markdown: **bold**, `code`, $figures
+function fmt(s){
+  return escapeHtml(s)
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/(\$[\d,]+(?:\.\d+)?k?|\b\d+(?:\.\d+)?%)/g,'<span class="fig">$1</span>')
+    .replace(/\n/g,'<br>');
+}
+
+/* ============================================================
+   Saiku client — live SSE with graceful mock fallback
+   ============================================================ */
+async function askLive(question, onChunk) {
+  await ensureSession();
+  const url = (CFG.base||'') + '/rest/saiku/api/ai/spaces/' + encodeURIComponent(CFG.space) + '/ask/stream';
+  const res = await fetch(url, {
+    method:'POST', credentials:'include',
+    headers: withCsrf({'Content-Type':'application/json','Accept':'text/event-stream'}),
+    body: JSON.stringify({ question, cube: CFG.cube, history })
+  });
+  if (!res.ok || !res.body) throw new Error('HTTP '+res.status);
+  const reader = res.body.getReader(); const dec = new TextDecoder();
+  let buf='', model=null, kind=null, prose='', finalObj=null;
+  for(;;){
+    const {done,value} = await reader.read(); if(done) break;
+    buf += dec.decode(value,{stream:true}); let i;
+    while((i=buf.indexOf('\n\n'))>=0){
+      const frame=buf.slice(0,i); buf=buf.slice(i+2);
+      let ev='message', data='';
+      frame.split('\n').forEach(l=>{ if(l.startsWith('event:')) ev=l.slice(6).trim(); else if(l.startsWith('data:')) data+=l.slice(5).trim(); });
+      if(!data) continue; let d; try{ d=JSON.parse(data); }catch{ continue; }
+      if(ev==='model'){ model=d.model; onChunk({type:'model', model}); }
+      else if(ev==='intent'){ kind=d.kind; }
+      else if(ev==='chunk'){ prose+=d.delta||''; onChunk({type:'chunk', delta:d.delta||''}); }
+      else if(ev==='error'){ onChunk({type:'error', reason:d.reason}); }
+      else if(ev==='final'){ finalObj=d; }
+    }
+  }
+  return { model, kind, prose, final: finalObj };
+}
+
+/* Convert a live AskResponse.response (records) into {name,value} bars */
+function recordsToBars(resp){
+  if(!resp || !Array.isArray(resp.data) || !resp.data.length) return null;
+  const rows = resp.data;
+  const keys = Object.keys(rows[0]);
+  const cellNum = v => (v && typeof v==='object') ? (v.value ?? parseFloat(String(v.formatted||'').replace(/[^0-9.\-]/g,''))) : (typeof v==='number'? v : parseFloat(String(v).replace(/[^0-9.\-]/g,'')));
+  const dimKey = keys.find(k => typeof rows[0][k]==='string' || (rows[0][k] && rows[0][k].value===undefined && isNaN(cellNum(rows[0][k])))) || keys[0];
+  const measKey = keys.find(k => k!==dimKey && !isNaN(cellNum(rows[0][k]))) || keys[1] || keys[0];
+  return rows.slice(0,8).map(r=>({ name:String(r[dimKey] && r[dimKey].formatted || r[dimKey]), value: cellNum(r[measKey])||0 })).filter(d=>d.value);
+}
+
+/* ============================================================
+   Mock engine — scripted, realistic, streamed like SSE
+   ============================================================ */
+const SCRIPTS = [
+  { match:/prior week|last week|vs the prior|track/i,
+    model:'claude-sonnet-4-6',
+    prose:"Store Sales landed at **$138.4k** last week — up **6.2%** on the prior week's $130.3k. The weekend carried it: Saturday alone added $24.1k. Weekday footfall was flat, so the lift is basket-size, not traffic.",
+    view:'area', drove:'Refreshed the weekly trend' },
+  { match:/product family|breakdown|by family|q4/i,
+    model:'claude-sonnet-4-6',
+    prose:"Q4 Store Sales by Product Family — **Food $409.0k** (72%) leads, then **Drink $105.5k** (19%) and **Non-Consumable $50.2k** (9%). Food's share is up 1.4 pts on Q3; Drink softened over the holidays.",
+    bars: FAMILY.map(([n,v])=>({name:n,value:v})), drove:'Rebuilt the breakdown by Product Family' },
+  { match:/department|up the most|month-over-month|mom|mover/i,
+    model:'claude-sonnet-4-6',
+    prose:"**Produce** is the standout — **+22.6%** month-over-month, driven by the seasonal citrus reset. **Beverages** follows at +14.1%. On the downside, **Dairy** is off **8.4%** — worth a look at the milk planogram.",
+    bars: [['Produce',88200],['Beverages',71400],['Snack Foods',54100],['Baking Goods',39800],['Frozen Foods',31200],['Dairy',28600]].map(([n,v])=>({name:n,value:v})),
+    drove:'Ranked departments by month-over-month change' },
+  { match:/weekly-foodmart-rollup|rollup|weekly roll/i,
+    model:'claude-sonnet-4-6', skill:true,
+    prose:"**Weekly rollup — Week 41.** Store Sales **$138.4k**, +6.2% WoW. Top families: Food $409.0k, Drink $105.5k, Non-Consumable $50.2k. Biggest mover: Produce +22.6%. One flag: Dairy −8.4%, third week of decline.",
+    bars: FAMILY.map(([n,v])=>({name:n,value:v})), drove:'Ran the weekly rollup skill' },
+];
+const DEFAULT_SCRIPT = {
+  model:'claude-sonnet-4-6',
+  prose:"Here's the current read on the FoodMart Sales cube. **Food $409.0k** leads Store Sales at 72% of the mix, with **Drink** and **Non-Consumable** behind. Ask me to slice by store, week, or department and I'll rebuild the view.",
+  bars: FAMILY.map(([n,v])=>({name:n,value:v})), drove:'Showed the Product Family mix'
+};
+function pickScript(q){ return SCRIPTS.find(s=>s.match.test(q)) || DEFAULT_SCRIPT; }
+
+async function askMock(question, onChunk){
+  const s = pickScript(question);
+  onChunk({type:'model', model:s.model});
+  await sleep(320);
+  const words = s.prose.split(/(\s+)/);
+  for(const w of words){ onChunk({type:'chunk', delta:w}); await sleep(18 + Math.random()*34); }
+  await sleep(150);
+  return { model:s.model, kind: s.view?'VIEW_CHANGE':'QUERY', prose:s.prose,
+           mockView:s.view, mockBars:s.bars, drove:s.drove };
+}
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+
+/* ============================================================
+   Orchestration
+   ============================================================ */
+let busy = false;
+async function ask(question){
+  if(busy || !question.trim()) return; busy=true; setSend(false);
+  addUser(question); history.push({role:'user', content:question});
+  const bubble = addBot(); const mdlEl = bubble.parentNode.querySelector('#mdl');
+  let prose=''; let firstChunk=true; let drove=null, newBars=null, newView=null;
+
+  const onChunk = (e)=>{
+    if(e.type==='model'){ mdlEl.textContent = e.model || ''; }
+    else if(e.type==='chunk'){
+      if(firstChunk){ bubble.innerHTML=''; firstChunk=false; }
+      prose += e.delta;
+      bubble.innerHTML = fmt(prose) + '<span class="caret"></span>';
+      scrollThread();
+    } else if(e.type==='error'){
+      if(firstChunk){ bubble.innerHTML=''; firstChunk=false; }
+      prose += (prose?'\n\n':'') + 'The persona returned: ' + (e.reason||'a scope or provider error') + '.';
+      bubble.innerHTML = fmt(prose);
+    }
+  };
+
+  try {
+    let out;
+    if (LIVE || CFG.base) {
+      try {
+        out = await askLive(question, onChunk);
+        setConn(true);
+        // Live QUERY → render records; VIEW_CHANGE → swap; INSIGHT → prose already streamed
+        const resp = out.final && out.final.response;
+        const bars = recordsToBars(resp);
+        if (bars && bars.length) { newBars = bars; }
+        if (out.final && out.final.viewChange) { newView = 'area'; }
+        if (!out.prose) prose = liveSummary(out.final, bars);
+        drove = bars ? 'Rendered live results from the Sales cube' : (out.final && out.final.viewChange ? 'Switched the view' : null);
+        if (out.final && out.final.degraded) throw new Error('degraded'); // fall to mock for a nicer demo
+      } catch(err){
+        setConn(false);
+        out = await mockTurn(question, onChunk, ()=>{ if(firstChunk){bubble.innerHTML='';firstChunk=false;} });
+        prose = out.prose; newBars = out.mockBars; newView = out.mockView; drove = out.drove;
+      }
+    } else {
+      out = await mockTurn(question, onChunk, ()=>{ if(firstChunk){bubble.innerHTML='';firstChunk=false;} });
+      prose = out.prose; newBars = out.mockBars; newView = out.mockView; drove = out.drove;
+    }
+
+    // finalize bubble (strip caret) + attach "drove the dashboard" note
+    let html = fmt(prose || '(no answer)');
+    if (drove) html += `<div class="drove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>${drove}</div>`;
+    bubble.innerHTML = html;
+    history.push({role:'assistant', content: prose});
+
+    // drive the dashboard
+    if (newBars && newBars.length) { barData = newBars; mainMode='bar'; renderMain(); flashBy(); setMainTitle('Ask FoodMart result', question); }
+    else if (newView) { mainMode = newView; renderMain(); flashBy(); }
+    scrollThread();
+  } finally { busy=false; setSend(true); }
+}
+
+async function mockTurn(question, onChunk, clearFirst){
+  clearFirst && clearFirst();
+  return await askMock(question, onChunk);
+}
+function liveSummary(final, bars){
+  if(!final) return 'Done.';
+  if(final.insight && final.insight.markdown) return final.insight.markdown;
+  if(bars && bars.length){ const top=bars.slice(0,3).map(b=>`**${b.name}** ${money(b.value)}`).join(', '); return `Top lines: ${top}. Rendered on your dashboard.`; }
+  if(final.viewChange) return 'Switched the view as requested.';
+  if(final.reason) return final.reason;
+  return 'Done — see the dashboard.';
+}
+function flashBy(){ const b=$('#mainBy'); b.classList.remove('show'); void b.offsetWidth; b.classList.add('show'); }
+function setMainTitle(t, sub){ $('#mainTitle').childNodes[0].nodeValue = t+' '; $('#mainSub').textContent = sub.length>52? sub.slice(0,52)+'…' : sub; }
+
+/* ============================================================
+   Connection / settings
+   ============================================================ */
+function setConn(live){
+  LIVE = live;
+  const c=$('#conn');
+  c.classList.toggle('live', live); c.classList.toggle('demo', !live);
+  $('#connText').textContent = live ? 'Live · Saiku' : 'Demo data';
+  $('#persona').textContent = 'Sales Analyst';
+}
+async function probeLive(){
+  if(!CFG.base && location.protocol==='file:') { setConn(false); return; }  // file:// can't do same-origin API
+  try {
+    await ensureSession();
+    const url=(CFG.base||'')+'/rest/saiku/api/ai/spaces';
+    const r = await fetch(url, {credentials:'include', headers:{'Accept':'application/json'}});
+    setConn(r.ok);
+  } catch { setConn(false); }
+}
+
+/* ============================================================
+   Wiring
+   ============================================================ */
+let currentStore = 'pdx14';
+function setStore(id){
+  currentStore = id; const s=STORES[id];
+  $('#storeVal').innerHTML = s.name.replace(' ','&nbsp;');
+  $('#pageTitle').textContent = s.name + ' · Today';
+  $('#pageStore').textContent = s.region;
+  renderKpis(); if(mainMode==='area') renderMain();
+}
+function setSend(on){ $('#send').disabled=!on; }
+
+function seedChips(){
+  const prompts = [
+    "How did Store Sales track last week vs the prior week?",
+    "Break down Store Sales by Product Family for Q4.",
+    "Which Product Department is up the most month-over-month?",
+    "/weekly-foodmart-rollup"
+  ];
+  const box=$('#chips');
+  prompts.forEach(p=>{
+    const skill = p.startsWith('/');
+    const b = el(`<button class="chip-s ${skill?'skill':''}">${escapeHtml(skill? p.slice(1).replace(/-/g,' '): p)}</button>`);
+    b.onclick=()=>{ if(!busy){ ask(p); } };
+    box.appendChild(b);
+  });
+}
+function greet(){
+  const bubble = addBot();
+  bubble.parentNode.querySelector('#mdl').textContent='';
+  bubble.innerHTML = fmt("Morning. I'm scoped to your **Pacific NW** stores and the **FoodMart Sales** cube. Ask in plain English — I'll answer and update the dashboard. Try one of the prompts below.");
+}
+
+function autosize(t){ t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,120)+'px'; }
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  // date
+  $('#today').textContent = 'Thu · Week 41';
+  renderKpis(); renderMovers(); renderMain(); seedChips(); greet();
+
+  // store selector
+  $('#storeSel').addEventListener('change', e=>setStore(e.target.value));
+
+  // chart segmented control
+  $('#chartSeg').addEventListener('click', e=>{
+    const b=e.target.closest('button'); if(!b) return; mainMode=b.dataset.k;
+    if(mainMode==='bar' && (!barData||!barData.length)) barData=FAMILY.map(([n,v])=>({name:n,value:v}));
+    if(mainMode==='bar') setMainTitle('Store Sales', 'by Product Family');
+    else setMainTitle('Store Sales — this view','Weekly trend · last 8 weeks');
+    renderMain();
+  });
+
+  // composer
+  const input=$('#input');
+  input.addEventListener('input', ()=>autosize(input));
+  input.addEventListener('keydown', e=>{
+    if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); const v=input.value; input.value=''; autosize(input); ask(v); }
+  });
+  $('#send').addEventListener('click', ()=>{ const v=input.value; input.value=''; autosize(input); ask(v); });
+
+  // settings modal
+  $('#cog').onclick=()=>{ $('#baseUrl').value=CFG.base; $('#spaceId').value=CFG.space; $('#modalBack').classList.add('show'); };
+  $('#conn').onclick=()=>$('#cog').onclick();
+  $('#modalCancel').onclick=()=>$('#modalBack').classList.remove('show');
+  $('#modalBack').onclick=e=>{ if(e.target===$('#modalBack')) $('#modalBack').classList.remove('show'); };
+  $('#modalSave').onclick=async ()=>{
+    CFG.base=$('#baseUrl').value.trim().replace(/\/$/,''); CFG.space=$('#spaceId').value.trim()||'foodmart-sales-analyst';
+    localStorage.setItem('fm.base',CFG.base); localStorage.setItem('fm.space',CFG.space);
+    $('#modalBack').classList.remove('show'); await probeLive();
+  };
+
+  probeLive();
+});
+</script>
+</body>
+</html>
