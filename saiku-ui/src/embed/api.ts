@@ -171,6 +171,56 @@ export interface EmbedMember {
   uniqueName: string;
 }
 
+/**
+ * Ask a plain-English question against a kind="ai" embed. The cube ref is pinned
+ * by the token; the client supplies only the question and optional history.
+ *
+ * The response is the same {@code AiAskApi.AskResponse} shape agent clients already know.
+ * We return it as a typed record — callers can render the answer text, drill into
+ * the generated MDX, or surface the executed query envelope.
+ */
+export async function askEmbedAi(
+  server: string,
+  cubeId: string,
+  token: string | null | undefined,
+  question: string,
+  history?: EmbedAskMessage[],
+): Promise<EmbedAskResponse> {
+  const base = stripTrailingSlash(server);
+  const url =
+    `${base}/rest/saiku/api/embed/ai/${encodePath(cubeId)}/ask`;
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
+  if (token) headers["X-Saiku-Embed-Token"] = token;
+  const body = JSON.stringify({ question, history: history ?? [] });
+  const resp = await fetch(url, { method: "POST", headers, credentials: "omit", body });
+  if (!resp.ok) throw await readError(resp);
+  return (await resp.json()) as EmbedAskResponse;
+}
+
+/** One turn of ask history. Role is "user" or "assistant". */
+export interface EmbedAskMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/**
+ * Response from the AI ask endpoint. Mirrors {@code AiAskApi.AskResponse} — narrated
+ * answer, generated MDX (for debugging), the executed request/response envelope.
+ * Fields the widget doesn't render round-trip via {@code unknown}.
+ */
+export interface EmbedAskResponse {
+  answer?: string;
+  narrative?: string;
+  degraded?: boolean;
+  reason?: string;
+  mdx?: string;
+  request?: unknown;
+  response?: unknown;
+}
+
 /* Re-export the dashboard shape so callers don't have to dig into types.ts. */
 export type { EmbedDashboardLayout, EmbedDashboardTile } from "./types";
 

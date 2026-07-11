@@ -1088,7 +1088,7 @@ public class AiQueryResource {
     }
 
     /** Parse a "connection/catalog/schema/cube" cubeId. Returns null on a malformed input. */
-    static AiCubeRef parseCubeId(String cubeId) {
+    public static AiCubeRef parseCubeId(String cubeId) {
         if (cubeId == null || cubeId.isEmpty()) return null;
         String[] parts = cubeId.split("/", -1);
         if (parts.length != 4) return null;

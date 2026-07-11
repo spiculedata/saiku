@@ -125,7 +125,13 @@ public class EmbedTokenResource {
         String username = currentUsername();
         List<String> roles = currentRoles();
 
-        if (!hasGrant(path, username, roles)) {
+        // AI-kind tokens pin a cube (not a repository file), so the file-ACL grant check
+        // doesn't apply. Gate on admin only for v1 — a follow-up can add cube-level ACLs.
+        if ("ai".equals(kind)) {
+            if (!isAdmin(roles)) {
+                return forbidden("AI embed tokens require admin privileges");
+            }
+        } else if (!hasGrant(path, username, roles)) {
             return forbidden("You don't have permission to embed this resource");
         }
 
@@ -382,8 +388,8 @@ public class EmbedTokenResource {
         if (kind == null || kind.isBlank()) {
             return badRequest("resourceKind", "resourceKind required");
         }
-        if (!"query".equals(kind) && !"dashboard".equals(kind)) {
-            return badRequest("resourceKind", "resourceKind must be 'query' or 'dashboard'");
+        if (!"query".equals(kind) && !"dashboard".equals(kind) && !"ai".equals(kind)) {
+            return badRequest("resourceKind", "resourceKind must be 'query', 'dashboard', or 'ai'");
         }
         if (path == null || path.isBlank()) {
             return badRequest("resourcePath", "resourcePath required");
@@ -397,6 +403,18 @@ public class EmbedTokenResource {
         }
         if ("dashboard".equals(kind) && !path.endsWith(".saikudash")) {
             return badRequest("resourcePath", "dashboard resourcePath must end .saikudash");
+        }
+        // For kind="ai" the resourcePath is a cube ID — connection/catalog/schema/cubeName.
+        // Sanity-check the shape so the view endpoint's downstream parseCubeId can't be
+        // handed something that would look like a file path (with slashes) but isn't a cube.
+        if ("ai".equals(kind)) {
+            String[] parts = path.split("/");
+            if (parts.length != 4 || java.util.Arrays.stream(parts).anyMatch(String::isBlank)) {
+                return badRequest("resourcePath", "ai resourcePath must be connection/catalog/schema/cubeName");
+            }
+            if (path.endsWith(".saiku") || path.endsWith(".saikudash")) {
+                return badRequest("resourcePath", "ai resourcePath must not carry a file extension");
+            }
         }
         return null;
     }

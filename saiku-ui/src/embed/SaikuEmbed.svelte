@@ -31,9 +31,10 @@
    *   server  — origin of the Saiku launcher, e.g. https://demo.saiku.bi
    *   token   — opaque embed token from POST /saiku/api/embed/tokens.
    *             Omit for anonymous public reads.
-   *   kind    — "query" (default) or "dashboard"
-   *   path    — repository path; ends .saiku for kind=query,
-   *             .saikudash for kind=dashboard
+   *   kind    — "query" (default), "dashboard", or "ai"
+   *   path    — kind="query": repository path ending .saiku
+   *             kind="dashboard": path ending .saikudash
+   *             kind="ai": cube ref connection/catalog/schema/cubeName
    *   render  — for kind=query only: "table" (default), "matrix", or "chart"
    *   mode    — for render=chart only: "bar" (default), "line", "pie"
    *   height  — CSS height for the rendered surface (default 400px)
@@ -46,6 +47,7 @@
   import EmbedChart from "./EmbedChart.svelte";
   import EmbedDashboard from "./EmbedDashboard.svelte";
   import EmbedMatrix from "./EmbedMatrix.svelte";
+  import EmbedAsk from "./EmbedAsk.svelte";
   import { fetchSavedQuery, EmbedFetchError } from "./api";
   import type { EmbedCaption, EmbedMatrixRow, EmbedRow } from "./types";
 
@@ -88,9 +90,8 @@
     const k = kind.trim() || "query";
     const r = (render || "").trim().toLowerCase();
     if (k !== "query") {
-      // Dashboards manage their own fetches (one for the layout, then
-      // one per tile under runAs). Reset so a kind switch doesn't show
-      // stale query rows.
+      // Dashboards + AI ask both manage their own fetches. Reset so a kind
+      // switch doesn't show stale query rows.
       rows = null;
       matrixRows = null;
       error = null;
@@ -149,6 +150,8 @@
 <div class="w-full h-full overflow-auto" style="min-height: {height};">
   {#if kind === "dashboard"}
     <EmbedDashboard {server} {token} {path} />
+  {:else if kind === "ai"}
+    <EmbedAsk {server} {token} cubeId={path} />
   {:else if loading}
     <div class="state">Loading…</div>
   {:else if error}

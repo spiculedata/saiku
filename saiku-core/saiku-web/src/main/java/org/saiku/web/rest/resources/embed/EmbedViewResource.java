@@ -298,6 +298,77 @@ public class EmbedViewResource {
         }
     }
 
+    /* --------------------------- ai ask ----------------------------- */
+
+    /**
+     * DimSum-in-a-widget. A kind="ai" embed token pins a cube (resourcePath =
+     * connection/catalog/schema/cubeName); this endpoint accepts a plain-English
+     * question and runs it through the same {@link org.saiku.service.olap.ai.ask.AiAskService}
+     * the /ai/ask REST endpoint uses, under the pinned owner's data scope.
+     *
+     * <p>Guest supplies only the question — the cube ref comes from the token so the
+     * embedder can't fish across cubes. Response envelope is the same
+     * {@code AiAskApi.AskResponse} shape agent clients already know.
+     */
+    @POST
+    @Path("/ai/{cubeId:.+}/ask")
+    @jakarta.ws.rs.Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response aiAsk(@PathParam("cubeId") String cubeIdParam, AiAskBody body) {
+        EmbedGuestDetails g = guest();
+        if (g == null || !"ai".equals(g.resourceKind)) {
+            return invalid();
+        }
+        // Defence-in-depth: cube ref comes from the pinned resourcePath, never from the URI.
+        // The auth filter already pinned this comparison at the trust boundary; re-assert here
+        // so a future filter regression can't leak into arbitrary-cube ask calls.
+        String pinnedCubeId = g.resourcePath == null ? null : g.resourcePath.replaceFirst("^/", "");
+        if (pinnedCubeId == null || pinnedCubeId.isBlank()) {
+            return invalid();
+        }
+        if (body == null || body.question == null || body.question.isBlank()) {
+            return harden(Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("status", "VALIDATION_ERROR", "field", "question", "error", "question required"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build());
+        }
+        try {
+            Response result = sessionService.runAs(g.ownerUser, g.ownerRoles, () -> {
+                org.saiku.service.olap.ai.AiCubeRef ref =
+                        org.saiku.web.rest.resources.AiQueryResource.parseCubeId(pinnedCubeId);
+                if (ref == null) {
+                    return Response.status(Response.Status.BAD_REQUEST)
+                            .entity(Map.of(
+                                    "status", "VALIDATION_ERROR",
+                                    "error", "pinned cube id is malformed"))
+                            .type(MediaType.APPLICATION_JSON)
+                            .build();
+                }
+                org.saiku.service.olap.ai.ask.AiAskApi.AskRequest req =
+                        new org.saiku.service.olap.ai.ask.AiAskApi.AskRequest();
+                req.setQuestion(body.question);
+                req.setCube(ref);
+                if (body.history != null) req.setHistory(body.history);
+                return aiQueryResource.ask(req);
+            });
+            audit(g, "/saiku/api/embed/ai/ask", outcomeFor(result.getStatus()));
+            return withPolicyHeader(harden(result), g);
+        } catch (RuntimeException e) {
+            log.warn("embed-view ai ask failed for {}", g.resourcePath, e);
+            audit(g, "/saiku/api/embed/ai/ask", AiAuditEntry.OUTCOME_ERROR);
+            return harden(Response.serverError()
+                    .entity(Map.of("status", "ERROR", "error", "AI ask failed"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build());
+        }
+    }
+
+    /** Body accepted by {@link #aiAsk}. Guest supplies only the question and optional history. */
+    public static class AiAskBody {
+        public String question;
+        public java.util.List<org.saiku.service.olap.ai.ask.AiAskApi.NlAskMessageDto> history;
+    }
+
     /* --------------------------- helpers ---------------------------- */
 
     /**
