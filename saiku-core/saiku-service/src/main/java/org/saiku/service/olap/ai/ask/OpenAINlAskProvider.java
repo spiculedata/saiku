@@ -28,7 +28,11 @@ import java.time.Duration;
  * and parse failures all return {@link NlAskResponse#degraded(String, String)} rather than throwing.
  * The shared request/response orchestration lives in {@link AbstractNlAskProvider}.
  */
-public final class OpenAINlAskProvider extends AbstractNlAskProvider {
+// Non-final so {@link AzureOpenAiNlAskProvider} (saiku#1431) can override the auth-header seam
+// without duplicating the whole request-building surface. Every method that would matter for a
+// downstream provider (endpoint, model, timeouts, request body building, response parsing) stays
+// method-scoped and safely overridable.
+public class OpenAINlAskProvider extends AbstractNlAskProvider {
 
     /** Default model id. Bump when OpenAI publishes a newer GA structured-output model. */
     public static final String DEFAULT_MODEL = "gpt-4o-mini";

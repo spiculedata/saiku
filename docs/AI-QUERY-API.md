@@ -1124,18 +1124,50 @@ file consumed by Spring.
 saiku.ai.ask.provider = anthropic
 # env ANTHROPIC_API_KEY = sk-ant-...
 
-# openai (or any OpenAI-compatible host — Azure, vLLM, Ollama, Together)
+# openai (or any OpenAI-compatible host — vLLM, Ollama, Together, LiteLLM)
 saiku.ai.ask.provider = openai
 # env OPENAI_API_KEY    = sk-...
 
-# optional, both providers
-saiku.ai.ask.model    = claude-sonnet-4-7 | gpt-4o-mini | ...
+# azure-openai (saiku#1431) — Azure OpenAI Service. Requires an endpoint.
+saiku.ai.ask.provider = azure-openai
+saiku.ai.ask.endpoint = https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completions?api-version=2024-02-15-preview
+saiku.ai.ask.model    = <deployment>          # the deployment name in the URL; sent as `model` in the body too
+# env AZURE_OPENAI_API_KEY = <azure-api-key>
+
+# optional, all providers
+saiku.ai.ask.model    = claude-sonnet-4-7 | gpt-4o-mini | <azure-deployment> | ...
 saiku.ai.ask.endpoint = https://my.openai-compatible.host/v1/chat/completions
 saiku.ai.ask.apiKey   = sk-...   # explicit override of the env var
 ```
 
 Provider defaults: `anthropic` → `claude-sonnet-4-6`,
-`openai` → `gpt-4o-mini` against `https://api.openai.com/v1/chat/completions`.
+`openai` → `gpt-4o-mini` against `https://api.openai.com/v1/chat/completions`,
+`azure-openai` → no default endpoint (must be configured explicitly;
+provider refuses to construct otherwise so the key can't accidentally
+leak to the wrong host).
+
+### Bring-your-own LLM (saiku#1431)
+
+Enterprise deployments often can't send prompts to Anthropic or OpenAI
+directly — the LLM has to run inside the customer's VPC or behind their
+existing procurement. The ask layer covers the three most common
+BYOLLM shapes:
+
+| Shape                    | Provider          | Endpoint                                                                              | Auth header               |
+|--------------------------|-------------------|---------------------------------------------------------------------------------------|---------------------------|
+| Azure OpenAI Service     | `azure-openai`    | `https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completions?api-version=<v>` | `api-key: <key>`         |
+| Self-hosted / OpenAI-compat proxy (vLLM, Ollama, LiteLLM, Together) | `openai`          | any URL that speaks OpenAI's Chat Completions API                                     | `Authorization: Bearer …` |
+| AWS Bedrock              | `openai` via [LiteLLM](https://docs.litellm.ai/) proxy | LiteLLM in front of Bedrock (`https://litellm.internal/v1/chat/completions`) | `Authorization: Bearer …` (LiteLLM handles SigV4 upstream) |
+
+The native `azure-openai` adapter takes care of the two Azure-specific
+things (deployment-name-in-URL and `api-key` header) so operators don't
+have to run a translation proxy for the most common case.
+
+For Bedrock, the recommended pattern is LiteLLM as an OpenAI-compatible
+front — it handles SigV4 upstream and Saiku hits it as a plain
+`openai` provider. This avoids baking the AWS SDK into Saiku itself
+(30+ MB of jars for a rarely-changing surface). A native Bedrock
+provider can land as a follow-up if the LiteLLM path proves painful.
 
 **API keys are never logged.** A single INFO line at boot records the
 selected provider + model:

@@ -25,6 +25,10 @@ import org.slf4j.LoggerFactory;
  *       {@code ANTHROPIC_API_KEY} env var.
  *   <li>{@code openai} — {@link OpenAINlAskProvider}; API key from {@code apiKey} arg or the
  *       {@code OPENAI_API_KEY} env var.
+ *   <li>{@code azure-openai} — {@link AzureOpenAiNlAskProvider} (saiku#1431); API key from
+ *       {@code apiKey} arg or the {@code AZURE_OPENAI_API_KEY} env var. Requires
+ *       {@code endpoint} pointing at the deployment URL
+ *       ({@code https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completions?api-version=<version>}).
  * </ul>
  *
  * <p>API keys are never logged. When a non-noop provider is selected, a single INFO line records
@@ -37,9 +41,12 @@ public final class NlAskProviderFactory {
     public static final String PROVIDER_NOOP = "noop";
     public static final String PROVIDER_ANTHROPIC = "anthropic";
     public static final String PROVIDER_OPENAI = "openai";
+    /** saiku#1431 — the Azure OpenAI Service. */
+    public static final String PROVIDER_AZURE_OPENAI = "azure-openai";
 
     public static final String ENV_ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY";
     public static final String ENV_OPENAI_API_KEY = "OPENAI_API_KEY";
+    public static final String ENV_AZURE_OPENAI_API_KEY = "AZURE_OPENAI_API_KEY";
 
     private final String providerName;
     private final String apiKey;
@@ -101,6 +108,36 @@ public final class NlAskProviderFactory {
             LOGGER.info("AI ask provider: openai (model={}, endpoint={})", effectiveModel, effectiveEndpoint);
             return new OpenAINlAskProvider(new OpenAINlAskProvider.Config(
                     resolvedKey, effectiveModel, effectiveEndpoint, 0.0, 4096, Duration.ofSeconds(60)));
+        }
+        if (PROVIDER_AZURE_OPENAI.equalsIgnoreCase(name)) {
+            String resolvedKey = resolveApiKey(ENV_AZURE_OPENAI_API_KEY);
+            if (resolvedKey == null) {
+                LOGGER.warn(
+                        "AI ask provider set to 'azure-openai' but no API key configured "
+                                + "(neither saiku.ai.ask.apiKey nor {} is set); falling back to NoopProvider.",
+                        ENV_AZURE_OPENAI_API_KEY);
+                return new NoopNlAskProvider();
+            }
+            String resolvedEndpoint = normalise(endpoint);
+            if (resolvedEndpoint == null) {
+                // Azure has no default endpoint — the deployment URL is per-resource and
+                // per-deployment, so we can't invent one. Refuse to construct rather than
+                // silently emitting to OpenAI's default host on the wrong auth header.
+                LOGGER.warn("AI ask provider set to 'azure-openai' but saiku.ai.ask.endpoint is unset. "
+                        + "Configure it to your deployment URL "
+                        + "(https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completions?api-version=<version>). "
+                        + "Falling back to NoopProvider.");
+                return new NoopNlAskProvider();
+            }
+            String resolvedModel = normalise(model);
+            String effectiveModel =
+                    resolvedModel == null ? AzureOpenAiNlAskProvider.DEFAULT_AZURE_MODEL : resolvedModel;
+            LOGGER.info(
+                    "AI ask provider: azure-openai (deployment/model={}, endpoint={})",
+                    effectiveModel,
+                    resolvedEndpoint);
+            return new AzureOpenAiNlAskProvider(new OpenAINlAskProvider.Config(
+                    resolvedKey, effectiveModel, resolvedEndpoint, 0.0, 4096, Duration.ofSeconds(60)));
         }
         LOGGER.warn("Unknown AI ask provider '{}'; falling back to NoopProvider.", providerName);
         return new NoopNlAskProvider();
