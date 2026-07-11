@@ -1239,6 +1239,97 @@ curl -sS -X POST -H 'Content-Type: application/json' \
 # }
 ```
 
+### Streaming variant — `POST /ai/ask/stream` (saiku#1433)
+
+Same request body, same auth, same rate/size guards, same envelope
+shape — but the response is a Server-Sent Events stream so embedded
+chat surfaces can render progress as it arrives.
+
+```http
+POST /rest/saiku/api/ai/ask/stream
+Content-Type: application/json
+Accept:       text/event-stream
+```
+
+Response is a sequence of SSE events per [WHATWG](https://html.spec.whatwg.org/multipage/server-sent-events.html):
+
+```
+event: model
+data: {"model":"claude-sonnet-4-6"}
+
+event: intent
+data: {"kind":"INSIGHT"}
+
+event: chunk
+data: {"delta":"Store "}
+
+event: chunk
+data: {"delta":"Sales trended up 12% week-on-week."}
+
+event: final
+data: {"degraded":false,"model":"claude-sonnet-4-6","insight":{"markdown":"Store Sales trended up 12% week-on-week."}}
+```
+
+Event names:
+
+| Event    | When                                                    | Payload                                                                         |
+|----------|---------------------------------------------------------|---------------------------------------------------------------------------------|
+| `model`  | Always fires first when the provider returned a model id | `{"model": "<model-id>"}`                                                        |
+| `intent` | After tool routing, before payload                       | `{"kind": "QUERY" \| "INSIGHT" \| "VIEW_CHANGE"}`                                |
+| `chunk`  | For prose-carrying intents (INSIGHT + VIEW_CHANGE `reason`), zero or more times | `{"delta": "<word or whitespace run>"}` — concatenating all deltas recovers the source |
+| `final`  | Always fires last on success                             | the complete `AskResponse` envelope — same shape as sync `/ai/ask` returns       |
+| `error`  | On degraded (provider transport / parse / auth failure)  | `{"reason": "<explanation>"}` — followed by a `final` event with `degraded:true` |
+
+**Streaming semantics (v1).** The underlying provider call is still
+synchronous — the LLM's tool-use response arrives whole. The endpoint
+then splits any prose fields (insight markdown, view-change reason)
+into word-sized deltas so the client renders progressively. True
+per-token streaming from the LLM provider is a follow-up; the wire
+shape above is stable so a future PR that plugs in real LLM streaming
+won't require any client changes.
+
+**Client-side accumulation:**
+
+```js
+const es = new EventSource('/rest/saiku/api/ai/ask/stream', { withCredentials: true });
+let markdown = "";
+es.addEventListener('chunk', (e) => {
+  markdown += JSON.parse(e.data).delta;
+  render(markdown);
+});
+es.addEventListener('final', (e) => {
+  const full = JSON.parse(e.data);
+  // full === same shape as POST /ai/ask returns
+  es.close();
+});
+es.addEventListener('error', (e) => {
+  const err = JSON.parse(e.data);
+  showError(err.reason);
+});
+```
+
+Or with `fetch` for POST bodies (EventSource is GET-only):
+
+```js
+const res = await fetch('/rest/saiku/api/ai/ask/stream', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
+  body: JSON.stringify({ question, cube }),
+});
+const reader = res.body.getReader();
+const decoder = new TextDecoder();
+let buffer = '';
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  buffer += decoder.decode(value, { stream: true });
+  // Split on double-newlines (event boundaries) and dispatch each event.
+  const events = buffer.split('\n\n');
+  buffer = events.pop();
+  for (const raw of events) dispatchSseEvent(raw);
+}
+```
+
 ### What the model sees vs doesn't
 
 The ask layer sends the model **only** the cube's AiSchema (serialised

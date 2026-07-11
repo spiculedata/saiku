@@ -857,6 +857,304 @@ public class AiQueryResource {
         return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
     }
 
+    /**
+     * Streaming variant of {@link #ask(AiAskApi.AskRequest)} (saiku#1433). Same request body,
+     * same response envelope, but the endpoint speaks Server-Sent Events so embedded chat surfaces
+     * can render progress as it arrives — the "assistant is typing…" affordance without waiting on
+     * the full round-trip.
+     *
+     * <p>Wire format (WHATWG SSE per <a href="https://html.spec.whatwg.org/multipage/server-sent-events.html">
+     * the HTML spec</a>):
+     *
+     * <pre>{@code
+     * event: model
+     * data: {"model":"claude-sonnet-4-6"}
+     *
+     * event: intent
+     * data: {"kind":"INSIGHT"}
+     *
+     * event: chunk
+     * data: {"delta":"Store "}
+     *
+     * event: chunk
+     * data: {"delta":"Sales trended up 12% week-on-week..."}
+     *
+     * event: final
+     * data: {"degraded":false,"model":"...","insight":{...}}
+     * }</pre>
+     *
+     * <p><strong>Streaming semantics (v1).</strong> The underlying provider call is still
+     * synchronous — the LLM's tool-use response is emitted whole. The endpoint then chunks any
+     * prose fields (insight markdown, view-change reason) into word-sized deltas so the client
+     * gets a progressive render experience. True per-token streaming from the LLM provider is a
+     * follow-up (both Anthropic and OpenAI expose streaming APIs, but their tool-use streaming
+     * payloads are non-trivial to accumulate at the AbstractNlAskProvider seam). The wire shape
+     * is stable; a future PR that plugs in real LLM streaming won't require client changes.
+     *
+     * <p>Rate limiter + size cap + policy gate + auth are identical to {@link
+     * #ask(AiAskApi.AskRequest)} — the streaming variant isn't a bypass surface.
+     */
+    @POST
+    @Path("/ask/stream")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces("text/event-stream")
+    public Response askStream(AiAskApi.AskRequest body) {
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
+        if (body == null) {
+            return badRequest("body", "request body required", null);
+        }
+        if (body.getQuestion() == null || body.getQuestion().isBlank()) {
+            return badRequest("question", "question must be non-blank", null);
+        }
+        if (body.getCube() == null || body.getCube().getCubeName() == null) {
+            return badRequest("cube", "cube ref required", null);
+        }
+        org.saiku.web.security.ratelimit.AiAskGuard.Violation sizeViolation =
+                org.saiku.web.security.ratelimit.AiAskGuard.checkSize(body);
+        if (sizeViolation != null) {
+            return askLimitResponse(sizeViolation.isPayloadTooLarge() ? 413 : 400, sizeViolation.getMessage());
+        }
+        if (!askRateLimiter.tryAcquire(askRateKey())) {
+            return askLimitResponse(
+                    429,
+                    "Too many AI ask requests — limit is " + askRateLimiter.getMaxCalls() + " per "
+                            + (askRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly.");
+        }
+        if (askService == null) {
+            AiAskApi.AskResponse notConfigured = new AiAskApi.AskResponse();
+            notConfigured.setDegraded(true);
+            notConfigured.setReason(
+                    "AI ask is not configured. Set saiku.ai.ask.provider to 'anthropic' or 'openai' and supply the matching API key.");
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity(notConfigured)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+
+        org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force =
+                org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.AUTO;
+        if (body.getForceTool() != null) {
+            try {
+                force = org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool.valueOf(
+                        body.getForceTool().toUpperCase());
+            } catch (IllegalArgumentException ignored) {
+                // Unknown value — keep AUTO, same as the sync endpoint.
+            }
+        }
+        final org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool forceFinal = force;
+
+        jakarta.ws.rs.core.StreamingOutput stream = outputStream -> {
+            java.io.Writer writer =
+                    new java.io.OutputStreamWriter(outputStream, java.nio.charset.StandardCharsets.UTF_8);
+            SseWriter sse = new SseWriter(writer);
+            try {
+                AiAskService.AskOutcome outcome = askService.ask(
+                        body.getCube(),
+                        body.getQuestion(),
+                        body.historyAsMessages(),
+                        body.getCellsetDigest(),
+                        forceFinal,
+                        body.getCurrentQuery());
+
+                // model event — always fired first so the client can show which backend answered.
+                if (outcome.model() != null) {
+                    sse.event("model", MAPPER.writeValueAsString(java.util.Map.of("model", outcome.model())));
+                }
+
+                if (outcome.degraded()) {
+                    // Degraded path — emit an error event with the provider's reason, then a final.
+                    sse.event(
+                            "error",
+                            MAPPER.writeValueAsString(
+                                    java.util.Map.of("reason", outcome.reason() == null ? "" : outcome.reason())));
+                    AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+                    out.setDegraded(true);
+                    out.setReason(outcome.reason());
+                    if (outcome.model() != null) out.setModel(outcome.model());
+                    sse.event("final", MAPPER.writeValueAsString(out));
+                    return;
+                }
+
+                sse.event(
+                        "intent",
+                        MAPPER.writeValueAsString(java.util.Map.of(
+                                "kind",
+                                outcome.kind() == null ? "" : outcome.kind().name())));
+
+                AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+                out.setDegraded(false);
+                out.setModel(outcome.model());
+
+                if (outcome.kind() == AiAskService.AskOutcome.Kind.INSIGHT) {
+                    // Chunk the insight markdown into word-sized deltas so the client sees a
+                    // progressive stream. Fake-stream today; wire-stable for real LLM streaming later.
+                    out.setInsight(outcome.insight());
+                    String markdown =
+                            outcome.insight() == null ? "" : outcome.insight().getMarkdown();
+                    if (markdown != null && !markdown.isEmpty()) {
+                        emitChunks(sse, markdown);
+                    }
+                    sse.event("final", MAPPER.writeValueAsString(out));
+                    return;
+                }
+
+                if (outcome.kind() == AiAskService.AskOutcome.Kind.VIEW_CHANGE) {
+                    // View change carries an optional reason string worth streaming — the caller
+                    // reads it as "why did the LLM pick this chart".
+                    out.setViewChange(outcome.viewChange());
+                    String reason = outcome.viewChange() == null
+                            ? null
+                            : outcome.viewChange().getReason();
+                    if (reason != null && !reason.isEmpty()) {
+                        emitChunks(sse, reason);
+                    }
+                    sse.event("final", MAPPER.writeValueAsString(out));
+                    return;
+                }
+
+                // QUERY intent — no prose to stream; the query itself IS the artefact. Execute the
+                // same way the sync endpoint does and emit the final envelope in one event so the
+                // client accumulates a complete AskResponse. We keep the SSE frame here (rather than
+                // a single JSON POST response) so the client's stream reader is uniform across intents.
+                AiQueryRequest req = outcome.request();
+                out.setRequest(req);
+                long start = System.currentTimeMillis();
+                try {
+                    schemaValidator.assertValid(MAPPER.valueToTree(req));
+                    AiSchema schema = cubeMetadataService.getSchema(req.getCube());
+                    ThinQuery tq = converter.convert(req, schema);
+                    out.setQueryModel(tq.getQueryModel());
+                    CellDataSet cds = thinQueryService.execute(tq);
+                    AiQueryResponse aiResp = buildResponse(tq, cds, start, "records");
+                    out.setResponse(aiResp);
+                    if (aiResp != null && aiResp.getMetadata() != null) {
+                        out.setGeneratedMdx(aiResp.getMetadata().getGeneratedMdx());
+                    }
+                } catch (AiValidationException e) {
+                    AiQueryResponse aiResp = new AiQueryResponse();
+                    aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.VALIDATION_ERROR);
+                    aiResp.setError(e.getMessage());
+                    aiResp.setField(e.getField());
+                    aiResp.setAvailable(e.getAvailable() == null ? null : new java.util.ArrayList<>(e.getAvailable()));
+                    aiResp.setRuntimeMs(System.currentTimeMillis() - start);
+                    out.setResponse(aiResp);
+                } catch (RuntimeException e) {
+                    log.warn("AI ask (streaming) execution failed after successful translation", e);
+                    AiQueryResponse aiResp = new AiQueryResponse();
+                    aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.EXECUTION_ERROR);
+                    aiResp.setError("execute failed");
+                    aiResp.setRuntimeMs(System.currentTimeMillis() - start);
+                    out.setResponse(aiResp);
+                }
+                sse.event("final", MAPPER.writeValueAsString(out));
+            } catch (java.io.IOException ioe) {
+                // Client disconnected — nothing to do, the connection is already dead.
+                log.debug("AI ask (streaming) client disconnected: {}", ioe.getMessage());
+            } catch (RuntimeException e) {
+                log.warn("AI ask (streaming) unexpected failure", e);
+                try {
+                    sse.event("error", MAPPER.writeValueAsString(java.util.Map.of("reason", "internal error")));
+                } catch (java.io.IOException swallow) {
+                    // best-effort — the client is already gone.
+                }
+            }
+        };
+
+        return Response.ok(stream)
+                .type("text/event-stream")
+                .header("Cache-Control", "no-cache")
+                .header("X-Accel-Buffering", "no") // Nginx: disable buffering so events flush.
+                .build();
+    }
+
+    /**
+     * Split {@code prose} into word-boundary chunks (keeping the whitespace attached to each
+     * chunk so the client can concatenate deltas without needing to guess spacing) and emit each
+     * as an SSE {@code chunk} event.
+     *
+     * <p>Package-private for a unit test. Cap on chunk count is loose — long insights emit
+     * hundreds of small events, which is fine on modern HTTP but not free; if that becomes an
+     * issue we can group tokens by sentence.
+     */
+    static void emitChunks(SseWriter sse, String prose) throws java.io.IOException {
+        int len = prose.length();
+        int i = 0;
+        while (i < len) {
+            // Find the next word boundary (whitespace run) and emit up to and including it so the
+            // delta reads naturally when concatenated.
+            int wordEnd = i;
+            while (wordEnd < len && !Character.isWhitespace(prose.charAt(wordEnd))) wordEnd++;
+            while (wordEnd < len && Character.isWhitespace(prose.charAt(wordEnd))) wordEnd++;
+            String chunk = prose.substring(i, wordEnd);
+            if (!chunk.isEmpty()) {
+                sse.event("chunk", "{\"delta\":" + jsonString(chunk) + "}");
+            }
+            i = wordEnd;
+        }
+    }
+
+    /**
+     * JSON-string escape for a raw text chunk. Kept package-visible for the emitChunks test; used
+     * verbatim in {@link #emitChunks} to avoid an extra Jackson serialisation round-trip per token.
+     */
+    static String jsonString(String s) {
+        StringBuilder b = new StringBuilder(s.length() + 8);
+        b.append('"');
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"' -> b.append("\\\"");
+                case '\\' -> b.append("\\\\");
+                case '\n' -> b.append("\\n");
+                case '\r' -> b.append("\\r");
+                case '\t' -> b.append("\\t");
+                case '\b' -> b.append("\\b");
+                case '\f' -> b.append("\\f");
+                default -> {
+                    if (c < 0x20) {
+                        b.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        b.append(c);
+                    }
+                }
+            }
+        }
+        b.append('"');
+        return b.toString();
+    }
+
+    /**
+     * Minimal SSE frame writer. Flushes after each event so a slow client sees progress rather
+     * than a batched dump at close. Package-private for testing.
+     */
+    static final class SseWriter {
+        private final java.io.Writer writer;
+
+        SseWriter(java.io.Writer writer) {
+            this.writer = writer;
+        }
+
+        /**
+         * Emit one SSE event with a name and JSON data payload. Multi-line payloads are rare on
+         * this endpoint (we control the JSON serialiser) but we still handle {@code \n} correctly
+         * per spec — every line after the first is prefixed with {@code data: }.
+         */
+        void event(String name, String jsonData) throws java.io.IOException {
+            writer.write("event: ");
+            writer.write(name);
+            writer.write('\n');
+            // Each line of the payload gets its own `data: ` prefix per the SSE spec. Our JSON is
+            // single-line but this keeps the writer honest if a future serialiser emits pretty-printed.
+            for (String line : jsonData.split("\n", -1)) {
+                writer.write("data: ");
+                writer.write(line);
+                writer.write('\n');
+            }
+            writer.write('\n');
+            writer.flush();
+        }
+    }
+
     /** Mondrian's parser raises "MDX object '<ref>' not found in cube '<name>'"
      *  whenever an axis or slicer references a member that doesn't exist. We
      *  scan the exception chain for that message and lift it to a 400 with the
