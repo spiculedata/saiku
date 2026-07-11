@@ -74,7 +74,11 @@ public class GraphQlResource {
         Map<String, Object> variables = body != null && body.get("variables") instanceof Map
                 ? (Map<String, Object>) body.get("variables")
                 : null;
-        Map<String, Object> result = graphQlService.execute(query, variables, operationName);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> extensions = body != null && body.get("extensions") instanceof Map
+                ? (Map<String, Object>) body.get("extensions")
+                : null;
+        Map<String, Object> result = graphQlService.execute(query, variables, operationName, extensions);
         return Response.ok(result).build();
     }
 
@@ -83,7 +87,8 @@ public class GraphQlResource {
     public Response executeGet(
             @QueryParam("query") String query,
             @QueryParam("variables") String variablesJson,
-            @QueryParam("operationName") String operationName) {
+            @QueryParam("operationName") String operationName,
+            @QueryParam("extensions") String extensionsJson) {
         if (graphQlService == null) {
             return unavailable("GraphQL engine not wired");
         }
@@ -95,8 +100,34 @@ public class GraphQlResource {
                 return badRequest("variables must be a JSON object: " + e.getMessage());
             }
         }
-        Map<String, Object> result = graphQlService.execute(query, variables, operationName);
+        Map<String, Object> extensions = null;
+        if (extensionsJson != null && !extensionsJson.isBlank()) {
+            try {
+                extensions = mapper.readValue(extensionsJson, Map.class);
+            } catch (Exception e) {
+                return badRequest("extensions must be a JSON object: " + e.getMessage());
+            }
+        }
+        Map<String, Object> result = graphQlService.execute(query, variables, operationName, extensions);
         return Response.ok(result).build();
+    }
+
+    /**
+     * Admin-only: force a schema rebuild against the current cube estate. Called after
+     * {@code POST /admin/discover/refresh} in operator scripts so the GraphQL type surface
+     * picks up cubes added since boot. Persisted query cache is wiped as a side-effect since
+     * the schema shape may have changed.
+     */
+    @POST
+    @Path("/refresh")
+    @Produces(MediaType.APPLICATION_JSON)
+    @jakarta.annotation.security.RolesAllowed({"ROLE_ADMIN"})
+    public Response refresh() {
+        if (graphQlService == null) {
+            return unavailable("GraphQL engine not wired");
+        }
+        graphQlService.refresh();
+        return Response.ok(Map.of("status", "ok")).build();
     }
 
     /**

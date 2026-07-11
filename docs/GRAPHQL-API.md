@@ -194,15 +194,120 @@ GraphQL errors with the REST body preserved under `extensions`:
 So client-side handling that already understands the REST `VALIDATION_ERROR` +
 `available` shape works verbatim through GraphQL.
 
-## Limitations of the initial release
+## Schema-per-cube typed access
 
-- **Query results are JSON scalars.** They ride the same envelope as REST rather than
-  being typed field-by-field. A follow-up (tracked internally) adds schema-first
-  cube-per-Query-type generation for consumers that want full typed responses.
+Every cube visible to the current session is also reachable as its own typed Query field
+with enum-typed measure + level inputs and a typed row output type. This is the "Cube-style"
+DX — autocomplete on measure names, typed responses your codegen understands.
+
+Naming rules (deterministic):
+
+- **Query field** — camelCase of the cube name. Colliding cubes across catalogs get a
+  schema / catalog / connection prefix appended in that order until unique.
+- **Measure enum** — `{Prefix}Measure` (PascalCase of the Query field), values in
+  SCREAMING_SNAKE_CASE of the canonical measure name.
+- **Level enum** — `{Prefix}Level`, values as `DIMENSION__LEVEL` (double underscore).
+- **Row output** — `{Prefix}Row` — every measure as a nullable `Float`, every level as a
+  nullable `String`. Only the fields the query selected are populated; the rest are `null`.
+
+Example — the FoodMart `Sales` cube:
+
+```graphql
+{
+  sales(
+    measures: [STORE_SALES, UNIT_SALES]
+    rows: [PRODUCT__PRODUCT_FAMILY]
+  ) {
+    storeSales
+    unitSales
+    productFamily
+  }
+}
+```
+
+Returns:
+
+```json
+{
+  "data": {
+    "sales": [
+      { "storeSales": 48836.21, "unitSales": 24597, "productFamily": "Drink" },
+      { "storeSales": 409035.59, "unitSales": 191940, "productFamily": "Food" },
+      { "storeSales": 107366.33, "unitSales": 50236, "productFamily": "Non-Consumable" }
+    ]
+  }
+}
+```
+
+Full auto-completion on the enum values, typed response your React / Vue client can bind
+directly, same numbers as the REST + XMLA + MCP surfaces.
+
+Cubes added at runtime through the admin UI are picked up on the next call to
+`POST /rest/saiku/api/graphql/refresh` (admin-only). That endpoint also wipes the persisted
+query cache because the schema shape may have changed.
+
+## Automatic Persisted Queries (APQ)
+
+Standard Apollo APQ protocol. Bandwidth win for mobile / embedded clients where GraphQL
+query text can dominate the request size.
+
+Request shape (both POST body and GET `extensions=…` param):
+
+```json
+{
+  "extensions": {
+    "persistedQuery": {
+      "version": 1,
+      "sha256Hash": "sha256hex-of-the-query-text"
+    }
+  }
+}
+```
+
+Flow:
+
+1. Client sends the hash only (no `query`). Server looks it up.
+2. On miss, server returns:
+   ```json
+   {
+     "data": null,
+     "errors": [
+       {
+         "message": "PersistedQueryNotFound",
+         "extensions": { "code": "PERSISTED_QUERY_NOT_FOUND" }
+       }
+     ]
+   }
+   ```
+3. Client re-sends with the full `query` text AND the hash. Server verifies
+   `SHA-256(query) == sha256Hash` and stores the mapping. Subsequent hash-only calls hit.
+
+If the hash doesn't verify on store, the server refuses with
+`PERSISTED_QUERY_HASH_MISMATCH` — this prevents cache-poisoning where a client tricks the
+server into storing arbitrary query text under a benign hash.
+
+Cache defaults: 1024 entries, no expiration. Wiped automatically when the schema shape
+changes (cubes added / removed on refresh). Configure per-deployment via
+`saiku.graphql.apqCacheSize` / `saiku.graphql.apqExpireAfterAccessSeconds` if the defaults
+don't fit your workload.
+
+## Refresh
+
+```
+POST /rest/saiku/api/graphql/refresh
+```
+
+Admin-only. Rebuilds the GraphQL schema against the current cube estate. Wipes the
+persisted query cache. Call this after `POST /admin/discover/refresh` in operator scripts.
+
+## Limitations of the current release
+
+- **Generic execution results are JSON scalars.** `executeMdx` / `executeOssie` return the
+  same JSON envelope REST uses. The per-cube typed shape above is the ergonomic path;
+  the generic surface is the escape hatch for cases you can't express typed (arbitrary
+  filter JSON, mixed cubes in one query).
 - **No subscriptions or mutations.** The MDX + Ossie surfaces are read-only from a
   GraphQL perspective. Cube CRUD stays on the admin REST endpoints.
-- **No persisted queries or automatic persisted queries (APQ).** If your team needs
-  either, tell us — we'll wire it.
 
 ## Related
 

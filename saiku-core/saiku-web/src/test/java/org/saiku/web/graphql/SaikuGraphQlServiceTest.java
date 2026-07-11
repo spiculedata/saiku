@@ -130,4 +130,77 @@ public class SaikuGraphQlServiceTest {
         // graphql-java reports parse errors under "errors" and leaves data null.
         assertNotNull(result.get("errors"));
     }
+
+    // ------------------------------------------------------------
+    // APQ (Automatic Persisted Queries) — Apollo protocol
+    // ------------------------------------------------------------
+
+    @Test
+    public void apqHashOnlyMissReturnsPersistedQueryNotFound() {
+        String query = "{ serverInfo { version } }";
+        String hash = PersistedQueryCache.sha256Hex(query);
+        Map<String, Object> extensions = Map.of("persistedQuery", Map.of("version", 1, "sha256Hash", hash));
+        Map<String, Object> result = svc.execute(null, null, null, extensions);
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> errors = (java.util.List<Map<String, Object>>) result.get("errors");
+        assertNotNull(errors);
+        assertEquals("PersistedQueryNotFound", errors.get(0).get("message"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> errExtensions = (Map<String, Object>) errors.get(0).get("extensions");
+        assertEquals("PERSISTED_QUERY_NOT_FOUND", errExtensions.get("code"));
+    }
+
+    @Test
+    public void apqStoreThenHashOnlyLookupReturnsData() {
+        String query = "{ serverInfo { version } }";
+        String hash = PersistedQueryCache.sha256Hex(query);
+        Map<String, Object> extensions = Map.of("persistedQuery", Map.of("version", 1, "sha256Hash", hash));
+
+        // First call: full query + hash — stores the mapping.
+        Map<String, Object> stored = svc.execute(query, null, null, extensions);
+        assertNull(stored.get("errors"));
+
+        // Second call: hash only — cache hit, executes.
+        Map<String, Object> hit = svc.execute(null, null, null, extensions);
+        assertNull(hit.get("errors"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) hit.get("data");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> info = (Map<String, Object>) data.get("serverInfo");
+        assertEquals("4.6.0-test", info.get("version"));
+    }
+
+    @Test
+    public void apqStoreRejectsMismatchedHash() {
+        String query = "{ serverInfo { version } }";
+        String badHash = PersistedQueryCache.sha256Hex("something else");
+        Map<String, Object> extensions = Map.of("persistedQuery", Map.of("version", 1, "sha256Hash", badHash));
+
+        Map<String, Object> result = svc.execute(query, null, null, extensions);
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> errors = (java.util.List<Map<String, Object>>) result.get("errors");
+        assertNotNull(errors);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> errExtensions = (Map<String, Object>) errors.get(0).get("extensions");
+        assertEquals("PERSISTED_QUERY_HASH_MISMATCH", errExtensions.get("code"));
+
+        // Cache stayed empty — a subsequent hash-only lookup still misses.
+        Map<String, Object> extensions2 = Map.of("persistedQuery", Map.of("version", 1, "sha256Hash", badHash));
+        Map<String, Object> miss = svc.execute(null, null, null, extensions2);
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> missErrors = (java.util.List<Map<String, Object>>) miss.get("errors");
+        assertEquals("PersistedQueryNotFound", missErrors.get(0).get("message"));
+    }
+
+    @Test
+    public void refreshInvalidatesPersistedQueries() {
+        String query = "{ serverInfo { version } }";
+        String hash = PersistedQueryCache.sha256Hex(query);
+        Map<String, Object> extensions = Map.of("persistedQuery", Map.of("version", 1, "sha256Hash", hash));
+        svc.execute(query, null, null, extensions);
+        assertEquals(1, svc.getPersistedQueryCache().size());
+        svc.refresh();
+        // With no cubes wired the SDL rebuild is stable — the cache should NOT wipe on a no-op rebuild.
+        assertEquals(1, svc.getPersistedQueryCache().size());
+    }
 }

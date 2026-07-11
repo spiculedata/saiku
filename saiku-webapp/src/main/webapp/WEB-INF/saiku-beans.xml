@@ -337,6 +337,10 @@
         <property name="ossieDiscoverService" ref="ossieDiscoverServiceBean"/>
         <property name="aiQueryResource" ref="aiQueryResource"/>
         <property name="aiOssieResource" ref="aiOssieResource"/>
+        <!-- Makes the AGGREGATED_RESULT_VALUES policy check explicit at the GraphQL layer.
+             The delegated AiQueryResource / AiOssieResource re-check it, but wiring it here
+             means audit logs show the policy gate at the entry point too. -->
+        <property name="aiPolicyGuard" ref="aiPolicyGuard"/>
         <property name="serverVersion" value="${saiku.version:4.6.0}"/>
     </bean>
 

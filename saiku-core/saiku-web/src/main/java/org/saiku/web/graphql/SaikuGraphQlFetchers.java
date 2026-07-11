@@ -20,6 +20,8 @@ import org.saiku.olap.dto.SaikuConnection;
 import org.saiku.service.olap.OlapDiscoverService;
 import org.saiku.service.olap.ai.AiCubeRef;
 import org.saiku.service.olap.ai.AiCubeSummary;
+import org.saiku.service.olap.ai.AiDataKind;
+import org.saiku.service.olap.ai.AiPolicyGuard;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiSchema;
 import org.saiku.service.olap.ai.OlapAiCubeMetadataService;
@@ -28,6 +30,8 @@ import org.saiku.service.ossie.OssieModelDto;
 import org.saiku.service.ossie.ai.OssieAiQueryRequest;
 import org.saiku.web.rest.resources.AiOssieResource;
 import org.saiku.web.rest.resources.AiQueryResource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Data fetchers for {@code SaikuGraphQlService}.
@@ -46,12 +50,15 @@ import org.saiku.web.rest.resources.AiQueryResource;
  */
 public class SaikuGraphQlFetchers {
 
+    private static final Logger LOG = LoggerFactory.getLogger(SaikuGraphQlFetchers.class);
+
     private final ObjectMapper mapper;
     private OlapAiCubeMetadataService cubeMetadataService;
     private OlapDiscoverService olapDiscoverService;
     private OssieDiscoverService ossieDiscoverService;
     private AiQueryResource aiQueryResource;
     private AiOssieResource aiOssieResource;
+    private AiPolicyGuard aiPolicyGuard;
     private String serverVersion = "unknown";
 
     public SaikuGraphQlFetchers(ObjectMapper mapper) {
@@ -82,8 +89,26 @@ public class SaikuGraphQlFetchers {
         this.aiOssieResource = r;
     }
 
+    /**
+     * Optional policy guard. When wired, {@link #executeMdx()}, {@link #executeOssie()}, and
+     * per-cube fetchers assert the {@link AiDataKind#AGGREGATED_RESULT_VALUES} data kind before
+     * dispatching. The delegated REST resources check this again themselves — this call makes
+     * the enforcement visible in the GraphQL audit trail rather than only inheriting it
+     * transitively.
+     */
+    public void setAiPolicyGuard(AiPolicyGuard g) {
+        this.aiPolicyGuard = g;
+    }
+
     public void setServerVersion(String v) {
         this.serverVersion = v;
+    }
+
+    /** Small helper so the execute fetchers stay one-liner. */
+    private void assertQueryAllowed() {
+        if (aiPolicyGuard != null) {
+            aiPolicyGuard.assertCanSend(AiDataKind.AGGREGATED_RESULT_VALUES);
+        }
     }
 
     // ------------------------------------------------------------
@@ -196,6 +221,7 @@ public class SaikuGraphQlFetchers {
             if (aiQueryResource == null) {
                 throw new IllegalStateException("MDX execution surface is not configured");
             }
+            assertQueryAllowed();
             Map<String, Object> input = env.getArgument("input");
             AiQueryRequest req = mapper.convertValue(input, AiQueryRequest.class);
             Response resp = aiQueryResource.executeAi(req, "records");
@@ -208,11 +234,186 @@ public class SaikuGraphQlFetchers {
             if (aiOssieResource == null) {
                 throw new IllegalStateException("Ossie execution surface is not configured");
             }
+            assertQueryAllowed();
             Map<String, Object> input = env.getArgument("input");
             OssieAiQueryRequest req = mapper.convertValue(input, OssieAiQueryRequest.class);
             Response resp = aiOssieResource.executeAi(req, "records");
             return unwrap(resp);
         };
+    }
+
+    // ------------------------------------------------------------
+    // Schema-per-cube — enumerate the cube estate and produce one CubeTypeGenerator each.
+    // Called from SaikuGraphQlService.rebuild().
+    // ------------------------------------------------------------
+
+    /**
+     * Enumerate every cube visible via {@code cubeMetadataService}, resolve its {@code AiSchema},
+     * assign a unique GraphQL field name (collision-safe within this schema), and hand back a
+     * {@code Map<queryFieldName, CubeTypeGenerator>}.
+     *
+     * <p>Failure to resolve one cube's schema doesn't stop the enumeration — the misbehaving
+     * cube is logged and skipped. The generic {@code executeMdx} field always covers it.
+     */
+    Map<String, CubeTypeGenerator> buildCubeGenerators() {
+        Map<String, CubeTypeGenerator> out = new LinkedHashMap<>();
+        if (cubeMetadataService == null) {
+            return out;
+        }
+        java.util.Set<String> takenFieldNames = new java.util.HashSet<>(java.util.Set.of(
+                "serverInfo", "cubes", "cube", "ossieModels", "ossieModel", "executeMdx", "executeOssie"));
+        List<AiCubeSummary> summaries;
+        try {
+            summaries = cubeMetadataService.listCubes();
+        } catch (RuntimeException e) {
+            LOG.warn("listCubes failed during schema generation: {}", e.toString());
+            return out;
+        }
+        for (AiCubeSummary c : summaries) {
+            AiCubeRef ref = new AiCubeRef();
+            ref.setConnectionName(c.getConnectionName());
+            ref.setCatalog(c.getCatalog());
+            ref.setSchema(c.getSchema());
+            ref.setCubeName(c.getCubeName());
+            AiSchema schema;
+            try {
+                schema = cubeMetadataService.getSchema(ref);
+            } catch (RuntimeException schemaErr) {
+                LOG.warn("skipping cube '{}' — schema unresolved: {}", c.getCubeName(), schemaErr.toString());
+                continue;
+            }
+            String fieldName = uniqueFieldName(takenFieldNames, c);
+            takenFieldNames.add(fieldName);
+            out.put(fieldName, new CubeTypeGenerator(c, schema, fieldName));
+        }
+        return out;
+    }
+
+    /**
+     * Per-cube data fetcher. Reads the enum-typed measure and level arguments, converts them back
+     * to the canonical names, builds an {@link AiQueryRequest}, delegates to
+     * {@link AiQueryResource#executeAi}, and marshals the row records onto the typed shape the
+     * generator declared.
+     */
+    DataFetcher<Object> executeCubeField(CubeTypeGenerator gen) {
+        return env -> {
+            if (aiQueryResource == null) {
+                throw new IllegalStateException("MDX execution surface is not configured");
+            }
+            assertQueryAllowed();
+            @SuppressWarnings("unchecked")
+            List<String> measureEnums = (List<String>) env.getArgument("measures");
+            @SuppressWarnings("unchecked")
+            List<String> rowEnums = (List<String>) env.getArgument("rows");
+            @SuppressWarnings("unchecked")
+            List<String> columnEnums = (List<String>) env.getArgument("columns");
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> filters = (List<Map<String, Object>>) env.getArgument("filters");
+            Integer limit = env.getArgument("limit");
+
+            if (measureEnums == null || measureEnums.isEmpty()) {
+                throw new IllegalArgumentException("measures is required and cannot be empty");
+            }
+
+            List<String> canonicalMeasures = new ArrayList<>(measureEnums.size());
+            List<Map<String, String>> measurePayload = new ArrayList<>(measureEnums.size());
+            for (String enumValue : measureEnums) {
+                String canonical = gen.measureEnumToCanonical(enumValue);
+                if (canonical == null) {
+                    throw new IllegalArgumentException("unknown measure enum: " + enumValue);
+                }
+                canonicalMeasures.add(canonical);
+                measurePayload.add(Map.of("name", canonical));
+            }
+
+            List<CubeTypeGenerator.AxisRef> selectedRows = resolveAxes(gen, rowEnums);
+            List<CubeTypeGenerator.AxisRef> selectedColumns = resolveAxes(gen, columnEnums);
+
+            Map<String, Object> requestJson = new LinkedHashMap<>();
+            Map<String, String> cubeRefJson = new LinkedHashMap<>();
+            org.saiku.service.olap.ai.AiCubeRef ref = gen.toCubeRef();
+            cubeRefJson.put("connectionName", ref.getConnectionName());
+            cubeRefJson.put("catalog", ref.getCatalog());
+            cubeRefJson.put("schema", ref.getSchema());
+            cubeRefJson.put("cubeName", ref.getCubeName());
+            requestJson.put("cube", cubeRefJson);
+            requestJson.put("measures", measurePayload);
+            requestJson.put("rows", axesToJson(selectedRows));
+            requestJson.put("columns", axesToJson(selectedColumns));
+            if (filters != null && !filters.isEmpty()) requestJson.put("filters", filters);
+            if (limit != null && limit > 0) requestJson.put("limit", limit);
+
+            AiQueryRequest req = mapper.convertValue(requestJson, AiQueryRequest.class);
+            Response resp = aiQueryResource.executeAi(req, "records");
+            Object payload = unwrap(resp);
+            return materialiseRows(payload, gen, canonicalMeasures, selectedRows, selectedColumns);
+        };
+    }
+
+    private static List<CubeTypeGenerator.AxisRef> resolveAxes(CubeTypeGenerator gen, List<String> enums) {
+        List<CubeTypeGenerator.AxisRef> out = new ArrayList<>();
+        if (enums == null) return out;
+        for (String enumValue : enums) {
+            CubeTypeGenerator.AxisRef axis = gen.levelEnumToAxis(enumValue);
+            if (axis == null) {
+                throw new IllegalArgumentException("unknown level enum: " + enumValue);
+            }
+            out.add(axis);
+        }
+        return out;
+    }
+
+    private static List<Map<String, String>> axesToJson(List<CubeTypeGenerator.AxisRef> axes) {
+        List<Map<String, String>> out = new ArrayList<>(axes.size());
+        for (CubeTypeGenerator.AxisRef a : axes) {
+            Map<String, String> m = new LinkedHashMap<>();
+            m.put("dimension", a.dimension);
+            m.put("hierarchy", a.hierarchy);
+            m.put("level", a.level);
+            out.add(m);
+        }
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> materialiseRows(
+            Object payload,
+            CubeTypeGenerator gen,
+            List<String> selectedMeasures,
+            List<CubeTypeGenerator.AxisRef> selectedRows,
+            List<CubeTypeGenerator.AxisRef> selectedColumns) {
+        if (!(payload instanceof Map)) return List.of();
+        Map<String, Object> envelope = (Map<String, Object>) payload;
+        Object data = envelope.get("data");
+        if (!(data instanceof List)) return List.of();
+        List<Object> raw = (List<Object>) data;
+        List<CubeTypeGenerator.AxisRef> combined = new ArrayList<>(selectedRows);
+        combined.addAll(selectedColumns);
+        List<Map<String, Object>> out = new ArrayList<>(raw.size());
+        for (Object row : raw) {
+            if (!(row instanceof Map)) continue;
+            out.add(gen.materialiseRow((Map<String, Object>) row, selectedMeasures, combined));
+        }
+        return out;
+    }
+
+    private static String uniqueFieldName(java.util.Set<String> taken, AiCubeSummary c) {
+        String base = CubeTypeGenerator.camelCase(c.getCubeName());
+        if (!taken.contains(base)) return base;
+        // Collide: prepend schema, then catalog, then connection.
+        String withSchema = CubeTypeGenerator.camelCase(c.getSchema() + " " + c.getCubeName());
+        if (!taken.contains(withSchema)) return withSchema;
+        String withCatalog = CubeTypeGenerator.camelCase(c.getCatalog() + " " + c.getSchema() + " " + c.getCubeName());
+        if (!taken.contains(withCatalog)) return withCatalog;
+        String full = CubeTypeGenerator.camelCase(
+                c.getConnectionName() + " " + c.getCatalog() + " " + c.getSchema() + " " + c.getCubeName());
+        // Final fallback — append counter until unique.
+        int i = 2;
+        String out = full;
+        while (taken.contains(out)) {
+            out = full + i++;
+        }
+        return out;
     }
 
     /**
