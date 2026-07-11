@@ -46,7 +46,7 @@
     const s = server.trim();
     const p = path.trim();
     const t = token.trim();
-    if (!s || !p) {
+    if (!p) {
       dashboard = null;
       error = null;
       return;
@@ -114,7 +114,7 @@
     const s = server.trim();
     const p = path.trim();
     const t = token.trim();
-    if (!dashboard || !s || !p) return;
+    if (!dashboard || !p) return;
     // Skip the initial "empty overrides" re-fire — the dashboard-load effect
     // already fetched every tile with no overrides.
     if (overrides.length === 0 && !hasEverFilteredRef.current) return;

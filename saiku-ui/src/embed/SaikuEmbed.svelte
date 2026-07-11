@@ -97,7 +97,9 @@
       error = null;
       return;
     }
-    if (!s || !p) {
+    // Empty server means same-origin: the fetch helper builds a relative path
+    // and the browser resolves it against the host page. Only path is required.
+    if (!p) {
       rows = null;
       matrixRows = null;
       error = null;
