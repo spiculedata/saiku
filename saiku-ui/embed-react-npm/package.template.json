@@ -1,0 +1,44 @@
+{
+  "name": "@concepttocloud/saiku-embed-react",
+  "version": "0.0.0-PLACEHOLDER",
+  "description": "Typed React wrapper around the <saiku-embed> Web Component. Same runtime, React types, single-import ergonomics.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "README.md"
+  ],
+  "keywords": [
+    "saiku",
+    "olap",
+    "embed",
+    "react",
+    "custom-element",
+    "dashboard",
+    "chart"
+  ],
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "dependencies": {
+    "@concepttocloud/saiku-embed": "0.0.0-PLACEHOLDER"
+  },
+  "homepage": "https://github.com/spiculedata/saiku",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spiculedata/saiku.git",
+    "directory": "saiku-ui/src/embed-react"
+  },
+  "bugs": {
+    "url": "https://github.com/spiculedata/saiku/issues"
+  }
+}
