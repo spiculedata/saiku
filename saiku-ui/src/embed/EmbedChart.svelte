@@ -84,11 +84,17 @@
   });
 </script>
 
-<div bind:this={container} class="w-full h-full min-h-[240px]" role="img" aria-label="Saiku embed chart"></div>
+<div bind:this={container} class="chart" role="img" aria-label="Saiku embed chart"></div>
 
 <style>
-/* The chart needs a concrete height to render — ECharts measures
-   * its container synchronously. The :host's min-height in
-   * SaikuEmbed.svelte already supplies one for the outer shell; we
-   * just fill it. */
+  /* ECharts measures its container synchronously on init, so the div MUST have a
+   * concrete height before init runs. Tailwind classes aren't in the embed
+   * bundle CSS (only the SvelteKit app has them), so we set width+height in
+   * scoped shadow-DOM CSS. Min-height covers the case where the host page's
+   * layout provides no explicit height. */
+  .chart {
+    width: 100%;
+    height: 100%;
+    min-height: 240px;
+  }
 </style>

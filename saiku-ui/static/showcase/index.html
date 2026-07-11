@@ -253,7 +253,7 @@
           <div class="panel-body tight">
             <saiku-embed
               server=""
-              path="homes/admin/Examples/Trend.saiku"
+              path="homes/admin/FoodMartTrend.saiku"
               render="table"
               height="360px"
             ></saiku-embed>
@@ -265,7 +265,7 @@
           <div class="panel-body tight">
             <saiku-embed
               server=""
-              path="homes/admin/Examples/Trend.saiku"
+              path="homes/admin/FoodMartTrend.saiku"
               render="chart"
               mode="bar"
               height="360px"
@@ -280,7 +280,7 @@
           <div class="panel-body tight">
             <saiku-embed
               server=""
-              path="homes/admin/Examples/Trend.saiku"
+              path="homes/admin/FoodMartTrend.saiku"
               render="matrix"
               height="360px"
             ></saiku-embed>
@@ -296,7 +296,7 @@
 
 &lt;saiku-embed
   server=""
-  path="homes/admin/Examples/Trend.saiku"
+  path="homes/admin/FoodMartTrend.saiku"
   render="matrix"      &lt;!-- also: "table" | "chart" --&gt;
   height="360px"
 &gt;&lt;/saiku-embed&gt;</pre>
@@ -319,14 +319,14 @@
           <label class="inline" for="ai-request">Request body (POST /rest/saiku/api/ai/query)</label>
           <textarea id="ai-request" spellcheck="false">{
   "cube": {
-    "connectionName": "foodmart",
+    "connectionName": "unknown_foodmart",
     "catalog": "FoodMart",
     "schema": "FoodMart",
     "cubeName": "Sales"
   },
   "measures": [{ "name": "Store Sales" }, { "name": "Unit Sales" }],
   "rows": [
-    { "dimension": "Product", "hierarchy": "Product", "level": "Product Family" }
+    { "dimension": "Product", "hierarchy": "Products", "level": "Product Family" }
   ]
 }</textarea>
           <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">

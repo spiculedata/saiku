@@ -683,6 +683,62 @@ public class SaikuLauncher implements Callable<Integer> {
                     .resolve("dashboards");
             Files.createDirectories(dashDir);
             stageResource("/seed/demo/welcome.saikudash", dashDir.resolve("welcome.saikudash"));
+
+            // Also seed a small FoodMart Sales saved query — the /ui/showcase/ SPA
+            // embeds it via a public grant so the "Three surfaces, one cube" playground
+            // has data to render on first launch of any demo instance. Same shape as the
+            // dashboard: only lands when the file doesn't already exist, so operator
+            // customisations survive re-launch.
+            Path adminHome = saikuHome
+                    .resolve("repository")
+                    .resolve("data")
+                    .resolve("unknown")
+                    .resolve("homes")
+                    .resolve("admin");
+            Files.createDirectories(adminHome);
+            stageResource("/seed/FoodMartTrend.saiku", adminHome.resolve("FoodMartTrend.saiku"));
+
+            // Public-grant the FoodMartTrend query so /ui/showcase/ can render its
+            // <saiku-embed> widgets anonymously. Idempotent: if the operator already
+            // manages embed-public.json we merge our entry in without touching theirs.
+            grantFoodMartTrendPublic(saikuHome);
+        }
+
+        /**
+         * Merge a {@code query:/homes/admin/FoodMartTrend.saiku} entry into
+         * {@code saiku-home/embed-public.json} if not already present. Rewrites the file
+         * only when the entry is missing — customer-managed grants pass through unchanged.
+         */
+        private static void grantFoodMartTrendPublic(Path saikuHome) throws IOException {
+            Path registryFile = saikuHome.resolve("embed-public.json");
+            String key = "query:/homes/admin/FoodMartTrend.saiku";
+            String grantJson = "{\"resourceKind\":\"query\","
+                    + "\"resourcePath\":\"/homes/admin/FoodMartTrend.saiku\","
+                    + "\"grantedBy\":\"admin\","
+                    + "\"ownerRolesSnapshot\":[\"ROLE_ADMIN\",\"ROLE_USER\"],"
+                    + "\"grantedAt\":" + System.currentTimeMillis() + "}";
+            String existing = Files.exists(registryFile)
+                    ? Files.readString(registryFile, java.nio.charset.StandardCharsets.UTF_8)
+                    : "{}";
+            if (existing.contains("\"" + key + "\"")) {
+                // Already granted — leave alone so a rotated `grantedAt` from a re-launch
+                // doesn't stomp an operator-managed timestamp.
+                return;
+            }
+            String merged;
+            if (existing.trim().equals("{}") || existing.trim().isEmpty()) {
+                merged = "{\"" + key + "\":" + grantJson + "}";
+            } else {
+                // Splice ",\"key\":<grantJson>" before the closing brace of the existing object.
+                int close = existing.lastIndexOf('}');
+                if (close < 0) {
+                    // Registry file is malformed; leave it alone rather than overwrite.
+                    return;
+                }
+                merged = existing.substring(0, close) + ",\"" + key + "\":" + grantJson + "}";
+            }
+            Files.writeString(registryFile, merged, java.nio.charset.StandardCharsets.UTF_8);
+            System.out.println("Granted public embed access: " + key);
         }
 
         private static void stageBrandingSample(Path brandingDir) throws Exception {
