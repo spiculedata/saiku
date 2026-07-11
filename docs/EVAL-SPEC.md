@@ -216,10 +216,45 @@ curl -sS -X POST -u admin:admin \
 The launcher stages the bundled FoodMart suite to `saiku-home/evals/foodmart-sales.eval.yaml`
 on first boot — a fresh install can run the endpoint immediately as a smoke check.
 
+## `saiku eval` CLI
+
+The launcher's `eval` subcommand wraps the REST endpoint so CI doesn't have to embed curl + jq:
+
+```bash
+# Registered suite name (looked up server-side against saiku-home/evals/)
+saiku eval foodmart-sales-evals \
+  --server http://localhost:8080 \
+  --user admin --password admin
+
+# Or a local YAML file — sent inline as suiteYaml
+saiku eval ./ci/regression.eval.yaml \
+  --server https://saiku.internal
+```
+
+The positional `SUITE` arg is treated as a filesystem path if it resolves to a
+readable file, otherwise as a registered suite name. Handy for CI jobs that build
+suites dynamically.
+
+**Options:**
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `-s, --server` | `http://localhost:8080` | Launcher URL |
+| `-u, --user` | `admin` | HTTP Basic username |
+| `-P, --password` | `admin` | Basic password. **Prefer `SAIKU_EVAL_PASSWORD` env var** for CI — command-line args show up in process listings |
+| `--format` | `text` | Output shape: `text` (human-readable summary) or `json` (raw report) |
+| `--timeout` | `300` | Server request timeout in seconds |
+| `--fail-on-degraded` / `--no-fail-on-degraded` | `true` | Whether degraded outcomes count as failures for the exit code |
+
+**Exit codes:**
+
+- `0` — every case passed (and no degraded when the flag is on)
+- `1` — at least one case failed / degraded
+- `2` — HTTP error (network, auth, 4xx, 5xx) — server response echoed to stderr
+- `3` — argument error (missing suite, unreadable file, bad flag)
+
 ## Non-goals for v1
 
-- **`saiku eval` CLI subcommand** — deferred. The REST endpoint above is the load-bearing
-  surface; a CLI wrapper is a thin HTTP client that pretty-prints the report. Small follow-up.
 - **Recording adapter** — an adapter that writes each live response to
   a fixture file so the fixture adapter can replay deterministically
   without spending LLM budget. Design ready; implementation deferred.

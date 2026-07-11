@@ -30,7 +30,12 @@ import picocli.CommandLine.Option;
         mixinStandardHelpOptions = true,
         version = "saiku 3.17",
         description = "Saiku Semantic Layer server.",
-        subcommands = {SaikuLauncher.ServeCommand.class, OssieExportCommand.class, SqlServeCommand.class})
+        subcommands = {
+            SaikuLauncher.ServeCommand.class,
+            OssieExportCommand.class,
+            SqlServeCommand.class,
+            EvalCommand.class
+        })
 public class SaikuLauncher implements Callable<Integer> {
 
     public static void main(String[] args) {
@@ -716,19 +721,16 @@ public class SaikuLauncher implements Callable<Integer> {
             Path spacesDir = saikuHome.resolve("agent-spaces");
             Files.createDirectories(spacesDir);
             stageResource(
-                    "/seed/agent-spaces/foodmart-sales-analyst.json",
-                    spacesDir.resolve("foodmart-sales-analyst.json"));
+                    "/seed/agent-spaces/foodmart-sales-analyst.json", spacesDir.resolve("foodmart-sales-analyst.json"));
             stageResource(
-                    "/seed/agent-spaces/foodmart-finance-ops.json",
-                    spacesDir.resolve("foodmart-finance-ops.json"));
+                    "/seed/agent-spaces/foodmart-finance-ops.json", spacesDir.resolve("foodmart-finance-ops.json"));
 
             // Seed the eval-suite catalogue (saiku#1424) with the FoodMart baseline —
             // 5 cases covering QUERY / INSIGHT / REFUSED that a fresh install can run
             // through POST /ai/evals/run as a smoke check.
             Path evalsDir = saikuHome.resolve("evals");
             Files.createDirectories(evalsDir);
-            stageResource(
-                    "/seed/evals/foodmart-sales.eval.yaml", evalsDir.resolve("foodmart-sales.eval.yaml"));
+            stageResource("/seed/evals/foodmart-sales.eval.yaml", evalsDir.resolve("foodmart-sales.eval.yaml"));
         }
 
         /**
