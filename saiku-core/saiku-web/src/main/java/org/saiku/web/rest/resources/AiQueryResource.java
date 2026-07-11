@@ -89,6 +89,23 @@ public class AiQueryResource {
     }
 
     /**
+     * Eval framework wiring (saiku#1424 REST endpoint slice). Both fields are optional — when
+     * either is null the eval endpoints degrade to structured 503 responses rather than throwing,
+     * so the resource stays boot-safe on instances that haven't opted in.
+     */
+    private org.saiku.service.olap.ai.eval.EvalSuiteRegistry evalSuiteRegistry;
+
+    private org.saiku.service.olap.ai.eval.EvalAskAdapter evalAskAdapter;
+
+    public void setEvalSuiteRegistry(org.saiku.service.olap.ai.eval.EvalSuiteRegistry r) {
+        this.evalSuiteRegistry = r;
+    }
+
+    public void setEvalAskAdapter(org.saiku.service.olap.ai.eval.EvalAskAdapter a) {
+        this.evalAskAdapter = a;
+    }
+
+    /**
      * saiku#1151: per-caller call-rate cap on the cost-bearing ask endpoint.
      * Default budget; replace via {@link #setAskRateLimiter} (Spring wiring or
      * tests). Size caps live in {@code AiAskGuard}.
@@ -946,6 +963,165 @@ public class AiQueryResource {
         out.setModel(outcome.model());
         out.setRequest(outcome.request());
         return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /* ============================================================================
+     * Agent-eval framework REST surface (saiku#1424 follow-up)
+     *
+     * Three endpoints so operators + CI can run YAML ground-truth suites without
+     * writing Java:
+     *
+     *   GET  /ai/evals/suites[?errors=true]      — list catalogued suites
+     *   GET  /ai/evals/suites/{name}              — one suite's parsed structure
+     *   POST /ai/evals/run                        — execute a suite, get the report
+     *
+     * Both the registry (for GETs) and the ask-adapter (for run) are optional
+     * beans — when either is null the endpoints return 503 with a structured
+     * "not configured" body rather than 500ing.
+     * ============================================================================ */
+
+    /**
+     * List catalogued eval suites. Pass {@code ?errors=true} to also include parse errors so
+     * operators can fix a broken YAML without reading server logs.
+     */
+    @GET
+    @Path("/evals/suites")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listEvalSuites(@QueryParam("errors") @DefaultValue("false") boolean includeErrors) {
+        if (evalSuiteRegistry == null) {
+            return Response.ok(java.util.Map.of("suites", List.of()))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+        List<Object> out = new ArrayList<>();
+        for (var suite : evalSuiteRegistry.list()) {
+            out.add(java.util.Map.of(
+                    "name", suite.name(),
+                    "description", suite.description() == null ? "" : suite.description(),
+                    "caseCount", suite.cases().size(),
+                    "cube",
+                            java.util.Map.of(
+                                    "connectionName", suite.cube().getConnectionName(),
+                                    "catalog", suite.cube().getCatalog(),
+                                    "schema", suite.cube().getSchema(),
+                                    "cubeName", suite.cube().getCubeName())));
+        }
+        body.put("suites", out);
+        if (includeErrors) {
+            body.put("errors", evalSuiteRegistry.errors());
+        }
+        return Response.ok(body).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /** Return one suite's parsed structure. */
+    @GET
+    @Path("/evals/suites/{name}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getEvalSuite(@PathParam("name") String name) {
+        if (evalSuiteRegistry == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(java.util.Map.of("error", "eval registry not configured"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        return evalSuiteRegistry
+                .get(name)
+                .<Response>map(suite ->
+                        Response.ok(suite).type(MediaType.APPLICATION_JSON).build())
+                .orElseGet(() -> Response.status(Response.Status.NOT_FOUND)
+                        .entity(java.util.Map.of("error", "suite '" + name + "' not found"))
+                        .type(MediaType.APPLICATION_JSON)
+                        .build());
+    }
+
+    /** Force-refresh the suite catalogue. */
+    @POST
+    @Path("/evals/suites/refresh")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response refreshEvalSuites() {
+        if (evalSuiteRegistry == null) {
+            return Response.ok(java.util.Map.of("suites", 0, "errors", 0))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        evalSuiteRegistry.forceRefresh();
+        return Response.ok(java.util.Map.of(
+                        "suites", evalSuiteRegistry.list().size(),
+                        "errors", evalSuiteRegistry.errors().size()))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    /**
+     * Run an eval suite and return the JSON report.
+     *
+     * <p>Two invocation shapes accepted in the request body:
+     *
+     * <ul>
+     *   <li>{@code {"suiteName": "foodmart-sales-evals"}} — looks the suite up in the registry.
+     *   <li>{@code {"suiteYaml": "name: ...\ncube: ..."}} — parses the YAML directly. Handy for
+     *       CI runs that build a suite dynamically and don't want to write to disk first.
+     * </ul>
+     *
+     * <p>Response is the pretty-printed {@link org.saiku.service.olap.ai.eval.EvalReport} JSON.
+     * HTTP {@code 200} when the report was produced regardless of pass/fail — the caller inspects
+     * {@code failedCount} / {@code degradedCount} to decide CI status. {@code 4xx} on missing
+     * suite / malformed body; {@code 503} when the ask adapter isn't wired.
+     */
+    @POST
+    @Path("/evals/run")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response runEvalSuite(java.util.Map<String, String> body) {
+        if (evalAskAdapter == null) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity(
+                            java.util.Map.of(
+                                    "error",
+                                    "eval runner not configured — check that the AI ask provider is set (saiku.ai.ask.provider) and the launcher has a wired liveEvalAskAdapterBean"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        if (body == null || (body.get("suiteName") == null && body.get("suiteYaml") == null)) {
+            return badRequest("body", "request body must carry either 'suiteName' or 'suiteYaml'", null);
+        }
+
+        org.saiku.service.olap.ai.eval.EvalSuite suite;
+        try {
+            if (body.get("suiteName") != null) {
+                if (evalSuiteRegistry == null) {
+                    return Response.status(Response.Status.NOT_FOUND)
+                            .entity(java.util.Map.of(
+                                    "error", "eval registry not configured — pass 'suiteYaml' instead"))
+                            .type(MediaType.APPLICATION_JSON)
+                            .build();
+                }
+                var maybe = evalSuiteRegistry.get(body.get("suiteName"));
+                if (maybe.isEmpty()) {
+                    return Response.status(Response.Status.NOT_FOUND)
+                            .entity(java.util.Map.of(
+                                    "error", "suite '" + body.get("suiteName") + "' not found in registry"))
+                            .type(MediaType.APPLICATION_JSON)
+                            .build();
+                }
+                suite = maybe.get();
+            } else {
+                suite = org.saiku.service.olap.ai.eval.EvalYamlReader.read(body.get("suiteYaml"), "inline");
+            }
+        } catch (org.saiku.service.olap.ai.eval.EvalYamlReader.EvalParseException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(java.util.Map.of(
+                            "error", "invalid suite YAML",
+                            "code", e.code(),
+                            "message", e.getMessage()))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+
+        org.saiku.service.olap.ai.eval.EvalReport report =
+                new org.saiku.service.olap.ai.eval.AgentEvalRunner(evalAskAdapter).run(suite);
+        return Response.ok(report).type(MediaType.APPLICATION_JSON).build();
     }
 
     @POST

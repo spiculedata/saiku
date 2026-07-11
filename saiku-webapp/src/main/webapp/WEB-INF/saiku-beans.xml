@@ -294,6 +294,11 @@
              saiku.ai.ask.provider is set to 'anthropic' or 'openai' and the
              matching API key env var is supplied. See aiAskServiceBean below. -->
         <property name="askService" ref="aiAskServiceBean"/>
+        <!-- Eval framework wiring (saiku#1424). Both properties are optional — the
+             /ai/evals/* endpoints return 404-shaped responses when either bean isn't
+             wired, so the resource stays boot-safe if evals aren't configured. -->
+        <property name="evalSuiteRegistry" ref="evalSuiteRegistryBean"/>
+        <property name="evalAskAdapter" ref="liveEvalAskAdapterBean"/>
     </bean>
 
     <!-- Ossie AI Query API (#1394) — parallel to aiQueryResource but for semantic-YAML
@@ -410,6 +415,27 @@
     <bean id="agentSpaceRegistryBean"
           class="org.saiku.service.olap.ai.ask.AgentSpaceRegistry">
         <constructor-arg type="java.lang.String" value="${saiku.home:./saiku-home}/agent-spaces"/>
+    </bean>
+
+    <!-- Eval suite catalogue (saiku#1424). YAML ground-truth cases under
+         saiku-home/evals/ scanned on demand. Consumed by the /ai/evals/*
+         REST surface. -->
+    <bean id="evalSuiteRegistryBean"
+          class="org.saiku.service.olap.ai.eval.EvalSuiteRegistry">
+        <constructor-arg type="java.lang.String" value="${saiku.home:./saiku-home}/evals"/>
+    </bean>
+
+    <!-- Production ask-adapter used by AgentEvalRunner (saiku#1424). Wires
+         AiAskService + AiCubeMetadataService + AiSchemaConverter + ThinQueryService
+         so the runner has the same execution pipeline as the /ai/ask endpoint. -->
+    <bean id="aiSchemaConverterBean" class="org.saiku.service.olap.ai.AiSchemaConverter"/>
+
+    <bean id="liveEvalAskAdapterBean"
+          class="org.saiku.service.olap.ai.eval.LiveEvalAskAdapter">
+        <constructor-arg ref="aiAskServiceBean"/>
+        <constructor-arg ref="aiCubeMetadataServiceBean"/>
+        <constructor-arg ref="aiSchemaConverterBean"/>
+        <constructor-arg ref="thinQueryBean"/>
     </bean>
 
     <!-- ====================================================================

@@ -178,11 +178,48 @@ a wrong answer":
 | `TYPE_MISMATCH`     | A field has the wrong type (e.g. `cases` is a mapping, not an array).    |
 | `INVALID_TOLERANCE` | `tolerance.absolute` or `tolerance.relative` is negative.                |
 
+## REST surface
+
+The eval framework ships four endpoints on the standard `/saiku/api/ai` base:
+
+- `GET  /rest/saiku/api/ai/evals/suites[?errors=true]` — catalogue: `[{name, description, caseCount, cube}]`
+- `GET  /rest/saiku/api/ai/evals/suites/{name}` — one suite's parsed structure (admin UI)
+- `POST /rest/saiku/api/ai/evals/suites/refresh` — force-rescan the catalogue
+- `POST /rest/saiku/api/ai/evals/run` — run a suite, return the JSON report
+
+The run endpoint accepts either shape:
+
+```jsonc
+// Look up by name in saiku-home/evals/
+{ "suiteName": "foodmart-sales-evals" }
+
+// Or inline YAML — CI dynamically builds a suite and doesn't want to write to disk first
+{ "suiteYaml": "name: adhoc\ncube: {...}\ncases: [...]" }
+```
+
+Response is the full JSON `EvalReport`. HTTP `200` is returned regardless of pass/fail — the
+caller inspects `failedCount` / `degradedCount` to decide CI status.
+
+```bash
+# Run the bundled FoodMart suite against a running launcher.
+curl -sS -X POST -u admin:admin \
+  -H 'content-type: application/json' \
+  http://localhost:8080/rest/saiku/api/ai/evals/run \
+  -d '{"suiteName": "foodmart-sales-evals"}' | jq '{
+    summary: .oneLine,
+    passed: .passedCount,
+    failed: .failedCount,
+    outcomes: [.outcomes[] | {caseName, status, mismatches}]
+  }'
+```
+
+The launcher stages the bundled FoodMart suite to `saiku-home/evals/foodmart-sales.eval.yaml`
+on first boot — a fresh install can run the endpoint immediately as a smoke check.
+
 ## Non-goals for v1
 
-- **REST endpoint** to trigger runs — the runner is programmatic in v1.
-  CLI + REST wrappers are a follow-up.
-- **`saiku eval` CLI subcommand** — deferred.
+- **`saiku eval` CLI subcommand** — deferred. The REST endpoint above is the load-bearing
+  surface; a CLI wrapper is a thin HTTP client that pretty-prints the report. Small follow-up.
 - **Recording adapter** — an adapter that writes each live response to
   a fixture file so the fixture adapter can replay deterministically
   without spending LLM budget. Design ready; implementation deferred.
