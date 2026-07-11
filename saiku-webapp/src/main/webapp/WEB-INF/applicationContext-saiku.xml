@@ -35,6 +35,11 @@
     </security:http>
     <security:http pattern="/ui/**" security="none">
     </security:http>
+    <!-- Static showcase SPA (saiku-ui/static/showcase/) — public, same-origin so its
+         fetches to /rest/saiku/api/* ride the visitor's own auth session (or the
+         demo mode's warm-session bootstrap). -->
+    <security:http pattern="/showcase/**" security="none">
+    </security:http>
     <security:http pattern="/" security="none">
     </security:http>
     <security:http pattern="/index.jsp" security="none">

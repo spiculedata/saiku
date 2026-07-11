@@ -32,7 +32,7 @@
   $effect(() => {
     const s = server.trim();
     const p = dashboardPath.trim();
-    if (!s || !p || !tile.target) {
+    if (!p || !tile.target) {
       members = null;
       return;
     }

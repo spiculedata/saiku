@@ -21,6 +21,14 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { defineConfig } from "vite";
 
 export default defineConfig({
+  // Statically replace `process.env.NODE_ENV` at build time — ECharts (a
+  // dependency of EmbedChart) uses it to gate development-only assertion
+  // warnings. Without this replacement the bundle references `process` at
+  // runtime and any host page without a Node-polyfill in scope throws
+  // `ReferenceError: process is not defined` at first render.
+  define: {
+    "process.env.NODE_ENV": JSON.stringify("production"),
+  },
   plugins: [
     svelte({
       // Compile every .svelte under src/embed/ as a Web Component. The

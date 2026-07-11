@@ -216,13 +216,21 @@ final class CubeTypeGenerator {
     // ------------------------------------------------------------
 
     private void buildNameMaps() {
+        // Collision detection for Row-type field names is UNIFIED across measures + levels —
+        // both go into the same GraphQL type, so a measure `Store Sqft` collides with a level
+        // `Store Sqft` even though they live in different metadata maps. Historical bug: kept
+        // them separate and got 'declared a field with a non-unique name' on real FoodMart cubes.
+        java.util.Set<String> takenRowFields = new java.util.HashSet<>();
+
         // Measures
         for (Map.Entry<String, AiSchema.Measure> e : schema.measures.entrySet()) {
             AiSchema.Measure m = e.getValue();
             if (m == null || m.name == null || m.name.isBlank()) continue;
             String enumValue = uniqueScreamingSnake(measureEnumToName.keySet(), m.name);
             measureEnumToName.put(enumValue, m.name);
-            measureNameToField.put(m.name, uniqueCamel(measureNameToField.values(), m.name));
+            String field = uniqueCamel(takenRowFields, m.name);
+            measureNameToField.put(m.name, field);
+            takenRowFields.add(field);
         }
         // Levels — walk dimensions → hierarchies → levels
         for (AiSchema.Dimension dim : schema.dimensions.values()) {
@@ -239,15 +247,15 @@ final class CubeTypeGenerator {
                     String enumValue = uniqueLevelEnum(
                             levelEnumToAxis.keySet(), screamingSnake(dimensionName), screamingSnake(lvl.name));
                     levelEnumToAxis.put(enumValue, new AxisRef(dimensionName, hierarchyName, lvl.name));
-                    // Row-field naming uses just the level name by default (avoids the ugly
-                    // productProductFamily double-word). If two dimensions expose a level with the
-                    // same name (e.g. "Name"), the second one gets the dimension prefix.
+                    // Row-field naming uses just the level name by default. If it would collide
+                    // with a measure OR another level's field, retry with the dimension prefix.
                     if (levelNameToField.containsKey(lvl.name)) continue;
-                    String preferredField = uniqueCamel(levelNameToField.values(), lvl.name);
-                    if (isDuplicateBasis(levelNameToField.values(), preferredField)) {
-                        preferredField = uniqueCamel(levelNameToField.values(), dimensionName + " " + lvl.name);
+                    String preferredField = uniqueCamel(takenRowFields, lvl.name);
+                    if (isDuplicateBasis(takenRowFields, preferredField)) {
+                        preferredField = uniqueCamel(takenRowFields, dimensionName + " " + lvl.name);
                     }
                     levelNameToField.put(lvl.name, preferredField);
+                    takenRowFields.add(preferredField);
                 }
             }
         }
