@@ -227,6 +227,45 @@ public class AiAskService {
         return askInternal(effectiveRef, question, history, cellsetDigest, forceTool, currentQuery, space);
     }
 
+    /**
+     * Result of a synchronous space-access pre-flight — the input-side scope decision, made
+     * without calling the LLM. Lets a streaming endpoint map a scope denial to a real HTTP status
+     * (403 / 404 / 503) <em>before</em> it commits to a 200 event-stream, instead of burying the
+     * denial in an in-band SSE error event (saiku#1454). The post-LLM re-check of the model's
+     * emitted cube (saiku#1453) still runs inside {@link #askInSpace}; this only covers the
+     * caller-supplied ref.
+     */
+    public enum SpaceAccess {
+        OK,
+        SPACES_NOT_CONFIGURED,
+        SPACE_NOT_FOUND,
+        FORBIDDEN
+    }
+
+    /**
+     * Pre-flight the caller-supplied cube ref against the space's allowlist without invoking the
+     * provider. Mirrors the guard sequence at the top of {@link #askInSpace} so the two agree on
+     * what a scope denial is. Cheap (registry lookup only) — safe to call before streaming starts.
+     */
+    public SpaceAccess checkSpaceAccess(String spaceId, AiCubeRef ref) {
+        if (spaces == null) {
+            return SpaceAccess.SPACES_NOT_CONFIGURED;
+        }
+        if (spaceId == null || spaceId.isBlank()) {
+            return SpaceAccess.SPACE_NOT_FOUND;
+        }
+        java.util.Optional<AgentSpace> maybe = spaces.get(spaceId);
+        if (maybe.isEmpty()) {
+            return SpaceAccess.SPACE_NOT_FOUND;
+        }
+        AgentSpace space = maybe.get();
+        AiCubeRef effectiveRef = ref != null ? ref : space.defaultCube();
+        if (effectiveRef == null || !space.allowsCube(effectiveRef)) {
+            return SpaceAccess.FORBIDDEN;
+        }
+        return SpaceAccess.OK;
+    }
+
     private AskOutcome askInternal(
             AiCubeRef ref,
             String question,
