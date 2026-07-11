@@ -907,10 +907,10 @@ public class AiQueryResource {
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         }
-        AiAskApi.AskResponse out = new AiAskApi.AskResponse();
-        out.setModel(outcome.model());
-        out.setRequest(outcome.request());
-        return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+        // Mirror the classic /ai/ask success handling (saiku#1455): branch on the outcome kind so
+        // INSIGHT / VIEW_CHANGE surface their artefact and QUERY is actually executed — previously
+        // this path echoed only {model, request} and silently dropped insight/view-change answers.
+        return buildAskSuccessResponse(outcome);
     }
 
     @POST
@@ -943,64 +943,7 @@ public class AiQueryResource {
                     .build();
         }
 
-        AiAskApi.AskResponse out = new AiAskApi.AskResponse();
-        out.setDegraded(false);
-        out.setModel(outcome.model());
-
-        // Insight and view-change intents skip the converter / execution entirely — the model already
-        // produced the final artefact (markdown analysis / view target). Return immediately so the
-        // drawer can render the result without going through ThinQuery → MDX → backend round-trip.
-        if (outcome.kind() == AiAskService.AskOutcome.Kind.INSIGHT) {
-            out.setInsight(outcome.insight());
-            return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
-        }
-        if (outcome.kind() == AiAskService.AskOutcome.Kind.VIEW_CHANGE) {
-            out.setViewChange(outcome.viewChange());
-            return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
-        }
-
-        // Default branch: QUERY intent — convert + execute as before.
-        AiQueryRequest req = outcome.request();
-        out.setRequest(req);
-
-        // Execute the produced request through the same path /ai/query uses. Errors are translated
-        // back into a 200 with the {request, model} echoed so the UI can still show "the model
-        // proposed this, but it failed at <stage>" — much more useful than a 500.
-        long start = System.currentTimeMillis();
-        try {
-            // Phase 2 shape-validate before the converter sees the request — same as /ai/query.
-            schemaValidator.assertValid(MAPPER.valueToTree(req));
-            AiSchema schema = cubeMetadataService.getSchema(req.getCube());
-            ThinQuery tq = converter.convert(req, schema);
-            // Surface the converted ThinQueryModel so the UI's "edit in canvas" can hydrate the
-            // workbench's chip builder directly (interactive query) instead of pasting MDX (opaque
-            // to the chip UI — user can't drag/drop). Same shape the workspace builder manipulates.
-            out.setQueryModel(tq.getQueryModel());
-            CellDataSet cds = thinQueryService.execute(tq);
-            AiQueryResponse aiResp = buildResponse(tq, cds, start, "records");
-            out.setResponse(aiResp);
-            if (aiResp != null && aiResp.getMetadata() != null) {
-                out.setGeneratedMdx(aiResp.getMetadata().getGeneratedMdx());
-            }
-        } catch (AiValidationException e) {
-            // Surface the converter's structured validation as the response envelope so the UI
-            // can render candidate-list suggestions just like a direct /ai/query call would.
-            AiQueryResponse aiResp = new AiQueryResponse();
-            aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.VALIDATION_ERROR);
-            aiResp.setError(e.getMessage());
-            aiResp.setField(e.getField());
-            aiResp.setAvailable(e.getAvailable() == null ? null : new java.util.ArrayList<>(e.getAvailable()));
-            aiResp.setRuntimeMs(System.currentTimeMillis() - start);
-            out.setResponse(aiResp);
-        } catch (RuntimeException e) {
-            log.warn("AI ask execution failed after successful translation", e);
-            AiQueryResponse aiResp = new AiQueryResponse();
-            aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.EXECUTION_ERROR);
-            aiResp.setError("execute failed");
-            aiResp.setRuntimeMs(System.currentTimeMillis() - start);
-            out.setResponse(aiResp);
-        }
-        return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+        return buildAskSuccessResponse(outcome);
     }
 
     /**
@@ -1161,39 +1104,11 @@ public class AiQueryResource {
             return;
         }
 
-        // QUERY intent — no prose to stream; the query itself IS the artefact. Execute the same
-        // way the sync endpoint does and emit the final envelope in one event so the client
-        // accumulates a complete AskResponse.
-        AiQueryRequest req = outcome.request();
-        out.setRequest(req);
-        long start = System.currentTimeMillis();
-        try {
-            schemaValidator.assertValid(MAPPER.valueToTree(req));
-            AiSchema schema = cubeMetadataService.getSchema(req.getCube());
-            ThinQuery tq = converter.convert(req, schema);
-            out.setQueryModel(tq.getQueryModel());
-            CellDataSet cds = thinQueryService.execute(tq);
-            AiQueryResponse aiResp = buildResponse(tq, cds, start, "records");
-            out.setResponse(aiResp);
-            if (aiResp != null && aiResp.getMetadata() != null) {
-                out.setGeneratedMdx(aiResp.getMetadata().getGeneratedMdx());
-            }
-        } catch (AiValidationException e) {
-            AiQueryResponse aiResp = new AiQueryResponse();
-            aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.VALIDATION_ERROR);
-            aiResp.setError(e.getMessage());
-            aiResp.setField(e.getField());
-            aiResp.setAvailable(e.getAvailable() == null ? null : new java.util.ArrayList<>(e.getAvailable()));
-            aiResp.setRuntimeMs(System.currentTimeMillis() - start);
-            out.setResponse(aiResp);
-        } catch (RuntimeException e) {
-            log.warn("AI ask (streaming) execution failed after successful translation", e);
-            AiQueryResponse aiResp = new AiQueryResponse();
-            aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.EXECUTION_ERROR);
-            aiResp.setError("execute failed");
-            aiResp.setRuntimeMs(System.currentTimeMillis() - start);
-            out.setResponse(aiResp);
-        }
+        // QUERY intent — no prose to stream; the query itself IS the artefact. Execute the same way
+        // the sync endpoint does (shared helper — saiku#1455/#1460) and emit the final envelope in
+        // one event so the client accumulates a complete AskResponse.
+        out.setRequest(outcome.request());
+        executeQueryIntoResponse(out, outcome.request());
         sse.event("final", MAPPER.writeValueAsString(out));
     }
 
@@ -2587,6 +2502,78 @@ public class AiQueryResource {
                     .build();
         }
         return null;
+    }
+
+    /**
+     * Build the success response envelope for a non-degraded ask outcome, shared by the sync
+     * classic ({@link #ask}) and space ({@link #askInSpace}) endpoints so every ask surface returns
+     * the same shape (saiku#1455). INSIGHT and VIEW_CHANGE short-circuit with the model's artefact;
+     * QUERY is converted + executed the same way {@code /ai/query} does.
+     */
+    private Response buildAskSuccessResponse(AiAskService.AskOutcome outcome) {
+        AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+        out.setDegraded(false);
+        out.setModel(outcome.model());
+
+        // Insight and view-change intents skip the converter / execution entirely — the model
+        // already produced the final artefact (markdown analysis / view target).
+        if (outcome.kind() == AiAskService.AskOutcome.Kind.INSIGHT) {
+            out.setInsight(outcome.insight());
+            return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+        }
+        if (outcome.kind() == AiAskService.AskOutcome.Kind.VIEW_CHANGE) {
+            out.setViewChange(outcome.viewChange());
+            return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+        }
+
+        // QUERY intent — convert + execute.
+        out.setRequest(outcome.request());
+        executeQueryIntoResponse(out, outcome.request());
+        return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /**
+     * Convert + execute the model's {@link AiQueryRequest} through the same path {@code /ai/query}
+     * uses, folding the result (or a structured validation / execution error) into {@code out}.
+     * Shared by the sync success path ({@link #buildAskSuccessResponse}) and the streaming QUERY
+     * branch ({@link #streamOutcomeAsSse}) so the two can't diverge. Errors are captured into the
+     * response envelope rather than thrown, so the UI can show "the model proposed this, but it
+     * failed at &lt;stage&gt;" instead of a 500.
+     */
+    private void executeQueryIntoResponse(AiAskApi.AskResponse out, AiQueryRequest req) {
+        long start = System.currentTimeMillis();
+        try {
+            // Phase 2 shape-validate before the converter sees the request — same as /ai/query.
+            schemaValidator.assertValid(MAPPER.valueToTree(req));
+            AiSchema schema = cubeMetadataService.getSchema(req.getCube());
+            ThinQuery tq = converter.convert(req, schema);
+            // Surface the converted ThinQueryModel so the UI's "edit in canvas" can hydrate the
+            // workbench's chip builder directly instead of pasting opaque MDX.
+            out.setQueryModel(tq.getQueryModel());
+            CellDataSet cds = thinQueryService.execute(tq);
+            AiQueryResponse aiResp = buildResponse(tq, cds, start, "records");
+            out.setResponse(aiResp);
+            if (aiResp != null && aiResp.getMetadata() != null) {
+                out.setGeneratedMdx(aiResp.getMetadata().getGeneratedMdx());
+            }
+        } catch (AiValidationException e) {
+            // Surface the converter's structured validation as the response envelope so the UI can
+            // render candidate-list suggestions just like a direct /ai/query call would.
+            AiQueryResponse aiResp = new AiQueryResponse();
+            aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.VALIDATION_ERROR);
+            aiResp.setError(e.getMessage());
+            aiResp.setField(e.getField());
+            aiResp.setAvailable(e.getAvailable() == null ? null : new java.util.ArrayList<>(e.getAvailable()));
+            aiResp.setRuntimeMs(System.currentTimeMillis() - start);
+            out.setResponse(aiResp);
+        } catch (RuntimeException e) {
+            log.warn("AI ask execution failed after successful translation", e);
+            AiQueryResponse aiResp = new AiQueryResponse();
+            aiResp.setStatus(org.saiku.service.olap.ai.AiQueryResponse.Status.EXECUTION_ERROR);
+            aiResp.setError("execute failed");
+            aiResp.setRuntimeMs(System.currentTimeMillis() - start);
+            out.setResponse(aiResp);
+        }
     }
 
     /**
