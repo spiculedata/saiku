@@ -28,6 +28,13 @@
 		return numberFormatter.format(value);
 	}
 
+	// Compact axis labels so wide numbers (25,000,000) don't clip the grid edge.
+	function compact(value: number): string {
+		if (Math.abs(value) >= 1e6) return `${(value / 1e6).toFixed(0)}M`;
+		if (Math.abs(value) >= 1e3) return `${(value / 1e3).toFixed(0)}k`;
+		return String(value);
+	}
+
 	function baseOption(): EChartsOption {
 		return {
 			backgroundColor: 'transparent',
@@ -54,7 +61,7 @@
 				type: 'value',
 				axisLine: { show: false },
 				splitLine: { lineStyle: { color: SPLIT_LINE_COLOR } },
-				axisLabel: { color: TEXT_COLOR, formatter: (v: number) => formatValue(v) }
+				axisLabel: { color: TEXT_COLOR, formatter: (v: number) => compact(v) }
 			},
 			series: [
 				{
@@ -78,7 +85,7 @@
 				type: 'value',
 				axisLine: { show: false },
 				splitLine: { lineStyle: { color: SPLIT_LINE_COLOR } },
-				axisLabel: { color: TEXT_COLOR, formatter: (v: number) => formatValue(v) }
+				axisLabel: { color: TEXT_COLOR, formatter: (v: number) => compact(v) }
 			},
 			yAxis: {
 				type: 'category',
@@ -86,7 +93,9 @@
 				inverse: true,
 				axisLine: { lineStyle: { color: AXIS_LINE_COLOR } },
 				axisTick: { show: false },
-				axisLabel: { color: TEXT_COLOR }
+				// cap the reserved label column so long names truncate cleanly with an
+				// ellipsis instead of bleeding off the left edge of the card
+				axisLabel: { color: TEXT_COLOR, width: 168, overflow: 'truncate', fontSize: 11 }
 			},
 			series: [
 				{
