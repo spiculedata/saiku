@@ -76,6 +76,31 @@ public class AnthropicNlAskProviderTest {
     }
 
     @Test
+    public void omitsTemperatureWhenSentinelNegative() throws Exception {
+        // OMIT_TEMPERATURE (negative) must drop the `temperature` field entirely — the Claude-5
+        // family rejects it as deprecated (400 invalid_request_error).
+        AnthropicNlAskProvider provider = new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config(
+                "k", "claude-sonnet-5", AnthropicNlAskProvider.OMIT_TEMPERATURE, 1024, null));
+        NlAskRequest req = new NlAskRequest(CUBE, "show sales", SCHEMA, REQUEST_SCHEMA, List.of());
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+
+        assertFalse("temperature must be omitted when the sentinel is set", root.has("temperature"));
+    }
+
+    @Test
+    public void includesTemperatureWhenExplicitlySet() throws Exception {
+        AnthropicNlAskProvider provider =
+                new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config("k", "claude-x", 0.2, 1024, null));
+        NlAskRequest req = new NlAskRequest(CUBE, "show sales", SCHEMA, REQUEST_SCHEMA, List.of());
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+
+        assertTrue(root.has("temperature"));
+        assertEquals(0.2, root.get("temperature").asDouble(), 1e-9);
+    }
+
+    @Test
     public void requestBodyIncludesConversationHistoryBeforeNewQuestion() throws Exception {
         AnthropicNlAskProvider provider =
                 new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config("k", "claude-x", 0.0, 1024, null));

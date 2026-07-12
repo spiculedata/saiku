@@ -88,8 +88,14 @@ public final class NlAskProviderFactory {
             String resolvedModel = normalise(model);
             String effectiveModel = resolvedModel == null ? AnthropicNlAskProvider.DEFAULT_MODEL : resolvedModel;
             LOGGER.info("AI ask provider: anthropic (model={})", effectiveModel);
-            return new AnthropicNlAskProvider(
-                    new AnthropicNlAskProvider.Config(resolvedKey, effectiveModel, 0.0, 4096, Duration.ofSeconds(60)));
+            // Omit temperature by default: the Claude-5 family rejects it, and tool_choice already
+            // forces the structured tool call so determinism doesn't depend on temperature=0.
+            return new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config(
+                    resolvedKey,
+                    effectiveModel,
+                    AnthropicNlAskProvider.OMIT_TEMPERATURE,
+                    4096,
+                    Duration.ofSeconds(60)));
         }
         if (PROVIDER_OPENAI.equalsIgnoreCase(name)) {
             String resolvedKey = resolveApiKey(ENV_OPENAI_API_KEY);
