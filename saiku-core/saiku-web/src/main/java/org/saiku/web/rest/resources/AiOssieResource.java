@@ -332,6 +332,36 @@ public class AiOssieResource {
         }
     }
 
+    /**
+     * Signals radar — headline screening/risk stats, the sanctions-first screening feed, a matched
+     * category tally, and the high-risk company leaderboard, in one call. Same model-resolved,
+     * warehouse-direct shape as {@link #entity}: the aggregates here (top-N by risk, category
+     * histogram over a multi-valued column) don't fit the shelf translator, so a direct read is
+     * the right tool. {@code flags} caps the screening feed, {@code risk} the leaderboard.
+     */
+    @GET
+    @Path("/signals/{connection}/{model}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response signals(
+            @PathParam("connection") String connectionName,
+            @PathParam("model") String modelName,
+            @jakarta.ws.rs.QueryParam("flags") @jakarta.ws.rs.DefaultValue("60") int flagLimit,
+            @jakarta.ws.rs.QueryParam("risk") @jakarta.ws.rs.DefaultValue("20") int riskLimit) {
+        if (ossieGraphService == null) {
+            return error("Ossie graph not wired");
+        }
+        try {
+            return Response.ok(ossieGraphService.signals(connectionName, flagLimit, riskLimit))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        } catch (IllegalStateException e) {
+            return badRequest("model", e.getMessage(), List.of());
+        } catch (Exception e) {
+            log.warn("Ossie signals failed (connection='{}')", connectionName, e);
+            return error("signals failed: " + e.getMessage());
+        }
+    }
+
     // -------------------------------------------------------------------
     // GET /schema/{connection}/{model}
     // -------------------------------------------------------------------

@@ -37,6 +37,13 @@ public class OssieGraphService {
     private static final Logger log = LoggerFactory.getLogger(OssieGraphService.class);
     private static final int MAX_DEPTH_CAP = 8;
 
+    // Signals: entities at/above this computed risk score are the "high-risk" headline count.
+    // The Benafide warehouse tops out at 30.0; >=20 isolates ~3.7k entities (the sharp tail).
+    private static final double HIGH_RISK_THRESHOLD = 20.0;
+    private static final int SIGNALS_FLAG_CAP = 200;
+    private static final int SIGNALS_RISK_CAP = 50;
+    private static final int SIGNALS_TOPIC_CAP = 12;
+
     private OssieDiscoverService discoverService;
     private OlapDiscoverService olapDiscoverService;
 
@@ -56,6 +63,22 @@ public class OssieGraphService {
 
     /** Traversal result. */
     public record GraphResult(String rootId, List<Node> nodes, List<Edge> edges, int maxDepth, boolean hasCycle) {}
+
+    /** A high-risk company for the Signals leaderboard. */
+    public record RiskEntity(String id, String name, String jurisdiction, Double riskScore) {}
+
+    /** One screening hit — {@code topics} is the split-out list of matched categories. */
+    public record Flag(String name, List<String> topics, String matchType, String status) {}
+
+    /** A screening-category tally (post-split, so multi-topic flags count once per category). */
+    public record TopicCount(String topic, long count) {}
+
+    /** Headline counts for the Signals radar. */
+    public record SignalsStats(long totalFlags, long sanctionFlags, long highRiskEntities, int distinctTopics) {}
+
+    /** The Signals bundle: headline stats + screening feed + category tally + risk leaderboard. */
+    public record SignalsResult(
+            SignalsStats stats, List<RiskEntity> topRisk, List<Flag> flags, List<TopicCount> topics) {}
 
     /**
      * Walk the ownership relationship up from {@code rootId} to {@code depth} levels.
@@ -251,6 +274,139 @@ public class OssieGraphService {
             }
         }
         return out;
+    }
+
+    /**
+     * The Signals radar bundle: headline screening/risk stats, the sanctions-first screening feed,
+     * a matched-category tally, and the high-risk company leaderboard. One warehouse round-trip of
+     * four read-only SELECTs, all resolved from the model's declared datasets (the {@code entity} +
+     * {@code risk_score} datasets for the leaderboard, the {@code risk_topics} dataset for the feed).
+     */
+    public SignalsResult signals(String connectionName, int flagLimit, int riskLimit) throws Exception {
+        OssieModelDto model = discoverService.getModel(connectionName);
+        if (model == null) throw new IllegalStateException("No Ossie model for '" + connectionName + "'");
+        OssieModelDto.Dataset entity = datasetWithField(model, "jurisdiction", "entity");
+        OssieModelDto.Dataset riskDs = datasetWithFieldOrNull(model, "risk_score");
+        OssieModelDto.Dataset flagDs = datasetWithFieldOrNull(model, "risk_topics");
+        if (riskDs == null || flagDs == null) {
+            throw new IllegalStateException("Model has no risk_score / risk_topics datasets — Signals unavailable");
+        }
+        String entityTable = entity.getSource();
+        String entityId =
+                entity.getPrimaryKey().isEmpty() ? "id" : entity.getPrimaryKey().get(0);
+        String riskTable = riskDs.getSource();
+        String riskFk = riskDs.getPrimaryKey().isEmpty()
+                ? "entity_id"
+                : riskDs.getPrimaryKey().get(0);
+        String flagTable = flagDs.getSource();
+        int fLim = Math.max(1, Math.min(flagLimit, SIGNALS_FLAG_CAP));
+        int rLim = Math.max(1, Math.min(riskLimit, SIGNALS_RISK_CAP));
+
+        String topRiskSql = "SELECT e.\"" + entityId + "\" AS id, e.\"name\" AS name, "
+                + "e.\"jurisdiction\" AS jurisdiction, r.\"risk_score\" AS risk_score "
+                + "FROM \"" + entityTable + "\" e JOIN \"" + riskTable + "\" r ON r.\"" + riskFk + "\" = e.\""
+                + entityId
+                + "\" WHERE r.\"risk_score\" > 0 ORDER BY r.\"risk_score\" DESC LIMIT " + rLim;
+
+        String flagsSql = "SELECT \"os_name\" AS name, \"risk_topics\" AS topics, "
+                + "\"match_type\" AS match_type, \"status\" AS status FROM \"" + flagTable + "\" "
+                + "ORDER BY (CASE WHEN \"risk_topics\" ILIKE '%sanction%' THEN 0 ELSE 1 END), \"os_name\" LIMIT "
+                + fLim;
+
+        String topicsSql = "SELECT trim(t) AS topic, count(*) AS c FROM \"" + flagTable
+                + "\", unnest(string_split(\"risk_topics\", ';')) AS u(t) "
+                + "WHERE trim(t) <> '' GROUP BY 1 ORDER BY 2 DESC LIMIT " + SIGNALS_TOPIC_CAP;
+
+        String statsSql = "SELECT (SELECT count(*) FROM \"" + flagTable + "\") AS total_flags, "
+                + "(SELECT count(*) FROM \"" + flagTable
+                + "\" WHERE \"risk_topics\" ILIKE '%sanction%') AS sanction_flags, "
+                + "(SELECT count(*) FROM \"" + riskTable + "\" WHERE \"risk_score\" >= " + HIGH_RISK_THRESHOLD
+                + ") AS high_risk";
+
+        ISaikuConnection saikuConn = olapDiscoverService.getConnectionManager().getConnection(connectionName);
+        if (saikuConn == null) throw new IllegalStateException("No live connection for '" + connectionName + "'");
+        Properties p = saikuConn.getProperties();
+        long start = System.currentTimeMillis();
+        try (Connection c = DriverManager.getConnection(
+                p.getProperty(ISaikuConnection.URL_KEY),
+                orEmpty(p.getProperty(ISaikuConnection.USERNAME_KEY)),
+                orEmpty(p.getProperty(ISaikuConnection.PASSWORD_KEY)))) {
+            List<RiskEntity> topRisk = new ArrayList<>();
+            for (Map<String, Object> row : query(c, topRiskSql)) {
+                Object score = row.get("risk_score");
+                topRisk.add(new RiskEntity(
+                        str(row.get("id")),
+                        str(row.get("name")),
+                        str(row.get("jurisdiction")),
+                        score instanceof Number ? ((Number) score).doubleValue() : null));
+            }
+            List<Flag> flags = new ArrayList<>();
+            for (Map<String, Object> row : query(c, flagsSql)) {
+                flags.add(new Flag(
+                        str(row.get("name")),
+                        splitTopics(str(row.get("topics"))),
+                        str(row.get("match_type")),
+                        str(row.get("status"))));
+            }
+            List<TopicCount> topics = new ArrayList<>();
+            for (Map<String, Object> row : query(c, topicsSql)) {
+                Object cnt = row.get("c");
+                topics.add(
+                        new TopicCount(str(row.get("topic")), cnt instanceof Number ? ((Number) cnt).longValue() : 0));
+            }
+            SignalsStats stats = new SignalsStats(0, 0, 0, topics.size());
+            List<Map<String, Object>> statRows = query(c, statsSql);
+            if (!statRows.isEmpty()) {
+                Map<String, Object> s = statRows.get(0);
+                stats = new SignalsStats(
+                        asLong(s.get("total_flags")),
+                        asLong(s.get("sanction_flags")),
+                        asLong(s.get("high_risk")),
+                        topics.size());
+            }
+            log.info(
+                    "Ossie signals (connection='{}'): {} flags, {} topics, {} top-risk in {}ms",
+                    connectionName,
+                    flags.size(),
+                    topics.size(),
+                    topRisk.size(),
+                    System.currentTimeMillis() - start);
+            return new SignalsResult(stats, topRisk, flags, topics);
+        }
+    }
+
+    /** Run a parameterless SELECT and collect its rows as ordered maps. */
+    private List<Map<String, Object>> query(Connection c, String sql) throws Exception {
+        List<Map<String, Object>> out = new ArrayList<>();
+        try (PreparedStatement ps = c.prepareStatement(sql);
+                ResultSet rs = ps.executeQuery()) {
+            java.sql.ResultSetMetaData md = rs.getMetaData();
+            while (rs.next()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                for (int i = 1; i <= md.getColumnCount(); i++) row.put(md.getColumnLabel(i), rs.getObject(i));
+                out.add(row);
+            }
+        }
+        return out;
+    }
+
+    /** Split a ';'-delimited risk_topics string into trimmed, non-empty categories. */
+    private static List<String> splitTopics(String raw) {
+        if (raw == null || raw.isBlank()) return List.of();
+        List<String> out = new ArrayList<>();
+        for (String part : raw.split(";")) {
+            String t = part.trim();
+            if (!t.isEmpty()) out.add(t);
+        }
+        return out;
+    }
+
+    private static String str(Object o) {
+        return o == null ? null : o.toString();
+    }
+
+    private static long asLong(Object o) {
+        return o instanceof Number ? ((Number) o).longValue() : 0L;
     }
 
     private static String orEmpty(String s) {
