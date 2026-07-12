@@ -52,6 +52,12 @@
     </security:http>
     <security:http pattern="/embed-demo/**" security="none">
     </security:http>
+    <!-- AQVIRA pharma OEM demo (aqvira-demo/) — same public-static + warm-session
+         model as embed-demo. Bare path permitted so the trailing-slash redirect works. -->
+    <security:http pattern="/aqvira-demo" security="none">
+    </security:http>
+    <security:http pattern="/aqvira-demo/**" security="none">
+    </security:http>
     <security:http pattern="/" security="none">
     </security:http>
     <security:http pattern="/index.jsp" security="none">
