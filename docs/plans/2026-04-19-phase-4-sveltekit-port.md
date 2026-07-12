@@ -1,5 +1,31 @@
 # Phase 4 — SvelteKit feature-complete port
 
+> ## ⚠️ STATUS (updated 2026-07-12): effectively complete (~90%+) — this checklist is stale
+>
+> This doc was written 2026-04-19 as a like-for-like Backbone→Svelte port plan and its
+> per-item checkboxes below (which read ~15%) were **never updated** as the work landed. A
+> plan-vs-reality inventory found `saiku-ui/src` now ships **158 `.svelte` files + 118 `.ts`
+> modules** covering nearly every listed item, plus large subsystems the plan never scoped
+> (Dashboards, AI/Ossie query, schema generator, design system + Storybook, share/embed,
+> Arrow cellset transport). Treat the checkboxes below as **historical**, not a live TODO.
+>
+> **Two decisions to record (deviations from this plan):**
+> - **Pivot grid built custom, NOT AG Grid.** `CellsetTable.svelte` + `ossie/pivot.ts`; there
+>   is no `ag-grid` dependency. (See the "AG Grid → Svelte-native" rationale note.)
+> - **Pentaho BIServer integration was dropped**, not ported.
+>
+> **Genuinely-remaining backlog (the real Phase-4 tail):**
+> - `QueryScenario` — general workspace what-if. (A *scoped* Mondrian what-if shipped for the
+>   AQVIRA demo via `/ai/scenario/whatif`, but the general workspace scenario editor is unbuilt.)
+> - `Buckets` plugin — no equivalent shipped.
+> - Anonymous usage-statistics ping — stats *viewing* exists (`StatsAdmin`); the outbound ping does not.
+> - Confirm-and-close the **BIServer/Pentaho drop** decision.
+> - Cosmetic "done differently": `SplashScreen` (absorbed into `Skeleton` loaders),
+>   `SessionErrorModal` (shipped as a banner), `License` (upgrade banner) — not missing, just different.
+>
+> Everything else the checklist marks `[ ]` (the ~23 modals, ChartEditor/ECharts, MDX/Monaco,
+> AdminConsole, i18n, and the model/store ports) **is built** — see `saiku-ui/src/lib/{views,modals,stores,api}`.
+
 Replaces the original Phase 4 (Vite/TS overlay on Backbone) and Phase 6
 (SvelteKit rewrite). The legacy Backbone UI is preserved on disk as
 `saiku-ui-legacy/` (restored from commit `4fa20202^`) as a read-only
