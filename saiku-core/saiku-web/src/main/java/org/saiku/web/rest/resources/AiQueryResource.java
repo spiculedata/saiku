@@ -552,6 +552,12 @@ public class AiQueryResource {
             return error("anomaly detection failed");
         }
 
+        // saiku#1482 — the /anomaly surface previously bypassed k-anonymity, leaking small-cell
+        // values /ai/query would have masked. Detection ran on the real values above (accurate
+        // flags); we mask the small-cell values in the observed records before they leave. Reuses
+        // the exact filter /ai/query uses — no-op without a count measure or when disabled.
+        applyKAnonymity(resp.getData());
+
         int anomalyCount = org.saiku.service.olap.ai.anomaly.AnomalyAugmenter.countAnomalies(resp);
         resp.setRuntimeMs(System.currentTimeMillis() - start);
 
@@ -663,6 +669,13 @@ public class AiQueryResource {
             log.error("AI forecast failed", e);
             return error("forecast failed");
         }
+
+        // saiku#1482 — mask small-cell values in the observed records before egress, same as
+        // /ai/query. The forecast projections above were computed on the real series (they're
+        // derived aggregates, not raw cells); this closes the raw small-cell leak on the observed
+        // half of the response. No-op without a count measure or when disabled.
+        applyKAnonymity(resp.getData());
+
         resp.setRuntimeMs(System.currentTimeMillis() - start);
 
         // Echo the typed response plus a sibling forecast block (observed data
