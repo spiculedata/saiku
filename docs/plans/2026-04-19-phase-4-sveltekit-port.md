@@ -9,17 +9,17 @@
 > (Dashboards, AI/Ossie query, schema generator, design system + Storybook, share/embed,
 > Arrow cellset transport). Treat the checkboxes below as **historical**, not a live TODO.
 >
-> **Two decisions to record (deviations from this plan):**
-> - **Pivot grid built custom, NOT AG Grid.** `CellsetTable.svelte` + `ossie/pivot.ts`; there
->   is no `ag-grid` dependency. (See the "AG Grid → Svelte-native" rationale note.)
-> - **Pentaho BIServer integration was dropped**, not ported.
+> **Confirmed decisions — WON'T DO (not backlog, deliberate):**
+> - **Pivot grid is custom Svelte-native, NOT AG Grid** — `CellsetTable.svelte` + `ossie/pivot.ts`,
+>   no `ag-grid` dependency. This is the accepted approach; the AG Grid line in the target stack above
+>   is superseded.
+> - **Pentaho BIServer integration is dropped** — not ported, and not planned. Any `BIServer` /
+>   `Buckets` plugin items below are closed as won't-do.
 >
 > **Genuinely-remaining backlog (the real Phase-4 tail):**
 > - `QueryScenario` — general workspace what-if. (A *scoped* Mondrian what-if shipped for the
 >   AQVIRA demo via `/ai/scenario/whatif`, but the general workspace scenario editor is unbuilt.)
-> - `Buckets` plugin — no equivalent shipped.
 > - Anonymous usage-statistics ping — stats *viewing* exists (`StatsAdmin`); the outbound ping does not.
-> - Confirm-and-close the **BIServer/Pentaho drop** decision.
 > - Cosmetic "done differently": `SplashScreen` (absorbed into `Skeleton` loaders),
 >   `SessionErrorModal` (shipped as a banner), `License` (upgrade banner) — not missing, just different.
 >
