@@ -5,6 +5,7 @@
 package org.saiku.web.rest.resources.mcp;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
@@ -12,6 +13,7 @@ import static org.junit.Assert.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.ws.rs.core.Response;
 import java.util.List;
@@ -295,6 +297,38 @@ public class McpResourceTest {
         params.put("name", tool);
         params.set("arguments", args);
         return params;
+    }
+
+    /* -------- saiku#878: structuredContent must always be a JSON object -------- */
+
+    @Test
+    public void wrapToolResult_wrapsBareArrayUnderItems() {
+        ArrayNode arr = MAPPER.createArrayNode();
+        arr.add(MAPPER.createObjectNode().put("name", "Sales"));
+        ObjectNode result = resource.wrapToolResult(arr);
+        JsonNode sc = result.get("structuredContent");
+        assertTrue("structuredContent must be a JSON object, never a bare array", sc.isObject());
+        assertTrue(sc.has("items"));
+        assertTrue(sc.get("items").isArray());
+        assertEquals(1, sc.get("items").size());
+    }
+
+    @Test
+    public void wrapToolResult_leavesObjectBodyUnchanged() {
+        ObjectNode body = MAPPER.createObjectNode();
+        body.put("cube", "Sales");
+        ObjectNode result = resource.wrapToolResult(body);
+        JsonNode sc = result.get("structuredContent");
+        assertTrue(sc.isObject());
+        assertEquals("Sales", sc.get("cube").asText());
+        assertFalse("object bodies are passed through untouched", sc.has("items"));
+    }
+
+    @Test
+    public void wrapToolResult_nullBodyBecomesEmptyObject() {
+        ObjectNode result = resource.wrapToolResult(null);
+        assertTrue(result.get("structuredContent").isObject());
+        assertEquals(0, result.get("structuredContent").size());
     }
 
     private static final class StubAiOssieResource extends org.saiku.web.rest.resources.AiOssieResource {
