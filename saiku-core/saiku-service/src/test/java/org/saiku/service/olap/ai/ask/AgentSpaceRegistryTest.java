@@ -104,6 +104,70 @@ public class AgentSpaceRegistryTest {
         assertTrue(reg.list().isEmpty());
     }
 
+    /* ---- saiku#1440: admin CRUD (save / delete / id validation) ---- */
+
+    @Test
+    public void saveWritesFileAndRoundTrips() throws Exception {
+        Path root = tmp.newFolder("spaces").toPath();
+        AgentSpaceRegistry reg = new AgentSpaceRegistry(root);
+        AgentSpace s = new AgentSpace(
+                "my-space",
+                "My Space",
+                "desc",
+                "You are a test persona.",
+                List.of(new org.saiku.service.olap.ai.AiCubeRef("c", "cat", "sch", "Cube")),
+                List.of("skill-a"),
+                List.of("try this"),
+                "my-space.json");
+        reg.save(s);
+
+        assertTrue(Files.exists(root.resolve("my-space.json")));
+        List<AgentSpace> spaces = reg.list();
+        assertEquals(1, spaces.size());
+        AgentSpace back = spaces.get(0);
+        assertEquals("My Space", back.name());
+        assertEquals("You are a test persona.", back.systemPrompt());
+        assertEquals(1, back.cubeAllowlist().size());
+        assertEquals("Cube", back.cubeAllowlist().get(0).getCubeName());
+        assertEquals(List.of("skill-a"), back.skillAllowlist());
+        assertEquals(List.of("try this"), back.suggestedPrompts());
+    }
+
+    @Test
+    public void deleteRemovesFileAndRescans() throws Exception {
+        Path root = tmp.newFolder("spaces").toPath();
+        write(root.resolve("gone.json"), String.format(GOLDEN, "gone", "Gone"));
+        AgentSpaceRegistry reg = new AgentSpaceRegistry(root);
+        assertEquals(1, reg.list().size());
+        assertTrue(reg.delete("gone"));
+        assertFalse(Files.exists(root.resolve("gone.json")));
+        assertTrue(reg.list().isEmpty());
+        assertFalse("deleting a missing space returns false", reg.delete("gone"));
+    }
+
+    @Test
+    public void saveRejectsUnsafeId() throws Exception {
+        Path root = tmp.newFolder("spaces").toPath();
+        AgentSpaceRegistry reg = new AgentSpaceRegistry(root);
+        AgentSpace evil = new AgentSpace("../evil", "x", null, null, List.of(), List.of(), List.of(), "x.json");
+        try {
+            reg.save(evil);
+            org.junit.Assert.fail("a traversal id must be rejected, not written");
+        } catch (IllegalArgumentException expected) {
+            // ok
+        }
+    }
+
+    @Test
+    public void idValidationIsKebabOnly() {
+        assertTrue(AgentSpaceRegistry.isValidId("foodmart-sales-analyst"));
+        assertFalse(AgentSpaceRegistry.isValidId("../x"));
+        assertFalse(AgentSpaceRegistry.isValidId("Foo Bar"));
+        assertFalse(AgentSpaceRegistry.isValidId("a/b"));
+        assertFalse(AgentSpaceRegistry.isValidId(""));
+        assertFalse(AgentSpaceRegistry.isValidId(null));
+    }
+
     private static void write(Path p, String content) throws Exception {
         Files.writeString(p, content, StandardCharsets.UTF_8);
     }
