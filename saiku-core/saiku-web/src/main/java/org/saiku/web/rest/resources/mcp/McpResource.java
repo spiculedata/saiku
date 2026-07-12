@@ -580,18 +580,33 @@ public class McpResource {
     /** Wrap a tool body in the MCP {@code CallToolResult} envelope:
      *  the body lands in {@code structuredContent} for agents that read
      *  structured JSON directly, and is also serialised into a single
-     *  {@code text} content block for hosts that only support text content. */
-    private ObjectNode wrapToolResult(JsonNode body) {
+     *  {@code text} content block for hosts that only support text content.
+     *
+     *  <p>saiku#878: MCP's {@code structuredContent} MUST be a JSON object, never a bare array
+     *  (claude.ai's tool-result validator rejects arrays). Individual array-returning tools wrap
+     *  under a meaningful key via {@link #wrapList} ("cubes", "members", "models"); this is the
+     *  belt-and-suspenders guard so a future array-returning tool that forgets can't emit a
+     *  spec-violating array — a bare array is wrapped under {@code items}, a null body becomes an
+     *  empty object. Package-visible for unit testing. */
+    ObjectNode wrapToolResult(JsonNode body) {
+        JsonNode structured;
+        if (body == null) {
+            structured = MAPPER.createObjectNode();
+        } else if (body.isArray()) {
+            structured = MAPPER.createObjectNode().set("items", body);
+        } else {
+            structured = body;
+        }
         ObjectNode result = MAPPER.createObjectNode();
         ArrayNode content = result.putArray("content");
         ObjectNode textBlock = content.addObject();
         textBlock.put("type", "text");
         try {
-            textBlock.put("text", MAPPER.writeValueAsString(body));
+            textBlock.put("text", MAPPER.writeValueAsString(structured));
         } catch (JsonProcessingException e) {
-            textBlock.put("text", String.valueOf(body));
+            textBlock.put("text", String.valueOf(structured));
         }
-        result.set("structuredContent", body);
+        result.set("structuredContent", structured);
         result.put("isError", false);
         return result;
     }
