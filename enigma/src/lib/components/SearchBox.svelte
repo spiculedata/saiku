@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { base } from '$app/paths';
 	import type { SearchResult } from '$lib/types';
 
 	const MIN_QUERY_LENGTH = 2;
@@ -16,7 +17,7 @@
 				results = [];
 				return;
 			}
-			const r = await fetch(`/api/entities?q=${encodeURIComponent(q)}`);
+			const r = await fetch(`${base}/api/entities?q=${encodeURIComponent(q)}`);
 			results = r.ok ? await r.json() : [];
 		}, DEBOUNCE_MS);
 	}
@@ -28,7 +29,7 @@
 		<ul class="results">
 			{#each results as e (e.id)}
 				<li>
-					<button onclick={() => goto(`/e/${encodeURIComponent(e.id)}`)}>
+					<button onclick={() => goto(`${base}/e/${encodeURIComponent(e.id)}`)}>
 						<b>{e.name}</b>
 						<span class="mono">{e.jurisdiction ?? ''} · {e.status ?? ''}</span>
 					</button>

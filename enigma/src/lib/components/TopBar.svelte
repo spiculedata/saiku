@@ -1,13 +1,14 @@
 <script lang="ts">
+	import { base } from '$app/paths';
 	const pillars = ['The Web', 'Reveal', 'The Deck', 'Ask', 'Signals', 'Borderlines', 'Cases'];
 	let { active = '' }: { active?: string } = $props();
 </script>
 
 <header class="bar">
-	<a class="logo" href="/">ENIGMA<span class="by">Benafide</span></a>
-	<a class="search" href="/">⌕&nbsp; Investigate a company or person…<span class="k">/</span></a>
+	<a class="logo" href="{base}/">ENIGMA<span class="by">Benafide</span></a>
+	<a class="search" href="{base}/">⌕&nbsp; Investigate a company or person…<span class="k">/</span></a>
 	<nav class="nav">
-		{#each pillars as p}<a class:on={p === active} href="/">{p}</a>{/each}
+		{#each pillars as p}<a class:on={p === active} href="{base}/">{p}</a>{/each}
 	</nav>
 </header>
 
