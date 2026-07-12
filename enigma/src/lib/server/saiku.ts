@@ -136,6 +136,83 @@ export async function ossieGraph(id: string, depth = 4, o: Opts = {}): Promise<O
 	return (await r.json()) as OwnershipGraph;
 }
 
+/** A chat turn passed to the Ossie ask endpoint for multi-turn context. */
+export interface AskTurn {
+	role: 'user' | 'assistant';
+	content: string;
+}
+
+export interface AskColumn {
+	key: string;
+	label: string;
+	type: string;
+}
+/** Result of a natural-language ask: the generated query + its executed result. */
+export interface AskResult {
+	question: string;
+	model: string | null;
+	queryUsed: unknown;
+	columns: AskColumn[];
+	records: Record<string, unknown>[];
+	runtimeMs: number | null;
+	/** Populated when the ask failed (not configured, validation, rate limit, …). */
+	error?: { code: string; message: string; field?: string; available?: string[] };
+}
+
+/** Whether the Ossie ask (LLM) layer is configured on the Saiku backend. */
+export async function ossieAskHealth(o: Opts = {}): Promise<{ configured: boolean; provider: string }> {
+	const f = o.fetch ?? fetch;
+	const base = o.base ?? config.saikuApi;
+	try {
+		const r = await f(`${base}${OSSIE}/ask/health`, {
+			headers: { accept: 'application/json', authorization: authHeader(o) }
+		});
+		if (!r.ok) return { configured: false, provider: 'unavailable' };
+		const j = (await r.json()) as { configured?: boolean; provider?: string };
+		return { configured: Boolean(j.configured), provider: j.provider ?? 'unknown' };
+	} catch {
+		return { configured: false, provider: 'unreachable' };
+	}
+}
+
+/** Natural-language ask over the Ossie model — LLM translates to a query, runs it, returns rows. */
+export async function ossieAsk(question: string, history: AskTurn[] = [], o: Opts = {}): Promise<AskResult> {
+	const f = o.fetch ?? fetch;
+	const base = o.base ?? config.saikuApi;
+	const body = { connection: CONNECTION, model: MODEL, question, history };
+	const r = await f(`${base}${OSSIE}/ask`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json', accept: 'application/json', authorization: authHeader(o) },
+		body: JSON.stringify(body)
+	});
+	const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+	if (!r.ok) {
+		return {
+			question,
+			model: null,
+			queryUsed: null,
+			columns: [],
+			records: [],
+			runtimeMs: null,
+			error: {
+				code: String(j.error ?? `HTTP_${r.status}`),
+				message: String(j.message ?? j.error ?? `ask failed (${r.status})`),
+				field: j.field as string | undefined,
+				available: j.available as string[] | undefined
+			}
+		};
+	}
+	const resp = (j.response ?? {}) as { columns?: AskColumn[]; records?: Record<string, unknown>[]; runtimeMs?: number };
+	return {
+		question,
+		model: (j.model as string) ?? null,
+		queryUsed: j.queryUsed ?? null,
+		columns: resp.columns ?? [],
+		records: resp.records ?? [],
+		runtimeMs: resp.runtimeMs ?? null
+	};
+}
+
 /** Signals radar — screening stats, feed, category tally + risk leaderboard — via the Ossie model. */
 export async function ossieSignals(flags = 60, risk = 20, o: Opts = {}): Promise<Signals | null> {
 	const f = o.fetch ?? fetch;

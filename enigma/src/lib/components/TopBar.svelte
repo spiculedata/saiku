@@ -4,7 +4,9 @@
 	const routes: Record<string, string> = {
 		'The Deck': '/deck',
 		Signals: '/signals',
-		Borderlines: '/borderlines'
+		Borderlines: '/borderlines',
+		Ask: '/ask',
+		Cases: '/cases'
 	};
 	let { active = '' }: { active?: string } = $props();
 

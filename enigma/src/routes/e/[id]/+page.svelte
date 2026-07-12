@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { base } from '$app/paths';
 	import { riskBand, jurisdictionFlag } from '$lib/format';
 	import GraphExplorer from '$lib/components/GraphExplorer.svelte';
 	import type { PageData } from './$types';
@@ -6,6 +7,35 @@
 
 	let { data }: { data: PageData } = $props();
 	const band = $derived(riskBand(data.risk_score));
+
+	let saveState = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
+	async function saveCase() {
+		if (saveState === 'saving' || saveState === 'saved') return;
+		saveState = 'saving';
+		try {
+			const r = await fetch(`${base}/api/cases`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					title: data.name,
+					kind: 'entity',
+					subjectId: data.id,
+					subjectName: data.name,
+					jurisdiction: data.jurisdiction,
+					note: `Risk ${data.risk_score?.toFixed?.(1) ?? '—'} · ${band.label}`,
+					payload: {
+						id: data.id,
+						risk_score: data.risk_score,
+						opacity_score: data.opacity_score,
+						status: data.status
+					}
+				})
+			});
+			saveState = r.ok ? 'saved' : 'error';
+		} catch {
+			saveState = 'error';
+		}
+	}
 
 	let graph: OwnershipGraph | undefined = $state();
 	const owners = $derived.by(() => {
@@ -41,6 +71,12 @@
 				<div class="t">Opacity</div>
 			</div>
 		</div>
+		<button class="save-case" disabled={saveState === 'saving' || saveState === 'saved'} onclick={saveCase}>
+			{#if saveState === 'saved'}✓ Saved to cases
+			{:else if saveState === 'saving'}Saving…
+			{:else if saveState === 'error'}Save failed — retry
+			{:else}＋ Save to case{/if}
+		</button>
 		<div class="legend mono">
 			<div class="label">Legend</div>
 			<div class="row"><span class="dot subject"></span> Subject</div>
@@ -130,6 +166,25 @@
 		color: var(--muted);
 		font-size: 11px;
 		margin-top: 4px;
+	}
+	.save-case {
+		width: 100%;
+		background: transparent;
+		border: 1px solid var(--line2);
+		color: var(--muted);
+		border-radius: 9px;
+		padding: 10px 14px;
+		font-size: 13px;
+		cursor: pointer;
+	}
+	.save-case:hover:not(:disabled) {
+		border-color: var(--cyan);
+		color: var(--cyan);
+	}
+	.save-case:disabled {
+		cursor: default;
+		color: var(--accent-2, #5fe0a0);
+		border-color: rgba(95, 224, 160, 0.4);
 	}
 	.legend {
 		margin-top: 28px;
