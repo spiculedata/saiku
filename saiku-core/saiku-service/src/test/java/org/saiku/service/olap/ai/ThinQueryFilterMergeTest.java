@@ -118,6 +118,84 @@ public class ThinQueryFilterMergeTest {
         assertNull(tq.getQueryModel());
     }
 
+    /* ---- saiku#1104: strict variant for forced RLS filters (applyReportingUnapplied) ---- */
+
+    @Test
+    public void strict_resolvableFilterAppliesWithNothingUnapplied() {
+        ThinQuery tq = querymodel();
+        List<AiFilterSelection> unapplied = ThinQueryFilterMerge.applyReportingUnapplied(
+                tq, Collections.singletonList(filter("Time", "Time", "Year", "[Time].[Time].[Year].&[1997]")), schema);
+        assertTrue("a resolvable forced filter must apply cleanly", unapplied.isEmpty());
+        assertNotNull("and be spliced onto the FILTER axis", tq.getQueryModel().getAxis(AxisLocation.FILTER));
+    }
+
+    @Test
+    public void strict_mdxModeReportsAllUnapplied() {
+        // MDX-mode saved query can't take a spliced slicer — every forced filter is unapplied, so the
+        // caller MUST fail closed (this is the RLS leak we refuse).
+        ThinQuery tq = new ThinQuery("test", null, "SELECT [Measures].[Unit Sales] ON 0 FROM [Sales]");
+        List<AiFilterSelection> forced =
+                Collections.singletonList(filter("Time", "Time", "Year", "[Time].[Time].[Year].&[1997]"));
+        List<AiFilterSelection> unapplied = ThinQueryFilterMerge.applyReportingUnapplied(tq, forced, schema);
+        assertEquals(1, unapplied.size());
+    }
+
+    @Test
+    public void strict_unknownDimensionIsReportedUnapplied() {
+        ThinQuery tq = querymodel();
+        List<AiFilterSelection> unapplied = ThinQueryFilterMerge.applyReportingUnapplied(
+                tq, Collections.singletonList(filter("Made Up", "Made Up", "Year", "[Made Up].[2026]")), schema);
+        assertEquals("an unresolvable forced filter must be reported, not silently dropped", 1, unapplied.size());
+    }
+
+    @Test
+    public void strict_emptyMembersIsReportedUnapplied() {
+        ThinQuery tq = querymodel();
+        List<AiFilterSelection> unapplied = ThinQueryFilterMerge.applyReportingUnapplied(
+                tq, Collections.singletonList(filter("Time", "Time", "Year")), schema);
+        assertEquals(1, unapplied.size());
+    }
+
+    @Test
+    public void strict_nullSchemaFailsClosedForAll() {
+        ThinQuery tq = querymodel();
+        List<AiFilterSelection> forced =
+                Collections.singletonList(filter("Time", "Time", "Year", "[Time].[Time].[Year].&[1997]"));
+        List<AiFilterSelection> unapplied = ThinQueryFilterMerge.applyReportingUnapplied(tq, forced, null);
+        assertEquals("no schema means nothing can be verified-applied — fail closed", 1, unapplied.size());
+    }
+
+    @Test
+    public void strict_mixedReportsOnlyTheUnappliedOne() {
+        ThinQuery tq = querymodel();
+        List<AiFilterSelection> forced = Arrays.asList(
+                filter("Time", "Time", "Year", "[Time].[Time].[Year].&[1997]"), // resolves
+                filter("Made Up", "Made Up", "Year", "[Made Up].[x]")); // does not
+        List<AiFilterSelection> unapplied = ThinQueryFilterMerge.applyReportingUnapplied(tq, forced, schema);
+        assertEquals(1, unapplied.size());
+        assertEquals("Made Up", unapplied.get(0).getDimension());
+    }
+
+    @Test
+    public void strict_forcedFilterWinsOverAClientFilterOnSameDim() {
+        // Client filter puts Time.Year = 1997 on the slicer; forced RLS then applies Time.Year = 1998.
+        // Forced applies LAST via the same in-place rewrite, so RLS must OVERRIDE the client members —
+        // a client filter must not be able to loosen the row-level restriction.
+        ThinQuery tq = querymodel();
+        ThinQueryFilterMerge.apply(
+                tq, Collections.singletonList(filter("Time", "Time", "Year", "[Time].[Time].[Year].&[1997]")), schema);
+        List<AiFilterSelection> unapplied = ThinQueryFilterMerge.applyReportingUnapplied(
+                tq, Collections.singletonList(filter("Time", "Time", "Year", "[Time].[Time].[Year].&[1998]")), schema);
+        assertTrue(unapplied.isEmpty());
+        ThinAxis fa = tq.getQueryModel().getAxis(AxisLocation.FILTER);
+        ThinLevel lvl = fa.getHierarchies().get(0).getLevels().get("Year");
+        assertEquals(1, lvl.getSelection().getMembers().size());
+        assertEquals(
+                "RLS member must win over the client filter",
+                "[Time].[Time].[Year].&[1998]",
+                lvl.getSelection().getMembers().get(0).getUniqueName());
+    }
+
     @Test
     public void newHierarchyLandsOnFilterAxis() {
         ThinQuery tq = querymodel();

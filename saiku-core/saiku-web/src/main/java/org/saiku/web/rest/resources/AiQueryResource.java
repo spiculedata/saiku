@@ -327,11 +327,10 @@ public class AiQueryResource {
             tq.setName(java.util.UUID.randomUUID().toString());
         }
 
-        // Merge dashboard runtime filters onto the loaded ThinQuery before
-        // execution. Skipped silently when the request carries no filters
-        // (the historical path), when the query is MDX-mode (can't splice
-        // safely), or when the cube schema can't be loaded. See
-        // ThinQueryFilterMerge for the precedence + axis-rewrite rules.
+        // Merge best-effort dashboard runtime filters FIRST. Skipped silently when the request
+        // carries no filters (the historical path), when the query is MDX-mode (can't splice
+        // safely), or when the cube schema can't be loaded. See ThinQueryFilterMerge for the
+        // precedence + axis-rewrite rules.
         if (body.getFilters() != null
                 && !body.getFilters().isEmpty()
                 && tq.getType() == ThinQuery.Type.QUERYMODEL
@@ -348,6 +347,41 @@ public class AiQueryResource {
                 // execution path — fall through with the un-merged query
                 // and let it run as-authored.
                 log.warn("Dashboard filter merge skipped for saved query {}: {}", path, ve.getMessage());
+            }
+        }
+
+        // saiku#1104 — forced RLS filters apply LAST (after any client/dashboard filters) so they
+        // always win: a client filter on the same dimension can't loosen the row-level restriction.
+        // They MUST apply or the request fails closed — a forced filter that can't be spliced
+        // (MDX-mode query, unresolvable dimension, schema lookup failure) means the query would run
+        // UNFILTERED, the exact RLS bypass we refuse. Only the embed surface sets these.
+        if (body.getForcedFilters() != null && !body.getForcedFilters().isEmpty()) {
+            AiSchema forcedSchema = null;
+            if (tq.getCube() != null && cubeMetadataService != null) {
+                try {
+                    org.saiku.olap.dto.SaikuCube cube = tq.getCube();
+                    forcedSchema = cubeMetadataService.getSchema(
+                            new AiCubeRef(cube.getConnection(), cube.getCatalog(), cube.getSchema(), cube.getName()));
+                } catch (RuntimeException e) {
+                    log.warn("saved-query {} forced-filter schema lookup failed — failing closed", path, e);
+                }
+            }
+            java.util.List<org.saiku.service.olap.ai.AiFilterSelection> unapplied =
+                    org.saiku.service.olap.ai.ThinQueryFilterMerge.applyReportingUnapplied(
+                            tq, body.getForcedFilters(), forcedSchema);
+            if (!unapplied.isEmpty()) {
+                log.warn(
+                        "saved-query {} refused: {} forced RLS filter(s) could not be applied (fail-closed)",
+                        path,
+                        unapplied.size());
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity(java.util.Map.of(
+                                "status",
+                                "RLS_UNAPPLIED",
+                                "error",
+                                "Row-level security filters could not be applied to this saved query."))
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
             }
         }
 
