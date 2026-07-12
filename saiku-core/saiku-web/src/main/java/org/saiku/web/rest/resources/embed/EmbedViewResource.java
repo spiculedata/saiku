@@ -124,9 +124,14 @@ public class EmbedViewResource {
         if (g.resourcePath == null || !g.resourcePath.endsWith(".saiku")) {
             return invalid();
         }
-        // saiku#1104: a saved query can't have RLS forced-filters injected in
-        // Phase 1 — fail closed rather than serve unfiltered rows.
-        if (g.forcedFiltersJson != null) {
+        // saiku#1104: forced RLS filters from the token's JWT claims. They ride the saved query's
+        // forcedFilters channel and executeSaved fails closed (RLS_UNAPPLIED 403) if any can't be
+        // spliced — so a QUERYMODEL saved query now runs WITH the RLS restriction instead of being
+        // refused outright, while an MDX-mode / unresolvable case still denies rather than leaks.
+        final java.util.List<AiFilterSelection> forced;
+        try {
+            forced = parseForcedFilters(g);
+        } catch (RuntimeException e) {
             audit(g, "/saiku/api/embed/query", AiAuditEntry.OUTCOME_DENIED);
             return forcedFilterUnsupported();
         }
@@ -142,9 +147,12 @@ public class EmbedViewResource {
                 if (!overrides.isEmpty()) {
                     sreq.setFilters(overrides);
                 }
+                if (!forced.isEmpty()) {
+                    sreq.setForcedFilters(forced);
+                }
                 return aiQueryResource.executeSaved(sreq, format);
             });
-            audit(g, "/saiku/api/embed/query", AiAuditEntry.OUTCOME_SUCCESS);
+            audit(g, "/saiku/api/embed/query", outcomeFor(result.getStatus()));
             return withPolicyHeader(harden(result), g);
         } catch (RuntimeException e) {
             log.warn("embed-view query execution failed for {}", g.resourcePath, e);
@@ -234,17 +242,19 @@ public class EmbedViewResource {
                     mergeFilterOverrides(q.body, filterOverrides);
                     return aiQueryResource.executeAi(q.body, "records");
                 } else if ("reference".equals(q.kind) && q.path != null) {
-                    if (g.forcedFiltersJson != null) {
-                        // Can't force-filter a saved/reference tile in Phase 1 —
-                        // fail closed rather than serve unfiltered rows.
-                        return forcedFilterUnsupported();
-                    }
                     AiSavedQueryRequest sreq = new AiSavedQueryRequest();
                     sreq.setPath(q.path);
                     // Filter-tile overrides ride the AiSavedQueryRequest.filters channel — the
                     // AI query resource merges these via ThinQueryFilterMerge before execute.
                     if (!filterOverrides.isEmpty()) {
                         sreq.setFilters(filterOverrides);
+                    }
+                    // saiku#1104: forced RLS filters ride the forcedFilters channel — executeSaved
+                    // applies them or fails closed (RLS_UNAPPLIED 403), so a QUERYMODEL reference
+                    // tile now runs WITH the restriction instead of being refused outright.
+                    java.util.List<AiFilterSelection> forcedTile = parseForcedFilters(g);
+                    if (!forcedTile.isEmpty()) {
+                        sreq.setForcedFilters(forcedTile);
                     }
                     // Dashboard tiles always render as records — tile renderers consume caption-keyed rows.
                     return aiQueryResource.executeSaved(sreq, "records");
@@ -515,12 +525,24 @@ public class EmbedViewResource {
      * unfiltered query — a parse failure throws, and the caller fails closed.
      */
     private void injectForcedFilters(AiQueryRequest body, EmbedGuestDetails g) {
-        if (g.forcedFiltersJson == null || body == null) {
+        if (body == null) {
             return;
+        }
+        body.getFilters().addAll(parseForcedFilters(g));
+    }
+
+    /**
+     * Parse the token's forced RLS filter claim (saiku#1104) into typed filters. A malformed claim
+     * throws so every caller fails closed — a broken RLS claim must never degrade to an unfiltered
+     * query. Returns an empty list when the token carries no forced filters.
+     */
+    private java.util.List<AiFilterSelection> parseForcedFilters(EmbedGuestDetails g) {
+        if (g == null || g.forcedFiltersJson == null) {
+            return java.util.Collections.emptyList();
         }
         try {
             AiFilterSelection[] forced = MAPPER.readValue(g.forcedFiltersJson, AiFilterSelection[].class);
-            body.getFilters().addAll(Arrays.asList(forced));
+            return Arrays.asList(forced);
         } catch (Exception e) {
             throw new IllegalStateException("invalid embed forced-filters claim", e);
         }

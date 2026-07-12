@@ -20,6 +20,7 @@ public class AiSavedQueryRequest {
 
     private String path;
     private List<AiFilterSelection> filters = new ArrayList<>();
+    private List<AiFilterSelection> forcedFilters = new ArrayList<>();
 
     public AiSavedQueryRequest() {}
 
@@ -37,5 +38,19 @@ public class AiSavedQueryRequest {
 
     public void setFilters(List<AiFilterSelection> filters) {
         this.filters = filters == null ? new ArrayList<>() : filters;
+    }
+
+    /**
+     * Forced RLS filters (saiku#1104). Unlike {@link #getFilters()} (best-effort dashboard chips),
+     * these MUST be applied to the loaded query or the request fails closed — they carry the
+     * row-level-security restriction from the embed token's JWT claims, so silently dropping one
+     * would serve unfiltered rows. Set only by the embed surface; empty for normal saved-query runs.
+     */
+    public List<AiFilterSelection> getForcedFilters() {
+        return forcedFilters;
+    }
+
+    public void setForcedFilters(List<AiFilterSelection> forcedFilters) {
+        this.forcedFilters = forcedFilters == null ? new ArrayList<>() : forcedFilters;
     }
 }

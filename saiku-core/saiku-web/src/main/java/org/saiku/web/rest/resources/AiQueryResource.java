@@ -327,6 +327,40 @@ public class AiQueryResource {
             tq.setName(java.util.UUID.randomUUID().toString());
         }
 
+        // saiku#1104 — forced RLS filters MUST apply or the request fails closed. Unlike the
+        // best-effort dashboard merge below, a forced filter that can't be spliced (MDX-mode saved
+        // query, unresolvable dimension, schema lookup failure) means the query would run UNFILTERED
+        // — the exact row-level-security bypass we refuse. Only the embed surface sets these.
+        if (body.getForcedFilters() != null && !body.getForcedFilters().isEmpty()) {
+            AiSchema forcedSchema = null;
+            if (tq.getCube() != null && cubeMetadataService != null) {
+                try {
+                    org.saiku.olap.dto.SaikuCube cube = tq.getCube();
+                    forcedSchema = cubeMetadataService.getSchema(
+                            new AiCubeRef(cube.getConnection(), cube.getCatalog(), cube.getSchema(), cube.getName()));
+                } catch (RuntimeException e) {
+                    log.warn("saved-query {} forced-filter schema lookup failed — failing closed", path, e);
+                }
+            }
+            java.util.List<org.saiku.service.olap.ai.AiFilterSelection> unapplied =
+                    org.saiku.service.olap.ai.ThinQueryFilterMerge.applyReportingUnapplied(
+                            tq, body.getForcedFilters(), forcedSchema);
+            if (!unapplied.isEmpty()) {
+                log.warn(
+                        "saved-query {} refused: {} forced RLS filter(s) could not be applied (fail-closed)",
+                        path,
+                        unapplied.size());
+                return Response.status(Response.Status.FORBIDDEN)
+                        .entity(java.util.Map.of(
+                                "status",
+                                "RLS_UNAPPLIED",
+                                "error",
+                                "Row-level security filters could not be applied to this saved query."))
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            }
+        }
+
         // Merge dashboard runtime filters onto the loaded ThinQuery before
         // execution. Skipped silently when the request carries no filters
         // (the historical path), when the query is MDX-mode (can't splice
