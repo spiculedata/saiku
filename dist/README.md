@@ -49,6 +49,44 @@ java -jar saiku-<version>.jar serve --help
 | `--context` | `/` | Context path. |
 | `--home` | `./saiku-home` | Saiku home (data, repository, logs, sessions). |
 
+## Subcommands
+
+The launcher is a Picocli multi-command. `serve` runs the web server; the
+others are operational tools that talk to a *running* server.
+
+```bash
+java -jar saiku-<version>.jar <command> --help
+```
+
+| Command | Purpose |
+|---------|---------|
+| `serve` | Start the Saiku web server (see CLI options above). |
+| `sql-serve` | Serve an Ossie/SQL semantic model without the full OLAP stack. |
+| `eval` | Run the agent-eval accuracy suites against a running server and report pass-rate. Exit `0` = all passed, `1` = a suite regressed, `2` = transport/config error. See `docs/EVAL-SPEC.md`. |
+
+`eval` is the CI/cron entry point for the AI accuracy monitor. It POSTs to
+`/rest/saiku/admin/ai-evals/run` (admin Basic auth) and blocks until the sweep
+finishes:
+
+```bash
+# against a locally-running server with default admin/admin
+java -jar saiku-<version>.jar eval
+
+# against a remote server, report-only (never non-zero exit)
+java -jar saiku-<version>.jar eval \
+  --server https://analytics.example.com \
+  --username admin --password '<secret>' \
+  --no-fail-on-regression
+```
+
+| Flag | Default | Notes |
+|------|---------|-------|
+| `-s`, `--server` | `http://localhost:8080` | Base URL of the running server. |
+| `-u`, `--username` | `admin` | Admin username. |
+| `-p`, `--password` | `admin` | Admin password. |
+| `--no-fail-on-regression` | _(off)_ | Exit `0` even when a suite has failures (report-only). |
+| `--timeout-minutes` | `15` | How long to wait for the sweep (LLM latency × cases). |
+
 ## Saiku home layout (auto-created on first run)
 
 ```
