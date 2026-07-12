@@ -138,6 +138,58 @@ public class OssieGraphService {
         return new GraphResult(rootId, new ArrayList<>(nodes.values()), edges, maxDepth, hasCycle);
     }
 
+    /**
+     * Search entities by name. Uses the warehouse's full-text index ({@code fts_main_<table>}) for
+     * relevance-ranked results when present; falls back to a case-insensitive substring match.
+     */
+    public List<Map<String, Object>> searchEntities(String connectionName, String q, int limit) throws Exception {
+        if (q == null || q.isBlank()) return List.of();
+        OssieModelDto model = discoverService.getModel(connectionName);
+        if (model == null) throw new IllegalStateException("No Ossie model for '" + connectionName + "'");
+        OssieModelDto.Dataset entity = datasetWithField(model, "jurisdiction", "entity");
+        String table = entity.getSource();
+        String idCol =
+                entity.getPrimaryKey().isEmpty() ? "id" : entity.getPrimaryKey().get(0);
+        int lim = Math.max(1, Math.min(limit, 25));
+
+        String cols =
+                "\"" + idCol + "\" AS id, \"name\" AS name, \"jurisdiction\" AS jurisdiction, \"status\" AS status";
+        String ftsSql = "SELECT " + cols + " FROM (SELECT *, fts_main_" + table + ".match_bm25(\"" + idCol
+                + "\", ?) AS _score FROM \"" + table + "\") WHERE _score IS NOT NULL ORDER BY _score DESC LIMIT " + lim;
+        String likeSql = "SELECT " + cols + " FROM \"" + table + "\" WHERE \"name\" ILIKE ? LIMIT " + lim;
+
+        ISaikuConnection saikuConn = olapDiscoverService.getConnectionManager().getConnection(connectionName);
+        if (saikuConn == null) throw new IllegalStateException("No live connection for '" + connectionName + "'");
+        Properties p = saikuConn.getProperties();
+        try (Connection c = DriverManager.getConnection(
+                p.getProperty(ISaikuConnection.URL_KEY),
+                orEmpty(p.getProperty(ISaikuConnection.USERNAME_KEY)),
+                orEmpty(p.getProperty(ISaikuConnection.PASSWORD_KEY)))) {
+            try {
+                return runSearch(c, ftsSql, q);
+            } catch (Exception ftsMiss) {
+                log.info("FTS search unavailable on '{}', falling back to substring: {}", table, ftsMiss.getMessage());
+                return runSearch(c, likeSql, "%" + q + "%");
+            }
+        }
+    }
+
+    private List<Map<String, Object>> runSearch(Connection c, String sql, String param) throws Exception {
+        List<Map<String, Object>> out = new ArrayList<>();
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, param);
+            try (ResultSet rs = ps.executeQuery()) {
+                java.sql.ResultSetMetaData md = rs.getMetaData();
+                while (rs.next()) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    for (int i = 1; i <= md.getColumnCount(); i++) row.put(md.getColumnLabel(i), rs.getObject(i));
+                    out.add(row);
+                }
+            }
+        }
+        return out;
+    }
+
     /** Per-entity profile: attributes + risk + opacity, resolved from the model, one query. */
     public Map<String, Object> entityProfile(String connectionName, String id) throws Exception {
         if (id == null || id.isBlank()) throw new IllegalArgumentException("id is required");

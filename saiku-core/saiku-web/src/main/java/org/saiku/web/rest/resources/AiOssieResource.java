@@ -270,6 +270,34 @@ public class AiOssieResource {
     }
 
     /**
+     * Search entities by name over the Ossie datasource's warehouse (FTS-ranked, ILIKE fallback).
+     * Returns {@code [{id, name, jurisdiction, status}, …]}.
+     */
+    @GET
+    @Path("/search/{connection}/{model}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response search(
+            @PathParam("connection") String connectionName,
+            @PathParam("model") String modelName,
+            @jakarta.ws.rs.QueryParam("q") String q,
+            @jakarta.ws.rs.DefaultValue("12") @jakarta.ws.rs.QueryParam("limit") int limit) {
+        if (ossieGraphService == null) {
+            return error("Ossie graph not wired");
+        }
+        if (q == null || q.trim().length() < 2) {
+            return Response.ok(List.of()).type(MediaType.APPLICATION_JSON).build();
+        }
+        try {
+            return Response.ok(ossieGraphService.searchEntities(connectionName, q.trim(), limit))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        } catch (Exception e) {
+            log.warn("Ossie entity search failed (connection='{}', q='{}')", connectionName, q, e);
+            return error("search failed: " + e.getMessage());
+        }
+    }
+
+    /**
      * Per-entity profile — attributes + risk + opacity in one call, resolved from the model and
      * served over the Ossie datasource's warehouse connection (no Benafide API). Aggregate metrics
      * on 1:1 dimension datasets don't fit the shelf translator; a direct lookup is the right shape.

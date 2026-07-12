@@ -424,6 +424,10 @@
             <artifactId>postgresql</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.gizmodata</groupId>
+            <artifactId>quack-jdbc</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.apache.hive</groupId>
             <artifactId>hive-jdbc</artifactId>
             <exclusions>
