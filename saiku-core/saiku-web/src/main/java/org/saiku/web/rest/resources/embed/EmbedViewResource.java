@@ -87,6 +87,34 @@ public class EmbedViewResource {
     @Path("/query/{path:.+}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response query(@PathParam("path") String pathParam, @jakarta.ws.rs.QueryParam("format") String formatParam) {
+        return runSavedQuery(formatParam, null);
+    }
+
+    /**
+     * Saved query with embed-time slicer overrides. The guest supplies only the filter payload
+     * (dimension/hierarchy/level/members) — the saved query's cube binding and axes are untouched;
+     * the overrides ride the same validated slicer path ({@link AiSavedQueryRequest#setFilters})
+     * that the dashboard filter tiles already use, so a guest can't pivot the cube or inject MDX.
+     * A saved query that carries forced RLS filters still fails closed (see {@link #runSavedQuery}).
+     */
+    @POST
+    @Path("/query/{path:.+}")
+    @jakarta.ws.rs.Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response queryFiltered(
+            @PathParam("path") String pathParam,
+            @jakarta.ws.rs.QueryParam("format") String formatParam,
+            TileQueryOverrides overrides) {
+        java.util.List<AiFilterSelection> filters =
+                overrides == null || overrides.filters == null ? null : overrides.filters;
+        return runSavedQuery(formatParam, filters);
+    }
+
+    /**
+     * Shared body for {@link #query} and {@link #queryFiltered}. Runs the token-pinned saved query
+     * under the owner's data scope, optionally splicing embed-time filter overrides onto it.
+     */
+    private Response runSavedQuery(String formatParam, java.util.List<AiFilterSelection> filters) {
         EmbedGuestDetails g = guest();
         if (g == null || !"query".equals(g.resourceKind)) {
             return invalid();
@@ -105,10 +133,15 @@ public class EmbedViewResource {
         // Whitelist embed output formats — records (default) or matrix. Any other value falls
         // back to records rather than propagating an untrusted string to buildResponse.
         final String format = "matrix".equalsIgnoreCase(formatParam) ? "matrix" : "records";
+        final java.util.List<AiFilterSelection> overrides =
+                filters == null ? java.util.Collections.emptyList() : filters;
         try {
             Response result = sessionService.runAs(g.ownerUser, g.ownerRoles, () -> {
                 AiSavedQueryRequest sreq = new AiSavedQueryRequest();
                 sreq.setPath(g.resourcePath);
+                if (!overrides.isEmpty()) {
+                    sreq.setFilters(overrides);
+                }
                 return aiQueryResource.executeSaved(sreq, format);
             });
             audit(g, "/saiku/api/embed/query", AiAuditEntry.OUTCOME_SUCCESS);
@@ -349,6 +382,15 @@ public class EmbedViewResource {
                 req.setQuestion(body.question);
                 req.setCube(ref);
                 if (body.history != null) req.setHistory(body.history);
+                // saiku#1440: when the guest names an Agent Space persona, route through
+                // askInSpace so the space's system prompt, skill filter, and cube allowlist
+                // apply. The cube stays pinned (set above), so a space can only NARROW what a
+                // guest reaches — if the space's allowlist excludes the pinned cube, askInSpace
+                // fails closed with 403 rather than answering.
+                String space = body.space == null ? null : body.space.trim();
+                if (space != null && !space.isEmpty()) {
+                    return aiQueryResource.askInSpace(space, req);
+                }
                 return aiQueryResource.ask(req);
             });
             audit(g, "/saiku/api/embed/ai/ask", outcomeFor(result.getStatus()));
@@ -363,10 +405,15 @@ public class EmbedViewResource {
         }
     }
 
-    /** Body accepted by {@link #aiAsk}. Guest supplies only the question and optional history. */
+    /**
+     * Body accepted by {@link #aiAsk}. Guest supplies only the question, optional history, and an
+     * optional Agent Space persona id ({@code space}). The cube ref is never accepted from the
+     * client — it stays pinned by the token.
+     */
     public static class AiAskBody {
         public String question;
         public java.util.List<org.saiku.service.olap.ai.ask.AiAskApi.NlAskMessageDto> history;
+        public String space;
     }
 
     /* --------------------------- helpers ---------------------------- */

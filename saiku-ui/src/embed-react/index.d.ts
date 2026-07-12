@@ -12,10 +12,38 @@ import type * as React from "react";
 export type SaikuEmbedKind = "query" | "dashboard" | "ai";
 
 /** Render mode for `kind="query"` embeds. */
-export type SaikuEmbedRender = "table" | "matrix" | "chart";
+export type SaikuEmbedRender = "table" | "matrix" | "chart" | "kpi";
 
 /** Chart type when `render="chart"`. */
 export type SaikuEmbedChartMode = "bar" | "line" | "pie";
+
+/** Colour theme. Unset keeps the original light palette. */
+export type SaikuEmbedTheme = "light" | "dark" | "auto";
+
+/** One slicer override applied at embed time via the `filter` prop. Mirrors the
+ *  server's AiFilterSelection — empty `members` clears that axis. */
+export interface SaikuEmbedFilter {
+  dimension: string;
+  hierarchy?: string | null;
+  level: string;
+  members: string[];
+}
+
+/** Detail payloads carried by the element's CustomEvents. */
+export interface SaikuEmbedLoadDetail {
+  kind: string;
+  rows: number;
+}
+export interface SaikuEmbedErrorDetail {
+  message: string;
+}
+export interface SaikuEmbedSelectDetail {
+  row: Record<string, { value: number | null; formatted: string; unit?: string }>;
+}
+export interface SaikuEmbedAiQueryDetail {
+  question: string;
+  degraded: boolean;
+}
 
 /**
  * Props for the {@link SaikuEmbed} React component.
@@ -60,6 +88,34 @@ export interface SaikuEmbedProps {
 
   /** CSS height of the rendered surface. Defaults to `"400px"`. */
   height?: string;
+
+  /**
+   * For `kind="ai"`: an Agent Space persona id (saiku#1440). Scopes the ask
+   * server-side — the persona's system prompt, skill filter, and cube allowlist
+   * apply. Can only narrow what the pinned cube exposes.
+   */
+  space?: string;
+
+  /**
+   * For `kind="query"`: slicer overrides applied at embed time. Pass an array of
+   * {@link SaikuEmbedFilter} (serialised for you) or a ready JSON string.
+   */
+  filter?: SaikuEmbedFilter[] | string;
+
+  /** Colour theme. Defaults to the light palette when unset. */
+  theme?: SaikuEmbedTheme;
+
+  /** Fired after a query/matrix/kpi surface finishes loading. */
+  onLoad?: (detail: SaikuEmbedLoadDetail) => void;
+
+  /** Fired when a query load fails (friendly message only). */
+  onError?: (detail: SaikuEmbedErrorDetail) => void;
+
+  /** Fired when a table row is clicked (`render="table"`). */
+  onSelect?: (detail: SaikuEmbedSelectDetail) => void;
+
+  /** Fired after an AI ask resolves (`kind="ai"`). */
+  onAiQuery?: (detail: SaikuEmbedAiQueryDetail) => void;
 
   /** Standard React style prop — applied to the custom element itself. */
   style?: React.CSSProperties;
@@ -167,6 +223,9 @@ export type SaikuEmbedElementAttributes = React.HTMLAttributes<HTMLElement> & {
   render?: SaikuEmbedRender;
   mode?: SaikuEmbedChartMode;
   height?: string;
+  space?: string;
+  filter?: string;
+  theme?: SaikuEmbedTheme;
 };
 
 /**

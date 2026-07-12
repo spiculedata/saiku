@@ -91,6 +91,76 @@ describe("<saiku-embed/>", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("POSTs a {filters} body when the filter attribute is set", async () => {
+    const el = document.createElement("saiku-embed");
+    el.setAttribute("server", "https://demo.saiku.bi");
+    el.setAttribute("path", "homes/admin/sales.saiku");
+    el.setAttribute("filter", JSON.stringify([{ dimension: "Time", level: "Year", members: ["[Time].[2024]"] }]));
+    document.body.appendChild(el);
+    await flush();
+
+    const last = calls[calls.length - 1];
+    expect(last.init?.method).toBe("POST");
+    expect(JSON.parse(String(last.init?.body))).toEqual({
+      filters: [{ dimension: "Time", level: "Year", members: ["[Time].[2024]"] }],
+    });
+  });
+
+  it("degrades a malformed filter attribute to an unfiltered GET", async () => {
+    const el = document.createElement("saiku-embed");
+    el.setAttribute("server", "https://demo.saiku.bi");
+    el.setAttribute("path", "homes/admin/sales.saiku");
+    el.setAttribute("filter", "{not json");
+    document.body.appendChild(el);
+    await flush();
+
+    const last = calls[calls.length - 1];
+    expect(last.init?.method).toBeUndefined();
+  });
+
+  it("emits a saiku:load event with the row count after a query loads", async () => {
+    nextResp = { status: 200, body: { format: "records", data: [{ M: { value: 1, formatted: "1" } }] } };
+    const el = document.createElement("saiku-embed");
+    const events: CustomEvent[] = [];
+    el.addEventListener("saiku:load", (e) => events.push(e as CustomEvent));
+    el.setAttribute("server", "https://demo.saiku.bi");
+    el.setAttribute("path", "homes/admin/sales.saiku");
+    document.body.appendChild(el);
+    await waitForEvent(() => events.length > 0);
+
+    expect(events[0].detail).toMatchObject({ rows: 1 });
+  });
+
+  it("emits a saiku:error event when a query load fails", async () => {
+    nextResp = { status: 401, body: { status: "EMBED_INVALID", error: "nope" } };
+    const el = document.createElement("saiku-embed");
+    const events: CustomEvent[] = [];
+    el.addEventListener("saiku:error", (e) => events.push(e as CustomEvent));
+    el.setAttribute("server", "https://demo.saiku.bi");
+    el.setAttribute("path", "homes/admin/sales.saiku");
+    document.body.appendChild(el);
+    await waitForEvent(() => events.length > 0);
+
+    expect((events[0].detail as { message: string }).message).toContain("unavailable");
+  });
+
+  it("renders a KPI tile for render=kpi and tags the load event kind", async () => {
+    nextResp = { status: 200, body: { format: "records", data: [{ "Net Revenue": { value: 42, formatted: "$42" } }] } };
+    const el = document.createElement("saiku-embed");
+    const events: CustomEvent[] = [];
+    el.addEventListener("saiku:load", (e) => events.push(e as CustomEvent));
+    el.setAttribute("server", "https://demo.saiku.bi");
+    el.setAttribute("path", "homes/admin/kpi.saiku");
+    el.setAttribute("render", "kpi");
+    document.body.appendChild(el);
+    await waitForEvent(() => events.length > 0);
+
+    expect((events[0].detail as { kind: string }).kind).toBe("kpi");
+    const root = (el as unknown as { shadowRoot: ShadowRoot }).shadowRoot;
+    await waitFor(() => (root.querySelector('[role="figure"]')?.textContent ?? "").includes("$42"));
+    expect(root.querySelector('[role="figure"]')?.textContent).toContain("$42");
+  });
+
   it("surfaces a friendly message instead of the raw 401 body", async () => {
     nextResp = {
       status: 401,
@@ -140,4 +210,9 @@ async function waitFor(pred: () => boolean): Promise<void> {
     if (pred()) return;
     await flush();
   }
+}
+
+/** Same as waitFor but named for event-arrival assertions. */
+async function waitForEvent(pred: () => boolean): Promise<void> {
+  await waitFor(pred);
 }

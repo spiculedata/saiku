@@ -14,9 +14,11 @@
 
   interface Props {
     rows: EmbedRow[];
+    /** Fired on row click so the host element can re-dispatch a saiku:select event. */
+    onSelect?: (row: EmbedRow) => void;
   }
 
-  let { rows }: Props = $props();
+  let { rows, onSelect }: Props = $props();
 
   let columns = $derived(rows.length > 0 ? Object.keys(rows[0]) : []);
 
@@ -46,7 +48,10 @@
     </thead>
     <tbody>
       {#each rows as row, i (i)}
-        <tr>
+        <tr
+          class:selectable={onSelect}
+          onclick={onSelect ? () => onSelect(row) : undefined}
+        >
           {#each columns as col (col)}
             {@const cell = row[col]}
             <td
@@ -98,6 +103,9 @@
   }
   tbody tr:hover {
     background: var(--saiku-embed-row-hover, #f3f4f6);
+  }
+  tbody tr.selectable {
+    cursor: pointer;
   }
   .empty {
     padding: 12px;

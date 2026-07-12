@@ -18,6 +18,10 @@
     cubeId: string;
     /** Optional initial placeholder in the input box. */
     placeholder?: string;
+    /** Optional Agent Space persona id — scopes the ask server-side (saiku#1440). */
+    space?: string;
+    /** Fired after each ask resolves, so the host element can re-dispatch a saiku:ai-query event. */
+    onResult?: (detail: { question: string; degraded: boolean }) => void;
   }
 
   let {
@@ -25,6 +29,8 @@
     token,
     cubeId,
     placeholder = "Ask a question about this cube...",
+    space = "",
+    onResult,
   }: Props = $props();
 
   let question = $state("");
@@ -40,7 +46,8 @@
     error = null;
     result = null;
     try {
-      result = await askEmbedAi(server, cubeId, token || undefined, q);
+      result = await askEmbedAi(server, cubeId, token || undefined, q, undefined, space || undefined);
+      onResult?.({ question: q, degraded: result?.degraded === true });
     } catch (err: unknown) {
       if (err instanceof EmbedFetchError) {
         error = err.status === 401 ? "This embed is unavailable." : (err.body.error ?? "Ask failed.");

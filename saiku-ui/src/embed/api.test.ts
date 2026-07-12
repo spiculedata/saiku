@@ -5,7 +5,7 @@
  * surface so a regression in the URL or header doesn't silently 401.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { EmbedFetchError, fetchDashboard, fetchDashboardTile, fetchSavedQuery } from "./api";
+import { askEmbedAi, EmbedFetchError, fetchDashboard, fetchDashboardTile, fetchSavedQuery } from "./api";
 
 describe("fetchSavedQuery", () => {
   let calls: Array<{ url: string; init?: RequestInit }>;
@@ -131,6 +131,66 @@ describe("fetchSavedQuery", () => {
   it("defaults to records mode with no query-string suffix", async () => {
     await fetchSavedQuery("https://demo.saiku.bi", "homes/admin/x.saiku", "tok");
     expect(calls[0].url).not.toContain("format=");
+  });
+
+  it("stays a GET (no body) when no filters are supplied", async () => {
+    await fetchSavedQuery("https://demo.saiku.bi", "homes/admin/x.saiku", "tok");
+    expect(calls[0].init?.method).toBeUndefined();
+    expect(calls[0].init?.body).toBeUndefined();
+  });
+
+  it("POSTs a {filters} body when embed-time filters are supplied", async () => {
+    const filters = [{ dimension: "Time", level: "Year", members: ["[Time].[2024]"] }];
+    await fetchSavedQuery("https://demo.saiku.bi", "homes/admin/x.saiku", "tok", "records", filters);
+    expect(calls[0].init?.method).toBe("POST");
+    expect((calls[0].init?.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({ filters });
+    // Same URL as the unfiltered GET — the server routes GET vs POST, not the path.
+    expect(calls[0].url).toBe("https://demo.saiku.bi/rest/saiku/api/embed/query/homes/admin/x.saiku");
+  });
+
+  it("ignores an empty filters array (stays a GET)", async () => {
+    await fetchSavedQuery("https://demo.saiku.bi", "homes/admin/x.saiku", "tok", "records", []);
+    expect(calls[0].init?.method).toBeUndefined();
+  });
+});
+
+describe("askEmbedAi", () => {
+  let calls: Array<{ url: string; init?: RequestInit }>;
+
+  beforeEach(() => {
+    calls = [];
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return Promise.resolve(
+        new Response(JSON.stringify({ answer: "ok" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("POSTs the question to the pinned cube ask URL, no space by default", async () => {
+    await askEmbedAi("https://demo.saiku.bi", "conn/cat/sch/Sales", "tok", "how are sales?");
+    expect(calls[0].url).toBe("https://demo.saiku.bi/rest/saiku/api/embed/ai/conn/cat/sch/Sales/ask");
+    const body = JSON.parse(String(calls[0].init?.body));
+    expect(body.question).toBe("how are sales?");
+    expect(body.space).toBeUndefined();
+  });
+
+  it("includes the space id in the body when a persona is named", async () => {
+    await askEmbedAi("https://demo.saiku.bi", "conn/cat/sch/Sales", "tok", "q", undefined, "sales-analyst");
+    const body = JSON.parse(String(calls[0].init?.body));
+    expect(body.space).toBe("sales-analyst");
+  });
+
+  it("omits a blank space (falls back to the un-scoped ask)", async () => {
+    await askEmbedAi("https://demo.saiku.bi", "conn/cat/sch/Sales", "tok", "q", undefined, "   ");
+    const body = JSON.parse(String(calls[0].init?.body));
+    expect(body.space).toBeUndefined();
   });
 });
 

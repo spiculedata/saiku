@@ -18,6 +18,9 @@
       render: { type: "String", attribute: "render", reflect: false },
       mode: { type: "String", attribute: "mode", reflect: false },
       height: { type: "String", attribute: "height", reflect: false },
+      space: { type: "String", attribute: "space", reflect: false },
+      filter: { type: "String", attribute: "filter", reflect: false },
+      theme: { type: "String", attribute: "theme", reflect: true },
     },
   }}
 />
@@ -27,7 +30,7 @@
    * <saiku-embed> Web Component — drops into React / Vue / vanilla HTML
    * host pages identically (Svelte 5 customElement compile target).
    *
-   * v3 attribute surface (cumulative):
+   * v4 attribute surface (cumulative):
    *   server  — origin of the Saiku launcher, e.g. https://demo.saiku.bi
    *   token   — opaque embed token from POST /saiku/api/embed/tokens.
    *             Omit for anonymous public reads.
@@ -35,20 +38,36 @@
    *   path    — kind="query": repository path ending .saiku
    *             kind="dashboard": path ending .saikudash
    *             kind="ai": cube ref connection/catalog/schema/cubeName
-   *   render  — for kind=query only: "table" (default), "matrix", or "chart"
+   *   render  — for kind=query only: "table" (default), "matrix", "chart", "kpi"
    *   mode    — for render=chart only: "bar" (default), "line", "pie"
    *   height  — CSS height for the rendered surface (default 400px)
+   *   space   — for kind=ai: Agent Space persona id; scopes the ask
+   *             server-side (prompt + skill filter + cube allowlist).
+   *   filter  — for kind=query: JSON array of slicer overrides applied at
+   *             embed time, e.g. filter='[{"dimension":"Time","level":
+   *             "Year","members":["[Time].[2024]"]}]'. Rides the same
+   *             validated slicer path the dashboard filter tiles use.
+   *   theme   — "dark", "light", or "auto" (follow prefers-color-scheme).
+   *             Unset keeps the original light palette so existing embeds
+   *             are unchanged.
    *
-   * The kind-aware fetch path lets dashboards walk their own tiles
-   * and chart mode swaps the table for an ECharts canvas. Everything
-   * is data-driven from $effect so attribute changes drive re-renders.
+   * Outbound events (CustomEvent, bubbles + composed so a host listener on
+   * the <saiku-embed> element catches them):
+   *   saiku:load      — detail {kind, rows} after a query/matrix/kpi loads
+   *   saiku:error     — detail {message} when a query load fails
+   *   saiku:select    — detail {row} when a table row is clicked
+   *   saiku:ai-query  — detail {question, degraded} after an AI ask resolves
+   *
+   * Everything is data-driven from $effect so attribute changes drive
+   * re-renders.
    */
   import EmbedTable from "./EmbedTable.svelte";
   import EmbedChart from "./EmbedChart.svelte";
+  import EmbedKpi from "./EmbedKpi.svelte";
   import EmbedDashboard from "./EmbedDashboard.svelte";
   import EmbedMatrix from "./EmbedMatrix.svelte";
   import EmbedAsk from "./EmbedAsk.svelte";
-  import { fetchSavedQuery, EmbedFetchError } from "./api";
+  import { fetchSavedQuery, EmbedFetchError, type EmbedFilterOverride } from "./api";
   import type { EmbedCaption, EmbedMatrixRow, EmbedRow } from "./types";
 
   interface Props {
@@ -59,6 +78,9 @@
     render?: string;
     mode?: string;
     height?: string;
+    space?: string;
+    filter?: string;
+    theme?: string;
   }
 
   let {
@@ -69,6 +91,8 @@
     render = "table",
     mode = "bar",
     height = "400px",
+    space = "",
+    filter = "",
   }: Props = $props();
 
   let rows = $state<EmbedRow[] | null>(null);
@@ -77,6 +101,29 @@
   let matrixColumnCaptions = $state<EmbedCaption[]>([]);
   let error = $state<string | null>(null);
   let loading = $state(false);
+  let rootEl = $state<HTMLDivElement | undefined>(undefined);
+
+  /** Dispatch a namespaced CustomEvent from the shadow root. bubbles + composed
+   *  means a host listener attached to the <saiku-embed> element (the event's
+   *  ancestor on the composed path) receives it. Guarded so a missing root during
+   *  teardown can't throw into the render. */
+  function emit(type: string, detail: unknown): void {
+    rootEl?.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
+  }
+
+  /** Parse the `filter` attribute (a JSON array of slicer overrides). Returns an
+   *  empty array on anything unparseable so a malformed attribute degrades to an
+   *  unfiltered query rather than throwing. */
+  function parseFilter(raw: string): EmbedFilterOverride[] {
+    const s = raw.trim();
+    if (!s) return [];
+    try {
+      const v = JSON.parse(s);
+      return Array.isArray(v) ? (v as EmbedFilterOverride[]) : [];
+    } catch {
+      return [];
+    }
+  }
 
   /* Re-fetch whenever the load-bearing inputs change. Empty server / path
    * holds the component in an idle state — useful while a host React
@@ -89,6 +136,7 @@
     const t = token.trim();
     const k = kind.trim() || "query";
     const r = (render || "").trim().toLowerCase();
+    const f = parseFilter(filter);
     if (k !== "query") {
       // Dashboards + AI ask both manage their own fetches. Reset so a kind
       // switch doesn't show stale query rows.
@@ -109,7 +157,7 @@
     loading = true;
     error = null;
     const wantMatrix = r === "matrix";
-    fetchSavedQuery(s, p, t || undefined, wantMatrix ? "matrix" : "records")
+    fetchSavedQuery(s, p, t || undefined, wantMatrix ? "matrix" : "records", f)
       .then((resp) => {
         if (cancelled) return;
         if (wantMatrix) {
@@ -117,16 +165,20 @@
           matrixRowCaptions = resp.metadata?.rows ?? [];
           matrixColumnCaptions = resp.metadata?.columns ?? [];
           rows = null;
+          emit("saiku:load", { kind: "matrix", rows: matrixRows.length });
         } else {
           rows = resp.data ?? [];
           matrixRows = null;
+          emit("saiku:load", { kind: r === "kpi" ? "kpi" : r || "records", rows: rows.length });
         }
       })
       .catch((e: unknown) => {
         if (cancelled) return;
-        error = friendlyError(e);
+        const msg = friendlyError(e);
+        error = msg;
         rows = null;
         matrixRows = null;
+        emit("saiku:error", { message: msg });
       })
       .finally(() => {
         if (!cancelled) loading = false;
@@ -149,11 +201,17 @@
   }
 </script>
 
-<div class="w-full h-full overflow-auto" style="min-height: {height};">
+<div class="w-full h-full overflow-auto" style="min-height: {height};" bind:this={rootEl}>
   {#if kind === "dashboard"}
     <EmbedDashboard {server} {token} {path} />
   {:else if kind === "ai"}
-    <EmbedAsk {server} {token} cubeId={path} />
+    <EmbedAsk
+      {server}
+      {token}
+      cubeId={path}
+      {space}
+      onResult={(d) => emit("saiku:ai-query", d)}
+    />
   {:else if loading}
     <div class="state">Loading…</div>
   {:else if error}
@@ -167,8 +225,10 @@
   {:else if rows !== null}
     {#if render === "chart"}
       <EmbedChart {rows} {mode} />
+    {:else if render === "kpi"}
+      <EmbedKpi {rows} />
     {:else}
-      <EmbedTable {rows} />
+      <EmbedTable {rows} onSelect={(row) => emit("saiku:select", { row })} />
     {/if}
   {:else}
     <div class="state muted">
@@ -186,6 +246,38 @@
     color: var(--saiku-embed-fg, #1f2937);
     background: var(--saiku-embed-bg, transparent);
   }
+
+  /* theme="dark" forces the dark palette; theme="auto" adopts it only when
+   * the viewer's OS is in dark mode. Unset / theme="light" keep the original
+   * light defaults so existing embeds don't shift. Host per-var overrides still
+   * work in the light theme; in dark, the palette below wins. */
+  :host([theme="dark"]) {
+    --saiku-embed-fg: #e6e8f0;
+    --saiku-embed-bg: #0f1420;
+    --saiku-embed-muted: #9aa2b4;
+    --saiku-embed-border: #2a3140;
+    --saiku-embed-header-bg: #171d2a;
+    --saiku-embed-row-hover: #1b2230;
+    --saiku-embed-error: #f87171;
+    --saiku-embed-negative: #f87171;
+    --saiku-embed-positive: #34d399;
+    --saiku-embed-accent: #6d7dff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :host([theme="auto"]) {
+      --saiku-embed-fg: #e6e8f0;
+      --saiku-embed-bg: #0f1420;
+      --saiku-embed-muted: #9aa2b4;
+      --saiku-embed-border: #2a3140;
+      --saiku-embed-header-bg: #171d2a;
+      --saiku-embed-row-hover: #1b2230;
+      --saiku-embed-error: #f87171;
+      --saiku-embed-negative: #f87171;
+      --saiku-embed-positive: #34d399;
+      --saiku-embed-accent: #6d7dff;
+    }
+  }
+
   .state {
     padding: 16px;
     font-family: system-ui, sans-serif;

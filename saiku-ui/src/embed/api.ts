@@ -22,6 +22,7 @@ export async function fetchSavedQuery(
   path: string,
   token?: string | null,
   format: "records" | "matrix" = "records",
+  filters?: EmbedFilterOverride[] | null,
 ): Promise<EmbedQueryResponse> {
   const base = stripTrailingSlash(server);
   const suffix = format === "matrix" ? "?format=matrix" : "";
@@ -30,7 +31,17 @@ export async function fetchSavedQuery(
   if (token) {
     headers["X-Saiku-Embed-Token"] = token;
   }
-  const resp = await fetch(url, { headers, credentials: "omit" });
+  // Filters at embed time ride the same POST channel + validated slicer path the
+  // dashboard tile overrides already use (EmbedViewResource#queryFiltered). Absent
+  // filters keep the original GET so existing embeds and their wire tests are unchanged.
+  const hasFilters = Array.isArray(filters) && filters.length > 0;
+  const init: RequestInit = { headers, credentials: "omit" };
+  if (hasFilters) {
+    headers["Content-Type"] = "application/json";
+    init.method = "POST";
+    init.body = JSON.stringify({ filters });
+  }
+  const resp = await fetch(url, init);
   if (!resp.ok) {
     throw await readError(resp);
   }
@@ -185,6 +196,7 @@ export async function askEmbedAi(
   token: string | null | undefined,
   question: string,
   history?: EmbedAskMessage[],
+  space?: string | null,
 ): Promise<EmbedAskResponse> {
   const base = stripTrailingSlash(server);
   const url =
@@ -194,7 +206,12 @@ export async function askEmbedAi(
     "Content-Type": "application/json",
   };
   if (token) headers["X-Saiku-Embed-Token"] = token;
-  const body = JSON.stringify({ question, history: history ?? [] });
+  // `space` names an admin-authored Agent Space persona (saiku#1440). When present the
+  // server routes the ask through askInSpace, which prepends the persona prompt, filters
+  // the skill catalogue, and enforces the space's cube allowlist — the pinned cube stays
+  // pinned, so the space can only narrow, never widen, what a guest reaches.
+  const sp = (space ?? "").trim();
+  const body = JSON.stringify(sp ? { question, history: history ?? [], space: sp } : { question, history: history ?? [] });
   const resp = await fetch(url, { method: "POST", headers, credentials: "omit", body });
   if (!resp.ok) throw await readError(resp);
   return (await resp.json()) as EmbedAskResponse;
