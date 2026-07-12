@@ -414,8 +414,14 @@ apart (the `format=matrix` bypass was closed in saiku#1324).
 **v1 limit (the shadow-count follow-up is tracked as saiku#905-B):**
 
 - **Only in-result count measures are covered.** A cube whose result carries no
-  count measure — and the `/ai/anomaly` / `/ai/forecast` surfaces — are not yet
-  suppressed.
+  count measure is not suppressed (there's nothing to key the small-cell test on
+  — the shadow-count follow-up, saiku#905-B, would inject a hidden count).
+- The `/ai/anomaly` and `/ai/forecast` surfaces **are** now suppressed (saiku#1482):
+  their observed records run through the same filter as `/ai/query` before egress,
+  so a small cell can't leak just because it was requested via the anomaly/forecast
+  path. Detection/forecasting still run on the real values (accurate flags); only
+  the observed cell **values** are masked. Forecast projections are derived
+  aggregates, not raw cells, and are unaffected.
 
 ---
 
