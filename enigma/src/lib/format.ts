@@ -3,12 +3,14 @@ interface RiskBand {
 	color: string;
 }
 
-const HIGH_RISK_THRESHOLD = 0.66;
-const MEDIUM_RISK_THRESHOLD = 0.33;
+// Benafide's entity_risk.risk_score is a composite on roughly a 0..10 scale
+// (most entities 0; flagged ones run ~2–8), not 0..1.
+const HIGH_RISK_THRESHOLD = 6;
+const MEDIUM_RISK_THRESHOLD = 3;
 
 /**
- * Maps a 0..1 risk score to a display band + CSS colour variable.
- * `null`/`undefined` scores are treated as unknown rather than low risk.
+ * Maps a risk score (~0..10) to a display band + CSS colour variable.
+ * `null`/`undefined` scores are treated as unknown; 0 reads as Low.
  */
 export function riskBand(score: number | null | undefined): RiskBand {
 	if (score == null) return { label: 'Unknown', color: 'var(--dim)' };

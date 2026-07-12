@@ -3,26 +3,26 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
-	const band = $derived(riskBand(data.risk?.risk_score));
+	const band = $derived(riskBand(data.risk_score));
 </script>
 
 <section class="profile grid-bg">
 	<div class="label">Subject</div>
-	<h1 class="disp">{data.entity.name}</h1>
+	<h1 class="disp">{data.name}</h1>
 	<div class="meta mono">
-		{jurisdictionFlag(data.entity.jurisdiction)} {data.entity.jurisdiction ?? '—'} · {data.entity.status ?? '—'} · {data.entity.id}
+		{jurisdictionFlag(data.jurisdiction)} {data.jurisdiction ?? '—'} · {data.status ?? '—'} · {data.id}
 	</div>
 	<div class="cards">
 		<div class="card">
-			<div class="v" style="color:{band.color}">{data.risk?.risk_score?.toFixed?.(2) ?? '—'}</div>
+			<div class="v" style="color:{band.color}">{data.risk_score?.toFixed?.(1) ?? '—'}</div>
 			<div class="t">Risk · {band.label}</div>
 		</div>
 		<div class="card">
-			<div class="v">{data.risk?.opacity_score?.toFixed?.(2) ?? '—'}</div>
+			<div class="v">{data.opacity_score?.toFixed?.(2) ?? '—'}</div>
 			<div class="t">Opacity</div>
 		</div>
 	</div>
-	<p class="hint mono">Ownership graph (The Web) arrives in Phase 1 →</p>
+	<p class="hint mono">via Ossie semantic model → Saiku → DuckDB · ownership graph (The Web) next →</p>
 </section>
 
 <style>
