@@ -26,6 +26,7 @@
 	},
 	"dependencies": {
 		"cytoscape": "^3.34.0",
-		"cytoscape-fcose": "^2.2.0"
+		"cytoscape-fcose": "^2.2.0",
+		"echarts": "^6.1.0"
 	}
 }
