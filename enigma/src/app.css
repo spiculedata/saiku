@@ -1,0 +1,16 @@
+:root{
+  --bg:#08090c; --bg2:#0d0f14; --panel:#10131c; --panel2:#141826; --line:#1e2231; --line2:#2a3044;
+  --fg:#e7e9f0; --muted:#8b90a3; --dim:#5a5f72;
+  --amber:#f5b544; --cyan:#57d6e6; --red:#ff5d6c; --green:#5fe0a0; --violet:#9b8cff;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+  --disp:'Fraunces',Georgia,serif;
+  --sans:'Inter Tight',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+.label{font-family:var(--mono);font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--dim)}
+.mono{font-family:var(--mono)}
+.disp{font-family:var(--disp)}
+.grid-bg{background-image:linear-gradient(rgba(255,255,255,.02) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.02) 1px,transparent 1px);background-size:34px 34px}
