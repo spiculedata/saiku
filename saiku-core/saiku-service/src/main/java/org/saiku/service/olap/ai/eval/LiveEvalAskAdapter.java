@@ -112,6 +112,25 @@ public final class LiveEvalAskAdapter implements EvalAskAdapter {
         };
     }
 
+    /**
+     * Execute a trusted reference query against the live cube and flatten it to the same records
+     * shape the NL-query path produces, so {@link RowComparator} can diff the two. The reference
+     * query's own cube ref wins if it pins one; otherwise the suite's cube is used. Runs through
+     * the exact same convert → execute → flatten pipeline as {@link #handleQuery}, so the reference
+     * and the NL answer are compared on identical footing.
+     */
+    @Override
+    public List<Map<String, Object>> executeReference(AiCubeRef cube, AiQueryRequest referenceQuery) {
+        Objects.requireNonNull(referenceQuery, "referenceQuery");
+        if (referenceQuery.getCube() == null) {
+            referenceQuery.setCube(cube);
+        }
+        AiSchema schema = metadataService.getSchema(referenceQuery.getCube());
+        ThinQuery tq = converter.convert(referenceQuery, schema);
+        CellDataSet cds = thinQueryService.execute(tq);
+        return flattenToRecords(cds);
+    }
+
     private EvalAskResult handleQuery(AiAskService.AskOutcome outcome) {
         AiQueryRequest req = outcome.request();
         if (req == null) {

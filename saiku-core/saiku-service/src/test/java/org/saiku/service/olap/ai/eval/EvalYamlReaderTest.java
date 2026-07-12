@@ -47,6 +47,45 @@ public class EvalYamlReaderTest {
     }
 
     @Test
+    public void parsesReferenceQueryIntoAiQueryRequest() throws Exception {
+        String yaml = "name: ref-evals\n"
+                + CUBE_BLOCK
+                + "cases:\n"
+                + "  - name: sales-by-country-ref\n"
+                + "    question: show store sales by country\n"
+                + "    expectedIntent: QUERY\n"
+                + "    referenceQuery:\n"
+                + "      measures:\n"
+                + "        - {name: Store Sales}\n"
+                + "      rows:\n"
+                + "        - {dimension: Store, hierarchy: Store, level: Store Country}\n"
+                + "    tolerance: {relative: 0.001}\n";
+        EvalSuite s = EvalYamlReader.read(yaml, "test.yaml");
+        EvalCase c = s.cases().get(0);
+        assertNotNull("referenceQuery should parse", c.referenceQuery());
+        assertNull("expectedRows unset when referenceQuery is used", c.expectedRows());
+        assertEquals(1, c.referenceQuery().getMeasures().size());
+        assertEquals("Store Sales", c.referenceQuery().getMeasures().get(0).getName());
+        assertEquals(1, c.referenceQuery().getRows().size());
+        assertTrue(c.hasExpectations());
+    }
+
+    @Test
+    public void rejectsNonObjectReferenceQuery() {
+        String yaml = "name: bad-ref\n" + CUBE_BLOCK
+                + "cases:\n"
+                + "  - name: x\n"
+                + "    question: q\n"
+                + "    referenceQuery: not-a-mapping\n";
+        try {
+            EvalYamlReader.read(yaml, "test.yaml");
+            fail("expected a TYPE_MISMATCH for a scalar referenceQuery");
+        } catch (EvalYamlReader.EvalParseException e) {
+            assertEquals("TYPE_MISMATCH", e.code());
+        }
+    }
+
+    @Test
     public void parsesRefusalCase() throws Exception {
         String yaml = "name: refusals\n"
                 + CUBE_BLOCK

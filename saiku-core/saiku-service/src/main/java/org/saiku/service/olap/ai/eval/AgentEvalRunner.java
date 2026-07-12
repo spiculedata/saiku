@@ -7,6 +7,7 @@ package org.saiku.service.olap.ai.eval;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import org.saiku.service.olap.ai.eval.EvalOutcome.Mismatch;
 import org.slf4j.Logger;
@@ -103,10 +104,27 @@ public final class AgentEvalRunner {
             }
         }
 
-        // 3. Rows comparison for QUERY intent.
-        if (c.expectedRows() != null && !c.expectedRows().isEmpty()) {
+        // 3. Rows comparison for QUERY intent. Ground truth comes from either a trusted
+        //    referenceQuery executed live (drift-proof — precedence) or frozen expectedRows.
+        List<Map<String, Object>> groundTruth = null;
+        if (c.referenceQuery() != null) {
+            try {
+                groundTruth = adapter.executeReference(suite.cube(), c.referenceQuery());
+            } catch (RuntimeException e) {
+                // A reference query that won't execute is a suite-authoring error, not a wrong
+                // answer — surface it as a distinct mismatch so the fix is obvious, and skip the
+                // row diff (there's nothing trustworthy to diff against).
+                log.warn("Case '{}' referenceQuery failed to execute", c.name(), e);
+                mismatches.add(new Mismatch(
+                        "referenceQuery",
+                        "reference query failed to execute: " + e.getClass().getSimpleName() + ": " + e.getMessage()));
+            }
+        } else if (c.expectedRows() != null && !c.expectedRows().isEmpty()) {
+            groundTruth = c.expectedRows();
+        }
+        if (groundTruth != null) {
             EvalTolerance tol = c.tolerance() == null ? EvalTolerance.EXACT : c.tolerance();
-            mismatches.addAll(RowComparator.compare(c.expectedRows(), result.rows(), tol, c.orderMatters()));
+            mismatches.addAll(RowComparator.compare(groundTruth, result.rows(), tol, c.orderMatters()));
         }
 
         // 4. Insight substring matches.

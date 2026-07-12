@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.Test;
 import org.saiku.service.olap.ai.AiCubeRef;
+import org.saiku.service.olap.ai.AiQueryRequest;
 
 public class AgentEvalRunnerTest {
 
@@ -26,6 +27,7 @@ public class AgentEvalRunnerTest {
                 "QUERY",
                 null,
                 List.of(map("country", "USA", "storeSales", 500.0)),
+                null,
                 true,
                 null,
                 EvalTolerance.EXACT);
@@ -52,6 +54,7 @@ public class AgentEvalRunnerTest {
                 "REFUSED",
                 "cube",
                 null,
+                null,
                 true,
                 null,
                 EvalTolerance.EXACT);
@@ -76,6 +79,7 @@ public class AgentEvalRunnerTest {
                 "REFUSED",
                 "not about this cube",
                 null,
+                null,
                 true,
                 null,
                 EvalTolerance.EXACT);
@@ -92,7 +96,7 @@ public class AgentEvalRunnerTest {
 
     @Test
     public void degradedAdapterProducesDegradedOutcome() {
-        EvalCase c = new EvalCase("any", "q", List.of(), null, null, null, true, null, EvalTolerance.EXACT);
+        EvalCase c = new EvalCase("any", "q", List.of(), null, null, null, null, true, null, EvalTolerance.EXACT);
         EvalSuite suite = new EvalSuite("t", null, CUBE, List.of(c));
 
         EvalAskAdapter adapter =
@@ -108,7 +112,7 @@ public class AgentEvalRunnerTest {
     public void adapterThrowingIsHandledAsDegraded() {
         // A wire-level exception (network, JSON parse, whatever) must translate to a degraded
         // outcome — the runner shouldn't fail the whole suite because one case's adapter blew up.
-        EvalCase c = new EvalCase("any", "q", List.of(), null, null, null, true, null, EvalTolerance.EXACT);
+        EvalCase c = new EvalCase("any", "q", List.of(), null, null, null, null, true, null, EvalTolerance.EXACT);
         EvalSuite suite = new EvalSuite("t", null, CUBE, List.of(c));
 
         EvalAskAdapter adapter = (cube, question, history) -> {
@@ -126,6 +130,7 @@ public class AgentEvalRunnerTest {
                 "spot trends",
                 List.of(),
                 "INSIGHT",
+                null,
                 null,
                 null,
                 true,
@@ -147,6 +152,7 @@ public class AgentEvalRunnerTest {
                 "spot trends",
                 List.of(),
                 "INSIGHT",
+                null,
                 null,
                 null,
                 true,
@@ -186,10 +192,95 @@ public class AgentEvalRunnerTest {
         assertEquals("2/4 passed, 1 failed, 1 degraded, 0 skipped", report.oneLine());
     }
 
+    @Test
+    public void referenceQueryProvidesLiveGroundTruthAndPasses() {
+        // Drift-proof path: ground truth is the reference query's live rows, not frozen literals.
+        // Here the NL answer and the reference return the same rows → PASS.
+        EvalCase c = refCase("ref-match");
+        EvalSuite suite = new EvalSuite("t", null, CUBE, List.of(c));
+
+        EvalAskAdapter adapter = new EvalAskAdapter() {
+            @Override
+            public EvalAskResult ask(AiCubeRef cube, String q, List<Map<String, String>> h) {
+                return EvalAskResult.forQuery("m", List.of(map("country", "USA", "storeSales", 565238.13)));
+            }
+
+            @Override
+            public List<Map<String, Object>> executeReference(AiCubeRef cube, AiQueryRequest r) {
+                return List.of(map("country", "USA", "storeSales", 565238.13));
+            }
+        };
+
+        EvalReport report = new AgentEvalRunner(adapter).run(suite);
+        assertTrue(report.allPassed());
+    }
+
+    @Test
+    public void referenceQueryMismatchFails() {
+        // NL answer diverges from the reference query's live rows → FAIL on the value.
+        EvalCase c = refCase("ref-divergent");
+        EvalSuite suite = new EvalSuite("t", null, CUBE, List.of(c));
+
+        EvalAskAdapter adapter = new EvalAskAdapter() {
+            @Override
+            public EvalAskResult ask(AiCubeRef cube, String q, List<Map<String, String>> h) {
+                return EvalAskResult.forQuery("m", List.of(map("country", "USA", "storeSales", 999.0)));
+            }
+
+            @Override
+            public List<Map<String, Object>> executeReference(AiCubeRef cube, AiQueryRequest r) {
+                return List.of(map("country", "USA", "storeSales", 565238.13));
+            }
+        };
+
+        EvalReport report = new AgentEvalRunner(adapter).run(suite);
+        assertFalse(report.allPassed());
+        assertEquals(EvalOutcome.Status.FAIL, report.outcomes().get(0).status());
+    }
+
+    @Test
+    public void referenceQueryExecutionFailureIsReportedAsAuthoringError() {
+        // A reference query that won't execute is a suite bug, surfaced on its own path — not a
+        // wrong-answer failure and not a degrade of the whole case.
+        EvalCase c = refCase("ref-broken");
+        EvalSuite suite = new EvalSuite("t", null, CUBE, List.of(c));
+
+        EvalAskAdapter adapter = new EvalAskAdapter() {
+            @Override
+            public EvalAskResult ask(AiCubeRef cube, String q, List<Map<String, String>> h) {
+                return EvalAskResult.forQuery("m", List.of(map("country", "USA", "storeSales", 1.0)));
+            }
+
+            @Override
+            public List<Map<String, Object>> executeReference(AiCubeRef cube, AiQueryRequest r) {
+                throw new RuntimeException("bad reference query");
+            }
+        };
+
+        EvalReport report = new AgentEvalRunner(adapter).run(suite);
+        assertFalse(report.allPassed());
+        assertEquals(
+                "referenceQuery", report.outcomes().get(0).mismatches().get(0).path());
+    }
+
     /* ---- helpers ---- */
 
+    private static EvalCase refCase(String name) {
+        return new EvalCase(
+                name,
+                "show sales by country",
+                List.of(),
+                "QUERY",
+                null,
+                null,
+                new AiQueryRequest(),
+                true,
+                null,
+                EvalTolerance.EXACT);
+    }
+
     private static EvalCase caseWithExpected(String name, String intent) {
-        return new EvalCase(name, "q", List.of(), intent, null, null, true, null, EvalTolerance.EXACT);
+        return new EvalCase(name, "q", List.of(), intent, null, null, null, true, null, EvalTolerance.EXACT);
     }
 
     private static Map<String, Object> map(Object... kv) {

@@ -7,6 +7,7 @@ package org.saiku.service.olap.ai.eval;
 import java.util.List;
 import java.util.Map;
 import org.saiku.service.olap.ai.AiCubeRef;
+import org.saiku.service.olap.ai.AiQueryRequest;
 
 /**
  * SPI the eval runner uses to call an ask surface (saiku#1424).
@@ -43,4 +44,25 @@ public interface EvalAskAdapter {
      *     adapters that hit a hard error return {@link EvalAskResult#forDegraded(String, String)}.
      */
     EvalAskResult ask(AiCubeRef cube, String question, List<Map<String, String>> history);
+
+    /**
+     * Execute a case's trusted {@code referenceQuery} against the live cube and return its rows as
+     * the ground truth for the row comparison (saiku#1424 — drift-proof evals). This is what lets
+     * a suite run against a customer's evolving data: the reference query and the NL-generated
+     * query hit the same data at the same moment, so the diff is meaningful even as the numbers
+     * change day to day.
+     *
+     * <p>Default implementation throws — only the live adapter can execute against a real cube; a
+     * fixture/replay adapter that has no executor should either override this with recorded rows or
+     * only be used with {@code expectedRows}-style cases.
+     *
+     * @param cube the suite's cube ref (used when the reference query doesn't pin its own)
+     * @param referenceQuery the trusted query to execute
+     * @return the reference result-set flattened to records, same shape as {@link #ask}'s query rows
+     * @throws UnsupportedOperationException if this adapter can't execute live queries
+     */
+    default List<Map<String, Object>> executeReference(AiCubeRef cube, AiQueryRequest referenceQuery) {
+        throw new UnsupportedOperationException(
+                "this EvalAskAdapter cannot execute reference queries; use expectedRows or the live adapter");
+    }
 }

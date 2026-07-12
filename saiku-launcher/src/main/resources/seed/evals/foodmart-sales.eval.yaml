@@ -46,6 +46,26 @@ cases:
     orderMatters: false
 
   # -----------------------------------------------------------------
+  # QUERY intent, DRIFT-PROOF — ground truth is a trusted referenceQuery
+  # executed live, not frozen numbers. The NL answer is diffed against
+  # the reference query's result-set at the same moment, so this case
+  # stays valid as the underlying data changes (a customer's warehouse,
+  # not a static demo). Prefer this over expectedRows for live models.
+  # -----------------------------------------------------------------
+
+  - name: store-sales-by-country-ref
+    question: Show store sales broken down by country.
+    expectedIntent: QUERY
+    referenceQuery:
+      measures:
+        - {name: Store Sales}
+      rows:
+        - {dimension: Store, hierarchy: Store, level: Store Country}
+    tolerance:
+      relative: 0.001
+    orderMatters: false
+
+  # -----------------------------------------------------------------
   # INSIGHT intent — no new query; markdown must reference key figures.
   # -----------------------------------------------------------------
 
