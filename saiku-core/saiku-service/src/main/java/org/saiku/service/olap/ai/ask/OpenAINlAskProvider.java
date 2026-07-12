@@ -73,6 +73,16 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
             + "`order` and `limit`. (6) Keep aggregator overrides off unless the user asks for one.\n\n"
             + "Always call exactly ONE function — never respond with prose.";
 
+    /**
+     * Sentinel for {@link Config#temperature()}: a negative value means "do not send a
+     * {@code temperature} field at all". Required for gpt-5 / o-series models, which reject a custom
+     * {@code temperature} (only the default is accepted) with a 400. Older models fall back to the
+     * API default — safe because the forced function call already pins the structured output.
+     *
+     * <p>Inherited by {@link AzureOpenAiNlAskProvider}, which reuses this request builder.
+     */
+    public static final double OMIT_TEMPERATURE = -1.0;
+
     /** Provider configuration. */
     public record Config(
             String apiKey, String model, String endpoint, double temperature, int maxTokens, Duration requestTimeout) {
@@ -147,7 +157,13 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
         ObjectNode root = MAPPER.createObjectNode();
         root.put("model", config.model());
         root.put("max_tokens", config.maxTokens());
-        root.put("temperature", config.temperature());
+        // Only send temperature when explicitly set (>= 0). gpt-5 / o-series reject a custom value;
+        // see OMIT_TEMPERATURE. The forced function call pins the structured output regardless.
+        // NOTE: gpt-5 / o-series also rename max_tokens -> max_completion_tokens on this endpoint —
+        // tracked separately (saiku#1479) since it needs a model-family check.
+        if (config.temperature() >= 0) {
+            root.put("temperature", config.temperature());
+        }
 
         // Mode picker — Auto leaves all three intents available; an explicit pick narrows the
         // tool list (+ refusal, always available) so the LLM can't auto-route to a different

@@ -112,8 +112,15 @@ public final class NlAskProviderFactory {
             String effectiveEndpoint =
                     resolvedEndpoint == null ? OpenAINlAskProvider.DEFAULT_ENDPOINT : resolvedEndpoint;
             LOGGER.info("AI ask provider: openai (model={}, endpoint={})", effectiveModel, effectiveEndpoint);
+            // Omit temperature by default: gpt-5 / o-series reject a custom value, and the forced
+            // function call already pins the structured output so determinism doesn't need it.
             return new OpenAINlAskProvider(new OpenAINlAskProvider.Config(
-                    resolvedKey, effectiveModel, effectiveEndpoint, 0.0, 4096, Duration.ofSeconds(60)));
+                    resolvedKey,
+                    effectiveModel,
+                    effectiveEndpoint,
+                    OpenAINlAskProvider.OMIT_TEMPERATURE,
+                    4096,
+                    Duration.ofSeconds(60)));
         }
         if (PROVIDER_AZURE_OPENAI.equalsIgnoreCase(name)) {
             String resolvedKey = resolveApiKey(ENV_AZURE_OPENAI_API_KEY);
@@ -143,7 +150,12 @@ public final class NlAskProviderFactory {
                     effectiveModel,
                     resolvedEndpoint);
             return new AzureOpenAiNlAskProvider(new OpenAINlAskProvider.Config(
-                    resolvedKey, effectiveModel, resolvedEndpoint, 0.0, 4096, Duration.ofSeconds(60)));
+                    resolvedKey,
+                    effectiveModel,
+                    resolvedEndpoint,
+                    OpenAINlAskProvider.OMIT_TEMPERATURE,
+                    4096,
+                    Duration.ofSeconds(60)));
         }
         LOGGER.warn("Unknown AI ask provider '{}'; falling back to NoopProvider.", providerName);
         return new NoopNlAskProvider();

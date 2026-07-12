@@ -73,6 +73,31 @@ public class OpenAINlAskProviderTest {
     }
 
     @Test
+    public void omitsTemperatureWhenSentinelNegative() throws Exception {
+        // OMIT_TEMPERATURE (negative) must drop the `temperature` field — gpt-5 / o-series reject a
+        // custom value with a 400.
+        OpenAINlAskProvider provider = new OpenAINlAskProvider(new OpenAINlAskProvider.Config(
+                "k", "gpt-5", OpenAINlAskProvider.DEFAULT_ENDPOINT, OpenAINlAskProvider.OMIT_TEMPERATURE, 1024, null));
+        NlAskRequest req = new NlAskRequest(CUBE, "show sales", SCHEMA, REQUEST_SCHEMA, List.of());
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+
+        assertFalse("temperature must be omitted when the sentinel is set", root.has("temperature"));
+    }
+
+    @Test
+    public void includesTemperatureWhenExplicitlySet() throws Exception {
+        OpenAINlAskProvider provider = new OpenAINlAskProvider(
+                new OpenAINlAskProvider.Config("k", "gpt-x", OpenAINlAskProvider.DEFAULT_ENDPOINT, 0.3, 1024, null));
+        NlAskRequest req = new NlAskRequest(CUBE, "show sales", SCHEMA, REQUEST_SCHEMA, List.of());
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+
+        assertTrue(root.has("temperature"));
+        assertEquals(0.3, root.get("temperature").asDouble(), 1e-9);
+    }
+
+    @Test
     public void requestBodyKeepsHistoryBetweenSystemAndQuestion() throws Exception {
         OpenAINlAskProvider provider = new OpenAINlAskProvider(
                 new OpenAINlAskProvider.Config("k", "gpt-x", OpenAINlAskProvider.DEFAULT_ENDPOINT, 0.0, 1024, null));
