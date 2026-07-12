@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { base } from '$app/paths';
 	const pillars = ['The Web', 'Reveal', 'The Deck', 'Ask', 'Signals', 'Borderlines', 'Cases'];
-	const routes: Record<string, string> = { 'The Deck': '/deck', Signals: '/signals' };
+	const routes: Record<string, string> = {
+		'The Deck': '/deck',
+		Signals: '/signals',
+		Borderlines: '/borderlines'
+	};
 	let { active = '' }: { active?: string } = $props();
 
 	function pillarHref(pillar: string): string {
