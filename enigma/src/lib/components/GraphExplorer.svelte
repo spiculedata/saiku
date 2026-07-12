@@ -43,45 +43,65 @@
 			style: {
 				'background-color': '#141826',
 				'border-width': 2,
+				'border-color': '#c8ccda',
+				width: 30,
+				height: 30,
+				// label sits BELOW the node on a dark pill so long names stay readable
 				label: 'data(label)',
 				color: '#e7e9f0',
 				'font-family': 'monospace',
-				'font-size': 9,
-				'text-valign': 'center',
+				'font-size': 10,
+				'text-valign': 'bottom',
+				'text-halign': 'center',
+				'text-margin-y': 7,
 				'text-wrap': 'wrap',
-				'text-max-width': '90px',
-				width: 34,
-				height: 34
+				'text-max-width': '150px',
+				'text-background-color': '#08090c',
+				'text-background-opacity': 0.82,
+				'text-background-padding': '3px',
+				'text-background-shape': 'roundrectangle',
+				'min-zoomed-font-size': 7
 			}
 		},
 		{
 			selector: 'node.subject',
 			style: {
 				'border-color': '#57d6e6',
-				width: 46,
-				height: 46,
+				'background-color': '#0f2a30',
+				color: '#57d6e6',
+				'font-weight': 'bold',
+				width: 44,
+				height: 44,
 				'border-width': 3
 			}
 		},
 		{
 			selector: 'node.entity',
-			style: { 'border-color': '#c8ccda' }
+			style: { 'border-color': '#c8ccda', color: '#e7e9f0', width: 34, height: 34 }
 		},
 		{
 			selector: 'node.person',
-			style: { 'border-color': '#f5b544', 'background-color': '#2a2410' }
+			style: { 'border-color': '#f5b544', 'background-color': '#241d0c', color: '#f2c483' }
 		},
 		{
 			selector: 'edge',
 			style: {
 				width: 1.5,
 				'line-color': '#3a4160',
-				'target-arrow-color': '#3a4160',
+				'line-opacity': 0.8,
+				'target-arrow-color': '#4a5170',
 				'target-arrow-shape': 'triangle',
+				'arrow-scale': 0.9,
 				'curve-style': 'bezier',
 				label: 'data(pct)',
-				'font-size': 8,
-				color: '#8b90a3'
+				'font-size': 9,
+				'font-family': 'monospace',
+				color: '#cdd2e4',
+				'text-background-color': '#08090c',
+				'text-background-opacity': 0.85,
+				'text-background-padding': '2px',
+				'text-background-shape': 'roundrectangle',
+				'min-zoomed-font-size': 7
 			}
 		},
 		{
@@ -90,7 +110,8 @@
 				'line-color': '#ff5d6c',
 				'target-arrow-color': '#ff5d6c',
 				'line-style': 'dashed',
-				width: 2
+				'line-opacity': 1,
+				width: 2.5
 			}
 		}
 	];
@@ -120,8 +141,21 @@
 				container,
 				elements: toElements(graph),
 				style: stylesheet,
-				layout: { name: 'cose', animate: false, padding: 20, nodeRepulsion: 8000, idealEdgeLength: 90 }
+				layout: {
+					name: 'cose',
+					animate: false,
+					padding: 60,
+					nodeRepulsion: 16000,
+					idealEdgeLength: 140,
+					nodeOverlap: 24,
+					componentSpacing: 120
+				},
+				minZoom: 0.3,
+				maxZoom: 2.5,
+				wheelSensitivity: 0.2
 			});
+			// fit the whole web into view with room for the below-node labels
+			cy.fit(undefined, 55);
 		})().catch(() => {
 			if (!disposed) {
 				failed = true;

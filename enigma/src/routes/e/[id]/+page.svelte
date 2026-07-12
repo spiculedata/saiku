@@ -8,7 +8,20 @@
 	const band = $derived(riskBand(data.risk_score));
 
 	let graph: OwnershipGraph | undefined = $state();
-	const owners = $derived(graph?.nodes.filter((n) => n.kind === 'person') ?? []);
+	const owners = $derived.by(() => {
+		if (!graph) return [];
+		// registry data repeats the same person across paths — collapse by name,
+		// and surface the largest declared stake we can see for them.
+		const seen = new Map<string, { label: string; pct: number | null }>();
+		for (const n of graph.nodes) {
+			if (n.kind !== 'person' || seen.has(n.label)) continue;
+			const pct = graph.edges
+				.filter((e) => e.owner === n.id && e.percentage != null)
+				.reduce<number | null>((max, e) => Math.max(max ?? 0, e.percentage as number), null);
+			seen.set(n.label, { label: n.label, pct });
+		}
+		return [...seen.values()];
+	});
 </script>
 
 <div class="investigation">
@@ -48,8 +61,9 @@
 			<p class="hint mono">None found in the traversed graph.</p>
 		{:else}
 			<ul class="owners">
-				{#each owners as o (o.id)}
+				{#each owners as o (o.label)}
 					<li>
+						{#if o.pct != null}<span class="pct mono">{Math.round(o.pct)}%</span>{/if}
 						<div class="name">{o.label}</div>
 						<div class="tag mono">beneficial owner</div>
 					</li>
@@ -159,6 +173,12 @@
 		border: 1px solid var(--line2);
 		border-radius: 10px;
 		padding: 10px 14px;
+	}
+	.owners .pct {
+		float: right;
+		color: var(--amber);
+		font-weight: 700;
+		font-size: 14px;
 	}
 	.owners .name {
 		font-size: 13px;
