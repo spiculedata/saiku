@@ -1,12 +1,17 @@
 # Ground-truth eval cases for the FoodMart Sales cube (saiku#1424).
 #
-# Runs against the AI ask layer to catch regressions when the LLM
-# provider changes, the schema changes, or the prompt changes. See
-# docs/EVAL-SPEC.md for the file format reference.
+# Runs against the AI ask layer to catch regressions when the LLM provider,
+# model, prompt, or schema changes. See docs/EVAL-SPEC.md for the format.
 #
-# Numbers in expectedRows are from the seeded FoodMart HSQL database;
-# they'll be off if the FoodMart schema is rebuilt with different data,
-# in which case rerun the queries manually and update this file.
+# QUERY cases use `referenceQuery` (drift-proof): the NL-generated query is
+# diffed against a trusted reference query's result-set at the SAME moment, so
+# a case stays valid as the underlying data changes — no frozen numbers to
+# rebase when the FoodMart seed (or a customer's warehouse) shifts.
+#
+# NOTE: INSIGHT-intent cases aren't included — INSIGHT routing needs a cellset
+# digest (the on-screen data to analyse), which the eval harness doesn't supply
+# yet; without it the model routes an "analyse this" question to QUERY. Adding a
+# per-case cellsetDigest to EvalCase is a follow-up (see docs/EVAL-SPEC.md).
 
 name: foodmart-sales-evals
 description: >
@@ -22,16 +27,18 @@ cube:
 cases:
 
   # -----------------------------------------------------------------
-  # QUERY intent — routes to emit_query, executes, compares row-set.
+  # QUERY intent, drift-proof — ground truth is a trusted referenceQuery
+  # executed live, diffed against the NL-generated query's result-set.
   # -----------------------------------------------------------------
 
   - name: store-sales-by-country
     question: Show store sales broken down by country.
     expectedIntent: QUERY
-    expectedRows:
-      - {country: "Canada", storeSales:  57197.83}
-      - {country: "Mexico", storeSales: 132720.19}
-      - {country: "USA",    storeSales: 375691.60}
+    referenceQuery:
+      measures:
+        - {name: Store Sales}
+      rows:
+        - {dimension: Store, hierarchy: Stores, level: Store Country}
     tolerance:
       relative: 0.001  # 0.1% — masks warehouse floating-point drift
     orderMatters: false
@@ -39,41 +46,14 @@ cases:
   - name: unit-sales-by-product-family
     question: Break down unit sales by Product Family.
     expectedIntent: QUERY
-    expectedRows:
-      - {productFamily: "Drink",          unitSales:  24597}
-      - {productFamily: "Food",           unitSales: 191940}
-      - {productFamily: "Non-Consumable", unitSales:  50236}
-    orderMatters: false
-
-  # -----------------------------------------------------------------
-  # QUERY intent, DRIFT-PROOF — ground truth is a trusted referenceQuery
-  # executed live, not frozen numbers. The NL answer is diffed against
-  # the reference query's result-set at the same moment, so this case
-  # stays valid as the underlying data changes (a customer's warehouse,
-  # not a static demo). Prefer this over expectedRows for live models.
-  # -----------------------------------------------------------------
-
-  - name: store-sales-by-country-ref
-    question: Show store sales broken down by country.
-    expectedIntent: QUERY
     referenceQuery:
       measures:
-        - {name: Store Sales}
+        - {name: Unit Sales}
       rows:
-        - {dimension: Store, hierarchy: Store, level: Store Country}
+        - {dimension: Product, hierarchy: Products, level: Product Family}
     tolerance:
       relative: 0.001
     orderMatters: false
-
-  # -----------------------------------------------------------------
-  # INSIGHT intent — no new query; markdown must reference key figures.
-  # -----------------------------------------------------------------
-
-  - name: what-drove-sales
-    question: what's driving store sales this quarter?
-    expectedIntent: INSIGHT
-    expectedInsightContains:
-      - Store Sales
 
   # -----------------------------------------------------------------
   # REFUSED intent — off-topic must decline with a matching reason.
