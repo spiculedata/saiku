@@ -80,6 +80,8 @@
 		const ordered = [...rows].reverse();
 		return {
 			...baseOption(),
+			// fixed label column (containLabel off) so labels never bleed off the left edge
+			grid: { top: 16, right: 30, bottom: 30, left: 150, containLabel: false },
 			tooltip: { trigger: 'axis', valueFormatter: (v) => formatValue(Number(v)) },
 			xAxis: {
 				type: 'value',
@@ -93,9 +95,7 @@
 				inverse: true,
 				axisLine: { lineStyle: { color: AXIS_LINE_COLOR } },
 				axisTick: { show: false },
-				// cap the reserved label column so long names truncate cleanly with an
-				// ellipsis instead of bleeding off the left edge of the card
-				axisLabel: { color: TEXT_COLOR, width: 168, overflow: 'truncate', fontSize: 11 }
+				axisLabel: { color: TEXT_COLOR, fontSize: 11, width: 142, overflow: 'truncate' }
 			},
 			series: [
 				{
