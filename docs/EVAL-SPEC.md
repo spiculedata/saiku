@@ -88,10 +88,53 @@ cases:
 | `history`                    | no       | array of `{role, content}` | Prior turns to seed the ask. Empty for single-shot cases.                                    |
 | `expectedIntent`             | no       | string            | `QUERY` \| `INSIGHT` \| `VIEW_CHANGE` \| `REFUSED` (case-insensitive)                             |
 | `expectedRefusalContains`    | no       | string            | Substring the refusal reason must contain. Only meaningful with `expectedIntent: REFUSED`.       |
-| `expectedRows`               | no       | array of maps     | Expected result rows for `QUERY`. See [Row comparison](#row-comparison) below.                   |
+| `expectedRows`               | no       | array of maps     | Expected result rows for `QUERY`, as **frozen literals**. See [Row comparison](#row-comparison). |
+| `referenceQuery`             | no       | object (AiQueryRequest) | A trusted query whose **live** result-set is the ground truth. Drift-proof. See [Reference-query ground truth](#reference-query-ground-truth). Takes precedence over `expectedRows`. |
 | `orderMatters`               | no       | boolean           | Defaults `true`. When `false`, both sides sort by keys before diff.                              |
 | `expectedInsightContains`    | no       | array of strings  | Substrings the insight markdown must contain. Substring match, not exact.                        |
 | `tolerance`                  | no       | `{absolute, relative}` | Numeric tolerance for row comparisons. Both default to `0.0` (exact match).                     |
+
+## Reference-query ground truth
+
+`expectedRows` freezes the answer as literal numbers — which is fine for a
+**static demo cube**, but wrong the moment you point a suite at a customer's
+**live, evolving warehouse**: yesterday's `565238.13` is today's different
+number, and every case false-fails on data drift rather than on a real
+regression.
+
+`referenceQuery` fixes this. Instead of a frozen number, you author the
+**trusted way to answer the question** — a normal AI Query API request
+(measures / rows / columns / filters). At run time the harness executes *both*
+the NL-generated query **and** the reference query against the same cube at the
+same moment, and diffs the two result-sets:
+
+```yaml
+- name: store-sales-by-country
+  question: Show store sales broken down by country.
+  expectedIntent: QUERY
+  referenceQuery:
+    measures:
+      - {name: Store Sales}
+    rows:
+      - {dimension: Store, hierarchy: Store, level: Store Country}
+  tolerance: { relative: 0.001 }
+  orderMatters: false
+```
+
+This is what makes the harness a **live-accuracy monitor**, not just a
+build-time regression gate: the case asks "does the NL query the model
+*generated* return the same answer as the query a human *trusts*?" — which stays
+a meaningful question as the data changes underneath it. The `cube` is optional
+in the block (the suite's cube is used); the reference query runs through the
+exact same convert → execute → flatten pipeline as the NL answer, so the two are
+compared on identical footing.
+
+- **Precedence:** when both `referenceQuery` and `expectedRows` are set, the
+  reference query wins.
+- **Authoring errors are distinct:** a reference query that won't execute is
+  reported on its own `referenceQuery` mismatch path (a suite bug), never
+  conflated with the model producing a wrong answer.
+- **Same tolerance + `orderMatters`** apply to the reference diff.
 
 ## Row comparison
 

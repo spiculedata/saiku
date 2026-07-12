@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.saiku.service.olap.ai.AiCubeRef;
+import org.saiku.service.olap.ai.AiQueryRequest;
 
 /**
  * Loads an {@link EvalSuite} from its on-disk YAML form (saiku#1424).
@@ -121,6 +122,7 @@ public final class EvalYamlReader {
 
         List<Map<String, String>> history = readHistory(node.get("history"), source, idx);
         List<Map<String, Object>> expectedRows = readRows(node.get("expectedRows"), source, idx);
+        AiQueryRequest referenceQuery = readReferenceQuery(node.get("referenceQuery"), source, idx);
         List<String> expectedInsightContains = readStringArray(node.get("expectedInsightContains"), source, idx);
         EvalTolerance tolerance = readTolerance(node.get("tolerance"), source, idx);
 
@@ -131,9 +133,33 @@ public final class EvalYamlReader {
                 expectedIntent,
                 expectedRefusalContains,
                 expectedRows,
+                referenceQuery,
                 orderMatters,
                 expectedInsightContains,
                 tolerance);
+    }
+
+    /**
+     * Parse a case's optional {@code referenceQuery} block into an {@link AiQueryRequest}. The block
+     * mirrors the AI Query API request shape (measures / rows / columns / filters); its {@code cube}
+     * is optional here because the runner falls back to the suite's cube. Deserialisation failures
+     * surface as {@code TYPE_MISMATCH} so a malformed reference query is reported as an authoring
+     * error, not conflated with a wrong LLM answer.
+     */
+    private static AiQueryRequest readReferenceQuery(JsonNode q, String source, int idx) throws EvalParseException {
+        if (q == null || q.isNull()) return null;
+        if (!q.isObject()) {
+            throw new EvalParseException(
+                    "TYPE_MISMATCH", source, "cases[" + idx + "].referenceQuery must be a mapping");
+        }
+        try {
+            return YAML.treeToValue(q, AiQueryRequest.class);
+        } catch (IOException e) {
+            throw new EvalParseException(
+                    "TYPE_MISMATCH",
+                    source,
+                    "cases[" + idx + "].referenceQuery is not a valid query: " + e.getMessage());
+        }
     }
 
     private static List<Map<String, String>> readHistory(JsonNode h, String source, int idx) throws EvalParseException {

@@ -7,6 +7,7 @@ package org.saiku.service.olap.ai.eval;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.saiku.service.olap.ai.AiQueryRequest;
 
 /**
  * One ground-truth case in an {@link EvalSuite} (saiku#1424).
@@ -37,7 +38,14 @@ import java.util.Objects;
  * @param expectedRefusalContains substring the refusal reason must contain. Only meaningful with
  *     {@code expectedIntent == "REFUSED"}. Null skips the check.
  * @param expectedRows expected result rows for QUERY cases. Each row is a map from column key to
- *     expected value (numeric or string). Null skips the check.
+ *     expected value (numeric or string). Null skips the check. Frozen literals — correct only for
+ *     a static snapshot of the cube. Use {@link #referenceQuery()} instead for live/evolving data.
+ * @param referenceQuery a trusted "known-good" query whose live result-set becomes the ground
+ *     truth for a QUERY case — the drift-proof alternative to {@link #expectedRows()}. The runner
+ *     executes it against the same live cube at the same moment as the NL-generated query and
+ *     diffs the two result-sets, so the case stays valid as the underlying data changes (a
+ *     customer's warehouse, not a frozen demo). Takes precedence over {@code expectedRows} when
+ *     both are set. Null skips reference-query comparison.
  * @param orderMatters if true (default), rows must match in order. If false, rows are sorted by
  *     their keys before diff — useful when the order isn't semantically meaningful.
  * @param expectedInsightContains list of substrings that must appear in the insight markdown.
@@ -52,6 +60,7 @@ public record EvalCase(
         String expectedIntent,
         String expectedRefusalContains,
         List<Map<String, Object>> expectedRows,
+        AiQueryRequest referenceQuery,
         boolean orderMatters,
         List<String> expectedInsightContains,
         EvalTolerance tolerance) {
@@ -75,6 +84,7 @@ public record EvalCase(
         return expectedIntent != null
                 || expectedRefusalContains != null
                 || (expectedRows != null && !expectedRows.isEmpty())
+                || referenceQuery != null
                 || (expectedInsightContains != null && !expectedInsightContains.isEmpty());
     }
 }
