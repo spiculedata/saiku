@@ -166,6 +166,35 @@ export const adminEvals = {
     get<EvalTrendPoint[]>(`/ai-evals/${encodeURIComponent(suite)}/trend?limit=${limit}`),
 };
 
+/**
+ * Agent Spaces admin CRUD (saiku#1440). Reads/writes the full persona (system prompt + cube
+ * allowlist included, unlike the public /ai/spaces catalogue) so the admin panel can author them
+ * without hand-editing JSON.
+ */
+export interface AgentSpaceCubeRef {
+  connectionName: string;
+  catalog: string;
+  schema: string;
+  cubeName: string;
+}
+
+export interface AgentSpace {
+  id: string;
+  name: string;
+  description?: string;
+  systemPrompt?: string;
+  cubeAllowlist: AgentSpaceCubeRef[];
+  skillAllowlist: string[];
+  suggestedPrompts: string[];
+}
+
+export const adminAgentSpaces = {
+  list: () => get<AgentSpace[]>("/agent-spaces"),
+  errors: () => get<Array<{ source: string; code: string; message: string }>>("/agent-spaces/errors"),
+  save: (space: AgentSpace) => json<AgentSpace>("PUT", `/agent-spaces/${encodeURIComponent(space.id)}`, space),
+  remove: (id: string) => json<null>("DELETE", `/agent-spaces/${encodeURIComponent(id)}`),
+};
+
 export async function getVersion(): Promise<string> {
   const res = await fetch(`${BASE}/version`, { credentials: "include" });
   if (!res.ok) throw new Error(`version -> ${res.status}`);

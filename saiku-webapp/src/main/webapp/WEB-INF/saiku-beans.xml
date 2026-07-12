@@ -441,6 +441,12 @@
         <constructor-arg type="java.lang.String" value="${saiku.home:./saiku-home}/agent-spaces"/>
     </bean>
 
+    <!-- saiku#1440: admin CRUD over Agent Spaces (GET/PUT/DELETE /saiku/admin/agent-spaces).
+         Writes JSON personas through the registry (which rescans on write). Admin-gated. -->
+    <bean id="agentSpaceAdminResource" class="org.saiku.web.rest.resources.AgentSpaceAdminResource">
+        <property name="registry" ref="agentSpaceRegistryBean"/>
+    </bean>
+
     <!-- ====================================================================
          MCP streamable-http endpoint (org.saiku.web.rest.resources.mcp.McpResource
          @ /saiku/api/mcp). Native Jersey resource that speaks JSON-RPC 2.0
