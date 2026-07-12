@@ -36,18 +36,51 @@ export function SaikuEmbed(props) {
     render,
     mode,
     height,
+    space,
+    filter,
+    theme,
     style,
     className,
     id,
     "data-testid": dataTestId,
+    onLoad,
+    onError,
+    onSelect,
+    onAiQuery,
   } = props;
+
+  const ref = React.useRef(null);
+
+  // The custom element emits CustomEvents (saiku:load / saiku:error /
+  // saiku:select / saiku:ai-query) that React props can't bind directly — a
+  // JSX `onLoad` doesn't map to the colon-namespaced DOM event. Attach the
+  // handlers imperatively so consumers get idiomatic callback props. Each
+  // handler is forwarded the event's `detail` payload.
+  React.useEffect(() => {
+    const node = ref.current;
+    if (!node) return undefined;
+    const pairs = [
+      ["saiku:load", onLoad],
+      ["saiku:error", onError],
+      ["saiku:select", onSelect],
+      ["saiku:ai-query", onAiQuery],
+    ].filter(([, fn]) => typeof fn === "function");
+    const listeners = pairs.map(([type, fn]) => {
+      const l = (e) => fn(e.detail);
+      node.addEventListener(type, l);
+      return [type, l];
+    });
+    return () => {
+      for (const [type, l] of listeners) node.removeEventListener(type, l);
+    };
+  }, [onLoad, onError, onSelect, onAiQuery]);
 
   // React 18+ passes string attributes verbatim to custom elements. The
   // one gotcha is that undefined-valued attrs would land as the string
   // "undefined" — hence the explicit spread guarded by each present
   // value. Empty strings are legal (server="" = same-origin) so we test
   // for undefined specifically rather than falsy.
-  const attrs = {};
+  const attrs = { ref };
   if (server !== undefined) attrs.server = server;
   if (path !== undefined) attrs.path = path;
   if (kind !== undefined) attrs.kind = kind;
@@ -55,6 +88,11 @@ export function SaikuEmbed(props) {
   if (render !== undefined) attrs.render = render;
   if (mode !== undefined) attrs.mode = mode;
   if (height !== undefined) attrs.height = height;
+  if (space !== undefined) attrs.space = space;
+  // `filter` is a JSON array on the wire; accept either a ready string or an
+  // array/object and serialise it so React consumers can pass a value.
+  if (filter !== undefined) attrs.filter = typeof filter === "string" ? filter : JSON.stringify(filter);
+  if (theme !== undefined) attrs.theme = theme;
   if (id !== undefined) attrs.id = id;
   if (dataTestId !== undefined) attrs["data-testid"] = dataTestId;
   if (style !== undefined) attrs.style = style;

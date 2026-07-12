@@ -84,6 +84,57 @@ scope. Requires an AI-kind token (see "Minting an AI token" below).
 ></saiku-embed>
 ```
 
+### A single KPI tile (v3.20, `render="kpi"`)
+
+The most common embed shape — one governed figure rendered large. Derives its
+value from the same records response as `render="table"`, so it needs no server
+change. Point it at a saved query whose last measure is the headline number;
+when the query carries a prior measure column, a delta chip is shown.
+
+```html
+<saiku-embed
+  server="..."
+  token="..."
+  path="homes/admin/Examples/NetRevenue.saiku"
+  render="kpi"
+  height="160px"
+></saiku-embed>
+```
+
+### A saved query, sliced at embed time (v3.20, `filter`)
+
+Pass slicer overrides as a JSON array. They ride the same validated slicer path
+the dashboard filter tiles use — the saved query's cube binding and axes are
+untouched, so a host can parameterise an embed without re-authoring the query.
+
+```html
+<saiku-embed
+  server="..."
+  token="..."
+  path="homes/admin/Examples/Sales.saiku"
+  filter='[{"dimension":"Time","level":"Year","members":["[Time].[2024]"]}]'
+></saiku-embed>
+```
+
+### A persona-scoped AI ask (v3.20, `space`)
+
+Add a `space` to a `kind="ai"` embed to scope the assistant to an admin-authored
+[Agent Space](../../../docs/AGENT-SPACES-SPEC.md) persona. The persona's system
+prompt, skill filter, and cube allowlist apply server-side. The cube stays
+pinned by the token, so a space can only **narrow** what the guest reaches — if
+the space's allowlist excludes the pinned cube, the ask fails closed.
+
+```html
+<saiku-embed
+  server="..."
+  token="..."
+  kind="ai"
+  path="foodmart/FoodMart/FoodMart/Sales"
+  space="foodmart-sales-analyst"
+  height="240px"
+></saiku-embed>
+```
+
 ### A saved dashboard
 
 ```html
@@ -117,13 +168,38 @@ If the resource is marked publicly embeddable on the server
 | `path`    | _(required)_| `kind=query`: saved query path (`.saiku`) — `kind=dashboard`: dashboard path (`.saikudash`) — `kind=ai`: cube ref `connection/catalog/schema/cubeName` |
 | `kind`    | `query`     | `query`, `dashboard`, or `ai`                                          |
 | `token`   | _(none)_    | Embed token from `POST /saiku/api/embed/tokens`. Omit for public reads |
-| `render`  | `table`     | For `kind=query`: `table`, `matrix`, or `chart`                        |
+| `render`  | `table`     | For `kind=query`: `table`, `matrix`, `chart`, or `kpi` (v3.20)         |
 | `mode`    | `bar`       | For `render=chart`: `bar`, `line`, or `pie`                            |
 | `height`  | `400px`     | CSS height of the rendered surface                                     |
+| `space`   | _(none)_    | For `kind=ai`: Agent Space persona id — scopes the ask server-side (v3.20) |
+| `filter`  | _(none)_    | For `kind=query`: JSON array of slicer overrides applied at embed time (v3.20) |
+| `theme`   | _(light)_   | `light`, `dark`, or `auto` (follow `prefers-color-scheme`) (v3.20)     |
 
 The component re-renders whenever an attribute changes, so frameworks
 binding state to attrs (React's JSX, Vue's `:server="..."`, etc.) just
 work.
+
+## Events (v3.20)
+
+The element emits namespaced `CustomEvent`s so the host page can react to what
+happens inside the embed. All bubble and are `composed`, so a listener on the
+`<saiku-embed>` element receives them:
+
+| Event             | `detail`                          | Fires when                              |
+|-------------------|-----------------------------------|-----------------------------------------|
+| `saiku:load`      | `{ kind, rows }`                  | a query / matrix / kpi surface loads    |
+| `saiku:error`     | `{ message }`                     | a query load fails (friendly message)   |
+| `saiku:select`    | `{ row }`                         | a table row is clicked (`render=table`) |
+| `saiku:ai-query`  | `{ question, degraded }`          | an AI ask resolves (`kind=ai`)          |
+
+```js
+const el = document.querySelector("saiku-embed");
+el.addEventListener("saiku:load", (e) => console.log("loaded", e.detail.rows, "rows"));
+el.addEventListener("saiku:select", (e) => showDetail(e.detail.row));
+```
+
+In React (via `@concepttocloud/saiku-embed-react`) the same events are exposed
+as `onLoad` / `onError` / `onSelect` / `onAiQuery` callback props.
 
 ## Server-side: minting a token
 
@@ -200,8 +276,14 @@ curl -X DELETE 'https://YOUR-SAIKU/rest/saiku/api/embed/public?kind=query&path=s
 
 The embed lives inside an
 [open shadow root](https://developer.mozilla.org/docs/Web/API/ShadowRoot),
-so host page CSS can't leak in and vice versa. To recolour the embed,
-set CSS variables on the host page:
+so host page CSS can't leak in and vice versa.
+
+For a quick dark surface, set `theme="dark"` (or `theme="auto"` to follow the
+viewer's `prefers-color-scheme`) — it swaps the whole palette without the host
+having to set each variable (v3.20). Leaving `theme` unset keeps the original
+light palette, so existing embeds are unchanged.
+
+To fine-tune individual colours, set CSS variables on the host page:
 
 ```css
 saiku-embed {
