@@ -207,6 +207,28 @@ FAIL: top-3-product-families (1024ms, intent=QUERY, model=claude-sonnet-4-6)
 Rendered via [`EvalReportWriter.toText`](../saiku-core/saiku-service/src/main/java/org/saiku/service/olap/ai/eval/EvalReportWriter.java).
 Also available as pretty-printed JSON via `toJson` for CI archives.
 
+## Running a suite: the `saiku eval` CLI (saiku#1478)
+
+The out-of-process runner drives a **running** server so the sweep executes inside
+a real request — where the session-scoped query service resolves and MDX runs
+under the caller's data scope (a background cron thread can't do this). It POSTs
+to `POST /rest/saiku/admin/ai-evals/run` (admin-gated, HTTP Basic), which runs
+every suite in `saiku-home/evals/`, persists each scored run to the H2 result
+store (surfaced by the admin **Agent evals** dashboard), and returns the tallies.
+The CLI prints them and sets its exit code so CI can gate on regressions:
+
+```bash
+# Nightly CI job against a running server:
+java -jar saiku-<version>.jar eval \
+  --server https://saiku.example.com --username admin --password ****
+# exit 0 = all green · 1 = a regression · 2 = couldn't reach / auth / run
+# --no-fail-on-regression for report-only; --timeout-minutes for slow sweeps
+```
+
+The same `POST …/ai-evals/run` endpoint backs a "Run now" action and can be
+`curl`ed from any external scheduler — the sanctioned way to populate accuracy
+history on a cadence without an in-server cron.
+
 ## Error codes
 
 Structured YAML-parse failures surface with a stable code so CI can
@@ -221,16 +243,23 @@ a wrong answer":
 | `TYPE_MISMATCH`     | A field has the wrong type (e.g. `cases` is a mapping, not an array).    |
 | `INVALID_TOLERANCE` | `tolerance.absolute` or `tolerance.relative` is negative.                |
 
+## Shipped since v1
+
+- **REST endpoint to trigger runs** — `POST /rest/saiku/admin/ai-evals/run`
+  (saiku#1478). Runs the sweep in-request and persists to the store.
+- **`saiku eval` CLI subcommand** — the out-of-process runner (see above).
+- **Result store + accuracy dashboard** — H2 (`EvalResultStore`) + the admin
+  **Agent evals** trend view (saiku#1424 Phase 2/3).
+- **Reference-query ground truth** — drift-proof, tracks live data.
+
 ## Non-goals for v1
 
-- **REST endpoint** to trigger runs — the runner is programmatic in v1.
-  CLI + REST wrappers are a follow-up.
-- **`saiku eval` CLI subcommand** — deferred.
 - **Recording adapter** — an adapter that writes each live response to
   a fixture file so the fixture adapter can replay deterministically
   without spending LLM budget. Design ready; implementation deferred.
 - **Cross-run comparison** — "is today's eval worse than yesterday's?"
-  Requires report archiving. Follow-up.
+  The store + trend chart now expose the history; an automated
+  worse-than-baseline gate is still a follow-up.
 - **Structural diff on the emitted AiQueryRequest** (as opposed to the
   executed row-set) — multiple structurally-different requests can
   produce the same rows, so row-diff is a better ground truth.

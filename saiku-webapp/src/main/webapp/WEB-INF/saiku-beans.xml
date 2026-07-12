@@ -375,8 +375,17 @@
         <constructor-arg value="${saiku.home:./saiku-home}"/>
     </bean>
 
-    <bean id="aiEvalResource" class="org.saiku.web.rest.resources.AiEvalResource">
+    <!-- Request-scoped (like aiQueryResource) so POST /run can resolve the session-scoped
+         thinQueryBean and execute the eval sweep under the admin's data scope. The GET reads
+         just use the singleton store. The out-of-process `saiku eval` CLI (saiku#1478) POSTs
+         to /run and gates CI on the returned tallies. -->
+    <bean id="aiEvalResource" scope="request" class="org.saiku.web.rest.resources.AiEvalResource">
+        <aop:scoped-proxy/>
         <property name="store" ref="evalResultStoreBean"/>
+        <property name="askService" ref="aiAskServiceBean"/>
+        <property name="cubeMetadataService" ref="aiCubeMetadataServiceBean"/>
+        <property name="thinQueryService" ref="thinQueryBean"/>
+        <property name="evalsDir" value="${saiku.home:./saiku-home}/evals"/>
     </bean>
 
     <!-- ====================================================================
