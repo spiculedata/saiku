@@ -1,14 +1,19 @@
 <script lang="ts">
 	import { base } from '$app/paths';
 	const pillars = ['The Web', 'Reveal', 'The Deck', 'Ask', 'Signals', 'Borderlines', 'Cases'];
+	const routes: Record<string, string> = { 'The Deck': '/deck', Signals: '/signals' };
 	let { active = '' }: { active?: string } = $props();
+
+	function pillarHref(pillar: string): string {
+		return `${base}${routes[pillar] ?? '/'}`;
+	}
 </script>
 
 <header class="bar">
 	<a class="logo" href="{base}/">ENIGMA<span class="by">Benafide</span></a>
 	<a class="search" href="{base}/">⌕&nbsp; Investigate a company or person…<span class="k">/</span></a>
 	<nav class="nav">
-		{#each pillars as p}<a class:on={p === active} href={p === 'The Deck' ? `${base}/deck` : `${base}/`}>{p}</a>{/each}
+		{#each pillars as p}<a class:on={p === active} href={pillarHref(p)}>{p}</a>{/each}
 	</nav>
 </header>
 

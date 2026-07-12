@@ -50,6 +50,37 @@ export interface OwnershipGraph {
 	hasCycle: boolean;
 }
 
+/** A high-risk company on the Signals leaderboard. */
+export interface RiskEntity {
+	id: string;
+	name: string | null;
+	jurisdiction: string | null;
+	riskScore: number | null;
+}
+/** One screening hit — `topics` is the split-out list of matched categories. */
+export interface Flag {
+	name: string | null;
+	topics: string[];
+	matchType: string | null;
+	status: string | null;
+}
+export interface TopicCount {
+	topic: string;
+	count: number;
+}
+export interface SignalsStats {
+	totalFlags: number;
+	sanctionFlags: number;
+	highRiskEntities: number;
+	distinctTopics: number;
+}
+export interface Signals {
+	stats: SignalsStats;
+	topRisk: RiskEntity[];
+	flags: Flag[];
+	topics: TopicCount[];
+}
+
 const CONNECTION = 'unknown_Benafide';
 const MODEL = 'Benafide';
 const OSSIE = '/rest/saiku/api/ai/ossie';
@@ -103,4 +134,14 @@ export async function ossieGraph(id: string, depth = 4, o: Opts = {}): Promise<O
 	const r = await f(url, { headers: { accept: 'application/json', authorization: authHeader(o) } });
 	if (!r.ok) return null;
 	return (await r.json()) as OwnershipGraph;
+}
+
+/** Signals radar — screening stats, feed, category tally + risk leaderboard — via the Ossie model. */
+export async function ossieSignals(flags = 60, risk = 20, o: Opts = {}): Promise<Signals | null> {
+	const f = o.fetch ?? fetch;
+	const base = o.base ?? config.saikuApi;
+	const url = `${base}${OSSIE}/signals/${CM}?flags=${flags}&risk=${risk}`;
+	const r = await f(url, { headers: { accept: 'application/json', authorization: authHeader(o) } });
+	if (!r.ok) return null;
+	return (await r.json()) as Signals;
 }
