@@ -81,6 +81,26 @@ public class EvalResultStoreTest {
     }
 
     @Test
+    public void listsDistinctSuitesAlphabetically() {
+        EvalResultStore store = memStore("suites");
+        store.save(report("beta", 1, 0, 0), "c", Instant.parse("2026-07-12T10:00:00Z"));
+        store.save(report("alpha", 1, 0, 0), "c", Instant.parse("2026-07-12T10:00:00Z"));
+        store.save(report("alpha", 1, 0, 0), "c", Instant.parse("2026-07-12T11:00:00Z"));
+        assertEquals(List.of("alpha", "beta"), store.suites());
+    }
+
+    @Test
+    public void latestRunReturnsMostRecentOrNull() {
+        EvalResultStore store = memStore("latest");
+        assertEquals(null, store.latestRun("nope"));
+        store.save(report("s", 1, 0, 0), "c", Instant.parse("2026-07-10T10:00:00Z"));
+        store.save(report("s", 3, 0, 0), "c", Instant.parse("2026-07-12T10:00:00Z"));
+        EvalResultStore.RunSummary latest = store.latestRun("s");
+        assertEquals(Instant.parse("2026-07-12T10:00:00Z"), latest.startedAt());
+        assertEquals(3, latest.passed());
+    }
+
+    @Test
     public void isolatesRunsBySuite() {
         EvalResultStore store = memStore("bysuite");
         store.save(report("alpha", 1, 0, 0), "c", Instant.parse("2026-07-12T10:00:00Z"));
