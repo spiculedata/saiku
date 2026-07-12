@@ -6,7 +6,8 @@
 		Signals: '/signals',
 		Borderlines: '/borderlines',
 		Ask: '/ask',
-		Cases: '/cases'
+		Cases: '/cases',
+		Reveal: '/reveal'
 	};
 	let { active = '' }: { active?: string } = $props();
 
