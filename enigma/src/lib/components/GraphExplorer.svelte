@@ -54,8 +54,8 @@
 				'text-valign': 'bottom',
 				'text-halign': 'center',
 				'text-margin-y': 7,
-				'text-wrap': 'wrap',
-				'text-max-width': '150px',
+				'text-wrap': 'ellipsis',
+				'text-max-width': '128px',
 				'text-background-color': '#08090c',
 				'text-background-opacity': 0.82,
 				'text-background-padding': '3px',
@@ -120,10 +120,12 @@
 		let disposed = false;
 
 		(async () => {
-			const [{ default: cytoscape }, r] = await Promise.all([
+			const [{ default: cytoscape }, { default: fcose }, r] = await Promise.all([
 				import('cytoscape'),
+				import('cytoscape-fcose'),
 				fetch(`${base}/api/graph/${encodeURIComponent(rootId)}?depth=${DEFAULT_DEPTH}`)
 			]);
+			cytoscape.use(fcose);
 			if (disposed) return;
 			if (!r.ok) {
 				failed = true;
@@ -142,20 +144,26 @@
 				elements: toElements(graph),
 				style: stylesheet,
 				layout: {
-					name: 'cose',
+					name: 'fcose',
 					animate: false,
+					randomize: false,
+					quality: 'proof',
+					nodeDimensionsIncludeLabels: true,
+					nodeSeparation: 160,
+					idealEdgeLength: 190,
 					padding: 60,
-					nodeRepulsion: 16000,
-					idealEdgeLength: 140,
-					nodeOverlap: 24,
-					componentSpacing: 120
-				},
-				minZoom: 0.3,
-				maxZoom: 2.5,
-				wheelSensitivity: 0.2
+					gravity: 0.2
+				} as unknown as import('cytoscape').LayoutOptions,
+				minZoom: 0.25,
+				maxZoom: 1.6
 			});
-			// fit the whole web into view with room for the below-node labels
-			cy.fit(undefined, 55);
+			// Fit the whole web in, then cap the zoom so a small graph isn't blown
+			// up to max (which made the below-node labels huge and overlap).
+			cy.fit(undefined, 60);
+			if (cy.zoom() > 0.9) {
+				cy.zoom(0.9);
+				cy.center();
+			}
 		})().catch(() => {
 			if (!disposed) {
 				failed = true;
