@@ -636,20 +636,68 @@ function st(){ const t=$('#thread'); t.scrollTop=t.scrollHeight; }
 function fmt(s){ return esc(s).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/(\$[\d,.]+[Mk]?|\b\d+(?:\.\d+)?%|\b\d+k\b|\bdeciles? \d+(?:–\d+)?)/g,'<span class="fig">$1</span>').replace(/\n/g,'<br>'); }
 function pick(q){ return SCRIPTS.find(s=>s.m.test(q))||DEFAULT_S; }
 
+/* Live ask through the governed "AQVIRA Rx Analyst" Agent Space. The space
+ * enforces the guardrails server-side: cubeAllowlist pins it to Pharma Rx (any
+ * other cube → 403) and its system prompt refuses anything not answerable from
+ * this dashboard's Rx data. Returns null on degrade / error / not-configured so
+ * the caller falls back to the scripted demo answer and the widget never breaks. */
+const AI_SPACE='pharma-rx-analyst';
+async function liveAsk(q){
+  await ensureSession();
+  const r=await fetch((CFG.base||'')+'/rest/saiku/api/ai/spaces/'+AI_SPACE+'/ask',{method:'POST',credentials:'include',
+    headers:csrf({'Content-Type':'application/json'}),
+    body:JSON.stringify({cube:CFG.cube,question:q,history:history.slice(-8).map(m=>({role:m.role,content:m.content}))})});
+  if(!r.ok) return null;
+  const d=await r.json();
+  if(d.degraded) return null;               // provider off / not configured → scripted fallback
+  return d;
+}
+// Turn records from a QUERY-intent answer into bars for the main chart.
+function recordsToBars(data){
+  if(!data||!data.length) return null;
+  const cols=Object.keys(data[0]);
+  const measCol=[...cols].reverse().find(c=>data.some(r=>r[c]&&typeof r[c]==='object'&&typeof r[c].value==='number'));
+  const catCol=cols.find(c=>typeof data[0][c]==='string');
+  if(!catCol||!measCol) return null;
+  return data.map(r=>({name:String(r[catCol]),value:cellNum(r[measCol])})).filter(x=>x.value).sort((a,b)=>b.value-a.value).slice(0,8);
+}
+function answerFrom(d){
+  const text=(d.insight&&d.insight.markdown)||(d.viewChange&&d.viewChange.reason)||'';
+  const bars=(d.response&&d.response.data)?recordsToBars(d.response.data):null;
+  return {text: text || (bars&&bars.length?'Here’s the breakdown from the live Rx model.':''), bars};
+}
+function droveTag(t){ return `<div class="drove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>${t}</div>`; }
+const DECLINE="I can only answer questions about this dashboard's Rx claims data — try asking about net revenue, payers, brands, prescribers, geographies, or trends.";
+
 async function ask(q){
   if(busy||!q.trim()) return; busy=true; $('#send').disabled=true;
   addUser(q); history.push({role:'user',content:q});
   const b=addBot(), mdl=b.parentNode.querySelector('#mdl');
-  const s=pick(q); mdl.textContent=s.model;
-  await sleep(300); b.innerHTML='';
+  b.innerHTML='<span class="thinking"><i></i><i></i><i></i></span>'; st();
+
+  // Try the governed live space first; fall back to the scripted demo answer.
+  let live=null; try{ live=await liveAsk(q); }catch{ live=null; }
+  let text, model, driveBars=null, driveTrend=false, tag='';
+  if(live){
+    const a=answerFrom(live);
+    text=a.text||DECLINE; model=live.model||'claude'; driveBars=a.bars;
+    if(driveBars&&driveBars.length) tag='Queried the live Rx model';
+  }else{
+    const s=pick(q); text=s.p; model=s.model;
+    if(s.bars){ driveBars=s.bars(); tag='Showed the portfolio mix'; }
+    else if(s.view==='trend'){ driveTrend=true; }
+    else if(s.drove){ tag=s.drove; }
+  }
+  mdl.textContent=model;
+  b.innerHTML='';
   let acc='';
-  for(const w of s.p.split(/(\s+)/)){ acc+=w; b.innerHTML=fmt(acc)+'<span class="caret"></span>'; st(); await sleep(16+Math.random()*30); }
-  let html=fmt(acc); if(s.drove) html+=`<div class="drove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>${s.drove}</div>`;
-  b.innerHTML=html; history.push({role:'assistant',content:acc});
-  // drive the dashboard
+  for(const w of text.split(/(\s+)/)){ acc+=w; b.innerHTML=fmt(acc)+'<span class="caret"></span>'; st(); await sleep(14+Math.random()*26); }
+  let html=fmt(acc);
+  // drive the dashboard when the answer produced a breakdown
   let drove=false;
-  if(s.bars){ barData=s.bars(); mainMode='custom'; renderMain(); flashBy(); setMain('Ask AQVIRA result', q); drove=true; }
-  else if(s.view==='trend'){ mainMode='ta'; renderMain(); flashBy(); drove=true; }
+  if(driveBars&&driveBars.length){ barData=driveBars; mainMode='custom'; renderMain(); flashBy(); setMain('Ask AQVIRA result', q); drove=true; if(tag) html+=droveTag(tag); }
+  else if(driveTrend){ mainMode='ta'; renderMain(); flashBy(); drove=true; }
+  b.innerHTML=html; history.push({role:'assistant',content:acc});
   st(); busy=false; $('#send').disabled=false;
   // on mobile the sheet covers the dashboard — drop it so the reshaped view is visible
   if(drove && window.matchMedia('(max-width:820px)').matches){
