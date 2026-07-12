@@ -215,6 +215,13 @@ public class AiQueryResource {
         this.cubeMetadataService = svc;
     }
 
+    /** saiku#scenario — raw olap4j connection for Mondrian write-back (what-if) scenarios. */
+    private org.saiku.service.olap.OlapDiscoverService olapDiscoverService;
+
+    public void setOlapDiscoverService(org.saiku.service.olap.OlapDiscoverService s) {
+        this.olapDiscoverService = s;
+    }
+
     public void setAsyncQueryService(AsyncQueryService a) {
         this.asyncQueryService = a;
     }
@@ -2410,6 +2417,203 @@ public class AiQueryResource {
 
     private static String safe(String s) {
         return s == null ? "" : s;
+    }
+
+    /**
+     * saiku#scenario — Mondrian write-back "what-if". Given a level and a target member on that
+     * level, write a new value for one member's measure cell into a fresh Mondrian scenario
+     * ({@code cell.setValue(v, allocationPolicy)}), then re-run the same query under the scenario so
+     * the engine re-allocates the delta and every sibling/total reflects it. Returns actual vs
+     * what-if per member. The cube must be declared {@code enableScenarios="true"}.
+     *
+     * <p>Body: {@code {connection, cube, level, measure, member, value, policy?}} where
+     * {@code level}/{@code member} are MDX unique names and {@code value} is the new absolute
+     * measure value for {@code member}. {@code policy} defaults to {@code EQUAL_ALLOCATION}.
+     */
+    @POST
+    @Path("/scenario/whatif")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response scenarioWhatIf(java.util.Map<String, Object> body) {
+        aiPolicyGuard.assertCanSend(org.saiku.service.olap.ai.AiDataKind.AGGREGATED_RESULT_VALUES);
+        if (body == null) return badRequest("body", "request body required", null);
+        String connection = str(body.get("connection"));
+        String cube = str(body.get("cube"));
+        String level = str(body.get("level"));
+        String measure = str(body.get("measure"));
+        String member = str(body.get("member"));
+        Object rawValue = body.get("value");
+        if (connection == null) return badRequest("connection", "connection is required", null);
+        if (cube == null || level == null || measure == null || member == null || rawValue == null) {
+            return badRequest("body", "cube, level, measure, member and value are required", null);
+        }
+        double newValue;
+        try {
+            newValue = Double.parseDouble(String.valueOf(rawValue));
+        } catch (NumberFormatException e) {
+            return badRequest("value", "value must be numeric", null);
+        }
+        org.olap4j.AllocationPolicy policy;
+        try {
+            policy = org.olap4j.AllocationPolicy.valueOf(
+                    str(body.get("policy")) == null
+                            ? "EQUAL_ALLOCATION"
+                            : str(body.get("policy")).toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            policy = org.olap4j.AllocationPolicy.EQUAL_ALLOCATION;
+        }
+
+        org.olap4j.OlapConnection con = null;
+        org.olap4j.Scenario prior = null;
+        try {
+            con = olapDiscoverService.getNativeConnection(connection);
+            prior = con.getScenario();
+            org.olap4j.Scenario scenario = con.createScenario();
+            con.setScenario(scenario);
+            // The query MUST be scoped to the scenario member in the WHERE clause, or it just
+            // reads actuals — the write-back lives on [Scenario].[<id>].
+            String mdx = "SELECT {[Measures].[" + measure + "]} ON COLUMNS, " + level
+                    + ".Members ON ROWS FROM [" + cube + "] WHERE [Scenario].[Scenario].[" + scenario.getId()
+                    + "]";
+            log.info("Scenario what-if MDX: {}", mdx);
+            try (org.olap4j.OlapStatement st = con.createStatement()) {
+                // 1) actuals under the (empty) scenario
+                org.olap4j.CellSet actual = st.executeOlapQuery(mdx);
+                java.util.List<org.olap4j.Position> rows =
+                        actual.getAxes().get(1).getPositions();
+                java.util.List<java.util.Map<String, Object>> out = new java.util.ArrayList<>();
+                int targetRow = -1;
+                for (int i = 0; i < rows.size(); i++) {
+                    org.olap4j.metadata.Member m = rows.get(i).getMembers().get(0);
+                    double a = cellDouble(actual.getCell(
+                            actual.getAxes().get(0).getPositions().get(0), rows.get(i)));
+                    java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+                    row.put("member", m.getUniqueName());
+                    row.put("caption", m.getCaption());
+                    row.put("actual", a);
+                    out.add(row);
+                    if (m.getUniqueName().equals(member)) targetRow = i;
+                }
+                if (targetRow < 0) {
+                    return badRequest(
+                            "member",
+                            "member not found on the level",
+                            out.stream().map(r -> (String) r.get("member")).toList());
+                }
+                // Secondary breakdowns (payer type + month). Capture the portfolio actuals AND
+                // the changed member's OWN mix now (scenario still empty). Mondrian's scenario
+                // re-allocation reflects in the write-back's own dimension but not in
+                // cross-dimension aggregates, so we distribute the portfolio delta across payer /
+                // month in proportion to the changed member's mix — which is exactly where the
+                // re-allocated value lands.
+                String payerLevel = str(body.get("payerLevel"));
+                String trendLevel = str(body.get("trendLevel"));
+                String memberSlicer = "(" + member + ")";
+                java.util.LinkedHashMap<String, Double> payerAct =
+                        payerLevel == null ? null : queryLevelAgg(st, measure, payerLevel, cube, null);
+                java.util.LinkedHashMap<String, Double> payerMix =
+                        payerLevel == null ? null : queryLevelAgg(st, measure, payerLevel, cube, memberSlicer);
+                java.util.LinkedHashMap<String, Double> trendAct =
+                        trendLevel == null ? null : queryLevelAgg(st, measure, trendLevel, cube, null);
+                java.util.LinkedHashMap<String, Double> trendMix =
+                        trendLevel == null ? null : queryLevelAgg(st, measure, trendLevel, cube, memberSlicer);
+
+                // 2) write the new value into the scenario (engine re-allocates the delta)
+                actual.getCell(actual.getAxes().get(0).getPositions().get(0), rows.get(targetRow))
+                        .setValue(newValue, policy);
+
+                // 3) re-run the main breakdown under the scenario — reflects the write-back
+                org.olap4j.CellSet whatif = st.executeOlapQuery(mdx);
+                java.util.List<org.olap4j.Position> wrows =
+                        whatif.getAxes().get(1).getPositions();
+                double actualTotal = 0, whatifTotal = 0;
+                for (int i = 0; i < wrows.size(); i++) {
+                    double w = cellDouble(whatif.getCell(
+                            whatif.getAxes().get(0).getPositions().get(0), wrows.get(i)));
+                    out.get(i).put("whatif", w);
+                    actualTotal += (double) out.get(i).get("actual");
+                    whatifTotal += w;
+                }
+                double delta = whatifTotal - actualTotal;
+                java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
+                resp.put("measure", measure);
+                resp.put("policy", policy.name());
+                resp.put("member", member);
+                resp.put("rows", out);
+                resp.put("actualTotal", actualTotal);
+                resp.put("whatifTotal", whatifTotal);
+                if (payerAct != null) resp.put("payer", distributeDelta(payerAct, payerMix, delta));
+                if (trendAct != null) resp.put("trend", distributeDelta(trendAct, trendMix, delta));
+                return Response.ok(resp).type(MediaType.APPLICATION_JSON).build();
+            }
+        } catch (RuntimeException | java.sql.SQLException e) {
+            log.warn("Scenario what-if failed", e);
+            Throwable root = e;
+            while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+            return error("what-if failed: " + e.getMessage() + " | root: "
+                    + root.getClass().getSimpleName() + ": " + root.getMessage());
+        } finally {
+            if (con != null) {
+                try {
+                    con.setScenario(prior);
+                } catch (Exception ignore) {
+                    // best-effort reset
+                }
+            }
+        }
+    }
+
+    private static String str(Object o) {
+        return o == null ? null : String.valueOf(o).isBlank() ? null : String.valueOf(o);
+    }
+
+    /**
+     * Run a single-measure level query, summing by member caption. {@code whereClause} (the
+     * content after {@code WHERE}, e.g. {@code ([Product].[Product].[Oncology])}) is appended when
+     * non-null — used to slice a breakdown to the changed member. Null = portfolio actuals.
+     */
+    private java.util.LinkedHashMap<String, Double> queryLevelAgg(
+            org.olap4j.OlapStatement st, String measure, String levelUnique, String cube, String whereClause)
+            throws java.sql.SQLException {
+        String mdx = "SELECT {[Measures].[" + measure + "]} ON COLUMNS, " + levelUnique + ".Members ON ROWS FROM ["
+                + cube + "]" + (whereClause == null ? "" : " WHERE " + whereClause);
+        org.olap4j.CellSet cs = st.executeOlapQuery(mdx);
+        java.util.List<org.olap4j.Position> rows = cs.getAxes().get(1).getPositions();
+        org.olap4j.Position col0 = cs.getAxes().get(0).getPositions().get(0);
+        java.util.LinkedHashMap<String, Double> m = new java.util.LinkedHashMap<>();
+        for (org.olap4j.Position rp : rows) {
+            m.merge(rp.getMembers().get(0).getCaption(), cellDouble(cs.getCell(col0, rp)), Double::sum);
+        }
+        return m;
+    }
+
+    /**
+     * Build {caption, actual, whatif} rows by distributing {@code delta} across the actuals in
+     * proportion to {@code mix} (the changed member's own breakdown at this level). Where the
+     * changed member concentrates, the what-if moves most — matching how the write-back re-allocates.
+     */
+    private static java.util.List<java.util.Map<String, Object>> distributeDelta(
+            java.util.LinkedHashMap<String, Double> act, java.util.LinkedHashMap<String, Double> mix, double delta) {
+        double mixTotal = 0;
+        if (mix != null) {
+            for (double v : mix.values()) mixTotal += v;
+        }
+        java.util.List<java.util.Map<String, Object>> out = new java.util.ArrayList<>();
+        for (java.util.Map.Entry<String, Double> e : act.entrySet()) {
+            double share = (mix != null && mixTotal != 0) ? mix.getOrDefault(e.getKey(), 0.0) / mixTotal : 0;
+            java.util.Map<String, Object> r = new java.util.LinkedHashMap<>();
+            r.put("caption", e.getKey());
+            r.put("actual", e.getValue());
+            r.put("whatif", e.getValue() + delta * share);
+            out.add(r);
+        }
+        return out;
+    }
+
+    private static double cellDouble(org.olap4j.Cell c) {
+        if (c == null || c.isNull()) return 0d;
+        Object v = c.getValue();
+        return v instanceof Number ? ((Number) v).doubleValue() : 0d;
     }
 
     private Response badRequest(String field, String message, List<String> available) {

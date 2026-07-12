@@ -289,6 +289,8 @@
              dashboard reference-tile binding. -->
         <property name="datasourceService" ref="datasourceServiceBean"/>
         <property name="sessionService" ref="sessionService"/>
+        <!-- Raw olap4j connection for Mondrian write-back (what-if) scenarios. -->
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
         <!-- Phase 2: natural-language ask layer. Off by default (provider=noop) —
              the resource returns 503 with a clear "not configured" message until
              saiku.ai.ask.provider is set to 'anthropic' or 'openai' and the
