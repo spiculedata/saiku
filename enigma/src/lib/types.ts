@@ -48,3 +48,9 @@ export interface OwnershipGraph {
 	maxDepth: number;
 	hasCycle: boolean;
 }
+
+/** A single label/value pair feeding a Deck chart (bar, hbar, or donut). */
+export interface ChartRow {
+	label: string;
+	value: number;
+}

@@ -8,7 +8,7 @@
 	<a class="logo" href="{base}/">ENIGMA<span class="by">Benafide</span></a>
 	<a class="search" href="{base}/">⌕&nbsp; Investigate a company or person…<span class="k">/</span></a>
 	<nav class="nav">
-		{#each pillars as p}<a class:on={p === active} href="{base}/">{p}</a>{/each}
+		{#each pillars as p}<a class:on={p === active} href={p === 'The Deck' ? `${base}/deck` : `${base}/`}>{p}</a>{/each}
 	</nav>
 </header>
 
