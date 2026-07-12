@@ -42,6 +42,10 @@
 <style>
 	.wrap {
 		position: relative;
+		/* width:100% is load-bearing: the hero centres children with align-items:center,
+		   which shrink-wraps this box; without an explicit width the input's width:100%
+		   collapses to the browser default (~20ch) and clips the placeholder. */
+		width: 100%;
 		max-width: 640px;
 		margin: 0 auto;
 	}
