@@ -177,6 +177,26 @@ public class ThinQueryFilterMergeTest {
     }
 
     @Test
+    public void strict_forcedFilterWinsOverAClientFilterOnSameDim() {
+        // Client filter puts Time.Year = 1997 on the slicer; forced RLS then applies Time.Year = 1998.
+        // Forced applies LAST via the same in-place rewrite, so RLS must OVERRIDE the client members —
+        // a client filter must not be able to loosen the row-level restriction.
+        ThinQuery tq = querymodel();
+        ThinQueryFilterMerge.apply(
+                tq, Collections.singletonList(filter("Time", "Time", "Year", "[Time].[Time].[Year].&[1997]")), schema);
+        List<AiFilterSelection> unapplied = ThinQueryFilterMerge.applyReportingUnapplied(
+                tq, Collections.singletonList(filter("Time", "Time", "Year", "[Time].[Time].[Year].&[1998]")), schema);
+        assertTrue(unapplied.isEmpty());
+        ThinAxis fa = tq.getQueryModel().getAxis(AxisLocation.FILTER);
+        ThinLevel lvl = fa.getHierarchies().get(0).getLevels().get("Year");
+        assertEquals(1, lvl.getSelection().getMembers().size());
+        assertEquals(
+                "RLS member must win over the client filter",
+                "[Time].[Time].[Year].&[1998]",
+                lvl.getSelection().getMembers().get(0).getUniqueName());
+    }
+
+    @Test
     public void newHierarchyLandsOnFilterAxis() {
         ThinQuery tq = querymodel();
         ThinQueryFilterMerge.apply(

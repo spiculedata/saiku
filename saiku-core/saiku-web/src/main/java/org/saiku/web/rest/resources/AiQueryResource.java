@@ -327,10 +327,34 @@ public class AiQueryResource {
             tq.setName(java.util.UUID.randomUUID().toString());
         }
 
-        // saiku#1104 — forced RLS filters MUST apply or the request fails closed. Unlike the
-        // best-effort dashboard merge below, a forced filter that can't be spliced (MDX-mode saved
-        // query, unresolvable dimension, schema lookup failure) means the query would run UNFILTERED
-        // — the exact row-level-security bypass we refuse. Only the embed surface sets these.
+        // Merge best-effort dashboard runtime filters FIRST. Skipped silently when the request
+        // carries no filters (the historical path), when the query is MDX-mode (can't splice
+        // safely), or when the cube schema can't be loaded. See ThinQueryFilterMerge for the
+        // precedence + axis-rewrite rules.
+        if (body.getFilters() != null
+                && !body.getFilters().isEmpty()
+                && tq.getType() == ThinQuery.Type.QUERYMODEL
+                && tq.getCube() != null
+                && cubeMetadataService != null) {
+            try {
+                org.saiku.olap.dto.SaikuCube cube = tq.getCube();
+                AiCubeRef ref =
+                        new AiCubeRef(cube.getConnection(), cube.getCatalog(), cube.getSchema(), cube.getName());
+                AiSchema schema = cubeMetadataService.getSchema(ref);
+                org.saiku.service.olap.ai.ThinQueryFilterMerge.apply(tq, body.getFilters(), schema);
+            } catch (RuntimeException ve) {
+                // Schema lookup failures shouldn't poison the saved-query
+                // execution path — fall through with the un-merged query
+                // and let it run as-authored.
+                log.warn("Dashboard filter merge skipped for saved query {}: {}", path, ve.getMessage());
+            }
+        }
+
+        // saiku#1104 — forced RLS filters apply LAST (after any client/dashboard filters) so they
+        // always win: a client filter on the same dimension can't loosen the row-level restriction.
+        // They MUST apply or the request fails closed — a forced filter that can't be spliced
+        // (MDX-mode query, unresolvable dimension, schema lookup failure) means the query would run
+        // UNFILTERED, the exact RLS bypass we refuse. Only the embed surface sets these.
         if (body.getForcedFilters() != null && !body.getForcedFilters().isEmpty()) {
             AiSchema forcedSchema = null;
             if (tq.getCube() != null && cubeMetadataService != null) {
@@ -358,30 +382,6 @@ public class AiQueryResource {
                                 "Row-level security filters could not be applied to this saved query."))
                         .type(MediaType.APPLICATION_JSON)
                         .build();
-            }
-        }
-
-        // Merge dashboard runtime filters onto the loaded ThinQuery before
-        // execution. Skipped silently when the request carries no filters
-        // (the historical path), when the query is MDX-mode (can't splice
-        // safely), or when the cube schema can't be loaded. See
-        // ThinQueryFilterMerge for the precedence + axis-rewrite rules.
-        if (body.getFilters() != null
-                && !body.getFilters().isEmpty()
-                && tq.getType() == ThinQuery.Type.QUERYMODEL
-                && tq.getCube() != null
-                && cubeMetadataService != null) {
-            try {
-                org.saiku.olap.dto.SaikuCube cube = tq.getCube();
-                AiCubeRef ref =
-                        new AiCubeRef(cube.getConnection(), cube.getCatalog(), cube.getSchema(), cube.getName());
-                AiSchema schema = cubeMetadataService.getSchema(ref);
-                org.saiku.service.olap.ai.ThinQueryFilterMerge.apply(tq, body.getFilters(), schema);
-            } catch (RuntimeException ve) {
-                // Schema lookup failures shouldn't poison the saved-query
-                // execution path — fall through with the un-merged query
-                // and let it run as-authored.
-                log.warn("Dashboard filter merge skipped for saved query {}: {}", path, ve.getMessage());
             }
         }
 
