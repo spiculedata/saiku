@@ -482,3 +482,4 @@ nbdist/
 # Runtime artifacts from Playwright / Claude MCP sessions
 .playwright-mcp/
 welcome-demo-fixed.png
+.superpowers/
