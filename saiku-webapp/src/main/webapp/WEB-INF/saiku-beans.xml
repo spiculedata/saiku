@@ -362,6 +362,24 @@
     </bean>
 
     <!-- ====================================================================
+         Agent-eval result store + read API (saiku#1424, Phase 2/3).
+
+         Embedded H2 under ${saiku.home}/data/eval-results holds scored eval
+         runs; the ScheduledEvalRunner (when a cron is wired) appends to it and
+         AiEvalResource (GET /saiku/admin/ai-evals) reads it for the accuracy
+         dashboard. AUTO_SERVER lets the resource read the file while a runner
+         holds it. Admin-gated, same posture as the audit resource. -->
+    <bean id="evalResultStoreBean"
+          class="org.saiku.service.olap.ai.eval.EvalResultStore"
+          factory-method="forSaikuHome">
+        <constructor-arg value="${saiku.home:./saiku-home}"/>
+    </bean>
+
+    <bean id="aiEvalResource" class="org.saiku.web.rest.resources.AiEvalResource">
+        <property name="store" ref="evalResultStoreBean"/>
+    </bean>
+
+    <!-- ====================================================================
          Natural-language ask layer (POST /saiku/api/ai/ask).
 
          Off by default. Activate per-deployment by setting:

@@ -181,6 +181,27 @@ public final class EvalResultStore {
         return out;
     }
 
+    /** Distinct suite names that have at least one persisted run, alphabetical. Drives the dashboard's suite list. */
+    public List<String> suites() {
+        List<String> out = new ArrayList<>();
+        try (Connection c = connect();
+                Statement s = c.createStatement();
+                ResultSet rs = s.executeQuery("SELECT DISTINCT suite_name FROM eval_run ORDER BY suite_name")) {
+            while (rs.next()) {
+                out.add(rs.getString(1));
+            }
+        } catch (SQLException e) {
+            throw new EvalStoreException("failed to list suites", e);
+        }
+        return out;
+    }
+
+    /** The most recent run for a suite, or {@code null} if it has never run. */
+    public RunSummary latestRun(String suiteName) {
+        List<RunSummary> runs = recentRuns(suiteName, 1);
+        return runs.isEmpty() ? null : runs.get(0);
+    }
+
     /**
      * Pass-rate over time for a suite, oldest first — the series a trend chart plots. Derived from
      * {@link #recentRuns} so a single query backs both the table and the chart.
