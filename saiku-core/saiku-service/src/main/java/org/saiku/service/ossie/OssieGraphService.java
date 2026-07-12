@@ -302,15 +302,18 @@ public class OssieGraphService {
         int fLim = Math.max(1, Math.min(flagLimit, SIGNALS_FLAG_CAP));
         int rLim = Math.max(1, Math.min(riskLimit, SIGNALS_RISK_CAP));
 
+        // Secondary sort on id is load-bearing: hundreds of entities tie at the top risk score
+        // (134 at exactly 30.0), so risk_score alone leaves LIMIT free to return a different
+        // arbitrary subset each run. Ordering by id after the score makes the leaderboard stable.
         String topRiskSql = "SELECT e.\"" + entityId + "\" AS id, e.\"name\" AS name, "
                 + "e.\"jurisdiction\" AS jurisdiction, r.\"risk_score\" AS risk_score "
                 + "FROM \"" + entityTable + "\" e JOIN \"" + riskTable + "\" r ON r.\"" + riskFk + "\" = e.\""
                 + entityId
-                + "\" WHERE r.\"risk_score\" > 0 ORDER BY r.\"risk_score\" DESC LIMIT " + rLim;
+                + "\" WHERE r.\"risk_score\" > 0 ORDER BY r.\"risk_score\" DESC, e.\"" + entityId + "\" LIMIT " + rLim;
 
         String flagsSql = "SELECT \"os_name\" AS name, \"risk_topics\" AS topics, "
                 + "\"match_type\" AS match_type, \"status\" AS status FROM \"" + flagTable + "\" "
-                + "ORDER BY (CASE WHEN \"risk_topics\" ILIKE '%sanction%' THEN 0 ELSE 1 END), \"os_name\" LIMIT "
+                + "ORDER BY (CASE WHEN \"risk_topics\" ILIKE '%sanction%' THEN 0 ELSE 1 END), \"os_name\", \"id\" LIMIT "
                 + fLim;
 
         String topicsSql = "SELECT trim(t) AS topic, count(*) AS c FROM \"" + flagTable
