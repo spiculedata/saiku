@@ -223,28 +223,62 @@ public class EmbedViewResourceTest {
     }
 
     @Test
-    public void saved_query_with_forced_filters_is_fail_closed() {
-        // A forced-filter token can't be applied to an opaque saved query in v1.
-        // It MUST be refused, never served unfiltered (cross-tenant leak).
+    public void saved_query_forwards_forced_filters_to_executeSaved() {
+        // saiku#1104: forced RLS filters now RIDE the saved query's forcedFilters channel — where
+        // executeSaved applies them or fails closed. The embed no longer blanket-refuses; it forwards
+        // the JWT claim so a QUERYMODEL saved query runs WITH the restriction.
         pinGuestJwt(
                 "query",
                 "/homes/admin/sales.saiku",
                 "admin",
                 List.of(),
                 "u_1",
-                "[{\"dimension\":\"Customer\",\"op\":\"in\",\"members\":[\"[Customer].[acme]\"]}]");
+                "[{\"dimension\":\"Customer\",\"level\":\"Customer\",\"members\":[\"[Customer].[acme]\"]}]");
+
+        Response r = resource.query("homes/admin/sales.saiku", null);
+
+        assertEquals(200, r.getStatus());
+        assertNotNull("executeSaved must be invoked with the forced filters", ai.lastSavedRequest);
+        assertEquals(
+                "the JWT forced filter must be forwarded on the forcedFilters channel",
+                1,
+                ai.lastSavedRequest.getForcedFilters().size());
+        assertEquals("Customer", ai.lastSavedRequest.getForcedFilters().get(0).getDimension());
+    }
+
+    @Test
+    public void saved_query_forced_filters_unappliable_passes_through_fail_closed() {
+        // When executeSaved can't apply the RLS filter (MDX-mode / unresolvable dim) it returns
+        // 403 RLS_UNAPPLIED; the embed surfaces that fail-closed status verbatim.
+        ai.savedResponseOverride = Response.status(403)
+                .entity(Map.of("status", "RLS_UNAPPLIED", "error", "x"))
+                .build();
+        pinGuestJwt(
+                "query",
+                "/homes/admin/sales.saiku",
+                "admin",
+                List.of(),
+                "u_1",
+                "[{\"dimension\":\"Customer\",\"level\":\"Customer\",\"members\":[\"[Customer].[acme]\"]}]");
 
         Response r = resource.query("homes/admin/sales.saiku", null);
 
         assertEquals(403, r.getStatus());
-        @SuppressWarnings("unchecked")
-        Map<String, Object> body = (Map<String, Object>) r.getEntity();
-        assertEquals("EMBED_RLS_UNSUPPORTED", body.get("status"));
-        assertNull("a fail-closed saved query must NOT execute", ai.lastSavedRequest);
     }
 
     @Test
-    public void reference_tile_with_forced_filters_is_fail_closed() {
+    public void saved_query_malformed_forced_filter_claim_fails_closed() {
+        // A forced-filter JWT claim that isn't valid filter JSON must fail closed, never execute.
+        pinGuestJwt("query", "/homes/admin/sales.saiku", "admin", List.of(), "u_1", "{not-an-array");
+
+        Response r = resource.query("homes/admin/sales.saiku", null);
+
+        assertEquals(403, r.getStatus());
+        assertNull("a malformed RLS claim must NOT execute", ai.lastSavedRequest);
+    }
+
+    @Test
+    public void reference_tile_forwards_forced_filters_to_executeSaved() {
         ds.fileContent = "{\"layout\":{\"tiles\":[{\"id\":\"t1\",\"query\":"
                 + "{\"kind\":\"reference\",\"path\":\"/homes/admin/q.saiku\"}}]}}";
         pinGuestJwt(
@@ -253,12 +287,13 @@ public class EmbedViewResourceTest {
                 "admin",
                 List.of(),
                 "u_1",
-                "[{\"dimension\":\"Customer\",\"op\":\"in\",\"members\":[\"[Customer].[acme]\"]}]");
+                "[{\"dimension\":\"Customer\",\"level\":\"Customer\",\"members\":[\"[Customer].[acme]\"]}]");
 
         Response r = resource.tileQuery("homes/admin/exec.saikudash", "t1", null);
 
-        assertEquals(403, r.getStatus());
-        assertNull("reference tile must NOT execute unfiltered", ai.lastSavedRequest);
+        assertEquals(200, r.getStatus());
+        assertNotNull("reference tile must forward forced filters to executeSaved", ai.lastSavedRequest);
+        assertEquals(1, ai.lastSavedRequest.getForcedFilters().size());
     }
 
     @Test
@@ -359,11 +394,16 @@ public class EmbedViewResourceTest {
         AiSavedQueryRequest lastSavedRequest;
         String lastSavedFormat;
         AiQueryRequest lastAiRequest;
+        // Override the saved-query response to simulate executeSaved's own RLS fail-closed (403).
+        Response savedResponseOverride;
 
         @Override
         public Response executeSaved(AiSavedQueryRequest body, String format) {
             lastSavedRequest = body;
             lastSavedFormat = format;
+            if (savedResponseOverride != null) {
+                return savedResponseOverride;
+            }
             return Response.ok(Map.of("status", "OK", "cells", List.of(), "format", format))
                     .type(jakarta.ws.rs.core.MediaType.APPLICATION_JSON)
                     .build();
