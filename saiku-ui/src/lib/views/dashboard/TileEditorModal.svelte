@@ -191,7 +191,12 @@
   // conditionally in the template.
   const ANOMALY_CHART_KINDS = new Set(["line", "bar", "area"]);
   let anomalyEnabled = $state<boolean>(untrack(() => tile.anomaly?.enabled ?? false));
-  let anomalyMethod = $state<AnomalyMethodConfig>(untrack(() => tile.anomaly?.method ?? "zscore"));
+  // Only offer / accept methods the backend implements. A tile persisted with a
+  // stub method (stl, saiku#908) coerces back to a working default so it can't
+  // silently keep 400ing after this dropdown dropped the option.
+  let anomalyMethod = $state<AnomalyMethodConfig>(
+    untrack(() => (tile.anomaly?.method === "mad" ? "mad" : "zscore")),
+  );
   let anomalyThreshold = $state<number | null>(untrack(() => tile.anomaly?.threshold ?? null));
   let anomalyTimeAxis = $state<string>(untrack(() => tile.anomaly?.timeAxis ?? ""));
   // Default threshold shown as the placeholder, tracking the chosen method.
@@ -199,7 +204,10 @@
   // ── Issue #908: forecast (time-series chart tiles only) ──
   // Working copy of the chart tile's forecast config; persisted on save.
   let forecastEnabled = $state<boolean>(untrack(() => tile.forecast?.enabled ?? false));
-  let forecastMethod = $state<ForecastMethodConfig>(untrack(() => tile.forecast?.method ?? "ets"));
+  // Only ETS is implemented; arima/prophet are stubs (saiku#908), so the dropdown
+  // offers ets alone and any persisted stub method coerces to ets — a saved tile
+  // can't keep 400ing. Widen this back to a passthrough when more methods land.
+  let forecastMethod = $state<ForecastMethodConfig>("ets");
   let forecastHorizon = $state<number>(untrack(() => tile.forecast?.horizon ?? 6));
   let forecastConfidence = $state<number>(untrack(() => tile.forecast?.confidence ?? 0.95));
   let forecastTimeAxis = $state<string>(untrack(() => tile.forecast?.timeAxis ?? ""));
@@ -880,10 +888,12 @@
             {#if anomalyEnabled}
               <label class="field">
                 <span>{i18n.t("dashboard.anomaly.method", "Method")}</span>
+                <!-- Only methods the backend actually implements are offered. STL is a
+                     registered-but-throwing stub (saiku#908) — surfacing it here let a user
+                     pick a method that 400s. Re-add when StlAnomalyDetector is implemented. -->
                 <select bind:value={anomalyMethod}>
                   <option value="zscore">{i18n.t("dashboard.anomaly.method.zscore", "Z-score")}</option>
                   <option value="mad">{i18n.t("dashboard.anomaly.method.mad", "MAD (robust)")}</option>
-                  <option value="stl">{i18n.t("dashboard.anomaly.method.stl", "STL (not yet supported)")}</option>
                 </select>
               </label>
               <label class="field">
@@ -919,12 +929,11 @@
             {#if forecastEnabled}
               <label class="field">
                 <span>{i18n.t("dashboard.forecast.method", "Method")}</span>
+                <!-- Only ETS is implemented; ARIMA + Prophet are registered-but-throwing
+                     stubs (saiku#908). Offering them let a user pick a method that 400s.
+                     Re-add when ArimaForecaster / ProphetForecaster are implemented. -->
                 <select bind:value={forecastMethod}>
                   <option value="ets">{i18n.t("dashboard.forecast.method.ets", "Exponential smoothing")}</option>
-                  <option value="arima">{i18n.t("dashboard.forecast.method.arima", "ARIMA (not yet supported)")}</option>
-                  <option value="prophet"
-                    >{i18n.t("dashboard.forecast.method.prophet", "Prophet (not yet supported)")}</option
-                  >
                 </select>
               </label>
               <label class="field">
