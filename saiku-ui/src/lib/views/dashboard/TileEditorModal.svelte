@@ -1068,9 +1068,9 @@
                 {/each}
               </select>
               <span class="hint">
-                Runtime fetch of saved queries lands in a follow-up — the
-                reference is persisted, the tile renderer will pick it up
-                once the resolver endpoint is wired.
+                The tile renders live from the saved query — the resolver
+                (POST /ai/query/saved) loads it, merges any applicable
+                dashboard filters, and runs it on each refresh.
               </span>
             {/if}
           </label>
