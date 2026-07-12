@@ -6,10 +6,11 @@
   import SchemasAdmin from "$lib/views/admin/SchemasAdmin.svelte";
   import LogsAdmin from "$lib/views/admin/LogsAdmin.svelte";
   import StatsAdmin from "$lib/views/admin/StatsAdmin.svelte";
+  import EvalsAdmin from "$lib/views/admin/EvalsAdmin.svelte";
   import ApiAccessAdmin from "$lib/views/admin/ApiAccessAdmin.svelte";
   import LoginForm from "$lib/views/LoginForm.svelte";
 
-  type Tab = "users" | "datasources" | "schemas" | "logs" | "stats" | "api";
+  type Tab = "users" | "datasources" | "schemas" | "logs" | "stats" | "evals" | "api";
   let tab = $state<Tab>("users");
 </script>
 
@@ -30,6 +31,7 @@
       <button type="button" role="tab" class:active={tab === "schemas"} onclick={() => (tab = "schemas")}>{i18n.t("admin.tabs.schemas")}</button>
       <button type="button" role="tab" class:active={tab === "logs"} onclick={() => (tab = "logs")}>{i18n.t("admin.tabs.logs")}</button>
       <button type="button" role="tab" class:active={tab === "stats"} onclick={() => (tab = "stats")}>{i18n.t("admin.tabs.stats")}</button>
+      <button type="button" role="tab" class:active={tab === "evals"} onclick={() => (tab = "evals")}>Agent evals</button>
       <button type="button" role="tab" class:active={tab === "api"} onclick={() => (tab = "api")}>API access</button>
     </div>
     <section class="flex-1 p-6 overflow-auto">
@@ -43,6 +45,8 @@
         <LogsAdmin />
       {:else if tab === "stats"}
         <StatsAdmin />
+      {:else if tab === "evals"}
+        <EvalsAdmin />
       {:else}
         <ApiAccessAdmin defaultOpen={true} />
       {/if}

@@ -128,6 +128,44 @@ export const adminLogs = {
   },
 };
 
+/**
+ * Agent-eval accuracy monitor (saiku#1424). Reads the admin-gated
+ * `/rest/saiku/admin/ai-evals` surface — scored eval runs persisted to H2 —
+ * so the admin panel can plot pass-rate over time per suite.
+ */
+export interface EvalRun {
+  runId: number;
+  suiteName: string;
+  cubeRef: string;
+  startedAt: number; // epoch millis
+  elapsedMs: number;
+  total: number;
+  passed: number;
+  failed: number;
+  degraded: number;
+  skipped: number;
+  passRate: number; // 0..1
+}
+
+export interface EvalSuiteCard {
+  name: string;
+  latest: EvalRun | null;
+}
+
+export interface EvalTrendPoint {
+  startedAt: number; // epoch millis
+  passRate: number; // 0..1
+  total: number;
+}
+
+export const adminEvals = {
+  suites: () => get<EvalSuiteCard[]>("/ai-evals"),
+  runs: (suite: string, limit = 30) =>
+    get<EvalRun[]>(`/ai-evals/${encodeURIComponent(suite)}/runs?limit=${limit}`),
+  trend: (suite: string, limit = 60) =>
+    get<EvalTrendPoint[]>(`/ai-evals/${encodeURIComponent(suite)}/trend?limit=${limit}`),
+};
+
 export async function getVersion(): Promise<string> {
   const res = await fetch(`${BASE}/version`, { credentials: "include" });
   if (!res.ok) throw new Error(`version -> ${res.status}`);
