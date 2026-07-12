@@ -69,6 +69,15 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
             + "`order` and `limit`. (6) Keep aggregator overrides off unless the user asks for one.\n\n"
             + "Always call exactly ONE tool — never respond with prose.";
 
+    /**
+     * Sentinel for {@link Config#temperature()}: a negative value means "do not send a
+     * {@code temperature} field at all". Required for the Claude-5 family (e.g.
+     * {@code claude-sonnet-5}), which rejects {@code temperature} as deprecated with a 400
+     * {@code invalid_request_error}. Older models fall back to the API's default temperature,
+     * which is fine because {@code tool_choice} already forces the structured tool call.
+     */
+    public static final double OMIT_TEMPERATURE = -1.0;
+
     /** Provider configuration. */
     public record Config(String apiKey, String model, double temperature, int maxTokens, Duration requestTimeout) {
         public Config {
@@ -139,7 +148,11 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
         ObjectNode root = MAPPER.createObjectNode();
         root.put("model", config.model());
         root.put("max_tokens", config.maxTokens());
-        root.put("temperature", config.temperature());
+        // Only send temperature when explicitly set (>= 0). Claude-5 models reject the field;
+        // see OMIT_TEMPERATURE. tool_choice forces the structured call, so omitting it is safe.
+        if (config.temperature() >= 0) {
+            root.put("temperature", config.temperature());
+        }
 
         NlAskRequest.ForceTool force = request.forceTool();
         boolean wantQuery = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.QUERY;

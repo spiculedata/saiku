@@ -642,15 +642,32 @@ function pick(q){ return SCRIPTS.find(s=>s.m.test(q))||DEFAULT_S; }
  * this dashboard's Rx data. Returns null on degrade / error / not-configured so
  * the caller falls back to the scripted demo answer and the widget never breaks. */
 const AI_SPACE='pharma-rx-analyst';
+// Strip the server's typed prefix (OFF_TOPIC:/FORBIDDEN:) off a refusal reason.
+function cleanReason(r){ return r ? String(r).replace(/^(OFF_TOPIC|FORBIDDEN):\s*/i,'').trim() : ''; }
+// Returns one of:
+//   {answer}          — a live answer to render/drive the dashboard
+//   {refusal:text}    — a GOVERNED decline (off-topic / out-of-allowlist): show it, don't fall back
+//   null              — provider unavailable (not configured / transport / network): scripted fallback
 async function liveAsk(q){
   await ensureSession();
-  const r=await fetch((CFG.base||'')+'/rest/saiku/api/ai/spaces/'+AI_SPACE+'/ask',{method:'POST',credentials:'include',
-    headers:csrf({'Content-Type':'application/json'}),
-    body:JSON.stringify({cube:CFG.cube,question:q,history:history.slice(-8).map(m=>({role:m.role,content:m.content}))})});
-  if(!r.ok) return null;
+  let r;
+  try{
+    r=await fetch((CFG.base||'')+'/rest/saiku/api/ai/spaces/'+AI_SPACE+'/ask',{method:'POST',credentials:'include',
+      headers:csrf({'Content-Type':'application/json'}),
+      body:JSON.stringify({cube:CFG.cube,question:q,history:history.slice(-8).map(m=>({role:m.role,content:m.content}))})});
+  }catch{ return null; }
+  if(r.status===403){                        // space cube-allowlist denial — a governed refusal
+    try{ const d=await r.json(); return {refusal: cleanReason(d.reason)||DECLINE}; }catch{ return {refusal:DECLINE}; }
+  }
+  if(!r.ok) return null;                      // other transport error → scripted fallback
   const d=await r.json();
-  if(d.degraded) return null;               // provider off / not configured → scripted fallback
-  return d;
+  if(d.degraded){
+    const reason=d.reason||'';
+    // Governed refusal (the model declined an out-of-scope ask) → show the decline, no fallback.
+    if(/^(OFF_TOPIC|FORBIDDEN)/i.test(reason)) return {refusal: cleanReason(reason)||DECLINE};
+    return null;                             // not-configured / provider error → scripted fallback
+  }
+  return {answer:d};
 }
 // Turn records from a QUERY-intent answer into bars for the main chart.
 function recordsToBars(data){
@@ -677,10 +694,13 @@ async function ask(q){
 
   // Try the governed live space first; fall back to the scripted demo answer.
   let live=null; try{ live=await liveAsk(q); }catch{ live=null; }
-  let text, model, driveBars=null, driveTrend=false, tag='';
-  if(live){
-    const a=answerFrom(live);
-    text=a.text||DECLINE; model=live.model||'claude'; driveBars=a.bars;
+  let text, model='', driveBars=null, driveTrend=false, tag='';
+  if(live && live.refusal){
+    // Governed decline — show it verbatim, drive nothing. This is the guardrail surfacing.
+    text=live.refusal; model='governed';
+  }else if(live && live.answer){
+    const a=answerFrom(live.answer);
+    text=a.text||DECLINE; model=live.answer.model||'claude'; driveBars=a.bars;
     if(driveBars&&driveBars.length) tag='Queried the live Rx model';
   }else{
     const s=pick(q); text=s.p; model=s.model;
