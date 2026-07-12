@@ -190,6 +190,13 @@
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
     </bean>
 
+    <!-- Ossie graph traversal: walks the relationships the model declares via a recursive
+         CTE over the datasource's warehouse (DuckDB/Quack) connection. Powers /ai/ossie/graph. -->
+    <bean id="ossieGraphServiceBean" class="org.saiku.service.ossie.OssieGraphService">
+        <property name="ossieDiscoverService" ref="ossieDiscoverServiceBean"/>
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+    </bean>
+
     <bean id="platformBean" class="org.saiku.service.PlatformUtilsService">
         <property name="path" value="${pluginpath}"/>
     </bean>
@@ -309,6 +316,7 @@
     <bean id="aiOssieResource" class="org.saiku.web.rest.resources.AiOssieResource">
         <property name="ossieDiscoverService" ref="ossieDiscoverServiceBean"/>
         <property name="ossieQueryService" ref="ossieQueryServiceBean"/>
+        <property name="ossieGraphService" ref="ossieGraphServiceBean"/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
         <property name="datasourceManager" ref="repositoryDsManager"/>
         <property name="asyncQueryService" ref="ossieAsyncQueryServiceBean"/>

@@ -76,6 +76,7 @@ public class AiOssieResource {
 
     private OssieDiscoverService ossieDiscoverService;
     private OssieQueryService ossieQueryService;
+    private org.saiku.service.ossie.OssieGraphService ossieGraphService;
     private OlapDiscoverService olapDiscoverService;
     private IDatasourceManager datasourceManager;
     private OssieAsyncQueryService asyncQueryService;
@@ -97,6 +98,10 @@ public class AiOssieResource {
 
     public void setOssieQueryService(OssieQueryService s) {
         this.ossieQueryService = s;
+    }
+
+    public void setOssieGraphService(org.saiku.service.ossie.OssieGraphService s) {
+        this.ossieGraphService = s;
     }
 
     public void setOlapDiscoverService(OlapDiscoverService s) {
@@ -224,6 +229,78 @@ public class AiOssieResource {
         } catch (RuntimeException e) {
             log.error("Ossie models listing failed", e);
             return error("model listing failed");
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // GET /graph/{connection}/{model}?root=&depth=
+    // -------------------------------------------------------------------
+
+    /**
+     * Walk the ownership graph up from a root entity. Where {@link #query} aggregates, this
+     * traverses the relationships the model declares — a recursive walk executed over the same
+     * DuckDB/Quack warehouse the aggregate queries use. Returns {@code {rootId, nodes[], edges[],
+     * maxDepth, hasCycle}}. The Ossie spec is untouched; this is a traversal capability on top of
+     * the semantic model's relationships.
+     */
+    @GET
+    @Path("/graph/{connection}/{model}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response graph(
+            @PathParam("connection") String connectionName,
+            @PathParam("model") String modelName,
+            @jakarta.ws.rs.QueryParam("root") String root,
+            @jakarta.ws.rs.DefaultValue("4") @jakarta.ws.rs.QueryParam("depth") int depth) {
+        if (ossieGraphService == null) {
+            return error("Ossie graph not wired");
+        }
+        if (root == null || root.isBlank()) {
+            return badRequest("root", "root entity id required (?root=…)", List.of());
+        }
+        try {
+            org.saiku.service.ossie.OssieGraphService.GraphResult g =
+                    ossieGraphService.ownershipGraph(connectionName, root, depth);
+            return Response.ok(g).type(MediaType.APPLICATION_JSON).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest("root", e.getMessage(), List.of());
+        } catch (Exception e) {
+            log.warn("Ossie graph traversal failed (connection='{}', root='{}')", connectionName, root, e);
+            return error("graph traversal failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Per-entity profile — attributes + risk + opacity in one call, resolved from the model and
+     * served over the Ossie datasource's warehouse connection (no Benafide API). Aggregate metrics
+     * on 1:1 dimension datasets don't fit the shelf translator; a direct lookup is the right shape.
+     */
+    @GET
+    @Path("/entity/{connection}/{model}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response entity(
+            @PathParam("connection") String connectionName,
+            @PathParam("model") String modelName,
+            @jakarta.ws.rs.QueryParam("id") String id) {
+        if (ossieGraphService == null) {
+            return error("Ossie graph not wired");
+        }
+        if (id == null || id.isBlank()) {
+            return badRequest("id", "entity id required (?id=…)", List.of());
+        }
+        try {
+            Map<String, Object> profile = ossieGraphService.entityProfile(connectionName, id);
+            if (profile.isEmpty()) {
+                return Response.status(Response.Status.NOT_FOUND)
+                        .entity(Map.of("error", "entity not found", "id", id))
+                        .type(MediaType.APPLICATION_JSON)
+                        .build();
+            }
+            return Response.ok(profile).type(MediaType.APPLICATION_JSON).build();
+        } catch (IllegalArgumentException e) {
+            return badRequest("id", e.getMessage(), List.of());
+        } catch (Exception e) {
+            log.warn("Ossie entity profile failed (connection='{}', id='{}')", connectionName, id, e);
+            return error("entity profile failed: " + e.getMessage());
         }
     }
 
