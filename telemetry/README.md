@@ -79,6 +79,22 @@ GET https://<worker-url>/v1/stats
 - Response: `{ "latest": "<version>" }`, HTTP 200. On any error the client should
   ignore the failure — telemetry must never affect Saiku's behaviour.
 
+## Client side (each Saiku instance)
+
+The launcher's `TelemetryService` fires the heartbeat on startup and once a day,
+storing a random install id in `saiku-home/instance-id`. It's **opt-out** — on by
+default, disabled by any of:
+
+| control | effect |
+|---|---|
+| `SAIKU_TELEMETRY=off` (env) | disable (also `false` / `0` / `no` / `disabled`) |
+| `DO_NOT_TRACK=1` (env) | disable (honours the [Console DNT](https://consoledonottrack.com/) convention) |
+| `-Dsaiku.telemetry.enabled=false` | disable |
+| `SAIKU_TELEMETRY_ENDPOINT=<url>` / `-Dsaiku.telemetry.endpoint=<url>` | point at a different collector |
+
+Default endpoint: `https://telemetry.saiku.bi/v1/check`. A one-line startup notice
+tells the operator it's on and how to turn it off.
+
 ## Free-tier headroom
 
 One upsert per install per day; one tiny row per install. Cloudflare free tier:
