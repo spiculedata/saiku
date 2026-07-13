@@ -3,6 +3,18 @@
 All notable changes to Saiku are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 4.6.1 — 2026-07-13
+
+Patch release fixing version reporting and install telemetry.
+
+### Fixed
+- **Version reporting** — deployed instances reported their version as `dev` because the
+  fat-JAR manifest never stamped `Implementation-Version`, so `getImplementationVersion()`
+  was always null. This broke the `/info` version, the update check, and install telemetry
+  (every 4.6.0 instance pinged as "dev"). Releases now report their real version.
+- **Install telemetry** — the heartbeat counts real releases only: dev/CI/IDE builds are
+  skipped client-side and excluded server-side, so the active-install count is accurate.
+
 ## 4.6.0 — 2026-07-13
 
 The headline release of the year: **Saiku becomes a semantic layer that AI agents can
