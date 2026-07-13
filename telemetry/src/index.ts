@@ -99,14 +99,17 @@ export default {
 		// --- public counts (cacheable) ------------------------------------------
 		if (url.pathname === '/v1/stats' && request.method === 'GET') {
 			const cutoff = now - WINDOW_SECONDS;
+			// Count real releases only — exclude non-release builds ('dev', *SNAPSHOT*) that come
+			// from CI, integration tests and IDE runs rather than deployed instances.
+			const RELEASE_ONLY = "version <> 'dev' AND version NOT LIKE '%SNAPSHOT%'";
 			try {
 				const active = await env.DB.prepare(
-					'SELECT count(*) AS n FROM installs WHERE last_seen > ?1'
+					`SELECT count(*) AS n FROM installs WHERE last_seen > ?1 AND ${RELEASE_ONLY}`
 				)
 					.bind(cutoff)
 					.first<{ n: number }>();
 				const byVersion = await env.DB.prepare(
-					'SELECT version, count(*) AS n FROM installs WHERE last_seen > ?1 GROUP BY version ORDER BY n DESC'
+					`SELECT version, count(*) AS n FROM installs WHERE last_seen > ?1 AND ${RELEASE_ONLY} GROUP BY version ORDER BY n DESC`
 				)
 					.bind(cutoff)
 					.all();

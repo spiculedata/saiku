@@ -74,8 +74,13 @@ public final class TelemetryService {
                 LOG.log(System.Logger.Level.DEBUG, "Saiku telemetry disabled by configuration");
                 return;
             }
-            String v = (version == null || version.isBlank()) ? "dev" : version;
-            TelemetryService svc = new TelemetryService(saikuHome, v, endpointFromConfig());
+            // No release version means this isn't a deployed instance — it's a dev/IDE run or the
+            // integration-test harness booting a server. Those shouldn't count as installs, so skip.
+            if (version == null || version.isBlank() || "dev".equalsIgnoreCase(version)) {
+                LOG.log(System.Logger.Level.DEBUG, "Saiku telemetry skipped: no release version (dev/test run)");
+                return;
+            }
+            TelemetryService svc = new TelemetryService(saikuHome, version, endpointFromConfig());
             svc.announce();
             svc.schedule();
         } catch (Throwable t) {
