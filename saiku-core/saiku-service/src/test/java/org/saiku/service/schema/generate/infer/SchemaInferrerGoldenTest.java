@@ -98,7 +98,10 @@ public class SchemaInferrerGoldenTest {
                 continue;
             }
 
-            if (!expected.equals(actual)) {
+            // Content compare, not byte-exact line endings — a golden checked
+            // out with CRLF (git core.autocrlf=true on Windows) must still match
+            // the LF the generator emits, else these flake on every Windows clone.
+            if (!normalizeEol(expected).equals(normalizeEol(actual))) {
                 failures.append("[")
                         .append(fixture)
                         .append("] output differs from ")
@@ -120,6 +123,11 @@ public class SchemaInferrerGoldenTest {
             }
             fail(failures.toString());
         }
+    }
+
+    /** Normalise CRLF/CR to LF so golden comparison is line-ending-agnostic. */
+    private static String normalizeEol(String s) {
+        return s == null ? null : s.replace("\r\n", "\n").replace('\r', '\n');
     }
 
     private static String readResource(String resource) throws IOException {

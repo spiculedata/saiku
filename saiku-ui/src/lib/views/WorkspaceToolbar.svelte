@@ -19,6 +19,8 @@
     Maximize2,
     Minimize2,
     Sparkles,
+    Undo2,
+    Redo2,
   } from "lucide-svelte";
   import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
   import SavedQueriesModal from "$lib/modals/SavedQueriesModal.svelte";
@@ -341,7 +343,7 @@
 <svelte:window onclick={handleBodyClick} />
 
 <div class="toolbar" role="toolbar" aria-label="Workspace toolbar">
-  <div class="toolbar__group" role="group" aria-label="File">
+  <div class="flex items-center gap-0.5 relative" role="group" aria-label="File">
     <button class="tb-btn" title={i18n.t("toolbar.new")} aria-label={i18n.t("toolbar.new")} onclick={onNew}>
       <FilePlus2 size={18} />
     </button>
@@ -349,7 +351,7 @@
       <FolderOpen size={18} />
     </button>
     <button
-      class="tb-btn tb-btn--dirty"
+      class="tb-btn relative"
       title={query.dirty ? `${i18n.t("toolbar.save")} (unsaved changes)` : i18n.t("toolbar.save")}
       aria-label={i18n.t("toolbar.save")}
       onclick={onSave}
@@ -364,7 +366,31 @@
     </button>
   </div>
   <div class="toolbar__sep"></div>
-  <div class="toolbar__group toolbar__menu" role="group" aria-label="Query">
+  <!-- Undo / redo. Disabled-state mirrors the store's canUndo / canRedo so the
+       button visually goes inert at the end of each stack rather than no-oping
+       on click. Cmd-Z / Cmd-Shift-Z keyboard shortcuts in the wrapper below. -->
+  <div class="flex items-center gap-0.5 relative" role="group" aria-label="Undo / redo">
+    <button
+      class="tb-btn"
+      title={platform.isMac ? "Undo (⌘Z)" : "Undo (Ctrl+Z)"}
+      aria-label="Undo"
+      disabled={!query.canUndo}
+      onclick={() => query.undo()}
+    >
+      <Undo2 size={18} />
+    </button>
+    <button
+      class="tb-btn"
+      title={platform.isMac ? "Redo (⇧⌘Z)" : "Redo (Ctrl+Shift+Z)"}
+      aria-label="Redo"
+      disabled={!query.canRedo}
+      onclick={() => query.redo()}
+    >
+      <Redo2 size={18} />
+    </button>
+  </div>
+  <div class="toolbar__sep"></div>
+  <div class="flex items-center gap-0.5 relative relative" role="group" aria-label="Query">
     <div class="split-btn">
       <button
         class="tb-btn tb-btn--primary split-btn__main"
@@ -374,7 +400,7 @@
         disabled={!runnable.ok}
         onclick={onRun}
       >
-        <Play size={18} /><span class="tb-btn__label">{i18n.t("toolbar.run")}</span>
+        <Play size={18} /><span class="text-sm">{i18n.t("toolbar.run")}</span>
       </button>
       <button
         class="tb-btn tb-btn--primary split-btn__caret"
@@ -413,7 +439,7 @@
   </div>
   {#if onAskAi}
     <div class="toolbar__sep"></div>
-    <div class="toolbar__group" role="group" aria-label={i18n.t("workspace.aiQuery.title")}>
+    <div class="flex items-center gap-0.5 relative" role="group" aria-label={i18n.t("workspace.aiQuery.title")}>
       <button
         class="tb-btn tb-btn--ai"
         title={i18n.t("workspace.aiQuery.open")}
@@ -421,18 +447,18 @@
         onclick={() => onAskAi?.()}
       >
         <Sparkles size={18} />
-        <span class="tb-btn__label">{i18n.t("workspace.aiQuery.title")}</span>
+        <span class="text-sm">{i18n.t("workspace.aiQuery.title")}</span>
       </button>
     </div>
   {/if}
   <div class="toolbar__sep"></div>
-  <div class="toolbar__group toolbar__menu" role="group" aria-label="Tools">
+  <div class="flex items-center gap-0.5 relative relative" role="group" aria-label="Tools">
     <button
       class="tb-btn"
       onclick={(e) => { e.stopPropagation(); toolsMenuOpen = !toolsMenuOpen; exportMenuOpen = false; }}
       title={i18n.t("toolbar.tools")}
     >
-      <Wrench size={18} /><span class="tb-btn__label">{i18n.t("toolbar.tools")}</span><ChevronDown size={14} />
+      <Wrench size={18} /><span class="text-sm">{i18n.t("toolbar.tools")}</span><ChevronDown size={14} />
     </button>
     {#if toolsMenuOpen}
       <div class="toolbar__dropdown">
@@ -463,17 +489,17 @@
       </div>
     {/if}
   </div>
-  <div class="toolbar__spacer"></div>
-  <div class="toolbar__group toolbar__menu" role="group" aria-label="Export">
+  <div class="flex-1"></div>
+  <div class="flex items-center gap-0.5 relative relative" role="group" aria-label="Export">
     <button
       class="tb-btn"
       onclick={(e) => { e.stopPropagation(); exportMenuOpen = !exportMenuOpen; toolsMenuOpen = false; }}
       title={i18n.t("toolbar.export")}
     >
-      <Download size={18} /><span class="tb-btn__label">{i18n.t("toolbar.export")}</span><ChevronDown size={14} />
+      <Download size={18} /><span class="text-sm">{i18n.t("toolbar.export")}</span><ChevronDown size={14} />
     </button>
     {#if exportMenuOpen}
-      <div class="toolbar__dropdown toolbar__dropdown--right">
+      <div class="toolbar__dropdown left-auto right-0">
         <button type="button" class="toolbar__item" onclick={() => exportCurrent("xls")}>
           <FileSpreadsheet size={16} /> <span>{i18n.t("toolbar.export.xls")}</span>
         </button>
@@ -546,7 +572,7 @@
 />
 
 <style>
-  .toolbar {
+.toolbar {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -555,13 +581,6 @@
     background: var(--bg-muted);
     flex-wrap: wrap;
   }
-  .toolbar__group {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    position: relative;
-  }
-  .toolbar__menu { position: relative; }
   .toolbar__dropdown {
     position: absolute;
     top: calc(100% + 6px);
@@ -574,7 +593,6 @@
     z-index: 50;
     min-width: 220px;
   }
-  .toolbar__dropdown--right { left: auto; right: 0; }
   .toolbar__item {
     display: flex;
     align-items: center;
@@ -596,8 +614,6 @@
     background: var(--border);
     margin: 0 4px;
   }
-  .toolbar__spacer { flex: 1; }
-
   .tb-btn {
     display: inline-flex;
     align-items: center;
@@ -613,7 +629,6 @@
   .tb-btn { transition: background var(--duration-fast), color var(--duration-fast); }
   .tb-btn:hover { background: var(--bg-hover); color: var(--fg); }
   .tb-btn:active { transform: translateY(1px); }
-  .tb-btn__label { font-size: var(--fs-sm); }
   .tb-btn--primary {
     background: var(--accent);
     color: var(--bg);
@@ -643,7 +658,6 @@
     filter: none;
     cursor: not-allowed;
   }
-  .tb-btn--dirty { position: relative; }
   .tb-btn__dot {
     position: absolute;
     top: 4px;
@@ -654,7 +668,6 @@
     border-radius: 50%;
     box-shadow: 0 0 0 2px var(--bg-muted);
   }
-
   .split-btn {
     display: inline-flex;
     align-items: stretch;

@@ -30,7 +30,24 @@
     }
   });
 
-  let selectedKey = $derived(selection.cube ? cubeKey(selection.cube) : "");
+  /**
+   * Encode an OSSIE-typed connection as a picker option value so we can round-trip through
+   * the same <select> the OLAP path uses. The `ossie:` prefix distinguishes from OLAP cube
+   * keys (which don't start with a scheme).
+   */
+  const OSSIE_PREFIX = "ossie:";
+
+  let selectedKey = $derived(
+    selection.mode === "ossie" && selection.ossie
+      ? `${OSSIE_PREFIX}${selection.ossie.connectionName}`
+      : selection.cube
+        ? cubeKey(selection.cube)
+        : "",
+  );
+
+  // Keep the Ossie-connection list handy for the dropdown; they have empty catalogs so the
+  // OLAP nested-loop below skips them entirely.
+  let ossieConnections = $derived(datasources.connections.filter((c) => c.type === "OSSIE"));
 
   // Build a flat cube index so the dropdown value can resolve back to the cube object.
   let cubeIndex = $derived(() => {
@@ -53,6 +70,15 @@
       selection.clear();
       return;
     }
+    if (key.startsWith(OSSIE_PREFIX)) {
+      const connectionName = key.substring(OSSIE_PREFIX.length);
+      // Ossie datasources are one-model-per-connection for the MVP shape; the model name
+      // (used to pick a semantic_model[] entry inside the YAML) defaults to the connection
+      // name. F3's OssieSchemaTree can override this later if multi-model YAML support
+      // lands.
+      selection.selectOssie({ connectionName, modelName: connectionName });
+      return;
+    }
     const cube = cubeIndex().get(key);
     if (cube) selection.select(cube);
   }
@@ -65,10 +91,10 @@
 
 <div class="cube-picker">
   <label class="cube-picker__label" for="cubes-select">{i18n.t("cubes.label")}</label>
-  <div class="cube-picker__row">
+  <div class="flex gap-2">
     <select
       id="cubes-select"
-      class="cube-picker__select"
+      class="flex-1 py-2 px-3 bg-bg text-fg border border-border-strong rounded-sm text-sm"
       value={selectedKey}
       onchange={onChange}
       disabled={datasources.loading}
@@ -91,6 +117,13 @@
           {/each}
         {/each}
       {/each}
+      {#if ossieConnections.length > 0}
+        <optgroup label="Ossie semantic models">
+          {#each ossieConnections as conn}
+            <option value="{OSSIE_PREFIX}{conn.name}">{conn.name}</option>
+          {/each}
+        </optgroup>
+      {/if}
     </select>
     <button
       type="button"
@@ -107,12 +140,12 @@
     <p class="callout callout--danger">{datasources.error}</p>
   {/if}
   {#if !datasources.loading && datasources.connections.length === 0 && !datasources.error}
-    <p class="cube-picker__empty">{i18n.t("cubes.empty")}</p>
+    <p class="m-0 text-sm text-fg-subtle">{i18n.t("cubes.empty")}</p>
   {/if}
 </div>
 
 <style>
-  .cube-picker {
+.cube-picker {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
@@ -124,19 +157,6 @@
     letter-spacing: 0.06em;
     color: var(--fg-muted);
   }
-  .cube-picker__row {
-    display: flex;
-    gap: var(--space-2);
-  }
-  .cube-picker__select {
-    flex: 1;
-    padding: var(--space-2) var(--space-3);
-    background: var(--bg);
-    color: var(--fg);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-sm);
-    font-size: var(--fs-sm);
-  }
   .cube-picker__refresh {
     /* match the select's vertical footprint so they line up at the same height */
     width: 36px;
@@ -147,10 +167,5 @@
   }
   @keyframes cube-picker-spin {
     to { transform: rotate(360deg); }
-  }
-  .cube-picker__empty {
-    margin: 0;
-    font-size: var(--fs-sm);
-    color: var(--fg-subtle);
   }
 </style>

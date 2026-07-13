@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { Button } from "$lib/components/ui";
   import type { SaikuMember } from "$lib/api/discover";
   import { i18n } from "$lib/stores/i18n.svelte";
 
@@ -28,19 +29,19 @@
     {#each filtered as m}
       <li>
         <button type="button" class="row" onclick={() => onSelect(m)}>
-          <span class="name">{m.caption || m.name}</span>
+          <span class="font-medium">{m.caption || m.name}</span>
           <span class="un">{m.uniqueName}</span>
         </button>
       </li>
     {/each}
   </ul>
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onCancel}>{i18n.t("modal.close")}</button>
+    <Button variant="outline" onclick={onCancel}>{i18n.t("modal.close")}</Button>
   {/snippet}
 </Modal>
 
 <style>
-  .list {
+.list {
     list-style: none;
     margin: var(--space-3) 0 0;
     padding: 0;
@@ -64,6 +65,5 @@
     text-align: left;
   }
   .row:hover { background: var(--bg-subtle); }
-  .name { font-weight: var(--weight-medium); }
   .un { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--fg-subtle); }
 </style>

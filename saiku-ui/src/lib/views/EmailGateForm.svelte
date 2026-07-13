@@ -8,6 +8,7 @@
    * this component is the thin shell.
    */
   import { i18n } from "$lib/stores/i18n.svelte";
+  import { Button } from "$lib/components/ui";
   import { requestCode, verifyCode } from "$lib/api/demoGate";
   import { isCompleteCode, isValidEmail, normalizeCode, type GateStep } from "$lib/demo/emailGate";
   import { MailCheck } from "lucide-svelte";
@@ -71,7 +72,7 @@
 </script>
 
 <div class="gate">
-  <div class="gate__badge">
+  <div class="inline-flex items-center justify-center w-[40px] h-[40px] rounded-md bg-success-soft text-success-strong mb-3">
     <MailCheck size={20} />
   </div>
   <h1>{i18n.t("demoGate.title")}</h1>
@@ -116,9 +117,9 @@
           required
         />
       </label>
-      <button type="submit" class="btn btn--primary btn--wide" disabled={busy || !canSend}>
+      <Button class="w-full" type="submit" disabled={busy || !canSend}>
         {busy ? i18n.t("demoGate.sending") : i18n.t("demoGate.sendCode")}
-      </button>
+      </Button>
     </form>
   {:else}
     <form onsubmit={onVerify}>
@@ -135,12 +136,12 @@
           required
         />
       </label>
-      <button type="submit" class="btn btn--primary btn--wide" disabled={busy || !codeComplete}>
+      <Button class="w-full" type="submit" disabled={busy || !codeComplete}>
         {busy ? i18n.t("demoGate.verifying") : i18n.t("demoGate.verify")}
-      </button>
-      <button type="button" class="btn btn--wide gate__back" onclick={back} disabled={busy}>
+      </Button>
+      <Button variant="outline" class="w-full gate__back" onclick={back} disabled={busy}>
         {i18n.t("demoGate.back")}
-      </button>
+      </Button>
     </form>
   {/if}
 
@@ -148,7 +149,7 @@
 </div>
 
 <style>
-  .gate {
+.gate {
     padding: var(--space-6);
     max-width: 380px;
     width: 100%;
@@ -156,17 +157,6 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-md);
-  }
-  .gate__badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: var(--radius-md);
-    background: var(--success-soft);
-    color: var(--success-strong);
-    margin-bottom: var(--space-3);
   }
   .gate h1 {
     margin: 0 0 var(--space-1);
@@ -193,17 +183,10 @@
     font-size: var(--fs-lg);
     text-align: center;
   }
-  .gate__back {
-    margin-top: var(--space-2);
-  }
   .gate__privacy {
     margin: var(--space-4) 0 0;
     font-size: var(--fs-xs);
     color: var(--fg-muted);
     line-height: var(--lh-normal);
-  }
-  .btn--wide {
-    width: 100%;
-    justify-content: center;
   }
 </style>

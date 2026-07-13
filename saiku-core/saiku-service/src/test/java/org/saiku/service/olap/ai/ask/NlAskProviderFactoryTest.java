@@ -80,6 +80,61 @@ public class NlAskProviderFactoryTest {
         assertTrue(p instanceof AnthropicNlAskProvider);
     }
 
+    /* ---- saiku#1431 Azure OpenAI adapter ---- */
+
+    @Test
+    public void azureOpenAiWithoutKeyFallsBackToNoop() {
+        NlAskProvider p = new NlAskProviderFactory("azure-openai", null, null, null, env(Map.of())).build();
+        assertTrue(p instanceof NoopNlAskProvider);
+    }
+
+    @Test
+    public void azureOpenAiWithoutEndpointFallsBackToNoop() {
+        // Azure has no default endpoint — the deployment URL is per-resource and per-deployment.
+        // A misconfiguration where the key is set but the endpoint isn't must not silently emit
+        // to OpenAI's default host on the wrong auth header.
+        NlAskProvider p = new NlAskProviderFactory(
+                        "azure-openai", null, null, null, env(Map.of("AZURE_OPENAI_API_KEY", "k")))
+                .build();
+        assertTrue(p instanceof NoopNlAskProvider);
+    }
+
+    @Test
+    public void azureOpenAiUsesExplicitKey() {
+        NlAskProvider p = new NlAskProviderFactory(
+                        "azure-openai",
+                        "azure-key",
+                        "my-deployment",
+                        "https://my-resource.openai.azure.com/openai/deployments/my-deployment/chat/completions?api-version=2024-02-15-preview",
+                        env(Map.of()))
+                .build();
+        assertTrue(p instanceof AzureOpenAiNlAskProvider);
+    }
+
+    @Test
+    public void azureOpenAiFallsBackToEnvKey() {
+        NlAskProvider p = new NlAskProviderFactory(
+                        "azure-openai",
+                        null,
+                        "my-deployment",
+                        "https://my-resource.openai.azure.com/openai/deployments/my-deployment/chat/completions?api-version=2024-02-15-preview",
+                        env(Map.of("AZURE_OPENAI_API_KEY", "k-from-env")))
+                .build();
+        assertTrue(p instanceof AzureOpenAiNlAskProvider);
+    }
+
+    @Test
+    public void azureOpenAiCaseInsensitive() {
+        NlAskProvider p = new NlAskProviderFactory(
+                        "Azure-OpenAI",
+                        "k",
+                        "my-deployment",
+                        "https://x.openai.azure.com/openai/deployments/d/chat/completions?api-version=2024-02-15",
+                        env(Map.of()))
+                .build();
+        assertTrue(p instanceof AzureOpenAiNlAskProvider);
+    }
+
     private static java.util.function.Function<String, String> env(Map<String, String> map) {
         return map::get;
     }

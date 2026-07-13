@@ -28,6 +28,9 @@ class PlatformStore {
   /** Capabilities probe — populated lazily by loadCapabilities. Null
    *  until the first successful fetch so callers can show a loading state. */
   capabilities = $state<PlatformCapabilities | null>(null);
+  /** True on macOS — drives keyboard-shortcut hints (⌘ vs Ctrl). Detected once
+   *  at construction; false during SSR (no navigator). */
+  readonly isMac: boolean = browser && /mac/i.test(navigator.platform || navigator.userAgent);
 
   constructor() {
     if (browser) {

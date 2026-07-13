@@ -303,7 +303,7 @@
 </div>
 
 <style>
-  /* #1083 sort + top-N styles removed — controls live in ChartEditorModal now. */
+/* #1083 sort + top-N styles removed — controls live in ChartEditorModal now. */
   /* #1053: the frame stays one viewport tall; small multiples grow the inner
      chart to N rows and this wrapper scrolls, keeping each chart full-size. */
   .chart-scroll {
@@ -317,9 +317,6 @@
     border-radius: var(--radius-sm);
   }
   /* Only show the scrollbar when small-multiples actually overflow. */
-  .chart-scroll--scrollable {
-    overflow-y: auto;
-  }
   .chart {
     width: 100%;
     /* height + min-height are set inline = smallMultipleRows × the single size. */

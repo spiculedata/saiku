@@ -31,6 +31,7 @@ import type {
   ChartColorRamp,
   ReferenceLine,
   ReferenceBand,
+  ComboSeriesType,
 } from "$lib/views/chartTypes";
 import { DEFAULT_CHART_OPTIONS, SERIES_AXIS_THRESHOLD, isChartType } from "$lib/views/chartTypes";
 import { aliasGeoName } from "$lib/charts/geoMatch";
@@ -45,6 +46,8 @@ import {
 } from "$lib/views/chartTheme";
 import { buildSparklineSvg } from "$lib/charts/sparkline";
 import { formatNumber, type NumberFormat } from "$lib/charts/numberFormat";
+// #1084: threshold-driven per-point colours.
+import { colorForValue, conditionalFormatForMeasure } from "$lib/charts/chartConditionalFormat";
 
 /** The shared, already-projected chart input both surfaces produce. Rollup
  *  rows are filtered (and parent context promoted into labels) by the caller
@@ -383,6 +386,47 @@ function dataZoomConfig(
       height: 16,
     },
   ];
+}
+
+/* issue #1085: brush cross-filter. Chart types whose x-axis is a discrete
+ * category axis the user can rubber-band to select a contiguous range of
+ * members. Proportional (pie/donut/treemap/sunburst), matrix (heatmap/radar),
+ * point (scatter/bubble) and geo (map) charts have no single category x-axis to
+ * brush, so they're excluded — the tile editor only offers the toggle for these
+ * kinds. */
+export const BRUSHABLE_CHART_TYPES: ReadonlySet<string> = new Set([
+  "bar",
+  "stackedBar",
+  "line",
+  "stackedLine",
+  "area",
+  "stackedArea",
+]);
+
+/* issue #1084: chart kinds that support threshold-driven conditional colours in
+ * Phase 1. Bar/stacked-bar map cleanly (one series per measure → per-bar colour
+ * by value). Scatter/bubble (series = rows, transposed), pie/donut (segment
+ * rules) and heatmap (visualMap) are deferred to later phases per the issue. */
+export const CONDITIONAL_FORMAT_CHART_TYPES: ReadonlySet<string> = new Set(["bar", "stackedBar"]);
+
+/** issue #1085: the ECharts `brush` option for a brushable cartesian chart, or
+ * `null` for a non-brushable type. `lineX` rubber-bands an x-axis RANGE (→ a
+ * contiguous run of category members); `single` keeps one active selection;
+ * `removeOnClick` lets a plain click clear it. The component enters brush mode
+ * programmatically via `takeGlobalCursor` (no toolbox button) — see ChartTile.
+ * Pure: just shapes option JSON, like {@link dataZoomConfig}. */
+export function brushOption(chartType: string): Record<string, unknown> | null {
+  if (!BRUSHABLE_CHART_TYPES.has(chartType)) return null;
+  return {
+    xAxisIndex: 0,
+    brushType: "lineX",
+    brushMode: "single",
+    transformable: false,
+    throttleType: "debounce",
+    throttleDelay: 250,
+    removeOnClick: true,
+    brushStyle: { borderWidth: 1, color: "rgba(120,140,210,0.18)", borderColor: "rgba(120,140,210,0.65)" },
+  };
 }
 
 /* Escape HTML — the map tooltip uses an ECharts function formatter whose return
@@ -1018,34 +1062,57 @@ export function buildChartOption(
       ]
     : { ...valueAxis, name: yName };
 
-  const base = cols.map((name, c) => ({
-    type: kindBase,
-    name,
-    // #1081: per-series colour override (by series name) wins over the cycle
-    // for this one series. ECharts honours a series-level `color` for both bar
-    // and line; absent overrides leave it off so the palette cycle drives it.
-    ...(seriesColorFor(o, name) ? { color: seriesColorFor(o, name) } : {}),
-    // Single-axis stacked → one "total" group (matches both surfaces' prior
-    // output); dual-axis stacked → separate groups per side so each axis stacks
-    // independently.
-    stack: isStacked
-      ? hasRight
-        ? seriesSides[c] === "right"
-          ? "total-right"
-          : "total-left"
-        : "total"
-      : undefined,
-    areaStyle,
-    smooth: kindBase === "line",
-    // #1091: high-contrast — thicker line strokes + bigger markers for lines,
-    // a same-bg border for bars so adjacent bars separate. No-ops when off.
-    ...(kindBase === "line" ? { ...lineStyleHC, ...markerHC } : itemStyleHC),
-    // #1082: format any displayed data labels (no-op object when nf is off).
-    ...seriesValueLabel,
-    yAxisIndex: hasRight ? (seriesSides[c] === "right" ? 1 : 0) : 0,
-    // Compact (tiles) draws missing cells as gaps; roomy (workspace) as 0.
-    data: matrix.map((row) => row[c] ?? (compact ? null : 0)),
-  }));
+  // issue #1089: the chart-level default series type (combo overrides fall back
+  // to it). "area" = a line with an areaStyle fill.
+  const chartDefaultType: ComboSeriesType = areaStyle ? "area" : kindBase;
+  const base = cols.map((name, c) => {
+    // #1089: per-series chart-type override (combo charts). Each series can be
+    // bar / line / area / scatter on the same cartesian grid; absent → the
+    // chart-level default. "area" renders as a line + areaStyle.
+    const stype: ComboSeriesType = o.seriesType?.[name] ?? chartDefaultType;
+    const echType = stype === "area" ? "line" : stype; // bar | line | scatter
+    const isLineLike = stype === "line" || stype === "area";
+    // #1084: conditional-format band for this measure — only for an EFFECTIVE
+    // bar series (line/area keep a continuous stroke; scatter is point-based but
+    // out of Phase-1 cond-format scope). A match recolours the point via
+    // point-level itemStyle, which ECharts merges over the series itemStyle (so
+    // the #1091 HC border is kept) and over the #1081 per-series colour.
+    const cf = echType === "bar" ? conditionalFormatForMeasure(o.conditionalFormat, c) : undefined;
+    return {
+      type: echType,
+      name,
+      // #1081: per-series colour override (by series name) wins over the cycle
+      // for this one series. ECharts honours a series-level `color` for both bar
+      // and line; absent overrides leave it off so the palette cycle drives it.
+      ...(seriesColorFor(o, name) ? { color: seriesColorFor(o, name) } : {}),
+      // Single-axis stacked → one "total" group (matches both surfaces' prior
+      // output); dual-axis stacked → separate groups per side so each axis stacks
+      // independently. (Mixed-type stacking is out of #1089 scope; the field is
+      // ignored by ECharts for scatter and best-effort otherwise.)
+      stack: isStacked
+        ? hasRight
+          ? seriesSides[c] === "right"
+            ? "total-right"
+            : "total-left"
+          : "total"
+        : undefined,
+      // #1089: areaStyle only on an effective area series.
+      areaStyle: stype === "area" ? {} : undefined,
+      smooth: isLineLike,
+      // #1091: high-contrast — thicker line strokes + bigger markers for line-
+      // like series, a same-bg border for bars/points. No-ops when off.
+      ...(isLineLike ? { ...lineStyleHC, ...markerHC } : itemStyleHC),
+      // #1082: format any displayed data labels (no-op object when nf is off).
+      ...seriesValueLabel,
+      yAxisIndex: hasRight ? (seriesSides[c] === "right" ? 1 : 0) : 0,
+      // Compact (tiles) draws missing cells as gaps; roomy (workspace) as 0.
+      data: matrix.map((row) => {
+        const raw = row[c] ?? (compact ? null : 0);
+        const ccolor = cf && typeof raw === "number" ? colorForValue(raw, cf) : undefined;
+        return ccolor ? { value: raw, itemStyle: { color: ccolor } } : raw;
+      }),
+    };
+  });
   const trend =
     kindBase === "line" && cols.length > 0
       ? trendSeries(

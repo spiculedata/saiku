@@ -125,6 +125,28 @@ can correlate logs ↔ traces:
 2026-06-03T12:34:56.789 INFO  [ThinQueryService] [trace_id=4bf92f3577b34da6a3ce929d0e0e4736 span_id=00f067aa0ba902b7] Executing MDX …
 ```
 
+## Provider bundles (saiku#1429)
+
+Four pre-baked provider integrations ship under
+[`observability/`](../observability/) — each with a copy-paste
+quickstart, a Docker Compose bundle (or env template), and a Grafana
+starter dashboard everyone reuses.
+
+| Provider              | Path                                                | Pipeline                                        |
+|-----------------------|-----------------------------------------------------|-------------------------------------------------|
+| **Datadog**           | [`observability/datadog/`](../observability/datadog/)         | Datadog Agent (OTLP receiver) → Datadog SaaS    |
+| **Grafana Cloud**     | [`observability/grafana-cloud/`](../observability/grafana-cloud/) | Direct OTLP → Grafana Cloud                     |
+| **New Relic**         | [`observability/new-relic/`](../observability/new-relic/)     | Direct OTLP → New Relic                         |
+| **AWS CloudWatch**    | [`observability/cloudwatch/`](../observability/cloudwatch/)   | ADOT collector → CloudWatch / X-Ray             |
+
+The [`observability/dashboards/grafana/saiku-overview.json`](../observability/dashboards/grafana/saiku-overview.json)
+dashboard covers HTTP request rate + latency, Mondrian JDBC statement
+rate + p95, JVM heap, GC pause, JVM threads, DBCP2 pool utilization,
+and outbound HTTP calls to AI providers. Import via Grafana →
+Dashboards → Import → Upload JSON. The PromQL queries are compatible
+with any Prometheus-speaking data source (Grafana Cloud Mimir, self-
+hosted Prometheus, Datadog's Prometheus API, etc.).
+
 ## What this doesn't cover
 
 Tier 1 stops at framework-level auto-instrumentation. The following

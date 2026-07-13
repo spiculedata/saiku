@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { Button, buttonVariants } from "$lib/components/ui";
   import { adminDatasources, type AdminDatasource } from "$lib/api/admin";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
@@ -36,10 +37,54 @@
       driver: "mondrian.olap4j.MondrianOlap4jDriver",
       location: "",
       type: "OLAP",
+      connectiontype: "MONDRIAN",
       username: "",
       password: "",
       schemaName: "",
+      ossieYaml: "",
     };
+  }
+
+  /**
+   * True when the currently-edited datasource is Ossie-typed. Drives the field-swap so the
+   * form shows the YAML path + warehouse fields instead of the Mondrian driver / catalog
+   * ones. Kept as a $derived so flipping the Type dropdown auto-updates the visible fields.
+   */
+  const isOssie = $derived(editing?.connectiontype === "OSSIE" || editing?.type === "OSSIE");
+
+  /**
+   * Keep {@link AdminDatasource.connectiontype} in sync with the Type dropdown value so the
+   * server's DataSourceMapper picks the right branch: OLAP → MONDRIAN, RELATIONAL → XMLA,
+   * OSSIE → OSSIE. Called from the dropdown's onchange rather than a $effect to avoid the
+   * effect-write-tracking pitfall (CLAUDE.md's Svelte 5 effect-discipline note).
+   */
+  /**
+   * Materialise the form's `editing` state from an existing datasource. The wire carries
+   * {@link AdminDatasource.connectiontype} as the persisted discriminator; the form's dropdown
+   * binds to `type`, so we back-fill `type` from `connectiontype` here so opening an
+   * OSSIE-typed datasource for edit lands on the OSSIE branch instead of defaulting to OLAP.
+   */
+  function openForEdit(ds: AdminDatasource): AdminDatasource {
+    const copy: AdminDatasource = { ...ds };
+    if (copy.connectiontype === "OSSIE") copy.type = "OSSIE";
+    else if (copy.connectiontype === "XMLA") copy.type = "RELATIONAL";
+    else if (copy.connectiontype === "MONDRIAN") copy.type = "OLAP";
+    return copy;
+  }
+
+  function onTypeChange() {
+    if (!editing) return;
+    if (editing.type === "OSSIE") {
+      editing.connectiontype = "OSSIE";
+      // Driver is unused for OSSIE — the backend derives everything from the Ossie YAML.
+      // We clear it so the on-disk .sds doesn't carry a misleading Mondrian driver hint.
+      editing.driver = "";
+    } else if (editing.type === "RELATIONAL") {
+      editing.connectiontype = "XMLA";
+    } else {
+      editing.connectiontype = "MONDRIAN";
+      if (!editing.driver) editing.driver = "mondrian.olap4j.MondrianOlap4jDriver";
+    }
   }
 
   async function save() {
@@ -79,9 +124,9 @@
 </script>
 
 <div class="pane">
-  <header class="pane__header">
+  <header class="flex justify-between items-center mb-3">
     <h2>{i18n.t("admin.tabs.datasources")}</h2>
-    <button type="button" class="btn btn--primary" onclick={startNew}>{i18n.t("admin.addDatasource")}</button>
+    <Button onclick={startNew}>{i18n.t("admin.addDatasource")}</Button>
   </header>
   {#if error}<p class="callout callout--danger">{error}</p>{/if}
   {#if loading}
@@ -98,15 +143,15 @@
             <td>{ds.schemaName ?? ""}</td>
             <td class="data-grid__actions">
               <a
-                class="btn"
+                class={buttonVariants({ variant: "outline" })}
                 data-testid="generate-schema-link"
                 href={generateSchemaHref(ds)}
               >
                 {generateSchemaLabel(ds)}
               </a>
-              <button class="btn" onclick={() => refreshDs(ds)}>{i18n.t("admin.refresh")}</button>
-              <button class="btn" onclick={() => (editing = { ...ds })}>{i18n.t("admin.edit")}</button>
-              <button class="btn btn--danger" onclick={() => (deleting = ds)}>{i18n.t("admin.delete")}</button>
+              <Button variant="outline" onclick={() => refreshDs(ds)}>{i18n.t("admin.refresh")}</Button>
+              <Button variant="outline" onclick={() => (editing = openForEdit(ds))}>{i18n.t("admin.edit")}</Button>
+              <Button variant="destructive" onclick={() => (deleting = ds)}>{i18n.t("admin.delete")}</Button>
             </td>
           </tr>
         {/each}
@@ -130,38 +175,66 @@
       <input class="field__input" bind:value={editing.name} />
     </label>
     <label class="field">
-      <span class="field__label">Driver</span>
-      <input class="field__input" bind:value={editing.driver} />
-    </label>
-    <label class="field">
-      <span class="field__label">Location (JDBC url)</span>
-      <input class="field__input" bind:value={editing.location} />
-    </label>
-    <label class="field">
       <span class="field__label">Type</span>
-      <select class="field__input" bind:value={editing.type}>
+      <select class="field__input" bind:value={editing.type} onchange={onTypeChange}>
         <option value="OLAP">Semantic Layer (Mondrian)</option>
         <option value="RELATIONAL">Relational</option>
+        <option value="OSSIE">Ossie (SQL semantic model)</option>
       </select>
     </label>
-    <label class="field">
-      <span class="field__label">Schema name</span>
-      <input class="field__input" bind:value={editing.schemaName} />
-    </label>
-    <div class="row">
-      <label class="field field--grow">
+    {#if isOssie}
+      <label class="field">
+        <span class="field__label">Ossie YAML path</span>
+        <input
+          class="field__input"
+          placeholder="/saiku-home/data/ossie/pharma.ossie.yaml"
+          bind:value={editing.ossieYaml}
+        />
+      </label>
+      <label class="field">
+        <span class="field__label">Warehouse JDBC URL</span>
+        <input
+          class="field__input"
+          placeholder="jdbc:postgresql://localhost:5432/warehouse"
+          bind:value={editing.location}
+        />
+      </label>
+      <label class="field">
+        <span class="field__label">Ossie model name</span>
+        <input
+          class="field__input"
+          placeholder="Semantic model name inside the YAML (defaults to datasource name)"
+          bind:value={editing.schemaName}
+        />
+      </label>
+    {:else}
+      <label class="field">
+        <span class="field__label">Driver</span>
+        <input class="field__input" bind:value={editing.driver} />
+      </label>
+      <label class="field">
+        <span class="field__label">Location (JDBC url)</span>
+        <input class="field__input" bind:value={editing.location} />
+      </label>
+      <label class="field">
+        <span class="field__label">Schema name</span>
+        <input class="field__input" bind:value={editing.schemaName} />
+      </label>
+    {/if}
+    <div class="flex gap-3">
+      <label class="field flex-1">
         <span class="field__label">Username</span>
         <input class="field__input" bind:value={editing.username} />
       </label>
-      <label class="field field--grow">
+      <label class="field flex-1">
         <span class="field__label">Password</span>
         <input class="field__input" type="password" bind:value={editing.password} />
       </label>
     </div>
   {/if}
   {#snippet footer()}
-    <button class="btn" onclick={() => (editing = null)}>Cancel</button>
-    <button class="btn btn--primary" onclick={save}>Save</button>
+    <Button variant="outline" onclick={() => (editing = null)}>Cancel</Button>
+    <Button onclick={save}>Save</Button>
   {/snippet}
 </Modal>
 
@@ -176,9 +249,6 @@
 />
 
 <style>
-  .pane__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); }
-  h2 { margin: 0; }
+h2 { margin: 0; }
   /* .data-grid / .data-grid__actions / .data-grid__empty come from app.css */
-  .row { display: flex; gap: var(--space-3); }
-  .field--grow { flex: 1; }
 </style>

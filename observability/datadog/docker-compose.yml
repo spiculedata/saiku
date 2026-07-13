@@ -1,0 +1,47 @@
+# Saiku → Datadog Agent (OTLP receiver) → Datadog SaaS.
+#
+# The Datadog Agent's OTLP receiver runs on 4317 (gRPC) and 4318 (HTTP).
+# Saiku emits to the HTTP endpoint by default because it's the simplest to
+# proxy through service meshes if you later put one in front.
+#
+# Required: DD_API_KEY. Optional: DD_SITE (defaults to US1).
+services:
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:7
+    container_name: saiku-dd-agent
+    environment:
+      DD_API_KEY: ${DD_API_KEY:?DD_API_KEY must be set}
+      DD_SITE: ${DD_SITE:-datadoghq.com}
+      # Enable the OTLP receiver on both protocols. Saiku picks HTTP by
+      # default; leaving gRPC on lets you point other services at it too.
+      DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_GRPC_ENDPOINT: "0.0.0.0:4317"
+      DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT: "0.0.0.0:4318"
+      DD_APM_ENABLED: "true"
+      DD_LOGS_ENABLED: "true"
+      DD_HOSTNAME: "saiku-host"
+    ports:
+      # Only exposed on localhost; if you're running the agent on a
+      # dedicated observability node, drop these binds.
+      - "127.0.0.1:4318:4318"
+      - "127.0.0.1:4317:4317"
+
+  saiku:
+    image: ghcr.io/spiculedata/saiku:latest
+    container_name: saiku
+    depends_on:
+      - datadog-agent
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://datadog-agent:4318"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
+      OTEL_SERVICE_NAME: "saiku"
+      OTEL_RESOURCE_ATTRIBUTES: "deployment.environment=demo,service.version=4.6.0"
+      # Sensible-default sampler for the demo. Flip to
+      # parentbased_traceidratio for production.
+      OTEL_TRACES_SAMPLER: "parentbased_always_on"
+    ports:
+      - "8080:8080"
+    volumes:
+      - saiku-home:/app/saiku-home
+
+volumes:
+  saiku-home: {}

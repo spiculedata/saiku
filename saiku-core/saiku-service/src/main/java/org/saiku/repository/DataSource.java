@@ -28,6 +28,9 @@ public class DataSource {
     private String csv;
     private String enabled;
 
+    /** Path to the Ossie YAML file. Only meaningful when {@link #type} is {@code "OSSIE"}. */
+    private String ossieYaml;
+
     public DataSource(SaikuDatasource datasource) {
         this.type = datasource.getType().toString();
         this.name = datasource.getName();
@@ -56,6 +59,9 @@ public class DataSource {
 
         if (datasource.getProperties().containsKey("propertyKey")) {
             this.propertyKey = datasource.getProperties().getProperty("propertyKey");
+        }
+        if (datasource.getProperties().containsKey("ossieYaml")) {
+            this.ossieYaml = datasource.getProperties().getProperty("ossieYaml");
         }
     }
 
@@ -209,5 +215,14 @@ public class DataSource {
 
     public void setEnabled(String enabled) {
         this.enabled = enabled;
+    }
+
+    @XmlElement
+    public String getOssieYaml() {
+        return ossieYaml;
+    }
+
+    public void setOssieYaml(String ossieYaml) {
+        this.ossieYaml = ossieYaml;
     }
 }

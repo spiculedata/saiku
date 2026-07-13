@@ -1,0 +1,43 @@
+# Saiku → ADOT collector → CloudWatch / X-Ray / CloudWatch Logs.
+#
+# The AWS Distro for OpenTelemetry (ADOT) collector wraps the standard
+# OpenTelemetry Collector with pre-configured AWS exporters. IAM
+# authentication happens transparently — either via the EC2 / ECS /
+# EKS instance role, or via mounted credentials.
+services:
+  otel-collector:
+    image: public.ecr.aws/aws-observability/aws-otel-collector:latest
+    container_name: saiku-adot-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    environment:
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      # If you're passing static creds (not recommended), uncomment:
+      # AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      # AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      # AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN}
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+      # Mount ~/.aws when running under aws-vault or dev machines.
+      - ${HOME}/.aws:/root/.aws:ro
+    ports:
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+
+  saiku:
+    image: ghcr.io/spiculedata/saiku:latest
+    container_name: saiku
+    depends_on:
+      - otel-collector
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
+      OTEL_SERVICE_NAME: "saiku"
+      OTEL_RESOURCE_ATTRIBUTES: "deployment.environment=demo,service.version=4.6.0"
+      OTEL_TRACES_SAMPLER: "parentbased_always_on"
+    ports:
+      - "8080:8080"
+    volumes:
+      - saiku-home:/app/saiku-home
+
+volumes:
+  saiku-home: {}

@@ -24,6 +24,14 @@ import java.util.Properties;
 public interface ISaikuConnection {
 
     String OLAP_DATASOURCE = "OLAP"; // $NON-NLS-1$
+    String OSSIE_DATASOURCE = "OSSIE"; // $NON-NLS-1$
+
+    /** Property key for the path to the Ossie YAML file backing an OSSIE datasource. */
+    String OSSIE_YAML_KEY = "ossieYaml"; // $NON-NLS-1$
+    /** Property key for the Ossie {@code semantic_model[].name} to expose when the document has
+     *  multiple; optional (defaults to the first entry). */
+    String OSSIE_MODEL_KEY = "ossieModel"; // $NON-NLS-1$
+
     String NAME_KEY = "name"; // $NON-NLS-1$
     String DRIVER_KEY = "driver"; // $NON-NLS-1$
     String URL_KEY = "location"; // $NON-NLS-1$
@@ -55,7 +63,7 @@ public interface ISaikuConnection {
         PASSWORD_ENCRYPT_KEY
     };
 
-    String[] DATASOURCES = new String[] {OLAP_DATASOURCE};
+    String[] DATASOURCES = new String[] {OLAP_DATASOURCE, OSSIE_DATASOURCE};
 
     /**
      * Sets the properties to be used when the connection is made. The standard keys for the properties are defined in

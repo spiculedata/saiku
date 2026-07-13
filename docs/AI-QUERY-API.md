@@ -41,6 +41,8 @@ Plus the long-tail:
 | `GET /saiku/api/ai/query/{queryId}/drillthrough?maxrows=N` | Get the raw fact rows behind a result. Add `?firstRowset=N` for warehouse-side short-circuit; add `?returns=col1,col2` to project a subset. |
 | `GET /saiku/api/ai/query/{queryId}/drillthrough/columns` | List the drillthrough columns available for `returns=` (saiku#774) |
 | `GET /saiku/api/ai/query/{queryId}/drillthrough/export/csv` | Same params as the JSON drillthrough (`position`, `returns`, `maxrows`, `firstRowset`); streams `text/csv` with `Content-Disposition: attachment` for direct download (saiku#1051). |
+| `POST /saiku/api/ai/anomaly` | Run a query, then flag anomalous points along a time axis. Returns the typed records response with an `anomaly:{score,expected,direction}` block on each flagged cell, plus an `anomaly` summary (`method`, `threshold`, `anomalyCount`) (saiku#907). |
+| `POST /saiku/api/ai/forecast` | Run a time-series query, then project `horizon` future points with prediction intervals. Returns the typed records response (observed data untouched) plus a `forecast` block keyed by measure (saiku#908). |
 
 All routes require an authenticated session (form login at `POST /login`
 on the launcher; same auth as the regular UI).
@@ -395,6 +397,32 @@ keyed by the column index as a string — but cells are still the typed
 typically ignore it. `freshness.computedAtMillis` is when the engine
 finished the query; `cached` indicates a cache-hit response.
 
+### Privacy: k-anonymity small-cell suppression (saiku#905)
+
+When `ai.kAnonymity` is set (default `5`; `0` disables), the server masks
+small-cell measure values before the result crosses the AI boundary. Any row —
+in **either** `records` **or** `matrix` format — whose in-result count measure (a
+column whose caption names a count on a word boundary, e.g. Mondrian's `Fact
+Count`, so `Discount` / `Account` are *not* mistaken for it) falls below `k` has
+every measure cell in that row masked. A masked cell carries `suppressed: true`,
+a nulled `value`, and a `formatted` of `—` (or the configured
+`ai.kAnonymity.maskValue`). This is the standard statistical small-cell control:
+a "SUM of salary by department" stops disclosing a one-person department's
+salary. Both egress shapes run the same suppression core, so they cannot drift
+apart (the `format=matrix` bypass was closed in saiku#1324).
+
+**v1 limit (the shadow-count follow-up is tracked as saiku#905-B):**
+
+- **Only in-result count measures are covered.** A cube whose result carries no
+  count measure is not suppressed (there's nothing to key the small-cell test on
+  — the shadow-count follow-up, saiku#905-B, would inject a hidden count).
+- The `/ai/anomaly` and `/ai/forecast` surfaces **are** now suppressed (saiku#1482):
+  their observed records run through the same filter as `/ai/query` before egress,
+  so a small cell can't leak just because it was requested via the anomaly/forecast
+  path. Detection/forecasting still run on the real values (accurate flags); only
+  the observed cell **values** are masked. Forecast projections are derived
+  aggregates, not raw cells, and are unaffected.
+
 ---
 
 ## Step 4 — validation: how the API teaches the agent
@@ -603,6 +631,24 @@ to know which columns are valid before issuing a constrained drillthrough
 
 If both are supplied, `firstRowset` wins.
 
+**Per-cell drillthrough** — by default the endpoint drills the result as a
+whole. To drill the fact rows behind a *single* cell (what a dashboard
+cell-click does, saiku#930), pass the cellset coordinate as
+`?position=col:row` — the **column-axis** position index first, then the
+**row-axis** position index, zero-based:
+
+```http
+GET /rest/saiku/api/ai/query/{queryId}/drillthrough?position=2:1&maxrows=20
+```
+
+Here `2:1` means "the cell at column-axis position 2, row-axis position 1".
+The indices are positions on the cellset axes, not member ordinals — they
+mirror the indices the workspace (`Query2Resource`) uses, so the same cell
+yields the same rows in either surface. A malformed `position` returns a
+`400` with a descriptive message rather than drilling the whole result.
+The CSV export endpoint
+(`/query/{queryId}/drillthrough/export/csv`) accepts the same `position`.
+
 ---
 
 ## Step 6 — async path (long-running queries)
@@ -647,6 +693,112 @@ DELETE /rest/saiku/api/ai/query/7f8b94b5-03aa-4fd9-aead-11ed3bdadfcb
 
 Cancellation is best-effort but real — it calls `OlapStatement.cancel()`
 on the live Mondrian statement, not just a soft flag.
+
+---
+
+## Step 7 — analytics: anomaly detection + forecast
+
+Two server-side analytics endpoints run a query through the **same path**
+`POST /query` uses, then layer a statistical pass on top of the result.
+Both are **Tier-3, in-JVM** — no LLM, no external model, no network call —
+and both reuse the self-correcting `400` envelope (`field` + `available`)
+for bad parameters.
+
+### Anomaly detection — `POST /ai/anomaly` (saiku#907)
+
+Flags anomalous points along a time axis. Body wraps an ordinary
+`AiQueryRequest` plus the time axis to scan:
+
+```jsonc
+{
+  "query": { /* a normal /query request body — cube, measures, rows, … */ },
+  "timeAxis": "[Time].[Time].[Month]",  // required: unique name of the time axis
+  "method": "zscore",                    // optional: "zscore" (default) | "mad"
+  "threshold": 3.0                       // optional: positive; default per method
+}
+```
+
+- `method` — `zscore` (rolling mean ± σ, default threshold **3.0**) or
+  `mad` (median absolute deviation, more outlier-robust, default
+  threshold **3.5**). `stl` is registered but returns a `400` until the
+  impl lands. Unknown methods return the candidate list in `available`.
+- `threshold` — must be a positive number; larger = stricter (fewer
+  points flagged).
+
+The response is the standard **records** response, with an `anomaly`
+block added to each flagged cell, plus a sibling summary so "no
+anomalies" is an explicit `0` — never a missing field:
+
+```jsonc
+{
+  "response": {
+    "format": "records",
+    "data": [
+      /* … normal rows; the measure cell is the {value,formatted,unit} envelope … */
+      {
+        "Month": "December",
+        "Unit Sales": {
+          "value": 9281.0, "formatted": "9,281", "unit": null,
+          "anomaly": { "score": 4.12, "expected": 5230.0,
+                       "direction": "high", "anomaly": true }
+        }
+      }
+    ]
+  },
+  "anomaly": { "method": "zscore", "threshold": 3.0,
+               "timeAxis": "[Time].[Time].[Month]", "anomalyCount": 1 }
+}
+```
+
+The `anomaly` object hangs off the flagged **measure cell** inside the
+`data` row (non-anomalous cells are left untouched, so the payload stays
+lean). `direction` is `high` / `low` relative to `expected`; `score` is
+the detector's distance metric (σ for `zscore`, scaled MAD for `mad`).
+The dashboard chart tile reads these to drop marker points on the series.
+
+### Forecast — `POST /ai/forecast` (saiku#908)
+
+Projects future points for each measure in a time-series query, with
+prediction intervals:
+
+```jsonc
+{
+  "query": { /* a normal /query request body */ },
+  "timeAxis": "[Time].[Time].[Month]",  // required
+  "method": "ets",                       // optional: "ets" (default)
+  "horizon": 6,                          // optional: future points, 1–365 (default 6)
+  "confidence": 0.95                     // optional: interval level, 0–1 exclusive (default 0.95)
+}
+```
+
+- `method` — `ets` (exponential smoothing, Holt's linear trend) is the
+  only live forecaster; `arima` and `prophet` are registered stubs that
+  `400` until implemented.
+- `horizon` — number of future periods, **1–365**.
+- `confidence` — interval level, strictly between 0 and 1.
+
+The response echoes the typed records response (observed data
+**untouched**) plus a `forecast` block keyed by measure caption. Each
+projected point carries the point estimate and the interval bounds:
+
+```jsonc
+{
+  "response": { /* the observed series, unchanged */ },
+  "forecast": {
+    "method": "ets", "horizon": 6, "confidence": 0.95,
+    "timeAxis": "[Time].[Time].[Month]",
+    "series": {
+      "Unit Sales": [
+        { "value": 5310.4, "lower": 4980.1, "upper": 5640.7, "forecast": true }
+      ]
+    }
+  }
+}
+```
+
+`forecast: true` marks projected points (vs observed); `lower`/`upper`
+are the interval bounds at the requested `confidence`. The chart tile
+appends these as a dashed continuation with a shaded confidence band.
 
 ---
 
@@ -978,18 +1130,50 @@ file consumed by Spring.
 saiku.ai.ask.provider = anthropic
 # env ANTHROPIC_API_KEY = sk-ant-...
 
-# openai (or any OpenAI-compatible host — Azure, vLLM, Ollama, Together)
+# openai (or any OpenAI-compatible host — vLLM, Ollama, Together, LiteLLM)
 saiku.ai.ask.provider = openai
 # env OPENAI_API_KEY    = sk-...
 
-# optional, both providers
-saiku.ai.ask.model    = claude-sonnet-4-7 | gpt-4o-mini | ...
+# azure-openai (saiku#1431) — Azure OpenAI Service. Requires an endpoint.
+saiku.ai.ask.provider = azure-openai
+saiku.ai.ask.endpoint = https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completions?api-version=2024-02-15-preview
+saiku.ai.ask.model    = <deployment>          # the deployment name in the URL; sent as `model` in the body too
+# env AZURE_OPENAI_API_KEY = <azure-api-key>
+
+# optional, all providers
+saiku.ai.ask.model    = claude-sonnet-4-7 | gpt-4o-mini | <azure-deployment> | ...
 saiku.ai.ask.endpoint = https://my.openai-compatible.host/v1/chat/completions
 saiku.ai.ask.apiKey   = sk-...   # explicit override of the env var
 ```
 
 Provider defaults: `anthropic` → `claude-sonnet-4-6`,
-`openai` → `gpt-4o-mini` against `https://api.openai.com/v1/chat/completions`.
+`openai` → `gpt-4o-mini` against `https://api.openai.com/v1/chat/completions`,
+`azure-openai` → no default endpoint (must be configured explicitly;
+provider refuses to construct otherwise so the key can't accidentally
+leak to the wrong host).
+
+### Bring-your-own LLM (saiku#1431)
+
+Enterprise deployments often can't send prompts to Anthropic or OpenAI
+directly — the LLM has to run inside the customer's VPC or behind their
+existing procurement. The ask layer covers the three most common
+BYOLLM shapes:
+
+| Shape                    | Provider          | Endpoint                                                                              | Auth header               |
+|--------------------------|-------------------|---------------------------------------------------------------------------------------|---------------------------|
+| Azure OpenAI Service     | `azure-openai`    | `https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completions?api-version=<v>` | `api-key: <key>`         |
+| Self-hosted / OpenAI-compat proxy (vLLM, Ollama, LiteLLM, Together) | `openai`          | any URL that speaks OpenAI's Chat Completions API                                     | `Authorization: Bearer …` |
+| AWS Bedrock              | `openai` via [LiteLLM](https://docs.litellm.ai/) proxy | LiteLLM in front of Bedrock (`https://litellm.internal/v1/chat/completions`) | `Authorization: Bearer …` (LiteLLM handles SigV4 upstream) |
+
+The native `azure-openai` adapter takes care of the two Azure-specific
+things (deployment-name-in-URL and `api-key` header) so operators don't
+have to run a translation proxy for the most common case.
+
+For Bedrock, the recommended pattern is LiteLLM as an OpenAI-compatible
+front — it handles SigV4 upstream and Saiku hits it as a plain
+`openai` provider. This avoids baking the AWS SDK into Saiku itself
+(30+ MB of jars for a rarely-changing surface). A native Bedrock
+provider can land as a follow-up if the LiteLLM path proves painful.
 
 **API keys are never logged.** A single INFO line at boot records the
 selected provider + model:
@@ -1093,6 +1277,97 @@ curl -sS -X POST -H 'Content-Type: application/json' \
 # }
 ```
 
+### Streaming variant — `POST /ai/ask/stream` (saiku#1433)
+
+Same request body, same auth, same rate/size guards, same envelope
+shape — but the response is a Server-Sent Events stream so embedded
+chat surfaces can render progress as it arrives.
+
+```http
+POST /rest/saiku/api/ai/ask/stream
+Content-Type: application/json
+Accept:       text/event-stream
+```
+
+Response is a sequence of SSE events per [WHATWG](https://html.spec.whatwg.org/multipage/server-sent-events.html):
+
+```
+event: model
+data: {"model":"claude-sonnet-4-6"}
+
+event: intent
+data: {"kind":"INSIGHT"}
+
+event: chunk
+data: {"delta":"Store "}
+
+event: chunk
+data: {"delta":"Sales trended up 12% week-on-week."}
+
+event: final
+data: {"degraded":false,"model":"claude-sonnet-4-6","insight":{"markdown":"Store Sales trended up 12% week-on-week."}}
+```
+
+Event names:
+
+| Event    | When                                                    | Payload                                                                         |
+|----------|---------------------------------------------------------|---------------------------------------------------------------------------------|
+| `model`  | Always fires first when the provider returned a model id | `{"model": "<model-id>"}`                                                        |
+| `intent` | After tool routing, before payload                       | `{"kind": "QUERY" \| "INSIGHT" \| "VIEW_CHANGE"}`                                |
+| `chunk`  | For prose-carrying intents (INSIGHT + VIEW_CHANGE `reason`), zero or more times | `{"delta": "<word or whitespace run>"}` — concatenating all deltas recovers the source |
+| `final`  | Always fires last on success                             | the complete `AskResponse` envelope — same shape as sync `/ai/ask` returns       |
+| `error`  | On degraded (provider transport / parse / auth failure)  | `{"reason": "<explanation>"}` — followed by a `final` event with `degraded:true` |
+
+**Streaming semantics (v1).** The underlying provider call is still
+synchronous — the LLM's tool-use response arrives whole. The endpoint
+then splits any prose fields (insight markdown, view-change reason)
+into word-sized deltas so the client renders progressively. True
+per-token streaming from the LLM provider is a follow-up; the wire
+shape above is stable so a future PR that plugs in real LLM streaming
+won't require any client changes.
+
+**Client-side accumulation:**
+
+```js
+const es = new EventSource('/rest/saiku/api/ai/ask/stream', { withCredentials: true });
+let markdown = "";
+es.addEventListener('chunk', (e) => {
+  markdown += JSON.parse(e.data).delta;
+  render(markdown);
+});
+es.addEventListener('final', (e) => {
+  const full = JSON.parse(e.data);
+  // full === same shape as POST /ai/ask returns
+  es.close();
+});
+es.addEventListener('error', (e) => {
+  const err = JSON.parse(e.data);
+  showError(err.reason);
+});
+```
+
+Or with `fetch` for POST bodies (EventSource is GET-only):
+
+```js
+const res = await fetch('/rest/saiku/api/ai/ask/stream', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
+  body: JSON.stringify({ question, cube }),
+});
+const reader = res.body.getReader();
+const decoder = new TextDecoder();
+let buffer = '';
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  buffer += decoder.decode(value, { stream: true });
+  // Split on double-newlines (event boundaries) and dispatch each event.
+  const events = buffer.split('\n\n');
+  buffer = events.pop();
+  for (const raw of events) dispatchSseEvent(raw);
+}
+```
+
 ### What the model sees vs doesn't
 
 The ask layer sends the model **only** the cube's AiSchema (serialised
@@ -1109,3 +1384,161 @@ The model never sees:
 
 This is the same isolation model the existing `/ai/query` agent surface
 uses, applied one layer earlier.
+
+## Skills — admin-authored workflows for `/ai/ask` (saiku#1426)
+
+Skills are markdown files with YAML frontmatter that land under
+`saiku-home/skills/`. The launcher scans them lazily (mtime-based
+signature check — no watcher thread) and injects the catalogue into the
+LLM system prompt every ask. Full file-format reference is in
+[docs/SKILLS-SPEC.md](./SKILLS-SPEC.md).
+
+Two invocation paths, both routing through the same `POST /ai/ask`
+endpoint documented above:
+
+- **Slash-command:** `POST /ai/ask` with a question that starts
+  `/<skill-name>`. If the skill exists, the ask service expands the
+  skill's body verbatim as the question, appended with the user's
+  refinement. The LLM sees the workflow AND the follow-up together, so
+  `/weekly-rollup for Q4 instead of this week` works exactly as an
+  operator would hope.
+- **Natural language:** the skill catalogue lands in the LLM system
+  prompt as a bulleted list of `/<name>: <description>` — the model
+  picks a matching skill on its own when the user's ask lines up with a
+  description. No explicit slash needed.
+
+### File format
+
+```markdown
+---
+name: weekly-foodmart-rollup
+description: |
+  Weekly revenue rollup for the FoodMart Sales cube: total Store Sales
+  by Product Family for the last 7 days, compared to the prior 7 days.
+cube: unknown_foodmart/FoodMart/FoodMart/Sales
+---
+
+## Steps
+
+1. Query total `[Measures].[Store Sales]` by `[Product].[Product Family]`
+   for the last 7 days.
+2. Query the same for the prior 7 days.
+3. Flag any family whose delta swings by more than 20%.
+```
+
+- `name` — kebab-case, `[a-z][a-z0-9-]{0,63}`. Used as the slash slug.
+- `description` — required. Fed to the LLM as the routing hint.
+- `cube` — optional `connection/catalog/schema/cubeName` ref. Scopes the
+  skill.
+
+Unknown top-level frontmatter keys are **rejected** so a typo
+(`descripton`) surfaces as a structured error rather than a silent
+nameless skill.
+
+### REST surface
+
+- `GET /rest/saiku/api/ai/skills` — catalogue of `{name, description,
+  cube}` summaries.
+- `GET /rest/saiku/api/ai/skills?errors=true` — same, plus the list of
+  files that failed to parse this scan, each with a stable machine
+  code (`EMPTY_SKILL`, `MISSING_FRONTMATTER`, `MALFORMED_YAML`,
+  `INVALID_NAME`, `DUPLICATE_NAME`, `UNKNOWN_FIELD`, …). Operators fix
+  frontmatter from this endpoint without reading server logs.
+- `GET /rest/saiku/api/ai/skills/{name}` — full body of one skill.
+  Handy for a UI slash-menu preview.
+- `POST /rest/saiku/api/ai/skills/refresh` — force a rescan (bypasses
+  the mtime signature check).
+
+### Bundled example
+
+Fresh installs stage `weekly-foodmart-rollup.md` into
+`saiku-home/skills/` on first boot — see
+`saiku-launcher/src/main/resources/seed/skills/`. The DimSum widget's
+`/ai/skills` catalogue has something to return immediately without an
+operator editing a file.
+
+### Error surfacing
+
+Broken skills don't take down the catalogue: a `ParseException` on one
+file discards that one entry and leaves the rest intact. Every failure
+carries a stable code — see the full table in
+[docs/SKILLS-SPEC.md](./SKILLS-SPEC.md#errors).
+
+## Agent Spaces — persona layer over `/ai/ask` (saiku#1440)
+
+Where skills codify individual workflows, **spaces** codify a persona:
+a named viewpoint that scopes an ask surface. Each space bundles a
+system prompt, a cube allowlist, a skill allowlist, and a suggested-
+prompts list. Persisted as JSON under `saiku-home/agent-spaces/`; the
+launcher scans lazily with the same mtime-signature model as skills.
+Full reference: [docs/AGENT-SPACES-SPEC.md](./AGENT-SPACES-SPEC.md).
+
+Two things make a space genuinely enforce scope:
+
+- **Cube allowlist.** `POST /ai/spaces/{id}/ask` refuses any cube ref
+  outside the allowlist with a 403 `FORBIDDEN`. When the body omits
+  `cube`, the space's first allowlisted ref is used as the default. The
+  check runs twice: on the caller-supplied ref before the model call,
+  and again on the cube the model emits in its generated query — so a
+  prompt-injected cross-cube query can't escape the persona's scope
+  (saiku#1453).
+- **System prompt injection.** The space's `systemPrompt` is prepended
+  to the built-in `SYSTEM_PROMPT` on the provider side. Users can't
+  override it through `history` or `question`.
+
+The skill catalogue seen by the LLM is filtered to the space's
+`skillAllowlist` too — a slash-command for a skill outside the space
+falls through as a raw ask.
+
+### On-disk shape
+
+```json title="saiku-home/agent-spaces/foodmart-sales-analyst.json"
+{
+  "id": "foodmart-sales-analyst",
+  "name": "FoodMart Sales Analyst",
+  "description": "Weekly and monthly sales rollups over FoodMart.",
+  "systemPrompt": "You are the FoodMart Sales Analyst. Prefer weekly grain...",
+  "cubeAllowlist": [
+    {"connectionName": "unknown_foodmart", "catalog": "FoodMart", "schema": "FoodMart", "cubeName": "Sales"}
+  ],
+  "skillAllowlist": ["weekly-foodmart-rollup"],
+  "suggestedPrompts": [
+    "How did Store Sales track last week vs the prior week?",
+    "/weekly-foodmart-rollup"
+  ]
+}
+```
+
+### REST surface
+
+- `GET /rest/saiku/api/ai/spaces` — catalogue (compact summaries —
+  `id`, `name`, `description`, `suggestedPrompts`). The `systemPrompt`
+  and `cubeAllowlist` are omitted so an unauthenticated embed can't
+  scrape the routing.
+- `GET /rest/saiku/api/ai/spaces?errors=true` — same, plus parse
+  errors.
+- `GET /rest/saiku/api/ai/spaces/{id}` — full record (for the admin
+  UI when editing a persona).
+- `POST /rest/saiku/api/ai/spaces/{id}/ask` — space-scoped ask. Body
+  shape mirrors `/ai/ask` but `cube` is optional.
+- `POST /rest/saiku/api/ai/spaces/{id}/ask/stream` — SSE streaming
+  variant. Same event schema as [`/ai/ask/stream`](#streaming-variant--post-aiaskstream-saiku1433)
+  (`model` → `intent` → `chunk` → `final`), but the persona scoping
+  from the space applies — the client sees identical wire events
+  whether they hit `/ai/ask/stream` or the space-scoped mirror. The
+  scope check is a pre-flight: a cube outside the allowlist returns a
+  real `403` (an unknown space `404`) *before* the event-stream opens,
+  not a `200` carrying an in-band error event.
+- `POST /rest/saiku/api/ai/spaces/refresh` — force a rescan.
+
+### Bundled examples
+
+Fresh launcher installs stage two personas:
+
+- **FoodMart Sales Analyst** — analytical, brief, numbers-first;
+  `weekly-foodmart-rollup` in its skill allowlist.
+- **FoodMart Finance Ops** — cautious, precise, margin-focused;
+  empty skill allowlist = all skills allowed.
+
+See `saiku-launcher/src/main/resources/seed/agent-spaces/`. A fresh
+demo has personas ready to click without any operator authoring.

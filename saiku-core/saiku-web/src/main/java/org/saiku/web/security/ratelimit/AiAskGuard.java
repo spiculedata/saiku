@@ -42,8 +42,25 @@ public final class AiAskGuard {
      */
     public static Violation checkSize(AiAskApi.AskRequest body) {
         if (body == null) return null;
+        List<String> historyContents = new java.util.ArrayList<>();
+        if (body.getHistory() != null) {
+            for (AiAskApi.NlAskMessageDto m : body.getHistory()) {
+                historyContents.add(m == null ? null : m.getContent());
+            }
+        }
+        return checkSize(body.getQuestion(), historyContents);
+    }
 
-        String question = body.getQuestion();
+    /**
+     * Primitive size check shared by the MDX ask endpoints (via {@link #checkSize(AiAskApi.AskRequest)})
+     * and the Ossie ask endpoint (saiku#1459), which carries its question + history as raw strings
+     * rather than an {@link AiAskApi.AskRequest}. A {@code null} question / history is treated as
+     * in-bounds — the caller rejects an absent question with its own 400.
+     *
+     * @param question the free-form ask text
+     * @param historyContents the {@code content} of each prior turn (nulls tolerated)
+     */
+    public static Violation checkSize(String question, List<String> historyContents) {
         long total = question == null ? 0 : question.length();
         if (question != null && question.length() > MAX_QUESTION_CHARS) {
             return new Violation(
@@ -52,25 +69,25 @@ public final class AiAskGuard {
                     true);
         }
 
-        List<AiAskApi.NlAskMessageDto> history = body.getHistory();
-        if (history != null) {
-            if (history.size() > MAX_HISTORY_MESSAGES) {
+        if (historyContents != null) {
+            if (historyContents.size() > MAX_HISTORY_MESSAGES) {
                 // Count overflow is a malformed/abusive request shape, not an
                 // oversize payload — surface as 400 so the client trims turns.
                 return new Violation(
                         "history",
-                        "history exceeds the " + MAX_HISTORY_MESSAGES + "-message limit (" + history.size() + ").",
+                        "history exceeds the " + MAX_HISTORY_MESSAGES + "-message limit (" + historyContents.size()
+                                + ").",
                         false);
             }
-            for (AiAskApi.NlAskMessageDto m : history) {
-                if (m == null || m.getContent() == null) continue;
-                if (m.getContent().length() > MAX_MESSAGE_CHARS) {
+            for (String content : historyContents) {
+                if (content == null) continue;
+                if (content.length() > MAX_MESSAGE_CHARS) {
                     return new Violation(
                             "history",
                             "a history message exceeds the " + MAX_MESSAGE_CHARS + "-character limit.",
                             true);
                 }
-                total += m.getContent().length();
+                total += content.length();
             }
         }
 

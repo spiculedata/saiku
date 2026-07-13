@@ -124,6 +124,11 @@
         <property name="datasourceService" ref="datasourceServiceBean"/>
     </bean>
 
+    <!-- Ossie-side discover: reads the semantic model YAML for OSSIE datasources -->
+    <bean id="ossieDiscoverServiceBean" class="org.saiku.service.ossie.OssieDiscoverService">
+        <property name="datasourceManager" ref="repositoryDsManager"/>
+    </bean>
+
     <bean id="olapQueryBean" scope="session" class="org.saiku.service.olap.OlapQueryService" destroy-method="destroy">
         <aop:scoped-proxy/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
@@ -139,6 +144,7 @@
           class="org.saiku.web.rest.resources.OlapDiscoverResource">
         <aop:scoped-proxy/>
         <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <property name="ossieDiscoverService" ref="ossieDiscoverServiceBean"/>
     </bean>
 
 
@@ -172,6 +178,23 @@
         <property name="userService" ref="userServiceBean"/>
         <!-- saiku#946: shared in-flight coalescer (singleton) -->
         <property name="queryCoalescer" ref="queryCoalescerBean"/>
+        <!-- Ossie query executor: takes over when ThinQuery.queryType = "OSSIE". -->
+        <property name="ossieQueryService" ref="ossieQueryServiceBean"/>
+    </bean>
+
+    <!-- Ossie query executor. Consults OssieDiscoverService for the semantic model
+         and OlapDiscoverService.getConnectionManager() for the underlying Calcite
+         JDBC connection. -->
+    <bean id="ossieQueryServiceBean" class="org.saiku.service.ossie.OssieQueryService">
+        <property name="ossieDiscoverService" ref="ossieDiscoverServiceBean"/>
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+    </bean>
+
+    <!-- Ossie graph traversal: walks the relationships the model declares via a recursive
+         CTE over the datasource's warehouse (DuckDB/Quack) connection. Powers /ai/ossie/graph. -->
+    <bean id="ossieGraphServiceBean" class="org.saiku.service.ossie.OssieGraphService">
+        <property name="ossieDiscoverService" ref="ossieDiscoverServiceBean"/>
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
     </bean>
 
     <bean id="platformBean" class="org.saiku.service.PlatformUtilsService">
@@ -238,9 +261,33 @@
         <property name="probeUnqueryable" value="#{systemProperties['saiku.ai.probeUnqueryable'] ?: 'true'}"/>
     </bean>
 
+    <!-- saiku#903: AI data-exposure policy guard. Singleton constructed at
+         startup so it resolves SAIKU_AI_POLICY / ai.policy (default schema-only)
+         and FAILS FAST on an invalid value before the app serves traffic. -->
+    <bean id="aiPolicyGuard" class="org.saiku.service.olap.ai.AiPolicyGuard"/>
+
+    <!-- saiku#905: k-anonymity small-cell suppression. Singleton resolving
+         ai.kAnonymity (default 5; 0 disables) + ai.kAnonymity.maskValue at boot. -->
+    <bean id="kAnonymityFilter" class="org.saiku.service.olap.ai.KAnonymityFilter"/>
+
+    <!-- saiku#906: AI audit log. Append-only JSONL at ${saiku.home}/logs/
+         ai-audit.jsonl; resolves ai.audit.enabled (default ON) + ai.audit.file
+         at boot. Written by aiAuditFilter, read by aiAuditResource. -->
+    <bean id="aiAuditLog" class="org.saiku.service.olap.ai.audit.AiAuditLog"/>
+
+    <!-- saiku#906: the audit backbone — a JAX-RS provider that records one entry
+         per /saiku/api/ai/* call (registered explicitly in SaikuJerseyApplication
+         since it isn't a @Path bean). Reads the active policy tier off the guard. -->
+    <bean id="aiAuditFilter" class="org.saiku.web.rest.resources.AiAuditFilter">
+        <property name="auditLog" ref="aiAuditLog"/>
+        <property name="policyGuard" ref="aiPolicyGuard"/>
+    </bean>
+
     <bean id="aiQueryResource" scope="request"
           class="org.saiku.web.rest.resources.AiQueryResource">
         <aop:scoped-proxy/>
+        <property name="aiPolicyGuard" ref="aiPolicyGuard"/>
+        <property name="kAnonymityFilter" ref="kAnonymityFilter"/>
         <property name="thinQueryService" ref="thinQueryBean"/>
         <property name="cubeMetadataService" ref="aiCubeMetadataServiceBean"/>
         <property name="asyncQueryService" ref="asyncQueryServiceBean"/>
@@ -249,11 +296,104 @@
              dashboard reference-tile binding. -->
         <property name="datasourceService" ref="datasourceServiceBean"/>
         <property name="sessionService" ref="sessionService"/>
+        <!-- Raw olap4j connection for Mondrian write-back (what-if) scenarios. -->
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
         <!-- Phase 2: natural-language ask layer. Off by default (provider=noop) —
              the resource returns 503 with a clear "not configured" message until
              saiku.ai.ask.provider is set to 'anthropic' or 'openai' and the
              matching API key env var is supplied. See aiAskServiceBean below. -->
         <property name="askService" ref="aiAskServiceBean"/>
+    </bean>
+
+    <!-- Ossie AI Query API (#1394) — parallel to aiQueryResource but for semantic-YAML
+         Ossie models. R2 endpoints: GET /ai/ossie/models, GET /ai/ossie/schema/{c}/{m},
+         POST /ai/ossie/query (+ ?format=matrix), POST /ai/ossie/query/preview, GET
+         /ai/ossie/values/search, POST /ai/ossie/query/execute-async + status/result/cancel. -->
+    <bean id="ossieAsyncQueryServiceBean" class="org.saiku.service.ossie.ai.OssieAsyncQueryService"
+          destroy-method="shutdown">
+        <constructor-arg ref="ossieQueryServiceBean"/>
+    </bean>
+    <bean id="aiOssieResource" class="org.saiku.web.rest.resources.AiOssieResource">
+        <property name="ossieDiscoverService" ref="ossieDiscoverServiceBean"/>
+        <property name="ossieQueryService" ref="ossieQueryServiceBean"/>
+        <property name="ossieGraphService" ref="ossieGraphServiceBean"/>
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <property name="datasourceManager" ref="repositoryDsManager"/>
+        <property name="asyncQueryService" ref="ossieAsyncQueryServiceBean"/>
+        <property name="kAnonymityFilter" ref="kAnonymityFilter"/>
+        <property name="askService" ref="ossieAiAskServiceBean"/>
+    </bean>
+    <!-- R5: Ossie natural-language ask. Reads saiku.ai.ask.provider + API key from env/props;
+         disabled by default (health returns configured=false; /ask returns 503). -->
+    <bean id="ossieAiAskServiceBean" class="org.saiku.service.ossie.ai.OssieAiAskService"/>
+
+    <!-- ====================================================================
+         GraphQL API (POST /saiku/api/graphql + GET /schema.graphql).
+
+         Loads the SDL from classpath:graphql/saiku.graphqls once at boot and
+         wires resolvers that delegate to the existing MDX + Ossie services.
+         Same auth surface as the REST endpoints (Spring Security session).
+
+         The fetchers hold a scoped proxy to aiQueryResource so the request
+         scope is available when a GraphQL executeMdx runs. aiOssieResource
+         is singleton, so no proxy needed there.
+         ==================================================================== -->
+    <bean id="saikuGraphQlFetchers" class="org.saiku.web.graphql.SaikuGraphQlFetchers">
+        <constructor-arg>
+            <bean class="com.fasterxml.jackson.databind.ObjectMapper"/>
+        </constructor-arg>
+        <property name="cubeMetadataService" ref="aiCubeMetadataServiceBean"/>
+        <property name="olapDiscoverService" ref="olapDiscoverServiceBean"/>
+        <property name="ossieDiscoverService" ref="ossieDiscoverServiceBean"/>
+        <property name="aiQueryResource" ref="aiQueryResource"/>
+        <property name="aiOssieResource" ref="aiOssieResource"/>
+        <!-- Makes the AGGREGATED_RESULT_VALUES policy check explicit at the GraphQL layer.
+             The delegated AiQueryResource / AiOssieResource re-check it, but wiring it here
+             means audit logs show the policy gate at the entry point too. -->
+        <property name="aiPolicyGuard" ref="aiPolicyGuard"/>
+        <property name="serverVersion" value="${saiku.version:4.6.0}"/>
+    </bean>
+
+    <bean id="saikuGraphQlService" class="org.saiku.web.graphql.SaikuGraphQlService">
+        <property name="fetchers" ref="saikuGraphQlFetchers"/>
+    </bean>
+
+    <bean id="graphQlResource" class="org.saiku.web.graphql.GraphQlResource">
+        <property name="graphQlService" ref="saikuGraphQlService"/>
+    </bean>
+
+    <!-- saiku#906: admin-only read API over the audit log
+         (GET /saiku/admin/ai-audit). Stateless singleton; @RolesAllowed +
+         the /rest/saiku/admin/** intercept-url both gate it. -->
+    <bean id="aiAuditResource" class="org.saiku.web.rest.resources.AiAuditResource">
+        <property name="auditLog" ref="aiAuditLog"/>
+    </bean>
+
+    <!-- ====================================================================
+         Agent-eval result store + read API (saiku#1424, Phase 2/3).
+
+         Embedded H2 under ${saiku.home}/data/eval-results holds scored eval
+         runs; the ScheduledEvalRunner (when a cron is wired) appends to it and
+         AiEvalResource (GET /saiku/admin/ai-evals) reads it for the accuracy
+         dashboard. AUTO_SERVER lets the resource read the file while a runner
+         holds it. Admin-gated, same posture as the audit resource. -->
+    <bean id="evalResultStoreBean"
+          class="org.saiku.service.olap.ai.eval.EvalResultStore"
+          factory-method="forSaikuHome">
+        <constructor-arg value="${saiku.home:./saiku-home}"/>
+    </bean>
+
+    <!-- Request-scoped (like aiQueryResource) so POST /run can resolve the session-scoped
+         thinQueryBean and execute the eval sweep under the admin's data scope. The GET reads
+         just use the singleton store. The out-of-process `saiku eval` CLI (saiku#1478) POSTs
+         to /run and gates CI on the returned tallies. -->
+    <bean id="aiEvalResource" scope="request" class="org.saiku.web.rest.resources.AiEvalResource">
+        <aop:scoped-proxy/>
+        <property name="store" ref="evalResultStoreBean"/>
+        <property name="askService" ref="aiAskServiceBean"/>
+        <property name="cubeMetadataService" ref="aiCubeMetadataServiceBean"/>
+        <property name="thinQueryService" ref="thinQueryBean"/>
+        <property name="evalsDir" value="${saiku.home:./saiku-home}/evals"/>
     </bean>
 
     <!-- ====================================================================
@@ -288,6 +428,31 @@
           class="org.saiku.service.olap.ai.ask.AiAskService">
         <constructor-arg ref="aiCubeMetadataServiceBean"/>
         <constructor-arg ref="aiAskProviderBean"/>
+        <property name="skills" ref="agentSkillRegistryBean"/>
+        <property name="spaces" ref="agentSpaceRegistryBean"/>
+    </bean>
+
+    <!-- Skill catalogue (saiku#1426). Markdown files with YAML frontmatter under
+         saiku-home/skills/ are scanned lazily and injected into the LLM system
+         prompt so the ask flow can route slash commands + natural-language asks
+         to admin-authored workflows. -->
+    <bean id="agentSkillRegistryBean"
+          class="org.saiku.service.olap.ai.ask.AgentSkillRegistry">
+        <constructor-arg type="java.lang.String" value="${saiku.home:./saiku-home}/skills"/>
+    </bean>
+
+    <!-- Agent-space catalogue (saiku#1440). JSON personas under saiku-home/agent-spaces/
+         pin cube allowlist + skill allowlist + system prompt + suggested prompts.
+         POST /ai/spaces/{id}/ask enforces those scopes server-side. -->
+    <bean id="agentSpaceRegistryBean"
+          class="org.saiku.service.olap.ai.ask.AgentSpaceRegistry">
+        <constructor-arg type="java.lang.String" value="${saiku.home:./saiku-home}/agent-spaces"/>
+    </bean>
+
+    <!-- saiku#1440: admin CRUD over Agent Spaces (GET/PUT/DELETE /saiku/admin/agent-spaces).
+         Writes JSON personas through the registry (which rescans on write). Admin-gated. -->
+    <bean id="agentSpaceAdminResource" class="org.saiku.web.rest.resources.AgentSpaceAdminResource">
+        <property name="registry" ref="agentSpaceRegistryBean"/>
     </bean>
 
     <!-- ====================================================================
@@ -309,6 +474,9 @@
           class="org.saiku.web.rest.resources.mcp.McpResource">
         <aop:scoped-proxy/>
         <property name="aiQueryResource" ref="aiQueryResource"/>
+        <!-- Ossie AI tools (#1394 R3). Bean is a singleton (unlike aiQueryResource
+             which is request-scoped) — no scoped-proxy needed. -->
+        <property name="aiOssieResource" ref="aiOssieResource"/>
         <property name="sessionStore" ref="mcpSessionStore"/>
     </bean>
 
@@ -439,6 +607,65 @@
         <property name="datasourceService" ref="datasourceServiceBean"/>
         <property name="sessionService" ref="sessionService"/>
         <property name="aiQueryResource" ref="aiQueryResource"/>
+    </bean>
+
+    <!-- ====================================================================
+         <saiku-embed/> Web Component surface — the framework-agnostic embed
+         flow (revival of the historical Saiku 2.x embed widget; now works in
+         React/Vue/vanilla pages identically because it ships as a custom
+         element rather than a saiku-themed iframe).
+         Parallel to the share-token flow (#941) rather than retrofitted into
+         it: embed supports queries AND dashboards, has a public-grant ACL
+         for anonymous reads (not present on share), and uses a distinct
+         auth header so the two cannot be confused by a misconfigured filter
+         chain.
+         - embedTokenStore: file-backed at ${saiku.home}/embed-tokens/<id>.json.
+         - embedPublicRegistry: file-backed at ${saiku.home}/embed-public.json
+           (single sidecar — public grants are rare and curating them lives
+           with the owner, not the resource file itself).
+         - embedAuthFilter: Spring Security custom filter on the
+           /rest/saiku/api/embed/{query,dashboard}/** read prefix. On a valid
+           token OR matching public-grant it sets a request-scoped
+           ROLE_EMBED_GUEST pinned to one resource (wired in
+           applicationContext-saiku.xml). Mint endpoint is left alone so the
+           caller's authenticated session still applies there.
+         - embedTokenResource (@ /saiku/api/embed): owner-only mint/list/
+           revoke for tokens AND grant/list/revoke for public flags;
+           mint gated on getResourceACL (canGrant) — the per-resource ACL
+           (#940), same gate share-token mint uses.
+         - embedViewResource (@ /saiku/api/embed): the ONLY guest data
+           surface for embeds; runs each tile's authored query under the
+           owner's scope via sessionService.runAs, identical pattern to
+           shareViewResource. Tile query body comes from the stored
+           dashboard, never the client.
+         ==================================================================== -->
+    <bean id="embedTokenStore" class="org.saiku.web.embed.EmbedTokenStore"/>
+
+    <bean id="embedPublicRegistry" class="org.saiku.web.embed.EmbedPublicRegistry"/>
+
+    <bean id="embedAuthFilter"
+          class="org.saiku.web.security.embed.EmbedAuthFilter">
+        <constructor-arg ref="embedTokenStore"/>
+        <constructor-arg ref="embedPublicRegistry"/>
+    </bean>
+
+    <bean id="embedTokenResource"
+          class="org.saiku.web.rest.resources.embed.EmbedTokenResource">
+        <property name="tokenStore" ref="embedTokenStore"/>
+        <property name="publicRegistry" ref="embedPublicRegistry"/>
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
+    <bean id="embedViewResource" scope="request"
+          class="org.saiku.web.rest.resources.embed.EmbedViewResource">
+        <aop:scoped-proxy/>
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
+        <property name="aiQueryResource" ref="aiQueryResource"/>
+        <!-- saiku#1104/#906: audit embed queries (carries the JWT sub). -->
+        <property name="auditLog" ref="aiAuditLog"/>
     </bean>
 
     <!-- Per-tile dashboard comments (issue #942). commentService stores a

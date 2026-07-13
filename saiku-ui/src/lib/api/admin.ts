@@ -14,11 +14,28 @@ export interface AdminDatasource {
   connectionName?: string;
   driver?: string;
   location?: string;
+  /**
+   * Legacy client-side type dropdown ("OLAP" | "RELATIONAL"). Not read by the backend
+   * DataSourceMapper — the wire discriminator is {@link connectiontype}. Kept for
+   * backward compatibility with existing saved forms; new code should key off
+   * {@link connectiontype}.
+   */
   type?: string;
+  /**
+   * Wire discriminator on the server-side DataSourceMapper: `"MONDRIAN" | "XMLA" | "OSSIE"`.
+   * Selects which branch of `toSaikuDataSource()` runs — Mondrian URL wrapping, XMLA URL
+   * wrapping, or Ossie semantic-model wrapping.
+   */
+  connectiontype?: string;
   username?: string;
   password?: string;
   properties?: Record<string, string>;
   schemaName?: string | null;
+  /**
+   * Path to the Ossie YAML file. Only meaningful when {@link connectiontype} is `"OSSIE"`;
+   * ignored otherwise. Server persists it in the `.sds` XML as an `<ossieYaml>` element.
+   */
+  ossieYaml?: string | null;
 }
 
 export interface AdminSchema {
@@ -109,6 +126,73 @@ export const adminLogs = {
     if (!res.ok) throw new Error(`log -> ${res.status}`);
     return res.text();
   },
+};
+
+/**
+ * Agent-eval accuracy monitor (saiku#1424). Reads the admin-gated
+ * `/rest/saiku/admin/ai-evals` surface — scored eval runs persisted to H2 —
+ * so the admin panel can plot pass-rate over time per suite.
+ */
+export interface EvalRun {
+  runId: number;
+  suiteName: string;
+  cubeRef: string;
+  startedAt: number; // epoch millis
+  elapsedMs: number;
+  total: number;
+  passed: number;
+  failed: number;
+  degraded: number;
+  skipped: number;
+  passRate: number; // 0..1
+}
+
+export interface EvalSuiteCard {
+  name: string;
+  latest: EvalRun | null;
+}
+
+export interface EvalTrendPoint {
+  startedAt: number; // epoch millis
+  passRate: number; // 0..1
+  total: number;
+}
+
+export const adminEvals = {
+  suites: () => get<EvalSuiteCard[]>("/ai-evals"),
+  runs: (suite: string, limit = 30) =>
+    get<EvalRun[]>(`/ai-evals/${encodeURIComponent(suite)}/runs?limit=${limit}`),
+  trend: (suite: string, limit = 60) =>
+    get<EvalTrendPoint[]>(`/ai-evals/${encodeURIComponent(suite)}/trend?limit=${limit}`),
+};
+
+/**
+ * Agent Spaces admin CRUD (saiku#1440). Reads/writes the full persona (system prompt + cube
+ * allowlist included, unlike the public /ai/spaces catalogue) so the admin panel can author them
+ * without hand-editing JSON.
+ */
+export interface AgentSpaceCubeRef {
+  connectionName: string;
+  catalog: string;
+  schema: string;
+  cubeName: string;
+}
+
+export interface AgentSpace {
+  id: string;
+  name: string;
+  description?: string;
+  systemPrompt?: string;
+  cubeAllowlist: AgentSpaceCubeRef[];
+  skillAllowlist: string[];
+  suggestedPrompts: string[];
+}
+
+export const adminAgentSpaces = {
+  list: () => get<AgentSpace[]>("/agent-spaces"),
+  errors: () => get<Array<{ source: string; code: string; message: string }>>("/agent-spaces/errors"),
+  save: (space: AgentSpace) => json<AgentSpace>("PUT", `/agent-spaces/${encodeURIComponent(space.id)}`, space),
+  remove: (id: string) => json<null>("DELETE", `/agent-spaces/${encodeURIComponent(id)}`),
 };
 
 export async function getVersion(): Promise<string> {

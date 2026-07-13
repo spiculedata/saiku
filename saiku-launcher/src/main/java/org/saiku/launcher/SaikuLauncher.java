@@ -30,7 +30,12 @@ import picocli.CommandLine.Option;
         mixinStandardHelpOptions = true,
         version = "saiku 3.17",
         description = "Saiku Semantic Layer server.",
-        subcommands = {SaikuLauncher.ServeCommand.class})
+        subcommands = {
+            SaikuLauncher.ServeCommand.class,
+            OssieExportCommand.class,
+            SqlServeCommand.class,
+            EvalCommand.class
+        })
 public class SaikuLauncher implements Callable<Integer> {
 
     public static void main(String[] args) {
@@ -135,11 +140,26 @@ public class SaikuLauncher implements Callable<Integer> {
             if (isDemoModeRequested() && System.getProperty("spring.profiles.active") == null) {
                 System.setProperty("spring.profiles.active", "demo");
             }
+            // Demo dashboards ship KPI + chart tiles that hit /ai/query for
+            // aggregated result values. Relax the AiPolicy default to
+            // AGGREGATED in demo mode — see resolveDemoAiPolicyDefault for
+            // the decision logic + rationale.
+            String demoAiPolicy = resolveDemoAiPolicyDefault(
+                    isDemoModeRequested(), System.getenv("SAIKU_AI_POLICY"), System.getProperty("ai.policy"));
+            if (demoAiPolicy != null) {
+                System.setProperty("ai.policy", demoAiPolicy);
+            }
             System.out.println("Saiku home: " + saikuHome);
 
             stageSeedAssets(dataDir);
             stageBrandingSample(brandingDir);
             stageDefaultDatasource(saikuHome);
+            // #1394 demos: TPC-DS + Flights Ossie datasources with H2 fixtures.
+            // Auto-provisioned on first boot so a fresh container has three Ossie
+            // datasources ready to poke at via /ai/ossie/models. Idempotent —
+            // stageResource + stageOssieDemoDatasource both no-op when the target
+            // exists, so operator edits survive container restarts.
+            stageOssieDemoDatasources(saikuHome);
             // saiku#1245: in demo mode, also stage a "Welcome" dashboard
             // under /dashboards/ so a fresh demo container has something
             // ready-to-look-at at first login instead of an empty list.
@@ -245,6 +265,11 @@ public class SaikuLauncher implements Callable<Integer> {
             }));
 
             server.start();
+
+            // Anonymous install-count heartbeat (opt-out; disable with SAIKU_TELEMETRY=off).
+            // Best-effort and off-thread — never blocks or fails the server.
+            TelemetryService.startIfEnabled(saikuHome, System.getProperty("saiku.version"));
+
             return server;
         }
 
@@ -417,6 +442,36 @@ public class SaikuLauncher implements Callable<Integer> {
             return isDemoModeRequested();
         }
 
+        /**
+         * Decide the {@code ai.policy} default under demo mode.
+         *
+         * <p>{@link org.saiku.service.olap.ai.AiPolicy} defaults to
+         * {@code SCHEMA_ONLY} — the fail-closed safe posture for production. That's the wrong
+         * default for the demo container: the welcome dashboard ships KPI + chart tiles that
+         * call {@code /ai/query} for aggregated result values, and SCHEMA_ONLY blocks them with
+         * an in-tile "AI policy 'schema-only' does not permit sending AGGREGATED_RESULT_VALUES"
+         * error. Demo mode has no real PII and no leak risk (bundled FoodMart cube, H2), so we
+         * relax the default to {@code aggregated} whenever demo mode is on.
+         *
+         * <p>Operators keep both escape hatches: an explicit {@code SAIKU_AI_POLICY} env var OR
+         * an explicit {@code -Dai.policy=...} JVM flag ALWAYS wins over this defaulting — this
+         * helper returns null when either is set. Empty / whitespace values count as unset so a
+         * caller with {@code SAIKU_AI_POLICY=} in their env (e.g. Kubernetes ConfigMap with the
+         * key present but blank) still gets the relaxed default.
+         *
+         * @param demoMode   whether demo mode is active (from {@link #isDemoModeRequested()})
+         * @param envValue   current value of {@code SAIKU_AI_POLICY} env var (may be null)
+         * @param propValue  current value of the {@code ai.policy} system property (may be null)
+         * @return {@code "aggregated"} when demo mode should provide the relaxed default;
+         *         {@code null} to leave {@code ai.policy} untouched
+         */
+        static String resolveDemoAiPolicyDefault(boolean demoMode, String envValue, String propValue) {
+            if (!demoMode) return null;
+            if (envValue != null && !envValue.isBlank()) return null;
+            if (propValue != null && !propValue.isBlank()) return null;
+            return "aggregated";
+        }
+
         private static void stageSeedAssets(Path dataDir) throws Exception {
             Path schema = dataDir.resolve("FoodMart4.xml");
             if (!Files.exists(schema)) {
@@ -507,6 +562,119 @@ public class SaikuLauncher implements Callable<Integer> {
         }
 
         /**
+         * Strip leading {@code -- comment} lines from a SQL statement so a header comment
+         * doesn't cause the whole statement to be skipped. Idempotent — passes any statement
+         * whose first non-blank line isn't a {@code --} comment through unchanged.
+         */
+        static String stripLeadingSqlComments(String stmt) {
+            if (stmt == null) return "";
+            String[] lines = stmt.split("\\r?\\n");
+            int firstReal = 0;
+            for (int i = 0; i < lines.length; i++) {
+                String l = lines[i].trim();
+                if (l.isEmpty() || l.startsWith("--")) {
+                    firstReal = i + 1;
+                } else {
+                    break;
+                }
+            }
+            if (firstReal == 0) return stmt;
+            StringBuilder sb = new StringBuilder();
+            for (int i = firstReal; i < lines.length; i++) {
+                if (sb.length() > 0) sb.append('\n');
+                sb.append(lines[i]);
+            }
+            return sb.toString();
+        }
+
+        /**
+         * Stage the two Ossie demo datasources — TPC-DS and Flights (#1394 demo pass).
+         *
+         * <p>For each: stage the .ossie.yaml to {@code <home>/data/}, execute the seed
+         * SQL against a fresh H2 database in the same directory, and materialise the
+         * {@code .sds} descriptor. All three writes are idempotent — a repeat boot with
+         * an existing H2 file, YAML, or .sds skips the corresponding step. Failures are
+         * logged and the launcher continues so a broken fixture doesn't block the boot.
+         */
+        private static void stageOssieDemoDatasources(Path saikuHome) throws Exception {
+            Path dataDir = saikuHome.resolve("data");
+            Path dsDir = saikuHome
+                    .resolve("repository")
+                    .resolve("data")
+                    .resolve("unknown")
+                    .resolve("datasources");
+            Files.createDirectories(dataDir);
+            Files.createDirectories(dsDir);
+
+            stageOneOssieDemo(saikuHome, dataDir, dsDir, "tpcds", "TPCDS");
+            stageOneOssieDemo(saikuHome, dataDir, dsDir, "flights", "Flights");
+        }
+
+        /**
+         * Stage one Ossie demo dataset: YAML + H2 fixture + .sds descriptor.
+         *
+         * @param slug   filename slug — matches {@code <slug>.ossie.yaml},
+         *               {@code <slug>-seed.sql}, {@code <slug>-ossie.sds.template} on
+         *               the launcher's classpath.
+         * @param dsName the datasource name written into the .sds; matches the value
+         *               the discover endpoint exposes.
+         */
+        private static void stageOneOssieDemo(Path saikuHome, Path dataDir, Path dsDir, String slug, String dsName)
+                throws Exception {
+            // 1. YAML — copy from classpath to <home>/data/.
+            stageResource("/seed/" + slug + ".ossie.yaml", dataDir.resolve(slug + ".ossie.yaml"));
+
+            // 2. H2 fixture — one .mv.db per demo. Skip if it already exists (idempotent).
+            Path h2File = dataDir.resolve(slug + ".mv.db");
+            if (!Files.exists(h2File)) {
+                try (InputStream in = SaikuLauncher.class.getResourceAsStream("/seed/" + slug + "-seed.sql")) {
+                    if (in == null) {
+                        System.out.println(
+                                "Warning: no /seed/" + slug + "-seed.sql on classpath; skipping H2 seed for " + dsName);
+                    } else {
+                        String sql = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                        String jdbcUrl = "jdbc:h2:" + dataDir.resolve(slug) + ";MODE=PostgreSQL";
+                        // Load H2 driver via reflection — the launcher's fat-JAR pins h2 via
+                        // saiku-service, but we don't want a compile-time coupling from this
+                        // package to h2.
+                        Class.forName("org.h2.Driver");
+                        try (java.sql.Connection c = java.sql.DriverManager.getConnection(jdbcUrl, "sa", "");
+                                java.sql.Statement st = c.createStatement()) {
+                            for (String statement : sql.split(";\\s*\\r?\\n")) {
+                                // Strip leading comment lines. A trimmed chunk that STARTS with
+                                // `-- comment` but has an actual statement after may look like
+                                // "-- header\nINSERT INTO ..." — the naive startsWith("--") skip
+                                // would drop the whole INSERT.
+                                String body = stripLeadingSqlComments(statement).trim();
+                                if (body.isEmpty()) continue;
+                                st.execute(body);
+                            }
+                        }
+                        System.out.println("Seeded H2 fixture: " + h2File);
+                    }
+                } catch (Exception e) {
+                    System.out.println(
+                            "Warning: seeding " + dsName + " fixture failed (" + e.getMessage() + "); continuing.");
+                }
+            }
+
+            // 3. .sds descriptor — substitute @SAIKU_HOME@ same way stageDefaultDatasource
+            //    does for the foodmart datasource.
+            Path sdsTarget = dsDir.resolve(slug + "-ossie.sds");
+            if (!Files.exists(sdsTarget)) {
+                try (InputStream in =
+                        SaikuLauncher.class.getResourceAsStream("/seed/" + slug + "-ossie.sds.template")) {
+                    if (in != null) {
+                        String body = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                        String resolved = body.replace("@SAIKU_HOME@", saikuHome.toString());
+                        Files.writeString(sdsTarget, resolved, java.nio.charset.StandardCharsets.UTF_8);
+                        System.out.println("Seeded: " + sdsTarget);
+                    }
+                }
+            }
+        }
+
+        /**
          * Stage demo content under {@code <home>/repository/data/unknown/dashboards/}.
          * Only runs in demo mode (gated at the call site); idempotent because
          * {@link #stageResource} is a no-op when the target already exists, so
@@ -525,6 +693,79 @@ public class SaikuLauncher implements Callable<Integer> {
                     .resolve("dashboards");
             Files.createDirectories(dashDir);
             stageResource("/seed/demo/welcome.saikudash", dashDir.resolve("welcome.saikudash"));
+
+            // Also seed a small FoodMart Sales saved query — the /ui/showcase/ SPA
+            // embeds it via a public grant so the "Three surfaces, one cube" playground
+            // has data to render on first launch of any demo instance. Same shape as the
+            // dashboard: only lands when the file doesn't already exist, so operator
+            // customisations survive re-launch.
+            Path adminHome = saikuHome
+                    .resolve("repository")
+                    .resolve("data")
+                    .resolve("unknown")
+                    .resolve("homes")
+                    .resolve("admin");
+            Files.createDirectories(adminHome);
+            stageResource("/seed/FoodMartTrend.saiku", adminHome.resolve("FoodMartTrend.saiku"));
+
+            // Public-grant the FoodMartTrend query so /ui/showcase/ can render its
+            // <saiku-embed> widgets anonymously. Idempotent: if the operator already
+            // manages embed-public.json we merge our entry in without touching theirs.
+            grantFoodMartTrendPublic(saikuHome);
+
+            // Seed the agent-skills catalogue (saiku#1426) with a working example. Operators
+            // add their own alongside; this one demonstrates the frontmatter shape and gives
+            // the DimSum widget something in the /ai/skills catalogue on a fresh install.
+            Path skillsDir = saikuHome.resolve("skills");
+            Files.createDirectories(skillsDir);
+            stageResource("/seed/skills/weekly-foodmart-rollup.md", skillsDir.resolve("weekly-foodmart-rollup.md"));
+
+            // Seed the agent-spaces catalogue (saiku#1440) with two personas: FoodMart Sales
+            // Analyst (analytical, brief) + FoodMart Finance Ops (cautious, margin-focused). A
+            // fresh launcher demo has personas ready to click without any operator authoring.
+            Path spacesDir = saikuHome.resolve("agent-spaces");
+            Files.createDirectories(spacesDir);
+            stageResource(
+                    "/seed/agent-spaces/foodmart-sales-analyst.json", spacesDir.resolve("foodmart-sales-analyst.json"));
+            stageResource(
+                    "/seed/agent-spaces/foodmart-finance-ops.json", spacesDir.resolve("foodmart-finance-ops.json"));
+        }
+
+        /**
+         * Merge a {@code query:/homes/admin/FoodMartTrend.saiku} entry into
+         * {@code saiku-home/embed-public.json} if not already present. Rewrites the file
+         * only when the entry is missing — customer-managed grants pass through unchanged.
+         */
+        private static void grantFoodMartTrendPublic(Path saikuHome) throws IOException {
+            Path registryFile = saikuHome.resolve("embed-public.json");
+            String key = "query:/homes/admin/FoodMartTrend.saiku";
+            String grantJson = "{\"resourceKind\":\"query\","
+                    + "\"resourcePath\":\"/homes/admin/FoodMartTrend.saiku\","
+                    + "\"grantedBy\":\"admin\","
+                    + "\"ownerRolesSnapshot\":[\"ROLE_ADMIN\",\"ROLE_USER\"],"
+                    + "\"grantedAt\":" + System.currentTimeMillis() + "}";
+            String existing = Files.exists(registryFile)
+                    ? Files.readString(registryFile, java.nio.charset.StandardCharsets.UTF_8)
+                    : "{}";
+            if (existing.contains("\"" + key + "\"")) {
+                // Already granted — leave alone so a rotated `grantedAt` from a re-launch
+                // doesn't stomp an operator-managed timestamp.
+                return;
+            }
+            String merged;
+            if (existing.trim().equals("{}") || existing.trim().isEmpty()) {
+                merged = "{\"" + key + "\":" + grantJson + "}";
+            } else {
+                // Splice ",\"key\":<grantJson>" before the closing brace of the existing object.
+                int close = existing.lastIndexOf('}');
+                if (close < 0) {
+                    // Registry file is malformed; leave it alone rather than overwrite.
+                    return;
+                }
+                merged = existing.substring(0, close) + ",\"" + key + "\":" + grantJson + "}";
+            }
+            Files.writeString(registryFile, merged, java.nio.charset.StandardCharsets.UTF_8);
+            System.out.println("Granted public embed access: " + key);
         }
 
         private static void stageBrandingSample(Path brandingDir) throws Exception {

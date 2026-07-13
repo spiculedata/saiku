@@ -148,6 +148,18 @@
     activeFilters.pushClick(filter, tile.id);
   }
 
+  /** #1085: brush cross-filter capture. Pushed as a "cross" source tagged with
+   *  this tile's id so effectiveQueryFor excludes the SOURCE tile (it keeps full
+   *  context) while every other compatible tile narrows. */
+  function handleCrossFilter(filter: DashboardFilter): void {
+    activeFilters.pushCross(filter, tile.id);
+  }
+
+  /** #1085: clear this tile's brush cross-filter (empty brush / Esc). */
+  function handleClearCross(): void {
+    activeFilters.clearCrossesFrom(tile.id);
+  }
+
   // issue #915: multi-select. A click on the tile body (not a button, not
   // the chart/table click-filter affordances) toggles/extends/replaces the
   // selection depending on modifier keys. Selection is an edit-mode-only
@@ -190,7 +202,7 @@
     class:tile-header--draggable={!readOnly}
     data-drag-handle={readOnly ? undefined : tile.id}
   >
-    <span class="title">{tile.title ?? defaultTitle(tile)}</span>
+    <span class="font-medium flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{tile.title ?? defaultTitle(tile)}</span>
     <!-- #942: comment badge — shown for a saved dashboard in both edit + viewer
          (hidden in the share view, where savedPath is empty). -->
     {#if commentsPath}
@@ -226,9 +238,14 @@
       </div>
     {/if}
   </header>
-  <div class="tile-body">
+  <div class="flex-1 min-h-0 overflow-auto">
     {#if tile.type === "chart"}
-      <ChartTile {tile} onClickFilter={readOnly ? undefined : handleClickFilter} />
+      <ChartTile
+        {tile}
+        onClickFilter={readOnly ? undefined : handleClickFilter}
+        onCrossFilter={readOnly ? undefined : handleCrossFilter}
+        onClearCross={readOnly ? undefined : handleClearCross}
+      />
     {:else if tile.type === "table"}
       <TableTile {tile} onClickFilter={readOnly ? undefined : handleClickFilter} />
     {:else if tile.type === "text"}
@@ -238,7 +255,7 @@
     {:else if tile.type === "image"}
       <ImageTile {tile} />
     {:else}
-      <div class="unknown">Unknown tile type: {tile.type}</div>
+      <div class="p-2 text-danger text-sm">Unknown tile type: {tile.type}</div>
     {/if}
   </div>
 </div>
@@ -258,7 +275,7 @@
          tile without dragging, especially in the mobile stacked layout. Stays
          open so repeated taps work; closes on outside click / Escape. -->
     <div class="tile-menu__row" role="group" aria-label="Tile height">
-      <span class="tile-menu__label">Height</span>
+      <span class="flex-1 text-fg-muted text-sm">Height</span>
       <button
         type="button"
         class="tile-menu__step"
@@ -325,7 +342,7 @@
 </script>
 
 <style>
-  .tile {
+.tile {
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -344,9 +361,6 @@
   .tile--filter-hit {
     box-shadow: inset 0 0 0 1px var(--accent);
     border-color: var(--accent);
-  }
-  .tile--filter-miss {
-    opacity: 0.5;
   }
   /* issue #915: multi-select outline. A 2px accent ring drawn with
      box-shadow (not border) so it never shifts the tile's layout, plus a
@@ -397,29 +411,11 @@
   .tile-header--draggable:active {
     cursor: grabbing;
   }
-  .title {
-    font-weight: var(--weight-medium);
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
   .tile-actions {
     display: flex;
     gap: 0.25rem;
   }
   /* .icon-btn / .icon-btn--danger inherit shape from app.css */
-  .tile-body {
-    flex: 1;
-    min-height: 0;
-    overflow: auto;
-  }
-  .unknown {
-    padding: 0.5rem;
-    color: var(--danger);
-    font-size: 0.8125rem;
-  }
-
   /* Overflow menu — positioned: fixed so both kebab + right-click
      callers can drive (left, top) directly from viewport coords. */
   .tile-menu {
@@ -458,11 +454,6 @@
     align-items: center;
     gap: 0.375rem;
     padding: 0.25rem 0.625rem;
-  }
-  .tile-menu__label {
-    flex: 1;
-    color: var(--fg-muted);
-    font-size: 0.8125rem;
   }
   .tile-menu__step {
     display: inline-flex;

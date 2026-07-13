@@ -53,6 +53,10 @@ export function isChartType(kind: string): kind is ChartType {
 
 export type TrendLineMode = "none" | "linear" | "ma" | "wma";
 
+/** issue #1089: per-series chart type for combo charts. Cartesian kinds only —
+ *  mixing radial (pie/sunburst) into a cartesian chart isn't meaningful. */
+export type ComboSeriesType = "bar" | "line" | "area" | "scatter";
+
 /** issue #1082: number-formatting controls for chart VALUE text — applied to
  *  the value-axis labels, tooltip values and (when shown) series data labels.
  *  All fields optional; an absent/empty `numberFormat` renders raw values
@@ -93,6 +97,32 @@ export interface ReferenceBand {
   color?: string;
 }
 
+/** issue #1084: one threshold rule in a conditional-format band. First rule
+ *  whose comparison matches a data point wins, recolouring that point. */
+export type ChartCondOp = "gt" | "gte" | "lt" | "lte" | "between";
+export interface ChartCondRule {
+  op: ChartCondOp;
+  /** Comparison operand. A `[min, max]` tuple for `between` (inclusive),
+   *  a single number otherwise. */
+  value: number | [number, number];
+  /** Colour applied to a matching data point (any CSS colour). */
+  color: string;
+  /** Optional legend/label for the rule (reserved for a future legend). */
+  label?: string;
+}
+
+/** issue #1084: per-measure conditional formatting — threshold-driven colours
+ *  on a chart series' data points (e.g. red below target, green above).
+ *  Optional; legacy charts (undefined / []) render with the normal palette. */
+export interface ChartConditionalFormat {
+  /** Which measure/series (column index) the rules apply to. */
+  measureIndex: number;
+  /** Rules in priority order — first match wins per data point. */
+  rules: ChartCondRule[];
+  /** Colour for points matching no rule. Omit to keep the palette colour. */
+  fallbackColor?: string;
+}
+
 export interface ChartOptions {
   title: string;
   xAxisLabel: string;
@@ -122,6 +152,12 @@ export interface ChartOptions {
    *  Absent entries fall back to the auto decision (or "left" when
    *  {@link dualAxis} is off). */
   seriesAxis: Record<string, "left" | "right">;
+  /** issue #1089: per-series CHART-TYPE override (combo charts), keyed by the
+   *  same series (column-category) name as {@link seriesAxis}. Lets one series
+   *  render as bars while another is a line/area/scatter on the same cartesian
+   *  canvas. Absent entries fall back to the chart-level type. Cartesian only;
+   *  optional so legacy charts (undefined / {}) are unchanged. */
+  seriesType?: Record<string, ComboSeriesType>;
   /** issue #1071 (map only): colour ramp for the choropleth visualMap. */
   colorRamp: ChartColorRamp;
   /** issue #1071 (map only): how to render a country present in the data
@@ -163,6 +199,10 @@ export interface ChartOptions {
   /** issue #1079: shaded reference bands (ECharts markArea) over cartesian
    *  charts. Optional; undefined / [] adds no markArea. */
   referenceBands?: ReferenceBand[];
+  /** issue #1084: threshold-driven conditional colours per measure (bar /
+   *  stackedBar / scatter / bubble in Phase 1). Optional; undefined / [] keeps
+   *  the normal palette so legacy charts are unchanged. */
+  conditionalFormat?: ChartConditionalFormat[];
 }
 
 /** Auto-split threshold: a series whose maximum absolute value is at
@@ -185,6 +225,8 @@ export const DEFAULT_CHART_OPTIONS: ChartOptions = {
   hideRollupRows: true,
   dualAxis: true,
   seriesAxis: {},
+  // issue #1089: inert default — no per-series type overrides (uniform chart).
+  seriesType: {},
   colorRamp: "blues",
   mapMissing: "blank",
   sortDirection: "none",
@@ -196,4 +238,6 @@ export const DEFAULT_CHART_OPTIONS: ChartOptions = {
   // issue #1079: inert defaults — no reference lines/bands on legacy charts.
   referenceLines: [],
   referenceBands: [],
+  // issue #1084: inert default — no conditional colour rules on legacy charts.
+  conditionalFormat: [],
 };

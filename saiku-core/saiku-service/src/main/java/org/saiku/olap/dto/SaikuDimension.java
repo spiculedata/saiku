@@ -15,9 +15,11 @@
  */
 package org.saiku.olap.dto;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class SaikuDimension extends AbstractSaikuObject {
 
@@ -36,6 +38,20 @@ public class SaikuDimension extends AbstractSaikuObject {
      *  the schema XML. Lets the SPA detect time dimensions without falling
      *  back to caption substring matching (saiku#1221). */
     private String dimensionType;
+    /** Names of the {@code <MeasureGroup>}s this dimension has a real
+     *  (non-NoLink) join to. Populated by {@code ObjectUtil.convert(Dimension)}
+     *  via {@code SaikuMondrianHelper.getMeasureGroupsForDimension}.
+     *
+     *  <p>Drives the SPA's dim-applicability hinting (saiku#TODO): when the
+     *  user has measures selected from MGs {@code R}, a dimension is
+     *  applicable iff {@code measureGroups ⊇ R}. Dimensions that fail this
+     *  check render greyed with a tooltip explaining the unjoined MG, so
+     *  virtual cubes that mix conformed and non-conformed dims surface the
+     *  asymmetry instead of silently producing sparse/empty cellsets.
+     *
+     *  <p>Null on non-Mondrian providers — the SPA treats null as "no info,
+     *  assume applicable" to preserve legacy UX. */
+    private List<String> measureGroups;
 
     public SaikuDimension() {
         super(null, null);
@@ -87,5 +103,13 @@ public class SaikuDimension extends AbstractSaikuObject {
 
     public void setDimensionType(String dimensionType) {
         this.dimensionType = dimensionType;
+    }
+
+    public List<String> getMeasureGroups() {
+        return measureGroups == null ? null : new ArrayList<>(measureGroups);
+    }
+
+    public void setMeasureGroups(Set<String> measureGroups) {
+        this.measureGroups = measureGroups == null ? null : new ArrayList<>(measureGroups);
     }
 }

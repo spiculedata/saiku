@@ -1,0 +1,379 @@
+/*
+ *   Copyright 2026 Spicule Ltd
+ *   Apache License, Version 2.0.
+ */
+package org.saiku.service.ossie;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.saiku.datasources.connection.ISaikuConnection;
+import org.saiku.datasources.datasource.SaikuDatasource;
+import org.saiku.service.datasource.RepositoryDatasourceManager;
+
+/**
+ * Unit tests for {@link OssieDiscoverService}: build a datasource with an Ossie YAML on disk,
+ * install a stub {@link RepositoryDatasourceManager} that overrides only the lookup we care
+ * about, and verify the projected {@link OssieModelDto} shape. Using a subclass rather than a
+ * mocking framework (Mockito isn't on this module's test classpath) or a hand-rolled interface
+ * stub (the {@code IDatasourceManager} surface is huge — 40+ methods).
+ */
+public class OssieDiscoverServiceTest {
+
+    private OssieDiscoverService service;
+    private StubDatasourceManager datasourceManager;
+    private Path yaml;
+
+    @Before
+    public void setUp() throws Exception {
+        yaml = Files.createTempFile("ossie-discover-", ".yaml");
+        Files.writeString(
+                yaml,
+                "version: 0.2.0.dev0\n"
+                        + "semantic_model:\n"
+                        + "- name: SALES\n"
+                        + "  datasets:\n"
+                        + "  - name: CUSTOMERS\n"
+                        + "    source: public.customers\n"
+                        + "    primary_key: [id]\n"
+                        + "    fields:\n"
+                        + "    - name: id\n"
+                        + "      expression:\n"
+                        + "        dialects:\n"
+                        + "        - dialect: ANSI_SQL\n"
+                        + "          expression: id\n"
+                        + "    - name: region\n"
+                        + "      expression:\n"
+                        + "        dialects:\n"
+                        + "        - dialect: ANSI_SQL\n"
+                        + "          expression: region\n"
+                        + "      description: Sales region\n"
+                        + "    - name: signup_date\n"
+                        + "      expression:\n"
+                        + "        dialects:\n"
+                        + "        - dialect: ANSI_SQL\n"
+                        + "          expression: signup_date\n"
+                        + "      dimension:\n"
+                        + "        is_time: true\n"
+                        + "    - name: full_name\n"
+                        + "      expression:\n"
+                        + "        dialects:\n"
+                        + "        - dialect: ANSI_SQL\n"
+                        + "          expression: full_name\n"
+                        + "      custom_extensions:\n"
+                        + "      - vendor_name: SAIKU\n"
+                        + "        data: '{\"pii\":true}'\n"
+                        + "  - name: ORDERS\n"
+                        + "    source: public.orders\n"
+                        + "    fields: []\n"
+                        + "  metrics:\n"
+                        + "  - name: revenue\n"
+                        + "    expression:\n"
+                        + "      dialects:\n"
+                        + "      - dialect: ANSI_SQL\n"
+                        + "        expression: SUM(orders.amount)\n"
+                        + "    custom_extensions:\n"
+                        + "    - vendor_name: SAIKU\n"
+                        + "      data: '{\"aggregation_kind\":\"SUM\"}'\n"
+                        + "  relationships:\n"
+                        + "  - name: orders_to_customers\n"
+                        + "    from: ORDERS\n"
+                        + "    to: CUSTOMERS\n"
+                        + "    from_columns: [customer_id]\n"
+                        + "    to_columns: [id]\n");
+        datasourceManager = new StubDatasourceManager();
+        service = new OssieDiscoverService();
+        service.setDatasourceManager(datasourceManager);
+    }
+
+    @After
+    public void tearDown() throws Exception {
+        if (yaml != null) Files.deleteIfExists(yaml);
+    }
+
+    @Test
+    public void projectsSemanticModelIntoDto() {
+        datasourceManager.put(
+                "SALES",
+                ossieDatasource("SALES", propsOf(ISaikuConnection.OSSIE_YAML_KEY, yaml.toString(), "schema", "SALES")));
+
+        OssieModelDto dto = service.getModel("SALES");
+
+        assertEquals("SALES", dto.getConnection());
+        assertEquals("SALES", dto.getName());
+        assertEquals(2, dto.getDatasets().size());
+        assertEquals("CUSTOMERS", dto.getDatasets().get(0).getName());
+        assertEquals("public.customers", dto.getDatasets().get(0).getSource());
+        assertEquals(4, dto.getDatasets().get(0).getFields().size());
+
+        OssieModelDto.Field signup = dto.getDatasets().get(0).getFields().get(2);
+        assertEquals("signup_date", signup.getName());
+        assertTrue("is_time flag must survive", signup.isTime());
+        assertFalse(signup.isPii());
+
+        OssieModelDto.Field fullName = dto.getDatasets().get(0).getFields().get(3);
+        assertTrue("PII custom_extensions must project through", fullName.isPii());
+
+        assertEquals(1, dto.getMetrics().size());
+        OssieModelDto.Metric revenue = dto.getMetrics().get(0);
+        assertEquals("revenue", revenue.getName());
+        assertEquals("SUM(orders.amount)", revenue.getExpression());
+        assertEquals("SUM", revenue.getAggregationKind());
+
+        assertEquals(1, dto.getRelationships().size());
+        OssieModelDto.Relationship rel = dto.getRelationships().get(0);
+        assertEquals("ORDERS", rel.getFrom());
+        assertEquals("CUSTOMERS", rel.getTo());
+        assertEquals(List.of("customer_id"), rel.getFromColumns());
+    }
+
+    @Test
+    public void missingSchemaPropertyFallsBackToFirstModel() {
+        datasourceManager.put(
+                "SALES", ossieDatasource("SALES", propsOf(ISaikuConnection.OSSIE_YAML_KEY, yaml.toString())));
+        OssieModelDto dto = service.getModel("SALES");
+        // Only one semantic_model in the fixture — 'SALES' — so fallback returns it.
+        assertEquals("SALES", dto.getName());
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void rejectsNonOssieDatasource() {
+        datasourceManager.put("MDX", new SaikuDatasource("MDX", SaikuDatasource.Type.OLAP, new Properties()));
+        service.getModel("MDX");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void rejectsUnknownConnection() {
+        service.getModel("no-such");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void rejectsMissingYamlProperty() {
+        datasourceManager.put("SALES", ossieDatasource("SALES", new Properties()));
+        service.getModel("SALES");
+    }
+
+    // ---- synonym + custom_extensions passthrough (#1408 / #1409) ----
+
+    @Test
+    public void synonymAliasesPopulatedFromAiContext() throws Exception {
+        Path yamlWithSynonyms = Files.createTempFile("ossie-syn-", ".yaml");
+        Files.writeString(
+                yamlWithSynonyms,
+                "version: 0.2.0.dev0\n"
+                        + "semantic_model:\n"
+                        + "- name: T\n"
+                        + "  datasets:\n"
+                        + "  - name: customers\n"
+                        + "    source: s.c\n"
+                        + "    ai_context:\n"
+                        + "      synonyms: [clients, buyers]\n"
+                        + "    fields:\n"
+                        + "    - name: region\n"
+                        + "      expression:\n"
+                        + "        dialects: [{dialect: ANSI_SQL, expression: r}]\n"
+                        + "      ai_context:\n"
+                        + "        synonyms: [state, geo]\n"
+                        + "  metrics:\n"
+                        + "  - name: net_revenue\n"
+                        + "    expression:\n"
+                        + "      dialects: [{dialect: ANSI_SQL, expression: SUM(x)}]\n"
+                        + "    ai_context:\n"
+                        + "      synonyms: [revenue, turnover, top-line]\n");
+        try {
+            datasourceManager.put(
+                    "T", ossieDatasource("T", propsOf(ISaikuConnection.OSSIE_YAML_KEY, yamlWithSynonyms.toString())));
+            OssieModelDto dto = service.getModel("T");
+            assertEquals("net_revenue", dto.getMetricAliases().get("revenue"));
+            assertEquals("net_revenue", dto.getMetricAliases().get("turnover"));
+            assertEquals("net_revenue", dto.getMetricAliases().get("top-line"));
+            assertEquals("customers", dto.getDatasetAliases().get("clients"));
+            assertEquals("customers.region", dto.getFieldAliases().get("state"));
+            assertEquals("customers.region", dto.getFieldAliases().get("geo"));
+        } finally {
+            Files.deleteIfExists(yamlWithSynonyms);
+        }
+    }
+
+    @Test
+    public void internalVisibilityExtensionsGetFiltered() throws Exception {
+        Path yamlWithInternal = Files.createTempFile("ossie-ext-", ".yaml");
+        Files.writeString(
+                yamlWithInternal,
+                "version: 0.2.0.dev0\n"
+                        + "semantic_model:\n"
+                        + "- name: T\n"
+                        + "  datasets:\n"
+                        + "  - name: d\n"
+                        + "    source: s.d\n"
+                        + "    fields:\n"
+                        + "    - name: f\n"
+                        + "      expression:\n"
+                        + "        dialects: [{dialect: ANSI_SQL, expression: c}]\n"
+                        + "      custom_extensions:\n"
+                        + "      - vendor_name: PUBLIC\n"
+                        + "        data: '{\"note\":\"visible\"}'\n"
+                        + "      - vendor_name: INTERNAL\n"
+                        + "        data: '{\"visibility\":\"internal\",\"secret\":true}'\n");
+        try {
+            datasourceManager.put(
+                    "T", ossieDatasource("T", propsOf(ISaikuConnection.OSSIE_YAML_KEY, yamlWithInternal.toString())));
+            OssieModelDto dto = service.getModel("T");
+            var ext = dto.getDatasets().get(0).getFields().get(0).getCustomExtensions();
+            // INTERNAL extension filtered out; PUBLIC remains.
+            assertEquals(1, ext.size());
+            assertEquals("PUBLIC", ext.get(0).getVendorName());
+            assertNotNull(ext.get(0).getData());
+            assertEquals("visible", ext.get(0).getData().get("note").asText());
+        } finally {
+            Files.deleteIfExists(yamlWithInternal);
+        }
+    }
+
+    @Test
+    public void descriptionsSurviveProjection() {
+        // Belt-and-braces regression guard: a field with a description but no PII extension
+        // must not get flagged as pii.
+        datasourceManager.put(
+                "SALES",
+                ossieDatasource("SALES", propsOf(ISaikuConnection.OSSIE_YAML_KEY, yaml.toString(), "schema", "SALES")));
+        OssieModelDto dto = service.getModel("SALES");
+        OssieModelDto.Field region = dto.getDatasets().get(0).getFields().get(1);
+        assertEquals("region", region.getName());
+        assertFalse("region has description but no PII marker", region.isPii());
+        assertNotNull(region.getDescription());
+        assertEquals("Sales region", region.getDescription());
+    }
+
+    // ---- well-known extensions (saiku#1409): display, roles, graded pii ----
+
+    @Test
+    public void wellKnownExtensionsProjectOntoFields() throws Exception {
+        Path wkYaml = Files.createTempFile("ossie-wk-", ".yaml");
+        Files.writeString(
+                wkYaml,
+                "version: 0.2.0.dev0\n"
+                        + "semantic_model:\n"
+                        + "- name: T\n"
+                        + "  datasets:\n"
+                        + "  - name: d\n"
+                        + "    source: s.d\n"
+                        + "    fields:\n"
+                        + "    - name: revenue\n"
+                        + "      expression:\n"
+                        + "        dialects: [{dialect: ANSI_SQL, expression: r}]\n"
+                        + "      custom_extensions:\n"
+                        + "      - vendor_name: SAIKU\n"
+                        + "        data: '{\"display\":{\"caption\":\"Net Revenue\",\"format\":\"$#,##0.00\",\"unit\":\"USD\"}}'\n"
+                        + "    - name: ssn\n"
+                        + "      expression:\n"
+                        + "        dialects: [{dialect: ANSI_SQL, expression: ssn}]\n"
+                        + "      custom_extensions:\n"
+                        + "      - vendor_name: SAIKU\n"
+                        + "        data: '{\"pii\":{\"level\":\"hash\"}}'\n"
+                        + "    - name: internal_flag\n"
+                        + "      expression:\n"
+                        + "        dialects: [{dialect: ANSI_SQL, expression: f}]\n"
+                        + "      custom_extensions:\n"
+                        + "      - vendor_name: SAIKU\n"
+                        + "        data: '{\"display\":{\"hidden\":true},\"roles\":{\"allow\":[\"ROLE_ADMIN\"]}}'\n");
+        try {
+            datasourceManager.put(
+                    "T", ossieDatasource("T", propsOf(ISaikuConnection.OSSIE_YAML_KEY, wkYaml.toString())));
+            OssieModelDto dto = service.getModel("T");
+
+            OssieModelDto.Field revenue = dto.getDatasets().get(0).getFields().get(0);
+            assertEquals("Net Revenue", revenue.getDisplayCaption());
+            assertEquals("$#,##0.00", revenue.getDisplayFormat());
+            assertEquals("USD", revenue.getDisplayUnit());
+            assertFalse("no hidden flag", revenue.isDisplayHidden());
+
+            OssieModelDto.Field ssn = dto.getDatasets().get(0).getFields().get(1);
+            assertEquals("HASH", ssn.getPiiLevel());
+            assertTrue("graded pii still flips the legacy boolean", ssn.isPii());
+
+            OssieModelDto.Field internal = dto.getDatasets().get(0).getFields().get(2);
+            assertTrue("hidden flag survives", internal.isDisplayHidden());
+            assertEquals(List.of("ROLE_ADMIN"), internal.getAllowRoles());
+            assertTrue("no deny roles set", internal.getDenyRoles().isEmpty());
+        } finally {
+            Files.deleteIfExists(wkYaml);
+        }
+    }
+
+    @Test
+    public void wellKnownExtensionsProjectOntoMetrics() throws Exception {
+        Path wkYaml = Files.createTempFile("ossie-wk-m-", ".yaml");
+        Files.writeString(
+                wkYaml,
+                "version: 0.2.0.dev0\n"
+                        + "semantic_model:\n"
+                        + "- name: T\n"
+                        + "  datasets: [{name: d, source: s.d, fields: []}]\n"
+                        + "  metrics:\n"
+                        + "  - name: revenue\n"
+                        + "    expression:\n"
+                        + "      dialects: [{dialect: ANSI_SQL, expression: SUM(x)}]\n"
+                        + "    custom_extensions:\n"
+                        + "    - vendor_name: SAIKU\n"
+                        + "      data: '{\"display\":{\"caption\":\"Net Revenue\",\"unit\":\"USD\"},\"roles\":{\"deny\":[\"ROLE_EMBED_GUEST\"]}}'\n");
+        try {
+            datasourceManager.put(
+                    "T", ossieDatasource("T", propsOf(ISaikuConnection.OSSIE_YAML_KEY, wkYaml.toString())));
+            OssieModelDto dto = service.getModel("T");
+            OssieModelDto.Metric revenue = dto.getMetrics().get(0);
+            assertEquals("Net Revenue", revenue.getDisplayCaption());
+            assertEquals("USD", revenue.getDisplayUnit());
+            assertTrue("no allow roles set", revenue.getAllowRoles().isEmpty());
+            assertEquals(List.of("ROLE_EMBED_GUEST"), revenue.getDenyRoles());
+        } finally {
+            Files.deleteIfExists(wkYaml);
+        }
+    }
+
+    private static SaikuDatasource ossieDatasource(String name, Properties props) {
+        return new SaikuDatasource(name, SaikuDatasource.Type.OSSIE, props);
+    }
+
+    private static Properties propsOf(String... kv) {
+        Properties p = new Properties();
+        for (int i = 0; i + 1 < kv.length; i += 2) p.setProperty(kv[i], kv[i + 1]);
+        return p;
+    }
+
+    /**
+     * Subclass of the real {@link RepositoryDatasourceManager} that overrides only the two
+     * {@code getDatasource} lookups the discover service uses. Extending the real class rather
+     * than the interface avoids stubbing the 40+ other {@code IDatasourceManager} methods.
+     * Never calls {@code load()} or any repository code, so the parent's uninitialised state
+     * is fine.
+     */
+    static final class StubDatasourceManager extends RepositoryDatasourceManager {
+        private final Map<String, SaikuDatasource> map = new HashMap<>();
+
+        void put(String name, SaikuDatasource ds) {
+            map.put(name, ds);
+        }
+
+        @Override
+        public SaikuDatasource getDatasource(String datasourceName) {
+            return map.get(datasourceName);
+        }
+
+        @Override
+        public SaikuDatasource getDatasource(String datasourceName, boolean refresh) {
+            return map.get(datasourceName);
+        }
+    }
+}

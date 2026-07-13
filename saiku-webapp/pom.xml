@@ -2,11 +2,11 @@
     <parent>
         <artifactId>saiku</artifactId>
         <groupId>org.saikuanalytics</groupId>
-        <version>4.5.2</version>
+        <version>4.6.0</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
     <artifactId>saiku-webapp</artifactId>
-    <version>4.5.2</version>
+    <version>4.6.0</version>
     <name>saiku - webapp</name>
     <packaging>war</packaging>
     <build>
@@ -20,7 +20,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-deploy-plugin</artifactId>
-                <version>3.1.3</version>
+                <version>3.1.4</version>
                 <configuration>
                     <skip>true</skip>
                 </configuration>
@@ -321,6 +321,35 @@
             <groupId>org.saikuanalytics</groupId>
             <artifactId>saiku-service</artifactId>
         </dependency>
+        <!-- saiku-sql brings OssieSchemaFactory + the Calcite Ossie adapter
+             to the runtime classpath. saiku-service's SaikuOssieConnection
+             constructs 'jdbc:calcite:model=...' URLs that reference
+             'bi.saiku.ossie.sql.internal.OssieSchemaFactory' by
+             fully-qualified name, so the class must be loadable when the
+             connection opens. Runtime scope because saiku-service doesn't
+             have a compile-time reference (and creating one would be a
+             Maven cycle since saiku-sql already depends on saiku-service). -->
+        <dependency>
+            <groupId>org.saikuanalytics</groupId>
+            <artifactId>saiku-sql</artifactId>
+            <version>${project.version}</version>
+            <scope>runtime</scope>
+            <exclusions>
+                <!-- avatica-server pulls Jetty 9.4 (its own embedded HTTP surface for
+                     the Avatica RPC endpoint). We don't need that inside the launcher —
+                     the OSSIE workbench uses Calcite via jdbc:calcite: (in-process); the
+                     external Avatica JDBC endpoint is only wired by the standalone
+                     'sql-serve' subcommand and packages its own classpath. Including
+                     avatica-server here collides with Jetty 12 that the launcher itself
+                     depends on: Jetty 9's AbstractLifeCycle wins the shade, and Jetty
+                     12's server-startup path then explodes on a missing StopException
+                     inner class. -->
+                <exclusion>
+                    <groupId>org.apache.calcite.avatica</groupId>
+                    <artifactId>avatica-server</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <dependency>
             <groupId>org.apache.hive</groupId>
             <artifactId>hive-jdbc</artifactId>
@@ -395,6 +424,10 @@
             <artifactId>postgresql</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.gizmodata</groupId>
+            <artifactId>quack-jdbc</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.apache.hive</groupId>
             <artifactId>hive-jdbc</artifactId>
             <exclusions>
@@ -440,7 +473,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jxr-plugin</artifactId>
-                <version>3.5.1</version>
+                <version>3.6.0</version>
                 <configuration>
                     <aggregate>true</aggregate>
                 </configuration>

@@ -474,3 +474,12 @@ nbdist/
 
 # Claude Code session worktrees / scratch (never commit)
 .claude/
+
+# git worktrees
+.worktrees/
+.pi/
+
+# Runtime artifacts from Playwright / Claude MCP sessions
+.playwright-mcp/
+welcome-demo-fixed.png
+.superpowers/

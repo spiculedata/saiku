@@ -25,8 +25,7 @@ import {
   query,
   type QueryStateSnapshot,
 } from "$lib/stores/query.svelte";
-import { selection } from "$lib/stores/selection.svelte";
-import type { SaikuCube } from "$lib/api/discover";
+import { selection, type SelectionSnapshot } from "$lib/stores/selection.svelte";
 
 /** One tab in the workspace tab strip. */
 export interface WorkspaceTab {
@@ -34,8 +33,12 @@ export interface WorkspaceTab {
   id: string;
   /** Snapshot of the query store's user-visible state. */
   query: QueryStateSnapshot;
-  /** Snapshot of the selected cube. */
-  cube: SaikuCube | null;
+  /**
+   * Snapshot of the selected datasource — MDX cube or Ossie model. Retained under the
+   * `cube` name for on-disk / session-storage compatibility with pre-Ossie snapshots. The
+   * discriminator lives inside the {@link SelectionSnapshot} value.
+   */
+  cube: SelectionSnapshot | null;
 }
 
 function freshTabId(): string {

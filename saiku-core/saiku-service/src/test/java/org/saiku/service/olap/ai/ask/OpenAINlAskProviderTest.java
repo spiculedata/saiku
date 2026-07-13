@@ -44,19 +44,21 @@ public class OpenAINlAskProviderTest {
 
         assertEquals("gpt-x", root.get("model").asText());
         assertEquals(1024, root.get("max_tokens").asInt());
-        // tool_choice "required" — model must call a function, picks emit_query OR refuse_off_topic.
+        // tool_choice "required" — model must call a function, picks among the four scoped functions.
         assertEquals("required", root.get("tool_choice").asText());
 
+        // AUTO routing exposes all four functions: emit_query, emit_insight, emit_view_change,
+        // and the refuse_off_topic scope guardrail (always appended last).
         JsonNode tools = root.get("tools");
-        assertEquals(2, tools.size());
+        assertEquals(4, tools.size());
         assertEquals("function", tools.get(0).get("type").asText());
         assertEquals("emit_query", tools.get(0).get("function").get("name").asText());
         assertEquals(
                 "object",
                 tools.get(0).get("function").get("parameters").get("type").asText());
-        assertEquals("function", tools.get(1).get("type").asText());
-        assertEquals(
-                "refuse_off_topic", tools.get(1).get("function").get("name").asText());
+        JsonNode refusal = tools.get(tools.size() - 1);
+        assertEquals("function", refusal.get("type").asText());
+        assertEquals("refuse_off_topic", refusal.get("function").get("name").asText());
 
         // System message embeds the cube schema
         JsonNode messages = root.get("messages");
@@ -68,6 +70,31 @@ public class OpenAINlAskProviderTest {
         assertEquals(
                 "show sales by country",
                 messages.get(messages.size() - 1).get("content").asText());
+    }
+
+    @Test
+    public void omitsTemperatureWhenSentinelNegative() throws Exception {
+        // OMIT_TEMPERATURE (negative) must drop the `temperature` field — gpt-5 / o-series reject a
+        // custom value with a 400.
+        OpenAINlAskProvider provider = new OpenAINlAskProvider(new OpenAINlAskProvider.Config(
+                "k", "gpt-5", OpenAINlAskProvider.DEFAULT_ENDPOINT, OpenAINlAskProvider.OMIT_TEMPERATURE, 1024, null));
+        NlAskRequest req = new NlAskRequest(CUBE, "show sales", SCHEMA, REQUEST_SCHEMA, List.of());
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+
+        assertFalse("temperature must be omitted when the sentinel is set", root.has("temperature"));
+    }
+
+    @Test
+    public void includesTemperatureWhenExplicitlySet() throws Exception {
+        OpenAINlAskProvider provider = new OpenAINlAskProvider(
+                new OpenAINlAskProvider.Config("k", "gpt-x", OpenAINlAskProvider.DEFAULT_ENDPOINT, 0.3, 1024, null));
+        NlAskRequest req = new NlAskRequest(CUBE, "show sales", SCHEMA, REQUEST_SCHEMA, List.of());
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+
+        assertTrue(root.has("temperature"));
+        assertEquals(0.3, root.get("temperature").asDouble(), 1e-9);
     }
 
     @Test
@@ -160,7 +187,7 @@ public class OpenAINlAskProviderTest {
                 + "\"arguments\":\"{}\"}}]}}]}";
         NlAskResponse resp = OpenAINlAskProvider.parseToolResponse(body, "gpt-x");
         assertTrue(resp.degraded());
-        assertEquals("tool_calls did not include emit_query", resp.reason());
+        assertEquals("tool_calls did not include a recognised tool", resp.reason());
     }
 
     // ---------- characterization: security invariants (issue #1159) ----------
@@ -200,7 +227,8 @@ public class OpenAINlAskProviderTest {
                 provider.buildRequestBody(new NlAskRequest(CUBE, "q", SCHEMA, REQUEST_SCHEMA, List.of())));
 
         assertEquals("required", root.get("tool_choice").asText());
-        JsonNode refusal = root.get("tools").get(1).get("function");
+        JsonNode tools = root.get("tools");
+        JsonNode refusal = tools.get(tools.size() - 1).get("function");
         assertEquals("refuse_off_topic", refusal.get("name").asText());
         assertEquals("reason", refusal.get("parameters").get("required").get(0).asText());
     }
@@ -216,8 +244,9 @@ public class OpenAINlAskProviderTest {
                 .get(0)
                 .get("content")
                 .asText();
-        assertTrue(system.contains("you MUST call the refuse_off_topic function"));
-        assertTrue(system.contains("Always call exactly one function"));
+        assertTrue(system.contains("SCOPE GUARDRAIL"));
+        assertTrue(system.contains("call refuse_off_topic with a one-sentence reason"));
+        assertTrue(system.contains("Always call exactly ONE function"));
     }
 
     @Test

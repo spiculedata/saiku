@@ -44,18 +44,20 @@ public class AnthropicNlAskProviderTest {
 
         assertEquals("claude-x", root.get("model").asText());
         assertEquals(1024, root.get("max_tokens").asInt());
-        // tool_choice "any" lets the model pick emit_query OR refuse_off_topic.
+        // tool_choice "any" lets the model pick among the four scoped tools.
         assertEquals("any", root.get("tool_choice").get("type").asText());
 
+        // AUTO routing exposes all four tools: emit_query, emit_insight, emit_view_change,
+        // and the refuse_off_topic scope guardrail (always appended last).
         JsonNode tools = root.get("tools");
-        assertEquals(2, tools.size());
+        assertEquals(4, tools.size());
         assertEquals("emit_query", tools.get(0).get("name").asText());
         assertEquals("object", tools.get(0).get("input_schema").get("type").asText());
-        assertEquals("refuse_off_topic", tools.get(1).get("name").asText());
+        JsonNode refusal = tools.get(tools.size() - 1);
+        assertEquals("refuse_off_topic", refusal.get("name").asText());
         assertEquals(
                 "string",
-                tools.get(1)
-                        .get("input_schema")
+                refusal.get("input_schema")
                         .get("properties")
                         .get("reason")
                         .get("type")
@@ -71,6 +73,31 @@ public class AnthropicNlAskProviderTest {
         assertEquals(1, messages.size());
         assertEquals("user", messages.get(0).get("role").asText());
         assertEquals("show sales by country", messages.get(0).get("content").asText());
+    }
+
+    @Test
+    public void omitsTemperatureWhenSentinelNegative() throws Exception {
+        // OMIT_TEMPERATURE (negative) must drop the `temperature` field entirely — the Claude-5
+        // family rejects it as deprecated (400 invalid_request_error).
+        AnthropicNlAskProvider provider = new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config(
+                "k", "claude-sonnet-5", AnthropicNlAskProvider.OMIT_TEMPERATURE, 1024, null));
+        NlAskRequest req = new NlAskRequest(CUBE, "show sales", SCHEMA, REQUEST_SCHEMA, List.of());
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+
+        assertFalse("temperature must be omitted when the sentinel is set", root.has("temperature"));
+    }
+
+    @Test
+    public void includesTemperatureWhenExplicitlySet() throws Exception {
+        AnthropicNlAskProvider provider =
+                new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config("k", "claude-x", 0.2, 1024, null));
+        NlAskRequest req = new NlAskRequest(CUBE, "show sales", SCHEMA, REQUEST_SCHEMA, List.of());
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+
+        assertTrue(root.has("temperature"));
+        assertEquals(0.2, root.get("temperature").asDouble(), 1e-9);
     }
 
     @Test
@@ -217,7 +244,8 @@ public class AnthropicNlAskProviderTest {
                 provider.buildRequestBody(new NlAskRequest(CUBE, "q", SCHEMA, REQUEST_SCHEMA, List.of())));
 
         assertEquals("any", root.get("tool_choice").get("type").asText());
-        JsonNode refusal = root.get("tools").get(1);
+        JsonNode tools = root.get("tools");
+        JsonNode refusal = tools.get(tools.size() - 1);
         assertEquals("refuse_off_topic", refusal.get("name").asText());
         assertEquals(
                 "reason", refusal.get("input_schema").get("required").get(0).asText());
@@ -232,8 +260,9 @@ public class AnthropicNlAskProviderTest {
                         provider.buildRequestBody(new NlAskRequest(CUBE, "q", SCHEMA, REQUEST_SCHEMA, List.of())))
                 .get("system")
                 .asText();
-        assertTrue(system.contains("you MUST call the refuse_off_topic tool"));
-        assertTrue(system.contains("Always call exactly one tool"));
+        assertTrue(system.contains("SCOPE GUARDRAIL"));
+        assertTrue(system.contains("call refuse_off_topic with a one-sentence reason"));
+        assertTrue(system.contains("Always call exactly ONE tool"));
     }
 
     /** Refusal with no reason field falls back to the canonical OFF_TOPIC default reason. */

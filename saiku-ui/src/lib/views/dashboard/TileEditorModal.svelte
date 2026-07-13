@@ -16,6 +16,7 @@
    */
 
   import { onMount, untrack } from "svelte";
+  import { Button } from "$lib/components/ui";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import { schemaCache } from "$lib/stores/schemaCache.svelte";
   import {
@@ -44,6 +45,8 @@
   import { flatten, listRepository, type RepositoryNode } from "$lib/api/repository";
   import { repositionTile } from "$lib/dashboard/tilePlacement";
   import { DEFAULT_CHART_OPTIONS, type ChartOptions } from "$lib/views/chartTypes";
+  // #1085: which chart kinds support a brush cross-filter (gates the toggle).
+  import { BRUSHABLE_CHART_TYPES } from "$lib/charts/build";
   // #1077: reuse the workspace chart-options editor for dashboard chart tiles.
   import ChartEditorModal from "$lib/modals/ChartEditorModal.svelte";
   import TileEditorImage from "$lib/views/dashboard/TileEditorImage.svelte";
@@ -188,7 +191,12 @@
   // conditionally in the template.
   const ANOMALY_CHART_KINDS = new Set(["line", "bar", "area"]);
   let anomalyEnabled = $state<boolean>(untrack(() => tile.anomaly?.enabled ?? false));
-  let anomalyMethod = $state<AnomalyMethodConfig>(untrack(() => tile.anomaly?.method ?? "zscore"));
+  // Only offer / accept methods the backend implements. A tile persisted with a
+  // stub method (stl, saiku#908) coerces back to a working default so it can't
+  // silently keep 400ing after this dropdown dropped the option.
+  let anomalyMethod = $state<AnomalyMethodConfig>(
+    untrack(() => (tile.anomaly?.method === "mad" ? "mad" : "zscore")),
+  );
   let anomalyThreshold = $state<number | null>(untrack(() => tile.anomaly?.threshold ?? null));
   let anomalyTimeAxis = $state<string>(untrack(() => tile.anomaly?.timeAxis ?? ""));
   // Default threshold shown as the placeholder, tracking the chosen method.
@@ -196,10 +204,15 @@
   // ── Issue #908: forecast (time-series chart tiles only) ──
   // Working copy of the chart tile's forecast config; persisted on save.
   let forecastEnabled = $state<boolean>(untrack(() => tile.forecast?.enabled ?? false));
-  let forecastMethod = $state<ForecastMethodConfig>(untrack(() => tile.forecast?.method ?? "ets"));
+  // Only ETS is implemented; arima/prophet are stubs (saiku#908), so the dropdown
+  // offers ets alone and any persisted stub method coerces to ets — a saved tile
+  // can't keep 400ing. Widen this back to a passthrough when more methods land.
+  let forecastMethod = $state<ForecastMethodConfig>("ets");
   let forecastHorizon = $state<number>(untrack(() => tile.forecast?.horizon ?? 6));
   let forecastConfidence = $state<number>(untrack(() => tile.forecast?.confidence ?? 0.95));
   let forecastTimeAxis = $state<string>(untrack(() => tile.forecast?.timeAxis ?? ""));
+  // ── Issue #1085: brush cross-filter (brushable cartesian chart tiles only) ──
+  let brushCrossFilterEnabled = $state<boolean>(untrack(() => tile.brushCrossFilter?.enabled ?? false));
   // Query source — "reference" picks a saved .saiku from the repo,
   // "inline" pastes an AiQueryRequest body. Default to "reference" so
   // non-technical authors aren't dropped into a JSON textarea on a
@@ -221,7 +234,10 @@
   let queryEditorError = $state<string | null>(null);
   // Saved workspace store state, restored on close.
   let savedQuerySnapshot: QueryStateSnapshot | null = null;
-  let savedCube: SaikuCube | null = null;
+  // Selection snapshot around the tile-editor lifecycle. SelectionSnapshot is the
+  // discriminated union that carries either an MDX cube or an Ossie selection — dashboards
+  // stay OLAP-only for MVP but the store returns the wider type, so track it here too.
+  let savedCube: import("$lib/stores/selection.svelte").SelectionSnapshot | null = null;
   // The body the embed was seeded from — passed back to thinQueryToBody so
   // unmanaged passthrough fields (order / limit / …) survive the round-trip.
   let seedBody: InlineQueryBody | null = null;
@@ -614,6 +630,10 @@
               timeAxis: forecastTimeAxis.trim() || undefined,
             }
           : undefined;
+      // ── Issue #1085: persist brush cross-filter config (undefined when off
+      // or on a non-brushable chart type, keeping tidy JSON). ──
+      patch.brushCrossFilter =
+        brushCrossFilterEnabled && BRUSHABLE_CHART_TYPES.has(chartType) ? { enabled: true } : undefined;
     }
 
     if (tile.type === "chart" || tile.type === "table") {
@@ -779,9 +799,9 @@
   <div class="modal" class:modal--wide={queryEditorOpen} role="dialog" aria-label="Edit tile">
     <header class="modal-header">
       <h2>Edit {tile.type} tile</h2>
-      <button type="button" class="close" aria-label="Close" onclick={handleClose}>×</button>
+      <button type="button" class="border-0 bg-transparent text-xl cursor-pointer text-fg-muted" aria-label="Close" onclick={handleClose}>×</button>
     </header>
-    <div class="modal-body">
+    <div class="p-4 overflow-auto flex flex-col gap-3">
       <label class="field">
         <span>Title</span>
         <input type="text" bind:value={title} placeholder={`Untitled ${tile.type}`} />
@@ -868,10 +888,12 @@
             {#if anomalyEnabled}
               <label class="field">
                 <span>{i18n.t("dashboard.anomaly.method", "Method")}</span>
+                <!-- Only methods the backend actually implements are offered. STL is a
+                     registered-but-throwing stub (saiku#908) — surfacing it here let a user
+                     pick a method that 400s. Re-add when StlAnomalyDetector is implemented. -->
                 <select bind:value={anomalyMethod}>
                   <option value="zscore">{i18n.t("dashboard.anomaly.method.zscore", "Z-score")}</option>
                   <option value="mad">{i18n.t("dashboard.anomaly.method.mad", "MAD (robust)")}</option>
-                  <option value="stl">{i18n.t("dashboard.anomaly.method.stl", "STL (not yet supported)")}</option>
                 </select>
               </label>
               <label class="field">
@@ -907,12 +929,11 @@
             {#if forecastEnabled}
               <label class="field">
                 <span>{i18n.t("dashboard.forecast.method", "Method")}</span>
+                <!-- Only ETS is implemented; ARIMA + Prophet are registered-but-throwing
+                     stubs (saiku#908). Offering them let a user pick a method that 400s.
+                     Re-add when ArimaForecaster / ProphetForecaster are implemented. -->
                 <select bind:value={forecastMethod}>
                   <option value="ets">{i18n.t("dashboard.forecast.method.ets", "Exponential smoothing")}</option>
-                  <option value="arima">{i18n.t("dashboard.forecast.method.arima", "ARIMA (not yet supported)")}</option>
-                  <option value="prophet"
-                    >{i18n.t("dashboard.forecast.method.prophet", "Prophet (not yet supported)")}</option
-                  >
                 </select>
               </label>
               <label class="field">
@@ -941,6 +962,23 @@
                 >
               </label>
             {/if}
+          </fieldset>
+        {/if}
+
+        <!-- ── Issue #1085: brush cross-filter (brushable cartesian charts) ── -->
+        {#if BRUSHABLE_CHART_TYPES.has(chartType)}
+          <fieldset class="anomaly">
+            <legend>{i18n.t("dashboard.crossfilter.legend", "Cross-filter")}</legend>
+            <label class="checkbox">
+              <input type="checkbox" bind:checked={brushCrossFilterEnabled} />
+              <span>{i18n.t("dashboard.crossfilter.enable", "Emit cross-filter on brush")}</span>
+            </label>
+            <span class="hint"
+              >{i18n.t(
+                "dashboard.crossfilter.hint",
+                "Drag to select a range on this chart; the other tiles filter to those members. This tile keeps full context — Esc clears it.",
+              )}</span
+            >
           </fieldset>
         {/if}
       {/if}
@@ -972,14 +1010,9 @@
              ════════════════════════════════════════════════════════════ -->
         {#if !queryEditorOpen}
           <div class="qe-launch">
-            <button
-              type="button"
-              class="btn"
-              disabled={!cube}
-              onclick={() => void openQueryEditor()}
-            >
+            <Button variant="outline" disabled={!cube} onclick={() => void openQueryEditor()}>
               {i18n.t("tileEditor.query.editInline")}
-            </button>
+            </Button>
             <span class="hint">
               {cube ? i18n.t("tileEditor.query.editInline.hint") : i18n.t("tileEditor.query.pickCubeFirst")}
             </span>
@@ -995,7 +1028,7 @@
             {/if}
             <div class="qe-embed">
               {#if session.current}
-                <aside class="qe-dims">
+                <aside class="overflow-y-auto p-2 border-r border-border bg-bg-subtle min-w-0">
                   <DimensionList username={session.current.username} />
                 </aside>
               {/if}
@@ -1003,13 +1036,13 @@
                 <QueryCanvas embedded />
               </div>
             </div>
-            <div class="qe-actions">
-              <button type="button" class="btn" onclick={cancelQueryEditor}>
+            <div class="flex justify-end gap-2">
+              <Button variant="outline" onclick={cancelQueryEditor}>
                 {i18n.t("tileEditor.query.collapse")}
-              </button>
-              <button type="button" class="btn primary" onclick={applyQueryEditor}>
+              </Button>
+              <Button onclick={applyQueryEditor}>
                 {i18n.t("modal.apply")}
-              </button>
+              </Button>
             </div>
           </fieldset>
         {/if}
@@ -1035,9 +1068,9 @@
                 {/each}
               </select>
               <span class="hint">
-                Runtime fetch of saved queries lands in a follow-up — the
-                reference is persisted, the tile renderer will pick it up
-                once the resolver endpoint is wired.
+                The tile renders live from the saved query — the resolver
+                (POST /ai/query/saved) loads it, merges any applicable
+                dashboard filters, and runs it on each refresh.
               </span>
             {/if}
           </label>
@@ -1141,11 +1174,11 @@
         </label>
       {/if}
     </div>
-    <footer class="modal-footer">
-      <button type="button" class="btn" onclick={handleClose} disabled={imageUploading}>Cancel</button>
-      <button type="button" class="btn primary" onclick={handleSave} disabled={imageUploading}>
+    <footer class="flex justify-end gap-2 py-3 px-4 border-t border-border">
+      <Button variant="outline" onclick={handleClose} disabled={imageUploading}>Cancel</Button>
+      <Button onclick={handleSave} disabled={imageUploading}>
         {imageUploading ? "Uploading…" : "Save"}
-      </button>
+      </Button>
     </footer>
   </div>
 </div>
@@ -1168,7 +1201,7 @@
 {/if}
 
 <style>
-  .modal-backdrop {
+.modal-backdrop {
     position: fixed;
     inset: 0;
     background: rgba(15, 23, 42, 0.45);
@@ -1206,26 +1239,8 @@
     flex: 1;
     text-transform: capitalize;
   }
-  .close {
-    border: none;
-    background: transparent;
-    font-size: 1.25rem;
-    cursor: pointer;
-    color: var(--fg-muted);
-  }
-  .modal-body {
-    padding: 1rem;
-    overflow: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
   /* #912: when the modal is in wide (visual-editor) mode, let the body
      consume the leftover height so the embedded .qe-section can grow. */
-  .modal--wide .modal-body {
-    flex: 1;
-    min-height: 0;
-  }
   .field {
     display: flex;
     flex-direction: column;
@@ -1325,26 +1340,6 @@
     color: var(--fg-muted);
   }
   .hint.error { color: var(--danger); }
-  .modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    border-top: 1px solid var(--border);
-  }
-  .btn {
-    padding: 0.375rem 0.75rem;
-    border: 1px solid var(--border-strong);
-    background: var(--bg);
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.875rem;
-  }
-  .btn.primary {
-    background: var(--accent);
-    color: white;
-    border-color: var(--accent);
-  }
   /* #1077, #919: chart-options + conditional-formatting styles moved
      into TileEditorChart / TileEditorTableConditional / TileEditorKpi /
      TileEditorTableSparkline (per saiku#1229). Svelte's scoped CSS
@@ -1394,13 +1389,6 @@
     border-radius: 4px;
     overflow: hidden;
   }
-  .qe-dims {
-    overflow-y: auto;
-    padding: 0.5rem;
-    border-right: 1px solid var(--border);
-    background: var(--bg-subtle);
-    min-width: 0;
-  }
   .qe-canvas {
     display: flex;
     flex-direction: column;
@@ -1412,10 +1400,5 @@
   .qe-canvas :global(.canvas) {
     flex: 1;
     min-height: 0;
-  }
-  .qe-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
   }
 </style>

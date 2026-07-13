@@ -1,3 +1,21 @@
+/*
+ * Base layer — every type-selector rule (a, body, headings, button,
+ * input, select, textarea, :focus-visible) lives inside @layer base
+ * so Tailwind utility classes (which are in @layer utilities) can
+ * cleanly override them.
+ *
+ * Without this wrapper, unlayered type-selector rules ALWAYS beat
+ * layered utility classes — the layering algorithm prioritises
+ * unlayered rules above ALL layers regardless of specificity. That's
+ * what made `<a class={buttonVariants()}>` render text in `var(--accent)`
+ * (the global a color) instead of `var(--accent-fg)` (the Tailwind
+ * `text-primary-foreground` class) — the anchor was invisible against
+ * its primary background.
+ *
+ * The `*, *::before, *::after { box-sizing }` reset stays unlayered
+ * because every component relies on it and no Tailwind utility can
+ * sensibly override box-sizing.
+ */
 *,
 *::before,
 *::after {
@@ -10,69 +28,71 @@ body {
   margin: 0;
 }
 
-body {
-  background: var(--bg);
-  color: var(--fg);
-  font-family: var(--font-sans);
-  font-size: var(--fs-md);
-  font-weight: var(--weight-normal);
-  line-height: var(--lh-normal);
-  -webkit-font-smoothing: antialiased;
-}
+@layer base {
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: var(--fs-md);
+    font-weight: var(--weight-normal);
+    line-height: var(--lh-normal);
+    -webkit-font-smoothing: antialiased;
+  }
 
-/* Heading scale. Components should default to these and only override
-   when they have a deliberate type-treatment reason. Margins follow the
-   space token grid so heading-followed-by-body has consistent rhythm. */
-h1, h2, h3, h4, h5, h6 {
-  margin: 0 0 var(--space-3);
-  color: var(--fg);
-  font-weight: var(--weight-semibold);
-  line-height: var(--lh-tight);
-}
+  /* Heading scale. Components should default to these and only override
+     when they have a deliberate type-treatment reason. Margins follow the
+     space token grid so heading-followed-by-body has consistent rhythm. */
+  h1, h2, h3, h4, h5, h6 {
+    margin: 0 0 var(--space-3);
+    color: var(--fg);
+    font-weight: var(--weight-semibold);
+    line-height: var(--lh-tight);
+  }
 
-h1 {
-  font-size: var(--fs-2xl);
-  font-weight: var(--weight-bold);
-}
+  h1 {
+    font-size: var(--fs-2xl);
+    font-weight: var(--weight-bold);
+  }
 
-h2 {
-  font-size: var(--fs-xl);
-}
+  h2 {
+    font-size: var(--fs-xl);
+  }
 
-h3 {
-  font-size: var(--fs-lg);
-}
+  h3 {
+    font-size: var(--fs-lg);
+  }
 
-h4, h5, h6 {
-  font-size: var(--fs-md);
-}
+  h4, h5, h6 {
+    font-size: var(--fs-md);
+  }
 
-button {
-  font-family: inherit;
-  font-size: inherit;
-}
+  button {
+    font-family: inherit;
+    font-size: inherit;
+  }
 
-input,
-select,
-textarea {
-  font-family: inherit;
-  font-size: inherit;
-  color: inherit;
-}
+  input,
+  select,
+  textarea {
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+  }
 
-a {
-  color: var(--accent);
-  text-decoration: none;
-}
+  a {
+    color: var(--accent);
+    text-decoration: none;
+  }
 
-a:hover {
-  text-decoration: underline;
-}
+  a:hover {
+    text-decoration: underline;
+  }
 
-:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-  border-radius: var(--radius-sm);
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+    border-radius: var(--radius-sm);
+  }
 }
 
 .btn {

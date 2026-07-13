@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { Button } from "$lib/components/ui";
   import { session } from "$lib/stores/session.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { platform } from "$lib/stores/platform.svelte";
@@ -99,7 +100,7 @@
     {#if showDemoPanel}
       <div class="demo-creds">
         <Info size={16} class="demo-creds__icon" />
-        <div class="demo-creds__body">
+        <div class="flex flex-col gap-0.5">
           <strong>Try the demo</strong>
           <span>
             Sign in with <code>admin</code> / <code>admin</code>, or use the
@@ -125,23 +126,18 @@
         required
       />
     </label>
-    <button type="submit" class="btn btn--primary btn--wide" disabled={busy}>
+    <Button class="w-full" type="submit" disabled={busy}>
       {busy ? i18n.t("login.submitting") : i18n.t("login.submit")}
-    </button>
+    </Button>
     {#if showDemoPanel}
-      <button
-        type="button"
-        class="btn btn--wide login__demo-button"
-        onclick={loginAsDemo}
-        disabled={busy}
-      >
+      <Button variant="outline" class="w-full login__demo-button" onclick={loginAsDemo} disabled={busy}>
         Sign in as demo user
-      </button>
+      </Button>
     {/if}
   </form>
 
   {#if showDemoPanel}
-    <aside class="login-stack__demo">
+    <aside class="w-full p-4 bg-bg border border-border rounded-lg">
       <ApiAccessAdmin />
     </aside>
   {/if}
@@ -149,7 +145,7 @@
 </div>
 
 <style>
-  .login-stack {
+.login-stack {
     /* .app__main wraps us in overflow:hidden + flex:1 (right for the
      * post-login workspace, wrong for our tall connection-info panel).
      * Take the available height and manage our own y-scroll so users
@@ -198,27 +194,8 @@
     font-size: var(--fs-sm);
     line-height: var(--lh-normal);
   }
-  .demo-creds__body {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
   .demo-creds :global(.demo-creds__icon) {
     flex-shrink: 0;
     margin-top: 2px;
-  }
-  .login__demo-button {
-    margin-top: var(--space-2);
-  }
-  .login-stack__demo {
-    width: 100%;
-    padding: var(--space-4);
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-  }
-  .btn--wide {
-    width: 100%;
-    justify-content: center;
   }
 </style>

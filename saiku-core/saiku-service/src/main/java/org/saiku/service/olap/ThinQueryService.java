@@ -115,6 +115,26 @@ public class ThinQueryService implements Serializable {
 
     private OlapDiscoverService olapDiscoverService;
 
+    /**
+     * Optional Ossie-flavoured executor. Only invoked for {@code ThinQuery} instances with
+     * {@code queryType=OSSIE}; null in non-Ossie deployments (existing MDX-only setups continue
+     * to work unchanged).
+     */
+    private org.saiku.service.ossie.OssieQueryService ossieQueryService;
+
+    public void setOssieQueryService(org.saiku.service.ossie.OssieQueryService s) {
+        this.ossieQueryService = s;
+    }
+
+    /**
+     * Exposed for {@code Query2Resource}'s "Show SQL" endpoint. Delegates to
+     * {@link org.saiku.service.ossie.OssieQueryService#previewSql} so the workbench can render
+     * the SQL its shelf state produces without dispatching an execution.
+     */
+    public org.saiku.service.ossie.OssieQueryService getOssieQueryService() {
+        return ossieQueryService;
+    }
+
     private CellSetFormatterFactory cff = new CellSetFormatterFactory();
 
     private final Map<String, QueryContext> context = new HashMap<>();
@@ -400,6 +420,20 @@ public class ThinQueryService implements Serializable {
     }
 
     public CellDataSet execute(ThinQuery tq) {
+        // OSSIE queries take a completely separate execution path — no MDX, no olap4j, no
+        // formatter. Dispatch before the Mondrian-flavoured branch so we never touch
+        // olapDiscoverService.getNativeConnection (which would blow up on an OSSIE connection).
+        if ("OSSIE".equalsIgnoreCase(tq.getQueryType())) {
+            if (ossieQueryService == null) {
+                throw new SaikuServiceException(
+                        "OSSIE query submitted but OssieQueryService is not wired — check spring config");
+            }
+            try {
+                return ossieQueryService.execute(tq);
+            } catch (Exception e) {
+                throw new SaikuServiceException("Failed to execute OSSIE query: " + tq.getName(), e);
+            }
+        }
         if (tq.getProperties().containsKey("saiku.olap.result.formatter")) {
             return execute(
                     tq, tq.getProperties().get("saiku.olap.result.formatter").toString());
@@ -575,7 +609,10 @@ public class ThinQueryService implements Serializable {
         return old;
     }
 
-    private ThinQuery removeDupSelections(ThinQuery old) {
+    // Package-private + static (uses only its argument, no instance state) so the
+    // null-selection guard below is unit-testable without standing up the bean
+    // (saiku#1362 — the AI edit-in-canvas NPE regression).
+    static ThinQuery removeDupSelections(ThinQuery old) {
         // Pure-MDX queries (e.g. those built by AiSchemaConverter) carry no
         // queryModel — there are no model-side selections to deduplicate.
         if (old == null || old.getQueryModel() == null) return old;
@@ -584,8 +621,19 @@ public class ThinQueryService implements Serializable {
             for (ThinHierarchy h : entry.getValue().getHierarchies()) {
                 Map<String, ThinLevel> map2 = h.getLevels();
                 for (Map.Entry<String, ThinLevel> levelentry : map2.entrySet()) {
-                    List<ThinMember> members =
-                            levelentry.getValue().getSelection().getMembers();
+                    // Levels without a selection (the AI-built queryModel path
+                    // produces these — e.g. an axis-only Date.(All) with no
+                    // member filter) have nothing to deduplicate. Skipping
+                    // them avoids the NPE that surfaced when the AI Ask
+                    // 'edit in canvas' re-executed an AI-built model client-
+                    // side: the dedupe pass assumed every level carried a
+                    // non-null selection, which holds for chip-built queries
+                    // (every level gets a selection from the picker) but not
+                    // for AI-built ones (the converter only sets selection
+                    // when the AiQueryRequest names members).
+                    ThinSelection selection = levelentry.getValue().getSelection();
+                    if (selection == null) continue;
+                    List<ThinMember> members = selection.getMembers();
 
                     List<ThinMember> uniqueMembers = new ArrayList<>();
                     Map<String, ThinMember> temp = new HashMap<>();

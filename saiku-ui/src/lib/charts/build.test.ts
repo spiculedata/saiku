@@ -7,7 +7,12 @@
  */
 
 import { describe, test, expect } from "vitest";
-import { buildChartOption, type ChartProjection } from "$lib/charts/build";
+import {
+  buildChartOption,
+  brushOption,
+  BRUSHABLE_CHART_TYPES,
+  type ChartProjection,
+} from "$lib/charts/build";
 import { DEFAULT_CHART_OPTIONS, type ChartOptions } from "$lib/views/chartTypes";
 import {
   DEFAULT_THEME_TOKENS,
@@ -1081,5 +1086,115 @@ describe("buildChartOption — x-axis label width per axis", () => {
     // get the 160px width budget (they read diagonally).
     expect(xAxis.axisLabel.rotate).toBe(30);
     expect(xAxis.axisLabel.width).toBe(160);
+  });
+});
+
+describe("brushOption / BRUSHABLE_CHART_TYPES — cross-filter (#1085)", () => {
+  test("brushable cartesian kinds return a lineX single-selection brush", () => {
+    for (const kind of ["bar", "stackedBar", "line", "stackedLine", "area", "stackedArea"]) {
+      const b = brushOption(kind);
+      expect(b, kind).not.toBeNull();
+      expect(b!.brushType).toBe("lineX");
+      expect(b!.brushMode).toBe("single");
+      expect(b!.xAxisIndex).toBe(0);
+      expect(b!.removeOnClick).toBe(true); // a plain click clears the selection
+    }
+  });
+
+  test("non-brushable kinds (no single category x-axis) return null", () => {
+    for (const kind of ["pie", "donut", "treemap", "sunburst", "heatmap", "radar", "scatter", "bubble", "map", "made-up"]) {
+      expect(brushOption(kind), kind).toBeNull();
+    }
+  });
+
+  test("BRUSHABLE_CHART_TYPES membership matches brushOption non-null", () => {
+    expect(BRUSHABLE_CHART_TYPES.has("bar")).toBe(true);
+    expect(BRUSHABLE_CHART_TYPES.has("pie")).toBe(false);
+    expect(BRUSHABLE_CHART_TYPES.has("map")).toBe(false);
+  });
+});
+
+describe("buildChartOption — conditional formatting (#1084)", () => {
+  // sample(): Store Sales = [565238.13, 612482.65]; Unit Sales = [266773, 282417].
+  const cf = [
+    {
+      measureIndex: 0,
+      rules: [{ op: "gt" as const, value: 600000, color: "#00ff00" }],
+      fallbackColor: "#888888",
+    },
+  ];
+
+  test("recolours matching bars on the targeted measure; fallback on the rest", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ dualAxis: false, conditionalFormat: cf })) as Record<
+      string,
+      unknown
+    >;
+    const series = opt.series as Array<{ data: unknown[] }>;
+    // Store Sales (measure 0): 565238 < 600000 → fallback grey; 612482 > 600000 → green.
+    expect(series[0].data[0]).toEqual({ value: 565238.13, itemStyle: { color: "#888888" } });
+    expect(series[0].data[1]).toEqual({ value: 612482.65, itemStyle: { color: "#00ff00" } });
+    // Unit Sales (measure 1): no band → plain numbers, untouched.
+    expect(series[1].data).toEqual([266773, 282417]);
+  });
+
+  test("no conditionalFormat → plain numeric data (unchanged)", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ dualAxis: false })) as Record<string, unknown>;
+    const series = opt.series as Array<{ data: unknown[] }>;
+    expect(series[0].data).toEqual([565238.13, 612482.65]);
+  });
+
+  test("line charts ignore conditional formatting (bar/stackedBar only in Phase 1)", () => {
+    const opt = buildChartOption(sample(), "line", opts({ dualAxis: false, conditionalFormat: cf })) as Record<
+      string,
+      unknown
+    >;
+    const series = opt.series as Array<{ data: unknown[] }>;
+    // line keeps a continuous stroke → raw numbers, no per-point itemStyle.
+    expect(series[0].data).toEqual([565238.13, 612482.65]);
+  });
+});
+
+describe("buildChartOption — combo charts / per-series type (#1089)", () => {
+  // sample(): series 0 = Store Sales, series 1 = Unit Sales.
+  test("per-series type override mixes bar + line on one bar chart", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ dualAxis: false, seriesType: { "Unit Sales": "line" } }),
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ name: string; type: string }>;
+    expect(series.find((s) => s.name === "Store Sales")?.type).toBe("bar"); // default
+    expect(series.find((s) => s.name === "Unit Sales")?.type).toBe("line"); // override
+  });
+
+  test("'area' override → line type + areaStyle; 'scatter' → scatter type", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ dualAxis: false, seriesType: { "Store Sales": "area", "Unit Sales": "scatter" } }),
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ name: string; type: string; areaStyle?: object }>;
+    const ss = series.find((s) => s.name === "Store Sales")!;
+    expect(ss.type).toBe("line");
+    expect(ss.areaStyle).toBeDefined();
+    expect(series.find((s) => s.name === "Unit Sales")?.type).toBe("scatter");
+  });
+
+  test("no seriesType → all series keep the chart-level type (unchanged)", () => {
+    const opt = buildChartOption(sample(), "bar", opts({ dualAxis: false })) as Record<string, unknown>;
+    const series = opt.series as Array<{ type: string }>;
+    expect(series.every((s) => s.type === "bar")).toBe(true);
+  });
+
+  test("combo composes with dualAxis (each axis keeps its own series + type)", () => {
+    const opt = buildChartOption(
+      sample(),
+      "bar",
+      opts({ dualAxis: false, seriesAxis: { "Unit Sales": "right" }, seriesType: { "Unit Sales": "line" } }),
+    ) as Record<string, unknown>;
+    const series = opt.series as Array<{ name: string; type: string; yAxisIndex: number }>;
+    const us = series.find((s) => s.name === "Unit Sales")!;
+    expect(us.type).toBe("line");
+    expect(us.yAxisIndex).toBe(1); // right axis
   });
 });

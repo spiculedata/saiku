@@ -1,0 +1,180 @@
+# TPC-DS retail semantic model — trimmed to the 5 base datasets, 4 relationships,
+# and 5 metrics for the Saiku demo. Sourced from
+# https://github.com/apache/ossie/blob/main/examples/tpcds_semantic_model.yaml
+# and adapted so it loads against a local H2 fixture: the ANSI-SQL expressions
+# reference bare column names (H2 doesn't schema-qualify by default) and the
+# sources match the CREATE TABLE names in tpcds-seed.sql.
+version: 0.2.0.dev0
+
+semantic_model:
+- name: TPCDS
+  description: TPC-DS retail — sales, customers, products, stores.
+  ai_context:
+    instructions: Retail analytics against a small TPC-DS fixture. Time via date_dim; customers via customer; products via item; stores via store.
+
+  datasets:
+  - name: store_sales
+    source: STORE_SALES
+    primary_key: [SS_ITEM_SK, SS_TICKET_NUMBER]
+    description: Store-sales transactions.
+    fields:
+    - name: ss_sold_date_sk
+      expression: {dialects: [{dialect: ANSI_SQL, expression: SS_SOLD_DATE_SK}]}
+    - name: ss_item_sk
+      expression: {dialects: [{dialect: ANSI_SQL, expression: SS_ITEM_SK}]}
+    - name: ss_customer_sk
+      expression: {dialects: [{dialect: ANSI_SQL, expression: SS_CUSTOMER_SK}]}
+    - name: ss_store_sk
+      expression: {dialects: [{dialect: ANSI_SQL, expression: SS_STORE_SK}]}
+    - name: ss_ticket_number
+      expression: {dialects: [{dialect: ANSI_SQL, expression: SS_TICKET_NUMBER}]}
+    - name: ss_quantity
+      expression: {dialects: [{dialect: ANSI_SQL, expression: SS_QUANTITY}]}
+    - name: ss_sales_price
+      expression: {dialects: [{dialect: ANSI_SQL, expression: SS_SALES_PRICE}]}
+    - name: ss_net_profit
+      expression: {dialects: [{dialect: ANSI_SQL, expression: SS_NET_PROFIT}]}
+
+  - name: date_dim
+    source: DATE_DIM
+    primary_key: [D_DATE_SK]
+    description: Date dimension.
+    fields:
+    - name: d_date_sk
+      expression: {dialects: [{dialect: ANSI_SQL, expression: D_DATE_SK}]}
+    - name: d_date
+      expression: {dialects: [{dialect: ANSI_SQL, expression: D_DATE}]}
+    - name: d_year
+      label: Year
+      expression: {dialects: [{dialect: ANSI_SQL, expression: D_YEAR}]}
+    - name: d_quarter
+      label: Quarter
+      expression: {dialects: [{dialect: ANSI_SQL, expression: D_QUARTER_NAME}]}
+    - name: d_month
+      label: Month
+      expression: {dialects: [{dialect: ANSI_SQL, expression: D_MONTH_NAME}]}
+
+  - name: customer
+    source: CUSTOMER
+    primary_key: [C_CUSTOMER_SK]
+    description: Customer dimension.
+    fields:
+    - name: c_customer_sk
+      expression: {dialects: [{dialect: ANSI_SQL, expression: C_CUSTOMER_SK}]}
+    - name: c_customer_id
+      expression: {dialects: [{dialect: ANSI_SQL, expression: C_CUSTOMER_ID}]}
+    - name: c_first_name
+      label: First name
+      expression: {dialects: [{dialect: ANSI_SQL, expression: C_FIRST_NAME}]}
+    - name: c_last_name
+      label: Last name
+      expression: {dialects: [{dialect: ANSI_SQL, expression: C_LAST_NAME}]}
+    - name: c_email
+      label: Email address
+      expression: {dialects: [{dialect: ANSI_SQL, expression: C_EMAIL_ADDRESS}]}
+    - name: c_state
+      label: State
+      expression: {dialects: [{dialect: ANSI_SQL, expression: C_STATE}]}
+
+  - name: item
+    source: ITEM
+    primary_key: [I_ITEM_SK]
+    description: Product / item dimension.
+    fields:
+    - name: i_item_sk
+      expression: {dialects: [{dialect: ANSI_SQL, expression: I_ITEM_SK}]}
+    - name: i_item_id
+      expression: {dialects: [{dialect: ANSI_SQL, expression: I_ITEM_ID}]}
+    - name: i_item_desc
+      label: Description
+      expression: {dialects: [{dialect: ANSI_SQL, expression: I_ITEM_DESC}]}
+    - name: i_brand
+      label: Brand
+      expression: {dialects: [{dialect: ANSI_SQL, expression: I_BRAND}]}
+    - name: i_category
+      label: Category
+      expression: {dialects: [{dialect: ANSI_SQL, expression: I_CATEGORY}]}
+    - name: i_current_price
+      label: Current price
+      expression: {dialects: [{dialect: ANSI_SQL, expression: I_CURRENT_PRICE}]}
+
+  - name: store
+    source: STORE
+    primary_key: [S_STORE_SK]
+    description: Store dimension.
+    fields:
+    - name: s_store_sk
+      expression: {dialects: [{dialect: ANSI_SQL, expression: S_STORE_SK}]}
+    - name: s_store_id
+      expression: {dialects: [{dialect: ANSI_SQL, expression: S_STORE_ID}]}
+    - name: s_store_name
+      label: Store name
+      expression: {dialects: [{dialect: ANSI_SQL, expression: S_STORE_NAME}]}
+    - name: s_city
+      label: City
+      expression: {dialects: [{dialect: ANSI_SQL, expression: S_CITY}]}
+    - name: s_state
+      label: State
+      expression: {dialects: [{dialect: ANSI_SQL, expression: S_STATE}]}
+    - name: s_number_employees
+      label: Employees
+      expression: {dialects: [{dialect: ANSI_SQL, expression: S_NUMBER_EMPLOYEES}]}
+
+  metrics:
+  - name: total_sales
+    description: Sum of net sales (quantity × sales_price) across all transactions.
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM("store_sales"."SS_QUANTITY" * "store_sales"."SS_SALES_PRICE")
+    aggregation_kind: sum
+  - name: total_profit
+    description: Sum of net profit across all transactions.
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: SUM("store_sales"."SS_NET_PROFIT")
+    aggregation_kind: sum
+  - name: transaction_count
+    description: Number of store-sale line items.
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: COUNT(*)
+    aggregation_kind: count
+  - name: avg_ticket
+    description: Average sales_price per transaction.
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: AVG("store_sales"."SS_SALES_PRICE")
+    aggregation_kind: avg
+  - name: distinct_customers
+    description: Distinct customer count over the sales fact.
+    expression:
+      dialects:
+      - dialect: ANSI_SQL
+        expression: COUNT(DISTINCT "store_sales"."SS_CUSTOMER_SK")
+    aggregation_kind: count
+
+  relationships:
+  - name: store_sales_to_date
+    from: store_sales
+    to: date_dim
+    from_columns: [SS_SOLD_DATE_SK]
+    to_columns: [D_DATE_SK]
+  - name: store_sales_to_customer
+    from: store_sales
+    to: customer
+    from_columns: [SS_CUSTOMER_SK]
+    to_columns: [C_CUSTOMER_SK]
+  - name: store_sales_to_item
+    from: store_sales
+    to: item
+    from_columns: [SS_ITEM_SK]
+    to_columns: [I_ITEM_SK]
+  - name: store_sales_to_store
+    from: store_sales
+    to: store
+    from_columns: [SS_STORE_SK]
+    to_columns: [S_STORE_SK]

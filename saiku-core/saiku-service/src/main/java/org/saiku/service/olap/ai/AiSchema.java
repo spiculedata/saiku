@@ -48,6 +48,17 @@ public class AiSchema {
          *  distinct-count | non-additive}. Tells the agent whether
          *  TopCount-style ranking makes sense at the requested grain. */
         public String aggregationKind;
+        /** saiku#902: PII marker. {@code true} when the schema author tagged
+         *  {@code saiku.semantic.pii=true} on the measure. Drives:
+         *  <ul>
+         *    <li>the agent-facing /ai/schema projection (caption, description,
+         *        synonyms stripped — see {@link AiSchema#toAgentView()});</li>
+         *    <li>drillthrough {@code returns=} refusal (the column may not be
+         *        projected back).</li>
+         *  </ul>
+         *  The internal in-memory AiSchema keeps everything for MDX
+         *  construction; redaction happens at the JSON boundary. */
+        public boolean pii;
 
         public Measure(String name, String uniqueName) {
             this.name = name;
@@ -118,6 +129,14 @@ public class AiSchema {
          *  {@code VALIDATION_ERROR} 400 with the full list as {@code available}.
          *  Empty list = no requirement (the default for unannotated cubes). */
         public java.util.List<RequiredFilter> requiredFilters = new java.util.ArrayList<>();
+        /** saiku#902: PII marker. {@code true} when the schema author tagged
+         *  {@code saiku.semantic.pii=true} on the level. Drives the
+         *  agent-facing /ai/schema projection (see {@link AiSchema#toAgentView()})
+         *  and drillthrough {@code returns=} refusal. The internal in-memory
+         *  AiSchema keeps captions + sample members + uniqueName intact so
+         *  MDX construction still works; redaction happens at the JSON
+         *  boundary so the validator can still match agent-supplied names. */
+        public boolean pii;
 
         /** Transient build-time signal: the sample-member fetch returned at least
          *  one row without throwing, so the level is already proven queryable
@@ -262,6 +281,133 @@ public class AiSchema {
         this.cubeId = cubeId;
         this.cubeName = cubeName;
         this.cubeUniqueName = cubeUniqueName;
+    }
+
+    /**
+     * saiku#902. Project the schema into an agent-facing redacted view.
+     *
+     * <p>The in-memory schema keeps captions, sample members, descriptions, and
+     * synonyms for every level + measure — including ones marked
+     * {@code pii=true} — because the internal MDX builder + validator need them
+     * for name resolution and member-by-caption lookup. The JSON response sent
+     * to the agent, on the other hand, must NOT carry those values when the
+     * schema author tagged the column PII.
+     *
+     * <p>This method returns a shallow-but-projection-correct copy where, for
+     * every PII-flagged measure / level:
+     * <ul>
+     *   <li>{@code displayName}, {@code description}, {@code synonyms} are
+     *       stripped.</li>
+     *   <li>{@code sampleMembers} is replaced with a single
+     *       {@code [REDACTED]} sentinel (the structural shape stays "this is a
+     *       level with members" — preserves the agent's mental model — but no
+     *       actual caption leaks).</li>
+     *   <li>{@code name} and {@code uniqueName} are KEPT so the agent can still
+     *       see the schema's shape; MDX referencing those names is what the
+     *       drillthrough refusal (separate path) blocks.</li>
+     *   <li>{@code pii=true} is set so the agent knows to treat the slot as
+     *       opaque without having to grep for stripped values.</li>
+     * </ul>
+     *
+     * <p>Aliases that point at PII levels / measures are removed from the
+     * top-level alias maps so an alias like "social_security_number" can't be
+     * used to bypass the strip.
+     *
+     * <p>Returns a new {@link AiSchema} instance; the caller's original is
+     * untouched. Safe to call repeatedly.
+     */
+    public AiSchema toAgentView() {
+        AiSchema view = new AiSchema(this.cubeId, this.cubeName, this.cubeUniqueName);
+        view.description = this.description;
+        view.examples = this.examples;
+        view.suggestions = this.suggestions;
+        view.requestSchema = this.requestSchema;
+
+        for (Map.Entry<String, Measure> e : this.measures.entrySet()) {
+            view.measures.put(e.getKey(), redactMeasure(e.getValue()));
+        }
+        for (Map.Entry<String, Dimension> e : this.dimensions.entrySet()) {
+            view.dimensions.put(e.getKey(), redactDimension(e.getValue()));
+        }
+        // Strip aliases that resolve to a PII-flagged measure / level — the
+        // canonical key map above has the pii flag on it, so we can decide
+        // membership cheaply.
+        for (Map.Entry<String, String> e : this.measureAliases.entrySet()) {
+            Measure target = view.measures.get(e.getValue());
+            if (target != null && !target.pii) view.measureAliases.put(e.getKey(), e.getValue());
+        }
+        for (Map.Entry<String, String> e : this.dimensionAliases.entrySet()) {
+            view.dimensionAliases.put(e.getKey(), e.getValue());
+        }
+        for (Map.Entry<String, java.util.List<LevelAliasTarget>> e : this.levelAliases.entrySet()) {
+            java.util.List<LevelAliasTarget> kept = new java.util.ArrayList<>();
+            for (LevelAliasTarget t : e.getValue()) {
+                if (!isPiiLevel(view, t)) kept.add(t);
+            }
+            if (!kept.isEmpty()) view.levelAliases.put(e.getKey(), kept);
+        }
+        return view;
+    }
+
+    private static Measure redactMeasure(Measure m) {
+        if (!m.pii) return m;
+        Measure r = new Measure(m.name, m.uniqueName);
+        r.visible = m.visible;
+        r.pii = true;
+        r.aggregationKind = m.aggregationKind;
+        // displayName / description / synonyms / unit / currency dropped.
+        return r;
+    }
+
+    private static Dimension redactDimension(Dimension d) {
+        Dimension copy = new Dimension(d.name, d.uniqueName);
+        copy.displayName = d.displayName;
+        copy.description = d.description;
+        copy.synonyms = d.synonyms;
+        for (Map.Entry<String, Hierarchy> e : d.hierarchies.entrySet()) {
+            copy.hierarchies.put(e.getKey(), redactHierarchy(e.getValue()));
+        }
+        return copy;
+    }
+
+    private static Hierarchy redactHierarchy(Hierarchy h) {
+        Hierarchy copy = new Hierarchy(h.name, h.uniqueName);
+        copy.displayName = h.displayName;
+        copy.description = h.description;
+        for (Map.Entry<String, Level> e : h.levels.entrySet()) {
+            copy.levels.put(e.getKey(), redactLevel(e.getValue()));
+        }
+        // Strip aliases that point at PII levels in this hierarchy so a
+        // display-name lookup can't reach a redacted level.
+        for (Map.Entry<String, String> e : h.levelAliases.entrySet()) {
+            Level target = copy.levels.get(e.getValue());
+            if (target != null && !target.pii) copy.levelAliases.put(e.getKey(), e.getValue());
+        }
+        return copy;
+    }
+
+    private static Level redactLevel(Level l) {
+        if (!l.pii) return l;
+        Level r = new Level(l.name, l.uniqueName);
+        r.pii = true;
+        r.cardinality = l.cardinality;
+        r.grain = l.grain;
+        r.requiredFilters = l.requiredFilters;
+        // displayName / description / synonyms dropped; sampleMembers replaced
+        // with a single [REDACTED] sentinel so the structural shape — "this is
+        // a level with members" — survives without leaking captions.
+        r.sampleMembers = java.util.List.of(new MemberSample("[REDACTED]", "[REDACTED]"));
+        return r;
+    }
+
+    private static boolean isPiiLevel(AiSchema view, LevelAliasTarget t) {
+        if (t == null || t.dimension == null || t.hierarchy == null || t.level == null) return false;
+        Dimension d = view.dimensions.get(t.dimension);
+        if (d == null) return false;
+        Hierarchy h = d.hierarchies.get(t.hierarchy);
+        if (h == null) return false;
+        Level l = h.levels.get(t.level);
+        return l != null && l.pii;
     }
 
     public String getCubeId() {

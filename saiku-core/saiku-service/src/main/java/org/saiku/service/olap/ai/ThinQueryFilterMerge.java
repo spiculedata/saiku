@@ -55,34 +55,56 @@ public final class ThinQueryFilterMerge {
     private ThinQueryFilterMerge() {}
 
     /**
-     * Apply the supplied dashboard filters to {@code tq} in-place. Safe
-     * to call with null/empty {@code filters} (no-op).
+     * Apply the supplied dashboard filters to {@code tq} in-place. Best-effort: filters that don't
+     * resolve (MDX-mode query, unknown dim/hier/level, empty members) are dropped silently — correct
+     * for optional dashboard chips. Safe to call with null/empty {@code filters} (no-op).
      */
     public static void apply(ThinQuery tq, List<AiFilterSelection> filters, AiSchema schema) {
-        if (tq == null || filters == null || filters.isEmpty() || schema == null) return;
-        if (tq.getType() == ThinQuery.Type.MDX) return;
-        ThinQueryModel model = tq.getQueryModel();
-        if (model == null) return;
+        // Best-effort callers don't care which filters were dropped.
+        applyReportingUnapplied(tq, filters, schema);
+    }
 
+    /**
+     * Strict variant for <em>forced RLS filters</em> (saiku#1104): apply what can be applied and
+     * return the sublist that could NOT be — an MDX-mode query (can't splice a WHERE into hand-written
+     * MDX), a dim/hier/level that doesn't resolve in the cube, or empty members. The caller MUST
+     * <strong>fail closed</strong> when the returned list is non-empty: a forced RLS filter that
+     * didn't apply means the query would run <em>unfiltered</em>, which is exactly the leak RLS
+     * exists to prevent. Behaviour-identical to {@link #apply} for the filters that DO apply.
+     *
+     * @return the filters that were not applied (empty when all applied); never null
+     */
+    public static List<AiFilterSelection> applyReportingUnapplied(
+            ThinQuery tq, List<AiFilterSelection> filters, AiSchema schema) {
+        List<AiFilterSelection> unapplied = new ArrayList<>();
+        if (filters == null || filters.isEmpty()) return unapplied;
+        // MDX-mode or model-less queries can't take a spliced slicer at all — every filter is unapplied.
+        ThinQueryModel model = (tq == null || tq.getType() == ThinQuery.Type.MDX) ? null : tq.getQueryModel();
         for (AiFilterSelection f : filters) {
             if (f == null) continue;
-            if (f.getMembers() == null || f.getMembers().isEmpty()) continue;
-            AiSchema.Hierarchy resolvedHier = resolveHierarchy(schema, f.getDimension(), f.getHierarchy());
-            if (resolvedHier == null) continue;
-            AiSchema.Level resolvedLevel = resolveLevel(resolvedHier, f.getLevel());
-            if (resolvedLevel == null) continue;
-
-            // Try to find the hierarchy on any existing axis and rewrite
-            // its selection in place. The dashboard filter overrides
-            // whatever INCLUSION/EXCLUSION the saved query had.
-            if (rewriteExistingAxisSelection(model, resolvedHier, resolvedLevel, f.getMembers())) {
-                continue;
+            if (schema == null || model == null || !applyOne(model, f, schema)) {
+                unapplied.add(f);
             }
-
-            // Not on any axis — add to FILTER (slicer).
-            ThinAxis filterAxis = ensureFilterAxis(model);
-            replaceOrAppendHierarchy(filterAxis, resolvedHier, resolvedLevel, f.getMembers());
         }
+        return unapplied;
+    }
+
+    /** Apply one filter to the model. Returns true iff it resolved and was spliced onto an axis / the slicer. */
+    private static boolean applyOne(ThinQueryModel model, AiFilterSelection f, AiSchema schema) {
+        if (f.getMembers() == null || f.getMembers().isEmpty()) return false;
+        AiSchema.Hierarchy resolvedHier = resolveHierarchy(schema, f.getDimension(), f.getHierarchy());
+        if (resolvedHier == null) return false;
+        AiSchema.Level resolvedLevel = resolveLevel(resolvedHier, f.getLevel());
+        if (resolvedLevel == null) return false;
+
+        // Try to find the hierarchy on any existing axis and rewrite its selection in place; else
+        // add to the FILTER (slicer) axis.
+        if (rewriteExistingAxisSelection(model, resolvedHier, resolvedLevel, f.getMembers())) {
+            return true;
+        }
+        ThinAxis filterAxis = ensureFilterAxis(model);
+        replaceOrAppendHierarchy(filterAxis, resolvedHier, resolvedLevel, f.getMembers());
+        return true;
     }
 
     /* ---------------------------- resolution ---------------------------- */

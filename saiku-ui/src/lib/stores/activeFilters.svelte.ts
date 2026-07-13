@@ -18,7 +18,12 @@ import type { DashboardFilter } from "$lib/api/dashboards";
 /** Where an ActiveFilter came from. Source identity drives precedence. */
 export type FilterSource =
   | { kind: "panel"; filterId: string }
-  | { kind: "click"; tileId: string };
+  | { kind: "click"; tileId: string }
+  /** Brush cross-filter (saiku#1085) — a rectangular brush on a chart tile
+   *  emits a (usually multi-member) filter on its row hierarchy. Carries the
+   *  source tile id so the SOURCE tile can exclude its own cross-filter and
+   *  keep full context (unlike click filters, which apply everywhere). */
+  | { kind: "cross"; tileId: string };
 
 export interface ActiveFilter {
   /** Stable per-instance id; used as the chip key. */
@@ -39,6 +44,10 @@ class ActiveFiltersStore {
   /** Click-captured filters, in insertion order. Cleared on dashboard swap. */
   clicks = $state<ActiveFilter[]>([]);
 
+  /** Brush cross-filters (saiku#1085), at most one per source tile. Transient
+   *  like clicks — cleared on dashboard swap. */
+  crosses = $state<ActiveFilter[]>([]);
+
   /** Derived: panel filters from the active dashboard. Re-derived
    *  whenever {@code dashboardStore.current.filterPanel} changes. */
   panel = $derived<ActiveFilter[]>(
@@ -54,12 +63,16 @@ class ActiveFiltersStore {
     })),
   );
 
-  /** Derived: the merged active set. Panel first, clicks second — when
-   *  two entries target the same (dim, hier, level), the click wins. */
+  /** Derived: the merged active set. Panel first, clicks second, brush
+   *  cross-filters last — when entries target the same (dim, hier, level),
+   *  the most-intentional (cross > click > panel) wins. Per-tile source
+   *  exclusion (a tile ignoring its OWN cross-filter) happens downstream in
+   *  effectiveQueryFor, which knows the consuming tile id. */
   all = $derived<ActiveFilter[]>((() => {
     const byKey = new Map<string, ActiveFilter>();
     for (const f of this.panel) byKey.set(targetKey(f.filter), f);
     for (const f of this.clicks) byKey.set(targetKey(f.filter), f);
+    for (const f of this.crosses) byKey.set(targetKey(f.filter), f);
     return Array.from(byKey.values());
   })());
 
@@ -80,13 +93,48 @@ class ActiveFiltersStore {
     ];
   }
 
-  /** Remove a filter chip — clicks are dropped from local state; panel
-   *  entries are cleared by zeroing their members[] through the store
-   *  so the change persists on save. */
+  /** Push (or replace) a brush cross-filter for a source tile (saiku#1085).
+   *  At most one cross-filter per source tile — a fresh brush on the same
+   *  tile replaces its previous selection. An empty members[] is treated as
+   *  "clear" so a brush that selects nothing removes the tile's cross-filter. */
+  pushCross(filter: DashboardFilter, sourceTileId: string): void {
+    const without = this.crosses.filter(
+      (c) => !(c.source.kind === "cross" && c.source.tileId === sourceTileId),
+    );
+    if (!filter.members || filter.members.length === 0) {
+      this.crosses = without; // empty selection = clear
+      return;
+    }
+    this.crosses = [
+      ...without,
+      {
+        id: `cross-${sourceTileId}-${targetKey(filter)}-${Date.now()}`,
+        source: { kind: "cross", tileId: sourceTileId },
+        filter,
+      },
+    ];
+  }
+
+  /** Drop the cross-filter emitted by a given source tile (brush cleared /
+   *  Esc / click-outside on that tile). No-op if the tile has none. */
+  clearCrossesFrom(sourceTileId: string): void {
+    this.crosses = this.crosses.filter(
+      (c) => !(c.source.kind === "cross" && c.source.tileId === sourceTileId),
+    );
+  }
+
+  /** Remove a filter chip — clicks and cross-filters are dropped from local
+   *  state; panel entries are cleared by zeroing their members[] through the
+   *  store so the change persists on save. */
   clearChip(id: string): void {
     const click = this.clicks.find((c) => c.id === id);
     if (click) {
       this.clicks = this.clicks.filter((c) => c.id !== id);
+      return;
+    }
+    const cross = this.crosses.find((c) => c.id === id);
+    if (cross) {
+      this.crosses = this.crosses.filter((c) => c.id !== id);
       return;
     }
     const panelMatch = this.panel.find((p) => p.id === id);
@@ -95,10 +143,11 @@ class ActiveFiltersStore {
     }
   }
 
-  /** Wipe transient click state on dashboard switch. Panel filters
+  /** Wipe transient click + cross state on dashboard switch. Panel filters
    *  re-derive automatically from the new dashboardStore.current. */
   resetTransient(): void {
     this.clicks = [];
+    this.crosses = [];
   }
 }
 

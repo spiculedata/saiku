@@ -6,45 +6,62 @@
 
     <groupId>org.saikuanalytics</groupId>
     <artifactId>saiku-bom</artifactId>
-    <version>4.5.2</version>
+    <version>4.6.0</version>
     <packaging>pom</packaging>
     <name>Saiku BOM</name>
     <description>Central dependency-version catalogue for Saiku modules.</description>
 
     <properties>
         <!-- Shared third-party versions. Child poms reference these via ${...}. -->
-        <!-- Spring Framework 6.2.x is the latest 6.x GA line (6.2.8 as of 2025-06).
-             6.2.x closes CVE-2025-41242 (path traversal) and CVE-2025-41249
-             (annotation-detection authorization). 7.x is still in milestones. -->
-        <spring.version>6.2.11</spring.version>
-        <!-- Spring Security 6.5.x is the latest GA line (6.5.1 as of 2025-06).
-             Closes CVE-2026-22732 (HTTP-headers-not-written) and CVE-2026-22746
-             (user-attribute enumeration). Pairs with Spring Framework 6.2.x. -->
-        <spring.security.version>6.5.10</spring.security.version>
+        <!-- Spring Framework 6.2.x is the latest 6.x GA line. 6.2.19 carries the
+             backported fixes for the 2026-06-01 advisory (16 CVEs, CVE-2026-41838..41855)
+             AND the older spring-webmvc CVE-2026-22737/22741/22745/22735 — staying on 6.x
+             keeps the XML-wired Spring Security working; 7.x is a separate planned migration. -->
+        <spring.version>6.2.19</spring.version>
+        <!-- Spring Security 6.5.x is the latest GA line paired with Spring Framework 6.2.x.
+             6.5.11 is current hygiene (the 2026-06 CVE batch is in spring-framework, fixed
+             transitively by the 6.2.19 bump above). 7.x deferred to a planned migration. -->
+        <spring.security.version>6.5.11</spring.security.version>
         <!-- slf4j 1.x reached EOL; 2.0.x is the maintained line. API
              (org.slf4j.Logger / LoggerFactory) is binary-compatible for
              the call surface saiku uses. Note: the slf4j → log4j-2 binding
              changes name in 2.x — log4j-slf4j-impl (slf4j-1.x) becomes
              log4j-slf4j2-impl (slf4j-2.x). -->
-        <slf4j.version>2.0.16</slf4j.version>
+        <slf4j.version>2.0.18</slf4j.version>
         <!-- log4j 1.x has 12 open CVEs and is EOL. Drop in the log4j-1.2-api
              compatibility bridge which preserves the org.apache.log4j.* package
              namespace (so existing imports keep working) but routes everything
              through log4j-core 2.x. slf4j-log4j12 likewise gets swapped for
              log4j-slf4j-impl, the slf4j-1.x → log4j2 binding. -->
-        <log4j2.version>2.24.3</log4j2.version>
+        <log4j2.version>2.26.0</log4j2.version>
         <!-- Batik 1.8 has CVE-2022-38398/40146/41704/42890/44729/44730. 1.17 fixes them. -->
         <batik.version>1.19</batik.version>
         <jersey.version>3.1.9</jersey.version>
         <saiku-query.version>0.4-SNAPSHOT</saiku-query.version>
-        <jackson.version>2.18.6</jackson.version>
+        <jackson.version>2.18.8</jackson.version>
         <arrow.version>18.2.0</arrow.version>
-        <caffeine.version>3.1.8</caffeine.version>
+        <caffeine.version>3.2.4</caffeine.version>
         <!-- JSON Schema (draft 2020-12) validator for the AiQueryRequest
              body. Used by AiRequestSchemaValidator to enforce shape errors
              before the converter's domain-resolution layer runs. Apache 2.0,
              ~200KB, no heavy transitives. Pairs with Jackson 2.18.x. -->
         <jsonSchemaValidator.version>1.5.8</jsonSchemaValidator.version>
+        <!-- Spring GraphQL 1.4.x is the current release line paired with Spring
+             Framework 6.2.x. Provides the GraphQlSource / GraphQlHttpHandler
+             plumbing that we hang the /rest/saiku/api/graphql endpoint off.
+             We use it standalone (not via Spring Boot autoconfig) because the
+             saiku-webapp is XML-wired Spring, not Boot. -->
+        <springGraphQl.version>1.4.1</springGraphQl.version>
+        <!-- graphql-java is spring-graphql's transitive engine. Pinning here so
+             we control the version rather than inherit whatever spring-graphql
+             1.4.1 defaults to. 24.3 is the last stable in the 24.x line;
+             25+ is fine but the Jackson-json-node integration on 24.x is well
+             exercised. -->
+        <graphqlJava.version>24.3</graphqlJava.version>
+        <!-- graphql-java-extended-scalars supplies the JSON, DateTime, Object
+             scalars we need to type Ossie filter payloads + typed cell values.
+             Version tracks the graphql-java major line. -->
+        <graphqlJavaExtendedScalars.version>24.0</graphqlJavaExtendedScalars.version>
     </properties>
 
     <dependencyManagement>
@@ -66,6 +83,15 @@
                 <groupId>org.postgresql</groupId>
                 <artifactId>postgresql</artifactId>
                 <version>42.7.11</version>
+            </dependency>
+            <!-- quack-jdbc: JDBC driver for DuckDB's native Quack client-server
+                 protocol (jdbc:quack://). Lets Ossie warehouses target a remote
+                 DuckDB server over HTTP with real DuckDB catalog metadata (no
+                 Postgres-wire emulation). Alpha as of DuckDB 1.5.3 / v2.0. -->
+            <dependency>
+                <groupId>com.gizmodata</groupId>
+                <artifactId>quack-jdbc</artifactId>
+                <version>0.1.0-alpha.1</version>
             </dependency>
             <!-- hive-jdbc 0.13 (2014) had ~3 CVEs. 2.3.x is the last
                  widely-deployed line with a stable JDBC surface. -->
@@ -231,7 +257,7 @@
             <dependency>
                 <groupId>org.apache.xmlgraphics</groupId>
                 <artifactId>xmlgraphics-commons</artifactId>
-                <version>2.9</version>
+                <version>2.11</version>
             </dependency>
 
             <!-- avalon-framework-api / -impl 4.2.0 (2006!) were only needed to
@@ -336,15 +362,32 @@
                 <artifactId>batik-ext</artifactId>
                 <version>${batik.version}</version>
             </dependency>
-            <!-- iText 4.2.0 under the old "iText:iText" groupId was never on Maven
-                 Central and the original hosting is gone. com.lowagie:itext:2.1.7
-                 is the same artifact (last OSS release before AGPL) published on
-                 Central. Saiku's PDF export code imports com.lowagie.text.* so
-                 the API surface is unchanged — only the coords. -->
+            <!-- batik-script + batik-extension aren't pulled by the managed
+                 coords above, so without an explicit pin they float to old
+                 transitive versions (batik-script resolved to 1.7 — CVE-2022-44730,
+                 fixed 1.17; batik-extension to 1.18). Pin both to ${batik.version}
+                 so the whole Batik set is aligned at 1.19 and CVE-2022-44730 is
+                 closed. -->
             <dependency>
-                <groupId>com.lowagie</groupId>
-                <artifactId>itext</artifactId>
-                <version>2.1.7</version>
+                <groupId>org.apache.xmlgraphics</groupId>
+                <artifactId>batik-script</artifactId>
+                <version>${batik.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.xmlgraphics</groupId>
+                <artifactId>batik-extension</artifactId>
+                <version>${batik.version}</version>
+            </dependency>
+            <!-- OpenPDF 1.4.2 is the maintained fork of the abandoned
+                 com.lowagie:itext:2.1.7. It keeps the same com.lowagie.text.*
+                 package (the rename to org.openpdf is a 2.x change), so Saiku's
+                 PDF export imports are unchanged — only the coords. Closes
+                 CVE-2017-9096 (XXE in iText <= 4.2.2), which com.lowagie:itext
+                 never fixed (no patched release exists). -->
+            <dependency>
+                <groupId>com.github.librepdf</groupId>
+                <artifactId>openpdf</artifactId>
+                <version>1.4.2</version>
             </dependency>
             <dependency>
                 <groupId>org.saikuanalytics</groupId>
@@ -718,6 +761,23 @@
                 <groupId>com.networknt</groupId>
                 <artifactId>json-schema-validator</artifactId>
                 <version>${jsonSchemaValidator.version}</version>
+            </dependency>
+
+            <!-- Spring GraphQL — /rest/saiku/api/graphql endpoint machinery -->
+            <dependency>
+                <groupId>org.springframework.graphql</groupId>
+                <artifactId>spring-graphql</artifactId>
+                <version>${springGraphQl.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.graphql-java</groupId>
+                <artifactId>graphql-java</artifactId>
+                <version>${graphqlJava.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.graphql-java</groupId>
+                <artifactId>graphql-java-extended-scalars</artifactId>
+                <version>${graphqlJavaExtendedScalars.version}</version>
             </dependency>
         </dependencies>
 

@@ -19,7 +19,7 @@
   const BAR_HEIGHTS = [55, 80, 42, 95, 64, 78, 50];
 </script>
 
-<div class="tile-loading" role="status" aria-busy="true" aria-label="Loading">
+<div class="h-full w-full p-3 box-border flex" role="status" aria-busy="true" aria-label="Loading">
   {#if variant === "table"}
     <div class="sk-table">
       <div class="sk-row sk-row--head">
@@ -37,28 +37,20 @@
       <div class="sk sk-label"></div>
     </div>
   {:else if variant === "radial"}
-    <div class="sk-radial">
+    <div class="flex-1 flex items-center justify-center">
       <div class="sk sk-ring"></div>
     </div>
   {:else}
-    <div class="sk-chart">
+    <div class="flex-1 flex items-end justify-around gap-2">
       {#each BAR_HEIGHTS as h, i (i)}
-        <div class="sk sk-bar" style="height: {h}%"></div>
+        <div class="sk flex-1 min-w-0" style="height: {h}%"></div>
       {/each}
     </div>
   {/if}
 </div>
 
 <style>
-  .tile-loading {
-    height: 100%;
-    width: 100%;
-    padding: 0.75rem;
-    box-sizing: border-box;
-    display: flex;
-  }
-
-  /* Shared shimmer fill. */
+/* Shared shimmer fill. */
   .sk {
     background: var(--bg-subtle);
     border-radius: 4px;
@@ -88,28 +80,9 @@
       animation: none;
     }
   }
-
   /* Chart: bars rising from a shared baseline. */
-  .sk-chart {
-    flex: 1;
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-around;
-    gap: 0.5rem;
-  }
-  .sk-bar {
-    flex: 1;
-    min-width: 0;
-  }
-
   /* Radial: a shimmer ring (pie / donut / sunburst). The mask punches a
      hole in the centre so the disc reads as a ring. */
-  .sk-radial {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
   .sk-ring {
     height: 85%;
     max-width: 85%;
@@ -118,7 +91,6 @@
     -webkit-mask: radial-gradient(circle, transparent 38%, #000 39%);
     mask: radial-gradient(circle, transparent 38%, #000 39%);
   }
-
   /* Table: header strip + body rows of equal cells. */
   .sk-table {
     flex: 1;
@@ -138,7 +110,6 @@
     height: 1.05rem;
     background: var(--bg-muted);
   }
-
   /* KPI: a big number block + a small caption block. */
   .sk-kpi {
     flex: 1;

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from "$lib/components/Modal.svelte";
+  import { Button } from "$lib/components/ui";
   import { i18n } from "$lib/stores/i18n.svelte";
   import {
     deleteSavedQuery,
@@ -148,6 +149,28 @@
   async function doOpen(entry: SavedQueryFile) {
     try {
       const q = await readSavedQuery(entry.path);
+      // Ossie queries share the .saiku extension so mixed folders are the norm. Detect
+      // OSSIE-flavoured payloads here and re-route through the Ossie load path — the
+      // canvas store hydrates the shelf state and flips selection.mode to 'ossie',
+      // which swaps the workbench sidebar + canvas to the Ossie shell. Falling through
+      // to onOpenQuery with an OSSIE payload would give the MDX QueryCanvas a
+      // ThinQuery with no cube/mdx/queryModel and render nothing.
+      if ((q as { queryType?: string })?.queryType === "OSSIE") {
+        const ossieMod = await import("$lib/stores/ossieQuery.svelte");
+        const selMod = await import("$lib/stores/selection.svelte");
+        const sessMod = await import("$lib/stores/session.svelte");
+        const loaded = await ossieMod.ossieQuery.load(entry.path);
+        if (loaded) {
+          const conn = loaded.ossieQueryModel.connection;
+          const model = loaded.ossieQueryModel.model;
+          selMod.selection.selectOssie({ connectionName: conn, modelName: model });
+          const user = sessMod.session.current?.username;
+          if (user) await ossieMod.ossieQuery.loadModel(user, conn, model);
+          toasts.success(i18n.t("toast.opened"), loaded.name);
+          onClose();
+        }
+        return;
+      }
       onOpenQuery(entry.path, q);
     } catch (err) {
       toasts.danger(i18n.t("toast.openFailed"), err instanceof Error ? err.message : String(err));
@@ -253,7 +276,7 @@
 </script>
 
 <Modal title={i18n.t("modal.open.title")} {open} size="lg" onClose={onClose}>
-  <nav class="saved__crumbs" aria-label={i18n.t("repo.breadcrumb")}>
+  <nav class="flex items-center flex-wrap gap-0.5 py-2 px-3 mb-2 bg-bg-subtle border border-border rounded-sm text-sm" aria-label={i18n.t("repo.breadcrumb")}>
     {#each breadcrumbs as crumb, i (crumb.path)}
       {#if i > 0}<ChevronRight size={12} class="saved__crumb-sep" />{/if}
       <button
@@ -305,8 +328,8 @@
             class="saved__main"
             onclick={() => (currentPath = f.path.replace(/^\/+|\/+$/g, ""))}
           >
-            <span class="saved__icon"><Folder size={14} /></span>
-            <span class="saved__name">{f.name}</span>
+            <span class="text-fg-muted inline-flex shrink-0"><Folder size={14} /></span>
+            <span class="font-medium overflow-hidden text-ellipsis whitespace-nowrap flex-1 min-w-0">{f.name}</span>
           </button>
         </li>
       {/each}
@@ -324,8 +347,8 @@
                 }}
                 autofocus
               />
-              <button type="button" class="btn btn--primary" onclick={() => commitRename()}>{i18n.t("modal.save")}</button>
-              <button type="button" class="btn" onclick={() => (renaming = null)}>{i18n.t("modal.cancel")}</button>
+              <Button onclick={() => commitRename()}>{i18n.t("modal.save")}</Button>
+              <Button variant="outline" >(renaming = null)}>{i18n.t("modal.cancel")}</Button>
             </div>
           {:else}
             <button
@@ -335,13 +358,13 @@
               onkeydown={(e) => onRowKey(e, entry)}
               title={i18n.t("saved.openHint")}
             >
-              <span class="saved__icon"><FolderOpen size={14} /></span>
-              <span class="saved__name">{entry.name}</span>
+              <span class="text-fg-muted inline-flex shrink-0"><FolderOpen size={14} /></span>
+              <span class="font-medium overflow-hidden text-ellipsis whitespace-nowrap flex-1 min-w-0">{entry.name}</span>
               {#if searchResults}
-                <span class="saved__path">{entry.path}</span>
+                <span class="text-fg-subtle text-xs">{entry.path}</span>
               {/if}
             </button>
-            <div class="saved__actions">
+            <div class="flex gap-0.5">
               <button type="button" class="icon-btn" title={i18n.t("saved.open")} onclick={() => doOpen(entry)}>
                 <FolderOpen size={16} />
               </button>
@@ -380,15 +403,15 @@
   {#if confirming}
     <div class="saved__confirm">
       <p>{i18n.t("saved.deletePrompt").replace("{name}", confirming.name)}</p>
-      <div class="saved__confirm-actions">
-        <button type="button" class="btn" onclick={() => (confirming = null)}>{i18n.t("modal.cancel")}</button>
-        <button type="button" class="btn btn--danger" onclick={() => commitDelete()}>{i18n.t("modal.delete")}</button>
+      <div class="flex justify-end gap-2 mt-2">
+        <Button variant="outline" >(confirming = null)}>{i18n.t("modal.cancel")}</Button>
+        <Button variant="destructive" onclick={() => commitDelete()}>{i18n.t("modal.delete")}</Button>
       </div>
     </div>
   {/if}
 
   {#snippet footer()}
-    <button type="button" class="btn" onclick={onClose}>{i18n.t("modal.close")}</button>
+    <Button variant="outline" onclick={onClose}>{i18n.t("modal.close")}</Button>
   {/snippet}
 </Modal>
 
@@ -407,20 +430,7 @@
 {/if}
 
 <style>
-  .hint { color: var(--fg-muted); font-size: var(--fs-sm); margin: var(--space-2) 0; }
-
-  .saved__crumbs {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 2px;
-    padding: var(--space-2) var(--space-3);
-    margin-bottom: var(--space-2);
-    background: var(--bg-subtle);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    font-size: var(--fs-sm);
-  }
+.hint { color: var(--fg-muted); font-size: var(--fs-sm); margin: var(--space-2) 0; }
   .saved__crumb {
     display: inline-flex;
     align-items: center;
@@ -438,7 +448,6 @@
   /* Applied via class={} on a lucide-svelte icon — needs :global so the
      scoped-style hash doesn't suppress it on the child component's root. */
   :global(.saved__crumb-sep) { color: var(--fg-subtle); }
-
   .saved__search {
     display: flex;
     align-items: center;
@@ -489,11 +498,6 @@
     padding: 0;
     min-width: 0;
   }
-  .saved__icon { color: var(--fg-muted); display: inline-flex; flex-shrink: 0; }
-  .saved__row--folder .saved__icon { color: var(--accent); }
-  .saved__name { font-weight: var(--weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
-  .saved__path { color: var(--fg-subtle); font-size: var(--fs-xs); }
-  .saved__actions { display: flex; gap: 2px; }
   /* .icon-btn / .icon-btn--danger come from app.css */
   .saved__rename {
     display: flex;
@@ -516,11 +520,5 @@
     border: 1px solid var(--danger);
     border-radius: var(--radius-sm);
     background: color-mix(in srgb, var(--danger) 10%, var(--bg));
-  }
-  .saved__confirm-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-2);
-    margin-top: var(--space-2);
   }
 </style>

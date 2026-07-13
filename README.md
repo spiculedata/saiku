@@ -15,6 +15,13 @@
   <a href="https://github.com/spiculedata/saiku/discussions"><b>Discussions</b></a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/spiculedata/saiku/releases"><img src="https://img.shields.io/github/v/tag/spiculedata/saiku?label=release&sort=semver" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0%20%2B%20EPL--1.0-blue" alt="License: Apache 2.0 + EPL 1.0"></a>
+  <a href="https://github.com/spiculedata/saiku/pkgs/container/saiku"><img src="https://img.shields.io/badge/docker-ghcr.io%2Fspiculedata%2Fsaiku-2496ED?logo=docker&logoColor=white" alt="Docker image"></a>
+  <a href="https://join.slack.com/t/saikucloud/shared_invite/zt-3yor7kgiv-YUPhqK0pvd4WljctIQVOTA"><img src="https://img.shields.io/badge/slack-Saiku%20Cloud-4A154B?logo=slack&logoColor=white" alt="Slack community"></a>
+</p>
+
 ***
 
 ## Try it in 30 seconds
@@ -71,6 +78,16 @@ See [`docs/AI-QUERY-API.md`](docs/AI-QUERY-API.md) and
 [`docs/schema-annotations.md`](docs/schema-annotations.md) for the typed
 contract and the `saiku.semantic.*` annotation namespace cubes use to
 describe themselves to agents.
+
+## Dashboards
+
+Build shareable dashboards of chart / table / KPI / text / image tiles over your
+cubes — with cross-tile filters, click- and brush-cross-filtering,
+drill-down/through, conditional formatting, combo charts, anomaly/forecast
+overlays, auto-refresh, PDF/PNG export and read-only share links. See the
+[`docs/dashboards-user-guide.md`](docs/dashboards-user-guide.md) for the full
+walkthrough, and [`saiku-ui/src/embed/README.md`](saiku-ui/src/embed/README.md)
+to embed a dashboard in your own app via the `<saiku-embed>` web component.
 
 ## Observability
 
@@ -142,6 +159,7 @@ launcher serves the static `dist/` under `/ui/`.
   [open an issue](https://github.com/spiculedata/saiku/issues/new/choose).
 - **Questions, ideas, walkthroughs**:
   [GitHub Discussions](https://github.com/spiculedata/saiku/discussions).
+- **Chat**: [Saiku Cloud Slack](https://join.slack.com/t/saikucloud/shared_invite/zt-3yor7kgiv-YUPhqK0pvd4WljctIQVOTA).
 - **Stack Overflow tag**:
   [`saiku`](https://stackoverflow.com/questions/tagged/saiku).
 - **Commercial support, hosted, training**: <hello@saiku.bi>.
@@ -165,7 +183,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md). Short version:
 ## License
 
 Saiku is dual-licensed under **Apache 2.0** and **EPL 1.0**. See
-[`LICENSE.txt`](LICENSE.txt). A summary lives at
+[`LICENSE`](LICENSE). A summary lives at
 <https://saiku.bi/#license>.
 
 ## History

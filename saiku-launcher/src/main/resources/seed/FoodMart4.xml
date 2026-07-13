@@ -744,28 +744,157 @@
         </CalculatedMembers>
     </Cube>
 
-    <Cube name='Warehouse and Sales' >
+    <!--
+        Warehouse and Sales — a proper Mondrian-4 virtual cube combining
+        the SALES fact table (sales_fact_1997) and the WAREHOUSE fact
+        table (inventory_fact_1997) under one analytical surface.
+
+        The conformed dimensions (Store / Time / Product) are linked to
+        BOTH measure groups, so an analyst can crossjoin e.g. Store ×
+        Month and see Unit Sales next to Warehouse Sales side by side.
+        Each side also keeps its non-conformed dims:
+          * Sales side has Promotion + Customer (no warehouse equivalent).
+          * Warehouse side has Warehouse (no sales equivalent).
+
+        A measure asked for at a coordinate not linked to its source
+        fact table rolls up to the All member on that dim — standard
+        Mondrian behaviour for virtual cubes.
+
+        Replaces a previous stub that was misnamed: 1 MG, 1 measure,
+        and a broken ForeignKeyLink wiring Store3 to product_id.
+    -->
+    <Cube name='Warehouse and Sales'>
         <Dimensions>
-            <Dimension source='Store2'/>
-            <Dimension source='Store3'/>
+            <Dimension source='Store'/>
+            <Dimension source='Time'/>
+            <Dimension source='Product'/>
+            <Dimension source='Warehouse'/>
+            <Dimension name='Promotion' table='promotion' key='Promotion Id'>
+                <Attributes>
+                    <Attribute name='Promotion Id' keyColumn='promotion_id' hasHierarchy='false'/>
+                    <Attribute name='Promotion Name' keyColumn='promotion_name' hasHierarchy='false'/>
+                    <Attribute name='Media Type' keyColumn='media_type' hierarchyAllMemberName='All Media' hasHierarchy='false'/>
+                </Attributes>
+                <Hierarchies>
+                    <Hierarchy name='Media Type' allMemberName='All Media'>
+                        <Level attribute='Media Type'/>
+                    </Hierarchy>
+                    <Hierarchy name='Promotions' allMemberName='All Promotions'>
+                        <Level attribute='Promotion Name'/>
+                    </Hierarchy>
+                </Hierarchies>
+            </Dimension>
+            <Dimension name='Customer' table='customer' key='Customer Id'>
+                <Attributes>
+                    <Attribute name='Customer Id' keyColumn='customer_id' nameColumn='full_name' orderByColumn='full_name' hasHierarchy='false'/>
+                    <Attribute name='Country' keyColumn='country' hasHierarchy='false'/>
+                    <Attribute name='State Province' hasHierarchy='false'>
+                        <Key>
+                            <Column name='country'/>
+                            <Column name='state_province'/>
+                        </Key>
+                        <Name>
+                            <Column name='state_province'/>
+                        </Name>
+                    </Attribute>
+                    <Attribute name='City' hasHierarchy='false'>
+                        <Key>
+                            <Column name='country'/>
+                            <Column name='state_province'/>
+                            <Column name='city'/>
+                        </Key>
+                        <Name>
+                            <Column name='city'/>
+                        </Name>
+                    </Attribute>
+                </Attributes>
+                <Hierarchies>
+                    <Hierarchy name='Customers' allMemberName='All Customers'>
+                        <Level attribute='Country'/>
+                        <Level attribute='State Province'/>
+                        <Level attribute='City'/>
+                        <Level attribute='Customer Id'/>
+                    </Hierarchy>
+                </Hierarchies>
+            </Dimension>
         </Dimensions>
 
         <MeasureGroups>
-            <MeasureGroup table='sales_fact_1997'>
+            <!-- ────────────────────── Sales side ────────────────────── -->
+            <MeasureGroup name='Sales' table='sales_fact_1997'>
                 <Measures>
-                    <Measure name='Sales Count' column='product_id' aggregator='count'/>
+                    <Measure name='Unit Sales'      column='unit_sales'      aggregator='sum'            formatString='Standard'/>
+                    <Measure name='Store Cost'      column='store_cost'      aggregator='sum'            formatString='#,###.00'/>
+                    <Measure name='Store Sales'     column='store_sales'     aggregator='sum'            formatString='#,###.00'/>
+                    <Measure name='Sales Count'     column='product_id'      aggregator='count'          formatString='#,###'/>
+                    <Measure name='Customer Count'  column='customer_id'     aggregator='distinct-count' formatString='#,###'/>
+                    <Measure name='Promotion Sales' column='promotion_sales' aggregator='sum'            formatString='#,###.00' datatype='Numeric'/>
                 </Measures>
                 <DimensionLinks>
-                    <ForeignKeyLink dimension='Store2' foreignKeyColumn='store_id'/>
-                    <ForeignKeyLink dimension='Store3' foreignKeyColumn='product_id'/>
-
+                    <ForeignKeyLink dimension='Store'     foreignKeyColumn='store_id'/>
+                    <ForeignKeyLink dimension='Time'      foreignKeyColumn='time_id'/>
+                    <ForeignKeyLink dimension='Product'   foreignKeyColumn='product_id'/>
+                    <ForeignKeyLink dimension='Promotion' foreignKeyColumn='promotion_id'/>
+                    <ForeignKeyLink dimension='Customer'  foreignKeyColumn='customer_id'/>
+                    <!-- Mondrian 4 requires every cube-level dim to be linked
+                         from every MG, even if it's not joined. NoLink rolls
+                         the Warehouse dim to its All member when a sales
+                         measure is asked for at a Warehouse coordinate. -->
+                    <NoLink dimension='Warehouse'/>
                 </DimensionLinks>
             </MeasureGroup>
 
+            <!-- ────────────────────── Warehouse side ────────────────── -->
+            <MeasureGroup name='Warehouse' table='inventory_fact_1997'>
+                <Measures>
+                    <Measure name='Store Invoice'    column='store_invoice'    aggregator='sum'/>
+                    <Measure name='Supply Time'      column='supply_time'      aggregator='sum'/>
+                    <Measure name='Warehouse Cost'   column='warehouse_cost'   aggregator='sum'/>
+                    <Measure name='Warehouse Sales'  column='warehouse_sales'  aggregator='sum'/>
+                    <Measure name='Units Shipped'    column='units_shipped'    aggregator='sum' formatString='#.0'/>
+                    <Measure name='Units Ordered'    column='units_ordered'    aggregator='sum' formatString='#.0'/>
+                    <Measure name='Warehouse Profit' column='warehouse_profit' aggregator='sum' datatype='Numeric'/>
+                </Measures>
+                <DimensionLinks>
+                    <ForeignKeyLink dimension='Store'     foreignKeyColumn='store_id'/>
+                    <ForeignKeyLink dimension='Time'      foreignKeyColumn='time_id'/>
+                    <ForeignKeyLink dimension='Product'   foreignKeyColumn='product_id'/>
+                    <ForeignKeyLink dimension='Warehouse' foreignKeyColumn=''>
+                        <ForeignKey>
+                            <Column name='warehouse_id'/>
+                        </ForeignKey>
+                    </ForeignKeyLink>
+                    <!-- See note above on the Sales MG — same NoLink reason. -->
+                    <NoLink dimension='Promotion'/>
+                    <NoLink dimension='Customer'/>
+                </DimensionLinks>
+            </MeasureGroup>
         </MeasureGroups>
 
-     
-
+        <!--
+            Cross-fact calculated members — the whole point of a virtual cube
+            is enabling KPIs that span the two fact tables. Each evaluates
+            correctly at every grain because Mondrian computes the underlying
+            measures independently and divides per cell.
+        -->
+        <CalculatedMembers>
+            <CalculatedMember name='Sell Through %' dimension='Measures'
+                              formula='[Measures].[Unit Sales] / [Measures].[Units Shipped]'>
+                <CalculatedMemberProperty name='FORMAT_STRING' value='0.0%'/>
+            </CalculatedMember>
+            <CalculatedMember name='Stock To Sales Ratio' dimension='Measures'
+                              formula='[Measures].[Warehouse Sales] / [Measures].[Store Sales]'>
+                <CalculatedMemberProperty name='FORMAT_STRING' value='0.00'/>
+            </CalculatedMember>
+            <CalculatedMember name='Gross Margin' dimension='Measures'
+                              formula='[Measures].[Store Sales] - [Measures].[Warehouse Cost]'>
+                <CalculatedMemberProperty name='FORMAT_STRING' value='#,###.00'/>
+            </CalculatedMember>
+            <CalculatedMember name='Gross Margin %' dimension='Measures'
+                              formula='([Measures].[Store Sales] - [Measures].[Warehouse Cost]) / [Measures].[Store Sales]'>
+                <CalculatedMemberProperty name='FORMAT_STRING' value='0.0%'/>
+            </CalculatedMember>
+        </CalculatedMembers>
     </Cube>
 
     <Cube name='HR'>

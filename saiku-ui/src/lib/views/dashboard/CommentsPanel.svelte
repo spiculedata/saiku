@@ -5,6 +5,7 @@
    * own (admins delete any). Mentions are parsed + stored server-side.
    */
   import { tick } from "svelte";
+  import { Button } from "$lib/components/ui";
   import Modal from "$lib/components/Modal.svelte";
   import { Trash2, Send } from "lucide-svelte";
   import { session } from "$lib/stores/session.svelte";
@@ -170,15 +171,15 @@
     {#if loading}
       <p class="cmts__state">Loading…</p>
     {:else if error}
-      <p class="cmts__state cmts__state--error">{error}</p>
+      <p class="cmts__state text-danger">{error}</p>
     {:else if comments.length === 0}
       <p class="cmts__state">No comments yet. Start the conversation about this tile.</p>
     {:else}
       <ul class="cmts__list">
         {#each comments as c (c.id)}
-          <li class="cmts__item">
-            <div class="cmts__head">
-              <span class="cmts__author">{c.author}</span>
+          <li class="border border-border rounded-sm p-2 bg-bg-subtle">
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-sm">{c.author}</span>
               <span class="cmts__date">{fmtDate(c.createdAt)}</span>
               {#if canDelete(c)}
                 <button type="button" class="cmts__del" onclick={() => remove(c.id)} title="Delete comment">
@@ -192,8 +193,8 @@
       </ul>
     {/if}
 
-    <div class="cmts__compose">
-      <div class="cmts__field">
+    <div class="flex gap-2 items-end border-t border-border pt-2">
+      <div class="relative flex-1">
         <textarea
           class="cmts__input"
           bind:this={textareaEl}
@@ -227,15 +228,15 @@
           </ul>
         {/if}
       </div>
-      <button type="button" class="btn primary" onclick={post} disabled={posting || !body.trim()}>
+      <Button onclick={post} disabled={posting || !body.trim()}>
         <Send size={14} /><span>{posting ? "Posting…" : "Post"}</span>
-      </button>
+      </Button>
     </div>
   </div>
 </Modal>
 
 <style>
-  .cmts {
+.cmts {
     min-width: 24rem;
     display: flex;
     flex-direction: column;
@@ -246,9 +247,6 @@
     font-size: var(--fs-sm);
     padding: var(--space-2) 0;
   }
-  .cmts__state--error {
-    color: var(--danger);
-  }
   .cmts__list {
     list-style: none;
     margin: 0;
@@ -258,21 +256,6 @@
     gap: var(--space-2);
     max-height: 40vh;
     overflow: auto;
-  }
-  .cmts__item {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: var(--space-2);
-    background: var(--bg-subtle);
-  }
-  .cmts__head {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .cmts__author {
-    font-weight: var(--weight-bold);
-    font-size: var(--fs-sm);
   }
   .cmts__date {
     font-size: var(--fs-xs, 0.75rem);
@@ -294,17 +277,6 @@
     font-size: var(--fs-sm);
     white-space: pre-wrap;
     word-break: break-word;
-  }
-  .cmts__compose {
-    display: flex;
-    gap: var(--space-2);
-    align-items: flex-end;
-    border-top: 1px solid var(--border);
-    padding-top: var(--space-2);
-  }
-  .cmts__field {
-    position: relative;
-    flex: 1;
   }
   .cmts__input {
     width: 100%;
@@ -340,9 +312,5 @@
     cursor: pointer;
     font: inherit;
     color: var(--fg);
-  }
-  .cmts__mention:hover,
-  .cmts__mention--active {
-    background: var(--bg-subtle);
   }
 </style>

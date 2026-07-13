@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+    TPC-DS demo Ossie datasource — auto-provisioned by saiku-launcher on
+    first start. The @SAIKU_HOME@ token is replaced with the absolute
+    saiku-home directory so the JDBC URL + YAML path are portable across
+    machines. Re-running the launcher leaves this file alone.
+
+    Warehouse: @SAIKU_HOME@/data/tpcds (H2 file). Seeded from
+    /seed/tpcds-seed.sql on first boot.
+-->
+<dataSource>
+    <id>tpcds-ossie-01</id>
+    <name>TPCDS</name>
+    <type>OSSIE</type>
+    <ossieYaml>@SAIKU_HOME@/data/tpcds.ossie.yaml</ossieYaml>
+    <location>jdbc:h2:@SAIKU_HOME@/data/tpcds;MODE=PostgreSQL;AUTO_SERVER=TRUE</location>
+    <schema>TPCDS</schema>
+    <username>sa</username>
+    <password></password>
+    <advanced>false</advanced>
+    <enabled>true</enabled>
+</dataSource>

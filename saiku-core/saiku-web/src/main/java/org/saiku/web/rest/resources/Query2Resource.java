@@ -225,6 +225,72 @@ public class Query2Resource {
      */
     public static final String ARROW_STREAM_MEDIA_TYPE = "application/vnd.apache.arrow.stream";
 
+    /**
+     * Translate an OSSIE ThinQuery's shelf-state into the SQL string the executor would run,
+     * without touching the connection or fetching rows. Powers the workbench's "Show SQL"
+     * affordance so users can see what the query planner will feed to Calcite. MDX queries
+     * are rejected with 400 — the MDX side has its own {@code /getMdx} endpoint.
+     */
+    @POST
+    @Consumes({"application/json"})
+    @Produces({"application/json"})
+    @Path("/preview-sql")
+    public Response previewSql(ThinQuery tq) {
+        try {
+            if (tq == null || !"OSSIE".equalsIgnoreCase(tq.getQueryType())) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                        .entity("{\"error\":\"queryType must be OSSIE\"}")
+                        .type("application/json")
+                        .build();
+            }
+            org.saiku.service.ossie.OssieQueryService svc = thinQueryService.getOssieQueryService();
+            if (svc == null) {
+                return Response.status(Response.Status.NOT_IMPLEMENTED)
+                        .entity("{\"error\":\"OssieQueryService not wired\"}")
+                        .type("application/json")
+                        .build();
+            }
+            String sql = svc.previewSql(tq.getOssieQueryModel());
+            // Return as a JSON envelope so the client can grab it directly without a
+            // text-plain content-type dance.
+            String body = "{\"sql\":" + jacksonJsonString(sql) + "}";
+            return Response.ok(body).type("application/json").build();
+        } catch (Exception e) {
+            log.error("Cannot preview Ossie SQL", e);
+            String msg = e.getMessage() == null ? "internal error" : e.getMessage();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity("{\"error\":" + jacksonJsonString(msg) + "}")
+                    .type("application/json")
+                    .build();
+        }
+    }
+
+    /** Minimal JSON-string encoder — escapes the four chars the JSON spec requires. */
+    private static String jacksonJsonString(String s) {
+        if (s == null) return "null";
+        StringBuilder sb = new StringBuilder(s.length() + 2);
+        sb.append('"');
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '\\' -> sb.append("\\\\");
+                case '"' -> sb.append("\\\"");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        sb.append('"');
+        return sb.toString();
+    }
+
     @POST
     @Consumes({"application/json"})
     @Produces({ARROW_STREAM_MEDIA_TYPE, "application/json"})
@@ -260,8 +326,15 @@ public class Query2Resource {
             }
 
             QueryResult qr = RestUtil.convert(thinQueryService.execute(tq));
-            ThinQuery tqAfter = thinQueryService.getContext(tq.getName()).getOlapQuery();
-            qr.setQuery(tqAfter);
+            // OSSIE queries don't register a QueryContext (the Ossie service goes straight
+            // from JDBC to CellDataSet). Skip the ThinQuery attachment in that case — the
+            // client already has the shelf state locally.
+            org.saiku.service.util.QueryContext ctx = thinQueryService.getContext(tq.getName());
+            if (ctx != null) {
+                qr.setQuery(ctx.getOlapQuery());
+            } else {
+                qr.setQuery(tq);
+            }
             return Response.ok(qr).type(MediaType.APPLICATION_JSON).build();
         } catch (Exception e) {
             log.error("Cannot execute query (" + tq + ")", e);

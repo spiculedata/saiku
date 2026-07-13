@@ -6,19 +6,21 @@
   import SchemasAdmin from "$lib/views/admin/SchemasAdmin.svelte";
   import LogsAdmin from "$lib/views/admin/LogsAdmin.svelte";
   import StatsAdmin from "$lib/views/admin/StatsAdmin.svelte";
+  import EvalsAdmin from "$lib/views/admin/EvalsAdmin.svelte";
+  import AgentSpacesAdmin from "$lib/views/admin/AgentSpacesAdmin.svelte";
   import ApiAccessAdmin from "$lib/views/admin/ApiAccessAdmin.svelte";
   import LoginForm from "$lib/views/LoginForm.svelte";
 
-  type Tab = "users" | "datasources" | "schemas" | "logs" | "stats" | "api";
+  type Tab = "users" | "datasources" | "schemas" | "logs" | "stats" | "evals" | "spaces" | "api";
   let tab = $state<Tab>("users");
 </script>
 
 {#if session.loading}
-  <div class="loading">{i18n.t("cubes.loading")}</div>
+  <div class="m-auto text-fg-muted">{i18n.t("cubes.loading")}</div>
 {:else if !session.current}
   <LoginForm />
 {:else if !session.isAdmin}
-  <div class="forbidden">
+  <div class="m-auto text-center">
     <h1>{i18n.t("admin.notAllowed")}</h1>
     <p>Your account does not have the <code>ROLE_ADMIN</code> grant.</p>
   </div>
@@ -30,9 +32,11 @@
       <button type="button" role="tab" class:active={tab === "schemas"} onclick={() => (tab = "schemas")}>{i18n.t("admin.tabs.schemas")}</button>
       <button type="button" role="tab" class:active={tab === "logs"} onclick={() => (tab = "logs")}>{i18n.t("admin.tabs.logs")}</button>
       <button type="button" role="tab" class:active={tab === "stats"} onclick={() => (tab = "stats")}>{i18n.t("admin.tabs.stats")}</button>
+      <button type="button" role="tab" class:active={tab === "evals"} onclick={() => (tab = "evals")}>Agent evals</button>
+      <button type="button" role="tab" class:active={tab === "spaces"} onclick={() => (tab = "spaces")}>Agent spaces</button>
       <button type="button" role="tab" class:active={tab === "api"} onclick={() => (tab = "api")}>API access</button>
     </div>
-    <section class="admin__body">
+    <section class="flex-1 p-6 overflow-auto">
       {#if tab === "users"}
         <UsersAdmin />
       {:else if tab === "datasources"}
@@ -43,6 +47,10 @@
         <LogsAdmin />
       {:else if tab === "stats"}
         <StatsAdmin />
+      {:else if tab === "evals"}
+        <EvalsAdmin />
+      {:else if tab === "spaces"}
+        <AgentSpacesAdmin />
       {:else}
         <ApiAccessAdmin defaultOpen={true} />
       {/if}
@@ -51,7 +59,7 @@
 {/if}
 
 <style>
-  .admin {
+.admin {
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -76,11 +84,4 @@
     color: var(--fg);
     border-bottom-color: var(--accent);
   }
-  .admin__body {
-    flex: 1;
-    padding: var(--space-5);
-    overflow: auto;
-  }
-  .forbidden { margin: auto; text-align: center; }
-  .loading { margin: auto; color: var(--fg-muted); }
 </style>

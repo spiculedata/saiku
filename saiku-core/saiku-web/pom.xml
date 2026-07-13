@@ -2,11 +2,11 @@
     <parent>
         <artifactId>saiku-core</artifactId>
         <groupId>org.saikuanalytics</groupId>
-        <version>4.5.2</version>
+        <version>4.6.0</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
     <artifactId>saiku-web</artifactId>
-    <version>4.5.2</version>
+    <version>4.6.0</version>
     <name>saiku - web</name>
     <packaging>jar</packaging>
 
@@ -128,6 +128,23 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
+
+        <!-- Spring GraphQL — /rest/saiku/api/graphql. Uses spring-graphql's
+             GraphQlHttpHandler + WebGraphQlHandler bound behind our own
+             Jersey resource; we do NOT use Spring Boot autoconfig, because
+             the saiku-webapp is XML-wired Spring. -->
+        <dependency>
+            <groupId>org.springframework.graphql</groupId>
+            <artifactId>spring-graphql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.graphql-java</groupId>
+            <artifactId>graphql-java</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.graphql-java</groupId>
+            <artifactId>graphql-java-extended-scalars</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.qmino</groupId>
             <artifactId>miredot-annotations</artifactId>
@@ -237,7 +254,9 @@
         <dependency>
             <groupId>org.apache.xmlgraphics</groupId>
             <artifactId>batik-script</artifactId>
-            <version>1.7</version>
+            <!-- version inherited from saiku-bom (${batik.version}=1.19); the old
+                 hard-pin to 1.7 was CVE-2022-44730 (XSS, fixed 1.17) and left the
+                 Batik set version-skewed. -->
             <exclusions>
                 <exclusion>
                     <groupId>org.apache.xmlgraphics</groupId>
@@ -250,11 +269,11 @@
             <artifactId>xmlgraphics-commons</artifactId>
         </dependency>
 
-        <!-- Inherits version from saiku-bom (com.lowagie:itext:2.1.7,
-             Central-resolvable, same com.lowagie.text.* API). -->
+        <!-- OpenPDF (maintained com.lowagie:itext fork; same com.lowagie.text.*
+             API; fixes CVE-2017-9096). Version from saiku-bom. -->
         <dependency>
-            <groupId>com.lowagie</groupId>
-            <artifactId>itext</artifactId>
+            <groupId>com.github.librepdf</groupId>
+            <artifactId>openpdf</artifactId>
         </dependency>
         <dependency>
             <groupId>net.sourceforge.htmlcleaner</groupId>
@@ -270,11 +289,11 @@
         </dependency>
 
 
-        <!-- Test -->
+        <!-- Test — version inherited from saiku-bom (4.13.2); the old hard-pin
+             at 4.8.2 carried CVE-2020-15250 (TemporaryFolder info disclosure). -->
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
-            <version>4.8.2</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -287,6 +306,14 @@
             <artifactId>arrow-memory-netty</artifactId>
             <scope>test</scope>
             <type>jar</type>
+        </dependency>
+        <!-- MockHttpServletRequest/Response/FilterChain for the embed auth
+             filter tests — avoids hand-rolled servlet stubs. Version is
+             pinned through the BOM (matches the runtime Spring version). -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-test</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
     <reporting>

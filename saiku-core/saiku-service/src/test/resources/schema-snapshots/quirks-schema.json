@@ -13,13 +13,15 @@
       "name" : "Number of Employees",
       "uniqueName" : "[Measures].[Number of Employees]",
       "visible" : true,
-      "synonyms" : [ ]
+      "synonyms" : [ ],
+      "pii" : false
     },
     "unit sales" : {
       "name" : "Unit Sales",
       "uniqueName" : "[Measures].[Unit Sales]",
       "visible" : true,
-      "synonyms" : [ ]
+      "synonyms" : [ ],
+      "pii" : false
     }
   },
   "dimensions" : {
@@ -37,21 +39,24 @@
               "uniqueName" : "[Customer].[Customers].[(All)]",
               "sampleMembers" : [ ],
               "synonyms" : [ ],
-              "requiredFilters" : [ ]
+              "requiredFilters" : [ ],
+              "pii" : false
             },
             "country" : {
               "name" : "Country",
               "uniqueName" : "[Customer].[Customers].[Country]",
               "sampleMembers" : [ ],
               "synonyms" : [ ],
-              "requiredFilters" : [ ]
+              "requiredFilters" : [ ],
+              "pii" : false
             },
             "state" : {
               "name" : "State",
               "uniqueName" : "[Customer].[Customers].[State]",
               "sampleMembers" : [ ],
               "synonyms" : [ ],
-              "requiredFilters" : [ ]
+              "requiredFilters" : [ ],
+              "pii" : false
             }
           },
           "levelAliases" : { }
@@ -65,14 +70,16 @@
               "uniqueName" : "[Customer].[Gender].[(All)]",
               "sampleMembers" : [ ],
               "synonyms" : [ ],
-              "requiredFilters" : [ ]
+              "requiredFilters" : [ ],
+              "pii" : false
             },
             "gender" : {
               "name" : "Gender",
               "uniqueName" : "[Customer].[Gender].[Gender]",
               "sampleMembers" : [ ],
               "synonyms" : [ ],
-              "requiredFilters" : [ ]
+              "requiredFilters" : [ ],
+              "pii" : false
             }
           },
           "levelAliases" : { }
@@ -86,14 +93,16 @@
               "uniqueName" : "[Customer].[Marital Status].[(All)]",
               "sampleMembers" : [ ],
               "synonyms" : [ ],
-              "requiredFilters" : [ ]
+              "requiredFilters" : [ ],
+              "pii" : false
             },
             "marital status" : {
               "name" : "Marital Status",
               "uniqueName" : "[Customer].[Marital Status].[Marital Status]",
               "sampleMembers" : [ ],
               "synonyms" : [ ],
-              "requiredFilters" : [ ]
+              "requiredFilters" : [ ],
+              "pii" : false
             }
           },
           "levelAliases" : { }
@@ -115,21 +124,24 @@
               "uniqueName" : "[Employee].[Employee$Manager Id$Parent].[(All)]",
               "sampleMembers" : [ ],
               "synonyms" : [ ],
-              "requiredFilters" : [ ]
+              "requiredFilters" : [ ],
+              "pii" : false
             },
             "closure" : {
               "name" : "Closure",
               "uniqueName" : "[Employee].[Employee$Manager Id$Parent].[Closure]",
               "sampleMembers" : [ ],
               "synonyms" : [ ],
-              "requiredFilters" : [ ]
+              "requiredFilters" : [ ],
+              "pii" : false
             },
             "item" : {
               "name" : "Item",
               "uniqueName" : "[Employee].[Employee$Manager Id$Parent].[Item]",
               "sampleMembers" : [ ],
               "synonyms" : [ ],
-              "requiredFilters" : [ ]
+              "requiredFilters" : [ ],
+              "pii" : false
             }
           },
           "levelAliases" : { }
@@ -143,14 +155,16 @@
               "uniqueName" : "[Employee].[Salary].[(All)]",
               "sampleMembers" : [ ],
               "synonyms" : [ ],
-              "requiredFilters" : [ ]
+              "requiredFilters" : [ ],
+              "pii" : false
             },
             "salary" : {
               "name" : "Salary",
               "uniqueName" : "[Employee].[Salary].[Salary]",
               "sampleMembers" : [ ],
               "synonyms" : [ ],
-              "requiredFilters" : [ ]
+              "requiredFilters" : [ ],
+              "pii" : false
             }
           },
           "levelAliases" : { }
@@ -172,14 +186,16 @@
               "uniqueName" : "[Store2].[Store Type].[(All)]",
               "sampleMembers" : [ ],
               "synonyms" : [ ],
-              "requiredFilters" : [ ]
+              "requiredFilters" : [ ],
+              "pii" : false
             },
             "store type" : {
               "name" : "Store Type",
               "uniqueName" : "[Store2].[Store Type].[Store Type]",
               "sampleMembers" : [ ],
               "synonyms" : [ ],
-              "requiredFilters" : [ ]
+              "requiredFilters" : [ ],
+              "pii" : false
             }
           },
           "levelAliases" : { }
@@ -201,14 +217,16 @@
               "uniqueName" : "[Time].[Time].[Quarter]",
               "sampleMembers" : [ ],
               "synonyms" : [ ],
-              "requiredFilters" : [ ]
+              "requiredFilters" : [ ],
+              "pii" : false
             },
             "year" : {
               "name" : "Year",
               "uniqueName" : "[Time].[Time].[Year]",
               "sampleMembers" : [ ],
               "synonyms" : [ ],
-              "requiredFilters" : [ ]
+              "requiredFilters" : [ ],
+              "pii" : false
             }
           },
           "levelAliases" : { }

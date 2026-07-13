@@ -125,6 +125,17 @@ public class InfoResource {
         Map<String, Object> ai = new LinkedHashMap<>();
         ai.put("enabled", true);
         ai.put("basePath", "/rest/saiku/api/ai");
+        // saiku#903: surface the active data-exposure policy so the UI can show
+        // the operator pill (schema-only | aggregated | full). Resolved quietly
+        // for display — an invalid value would already have failed startup.
+        String aiPolicy;
+        try {
+            aiPolicy = org.saiku.service.olap.ai.AiPolicy.resolve(System::getenv, System::getProperty)
+                    .displayName();
+        } catch (RuntimeException e) {
+            aiPolicy = org.saiku.service.olap.ai.AiPolicy.DEFAULT.displayName();
+        }
+        ai.put("policy", aiPolicy);
         ai.put(
                 "endpoints",
                 Map.of(

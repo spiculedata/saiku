@@ -2,12 +2,12 @@
     <parent>
         <artifactId>saiku-core</artifactId>
         <groupId>org.saikuanalytics</groupId>
-        <version>4.5.2</version>
+        <version>4.6.0</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
     <packaging>jar</packaging>
     <artifactId>saiku-service</artifactId>
-    <version>4.5.2</version>
+    <version>4.6.0</version>
     <name>saiku - services</name>
     <build>
         <plugins>
@@ -129,6 +129,23 @@
         </plugins>
     </build>
 	<dependencies>
+		<!-- Ossie DTOs + YAML/JSON reader/writer, published as a
+		     standalone library at github.com/spiculedata/ossie
+		     (saiku#1396 L2/L3). MondrianToOssieConverter stays in this
+		     module because it depends on Mondrian; the pure-Jackson
+		     parser layer is external so any JVM tool — Superset,
+		     Metabase, Trino wrappers — can pull it without dragging
+		     in Mondrian or Spring.
+
+		     SNAPSHOTs resolve from GitHub Packages (see the
+		     github-ossie repo definition in the root pom); release
+		     versions will land on Maven Central. -->
+		<dependency>
+			<groupId>bi.saiku.ossie</groupId>
+			<artifactId>ossie-core</artifactId>
+			<version>${ossie.version}</version>
+		</dependency>
+
 		<!-- @NotNull / @Nullable annotations used in ObjectUtil + Acl2.
 		     Was previously dragged in transitively (probably via a removed
 		     pentaho-platform-* or serenity transitive); now explicit. -->
@@ -230,6 +247,27 @@
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-databind</artifactId>
+			<scope>compile</scope>
+		</dependency>
+		<!-- YAML output for the Ossie exporter (saiku#1384). Jackson's YAML
+		     module reuses the same @JsonProperty / @JsonInclude annotations as
+		     the JSON path, so the model classes serialise as either format
+		     without duplicate annotations. -->
+		<dependency>
+			<groupId>com.fasterxml.jackson.dataformat</groupId>
+			<artifactId>jackson-dataformat-yaml</artifactId>
+			<scope>compile</scope>
+		</dependency>
+		<!-- Calcite JDBC driver (jdbc:calcite:...) for the Ossie datasource path.
+		     SaikuOssieConnection opens Calcite connections directly; the actual
+		     OssieSchemaFactory implementation lives in saiku-sql and gets
+		     discovered via Class.forName reflection driven by the connect model.
+		     Version pinned to match the saiku-sql module (bumping requires
+		     coordinating both). -->
+		<dependency>
+			<groupId>org.apache.calcite</groupId>
+			<artifactId>calcite-core</artifactId>
+			<version>1.41.0</version>
 			<scope>compile</scope>
 		</dependency>
 		<dependency>

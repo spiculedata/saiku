@@ -1,0 +1,69 @@
+# Ground-truth eval cases for the FoodMart Sales cube (saiku#1424).
+#
+# Runs against the AI ask layer to catch regressions when the LLM provider,
+# model, prompt, or schema changes. See docs/EVAL-SPEC.md for the format.
+#
+# QUERY cases use `referenceQuery` (drift-proof): the NL-generated query is
+# diffed against a trusted reference query's result-set at the SAME moment, so
+# a case stays valid as the underlying data changes — no frozen numbers to
+# rebase when the FoodMart seed (or a customer's warehouse) shifts.
+#
+# NOTE: INSIGHT-intent cases aren't included — INSIGHT routing needs a cellset
+# digest (the on-screen data to analyse), which the eval harness doesn't supply
+# yet; without it the model routes an "analyse this" question to QUERY. Adding a
+# per-case cellsetDigest to EvalCase is a follow-up (see docs/EVAL-SPEC.md).
+
+name: foodmart-sales-evals
+description: >
+  Ground-truth cases for the FoodMart Sales cube. Baseline for AI ask
+  regressions when the LLM provider, model, prompt, or schema changes.
+
+cube:
+  connectionName: unknown_foodmart
+  catalog: FoodMart
+  schema: FoodMart
+  cubeName: Sales
+
+cases:
+
+  # -----------------------------------------------------------------
+  # QUERY intent, drift-proof — ground truth is a trusted referenceQuery
+  # executed live, diffed against the NL-generated query's result-set.
+  # -----------------------------------------------------------------
+
+  - name: store-sales-by-country
+    question: Show store sales broken down by country.
+    expectedIntent: QUERY
+    referenceQuery:
+      measures:
+        - {name: Store Sales}
+      rows:
+        - {dimension: Store, hierarchy: Stores, level: Store Country}
+    tolerance:
+      relative: 0.001  # 0.1% — masks warehouse floating-point drift
+    orderMatters: false
+
+  - name: unit-sales-by-product-family
+    question: Break down unit sales by Product Family.
+    expectedIntent: QUERY
+    referenceQuery:
+      measures:
+        - {name: Unit Sales}
+      rows:
+        - {dimension: Product, hierarchy: Products, level: Product Family}
+    tolerance:
+      relative: 0.001
+    orderMatters: false
+
+  # -----------------------------------------------------------------
+  # REFUSED intent — off-topic must decline with a matching reason.
+  # -----------------------------------------------------------------
+
+  - name: refuse-general-knowledge
+    question: What's the capital of France?
+    expectedIntent: REFUSED
+    expectedRefusalContains: cube
+
+  - name: refuse-coding-help
+    question: Write me a Python function that sorts a list.
+    expectedIntent: REFUSED
