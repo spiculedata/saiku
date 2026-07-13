@@ -36,7 +36,7 @@
         <jackson.version>2.18.8</jackson.version>
         <!-- bi.saiku.ossie:ossie-core — external Ossie/OSI parser library
              (spiculedata/ossie). Track its releases and bump here. -->
-        <ossie.version>0.1.0-SNAPSHOT</ossie.version>
+        <ossie.version>0.1.0</ossie.version>
     </properties>
     <repositories>
         <!-- In-tree Maven file-repo for vendored deps that aren't reachable on
