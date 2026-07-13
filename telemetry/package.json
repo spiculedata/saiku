@@ -1,0 +1,21 @@
+{
+  "name": "saiku-telemetry",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Anonymous install-count collector for Saiku (Cloudflare Worker + D1)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:create": "wrangler d1 create saiku-telemetry",
+    "db:init": "wrangler d1 execute saiku-telemetry --remote --file=./schema.sql",
+    "db:init:local": "wrangler d1 execute saiku-telemetry --local --file=./schema.sql",
+    "stats": "wrangler d1 execute saiku-telemetry --remote --command \"SELECT count(*) AS active_instances FROM installs WHERE last_seen > unixepoch()-2592000\"",
+    "stats:versions": "wrangler d1 execute saiku-telemetry --remote --command \"SELECT version, count(*) AS n FROM installs WHERE last_seen > unixepoch()-2592000 GROUP BY version ORDER BY n DESC\""
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250510.0",
+    "typescript": "^5.6.3",
+    "wrangler": "^3.90.0"
+  }
+}

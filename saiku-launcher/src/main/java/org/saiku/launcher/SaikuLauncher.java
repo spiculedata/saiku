@@ -265,6 +265,11 @@ public class SaikuLauncher implements Callable<Integer> {
             }));
 
             server.start();
+
+            // Anonymous install-count heartbeat (opt-out; disable with SAIKU_TELEMETRY=off).
+            // Best-effort and off-thread — never blocks or fails the server.
+            TelemetryService.startIfEnabled(saikuHome, System.getProperty("saiku.version"));
+
             return server;
         }
 

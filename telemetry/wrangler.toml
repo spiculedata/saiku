@@ -1,0 +1,21 @@
+name = "saiku-telemetry"
+main = "src/index.ts"
+compatibility_date = "2025-05-01"
+workers_dev = true
+
+# Latest released version, returned to instances as the update-check answer.
+# Bump this one line on each release (or wire it to the GitHub releases API later).
+[vars]
+LATEST_VERSION = "4.6.0"
+
+# D1 (serverless SQLite). Fill database_id after `npm run db:create`.
+[[d1_databases]]
+binding = "DB"
+database_name = "saiku-telemetry"
+database_id = "ead61753-bfe8-4178-ac77-fe9b38951a10"
+
+# Stable product endpoint. Workers Custom Domain — Cloudflare provisions the
+# telemetry.saiku.bi DNS record + TLS cert automatically (saiku.bi is on this account).
+[[routes]]
+pattern = "telemetry.saiku.bi"
+custom_domain = true
