@@ -123,6 +123,29 @@ Fresh launcher installs stage two working personas:
 Both scope to the FoodMart Sales cube — a fresh demo has personas ready
 to click without any operator authoring.
 
+## Shipped since v1
+
+The following were listed as v1 non-goals and have since landed:
+
+- **Admin CRUD UI.** A Svelte admin tab (**Admin → Agent spaces**,
+  `saiku-ui/src/lib/views/admin/AgentSpacesAdmin.svelte`) authors spaces
+  in the browser — system prompt, a checkbox cube allowlist backed by
+  live cube discovery, skill allowlist, and suggested prompts — without
+  hand-editing JSON. Backed by an admin-gated CRUD surface,
+  `GET/PUT/DELETE /rest/saiku/admin/agent-spaces`
+  (`AgentSpaceAdminResource`), which returns the *full* persona
+  (system prompt + cube allowlist included, unlike the redacted public
+  `/ai/spaces` catalogue). Writes go through
+  `AgentSpaceRegistry.save(...)`, which validates the id
+  (kebab-case, path-traversal guarded) before persisting the JSON file.
+  Operators can still drop JSON into `saiku-home/agent-spaces/` directly.
+- **Embed integration.** `<saiku-embed kind="ai" space="foodmart-sales-analyst">`
+  scopes an embedded assistant to a persona server-side (saiku-ui embed
+  v3.20). See `saiku-ui/src/embed/README.md`.
+- **Streaming.** `POST /ai/spaces/{id}/ask/stream` mirrors the SSE wire
+  format of `/ai/ask/stream` with the persona scope applied
+  (saiku#1440 + #1433).
+
 ## Non-goals for v1
 
 - **Per-user / per-role scoping.** Spaces are per-launcher for v1.
@@ -130,10 +153,8 @@ to click without any operator authoring.
   directories onto a per-workspace registry root — deferred.
 - **Data-scope override.** The proposed shape in
   [saiku#1440](https://github.com/spiculedata/saiku/issues/1440) mentions
-  pinning a role's data-scope filters onto every space-scoped query.
-  Deferred to the RLS follow-up so the annotation lives in one place.
-- **Admin CRUD UI.** The runtime enforcement is complete; a Svelte
-  admin UI for authoring spaces via the browser is a follow-up slice.
-  Operators can author the JSON directly in v1.
-- **Embed integration** (`<saiku-embed kind="ai" path="space:sales-analyst">`).
-  Follow-up — the runtime is ready to consume it.
+  pinning a role's data-scope filters onto every space-scoped query. The
+  embed layer now enforces forced row-level filters
+  (`ThinQueryFilterMerge.applyReportingUnapplied`, apply-or-fail-closed —
+  see the RLS notes in the AI Query API docs); pinning those filters onto
+  *space*-scoped asks specifically is still deferred.

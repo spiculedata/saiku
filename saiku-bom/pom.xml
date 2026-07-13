@@ -84,6 +84,15 @@
                 <artifactId>postgresql</artifactId>
                 <version>42.7.11</version>
             </dependency>
+            <!-- quack-jdbc: JDBC driver for DuckDB's native Quack client-server
+                 protocol (jdbc:quack://). Lets Ossie warehouses target a remote
+                 DuckDB server over HTTP with real DuckDB catalog metadata (no
+                 Postgres-wire emulation). Alpha as of DuckDB 1.5.3 / v2.0. -->
+            <dependency>
+                <groupId>com.gizmodata</groupId>
+                <artifactId>quack-jdbc</artifactId>
+                <version>0.1.0-alpha.1</version>
+            </dependency>
             <!-- hive-jdbc 0.13 (2014) had ~3 CVEs. 2.3.x is the last
                  widely-deployed line with a stable JDBC surface. -->
             <dependency>

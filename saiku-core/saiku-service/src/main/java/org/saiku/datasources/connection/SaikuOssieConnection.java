@@ -113,6 +113,25 @@ public class SaikuOssieConnection implements ISaikuConnection {
             modelName = name;
         }
 
+        // Eagerly load the warehouse JDBC driver so it registers with DriverManager. In the
+        // launcher fat-jar the driver lives in the war's classloader, which DriverManager's
+        // ServiceLoader auto-registration doesn't reliably scan — so the DBCP2 pool inside
+        // OssieSchemaFactory can otherwise fail with "Cannot create JDBC driver of class ''".
+        // An explicit `driver` property wins; otherwise infer the well-known jdbc:quack driver.
+        String warehouseDriver = props.getProperty(DRIVER_KEY);
+        if ((warehouseDriver == null || warehouseDriver.isBlank())
+                && warehouseUrl != null
+                && warehouseUrl.startsWith("jdbc:quack:")) {
+            warehouseDriver = "com.gizmodata.quack.jdbc.sql.QuackDriver";
+        }
+        if (warehouseDriver != null && !warehouseDriver.isBlank()) {
+            try {
+                Class.forName(warehouseDriver);
+            } catch (ClassNotFoundException e) {
+                log.warn("Warehouse JDBC driver '{}' not found on the classpath", warehouseDriver);
+            }
+        }
+
         String calciteUrl = buildCalciteConnectString(Path.of(ossieYaml), modelName, warehouseUrl, user, password);
         // The Calcite driver reads the model + operand from the URL — no user/pass params
         // needed here since we baked the warehouse creds into the operand.
