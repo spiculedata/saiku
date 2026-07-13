@@ -299,7 +299,7 @@ public class AiOssieResource {
 
     /**
      * Per-entity profile — attributes + risk + opacity in one call, resolved from the model and
-     * served over the Ossie datasource's warehouse connection (no Benafide API). Aggregate metrics
+     * served over the Ossie datasource's warehouse connection directly. Aggregate metrics
      * on 1:1 dimension datasets don't fit the shelf translator; a direct lookup is the right shape.
      */
     @GET

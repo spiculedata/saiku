@@ -38,7 +38,7 @@ public class OssieGraphService {
     private static final int MAX_DEPTH_CAP = 8;
 
     // Signals: entities at/above this computed risk score are the "high-risk" headline count.
-    // The Benafide warehouse tops out at 30.0; >=20 isolates ~3.7k entities (the sharp tail).
+    // 20 suits a 0..30-style risk_score scale; tune to your model's range.
     private static final double HIGH_RISK_THRESHOLD = 20.0;
     private static final int SIGNALS_FLAG_CAP = 200;
     private static final int SIGNALS_RISK_CAP = 50;
@@ -83,7 +83,7 @@ public class OssieGraphService {
     /**
      * Walk the ownership relationship up from {@code rootId} to {@code depth} levels.
      *
-     * @param connectionName the Ossie datasource connection (e.g. {@code unknown_Benafide})
+     * @param connectionName the Ossie datasource connection name
      * @param rootId the id of the company to start from
      * @param depth max levels to walk (clamped to {@value #MAX_DEPTH_CAP})
      */
