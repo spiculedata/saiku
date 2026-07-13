@@ -12,7 +12,7 @@ LATEST_VERSION = "4.6.0"
 [[d1_databases]]
 binding = "DB"
 database_name = "saiku-telemetry"
-database_id = "REPLACE_AFTER_db:create"
+database_id = "ead61753-bfe8-4178-ac77-fe9b38951a10"
 
 # Optional custom route (only if saiku.bi is on this Cloudflare account).
 # Otherwise the free https://saiku-telemetry.<subdomain>.workers.dev URL is used.
