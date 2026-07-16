@@ -36,6 +36,39 @@ Open <http://localhost:8080/ui/> and sign in:
 A `foodmart` cube list appears on first query (initial load of the H2
 fixture takes ~30 s — subsequent launches reuse the file).
 
+## Setting the admin password
+
+Saiku ships with `admin` / `admin` and **refuses to start** once it's reachable
+on a network while that default is unchanged (demo mode excepted). Set a real
+password — **no rebuild required**:
+
+```bash
+# Docker
+docker run -e SAIKU_ADMIN_PASSWORD='a-strong-password' ... ghcr.io/spiculedata/saiku:<version>
+
+# dist zip / fat-jar
+SAIKU_ADMIN_PASSWORD='a-strong-password' ./run.sh
+```
+
+On boot Saiku bcrypt-hashes it and writes `<saiku-home>/users.properties`
+(persisted on the volume, so it survives restarts — the env var is only needed
+the first time, though setting it again just re-applies it). To add more users
+or manage roles by hand, edit that file directly:
+
+```properties
+admin={bcrypt}$2y$12$....,ROLE_USER,ROLE_ADMIN
+analyst={bcrypt}$2y$12$....,ROLE_USER
+```
+
+Generate a hash with `htpasswd -nbBC 12 <user> '<password>'` and reformat the
+`user:$2y$...` output as `user={bcrypt}$2y$...,ROLE_USER`.
+
+> **Note:** the bundled auth is an in-memory user store — the admin panel's
+> user-management screens are read-only against it. For real multi-user setups,
+> point Saiku at LDAP / OAuth / SAML via `applicationContext-spring-security-memory.xml`.
+> To boot with the default password anyway (local/dev only), set
+> `SAIKU_ALLOW_DEFAULT_ADMIN=true`.
+
 ## CLI options
 
 ```bash

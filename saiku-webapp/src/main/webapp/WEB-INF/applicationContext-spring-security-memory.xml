@@ -24,7 +24,12 @@
   <beans profile="!demo">
     <security:authentication-manager alias="authenticationManager">
       <security:authentication-provider>
-        <security:user-service id="uds" properties="/WEB-INF/users.properties"/>
+        <!-- saiku#1512: users file is overridable at runtime via
+             -Dsaiku.security.usersFile (the launcher sets it from
+             SAIKU_ADMIN_PASSWORD or an external <saiku-home>/users.properties),
+             so operators can rotate the admin password without rebuilding the
+             WAR. Defaults to the baked-in file. -->
+        <security:user-service id="uds" properties="${saiku.security.usersFile:/WEB-INF/users.properties}"/>
       </security:authentication-provider>
     </security:authentication-manager>
   </beans>
@@ -32,7 +37,12 @@
   <beans profile="demo">
     <security:authentication-manager alias="authenticationManager">
       <security:authentication-provider>
-        <security:user-service id="uds" properties="/WEB-INF/users.properties"/>
+        <!-- saiku#1512: users file is overridable at runtime via
+             -Dsaiku.security.usersFile (the launcher sets it from
+             SAIKU_ADMIN_PASSWORD or an external <saiku-home>/users.properties),
+             so operators can rotate the admin password without rebuilding the
+             WAR. Defaults to the baked-in file. -->
+        <security:user-service id="uds" properties="${saiku.security.usersFile:/WEB-INF/users.properties}"/>
       </security:authentication-provider>
       <security:authentication-provider>
         <security:user-service id="udsDemo" properties="/WEB-INF/users-demo.properties"/>
