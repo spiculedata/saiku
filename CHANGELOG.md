@@ -3,6 +3,18 @@
 All notable changes to Saiku are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 4.6.2 — 2026-07-16
+
+Patch release.
+
+### Added
+- **`SAIKU_ADMIN_PASSWORD`** — set the admin password without rebuilding the image.
+  The launcher bcrypt-hashes it into a persisted external `<saiku-home>/users.properties`
+  (or supply that file yourself), so a rotated password boots without
+  `SAIKU_ALLOW_DEFAULT_ADMIN`. Fixes the self-host password-rotation gap — the
+  previously-documented `saiku-rotate-admin` command never existed. See
+  `dist/README.md` for details.
+
 ## 4.6.1 — 2026-07-13
 
 Patch release fixing version reporting and install telemetry.
