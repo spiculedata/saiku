@@ -7,6 +7,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.Callable;
 import java.util.zip.ZipEntry;
@@ -21,6 +23,7 @@ import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.session.DefaultSessionCache;
 import org.eclipse.jetty.session.FileSessionDataStore;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -171,11 +174,19 @@ public class SaikuLauncher implements Callable<Integer> {
 
             Path warPath = extractWar();
 
+            // saiku#1512: runtime admin-password override so operators can set the
+            // admin password (or supply an external users.properties) WITHOUT
+            // rebuilding the image. Precedence: SAIKU_ADMIN_PASSWORD env /
+            // -Dsaiku.admin.password > <saiku-home>/users.properties > the WAR's
+            // baked default. When an override is in effect, Spring Security reads it
+            // via -Dsaiku.security.usersFile and the policy below checks THAT file.
+            Path usersFile = resolveEffectiveUsersFile(saikuHome, warPath);
+
             // saiku#1153: refuse to serve in production while the shipped default
             // admin password is unchanged. Demo mode (SAIKU_DEMO=true) and an
             // explicit SAIKU_ALLOW_DEFAULT_ADMIN=true both opt out. Throws
             // DefaultCredentialsException, which the CLI turns into a clean exit.
-            enforceDefaultCredentialPolicy(warPath);
+            enforceDefaultCredentialPolicy(usersFile, warPath);
 
             Server server = new Server();
             // saiku#1165 audit-3: harden the HTTP transport.
@@ -289,6 +300,12 @@ public class SaikuLauncher implements Callable<Integer> {
             if (Boolean.parseBoolean(System.getProperty("saiku.security.acknowledged", "false"))) {
                 return;
             }
+            // A rotated admin password (SAIKU_ADMIN_PASSWORD / external users.properties / rebuilt
+            // WAR) is not a default-credentials situation — stay quiet outside demo mode.
+            boolean adminIsDefault = Boolean.parseBoolean(System.getProperty("saiku.security.adminIsDefault", "true"));
+            if (!isDemoModeActive() && !adminIsDefault) {
+                return;
+            }
             String bar = "============================================================";
             System.out.println();
             System.out.println(bar);
@@ -305,10 +322,10 @@ public class SaikuLauncher implements Callable<Integer> {
             } else {
                 System.out.println("  SECURITY: default credentials (admin/admin) are active.");
             }
-            System.out.println("  Rotate them in saiku-webapp's users.properties before");
-            System.out.println("  exposing this instance, or replace the in-memory auth");
-            System.out.println("  config (applicationContext-spring-security-memory.xml)");
-            System.out.println("  with LDAP / OAuth / SAML.");
+            System.out.println("  Set SAIKU_ADMIN_PASSWORD=<strong-password> to rotate the admin");
+            System.out.println("  password before exposing this instance (no rebuild needed), or");
+            System.out.println("  replace the in-memory auth (applicationContext-spring-security-");
+            System.out.println("  memory.xml) with LDAP / OAuth / SAML.");
             System.out.println("  Suppress this warning with -Dsaiku.security.acknowledged=true");
             System.out.println(bar);
             System.out.println();
@@ -387,8 +404,13 @@ public class SaikuLauncher implements Callable<Integer> {
          * @throws DefaultCredentialsException with an operator-facing fix-it
          *     message when the boot should be refused.
          */
-        static void enforceDefaultCredentialPolicy(Path warPath) {
-            if (!shouldRefuse(adminPasswordIsDefault(warPath), isDemoModeRequested(), allowDefaultAdmin())) {
+        static void enforceDefaultCredentialPolicy(Path usersFile, Path warPath) {
+            boolean isDefault = usersFile.equals(warPath)
+                    ? adminPasswordIsDefault(warPath)
+                    : isDefaultAdminValue(readAdminValue(usersFile));
+            // Record it so the post-boot warning doesn't cry "default credentials" once rotated.
+            System.setProperty("saiku.security.adminIsDefault", Boolean.toString(isDefault));
+            if (!shouldRefuse(isDefault, isDemoModeRequested(), allowDefaultAdmin())) {
                 return;
             }
             String bar = "============================================================";
@@ -401,9 +423,11 @@ public class SaikuLauncher implements Callable<Integer> {
                     "  with default credentials is compromised within seconds.",
                     "",
                     "  Fix one of the following, then restart:",
-                    "    * Rotate the admin password in users.properties (bcrypt):",
+                    "    * Set an admin password (no rebuild — recommended):",
+                    "        SAIKU_ADMIN_PASSWORD=<a-strong-password>",
+                    "    * Or rotate it in users.properties (bcrypt):",
                     "        htpasswd -nbBC 12 admin <newpassword>",
-                    "    * Replace the in-memory auth with LDAP / OAuth / SAML",
+                    "    * Or replace the in-memory auth with LDAP / OAuth / SAML",
                     "      (applicationContext-spring-security-memory.xml).",
                     "",
                     "  To start anyway (NOT for a production / exposed host), set:",
@@ -412,6 +436,82 @@ public class SaikuLauncher implements Callable<Integer> {
                     bar,
                     "");
             throw new DefaultCredentialsException(msg);
+        }
+
+        /**
+         * Resolve which users.properties Spring Security should authenticate against, and point it
+         * there via {@code -Dsaiku.security.usersFile} when an override is active. Precedence:
+         * {@code SAIKU_ADMIN_PASSWORD} / {@code -Dsaiku.admin.password} (hashed into an external
+         * file) &gt; an existing {@code <saiku-home>/users.properties} &gt; the WAR's baked default
+         * (returned as {@code warPath}). Never throws — falls back to the bundled file on any I/O error.
+         */
+        static Path resolveEffectiveUsersFile(Path saikuHome, Path warPath) {
+            Path external = saikuHome.resolve("users.properties");
+            String pw = System.getenv("SAIKU_ADMIN_PASSWORD");
+            if (pw == null || pw.isBlank()) pw = System.getProperty("saiku.admin.password");
+            try {
+                if (pw != null && !pw.isBlank()) {
+                    writeAdminUsersFile(external, pw.trim());
+                    System.setProperty(
+                            "saiku.security.usersFile", external.toUri().toString());
+                    System.out.println("Admin password set from SAIKU_ADMIN_PASSWORD (" + external + ").");
+                    return external;
+                }
+                if (Files.isRegularFile(external)) {
+                    System.setProperty(
+                            "saiku.security.usersFile", external.toUri().toString());
+                    System.out.println("Using external users.properties (" + external + ").");
+                    return external;
+                }
+            } catch (IOException e) {
+                System.err.println("Could not write external users.properties (" + e.getMessage()
+                        + "); falling back to the bundled default.");
+            }
+            return warPath;
+        }
+
+        /**
+         * Write an external users.properties with a bcrypt {@code admin} row, preserving any other
+         * (non-admin) rows already present so operator-added users survive a password change.
+         */
+        static void writeAdminUsersFile(Path file, String password) throws IOException {
+            List<String> keep = new ArrayList<>();
+            if (Files.isRegularFile(file)) {
+                for (String line : Files.readAllLines(file)) {
+                    String t = line.trim();
+                    if (t.isEmpty() || t.startsWith("#") || t.startsWith("admin=") || t.startsWith("admin ")) {
+                        continue;
+                    }
+                    keep.add(line);
+                }
+            }
+            String hash = new BCryptPasswordEncoder().encode(password);
+            Files.createDirectories(file.getParent());
+            List<String> out = new ArrayList<>();
+            out.add("# Managed by Saiku: admin row set from SAIKU_ADMIN_PASSWORD. Add more users below.");
+            out.add("admin={bcrypt}" + hash + ",ROLE_USER,ROLE_ADMIN");
+            out.addAll(keep);
+            Files.write(file, out);
+            try {
+                File f = file.toFile();
+                f.setReadable(false, false);
+                f.setReadable(true, true);
+                f.setWritable(false, false);
+                f.setWritable(true, true);
+            } catch (RuntimeException ignore) {
+                // best-effort permission tightening — never fatal
+            }
+        }
+
+        /** Read the {@code admin=} value from an external users.properties, or null on any error. */
+        static String readAdminValue(Path file) {
+            try (InputStream in = Files.newInputStream(file)) {
+                Properties p = new Properties();
+                p.load(in);
+                return p.getProperty("admin");
+            } catch (IOException e) {
+                return null;
+            }
         }
 
         /**

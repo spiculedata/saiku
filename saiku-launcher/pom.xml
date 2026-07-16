@@ -6,7 +6,7 @@
     <parent>
         <groupId>org.saikuanalytics</groupId>
         <artifactId>saiku</artifactId>
-        <version>4.6.1</version>
+        <version>4.6.2</version>
     </parent>
 
     <artifactId>saiku-launcher</artifactId>
@@ -86,6 +86,14 @@
             <groupId>info.picocli</groupId>
             <artifactId>picocli</artifactId>
             <version>${picocli.version}</version>
+        </dependency>
+
+        <!-- BCrypt hashing for the SAIKU_ADMIN_PASSWORD runtime override in
+             SaikuLauncher (rotate the admin password without rebuilding). -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+            <version>${spring.security.version}</version>
         </dependency>
 
         <dependency>
