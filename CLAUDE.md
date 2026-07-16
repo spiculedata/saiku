@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build, test, run
 
-JDK 21 + Maven 3.9+ are required. The reactor is `saiku-bom → saiku-core → saiku-webapp → saiku-launcher`. `saiku-ui` is a separate SvelteKit app and is **not** in the Maven reactor.
+JDK 21 + Maven 3.9+ are required. The reactor is `saiku-bom → saiku-core → saiku-webapp → saiku-launcher`. `saiku-ui` is a separate SvelteKit app and is **not** a reactor module — but `mvn verify` still builds it, via `saiku-webapp`'s frontend plugin (see *Testing baseline*), so a cold build downloads a Node toolchain.
+
+**On Windows, set `git config core.autocrlf false` and re-clone before building.** Git for Windows defaults `core.autocrlf=true`, and the repo has no `.gitattributes` to override it, so checkout rewrites every LF blob to CRLF and `spotless:check` then rejects every Java file — before anything compiles. CI never catches this because CI is Linux-only.
 
 ```bash
 mvn verify                                    # compile + unit tests + spotless:check (CI's gate)
@@ -20,7 +22,8 @@ mvn -P security verify                        # OWASP dependency-check (opt-in)
 Run the launcher fat-JAR (Picocli + embedded Jetty 12 EE10):
 
 ```bash
-java -jar saiku-launcher/target/saiku-4.0.1.jar serve --port 8080 --home ./saiku-home
+java -jar saiku-launcher/target/saiku-<version>.jar serve --port 8080 --home ./saiku-home
+# <version> is the root pom's <version> — `mvn -q -DforceStdout help:evaluate -Dexpression=project.version`
 # UI:    http://localhost:8080/ui/
 # REST:  http://localhost:8080/saiku/api/...
 # Login: admin / admin
@@ -49,13 +52,15 @@ Live AI Query API regression suite against a running launcher: `saiku-launcher/t
 
 ## GitHub Packages auth (non-obvious gotcha)
 
-Saiku depends on four Spicule-published artifacts hosted on **GitHub Packages, which requires authentication for downloads even when public**. The root `pom.xml` registers four repos (`github-mondrian-saiku`, `github-olap4j`, `github-olap4j-xmlaserver`, `github-saiku-query`); each needs a matching `<server>` entry in `~/.m2/settings.xml` with a GitHub username + PAT (scope `read:packages`). One PAT covers all four. CI writes this `settings.xml` inline in `.github/workflows/ci.yml` using `secrets.GH_PACKAGES_TOKEN` — the auto-issued `GITHUB_TOKEN` will NOT work cross-org. Local forks of `mondrian-saiku`, `olap4j`, `olap4j-xmlaserver`, `saiku-query` installed in `~/.m2` will be preferred over the remote.
+Saiku depends on Spicule-published artifacts hosted on **GitHub Packages, which requires authentication for downloads even when public**. The root `pom.xml` registers five repos (`github-mondrian-saiku`, `github-olap4j`, `github-olap4j-xmlaserver`, `github-saiku-query`, `github-ossie`); each needs a matching `<server>` entry in `~/.m2/settings.xml` with a GitHub username + PAT. One PAT covers all five — mirror the five `<server>` blocks CI writes in `.github/workflows/ci.yml`. CI uses `secrets.GH_PACKAGES_TOKEN`; the auto-issued `GITHUB_TOKEN` will NOT work cross-org. Local forks of `mondrian-saiku`, `olap4j`, `olap4j-xmlaserver`, `saiku-query` installed in `~/.m2` will be preferred over the remote.
+
+The PAT must be a **classic** token with the `read:packages` scope — [GitHub only supports classic PATs for the Maven registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry), so a fine-grained token 401s. All five source repos are public, so `read:packages` alone suffices; no `repo` scope. **A fine-grained token and a classic token missing `read:packages` produce an identical bare `401 Unauthorized` that never mentions scopes** — so diagnose before re-minting: `curl -sI -H "Authorization: token $PAT" https://api.github.com/user | grep -i x-oauth-scopes`. HTTP 200 with a scope list lacking `read:packages` means the token is valid but under-scoped; classic PAT scopes are editable in place (Settings → Developer settings → Tokens (classic) → tick `read:packages` → Update token) and the value doesn't change, so `settings.xml` needs no edit.
 
 `lib/repo/` is an in-tree file-based Maven repo for vendored deps that aren't reachable on any public remote (currently `miredot-annotations`, Bintray-only). Use `${maven.multiModuleProjectDirectory}` (not `${project.basedir}`) when adding new entries so child modules inherit a URL pointing at the reactor root.
 
 ## Architecture
 
-**Multi-module Maven reactor** (all artifacts `org.saikuanalytics:*:4.0.1`):
+**Multi-module Maven reactor** (all artifacts `org.saikuanalytics:*`, sharing the root pom's `<version>`):
 
 - `saiku-bom` — central dependency catalogue. Versions live here (Spring 6.2.x, Spring Security 6.5.x, slf4j 2.0.16, log4j 2.24.3, Jackson 2.18.6, Jersey 3.1.9, Arrow 18, Caffeine 3.1.8, mondrian fork 4.8.1.x). Child poms reference `${...}` and must `<import>` the BOM via `dependencyManagement`. The root pom shadows the same versions defensively so a child that forgets to import the BOM doesn't silently inherit stale numbers — keep them in sync.
 - `saiku-core/saiku-olap-util` — olap4j helpers.
@@ -81,7 +86,13 @@ Saiku depends on four Spicule-published artifacts hosted on **GitHub Packages, w
 
 ## Testing baseline
 
-`TESTING.md` is the source of truth. As of Phase 0: **10 unit tests** total, all in `saiku-core/saiku-service` (`NoReHashPasswordEncoderTest`, `RepositoryDatasourceManagerTest`). No live MDX/FoodMart harness in the suite — `MondrianFoodMartHarnessTest` was drafted but the bundled HSQL dump + `FoodMart4.xml` do not line up under the current Mondrian fork. `saiku-core/saiku-web` (REST layer), `saiku-webapp`, and `saiku-ui` currently have zero coverage. CI (`.github/workflows/ci.yml`) runs `mvn verify` on Linux + macOS against JDK 21; the `dist` job uploads `saiku-dist-<version>.zip` (launcher fat-JAR + `dist/run.sh` + `dist/run.bat` + `dist/README.md`) as an artifact.
+**`TESTING.md` is the source of truth — read it rather than trusting any count restated here.** This section is deliberately thin: it previously carried a duplicated snapshot that rotted badly (it claimed 10 tests total and "zero coverage" for `saiku-core/saiku-web`, a module that by then ran 500 green tests behind a CI floor of 330). A number copied next to its source will drift from it; get current figures by running the suite, not by reading this paragraph. For orientation only: `mvn -B -ntp -DskipITs=false verify` was ~1,480 tests green at 4.6.1, across `saiku-service`, `saiku-web`, `saiku-launcher` (plus failsafe ITs), `saiku-semantic` and `saiku-sql`.
+
+**Test floors are a hard gate.** `.github/test-floors.json` fails CI when a module's surefire total drops below its declared floor (`saiku-core/saiku-service` and `saiku-core/saiku-web` are floored today). Bump a floor explicitly when you add tests; never delete tests to get green.
+
+CI (`.github/workflows/ci.yml`) runs `mvn -B -ntp -DskipITs=false verify` on **ubuntu-latest** against JDK 21 — Linux only, no macOS runner. A separate path-filtered `ui` job runs `npm run check` + vitest on Node 20. The `dist` job uploads `saiku-dist-<version>.zip` (launcher fat-JAR + `dist/run.sh` + `dist/run.bat` + `dist/README.md`) as an artifact. Branch protection requires only the aggregate `ci` check, which passes when upstream jobs succeed *or* are legitimately path-skipped.
+
+**`mvn verify` builds `saiku-ui` but does not test it.** `saiku-ui` is not a reactor module, yet `saiku-webapp`'s `frontend-maven-plugin` runs `install-node-and-npm` → `npm ci` → `npm run build` so the war overlay gets a bundle. Expect a Node toolchain download and a long `saiku-webapp` phase on a cold build (~34 min observed). UI tests run only via the `ui` CI job or `npm test` inside `saiku-ui/`.
 
 ## Conventions specific to this repo
 
