@@ -27,12 +27,17 @@
 ## Try it in 30 seconds
 
 ```sh
-docker run -d -p 8080:8080 --name saiku ghcr.io/spiculedata/saiku
+docker run -d -p 8080:8080 --name saiku -e SAIKU_DEMO=true ghcr.io/spiculedata/saiku
 ```
 
-Then open <http://localhost:8080/ui/> and log in with `admin` / `admin`. The
-container ships with a self-contained H2 + FoodMart demo cube — drag fields
-onto rows, columns, or filters and the SPA writes MDX for you.
+Then open <http://localhost:8080/ui/> and log in with `admin` / `admin`. Demo
+mode ships a self-contained H2 + FoodMart cube — drag fields onto rows, columns,
+or filters and the SPA writes MDX for you.
+
+> **For a real deployment**, drop `SAIKU_DEMO=true` and set an admin password:
+> `-e SAIKU_ADMIN_PASSWORD='a-strong-password'`. Saiku **refuses to start** on the
+> default `admin`/`admin` once it's network-reachable, so one of those two is
+> required.
 
 A hosted instance is always live at <https://demo.saiku.bi> (auto-reset
 nightly).

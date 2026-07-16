@@ -23,15 +23,15 @@ runs the script and writes a ~200 MB `foodmart.mv.db` into
 ```bash
 unzip saiku-dist-<version>.zip
 cd saiku-dist-<version>
-./run.sh                       # or: run.bat on Windows
+SAIKU_DEMO=true ./run.sh        # first look: demo cube + admin/admin  (run.bat on Windows)
 ```
 
-Open <http://localhost:8080/ui/> and sign in:
+Open <http://localhost:8080/ui/> and sign in with `admin` / `admin`.
 
-| Field    | Value |
-|----------|-------|
-| Username | `admin` |
-| Password | `admin` |
+> Demo mode is only for a first look. For anything real, skip `SAIKU_DEMO=true`
+> and set a password instead — `SAIKU_ADMIN_PASSWORD='a-strong-password' ./run.sh`
+> — because Saiku **refuses to start** on the default `admin`/`admin` (see
+> "Setting the admin password" below).
 
 A `foodmart` cube list appears on first query (initial load of the H2
 fixture takes ~30 s — subsequent launches reuse the file).
@@ -44,7 +44,7 @@ password — **no rebuild required**:
 
 ```bash
 # Docker
-docker run -e SAIKU_ADMIN_PASSWORD='a-strong-password' ... ghcr.io/spiculedata/saiku:<version>
+docker run -d -p 8080:8080 -e SAIKU_ADMIN_PASSWORD='a-strong-password' ghcr.io/spiculedata/saiku:<version>
 
 # dist zip / fat-jar
 SAIKU_ADMIN_PASSWORD='a-strong-password' ./run.sh
