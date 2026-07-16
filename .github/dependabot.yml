@@ -12,3 +12,18 @@ updates:
       interval: weekly
     open-pull-requests-limit: 3
     labels: [dependencies, github-actions]
+  # saiku-ui has its own package.json and is not part of the Maven reactor, so
+  # it needs its own entry — without one it is never scanned at all. Grouped so
+  # a week's worth of SvelteKit churn arrives as a couple of PRs, not a wall.
+  - package-ecosystem: npm
+    directory: /saiku-ui
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, npm]
+    groups:
+      dev-dependencies:
+        dependency-type: development
+      production-minor-patch:
+        dependency-type: production
+        update-types: [minor, patch]
