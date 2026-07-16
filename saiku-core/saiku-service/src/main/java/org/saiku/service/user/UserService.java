@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import org.saiku.database.JdbcUserDAO;
 import org.saiku.database.dto.SaikuUser;
 import org.saiku.service.ISessionService;
@@ -127,10 +128,22 @@ public class UserService implements IUserManager, Serializable {
 
     @SuppressWarnings("unchecked")
     private List<String> getCurrentUserRolesList() {
-        if (sessionService != null
-                && sessionService.getAllSessionObjects() != null
-                && sessionService.getAllSessionObjects().get("roles") != null) {
-            return (List<String>) sessionService.getAllSessionObjects().get("roles");
+        // Snapshot the session objects ONCE, then read only from the local.
+        // SessionService.getAllSessionObjects() rebuilds a fresh defensive copy from the
+        // live sessionHolder on every call, and returns an empty map as soon as the
+        // principal's entry is gone (SessionService.java:236-249). Calling it separately
+        // for the guard and for the read was a time-of-check/time-of-use race: the entry
+        // could vanish in between — logout() (:176), runAs()'s finally (:290) and
+        // clearSessions() (:305) all remove it, and sessionHolder is keyed by a principal
+        // whose equals() is username-based, so a second client on the same account is
+        // enough to trigger it. When that happened this method returned null, which made
+        // isAdmin() grant admin and getCurrentUserRoles() throw NPE.
+        Map<String, Object> sessionObjects = sessionService == null ? null : sessionService.getAllSessionObjects();
+        if (sessionObjects != null) {
+            Object roles = sessionObjects.get("roles");
+            if (roles != null) {
+                return (List<String>) roles;
+            }
         }
 
         return new ArrayList<String>();
@@ -145,11 +158,16 @@ public class UserService implements IUserManager, Serializable {
     public boolean isAdmin() {
         List<String> roles = getCurrentUserRolesList();
 
-        if (roles != null) {
-            return !Collections.disjoint(roles, adminRoles);
-        } else {
-            return true;
+        // Absent roles deny. This is an authorization check: the safe direction on
+        // missing input is fail-closed, and the previous default did the opposite —
+        // it granted admin on a null collection. Kept as defence in depth behind the
+        // snapshot in getCurrentUserRolesList(); either layer alone stops the race
+        // above from granting admin, and deny is the correct answer here regardless.
+        if (roles == null) {
+            return false;
         }
+
+        return !Collections.disjoint(roles, adminRoles);
     }
 
     public void checkFolders() {
