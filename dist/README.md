@@ -63,9 +63,16 @@ analyst={bcrypt}$2y$12$....,ROLE_USER
 Generate a hash with `htpasswd -nbBC 12 <user> '<password>'` and reformat the
 `user:$2y$...` output as `user={bcrypt}$2y$...,ROLE_USER`.
 
-> **Note:** the bundled auth is an in-memory user store — the admin panel's
-> user-management screens are read-only against it. For real multi-user setups,
-> point Saiku at LDAP / OAuth / SAML via `applicationContext-spring-security-memory.xml`.
+> **⚠️ Don't manage credentials through the admin panel.** The bundled auth reads
+> `users.properties` (above), but the panel's user-management screens write to a
+> separate store that auth never consults. Adding a user or changing a password
+> there returns success and has **no effect**: a new account can't log in, and a
+> rotated password leaves the old one working. Use `SAIKU_ADMIN_PASSWORD` or edit
+> `users.properties` directly. Tracked in
+> [#1514](https://github.com/spiculedata/saiku/issues/1514).
+>
+> For real multi-user setups, point Saiku at LDAP / OAuth / SAML via
+> `applicationContext-spring-security-memory.xml`.
 > To boot with the default password anyway (local/dev only), set
 > `SAIKU_ALLOW_DEFAULT_ADMIN=true`.
 
