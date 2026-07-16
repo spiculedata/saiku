@@ -119,6 +119,24 @@ custom spans for `ThinQueryService` etc.).
 
 JDK 21 + Maven 3.9+ required.
 
+**Set up GitHub Packages auth first, or the build fails before it compiles.** Saiku's Mondrian fork, olap4j,
+saiku-query and Ossie artifacts are published to GitHub Packages, which requires an authenticated token **even
+though the packages are public**. Without it you get a bare `401 Unauthorized` on `pentaho:mondrian` that never
+mentions tokens:
+
+1. Create a **classic** personal access token with only the `read:packages` scope
+   ([Tokens (classic)](https://github.com/settings/tokens/new)). It must be classic — [GitHub's Maven registry
+   does not accept fine-grained tokens](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry),
+   and the UI defaults to fine-grained. Our packages are public, so no `repo` scope or org membership is needed.
+2. Add five `<server>` entries to `~/.m2/settings.xml` — `github-mondrian-saiku`, `github-olap4j`,
+   `github-olap4j-xmlaserver`, `github-saiku-query`, `github-ossie`. Copy the block from
+   [`.github/workflows/ci.yml`](.github/workflows/ci.yml); one token covers all five.
+
+Still getting a 401? A fine-grained token and a classic token missing `read:packages` produce an identical error,
+so check what the token actually has before minting another —
+`curl -sI -H "Authorization: token $PAT" https://api.github.com/user | grep -i x-oauth-scopes`. A classic token's
+scopes are editable in place, and the value doesn't change, so `settings.xml` needs no edit.
+
 ```sh
 # Compile, unit tests, Spotless format check (CI gate):
 mvn verify
