@@ -13,17 +13,65 @@ updates:
     open-pull-requests-limit: 3
     labels: [dependencies, github-actions]
   # saiku-ui has its own package.json and is not part of the Maven reactor, so
-  # it needs its own entry — without one it is never scanned at all. Grouped so
-  # a week's worth of SvelteKit churn arrives as a couple of PRs, not a wall.
+  # it needs its own entry — without one it is never scanned at all.
+  #
+  # Every group below is bounded to minor/patch deliberately. Majors have to
+  # surface as their own PR and justify themselves — that is why docker/login-action
+  # v4 (#1381) and hamcrest 3.0 (#1383) are still sitting on their own rather than
+  # riding in on a batch. Leaving the dev group unbounded broke exactly that rule:
+  # it swept typescript 5->7 and @sveltejs/vite-plugin-svelte 5->7 into a
+  # 19-package PR (#1525) that npm ci could not even resolve, because typescript 7
+  # is outside @sveltejs/kit's peerOptional range. Bounding does NOT hold back
+  # security fixes — these groups are version updates only (`applies-to` defaults
+  # to version-updates) and Dependabot's security updates run on a separate path.
+  #
+  # Split by blast radius rather than one flat "dev" bucket, because a red PR in
+  # each means a different thing:
+  #   - build-toolchain gates `npm run build`, which saiku-webapp's
+  #     frontend-maven-plugin runs during `mvn verify` — a break here takes the
+  #     whole reactor down on development, not just the UI.
+  #   - dev-tooling is what CI's `ui` job actually exercises (svelte-check,
+  #     vitest, eslint).
+  #   - storybook is not built by CI at all and its packages move in lockstep, so
+  #     it can churn on its own without masking the other two.
+  # Order matters: a dependency lands in the FIRST group it matches, so the
+  # pattern groups must come before the catch-all.
   - package-ecosystem: npm
     directory: /saiku-ui
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    # Raised from 5. Now that the dev group is bounded, each pending major
+    # (typescript, @sveltejs/vite-plugin-svelte, @types/node) gets its own PR and
+    # competes with the grouped ones for this pool; at 5 the majors would starve
+    # and we would be back to never seeing them.
+    open-pull-requests-limit: 10
     labels: [dependencies, npm]
     groups:
-      dev-dependencies:
+      build-toolchain:
         dependency-type: development
+        update-types: [minor, patch]
+        patterns:
+          - svelte
+          - svelte-check
+          - "@sveltejs/*"
+          - vite
+          - tailwindcss
+          - "@tailwindcss/*"
+          - typescript
+          - "@types/node"
+      storybook:
+        dependency-type: development
+        update-types: [minor, patch]
+        patterns:
+          - storybook
+          - "@storybook/*"
+          - "@chromatic-com/*"
+      # Catch-all for the rest of devDependencies (eslint, typescript-eslint,
+      # globals, vitest, playwright, jsdom/happy-dom) and for anything added
+      # later, so a new dev dep is never orphaned into a PR of its own.
+      dev-tooling:
+        dependency-type: development
+        update-types: [minor, patch]
       production-minor-patch:
         dependency-type: production
         update-types: [minor, patch]
