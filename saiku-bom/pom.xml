@@ -540,7 +540,7 @@
             <dependency>
                 <groupId>org.codehaus.jettison</groupId>
                 <artifactId>jettison</artifactId>
-                <version>1.5.4</version>
+                <version>1.5.6</version>
             </dependency>
             <!-- HSQLDB 1.8.0.10 (2010) had multiple CVEs and the legacy
                  hsqldb:hsqldb coords. 2.x publishes under org.hsqldb:hsqldb
