@@ -206,7 +206,7 @@
             <dependency>
                 <groupId>org.apache.poi</groupId>
                 <artifactId>poi-ooxml</artifactId>
-                <version>5.4.0</version>
+                <version>5.5.1</version>
             </dependency>
             <!--
                 POI 5.4.0 compiles against commons-compress 1.27.1 which
