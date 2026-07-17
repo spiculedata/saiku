@@ -113,8 +113,28 @@
       <input class="field__input" bind:value={editing.email} />
     </label>
     <label class="field">
-      <span class="field__label">{editing.id === 0 ? "Password" : "New password (leave blank to keep current)"}</span>
-      <input class="field__input" type="password" bind:value={editing.password} />
+      <span class="field__label">Password</span>
+      <!-- saiku#1514: the bundled auth reads users.properties; this panel writes a store it
+           never consults. Rotation is therefore impossible here in every deployment mode, so
+           the control is disabled rather than left to fail on submit. The server refuses a
+           password change with 501 regardless — this only stops us inviting the attempt. -->
+      <input
+        class="field__input"
+        type="password"
+        bind:value={editing.password}
+        disabled={editing.id !== 0}
+      />
+      {#if editing.id === 0}
+        <p class="field__hint">
+          Adds the account to the @-mention directory. It cannot sign in until it is added to
+          <code>users.properties</code> — the bundled authentication reads that file, not this panel.
+        </p>
+      {:else}
+        <p class="field__hint">
+          Passwords cannot be changed here. Set <code>SAIKU_ADMIN_PASSWORD</code> and restart, or add a
+          bcrypt row to <code>users.properties</code> (<code>htpasswd -nbBC 12 &lt;user&gt; &lt;newpassword&gt;</code>).
+        </p>
+      {/if}
     </label>
     <fieldset class="field">
       <legend class="field__label">Roles</legend>
@@ -145,4 +165,13 @@
 <style>
 h2 { margin: 0; }
   /* .data-grid / .data-grid__actions / .data-grid__empty come from app.css */
+  /* .field__hint is a local convention rather than a global — mirrors TopBottomCountModal.svelte. */
+  .field__hint {
+    margin: var(--space-1) 0 0;
+    color: var(--fg-subtle);
+    font-size: var(--fs-xs);
+  }
+  .field__hint code {
+    font-size: var(--fs-xs);
+  }
 </style>

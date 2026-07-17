@@ -50,10 +50,20 @@ docker run -d -p 8080:8080 -e SAIKU_ADMIN_PASSWORD='a-strong-password' ghcr.io/s
 SAIKU_ADMIN_PASSWORD='a-strong-password' ./run.sh
 ```
 
-On boot Saiku bcrypt-hashes it and writes `<saiku-home>/users.properties`
-(persisted on the volume, so it survives restarts — the env var is only needed
-the first time, though setting it again just re-applies it). To add more users
-or manage roles by hand, edit that file directly:
+On boot Saiku bcrypt-hashes it and writes `<saiku-home>/users.properties`,
+persisted on the volume. Precedence is **`SAIKU_ADMIN_PASSWORD` > an existing
+`<saiku-home>/users.properties` > the WAR's baked default**, so while the
+variable is set it is enforced on *every* boot: it rewrites the `admin` row and
+overrides whatever that file already contains.
+
+That makes the variable the rotation mechanism — change its value and restart,
+and the old password stops working. It also means that while the variable stays
+set, editing the `admin` row by hand is reverted on the next restart. Unset it
+first if you want to manage that row yourself; the stored hash keeps working
+without it.
+
+To add more users or manage roles by hand, edit that file directly — rows other
+than `admin` survive a rewrite of the `admin` row:
 
 ```properties
 admin={bcrypt}$2y$12$....,ROLE_USER,ROLE_ADMIN
@@ -63,12 +73,14 @@ analyst={bcrypt}$2y$12$....,ROLE_USER
 Generate a hash with `htpasswd -nbBC 12 <user> '<password>'` and reformat the
 `user:$2y$...` output as `user={bcrypt}$2y$...,ROLE_USER`.
 
-> **⚠️ Don't manage credentials through the admin panel.** The bundled auth reads
+> **⚠️ The admin panel can't manage credentials.** The bundled auth reads
 > `users.properties` (above), but the panel's user-management screens write to a
-> separate store that auth never consults. Adding a user or changing a password
-> there returns success and has **no effect**: a new account can't log in, and a
-> rotated password leaves the old one working. Use `SAIKU_ADMIN_PASSWORD` or edit
-> `users.properties` directly. Tracked in
+> separate store that auth never consults. **Changing a password there is refused
+> (HTTP 501)**, with a message pointing back here — rotate with
+> `SAIKU_ADMIN_PASSWORD` or by editing `users.properties` directly. Adding a user
+> still succeeds, but the account is only a directory entry (it's what @-mentions
+> in dashboard comments autocomplete against): it can't sign in until you add it
+> to `users.properties` too. Tracked in
 > [#1514](https://github.com/spiculedata/saiku/issues/1514).
 >
 > For real multi-user setups, point Saiku at LDAP / OAuth / SAML via
