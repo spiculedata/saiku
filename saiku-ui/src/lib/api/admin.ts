@@ -91,12 +91,90 @@ export async function listAllRoles(): Promise<string[]> {
   return Array.from(set).sort();
 }
 
+/**
+ * Raw JSON contract of the server-side `DataSourceMapper` (saiku-web). These are the
+ * field names Jersey/Jackson binds on `POST`/`PUT` and emits on `GET` — deliberately
+ * NOT camelCase. The admin UI works in the friendlier {@link AdminDatasource} shape and
+ * translates at this boundary.
+ *
+ * saiku#1529: the previous code posted `AdminDatasource` verbatim (`name`, `location`,
+ * `schemaName`, `type`, …), none of which exist on `DataSourceMapper`. Jackson's
+ * `FAIL_ON_UNKNOWN_PROPERTIES` tripped on the first unknown key and the global
+ * `JacksonValidationExceptionMapper` turned it into an HTTP 400 — so *every* create/edit
+ * failed with `/datasources -> 400`, and the list showed blank Type/Schema columns
+ * because the reads were reading keys the server never sent.
+ */
+interface DatasourceWire {
+  id?: string;
+  connectionname?: string;
+  connectiontype?: string;
+  jdbcurl?: string;
+  schema?: string;
+  driver?: string;
+  username?: string;
+  password?: string;
+  ossieYaml?: string | null;
+}
+
+/** Derive the UI's legacy `type` dropdown value from the wire discriminator. */
+function typeFromConnectiontype(ct?: string): string {
+  if (ct === "OSSIE") return "OSSIE";
+  if (ct === "XMLA") return "RELATIONAL";
+  return "OLAP";
+}
+
+/** Map the UI datasource shape onto the server `DataSourceMapper` wire contract. */
+export function toDatasourceWire(ds: AdminDatasource): DatasourceWire {
+  return {
+    id: ds.id || undefined,
+    connectionname: ds.name,
+    connectiontype: ds.connectiontype,
+    jdbcurl: ds.location,
+    schema: ds.schemaName ?? undefined,
+    driver: ds.driver,
+    username: ds.username,
+    // Only send a password when the operator actually typed one, so editing a datasource
+    // without touching the password field doesn't blank the stored credential.
+    password: ds.password ? ds.password : undefined,
+    ossieYaml: ds.ossieYaml ?? undefined,
+  };
+}
+
+/** Map a server `DataSourceMapper` JSON row back onto the UI datasource shape. */
+export function fromDatasourceWire(w: DatasourceWire): AdminDatasource {
+  return {
+    id: w.id ?? "",
+    name: w.connectionname ?? "",
+    connectionName: w.connectionname,
+    connectiontype: w.connectiontype,
+    type: typeFromConnectiontype(w.connectiontype),
+    driver: w.driver,
+    location: w.jdbcurl,
+    schemaName: w.schema ?? null,
+    username: w.username,
+    // Server never returns the password (DataSourceMapper marks it WRITE_ONLY).
+    ossieYaml: w.ossieYaml ?? null,
+  };
+}
+
 export const adminDatasources = {
-  list: () => get<AdminDatasource[]>("/datasources"),
-  refresh: (id: string) => json<AdminDatasource>("PUT", `/datasources/${encodeURIComponent(id)}/refresh`),
-  create: (ds: AdminDatasource) => json<AdminDatasource>("POST", "/datasources", ds),
-  update: (ds: AdminDatasource) =>
-    json<AdminDatasource>("PUT", `/datasources/${encodeURIComponent(ds.id)}`, ds),
+  list: async () => (await get<DatasourceWire[]>("/datasources")).map(fromDatasourceWire),
+  refresh: async (id: string) => {
+    const w = await json<DatasourceWire>("PUT", `/datasources/${encodeURIComponent(id)}/refresh`);
+    return w ? fromDatasourceWire(w) : null;
+  },
+  create: async (ds: AdminDatasource) => {
+    const w = await json<DatasourceWire>("POST", "/datasources", toDatasourceWire(ds));
+    return w ? fromDatasourceWire(w) : null;
+  },
+  update: async (ds: AdminDatasource) => {
+    const w = await json<DatasourceWire>(
+      "PUT",
+      `/datasources/${encodeURIComponent(ds.id)}`,
+      toDatasourceWire(ds),
+    );
+    return w ? fromDatasourceWire(w) : null;
+  },
   remove: (id: string) => json<null>("DELETE", `/datasources/${encodeURIComponent(id)}`),
 };
 
