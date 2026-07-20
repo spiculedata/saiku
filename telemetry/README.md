@@ -4,8 +4,12 @@ Counts **monthly active Saiku instances** anonymously, using a Cloudflare Worker
 + D1. Zero servers, zero maintenance, comfortably inside the free tier.
 
 Instances phone home once on startup and once a day. We keep **one row per
-install** and count distinct installs seen in the last 30 days. Downloads/pulls
-aren't counted — they lie badly for Docker.
+install** and count distinct installs that have **pinged more than once**
+(`last_seen > first_seen`) in the last 30 days. The recurrence requirement
+matters: a real deployment pings daily, but a throwaway `docker run`, a CI
+container or a one-off eval pings once and never again — and since each fresh
+container mints a new install id, counting those one-shots inflates the number
+badly. Downloads/pulls aren't counted — they lie badly for Docker.
 
 ## What is (and isn't) collected
 

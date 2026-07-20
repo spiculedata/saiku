@@ -1,0 +1,44 @@
+# Line-ending normalisation. See #1500.
+#
+# Git for Windows ships core.autocrlf=true by default, so without this file a
+# Windows clone gets CRLF in the working tree even though every blob here is
+# LF. Palantir Java Format (spotless:check, bound to `verify`) then rejects
+# EVERY .java file before anything compiles. CI is ubuntu-latest only, so it
+# never catches this — the repo simply doesn't build on Windows.
+#
+# `eol=lf` (not bare `text=auto`) is deliberate: it pins the WORKING TREE to LF
+# regardless of the contributor's core.autocrlf setting, which is the only way
+# to make the spotless gate reproducible across platforms.
+
+* text=auto eol=lf
+
+# Windows batch files must keep CRLF — cmd.exe mis-parses LF-only .bat files.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell scripts must be LF everywhere, including on Windows checkouts.
+*.sh text eol=lf
+
+# Binary — never normalise, never diff as text.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.jar  binary
+*.war  binary
+*.zip  binary
+*.gz   binary
+*.tgz  binary
+*.pdf  binary
+*.xls  binary
+*.xlsx binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.eot  binary
+*.so   binary
+*.dll  binary
+*.dylib binary
+*.keystore binary
+*.p12  binary

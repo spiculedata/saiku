@@ -3,6 +3,19 @@
 All notable changes to Saiku are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 4.6.3 — 2026-07-20
+
+Patch release.
+
+### Fixed
+- **Admin datasource save returned 400** — adding or editing a datasource in the admin
+  panel failed with `Save failed  /datasources -> 400`, and the datasource list showed
+  blank Type/Schema columns. The SvelteKit admin UI posted camelCase field names
+  (`name`, `location`, `schemaName`, `type`) that don't exist on the server's
+  `DataSourceMapper`; Jackson rejected the first unknown field as a 400. The UI now
+  translates to the server's field contract at the API boundary. Editing a datasource
+  without retyping the password no longer wipes the stored credential. (saiku#1529)
+
 ## 4.6.2 — 2026-07-16
 
 Patch release.

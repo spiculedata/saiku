@@ -23,15 +23,15 @@ runs the script and writes a ~200 MB `foodmart.mv.db` into
 ```bash
 unzip saiku-dist-<version>.zip
 cd saiku-dist-<version>
-./run.sh                       # or: run.bat on Windows
+SAIKU_DEMO=true ./run.sh        # first look: demo cube + admin/admin  (run.bat on Windows)
 ```
 
-Open <http://localhost:8080/ui/> and sign in:
+Open <http://localhost:8080/ui/> and sign in with `admin` / `admin`.
 
-| Field    | Value |
-|----------|-------|
-| Username | `admin` |
-| Password | `admin` |
+> Demo mode is only for a first look. For anything real, skip `SAIKU_DEMO=true`
+> and set a password instead — `SAIKU_ADMIN_PASSWORD='a-strong-password' ./run.sh`
+> — because Saiku **refuses to start** on the default `admin`/`admin` (see
+> "Setting the admin password" below).
 
 A `foodmart` cube list appears on first query (initial load of the H2
 fixture takes ~30 s — subsequent launches reuse the file).
@@ -44,7 +44,7 @@ password — **no rebuild required**:
 
 ```bash
 # Docker
-docker run -e SAIKU_ADMIN_PASSWORD='a-strong-password' ... ghcr.io/spiculedata/saiku:<version>
+docker run -d -p 8080:8080 -e SAIKU_ADMIN_PASSWORD='a-strong-password' ghcr.io/spiculedata/saiku:<version>
 
 # dist zip / fat-jar
 SAIKU_ADMIN_PASSWORD='a-strong-password' ./run.sh
@@ -63,9 +63,16 @@ analyst={bcrypt}$2y$12$....,ROLE_USER
 Generate a hash with `htpasswd -nbBC 12 <user> '<password>'` and reformat the
 `user:$2y$...` output as `user={bcrypt}$2y$...,ROLE_USER`.
 
-> **Note:** the bundled auth is an in-memory user store — the admin panel's
-> user-management screens are read-only against it. For real multi-user setups,
-> point Saiku at LDAP / OAuth / SAML via `applicationContext-spring-security-memory.xml`.
+> **⚠️ Don't manage credentials through the admin panel.** The bundled auth reads
+> `users.properties` (above), but the panel's user-management screens write to a
+> separate store that auth never consults. Adding a user or changing a password
+> there returns success and has **no effect**: a new account can't log in, and a
+> rotated password leaves the old one working. Use `SAIKU_ADMIN_PASSWORD` or edit
+> `users.properties` directly. Tracked in
+> [#1514](https://github.com/spiculedata/saiku/issues/1514).
+>
+> For real multi-user setups, point Saiku at LDAP / OAuth / SAML via
+> `applicationContext-spring-security-memory.xml`.
 > To boot with the default password anyway (local/dev only), set
 > `SAIKU_ALLOW_DEFAULT_ADMIN=true`.
 

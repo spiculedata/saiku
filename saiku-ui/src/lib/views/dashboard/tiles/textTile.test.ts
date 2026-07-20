@@ -1,5 +1,5 @@
 /**
- * @vitest-environment happy-dom
+ * @vitest-environment jsdom
  */
 
 /*
@@ -14,10 +14,19 @@
  * that the *configuration* we use (USE_PROFILES: { html: true }) strips
  * the vectors we care about.
  *
- * Test env: happy-dom — vitest's `node` default leaves DOMPurify in
+ * Test env: jsdom — vitest's `node` default leaves DOMPurify in
  * fall-through mode (returns input unchanged), defeating the test. The
  * @vitest-environment pragma above flips the env per-file without
  * touching the global vite.config.
+ *
+ * jsdom rather than happy-dom, deliberately: happy-dom (every version up
+ * to 20.10.6) strips <h2> from DOMPurify 3.4.12's output while jsdom and
+ * real browsers keep it. That's a happy-dom DOM-fidelity gap, not a
+ * sanitiser behaviour. It surfaced here as a false failure — but the same
+ * gap could just as easily hide a false PASS, i.e. a payload happy-dom
+ * neutralises that a browser executes. For a test whose entire purpose is
+ * asserting what survives sanitisation, the environment has to model the
+ * DOM faithfully or the result means nothing.
  */
 
 import { describe, test, expect } from "vitest";

@@ -3,7 +3,10 @@
  *
  * Counts *running instances*, not downloads (which lie badly for Docker). Each
  * Saiku instance POSTs a heartbeat on startup and once a day; we keep ONE row
- * per install and count distinct installs seen in the last 30 days.
+ * per install and count distinct installs that have pinged more than once in the
+ * last 30 days. The recurrence requirement filters out ephemeral one-shot pings
+ * (throwaway containers, CI, one-off evals), each of which mints a fresh install
+ * id and would otherwise inflate the count.
  *
  * Privacy, by construction:
  *   - the client IP is never read or stored;
@@ -102,14 +105,19 @@ export default {
 			// Count real releases only — exclude non-release builds ('dev', *SNAPSHOT*) that come
 			// from CI, integration tests and IDE runs rather than deployed instances.
 			const RELEASE_ONLY = "version <> 'dev' AND version NOT LIKE '%SNAPSHOT%'";
+			// Count *recurring* installs only. A real deployment pings on startup AND once a day,
+			// so a genuine install's last_seen advances past its first_seen. A never-repeated ping
+			// (last_seen == first_seen) is almost always ephemeral — a throwaway `docker run`, a CI
+			// container, a one-off eval — and since each fresh container mints a new install id,
+			// counting one-shots inflates the number badly. Requiring recurrence keeps it honest.
+			const RECURRING = 'last_seen > first_seen';
+			const WHERE = `last_seen > ?1 AND ${RELEASE_ONLY} AND ${RECURRING}`;
 			try {
-				const active = await env.DB.prepare(
-					`SELECT count(*) AS n FROM installs WHERE last_seen > ?1 AND ${RELEASE_ONLY}`
-				)
+				const active = await env.DB.prepare(`SELECT count(*) AS n FROM installs WHERE ${WHERE}`)
 					.bind(cutoff)
 					.first<{ n: number }>();
 				const byVersion = await env.DB.prepare(
-					`SELECT version, count(*) AS n FROM installs WHERE last_seen > ?1 AND ${RELEASE_ONLY} GROUP BY version ORDER BY n DESC`
+					`SELECT version, count(*) AS n FROM installs WHERE ${WHERE} GROUP BY version ORDER BY n DESC`
 				)
 					.bind(cutoff)
 					.all();
