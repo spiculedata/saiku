@@ -55,7 +55,7 @@
     "vitest": "^3.2.6"
   },
   "dependencies": {
-    "apache-arrow": "^15.0.2",
+    "apache-arrow": "^21.1.0",
     "bits-ui": "^2.18.1",
     "clsx": "^2.1.1",
     "echarts": "^6.0.0",
