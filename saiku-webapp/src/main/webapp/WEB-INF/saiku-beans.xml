@@ -649,6 +649,19 @@
         <constructor-arg ref="embedPublicRegistry"/>
     </bean>
 
+    <!-- saiku-cloud#940 mint-time PII gate. Resolves a resource's bound cubes
+         and walks their AiSchemas for saiku.semantic.pii=true annotations.
+         Constructor takes (DatasourceService, AiCubeMetadataService) — reusing
+         the same datasourceServiceBean the token resource reads files with and
+         the aiCubeMetadataServiceBean the AI query surface already uses for
+         schema lookups (wired identically at aiQueryResource, above). Without
+         this bean set on embedTokenResource.piiInspector the mint/grant PII
+         gates no-op. -->
+    <bean id="embedPiiInspector" class="org.saiku.web.embed.EmbedPiiInspector">
+        <constructor-arg ref="datasourceServiceBean"/>
+        <constructor-arg ref="aiCubeMetadataServiceBean"/>
+    </bean>
+
     <bean id="embedTokenResource"
           class="org.saiku.web.rest.resources.embed.EmbedTokenResource">
         <property name="tokenStore" ref="embedTokenStore"/>
@@ -656,6 +669,7 @@
         <property name="datasourceService" ref="datasourceServiceBean"/>
         <property name="sessionService" ref="sessionService"/>
         <property name="userService" ref="userServiceBean"/>
+        <property name="piiInspector" ref="embedPiiInspector"/>
     </bean>
 
     <bean id="embedViewResource" scope="request"
