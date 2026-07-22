@@ -62,6 +62,37 @@ public class AdminResource {
     private OlapDiscoverService olapDiscoverService;
     private LogExtractor logExtractor;
 
+    /**
+     * saiku#1514: why a password write here is refused rather than acknowledged.
+     *
+     * <p>Authentication resolves through {@code authenticationManager}, whose only providers are
+     * file-backed {@code <security:user-service properties=.../>} beans
+     * (applicationContext-spring-security-memory.xml:32,45,48). This resource writes to H2 via
+     * {@link UserService} → {@code JdbcUserDAO}. No {@code AuthenticationProvider} reads that store,
+     * so a password set here has never had any effect on who can log in — the endpoint simply
+     * returned 200 and the superseded credential kept working.
+     *
+     * <p>The wording is deliberately the launcher's, taken from the boot-time FATAL banner it
+     * prints on a default-credentials refusal ({@code SaikuLauncher.enforceDefaultCredentialPolicy})
+     * and from dist/README's htpasswd recipe, so operators meet one vocabulary for rotation rather
+     * than two. It cannot be shared as a constant: this module is {@code saiku-web}, and the reactor
+     * runs saiku-core → saiku-webapp → saiku-launcher, so depending on the launcher would invert
+     * that order. If the banner is ever reworded, reword this with it.
+     */
+    private static final String PASSWORD_WRITE_UNSUPPORTED = String.join(
+            "\n",
+            "Saiku's bundled authentication reads users.properties; this panel writes to a",
+            "separate store that authentication never consults, so a password set here would",
+            "have no effect and the superseded one would keep working. Set the password one of",
+            "these ways instead, then restart:",
+            "  * Set an admin password (no rebuild — recommended):",
+            "      SAIKU_ADMIN_PASSWORD=<a-strong-password>",
+            "  * Or rotate it in users.properties (bcrypt):",
+            "      htpasswd -nbBC 12 <user> <newpassword>",
+            "  * Or replace the in-memory auth with LDAP / OAuth / SAML",
+            "    (applicationContext-spring-security-memory.xml).",
+            "See https://github.com/spiculedata/saiku/issues/1514");
+
     public LogExtractor getLogExtractor() {
         return logExtractor;
     }
@@ -490,10 +521,16 @@ public class AdminResource {
 
     /**
      * Update a users user details on the Saiku server.
+     *
+     * <p>Email and roles are updated as before. A password change is refused with 501 — see
+     * {@link #PASSWORD_WRITE_UNSUPPORTED}. The refusal is unconditional and applies to every
+     * user, not just {@code admin}: no deployment mode exists in which a password written here
+     * reaches the authenticator, so there is nothing to detect and nothing to condition on.
+     *
      * @summary Update user details
      * @param jsonString SaikuUser object.
      * @param userName The username for the user to be updated.
-     * @return A response containing a user object.
+     * @return A response containing a user object, or 501 when a password change is requested.
      */
     @PUT
     @Produces({"application/json"})
@@ -510,8 +547,18 @@ public class AdminResource {
                         .entity(userService.updateUser(jsonString, false))
                         .build();
             } else {
-                return Response.ok()
-                        .entity(userService.updateUser(jsonString, true))
+                // saiku#1514: this used to call updateUser(jsonString, true), which bcrypt-hashes
+                // into H2 — a store no AuthenticationProvider reads — and return 200. Refuse
+                // instead, and say how to rotate for real. 501, not 4xx: the request is
+                // well-formed and the caller is a legitimate admin; the capability does not exist
+                // in this server (RFC 9110 §15.6.2).
+                log.warn(
+                        "Refused a password change for user '{}' via /admin/users — the admin panel"
+                                + " cannot rotate credentials (saiku#1514).",
+                        userName);
+                return Response.status(Response.Status.NOT_IMPLEMENTED)
+                        .type(MediaType.TEXT_PLAIN)
+                        .entity(PASSWORD_WRITE_UNSUPPORTED)
                         .build();
             }
         } catch (IllegalArgumentException policy) {
@@ -524,6 +571,18 @@ public class AdminResource {
 
     /**
      * Create user details on the Saiku server.
+     *
+     * <p>saiku#1514: deliberately NOT refused, unlike the password change in
+     * {@link #updateUserDetails}. The created row is inert for authentication — the new account
+     * cannot log in until it exists in users.properties — but it is not useless: it is what
+     * {@code /saiku/api/users} ({@code UsersResource}) lists, which is the @-mention directory for
+     * dashboard comments. Refusing here would remove the only way to add someone to that
+     * directory, and it would have to be a blanket refusal rather than a password-only one:
+     * {@link org.saiku.service.user.UserService#addUser} validates the password policy
+     * unconditionally, so a create carries a mandatory password and there is no password-free
+     * create to fall back to. Creating a user is therefore honest about what it does; only the
+     * implication that the account can sign in is not, and the UI carries that caveat.
+     *
      * @summary Create user details
      * @param jsonString SaikuUser object
      * @return A response containing the user object.

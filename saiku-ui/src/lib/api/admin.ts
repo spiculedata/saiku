@@ -62,8 +62,15 @@ async function json<T>(method: "POST" | "PUT" | "DELETE", path: string, body?: u
     headers: body ? { "Content-Type": "application/json", Accept: "application/json" } : {},
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
   const text = await res.text();
+  if (!res.ok) {
+    // saiku#1514: surface the server's explanation, not just the status. AdminResource sends
+    // operator-facing prose on the paths that matter — the 501 refusing a password change, and
+    // the pre-existing 400 carrying the password-policy rule that was broken — and both were
+    // being discarded here, leaving the user with a bare "/users/admin -> 501".
+    const detail = text.trim();
+    throw new Error(detail ? `${path} -> ${res.status}\n${detail}` : `${path} -> ${res.status}`);
+  }
   return text ? (JSON.parse(text) as T) : null;
 }
 
