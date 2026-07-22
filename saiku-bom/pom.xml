@@ -51,7 +51,7 @@
              plumbing that we hang the /rest/saiku/api/graphql endpoint off.
              We use it standalone (not via Spring Boot autoconfig) because the
              saiku-webapp is XML-wired Spring, not Boot. -->
-        <springGraphQl.version>1.4.1</springGraphQl.version>
+        <springGraphQl.version>2.0.4</springGraphQl.version>
         <!-- graphql-java is spring-graphql's transitive engine. Pinning here so
              we control the version rather than inherit whatever spring-graphql
              1.4.1 defaults to. 24.3 is the last stable in the 24.x line;
