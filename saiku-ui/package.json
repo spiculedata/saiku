@@ -45,7 +45,7 @@
     "globals": "^17.6.0",
     "happy-dom": "^20.9.0",
     "jsdom": "^29.1.1",
-    "storybook": "^10.4.6",
+    "storybook": "^10.5.3",
     "svelte": "^5.2.7",
     "svelte-check": "^4.1.0",
     "tailwindcss": "^4.3.1",
