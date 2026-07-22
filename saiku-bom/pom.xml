@@ -57,7 +57,7 @@
              1.4.1 defaults to. 24.3 is the last stable in the 24.x line;
              25+ is fine but the Jackson-json-node integration on 24.x is well
              exercised. -->
-        <graphqlJava.version>24.3</graphqlJava.version>
+        <graphqlJava.version>26.0</graphqlJava.version>
         <!-- graphql-java-extended-scalars supplies the JSON, DateTime, Object
              scalars we need to type Ossie filter payloads + typed cell values.
              Version tracks the graphql-java major line. -->
