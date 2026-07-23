@@ -865,6 +865,155 @@ public class AiAskServiceTest {
         assertFalse(chain.hitStepLimit());
     }
 
+    /* ---- OPT-3: bounded rate-limit paced retry in askChained ---- */
+
+    @Test
+    public void chainedAskRecoversAfterOneRateLimit() {
+        // turn-1 -> okQuery (executes) -> turn-2 first attempt -> rateLimited(8000) -> (wait, retry)
+        // -> turn-2 second attempt -> okInsight. Recovered, not degraded.
+        ScriptedProvider provider = new ScriptedProvider(List.of(
+                NlAskResponse.okQuery(fullQueryJson(), "m", 10, 5, "t1"),
+                NlAskResponse.rateLimited("HTTP 429: rate limited", "m", 8000),
+                NlAskResponse.okInsight(insightJson(), "m", 10, 5)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+        List<Long> recorded = new ArrayList<>();
+        svc.setSleeper(recorded::add);
+
+        AiAskService.AskChain chain = svc.askChained(
+                CUBE, "build the query and report on it", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(List.of(8000L), recorded);
+        assertEquals(2, chain.steps().size());
+        assertEquals(AiAskService.AskOutcome.Kind.QUERY, chain.steps().get(0).kind());
+        assertFalse(chain.steps().get(0).degraded());
+        assertEquals(AiAskService.AskOutcome.Kind.INSIGHT, chain.steps().get(1).kind());
+        assertFalse(chain.steps().get(1).degraded());
+        assertEquals(3, provider.seen().size());
+    }
+
+    @Test
+    public void chainedAskUnknownRateLimitHintUsesDefaultWait() {
+        ScriptedProvider provider = new ScriptedProvider(List.of(
+                NlAskResponse.okQuery(fullQueryJson(), "m", 10, 5, "t1"),
+                NlAskResponse.rateLimited("HTTP 429: rate limited", "m", 0),
+                NlAskResponse.okInsight(insightJson(), "m", 10, 5)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+        List<Long> recorded = new ArrayList<>();
+        svc.setSleeper(recorded::add);
+
+        svc.askChained(CUBE, "build the query and report on it", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(List.of(5000L), recorded);
+    }
+
+    @Test
+    public void chainedAskCapsExcessiveRateLimitWait() {
+        ScriptedProvider provider = new ScriptedProvider(List.of(
+                NlAskResponse.okQuery(fullQueryJson(), "m", 10, 5, "t1"),
+                NlAskResponse.rateLimited("HTTP 429: rate limited", "m", 999999),
+                NlAskResponse.okInsight(insightJson(), "m", 10, 5)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+        List<Long> recorded = new ArrayList<>();
+        svc.setSleeper(recorded::add);
+
+        svc.askChained(CUBE, "build the query and report on it", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(List.of(20000L), recorded);
+    }
+
+    @Test
+    public void chainedAskExhaustsRateLimitRetriesThenDegrades() {
+        String savedProp = System.getProperty("saiku.ai.ask.chain.rateLimitRetries");
+        System.setProperty("saiku.ai.ask.chain.rateLimitRetries", "1");
+        try {
+            ScriptedProvider provider = new ScriptedProvider(List.of(
+                    NlAskResponse.okQuery(fullQueryJson(), "m", 10, 5, "t1"),
+                    NlAskResponse.rateLimited("HTTP 429: rate limited", "m", 1000),
+                    NlAskResponse.rateLimited("HTTP 429: rate limited", "m", 1000)));
+            AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+            svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+            svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+            List<Long> recorded = new ArrayList<>();
+            svc.setSleeper(recorded::add);
+
+            AiAskService.AskChain chain = svc.askChained(
+                    CUBE, "build the query and report on it", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+            assertEquals(1, recorded.size());
+            assertEquals(2, chain.steps().size());
+            assertEquals(
+                    AiAskService.AskOutcome.Kind.QUERY, chain.steps().get(0).kind());
+            assertTrue(chain.steps().get(1).degraded());
+            assertTrue(chain.steps().get(1).reason().contains("429"));
+            assertEquals(
+                    "1 query + 1 first insight attempt + 1 retry = 3 provider calls",
+                    3,
+                    provider.seen().size());
+        } finally {
+            if (savedProp == null) {
+                System.clearProperty("saiku.ai.ask.chain.rateLimitRetries");
+            } else {
+                System.setProperty("saiku.ai.ask.chain.rateLimitRetries", savedProp);
+            }
+        }
+    }
+
+    @Test
+    public void chainedAskRateLimitRetriesZeroDisablesRetry() {
+        String savedProp = System.getProperty("saiku.ai.ask.chain.rateLimitRetries");
+        System.setProperty("saiku.ai.ask.chain.rateLimitRetries", "0");
+        try {
+            ScriptedProvider provider = new ScriptedProvider(List.of(
+                    NlAskResponse.okQuery(fullQueryJson(), "m", 10, 5, "t1"),
+                    NlAskResponse.rateLimited("HTTP 429: rate limited", "m", 1000)));
+            AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+            svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+            svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+            List<Long> recorded = new ArrayList<>();
+            svc.setSleeper(recorded::add);
+
+            AiAskService.AskChain chain = svc.askChained(
+                    CUBE, "build the query and report on it", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+            assertTrue("retries=0 must never sleep", recorded.isEmpty());
+            assertEquals(2, chain.steps().size());
+            assertTrue(chain.steps().get(1).degraded());
+            assertEquals(2, provider.seen().size());
+        } finally {
+            if (savedProp == null) {
+                System.clearProperty("saiku.ai.ask.chain.rateLimitRetries");
+            } else {
+                System.setProperty("saiku.ai.ask.chain.rateLimitRetries", savedProp);
+            }
+        }
+    }
+
+    @Test
+    public void chainedAskNonRateLimitDegradeNeverSleepsOrRetries() {
+        // retryAfterMs == -1 (a plain provider degrade, not a 429) must not enter the retry loop.
+        ScriptedProvider provider = new ScriptedProvider(NlAskResponse.degraded("not configured"));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(new ThinQueryService());
+        List<Long> recorded = new ArrayList<>();
+        svc.setSleeper(recorded::add);
+
+        AiAskService.AskChain chain =
+                svc.askChained(CUBE, "show sales", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertTrue("a non-429 degrade must never sleep", recorded.isEmpty());
+        assertEquals(1, chain.steps().size());
+        assertTrue(chain.steps().get(0).degraded());
+        assertEquals("not configured", chain.steps().get(0).reason());
+        assertEquals(
+                "must not retry — exactly one provider call", 1, provider.seen().size());
+    }
+
     // ---------- helpers ----------
 
     private static AiCubeMetadataService fixedSchemaService(AiSchema schema) {

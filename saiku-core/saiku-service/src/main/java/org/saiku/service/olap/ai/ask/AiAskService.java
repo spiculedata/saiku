@@ -414,6 +414,60 @@ public class AiAskService {
     }
 
     /**
+     * Max in-loop retries when the LLM returns a rate-limit (HTTP 429). Default 2; 0 disables paced
+     * retry. Read from env {@code SAIKU_AI_CHAIN_RATELIMIT_RETRIES} first, else system property
+     * {@code saiku.ai.ask.chain.rateLimitRetries}, clamped to [0, 5].
+     */
+    private static int rateLimitRetries() {
+        String v = System.getenv("SAIKU_AI_CHAIN_RATELIMIT_RETRIES");
+        if (v == null || v.isBlank()) v = System.getProperty("saiku.ai.ask.chain.rateLimitRetries");
+        int n = 2;
+        if (v != null && !v.isBlank()) {
+            try {
+                n = Integer.parseInt(v.trim());
+            } catch (NumberFormatException ignore) {
+                // fall through to the default
+            }
+        }
+        return Math.max(0, Math.min(5, n));
+    }
+
+    /**
+     * Hard cap on each rate-limit wait (ms). Default 20000; keeps a slow LLM from pinning the
+     * request thread. Read from env {@code SAIKU_AI_CHAIN_RATELIMIT_MAX_WAIT_MS} first, else system
+     * property {@code saiku.ai.ask.chain.rateLimitMaxWaitMs}, clamped to [0, 60000].
+     */
+    private static long rateLimitMaxWaitMs() {
+        String v = System.getenv("SAIKU_AI_CHAIN_RATELIMIT_MAX_WAIT_MS");
+        if (v == null || v.isBlank()) v = System.getProperty("saiku.ai.ask.chain.rateLimitMaxWaitMs");
+        long n = 20_000L;
+        if (v != null && !v.isBlank()) {
+            try {
+                n = Long.parseLong(v.trim());
+            } catch (NumberFormatException ignore) {
+                // fall through to the default
+            }
+        }
+        return Math.max(0L, Math.min(60_000L, n));
+    }
+
+    /** Used when a 429 gave no usable hint ({@code retryAfterMs == 0}). */
+    private static final long DEFAULT_RATE_LIMIT_WAIT_MS = 5_000L;
+
+    /** Sleep primitive, injectable so tests exercise the paced-retry loop without real waits. */
+    @FunctionalInterface
+    interface Sleeper {
+        void sleep(long ms) throws InterruptedException;
+    }
+
+    private Sleeper sleeper = Thread::sleep;
+
+    /** Package-visible for tests. */
+    void setSleeper(Sleeper sleeper) {
+        this.sleeper = sleeper;
+    }
+
+    /**
      * Bounded server-side agentic loop: the model builds a query, the server executes it, the result
      * is fed back (egress-gated), and the model reports on it — all in one request. Terminal tool, a
      * degrade, or the step cap ends the loop. NO send/save/mutate capability; execution returns data
@@ -507,6 +561,25 @@ public class AiAskService {
                     null,
                     List.copyOf(transcript));
             NlAskResponse resp = provider.ask(req);
+
+            // OPT-3: a rate-limited turn (HTTP 429, resp.retryAfterMs() >= 0) is paced + retried in
+            // place — the SAME request, since a rate limit isn't the model's fault — up to a bounded
+            // retry count. A non-429 degrade (retryAfterMs == -1) never enters this loop.
+            int rlRetries = 0;
+            while (resp.degraded() && resp.retryAfterMs() >= 0 && rlRetries < rateLimitRetries()) {
+                long wait = resp.retryAfterMs() > 0 ? resp.retryAfterMs() : DEFAULT_RATE_LIMIT_WAIT_MS;
+                wait = Math.min(wait, rateLimitMaxWaitMs());
+                try {
+                    sleeper.sleep(wait);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break; // stop retrying; fall through to the degraded handling below
+                }
+                rlRetries++;
+                log.info(
+                        "chained ask: LLM rate-limited, waited {}ms, retry {}/{}", wait, rlRetries, rateLimitRetries());
+                resp = provider.ask(req);
+            }
 
             if (resp.degraded()) {
                 steps.add(AskOutcome.degraded(resp.reason(), resp.model()));
