@@ -471,6 +471,10 @@
              AiQueryRequest and executes it in-service (same converter+executor path the web layer
              uses). Session-scoped proxy — resolves the per-request ThinQueryService. -->
         <property name="thinQueryService" ref="thinQueryBean"/>
+        <!-- k-anonymity small-cell suppression on the chained-ask loop's executed CellDataSet,
+             before it is digested and fed back to the model — parity with the masking every other
+             egress path (records/matrix via AiQueryResource) already applies. -->
+        <property name="kAnonymityFilter" ref="kAnonymityFilter"/>
     </bean>
 
     <!-- Skill catalogue (saiku#1426). Markdown files with YAML frontmatter under

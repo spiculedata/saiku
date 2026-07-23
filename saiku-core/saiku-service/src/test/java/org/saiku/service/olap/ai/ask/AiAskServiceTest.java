@@ -29,6 +29,7 @@ import org.saiku.service.olap.ai.AiCubeRef;
 import org.saiku.service.olap.ai.AiPolicy;
 import org.saiku.service.olap.ai.AiPolicyGuard;
 import org.saiku.service.olap.ai.AiSchema;
+import org.saiku.service.olap.ai.KAnonymityFilter;
 
 /** Unit tests for {@link AiAskService}. Provider + metadata service are stubbed. */
 public class AiAskServiceTest {
@@ -686,7 +687,41 @@ public class AiAskServiceTest {
         assertFalse(chain.hitStepLimit());
         assertEquals(
                 "loop must stop before a 2nd provider call", 1, provider.seen().size());
-        assertEquals(1, execCount.get());
+        // SEC fix: execution is gated on egress BEFORE it runs — schema-only must never execute
+        // the Mondrian query at all (previously executed once and discarded the result).
+        assertEquals("schema-only must never execute the query — gate before execute, not after", 0, execCount.get());
+    }
+
+    @Test
+    public void chainedAskMasksSubKRowsBeforeFeedingResultBack() {
+        // SEC — k-anonymity bypass regression guard: the executed CellDataSet carries a sub-k row
+        // (count 3 < default k=5); the fix must mask it before CellsetDigestBuilder.digest turns it
+        // into the prompt text the second provider turn receives.
+        ScriptedProvider provider = new ScriptedProvider(List.of(
+                NlAskResponse.okQuery(fullQueryJson(), "m", 10, 5, "t1"),
+                NlAskResponse.okInsight(insightJson(), "m", 10, 5)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(subKCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+        svc.setKAnonymityFilter(new KAnonymityFilter(5, null));
+
+        AiAskService.AskChain chain = svc.askChained(
+                CUBE, "build the query and report on it", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(2, chain.steps().size());
+        assertFalse(chain.steps().get(0).degraded());
+        assertFalse(chain.steps().get(1).degraded());
+
+        NlAskRequest secondReq = provider.seen().get(1);
+        ToolTurn turn = secondReq.toolTranscript().get(0);
+        assertNotNull(turn.resultDigest());
+        assertTrue(
+                "masked digest must carry the mask token: " + turn.resultDigest(),
+                turn.resultDigest().contains("—"));
+        assertFalse(
+                "the sub-k row's real measure value must never reach the digest: " + turn.resultDigest(),
+                turn.resultDigest().contains("987654"));
+        assertEquals(turn.resultDigest(), secondReq.cellsetDigest());
     }
 
     @Test
@@ -838,6 +873,24 @@ public class AiAskServiceTest {
         CellDataSet cds = new CellDataSet();
         cds.setCellSetHeaders(new AbstractBaseCell[][] {{header("Tier"), header("Balance")}});
         cds.setCellSetBody(new AbstractBaseCell[][] {{data("Large"), data("7,000")}});
+        return cds;
+    }
+
+    /** A grid with a count column and one sub-k row (count 3 &lt; default k=5) — used to prove the
+     *  chained-ask loop masks small cells before they reach the LLM. */
+    private static CellDataSet subKCellDataSet() {
+        MemberCell rowHeader = new MemberCell(false, false);
+        rowHeader.setFormattedValue("Small Segment");
+        DataCell count = new DataCell(false, false, Collections.emptyList());
+        count.setFormattedValue("3");
+        count.setRawNumber(3.0);
+        DataCell balance = new DataCell(false, false, Collections.emptyList());
+        balance.setFormattedValue("987654");
+        balance.setRawNumber(987654.0);
+
+        CellDataSet cds = new CellDataSet();
+        cds.setCellSetHeaders(new AbstractBaseCell[][] {{header("Tier"), header("Count"), header("Balance")}});
+        cds.setCellSetBody(new AbstractBaseCell[][] {{rowHeader, count, balance}});
         return cds;
     }
 

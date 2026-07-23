@@ -149,17 +149,6 @@ public class AiQueryResource {
         this.kAnonymityFilter = f;
     }
 
-    /** saiku#905 — matches a column caption that names a row-count measure
-     *  (e.g. "Fact Count", "Count", "Distinct Count", "Row Count") on a whole-
-     *  word boundary, so ordinary numeric measures that merely *contain* the
-     *  substring — {@code Discount}, {@code Account}, {@code Counter} — are NOT
-     *  mistaken for the count column. Keying suppression off a non-count measure
-     *  would silently leak the very small cells k-anonymity exists to mask
-     *  (SEC #1324 / QA finding). Trailing plural {@code s} is allowed
-     *  ("Counts") but {@code Discounts}/{@code Counter} stay excluded. */
-    private static final java.util.regex.Pattern COUNT_MEASURE =
-            java.util.regex.Pattern.compile("\\bcounts?\\b", java.util.regex.Pattern.CASE_INSENSITIVE);
-
     /**
      * saiku#905 / #1324 — apply k-anonymity small-cell suppression to a
      * records-format payload using an in-result count measure (a measure column
@@ -184,7 +173,9 @@ public class AiQueryResource {
         }
         String countKey = null;
         for (String k : measureKeys) {
-            if (COUNT_MEASURE.matcher(k).find()) {
+            if (org.saiku.service.olap.ai.KAnonymityFilter.COUNT_MEASURE
+                    .matcher(k)
+                    .find()) {
                 countKey = k;
                 break;
             }
@@ -217,7 +208,9 @@ public class AiQueryResource {
             String caption = columnCaptions.get(i);
             if (countKey == null
                     && caption != null
-                    && COUNT_MEASURE.matcher(caption).find()) {
+                    && org.saiku.service.olap.ai.KAnonymityFilter.COUNT_MEASURE
+                            .matcher(caption)
+                            .find()) {
                 countKey = key;
             }
         }

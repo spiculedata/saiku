@@ -21,6 +21,7 @@ import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiRequestJsonSchema;
 import org.saiku.service.olap.ai.AiSchema;
 import org.saiku.service.olap.ai.AiSchemaConverter;
+import org.saiku.service.olap.ai.KAnonymityFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -85,6 +86,18 @@ public class AiAskService {
      */
     private ThinQueryService thinQueryService;
 
+    /**
+     * K-anonymity small-cell suppression applied to the executed {@code CellDataSet} before it is
+     * digested and fed back to the model — parity with the masking every other egress path (records
+     * / matrix format via {@code AiQueryResource}) already applies. Setter-injected (wired to
+     * {@code kAnonymityFilter} in saiku-beans.xml), same optional-field pattern as {@link
+     * #egressGuard} / {@link #thinQueryService}. Null-tolerant: an unwired filter means no masking
+     * is applied here, but that's safe rather than a leak — every OTHER egress path still applies
+     * its own {@code kAnonymityFilter} bean, and the loop is fail-closed on egress itself (schema-only
+     * stops before any cell data is even executed/digested).
+     */
+    private KAnonymityFilter kAnonymityFilter;
+
     public AiAskService(AiCubeMetadataService metadataService, NlAskProvider provider) {
         this(metadataService, provider, defaultMapper());
     }
@@ -136,6 +149,16 @@ public class AiAskService {
     /** The query executor, or {@code null} if not wired. */
     public ThinQueryService thinQueryService() {
         return thinQueryService;
+    }
+
+    /** Spring setter — wired to {@code kAnonymityFilter} in {@code saiku-beans.xml}. */
+    public void setKAnonymityFilter(KAnonymityFilter kAnonymityFilter) {
+        this.kAnonymityFilter = kAnonymityFilter;
+    }
+
+    /** The k-anonymity filter, or {@code null} if not wired (no grid masking applied). */
+    public KAnonymityFilter kAnonymityFilter() {
+        return kAnonymityFilter;
     }
 
     /** The stateless schema→ThinQuery converter. */
@@ -482,7 +505,15 @@ public class AiAskService {
                 break;
             }
 
-            // execute the built query and feed the result back
+            // SEC: never execute or digest when egress is denied — schema-only stops honestly here
+            // (also avoids a wasted Mondrian execution).
+            if (!egressPermitsCellData()) {
+                steps.add(AskOutcome.degraded(
+                        "Query built. Enable aggregated AI egress (SAIKU_AI_LLM_EGRESS=aggregated) for an "
+                                + "AI report on the results.",
+                        resp.model()));
+                break;
+            }
             AiQueryRequest parsed = outcome.request();
             CellDataSet cds;
             try {
@@ -494,23 +525,16 @@ public class AiAskService {
                 steps.add(AskOutcome.degraded("failed to execute the built query", resp.model()));
                 break;
             }
-            String resultDigest =
-                    egressPermitsCellData() ? CellsetDigestBuilder.digest(cds, CHAIN_DIGEST_MAX_ROWS) : null;
+            // SEC: k-anonymity small-cell suppression on the executed result before it crosses to
+            // the LLM — parity with buildResponse's applyKAnonymity on every other egress path.
+            if (kAnonymityFilter != null) {
+                kAnonymityFilter.applyToCellDataSet(cds);
+            }
+            String resultDigest = CellsetDigestBuilder.digest(cds, CHAIN_DIGEST_MAX_ROWS);
             String callId =
                     (resp.toolCallId() != null && !resp.toolCallId().isBlank()) ? resp.toolCallId() : "call_" + i;
             transcript.add(new ToolTurn(callId, "emit_query", resp.payloadJson(), resultDigest));
-            turnDigest = resultDigest; // feed forward: unlocks emit_insight + supplies the data (null under
-            // schema-only)
-
-            if (resultDigest == null) {
-                // schema-only egress: emit_insight is gated off without a digest, so the model can't
-                // report. Stop honestly with the built query in hand rather than loop to the cap.
-                steps.add(AskOutcome.degraded(
-                        "Query built. Enable aggregated AI egress (SAIKU_AI_LLM_EGRESS=aggregated) for an "
-                                + "AI report on the results.",
-                        resp.model()));
-                break;
-            }
+            turnDigest = resultDigest; // feed forward: unlocks emit_insight + supplies the data
             // else: loop again — the model now has the data and should emit_insight (the report).
         }
         return new AskChain(List.copyOf(steps), hitStepLimit);
