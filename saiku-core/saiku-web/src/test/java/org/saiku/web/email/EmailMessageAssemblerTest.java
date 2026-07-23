@@ -114,4 +114,61 @@ public class EmailMessageAssemblerTest {
             // expected
         }
     }
+
+    @Test
+    public void summaryHtml_stripsScriptAndEventHandlers() {
+        EmailSelfRequest r = req("me@example.com");
+        r.setSummaryHtml("<p>Hi</p><script>alert(1)</script><img src=x onerror=alert(1)>");
+        MailMessage m = assembler.assemble(r, FROM);
+        assertTrue(m.htmlBody().contains("<p>Hi</p>"));
+        assertFalse(m.htmlBody().contains("<script"));
+        assertFalse(m.htmlBody().contains("onerror"));
+        // Only the server-added chart <img cid:chart> may survive; the client's
+        // tracking <img src=x> must not.
+        assertFalse(m.htmlBody().contains("src=\"x\""));
+        assertFalse(m.htmlBody().contains("src=x"));
+    }
+
+    @Test
+    public void summaryHtml_stripsUnsafeLinkProtocol() {
+        EmailSelfRequest r = req("me@example.com");
+        r.setSummaryHtml("<a href=\"javascript:alert(1)\">x</a>");
+        MailMessage m = assembler.assemble(r, FROM);
+        assertFalse(m.htmlBody().contains("javascript:"));
+    }
+
+    @Test
+    public void summaryHtml_keepsSafeFormattingLinksAndTables() {
+        EmailSelfRequest r = req("me@example.com");
+        r.setSummaryHtml("<h3>Report</h3><ul><li>Small $1,500</li></ul>"
+                + "<a href=\"https://x.com\">link</a><table><tr><td>1</td></tr></table>");
+        MailMessage m = assembler.assemble(r, FROM);
+        String body = m.htmlBody();
+        assertTrue(body.contains("Report"));
+        assertTrue(body.contains("Small $1,500"));
+        assertTrue(body.contains("https://x.com"));
+        assertTrue(body.contains("<table"));
+        assertTrue(body.contains(">1<"));
+    }
+
+    @Test
+    public void nullOrBlankSummary_usesDefault() {
+        EmailSelfRequest r1 = req("me@example.com");
+        r1.setSummaryHtml(null);
+        MailMessage m1 = assembler.assemble(r1, FROM);
+        assertTrue(m1.htmlBody().startsWith("<p>Your Saiku analysis is attached.</p>"));
+
+        EmailSelfRequest r2 = req("me@example.com");
+        r2.setSummaryHtml("   ");
+        MailMessage m2 = assembler.assemble(r2, FROM);
+        assertTrue(m2.htmlBody().startsWith("<p>Your Saiku analysis is attached.</p>"));
+    }
+
+    @Test
+    public void chartImg_stillAppendedAfterSanitizedSummary() {
+        EmailSelfRequest r = req("me@example.com");
+        r.setSummaryHtml("<p>Hi</p><script>alert(1)</script>");
+        MailMessage m = assembler.assemble(r, FROM);
+        assertTrue(m.htmlBody().endsWith("<br><img src=\"cid:chart\" alt=\"chart\">"));
+    }
 }
