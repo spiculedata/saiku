@@ -31,6 +31,7 @@
 
   let address = $state(untrack(() => rememberedAddress.get()));
   let subject = $state(untrack(() => defaultSubject()));
+  let summary = $state("");
   let sending = $state(false);
   let showAddressError = $state(false);
 
@@ -43,6 +44,7 @@
     if (open) {
       address = rememberedAddress.get();
       subject = defaultSubject();
+      summary = aiInsight.latestMarkdown?.trim() ?? "";
       showAddressError = false;
     }
   });
@@ -59,7 +61,7 @@
       const body = {
         subject,
         address,
-        summaryHtml: aiInsight.latestMarkdown ? renderTinyMarkdown(aiInsight.latestMarkdown) : "",
+        summaryHtml: summary.trim() ? renderTinyMarkdown(summary) : "",
         chartPngBase64: chartPngBase64(),
         pdfBase64: await resultToPdfBase64(document.querySelector(".result-host")),
       };
@@ -138,6 +140,15 @@
   <label class="field">
     <span class="field__label">{i18n.t("modal.emailMeThis.subject", "Subject")}</span>
     <input class="field__input" bind:value={subject} />
+  </label>
+  <label class="field">
+    <span class="field__label">{i18n.t("modal.emailMeThis.summary", "Summary")}</span>
+    <textarea
+      class="field__input"
+      rows={4}
+      bind:value={summary}
+      placeholder={i18n.t("modal.emailMeThis.summaryPlaceholder", "Add a short summary, or generate one.")}
+    ></textarea>
   </label>
   {#snippet footer()}
     <Button variant="outline" onclick={onClose} disabled={sending}>{i18n.t("modal.cancel", "Cancel")}</Button>
