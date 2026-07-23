@@ -157,6 +157,34 @@ public class AiAskServiceTest {
         assertTrue(out.reason().contains("invalid viewMode"));
     }
 
+    /* ---- NL email-draft intent (draft-only — the AI never sends) ---- */
+
+    @Test
+    public void returnsParsedEmailDraftOnSuccess() {
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(emptySchema()),
+                stub(NlAskResponse.okEmailDraft("{\"summary\":\"Large tier leads at 7,000.\"}", "m", 0, 0)));
+
+        AiAskService.AskOutcome out = svc.ask(CUBE, "draft an email summarising this", List.of());
+
+        assertFalse(out.degraded());
+        assertEquals(AiAskService.AskOutcome.Kind.EMAIL_DRAFT, out.kind());
+        assertNotNull(out.emailDraft());
+        assertEquals("Large tier leads at 7,000.", out.emailDraft().getSummary());
+    }
+
+    @Test
+    public void degradesWhenEmailDraftSummaryBlank() {
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(emptySchema()), stub(NlAskResponse.okEmailDraft("{\"summary\":\"\"}", "m", 0, 0)));
+
+        AiAskService.AskOutcome out = svc.ask(CUBE, "draft an email summarising this", List.of());
+
+        assertTrue(out.degraded());
+        assertTrue(out.reason().contains("empty email draft"));
+        assertNull(out.emailDraft());
+    }
+
     /* ---- saiku#1426 skill catalogue + slash-command expansion ---- */
 
     @Test

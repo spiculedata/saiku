@@ -133,8 +133,8 @@ public class AiAskService {
     /**
      * Result of an {@link #ask(AiCubeRef, String, List)} call.
      *
-     * <p>Exactly one of {@code request} / {@code insight} / {@code viewChange} is non-null on
-     * success (matched to {@link #kind()}); all are null on degraded.
+     * <p>Exactly one of {@code request} / {@code insight} / {@code viewChange} / {@code
+     * emailDraft} is non-null on success (matched to {@link #kind()}); all are null on degraded.
      */
     public record AskOutcome(
             Kind kind,
@@ -143,30 +143,36 @@ public class AiAskService {
             AiQueryRequest request,
             AiInsight insight,
             AiViewChange viewChange,
+            AiEmailDraft emailDraft,
             String model,
             SpaceAccess denial) {
 
         public enum Kind {
             QUERY,
             INSIGHT,
-            VIEW_CHANGE
+            VIEW_CHANGE,
+            EMAIL_DRAFT
         }
 
         public static AskOutcome ok(AiQueryRequest request, String model) {
-            return new AskOutcome(Kind.QUERY, false, null, request, null, null, model, SpaceAccess.OK);
+            return new AskOutcome(Kind.QUERY, false, null, request, null, null, null, model, SpaceAccess.OK);
         }
 
         public static AskOutcome okInsight(AiInsight insight, String model) {
-            return new AskOutcome(Kind.INSIGHT, false, null, null, insight, null, model, SpaceAccess.OK);
+            return new AskOutcome(Kind.INSIGHT, false, null, null, insight, null, null, model, SpaceAccess.OK);
         }
 
         public static AskOutcome okViewChange(AiViewChange viewChange, String model) {
-            return new AskOutcome(Kind.VIEW_CHANGE, false, null, null, null, viewChange, model, SpaceAccess.OK);
+            return new AskOutcome(Kind.VIEW_CHANGE, false, null, null, null, viewChange, null, model, SpaceAccess.OK);
+        }
+
+        public static AskOutcome okEmailDraft(AiEmailDraft emailDraft, String model) {
+            return new AskOutcome(Kind.EMAIL_DRAFT, false, null, null, null, null, emailDraft, model, SpaceAccess.OK);
         }
 
         /** Provider-side degrade (transport/parse/refusal) — carries no space-scope denial. */
         public static AskOutcome degraded(String reason, String model) {
-            return new AskOutcome(null, true, reason, null, null, null, model, SpaceAccess.OK);
+            return new AskOutcome(null, true, reason, null, null, null, null, model, SpaceAccess.OK);
         }
 
         /**
@@ -174,7 +180,7 @@ public class AiAskService {
          * HTTP status without prose-prefix matching on {@link #reason()}.
          */
         public static AskOutcome degraded(String reason, String model, SpaceAccess denial) {
-            return new AskOutcome(null, true, reason, null, null, null, model, denial);
+            return new AskOutcome(null, true, reason, null, null, null, null, model, denial);
         }
     }
 
@@ -448,6 +454,15 @@ public class AiAskService {
                     return AskOutcome.degraded("provider emitted empty insight", resp.model());
                 }
                 return AskOutcome.okInsight(insight, resp.model());
+            }
+            if (kind == NlAskResponse.Kind.EMAIL_DRAFT) {
+                AiEmailDraft draft = mapper.readValue(resp.payloadJson(), AiEmailDraft.class);
+                if (draft == null
+                        || draft.getSummary() == null
+                        || draft.getSummary().isBlank()) {
+                    return AskOutcome.degraded("provider emitted empty email draft", resp.model());
+                }
+                return AskOutcome.okEmailDraft(draft, resp.model());
             }
             if (kind == NlAskResponse.Kind.VIEW_CHANGE) {
                 AiViewChange vc = mapper.readValue(resp.payloadJson(), AiViewChange.class);
