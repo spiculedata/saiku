@@ -15,6 +15,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Test;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiCubeRef;
+import org.saiku.service.olap.ai.AiPolicy;
+import org.saiku.service.olap.ai.AiPolicyGuard;
 import org.saiku.service.olap.ai.AiSchema;
 
 /** Unit tests for {@link AiAskService}. Provider + metadata service are stubbed. */
@@ -424,6 +426,89 @@ public class AiAskServiceTest {
         assertFalse("blocked skill must not surface: " + fragment, fragment.contains("/blocked-skill"));
     }
 
+    /* ---- LLM-egress gate: cellset-digest strip (#2) + PII-filtered schema (#3) ---- */
+
+    @Test
+    public void egressSchemaOnlyStripsCellsetDigestButAskStillSucceeds() {
+        // Egress posture is the fail-closed default (schema-only) → the supplied cellset digest must
+        // be withheld from the provider request, but the ask still runs (degraded/ungrounded, NOT
+        // refused).
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        NlAskProvider capturing = req -> {
+            seen.set(req);
+            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.SCHEMA_ONLY));
+
+        AiAskService.AskOutcome out = svc.ask(CUBE, "spot the trend", List.of(), "| Country | Sales |\n| CA | 42 |");
+
+        assertFalse("schema-only egress must degrade to schema-only, not refuse the ask", out.degraded());
+        assertNotNull(seen.get());
+        assertNull(
+                "cellset digest must be stripped under schema-only egress",
+                seen.get().cellsetDigest());
+    }
+
+    @Test
+    public void egressAggregatedPassesCellsetDigestThrough() {
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        NlAskProvider capturing = req -> {
+            seen.set(req);
+            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+        String digest = "| Country | Sales |\n| CA | 42 |";
+        svc.ask(CUBE, "spot the trend", List.of(), digest);
+
+        assertNotNull(seen.get());
+        assertEquals(
+                "aggregated egress must pass the digest through",
+                digest,
+                seen.get().cellsetDigest());
+    }
+
+    @Test
+    public void egressGuardUnwiredFailsClosedAndStripsDigest() {
+        // No setEgressGuard() call — the guard is null. Fail-closed: absence of a permit means the
+        // digest is stripped, never leaked.
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        NlAskProvider capturing = req -> {
+            seen.set(req);
+            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
+
+        svc.ask(CUBE, "spot the trend", List.of(), "| Country | Sales |\n| CA | 42 |");
+
+        assertNotNull(seen.get());
+        assertNull(
+                "an unwired egress guard must fail closed and strip the digest",
+                seen.get().cellsetDigest());
+    }
+
+    @Test
+    public void schemaHandedToProviderIsPiiFilteredAgentView() {
+        // #3: the schema JSON in the provider request must be the agent view — a PII-tagged level's
+        // sample members (and captions) must NOT appear; the [REDACTED] sentinel does.
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        NlAskProvider capturing = req -> {
+            seen.set(req);
+            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(piiSchema()), capturing);
+
+        svc.ask(CUBE, "show customers", List.of());
+
+        String schemaJson = seen.get().cubeSchemaJson();
+        assertNotNull(schemaJson);
+        assertFalse("PII sample member caption must not egress: " + schemaJson, schemaJson.contains("John Smith"));
+        assertFalse("PII display name must not egress: " + schemaJson, schemaJson.contains("Customer Name"));
+        assertTrue("redaction sentinel must be present: " + schemaJson, schemaJson.contains("[REDACTED]"));
+    }
+
     // ---------- helpers ----------
 
     private static AiCubeMetadataService fixedSchemaService(AiSchema schema) {
@@ -432,6 +517,23 @@ public class AiAskServiceTest {
 
     private static AiSchema emptySchema() {
         return new AiSchema("conn/cat/sch/Sales", "Sales", "[Sales]");
+    }
+
+    /** Schema carrying a PII-tagged level with sensitive sample members, to prove #3 filtering. */
+    private static AiSchema piiSchema() {
+        AiSchema schema = new AiSchema("conn/cat/sch/Sales", "Sales", "[Sales]");
+        AiSchema.Level pii = new AiSchema.Level("CustomerName", "[Customers].[CustomerName]");
+        pii.displayName = "Customer Name";
+        pii.pii = true;
+        pii.sampleMembers = List.of(
+                new AiSchema.MemberSample("John Smith", "[Customers].[USA].[CA].[John Smith]"),
+                new AiSchema.MemberSample("Jane Doe", "[Customers].[USA].[CA].[Jane Doe]"));
+        AiSchema.Dimension d = new AiSchema.Dimension("Customers", "[Customers]");
+        AiSchema.Hierarchy h = new AiSchema.Hierarchy("Customers", "[Customers]");
+        h.levels.put(AiSchema.key("CustomerName"), pii);
+        d.hierarchies.put(AiSchema.key("Customers"), h);
+        schema.dimensions.put(AiSchema.key("Customers"), d);
+        return schema;
     }
 
     private static NlAskProvider stub(NlAskResponse fixed) {

@@ -24,6 +24,17 @@ public class AiPolicyGuard {
 
     private static final Logger log = LoggerFactory.getLogger(AiPolicyGuard.class);
 
+    /**
+     * Environment variable key for the DEDICATED LLM-egress guard — "may cell
+     * data leave the box to a third-party LLM vendor?" — resolved independently
+     * of the data-return {@link AiPolicy#ENV} guard. Takes precedence over
+     * {@link #LLM_EGRESS_PROP}.
+     */
+    public static final String LLM_EGRESS_ENV = "SAIKU_AI_LLM_EGRESS";
+
+    /** System property key for the LLM-egress guard (see {@link #LLM_EGRESS_ENV}). */
+    public static final String LLM_EGRESS_PROP = "ai.llm.egress";
+
     private final AiPolicy current;
 
     /** Production constructor — resolves from the real environment + system
@@ -46,6 +57,30 @@ public class AiPolicyGuard {
     /** Testable resolution seam (env + property lookups injected). */
     public static AiPolicyGuard from(Function<String, String> env, Function<String, String> prop) {
         return new AiPolicyGuard(AiPolicy.resolve(env, prop));
+    }
+
+    /**
+     * Production factory for the DEDICATED LLM-egress guard. Resolves from
+     * {@link #LLM_EGRESS_ENV} &gt; {@link #LLM_EGRESS_PROP} &gt; default
+     * {@code schema-only}, logs the active egress posture once at boot (mirroring
+     * the data-policy boot log), and throws on an invalid configured value so the
+     * app fails fast at startup. Separate from the data-return {@link AiPolicy}
+     * guard: this answers "may cell data egress to a third-party LLM vendor?"
+     * independently of "may aggregated data return to the authenticated caller?".
+     */
+    public static AiPolicyGuard forLlmEgress() {
+        AiPolicyGuard guard = fromLlmEgress(System::getenv, System::getProperty);
+        log.info(
+                "AI LLM egress policy: {} (set via {} / {}; default schema-only)",
+                guard.current.displayName(),
+                LLM_EGRESS_ENV,
+                LLM_EGRESS_PROP);
+        return guard;
+    }
+
+    /** Testable resolution seam for the LLM-egress guard (env + property injected). */
+    public static AiPolicyGuard fromLlmEgress(Function<String, String> env, Function<String, String> prop) {
+        return new AiPolicyGuard(AiPolicy.resolve(env, prop, LLM_EGRESS_ENV, LLM_EGRESS_PROP));
     }
 
     /** The active policy tier. */

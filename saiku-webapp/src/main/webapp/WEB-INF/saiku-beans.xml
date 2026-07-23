@@ -266,6 +266,16 @@
          and FAILS FAST on an invalid value before the app serves traffic. -->
     <bean id="aiPolicyGuard" class="org.saiku.service.olap.ai.AiPolicyGuard"/>
 
+    <!-- Dedicated LLM-egress guard (Option A). Answers "may cell data leave the
+         box to a third-party LLM vendor?" — SEPARATE from aiPolicyGuard (which
+         governs whether aggregated data returns to the authenticated caller).
+         forLlmEgress() resolves SAIKU_AI_LLM_EGRESS / ai.llm.egress (default
+         schema-only), logs the active egress posture once at boot, and FAILS FAST
+         on an invalid value. Consumed by aiAskServiceBean to strip the cellset
+         digest from the LLM prompt when egress isn't permitted. -->
+    <bean id="aiLlmEgressGuard" class="org.saiku.service.olap.ai.AiPolicyGuard"
+          factory-method="forLlmEgress"/>
+
     <!-- saiku#905: k-anonymity small-cell suppression. Singleton resolving
          ai.kAnonymity (default 5; 0 disables) + ai.kAnonymity.maskValue at boot. -->
     <bean id="kAnonymityFilter" class="org.saiku.service.olap.ai.KAnonymityFilter"/>
@@ -430,6 +440,9 @@
         <constructor-arg ref="aiAskProviderBean"/>
         <property name="skills" ref="agentSkillRegistryBean"/>
         <property name="spaces" ref="agentSpaceRegistryBean"/>
+        <!-- LLM-egress gate: strips the cellset digest from the prompt when
+             SAIKU_AI_LLM_EGRESS / ai.llm.egress doesn't permit cell data egress. -->
+        <property name="egressGuard" ref="aiLlmEgressGuard"/>
     </bean>
 
     <!-- Skill catalogue (saiku#1426). Markdown files with YAML frontmatter under

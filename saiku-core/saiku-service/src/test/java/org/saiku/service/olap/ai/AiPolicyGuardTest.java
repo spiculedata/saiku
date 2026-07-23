@@ -115,4 +115,73 @@ public class AiPolicyGuardTest {
                 AiPolicyGuard.from(map(AiPolicy.ENV, "aggregated"), map()).current());
         assertEquals(AiPolicy.SCHEMA_ONLY, new AiPolicyGuard((AiPolicy) null).current());
     }
+
+    /* ------------------------ LLM-egress guard ----------------------- */
+    // The dedicated egress guard reuses AiPolicy but reads its OWN keys
+    // (SAIKU_AI_LLM_EGRESS / ai.llm.egress), independent of the data-return
+    // SAIKU_AI_POLICY / ai.policy guard.
+
+    @Test
+    public void llmEgress_resolves_env_beats_property_beats_default() {
+        // env wins
+        assertEquals(
+                AiPolicy.FULL,
+                AiPolicyGuard.fromLlmEgress(
+                                map(AiPolicyGuard.LLM_EGRESS_ENV, "full"),
+                                map(AiPolicyGuard.LLM_EGRESS_PROP, "aggregated"))
+                        .current());
+        // property used when env absent
+        assertEquals(
+                AiPolicy.AGGREGATED,
+                AiPolicyGuard.fromLlmEgress(map(), map(AiPolicyGuard.LLM_EGRESS_PROP, "aggregated"))
+                        .current());
+        // default (fail-closed) when neither set
+        assertEquals(
+                AiPolicy.SCHEMA_ONLY, AiPolicyGuard.fromLlmEgress(map(), map()).current());
+        // blank env falls through to property
+        assertEquals(
+                AiPolicy.AGGREGATED,
+                AiPolicyGuard.fromLlmEgress(
+                                map(AiPolicyGuard.LLM_EGRESS_ENV, "  "),
+                                map(AiPolicyGuard.LLM_EGRESS_PROP, "aggregated"))
+                        .current());
+    }
+
+    @Test
+    public void llmEgress_default_is_schema_only_which_denies_cell_data() {
+        // Fail-closed default: schema-only egress does NOT permit aggregated cell
+        // values to reach the vendor — the ask path strips the digest on this.
+        AiPolicyGuard g = AiPolicyGuard.fromLlmEgress(map(), map());
+        assertEquals(AiPolicy.SCHEMA_ONLY, g.current());
+        assertFalse(g.canSend(AiDataKind.AGGREGATED_RESULT_VALUES));
+        assertTrue(g.canSend(AiDataKind.SCHEMA_METADATA));
+    }
+
+    @Test
+    public void llmEgress_aggregated_permits_cell_data() {
+        AiPolicyGuard g = AiPolicyGuard.fromLlmEgress(map(AiPolicyGuard.LLM_EGRESS_ENV, "aggregated"), map());
+        assertTrue(g.canSend(AiDataKind.AGGREGATED_RESULT_VALUES));
+    }
+
+    @Test
+    public void llmEgress_invalid_configured_value_fails_fast() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> AiPolicyGuard.fromLlmEgress(map(AiPolicyGuard.LLM_EGRESS_ENV, "leak-everything"), map()));
+    }
+
+    @Test
+    public void llmEgress_keys_are_independent_of_data_policy_keys() {
+        // Setting the DATA-policy keys must NOT move the egress guard, and vice
+        // versa — the two postures are resolved separately.
+        assertEquals(
+                AiPolicy.SCHEMA_ONLY,
+                AiPolicyGuard.fromLlmEgress(map(AiPolicy.ENV, "full"), map(AiPolicy.PROP, "full"))
+                        .current());
+        assertEquals(
+                AiPolicy.SCHEMA_ONLY,
+                AiPolicyGuard.from(
+                                map(AiPolicyGuard.LLM_EGRESS_ENV, "full"), map(AiPolicyGuard.LLM_EGRESS_PROP, "full"))
+                        .current());
+    }
 }
