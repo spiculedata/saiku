@@ -295,6 +295,31 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
         user.put("role", "user");
         user.put("content", request.question());
 
+        for (ToolTurn t : request.toolTranscript()) {
+            // Assistant's prior tool call. OpenAI: content is null when tool_calls is present.
+            ObjectNode asst = messages.addObject();
+            asst.put("role", "assistant");
+            asst.putNull("content");
+            ArrayNode toolCalls = asst.putArray("tool_calls");
+            ObjectNode call = toolCalls.addObject();
+            call.put("id", t.toolCallId());
+            call.put("type", "function");
+            ObjectNode fn = call.putObject("function");
+            fn.put("name", t.toolName());
+            fn.put("arguments", t.toolInputJson()); // OpenAI wants arguments as a STRING; ToolTurn already
+            // holds a JSON string — pass verbatim, do NOT re-encode
+
+            // The server's result for that call.
+            ObjectNode toolMsg = messages.addObject();
+            toolMsg.put("role", "tool");
+            toolMsg.put("tool_call_id", t.toolCallId());
+            toolMsg.put(
+                    "content",
+                    t.resultDigest() != null && !t.resultDigest().isBlank()
+                            ? t.resultDigest()
+                            : "(result withheld by data policy)");
+        }
+
         return MAPPER.writeValueAsString(root);
     }
 
@@ -335,7 +360,8 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
                 if (arguments == null || arguments.isBlank()) {
                     return NlAskResponse.degraded("empty tool_call arguments", model);
                 }
-                return NlAskResponse.okQuery(arguments, model, inputTokens, outputTokens);
+                String toolCallId = call.path("id").asText(null);
+                return NlAskResponse.okQuery(arguments, model, inputTokens, outputTokens, toolCallId);
             }
             if (INSIGHT_TOOL_NAME.equals(fnName)) {
                 if (arguments == null || arguments.isBlank()) {
