@@ -1117,6 +1117,38 @@ public class AiQueryResource {
     }
 
     /**
+     * Streaming variant of the chained ask loop (Task 7, feature-email). Runs {@link
+     * AiAskService#askChained} — the bounded server-side agentic loop that builds a query, executes
+     * it, feeds the result back, and lets the model report on it, all in one request — and streams
+     * every step over SSE so the UI can hydrate the workspace as soon as the query step arrives and
+     * render the report the moment the terminal step lands, without waiting on the whole chain.
+     *
+     * <p>Same preamble (auth/size/rate/policy/configured) as every other ask endpoint — one chain
+     * counts as one rate-limited unit, exactly like a single-turn ask. See {@link
+     * #streamChainAsSse(AiAskService.AskChain, SseWriter)} for the wire contract.
+     */
+    @POST
+    @Path("/ask/chain/stream")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces("text/event-stream")
+    public Response askChainStream(AiAskApi.AskRequest body) {
+        Response pre = validateAskPreamble(body, true);
+        if (pre != null) {
+            return pre;
+        }
+        org.saiku.service.olap.ai.ask.NlAskRequest.ForceTool force = parseForceTool(body.getForceTool());
+        return streamChain(
+                () -> askService.askChained(
+                        body.getCube(),
+                        body.getQuestion(),
+                        body.historyAsMessages(),
+                        body.getCellsetDigest(),
+                        force,
+                        body.getCurrentQuery()),
+                "AI ask (chained, streaming)");
+    }
+
+    /**
      * Translate one ask outcome into the SSE event sequence documented on {@link
      * #askStream(AiAskApi.AskRequest)}: {@code model} → {@code intent} → 0+ {@code chunk} → {@code
      * final}, or {@code model} → {@code error} → degraded-{@code final} when the provider failed.
@@ -1202,6 +1234,121 @@ public class AiQueryResource {
         out.setRequest(outcome.request());
         executeQueryIntoResponse(out, outcome.request());
         sse.event("final", MAPPER.writeValueAsString(out));
+    }
+
+    /**
+     * Stream an {@link AiAskService.AskChain}: each step reuses the single-step envelope shape
+     * ({@link AiAskApi.AskResponse}), but only the LAST step emits {@code final} — the client's
+     * completion signal — while every earlier step emits {@code step} instead. Per step:
+     *
+     * <pre>{@code
+     * event: intent
+     * data: {"kind":"QUERY","index":0}
+     *
+     * event: step            (or `final` on the last step)
+     * data: {"degraded":false,"model":"...","request":{...}}
+     * }</pre>
+     *
+     * <p><strong>QUERY steps never re-execute.</strong> The chained loop already ran the query
+     * server-side (to feed the model the result); this only streams {@code request} so the client
+     * hydrates the workspace and re-renders — mirroring today's non-streaming QUERY path. Calling
+     * {@link #executeQueryIntoResponse} here would run the query a second time for no benefit.
+     * INSIGHT / VIEW_CHANGE / EMAIL_DRAFT steps carry their artefact plus chunked prose exactly as
+     * {@link #streamOutcomeAsSse} does. A degraded step emits {@code error} then its terminal
+     * envelope, matching the single-turn contract.
+     *
+     * <p>When {@link AiAskService.AskChain#hitStepLimit()} is true, the loop stopped at the cap
+     * while still building queries (no report was produced). {@code final} has already fired by
+     * then, so an informational {@code note} event is emitted afterward — the client has already
+     * completed on {@code final}; treat {@code note} as a toast, not part of the completion gate.
+     *
+     * <p>Package-visible for unit testing (mirrors {@link #streamOutcomeAsSse}'s test seam).
+     */
+    void streamChainAsSse(AiAskService.AskChain chain, SseWriter sse) throws java.io.IOException {
+        List<AiAskService.AskOutcome> steps = chain.steps();
+
+        // model event once — the first step that carries a model id, fired before any step content.
+        String model = steps.stream()
+                .map(AiAskService.AskOutcome::model)
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+        if (model != null) {
+            sse.event("model", MAPPER.writeValueAsString(java.util.Map.of("model", model)));
+        }
+
+        for (int i = 0; i < steps.size(); i++) {
+            AiAskService.AskOutcome step = steps.get(i);
+            boolean last = i == steps.size() - 1;
+            String eventName = last ? "final" : "step";
+
+            if (step.degraded()) {
+                sse.event(
+                        "error",
+                        MAPPER.writeValueAsString(
+                                java.util.Map.of("reason", step.reason() == null ? "" : step.reason())));
+                AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+                out.setDegraded(true);
+                out.setReason(step.reason());
+                if (step.model() != null) {
+                    out.setModel(step.model());
+                }
+                sse.event(eventName, MAPPER.writeValueAsString(out));
+                continue;
+            }
+
+            sse.event(
+                    "intent",
+                    MAPPER.writeValueAsString(java.util.Map.of(
+                            "kind", step.kind() == null ? "" : step.kind().name(), "index", i)));
+
+            AiAskApi.AskResponse out = new AiAskApi.AskResponse();
+            out.setDegraded(false);
+            out.setModel(step.model());
+
+            if (step.kind() == AiAskService.AskOutcome.Kind.INSIGHT) {
+                out.setInsight(step.insight());
+                String markdown = step.insight() == null ? "" : step.insight().getMarkdown();
+                if (markdown != null && !markdown.isEmpty()) {
+                    emitChunks(sse, markdown);
+                }
+            } else if (step.kind() == AiAskService.AskOutcome.Kind.VIEW_CHANGE) {
+                out.setViewChange(step.viewChange());
+                String reason =
+                        step.viewChange() == null ? null : step.viewChange().getReason();
+                if (reason != null && !reason.isEmpty()) {
+                    emitChunks(sse, reason);
+                }
+            } else if (step.kind() == AiAskService.AskOutcome.Kind.EMAIL_DRAFT) {
+                if (!mailConfigured()) {
+                    sse.event(
+                            "error", MAPPER.writeValueAsString(java.util.Map.of("reason", MAIL_NOT_CONFIGURED_REASON)));
+                    out.setDegraded(true);
+                    out.setReason(MAIL_NOT_CONFIGURED_REASON);
+                    sse.event(eventName, MAPPER.writeValueAsString(out));
+                    continue;
+                }
+                out.setEmailDraft(step.emailDraft());
+                String summary =
+                        step.emailDraft() == null ? "" : step.emailDraft().getSummary();
+                if (summary != null && !summary.isEmpty()) {
+                    emitChunks(sse, summary);
+                }
+            } else if (step.kind() == AiAskService.AskOutcome.Kind.QUERY) {
+                // NO executeQueryIntoResponse — the chained loop already executed this query
+                // server-side; the client hydrates the workspace from `request` and re-renders.
+                out.setRequest(step.request());
+            }
+
+            sse.event(eventName, MAPPER.writeValueAsString(out));
+        }
+
+        if (chain.hitStepLimit()) {
+            sse.event(
+                    "note",
+                    MAPPER.writeValueAsString(java.util.Map.of(
+                            "reason", "Reached the step limit — returned the built query without an AI report.")));
+        }
     }
 
     /**
@@ -2965,6 +3112,39 @@ public class AiQueryResource {
                 .type("text/event-stream")
                 .header("Cache-Control", "no-cache")
                 .header("X-Accel-Buffering", "no") // Nginx: disable buffering so events flush.
+                .build();
+    }
+
+    /**
+     * Shared SSE runner for the chained streaming endpoint ({@link #askChainStream}) — twin of
+     * {@link #streamAsk} but wraps {@link AiAskService.AskChain} through {@link
+     * #streamChainAsSse(AiAskService.AskChain, SseWriter)} instead of a single {@code AskOutcome}.
+     * Same failure handling: a serialisation failure surfaces as an in-band error (not silently
+     * swallowed as a disconnect), a genuine client disconnect logs at DEBUG and stops, and any other
+     * runtime failure emits the terminal error/final pair so a client keying completion on {@code
+     * final} never hangs.
+     */
+    private Response streamChain(java.util.function.Supplier<AiAskService.AskChain> chainSupplier, String logLabel) {
+        jakarta.ws.rs.core.StreamingOutput stream = outputStream -> {
+            java.io.Writer writer =
+                    new java.io.OutputStreamWriter(outputStream, java.nio.charset.StandardCharsets.UTF_8);
+            SseWriter sse = new SseWriter(writer);
+            try {
+                streamChainAsSse(chainSupplier.get(), sse);
+            } catch (com.fasterxml.jackson.core.JsonProcessingException jpe) {
+                log.warn("{}: failed to serialise SSE payload", logLabel, jpe);
+                emitStreamError(sse);
+            } catch (java.io.IOException ioe) {
+                log.debug("{}: client disconnected: {}", logLabel, ioe.getMessage());
+            } catch (RuntimeException e) {
+                log.warn("{}: unexpected failure", logLabel, e);
+                emitStreamError(sse);
+            }
+        };
+        return Response.ok(stream)
+                .type("text/event-stream")
+                .header("Cache-Control", "no-cache")
+                .header("X-Accel-Buffering", "no")
                 .build();
     }
 
