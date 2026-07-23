@@ -54,4 +54,12 @@ class MailConfigTest {
         assertEquals("prop-host", c.host());
         assertEquals(2525, c.port());
     }
+
+    @Test
+    void fromEnvironment_resolvesWithoutThrowing() {
+        MailConfig c = MailConfig.fromEnvironment();
+        assertNotNull(c);
+        // With no env/props set in the test JVM it is simply not configured; the point is it resolves.
+        assertEquals(587, c.port());
+    }
 }

@@ -23,6 +23,11 @@ public record MailConfig(
         return new MailConfig(host, port, user, pass, from, startTls, ssl);
     }
 
+    /** Production factory: resolve from the real environment + system properties. */
+    public static MailConfig fromEnvironment() {
+        return resolve(System::getenv, System::getProperty);
+    }
+
     private static String pick(
             Function<String, String> env, Function<String, String> prop, String envKey, String propKey, String def) {
         String v = env.apply(envKey);
