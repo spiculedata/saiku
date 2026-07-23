@@ -1,0 +1,88 @@
+package org.saiku.service.mail;
+
+import jakarta.activation.DataHandler;
+import jakarta.mail.Authenticator;
+import jakarta.mail.Message;
+import jakarta.mail.MessagingException;
+import jakarta.mail.PasswordAuthentication;
+import jakarta.mail.Session;
+import jakarta.mail.Transport;
+import jakarta.mail.internet.InternetAddress;
+import jakarta.mail.internet.MimeBodyPart;
+import jakarta.mail.internet.MimeMessage;
+import jakarta.mail.internet.MimeMultipart;
+import jakarta.mail.util.ByteArrayDataSource;
+import java.util.Properties;
+
+/** Sends mail over SMTP via Jakarta Mail. multipart/mixed[ related[ html + inline ] + attachments ]. */
+public class SmtpMailSender implements MailSender {
+
+    private final MailConfig config;
+
+    public SmtpMailSender(MailConfig config) {
+        this.config = config;
+    }
+
+    @Override
+    public boolean isConfigured() {
+        return config.isConfigured();
+    }
+
+    @Override
+    public void send(MailMessage m) {
+        try {
+            Session session = session();
+            MimeMessage msg = new MimeMessage(session);
+            msg.setFrom(new InternetAddress(m.from()));
+            msg.setRecipient(Message.RecipientType.TO, new InternetAddress(m.to()));
+            msg.setSubject(m.subject(), "UTF-8");
+
+            MimeMultipart related = new MimeMultipart("related");
+            MimeBodyPart html = new MimeBodyPart();
+            html.setContent(m.htmlBody(), "text/html; charset=UTF-8");
+            related.addBodyPart(html);
+            for (InlineImage img : m.inlineImages()) {
+                MimeBodyPart part = new MimeBodyPart();
+                part.setDataHandler(new DataHandler(new ByteArrayDataSource(img.data(), img.contentType())));
+                part.setContentID("<" + img.contentId() + ">");
+                part.setDisposition(MimeBodyPart.INLINE);
+                related.addBodyPart(part);
+            }
+            MimeBodyPart relatedWrapper = new MimeBodyPart();
+            relatedWrapper.setContent(related);
+
+            MimeMultipart mixed = new MimeMultipart("mixed");
+            mixed.addBodyPart(relatedWrapper);
+            for (Attachment att : m.attachments()) {
+                MimeBodyPart part = new MimeBodyPart();
+                part.setDataHandler(new DataHandler(new ByteArrayDataSource(att.data(), att.contentType())));
+                part.setFileName(att.filename());
+                part.setDisposition(MimeBodyPart.ATTACHMENT);
+                mixed.addBodyPart(part);
+            }
+            msg.setContent(mixed);
+            Transport.send(msg);
+        } catch (MessagingException e) {
+            throw new MailException("SMTP send to " + m.to() + " failed: " + e.getMessage(), e);
+        }
+    }
+
+    private Session session() {
+        Properties p = new Properties();
+        p.put("mail.smtp.host", config.host());
+        p.put("mail.smtp.port", String.valueOf(config.port()));
+        boolean auth = config.username() != null && !config.username().isBlank();
+        p.put("mail.smtp.auth", String.valueOf(auth));
+        if (config.startTls()) p.put("mail.smtp.starttls.enable", "true");
+        if (config.ssl()) p.put("mail.smtp.ssl.enable", "true");
+        if (auth) {
+            return Session.getInstance(p, new Authenticator() {
+                @Override
+                protected PasswordAuthentication getPasswordAuthentication() {
+                    return new PasswordAuthentication(config.username(), config.password());
+                }
+            });
+        }
+        return Session.getInstance(p);
+    }
+}

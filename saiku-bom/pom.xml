@@ -779,6 +779,30 @@
                 <artifactId>graphql-java-extended-scalars</artifactId>
                 <version>${graphqlJavaExtendedScalars.version}</version>
             </dependency>
+
+            <!-- Jakarta Mail: SmtpMailSender's MIME assembly + SMTP transport
+                 for the email-delivery mail engine (Slice B1). angus-mail is
+                 the runtime impl of jakarta.mail-api (Eclipse Foundation fork
+                 of the old javax.mail / com.sun.mail line, Jakarta EE 10
+                 namespace). Kept in lockstep at the Jakarta Mail 2.1.x line. -->
+            <dependency>
+                <groupId>jakarta.mail</groupId>
+                <artifactId>jakarta.mail-api</artifactId>
+                <version>2.1.3</version>
+            </dependency>
+            <dependency>
+                <groupId>org.eclipse.angus</groupId>
+                <artifactId>angus-mail</artifactId>
+                <version>2.0.3</version>
+            </dependency>
+            <!-- GreenMail 2.x: in-process SMTP server for SmtpMailSenderTest.
+                 2.x supports the Jakarta namespace (1.x is javax) — required
+                 to pair with jakarta.mail-api 2.1.x above. -->
+            <dependency>
+                <groupId>com.icegreen</groupId>
+                <artifactId>greenmail-junit5</artifactId>
+                <version>2.1.3</version>
+            </dependency>
         </dependencies>
 
     </dependencyManagement>
