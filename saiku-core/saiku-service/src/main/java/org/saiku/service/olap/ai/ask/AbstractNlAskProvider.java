@@ -13,6 +13,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Shared machinery for the HTTP-backed {@link NlAskProvider} implementations (Anthropic, OpenAI and
@@ -122,8 +125,11 @@ abstract class AbstractNlAskProvider implements NlAskProvider {
             HttpRequest httpRequest = builder.build();
             HttpResponse<String> response = http.send(httpRequest, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() / 100 != 2) {
-                return NlAskResponse.degraded(
-                        "HTTP " + response.statusCode() + ": " + truncate(response.body(), 200), model());
+                String reason = "HTTP " + response.statusCode() + ": " + truncate(response.body(), 200);
+                if (response.statusCode() == 429) {
+                    return NlAskResponse.rateLimited(reason, model(), parseRetryAfterMs(response));
+                }
+                return NlAskResponse.degraded(reason, model());
             }
             return doParseToolResponse(response.body(), model());
         } catch (IOException | InterruptedException e) {
@@ -137,6 +143,53 @@ abstract class AbstractNlAskProvider implements NlAskProvider {
     }
 
     // ---------- shared helpers ----------
+
+    /** Matches vendor 429-body wait phrasing, e.g. "try again in 9.512s" / "try again in 2m1.2s". */
+    private static final Pattern TRY_AGAIN_IN =
+            Pattern.compile("try again in (?:([0-9]+)m)?([0-9]+(?:\\.[0-9]+)?)s", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Best-effort wait hint from a 429: prefer the standard {@code Retry-After} header (seconds,
+     * possibly fractional), else parse the vendor body's "try again in Xs" phrasing, else 0
+     * (unknown).
+     */
+    static long parseRetryAfterMs(HttpResponse<String> response) {
+        return parseRetryAfterMs(response.headers().firstValue("retry-after"), response.body());
+    }
+
+    /**
+     * Parse core for {@link #parseRetryAfterMs(HttpResponse)}, split out so it can be unit-tested
+     * without needing a real {@code HttpResponse<String>}.
+     */
+    static long parseRetryAfterMs(Optional<String> retryAfterHeader, String body) {
+        // 1) Retry-After header — seconds (integer or fractional). (HTTP-date form not expected
+        // from LLM vendors.)
+        if (retryAfterHeader.isPresent()) {
+            try {
+                double secs = Double.parseDouble(retryAfterHeader.get().trim());
+                if (secs >= 0) {
+                    return (long) Math.ceil(secs * 1000);
+                }
+            } catch (NumberFormatException ignore) {
+                // fall through to body parse
+            }
+        }
+        // 2) Body phrasing: "Please try again in 9.512s" / "try again in 2m1.2s" (Groq).
+        if (body != null) {
+            Matcher m = TRY_AGAIN_IN.matcher(body);
+            if (m.find()) {
+                long ms = 0;
+                if (m.group(1) != null) {
+                    ms += Long.parseLong(m.group(1)) * 60_000; // minutes
+                }
+                if (m.group(2) != null) {
+                    ms += (long) Math.ceil(Double.parseDouble(m.group(2)) * 1000); // seconds
+                }
+                return ms;
+            }
+        }
+        return 0L; // rate-limited, no parseable hint → caller uses its default
+    }
 
     /** Serialise the cube ref the model must echo back verbatim. */
     protected static String cubeRefJson(NlAskRequest request) {

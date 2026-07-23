@@ -49,6 +49,9 @@ package org.saiku.service.olap.ai.ask;
  *     unknown
  * @param toolCallId provider-assigned id for the emitted tool call (Anthropic tool_use id / OpenAI
  *     tool_call id); {@code null} for degraded/refusal/insight/view-change responses
+ * @param retryAfterMs {@code -1} when not a rate-limit; {@code >= 0} when the provider was rate
+ *     limited (HTTP 429) and this is the suggested wait, in ms, before retrying ({@code 0} means
+ *     rate-limited but the provider gave no usable hint)
  */
 public record NlAskResponse(
         Kind kind,
@@ -58,7 +61,8 @@ public record NlAskResponse(
         String model,
         int inputTokens,
         int outputTokens,
-        String toolCallId) {
+        String toolCallId,
+        long retryAfterMs) {
 
     public enum Kind {
         QUERY,
@@ -78,31 +82,41 @@ public record NlAskResponse(
 
     public static NlAskResponse okQuery(
             String json, String model, int inputTokens, int outputTokens, String toolCallId) {
-        return new NlAskResponse(Kind.QUERY, json, false, "", model, inputTokens, outputTokens, toolCallId);
+        return new NlAskResponse(Kind.QUERY, json, false, "", model, inputTokens, outputTokens, toolCallId, -1L);
     }
 
     public static NlAskResponse okInsight(String json, String model, int inputTokens, int outputTokens) {
-        return new NlAskResponse(Kind.INSIGHT, json, false, "", model, inputTokens, outputTokens, null);
+        return new NlAskResponse(Kind.INSIGHT, json, false, "", model, inputTokens, outputTokens, null, -1L);
     }
 
     public static NlAskResponse okViewChange(String json, String model, int inputTokens, int outputTokens) {
-        return new NlAskResponse(Kind.VIEW_CHANGE, json, false, "", model, inputTokens, outputTokens, null);
+        return new NlAskResponse(Kind.VIEW_CHANGE, json, false, "", model, inputTokens, outputTokens, null, -1L);
     }
 
     public static NlAskResponse okEmailDraft(String json, String model, int inputTokens, int outputTokens) {
-        return new NlAskResponse(Kind.EMAIL_DRAFT, json, false, "", model, inputTokens, outputTokens, null);
+        return new NlAskResponse(Kind.EMAIL_DRAFT, json, false, "", model, inputTokens, outputTokens, null, -1L);
     }
 
     public static NlAskResponse refusal(String reason, String model, int inputTokens, int outputTokens) {
-        return new NlAskResponse(Kind.REFUSAL, null, false, reason, model, inputTokens, outputTokens, null);
+        return new NlAskResponse(Kind.REFUSAL, null, false, reason, model, inputTokens, outputTokens, null, -1L);
     }
 
     public static NlAskResponse degraded(String reason) {
-        return new NlAskResponse(null, null, true, reason, null, -1, -1, null);
+        return new NlAskResponse(null, null, true, reason, null, -1, -1, null, -1L);
     }
 
     public static NlAskResponse degraded(String reason, String model) {
-        return new NlAskResponse(null, null, true, reason, model, -1, -1, null);
+        return new NlAskResponse(null, null, true, reason, model, -1, -1, null, -1L);
+    }
+
+    /**
+     * Provider hit a rate limit (HTTP 429). Degraded like any transport failure, but carries the
+     * suggested wait so a caller (the chained-ask loop) can pace + retry rather than give up.
+     *
+     * @param retryAfterMs suggested wait in ms; 0 when the provider gave no hint
+     */
+    public static NlAskResponse rateLimited(String reason, String model, long retryAfterMs) {
+        return new NlAskResponse(null, null, true, reason, model, -1, -1, null, Math.max(0, retryAfterMs));
     }
 
     /**
