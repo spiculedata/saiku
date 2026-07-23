@@ -129,6 +129,9 @@ abstract class AbstractNlAskProvider implements NlAskProvider {
                 if (response.statusCode() == 429) {
                     return NlAskResponse.rateLimited(reason, model(), parseRetryAfterMs(response));
                 }
+                if (response.statusCode() == 400 && isTransientToolError(response.body())) {
+                    return NlAskResponse.retryableToolError(reason, model());
+                }
                 return NlAskResponse.degraded(reason, model());
             }
             return doParseToolResponse(response.body(), model());
@@ -189,6 +192,15 @@ abstract class AbstractNlAskProvider implements NlAskProvider {
             }
         }
         return 0L; // rate-limited, no parseable hint → caller uses its default
+    }
+
+    /**
+     * A Groq/LLM "the model fumbled the tool-call format" 400 — transient, worth a re-ask. Detected by
+     * the vendor error code {@code tool_use_failed} in the body. Other 400s (genuinely malformed
+     * requests) are NOT transient and must NOT be retried, so they fall through to a plain degrade.
+     */
+    static boolean isTransientToolError(String body) {
+        return body != null && body.contains("tool_use_failed");
     }
 
     /** Serialise the cube ref the model must echo back verbatim. */

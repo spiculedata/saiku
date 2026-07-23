@@ -51,7 +51,9 @@ package org.saiku.service.olap.ai.ask;
  *     tool_call id); {@code null} for degraded/refusal/insight/view-change responses
  * @param retryAfterMs {@code -1} when not a rate-limit; {@code >= 0} when the provider was rate
  *     limited (HTTP 429) and this is the suggested wait, in ms, before retrying ({@code 0} means
- *     rate-limited but the provider gave no usable hint)
+ *     rate-limited but the provider gave no usable hint). Also {@code >= 0} for {@link
+ *     #retryableToolError(String, String)} — a transient tool-call failure — so both share the
+ *     same paced-retry path in the chained-ask loop.
  */
 public record NlAskResponse(
         Kind kind,
@@ -117,6 +119,20 @@ public record NlAskResponse(
      */
     public static NlAskResponse rateLimited(String reason, String model, long retryAfterMs) {
         return new NlAskResponse(null, null, true, reason, model, -1, -1, null, Math.max(0, retryAfterMs));
+    }
+
+    /** Short backoff for {@link #retryableToolError(String, String)} — the model call itself takes
+     *  seconds, so this only avoids the 429 no-hint 5s default and gives a tiny gap before re-asking. */
+    public static final long TOOL_ERROR_BACKOFF_MS = 500L;
+
+    /**
+     * Provider returned a transient tool-call failure (e.g. Groq HTTP 400 {@code tool_use_failed}):
+     * the model fumbled the tool-call format. Degraded, but retryable — a re-ask usually succeeds —
+     * so it carries a short {@link #TOOL_ERROR_BACKOFF_MS} wait, letting the chained-ask loop retry it
+     * through the same paced-retry path as a rate limit.
+     */
+    public static NlAskResponse retryableToolError(String reason, String model) {
+        return new NlAskResponse(null, null, true, reason, model, -1, -1, null, TOOL_ERROR_BACKOFF_MS);
     }
 
     /**

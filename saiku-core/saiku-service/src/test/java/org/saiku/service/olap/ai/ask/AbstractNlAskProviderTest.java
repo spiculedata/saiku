@@ -5,6 +5,8 @@
 package org.saiku.service.olap.ai.ask;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.util.Optional;
 import org.junit.Test;
@@ -59,5 +61,38 @@ public class AbstractNlAskProviderTest {
         long ms = AbstractNlAskProvider.parseRetryAfterMs(
                 Optional.of("Wed, 21 Oct 2026 07:28:00 GMT"), "try again in 3s");
         assertEquals(3000L, ms);
+    }
+
+    /* ---- OPT-4: transient tool_use_failed 400 detection ---- */
+
+    @Test
+    public void detectsGroqStyleToolUseFailedCode() {
+        assertTrue(AbstractNlAskProvider.isTransientToolError(
+                "{\"error\":{\"message\":\"Failed to call a function.\",\"code\":\"tool_use_failed\"}}"));
+    }
+
+    @Test
+    public void detectsBareToolUseFailedSubstring() {
+        assertTrue(AbstractNlAskProvider.isTransientToolError("some prefix tool_use_failed some suffix"));
+    }
+
+    @Test
+    public void nullBodyIsNotTransientToolError() {
+        assertFalse(AbstractNlAskProvider.isTransientToolError(null));
+    }
+
+    @Test
+    public void emptyBodyIsNotTransientToolError() {
+        assertFalse(AbstractNlAskProvider.isTransientToolError(""));
+    }
+
+    @Test
+    public void genericBadRequestBodyIsNotTransientToolError() {
+        assertFalse(AbstractNlAskProvider.isTransientToolError("{\"error\":{\"code\":\"invalid_request_error\"}}"));
+    }
+
+    @Test
+    public void twoXxLookingBodyIsNotTransientToolError() {
+        assertFalse(AbstractNlAskProvider.isTransientToolError("{\"id\":\"msg_1\",\"type\":\"message\"}"));
     }
 }

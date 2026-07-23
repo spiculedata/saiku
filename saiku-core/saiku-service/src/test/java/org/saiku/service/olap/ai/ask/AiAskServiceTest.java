@@ -1014,6 +1014,100 @@ public class AiAskServiceTest {
                 "must not retry — exactly one provider call", 1, provider.seen().size());
     }
 
+    /* ---- OPT-4: transient tool_use_failed 400 rides the OPT-3 paced-retry loop unchanged ---- */
+
+    @Test
+    public void chainedAskRecoversAfterOneTransientToolError() {
+        // turn-1 -> okQuery (executes) -> turn-2 first attempt -> retryableToolError(500) -> (wait,
+        // retry) -> turn-2 second attempt -> okInsight. Recovered, not degraded. Proves the EXISTING
+        // OPT-3 loop (unchanged) retries a transient tool_use_failed exactly like a 429.
+        ScriptedProvider provider = new ScriptedProvider(List.of(
+                NlAskResponse.okQuery(fullQueryJson(), "m", 10, 5, "t1"),
+                NlAskResponse.retryableToolError("HTTP 400: tool_use_failed", "m"),
+                NlAskResponse.okInsight(insightJson(), "m", 10, 5)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+        List<Long> recorded = new ArrayList<>();
+        svc.setSleeper(recorded::add);
+
+        AiAskService.AskChain chain = svc.askChained(
+                CUBE, "build the query and report on it", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(List.of(NlAskResponse.TOOL_ERROR_BACKOFF_MS), recorded);
+        assertEquals(2, chain.steps().size());
+        assertEquals(AiAskService.AskOutcome.Kind.QUERY, chain.steps().get(0).kind());
+        assertFalse(chain.steps().get(0).degraded());
+        assertEquals(AiAskService.AskOutcome.Kind.INSIGHT, chain.steps().get(1).kind());
+        assertFalse(chain.steps().get(1).degraded());
+        assertEquals(
+                "1 query + 1 failed insight attempt + 1 retried insight = 3 calls",
+                3,
+                provider.seen().size());
+    }
+
+    @Test
+    public void chainedAskExhaustsRetriesOnRepeatedTransientToolErrorThenDegrades() {
+        String savedProp = System.getProperty("saiku.ai.ask.chain.rateLimitRetries");
+        System.setProperty("saiku.ai.ask.chain.rateLimitRetries", "2"); // default, explicit for clarity
+        try {
+            ScriptedProvider provider = new ScriptedProvider(List.of(
+                    NlAskResponse.okQuery(fullQueryJson(), "m", 10, 5, "t1"),
+                    NlAskResponse.retryableToolError("HTTP 400: tool_use_failed", "m"),
+                    NlAskResponse.retryableToolError("HTTP 400: tool_use_failed", "m"),
+                    NlAskResponse.retryableToolError("HTTP 400: tool_use_failed", "m")));
+            AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+            svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+            svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+            List<Long> recorded = new ArrayList<>();
+            svc.setSleeper(recorded::add);
+
+            AiAskService.AskChain chain = svc.askChained(
+                    CUBE, "build the query and report on it", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+            // rateLimitRetries()==2, so it never loops forever: 2 sleeps, then gives up degraded.
+            assertEquals(List.of(NlAskResponse.TOOL_ERROR_BACKOFF_MS, NlAskResponse.TOOL_ERROR_BACKOFF_MS), recorded);
+            assertEquals(2, chain.steps().size());
+            assertEquals(
+                    AiAskService.AskOutcome.Kind.QUERY, chain.steps().get(0).kind());
+            assertTrue(chain.steps().get(1).degraded());
+            assertTrue(chain.steps().get(1).reason().contains("tool_use_failed"));
+            assertEquals(
+                    "1 query + 1 first attempt + 2 retries = 4 provider calls",
+                    4,
+                    provider.seen().size());
+        } finally {
+            if (savedProp == null) {
+                System.clearProperty("saiku.ai.ask.chain.rateLimitRetries");
+            } else {
+                System.setProperty("saiku.ai.ask.chain.rateLimitRetries", savedProp);
+            }
+        }
+    }
+
+    @Test
+    public void chainedAskNonToolErrorPlainDegradeIsNotRetried() {
+        // A plain 400 that is NOT a transient tool_use_failed (e.g. genuinely malformed request)
+        // degrades via NlAskResponse.degraded(...) — retryAfterMs == -1 — and must never enter the
+        // retry loop, exactly like any other non-429/non-tool-error degrade.
+        ScriptedProvider provider = new ScriptedProvider(
+                List.of(NlAskResponse.degraded("HTTP 400: {\"error\":{\"code\":\"invalid_request_error\"}}", "m")));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(new ThinQueryService());
+        List<Long> recorded = new ArrayList<>();
+        svc.setSleeper(recorded::add);
+
+        AiAskService.AskChain chain =
+                svc.askChained(CUBE, "show sales", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertTrue("a non-tool-error 400 degrade must never sleep", recorded.isEmpty());
+        assertEquals(1, chain.steps().size());
+        assertTrue(chain.steps().get(0).degraded());
+        assertTrue(chain.steps().get(0).reason().contains("invalid_request_error"));
+        assertEquals(
+                "must not retry — exactly one provider call", 1, provider.seen().size());
+    }
+
     // ---------- helpers ----------
 
     private static AiCubeMetadataService fixedSchemaService(AiSchema schema) {

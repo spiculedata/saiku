@@ -75,6 +75,17 @@ public class NlAskResponseTest {
     }
 
     @Test
+    public void retryableToolErrorCarriesShortBackoffAndIsDegraded() {
+        NlAskResponse resp = NlAskResponse.retryableToolError("HTTP 400: tool_use_failed", "m");
+        assertTrue(resp.degraded());
+        assertNull(resp.kind());
+        assertEquals(NlAskResponse.TOOL_ERROR_BACKOFF_MS, resp.retryAfterMs());
+        assertEquals(500L, resp.retryAfterMs());
+        assertEquals("m", resp.model());
+        assertEquals("HTTP 400: tool_use_failed", resp.reason());
+    }
+
+    @Test
     public void everyOtherFactoryDefaultsRetryAfterMsToMinusOne() {
         assertEquals(-1L, NlAskResponse.okQuery("{}", "claude-x", 1, 2).retryAfterMs());
         assertEquals(
