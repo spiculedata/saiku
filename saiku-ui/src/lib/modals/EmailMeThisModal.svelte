@@ -2,7 +2,7 @@
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import { Button } from "$lib/components/ui";
-  import { AlertCircle, Loader2 } from "lucide-svelte";
+  import { AlertCircle, Loader2, Sparkles } from "lucide-svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { renderTinyMarkdown } from "$lib/api/tinyMarkdown";
@@ -11,6 +11,10 @@
   import { sendEmailSelf } from "$lib/api/emailSelf";
   import { rememberedAddress } from "$lib/email/rememberedAddress";
   import { query } from "$lib/stores/query.svelte";
+  import { generateSummary } from "$lib/email/summarize";
+  import { buildCellsetDigest } from "$lib/api/cellsetDigest";
+  import { aiAskHealth } from "$lib/stores/aiAskHealth.svelte";
+  import type { AiCubeRef } from "$lib/api/aiAsk";
 
   /*
    * "Email me this" — bundles the current AI insight (rendered to HTML),
@@ -33,6 +37,7 @@
   let subject = $state(untrack(() => defaultSubject()));
   let summary = $state("");
   let sending = $state(false);
+  let generating = $state(false);
   let showAddressError = $state(false);
 
   function defaultSubject(): string {
@@ -50,6 +55,28 @@
   });
 
   const addressValid = $derived(address.trim().length > 0);
+  const canGenerate = $derived(aiAskHealth.configured && !!query.result && !!query.current?.cube);
+
+  async function handleGenerate() {
+    const cube = query.current?.cube;
+    if (!cube || generating) return;
+    const ref: AiCubeRef = {
+      connectionName: cube.connection,
+      catalog: cube.catalog,
+      schema: cube.schema,
+      cubeName: cube.name,
+    };
+    generating = true;
+    try {
+      const md = await generateSummary(ref, buildCellsetDigest(query.result) || undefined);
+      if (md) summary = md;
+      else toasts.danger(i18n.t("modal.emailMeThis.generateFailed", "Couldn't generate a summary."));
+    } catch {
+      toasts.danger(i18n.t("modal.emailMeThis.generateFailed", "Couldn't generate a summary."));
+    } finally {
+      generating = false;
+    }
+  }
 
   async function handleSend() {
     if (!addressValid) {
@@ -150,9 +177,22 @@
       placeholder={i18n.t("modal.emailMeThis.summaryPlaceholder", "Add a short summary, or generate one.")}
     ></textarea>
   </label>
+  {#if canGenerate}
+    <Button variant="outline" size="sm" disabled={generating} onclick={handleGenerate}>
+      {#if generating}
+        <Loader2 size={16} class="animate-spin" />
+        {i18n.t("modal.emailMeThis.generating", "Summarizing…")}
+      {:else}
+        <Sparkles size={16} />
+        {summary.trim()
+          ? i18n.t("modal.emailMeThis.regenerate", "Regenerate")
+          : i18n.t("modal.emailMeThis.generate", "Generate summary")}
+      {/if}
+    </Button>
+  {/if}
   {#snippet footer()}
     <Button variant="outline" onclick={onClose} disabled={sending}>{i18n.t("modal.cancel", "Cancel")}</Button>
-    <Button onclick={handleSend} disabled={sending || !addressValid}>
+    <Button onclick={handleSend} disabled={sending || generating || !addressValid}>
       {#if sending}
         <Loader2 size={14} class="animate-spin" />
         {i18n.t("modal.emailMeThis.sending", "Sending…")}
