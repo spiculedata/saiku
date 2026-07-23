@@ -13,7 +13,7 @@ import { SUMMARIZE_PROMPT, buildSummarizeRequest, generateSummary } from "./summ
 
 const cube = { connectionName: "c", catalog: "cat", schema: "sch", cubeName: "Accounts" };
 
-beforeEach(async () => {
+beforeEach(() => {
   askAiMock.mockReset();
 });
 

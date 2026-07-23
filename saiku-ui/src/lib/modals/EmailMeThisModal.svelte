@@ -47,10 +47,12 @@
 
   $effect(() => {
     if (open) {
-      address = rememberedAddress.get();
-      subject = defaultSubject();
-      summary = aiInsight.latestMarkdown?.trim() ?? "";
-      showAddressError = false;
+      untrack(() => {
+        address = rememberedAddress.get();
+        subject = defaultSubject();
+        summary = aiInsight.latestMarkdown?.trim() ?? "";
+        showAddressError = false;
+      });
     }
   });
 
