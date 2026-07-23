@@ -71,9 +71,15 @@ public class SmtpMailSender implements MailSender {
         Properties p = new Properties();
         p.put("mail.smtp.host", config.host());
         p.put("mail.smtp.port", String.valueOf(config.port()));
+        p.put("mail.smtp.connectiontimeout", "10000");
+        p.put("mail.smtp.timeout", "10000");
+        p.put("mail.smtp.writetimeout", "10000");
         boolean auth = config.username() != null && !config.username().isBlank();
         p.put("mail.smtp.auth", String.valueOf(auth));
-        if (config.startTls()) p.put("mail.smtp.starttls.enable", "true");
+        if (config.startTls()) {
+            p.put("mail.smtp.starttls.enable", "true");
+            p.put("mail.smtp.starttls.required", "true");
+        }
         if (config.ssl()) p.put("mail.smtp.ssl.enable", "true");
         if (auth) {
             return Session.getInstance(p, new Authenticator() {
