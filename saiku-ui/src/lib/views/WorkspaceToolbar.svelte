@@ -21,9 +21,11 @@
     Sparkles,
     Undo2,
     Redo2,
+    Mail,
   } from "lucide-svelte";
   import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
   import SavedQueriesModal from "$lib/modals/SavedQueriesModal.svelte";
+  import EmailMeThisModal from "$lib/modals/EmailMeThisModal.svelte";
   import { getQueryMdx, type ThinQuery } from "$lib/api/query";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import WarningModal from "$lib/modals/WarningModal.svelte";
@@ -40,6 +42,7 @@
   import type { SaikuCube } from "$lib/api/discover";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { platform } from "$lib/stores/platform.svelte";
+  import { mailHealth } from "$lib/stores/mailHealth.svelte";
 
   interface Props {
     /** Open the AI Query drawer. Owned by Workspace so the drawer can overlay the canvas. */
@@ -109,6 +112,7 @@
   let toolsMenuOpen = $state(false);
   let exportMenuOpen = $state(false);
   let runMenuOpen = $state(false);
+  let emailModalOpen = $state(false);
 
   let reportTitles = $state<ReportTitles>({ title: "", subtitle: "", notes: "" });
 
@@ -512,6 +516,17 @@
       </div>
     {/if}
   </div>
+  <div class="flex items-center gap-0.5 relative" role="group" aria-label="Email">
+    <button
+      class="tb-btn"
+      disabled={!mailHealth.configured}
+      title={mailHealth.configured ? i18n.t("toolbar.emailMeThis", "Email me this") : i18n.t("toolbar.emailMeThis.disabled", "Email isn't configured on this server")}
+      aria-label={i18n.t("toolbar.emailMeThis", "Email me this")}
+      onclick={() => (emailModalOpen = true)}
+    >
+      <Mail size={18} /><span class="text-sm">{i18n.t("toolbar.emailMeThis", "Email me this")}</span>
+    </button>
+  </div>
 </div>
 
 {#if saveOpen}
@@ -570,6 +585,8 @@
   open={warningOpen}
   onClose={() => (warningOpen = false)}
 />
+
+<EmailMeThisModal open={emailModalOpen} onClose={() => (emailModalOpen = false)} />
 
 <style>
 .toolbar {
