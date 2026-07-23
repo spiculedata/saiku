@@ -20,9 +20,10 @@
   import { emailComposer } from "$lib/stores/emailComposer.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { selection } from "$lib/stores/selection.svelte";
-  import { askAi, AiAskTransportError, type AiInsight, type AiViewChange, type AskResponse, type NlAskMessageDto } from "$lib/api/aiAsk";
+  import { askAi, askAiStream, AiAskTransportError, type AiInsight, type AiViewChange, type AskResponse, type NlAskMessageDto } from "$lib/api/aiAsk";
   import { buildCellsetDigest } from "$lib/api/cellsetDigest";
   import { aiRequestToQueryModel, queryModelToAiRequest, type AiQueryRequestShape } from "$lib/api/aiQueryToModel";
+  import { classifyChainEnvelope } from "$lib/api/chainStep";
   import { renderTinyMarkdown } from "$lib/api/tinyMarkdown";
   import { query } from "$lib/stores/query.svelte";
   import { X, Send, Sparkles, ChevronDown, ChevronRight, Copy, Trash2 } from "lucide-svelte";
@@ -144,6 +145,11 @@
   /** Mode picker. Auto = LLM routes via question shape; the others force a single tool. */
   type ForceTool = "auto" | "query" | "insight" | "view_change";
   let forceTool = $state<ForceTool>("auto");
+  /** Opt-in "Build & report" toggle — OFF by default. When true, send routes to submitChained()
+   *  (askAiStream against the chain endpoint) instead of submit()'s single-turn askAi. The
+   *  single-turn path below is untouched by this flag; it only changes which function the send
+   *  button/keyboard shortcut calls. */
+  let buildAndReport = $state(false);
   /** Elapsed-time indicator for in-flight requests so 5-10s Anthropic round-trips don't read as
    *  "frozen". Ticks every 250ms; only visible while inflight. */
   let inflightStartedAt = $state<number | null>(null);
@@ -443,6 +449,213 @@
     }
   }
 
+  /**
+   * Opt-in chained path — "Build & report" toggle. Streams a multi-step ask (query builds → runs
+   * → report renders) via askAiStream and dispatches each step into the chat thread + workspace,
+   * instead of the single askAi round-trip submit() makes. Mirrors submit()'s opening exactly
+   * (guards, user turn, cellsetDigest/currentQuery, inflight) so the request payload and the local
+   * thread bookkeeping stay identical between the two paths; only how the response is consumed
+   * differs.
+   */
+  async function submitChained(): Promise<void> {
+    const question = prompt.trim();
+    if (!question || inflight) return;
+    const cube = selection.cube;
+    if (!cube) {
+      turns = [
+        ...turns,
+        {
+          id: nextId(),
+          role: "error",
+          text: i18n.t("workspace.aiQuery.noCube"),
+        },
+      ];
+      return;
+    }
+
+    const history = historyForRequest();
+    const userTurn: ChatTurn = { id: nextId(), role: "user", text: question };
+    turns = [...turns, userTurn];
+    prompt = "";
+    inflight = true;
+    notConfiguredBanner = null;
+
+    const cellsetDigest = buildCellsetDigest(query.result) || undefined;
+    const currentQuery = query.current?.queryModel
+      ? queryModelToAiRequest(query.current.queryModel, {
+          connectionName: cube.connection,
+          catalog: cube.catalog,
+          schema: cube.schema,
+          cubeName: cube.name,
+        }) ?? undefined
+      : undefined;
+
+    const req = {
+      question,
+      cube: {
+        connectionName: cube.connection,
+        catalog: cube.catalog,
+        schema: cube.schema,
+        cubeName: cube.name,
+      },
+      history,
+      cellsetDigest,
+      forceTool: forceTool === "auto" ? undefined : forceTool,
+      currentQuery,
+    };
+
+    // Model tag surfaced by the "via {model}" caption; captured from the `model` SSE event and
+    // stamped onto whichever turns we push after it arrives.
+    let model: string | undefined;
+    // Id of the in-progress insight turn we grow with streamed chunks, or null before the report
+    // step starts (or if this chain never reaches one, e.g. it hits the step limit first).
+    let reportTurnId: string | null = null;
+
+    // Hydrate the workspace + push a "built the query" turn for a built-query step/terminal
+    // envelope — the same construction submit()'s QUERY path uses (aiRequestToQueryModel +
+    // onEditInCanvas), just reused for both the intermediate `step` event and a `final` envelope
+    // that turns out to be a query (the chain hit its step limit before a report followed).
+    const hydrateBuiltQuery = (env: AskResponse): void => {
+      const queryModel = env.queryModel ?? aiRequestToQueryModel(env.request as AiQueryRequestShape);
+      const mdx = env.generatedMdx ?? "";
+      turns = [
+        ...turns,
+        {
+          id: nextId(),
+          role: "assistant",
+          text: i18n.t("workspace.aiQuery.builtQuery", "Built the query — running it…"),
+          mdx,
+          queryModel,
+          model,
+          mdxExpanded: false,
+        },
+      ];
+      if (mdx || queryModel) onEditInCanvas({ mdx, queryModel });
+    };
+
+    try {
+      await askAiStream(req, {
+        onModel: (m) => {
+          model = m;
+        },
+        onIntent: (kind) => {
+          if (kind === "INSIGHT") {
+            // Open an empty insight turn now so the bubble appears before the first chunk lands;
+            // onChunk below grows it in place.
+            const id = nextId();
+            reportTurnId = id;
+            turns = [...turns, { id, role: "insight", text: "", insightMarkdown: "", model }];
+          }
+          // QUERY intent: nothing to render yet — the `step` envelope (onStep) hydrates the canvas
+          // once the built query itself arrives.
+        },
+        onStep: (env) => {
+          if (classifyChainEnvelope(env) === "query") {
+            hydrateBuiltQuery(env);
+          }
+        },
+        onChunk: (delta) => {
+          if (reportTurnId == null) return;
+          // Mutate by index, mirroring toggleMdx()'s idiom — Svelte 5's $state proxy surfaces
+          // array-element field writes reactively without rebuilding the array.
+          const idx = turns.findIndex((t) => t.id === reportTurnId);
+          if (idx >= 0) turns[idx].insightMarkdown = (turns[idx].insightMarkdown ?? "") + delta;
+        },
+        onFinal: (env) => {
+          const kind = classifyChainEnvelope(env);
+          if (kind === "degraded") {
+            turns = [
+              ...turns,
+              {
+                id: nextId(),
+                role: "error",
+                text: env.reason ?? i18n.t("workspace.aiQuery.unknownError"),
+                model,
+              },
+            ];
+          } else if (kind === "report" && env.insight) {
+            aiInsight.set(env.insight.markdown);
+            if (reportTurnId != null) {
+              const idx = turns.findIndex((t) => t.id === reportTurnId);
+              if (idx >= 0) {
+                turns[idx].insightMarkdown = env.insight.markdown;
+                turns[idx].text = env.insight.headline ?? "";
+                turns[idx].model = model;
+              }
+            } else {
+              // No INSIGHT intent event preceded this — degrade gracefully by pushing the
+              // completed turn directly rather than assuming onIntent always fires first.
+              turns = [
+                ...turns,
+                {
+                  id: nextId(),
+                  role: "insight",
+                  text: env.insight.headline ?? "",
+                  insightMarkdown: env.insight.markdown,
+                  model,
+                },
+              ];
+            }
+          } else if (kind === "emailDraft" && env.emailDraft) {
+            aiInsight.set(env.emailDraft.summary);
+            emailComposer.requestOpen();
+            turns = [
+              ...turns,
+              {
+                id: nextId(),
+                role: "assistant",
+                text: i18n.t("workspace.aiQuery.emailDraftOpening", "Opening a draft email for you to review…"),
+                model,
+              },
+            ];
+          } else if (kind === "viewChange" && env.viewChange) {
+            onApplyViewChange(env.viewChange);
+            const target =
+              env.viewChange.viewMode === "chart" ? `chart (${env.viewChange.chartType ?? "?"})` : "grid";
+            turns = [
+              ...turns,
+              {
+                id: nextId(),
+                role: "viewChange",
+                text: env.viewChange.reason ?? `Switched view to ${target}.`,
+                viewChange: env.viewChange,
+                model,
+              },
+            ];
+          } else if (kind === "query") {
+            // Step-limit terminal: the chain ran out of steps right after building a query, with
+            // no report to follow. Hydrate it exactly like an intermediate step.
+            hydrateBuiltQuery(env);
+          } else {
+            turns = [
+              ...turns,
+              { id: nextId(), role: "error", text: i18n.t("workspace.aiQuery.unknownError"), model },
+            ];
+          }
+        },
+        onNote: (reason) => {
+          turns = [...turns, { id: nextId(), role: "assistant", text: reason, model }];
+        },
+        onError: (reason) => {
+          turns = [...turns, { id: nextId(), role: "error", text: reason, model }];
+        },
+      });
+    } catch (e) {
+      const message = e instanceof AiAskTransportError ? e.message : (e as Error).message;
+      turns = [
+        ...turns,
+        {
+          id: nextId(),
+          role: "error",
+          text: i18n.t("workspace.aiQuery.transportError").replace("{message}", message),
+          model,
+        },
+      ];
+    } finally {
+      inflight = false;
+    }
+  }
+
   function clearConversation(): void {
     turns = [];
     notConfiguredBanner = null;
@@ -465,7 +678,7 @@
     // Cmd/Ctrl + Enter submits; plain Enter inserts newline.
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
-      void submit();
+      void (buildAndReport ? submitChained() : submit());
     }
   }
 
@@ -718,6 +931,12 @@
         >{opt.label}</button>
       {/each}
     </div>
+    <!-- Opt-in chained ("Build & report") toggle — default OFF. When on, send routes to
+         submitChained() (streamed multi-step ask) instead of submit()'s single-turn askAi. -->
+    <label class="ai-drawer__chain-toggle" title={i18n.t("workspace.aiQuery.buildAndReportHint")}>
+      <input type="checkbox" bind:checked={buildAndReport} disabled={inflight} />
+      <span>{i18n.t("workspace.aiQuery.buildAndReport")}</span>
+    </label>
     <div class="flex gap-2 items-end">
     <textarea
       bind:this={inputEl}
@@ -732,7 +951,7 @@
       type="button"
       class="ai-drawer__submit"
       disabled={inflight || prompt.trim().length === 0}
-      onclick={() => void submit()}
+      onclick={() => void (buildAndReport ? submitChained() : submit())}
       title={i18n.t("workspace.aiQuery.send")}
       aria-label={i18n.t("workspace.aiQuery.send")}
     >
@@ -1085,6 +1304,30 @@
     color: var(--accent);
     border-color: var(--accent);
     font-weight: 600;
+  }
+  /* "Build & report" opt-in toggle — sits between the mode bar and the input row. Plain
+     checkbox + label rather than a bespoke switch component; matches the mode bar's font size
+     and muted-until-active color so it reads as a secondary control. */
+  .ai-drawer__chain-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: fit-content;
+    font-size: 0.78rem;
+    color: var(--fg-muted);
+    cursor: pointer;
+  }
+  .ai-drawer__chain-toggle input {
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .ai-drawer__chain-toggle:has(input:checked) {
+    color: var(--fg);
+    font-weight: 600;
+  }
+  .ai-drawer__chain-toggle:has(input:disabled) {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   /* Elapsed-time label inside the in-flight bubble — appears after 1.5s so
      short successful turns don't flash it. */
