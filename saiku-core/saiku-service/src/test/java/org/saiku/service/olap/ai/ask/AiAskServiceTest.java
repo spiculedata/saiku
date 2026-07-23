@@ -165,7 +165,10 @@ public class AiAskServiceTest {
                 fixedSchemaService(emptySchema()),
                 stub(NlAskResponse.okEmailDraft("{\"summary\":\"Large tier leads at 7,000.\"}", "m", 0, 0)));
 
-        AiAskService.AskOutcome out = svc.ask(CUBE, "draft an email summarising this", List.of());
+        // No-data guard (design §5): EMAIL_DRAFT only succeeds when the client actually sent a
+        // cellset digest (analysis on screen) — exercise the overload that carries one.
+        AiAskService.AskOutcome out =
+                svc.ask(CUBE, "draft an email summarising this", List.of(), "| Tier | Balance |\n| Large | 7,000 |");
 
         assertFalse(out.degraded());
         assertEquals(AiAskService.AskOutcome.Kind.EMAIL_DRAFT, out.kind());
@@ -178,11 +181,51 @@ public class AiAskServiceTest {
         AiAskService svc = new AiAskService(
                 fixedSchemaService(emptySchema()), stub(NlAskResponse.okEmailDraft("{\"summary\":\"\"}", "m", 0, 0)));
 
-        AiAskService.AskOutcome out = svc.ask(CUBE, "draft an email summarising this", List.of());
+        // Non-blank digest so this exercises the empty-summary guard, not the no-data guard.
+        AiAskService.AskOutcome out =
+                svc.ask(CUBE, "draft an email summarising this", List.of(), "| Tier | Balance |\n| Large | 7,000 |");
 
         assertTrue(out.degraded());
         assertTrue(out.reason().contains("empty email draft"));
         assertNull(out.emailDraft());
+    }
+
+    @Test
+    public void refusesEmailDraftWhenNoCellsetOnScreen() {
+        // Design §5 belt-and-braces: the server refuses EMAIL_DRAFT when the client sent no
+        // cellset digest at all (no analysis on screen), BEFORE the egress-strip could otherwise
+        // conflate this with a digest withheld by policy. Checked here regardless of what the
+        // provider stub would return.
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(emptySchema()),
+                stub(NlAskResponse.okEmailDraft("{\"summary\":\"Large tier leads at 7,000.\"}", "m", 0, 0)));
+
+        AiAskService.AskOutcome out = svc.ask(CUBE, "draft an email summarising this", List.of(), null);
+
+        assertTrue(out.degraded());
+        assertTrue(out.reason().contains("run a query first"));
+        assertNull(out.emailDraft());
+    }
+
+    @Test
+    public void draftsEmailWhenDigestPresentButEgressStripped() {
+        // Regression guard for the capture-before-strip invariant: the CLIENT sent a non-blank
+        // digest (there WAS analysis on screen), but schema-only egress strips it before it reaches
+        // the LLM. That must NOT be conflated with "client sent nothing" — hadCellsetOnScreen is
+        // captured before the strip, so EMAIL_DRAFT still succeeds. If someone later moved that
+        // capture to read the post-strip value, this test would fail.
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(emptySchema()),
+                stub(NlAskResponse.okEmailDraft("{\"summary\":\"Large tier leads at 7,000.\"}", "m", 0, 0)));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.SCHEMA_ONLY));
+
+        AiAskService.AskOutcome out =
+                svc.ask(CUBE, "draft an email summarising this", List.of(), "| Tier | Balance |\n| Large | 7,000 |");
+
+        assertFalse(out.degraded());
+        assertEquals(AiAskService.AskOutcome.Kind.EMAIL_DRAFT, out.kind());
+        assertNotNull(out.emailDraft());
+        assertEquals("Large tier leads at 7,000.", out.emailDraft().getSummary());
     }
 
     /* ---- saiku#1426 skill catalogue + slash-command expansion ---- */

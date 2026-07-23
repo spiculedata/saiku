@@ -355,6 +355,13 @@ public class AiAskService {
             return AskOutcome.degraded("schema serialisation failed", null);
         }
 
+        // No-data guard (design §5): capture whether the CLIENT actually sent a digest BEFORE the
+        // egress-policy strip below mutates it. This must not be conflated with the post-strip
+        // value — under schema-only egress a digest that WAS on screen gets nulled for the LLM, but
+        // that's "data present, withheld by policy", not "no analysis on screen". Only the latter
+        // should refuse EMAIL_DRAFT (see the EMAIL_DRAFT routing branch further down).
+        final boolean hadCellsetOnScreen = cellsetDigest != null && !cellsetDigest.isBlank();
+
         // #2: LLM-egress gate. When the dedicated egress guard does NOT permit aggregated cell
         // values to leave the box, STRIP the cellset digest so the prompt is schema-only. The ask
         // still runs — degraded (ungrounded), never refused. Fail-closed: an unwired guard denies
@@ -456,6 +463,11 @@ public class AiAskService {
                 return AskOutcome.okInsight(insight, resp.model());
             }
             if (kind == NlAskResponse.Kind.EMAIL_DRAFT) {
+                if (!hadCellsetOnScreen) {
+                    return AskOutcome.degraded(
+                            "No analysis is on screen to summarise — run a query first, then ask me to email it.",
+                            resp.model());
+                }
                 AiEmailDraft draft = mapper.readValue(resp.payloadJson(), AiEmailDraft.class);
                 if (draft == null
                         || draft.getSummary() == null
