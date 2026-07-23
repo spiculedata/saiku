@@ -420,7 +420,8 @@ public class AiAskService {
                 forceTool == null ? NlAskRequest.ForceTool.AUTO : forceTool,
                 currentQueryJson,
                 skillsFragment,
-                spaceSystemPrompt);
+                spaceSystemPrompt,
+                List.of());
         NlAskResponse resp = provider.ask(req);
 
         if (resp.degraded()) {
