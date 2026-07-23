@@ -4,13 +4,85 @@
  */
 package org.saiku.service.olap.ai.ask;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.time.Duration;
 import java.util.Map;
 import org.junit.Test;
 
 /** Unit tests for {@link NlAskProviderFactory}. */
 public class NlAskProviderFactoryTest {
+
+    private static final String PROP = "saiku.ai.ask.timeoutSeconds";
+
+    /* ---- askRequestTimeout() ----
+     * Note: the env-var path (SAIKU_AI_ASK_TIMEOUT_SECONDS) can't be set per-test from within the
+     * JVM, so only the system-property fallback is exercised here; the property path is
+     * representative of the same parse/clamp logic the env path shares. */
+
+    @Test
+    public void askRequestTimeoutDefaultsTo60sWhenUnset() {
+        String saved = System.getProperty(PROP);
+        System.clearProperty(PROP);
+        try {
+            assertEquals(Duration.ofSeconds(60), NlAskProviderFactory.askRequestTimeout());
+        } finally {
+            restore(saved);
+        }
+    }
+
+    @Test
+    public void askRequestTimeoutUsesSystemProperty() {
+        String saved = System.getProperty(PROP);
+        System.setProperty(PROP, "300");
+        try {
+            assertEquals(Duration.ofSeconds(300), NlAskProviderFactory.askRequestTimeout());
+        } finally {
+            restore(saved);
+        }
+    }
+
+    @Test
+    public void askRequestTimeoutClampsLow() {
+        String saved = System.getProperty(PROP);
+        System.setProperty(PROP, "1");
+        try {
+            assertEquals(Duration.ofSeconds(5), NlAskProviderFactory.askRequestTimeout());
+        } finally {
+            restore(saved);
+        }
+    }
+
+    @Test
+    public void askRequestTimeoutClampsHigh() {
+        String saved = System.getProperty(PROP);
+        System.setProperty(PROP, "99999");
+        try {
+            assertEquals(Duration.ofSeconds(900), NlAskProviderFactory.askRequestTimeout());
+        } finally {
+            restore(saved);
+        }
+    }
+
+    @Test
+    public void askRequestTimeoutFallsBackOnNonNumeric() {
+        String saved = System.getProperty(PROP);
+        System.setProperty(PROP, "abc");
+        try {
+            assertEquals(Duration.ofSeconds(60), NlAskProviderFactory.askRequestTimeout());
+        } finally {
+            restore(saved);
+        }
+    }
+
+    private static void restore(String saved) {
+        if (saved == null) {
+            System.clearProperty(PROP);
+        } else {
+            System.setProperty(PROP, saved);
+        }
+    }
 
     @Test
     public void defaultsToNoopWhenProviderIsNull() {

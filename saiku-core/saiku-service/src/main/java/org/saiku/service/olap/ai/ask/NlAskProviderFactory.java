@@ -91,11 +91,7 @@ public final class NlAskProviderFactory {
             // Omit temperature by default: the Claude-5 family rejects it, and tool_choice already
             // forces the structured tool call so determinism doesn't depend on temperature=0.
             return new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config(
-                    resolvedKey,
-                    effectiveModel,
-                    AnthropicNlAskProvider.OMIT_TEMPERATURE,
-                    4096,
-                    Duration.ofSeconds(60)));
+                    resolvedKey, effectiveModel, AnthropicNlAskProvider.OMIT_TEMPERATURE, 4096, askRequestTimeout()));
         }
         if (PROVIDER_OPENAI.equalsIgnoreCase(name)) {
             String resolvedKey = resolveApiKey(ENV_OPENAI_API_KEY);
@@ -120,7 +116,7 @@ public final class NlAskProviderFactory {
                     effectiveEndpoint,
                     OpenAINlAskProvider.OMIT_TEMPERATURE,
                     4096,
-                    Duration.ofSeconds(60)));
+                    askRequestTimeout()));
         }
         if (PROVIDER_AZURE_OPENAI.equalsIgnoreCase(name)) {
             String resolvedKey = resolveApiKey(ENV_AZURE_OPENAI_API_KEY);
@@ -155,10 +151,31 @@ public final class NlAskProviderFactory {
                     resolvedEndpoint,
                     OpenAINlAskProvider.OMIT_TEMPERATURE,
                     4096,
-                    Duration.ofSeconds(60)));
+                    askRequestTimeout()));
         }
         LOGGER.warn("Unknown AI ask provider '{}'; falling back to NoopProvider.", providerName);
         return new NoopNlAskProvider();
+    }
+
+    /**
+     * Per-request HTTP timeout to the LLM provider, in seconds. Configurable because local/
+     * self-hosted models (e.g. Ollama) can take far longer than a hosted API to evaluate a large
+     * prompt. Env {@code SAIKU_AI_ASK_TIMEOUT_SECONDS}, else system property {@code
+     * saiku.ai.ask.timeoutSeconds}, else 60. Clamped to [5, 900].
+     */
+    static Duration askRequestTimeout() {
+        String v = System.getenv("SAIKU_AI_ASK_TIMEOUT_SECONDS");
+        if (v == null || v.isBlank()) v = System.getProperty("saiku.ai.ask.timeoutSeconds");
+        long secs = 60;
+        if (v != null && !v.isBlank()) {
+            try {
+                secs = Long.parseLong(v.trim());
+            } catch (NumberFormatException ignore) {
+                // fall through to the default
+            }
+        }
+        secs = Math.max(5, Math.min(900, secs));
+        return Duration.ofSeconds(secs);
     }
 
     private String resolveApiKey(String envKey) {
