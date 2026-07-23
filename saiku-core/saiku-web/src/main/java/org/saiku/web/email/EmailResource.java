@@ -1,6 +1,7 @@
 package org.saiku.web.email;
 
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -33,6 +34,14 @@ public class EmailResource {
 
     public void setMailConfig(MailConfig mailConfig) {
         this.mailConfig = mailConfig;
+    }
+
+    @GET
+    @Path("/health")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response health() {
+        boolean configured = mailSender != null && mailSender.isConfigured();
+        return Response.ok(Map.of("configured", configured)).build();
     }
 
     @POST
