@@ -17,6 +17,7 @@
    */
 
   import { aiInsight } from "$lib/stores/aiInsight.svelte";
+  import { emailComposer } from "$lib/stores/emailComposer.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { selection } from "$lib/stores/selection.svelte";
   import { askAi, AiAskTransportError, type AiInsight, type AiViewChange, type AskResponse, type NlAskMessageDto } from "$lib/api/aiAsk";
@@ -337,6 +338,26 @@
           role: "insight",
           text: resp.insight.headline ?? "",
           insightMarkdown: resp.insight.markdown,
+          model: resp.model,
+        },
+      ];
+      inflight = false;
+      return;
+    }
+
+    // Intent: email draft — model picked the email intent. Hand the summary off to the
+    // "email me this" modal via the shared aiInsight store (same seed path the modal already
+    // reads from) and signal the toolbar to open it. The AI never sends — the human reviews
+    // and clicks Send in the modal.
+    if (resp.emailDraft) {
+      aiInsight.set(resp.emailDraft.summary);
+      emailComposer.requestOpen();
+      turns = [
+        ...turns,
+        {
+          id: nextId(),
+          role: "assistant",
+          text: i18n.t("workspace.aiQuery.emailDraftOpening", "Opening a draft email for you to review…"),
           model: resp.model,
         },
       ];

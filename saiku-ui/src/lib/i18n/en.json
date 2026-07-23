@@ -601,6 +601,7 @@
   "workspace.aiQuery.copyMdx": "Copy MDX",
   "workspace.aiQuery.editInCanvas": "Edit in canvas",
   "workspace.aiQuery.viaModel": "via {model}",
+  "workspace.aiQuery.emailDraftOpening": "Opening a draft email for you to review…",
   "workspace.aiQuery.insightLabel": "Insight",
   "workspace.aiQuery.viewChangeLabel": "View change",
   "workspace.aiQuery.modeLabel": "Mode",
