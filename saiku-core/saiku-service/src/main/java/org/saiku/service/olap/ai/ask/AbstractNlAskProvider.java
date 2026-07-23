@@ -53,6 +53,13 @@ abstract class AbstractNlAskProvider implements NlAskProvider {
      */
     protected static final String VIEW_CHANGE_TOOL_NAME = "emit_view_change";
 
+    /**
+     * Name of the email-draft tool — picks when the user explicitly asks to email / send the
+     * currently-rendered cellset. No query is built; the model returns a short prose summary the app
+     * uses as the pre-filled email body. Draft-only — the AI never sends.
+     */
+    protected static final String EMAIL_DRAFT_TOOL_NAME = "emit_email_draft";
+
     /** Prefix on the degraded reason when the model refuses an off-topic question. */
     protected static final String REFUSAL_REASON_PREFIX = "OFF_TOPIC: ";
 
@@ -177,6 +184,27 @@ abstract class AbstractNlAskProvider implements NlAskProvider {
                 "Optional 1-line headline (<=80 chars) shown above the markdown body in the drawer. "
                         + "Example: 'Revenue concentrated in Q4; CA leads by 38%.'");
         root.putArray("required").add("markdown");
+        return root;
+    }
+
+    /**
+     * Builds the JSON Schema for the {@code emit_email_draft} tool's input. Provider-agnostic — both
+     * Anthropic and OpenAI consume the same {@code {"type":"object", "properties":...}} shape under
+     * their respective tool/function definitions.
+     *
+     * <p>One field: {@code summary} (required, the email body).
+     */
+    protected static ObjectNode emailDraftInputSchema() {
+        ObjectNode root = MAPPER.createObjectNode();
+        root.put("type", "object");
+        ObjectNode props = root.putObject("properties");
+        ObjectNode summary = props.putObject("summary");
+        summary.put("type", "string");
+        summary.put(
+                "description",
+                "The email body: a short plain-prose summary of the CURRENT cellset (2-3 sentences, "
+                        + "reference specific figures from the digest). No greeting, no subject line.");
+        root.putArray("required").add("summary");
         return root;
     }
 

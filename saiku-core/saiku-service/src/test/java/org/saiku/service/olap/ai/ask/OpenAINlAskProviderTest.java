@@ -44,13 +44,13 @@ public class OpenAINlAskProviderTest {
 
         assertEquals("gpt-x", root.get("model").asText());
         assertEquals(1024, root.get("max_tokens").asInt());
-        // tool_choice "required" — model must call a function, picks among the four scoped functions.
+        // tool_choice "required" — model must call a function, picks among the five scoped functions.
         assertEquals("required", root.get("tool_choice").asText());
 
-        // AUTO routing exposes all four functions: emit_query, emit_insight, emit_view_change,
-        // and the refuse_off_topic scope guardrail (always appended last).
+        // AUTO routing exposes all five functions: emit_query, emit_insight, emit_email_draft,
+        // emit_view_change, and the refuse_off_topic scope guardrail (always appended last).
         JsonNode tools = root.get("tools");
-        assertEquals(4, tools.size());
+        assertEquals(5, tools.size());
         assertEquals("function", tools.get(0).get("type").asText());
         assertEquals("emit_query", tools.get(0).get("function").get("name").asText());
         assertEquals(
@@ -170,6 +170,52 @@ public class OpenAINlAskProviderTest {
         NlAskResponse resp = OpenAINlAskProvider.parseToolResponse(body, "gpt-x");
         assertTrue(resp.degraded());
         assertEquals("empty tool_call arguments", resp.reason());
+    }
+
+    /** AUTO routing offers emit_email_draft with a schema requiring `summary`. */
+    @Test
+    public void requestBodyIncludesEmailDraftFunctionWithRequiredSummary() throws Exception {
+        OpenAINlAskProvider provider = new OpenAINlAskProvider(
+                new OpenAINlAskProvider.Config("k", "gpt-x", OpenAINlAskProvider.DEFAULT_ENDPOINT, 0.0, 1024, null));
+        JsonNode root = MAPPER.readTree(
+                provider.buildRequestBody(new NlAskRequest(CUBE, "q", SCHEMA, REQUEST_SCHEMA, List.of())));
+
+        JsonNode tools = root.get("tools");
+        JsonNode emailFn = null;
+        for (JsonNode tool : tools) {
+            if ("emit_email_draft".equals(tool.get("function").get("name").asText())) {
+                emailFn = tool.get("function");
+            }
+        }
+        assertNotNull("emit_email_draft function must be present in AUTO mode", emailFn);
+        assertEquals("object", emailFn.get("parameters").get("type").asText());
+        assertEquals("summary", emailFn.get("parameters").get("required").get(0).asText());
+    }
+
+    @Test
+    public void parseToolResponseExtractsEmailDraftArgumentsAsJson() throws Exception {
+        String body = "{\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":5},"
+                + "\"choices\":[{\"message\":{\"tool_calls\":[{\"function\":{\"name\":\"emit_email_draft\","
+                + "\"arguments\":\"{\\\"summary\\\":\\\"Large tier leads at 7,000.\\\"}\"}}]}}]}";
+
+        NlAskResponse resp = OpenAINlAskProvider.parseToolResponse(body, "gpt-x");
+
+        assertFalse(resp.degraded());
+        assertEquals(NlAskResponse.Kind.EMAIL_DRAFT, resp.kind());
+        assertEquals("gpt-x", resp.model());
+        assertEquals(11, resp.inputTokens());
+        assertEquals(5, resp.outputTokens());
+        JsonNode parsed = MAPPER.readTree(resp.payloadJson());
+        assertEquals("Large tier leads at 7,000.", parsed.get("summary").asText());
+    }
+
+    @Test
+    public void parseToolResponseDegradesWhenEmailDraftArgumentsBlank() throws Exception {
+        String body = "{\"choices\":[{\"message\":{\"tool_calls\":[{\"function\":{\"name\":\"emit_email_draft\","
+                + "\"arguments\":\"\"}}]}}]}";
+        NlAskResponse resp = OpenAINlAskProvider.parseToolResponse(body, "gpt-x");
+        assertTrue(resp.degraded());
+        assertEquals("empty email draft tool arguments", resp.reason());
     }
 
     @Test

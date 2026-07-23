@@ -8,7 +8,7 @@ package org.saiku.service.olap.ai.ask;
  * Output of {@link NlAskProvider#ask(NlAskRequest)}.
  *
  * <p>The provider returns the raw JSON the model emitted, plus a {@link Kind} discriminator
- * identifying which tool the model picked. Three intents are routed by {@link AiAskService}:
+ * identifying which tool the model picked. Four intents are routed by {@link AiAskService}:
  *
  * <ul>
  *   <li>{@link Kind#QUERY} — an {@code AiQueryRequest} the converter will execute.

@@ -35,7 +35,7 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
     private static final String API_VERSION = "2023-06-01";
 
     private static final String SYSTEM_PROMPT = "You are a Mondrian OLAP analyst assistant scoped to a "
-            + "single cube. You have FOUR tools — pick exactly one based on the user's intent.\n\n"
+            + "single cube. You have FIVE tools — pick exactly one based on the user's intent.\n\n"
             + "TOOL CHOICE:\n"
             + "  - emit_query: the user wants new data or a different breakdown of the cube. "
             + "Translate their question into a single AiQueryRequest matching the schema.\n"
@@ -43,6 +43,11 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
             + "'what's interesting', 'summarise this', 'why is X high'). The user's current cellset is "
             + "provided as a digest below; reason from it. Do NOT build a new query. Return a markdown "
             + "analysis that references specific row/column captions and figures from the digest.\n"
+            + "  - emit_email_draft: the user explicitly asks to EMAIL / send / 'email it to me' the current "
+            + "analysis. Compose a short prose summary of the current cellset as the email body (like "
+            + "emit_insight, but the user wants it emailed). Requires data on screen — if the digest is "
+            + "empty, use refuse_off_topic and tell them to run an analysis first. You do NOT send the "
+            + "email; the user reviews and sends it.\n"
             + "  - emit_view_change: the user wants to change HOW the existing data is displayed "
             + "('switch to chart', 'show this as a bar chart', 'back to grid', 'best chart for this'). "
             + "Pick viewMode + chartType from the catalog. Do NOT re-query. If the user just says 'chart' "
@@ -158,6 +163,7 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
         boolean wantQuery = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.QUERY;
         boolean wantInsight = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.INSIGHT;
         boolean wantViewChange = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.VIEW_CHANGE;
+        boolean wantEmailDraft = force == NlAskRequest.ForceTool.AUTO;
 
         StringBuilder system = new StringBuilder(SYSTEM_PROMPT);
         // Agent-space persona voice (saiku#1440). Prepended before the cube schema so the LLM
@@ -222,6 +228,13 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
                             + "comparisons, summaries, or 'what's interesting' about the data already on screen. "
                             + "Do not propose a new query.");
             insightTool.set("input_schema", insightInputSchema());
+        }
+
+        if (wantEmailDraft) {
+            ObjectNode emailTool = tools.addObject();
+            emailTool.put("name", EMAIL_DRAFT_TOOL_NAME);
+            emailTool.put("description", "Draft an email of the current analysis for the user to review and send.");
+            emailTool.set("input_schema", emailDraftInputSchema());
         }
 
         if (wantViewChange) {
@@ -308,6 +321,13 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
                         return NlAskResponse.degraded("empty insight tool input", model);
                     }
                     return NlAskResponse.okInsight(MAPPER.writeValueAsString(input), model, inputTokens, outputTokens);
+                }
+                if (EMAIL_DRAFT_TOOL_NAME.equals(toolName)) {
+                    if (input.isMissingNode() || input.isNull()) {
+                        return NlAskResponse.degraded("empty email draft tool input", model);
+                    }
+                    return NlAskResponse.okEmailDraft(
+                            MAPPER.writeValueAsString(input), model, inputTokens, outputTokens);
                 }
                 if (VIEW_CHANGE_TOOL_NAME.equals(toolName)) {
                     if (input.isMissingNode() || input.isNull()) {
