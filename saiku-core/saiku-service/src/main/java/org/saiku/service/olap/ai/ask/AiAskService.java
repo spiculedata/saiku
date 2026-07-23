@@ -7,8 +7,11 @@ package org.saiku.service.olap.ai.ask;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import org.saiku.olap.dto.resultset.CellDataSet;
+import org.saiku.olap.query2.ThinQuery;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiCubeRef;
@@ -214,6 +217,14 @@ public class AiAskService {
     }
 
     /**
+     * Ordered transcript of one chained ask: each step reuses the single-turn {@link AskOutcome}
+     * (QUERY for a built+executed query, INSIGHT/VIEW_CHANGE/EMAIL_DRAFT for a terminal, or a
+     * degraded step for an error / policy stop). {@code hitStepLimit} is true when the cap was
+     * reached while the model was still emitting queries (no report produced).
+     */
+    public record AskChain(List<AskOutcome> steps, boolean hitStepLimit) {}
+
+    /**
      * Translate a natural-language question against the cube pointed to by {@code ref}.
      *
      * @param ref cube to target; must be non-null and have a non-null cubeName
@@ -345,6 +356,166 @@ public class AiAskService {
         return SpaceAccess.OK;
     }
 
+    /** Fed-back result rows are capped to match the client-side cellset digest's 50-row cap. */
+    private static final int CHAIN_DIGEST_MAX_ROWS = 50;
+
+    /**
+     * Cap on the number of provider round-trips {@link #askChained} will make in one call. Read
+     * from env {@code SAIKU_AI_MAX_STEPS} first (so ops can tune it without a {@code -D}), else
+     * system property {@code saiku.ai.ask.max-steps}, else default 4; clamped to [1, 8].
+     */
+    private static int maxSteps() {
+        String v = System.getenv("SAIKU_AI_MAX_STEPS");
+        if (v == null || v.isBlank()) v = System.getProperty("saiku.ai.ask.max-steps");
+        int n = 4;
+        if (v != null && !v.isBlank()) {
+            try {
+                n = Integer.parseInt(v.trim());
+            } catch (NumberFormatException ignore) {
+                // fall through to the default
+            }
+        }
+        return Math.max(1, Math.min(8, n));
+    }
+
+    /**
+     * Bounded server-side agentic loop: the model builds a query, the server executes it, the result
+     * is fed back (egress-gated), and the model reports on it — all in one request. Terminal tool, a
+     * degrade, or the step cap ends the loop. NO send/save/mutate capability; execution returns data
+     * only to the authenticated caller under the same policy as a single-turn query.
+     *
+     * <p>v1 runs the classic (non-space-scoped) path only — {@code space} is always {@code null} for
+     * the routed outcomes and no space system prompt / skill filtering applies.
+     */
+    public AskChain askChained(
+            AiCubeRef ref,
+            String question,
+            List<NlAskMessage> history,
+            String cellsetDigest,
+            NlAskRequest.ForceTool forceTool,
+            AiQueryRequest currentQuery) {
+
+        if (ref == null) {
+            return new AskChain(List.of(AskOutcome.degraded("cube ref required", null)), false);
+        }
+        if (question == null || question.isBlank()) {
+            return new AskChain(List.of(AskOutcome.degraded("question must be non-blank", null)), false);
+        }
+        if (thinQueryService == null) { // chaining needs the executor
+            return new AskChain(
+                    List.of(AskOutcome.degraded("server-side query execution is not available on this instance", null)),
+                    false);
+        }
+
+        // --- preamble (mirror askInternal) ---
+        AiSchema schema;
+        try {
+            schema = metadataService.getSchema(ref);
+        } catch (RuntimeException e) {
+            log.warn("chained ask: failed to load schema for {}", ref, e);
+            return new AskChain(List.of(AskOutcome.degraded("failed to load cube schema", null)), false);
+        }
+        String schemaJson;
+        String requestSchemaJson;
+        try {
+            schemaJson = mapper.writeValueAsString(schema.toAgentView());
+            requestSchemaJson = mapper.writeValueAsString(AiRequestJsonSchema.forRequest());
+        } catch (JsonProcessingException e) {
+            return new AskChain(List.of(AskOutcome.degraded("schema serialisation failed", null)), false);
+        }
+        final boolean hadCellsetOnScreen = cellsetDigest != null && !cellsetDigest.isBlank();
+        String effectiveDigest = cellsetDigest;
+        if (hadCellsetOnScreen && !egressPermitsCellData()) effectiveDigest = null;
+
+        String currentQueryJson = null;
+        if (currentQuery != null) {
+            try {
+                currentQueryJson = mapper.writeValueAsString(currentQuery);
+            } catch (JsonProcessingException e) {
+                log.debug("chained ask: currentQuery serialise failed; omitting", e);
+            }
+        }
+        String effectiveQuestion = maybeExpandSlashCommand(question, null);
+        String skillsFragment = null;
+        if (skills != null) {
+            String f = AgentSkill.catalogPromptFragment(skills.list());
+            if (f != null && !f.isBlank()) skillsFragment = f;
+        }
+        final NlAskRequest.ForceTool ft = forceTool == null ? NlAskRequest.ForceTool.AUTO : forceTool;
+        final List<NlAskMessage> hist = history == null ? List.of() : history;
+
+        // --- the loop ---
+        List<AskOutcome> steps = new ArrayList<>();
+        List<ToolTurn> transcript = new ArrayList<>();
+        String turnDigest = effectiveDigest; // the cellset the model sees THIS turn; starts as on-screen (gated)
+        int cap = maxSteps();
+        boolean hitStepLimit = false;
+
+        for (int i = 0; i < cap; i++) {
+            NlAskRequest req = new NlAskRequest(
+                    ref,
+                    effectiveQuestion,
+                    schemaJson,
+                    requestSchemaJson,
+                    hist,
+                    turnDigest,
+                    ft,
+                    currentQueryJson,
+                    skillsFragment,
+                    null,
+                    List.copyOf(transcript));
+            NlAskResponse resp = provider.ask(req);
+
+            if (resp.degraded()) {
+                steps.add(AskOutcome.degraded(resp.reason(), resp.model()));
+                break;
+            }
+
+            AskOutcome outcome = routeResponse(resp, null, hadCellsetOnScreen);
+            steps.add(outcome);
+
+            boolean isQuery = outcome.kind() == AskOutcome.Kind.QUERY && !outcome.degraded();
+            if (!isQuery) break; // terminal report / degraded route → done
+
+            if (i == cap - 1) {
+                hitStepLimit = true; // cap reached still building queries
+                break;
+            }
+
+            // execute the built query and feed the result back
+            AiQueryRequest parsed = outcome.request();
+            CellDataSet cds;
+            try {
+                AiSchema qSchema = metadataService.getSchema(parsed.getCube());
+                ThinQuery tq = converter.convert(parsed, qSchema);
+                cds = thinQueryService.execute(tq);
+            } catch (RuntimeException e) {
+                log.warn("chained ask: query execution failed", e);
+                steps.add(AskOutcome.degraded("failed to execute the built query", resp.model()));
+                break;
+            }
+            String resultDigest =
+                    egressPermitsCellData() ? CellsetDigestBuilder.digest(cds, CHAIN_DIGEST_MAX_ROWS) : null;
+            String callId =
+                    (resp.toolCallId() != null && !resp.toolCallId().isBlank()) ? resp.toolCallId() : "call_" + i;
+            transcript.add(new ToolTurn(callId, "emit_query", resp.payloadJson(), resultDigest));
+            turnDigest = resultDigest; // feed forward: unlocks emit_insight + supplies the data (null under
+            // schema-only)
+
+            if (resultDigest == null) {
+                // schema-only egress: emit_insight is gated off without a digest, so the model can't
+                // report. Stop honestly with the built query in hand rather than loop to the cap.
+                steps.add(AskOutcome.degraded(
+                        "Query built. Enable aggregated AI egress (SAIKU_AI_LLM_EGRESS=aggregated) for an "
+                                + "AI report on the results.",
+                        resp.model()));
+                break;
+            }
+            // else: loop again — the model now has the data and should emit_insight (the report).
+        }
+        return new AskChain(List.copyOf(steps), hitStepLimit);
+    }
+
     private AskOutcome askInternal(
             AiCubeRef ref,
             String question,
@@ -456,8 +627,16 @@ public class AiAskService {
         if (resp.degraded()) {
             return AskOutcome.degraded(resp.reason(), resp.model());
         }
+        return routeResponse(resp, space, hadCellsetOnScreen);
+    }
 
-        // Route by which tool the provider's model picked.
+    /**
+     * Map a NON-degraded provider response to an {@link AskOutcome} by which tool the provider's
+     * model picked. Self-contained: handles its own JSON parse errors and space cube-scope
+     * re-validation. {@code space} may be {@code null} (classic, non-space-scoped path).
+     * {@code hadCellsetOnScreen} drives the {@link AskOutcome.Kind#EMAIL_DRAFT} no-data guard.
+     */
+    private AskOutcome routeResponse(NlAskResponse resp, AgentSpace space, boolean hadCellsetOnScreen) {
         try {
             NlAskResponse.Kind kind = resp.kind();
             if (kind == NlAskResponse.Kind.QUERY) {
