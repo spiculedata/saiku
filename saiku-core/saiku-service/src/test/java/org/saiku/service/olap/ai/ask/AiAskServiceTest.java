@@ -13,6 +13,7 @@ import static org.junit.Assert.assertTrue;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Test;
+import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiCubeRef;
 import org.saiku.service.olap.ai.AiPolicy;
@@ -578,6 +579,26 @@ public class AiAskServiceTest {
         assertFalse("PII sample member caption must not egress: " + schemaJson, schemaJson.contains("John Smith"));
         assertFalse("PII display name must not egress: " + schemaJson, schemaJson.contains("Customer Name"));
         assertTrue("redaction sentinel must be present: " + schemaJson, schemaJson.contains("[REDACTED]"));
+    }
+
+    /* ---- Task 5: chained-ask wiring (converter + setter-injected ThinQueryService) ---- */
+
+    @Test
+    public void converterIsAlwaysNonNull() {
+        // Stateless, instantiated directly — no wiring required, unlike thinQueryService().
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), stub(NlAskResponse.ok("{}", "m", 0, 0)));
+        assertNotNull(svc.converter());
+    }
+
+    @Test
+    public void thinQueryServiceIsNullUntilWiredThenReturnsTheSetInstance() {
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), stub(NlAskResponse.ok("{}", "m", 0, 0)));
+        assertNull("unwired executor must be null, not silently defaulted", svc.thinQueryService());
+
+        ThinQueryService executor = new ThinQueryService();
+        svc.setThinQueryService(executor);
+
+        assertEquals(executor, svc.thinQueryService());
     }
 
     // ---------- helpers ----------

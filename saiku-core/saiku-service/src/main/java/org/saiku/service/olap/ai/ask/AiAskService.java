@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import java.util.List;
 import java.util.Objects;
+import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiCubeRef;
 import org.saiku.service.olap.ai.AiDataKind;
@@ -16,6 +17,7 @@ import org.saiku.service.olap.ai.AiPolicyGuard;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiRequestJsonSchema;
 import org.saiku.service.olap.ai.AiSchema;
+import org.saiku.service.olap.ai.AiSchemaConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -68,6 +70,18 @@ public class AiAskService {
      */
     private AiPolicyGuard egressGuard;
 
+    /** Pure schema→ThinQuery converter (stateless), same instance-per-service pattern as AiQueryResource. */
+    private final AiSchemaConverter converter = new AiSchemaConverter();
+
+    /**
+     * Executes a converted {@link org.saiku.olap.query2.ThinQuery} to a {@code CellDataSet}.
+     * Setter-injected (wired to {@code thinQueryBean} in saiku-beans.xml) so existing two-arg
+     * construction and every unit test that builds this service without an executor stay
+     * unchanged. Null when unwired — the chained-ask loop (a later task) treats a null executor
+     * as "server-side execution unavailable".
+     */
+    private ThinQueryService thinQueryService;
+
     public AiAskService(AiCubeMetadataService metadataService, NlAskProvider provider) {
         this(metadataService, provider, defaultMapper());
     }
@@ -109,6 +123,21 @@ public class AiAskService {
     /** The dedicated LLM-egress guard, or {@code null} if not wired (treated as egress-denied). */
     public AiPolicyGuard egressGuard() {
         return egressGuard;
+    }
+
+    /** Spring setter — wired to {@code thinQueryBean} in {@code saiku-beans.xml}. */
+    public void setThinQueryService(ThinQueryService thinQueryService) {
+        this.thinQueryService = thinQueryService;
+    }
+
+    /** The query executor, or {@code null} if not wired. */
+    public ThinQueryService thinQueryService() {
+        return thinQueryService;
+    }
+
+    /** The stateless schema→ThinQuery converter. */
+    public AiSchemaConverter converter() {
+        return converter;
     }
 
     /**

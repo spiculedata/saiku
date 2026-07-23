@@ -467,6 +467,10 @@
         <!-- LLM-egress gate: strips the cellset digest from the prompt when
              SAIKU_AI_LLM_EGRESS / ai.llm.egress doesn't permit cell data egress. -->
         <property name="egressGuard" ref="aiLlmEgressGuard"/>
+        <!-- Server-side query execution for the chained-ask loop: converts the model's emitted
+             AiQueryRequest and executes it in-service (same converter+executor path the web layer
+             uses). Session-scoped proxy — resolves the per-request ThinQueryService. -->
+        <property name="thinQueryService" ref="thinQueryBean"/>
     </bean>
 
     <!-- Skill catalogue (saiku#1426). Markdown files with YAML frontmatter under
