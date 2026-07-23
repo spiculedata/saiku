@@ -144,6 +144,89 @@ public class AnthropicNlAskProviderTest {
     }
 
     @Test
+    public void requestBodyWithEmptyTranscriptIsUnchanged() throws Exception {
+        AnthropicNlAskProvider provider =
+                new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config("k", "claude-x", 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(CUBE, "show sales by country", SCHEMA, REQUEST_SCHEMA, List.of())
+                .withToolTranscript(List.of());
+
+        JsonNode messages = MAPPER.readTree(provider.buildRequestBody(req)).get("messages");
+
+        assertEquals(1, messages.size());
+        assertEquals("user", messages.get(0).get("role").asText());
+        assertEquals("show sales by country", messages.get(0).get("content").asText());
+        for (JsonNode m : messages) {
+            if (m.has("content") && m.get("content").isArray()) {
+                for (JsonNode block : m.get("content")) {
+                    assertFalse(
+                            "no tool_use/tool_result block should appear with an empty transcript",
+                            "tool_use".equals(block.path("type").asText())
+                                    || "tool_result".equals(block.path("type").asText()));
+                }
+            }
+        }
+    }
+
+    @Test
+    public void requestBodyRendersOneToolTurnAsToolUseAndToolResultPair() throws Exception {
+        AnthropicNlAskProvider provider =
+                new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config("k", "claude-x", 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(CUBE, "now break it down by region", SCHEMA, REQUEST_SCHEMA, List.of())
+                .withToolTranscript(List.of(
+                        new ToolTurn("toolu_1", "emit_query", "{\"cube\":\"x\"}", "| Tier | Bal |\n| Large | 7000 |")));
+
+        JsonNode messages = MAPPER.readTree(provider.buildRequestBody(req)).get("messages");
+
+        // ...history(none)..., {user, question}, {assistant tool_use}, {user tool_result}
+        assertEquals(3, messages.size());
+        JsonNode asstMsg = messages.get(1);
+        assertEquals("assistant", asstMsg.get("role").asText());
+        JsonNode toolUse = asstMsg.get("content").get(0);
+        assertEquals("tool_use", toolUse.get("type").asText());
+        assertEquals("toolu_1", toolUse.get("id").asText());
+        assertEquals("emit_query", toolUse.get("name").asText());
+        assertEquals("x", toolUse.get("input").get("cube").asText());
+
+        JsonNode toolResultMsg = messages.get(2);
+        assertEquals("user", toolResultMsg.get("role").asText());
+        JsonNode toolResult = toolResultMsg.get("content").get(0);
+        assertEquals("tool_result", toolResult.get("type").asText());
+        assertEquals("toolu_1", toolResult.get("tool_use_id").asText());
+        assertEquals(
+                "| Tier | Bal |\n| Large | 7000 |", toolResult.get("content").asText());
+    }
+
+    @Test
+    public void requestBodyRendersNullResultDigestAsWithheldPlaceholder() throws Exception {
+        AnthropicNlAskProvider provider =
+                new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config("k", "claude-x", 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(CUBE, "q", SCHEMA, REQUEST_SCHEMA, List.of())
+                .withToolTranscript(List.of(new ToolTurn("toolu_2", "emit_query", "{}", null)));
+
+        JsonNode messages = MAPPER.readTree(provider.buildRequestBody(req)).get("messages");
+
+        JsonNode toolResultMsg = messages.get(messages.size() - 1);
+        JsonNode toolResult = toolResultMsg.get("content").get(0);
+        assertEquals(
+                "(result withheld by data policy)", toolResult.get("content").asText());
+    }
+
+    @Test
+    public void parseToolResponseCapturesToolUseId() throws Exception {
+        String body = "{"
+                + "\"usage\":{\"input_tokens\":1,\"output_tokens\":1},"
+                + "\"content\":["
+                + "{\"type\":\"tool_use\",\"id\":\"toolu_abc\",\"name\":\"emit_query\",\"input\":{\"cube\":\"x\"}}"
+                + "]}";
+
+        NlAskResponse resp = AnthropicNlAskProvider.parseToolResponse(body, "claude-x");
+
+        assertFalse(resp.degraded());
+        assertEquals(NlAskResponse.Kind.QUERY, resp.kind());
+        assertEquals("toolu_abc", resp.toolCallId());
+    }
+
+    @Test
     public void parseToolResponseDegradesWhenNoToolUseBlock() throws Exception {
         String body = "{\"content\":[{\"type\":\"text\",\"text\":\"sorry I refuse\"}]}";
         NlAskResponse resp = AnthropicNlAskProvider.parseToolResponse(body, "claude-x");
