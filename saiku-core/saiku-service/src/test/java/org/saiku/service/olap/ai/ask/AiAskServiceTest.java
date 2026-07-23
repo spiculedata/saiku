@@ -644,6 +644,61 @@ public class AiAskServiceTest {
     }
 
     @Test
+    public void chainedAskForcesInsightOnContinuationTurnByDefault() {
+        // OPT-1: the continuation (report) turn is asked with forceTool=INSIGHT so the provider
+        // drops the ~9k-token emit_query schema it never uses on that turn — the trim is on by
+        // default. Turn-1 (empty transcript) must still be asked with the caller's forceTool (AUTO)
+        // so it retains full agency to emit_query.
+        ScriptedProvider provider = new ScriptedProvider(List.of(
+                NlAskResponse.okQuery(fullQueryJson(), "m", 10, 5, "t1"),
+                NlAskResponse.okInsight(insightJson(), "m", 10, 5)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+        AiAskService.AskChain chain = svc.askChained(
+                CUBE, "build the query and report on it", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertFalse(chain.hitStepLimit());
+        assertEquals(2, provider.seen().size());
+        assertEquals(NlAskRequest.ForceTool.AUTO, provider.seen().get(0).forceTool());
+        assertEquals(NlAskRequest.ForceTool.INSIGHT, provider.seen().get(1).forceTool());
+    }
+
+    @Test
+    public void chainedAskToggleOffKeepsFullAgencyOnContinuationTurn() {
+        // Toggle off: the continuation turn keeps the caller's forceTool (AUTO here) instead of
+        // being forced to INSIGHT — full multi-turn agency preserved (e.g. dashboard builder).
+        String savedProp = System.getProperty("saiku.ai.ask.chain.forceReportAfterQuery");
+        System.setProperty("saiku.ai.ask.chain.forceReportAfterQuery", "false");
+        try {
+            ScriptedProvider provider = new ScriptedProvider(List.of(
+                    NlAskResponse.okQuery(fullQueryJson(), "m", 10, 5, "t1"),
+                    NlAskResponse.okInsight(insightJson(), "m", 10, 5)));
+            AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+            svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+            svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+            AiAskService.AskChain chain = svc.askChained(
+                    CUBE, "build the query and report on it", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+            assertFalse(chain.hitStepLimit());
+            assertEquals(2, provider.seen().size());
+            assertEquals(NlAskRequest.ForceTool.AUTO, provider.seen().get(0).forceTool());
+            assertEquals(
+                    "toggle off must NOT force INSIGHT — caller's forceTool (AUTO) is preserved",
+                    NlAskRequest.ForceTool.AUTO,
+                    provider.seen().get(1).forceTool());
+        } finally {
+            if (savedProp == null) {
+                System.clearProperty("saiku.ai.ask.chain.forceReportAfterQuery");
+            } else {
+                System.setProperty("saiku.ai.ask.chain.forceReportAfterQuery", savedProp);
+            }
+        }
+    }
+
+    @Test
     public void chainedAskAllowsBuildAndReportWithNoCellsetOnScreen() {
         // Empty-screen build+report is allowed for chaining — deliberate contrast with the
         // EMAIL_DRAFT no-data refusal (design §5).
@@ -726,6 +781,12 @@ public class AiAskServiceTest {
 
     @Test
     public void chainedAskHitsStepCapWhenAlwaysBuildingQueries() {
+        // OPT-1 interaction: with the default trim ON, continuation turns are asked with
+        // forceTool=INSIGHT. This test's ScriptedProvider ignores the incoming request entirely and
+        // always replies okQuery ("always building queries"), so the loop still sees QUERY every
+        // turn and counts to the cap exactly as before — a real provider would honor forceTool and
+        // return an insight instead. No toggle-off needed here: the test exercises the pure
+        // step-cap mechanic, which this stub's behavior doesn't depend on forceTool for.
         String savedProp = System.getProperty("saiku.ai.ask.max-steps");
         System.setProperty("saiku.ai.ask.max-steps", "3");
         try {
