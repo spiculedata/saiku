@@ -636,9 +636,10 @@
         onNote: (reason) => {
           turns = [...turns, { id: nextId(), role: "assistant", text: reason, model }];
         },
-        onError: (reason) => {
-          turns = [...turns, { id: nextId(), role: "error", text: reason, model }];
-        },
+        // `error` is an early signal that always precedes a terminal degraded `final` for the
+        // same failure (by design — see streamChainAsSse) — onFinal's degraded branch renders
+        // the one error turn from env.reason. Pushing here too would double the red bubble.
+        onError: () => {},
       });
     } catch (e) {
       const message = e instanceof AiAskTransportError ? e.message : (e as Error).message;
