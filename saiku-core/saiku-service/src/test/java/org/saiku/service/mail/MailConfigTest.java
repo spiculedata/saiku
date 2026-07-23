@@ -1,6 +1,7 @@
 package org.saiku.service.mail;
 
 import static org.junit.jupiter.api.Assertions.*;
+
 import java.util.Map;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
@@ -41,9 +42,15 @@ class MailConfigTest {
 
     @Test
     void propertyUsedWhenEnvAbsent_andPortParsed() {
-        MailConfig c = MailConfig.resolve(of(Map.of()),
-                of(Map.of("saiku.mail.smtp.host", "prop-host", "saiku.mail.from", "p@x.com",
-                        "saiku.mail.smtp.port", "2525")));
+        MailConfig c = MailConfig.resolve(
+                of(Map.of()),
+                of(Map.of(
+                        "saiku.mail.smtp.host",
+                        "prop-host",
+                        "saiku.mail.from",
+                        "p@x.com",
+                        "saiku.mail.smtp.port",
+                        "2525")));
         assertEquals("prop-host", c.host());
         assertEquals(2525, c.port());
     }

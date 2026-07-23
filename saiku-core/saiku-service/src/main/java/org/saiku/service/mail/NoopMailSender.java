@@ -15,8 +15,10 @@ public class NoopMailSender implements MailSender {
 
     @Override
     public void send(MailMessage message) {
-        log.warn("Email is not configured (SMTP host unset) — dropping message to {} (subject: {}). "
-                + "Set SAIKU_MAIL_SMTP_HOST and SAIKU_MAIL_FROM to enable delivery.",
-                message.to(), message.subject());
+        log.warn(
+                "Email is not configured (SMTP host unset) — dropping message to {} (subject: {}). "
+                        + "Set SAIKU_MAIL_SMTP_HOST and SAIKU_MAIL_FROM to enable delivery.",
+                message.to(),
+                message.subject());
     }
 }
