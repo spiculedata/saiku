@@ -28,12 +28,27 @@ public class EmailResource {
     private MailConfig mailConfig;
     private final EmailMessageAssembler assembler = new EmailMessageAssembler();
 
+    /**
+     * Per-user send rate limit for the self-send endpoint (SEC-harden slice,
+     * task 2/2). Mirrors {@code AiQueryResource#askRateLimiter}: a direct
+     * {@code new} field + Spring/test setter, keyed by the authenticated
+     * principal so one user's abuse can't exhaust another's budget.
+     */
+    private org.saiku.web.security.ratelimit.AiRateLimiter emailRateLimiter =
+            new org.saiku.web.security.ratelimit.AiRateLimiter(
+                    Integer.getInteger("saiku.email.ratelimit.maxPerMinute", 10), 60_000L);
+
     public void setMailSender(MailSender mailSender) {
         this.mailSender = mailSender;
     }
 
     public void setMailConfig(MailConfig mailConfig) {
         this.mailConfig = mailConfig;
+    }
+
+    /** Spring/test setter to override the per-user send rate limit. */
+    public void setEmailRateLimiter(org.saiku.web.security.ratelimit.AiRateLimiter emailRateLimiter) {
+        this.emailRateLimiter = emailRateLimiter;
     }
 
     @GET
@@ -53,6 +68,14 @@ public class EmailResource {
         if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity(Map.of("error", "authentication required"))
+                    .build();
+        }
+        if (!emailRateLimiter.tryAcquire(auth.getName())) {
+            return Response.status(429)
+                    .entity(java.util.Map.of(
+                            "error",
+                            "Too many emails — limit is " + emailRateLimiter.getMaxCalls() + " per "
+                                    + (emailRateLimiter.getWindowMs() / 1000) + "s. Please retry shortly."))
                     .build();
         }
         if (mailSender == null || !mailSender.isConfigured()) {
