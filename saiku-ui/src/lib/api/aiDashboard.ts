@@ -83,7 +83,10 @@ function isDashboardSpec(body: unknown): body is DashboardSpec {
  * 500) throws {@link AiAskTransportError} so it is surfaced distinctly from a
  * degrade.
  */
-export async function buildAiDashboard(req: BuildDashboardRequest): Promise<DashboardSpec> {
+export async function buildAiDashboard(
+  req: BuildDashboardRequest,
+  signal?: AbortSignal,
+): Promise<DashboardSpec> {
   let res: Response;
   try {
     res = await fetch(DASHBOARD_URL, {
@@ -94,8 +97,12 @@ export async function buildAiDashboard(req: BuildDashboardRequest): Promise<Dash
         Accept: "application/json",
       },
       body: JSON.stringify(req),
+      signal,
     });
   } catch (e) {
+    // A user-initiated cancel aborts the fetch — surface the AbortError raw so
+    // the caller can dismiss quietly (NOT as a transport/error toast).
+    if ((e as Error)?.name === "AbortError") throw e;
     throw new AiAskTransportError(`buildAiDashboard: transport error (${(e as Error).message})`, 0);
   }
 

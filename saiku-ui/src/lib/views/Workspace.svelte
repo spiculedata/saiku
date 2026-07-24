@@ -11,6 +11,7 @@
   import WorkspaceToolbar from "$lib/views/WorkspaceToolbar.svelte";
   import QueryCanvas from "$lib/views/QueryCanvas.svelte";
   import AiQueryDrawer from "$lib/views/AiQueryDrawer.svelte";
+  import AiDashboardBuildingOverlay from "$lib/views/AiDashboardBuildingOverlay.svelte";
   import PrefsMenu from "$lib/components/PrefsMenu.svelte";
   import { query } from "$lib/stores/query.svelte";
   import { selection } from "$lib/stores/selection.svelte";
@@ -422,6 +423,11 @@
     onApplyViewChange={handleApplyViewChange}
   />
 {/if}
+
+<!-- Full-screen dashboard-build loader. Mounted at the page level, OUTSIDE the
+     AI drawer, so a drawer unmount/remount (window resize) can't hide it while
+     the ~1-2 min build runs. Self-gates on the build store. -->
+<AiDashboardBuildingOverlay />
 
 <Modal title={i18n.t("modal.about.title")} open={aboutOpen} size="sm" onClose={() => (aboutOpen = false)}>
   <p>{i18n.t("modal.about.tagline")}</p>

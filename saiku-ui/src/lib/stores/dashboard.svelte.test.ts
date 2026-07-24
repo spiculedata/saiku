@@ -150,4 +150,47 @@ describe("dashboardStore — REVIEW-THEN-SAVE persisted + path-bound adoption", 
     expect(dashboardStore.current?.name).toBe("Fetched Real");
     expect(dashboardStore.persisted).toBe(true);
   });
+
+  describe("commentsPath — #942 badge gates on persisted, not savedPath", () => {
+    // Regression: the per-tile comment-count badge fetched comments against the
+    // review dashboard's not-yet-written savedPath, 403'ing (canReadDashboard
+    // ACL) — which the global fetch interceptor mis-surfaced as a bogus
+    // "Session expired" banner right after an AI dashboard build.
+    it("is empty for a staged/adopted AI review (savedPath set, persisted false)", async () => {
+      const path = "homes/juan/ai-sales-abc.saikudash";
+      dashboardStore.beginReview(newDashboard("AI Sales"), path);
+      await dashboardStore.load(path); // adopt — no fetch
+      expect(dashboardStore.savedPath).toBe(path);
+      expect(dashboardStore.persisted).toBe(false);
+      // The badge must stay disabled while the dashboard doesn't exist server-side.
+      expect(dashboardStore.commentsPath).toBe("");
+    });
+
+    it("is empty for a 404 fallback (savedPath set, persisted false)", async () => {
+      loadDashboardMock.mockRejectedValueOnce(new Error("loadDashboard -> 404"));
+      await dashboardStore.load("homes/juan/does-not-exist.saikudash");
+      expect(dashboardStore.savedPath).toBe("homes/juan/does-not-exist.saikudash");
+      expect(dashboardStore.persisted).toBe(false);
+      expect(dashboardStore.commentsPath).toBe("");
+    });
+
+    it("equals savedPath for a fetched dashboard, and after the review is saved", async () => {
+      // Fetched from the repository → persisted → comments enabled.
+      await dashboardStore.load("homes/juan/real.saikudash");
+      expect(dashboardStore.persisted).toBe(true);
+      expect(dashboardStore.commentsPath).toBe(dashboardStore.savedPath);
+      expect(dashboardStore.commentsPath).toBe("homes/juan/real.saikudash");
+
+      // A review only enables comments once the user Saves it.
+      dashboardStore.reset();
+      const path = "homes/juan/ai-x.saikudash";
+      dashboardStore.beginReview(newDashboard("AI Review"), path);
+      await dashboardStore.load(path); // adopt
+      expect(dashboardStore.commentsPath).toBe("");
+      const ok = await dashboardStore.save();
+      expect(ok).toBe(true);
+      expect(dashboardStore.persisted).toBe(true);
+      expect(dashboardStore.commentsPath).toBe(dashboardStore.savedPath);
+    });
+  });
 });

@@ -40,10 +40,15 @@
 
   let editorOpen = $state(false);
 
-  // #942: comments act on the SAVED dashboard. savedPath is empty for an
-  // unsaved draft AND for the public share viewer (hydrated with ""), so the
-  // badge naturally hides in both — guests can't comment.
-  const commentsPath = $derived(dashboardStore.savedPath);
+  // #942: comments act on a dashboard that ACTUALLY EXISTS on the server.
+  // Gate on the store's commentsPath getter (persisted ? savedPath : ""), not
+  // on savedPath directly: an AI-assembled review and a 404 fallback both carry
+  // a non-empty savedPath while still unsaved, and fetching comments against
+  // that not-yet-written path 403s (canReadDashboard ACL) — which the global
+  // interceptor mis-surfaces as a "Session expired" banner. persisted flips
+  // true once the dashboard is fetched or saved, so the badge appears then.
+  // Empty for the public share viewer too (hydrated ""), so guests can't comment.
+  const commentsPath = $derived(dashboardStore.commentsPath);
   let commentsOpen = $state(false);
   let commentCount = $state(0);
   let countLoaded = $state(false);

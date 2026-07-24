@@ -63,6 +63,21 @@ class DashboardStore {
    *  savedPath, so a not-yet-written dashboard can't leak a real link. */
   persisted = $state<boolean>(false);
 
+  /** Repository path the per-tile comment surface (#942) is allowed to act on,
+   *  or "" when comments must stay disabled. Comments are durable server state
+   *  keyed on the dashboard path, so — exactly like Share / Embed / History —
+   *  they MUST gate on {@link persisted}, NOT on {@link savedPath}. An
+   *  AI-assembled review ({@link beginReview}) and a 404 fallback both carry a
+   *  non-empty savedPath while persisted is still false; reading/writing
+   *  comments against that not-yet-written path makes the server's
+   *  canReadDashboard ACL check fail and return 403 (CommentResource), which the
+   *  global fetch interceptor then mis-surfaces as a spurious "Session expired"
+   *  banner. Gating here keeps the badge hidden until the dashboard actually
+   *  exists on the server. */
+  get commentsPath(): string {
+    return this.persisted ? this.savedPath : "";
+  }
+
   /** Signal that the next Tile to render with this id should auto-open
    *  its editor modal — used by {@link duplicateTile} so the freshly
    *  cloned tile lands in immediate-edit mode (issue #913). Consumed
