@@ -52,6 +52,16 @@ class DashboardStore {
   dirty = $state<boolean>(false);
   dirtyCount = $state<number>(0);
 
+  /** True once the active dashboard actually exists on the server — i.e. it
+   *  was FETCHED from the repository ({@link load}) or the user SAVED it
+   *  ({@link save}). Distinct from {@link savedPath}, which is only the Save
+   *  TARGET: an AI-assembled review ({@link beginReview}), a blank new
+   *  dashboard, or a 404 fallback all carry a savedPath but are NOT yet
+   *  persisted. Server-side surfaces that mint/read durable state keyed on the
+   *  path — Share (public token), Embed, History — must gate on THIS, never on
+   *  savedPath, so a not-yet-written dashboard can't leak a real link. */
+  persisted = $state<boolean>(false);
+
   /** Signal that the next Tile to render with this id should auto-open
    *  its editor modal — used by {@link duplicateTile} so the freshly
    *  cloned tile lands in immediate-edit mode (issue #913). Consumed
@@ -88,9 +98,49 @@ class DashboardStore {
 
   /* ----------------------------- lifecycle ----------------------------- */
 
+  /** An AI-assembled dashboard staged for REVIEW-THEN-SAVE, and the exact
+   *  repository path it was staged for. Set by {@link beginReview} just before
+   *  the drawer navigates to the editor; the next {@link load} FOR THAT SAME
+   *  PATH adopts it IN PLACE OF a repository fetch so its in-memory
+   *  (never-persisted) tiles survive the navigation into the real editor.
+   *  Consumed exactly once. Path-bound so an aborted navigation or a load for
+   *  a different path falls through to the normal fetch instead of adopting the
+   *  staged dashboard into the wrong place. No auto-save — the user reviews in
+   *  the real grid and clicks the existing Save, which writes it as a new file. */
+  private pendingReview: Dashboard | null = null;
+  private pendingReviewPath: string | null = null;
+
+  /** Stage an AI-assembled dashboard for review. Does NOT persist. The
+   *  {@code savePath} is the suggested repository path the freshly-reviewed
+   *  dashboard will Save to (the caller navigates the editor there); the next
+   *  {@link load} for that exact path adopts the staged dashboard, marks it
+   *  dirty and NOT persisted, so the existing Save button is enabled and writes
+   *  a new file — but Share / Embed / History stay hidden until it is saved. */
+  beginReview(dashboard: Dashboard, savePath: string): void {
+    this.pendingReview = dashboard;
+    this.pendingReviewPath = savePath;
+  }
+
   /** Load a dashboard from the repository. On 404 the store falls back to
    *  a fresh empty dashboard so the editor can offer "save to create". */
   async load(path: string): Promise<void> {
+    // REVIEW-THEN-SAVE: adopt an AI-assembled dashboard staged via
+    // beginReview() instead of fetching, so its in-memory tiles survive the
+    // navigation into the editor. Path-bound + consumed once: only the load for
+    // the exact staged path adopts it; any other path (aborted nav, user
+    // switch, a different dashboard) falls through to a normal fetch. Landed
+    // dirty + NOT persisted so the existing Save is enabled but Share/Embed/
+    // History stay gated off; savedPath = the navigated path so the editor's
+    // reload-guard ($effect: savedPath !== path) doesn't re-fetch and clobber.
+    if (this.pendingReview && this.pendingReviewPath === path) {
+      const review = this.pendingReview;
+      this.pendingReview = null;
+      this.pendingReviewPath = null;
+      this.hydrate(review, path); // hydrate resets persisted = false
+      this.dirty = true;
+      this.dirtyCount = 1;
+      return;
+    }
     this.loading = true;
     this.loadError = null;
     try {
@@ -100,6 +150,9 @@ class DashboardStore {
       }
       const d = await loadDashboard(path);
       this.hydrate(d, path);
+      // A real fetch succeeded — this dashboard exists on the server, so
+      // Share / Embed / History may act on it. (hydrate reset it to false.)
+      this.persisted = true;
       // Track on successful view only — 404 fallbacks below shouldn't
       // poison the "recently viewed" section with dead paths (#936).
       recentDashboards.push(path);
@@ -132,6 +185,11 @@ class DashboardStore {
     this.savedPath = savedPath;
     this.dirty = changed;
     this.dirtyCount = changed ? 1 : 0;
+    // Default to NOT persisted; callers that actually fetched (load) or saved
+    // (save) flip it true afterwards. A direct hydrate (guest share viewer,
+    // review adoption, blank/404 fallback) leaves it false so path-keyed
+    // server surfaces (Share / Embed / History) stay gated off.
+    this.persisted = false;
     this.saveError = null;
     // Snapshot AFTER migration — analysts who reset want to land on
     // the migrated baseline, not on the pre-migration shape that no
@@ -176,6 +234,9 @@ class DashboardStore {
       this.savedPath = path;
       this.dirty = false;
       this.dirtyCount = 0;
+      // The dashboard now exists on the server — Share / Embed / History may
+      // act on it. This is the flip point for a reviewed AI build.
+      this.persisted = true;
       return true;
     } catch (e: unknown) {
       this.saveError = e instanceof Error ? e.message : String(e);
@@ -190,10 +251,15 @@ class DashboardStore {
     this.savedPath = "";
     this.dirty = false;
     this.dirtyCount = 0;
+    this.persisted = false;
     this.loadError = null;
     this.saveError = null;
     this.savedDefaultMembers = {};
     this.pendingBefore = null;
+    // Drop any staged review so a reset (page teardown / user switch) can't
+    // later adopt it into an unrelated load. (FIX 2 — leak window.)
+    this.pendingReview = null;
+    this.pendingReviewPath = null;
     this.canUndo = false;
     this.canRedo = false;
   }

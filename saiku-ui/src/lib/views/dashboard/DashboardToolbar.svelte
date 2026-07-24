@@ -82,9 +82,14 @@
     gridElement = null,
   }: Props = $props();
 
-  // #941/#947: share + history act on the SAVED dashboard, so the buttons only
-  // appear once it has a repository path (not for an unsaved draft).
+  // #941/#947: share + history act on the PERSISTED dashboard (one that
+  // actually exists on the server), so the buttons only appear once it has been
+  // fetched or saved — never for an unsaved draft or an AI-assembled review
+  // that merely carries a suggested savedPath (SEC D2 FIX 1: gating on savedPath
+  // let a pre-save Share mint a real public token for a not-yet-written path).
+  // savedPath stays the Save TARGET; `persisted` gates the path-keyed surfaces.
   const savedPath = $derived(dashboardStore.savedPath);
+  const persisted = $derived(dashboardStore.persisted);
   let shareOpen = $state(false);
   let historyOpen = $state(false);
 
@@ -356,7 +361,7 @@
     <AddTileMenu onPick={(t) => onAddTile?.(t)} disabled={!onAddTile} />
   {/if}
 
-  {#if savedPath}
+  {#if persisted}
     <Button variant="outline" onclick={() => (historyOpen = true)} title="Version history — preview and restore earlier saves" aria-haspopup="dialog">
       <History size={14} aria-hidden="true" />
       <span>History</span>
@@ -385,7 +390,7 @@
   {/if}
 {/snippet}
 
-{#if savedPath}
+{#if persisted}
   <DashboardShareModal dashboardPath={savedPath} open={shareOpen} onClose={() => (shareOpen = false)} />
   <HistoryPanel
     dashboardPath={savedPath}
