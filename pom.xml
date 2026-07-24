@@ -18,6 +18,10 @@
         <module>saiku-core</module>
         <module>saiku-webapp</module>
         <module>saiku-launcher</module>
+        <!-- Hegel property tests against Saiku code. Test-only, never published.
+             Requires JDK 22+ (Hegel's FFM native engine), which is why the reactor
+             build now needs JDK 22 even though main artifacts still target release 21. -->
+        <module>saiku-proptest</module>
     </modules>
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
