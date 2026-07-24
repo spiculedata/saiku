@@ -1112,6 +1112,110 @@ public class AiAskServiceTest {
                 "must not retry — exactly one provider call", 1, provider.seen().size());
     }
 
+    /* ---- F3: total wall-clock deadline across the whole chained-ask loop ---- */
+
+    @Test
+    public void chainedAskStopsCleanlyWhenWallClockDeadlineExceeded() {
+        // The chain builds+executes a query on turn 1, then the injected clock reports the whole
+        // chain has blown its wall-clock budget (default 300s) before turn 2's provider call. The
+        // loop must stop with a clean degraded outcome, keep the AskChain shape (no throw), and make
+        // NO further provider call after the deadline. The scripted insight for turn 2 is never
+        // reached.
+        ScriptedProvider provider = new ScriptedProvider(List.of(
+                NlAskResponse.okQuery(fullQueryJson(), "m", 10, 5, "t1"),
+                NlAskResponse.okInsight(insightJson(), "m", 10, 5)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+        // start=0, turn-1 check=0 (under 300s), turn-2 check=400s (over 300s → deadline fires).
+        svc.setNanoClock(steppedClock(0L, 0L, 400_000_000_000L));
+
+        AiAskService.AskChain chain = svc.askChained(
+                CUBE, "build the query and report on it", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(2, chain.steps().size());
+        assertEquals(AiAskService.AskOutcome.Kind.QUERY, chain.steps().get(0).kind());
+        assertFalse(chain.steps().get(0).degraded());
+        assertTrue("deadline exit must be a degraded step", chain.steps().get(1).degraded());
+        assertTrue(
+                "degrade reason must be the generic time message: "
+                        + chain.steps().get(1).reason(),
+                chain.steps().get(1).reason().contains("took too long"));
+        assertFalse(
+                "no internals in the client-facing reason",
+                chain.steps().get(1).reason().contains("300")
+                        || chain.steps().get(1).reason().contains("nano"));
+        // Model of the last successful turn is carried onto the degraded outcome.
+        assertEquals("m", chain.steps().get(1).model());
+        // A time degrade is not the step cap.
+        assertFalse(chain.hitStepLimit());
+        // The decisive assertion: the provider was NOT called again after the deadline fired.
+        assertEquals(
+                "loop must stop before any further provider call",
+                1,
+                provider.seen().size());
+    }
+
+    @Test
+    public void chainedAskDeadlineDoesNotFireOnANormalChain() {
+        // With the default deadline (300s) and a real monotonic clock, a normal 1-query→1-insight
+        // chain completes in milliseconds and NEVER trips the wall-clock bound — no premature
+        // degrade. Guards against a deadline default/clamp that could cut a legitimate chain short.
+        ScriptedProvider provider = new ScriptedProvider(List.of(
+                NlAskResponse.okQuery(fullQueryJson(), "m", 10, 5, "t1"),
+                NlAskResponse.okInsight(insightJson(), "m", 10, 5)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+        // No setNanoClock — real System.nanoTime, default 300s deadline.
+
+        AiAskService.AskChain chain = svc.askChained(
+                CUBE, "build the query and report on it", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(2, chain.steps().size());
+        assertEquals(AiAskService.AskOutcome.Kind.QUERY, chain.steps().get(0).kind());
+        assertFalse(chain.steps().get(0).degraded());
+        assertEquals(AiAskService.AskOutcome.Kind.INSIGHT, chain.steps().get(1).kind());
+        assertFalse(
+                "a normal chain must never hit the deadline",
+                chain.steps().get(1).degraded());
+        assertFalse(chain.hitStepLimit());
+        assertEquals(2, provider.seen().size());
+    }
+
+    @Test
+    public void chainDeadlineSecondsClampsSyspropBounds() {
+        String key = "saiku.ai.ask.chain.deadlineSeconds";
+        String saved = System.getProperty(key);
+        try {
+            System.setProperty(key, "10");
+            assertEquals("10 clamps to the floor of 30", 30L, AiAskService.chainDeadlineSeconds());
+
+            System.setProperty(key, "99999");
+            assertEquals("99999 clamps to the ceiling of 1800", 1800L, AiAskService.chainDeadlineSeconds());
+
+            System.setProperty(key, "not-a-number");
+            assertEquals("non-numeric falls back to the default of 300", 300L, AiAskService.chainDeadlineSeconds());
+        } finally {
+            if (saved == null) {
+                System.clearProperty(key);
+            } else {
+                System.setProperty(key, saved);
+            }
+        }
+    }
+
+    /**
+     * A monotonic {@code nanoTime} stand-in that returns each supplied value in turn, then repeats
+     * the last one once exhausted. Lets a test drive the {@link AiAskService#askChained} wall-clock
+     * deadline deterministically: the values are consumed as start-capture, then one per loop
+     * iteration's deadline check.
+     */
+    private static java.util.function.LongSupplier steppedClock(long... nanos) {
+        AtomicInteger idx = new AtomicInteger();
+        return () -> nanos[Math.min(idx.getAndIncrement(), nanos.length - 1)];
+    }
+
     /* ---- D1: buildDashboard — multi-tile dashboard spec (validated + hardened) ---- */
 
     /** A valid tile query that resolves against {@link #salesSchemaWithMeasure()}. */
