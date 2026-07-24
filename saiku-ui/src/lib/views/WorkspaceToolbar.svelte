@@ -681,8 +681,7 @@
     border-color: var(--accent);
   }
   .tb-btn--ai:hover {
-    filter: brightness(1.08);
-    color: var(--bg);
+    color: var(--accent);
   }
   /*
    * saiku-cloud#612 — visual cue that the query shape isn't runnable yet
