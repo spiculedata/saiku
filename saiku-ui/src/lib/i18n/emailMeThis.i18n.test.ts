@@ -8,6 +8,12 @@ describe("emailMeThis i18n keys", () => {
     "modal.emailMeThis.title",
     "modal.emailMeThis.to",
     "modal.emailMeThis.subject",
+    "modal.emailMeThis.summary",
+    "modal.emailMeThis.summaryPlaceholder",
+    "modal.emailMeThis.generate",
+    "modal.emailMeThis.regenerate",
+    "modal.emailMeThis.generating",
+    "modal.emailMeThis.generateFailed",
     "modal.emailMeThis.send",
     "modal.emailMeThis.sending",
     "modal.emailMeThis.defaultSubject",
@@ -22,7 +28,7 @@ describe("emailMeThis i18n keys", () => {
     "modal.emailMeThis.failedBody",
   ];
 
-  it("should have all 17 emailMeThis keys defined and non-empty", () => {
+  it("should have all 23 emailMeThis keys defined and non-empty", () => {
     for (const key of emailMeThisKeys) {
       expect(enJson).toHaveProperty(key);
       const value = (enJson as Record<string, unknown>)[key];
