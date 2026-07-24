@@ -17,6 +17,7 @@
   import { tabs } from "$lib/stores/tabs.svelte";
   import { embed } from "$lib/stores/embed.svelte";
   import { aiAskHealth } from "$lib/stores/aiAskHealth.svelte";
+  import { mailHealth } from "$lib/stores/mailHealth.svelte";
   import {
     deserializeQueryFromHash,
     serializeQueryToHash,
@@ -179,13 +180,14 @@
 
   onMount(() => {
     if (typeof window === "undefined") return;
-    // Re-probe the AI Ask health on workspace mount. The store's
-    // constructor fires at module load, which can race with session
-    // cookie setup on a cold load — a 401 there latches configured=false
-    // for the session and hides the Sparkles button even after the
-    // backend is properly configured. Re-probing here guarantees we ask
-    // again with credentials in place.
+    // Re-probe both the AI Ask and Email Me This health flags on workspace
+    // mount. Each store's constructor fires at module load, which can race
+    // with session-cookie setup on a cold load — a 401 there latches
+    // configured=false for the session and hides the Sparkles button (AI Ask)
+    // or Email Me This button even after the backend is properly configured.
+    // Re-probing here guarantees we ask again with credentials in place.
     void aiAskHealth.refresh();
+    void mailHealth.refresh();
     const params = new URLSearchParams(window.location.search);
     const token = params.get("q");
     if (token) {

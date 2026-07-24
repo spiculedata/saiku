@@ -16,6 +16,7 @@
    * banner with the reason from the response body.
    */
 
+  import { aiInsight } from "$lib/stores/aiInsight.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { selection } from "$lib/stores/selection.svelte";
   import { askAi, AiAskTransportError, type AiInsight, type AiViewChange, type AskResponse, type NlAskMessageDto } from "$lib/api/aiAsk";
@@ -324,6 +325,11 @@
     // Intent: insight — model produced markdown analysis of the user's current cellset.
     // Render in the thread; no canvas mutation.
     if (resp.insight) {
+      // Lift the markdown into the shared store so surfaces outside the
+      // drawer (the "email me this" modal) can read the latest insight
+      // without owning the chat thread. Plain event-handler write — not
+      // inside an $effect — so no read/write reentrancy risk here.
+      aiInsight.set(resp.insight.markdown);
       turns = [
         ...turns,
         {
