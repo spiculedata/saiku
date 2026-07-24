@@ -34,6 +34,8 @@ If you don't have JDK 22, exclude the module: `mvn -pl '!saiku-proptest' verify`
 |------|----------|
 | `JdbcUrlValidatorPropertyTest` | Every dangerous H2 URL (`INIT=RUNSCRIPT`, `CREATE ALIAS/TRIGGER`, `SHUTDOWN`) is rejected — even nested in a `jdbc:mondrian:Jdbc=…` wrapper — and benign URLs are never rejected. |
 | `CryptoUtilPropertyTest` | `decrypt(encrypt(s)) == s` for every string `s`. |
+| `DataSourceMapperRoundTripPropertyTest` | An Ossie datasource survives `DataSourceMapper → SaikuDatasource → DataSourceMapper` with its identifying fields intact (the server-side wire contract behind saiku#1529). |
+| `KAnonymityFilterPropertyTest` | The k-anonymity gate masks exactly the disclosive region: known counts in `[1, k)` are suppressed, `k` and above are not (inclusive boundary), and unknown counts (`<= 0`) never are. |
 
 ## Adding a property test
 
