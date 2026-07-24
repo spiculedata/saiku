@@ -25,11 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Set up JDK 21
+      - name: Set up JDK 22
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: "22"
           cache: maven
 
       # Same multi-server settings.xml as ci.yml / release.yml — the
