@@ -2,14 +2,14 @@
   import { untrack } from "svelte";
   import Modal from "$lib/components/Modal.svelte";
   import { Button } from "$lib/components/ui";
-  import { AlertCircle, Loader2, Sparkles } from "lucide-svelte";
+  import { Loader2, Sparkles } from "lucide-svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { renderTinyMarkdown } from "$lib/api/tinyMarkdown";
   import { aiInsight } from "$lib/stores/aiInsight.svelte";
   import { chartPngBase64, resultToPdfBase64 } from "$lib/email/artifacts";
   import { sendEmailSelf } from "$lib/api/emailSelf";
-  import { rememberedAddress } from "$lib/email/rememberedAddress";
+  import { mailHealth } from "$lib/stores/mailHealth.svelte";
   import { query } from "$lib/stores/query.svelte";
   import { generateSummary } from "$lib/email/summarize";
   import { buildCellsetDigest } from "$lib/api/cellsetDigest";
@@ -20,6 +20,10 @@
    * "Email me this" — bundles the current AI insight (rendered to HTML),
    * the chart PNG (chart view mode only), and a PDF snapshot of the result
    * view, then POSTs them to the backend's send-to-self endpoint.
+   *
+   * The recipient is NOT user-chosen: the server sends only to the
+   * admin-configured address (SAIKU_MAIL_SELF_TO), surfaced read-only here via
+   * the mailHealth store. When no recipient is configured, Send is disabled.
    *
    * Structural template is ReportTitlesModal.svelte: local $state form
    * seeded via $effect from props, Modal + field__input inputs, a footer
@@ -33,12 +37,10 @@
 
   let { open, onClose }: Props = $props();
 
-  let address = $state(untrack(() => rememberedAddress.get()));
   let subject = $state(untrack(() => defaultSubject()));
   let summary = $state("");
   let sending = $state(false);
   let generating = $state(false);
-  let showAddressError = $state(false);
 
   function defaultSubject(): string {
     const cubeName = query.current?.cube?.caption ?? query.current?.cube?.name;
@@ -48,15 +50,12 @@
   $effect(() => {
     if (open) {
       untrack(() => {
-        address = rememberedAddress.get();
         subject = defaultSubject();
         summary = aiInsight.latestMarkdown?.trim() ?? "";
-        showAddressError = false;
       });
     }
   });
 
-  const addressValid = $derived(address.trim().length > 0);
   const canGenerate = $derived(aiAskHealth.configured && !!query.result && !!query.current?.cube);
 
   async function handleGenerate() {
@@ -81,25 +80,24 @@
   }
 
   async function handleSend() {
-    if (!addressValid) {
-      showAddressError = true;
-      return;
-    }
+    // The recipient is server-controlled; Send is disabled unless the backend
+    // reports a configured self-recipient. Guard defensively regardless.
+    if (!mailHealth.selfConfigured) return;
     sending = true;
     try {
       const body = {
         subject,
-        address,
         summaryHtml: summary.trim() ? renderTinyMarkdown(summary) : "",
         chartPngBase64: chartPngBase64(),
         pdfBase64: await resultToPdfBase64(document.querySelector(".result-host")),
       };
-      rememberedAddress.set(address);
       const res = await sendEmailSelf(body);
       if (res.ok) {
         toasts.success(
           i18n.t("modal.emailMeThis.sentTitle", "Email sent"),
-          `${i18n.t("modal.emailMeThis.sentBody", "Sent to")} ${address}`,
+          mailHealth.to
+            ? `${i18n.t("modal.emailMeThis.sentBody", "Sent to")} ${mailHealth.to}`
+            : i18n.t("modal.emailMeThis.sentBodyGeneric", "Your analysis is on its way."),
         );
         onClose();
         return;
@@ -153,19 +151,26 @@
 </script>
 
 <Modal title={i18n.t("modal.emailMeThis.title", "Email me this")} {open} size="md" onClose={onClose}>
-  <label class="field" class:field--invalid={showAddressError}>
+  <div class="field">
     <span class="field__label">{i18n.t("modal.emailMeThis.to", "To")}</span>
-    <input
-      class="field__input"
-      type="email"
-      bind:value={address}
-      oninput={() => (showAddressError = false)}
-      autocomplete="email"
-    />
-    {#if showAddressError}
-      <p class="field__error"><AlertCircle size={14} />{i18n.t("modal.emailMeThis.addressRequired", "Enter an email address.")}</p>
+    {#if !mailHealth.selfConfigured}
+      <p class="recipient recipient--muted">
+        {i18n.t("modal.emailMeThis.recipientNotConfigured", "No recipient is configured on this server.")}
+      </p>
+    {:else if mailHealth.to}
+      <p class="recipient">
+        {i18n.t("modal.emailMeThis.sendsToPrefix", "Sends to:")}
+        {mailHealth.to}
+      </p>
+    {:else}
+      <p class="recipient">
+        {i18n.t(
+          "modal.emailMeThis.sendsToGeneric",
+          "Sends to the address configured by your administrator.",
+        )}
+      </p>
     {/if}
-  </label>
+  </div>
   <label class="field">
     <span class="field__label">{i18n.t("modal.emailMeThis.subject", "Subject")}</span>
     <input class="field__input" bind:value={subject} />
@@ -194,7 +199,7 @@
   {/if}
   {#snippet footer()}
     <Button variant="outline" onclick={onClose} disabled={sending}>{i18n.t("modal.cancel", "Cancel")}</Button>
-    <Button onclick={handleSend} disabled={sending || generating || !addressValid}>
+    <Button onclick={handleSend} disabled={sending || generating || !mailHealth.selfConfigured}>
       {#if sending}
         <Loader2 size={14} class="animate-spin" />
         {i18n.t("modal.emailMeThis.sending", "Sending…")}
@@ -204,3 +209,20 @@
     </Button>
   {/snippet}
 </Modal>
+
+<style>
+  .recipient {
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--fg);
+    font-size: var(--fs-sm);
+    word-break: break-all;
+  }
+
+  .recipient--muted {
+    color: var(--fg-subtle);
+  }
+</style>

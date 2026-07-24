@@ -34,8 +34,8 @@ public class EmailMessageAssembler {
     private static final PolicyFactory SUMMARY_POLICY =
             Sanitizers.FORMATTING.and(Sanitizers.BLOCKS).and(Sanitizers.LINKS).and(Sanitizers.TABLES);
 
-    public MailMessage assemble(EmailSelfRequest req, String fromAddress) {
-        String to = validateAddress(req.getAddress());
+    public MailMessage assemble(EmailSelfRequest req, String fromAddress, String toAddress) {
+        String to = validateAddress(toAddress);
         String subject = stripCrlf(req.getSubject() == null ? "" : req.getSubject());
 
         String summary = req.getSummaryHtml() == null || req.getSummaryHtml().isBlank()

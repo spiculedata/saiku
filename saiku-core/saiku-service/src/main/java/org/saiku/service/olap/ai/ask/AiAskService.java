@@ -454,6 +454,47 @@ public class AiAskService {
     /** Used when a 429 gave no usable hint ({@code retryAfterMs == 0}). */
     private static final long DEFAULT_RATE_LIMIT_WAIT_MS = 5_000L;
 
+    /**
+     * Total wall-clock budget (seconds) for ONE whole {@link #askChained} run (F3 hardening). This
+     * is an OUTER bound across the entire loop — distinct from, and additive to, the per-turn
+     * rate-limit waits ({@link #rateLimitMaxWaitMs()}) and the step cap ({@link #maxSteps()}). Read
+     * from env {@code SAIKU_AI_CHAIN_DEADLINE_SECONDS} first (so ops can tune it without a
+     * {@code -D}), else system property {@code saiku.ai.ask.chain.deadlineSeconds}, else default
+     * 300; clamped to [30, 1800].
+     *
+     * <p>The default is deliberately generous. Real multi-step local-model chains have been observed
+     * at ~110–160s, and the per-request provider timeout defaults to 60s and can be raised to 300s
+     * in demos — so a legitimate slow chain stays comfortably under 300s and this NEVER fires in
+     * normal operation. Its only job is to cap the pathological worst case (max steps × max retries ×
+     * max wait × a long per-request timeout) so a single request can't pin a Jetty worker
+     * indefinitely. The [30, 1800] clamp keeps an operator from tuning it below a plausible single
+     * slow turn (30s floor) or above a half-hour hard ceiling.
+     *
+     * <p>Package-visible (not {@code private}) purely so the clamp is unit-testable directly, since
+     * its effect is a wall-clock bound that can't be asserted behaviourally the way a step/tile cap
+     * can.
+     */
+    static long chainDeadlineSeconds() {
+        String v = System.getenv("SAIKU_AI_CHAIN_DEADLINE_SECONDS");
+        if (v == null || v.isBlank()) v = System.getProperty("saiku.ai.ask.chain.deadlineSeconds");
+        long n = 300L;
+        if (v != null && !v.isBlank()) {
+            try {
+                n = Long.parseLong(v.trim());
+            } catch (NumberFormatException ignore) {
+                // fall through to the default
+            }
+        }
+        return Math.max(30L, Math.min(1800L, n));
+    }
+
+    /**
+     * Generic, client-facing degrade reason when a chain blows its wall-clock budget. No internals
+     * (no elapsed time, no step index, no config value) — the detail is logged server-side only,
+     * mirroring the {@code #1282}-class info-leak hardening on the other degrade paths.
+     */
+    private static final String CHAIN_DEADLINE_REASON = "the request took too long; please try a simpler ask";
+
     /** Sleep primitive, injectable so tests exercise the paced-retry loop without real waits. */
     @FunctionalInterface
     interface Sleeper {
@@ -465,6 +506,19 @@ public class AiAskService {
     /** Package-visible for tests. */
     void setSleeper(Sleeper sleeper) {
         this.sleeper = sleeper;
+    }
+
+    /**
+     * Monotonic nanosecond time source for the {@link #askChained} wall-clock deadline (F3).
+     * Defaults to {@link System#nanoTime()} — fine in app code. Injectable so a test can drive the
+     * deadline past its budget deterministically without real waits (mirrors the {@link Sleeper}
+     * seam the paced-retry tests use).
+     */
+    private java.util.function.LongSupplier nanoClock = System::nanoTime;
+
+    /** Package-visible for tests. */
+    void setNanoClock(java.util.function.LongSupplier nanoClock) {
+        this.nanoClock = nanoClock;
     }
 
     /**
@@ -541,7 +595,28 @@ public class AiAskService {
         boolean hitStepLimit = false;
         final boolean forceReport = forceReportAfterQuery();
 
+        // F3: total wall-clock budget for the WHOLE chain. Captured once here, checked at the top of
+        // every iteration below — an OUTER bound over the loop (never inside askWithPacedRetry's
+        // sleep, so paced-retry semantics stay intact). nanoClock is injectable for tests.
+        final long chainStartNanos = nanoClock.getAsLong();
+        final long chainDeadlineNanos = chainDeadlineSeconds() * 1_000_000_000L;
+        String lastModel = null; // most recent provider model, for a clean degraded return on deadline
+
         for (int i = 0; i < cap; i++) {
+            // F3: stop the loop cleanly if the whole chain has blown its wall-clock budget. Checked
+            // before each provider round-trip (and thus after the previous turn's paced-retry waits).
+            // Mirrors the egress-denied early exit: append a degraded step and break — NEVER throw,
+            // keep the AskChain(steps, ...) shape. hitStepLimit stays false (this is a time degrade,
+            // not "cap reached still building queries"); the degraded step's reason is the terminal
+            // signal, same as the egress-denied and execution-failure exits.
+            if (nanoClock.getAsLong() - chainStartNanos >= chainDeadlineNanos) {
+                log.info(
+                        "chained ask: wall-clock deadline ({}s) exceeded after {} step(s); stopping cleanly",
+                        chainDeadlineSeconds(),
+                        steps.size());
+                steps.add(AskOutcome.degraded(CHAIN_DEADLINE_REASON, lastModel));
+                break;
+            }
             // Continuation turns (a query already executed this chain) are forced to the report tool
             // when the trim toggle is on — drops the ~9k-token emit_query schema from the request the
             // provider never uses on that turn. Turn-1 (empty transcript) always uses the caller's ft
@@ -564,6 +639,7 @@ public class AiAskService {
             // since a rate limit isn't the model's fault — up to a bounded retry count. A non-429
             // degrade never enters that loop. Shared with buildDashboard (see askWithPacedRetry).
             NlAskResponse resp = askWithPacedRetry(req);
+            lastModel = resp.model(); // remember for a clean deadline degrade on a later iteration
 
             if (resp.degraded()) {
                 steps.add(AskOutcome.degraded(resp.reason(), resp.model()));

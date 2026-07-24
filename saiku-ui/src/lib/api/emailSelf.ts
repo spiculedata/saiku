@@ -12,12 +12,20 @@ const EMAIL_HEALTH_URL = "/rest/saiku/api/email/health";
 const EMAIL_SELF_URL = "/rest/saiku/api/email/self";
 
 export interface MailHealth {
+  /** True iff the backend mail sender (SMTP) is wired. */
   configured: boolean;
+  /** True iff an admin has configured the fixed self-send recipient
+   *  (SAIKU_MAIL_SELF_TO). The recipient is never chosen by the client. */
+  selfConfigured: boolean;
+  /** The configured self-send recipient, or null when unconfigured. Exposed to
+   *  authenticated users of the single-admin build (it's the admin's own
+   *  config) so the composer can show "Sends to: <address>". */
+  to: string | null;
 }
 
-/** GET /email/health. Returns {configured: false} on transport failure so the
- *  toolbar silently hides the "Email me this" button rather than showing an
- *  error. */
+/** GET /email/health. Returns an unconfigured health on transport failure so
+ *  the toolbar silently hides the "Email me this" button rather than showing
+ *  an error. */
 export async function fetchMailHealth(): Promise<MailHealth> {
   try {
     const res = await fetch(EMAIL_HEALTH_URL, {
@@ -25,11 +33,15 @@ export async function fetchMailHealth(): Promise<MailHealth> {
       credentials: "include",
       headers: { Accept: "application/json" },
     });
-    if (!res.ok) return { configured: false };
-    const body = (await res.json()) as MailHealth;
-    return { configured: !!body.configured };
+    if (!res.ok) return { configured: false, selfConfigured: false, to: null };
+    const body = (await res.json()) as Partial<MailHealth>;
+    return {
+      configured: !!body.configured,
+      selfConfigured: !!body.selfConfigured,
+      to: typeof body.to === "string" ? body.to : null,
+    };
   } catch {
-    return { configured: false };
+    return { configured: false, selfConfigured: false, to: null };
   }
 }
 

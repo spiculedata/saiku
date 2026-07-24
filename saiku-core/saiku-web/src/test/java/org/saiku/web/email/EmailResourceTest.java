@@ -26,8 +26,11 @@ import org.springframework.security.core.context.SecurityContextHolder;
  */
 public class EmailResourceTest {
 
+    private static final String SELF_TO = "self@example.com";
     private static final MailConfig CONFIG =
-            new MailConfig("smtp.example.com", 587, "user", "pass", "saiku@example.com", true, false);
+            new MailConfig("smtp.example.com", 587, "user", "pass", "saiku@example.com", true, false, SELF_TO);
+    private static final MailConfig CONFIG_NO_SELFTO =
+            new MailConfig("smtp.example.com", 587, "user", "pass", "saiku@example.com", true, false, null);
 
     @After
     public void clearAuth() {
@@ -44,7 +47,6 @@ public class EmailResourceTest {
 
     private static EmailSelfRequest validBody() {
         EmailSelfRequest r = new EmailSelfRequest();
-        r.setAddress("me@example.com");
         r.setSubject("Your analysis");
         r.setSummaryHtml("<p>Here is what changed.</p>");
         r.setChartPngBase64(Base64.getEncoder().encodeToString(new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47}));
@@ -105,6 +107,34 @@ public class EmailResourceTest {
         assertEquals(200, resp.getStatus());
         assertEquals(1, sender.sendCount.get());
         assertEquals("sent", ((Map<?, ?>) resp.getEntity()).get("status"));
+    }
+
+    /**
+     * F1 (open-relay) fix: the recipient is the admin-configured {@code selfTo}, never a client
+     * value. The response echoes the recipient actually used — it must equal {@code selfTo}.
+     */
+    @Test
+    public void recipient_isServerConfiguredSelfTo_notAClientValue() {
+        login("alice");
+        CountingSender sender = new CountingSender();
+        EmailResource r = resource(sender);
+        Response resp = r.sendSelf(validBody());
+        assertEquals(200, resp.getStatus());
+        assertEquals(SELF_TO, ((Map<?, ?>) resp.getEntity()).get("to"));
+        assertEquals(1, sender.sendCount.get());
+    }
+
+    /** Fail closed: with no self-recipient configured, sendSelf returns 503 and never sends. */
+    @Test
+    public void selfRecipientNotConfigured_returns503_andDoesNotSend() {
+        login("alice");
+        CountingSender sender = new CountingSender();
+        EmailResource r = new EmailResource();
+        r.setMailSender(sender);
+        r.setMailConfig(CONFIG_NO_SELFTO);
+        Response resp = r.sendSelf(validBody());
+        assertEquals(503, resp.getStatus());
+        assertEquals(0, sender.sendCount.get());
     }
 
     @Test

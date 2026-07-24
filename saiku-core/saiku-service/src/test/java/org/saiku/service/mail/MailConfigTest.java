@@ -56,6 +56,43 @@ class MailConfigTest {
     }
 
     @Test
+    void selfTo_unset_isNotSelfSendConfigured() {
+        MailConfig c = MailConfig.resolve(of(Map.of()), of(Map.of()));
+        assertNull(c.selfTo());
+        assertFalse(c.selfSendConfigured());
+    }
+
+    @Test
+    void selfTo_fromProperty_isSelfSendConfigured() {
+        MailConfig c = MailConfig.resolve(of(Map.of()), of(Map.of("saiku.mail.self.to", "ops@example.com")));
+        assertEquals("ops@example.com", c.selfTo());
+        assertTrue(c.selfSendConfigured());
+    }
+
+    @Test
+    void selfTo_fromEnv_isSelfSendConfigured() {
+        MailConfig c = MailConfig.resolve(of(Map.of("SAIKU_MAIL_SELF_TO", "ops@example.com")), of(Map.of()));
+        assertEquals("ops@example.com", c.selfTo());
+        assertTrue(c.selfSendConfigured());
+    }
+
+    @Test
+    void selfTo_envWinsOverProperty() {
+        MailConfig c = MailConfig.resolve(
+                of(Map.of("SAIKU_MAIL_SELF_TO", "env@example.com")),
+                of(Map.of("saiku.mail.self.to", "prop@example.com")));
+        assertEquals("env@example.com", c.selfTo());
+    }
+
+    @Test
+    void selfTo_blank_isNotSelfSendConfigured() {
+        MailConfig c = MailConfig.resolve(of(Map.of()), of(Map.of("saiku.mail.self.to", "   ")));
+        // pick() trims and treats blank as absent, so selfTo falls through to the null default.
+        assertNull(c.selfTo());
+        assertFalse(c.selfSendConfigured());
+    }
+
+    @Test
     void fromEnvironment_resolvesWithoutThrowing() {
         MailConfig c = MailConfig.fromEnvironment();
         assertNotNull(c);

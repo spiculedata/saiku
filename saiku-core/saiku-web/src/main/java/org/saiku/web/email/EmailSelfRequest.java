@@ -3,7 +3,6 @@ package org.saiku.web.email;
 /** Request body for POST /saiku/api/email/self — the browser-rendered artifacts to email. */
 public class EmailSelfRequest {
     private String subject;
-    private String address;
     private String summaryHtml;
     private String chartPngBase64;
     private String pdfBase64;
@@ -14,14 +13,6 @@ public class EmailSelfRequest {
 
     public void setSubject(String subject) {
         this.subject = subject;
-    }
-
-    public String getAddress() {
-        return address;
-    }
-
-    public void setAddress(String address) {
-        this.address = address;
     }
 
     public String getSummaryHtml() {
