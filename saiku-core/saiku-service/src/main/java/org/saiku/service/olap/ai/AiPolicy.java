@@ -48,6 +48,16 @@ public enum AiPolicy {
      * {@code full} case-insensitively.
      */
     public static AiPolicy parse(String raw) {
+        return parse(raw, ENV, PROP);
+    }
+
+    /**
+     * Parse as {@link #parse(String)} but name {@code envKey}/{@code propKey} in
+     * the fail-fast error so a second guard reading different keys (e.g. the
+     * LLM-egress guard on {@code SAIKU_AI_LLM_EGRESS} / {@code ai.llm.egress})
+     * reports the keys the operator actually set.
+     */
+    public static AiPolicy parse(String raw, String envKey, String propKey) {
         if (raw == null || raw.isBlank()) {
             return DEFAULT;
         }
@@ -60,7 +70,7 @@ public enum AiPolicy {
             case "full":
                 return FULL;
             default:
-                throw new IllegalArgumentException("Invalid " + PROP + " / " + ENV + " value '" + raw
+                throw new IllegalArgumentException("Invalid " + propKey + " / " + envKey + " value '" + raw
                         + "' — expected one of: schema-only, aggregated, full");
         }
     }
@@ -72,11 +82,22 @@ public enum AiPolicy {
      * value (fail-fast).
      */
     public static AiPolicy resolve(Function<String, String> env, Function<String, String> prop) {
-        String fromEnv = env.apply(ENV);
+        return resolve(env, prop, ENV, PROP);
+    }
+
+    /**
+     * Resolve from an arbitrary pair of env/property keys — env &gt; property &gt;
+     * default. Lets a second, independent policy (the LLM-egress guard) reuse the
+     * same tier enum + fail-fast parsing while reading its own keys, without
+     * changing the meaning of the data-return {@link #ENV}/{@link #PROP} guard.
+     */
+    public static AiPolicy resolve(
+            Function<String, String> env, Function<String, String> prop, String envKey, String propKey) {
+        String fromEnv = env.apply(envKey);
         if (fromEnv != null && !fromEnv.isBlank()) {
-            return parse(fromEnv);
+            return parse(fromEnv, envKey, propKey);
         }
-        return parse(prop.apply(PROP));
+        return parse(prop.apply(propKey), envKey, propKey);
     }
 
     /** The wire/display form: lowercase, hyphenated (e.g. {@code schema-only}). */

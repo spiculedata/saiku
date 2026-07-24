@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Objects;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiCubeRef;
+import org.saiku.service.olap.ai.AiDataKind;
+import org.saiku.service.olap.ai.AiPolicyGuard;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiRequestJsonSchema;
 import org.saiku.service.olap.ai.AiSchema;
@@ -56,6 +58,16 @@ public class AiAskService {
      */
     private AgentSpaceRegistry spaces;
 
+    /**
+     * Dedicated LLM-egress guard (Option A). Answers "may cell data leave the box to a third-party
+     * LLM vendor?" — resolved from {@code SAIKU_AI_LLM_EGRESS} / {@code ai.llm.egress}, SEPARATE
+     * from the data-return {@link AiPolicyGuard} on {@code SAIKU_AI_POLICY}. Injected via setter so
+     * existing two-arg construction stays unchanged. FAIL-CLOSED: a null (unwired) guard is treated
+     * as "egress not permitted", so an unconfigured instance strips cell data from the prompt rather
+     * than leaking it.
+     */
+    private AiPolicyGuard egressGuard;
+
     public AiAskService(AiCubeMetadataService metadataService, NlAskProvider provider) {
         this(metadataService, provider, defaultMapper());
     }
@@ -87,6 +99,26 @@ public class AiAskService {
     /** Agent-space catalogue, or {@code null} if the operator hasn't configured one. */
     public AgentSpaceRegistry spaces() {
         return spaces;
+    }
+
+    /** Spring setter — wired to {@code aiLlmEgressGuard} in {@code saiku-beans.xml}. */
+    public void setEgressGuard(AiPolicyGuard egressGuard) {
+        this.egressGuard = egressGuard;
+    }
+
+    /** The dedicated LLM-egress guard, or {@code null} if not wired (treated as egress-denied). */
+    public AiPolicyGuard egressGuard() {
+        return egressGuard;
+    }
+
+    /**
+     * Whether cell data (the cellset digest) may egress to the LLM vendor under the active egress
+     * posture. FAIL-CLOSED: a null guard, or a guard that doesn't permit {@link
+     * AiDataKind#AGGREGATED_RESULT_VALUES}, returns {@code false} — the digest is stripped and the
+     * prompt is schema-only.
+     */
+    private boolean egressPermitsCellData() {
+        return egressGuard != null && egressGuard.canSend(AiDataKind.AGGREGATED_RESULT_VALUES);
     }
 
     /**
@@ -306,11 +338,26 @@ public class AiAskService {
         String schemaJson;
         String requestSchemaJson;
         try {
-            schemaJson = mapper.writeValueAsString(schema);
+            // #3: serialise the PII-filtered agent view, never the raw schema. PII-tagged levels /
+            // measures have their captions, sample members, descriptions and synonyms stripped before
+            // the schema crosses the trust boundary to the vendor. Applies at every egress tier —
+            // schema egress is permitted even at schema-only, but must still be PII-filtered.
+            schemaJson = mapper.writeValueAsString(schema.toAgentView());
             requestSchemaJson = mapper.writeValueAsString(AiRequestJsonSchema.forRequest());
         } catch (JsonProcessingException e) {
             log.warn("Failed to serialise schema / request-schema for ask", e);
             return AskOutcome.degraded("schema serialisation failed", null);
+        }
+
+        // #2: LLM-egress gate. When the dedicated egress guard does NOT permit aggregated cell
+        // values to leave the box, STRIP the cellset digest so the prompt is schema-only. The ask
+        // still runs — degraded (ungrounded), never refused. Fail-closed: an unwired guard denies
+        // egress, so any doubt strips.
+        String effectiveDigest = cellsetDigest;
+        if (cellsetDigest != null && !cellsetDigest.isBlank() && !egressPermitsCellData()) {
+            effectiveDigest = null;
+            // No data in the log — just the fact that the digest was withheld by policy.
+            log.debug("Cellset digest withheld from LLM by egress policy; ask proceeds schema-only");
         }
 
         // Serialise the current query into JSON for the provider to embed in the prompt.
@@ -356,7 +403,7 @@ public class AiAskService {
                 schemaJson,
                 requestSchemaJson,
                 history == null ? List.of() : history,
-                cellsetDigest,
+                effectiveDigest,
                 forceTool == null ? NlAskRequest.ForceTool.AUTO : forceTool,
                 currentQueryJson,
                 skillsFragment,
