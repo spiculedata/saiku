@@ -46,6 +46,13 @@ public class SaikuJerseyApplication extends ResourceConfig {
         // AiValidationException pass through with their typed envelopes intact.
         register(org.saiku.web.rest.util.GenericExceptionMapper.class);
 
+        // F2: pre-parse request-size ceiling for POST /saiku/api/email/self. A
+        // @PreMatching filter that rejects an oversized body by its Content-Length
+        // with 413 BEFORE Jackson materialises it in heap. Dependency-free, so it's
+        // registered as a class (like the exception mappers above); it scopes itself
+        // to the self-send path internally and leaves every other endpoint untouched.
+        register(org.saiku.web.email.EmailRequestSizeFilter.class);
+
         ApplicationContext ctx = WebApplicationContextUtils.getRequiredWebApplicationContext(servletContext);
         for (String name : ctx.getBeanNamesForAnnotation(Path.class)) {
             if (name.startsWith("scopedTarget.")) {
