@@ -26,6 +26,7 @@
   import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
   import SavedQueriesModal from "$lib/modals/SavedQueriesModal.svelte";
   import EmailMeThisModal from "$lib/modals/EmailMeThisModal.svelte";
+  import AiEmailPreparingPopup from "$lib/views/AiEmailPreparingPopup.svelte";
   import { getQueryMdx, type ThinQuery } from "$lib/api/query";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import WarningModal from "$lib/modals/WarningModal.svelte";
@@ -601,6 +602,12 @@
   open={warningOpen}
   onClose={() => (warningOpen = false)}
 />
+
+<!-- Page-level "Preparing your email…" loader for the AI email NL-draft
+     hand-off. Mounted here (not in the AI drawer) so a drawer remount can't
+     hide it; emailComposer.consumeOpen() above clears `preparing` as this
+     modal opens, so the popup hands off with no overlap flash. -->
+<AiEmailPreparingPopup />
 
 <EmailMeThisModal open={emailModalOpen} onClose={() => (emailModalOpen = false)} />
 

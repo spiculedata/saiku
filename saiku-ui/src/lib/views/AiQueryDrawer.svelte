@@ -21,12 +21,7 @@
   import { i18n } from "$lib/stores/i18n.svelte";
   import { selection } from "$lib/stores/selection.svelte";
   import { askAi, askAiStream, AiAskTransportError, type AiViewChange, type AskResponse, type NlAskMessageDto } from "$lib/api/aiAsk";
-  import { buildAiDashboard, type DashboardSpec } from "$lib/api/aiDashboard";
-  import { assembleDashboard } from "$lib/dashboard/aiDashboardAssembler";
-  import { dashboardStore } from "$lib/stores/dashboard.svelte";
-  import { session } from "$lib/stores/session.svelte";
-  import { goto } from "$app/navigation";
-  import { base } from "$app/paths";
+  import { aiDashboardBuild } from "$lib/stores/aiDashboardBuild.svelte";
   import { buildCellsetDigest } from "$lib/api/cellsetDigest";
   import { aiRequestToQueryModel, queryModelToAiRequest, type AiQueryRequestShape } from "$lib/api/aiQueryToModel";
   import { classifyChainEnvelope } from "$lib/api/chainStep";
@@ -370,6 +365,9 @@
     // and clicks Send in the modal.
     if (resp.emailDraft) {
       aiInsight.set(resp.emailDraft.summary);
+      // Show the page-level "Preparing your email…" popup (outside this drawer)
+      // for the hand-off to the composer modal; consumeOpen() clears it.
+      emailComposer.beginPreparing();
       emailComposer.requestOpen();
       turns = [
         ...turns,
@@ -611,6 +609,7 @@
             }
           } else if (kind === "emailDraft" && env.emailDraft) {
             aiInsight.set(env.emailDraft.summary);
+            emailComposer.beginPreparing();
             emailComposer.requestOpen();
             turns = [
               ...turns,
@@ -670,37 +669,18 @@
     }
   }
 
-  /** Suggest a repository path for the reviewed dashboard to Save to. Mirrors
-   *  the New-dashboard flow's home default + slug, and appends a short unique
-   *  suffix so opening a review never lands on (and the user's Save never
-   *  overwrites) an existing dashboard at a colliding name. */
-  function suggestedDashboardPath(title: string | undefined): string {
-    const user = session.current?.username ?? "";
-    const home = user ? `homes/${user}` : "homes";
-    const slug =
-      (title ?? "")
-        .toLowerCase()
-        .trim()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 48) || "dashboard";
-    const unique = Date.now().toString(36).slice(-5);
-    return `${home}/ai-${slug}-${unique}.saikudash`;
-  }
-
   /**
-   * Opt-in dashboard path — "Build dashboard" toggle. A single non-streaming
-   * build (buildAiDashboard) returns a validated, server-hardened DashboardSpec;
-   * on success we assemble it into a REAL Dashboard (assembleDashboard) and hand
-   * it to the store for REVIEW-THEN-SAVE, then navigate to the real editor. We
-   * never persist — the user reviews / tweaks in the grid and clicks the existing
-   * Save. On degrade we render the generic reason inline (no navigation); on a
-   * thrown transport error we render the existing error turn. Mirrors submit()'s
-   * opening (guards, user turn, inflight) so the two paths stay in lockstep.
+   * Opt-in dashboard path — "Build dashboard" toggle. The drawer only KICKS OFF
+   * the build: it records the ask in the thread, then hands the whole
+   * request→assemble→review→navigate flow to the aiDashboardBuild store. The
+   * store owns the loading UX (a full-screen overlay mounted OUTSIDE this drawer)
+   * plus success/degrade/error handling, so the build survives this drawer
+   * unmounting/remounting on a window resize. No persistence here (REVIEW-THEN-
+   * SAVE); the single-ask + "Build & report" paths are untouched.
    */
-  async function submitDashboard(): Promise<void> {
+  function submitDashboard(): void {
     const question = prompt.trim();
-    if (!question || inflight) return;
+    if (!question || inflight || aiDashboardBuild.building) return;
     const cube = selection.cube;
     if (!cube) {
       turns = [
@@ -714,13 +694,6 @@
       return;
     }
 
-    const history = historyForRequest();
-    const userTurn: ChatTurn = { id: nextId(), role: "user", text: question };
-    turns = [...turns, userTurn];
-    prompt = "";
-    inflight = true;
-    notConfiguredBanner = null;
-
     const cubeRef = {
       connectionName: cube.connection,
       catalog: cube.catalog,
@@ -728,65 +701,11 @@
       cubeName: cube.name,
     };
 
-    let spec: DashboardSpec;
-    try {
-      spec = await buildAiDashboard({ question, cube: cubeRef, history });
-    } catch (e) {
-      const message = e instanceof AiAskTransportError ? e.message : (e as Error).message;
-      turns = [
-        ...turns,
-        {
-          id: nextId(),
-          role: "error",
-          text: i18n.t("workspace.aiQuery.transportError").replace("{message}", message),
-        },
-      ];
-      inflight = false;
-      return;
-    }
-
-    if (spec.degraded) {
-      const reason = spec.reason ?? i18n.t("workspace.aiQuery.unknownError");
-      if (reason.toLowerCase().includes("not configured")) {
-        notConfiguredBanner = reason;
-      }
-      const isOffTopic = reason.startsWith("OFF_TOPIC: ");
-      const text = isOffTopic
-        ? i18n.t("workspace.aiQuery.offTopic").replace("{reason}", reason.slice("OFF_TOPIC: ".length))
-        : reason;
-      turns = [
-        ...turns,
-        {
-          id: nextId(),
-          role: isOffTopic ? "assistant" : "error",
-          text,
-        },
-      ];
-      inflight = false;
-      return;
-    }
-
-    // Success — assemble the real Dashboard, stage it for review, and open the
-    // editor. beginReview() does NOT persist; the store adopts it on the
-    // editor's load() and lands it dirty so the existing Save writes a new file.
-    const dashboard = assembleDashboard(spec, cubeRef);
-    // Stage the dashboard bound to the exact path we're about to navigate to,
-    // so the editor's load() adopts it there (and nowhere else).
-    const savePath = suggestedDashboardPath(spec.title);
-    dashboardStore.beginReview(dashboard, savePath);
-    turns = [
-      ...turns,
-      {
-        id: nextId(),
-        role: "assistant",
-        text: i18n.t("workspace.aiQuery.dashboardOpening", "Opening your dashboard for review…"),
-        model: spec.model,
-      },
-    ];
-    inflight = false;
-    // Collapse the drawer as we move to the dashboard editor.
-    onClose();
-    await goto(`${base}/dashboards/${savePath}`);
+    turns = [...turns, { id: nextId(), role: "user", text: question }];
+    prompt = "";
+    notConfiguredBanner = null;
+    // Fire-and-forget: the store runs to completion independent of this drawer.
+    void aiDashboardBuild.run(question, cubeRef);
   }
 
   function clearConversation(): void {

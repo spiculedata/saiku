@@ -11,4 +11,24 @@ describe("emailComposer", () => {
     expect(emailComposer.pendingOpen).toBe(false); // and clears it
     expect(emailComposer.consumeOpen()).toBe(false); // second consume is false
   });
+
+  it("shows the preparing popup on draft-start and hides it when the composer opens", () => {
+    emailComposer.stopPreparing(); // reset
+    expect(emailComposer.preparing).toBe(false);
+    emailComposer.beginPreparing();
+    expect(emailComposer.preparing).toBe(true);
+    // consuming the open (the composer modal opening) clears preparing — no
+    // overlap flash between the loader popup and the modal.
+    emailComposer.requestOpen();
+    emailComposer.consumeOpen();
+    expect(emailComposer.preparing).toBe(false);
+  });
+
+  it("stopPreparing() clears the popup on error without opening the composer", () => {
+    emailComposer.beginPreparing();
+    expect(emailComposer.preparing).toBe(true);
+    emailComposer.stopPreparing();
+    expect(emailComposer.preparing).toBe(false);
+    expect(emailComposer.pendingOpen).toBe(false);
+  });
 });
