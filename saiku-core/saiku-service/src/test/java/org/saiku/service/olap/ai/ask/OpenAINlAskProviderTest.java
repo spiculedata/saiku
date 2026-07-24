@@ -236,6 +236,90 @@ public class OpenAINlAskProviderTest {
         assertEquals("tool_calls did not include a recognised tool", resp.reason());
     }
 
+    // ---------- multi-turn tool transcript rendering (agentic loop) ----------
+
+    @Test
+    public void requestBodyWithEmptyTranscriptIsUnchanged() throws Exception {
+        OpenAINlAskProvider provider = new OpenAINlAskProvider(
+                new OpenAINlAskProvider.Config("k", "gpt-x", OpenAINlAskProvider.DEFAULT_ENDPOINT, 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(CUBE, "show sales by country", SCHEMA, REQUEST_SCHEMA, List.of())
+                .withToolTranscript(List.of());
+
+        JsonNode messages = MAPPER.readTree(provider.buildRequestBody(req)).get("messages");
+
+        // system + final user turn only — no assistant tool_calls / role:tool entries appended.
+        assertEquals(2, messages.size());
+        JsonNode last = messages.get(messages.size() - 1);
+        assertEquals("user", last.get("role").asText());
+        assertEquals("show sales by country", last.get("content").asText());
+        for (JsonNode m : messages) {
+            assertFalse("no assistant tool_calls with an empty transcript", m.has("tool_calls"));
+            assertFalse(
+                    "no role:tool message with an empty transcript",
+                    "tool".equals(m.path("role").asText()));
+        }
+    }
+
+    @Test
+    public void requestBodyRendersOneToolTurnAsAssistantToolCallsAndToolMessage() throws Exception {
+        OpenAINlAskProvider provider = new OpenAINlAskProvider(
+                new OpenAINlAskProvider.Config("k", "gpt-x", OpenAINlAskProvider.DEFAULT_ENDPOINT, 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(CUBE, "now break it down by region", SCHEMA, REQUEST_SCHEMA, List.of())
+                .withToolTranscript(List.of(
+                        new ToolTurn("call_1", "emit_query", "{\"cube\":\"x\"}", "| Tier | Bal |\n| Large | 7000 |")));
+
+        JsonNode messages = MAPPER.readTree(provider.buildRequestBody(req)).get("messages");
+
+        // system, final user turn, assistant tool_calls, tool result — in that order.
+        assertEquals(4, messages.size());
+        JsonNode asstMsg = messages.get(2);
+        assertEquals("assistant", asstMsg.get("role").asText());
+        assertTrue(
+                "assistant content must be null when tool_calls is present",
+                asstMsg.get("content").isNull());
+        JsonNode call = asstMsg.get("tool_calls").get(0);
+        assertEquals("call_1", call.get("id").asText());
+        assertEquals("function", call.get("type").asText());
+        assertEquals("emit_query", call.get("function").get("name").asText());
+        // arguments must stay the raw STRING "{\"cube\":\"x\"}" — NOT re-parsed into a nested object.
+        assertTrue(
+                "arguments must be a JSON string node, not an object",
+                call.get("function").get("arguments").isTextual());
+        assertEquals("{\"cube\":\"x\"}", call.get("function").get("arguments").asText());
+
+        JsonNode toolMsg = messages.get(3);
+        assertEquals("tool", toolMsg.get("role").asText());
+        assertEquals("call_1", toolMsg.get("tool_call_id").asText());
+        assertEquals("| Tier | Bal |\n| Large | 7000 |", toolMsg.get("content").asText());
+    }
+
+    @Test
+    public void requestBodyRendersNullResultDigestAsWithheldPlaceholder() throws Exception {
+        OpenAINlAskProvider provider = new OpenAINlAskProvider(
+                new OpenAINlAskProvider.Config("k", "gpt-x", OpenAINlAskProvider.DEFAULT_ENDPOINT, 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(CUBE, "q", SCHEMA, REQUEST_SCHEMA, List.of())
+                .withToolTranscript(List.of(new ToolTurn("call_2", "emit_query", "{}", null)));
+
+        JsonNode messages = MAPPER.readTree(provider.buildRequestBody(req)).get("messages");
+
+        JsonNode toolMsg = messages.get(messages.size() - 1);
+        assertEquals("tool", toolMsg.get("role").asText());
+        assertEquals("(result withheld by data policy)", toolMsg.get("content").asText());
+    }
+
+    @Test
+    public void parseToolResponseCapturesToolCallId() throws Exception {
+        String body = "{\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1},"
+                + "\"choices\":[{\"message\":{\"tool_calls\":[{\"id\":\"call_abc\",\"type\":\"function\","
+                + "\"function\":{\"name\":\"emit_query\",\"arguments\":\"{\\\"cube\\\":\\\"x\\\"}\"}}]}}]}";
+
+        NlAskResponse resp = OpenAINlAskProvider.parseToolResponse(body, "gpt-x");
+
+        assertFalse(resp.degraded());
+        assertEquals(NlAskResponse.Kind.QUERY, resp.kind());
+        assertEquals("call_abc", resp.toolCallId());
+    }
+
     // ---------- characterization: security invariants (issue #1159) ----------
 
     /** Security invariant: the API key may appear ONLY in the Bearer auth header, never in the body. */

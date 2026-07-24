@@ -32,6 +32,8 @@ import org.saiku.service.olap.ai.AiCubeRef;
  *       emit_insight} or {@code emit_view_change} tools (trend analysis / "switch to chart"). When
  *       {@code null}, the model can still produce queries from the schema alone but can't do
  *       insight or sensibly route view changes.
+ *   <li>{@code toolTranscript} — prior tool steps in a server-side agentic loop; empty for a
+ *       single-shot ask.
  * </ul>
  *
  * <p>Implementations MUST NOT mutate any field; the record is intentionally immutable.
@@ -46,7 +48,8 @@ public record NlAskRequest(
         ForceTool forceTool,
         String currentQueryJson,
         String skillsFragment,
-        String spaceSystemPrompt) {
+        String spaceSystemPrompt,
+        List<ToolTurn> toolTranscript) {
 
     /**
      * Optional override for the tool the LLM is allowed to call. Default (null/{@code AUTO}) leaves
@@ -74,6 +77,7 @@ public record NlAskRequest(
         Objects.requireNonNull(requestJsonSchema, "requestJsonSchema");
         history = history == null ? List.of() : List.copyOf(history);
         if (forceTool == null) forceTool = ForceTool.AUTO;
+        toolTranscript = toolTranscript == null ? List.of() : List.copyOf(toolTranscript);
     }
 
     /** Pre-space ctor — kept for callers that don't scope by AgentSpace. */
@@ -97,7 +101,8 @@ public record NlAskRequest(
                 forceTool,
                 currentQueryJson,
                 skillsFragment,
-                null);
+                null,
+                List.of());
     }
 
     /** Pre-skills ctor — kept for callers that don't have a skills catalogue. */
@@ -120,7 +125,8 @@ public record NlAskRequest(
                 forceTool,
                 currentQueryJson,
                 null,
-                null);
+                null,
+                List.of());
     }
 
     /** Pre-forceTool ctor — kept for callers that don't need the override. */
@@ -143,7 +149,18 @@ public record NlAskRequest(
             List<NlAskMessage> history,
             String cellsetDigest,
             ForceTool forceTool) {
-        this(cubeRef, question, cubeSchemaJson, requestJsonSchema, history, cellsetDigest, forceTool, null, null, null);
+        this(
+                cubeRef,
+                question,
+                cubeSchemaJson,
+                requestJsonSchema,
+                history,
+                cellsetDigest,
+                forceTool,
+                null,
+                null,
+                null,
+                List.of());
     }
 
     /**
@@ -157,5 +174,21 @@ public record NlAskRequest(
             String requestJsonSchema,
             List<NlAskMessage> history) {
         this(cubeRef, question, cubeSchemaJson, requestJsonSchema, history, null, ForceTool.AUTO, null, null);
+    }
+
+    /** Returns a copy of this request carrying the given agentic tool transcript. */
+    public NlAskRequest withToolTranscript(List<ToolTurn> transcript) {
+        return new NlAskRequest(
+                cubeRef,
+                question,
+                cubeSchemaJson,
+                requestJsonSchema,
+                history,
+                cellsetDigest,
+                forceTool,
+                currentQueryJson,
+                skillsFragment,
+                spaceSystemPrompt,
+                transcript);
     }
 }

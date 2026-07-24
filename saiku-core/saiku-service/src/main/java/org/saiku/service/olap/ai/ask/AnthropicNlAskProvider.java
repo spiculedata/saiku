@@ -280,6 +280,32 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
         user.put("role", "user");
         user.put("content", request.question());
 
+        for (ToolTurn t : request.toolTranscript()) {
+            // Assistant's prior tool call — Anthropic requires a tool_use block here, and the very next
+            // message must carry its matching tool_result (else the Messages API 400s).
+            ObjectNode asst = messages.addObject();
+            asst.put("role", "assistant");
+            ArrayNode asstContent = asst.putArray("content");
+            ObjectNode toolUse = asstContent.addObject();
+            toolUse.put("type", "tool_use");
+            toolUse.put("id", t.toolCallId());
+            toolUse.put("name", t.toolName());
+            toolUse.set("input", MAPPER.readTree(t.toolInputJson())); // input must be a JSON object, not a string
+
+            // The server's result, fed back as this tool_use's result.
+            ObjectNode toolResultMsg = messages.addObject();
+            toolResultMsg.put("role", "user");
+            ArrayNode trContent = toolResultMsg.putArray("content");
+            ObjectNode toolResult = trContent.addObject();
+            toolResult.put("type", "tool_result");
+            toolResult.put("tool_use_id", t.toolCallId());
+            toolResult.put(
+                    "content",
+                    t.resultDigest() != null && !t.resultDigest().isBlank()
+                            ? t.resultDigest()
+                            : "(result withheld by data policy)");
+        }
+
         return MAPPER.writeValueAsString(root);
     }
 
@@ -314,7 +340,9 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
                     if (input.isMissingNode() || input.isNull()) {
                         return NlAskResponse.degraded("empty tool_use input", model);
                     }
-                    return NlAskResponse.okQuery(MAPPER.writeValueAsString(input), model, inputTokens, outputTokens);
+                    String toolCallId = block.path("id").asText(null);
+                    return NlAskResponse.okQuery(
+                            MAPPER.writeValueAsString(input), model, inputTokens, outputTokens, toolCallId);
                 }
                 if (INSIGHT_TOOL_NAME.equals(toolName)) {
                     if (input.isMissingNode() || input.isNull()) {

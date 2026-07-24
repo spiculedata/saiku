@@ -10,11 +10,16 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import org.junit.Test;
+import org.saiku.olap.dto.resultset.AbstractBaseCell;
+import org.saiku.olap.dto.resultset.CellDataSet;
+import org.saiku.olap.dto.resultset.DataCell;
+import org.saiku.olap.dto.resultset.MemberCell;
 
 /** saiku#905 — unit coverage for k-anonymity small-cell suppression. */
 public class KAnonymityFilterTest {
@@ -143,5 +148,158 @@ public class KAnonymityFilterTest {
         int n = new KAnonymityFilter(0, "null").applyToRecords(rows, "Fact Count", java.util.List.of("Store Sales"));
         assertEquals(0, n);
         assertFalse(((AiCell) rows.get(0).get("Store Sales")).isSuppressed());
+    }
+
+    /* ------------------------ applyToCellDataSet ---------------------- */
+
+    private static MemberCell header(String value) {
+        MemberCell cell = new MemberCell(false, false);
+        cell.setFormattedValue(value);
+        return cell;
+    }
+
+    private static DataCell data(String value) {
+        DataCell cell = new DataCell(false, false, Collections.emptyList());
+        cell.setFormattedValue(value);
+        cell.setRawNumber(Double.valueOf(value.replace(",", "")));
+        return cell;
+    }
+
+    private static MemberCell rowHeader(String value) {
+        MemberCell cell = new MemberCell(false, false);
+        cell.setFormattedValue(value);
+        return cell;
+    }
+
+    /** Grid: [Product(header) | Count | Balance], one small row (count 3) and one big row (count 10). */
+    private static CellDataSet grid() {
+        CellDataSet cds = new CellDataSet();
+        cds.setCellSetHeaders(new AbstractBaseCell[][] {{header("Product"), header("Count"), header("Balance")}});
+        cds.setCellSetBody(new AbstractBaseCell[][] {
+            {rowHeader("Tiny"), data("3"), data("99")},
+            {rowHeader("Big"), data("10"), data("5,000")}
+        });
+        return cds;
+    }
+
+    @Test
+    public void applyToCellDataSet_masks_subK_row_including_count_cell() {
+        CellDataSet cds = grid();
+        int n = new KAnonymityFilter(5, "null").applyToCellDataSet(cds);
+
+        assertEquals(1, n);
+        AbstractBaseCell[] tiny = cds.getCellSetBody()[0];
+        assertEquals("row-header untouched", "Tiny", tiny[0].getFormattedValue());
+        assertEquals("—", tiny[1].getFormattedValue()); // count cell itself masked
+        assertEquals("—", tiny[2].getFormattedValue()); // Balance masked
+        assertNull(((DataCell) tiny[1]).getRawNumber());
+        assertNull(((DataCell) tiny[2]).getRawNumber());
+    }
+
+    @Test
+    public void applyToCellDataSet_leaves_atOrAboveK_row_untouched() {
+        CellDataSet cds = grid();
+        new KAnonymityFilter(5, "null").applyToCellDataSet(cds);
+
+        AbstractBaseCell[] big = cds.getCellSetBody()[1];
+        assertEquals("Big", big[0].getFormattedValue());
+        assertEquals("10", big[1].getFormattedValue());
+        assertEquals("5,000", big[2].getFormattedValue());
+    }
+
+    @Test
+    public void applyToCellDataSet_noCountColumn_isNoop() {
+        CellDataSet cds = new CellDataSet();
+        cds.setCellSetHeaders(new AbstractBaseCell[][] {{header("Product"), header("Balance")}});
+        cds.setCellSetBody(new AbstractBaseCell[][] {{rowHeader("Tiny"), data("99")}});
+
+        int n = new KAnonymityFilter(5, "null").applyToCellDataSet(cds);
+
+        assertEquals(0, n);
+        assertEquals("99", cds.getCellSetBody()[0][1].getFormattedValue());
+    }
+
+    @Test
+    public void applyToCellDataSet_disabled_isNoop() {
+        CellDataSet cds = grid();
+        int n = new KAnonymityFilter(0, "null").applyToCellDataSet(cds);
+
+        assertEquals(0, n);
+        assertEquals("3", cds.getCellSetBody()[0][1].getFormattedValue());
+    }
+
+    /**
+     * saiku SEC re-review — the AI query converter always nests measures ABOVE any column
+     * dimension, so a multi-level column axis (measures outer, a dimension inner) puts DIMENSION
+     * members ("1997", "1998") in the LAST header row, not the measure captions. Reading only the
+     * last header row (the pre-fix behaviour) therefore never finds "Fact Count" and the count
+     * column is missed entirely -> countCol stays -1 -> applyToCellDataSet no-ops -> a sub-k row
+     * reaches the LLM unmasked. The fix joins ALL header rows with fill-down (mirroring
+     * AiQueryResource.buildResponse) so "Fact Count | 1997" is visible on the joined caption.
+     *
+     * <p>Layout (col 0 = row header):
+     * <pre>
+     * row0 (measures, spanned): ["",           "Fact Count", "",     "Store Sales", ""]
+     * row1 (inner dimension):   ["",           "1997",       "1998", "1997",        "1998"]
+     * body (Acme):              [Acme,         2,            9,      100,           100]
+     * body (BigCo):             [BigCo,        10,           1,      500,           600]
+     * </pre>
+     * With k=5: the located count column is col 1 ("Fact Count | 1997") — single-count-column
+     * semantics, same as {@link #applyToMatrix}. Acme's col-1 count (2) is below k, so its whole
+     * row is masked (cols 1-4), including col 2 even though the "Fact Count | 1998" figure (9) is
+     * itself &gt;= k — masking is keyed off the ONE located count column, not per measure. BigCo's
+     * col-1 count (10) is &gt;= k, so it stays untouched even though its col-2 count (1) is small —
+     * that's the documented single-countKey limitation, not a bug this fix introduces.
+     */
+    private static CellDataSet multiLevelColumnAxisGrid() {
+        CellDataSet cds = new CellDataSet();
+        cds.setCellSetHeaders(new AbstractBaseCell[][] {
+            {header(""), header("Fact Count"), header(""), header("Store Sales"), header("")},
+            {header(""), header("1997"), header("1998"), header("1997"), header("1998")}
+        });
+        cds.setCellSetBody(new AbstractBaseCell[][] {
+            {rowHeader("Acme"), data("2"), data("9"), data("100"), data("100")},
+            {rowHeader("BigCo"), data("10"), data("1"), data("500"), data("600")}
+        });
+        return cds;
+    }
+
+    @Test
+    public void applyToCellDataSet_findsCountColumn_acrossMultiLevelColumnAxis() {
+        CellDataSet cds = multiLevelColumnAxisGrid();
+        int n = new KAnonymityFilter(5, "null").applyToCellDataSet(cds);
+
+        assertEquals("only Acme's row (col-1 count=2 < k=5) is suppressed", 1, n);
+
+        AbstractBaseCell[] acme = cds.getCellSetBody()[0];
+        assertEquals("row-header untouched", "Acme", acme[0].getFormattedValue());
+        assertEquals("—", acme[1].getFormattedValue());
+        assertEquals("—", acme[2].getFormattedValue());
+        assertEquals("—", acme[3].getFormattedValue());
+        assertEquals("—", acme[4].getFormattedValue());
+        assertNull(((DataCell) acme[1]).getRawNumber());
+        assertNull(((DataCell) acme[4]).getRawNumber());
+
+        AbstractBaseCell[] bigCo = cds.getCellSetBody()[1];
+        assertEquals(
+                "BigCo's col-1 count (10) is >= k, so the row stays untouched "
+                        + "(single countKey semantics, same as applyToMatrix)",
+                "10",
+                bigCo[1].getFormattedValue());
+        assertEquals("1", bigCo[2].getFormattedValue());
+        assertEquals("500", bigCo[3].getFormattedValue());
+        assertEquals("600", bigCo[4].getFormattedValue());
+    }
+
+    @Test
+    public void applyToCellDataSet_emptyBody_isNoop() {
+        CellDataSet cds = new CellDataSet();
+        cds.setCellSetBody(new AbstractBaseCell[][] {});
+        assertEquals(0, new KAnonymityFilter(5, "null").applyToCellDataSet(cds));
+
+        CellDataSet cdsNullBody = new CellDataSet();
+        assertEquals(0, new KAnonymityFilter(5, "null").applyToCellDataSet(cdsNullBody));
+
+        assertEquals(0, new KAnonymityFilter(5, "null").applyToCellDataSet(null));
     }
 }

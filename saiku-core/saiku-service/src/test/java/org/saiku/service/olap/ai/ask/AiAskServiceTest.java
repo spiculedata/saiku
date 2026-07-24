@@ -10,14 +10,26 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.Test;
+import org.saiku.olap.dto.resultset.AbstractBaseCell;
+import org.saiku.olap.dto.resultset.CellDataSet;
+import org.saiku.olap.dto.resultset.DataCell;
+import org.saiku.olap.dto.resultset.MemberCell;
+import org.saiku.olap.query2.ThinQuery;
+import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiCubeRef;
 import org.saiku.service.olap.ai.AiPolicy;
 import org.saiku.service.olap.ai.AiPolicyGuard;
 import org.saiku.service.olap.ai.AiSchema;
+import org.saiku.service.olap.ai.KAnonymityFilter;
 
 /** Unit tests for {@link AiAskService}. Provider + metadata service are stubbed. */
 public class AiAskServiceTest {
@@ -580,6 +592,218 @@ public class AiAskServiceTest {
         assertTrue("redaction sentinel must be present: " + schemaJson, schemaJson.contains("[REDACTED]"));
     }
 
+    /* ---- Task 5: chained-ask wiring (converter + setter-injected ThinQueryService) ---- */
+
+    @Test
+    public void converterIsAlwaysNonNull() {
+        // Stateless, instantiated directly — no wiring required, unlike thinQueryService().
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), stub(NlAskResponse.ok("{}", "m", 0, 0)));
+        assertNotNull(svc.converter());
+    }
+
+    @Test
+    public void thinQueryServiceIsNullUntilWiredThenReturnsTheSetInstance() {
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), stub(NlAskResponse.ok("{}", "m", 0, 0)));
+        assertNull("unwired executor must be null, not silently defaulted", svc.thinQueryService());
+
+        ThinQueryService executor = new ThinQueryService();
+        svc.setThinQueryService(executor);
+
+        assertEquals(executor, svc.thinQueryService());
+    }
+
+    /* ---- Task 6: askChained — the bounded server-side agentic loop ---- */
+
+    @Test
+    public void chainedAskHappyTwoStepFeedsResultForward() {
+        ScriptedProvider provider = new ScriptedProvider(List.of(
+                NlAskResponse.okQuery(fullQueryJson(), "m", 10, 5, "t1"),
+                NlAskResponse.okInsight(insightJson(), "m", 10, 5)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+        AiAskService.AskChain chain = svc.askChained(
+                CUBE, "build the query and report on it", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(2, chain.steps().size());
+        assertEquals(AiAskService.AskOutcome.Kind.QUERY, chain.steps().get(0).kind());
+        assertFalse(chain.steps().get(0).degraded());
+        assertEquals(AiAskService.AskOutcome.Kind.INSIGHT, chain.steps().get(1).kind());
+        assertFalse(chain.steps().get(1).degraded());
+        assertFalse(chain.hitStepLimit());
+        assertEquals(2, provider.seen().size());
+
+        NlAskRequest secondReq = provider.seen().get(1);
+        assertEquals(1, secondReq.toolTranscript().size());
+        ToolTurn turn = secondReq.toolTranscript().get(0);
+        assertEquals("t1", turn.toolCallId());
+        assertEquals("emit_query", turn.toolName());
+        assertNotNull(turn.resultDigest());
+        assertEquals(turn.resultDigest(), secondReq.cellsetDigest());
+    }
+
+    @Test
+    public void chainedAskAllowsBuildAndReportWithNoCellsetOnScreen() {
+        // Empty-screen build+report is allowed for chaining — deliberate contrast with the
+        // EMAIL_DRAFT no-data refusal (design §5).
+        ScriptedProvider provider = new ScriptedProvider(List.of(
+                NlAskResponse.okQuery(fullQueryJson(), "m", 10, 5, "t1"),
+                NlAskResponse.okInsight(insightJson(), "m", 10, 5)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+        AiAskService.AskChain chain = svc.askChained(
+                CUBE, "build a query and report on it", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(2, chain.steps().size());
+        assertEquals(AiAskService.AskOutcome.Kind.QUERY, chain.steps().get(0).kind());
+        assertEquals(AiAskService.AskOutcome.Kind.INSIGHT, chain.steps().get(1).kind());
+        assertFalse(chain.hitStepLimit());
+
+        NlAskRequest secondReq = provider.seen().get(1);
+        assertNotNull(
+                "the executed result must be fed forward even though no digest was on screen",
+                secondReq.cellsetDigest());
+    }
+
+    @Test
+    public void chainedAskStopsHonestlyUnderSchemaOnlyEgress() {
+        ScriptedProvider provider =
+                new ScriptedProvider(List.of(NlAskResponse.okQuery(fullQueryJson(), "m", 10, 5, "t1")));
+        AtomicInteger execCount = new AtomicInteger();
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(countingExecutor(cannedCellDataSet(), execCount));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.SCHEMA_ONLY));
+
+        AiAskService.AskChain chain =
+                svc.askChained(CUBE, "show sales", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(2, chain.steps().size());
+        assertEquals(AiAskService.AskOutcome.Kind.QUERY, chain.steps().get(0).kind());
+        assertTrue(chain.steps().get(1).degraded());
+        assertTrue(chain.steps().get(1).reason().contains("Enable aggregated AI egress"));
+        assertFalse(chain.hitStepLimit());
+        assertEquals(
+                "loop must stop before a 2nd provider call", 1, provider.seen().size());
+        // SEC fix: execution is gated on egress BEFORE it runs — schema-only must never execute
+        // the Mondrian query at all (previously executed once and discarded the result).
+        assertEquals("schema-only must never execute the query — gate before execute, not after", 0, execCount.get());
+    }
+
+    @Test
+    public void chainedAskMasksSubKRowsBeforeFeedingResultBack() {
+        // SEC — k-anonymity bypass regression guard: the executed CellDataSet carries a sub-k row
+        // (count 3 < default k=5); the fix must mask it before CellsetDigestBuilder.digest turns it
+        // into the prompt text the second provider turn receives.
+        ScriptedProvider provider = new ScriptedProvider(List.of(
+                NlAskResponse.okQuery(fullQueryJson(), "m", 10, 5, "t1"),
+                NlAskResponse.okInsight(insightJson(), "m", 10, 5)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(subKCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+        svc.setKAnonymityFilter(new KAnonymityFilter(5, null));
+
+        AiAskService.AskChain chain = svc.askChained(
+                CUBE, "build the query and report on it", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(2, chain.steps().size());
+        assertFalse(chain.steps().get(0).degraded());
+        assertFalse(chain.steps().get(1).degraded());
+
+        NlAskRequest secondReq = provider.seen().get(1);
+        ToolTurn turn = secondReq.toolTranscript().get(0);
+        assertNotNull(turn.resultDigest());
+        assertTrue(
+                "masked digest must carry the mask token: " + turn.resultDigest(),
+                turn.resultDigest().contains("—"));
+        assertFalse(
+                "the sub-k row's real measure value must never reach the digest: " + turn.resultDigest(),
+                turn.resultDigest().contains("987654"));
+        assertEquals(turn.resultDigest(), secondReq.cellsetDigest());
+    }
+
+    @Test
+    public void chainedAskHitsStepCapWhenAlwaysBuildingQueries() {
+        String savedProp = System.getProperty("saiku.ai.ask.max-steps");
+        System.setProperty("saiku.ai.ask.max-steps", "3");
+        try {
+            ScriptedProvider provider = new ScriptedProvider(NlAskResponse.okQuery(fullQueryJson(), "m", 1, 1, "t1"));
+            AtomicInteger execCount = new AtomicInteger();
+            AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+            svc.setThinQueryService(countingExecutor(cannedCellDataSet(), execCount));
+            svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+            AiAskService.AskChain chain =
+                    svc.askChained(CUBE, "keep querying", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+            assertTrue(chain.hitStepLimit());
+            for (AiAskService.AskOutcome step : chain.steps()) {
+                assertEquals(AiAskService.AskOutcome.Kind.QUERY, step.kind());
+            }
+            assertEquals(chain.steps().size() - 1, execCount.get());
+        } finally {
+            if (savedProp == null) {
+                System.clearProperty("saiku.ai.ask.max-steps");
+            } else {
+                System.setProperty("saiku.ai.ask.max-steps", savedProp);
+            }
+        }
+    }
+
+    @Test
+    public void chainedAskDegradesWhenQueryExecutionThrows() {
+        ScriptedProvider provider = new ScriptedProvider(NlAskResponse.okQuery(fullQueryJson(), "m", 1, 1, "t1"));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(throwingExecutor());
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+        AiAskService.AskChain chain =
+                svc.askChained(CUBE, "show sales", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(2, chain.steps().size());
+        assertEquals(AiAskService.AskOutcome.Kind.QUERY, chain.steps().get(0).kind());
+        assertTrue(chain.steps().get(1).degraded());
+        assertTrue(chain.steps().get(1).reason().contains("failed to execute the built query"));
+        assertFalse(chain.hitStepLimit());
+    }
+
+    @Test
+    public void chainedAskDegradesWithoutExecutorAndNeverCallsProvider() {
+        AtomicInteger callCount = new AtomicInteger();
+        NlAskProvider provider = req -> {
+            callCount.incrementAndGet();
+            return NlAskResponse.okQuery(fullQueryJson(), "m", 1, 1, "t1");
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        // No setThinQueryService() call — chaining needs the executor.
+
+        AiAskService.AskChain chain =
+                svc.askChained(CUBE, "show sales", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(1, chain.steps().size());
+        assertTrue(chain.steps().get(0).degraded());
+        assertTrue(chain.steps().get(0).reason().contains("server-side query execution is not available"));
+        assertFalse(chain.hitStepLimit());
+        assertEquals(0, callCount.get());
+    }
+
+    @Test
+    public void chainedAskDegradesWhenProviderDegradesFirstTurn() {
+        ScriptedProvider provider = new ScriptedProvider(NlAskResponse.degraded("not configured"));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(new ThinQueryService());
+
+        AiAskService.AskChain chain =
+                svc.askChained(CUBE, "show sales", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        assertEquals(1, chain.steps().size());
+        assertTrue(chain.steps().get(0).degraded());
+        assertEquals("not configured", chain.steps().get(0).reason());
+        assertFalse(chain.hitStepLimit());
+    }
+
     // ---------- helpers ----------
 
     private static AiCubeMetadataService fixedSchemaService(AiSchema schema) {
@@ -609,5 +833,122 @@ public class AiAskServiceTest {
 
     private static NlAskProvider stub(NlAskResponse fixed) {
         return req -> fixed;
+    }
+
+    /** Schema carrying a resolvable "Store Sales" measure — needed so {@code askChained}'s
+     *  in-service {@code AiSchemaConverter.convert} call succeeds against the emitted query. */
+    private static AiSchema salesSchemaWithMeasure() {
+        AiSchema schema = new AiSchema("conn/cat/sch/Sales", "Sales", "[Sales]");
+        schema.measures.put(
+                AiSchema.key("Store Sales"), new AiSchema.Measure("Store Sales", "[Measures].[Store Sales]"));
+        return schema;
+    }
+
+    /** A valid, fully-qualified {@code AiQueryRequest} JSON emission — resolves against {@link
+     *  #salesSchemaWithMeasure()}. */
+    private static String fullQueryJson() {
+        return "{"
+                + "\"cube\":{\"connectionName\":\"conn\",\"catalog\":\"cat\",\"schema\":\"sch\",\"cubeName\":\"Sales\"},"
+                + "\"measures\":[{\"name\":\"Store Sales\"}]"
+                + "}";
+    }
+
+    private static String insightJson() {
+        return "{\"markdown\":\"Sales are trending up.\"}";
+    }
+
+    private static MemberCell header(String value) {
+        MemberCell cell = new MemberCell(false, false);
+        cell.setFormattedValue(value);
+        return cell;
+    }
+
+    private static DataCell data(String value) {
+        DataCell cell = new DataCell(false, false, Collections.emptyList());
+        cell.setFormattedValue(value);
+        return cell;
+    }
+
+    private static CellDataSet cannedCellDataSet() {
+        CellDataSet cds = new CellDataSet();
+        cds.setCellSetHeaders(new AbstractBaseCell[][] {{header("Tier"), header("Balance")}});
+        cds.setCellSetBody(new AbstractBaseCell[][] {{data("Large"), data("7,000")}});
+        return cds;
+    }
+
+    /** A grid with a count column and one sub-k row (count 3 &lt; default k=5) — used to prove the
+     *  chained-ask loop masks small cells before they reach the LLM. */
+    private static CellDataSet subKCellDataSet() {
+        MemberCell rowHeader = new MemberCell(false, false);
+        rowHeader.setFormattedValue("Small Segment");
+        DataCell count = new DataCell(false, false, Collections.emptyList());
+        count.setFormattedValue("3");
+        count.setRawNumber(3.0);
+        DataCell balance = new DataCell(false, false, Collections.emptyList());
+        balance.setFormattedValue("987654");
+        balance.setRawNumber(987654.0);
+
+        CellDataSet cds = new CellDataSet();
+        cds.setCellSetHeaders(new AbstractBaseCell[][] {{header("Tier"), header("Count"), header("Balance")}});
+        cds.setCellSetBody(new AbstractBaseCell[][] {{rowHeader, count, balance}});
+        return cds;
+    }
+
+    private static ThinQueryService cannedExecutor(CellDataSet result) {
+        return new ThinQueryService() {
+            @Override
+            public CellDataSet execute(ThinQuery tq) {
+                return result;
+            }
+        };
+    }
+
+    private static ThinQueryService countingExecutor(CellDataSet result, AtomicInteger counter) {
+        return new ThinQueryService() {
+            @Override
+            public CellDataSet execute(ThinQuery tq) {
+                counter.incrementAndGet();
+                return result;
+            }
+        };
+    }
+
+    private static ThinQueryService throwingExecutor() {
+        return new ThinQueryService() {
+            @Override
+            public CellDataSet execute(ThinQuery tq) {
+                throw new RuntimeException("execution boom");
+            }
+        };
+    }
+
+    /** Records every {@link NlAskRequest} it receives and returns responses from a queue in order,
+     *  repeating the last one once the queue is drained (or a fixed single response forever). */
+    private static final class ScriptedProvider implements NlAskProvider {
+        private final Deque<NlAskResponse> queue;
+        private final NlAskResponse repeat;
+        private final List<NlAskRequest> seen = new ArrayList<>();
+
+        ScriptedProvider(List<NlAskResponse> responses) {
+            this.queue = new ArrayDeque<>(responses);
+            this.repeat = null;
+        }
+
+        ScriptedProvider(NlAskResponse always) {
+            this.queue = new ArrayDeque<>();
+            this.repeat = always;
+        }
+
+        @Override
+        public NlAskResponse ask(NlAskRequest request) {
+            seen.add(request);
+            if (!queue.isEmpty()) return queue.poll();
+            if (repeat != null) return repeat;
+            throw new IllegalStateException("ScriptedProvider queue exhausted with no repeat response set");
+        }
+
+        List<NlAskRequest> seen() {
+            return seen;
+        }
     }
 }

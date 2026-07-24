@@ -47,6 +47,8 @@ package org.saiku.service.olap.ai.ask;
  * @param inputTokens prompt token count when reported by the provider; {@code -1} when unknown
  * @param outputTokens completion token count when reported by the provider; {@code -1} when
  *     unknown
+ * @param toolCallId provider-assigned id for the emitted tool call (Anthropic tool_use id / OpenAI
+ *     tool_call id); {@code null} for degraded/refusal/insight/view-change responses
  */
 public record NlAskResponse(
         Kind kind,
@@ -55,7 +57,8 @@ public record NlAskResponse(
         String reason,
         String model,
         int inputTokens,
-        int outputTokens) {
+        int outputTokens,
+        String toolCallId) {
 
     public enum Kind {
         QUERY,
@@ -70,31 +73,36 @@ public record NlAskResponse(
     }
 
     public static NlAskResponse okQuery(String json, String model, int inputTokens, int outputTokens) {
-        return new NlAskResponse(Kind.QUERY, json, false, "", model, inputTokens, outputTokens);
+        return okQuery(json, model, inputTokens, outputTokens, null);
+    }
+
+    public static NlAskResponse okQuery(
+            String json, String model, int inputTokens, int outputTokens, String toolCallId) {
+        return new NlAskResponse(Kind.QUERY, json, false, "", model, inputTokens, outputTokens, toolCallId);
     }
 
     public static NlAskResponse okInsight(String json, String model, int inputTokens, int outputTokens) {
-        return new NlAskResponse(Kind.INSIGHT, json, false, "", model, inputTokens, outputTokens);
+        return new NlAskResponse(Kind.INSIGHT, json, false, "", model, inputTokens, outputTokens, null);
     }
 
     public static NlAskResponse okViewChange(String json, String model, int inputTokens, int outputTokens) {
-        return new NlAskResponse(Kind.VIEW_CHANGE, json, false, "", model, inputTokens, outputTokens);
+        return new NlAskResponse(Kind.VIEW_CHANGE, json, false, "", model, inputTokens, outputTokens, null);
     }
 
     public static NlAskResponse okEmailDraft(String json, String model, int inputTokens, int outputTokens) {
-        return new NlAskResponse(Kind.EMAIL_DRAFT, json, false, "", model, inputTokens, outputTokens);
+        return new NlAskResponse(Kind.EMAIL_DRAFT, json, false, "", model, inputTokens, outputTokens, null);
     }
 
     public static NlAskResponse refusal(String reason, String model, int inputTokens, int outputTokens) {
-        return new NlAskResponse(Kind.REFUSAL, null, false, reason, model, inputTokens, outputTokens);
+        return new NlAskResponse(Kind.REFUSAL, null, false, reason, model, inputTokens, outputTokens, null);
     }
 
     public static NlAskResponse degraded(String reason) {
-        return new NlAskResponse(null, null, true, reason, null, -1, -1);
+        return new NlAskResponse(null, null, true, reason, null, -1, -1, null);
     }
 
     public static NlAskResponse degraded(String reason, String model) {
-        return new NlAskResponse(null, null, true, reason, model, -1, -1);
+        return new NlAskResponse(null, null, true, reason, model, -1, -1, null);
     }
 
     /**
