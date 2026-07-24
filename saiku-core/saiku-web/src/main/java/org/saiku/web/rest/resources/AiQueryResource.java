@@ -47,6 +47,7 @@ import org.saiku.service.olap.ai.AiValidationException;
 import org.saiku.service.olap.ai.OlapAiCubeMetadataService;
 import org.saiku.service.olap.ai.ask.AiAskApi;
 import org.saiku.service.olap.ai.ask.AiAskService;
+import org.saiku.service.olap.ai.ask.DashboardSpec;
 import org.saiku.web.util.JdbcCleanup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -1139,6 +1140,35 @@ public class AiQueryResource {
                         force,
                         body.getCurrentQuery()),
                 "AI ask (chained, streaming)");
+    }
+
+    /**
+     * AI dashboard-builder (D1, feature-email): from one natural-language request the model authors
+     * a MULTI-TILE dashboard spec (N query-tiles) the frontend drops into Saiku's real dashboard
+     * model. NON-streaming — a dashboard spec is one provider turn, so there's nothing to progress
+     * over SSE.
+     *
+     * <p>Same preamble as every other ask endpoint (auth/size/rate/policy/configured) — a dashboard
+     * build is one LLM call, so it counts as one unit against the shared AI rate budget via {@link
+     * #askRateLimiter}. Unlike the report path, this path sends NO cell data to the LLM (only the
+     * PII-filtered schema + the model's own query specs), so it is not gated on {@code
+     * ai.llm.egress=aggregated}. On success returns the {@link DashboardSpec} (200). On a degrade
+     * the same 200-with-degraded-field envelope every other ask surface uses.
+     */
+    @POST
+    @Path("/ask/dashboard")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response askDashboard(AiAskApi.AskRequest body) {
+        Response pre = validateAskPreamble(body, true);
+        if (pre != null) {
+            return pre;
+        }
+        // v1 runs the classic (non-space-scoped) path — space is null, matching the chained-ask
+        // endpoint's v1 posture. The AskRequest wire shape carries no space id.
+        DashboardSpec spec =
+                askService.buildDashboard(body.getCube(), body.getQuestion(), body.historyAsMessages(), null);
+        return Response.ok(spec).type(MediaType.APPLICATION_JSON).build();
     }
 
     /**

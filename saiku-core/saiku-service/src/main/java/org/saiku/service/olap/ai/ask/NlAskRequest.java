@@ -64,7 +64,14 @@ public record NlAskRequest(
         AUTO,
         QUERY,
         INSIGHT,
-        VIEW_CHANGE
+        VIEW_CHANGE,
+        /**
+         * Force the {@code emit_dashboard} tool (multi-tile dashboard spec). Unlike the other
+         * modes, {@code DASHBOARD} is never part of {@code AUTO} — it is a dedicated entry point
+         * ({@link AiAskService#buildDashboard}), so the classic ask picker never routes to it. The
+         * provider advertises only {@code emit_dashboard} + the refusal tool for this turn.
+         */
+        DASHBOARD
     }
 
     public NlAskRequest {

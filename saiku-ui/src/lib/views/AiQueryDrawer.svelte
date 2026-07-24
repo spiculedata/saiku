@@ -20,7 +20,13 @@
   import { emailComposer } from "$lib/stores/emailComposer.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { selection } from "$lib/stores/selection.svelte";
-  import { askAi, askAiStream, AiAskTransportError, type AiInsight, type AiViewChange, type AskResponse, type NlAskMessageDto } from "$lib/api/aiAsk";
+  import { askAi, askAiStream, AiAskTransportError, type AiViewChange, type AskResponse, type NlAskMessageDto } from "$lib/api/aiAsk";
+  import { buildAiDashboard, type DashboardSpec } from "$lib/api/aiDashboard";
+  import { assembleDashboard } from "$lib/dashboard/aiDashboardAssembler";
+  import { dashboardStore } from "$lib/stores/dashboard.svelte";
+  import { session } from "$lib/stores/session.svelte";
+  import { goto } from "$app/navigation";
+  import { base } from "$app/paths";
   import { buildCellsetDigest } from "$lib/api/cellsetDigest";
   import { aiRequestToQueryModel, queryModelToAiRequest, type AiQueryRequestShape } from "$lib/api/aiQueryToModel";
   import { classifyChainEnvelope } from "$lib/api/chainStep";
@@ -150,6 +156,13 @@
    *  single-turn path below is untouched by this flag; it only changes which function the send
    *  button/keyboard shortcut calls. */
   let buildAndReport = $state(false);
+  /** Opt-in "Build dashboard" toggle — OFF by default. When true, Send routes to
+   *  submitDashboard() (a single non-streaming build → assemble → open in the real
+   *  dashboard editor for REVIEW-THEN-SAVE) instead of submit() / submitChained().
+   *  Mutually exclusive with "Build & report": turning one on turns the other off
+   *  so Send has a single unambiguous mode. The single-ask + chained paths are
+   *  otherwise untouched — this is purely additive. */
+  let buildDashboard = $state(false);
   /** Elapsed-time indicator for in-flight requests so 5-10s Anthropic round-trips don't read as
    *  "frozen". Ticks every 250ms; only visible while inflight. */
   let inflightStartedAt = $state<number | null>(null);
@@ -657,6 +670,125 @@
     }
   }
 
+  /** Suggest a repository path for the reviewed dashboard to Save to. Mirrors
+   *  the New-dashboard flow's home default + slug, and appends a short unique
+   *  suffix so opening a review never lands on (and the user's Save never
+   *  overwrites) an existing dashboard at a colliding name. */
+  function suggestedDashboardPath(title: string | undefined): string {
+    const user = session.current?.username ?? "";
+    const home = user ? `homes/${user}` : "homes";
+    const slug =
+      (title ?? "")
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 48) || "dashboard";
+    const unique = Date.now().toString(36).slice(-5);
+    return `${home}/ai-${slug}-${unique}.saikudash`;
+  }
+
+  /**
+   * Opt-in dashboard path — "Build dashboard" toggle. A single non-streaming
+   * build (buildAiDashboard) returns a validated, server-hardened DashboardSpec;
+   * on success we assemble it into a REAL Dashboard (assembleDashboard) and hand
+   * it to the store for REVIEW-THEN-SAVE, then navigate to the real editor. We
+   * never persist — the user reviews / tweaks in the grid and clicks the existing
+   * Save. On degrade we render the generic reason inline (no navigation); on a
+   * thrown transport error we render the existing error turn. Mirrors submit()'s
+   * opening (guards, user turn, inflight) so the two paths stay in lockstep.
+   */
+  async function submitDashboard(): Promise<void> {
+    const question = prompt.trim();
+    if (!question || inflight) return;
+    const cube = selection.cube;
+    if (!cube) {
+      turns = [
+        ...turns,
+        {
+          id: nextId(),
+          role: "error",
+          text: i18n.t("workspace.aiQuery.noCube"),
+        },
+      ];
+      return;
+    }
+
+    const history = historyForRequest();
+    const userTurn: ChatTurn = { id: nextId(), role: "user", text: question };
+    turns = [...turns, userTurn];
+    prompt = "";
+    inflight = true;
+    notConfiguredBanner = null;
+
+    const cubeRef = {
+      connectionName: cube.connection,
+      catalog: cube.catalog,
+      schema: cube.schema,
+      cubeName: cube.name,
+    };
+
+    let spec: DashboardSpec;
+    try {
+      spec = await buildAiDashboard({ question, cube: cubeRef, history });
+    } catch (e) {
+      const message = e instanceof AiAskTransportError ? e.message : (e as Error).message;
+      turns = [
+        ...turns,
+        {
+          id: nextId(),
+          role: "error",
+          text: i18n.t("workspace.aiQuery.transportError").replace("{message}", message),
+        },
+      ];
+      inflight = false;
+      return;
+    }
+
+    if (spec.degraded) {
+      const reason = spec.reason ?? i18n.t("workspace.aiQuery.unknownError");
+      if (reason.toLowerCase().includes("not configured")) {
+        notConfiguredBanner = reason;
+      }
+      const isOffTopic = reason.startsWith("OFF_TOPIC: ");
+      const text = isOffTopic
+        ? i18n.t("workspace.aiQuery.offTopic").replace("{reason}", reason.slice("OFF_TOPIC: ".length))
+        : reason;
+      turns = [
+        ...turns,
+        {
+          id: nextId(),
+          role: isOffTopic ? "assistant" : "error",
+          text,
+        },
+      ];
+      inflight = false;
+      return;
+    }
+
+    // Success — assemble the real Dashboard, stage it for review, and open the
+    // editor. beginReview() does NOT persist; the store adopts it on the
+    // editor's load() and lands it dirty so the existing Save writes a new file.
+    const dashboard = assembleDashboard(spec, cubeRef);
+    // Stage the dashboard bound to the exact path we're about to navigate to,
+    // so the editor's load() adopts it there (and nowhere else).
+    const savePath = suggestedDashboardPath(spec.title);
+    dashboardStore.beginReview(dashboard, savePath);
+    turns = [
+      ...turns,
+      {
+        id: nextId(),
+        role: "assistant",
+        text: i18n.t("workspace.aiQuery.dashboardOpening", "Opening your dashboard for review…"),
+        model: spec.model,
+      },
+    ];
+    inflight = false;
+    // Collapse the drawer as we move to the dashboard editor.
+    onClose();
+    await goto(`${base}/dashboards/${savePath}`);
+  }
+
   function clearConversation(): void {
     turns = [];
     notConfiguredBanner = null;
@@ -675,11 +807,17 @@
     if (idx >= 0) turns[idx].mdxExpanded = !turns[idx].mdxExpanded;
   }
 
+  /** Route Send to the active mode. Dashboard wins over chained wins over the
+   *  single ask; the toggles are mutually exclusive so at most one is on. */
+  function runSend(): void {
+    void (buildDashboard ? submitDashboard() : buildAndReport ? submitChained() : submit());
+  }
+
   function handleKeydown(e: KeyboardEvent): void {
     // Cmd/Ctrl + Enter submits; plain Enter inserts newline.
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
-      void (buildAndReport ? submitChained() : submit());
+      void runSend();
     }
   }
 
@@ -932,12 +1070,31 @@
         >{opt.label}</button>
       {/each}
     </div>
-    <!-- Opt-in chained ("Build & report") toggle — default OFF. When on, send routes to
-         submitChained() (streamed multi-step ask) instead of submit()'s single-turn askAi. -->
-    <label class="ai-drawer__chain-toggle" title={i18n.t("workspace.aiQuery.buildAndReportHint")}>
-      <input type="checkbox" bind:checked={buildAndReport} disabled={inflight} />
-      <span>{i18n.t("workspace.aiQuery.buildAndReport")}</span>
-    </label>
+    <!-- Opt-in build toggles — default OFF, mutually exclusive so Send has one
+         unambiguous mode. "Build & report" routes to submitChained() (streamed
+         multi-step ask); "Build dashboard" routes to submitDashboard() (single
+         non-streaming build → assemble → open the real editor for review). With
+         both off, Send is the single-turn askAi. -->
+    <div class="ai-drawer__build-toggles">
+      <label class="ai-drawer__chain-toggle" title={i18n.t("workspace.aiQuery.buildAndReportHint")}>
+        <input
+          type="checkbox"
+          bind:checked={buildAndReport}
+          disabled={inflight}
+          onchange={() => { if (buildAndReport) buildDashboard = false; }}
+        />
+        <span>{i18n.t("workspace.aiQuery.buildAndReport")}</span>
+      </label>
+      <label class="ai-drawer__chain-toggle" title={i18n.t("workspace.aiQuery.buildDashboardHint")}>
+        <input
+          type="checkbox"
+          bind:checked={buildDashboard}
+          disabled={inflight}
+          onchange={() => { if (buildDashboard) buildAndReport = false; }}
+        />
+        <span>{i18n.t("workspace.aiQuery.buildDashboard")}</span>
+      </label>
+    </div>
     <div class="flex gap-2 items-end">
     <textarea
       bind:this={inputEl}
@@ -952,7 +1109,7 @@
       type="button"
       class="ai-drawer__submit"
       disabled={inflight || prompt.trim().length === 0}
-      onclick={() => void (buildAndReport ? submitChained() : submit())}
+      onclick={() => runSend()}
       title={i18n.t("workspace.aiQuery.send")}
       aria-label={i18n.t("workspace.aiQuery.send")}
     >
@@ -1309,6 +1466,13 @@
   /* "Build & report" opt-in toggle — sits between the mode bar and the input row. Plain
      checkbox + label rather than a bespoke switch component; matches the mode bar's font size
      and muted-until-active color so it reads as a secondary control. */
+  /* Row of build-mode toggles ("Build & report" / "Build dashboard"). Wraps so
+     the two pills reflow on a narrow drawer instead of overflowing. */
+  .ai-drawer__build-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+  }
   .ai-drawer__chain-toggle {
     display: inline-flex;
     align-items: center;

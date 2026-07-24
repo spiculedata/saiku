@@ -426,6 +426,61 @@ public class OpenAINlAskProviderTest {
         assertTrue(resp.reason().startsWith("Transport error"));
     }
 
+    /* ---- emit_dashboard function (D1 dashboard-builder) ---- */
+
+    @Test
+    public void dashboardModeAdvertisesOnlyDashboardAndRefusalFunctions() throws Exception {
+        OpenAINlAskProvider provider =
+                new OpenAINlAskProvider(new OpenAINlAskProvider.Config("k", "gpt-x", null, 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(
+                CUBE,
+                "build a sales dashboard",
+                SCHEMA,
+                REQUEST_SCHEMA,
+                List.of(),
+                null,
+                NlAskRequest.ForceTool.DASHBOARD);
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+        JsonNode tools = root.get("tools");
+
+        assertEquals(2, tools.size());
+        assertEquals("emit_dashboard", tools.get(0).get("function").get("name").asText());
+        assertEquals(
+                "refuse_off_topic", tools.get(1).get("function").get("name").asText());
+
+        JsonNode params = tools.get(0).get("function").get("parameters");
+        assertEquals("object", params.get("type").asText());
+        assertTrue(params.get("properties").has("title"));
+        JsonNode tileItems = params.get("properties").get("tiles").get("items");
+        assertEquals(
+                "object", tileItems.get("properties").get("query").get("type").asText());
+        assertTrue(root.get("messages").get(0).get("content").asText().contains("DASHBOARD MODE"));
+    }
+
+    @Test
+    public void parseToolResponseExtractsDashboardArgumentsAsJson() throws Exception {
+        String body = "{\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":4},"
+                + "\"choices\":[{\"message\":{\"tool_calls\":[{\"function\":{\"name\":\"emit_dashboard\","
+                + "\"arguments\":\"{\\\"title\\\":\\\"Sales\\\",\\\"tiles\\\":[]}\"}}]}}]}";
+
+        NlAskResponse resp = OpenAINlAskProvider.parseToolResponse(body, "gpt-x");
+
+        assertFalse(resp.degraded());
+        assertEquals(NlAskResponse.Kind.DASHBOARD, resp.kind());
+        JsonNode parsed = MAPPER.readTree(resp.payloadJson());
+        assertEquals("Sales", parsed.get("title").asText());
+    }
+
+    @Test
+    public void parseToolResponseDegradesWhenDashboardArgumentsBlank() throws Exception {
+        String body = "{\"choices\":[{\"message\":{\"tool_calls\":[{\"function\":{\"name\":\"emit_dashboard\","
+                + "\"arguments\":\"\"}}]}}]}";
+        NlAskResponse resp = OpenAINlAskProvider.parseToolResponse(body, "gpt-x");
+        assertTrue(resp.degraded());
+        assertEquals("empty dashboard tool arguments", resp.reason());
+    }
+
     /** Minimal {@link HttpClient} stub — only {@code send} is exercised. Captures the last request. */
     private static final class StubHttp extends HttpClient {
         private final int status;

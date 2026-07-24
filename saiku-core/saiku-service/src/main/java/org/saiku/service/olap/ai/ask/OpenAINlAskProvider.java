@@ -178,8 +178,23 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
         boolean wantInsight = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.INSIGHT;
         boolean wantViewChange = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.VIEW_CHANGE;
         boolean wantEmailDraft = force == NlAskRequest.ForceTool.AUTO;
+        // Dashboard is a dedicated forced mode (buildDashboard), never part of AUTO — so the classic
+        // ask picker never emits a dashboard. When forced, only emit_dashboard + refusal advertise.
+        boolean wantDashboard = force == NlAskRequest.ForceTool.DASHBOARD;
 
         ArrayNode tools = root.putArray("tools");
+
+        if (wantDashboard) {
+            ObjectNode dashboardTool = tools.addObject();
+            dashboardTool.put("type", "function");
+            ObjectNode dashboardFn = dashboardTool.putObject("function");
+            dashboardFn.put("name", DASHBOARD_TOOL_NAME);
+            dashboardFn.put(
+                    "description",
+                    "Build a multi-tile dashboard spec from the request. Emit a title and a set of tiles, "
+                            + "each with its own AiQueryRequest matching the cube schema.");
+            dashboardFn.set("parameters", dashboardInputSchema(MAPPER.readTree(request.requestJsonSchema())));
+        }
 
         if (wantQuery) {
             ObjectNode tool = tools.addObject();
@@ -284,6 +299,15 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
                             + "and add the new one; only drop a field when the user asks to remove it):\n")
                     .append(truncate(request.currentQueryJson(), 4000));
         }
+        // Dashboard-mode directive — only appended when the dashboard function is the forced choice.
+        if (wantDashboard) {
+            sys.append("\n\nDASHBOARD MODE: Call emit_dashboard exactly once. Design a small set of tiles "
+                    + "(one per distinct view) that together answer the request. Each tile's `query` MUST be a "
+                    + "valid AiQueryRequest against the cube schema above — every name field must exist in the "
+                    + "schema, and echo the cube ref exactly. Choose each tile's `type` (chart, table, or kpi) and, "
+                    + "for chart tiles, a `chartType`. Give the dashboard and each tile a short plain-text title. "
+                    + "If the request is not about this cube's data, call refuse_off_topic instead.");
+        }
         system.put("content", sys.toString());
 
         for (NlAskMessage m : request.history()) {
@@ -380,6 +404,12 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
                     return NlAskResponse.degraded("empty view_change tool arguments", model);
                 }
                 return NlAskResponse.okViewChange(arguments, model, inputTokens, outputTokens);
+            }
+            if (DASHBOARD_TOOL_NAME.equals(fnName)) {
+                if (arguments == null || arguments.isBlank()) {
+                    return NlAskResponse.degraded("empty dashboard tool arguments", model);
+                }
+                return NlAskResponse.okDashboard(arguments, model, inputTokens, outputTokens);
             }
             if (REFUSAL_TOOL_NAME.equals(fnName)) {
                 String reason = "Question is not about the cube.";

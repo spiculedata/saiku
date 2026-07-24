@@ -164,6 +164,9 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
         boolean wantInsight = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.INSIGHT;
         boolean wantViewChange = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.VIEW_CHANGE;
         boolean wantEmailDraft = force == NlAskRequest.ForceTool.AUTO;
+        // Dashboard is a dedicated forced mode (buildDashboard), never part of AUTO — so the classic
+        // ask picker never emits a dashboard. When forced, only emit_dashboard + refusal advertise.
+        boolean wantDashboard = force == NlAskRequest.ForceTool.DASHBOARD;
 
         StringBuilder system = new StringBuilder(SYSTEM_PROMPT);
         // Agent-space persona voice (saiku#1440). Prepended before the cube schema so the LLM
@@ -205,9 +208,29 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
                             + "field when the user explicitly asks to remove it):\n")
                     .append(truncate(request.currentQueryJson(), 4000));
         }
+        // Dashboard-mode directive — only appended when the dashboard tool is the forced choice, so
+        // the classic tool-choice prompt is untouched for every other turn.
+        if (wantDashboard) {
+            system.append("\n\nDASHBOARD MODE: Call emit_dashboard exactly once. Design a small set of tiles "
+                    + "(one per distinct view) that together answer the request. Each tile's `query` MUST be a "
+                    + "valid AiQueryRequest against the cube schema above — every name field must exist in the "
+                    + "schema, and echo the cube ref exactly. Choose each tile's `type` (chart, table, or kpi) and, "
+                    + "for chart tiles, a `chartType`. Give the dashboard and each tile a short plain-text title. "
+                    + "If the request is not about this cube's data, call refuse_off_topic instead.");
+        }
         root.put("system", system.toString());
 
         ArrayNode tools = root.putArray("tools");
+
+        if (wantDashboard) {
+            ObjectNode dashboardTool = tools.addObject();
+            dashboardTool.put("name", DASHBOARD_TOOL_NAME);
+            dashboardTool.put(
+                    "description",
+                    "Build a multi-tile dashboard spec from the request. Emit a title and a set of tiles, "
+                            + "each with its own AiQueryRequest matching the cube schema.");
+            dashboardTool.set("input_schema", dashboardInputSchema(MAPPER.readTree(request.requestJsonSchema())));
+        }
 
         // wantQuery / wantInsight / wantViewChange are computed at the top of the method (where the
         // system prompt's tool-specific sections are pruned by the same flags).
@@ -362,6 +385,13 @@ public final class AnthropicNlAskProvider extends AbstractNlAskProvider {
                         return NlAskResponse.degraded("empty view_change tool input", model);
                     }
                     return NlAskResponse.okViewChange(
+                            MAPPER.writeValueAsString(input), model, inputTokens, outputTokens);
+                }
+                if (DASHBOARD_TOOL_NAME.equals(toolName)) {
+                    if (input.isMissingNode() || input.isNull()) {
+                        return NlAskResponse.degraded("empty dashboard tool input", model);
+                    }
+                    return NlAskResponse.okDashboard(
                             MAPPER.writeValueAsString(input), model, inputTokens, outputTokens);
                 }
                 if (REFUSAL_TOOL_NAME.equals(toolName)) {

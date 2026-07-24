@@ -71,6 +71,7 @@ public record NlAskResponse(
         INSIGHT,
         VIEW_CHANGE,
         EMAIL_DRAFT,
+        DASHBOARD,
         REFUSAL
     }
 
@@ -97,6 +98,16 @@ public record NlAskResponse(
 
     public static NlAskResponse okEmailDraft(String json, String model, int inputTokens, int outputTokens) {
         return new NlAskResponse(Kind.EMAIL_DRAFT, json, false, "", model, inputTokens, outputTokens, null, -1L);
+    }
+
+    /**
+     * The model called {@code emit_dashboard}: {@code json} is the raw multi-tile dashboard spec
+     * (title + tiles[]) the AI authored, ready for {@link AiAskService#buildDashboard} to parse,
+     * validate against the live cube, and harden. Carries no tool-call id — the dashboard build is
+     * a single provider turn with no execute→feedback loop.
+     */
+    public static NlAskResponse okDashboard(String json, String model, int inputTokens, int outputTokens) {
+        return new NlAskResponse(Kind.DASHBOARD, json, false, "", model, inputTokens, outputTokens, null, -1L);
     }
 
     public static NlAskResponse refusal(String reason, String model, int inputTokens, int outputTokens) {
