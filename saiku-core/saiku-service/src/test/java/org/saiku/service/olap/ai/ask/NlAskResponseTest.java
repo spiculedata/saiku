@@ -6,6 +6,7 @@ package org.saiku.service.olap.ai.ask;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -55,5 +56,46 @@ public class NlAskResponseTest {
 
         NlAskResponse resp2 = NlAskResponse.degraded("parse", "claude-x");
         assertNull(resp2.toolCallId());
+    }
+
+    @Test
+    public void rateLimitedCarriesRetryAfterMsAndIsDegraded() {
+        NlAskResponse resp = NlAskResponse.rateLimited("HTTP 429: x", "m", 9500);
+        assertTrue(resp.degraded());
+        assertEquals(9500L, resp.retryAfterMs());
+        assertNull(resp.kind());
+        assertEquals("m", resp.model());
+        assertEquals("HTTP 429: x", resp.reason());
+    }
+
+    @Test
+    public void rateLimitedFloorsNegativeRetryAfterMsToZero() {
+        NlAskResponse resp = NlAskResponse.rateLimited("HTTP 429: x", "m", -5);
+        assertEquals(0L, resp.retryAfterMs());
+    }
+
+    @Test
+    public void retryableToolErrorCarriesShortBackoffAndIsDegraded() {
+        NlAskResponse resp = NlAskResponse.retryableToolError("HTTP 400: tool_use_failed", "m");
+        assertTrue(resp.degraded());
+        assertNull(resp.kind());
+        assertEquals(NlAskResponse.TOOL_ERROR_BACKOFF_MS, resp.retryAfterMs());
+        assertEquals(500L, resp.retryAfterMs());
+        assertEquals("m", resp.model());
+        assertEquals("HTTP 400: tool_use_failed", resp.reason());
+    }
+
+    @Test
+    public void everyOtherFactoryDefaultsRetryAfterMsToMinusOne() {
+        assertEquals(-1L, NlAskResponse.okQuery("{}", "claude-x", 1, 2).retryAfterMs());
+        assertEquals(
+                -1L, NlAskResponse.okQuery("{}", "claude-x", 1, 2, "toolu_abc").retryAfterMs());
+        assertEquals(-1L, NlAskResponse.okInsight("{}", "claude-x", 1, 2).retryAfterMs());
+        assertEquals(-1L, NlAskResponse.okViewChange("{}", "claude-x", 1, 2).retryAfterMs());
+        assertEquals(-1L, NlAskResponse.okEmailDraft("{}", "claude-x", 1, 2).retryAfterMs());
+        assertEquals(-1L, NlAskResponse.refusal("off-topic", "claude-x", 1, 2).retryAfterMs());
+        assertEquals(-1L, NlAskResponse.degraded("transport").retryAfterMs());
+        assertEquals(-1L, NlAskResponse.degraded("parse", "claude-x").retryAfterMs());
+        assertEquals(-1L, NlAskResponse.ok("{}", "claude-x", 1, 2).retryAfterMs());
     }
 }

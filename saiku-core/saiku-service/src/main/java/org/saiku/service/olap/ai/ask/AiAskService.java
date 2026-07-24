@@ -402,6 +402,72 @@ public class AiAskService {
     }
 
     /**
+     * When true (default), a chained turn that FOLLOWS an executed query is forced to the report
+     * (emit_insight) tool only — dropping the emit_query schema (~9k tokens) so the loop fits tight
+     * LLM token-per-minute limits. Set false to keep full multi-turn agency (the model may issue
+     * another query mid-chain), e.g. for the dashboard builder.
+     */
+    private static boolean forceReportAfterQuery() {
+        String v = System.getenv("SAIKU_AI_CHAIN_FORCE_REPORT");
+        if (v == null || v.isBlank()) v = System.getProperty("saiku.ai.ask.chain.forceReportAfterQuery");
+        return v == null || v.isBlank() || Boolean.parseBoolean(v.trim()); // default TRUE
+    }
+
+    /**
+     * Max in-loop retries when the LLM returns a rate-limit (HTTP 429). Default 2; 0 disables paced
+     * retry. Read from env {@code SAIKU_AI_CHAIN_RATELIMIT_RETRIES} first, else system property
+     * {@code saiku.ai.ask.chain.rateLimitRetries}, clamped to [0, 5].
+     */
+    private static int rateLimitRetries() {
+        String v = System.getenv("SAIKU_AI_CHAIN_RATELIMIT_RETRIES");
+        if (v == null || v.isBlank()) v = System.getProperty("saiku.ai.ask.chain.rateLimitRetries");
+        int n = 2;
+        if (v != null && !v.isBlank()) {
+            try {
+                n = Integer.parseInt(v.trim());
+            } catch (NumberFormatException ignore) {
+                // fall through to the default
+            }
+        }
+        return Math.max(0, Math.min(5, n));
+    }
+
+    /**
+     * Hard cap on each rate-limit wait (ms). Default 20000; keeps a slow LLM from pinning the
+     * request thread. Read from env {@code SAIKU_AI_CHAIN_RATELIMIT_MAX_WAIT_MS} first, else system
+     * property {@code saiku.ai.ask.chain.rateLimitMaxWaitMs}, clamped to [0, 60000].
+     */
+    private static long rateLimitMaxWaitMs() {
+        String v = System.getenv("SAIKU_AI_CHAIN_RATELIMIT_MAX_WAIT_MS");
+        if (v == null || v.isBlank()) v = System.getProperty("saiku.ai.ask.chain.rateLimitMaxWaitMs");
+        long n = 20_000L;
+        if (v != null && !v.isBlank()) {
+            try {
+                n = Long.parseLong(v.trim());
+            } catch (NumberFormatException ignore) {
+                // fall through to the default
+            }
+        }
+        return Math.max(0L, Math.min(60_000L, n));
+    }
+
+    /** Used when a 429 gave no usable hint ({@code retryAfterMs == 0}). */
+    private static final long DEFAULT_RATE_LIMIT_WAIT_MS = 5_000L;
+
+    /** Sleep primitive, injectable so tests exercise the paced-retry loop without real waits. */
+    @FunctionalInterface
+    interface Sleeper {
+        void sleep(long ms) throws InterruptedException;
+    }
+
+    private Sleeper sleeper = Thread::sleep;
+
+    /** Package-visible for tests. */
+    void setSleeper(Sleeper sleeper) {
+        this.sleeper = sleeper;
+    }
+
+    /**
      * Bounded server-side agentic loop: the model builds a query, the server executes it, the result
      * is fed back (egress-gated), and the model reports on it — all in one request. Terminal tool, a
      * degrade, or the step cap ends the loop. NO send/save/mutate capability; execution returns data
@@ -473,8 +539,15 @@ public class AiAskService {
         String turnDigest = effectiveDigest; // the cellset the model sees THIS turn; starts as on-screen (gated)
         int cap = maxSteps();
         boolean hitStepLimit = false;
+        final boolean forceReport = forceReportAfterQuery();
 
         for (int i = 0; i < cap; i++) {
+            // Continuation turns (a query already executed this chain) are forced to the report tool
+            // when the trim toggle is on — drops the ~9k-token emit_query schema from the request the
+            // provider never uses on that turn. Turn-1 (empty transcript) always uses the caller's ft
+            // so it can still emit_query.
+            NlAskRequest.ForceTool turnForceTool =
+                    (forceReport && !transcript.isEmpty()) ? NlAskRequest.ForceTool.INSIGHT : ft;
             NlAskRequest req = new NlAskRequest(
                     ref,
                     effectiveQuestion,
@@ -482,12 +555,31 @@ public class AiAskService {
                     requestSchemaJson,
                     hist,
                     turnDigest,
-                    ft,
+                    turnForceTool,
                     currentQueryJson,
                     skillsFragment,
                     null,
                     List.copyOf(transcript));
             NlAskResponse resp = provider.ask(req);
+
+            // OPT-3: a rate-limited turn (HTTP 429, resp.retryAfterMs() >= 0) is paced + retried in
+            // place — the SAME request, since a rate limit isn't the model's fault — up to a bounded
+            // retry count. A non-429 degrade (retryAfterMs == -1) never enters this loop.
+            int rlRetries = 0;
+            while (resp.degraded() && resp.retryAfterMs() >= 0 && rlRetries < rateLimitRetries()) {
+                long wait = resp.retryAfterMs() > 0 ? resp.retryAfterMs() : DEFAULT_RATE_LIMIT_WAIT_MS;
+                wait = Math.min(wait, rateLimitMaxWaitMs());
+                try {
+                    sleeper.sleep(wait);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break; // stop retrying; fall through to the degraded handling below
+                }
+                rlRetries++;
+                log.info(
+                        "chained ask: LLM rate-limited, waited {}ms, retry {}/{}", wait, rlRetries, rateLimitRetries());
+                resp = provider.ask(req);
+            }
 
             if (resp.degraded()) {
                 steps.add(AskOutcome.degraded(resp.reason(), resp.model()));
