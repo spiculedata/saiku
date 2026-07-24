@@ -36,6 +36,11 @@ If you don't have JDK 22, exclude the module: `mvn -pl '!saiku-proptest' verify`
 | `CryptoUtilPropertyTest` | `decrypt(encrypt(s)) == s` for every string `s`. |
 | `DataSourceMapperRoundTripPropertyTest` | An Ossie datasource survives `DataSourceMapper → SaikuDatasource → DataSourceMapper` with its identifying fields intact (the server-side wire contract behind saiku#1529). |
 | `KAnonymityFilterPropertyTest` | The k-anonymity gate masks exactly the disclosive region: known counts in `[1, k)` are suppressed, `k` and above are not (inclusive boundary), and unknown counts (`<= 0`) never are. |
+| `KAnonymityFilterMatrixPropertyTest` | The real egress guarantee: after `applyToMatrix`, no row with a known sub-`k` count keeps an unmasked measure value, and rows at/above `k` are left untouched. |
+| `CsvExporterPropertyTest` | CSV formula-injection: any value starting with `= + - @`/tab/CR (and not a number) is quote-prefixed; safe values are never altered; output is only ever the input or `'`+input. |
+| `MdxParameterSubstitutorPropertyTest` | MDX injection: values with MDX-meta chars are rejected, and safe values are substituted literally (never re-interpreted as regex replacements like `$0`). |
+
+`CryptoUtilPropertyTest` also asserts new saves are always AES-GCM `v2:` format and are nonce-unique (two encryptions differ) yet both decrypt back.
 
 ## Adding a property test
 
