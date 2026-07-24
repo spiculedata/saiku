@@ -279,6 +279,13 @@
             <groupId>net.sourceforge.htmlcleaner</groupId>
             <artifactId>htmlcleaner</artifactId>
         </dependency>
+        <!-- OWASP Java HTML Sanitizer: allowlist-sanitizes client-supplied
+             summaryHtml in EmailMessageAssembler before it's assembled into
+             the outbound email body. Version from saiku-bom. -->
+        <dependency>
+            <groupId>com.googlecode.owasp-java-html-sanitizer</groupId>
+            <artifactId>owasp-java-html-sanitizer</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.mozilla</groupId>
             <artifactId>rhino</artifactId>

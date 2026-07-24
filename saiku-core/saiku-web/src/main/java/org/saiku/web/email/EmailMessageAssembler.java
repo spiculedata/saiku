@@ -5,6 +5,8 @@ import jakarta.mail.internet.InternetAddress;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import org.owasp.html.PolicyFactory;
+import org.owasp.html.Sanitizers;
 import org.saiku.service.mail.Attachment;
 import org.saiku.service.mail.InlineImage;
 import org.saiku.service.mail.MailMessage;
@@ -20,14 +22,26 @@ public class EmailMessageAssembler {
 
     private static final String CHART_CID = "chart";
 
+    /**
+     * Allowlist policy for the client-supplied {@code summaryHtml}: formatting (b/i/strong/em/u/
+     * etc), block structure (p/div/h1-6/ul/ol/li/blockquote/pre), links (restricted to safe
+     * protocols, {@code rel=nofollow} added), and tables. Deliberately NO {@code IMAGES} — the AI
+     * summary must not be able to carry a client {@code <img>} (tracking pixel). The server's own
+     * chart {@code <img cid:chart>} is appended after sanitization and is unaffected. Scripts,
+     * event handlers, and {@code javascript:}/{@code data:} URLs are stripped by default; none of
+     * these policies allow them.
+     */
+    private static final PolicyFactory SUMMARY_POLICY =
+            Sanitizers.FORMATTING.and(Sanitizers.BLOCKS).and(Sanitizers.LINKS).and(Sanitizers.TABLES);
+
     public MailMessage assemble(EmailSelfRequest req, String fromAddress) {
         String to = validateAddress(req.getAddress());
         String subject = stripCrlf(req.getSubject() == null ? "" : req.getSubject());
 
-        StringBuilder html = new StringBuilder(
-                req.getSummaryHtml() == null || req.getSummaryHtml().isBlank()
-                        ? "<p>Your Saiku analysis is attached.</p>"
-                        : req.getSummaryHtml());
+        String summary = req.getSummaryHtml() == null || req.getSummaryHtml().isBlank()
+                ? "<p>Your Saiku analysis is attached.</p>"
+                : SUMMARY_POLICY.sanitize(req.getSummaryHtml());
+        StringBuilder html = new StringBuilder(summary);
 
         List<InlineImage> inline = new ArrayList<>();
         if (notBlank(req.getChartPngBase64())) {

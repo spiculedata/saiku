@@ -62,6 +62,11 @@
              scalars we need to type Ossie filter payloads + typed cell values.
              Version tracks the graphql-java major line. -->
         <graphqlJavaExtendedScalars.version>24.0</graphqlJavaExtendedScalars.version>
+        <!-- OWASP Java HTML Sanitizer: allowlist-sanitizes client-supplied
+             summaryHtml before it's assembled into the outbound email body
+             (EmailMessageAssembler). 20240325.1 is the latest published
+             release on Maven Central as of this pin. -->
+        <owasp.html.sanitizer.version>20240325.1</owasp.html.sanitizer.version>
     </properties>
 
     <dependencyManagement>
@@ -802,6 +807,16 @@
                 <groupId>com.icegreen</groupId>
                 <artifactId>greenmail-junit5</artifactId>
                 <version>2.1.3</version>
+            </dependency>
+            <!-- OWASP Java HTML Sanitizer: allowlist policy that strips the
+                 client-supplied summaryHtml down to safe formatting/blocks/
+                 links/tables before EmailMessageAssembler builds the outbound
+                 mail body. Pulls in guava transitively — the guava pin above
+                 (33.4.8-jre, for Calcite) wins via dependencyManagement. -->
+            <dependency>
+                <groupId>com.googlecode.owasp-java-html-sanitizer</groupId>
+                <artifactId>owasp-java-html-sanitizer</artifactId>
+                <version>${owasp.html.sanitizer.version}</version>
             </dependency>
         </dependencies>
 
