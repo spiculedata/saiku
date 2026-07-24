@@ -158,6 +158,14 @@
    *  so Send has a single unambiguous mode. The single-ask + chained paths are
    *  otherwise untouched — this is purely additive. */
   let buildDashboard = $state(false);
+  /** Opt-in "Email" mode toggle — OFF by default. When on, Send shows the
+   *  page-level "Preparing your email…" popup immediately (before the slow AI
+   *  ask) and keeps it up through the wait; the ask still runs through the
+   *  normal single-turn path (client-side hint only — no forced backend tool).
+   *  The popup is dismissed when the composer opens (email draft) or by
+   *  stopPreparing() on any non-email response / error. Mutually exclusive with
+   *  "Build & report" and "Build dashboard". */
+  let emailMode = $state(false);
   /** Elapsed-time indicator for in-flight requests so 5-10s Anthropic round-trips don't read as
    *  "frozen". Ticks every 250ms; only visible while inflight. */
   let inflightStartedAt = $state<number | null>(null);
@@ -268,6 +276,11 @@
     prompt = "";
     inflight = true;
     notConfiguredBanner = null;
+    // Email mode: show the "Preparing your email…" popup NOW (before the slow
+    // ask) so the user gets immediate feedback that stays up through the wait.
+    // Dismissed below — composer-open on an email draft, or stopPreparing() on
+    // any other outcome / error. No forced tool: the auto path still drafts.
+    if (emailMode) emailComposer.beginPreparing();
 
     let resp: AskResponse;
     try {
@@ -309,9 +322,15 @@
           text: i18n.t("workspace.aiQuery.transportError").replace("{message}", message),
         },
       ];
+      emailComposer.stopPreparing();
       inflight = false;
       return;
     }
+
+    // Anything other than an email draft dismisses the "Preparing your email…"
+    // popup (a no-op unless Email mode started it). The email-draft branch
+    // below keeps it up until the composer opens.
+    if (!resp.emailDraft) emailComposer.stopPreparing();
 
     if (resp.degraded) {
       const reason = resp.reason ?? i18n.t("workspace.aiQuery.unknownError");
@@ -1000,7 +1019,7 @@
           type="checkbox"
           bind:checked={buildAndReport}
           disabled={inflight}
-          onchange={() => { if (buildAndReport) buildDashboard = false; }}
+          onchange={() => { if (buildAndReport) { buildDashboard = false; emailMode = false; } }}
         />
         <span>{i18n.t("workspace.aiQuery.buildAndReport")}</span>
       </label>
@@ -1009,9 +1028,18 @@
           type="checkbox"
           bind:checked={buildDashboard}
           disabled={inflight}
-          onchange={() => { if (buildDashboard) buildAndReport = false; }}
+          onchange={() => { if (buildDashboard) { buildAndReport = false; emailMode = false; } }}
         />
         <span>{i18n.t("workspace.aiQuery.buildDashboard")}</span>
+      </label>
+      <label class="ai-drawer__chain-toggle" title={i18n.t("workspace.aiQuery.emailModeHint")}>
+        <input
+          type="checkbox"
+          bind:checked={emailMode}
+          disabled={inflight}
+          onchange={() => { if (emailMode) { buildAndReport = false; buildDashboard = false; forceTool = "auto"; } }}
+        />
+        <span>{i18n.t("workspace.aiQuery.emailMode")}</span>
       </label>
     </div>
     <div class="flex gap-2 items-end">

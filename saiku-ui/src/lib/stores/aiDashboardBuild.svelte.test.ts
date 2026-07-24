@@ -145,6 +145,49 @@ describe("aiDashboardBuild.run — orchestration (no drawer component)", () => {
     expect(dangerMock).toHaveBeenCalledTimes(1);
   });
 
+  it("run() creates an AbortController and forwards its signal to buildAiDashboard", async () => {
+    (buildMock as Mock).mockResolvedValue({ degraded: false, title: "t", tiles: [] });
+
+    await aiDashboardBuild.run("build", CUBE);
+
+    const [reqArg, signalArg] = (buildMock as Mock).mock.calls[0];
+    expect(reqArg).toEqual({ question: "build", cube: CUBE });
+    expect(signalArg).toBeInstanceOf(AbortSignal);
+  });
+
+  it("cancel() aborts the in-flight build and dismisses QUIETLY (building=false, no error/toast/nav)", async () => {
+    (buildMock as Mock).mockImplementation(
+      (_req: unknown, signal: AbortSignal) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () =>
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+          );
+        }),
+    );
+
+    const p = aiDashboardBuild.run("build", CUBE);
+    expect(aiDashboardBuild.building).toBe(true);
+
+    aiDashboardBuild.cancel();
+    expect(aiDashboardBuild.building).toBe(false); // dismissed synchronously
+
+    await p; // run()'s catch recognises the AbortError and swallows it
+    expect(aiDashboardBuild.error).toBeNull(); // abort is NOT an error
+    expect(dangerMock).not.toHaveBeenCalled(); // no error toast on a user cancel
+    expect(gotoMock).not.toHaveBeenCalled();
+    expect(beginReviewMock).not.toHaveBeenCalled(); // nothing assembled/staged
+  });
+
+  it("a real (non-abort) rejection still fails + toasts (abort handling didn't swallow it)", async () => {
+    (buildMock as Mock).mockRejectedValue(new Error("500 Internal Server Error"));
+
+    await aiDashboardBuild.run("build", CUBE);
+
+    expect(aiDashboardBuild.building).toBe(false);
+    expect(aiDashboardBuild.error).toContain("500");
+    expect(dangerMock).toHaveBeenCalledTimes(1);
+  });
+
   it("re-entry guard: run() ignores a second call while already building", async () => {
     let resolve!: (v: unknown) => void;
     (buildMock as Mock).mockReturnValue(new Promise((r) => (resolve = r)));

@@ -32,6 +32,10 @@ class AiDashboardBuildStore {
   /** Last failure reason (generic, user-safe), surfaced via toast. */
   error = $state<string | null>(null);
 
+  /** Aborts the in-flight build fetch when the user hits Cancel. Held only for
+   *  the duration of the request; cleared once it settles. */
+  private controller: AbortController | null = null;
+
   /** Derived whole-seconds elapsed since {@link startedAt}. Pure computation
    *  off Date.now(); the overlay owns the 1 Hz re-render tick. */
   get elapsedSeconds(): number {
@@ -61,19 +65,38 @@ class AiDashboardBuildStore {
     this.startedAt = null;
   }
 
+  /** User hit Cancel on the overlay: abort the in-flight fetch and dismiss the
+   *  overlay QUIETLY (no error). The aborted fetch rejects with an AbortError
+   *  which run()'s catch recognises and swallows — nothing was assembled or
+   *  persisted (the abort happens before the spec returns), so there is no
+   *  half-built state to clean up. */
+  cancel(): void {
+    this.controller?.abort();
+    this.controller = null;
+    this.finish();
+  }
+
   /**
    * Run the whole build: request → assemble → stage for review → navigate.
    * Store-driven so it does NOT depend on the drawer staying mounted. Re-entry
-   * guarded. Never throws — degrade/error are turned into fail() + a toast.
+   * guarded. Never throws — degrade/error are turned into fail() + a toast; a
+   * user cancel (AbortError) is swallowed silently.
    */
   async run(request: string, cube: AiCubeRef): Promise<void> {
     if (this.building) return;
     this.start(request);
+    const controller = new AbortController();
+    this.controller = controller;
 
     let spec;
     try {
-      spec = await buildAiDashboard({ question: request, cube });
+      spec = await buildAiDashboard({ question: request, cube }, controller.signal);
     } catch (e) {
+      // User-initiated cancel — cancel() already dismissed the overlay; stay
+      // quiet (no error state, no toast).
+      if ((e as Error)?.name === "AbortError" || controller.signal.aborted) {
+        return;
+      }
       const message = e instanceof Error ? e.message : String(e);
       this.fail(message);
       toasts.danger(
@@ -84,6 +107,9 @@ class AiDashboardBuildStore {
         ),
       );
       return;
+    } finally {
+      // The fetch has settled — this controller is no longer needed.
+      if (this.controller === controller) this.controller = null;
     }
 
     if (spec.degraded) {

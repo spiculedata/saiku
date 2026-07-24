@@ -632,6 +632,8 @@
   "workspace.aiDashboard.buildFailedBody": "Something went wrong while building the dashboard. Please try again.",
   "workspace.aiDashboard.buildDegradedTitle": "Couldn't build the dashboard",
   "workspace.aiEmail.preparing": "Preparing your email…",
+  "workspace.aiQuery.emailMode": "Email",
+  "workspace.aiQuery.emailModeHint": "Ask the AI to draft an email — shows a preparing indicator while it works, then opens the composer to review and send.",
   "warning.selectCube": "Select a cube first.",
   "warning.selectCubeToRun": "Select a cube before running a query.",
   "warning.runBeforeExport": "Run a query first before exporting.",

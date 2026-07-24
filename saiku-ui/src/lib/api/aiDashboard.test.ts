@@ -124,6 +124,32 @@ describe("buildAiDashboard", () => {
     }
   });
 
+  test("forwards an AbortSignal to fetch", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ degraded: false, title: "x", tiles: [] }), { status: 200 }),
+    );
+    globalThis.fetch = fetchMock;
+    const controller = new AbortController();
+
+    await buildAiDashboard(baseReq, controller.signal);
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.signal).toBe(controller.signal);
+  });
+
+  test("rethrows an AbortError UNWRAPPED (not an AiAskTransportError) so a cancel reads as a cancel", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error("aborted"), { name: "AbortError" }));
+    try {
+      await buildAiDashboard(baseReq, new AbortController().signal);
+      expect.fail("should have thrown");
+    } catch (e) {
+      expect((e as Error).name).toBe("AbortError");
+      expect(e).not.toBeInstanceOf(AiAskTransportError);
+    }
+  });
+
   test("posts to the dashboard endpoint with credentials + JSON + the request body", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ degraded: false, title: "x", tiles: [] }), { status: 200 }),

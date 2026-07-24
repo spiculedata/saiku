@@ -10,6 +10,7 @@
    */
   import { aiDashboardBuild } from "$lib/stores/aiDashboardBuild.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
+  import { Button } from "$lib/components/ui";
   import { Loader2 } from "lucide-svelte";
 
   // Local 1 Hz tick so the elapsed timer re-renders. The interval is owned by
@@ -58,6 +59,9 @@
       <div class="text-xs text-fg-subtle">
         {i18n.t("workspace.aiDashboard.buildingHint", "This can take a minute or two on a local model.")}
       </div>
+      <Button variant="outline" size="sm" onclick={() => aiDashboardBuild.cancel()}>
+        {i18n.t("modal.cancel", "Cancel")}
+      </Button>
     </div>
   </div>
 {/if}

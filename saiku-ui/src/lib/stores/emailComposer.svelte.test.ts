@@ -24,6 +24,17 @@ describe("emailComposer", () => {
     expect(emailComposer.preparing).toBe(false);
   });
 
+  it("keeps the preparing popup up THROUGH the wait, until the composer opens", async () => {
+    emailComposer.stopPreparing(); // reset
+    emailComposer.beginPreparing(); // Email mode, at send-time (before the ask)
+    expect(emailComposer.preparing).toBe(true);
+    await Promise.resolve(); // simulate the async AI draft wait
+    expect(emailComposer.preparing).toBe(true); // still visible during the wait
+    emailComposer.requestOpen();
+    emailComposer.consumeOpen(); // composer opens
+    expect(emailComposer.preparing).toBe(false); // handed off, no stuck popup
+  });
+
   it("stopPreparing() clears the popup on error without opening the composer", () => {
     emailComposer.beginPreparing();
     expect(emailComposer.preparing).toBe(true);
