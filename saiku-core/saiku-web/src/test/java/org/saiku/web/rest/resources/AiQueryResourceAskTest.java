@@ -184,6 +184,73 @@ public class AiQueryResourceAskTest {
                 body.getResponse().getField().startsWith("measures"));
     }
 
+    /* ---- Task 3 (NL email-draft slice): EMAIL_DRAFT routing + mail-configured refusal gate ---- */
+
+    private static org.saiku.service.olap.ai.ask.AiEmailDraft stubDraft(String summary) {
+        return new org.saiku.service.olap.ai.ask.AiEmailDraft(summary);
+    }
+
+    @Test
+    public void emailDraftSurfacedWhenMailConfigured() {
+        resource.setMailSender(new org.saiku.service.mail.MailSender() {
+            @Override
+            public boolean isConfigured() {
+                return true;
+            }
+
+            @Override
+            public void send(org.saiku.service.mail.MailMessage message) {
+                throw new UnsupportedOperationException("not exercised by this test");
+            }
+        });
+        wireAskService(AiAskService.AskOutcome.okEmailDraft(stubDraft("Store sales are up 12%."), "claude-x"));
+
+        Response resp = resource.ask(validBody());
+        assertEquals(200, resp.getStatus());
+
+        AiAskApi.AskResponse body = (AiAskApi.AskResponse) resp.getEntity();
+        assertFalse(body.isDegraded());
+        assertNotNull("emailDraft carried on success", body.getEmailDraft());
+        assertEquals("Store sales are up 12%.", body.getEmailDraft().getSummary());
+    }
+
+    @Test
+    public void emailDraftRefusedWhenMailUnconfigured() {
+        resource.setMailSender(new org.saiku.service.mail.MailSender() {
+            @Override
+            public boolean isConfigured() {
+                return false;
+            }
+
+            @Override
+            public void send(org.saiku.service.mail.MailMessage message) {
+                throw new UnsupportedOperationException("not exercised by this test");
+            }
+        });
+        wireAskService(AiAskService.AskOutcome.okEmailDraft(stubDraft("Store sales are up 12%."), "claude-x"));
+
+        Response resp = resource.ask(validBody());
+        assertEquals(200, resp.getStatus());
+
+        AiAskApi.AskResponse body = (AiAskApi.AskResponse) resp.getEntity();
+        assertTrue("mail-unconfigured must refuse, not hand back an un-sendable draft", body.isDegraded());
+        assertEquals("Email isn't set up on this server.", body.getReason());
+        assertNull("no draft leaks through on refusal", body.getEmailDraft());
+    }
+
+    @Test
+    public void emailDraftRefusedWhenMailSenderNeverWired() {
+        // Default state — no setMailSender() call at all (mirrors an un-wired deployment).
+        wireAskService(AiAskService.AskOutcome.okEmailDraft(stubDraft("Store sales are up 12%."), "claude-x"));
+
+        Response resp = resource.ask(validBody());
+        assertEquals(200, resp.getStatus());
+
+        AiAskApi.AskResponse body = (AiAskApi.AskResponse) resp.getEntity();
+        assertTrue(body.isDegraded());
+        assertEquals("Email isn't set up on this server.", body.getReason());
+    }
+
     /* ---- saiku#1455: sync /spaces/{id}/ask must return the full answer, not just {model,request} ---- */
 
     /** Wire a fake askService whose {@code askInSpace} returns a fixed outcome. */

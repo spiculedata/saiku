@@ -44,13 +44,13 @@ public class AnthropicNlAskProviderTest {
 
         assertEquals("claude-x", root.get("model").asText());
         assertEquals(1024, root.get("max_tokens").asInt());
-        // tool_choice "any" lets the model pick among the four scoped tools.
+        // tool_choice "any" lets the model pick among the five scoped tools.
         assertEquals("any", root.get("tool_choice").get("type").asText());
 
-        // AUTO routing exposes all four tools: emit_query, emit_insight, emit_view_change,
-        // and the refuse_off_topic scope guardrail (always appended last).
+        // AUTO routing exposes all five tools: emit_query, emit_insight, emit_email_draft,
+        // emit_view_change, and the refuse_off_topic scope guardrail (always appended last).
         JsonNode tools = root.get("tools");
-        assertEquals(4, tools.size());
+        assertEquals(5, tools.size());
         assertEquals("emit_query", tools.get(0).get("name").asText());
         assertEquals("object", tools.get(0).get("input_schema").get("type").asText());
         JsonNode refusal = tools.get(tools.size() - 1);
@@ -157,6 +157,52 @@ public class AnthropicNlAskProviderTest {
         NlAskResponse resp = AnthropicNlAskProvider.parseToolResponse(body, "claude-x");
         assertTrue(resp.degraded());
         assertEquals("empty tool_use input", resp.reason());
+    }
+
+    /** AUTO routing offers emit_email_draft with a schema requiring `summary`. */
+    @Test
+    public void requestBodyIncludesEmailDraftToolWithRequiredSummary() throws Exception {
+        AnthropicNlAskProvider provider =
+                new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config("k", "claude-x", 0.0, 1024, null));
+        JsonNode root = MAPPER.readTree(
+                provider.buildRequestBody(new NlAskRequest(CUBE, "q", SCHEMA, REQUEST_SCHEMA, List.of())));
+
+        JsonNode tools = root.get("tools");
+        JsonNode emailTool = null;
+        for (JsonNode tool : tools) {
+            if ("emit_email_draft".equals(tool.get("name").asText())) {
+                emailTool = tool;
+            }
+        }
+        assertNotNull("emit_email_draft tool must be present in AUTO mode", emailTool);
+        assertEquals("object", emailTool.get("input_schema").get("type").asText());
+        assertEquals(
+                "summary", emailTool.get("input_schema").get("required").get(0).asText());
+    }
+
+    @Test
+    public void parseToolResponseExtractsEmailDraftInputAsJson() throws Exception {
+        String body = "{\"usage\":{\"input_tokens\":11,\"output_tokens\":5},"
+                + "\"content\":[{\"type\":\"tool_use\",\"name\":\"emit_email_draft\","
+                + "\"input\":{\"summary\":\"Large tier leads at 7,000.\"}}]}";
+
+        NlAskResponse resp = AnthropicNlAskProvider.parseToolResponse(body, "claude-x");
+
+        assertFalse(resp.degraded());
+        assertEquals(NlAskResponse.Kind.EMAIL_DRAFT, resp.kind());
+        assertEquals("claude-x", resp.model());
+        assertEquals(11, resp.inputTokens());
+        assertEquals(5, resp.outputTokens());
+        JsonNode parsed = MAPPER.readTree(resp.payloadJson());
+        assertEquals("Large tier leads at 7,000.", parsed.get("summary").asText());
+    }
+
+    @Test
+    public void parseToolResponseDegradesWhenEmailDraftInputMissing() throws Exception {
+        String body = "{\"content\":[{\"type\":\"tool_use\",\"name\":\"emit_email_draft\"}]}";
+        NlAskResponse resp = AnthropicNlAskProvider.parseToolResponse(body, "claude-x");
+        assertTrue(resp.degraded());
+        assertEquals("empty email draft tool input", resp.reason());
     }
 
     @Test

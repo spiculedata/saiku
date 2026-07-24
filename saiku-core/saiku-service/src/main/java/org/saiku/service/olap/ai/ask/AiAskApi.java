@@ -187,6 +187,13 @@ public final class AiAskApi {
          * Mutually exclusive with the other intents as above.
          */
         private AiViewChange viewChange;
+        /**
+         * Composed email body. Present when the model picked {@code emit_email_draft} AND mail
+         * delivery is configured on this server. Mutually exclusive with the other intents as
+         * above. Draft-only — the browser opens a composer; sending happens via the existing
+         * {@code /email/self}, never here.
+         */
+        private AiEmailDraft emailDraft;
 
         public boolean isDegraded() {
             return degraded;
@@ -258,6 +265,14 @@ public final class AiAskApi {
 
         public void setViewChange(AiViewChange v) {
             this.viewChange = v;
+        }
+
+        public AiEmailDraft getEmailDraft() {
+            return emailDraft;
+        }
+
+        public void setEmailDraft(AiEmailDraft v) {
+            this.emailDraft = v;
         }
     }
 }

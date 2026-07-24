@@ -43,6 +43,8 @@
   import { i18n } from "$lib/stores/i18n.svelte";
   import { platform } from "$lib/stores/platform.svelte";
   import { mailHealth } from "$lib/stores/mailHealth.svelte";
+  import { emailComposer } from "$lib/stores/emailComposer.svelte";
+  import { untrack } from "svelte";
 
   interface Props {
     /** Open the AI Query drawer. Owned by Workspace so the drawer can overlay the canvas. */
@@ -341,6 +343,20 @@
       subtitle: String(p["saiku.report.subtitle"] ?? ""),
       notes: String(p["saiku.report.notes"] ?? ""),
     };
+  });
+
+  // AI-Ask drawer handoff: the drawer sets emailComposer.pendingOpen after seeding
+  // aiInsight with an email-intent summary; consume the signal here and flip the
+  // modal open. Wrapped in untrack so consuming the flag (which writes pendingOpen,
+  // a dependency of THIS effect) can't re-queue it — the effect only ever needs to
+  // fire once per requestOpen(), not once again for its own consume-write.
+  $effect(() => {
+    if (emailComposer.pendingOpen) {
+      untrack(() => {
+        emailComposer.consumeOpen();
+        emailModalOpen = true;
+      });
+    }
   });
 </script>
 

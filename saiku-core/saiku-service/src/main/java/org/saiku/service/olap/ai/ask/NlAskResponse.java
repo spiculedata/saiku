@@ -8,7 +8,7 @@ package org.saiku.service.olap.ai.ask;
  * Output of {@link NlAskProvider#ask(NlAskRequest)}.
  *
  * <p>The provider returns the raw JSON the model emitted, plus a {@link Kind} discriminator
- * identifying which tool the model picked. Three intents are routed by {@link AiAskService}:
+ * identifying which tool the model picked. Four intents are routed by {@link AiAskService}:
  *
  * <ul>
  *   <li>{@link Kind#QUERY} — an {@code AiQueryRequest} the converter will execute.
@@ -16,6 +16,8 @@ package org.saiku.service.olap.ai.ask;
  *       cellset). No execution.
  *   <li>{@link Kind#VIEW_CHANGE} — an {@code AiViewChange} (target viewMode + chartType). No
  *       execution.
+ *   <li>{@link Kind#EMAIL_DRAFT} — an {@code AiEmailDraft} (email body summarising the user's
+ *       current cellset). Draft-only — the AI never sends.
  *   <li>{@link Kind#REFUSAL} — the model called the refusal tool (off-topic question). Surface
  *       {@link #reason()} verbatim to the user.
  * </ul>
@@ -59,6 +61,7 @@ public record NlAskResponse(
         QUERY,
         INSIGHT,
         VIEW_CHANGE,
+        EMAIL_DRAFT,
         REFUSAL
     }
 
@@ -76,6 +79,10 @@ public record NlAskResponse(
 
     public static NlAskResponse okViewChange(String json, String model, int inputTokens, int outputTokens) {
         return new NlAskResponse(Kind.VIEW_CHANGE, json, false, "", model, inputTokens, outputTokens);
+    }
+
+    public static NlAskResponse okEmailDraft(String json, String model, int inputTokens, int outputTokens) {
+        return new NlAskResponse(Kind.EMAIL_DRAFT, json, false, "", model, inputTokens, outputTokens);
     }
 
     public static NlAskResponse refusal(String reason, String model, int inputTokens, int outputTokens) {

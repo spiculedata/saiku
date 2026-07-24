@@ -41,7 +41,7 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
     public static final String DEFAULT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 
     private static final String SYSTEM_PROMPT = "You are a Mondrian OLAP analyst assistant scoped to a "
-            + "single cube. You have FOUR functions — pick exactly one based on the user's intent.\n\n"
+            + "single cube. You have FIVE functions — pick exactly one based on the user's intent.\n\n"
             + "FUNCTION CHOICE:\n"
             + "  - emit_query: the user wants new data or a different breakdown of the cube. "
             + "Translate their question into a single AiQueryRequest matching the schema.\n"
@@ -49,6 +49,11 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
             + "'what's interesting', 'summarise this', 'why is X high'). The user's current cellset is "
             + "provided as a digest below; reason from it. Do NOT build a new query. Return a markdown "
             + "analysis that references specific row/column captions and figures from the digest.\n"
+            + "  - emit_email_draft: the user explicitly asks to EMAIL / send / 'email it to me' the current "
+            + "analysis. Compose a short prose summary of the current cellset as the email body (like "
+            + "emit_insight, but the user wants it emailed). Requires data on screen — if the digest is "
+            + "empty, use refuse_off_topic and tell them to run an analysis first. You do NOT send the "
+            + "email; the user reviews and sends it.\n"
             + "  - emit_view_change: the user wants to change HOW the existing data is displayed "
             + "('switch to chart', 'show this as a bar chart', 'back to grid', 'best chart for this'). "
             + "Pick viewMode + chartType from the catalog. Do NOT re-query. If the user just says 'chart' "
@@ -172,6 +177,7 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
         boolean wantQuery = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.QUERY;
         boolean wantInsight = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.INSIGHT;
         boolean wantViewChange = force == NlAskRequest.ForceTool.AUTO || force == NlAskRequest.ForceTool.VIEW_CHANGE;
+        boolean wantEmailDraft = force == NlAskRequest.ForceTool.AUTO;
 
         ArrayNode tools = root.putArray("tools");
 
@@ -196,6 +202,15 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
                             + "comparisons, summaries, or 'what's interesting' about the data already on screen. "
                             + "Do not propose a new query.");
             insightFn.set("parameters", insightInputSchema());
+        }
+
+        if (wantEmailDraft) {
+            ObjectNode emailTool = tools.addObject();
+            emailTool.put("type", "function");
+            ObjectNode emailFn = emailTool.putObject("function");
+            emailFn.put("name", EMAIL_DRAFT_TOOL_NAME);
+            emailFn.put("description", "Draft an email of the current analysis for the user to review and send.");
+            emailFn.set("parameters", emailDraftInputSchema());
         }
 
         if (wantViewChange) {
@@ -327,6 +342,12 @@ public class OpenAINlAskProvider extends AbstractNlAskProvider {
                     return NlAskResponse.degraded("empty insight tool arguments", model);
                 }
                 return NlAskResponse.okInsight(arguments, model, inputTokens, outputTokens);
+            }
+            if (EMAIL_DRAFT_TOOL_NAME.equals(fnName)) {
+                if (arguments == null || arguments.isBlank()) {
+                    return NlAskResponse.degraded("empty email draft tool arguments", model);
+                }
+                return NlAskResponse.okEmailDraft(arguments, model, inputTokens, outputTokens);
             }
             if (VIEW_CHANGE_TOOL_NAME.equals(fnName)) {
                 if (arguments == null || arguments.isBlank()) {

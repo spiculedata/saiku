@@ -90,6 +90,11 @@ export interface AiInsight {
   headline?: string;
 }
 
+/** Email draft summary the AI emitted when the model picked the email intent. */
+export interface AiEmailDraft {
+  summary: string;
+}
+
 /** View-target the AI emitted when the user asked to change how current data is displayed. */
 export interface AiViewChange {
   viewMode: "grid" | "chart";
@@ -125,6 +130,8 @@ export interface AskResponse {
   insight?: AiInsight;
   /** Set when the model picked the view-change intent. Mutually exclusive with the other intents. */
   viewChange?: AiViewChange;
+  /** Set when the model picked the email intent. Mutually exclusive with the other intents. */
+  emailDraft?: AiEmailDraft;
 }
 
 /** Error thrown only on transport / non-JSON failures. The "not configured"

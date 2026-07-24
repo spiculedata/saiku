@@ -109,6 +109,10 @@ public final class LiveEvalAskAdapter implements EvalAskAdapter {
             case VIEW_CHANGE -> EvalAskResult.forViewChange(
                     outcome.model(),
                     outcome.viewChange() == null ? "" : outcome.viewChange().getViewMode());
+                // Not yet exercised by the live-eval harness — surfaced as degraded rather than
+                // silently mis-scoring so a suite run makes the gap visible.
+            case EMAIL_DRAFT -> EvalAskResult.forDegraded(
+                    outcome.model(), "email-draft intent not yet supported by the eval harness");
         };
     }
 

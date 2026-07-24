@@ -133,8 +133,8 @@ public class AiAskService {
     /**
      * Result of an {@link #ask(AiCubeRef, String, List)} call.
      *
-     * <p>Exactly one of {@code request} / {@code insight} / {@code viewChange} is non-null on
-     * success (matched to {@link #kind()}); all are null on degraded.
+     * <p>Exactly one of {@code request} / {@code insight} / {@code viewChange} / {@code
+     * emailDraft} is non-null on success (matched to {@link #kind()}); all are null on degraded.
      */
     public record AskOutcome(
             Kind kind,
@@ -143,30 +143,36 @@ public class AiAskService {
             AiQueryRequest request,
             AiInsight insight,
             AiViewChange viewChange,
+            AiEmailDraft emailDraft,
             String model,
             SpaceAccess denial) {
 
         public enum Kind {
             QUERY,
             INSIGHT,
-            VIEW_CHANGE
+            VIEW_CHANGE,
+            EMAIL_DRAFT
         }
 
         public static AskOutcome ok(AiQueryRequest request, String model) {
-            return new AskOutcome(Kind.QUERY, false, null, request, null, null, model, SpaceAccess.OK);
+            return new AskOutcome(Kind.QUERY, false, null, request, null, null, null, model, SpaceAccess.OK);
         }
 
         public static AskOutcome okInsight(AiInsight insight, String model) {
-            return new AskOutcome(Kind.INSIGHT, false, null, null, insight, null, model, SpaceAccess.OK);
+            return new AskOutcome(Kind.INSIGHT, false, null, null, insight, null, null, model, SpaceAccess.OK);
         }
 
         public static AskOutcome okViewChange(AiViewChange viewChange, String model) {
-            return new AskOutcome(Kind.VIEW_CHANGE, false, null, null, null, viewChange, model, SpaceAccess.OK);
+            return new AskOutcome(Kind.VIEW_CHANGE, false, null, null, null, viewChange, null, model, SpaceAccess.OK);
+        }
+
+        public static AskOutcome okEmailDraft(AiEmailDraft emailDraft, String model) {
+            return new AskOutcome(Kind.EMAIL_DRAFT, false, null, null, null, null, emailDraft, model, SpaceAccess.OK);
         }
 
         /** Provider-side degrade (transport/parse/refusal) — carries no space-scope denial. */
         public static AskOutcome degraded(String reason, String model) {
-            return new AskOutcome(null, true, reason, null, null, null, model, SpaceAccess.OK);
+            return new AskOutcome(null, true, reason, null, null, null, null, model, SpaceAccess.OK);
         }
 
         /**
@@ -174,7 +180,7 @@ public class AiAskService {
          * HTTP status without prose-prefix matching on {@link #reason()}.
          */
         public static AskOutcome degraded(String reason, String model, SpaceAccess denial) {
-            return new AskOutcome(null, true, reason, null, null, null, model, denial);
+            return new AskOutcome(null, true, reason, null, null, null, null, model, denial);
         }
     }
 
@@ -349,6 +355,13 @@ public class AiAskService {
             return AskOutcome.degraded("schema serialisation failed", null);
         }
 
+        // No-data guard (design §5): capture whether the CLIENT actually sent a digest BEFORE the
+        // egress-policy strip below mutates it. This must not be conflated with the post-strip
+        // value — under schema-only egress a digest that WAS on screen gets nulled for the LLM, but
+        // that's "data present, withheld by policy", not "no analysis on screen". Only the latter
+        // should refuse EMAIL_DRAFT (see the EMAIL_DRAFT routing branch further down).
+        final boolean hadCellsetOnScreen = cellsetDigest != null && !cellsetDigest.isBlank();
+
         // #2: LLM-egress gate. When the dedicated egress guard does NOT permit aggregated cell
         // values to leave the box, STRIP the cellset digest so the prompt is schema-only. The ask
         // still runs — degraded (ungrounded), never refused. Fail-closed: an unwired guard denies
@@ -448,6 +461,20 @@ public class AiAskService {
                     return AskOutcome.degraded("provider emitted empty insight", resp.model());
                 }
                 return AskOutcome.okInsight(insight, resp.model());
+            }
+            if (kind == NlAskResponse.Kind.EMAIL_DRAFT) {
+                if (!hadCellsetOnScreen) {
+                    return AskOutcome.degraded(
+                            "No analysis is on screen to summarise — run a query first, then ask me to email it.",
+                            resp.model());
+                }
+                AiEmailDraft draft = mapper.readValue(resp.payloadJson(), AiEmailDraft.class);
+                if (draft == null
+                        || draft.getSummary() == null
+                        || draft.getSummary().isBlank()) {
+                    return AskOutcome.degraded("provider emitted empty email draft", resp.model());
+                }
+                return AskOutcome.okEmailDraft(draft, resp.model());
             }
             if (kind == NlAskResponse.Kind.VIEW_CHANGE) {
                 AiViewChange vc = mapper.readValue(resp.payloadJson(), AiViewChange.class);

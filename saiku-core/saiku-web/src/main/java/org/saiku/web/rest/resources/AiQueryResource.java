@@ -30,6 +30,7 @@ import org.saiku.olap.util.OlapResultSetUtil;
 import org.saiku.olap.util.SaikuProperties;
 import org.saiku.service.async.AsyncQueryHandle;
 import org.saiku.service.async.AsyncQueryService;
+import org.saiku.service.mail.MailSender;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.ai.AiCell;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
@@ -86,6 +87,24 @@ public class AiQueryResource {
 
     public void setAskService(AiAskService s) {
         this.askService = s;
+    }
+
+    /**
+     * Task 3 (NL email-draft slice): mail-configured gate for the {@code EMAIL_DRAFT} ask outcome.
+     * Wired to the same {@code mailSender} bean {@link org.saiku.web.email.EmailResource} uses for
+     * its own health check — held as {@code null} when no Spring wiring supplies one, in which
+     * case {@link #mailConfigured()} fails closed (never hands the user an un-sendable draft).
+     */
+    private MailSender mailSender;
+
+    public void setMailSender(MailSender mailSender) {
+        this.mailSender = mailSender;
+    }
+
+    /** True only when a real mail transport is wired and configured — mirrors {@code
+     *  EmailResource#health()}'s check exactly, so the two surfaces can never disagree. */
+    private boolean mailConfigured() {
+        return mailSender != null && mailSender.isConfigured();
     }
 
     /**
@@ -1151,6 +1170,27 @@ public class AiQueryResource {
                     outcome.viewChange() == null ? null : outcome.viewChange().getReason();
             if (reason != null && !reason.isEmpty()) {
                 emitChunks(sse, reason);
+            }
+            sse.event("final", MAPPER.writeValueAsString(out));
+            return;
+        }
+
+        if (outcome.kind() == AiAskService.AskOutcome.Kind.EMAIL_DRAFT) {
+            if (!mailConfigured()) {
+                // Task 3: same honest refusal as the sync path (buildAskSuccessResponse), mirrored
+                // into the streaming wire shape — error event carrying the reason, then a degraded
+                // final so a client keying completion on `final` never hangs.
+                sse.event("error", MAPPER.writeValueAsString(java.util.Map.of("reason", MAIL_NOT_CONFIGURED_REASON)));
+                out.setDegraded(true);
+                out.setReason(MAIL_NOT_CONFIGURED_REASON);
+                sse.event("final", MAPPER.writeValueAsString(out));
+                return;
+            }
+            out.setEmailDraft(outcome.emailDraft());
+            String summary =
+                    outcome.emailDraft() == null ? "" : outcome.emailDraft().getSummary();
+            if (summary != null && !summary.isEmpty()) {
+                emitChunks(sse, summary);
             }
             sse.event("final", MAPPER.writeValueAsString(out));
             return;
@@ -2708,6 +2748,13 @@ public class AiQueryResource {
                     + "enable the feature.";
 
     /**
+     * Task 3 (NL email-draft slice): client-facing reason when the model picked {@code
+     * EMAIL_DRAFT} but this server has no mail transport wired ({@link #mailConfigured()} false).
+     * An honest refusal, not a 503 — the ask itself succeeded, only delivery isn't available.
+     */
+    private static final String MAIL_NOT_CONFIGURED_REASON = "Email isn't set up on this server.";
+
+    /**
      * Shared validation preamble for every ask endpoint (sync + streaming, classic + space).
      * Runs the policy gate, shape checks, size cap, rate limit and provider-configured check in
      * one place so a guard change can't drift across the four copies (saiku#1460). Returns a
@@ -2772,6 +2819,19 @@ public class AiQueryResource {
         }
         if (outcome.kind() == AiAskService.AskOutcome.Kind.VIEW_CHANGE) {
             out.setViewChange(outcome.viewChange());
+            return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+        }
+        if (outcome.kind() == AiAskService.AskOutcome.Kind.EMAIL_DRAFT) {
+            if (!mailConfigured()) {
+                // Task 3: honest refusal — mail isn't wired on this deployment, so don't hand the
+                // user a draft they have no way to send. Mirrors the classic degraded AskResponse
+                // shape (degraded=true + reason, model already set above) rather than inventing a
+                // new envelope.
+                out.setDegraded(true);
+                out.setReason(MAIL_NOT_CONFIGURED_REASON);
+                return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
+            }
+            out.setEmailDraft(outcome.emailDraft());
             return Response.ok(out).type(MediaType.APPLICATION_JSON).build();
         }
 

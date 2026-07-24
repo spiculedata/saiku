@@ -332,6 +332,11 @@
              saiku.ai.ask.provider is set to 'anthropic' or 'openai' and the
              matching API key env var is supplied. See aiAskServiceBean below. -->
         <property name="askService" ref="aiAskServiceBean"/>
+        <!-- NL email-draft slice, Task 3: same mailSender bean emailResource uses for its
+             health check (above), so /ai/ask's EMAIL_DRAFT outcome refuses honestly
+             ("Email isn't set up on this server.") whenever mail delivery isn't configured,
+             instead of handing back an un-sendable draft. -->
+        <property name="mailSender" ref="mailSender"/>
     </bean>
 
     <!-- Ossie AI Query API (#1394) — parallel to aiQueryResource but for semantic-YAML
