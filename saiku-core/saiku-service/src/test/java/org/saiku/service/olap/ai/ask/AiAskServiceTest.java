@@ -10,6 +10,8 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -26,8 +28,10 @@ import org.saiku.olap.query2.ThinQuery;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiCubeRef;
+import org.saiku.service.olap.ai.AiMeasureSelection;
 import org.saiku.service.olap.ai.AiPolicy;
 import org.saiku.service.olap.ai.AiPolicyGuard;
+import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiSchema;
 import org.saiku.service.olap.ai.KAnonymityFilter;
 
@@ -1106,6 +1110,406 @@ public class AiAskServiceTest {
         assertTrue(chain.steps().get(0).reason().contains("invalid_request_error"));
         assertEquals(
                 "must not retry — exactly one provider call", 1, provider.seen().size());
+    }
+
+    /* ---- D1: buildDashboard — multi-tile dashboard spec (validated + hardened) ---- */
+
+    /** A valid tile query that resolves against {@link #salesSchemaWithMeasure()}. */
+    private static final String VALID_TILE_QUERY = "{\"measures\":[{\"name\":\"Store Sales\"}]}";
+
+    @Test
+    public void buildDashboardHappyPathReturnsThreeHardenedTiles() {
+        String payload = "{\"title\":\"Sales <b>Overview</b>\",\"tiles\":["
+                + "{\"title\":\"Trend\",\"type\":\"chart\",\"chartType\":\"line\",\"query\":" + VALID_TILE_QUERY + "},"
+                + "{\"title\":\"Grid\",\"type\":\"table\",\"query\":" + VALID_TILE_QUERY + "},"
+                + "{\"title\":\"Total\",\"type\":\"kpi\",\"query\":" + VALID_TILE_QUERY + "}"
+                + "]}";
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(salesSchemaWithMeasure()),
+                stub(NlAskResponse.okDashboard(payload, "claude-x", 10, 5)));
+
+        DashboardSpec spec = svc.buildDashboard(CUBE, "build a sales dashboard", List.of(), null);
+
+        assertFalse(spec.degraded());
+        assertEquals(3, spec.tiles().size());
+        assertEquals("Sales Overview", spec.title()); // HTML tags stripped, whitespace collapsed
+        assertEquals("claude-x", spec.model());
+        // Every tile's cube is pinned to the session ref.
+        for (DashboardTileSpec t : spec.tiles()) {
+            assertEquals("Sales", t.query().getCube().getCubeName());
+            assertEquals("conn", t.query().getCube().getConnectionName());
+        }
+        assertEquals("chart", spec.tiles().get(0).type());
+        assertEquals("line", spec.tiles().get(0).chartType());
+        assertEquals("table", spec.tiles().get(1).type());
+        assertNull(
+                "non-chart tile must have null chartType", spec.tiles().get(1).chartType());
+        assertEquals("kpi", spec.tiles().get(2).type());
+        assertNull(spec.tiles().get(2).chartType());
+    }
+
+    @Test
+    public void buildDashboardTruncatesToTileCap() {
+        // 20 tiles emitted — must truncate to the default cap (6), never error.
+        StringBuilder tiles = new StringBuilder();
+        for (int i = 0; i < 20; i++) {
+            if (i > 0) tiles.append(',');
+            tiles.append("{\"title\":\"T")
+                    .append(i)
+                    .append("\",\"type\":\"table\",\"query\":")
+                    .append(VALID_TILE_QUERY)
+                    .append('}');
+        }
+        String payload = "{\"title\":\"Big\",\"tiles\":[" + tiles + "]}";
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(salesSchemaWithMeasure()), stub(NlAskResponse.okDashboard(payload, "m", 0, 0)));
+
+        DashboardSpec spec = svc.buildDashboard(CUBE, "everything", List.of(), null);
+
+        assertFalse(spec.degraded());
+        assertEquals(
+                "model over-emission must truncate to the tile cap",
+                6,
+                spec.tiles().size());
+    }
+
+    @Test
+    public void buildDashboardDropsHallucinatedTileButKeepsValidOnes() {
+        // Tile 1's query references a level/dim that doesn't exist on the cube — converter.convert
+        // throws, so that tile drops; the valid tile survives.
+        String badQuery = "{\"measures\":[{\"name\":\"Store Sales\"}],"
+                + "\"rows\":[{\"dimension\":\"Nope\",\"level\":\"Nada\"}]}";
+        String payload = "{\"title\":\"Mixed\",\"tiles\":["
+                + "{\"title\":\"Good\",\"type\":\"table\",\"query\":" + VALID_TILE_QUERY + "},"
+                + "{\"title\":\"Bad\",\"type\":\"table\",\"query\":" + badQuery + "}"
+                + "]}";
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(salesSchemaWithMeasure()), stub(NlAskResponse.okDashboard(payload, "m", 0, 0)));
+
+        DashboardSpec spec = svc.buildDashboard(CUBE, "mixed", List.of(), null);
+
+        assertFalse(spec.degraded());
+        assertEquals(1, spec.tiles().size());
+        assertEquals("Good", spec.tiles().get(0).title());
+    }
+
+    @Test
+    public void buildDashboardDegradesWhenAllTilesHallucinated() {
+        String badQuery = "{\"measures\":[{\"name\":\"Store Sales\"}],"
+                + "\"rows\":[{\"dimension\":\"Nope\",\"level\":\"Nada\"}]}";
+        String payload = "{\"title\":\"All Bad\",\"tiles\":["
+                + "{\"title\":\"Bad\",\"type\":\"table\",\"query\":" + badQuery + "}"
+                + "]}";
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(salesSchemaWithMeasure()), stub(NlAskResponse.okDashboard(payload, "m", 0, 0)));
+
+        DashboardSpec spec = svc.buildDashboard(CUBE, "all bad", List.of(), null);
+
+        assertTrue(spec.degraded());
+        assertTrue(spec.reason().contains("couldn't build a dashboard"));
+        assertTrue(spec.tiles().isEmpty());
+    }
+
+    @Test
+    public void buildDashboardForcesTileCubeToSessionRef() {
+        // The model authors a tile against a DIFFERENT cube — the server must override it to ref.
+        String foreignQuery = "{\"cube\":{\"connectionName\":\"x\",\"catalog\":\"y\",\"schema\":\"z\","
+                + "\"cubeName\":\"Other\"},\"measures\":[{\"name\":\"Store Sales\"}]}";
+        String payload = "{\"title\":\"Locked\",\"tiles\":["
+                + "{\"title\":\"Tile\",\"type\":\"table\",\"query\":" + foreignQuery + "}"
+                + "]}";
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(salesSchemaWithMeasure()), stub(NlAskResponse.okDashboard(payload, "m", 0, 0)));
+
+        DashboardSpec spec = svc.buildDashboard(CUBE, "locked", List.of(), null);
+
+        assertFalse(spec.degraded());
+        assertEquals(1, spec.tiles().size());
+        assertEquals("Sales", spec.tiles().get(0).query().getCube().getCubeName());
+        assertEquals("cat", spec.tiles().get(0).query().getCube().getCatalog());
+    }
+
+    @Test
+    public void buildDashboardSanitizesTitlesAndDefaultsBlank() {
+        String payload = "{\"title\":\"<script>alert(1)</script>Report\\r\\nQ4\",\"tiles\":["
+                + "{\"title\":\"  \",\"type\":\"table\",\"query\":" + VALID_TILE_QUERY + "}"
+                + "]}";
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(salesSchemaWithMeasure()), stub(NlAskResponse.okDashboard(payload, "m", 0, 0)));
+
+        DashboardSpec spec = svc.buildDashboard(CUBE, "titles", List.of(), null);
+
+        assertFalse(spec.degraded());
+        assertFalse("script tag must be stripped", spec.title().contains("<script>"));
+        assertFalse(
+                "CR/LF must be stripped",
+                spec.title().contains("\r") || spec.title().contains("\n"));
+        assertTrue(spec.title().contains("Report"));
+        assertTrue(spec.title().contains("Q4"));
+        assertEquals(
+                "blank tile title falls back to a default",
+                "Tile 1",
+                spec.tiles().get(0).title());
+    }
+
+    @Test
+    public void buildDashboardStripsUnicodeFormatChars() {
+        // Trojan-Source hardening: a bidi override (U+202E) + a zero-width char (U+200B) must be
+        // stripped from titles, while the visible letters survive.
+        String spoof = "Bal‮ance​";
+        String payload = "{\"title\":\"" + spoof + "\",\"tiles\":["
+                + "{\"title\":\"" + spoof + "\",\"type\":\"table\",\"query\":" + VALID_TILE_QUERY + "}"
+                + "]}";
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(salesSchemaWithMeasure()), stub(NlAskResponse.okDashboard(payload, "m", 0, 0)));
+
+        DashboardSpec spec = svc.buildDashboard(CUBE, "spoof", List.of(), null);
+
+        assertFalse(spec.degraded());
+        assertFalse("bidi override U+202E must be stripped", spec.title().indexOf('‮') >= 0);
+        assertFalse("zero-width U+200B must be stripped", spec.title().indexOf('​') >= 0);
+        assertTrue(
+                "visible letters must survive",
+                spec.title().contains("Bal") && spec.title().contains("ance"));
+        assertFalse(
+                "tile title must also be cleaned",
+                spec.tiles().get(0).title().indexOf('‮') >= 0
+                        || spec.tiles().get(0).title().indexOf('​') >= 0);
+    }
+
+    @Test
+    public void buildDashboardCapsOverlongTitle() {
+        String longTitle = "x".repeat(200);
+        String payload = "{\"title\":\"" + longTitle + "\",\"tiles\":["
+                + "{\"title\":\"T\",\"type\":\"table\",\"query\":" + VALID_TILE_QUERY + "}"
+                + "]}";
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(salesSchemaWithMeasure()), stub(NlAskResponse.okDashboard(payload, "m", 0, 0)));
+
+        DashboardSpec spec = svc.buildDashboard(CUBE, "long", List.of(), null);
+
+        assertTrue("dashboard title must be capped at 120", spec.title().length() <= 120);
+    }
+
+    @Test
+    public void buildDashboardCoercesTypeAndChartType() {
+        String payload = "{\"title\":\"Coerce\",\"tiles\":["
+                + "{\"title\":\"a\",\"type\":\"bogus\",\"query\":" + VALID_TILE_QUERY + "},"
+                + "{\"title\":\"b\",\"type\":\"chart\",\"chartType\":\"hologram\",\"query\":" + VALID_TILE_QUERY + "},"
+                + "{\"title\":\"c\",\"type\":\"chart\",\"query\":" + VALID_TILE_QUERY + "}"
+                + "]}";
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(salesSchemaWithMeasure()), stub(NlAskResponse.okDashboard(payload, "m", 0, 0)));
+
+        DashboardSpec spec = svc.buildDashboard(CUBE, "coerce", List.of(), null);
+
+        assertEquals(
+                "unknown type coerces to table", "table", spec.tiles().get(0).type());
+        assertNull(spec.tiles().get(0).chartType());
+        assertEquals("chart", spec.tiles().get(1).type());
+        assertEquals("bad chartType coerces to bar", "bar", spec.tiles().get(1).chartType());
+        assertEquals(
+                "missing chartType on a chart tile defaults to bar",
+                "bar",
+                spec.tiles().get(2).chartType());
+    }
+
+    @Test
+    public void buildDashboardDegradesWhenProviderDegrades() {
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(salesSchemaWithMeasure()), stub(NlAskResponse.degraded("not configured")));
+
+        DashboardSpec spec = svc.buildDashboard(CUBE, "anything", List.of(), null);
+
+        assertTrue(spec.degraded());
+        assertEquals("not configured", spec.reason());
+        assertTrue(spec.tiles().isEmpty());
+    }
+
+    @Test
+    public void buildDashboardDegradesWhenCubeRefNull() {
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(salesSchemaWithMeasure()), stub(NlAskResponse.okDashboard("{}", "m", 0, 0)));
+        DashboardSpec spec = svc.buildDashboard(null, "q", List.of(), null);
+        assertTrue(spec.degraded());
+        assertEquals("cube ref required", spec.reason());
+    }
+
+    @Test
+    public void buildDashboardForcesDashboardToolOnProviderRequest() {
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        NlAskProvider capturing = req -> {
+            seen.set(req);
+            String payload = "{\"title\":\"T\",\"tiles\":[{\"title\":\"a\",\"type\":\"table\",\"query\":"
+                    + VALID_TILE_QUERY + "}]}";
+            return NlAskResponse.okDashboard(payload, "m", 0, 0);
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), capturing);
+
+        svc.buildDashboard(CUBE, "dashboard please", List.of(), null);
+
+        assertNotNull(seen.get());
+        assertEquals(NlAskRequest.ForceTool.DASHBOARD, seen.get().forceTool());
+        // No cell data is sent on the dashboard path — the digest is always null.
+        assertNull(seen.get().cellsetDigest());
+    }
+
+    @Test
+    public void buildDashboardRecoversAfterOneRateLimit() {
+        // Proves the shared OPT-3 paced-retry helper covers buildDashboard too.
+        String payload =
+                "{\"title\":\"T\",\"tiles\":[{\"title\":\"a\",\"type\":\"table\",\"query\":" + VALID_TILE_QUERY + "}]}";
+        ScriptedProvider provider = new ScriptedProvider(List.of(
+                NlAskResponse.rateLimited("HTTP 429: rate limited", "m", 1000),
+                NlAskResponse.okDashboard(payload, "m", 0, 0)));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        List<Long> recorded = new ArrayList<>();
+        svc.setSleeper(recorded::add);
+
+        DashboardSpec spec = svc.buildDashboard(CUBE, "dashboard", List.of(), null);
+
+        assertEquals(List.of(1000L), recorded);
+        assertFalse(spec.degraded());
+        assertEquals(1, spec.tiles().size());
+        assertEquals(2, provider.seen().size());
+    }
+
+    @Test
+    public void dashboardSpecSerializesToStableWireContract() throws Exception {
+        // Pins the EXACT JSON wire shape D2 reads verbatim. The @JsonInclude(NON_NULL) on the record
+        // types drives field omission regardless of mapper config, so a plain ObjectMapper reflects
+        // the same shape the JAX-RS endpoint emits.
+        ObjectMapper om = new ObjectMapper();
+        AiQueryRequest q = new AiQueryRequest();
+        q.setCube(CUBE);
+        q.setMeasures(List.of(new AiMeasureSelection("Store Sales")));
+        DashboardSpec success = DashboardSpec.ok(
+                "Sales Overview",
+                List.of(
+                        new DashboardTileSpec("Trend", "chart", "line", q),
+                        new DashboardTileSpec("Grid", "table", null, q),
+                        new DashboardTileSpec("Total", "kpi", null, q)),
+                "claude-x");
+
+        JsonNode root = om.readTree(om.writeValueAsString(success));
+        // degraded is always present + boolean.
+        assertTrue("degraded key must always be present", root.has("degraded"));
+        assertTrue(root.get("degraded").isBoolean());
+        assertFalse(root.get("degraded").asBoolean());
+        assertTrue("success spec carries title", root.has("title"));
+        assertEquals("Sales Overview", root.get("title").asText());
+        JsonNode tiles = root.get("tiles");
+        assertEquals(3, tiles.size());
+        // Every tile carries title / type / query; chartType ONLY on the chart tile.
+        for (JsonNode t : tiles) {
+            assertTrue(t.has("title"));
+            assertTrue(t.has("type"));
+            assertTrue(t.has("query"));
+        }
+        JsonNode chart = tiles.get(0);
+        assertTrue("chart tile must carry chartType", chart.has("chartType"));
+        assertEquals("line", chart.get("chartType").asText());
+        assertFalse("table tile must omit chartType (NON_NULL)", tiles.get(1).has("chartType"));
+        assertFalse("kpi tile must omit chartType (NON_NULL)", tiles.get(2).has("chartType"));
+        // query serializes as a full AiQueryRequest with cube set.
+        assertEquals("Sales", chart.get("query").get("cube").get("cubeName").asText());
+
+        // Degrade counterpart.
+        DashboardSpec degraded = DashboardSpec.degraded("couldn't build a dashboard for that request", "claude-x");
+        JsonNode d = om.readTree(om.writeValueAsString(degraded));
+        assertTrue(d.has("degraded"));
+        assertTrue("degraded flag is true", d.get("degraded").asBoolean());
+        assertTrue("degraded spec keeps an (empty) tiles array", d.has("tiles"));
+        assertEquals(0, d.get("tiles").size());
+        assertFalse("degraded spec omits title (null → NON_NULL)", d.has("title"));
+        assertTrue("degraded spec carries reason", d.has("reason"));
+        assertEquals(
+                "couldn't build a dashboard for that request", d.get("reason").asText());
+    }
+
+    @Test
+    public void buildDashboardDegradesOnMalformedProviderJson() {
+        // A provider payload that isn't valid JSON must degrade cleanly — no exception escapes, and
+        // the reason stays generic (no raw parser detail).
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(salesSchemaWithMeasure()),
+                stub(NlAskResponse.okDashboard("{this is not valid json", "m", 0, 0)));
+
+        DashboardSpec spec = svc.buildDashboard(CUBE, "x", List.of(), null);
+
+        assertTrue(spec.degraded());
+        assertFalse("reason must not be blank", spec.reason().isBlank());
+        assertTrue(spec.reason().contains("invalid dashboard JSON"));
+        assertTrue(spec.tiles().isEmpty());
+    }
+
+    @Test
+    public void buildDashboardDropsTileMissingQuery() {
+        // A tile with title/type but no `query` drops (no NPE); siblings survive.
+        String payload = "{\"title\":\"Mixed\",\"tiles\":["
+                + "{\"title\":\"Good\",\"type\":\"table\",\"query\":" + VALID_TILE_QUERY + "},"
+                + "{\"title\":\"NoQuery\",\"type\":\"table\"}"
+                + "]}";
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(salesSchemaWithMeasure()), stub(NlAskResponse.okDashboard(payload, "m", 0, 0)));
+
+        DashboardSpec spec = svc.buildDashboard(CUBE, "mixed", List.of(), null);
+
+        assertFalse(spec.degraded());
+        assertEquals(1, spec.tiles().size());
+        assertEquals("Good", spec.tiles().get(0).title());
+
+        // A lone query-less tile → clean degrade (0 valid tiles).
+        String onlyBad = "{\"title\":\"T\",\"tiles\":[{\"title\":\"NoQuery\",\"type\":\"table\"}]}";
+        AiAskService svc2 = new AiAskService(
+                fixedSchemaService(salesSchemaWithMeasure()), stub(NlAskResponse.okDashboard(onlyBad, "m", 0, 0)));
+        DashboardSpec degraded = svc2.buildDashboard(CUBE, "only bad", List.of(), null);
+        assertTrue(degraded.degraded());
+        assertTrue(degraded.tiles().isEmpty());
+    }
+
+    @Test
+    public void maxTilesClampsSyspropBounds() {
+        String key = "saiku.ai.dashboard.maxTiles";
+        String saved = System.getProperty(key);
+        try {
+            System.setProperty(key, "0");
+            assertEquals("0 clamps to the floor of 1", 1, tileCountFor(3));
+
+            System.setProperty(key, "99");
+            assertEquals("99 clamps to the ceiling of 12", 12, tileCountFor(15));
+
+            System.setProperty(key, "not-a-number");
+            assertEquals("non-numeric falls back to the default of 6", 6, tileCountFor(8));
+        } finally {
+            if (saved == null) {
+                System.clearProperty(key);
+            } else {
+                System.setProperty(key, saved);
+            }
+        }
+    }
+
+    /** Build a dashboard from {@code emitted} valid tiles and return how many survive the cap. */
+    private static int tileCountFor(int emitted) {
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(salesSchemaWithMeasure()),
+                stub(NlAskResponse.okDashboard(dashboardPayloadWithTiles(emitted), "m", 0, 0)));
+        return svc.buildDashboard(CUBE, "cap", List.of(), null).tiles().size();
+    }
+
+    /** A dashboard payload carrying {@code n} valid table tiles. */
+    private static String dashboardPayloadWithTiles(int n) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < n; i++) {
+            if (i > 0) sb.append(',');
+            sb.append("{\"title\":\"T")
+                    .append(i)
+                    .append("\",\"type\":\"table\",\"query\":")
+                    .append(VALID_TILE_QUERY)
+                    .append('}');
+        }
+        return "{\"title\":\"Big\",\"tiles\":[" + sb + "]}";
     }
 
     // ---------- helpers ----------

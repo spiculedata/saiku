@@ -560,26 +560,10 @@ public class AiAskService {
                     skillsFragment,
                     null,
                     List.copyOf(transcript));
-            NlAskResponse resp = provider.ask(req);
-
-            // OPT-3: a rate-limited turn (HTTP 429, resp.retryAfterMs() >= 0) is paced + retried in
-            // place — the SAME request, since a rate limit isn't the model's fault — up to a bounded
-            // retry count. A non-429 degrade (retryAfterMs == -1) never enters this loop.
-            int rlRetries = 0;
-            while (resp.degraded() && resp.retryAfterMs() >= 0 && rlRetries < rateLimitRetries()) {
-                long wait = resp.retryAfterMs() > 0 ? resp.retryAfterMs() : DEFAULT_RATE_LIMIT_WAIT_MS;
-                wait = Math.min(wait, rateLimitMaxWaitMs());
-                try {
-                    sleeper.sleep(wait);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    break; // stop retrying; fall through to the degraded handling below
-                }
-                rlRetries++;
-                log.info(
-                        "chained ask: LLM rate-limited, waited {}ms, retry {}/{}", wait, rlRetries, rateLimitRetries());
-                resp = provider.ask(req);
-            }
+            // OPT-3: a rate-limited turn (HTTP 429) is paced + retried in place — the SAME request,
+            // since a rate limit isn't the model's fault — up to a bounded retry count. A non-429
+            // degrade never enters that loop. Shared with buildDashboard (see askWithPacedRetry).
+            NlAskResponse resp = askWithPacedRetry(req);
 
             if (resp.degraded()) {
                 steps.add(AskOutcome.degraded(resp.reason(), resp.model()));
@@ -630,6 +614,279 @@ public class AiAskService {
             // else: loop again — the model now has the data and should emit_insight (the report).
         }
         return new AskChain(List.copyOf(steps), hitStepLimit);
+    }
+
+    /**
+     * Send {@code req} to the provider and pace-retry it in place on a rate-limit (HTTP 429) or a
+     * transient tool-call failure — the SAME request, since neither is the model's fault — up to a
+     * bounded retry count. A non-429 degrade ({@code retryAfterMs == -1}) returns immediately.
+     * Extracted so {@link #askChained} and {@link #buildDashboard} share identical paced-retry
+     * behaviour rather than duplicating the loop.
+     */
+    private NlAskResponse askWithPacedRetry(NlAskRequest req) {
+        NlAskResponse resp = provider.ask(req);
+        int rlRetries = 0;
+        while (resp.degraded() && resp.retryAfterMs() >= 0 && rlRetries < rateLimitRetries()) {
+            long wait = resp.retryAfterMs() > 0 ? resp.retryAfterMs() : DEFAULT_RATE_LIMIT_WAIT_MS;
+            wait = Math.min(wait, rateLimitMaxWaitMs());
+            try {
+                sleeper.sleep(wait);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                break; // stop retrying; caller handles the degraded response
+            }
+            rlRetries++;
+            log.info("AI ask: LLM rate-limited, waited {}ms, retry {}/{}", wait, rlRetries, rateLimitRetries());
+            resp = provider.ask(req);
+        }
+        return resp;
+    }
+
+    /**
+     * Cap on the number of tiles {@link #buildDashboard} will keep. Read from env
+     * {@code SAIKU_AI_DASHBOARD_MAX_TILES} first (so ops can tune it without a {@code -D}), else
+     * system property {@code saiku.ai.dashboard.maxTiles}, else default 6; clamped to [1, 12].
+     * Mirrors the {@link #maxSteps()} config-read style.
+     */
+    private static int maxTiles() {
+        String v = System.getenv("SAIKU_AI_DASHBOARD_MAX_TILES");
+        if (v == null || v.isBlank()) v = System.getProperty("saiku.ai.dashboard.maxTiles");
+        int n = 6;
+        if (v != null && !v.isBlank()) {
+            try {
+                n = Integer.parseInt(v.trim());
+            } catch (NumberFormatException ignore) {
+                // fall through to the default
+            }
+        }
+        return Math.max(1, Math.min(12, n));
+    }
+
+    /** Allowlisted dashboard tile kinds (MVP). Unknown values coerce to {@code table}. */
+    private static final java.util.Set<String> TILE_TYPES = java.util.Set.of("chart", "table", "kpi");
+
+    /** Allowlisted chart subtypes for chart tiles. Unknown values coerce to {@code bar}. */
+    private static final java.util.Set<String> CHART_TYPES = java.util.Set.of("bar", "line", "pie", "area", "scatter");
+
+    private static final int DASHBOARD_TITLE_MAX = 120;
+    private static final int TILE_TITLE_MAX = 80;
+
+    /**
+     * Build a multi-tile dashboard spec from one natural-language request. A separate, simpler entry
+     * point than {@link #askChained}: a dashboard needs no execute→feedback grounding loop because
+     * the model authors query SPECS from the schema alone — NO cell data is ever executed or fed
+     * back to the LLM on this path (tiles run lazily client-side; here we only prove each tile query
+     * CONVERTS against the live cube).
+     *
+     * <p>The model's output is untrusted: every tile is hardened server-side (§3 of the design) —
+     * cube-pinned to {@code ref}, converter-validated (hallucinated dims/levels/members drop the
+     * tile), title-sanitised, and type/chartType-coerced to their allowlists. The tile set is capped
+     * at {@link #maxTiles()} (excess truncated, not errored). If nothing survives, a clean degrade.
+     *
+     * @param ref cube to target; must be non-null with a non-null cubeName
+     * @param question free-form English request; must be non-blank
+     * @param history prior turns; may be null / empty
+     * @param space optional agent-space persona (system prompt + skill filter + cube allowlist); may
+     *     be null for the classic, non-space-scoped path
+     */
+    public DashboardSpec buildDashboard(AiCubeRef ref, String question, List<NlAskMessage> history, AgentSpace space) {
+        if (ref == null) {
+            return DashboardSpec.degraded("cube ref required", null);
+        }
+        if (question == null || question.isBlank()) {
+            return DashboardSpec.degraded("question must be non-blank", null);
+        }
+        // Persona guardrail: if a space is in effect, its allowlist pins the cube. The web layer
+        // resolves ref within the allowlist before calling; re-check here so a stale ref can't slip
+        // through (mirrors askInSpace's guard).
+        if (space != null && !space.allowsCube(ref)) {
+            return DashboardSpec.degraded(
+                    "FORBIDDEN: cube " + ref.getCubeName() + " is not in space '" + space.id() + "' allowlist", null);
+        }
+
+        AiSchema schema;
+        try {
+            schema = metadataService.getSchema(ref);
+        } catch (RuntimeException e) {
+            log.warn("dashboard build: failed to load schema for {}", ref, e);
+            // Generic client-facing reason — the exception detail is logged, never echoed
+            // (#1282-class info-leak hardening), mirroring askInternal.
+            return DashboardSpec.degraded("failed to load cube schema", null);
+        }
+
+        String schemaJson;
+        String requestSchemaJson;
+        try {
+            // Always the PII-filtered agent view (#3) — schema egress is permitted, but must stay
+            // filtered. This path sends NO cell data, so it isn't gated on the aggregated egress
+            // posture the report path uses.
+            schemaJson = mapper.writeValueAsString(schema.toAgentView());
+            requestSchemaJson = mapper.writeValueAsString(AiRequestJsonSchema.forRequest());
+        } catch (JsonProcessingException e) {
+            log.warn("dashboard build: schema serialisation failed", e);
+            return DashboardSpec.degraded("schema serialisation failed", null);
+        }
+
+        String effectiveQuestion = maybeExpandSlashCommand(question, space);
+        String skillsFragment = null;
+        if (skills != null) {
+            List<AgentSkill> catalog = skills.list();
+            if (space != null) {
+                catalog = catalog.stream()
+                        .filter(s -> space.allowsSkill(s.name()))
+                        .toList();
+            }
+            String f = AgentSkill.catalogPromptFragment(catalog);
+            if (f != null && !f.isBlank()) skillsFragment = f;
+        }
+        String spaceSystemPrompt = space != null ? space.systemPrompt() : null;
+
+        NlAskRequest req = new NlAskRequest(
+                ref,
+                effectiveQuestion,
+                schemaJson,
+                requestSchemaJson,
+                history == null ? List.of() : history,
+                null, // no cellset digest — the dashboard is authored from the schema alone
+                NlAskRequest.ForceTool.DASHBOARD,
+                null,
+                skillsFragment,
+                spaceSystemPrompt,
+                List.of());
+
+        NlAskResponse resp = askWithPacedRetry(req);
+        if (resp.degraded()) {
+            // Provider transport/parse/refusal degrade — surface the reason (already generic /
+            // OFF_TOPIC-prefixed) so the resource can render it.
+            return DashboardSpec.degraded(resp.reason(), resp.model());
+        }
+        if (resp.kind() != NlAskResponse.Kind.DASHBOARD || resp.payloadJson() == null) {
+            return DashboardSpec.degraded("provider did not return a dashboard", resp.model());
+        }
+        return hardenDashboard(resp.payloadJson(), ref, schema, resp.model());
+    }
+
+    /**
+     * Parse the raw {@code emit_dashboard} payload and apply ALL server-side hardening (§3). The
+     * model's JSON is untrusted, so this drives the whole validation surface: tile cap + truncation,
+     * per-tile converter validation, cube-pinning, title sanitisation, and type/chartType coercion.
+     */
+    private DashboardSpec hardenDashboard(String payloadJson, AiCubeRef ref, AiSchema schema, String model) {
+        com.fasterxml.jackson.databind.JsonNode root;
+        try {
+            root = mapper.readTree(payloadJson);
+        } catch (JsonProcessingException e) {
+            log.warn("dashboard build: provider emitted invalid JSON: {}", e.getMessage());
+            return DashboardSpec.degraded("provider emitted invalid dashboard JSON", model);
+        }
+
+        String title = sanitizeLabel(
+                root.path("title").isTextual() ? root.path("title").asText() : null,
+                DASHBOARD_TITLE_MAX,
+                "AI dashboard");
+
+        com.fasterxml.jackson.databind.JsonNode tilesNode = root.path("tiles");
+        int cap = maxTiles();
+        int total = tilesNode.isArray() ? tilesNode.size() : 0;
+        if (total > cap) {
+            // Truncate to the cap — never error on an over-eager model (§3).
+            log.info("dashboard build: model returned {} tiles, capping to {} (dropped {})", total, cap, total - cap);
+        }
+
+        List<DashboardTileSpec> tiles = new ArrayList<>();
+        int considered = Math.min(total, cap);
+        for (int i = 0; i < considered; i++) {
+            com.fasterxml.jackson.databind.JsonNode tileNode = tilesNode.get(i);
+            if (tileNode == null || !tileNode.isObject()) {
+                continue;
+            }
+            AiQueryRequest query;
+            try {
+                query = mapper.treeToValue(tileNode.path("query"), AiQueryRequest.class);
+            } catch (JsonProcessingException e) {
+                log.warn("dashboard build: tile {} query failed to parse — dropping tile", i);
+                continue;
+            }
+            if (query == null) {
+                log.warn("dashboard build: tile {} has no query — dropping tile", i);
+                continue;
+            }
+            // Cube lock: force every tile to the session cube. The model must not author a tile
+            // against a different cube; ignore/override whatever cube it put on the tile (§3).
+            query.setCube(ref);
+            // Per-tile validation: prove the query CONVERTS against the live cube. This rejects
+            // hallucinated dimensions/levels/members. We do NOT execute (thinQueryService.execute) —
+            // tiles run lazily client-side, so NO cell data crosses to the LLM on this path.
+            try {
+                converter.convert(query, schema);
+            } catch (RuntimeException e) {
+                // Generic warn — the converter's detail (which can echo member/level text) stays out
+                // of the client-facing spec (#1282-class hardening). Drop the tile, keep the rest.
+                log.warn("dashboard build: tile {} query did not validate against the cube — dropping tile", i);
+                continue;
+            }
+
+            String tileTitle = sanitizeLabel(
+                    tileNode.path("title").isTextual() ? tileNode.path("title").asText() : null,
+                    TILE_TITLE_MAX,
+                    "Tile " + (tiles.size() + 1));
+            String type = coerceType(tileNode.path("type").asText(null));
+            String chartType = coerceChartType(type, tileNode.path("chartType").asText(null));
+            tiles.add(new DashboardTileSpec(tileTitle, type, chartType, query));
+        }
+
+        if (tiles.isEmpty()) {
+            return DashboardSpec.degraded("couldn't build a dashboard for that request", model);
+        }
+        return DashboardSpec.ok(title, tiles, model);
+    }
+
+    /** Coerce a tile type to the {chart, table, kpi} allowlist; unknown/blank → {@code table}. */
+    private static String coerceType(String raw) {
+        if (raw != null && TILE_TYPES.contains(raw)) {
+            return raw;
+        }
+        return "table";
+    }
+
+    /**
+     * Coerce a chart subtype: {@code null} for non-chart tiles; for chart tiles, an allowlisted
+     * value or {@code bar} when missing/unknown.
+     */
+    private static String coerceChartType(String type, String raw) {
+        if (!"chart".equals(type)) {
+            return null;
+        }
+        if (raw != null && CHART_TYPES.contains(raw)) {
+            return raw;
+        }
+        return "bar";
+    }
+
+    /**
+     * Sanitise a plain-text label from untrusted model output: strip HTML tags and control chars
+     * (including CR/LF), collapse runs of whitespace, and cap the length. Blank input (or a value
+     * that sanitises to empty) falls back to {@code fallback}. No new dependency — these are text
+     * labels, not HTML, so the OWASP sanitizer would be overkill.
+     */
+    private static String sanitizeLabel(String raw, int maxLen, String fallback) {
+        if (raw == null) {
+            return fallback;
+        }
+        String s = raw.replaceAll("<[^>]*>", " "); // strip tag-like spans
+        // Strip control chars (incl. CR/LF/tab, \p{Cntrl}) AND Unicode format chars (\p{Cf} —
+        // bidi overrides like U+202E, zero-width joiners/non-joiners U+200B–U+200D, BOM U+FEFF,
+        // LRM/RLM). The latter are invisible, so a Trojan-Source visual spoof can't survive in a
+        // plain-text label. Normal letters/digits/punctuation/spaces and non-Latin scripts stay.
+        s = s.replaceAll("[\\p{Cntrl}\\p{Cf}]", " ");
+        s = s.trim().replaceAll("\\s+", " "); // collapse whitespace
+        if (s.isEmpty()) {
+            return fallback;
+        }
+        if (s.length() > maxLen) {
+            s = s.substring(0, maxLen).trim();
+        }
+        return s;
     }
 
     private AskOutcome askInternal(

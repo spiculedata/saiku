@@ -4,6 +4,7 @@
  */
 package org.saiku.service.olap.ai.ask;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -62,6 +63,18 @@ abstract class AbstractNlAskProvider implements NlAskProvider {
      * uses as the pre-filled email body. Draft-only — the AI never sends.
      */
     protected static final String EMAIL_DRAFT_TOOL_NAME = "emit_email_draft";
+
+    /**
+     * Name of the dashboard-builder tool — picks when the user wants a multi-tile dashboard built
+     * from one request. The model emits a title plus N tiles, each carrying its own AiQueryRequest
+     * (the SAME shape {@code emit_query} uses). No query is executed; {@link AiAskService#buildDashboard}
+     * validates every tile query against the live cube before returning the spec.
+     */
+    protected static final String DASHBOARD_TOOL_NAME = "emit_dashboard";
+
+    /** Chart-subtype allowlist advertised for a dashboard tile's {@code chartType} (MVP set). */
+    protected static final java.util.List<String> DASHBOARD_CHART_TYPES =
+            java.util.List.of("bar", "line", "pie", "area", "scatter");
 
     /** Prefix on the degraded reason when the model refuses an off-topic question. */
     protected static final String REFUSAL_REASON_PREFIX = "OFF_TOPIC: ";
@@ -270,6 +283,64 @@ abstract class AbstractNlAskProvider implements NlAskProvider {
                 "The email body: a short plain-prose summary of the CURRENT cellset (2-3 sentences, "
                         + "reference specific figures from the digest). No greeting, no subject line.");
         root.putArray("required").add("summary");
+        return root;
+    }
+
+    /**
+     * Builds the JSON Schema for the {@code emit_dashboard} tool's input: a dashboard {@code title}
+     * plus a non-empty {@code tiles} array. Each tile carries a plain-text {@code title}, a {@code
+     * type} (chart | table | kpi), an optional {@code chartType} (only meaningful for chart tiles),
+     * and a {@code query} whose schema is the CANONICAL AiQueryRequest schema — the exact same
+     * document {@code emit_query} advertises, passed in as {@code aiQueryRequestSchema} so the two
+     * never fork. Server-side validation ({@link AiAskService#buildDashboard}) is the real
+     * guardrail; this schema just shapes the model's output.
+     */
+    protected static ObjectNode dashboardInputSchema(JsonNode aiQueryRequestSchema) {
+        ObjectNode root = MAPPER.createObjectNode();
+        root.put("type", "object");
+        ObjectNode props = root.putObject("properties");
+
+        ObjectNode title = props.putObject("title");
+        title.put("type", "string");
+        title.put("description", "Dashboard name — short plain text (no markup).");
+
+        ObjectNode tiles = props.putObject("tiles");
+        tiles.put("type", "array");
+        tiles.put(
+                "description",
+                "The dashboard's tiles. Author a small, coherent set that together answers the "
+                        + "request — one tile per distinct view of the cube.");
+        ObjectNode tile = tiles.putObject("items");
+        tile.put("type", "object");
+        ObjectNode tileProps = tile.putObject("properties");
+
+        ObjectNode tileTitle = tileProps.putObject("title");
+        tileTitle.put("type", "string");
+        tileTitle.put("description", "Tile heading — short plain text (no markup).");
+
+        ObjectNode type = tileProps.putObject("type");
+        type.put("type", "string");
+        ArrayNode typeEnum = type.putArray("enum");
+        typeEnum.add("chart");
+        typeEnum.add("table");
+        typeEnum.add("kpi");
+        type.put(
+                "description", "Tile kind: 'chart' for a chart render, 'table' for a grid, 'kpi' for a single figure.");
+
+        ObjectNode chartType = tileProps.putObject("chartType");
+        chartType.put("type", "string");
+        ArrayNode chartEnum = chartType.putArray("enum");
+        for (String id : DASHBOARD_CHART_TYPES) {
+            chartEnum.add(id);
+        }
+        chartType.put("description", "Chart subtype. Only meaningful when type='chart'; omit otherwise.");
+
+        // The tile query IS an AiQueryRequest — reference the same schema emit_query advertises so
+        // the tile-query contract and the single-query contract can never drift.
+        tileProps.set("query", aiQueryRequestSchema);
+
+        tile.putArray("required").add("title").add("type").add("query");
+        root.putArray("required").add("title").add("tiles");
         return root;
     }
 

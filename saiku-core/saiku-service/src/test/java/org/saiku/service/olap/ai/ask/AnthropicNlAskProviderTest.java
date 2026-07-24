@@ -403,6 +403,74 @@ public class AnthropicNlAskProviderTest {
         assertEquals("OFF_TOPIC: Question is not about the cube.", resp.reason());
     }
 
+    /* ---- emit_dashboard tool (D1 dashboard-builder) ---- */
+
+    @Test
+    public void dashboardModeAdvertisesOnlyDashboardAndRefusalTools() throws Exception {
+        AnthropicNlAskProvider provider =
+                new AnthropicNlAskProvider(new AnthropicNlAskProvider.Config("k", "claude-x", 0.0, 1024, null));
+        NlAskRequest req = new NlAskRequest(
+                CUBE,
+                "build a sales dashboard",
+                SCHEMA,
+                REQUEST_SCHEMA,
+                List.of(),
+                null,
+                NlAskRequest.ForceTool.DASHBOARD);
+
+        JsonNode root = MAPPER.readTree(provider.buildRequestBody(req));
+        JsonNode tools = root.get("tools");
+
+        // Only emit_dashboard + refuse_off_topic — the classic query/insight/email/view tools drop.
+        assertEquals(2, tools.size());
+        assertEquals("emit_dashboard", tools.get(0).get("name").asText());
+        assertEquals("refuse_off_topic", tools.get(1).get("name").asText());
+        for (JsonNode t : tools) {
+            assertFalse(
+                    "emit_query must not be advertised in dashboard mode",
+                    "emit_query".equals(t.get("name").asText()));
+        }
+
+        // The dashboard tool's input schema carries title + tiles, and each tile embeds the SAME
+        // AiQueryRequest schema (the REQUEST_SCHEMA stub) as its query.
+        JsonNode schema = tools.get(0).get("input_schema");
+        assertEquals("object", schema.get("type").asText());
+        assertTrue(schema.get("properties").has("title"));
+        JsonNode tileItems = schema.get("properties").get("tiles").get("items");
+        assertEquals(
+                "object", tileItems.get("properties").get("query").get("type").asText());
+        List<String> required = new java.util.ArrayList<>();
+        schema.get("required").forEach(n -> required.add(n.asText()));
+        assertTrue(required.contains("title"));
+        assertTrue(required.contains("tiles"));
+        // Dashboard-mode directive is appended to the system prompt.
+        assertTrue(root.get("system").asText().contains("DASHBOARD MODE"));
+    }
+
+    @Test
+    public void parseToolResponseExtractsDashboardInputAsJson() throws Exception {
+        String body = "{\"usage\":{\"input_tokens\":9,\"output_tokens\":4},"
+                + "\"content\":[{\"type\":\"tool_use\",\"name\":\"emit_dashboard\","
+                + "\"input\":{\"title\":\"Sales\",\"tiles\":[{\"title\":\"By Year\",\"type\":\"table\","
+                + "\"query\":{\"measures\":[{\"name\":\"Store Sales\"}]}}]}}]}";
+
+        NlAskResponse resp = AnthropicNlAskProvider.parseToolResponse(body, "claude-x");
+
+        assertFalse(resp.degraded());
+        assertEquals(NlAskResponse.Kind.DASHBOARD, resp.kind());
+        JsonNode parsed = MAPPER.readTree(resp.payloadJson());
+        assertEquals("Sales", parsed.get("title").asText());
+        assertEquals(1, parsed.get("tiles").size());
+    }
+
+    @Test
+    public void parseToolResponseDegradesWhenDashboardInputMissing() throws Exception {
+        String body = "{\"content\":[{\"type\":\"tool_use\",\"name\":\"emit_dashboard\"}]}";
+        NlAskResponse resp = AnthropicNlAskProvider.parseToolResponse(body, "claude-x");
+        assertTrue(resp.degraded());
+        assertEquals("empty dashboard tool input", resp.reason());
+    }
+
     /** Minimal {@link HttpClient} stub — only {@code send} is exercised. Captures the last request. */
     private static final class StubHttp extends HttpClient {
         private final int status;
