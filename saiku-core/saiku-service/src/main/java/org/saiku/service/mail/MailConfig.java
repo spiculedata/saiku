@@ -4,11 +4,28 @@ import java.util.function.Function;
 
 /** SMTP settings, resolved env > system property > default. */
 public record MailConfig(
-        String host, int port, String username, String password, String from, boolean startTls, boolean ssl) {
+        String host,
+        int port,
+        String username,
+        String password,
+        String from,
+        boolean startTls,
+        boolean ssl,
+        String selfTo) {
 
     /** Configured only when a host and a from-address are both present. */
     public boolean isConfigured() {
         return notBlank(host) && notBlank(from);
+    }
+
+    /**
+     * True when an admin has configured the fixed self-send recipient
+     * ({@code SAIKU_MAIL_SELF_TO} / {@code saiku.mail.self.to}). The
+     * {@code /email/self} endpoint fails closed unless this is set — the
+     * recipient is never taken from the client.
+     */
+    public boolean selfSendConfigured() {
+        return notBlank(selfTo);
     }
 
     public static MailConfig resolve(Function<String, String> env, Function<String, String> prop) {
@@ -20,7 +37,8 @@ public record MailConfig(
         boolean startTls =
                 parseBool(pick(env, prop, "SAIKU_MAIL_SMTP_STARTTLS", "saiku.mail.smtp.starttls", "true"), true);
         boolean ssl = parseBool(pick(env, prop, "SAIKU_MAIL_SMTP_SSL", "saiku.mail.smtp.ssl", "false"), false);
-        return new MailConfig(host, port, user, pass, from, startTls, ssl);
+        String selfTo = pick(env, prop, "SAIKU_MAIL_SELF_TO", "saiku.mail.self.to", null);
+        return new MailConfig(host, port, user, pass, from, startTls, ssl, selfTo);
     }
 
     /** Production factory: resolve from the real environment + system properties. */

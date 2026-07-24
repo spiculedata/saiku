@@ -56,7 +56,16 @@ public class EmailResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response health() {
         boolean configured = mailSender != null && mailSender.isConfigured();
-        return Response.ok(Map.of("configured", configured)).build();
+        boolean selfConfigured = mailConfig != null && mailConfig.selfSendConfigured();
+        // Single-admin embedded build: the self-send recipient is the admin's own
+        // configured address, so exposing it to an authenticated user is acceptable
+        // and lets the composer show "Sends to: <address>". null when unconfigured.
+        String to = selfConfigured ? mailConfig.selfTo() : null;
+        Map<String, Object> health = new java.util.HashMap<>();
+        health.put("configured", configured);
+        health.put("selfConfigured", selfConfigured);
+        health.put("to", to);
+        return Response.ok(health).build();
     }
 
     @POST
@@ -83,8 +92,15 @@ public class EmailResource {
                     .entity(Map.of("error", "email not configured"))
                     .build();
         }
+        // Fail closed: the recipient comes ONLY from the admin-configured server value.
+        // No client-supplied value ever reaches the recipient (open-relay fix, F1).
+        if (mailConfig == null || !mailConfig.selfSendConfigured()) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity(Map.of("error", "email recipient not configured"))
+                    .build();
+        }
         try {
-            MailMessage msg = assembler.assemble(body, mailConfig.from());
+            MailMessage msg = assembler.assemble(body, mailConfig.from(), mailConfig.selfTo());
             mailSender.send(msg);
             log.info("Emailed analysis for user {} to {}", auth.getName(), msg.to());
             return Response.ok(Map.of("status", "sent", "to", msg.to())).build();

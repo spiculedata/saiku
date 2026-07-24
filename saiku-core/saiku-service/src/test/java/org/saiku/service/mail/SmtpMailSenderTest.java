@@ -19,7 +19,7 @@ class SmtpMailSenderTest {
     @Test
     void sends_multipartEmail_withInlineChart_andPdfAttachment() throws Exception {
         MailConfig cfg = new MailConfig(
-                "127.0.0.1", greenMail.getSmtp().getPort(), null, null, "saiku@example.com", false, false);
+                "127.0.0.1", greenMail.getSmtp().getPort(), null, null, "saiku@example.com", false, false, null);
         SmtpMailSender sender = new SmtpMailSender(cfg);
 
         MailMessage m = new MailMessage(

@@ -29,6 +29,48 @@ describe("emailSelf", () => {
       expect(out.configured).toBe(true);
     });
 
+    test("parses selfConfigured + to from the health body", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ configured: true, selfConfigured: true, to: "ops@example.com" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+      const out = await fetchMailHealth();
+
+      expect(out.selfConfigured).toBe(true);
+      expect(out.to).toBe("ops@example.com");
+    });
+
+    test("defaults selfConfigured=false and to=null when the body omits them", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ configured: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+      const out = await fetchMailHealth();
+
+      expect(out.selfConfigured).toBe(false);
+      expect(out.to).toBeNull();
+    });
+
+    test("selfConfigured true with a null recipient stays selfConfigured (booleans-only disclosure)", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ configured: true, selfConfigured: true, to: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+      const out = await fetchMailHealth();
+
+      expect(out.selfConfigured).toBe(true);
+      expect(out.to).toBeNull();
+    });
+
     test("hits GET /rest/saiku/api/email/health with credentials included", async () => {
       const fetchMock = vi.fn().mockResolvedValue(
         new Response(JSON.stringify({ configured: false }), { status: 200 }),
