@@ -26,6 +26,7 @@ import {
   type QueryStateSnapshot,
 } from "$lib/stores/query.svelte";
 import { selection, type SelectionSnapshot } from "$lib/stores/selection.svelte";
+import { moveSavedQuery } from "$lib/api/repository";
 
 /** One tab in the workspace tab strip. */
 export interface WorkspaceTab {
@@ -43,6 +44,27 @@ export interface WorkspaceTab {
 
 function freshTabId(): string {
   return `t-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+}
+
+/** Human-readable base name for a snapshot, used to seed a duplicate's
+ *  "<name> copy" label. Prefers the user-typed pending name, then the
+ *  saved-file basename (sans `.saiku`), else a neutral fallback. i18n is
+ *  the component's job — the store stays locale-agnostic. */
+function baseNameOf(snap: QueryStateSnapshot): string {
+  if (snap.pendingName && snap.pendingName.trim()) return snap.pendingName.trim();
+  const p = snap.savedPath;
+  if (p) {
+    const base = p.split("/").pop() ?? p;
+    return base.endsWith(".saiku") ? base.slice(0, -".saiku".length) : base;
+  }
+  return "Untitled";
+}
+
+/** Result of a tab rename. `saved` distinguishes the move-a-file path
+ *  (the query had a savedPath) from the stash-a-pending-name path. */
+export interface TabRenameResult {
+  saved: boolean;
+  path?: string;
 }
 
 class TabsStore {
@@ -125,6 +147,100 @@ class TabsStore {
     this.activeIndex = remaining.findIndex((t) => t.id === target.id);
   }
 
+  /** The effective savedPath for tab {@code i}: the live query store for
+   *  the active tab, the captured snapshot otherwise. */
+  private savedPathFor(i: number): string | null {
+    return i === this.activeIndex ? query.savedPath : this.list[i].query.savedPath;
+  }
+
+  /** Patch a single (non-active) tab's captured query snapshot immutably so
+   *  Svelte 5 reactivity propagates. */
+  private patchTabQuery(i: number, patch: Partial<QueryStateSnapshot>): void {
+    this.list = this.list.map((t, idx) =>
+      idx === i ? { ...t, query: { ...t.query, ...patch } } : t,
+    );
+  }
+
+  /**
+   * Rename tab {@code i} to {@code rawName}.
+   *
+   * - If the tab's query is SAVED (its snapshot `savedPath` is set), the
+   *   file is moved on disk to `<same folder>/<new name>.saiku` via
+   *   {@link moveSavedQuery}, then the tab's savedPath is updated (through
+   *   `query.markSaved` when it's the active tab so the live label/dirty
+   *   flag follow). A rejected move propagates to the caller (which toasts).
+   * - If the tab is UNSAVED (`savedPath` null), there's no file to move —
+   *   the typed name is stashed as the query's `pendingName` so the next
+   *   Save dialog pre-fills it and the tab label reflects it immediately.
+   *
+   * Returns {@link TabRenameResult} so the caller can toast appropriately.
+   * A blank/whitespace name is a no-op.
+   */
+  async rename(i: number, rawName: string): Promise<TabRenameResult> {
+    if (i < 0 || i >= this.list.length) return { saved: false };
+    const name = rawName.trim();
+    if (!name) return { saved: false };
+
+    const oldPath = this.savedPathFor(i);
+    if (oldPath) {
+      const idx = oldPath.lastIndexOf("/");
+      const folder = idx > 0 ? oldPath.slice(0, idx) : "";
+      const file = name.endsWith(".saiku") ? name : `${name}.saiku`;
+      const newPath = folder ? `${folder}/${file}` : file;
+      if (newPath === oldPath) return { saved: true, path: oldPath };
+      await moveSavedQuery(oldPath, newPath);
+      if (i === this.activeIndex) {
+        query.markSaved(newPath);
+      } else {
+        this.patchTabQuery(i, { savedPath: newPath, pendingName: null });
+      }
+      return { saved: true, path: newPath };
+    }
+
+    // Unsaved — no file to move; stash the name for the next Save.
+    if (i === this.activeIndex) {
+      query.setPendingName(name);
+    } else {
+      this.patchTabQuery(i, { pendingName: name });
+    }
+    return { saved: false };
+  }
+
+  /**
+   * Open a new tab holding a DEEP COPY of the active tab's query + cube,
+   * marked unsaved (`savedPath = null`) with a "<name> copy" pending label,
+   * and switch to it. The copy is structurally independent of the source —
+   * mutating one tab's query never bleeds into the other.
+   *
+   * Reuses the same capture/new/hydrate machinery as {@link newTab}:
+   * snapshot the live active state, clone it, capture the outgoing tab, push
+   * the clone, then hydrate the live stores against it. Returns the new id.
+   */
+  duplicateActive(): string {
+    // Deep-clone the LIVE active state. $state.snapshot unwraps the Svelte 5
+    // proxies (structuredClone throws on proxies) into plain objects; the
+    // clone shares no references with the source snapshot.
+    const srcQuery = query.snapshot();
+    const srcCube = selection.snapshot();
+    const clonedQuery = structuredClone($state.snapshot(srcQuery)) as QueryStateSnapshot;
+    const clonedCube = structuredClone($state.snapshot(srcCube)) as SelectionSnapshot;
+
+    // A duplicate is an unsaved working copy: drop the saved path, seed the
+    // label, start it dirty (there are unpersisted contents), and give it a
+    // fresh (empty) undo history rather than sharing the source's stacks.
+    clonedQuery.savedPath = null;
+    clonedQuery.pendingName = `${baseNameOf(srcQuery)} copy`;
+    clonedQuery.dirty = true;
+    clonedQuery.dirtyCount = 0;
+    clonedQuery.past = [];
+    clonedQuery.future = [];
+
+    this.captureActive();
+    const t: WorkspaceTab = { id: freshTabId(), query: clonedQuery, cube: clonedCube };
+    this.list = [...this.list, t];
+    this.hydrateActive(this.list.length - 1);
+    return t.id;
+  }
 }
 
 export const tabs = new TabsStore();

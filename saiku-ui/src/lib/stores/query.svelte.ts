@@ -24,6 +24,11 @@ export interface QueryStateSnapshot {
   current: ThinQuery | null;
   result: QueryResult | null;
   savedPath: string | null;
+  /** User-typed name for an UNSAVED tab (rename from the tab strip when
+   *  there's no file to move yet). Pre-fills the Save dialog's default
+   *  name and drives the tab label until the query is first saved. Null
+   *  once savedPath is set. */
+  pendingName?: string | null;
   viewMode: ViewMode;
   chartType: ChartType;
   chartOptions: ChartOptions;
@@ -54,6 +59,7 @@ export function blankSnapshot(): QueryStateSnapshot {
     current: null,
     result: null,
     savedPath: null,
+    pendingName: null,
     viewMode: "grid",
     chartType: "bar",
     chartOptions: { ...DEFAULT_CHART_OPTIONS },
@@ -120,6 +126,8 @@ class QueryStore {
   dirty = $state<boolean>(false);
   dirtyCount = $state<number>(0);
   savedPath = $state<string | null>(null);
+  /** Typed name for an unsaved tab (see {@link QueryStateSnapshot.pendingName}). */
+  pendingName = $state<string | null>(null);
   autorun = $state<boolean>(true);
   viewMode = $state<ViewMode>("grid");
   chartType = $state<ChartType>("bar");
@@ -264,6 +272,7 @@ class QueryStore {
     this.dirty = false;
     this.dirtyCount = 0;
     this.savedPath = null;
+    this.pendingName = null;
     // Brand-new query starts with empty undo history — there's nothing
     // meaningful to undo back to. The user's previous tab still has its own
     // history (per-tab stacks).
@@ -279,6 +288,7 @@ class QueryStore {
     this.dirty = false;
     this.dirtyCount = 0;
     this.savedPath = path;
+    this.pendingName = null;
     this.clearHistory();
   }
 
@@ -292,6 +302,7 @@ class QueryStore {
     this.dirty = false;
     this.dirtyCount = 0;
     this.savedPath = savedPath;
+    this.pendingName = null;
     this.clearHistory();
   }
 
@@ -302,8 +313,17 @@ class QueryStore {
     // request like /rest/saiku/api/query/{name}/drillthrough would 400 once
     // the name turned into "folder/file.saiku".
     this.savedPath = path;
+    this.pendingName = null;
     this.dirty = false;
     this.dirtyCount = 0;
+  }
+
+  /** Stash a user-typed name for an unsaved query so the next Save dialog
+   *  pre-fills it. No-op-safe on empty input. Cleared once the query is
+   *  actually saved (see {@link markSaved}). */
+  setPendingName(name: string): void {
+    const trimmed = name.trim();
+    this.pendingName = trimmed.length > 0 ? trimmed : null;
   }
 
   reset(): void {
@@ -314,6 +334,7 @@ class QueryStore {
     this.dirty = false;
     this.dirtyCount = 0;
     this.savedPath = null;
+    this.pendingName = null;
     this.clearHistory();
   }
 
@@ -327,6 +348,7 @@ class QueryStore {
       current: this.current,
       result: this.result,
       savedPath: this.savedPath,
+      pendingName: this.pendingName,
       viewMode: this.viewMode,
       chartType: this.chartType,
       chartOptions: this.chartOptions,
@@ -354,6 +376,7 @@ class QueryStore {
     this.current = s.current;
     this.result = s.result;
     this.savedPath = s.savedPath;
+    this.pendingName = s.pendingName ?? null;
     this.viewMode = s.viewMode;
     this.chartType = s.chartType;
     this.chartOptions = s.chartOptions;
