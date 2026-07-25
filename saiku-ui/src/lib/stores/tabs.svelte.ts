@@ -166,9 +166,10 @@ class TabsStore {
    *
    * - If the tab's query is SAVED (its snapshot `savedPath` is set), the
    *   file is moved on disk to `<same folder>/<new name>.saiku` via
-   *   {@link moveSavedQuery}, then the tab's savedPath is updated (through
-   *   `query.markSaved` when it's the active tab so the live label/dirty
-   *   flag follow). A rejected move propagates to the caller (which toasts).
+   *   {@link moveSavedQuery}, then the tab's savedPath is repointed (through
+   *   `query.renamePath` when it's the active tab) while preserving any
+   *   unsaved edits' dirty flag. A rejected move propagates to the caller
+   *   (which toasts).
    * - If the tab is UNSAVED (`savedPath` null), there's no file to move —
    *   the typed name is stashed as the query's `pendingName` so the next
    *   Save dialog pre-fills it and the tab label reflects it immediately.
@@ -189,8 +190,12 @@ class TabsStore {
       const newPath = folder ? `${folder}/${file}` : file;
       if (newPath === oldPath) return { saved: true, path: oldPath };
       await moveSavedQuery(oldPath, newPath);
+      // Repoint the path but preserve the dirty flag: the move renamed the
+      // *previous* on-disk content, so any unsaved in-memory edits are still
+      // unsaved. `renamePath` (active) and the snapshot patch (background)
+      // both leave `dirty` untouched, keeping the two paths consistent.
       if (i === this.activeIndex) {
-        query.markSaved(newPath);
+        query.renamePath(newPath);
       } else {
         this.patchTabQuery(i, { savedPath: newPath, pendingName: null });
       }

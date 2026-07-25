@@ -83,6 +83,22 @@ describe("tabs.rename — saved query", () => {
     expect(query.savedPath).toBe("homes/admin/Quarterly.saiku");
   });
 
+  it("preserves the dirty flag when the renamed active tab has unsaved edits", async () => {
+    const { tabs } = tabsMod;
+    const { query } = queryMod;
+    seedActiveQuery("homes/admin/Report.saiku"); // markSaved → clean
+    // Make an in-memory edit AFTER the save so the tab is saved-but-dirty.
+    query.addMeasure({ uniqueName: "[Measures].[Store Sales]", name: "Store Sales" } as never);
+    expect(query.dirty).toBe(true);
+
+    await tabs.rename(tabs.activeIndex, "Quarterly");
+
+    // The move renamed the previous on-disk content; the unsaved edit is still
+    // unsaved, so dirty must survive (else the edit is silently discardable).
+    expect(query.savedPath).toBe("homes/admin/Quarterly.saiku");
+    expect(query.dirty).toBe(true);
+  });
+
   it("keeps a root-level query at the root and appends .saiku", async () => {
     const { tabs } = tabsMod;
     seedActiveQuery("Report.saiku");

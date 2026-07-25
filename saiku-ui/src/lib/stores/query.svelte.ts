@@ -318,6 +318,16 @@ class QueryStore {
     this.dirtyCount = 0;
   }
 
+  /** Repoint the saved path after an on-disk rename WITHOUT clearing the
+   *  dirty state. Unlike {@link markSaved}, this preserves unsaved in-memory
+   *  edits: a rename moves the *previous* on-disk content, so any pending
+   *  edits remain unsaved and must keep their dirty flag (and the close
+   *  guard that depends on it). */
+  renamePath(path: string): void {
+    this.savedPath = path;
+    this.pendingName = null;
+  }
+
   /** Stash a user-typed name for an unsaved query so the next Save dialog
    *  pre-fills it. No-op-safe on empty input. Cleared once the query is
    *  actually saved (see {@link markSaved}). */
