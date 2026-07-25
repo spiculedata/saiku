@@ -43,6 +43,25 @@
   }
 
   const valid = $derived(name.trim().length > 0);
+
+  function save(): void {
+    onSave(normalizeFolder(folder), name.trim());
+  }
+
+  // Focus the Name input as soon as it mounts. The modal body only
+  // renders while `open` is true, so the action runs on every open. A
+  // queueMicrotask defers the focus until after the node is painted,
+  // and — being outside any $effect — it never re-triggers reactivity.
+  function autofocus(node: HTMLInputElement) {
+    queueMicrotask(() => node.focus());
+  }
+
+  function onNameKeydown(e: KeyboardEvent) {
+    if (e.key === "Enter" && valid) {
+      e.preventDefault();
+      save();
+    }
+  }
 </script>
 
 <Modal title={i18n.t("modal.save.title")} {open} size="lg" onClose={onCancel}>
@@ -50,22 +69,31 @@
     {i18n.t("modal.save.intro").replace("{folder}", folder || i18n.t("repo.root"))}
   </p>
 
-  <RepositoryBrowser
-    mode="save"
-    selectedPath={folder}
-    onSelect={(p) => (folder = p)}
-  />
-
-  <label class="field mt-3">
+  <label class="field">
     <span class="field__label">{i18n.t("modal.save.name")}</span>
-    <input class="field__input" bind:value={name} autocomplete="off" required />
+    <input
+      class="field__input"
+      bind:value={name}
+      autocomplete="off"
+      required
+      use:autofocus
+      onkeydown={onNameKeydown}
+    />
   </label>
+
+  <div class="mt-3">
+    <RepositoryBrowser
+      mode="save"
+      selectedPath={folder}
+      onSelect={(p) => (folder = p)}
+    />
+  </div>
 
   {#snippet footer()}
     <Button variant="outline" onclick={onCancel}>{i18n.t("modal.cancel")}</Button>
     <Button
       disabled={!valid}
-      onclick={() => onSave(normalizeFolder(folder), name.trim())}
+      onclick={save}
     >{i18n.t("modal.save")}</Button>
   {/snippet}
 </Modal>
