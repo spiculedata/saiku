@@ -130,7 +130,16 @@
 
   function deriveDefaults(): { folder: string; name: string } {
     const path = query.savedPath ?? "";
-    if (!path) return { folder: defaultHomeFolder(), name: "Untitled.saiku" };
+    if (!path) {
+      // Unsaved: honour a name the user typed via the tab-strip rename
+      // (query.pendingName) so the Save dialog pre-fills it; otherwise the
+      // neutral Untitled default.
+      const pending = query.pendingName?.trim();
+      return {
+        folder: defaultHomeFolder(),
+        name: pending ? `${pending}.saiku` : "Untitled.saiku",
+      };
+    }
     const idx = path.lastIndexOf("/");
     const folder = idx > 0 ? path.slice(0, idx) : defaultHomeFolder();
     const name = idx >= 0 ? path.slice(idx + 1) : path;

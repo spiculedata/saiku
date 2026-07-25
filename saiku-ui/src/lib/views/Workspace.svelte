@@ -3,6 +3,8 @@
   import { Button } from "$lib/components/ui";
   import type { SaikuSession } from "$lib/api/session";
   import Modal from "$lib/components/Modal.svelte";
+  import ContextMenu from "$lib/components/ContextMenu.svelte";
+  import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import CubePicker from "$lib/views/CubePicker.svelte";
   import DimensionList from "$lib/views/DimensionList.svelte";
@@ -41,6 +43,11 @@
   let { session }: Props = $props();
   let aboutOpen = $state(false);
   let aiDrawerOpen = $state(false);
+
+  // Mirror of ContextMenu.svelte's item shape (the component exports it from
+  // its instance script, which isn't importable as a type — QueryCanvas
+  // declares the same local alias).
+  type ContextMenuItem = { id: string; label: string; disabled?: boolean; danger?: boolean; sep?: boolean };
 
   /** Hand the model's MDX to the active query tab and re-run.
    *
@@ -119,15 +126,20 @@
   // tab reads the live query store, others read their captured
   // savedPath. Dirty marker on the active tab driven by live query.dirty;
   // other tabs read their snapshotted dirty flag.
-  function deriveTabLabel(path: string | null): string {
-    if (!path) return i18n.t("workspace.unsavedQuery");
-    const base = path.split("/").pop() ?? path;
-    return base.endsWith(".saiku") ? base.slice(0, -".saiku".length) : base;
+  function deriveTabLabel(path: string | null, pendingName?: string | null): string {
+    if (path) {
+      const base = path.split("/").pop() ?? path;
+      return base.endsWith(".saiku") ? base.slice(0, -".saiku".length) : base;
+    }
+    // Unsaved: show the user-typed name (from a tab-strip rename or a
+    // duplicate's "<name> copy" seed) when present, else the neutral label.
+    if (pendingName && pendingName.trim()) return pendingName.trim();
+    return i18n.t("workspace.unsavedQuery");
   }
 
   function tabLabelFor(i: number): string {
-    if (i === tabs.activeIndex) return deriveTabLabel(query.savedPath);
-    return deriveTabLabel(tabs.list[i].query.savedPath);
+    if (i === tabs.activeIndex) return deriveTabLabel(query.savedPath, query.pendingName);
+    return deriveTabLabel(tabs.list[i].query.savedPath, tabs.list[i].query.pendingName);
   }
 
   function tabTitleFor(i: number): string {
@@ -165,15 +177,95 @@
 
   function handleCloseTab(i: number, e: MouseEvent): void {
     e.stopPropagation();
+    doCloseTab(i);
+  }
+
+  /** Close tab {@code i}, confirming first when it carries unsaved changes.
+   *  Shared by the tab's × affordance and the context-menu Close item. */
+  function doCloseTab(i: number): void {
     if (tabs.list.length <= 1) return;
-    // If the tab is dirty, confirm before closing.
     const dirty = tabDirtyFor(i);
     if (dirty) {
-       
+
       const ok = window.confirm(i18n.t("confirm.discardUnsaved") ?? "Discard unsaved changes?");
       if (!ok) return;
     }
     tabs.closeTab(i);
+  }
+
+  // --- Tab context menu + inline rename (#1571) ---
+
+  type TabMenuId = "rename" | "duplicate" | "close";
+
+  let tabMenu = $state<{ open: boolean; x: number; y: number; index: number }>({
+    open: false,
+    x: 0,
+    y: 0,
+    index: 0,
+  });
+
+  /** Index of the tab currently in inline-rename mode, or null. */
+  let renamingIndex = $state<number | null>(null);
+  let renameValue = $state<string>("");
+
+  let tabMenuItems = $derived<ContextMenuItem[]>([
+    { id: "rename", label: i18n.t("tab.rename") },
+    { id: "duplicate", label: i18n.t("tab.duplicate") },
+    { id: "close", label: i18n.t("tab.close"), danger: true },
+  ]);
+
+  function openTabMenu(i: number, e: MouseEvent): void {
+    e.preventDefault();
+    e.stopPropagation();
+    tabMenu = { open: true, x: e.clientX, y: e.clientY, index: i };
+  }
+
+  function onTabMenuPick(id: string): void {
+    const i = tabMenu.index;
+    if (id === ("rename" satisfies TabMenuId)) {
+      beginRename(i);
+    } else if (id === ("duplicate" satisfies TabMenuId)) {
+      handleDuplicateTab(i);
+    } else if (id === ("close" satisfies TabMenuId)) {
+      doCloseTab(i);
+    }
+  }
+
+  /** Enter inline-rename mode for tab {@code i}, seeding the input with its
+   *  current label. The rendered <input> uses the `autofocus` attribute
+   *  (no $effect) so opening it can't trip effect_update_depth_exceeded. */
+  function beginRename(i: number): void {
+    renameValue = tabLabelFor(i);
+    renamingIndex = i;
+  }
+
+  function cancelRename(): void {
+    renamingIndex = null;
+  }
+
+  async function commitRename(i: number): Promise<void> {
+    // Guard re-entrancy: Enter commits then unmounts the input, whose blur
+    // would call this again; Escape nulls renamingIndex before blur fires.
+    // Bail unless this tab is still the one being renamed.
+    if (renamingIndex !== i) return;
+    const value = renameValue.trim();
+    renamingIndex = null;
+    if (!value) return;
+    try {
+      const res = await tabs.rename(i, value);
+      // Only the move-a-file path toasts — the unsaved path silently updates
+      // the label/pending name (the next Save surfaces it).
+      if (res.saved) toasts.success(i18n.t("toast.renamed"), res.path);
+    } catch (err) {
+      toasts.danger(i18n.t("toast.renameFailed"), err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** Duplicate tab {@code i}. Switch to it first so the store's
+   *  duplicateActive() copies the intended tab's live state. */
+  function handleDuplicateTab(i: number): void {
+    tabs.switchTo(i);
+    tabs.duplicateActive();
   }
 
   // Guard so we don't immediately overwrite the URL before (or during) hydrate.
@@ -358,30 +450,54 @@
     {#if !embed.active}
       <div class="tabset" role="tablist">
         {#each tabs.list as t, i (t.id)}
-          <button
-            type="button"
-            class="tab"
-            class:tab--active={i === tabs.activeIndex}
-            role="tab"
-            aria-selected={i === tabs.activeIndex}
-            title={tabTitleFor(i)}
-            onclick={() => handleSwitchTab(i)}
-          >
-            <span class="tab__label">{tabLabelFor(i)}</span>
-            {#if tabDirtyFor(i)}<span class="text-accent" aria-label="unsaved changes">•</span>{/if}
-            {#if tabs.list.length > 1}
-              <span
-                class="tab__close"
-                role="button"
-                tabindex="0"
-                aria-label="Close tab"
-                onclick={(e) => handleCloseTab(i, e)}
+          {#if renamingIndex === i}
+            <!-- Inline rename: the tab label becomes a text input. Enter
+                 commits, Escape cancels, blur commits (guarded against the
+                 double-fire that Enter/Escape unmount would otherwise cause).
+                 `autofocus` (no $effect) sidesteps effect_update_depth. -->
+            <div class="tab tab--active tab--renaming">
+              <!-- svelte-ignore a11y_autofocus -->
+              <input
+                class="tab__rename-input"
+                bind:value={renameValue}
+                aria-label={i18n.t("tab.rename")}
+                placeholder={i18n.t("tab.renamePlaceholder")}
                 onkeydown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") handleCloseTab(i, e as unknown as MouseEvent);
+                  if (e.key === "Enter") { e.preventDefault(); void commitRename(i); }
+                  else if (e.key === "Escape") { e.preventDefault(); cancelRename(); }
                 }}
-              >×</span>
-            {/if}
-          </button>
+                onblur={() => void commitRename(i)}
+                autofocus
+              />
+            </div>
+          {:else}
+            <button
+              type="button"
+              class="tab"
+              class:tab--active={i === tabs.activeIndex}
+              role="tab"
+              aria-selected={i === tabs.activeIndex}
+              title={tabTitleFor(i)}
+              onclick={() => handleSwitchTab(i)}
+              ondblclick={() => beginRename(i)}
+              oncontextmenu={(e) => openTabMenu(i, e)}
+            >
+              <span class="tab__label">{tabLabelFor(i)}</span>
+              {#if tabDirtyFor(i)}<span class="text-accent" aria-label="unsaved changes">•</span>{/if}
+              {#if tabs.list.length > 1}
+                <span
+                  class="tab__close"
+                  role="button"
+                  tabindex="0"
+                  aria-label={i18n.t("tab.close")}
+                  onclick={(e) => handleCloseTab(i, e)}
+                  onkeydown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") handleCloseTab(i, e as unknown as MouseEvent);
+                  }}
+                >×</span>
+              {/if}
+            </button>
+          {/if}
         {/each}
         <button
           type="button"
@@ -428,6 +544,16 @@
      AI drawer, so a drawer unmount/remount (window resize) can't hide it while
      the ~1-2 min build runs. Self-gates on the build store. -->
 <AiDashboardBuildingOverlay />
+
+<!-- Right-click tab menu (#1571): Rename / Duplicate / Close. -->
+<ContextMenu
+  open={tabMenu.open}
+  x={tabMenu.x}
+  y={tabMenu.y}
+  items={tabMenuItems}
+  onPick={onTabMenuPick}
+  onClose={() => (tabMenu = { ...tabMenu, open: false })}
+/>
 
 <Modal title={i18n.t("modal.about.title")} open={aboutOpen} size="sm" onClose={() => (aboutOpen = false)}>
   <p>{i18n.t("modal.about.tagline")}</p>
@@ -542,6 +668,26 @@
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 12rem;
+  }
+  .tab--renaming {
+    /* Keep the same footprint as a normal tab so the strip doesn't jump
+       when the label flips to an input. */
+    cursor: text;
+  }
+  .tab__rename-input {
+    width: 10rem;
+    max-width: 12rem;
+    padding: 2px 4px;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    color: var(--fg);
+    font: inherit;
+    font-size: var(--fs-sm);
+    outline: none;
+  }
+  .tab__rename-input:focus {
+    border-color: var(--accent);
   }
   .tab__close {
     display: inline-flex;
