@@ -32,7 +32,7 @@
              otherwise inherit the stale 4.3.30/1.19 values — kept in sync
              with saiku-bom/pom.xml to remove the footgun. -->
         <spring.version>6.2.19</spring.version>
-        <spring.security.version>6.5.11</spring.security.version>
+        <spring.security.version>7.1.0</spring.security.version>
         <slf4j.version>2.0.16</slf4j.version>
         <jersey.version>3.1.9</jersey.version>
         <maven.build.timestamp.format>yyyyMMdd-HHmm</maven.build.timestamp.format>
