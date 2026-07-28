@@ -805,6 +805,17 @@ parsing, no fence-stripping. Off-topic questions come back as
 `{"error": "OFF_TOPIC", "message": "…"}` and surface as 400 with the
 narration attached.
 
+### LLM egress posture (#1554)
+
+At the default `schema-only` egress posture, `/ai/ossie/ask` sends the
+model's schema **metadata only** — dataset / field / metric names, types,
+cardinality — and strips the schema's `sampleValues` before the prompt
+reaches the LLM vendor. To include sample values — which improves
+filter-value grounding, e.g. the model seeing example members like
+`Springfield` and spelling filters right on the first try — an operator
+sets `SAIKU_AI_LLM_EGRESS=aggregated` (`ai.llm.egress`) on the launcher.
+The gate fails closed: an unconfigured server withholds sample values.
+
 ### Skills — admin-authored workflows (#1426)
 
 Admin-authored markdown workflows under `saiku-home/skills/` are
