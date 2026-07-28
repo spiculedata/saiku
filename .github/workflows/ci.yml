@@ -120,7 +120,7 @@ jobs:
           exit "$fail"
 
   ui:
-    name: ui (svelte-check + vitest)
+    name: ui (svelte-check + vitest + build)
     needs: changes
     if: needs.changes.outputs.ui == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -141,6 +141,13 @@ jobs:
         run: npm run check
       - name: vitest
         run: npm test -- --run
+      # Run the production build in the fast UI lane so a broken `vite build`
+      # fails here instead of only surfacing later inside the heavier Maven
+      # jobs (saiku-webapp's frontend-maven-plugin runs the same `npm run
+      # build`). Placed after check+test so a build break is clearly the
+      # build's fault, not a type/test failure. (saiku#1551)
+      - name: Production build
+        run: npm run build
 
   dist:
     name: bundle (saiku-dist zip)
