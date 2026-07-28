@@ -28,6 +28,7 @@ import org.saiku.olap.query2.ThinQuery;
 import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiCubeRef;
+import org.saiku.service.olap.ai.AiFilterSelection;
 import org.saiku.service.olap.ai.AiMeasureSelection;
 import org.saiku.service.olap.ai.AiPolicy;
 import org.saiku.service.olap.ai.AiPolicyGuard;
@@ -119,6 +120,10 @@ public class AiAskServiceTest {
             return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
         };
         AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
+        // #1553: unchanged full-history passthrough now requires a posture that permits aggregated
+        // egress. Under the fail-closed default the assistant turn would be dropped (covered by the
+        // dedicated #1553 tests); this test asserts the plumbing forwards the whole history intact.
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
 
         svc.ask(CUBE, "show sales by country", List.of(NlAskMessage.user("earlier"), NlAskMessage.assistant("ack")));
 
@@ -594,6 +599,187 @@ public class AiAskServiceTest {
         assertFalse("PII sample member caption must not egress: " + schemaJson, schemaJson.contains("John Smith"));
         assertFalse("PII display name must not egress: " + schemaJson, schemaJson.contains("Customer Name"));
         assertTrue("redaction sentinel must be present: " + schemaJson, schemaJson.contains("[REDACTED]"));
+    }
+
+    /* ---- saiku#1553: send-time re-gate of history + currentQuery egress ---- */
+
+    /** History with a user turn, an assistant turn carrying a cell-derived figure, and a 2nd user turn. */
+    private static List<NlAskMessage> historyWithAssistantFigure() {
+        return List.of(
+                NlAskMessage.user("show sales by tier"),
+                NlAskMessage.assistant("Insight: the Large tier leads at 7,000."),
+                NlAskMessage.user("now email it"));
+    }
+
+    /**
+     * A currentQuery snapshot with a resolvable measure + a slicer filter whose member is a specific
+     * customer's MDX unique name — the cell-derived selection #1553 must strip under schema-only.
+     */
+    private static AiQueryRequest currentQueryWithFilterMember() {
+        AiQueryRequest cq = new AiQueryRequest();
+        cq.setCube(CUBE);
+        cq.setMeasures(new ArrayList<>(List.of(new AiMeasureSelection("Store Sales"))));
+        AiFilterSelection filter = new AiFilterSelection(
+                "Customers", "[Customers]", "[Customers].[Name]", new ArrayList<>(List.of("[Customers].[John Smith]")));
+        cq.setFilters(new ArrayList<>(List.of(filter)));
+        return cq;
+    }
+
+    @Test
+    public void schemaOnlyDropsAssistantHistoryTurnsButKeepsUserTurns() {
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        NlAskProvider capturing = req -> {
+            seen.set(req);
+            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.SCHEMA_ONLY));
+
+        svc.ask(CUBE, "follow up", historyWithAssistantFigure(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        NlAskRequest captured = seen.get();
+        assertNotNull(captured);
+        assertEquals(
+                "only the two user turns survive schema-only egress",
+                2,
+                captured.history().size());
+        for (NlAskMessage m : captured.history()) {
+            assertEquals(NlAskMessage.Role.USER, m.role());
+        }
+        // The assistant turn's cell-derived figure must never cross to the LLM.
+        assertFalse(captured.history().stream().anyMatch(m -> m.content().contains("7,000")));
+    }
+
+    @Test
+    public void schemaOnlyStripsCurrentQueryFilterMembersButKeepsStructure() {
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        NlAskProvider capturing = req -> {
+            seen.set(req);
+            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.SCHEMA_ONLY));
+
+        svc.ask(CUBE, "spot the trend", List.of(), null, NlAskRequest.ForceTool.AUTO, currentQueryWithFilterMember());
+
+        String cqJson = seen.get().currentQueryJson();
+        assertNotNull("current query still forwarded (structure, not data)", cqJson);
+        assertFalse("filter member unique name must be stripped: " + cqJson, cqJson.contains("John Smith"));
+        // Structure kept: measure, filter dimension + level refs all survive.
+        assertTrue("measure structure retained: " + cqJson, cqJson.contains("Store Sales"));
+        assertTrue("filter dimension retained: " + cqJson, cqJson.contains("Customers"));
+        assertTrue("filter level retained: " + cqJson, cqJson.contains("[Customers].[Name]"));
+    }
+
+    @Test
+    public void egressUnwiredFailsClosedAndDropsHistoryAndStripsMembers() {
+        // No setEgressGuard() → null guard → fail-closed: assistant turns dropped, members stripped.
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        NlAskProvider capturing = req -> {
+            seen.set(req);
+            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
+
+        svc.ask(
+                CUBE,
+                "follow up",
+                historyWithAssistantFigure(),
+                null,
+                NlAskRequest.ForceTool.AUTO,
+                currentQueryWithFilterMember());
+
+        NlAskRequest captured = seen.get();
+        assertNotNull(captured);
+        assertEquals(
+                "unwired guard fails closed: only user turns survive",
+                2,
+                captured.history().size());
+        assertFalse(captured.history().stream().anyMatch(m -> m.content().contains("7,000")));
+        assertFalse(
+                "unwired guard fails closed: members stripped",
+                captured.currentQueryJson().contains("John Smith"));
+    }
+
+    @Test
+    public void aggregatedPassesHistoryAndCurrentQueryThroughUntouched() {
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        NlAskProvider capturing = req -> {
+            seen.set(req);
+            return NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+        };
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+        svc.ask(
+                CUBE,
+                "follow up",
+                historyWithAssistantFigure(),
+                null,
+                NlAskRequest.ForceTool.AUTO,
+                currentQueryWithFilterMember());
+
+        NlAskRequest captured = seen.get();
+        assertNotNull(captured);
+        assertEquals(
+                "aggregated egress keeps all turns including assistant",
+                3,
+                captured.history().size());
+        assertTrue(
+                "assistant figure passes through at aggregated",
+                captured.history().stream().anyMatch(m -> m.content().contains("7,000")));
+        assertTrue(
+                "filter member passes through at aggregated",
+                captured.currentQueryJson().contains("John Smith"));
+    }
+
+    @Test
+    public void egressStripDoesNotMutateCallerHistoryOrCurrentQuery() {
+        // Copy-not-mutate invariant (#1553): the send-time strip must operate on copies, leaving the
+        // caller-owned history list + currentQuery object exactly as they were passed in.
+        NlAskProvider capturing =
+                req -> NlAskResponse.ok("{\"cube\":{\"cubeName\":\"Sales\"},\"measures\":[]}", "m", 0, 0);
+        AiAskService svc = new AiAskService(fixedSchemaService(emptySchema()), capturing);
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.SCHEMA_ONLY));
+
+        List<NlAskMessage> history = historyWithAssistantFigure();
+        AiQueryRequest currentQuery = currentQueryWithFilterMember();
+
+        svc.ask(CUBE, "follow up", history, null, NlAskRequest.ForceTool.AUTO, currentQuery);
+
+        // Original history untouched — assistant turn still present.
+        assertEquals("caller history must not be mutated", 3, history.size());
+        assertEquals(NlAskMessage.Role.ASSISTANT, history.get(1).role());
+        // Original currentQuery untouched — filter member still present.
+        assertEquals(1, currentQuery.getFilters().size());
+        assertEquals(
+                "caller currentQuery members must not be mutated",
+                List.of("[Customers].[John Smith]"),
+                currentQuery.getFilters().get(0).getMembers());
+    }
+
+    @Test
+    public void chainedAskWithheldToolTranscriptNeverCarriesResultDigestUnderSchemaOnly() {
+        // #1553 toolTranscript confirmation: the server-side loop is the only producer of ToolTurns.
+        // Under schema-only egress it stops after building the query — before executing/digesting —
+        // so NO ToolTurn carrying a real result digest is ever replayed to the LLM. The withheld
+        // path (ToolTurn.resultDigest == null) is the only shape the transcript could take, and here
+        // no populated transcript is ever sent at all. RED if the loop leaked a data-bearing turn.
+        ScriptedProvider provider =
+                new ScriptedProvider(List.of(NlAskResponse.okQuery(fullQueryJson(), "m", 10, 5, "t1")));
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), provider);
+        svc.setThinQueryService(cannedExecutor(cannedCellDataSet()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.SCHEMA_ONLY));
+
+        svc.askChained(CUBE, "build and report", List.of(), null, NlAskRequest.ForceTool.AUTO, null);
+
+        for (NlAskRequest req : provider.seen()) {
+            for (ToolTurn turn : req.toolTranscript()) {
+                assertNull(
+                        "no tool turn may carry a result digest under schema-only egress: " + turn.resultDigest(),
+                        turn.resultDigest());
+            }
+        }
     }
 
     /* ---- Task 5: chained-ask wiring (converter + setter-injected ThinQueryService) ---- */
@@ -1250,6 +1436,95 @@ public class AiAskServiceTest {
                 "non-chart tile must have null chartType", spec.tiles().get(1).chartType());
         assertEquals("kpi", spec.tiles().get(2).type());
         assertNull(spec.tiles().get(2).chartType());
+    }
+
+    /* ---- saiku#1553: the /ai/ask/dashboard seam re-gates client-supplied history too ---- */
+
+    /**
+     * Capturing provider that records the request and returns a minimal valid dashboard so the
+     * build completes. Mirrors the report-path capturing lambdas but for the dashboard tool.
+     */
+    private static NlAskProvider capturingDashboard(AtomicReference<NlAskRequest> seen) {
+        String payload = "{\"title\":\"D\",\"tiles\":[" + "{\"title\":\"Grid\",\"type\":\"table\",\"query\":"
+                + VALID_TILE_QUERY + "}]}";
+        return req -> {
+            seen.set(req);
+            return NlAskResponse.okDashboard(payload, "m", 0, 0);
+        };
+    }
+
+    @Test
+    public void buildDashboardSchemaOnlyDropsAssistantHistoryTurnsButKeepsUserTurns() {
+        // #1553: the dashboard endpoint takes client-supplied history just like the report path. Under
+        // schema-only egress the assistant turns (replaying cell-derived figures) must be dropped
+        // before the request crosses to the LLM; only the user's own words survive.
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), capturingDashboard(seen));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.SCHEMA_ONLY));
+
+        svc.buildDashboard(CUBE, "build me a dashboard", historyWithAssistantFigure(), null);
+
+        NlAskRequest captured = seen.get();
+        assertNotNull(captured);
+        assertEquals(
+                "only the two user turns survive schema-only egress on the dashboard seam",
+                2,
+                captured.history().size());
+        for (NlAskMessage m : captured.history()) {
+            assertEquals(NlAskMessage.Role.USER, m.role());
+        }
+        assertFalse(captured.history().stream().anyMatch(m -> m.content().contains("7,000")));
+    }
+
+    @Test
+    public void buildDashboardEgressUnwiredFailsClosedAndDropsAssistantHistory() {
+        // No setEgressGuard() → null guard → fail-closed: assistant turns dropped on the dashboard seam.
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), capturingDashboard(seen));
+
+        svc.buildDashboard(CUBE, "build me a dashboard", historyWithAssistantFigure(), null);
+
+        NlAskRequest captured = seen.get();
+        assertNotNull(captured);
+        assertEquals(
+                "unwired guard fails closed on the dashboard seam",
+                2,
+                captured.history().size());
+        assertFalse(captured.history().stream().anyMatch(m -> m.content().contains("7,000")));
+    }
+
+    @Test
+    public void buildDashboardAggregatedPassesHistoryThroughUntouched() {
+        // At aggregated egress the assistant turn (and its figure) passes through intact.
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), capturingDashboard(seen));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+        svc.buildDashboard(CUBE, "build me a dashboard", historyWithAssistantFigure(), null);
+
+        NlAskRequest captured = seen.get();
+        assertNotNull(captured);
+        assertEquals(
+                "aggregated egress keeps all turns including assistant on the dashboard seam",
+                3,
+                captured.history().size());
+        assertTrue(
+                "assistant figure passes through at aggregated",
+                captured.history().stream().anyMatch(m -> m.content().contains("7,000")));
+    }
+
+    @Test
+    public void buildDashboardSchemaOnlyDoesNotMutateCallerHistory() {
+        // Copy-not-mutate (#1553): the send-time strip operates on a copy; the caller's list is intact.
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(salesSchemaWithMeasure()), capturingDashboard(new AtomicReference<>()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.SCHEMA_ONLY));
+
+        List<NlAskMessage> history = historyWithAssistantFigure();
+        svc.buildDashboard(CUBE, "build me a dashboard", history, null);
+
+        assertEquals("caller history must not be mutated", 3, history.size());
+        assertEquals(NlAskMessage.Role.ASSISTANT, history.get(1).role());
     }
 
     @Test
