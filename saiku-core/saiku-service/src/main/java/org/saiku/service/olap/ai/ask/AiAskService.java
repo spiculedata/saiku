@@ -16,6 +16,7 @@ import org.saiku.service.olap.ThinQueryService;
 import org.saiku.service.olap.ai.AiCubeMetadataService;
 import org.saiku.service.olap.ai.AiCubeRef;
 import org.saiku.service.olap.ai.AiDataKind;
+import org.saiku.service.olap.ai.AiFilterSelection;
 import org.saiku.service.olap.ai.AiPolicyGuard;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiRequestJsonSchema;
@@ -174,6 +175,64 @@ public class AiAskService {
      */
     private boolean egressPermitsCellData() {
         return egressGuard != null && egressGuard.canSend(AiDataKind.AGGREGATED_RESULT_VALUES);
+    }
+
+    /**
+     * Send-time re-gate of the conversation {@code history} (saiku#1553). When the active egress
+     * posture forbids aggregated cell data ({@code !egressPermitsCellData()}), DROP every
+     * assistant-role turn and keep only the user's own words. Assistant turns replay the model's
+     * previously emitted figures ({@code emit_insight} / {@code emit_email_draft} markdown carrying
+     * cell-derived values); replaying them back to the LLM would egress that data even at
+     * schema-only — the killer case being a turn-1 {@code aggregated} insight the client re-sends at
+     * a turn-2 {@code schema-only} posture. History is client-supplied and untrusted every turn, so
+     * this send-time gate is the only enforceable control (mirrors the {@code cellsetDigest} strip).
+     *
+     * <p>Returns a NEW list — never mutates the caller-owned {@code history}. Fail-closed at the call
+     * site: this runs whenever egress isn't permitted, including the null/unwired-guard case.
+     */
+    private static List<NlAskMessage> dropAssistantTurns(List<NlAskMessage> history) {
+        if (history == null || history.isEmpty()) {
+            return List.of();
+        }
+        List<NlAskMessage> kept = new ArrayList<>(history.size());
+        for (NlAskMessage m : history) {
+            if (m != null && m.role() == NlAskMessage.Role.USER) {
+                kept.add(m);
+            }
+        }
+        return kept;
+    }
+
+    /**
+     * Send-time re-gate of the {@code currentQuery} snapshot (saiku#1553). When the active egress
+     * posture forbids aggregated cell data ({@code !egressPermitsCellData()}), redact a COPY of the
+     * query whose {@code filters[].members} lists (the MDX member unique names like
+     * {@code [Customers].[John Smith]} — a cell-derived selection) are cleared, while KEEPING the
+     * query structure: measures / rows / columns / cube / filter dimension+hierarchy+level refs. The
+     * model still sees what the query is shaped like without seeing which members were picked.
+     *
+     * <p>Copy-not-mutate (saiku#1553): the redaction is applied to a mapper round-trip copy so the
+     * caller-owned {@code currentQuery} object is never touched. Fail-closed: if the copy can't be
+     * made, returns {@code null} so the current-query context block is omitted entirely rather than
+     * risk leaking members.
+     */
+    private AiQueryRequest redactFilterMembers(AiQueryRequest currentQuery) {
+        if (currentQuery == null) {
+            return null;
+        }
+        AiQueryRequest copy;
+        try {
+            copy = mapper.readValue(mapper.writeValueAsString(currentQuery), AiQueryRequest.class);
+        } catch (JsonProcessingException e) {
+            log.debug("currentQuery member redaction copy failed; omitting current-query context", e);
+            return null;
+        }
+        if (copy.getFilters() != null) {
+            for (AiFilterSelection f : copy.getFilters()) {
+                f.setMembers(new ArrayList<>());
+            }
+        }
+        return copy;
     }
 
     /**
@@ -570,10 +629,17 @@ public class AiAskService {
         String effectiveDigest = cellsetDigest;
         if (hadCellsetOnScreen && !egressPermitsCellData()) effectiveDigest = null;
 
+        // #1553: send-time re-gate of currentQuery — same as askInternal. Redact a COPY (members
+        // cleared, structure kept) when egress forbids aggregated cell data; never mutate the
+        // caller's object; fail-closed on an unwired/denying guard.
+        AiQueryRequest effectiveQuery = currentQuery;
+        if (currentQuery != null && !egressPermitsCellData()) {
+            effectiveQuery = redactFilterMembers(currentQuery);
+        }
         String currentQueryJson = null;
-        if (currentQuery != null) {
+        if (effectiveQuery != null) {
             try {
-                currentQueryJson = mapper.writeValueAsString(currentQuery);
+                currentQueryJson = mapper.writeValueAsString(effectiveQuery);
             } catch (JsonProcessingException e) {
                 log.debug("chained ask: currentQuery serialise failed; omitting", e);
             }
@@ -585,7 +651,14 @@ public class AiAskService {
             if (f != null && !f.isBlank()) skillsFragment = f;
         }
         final NlAskRequest.ForceTool ft = forceTool == null ? NlAskRequest.ForceTool.AUTO : forceTool;
-        final List<NlAskMessage> hist = history == null ? List.of() : history;
+        // #1553: send-time re-gate of history — drop assistant turns (model-emitted, cell-derived)
+        // when egress forbids aggregated cell data, keeping the user's turns. New list, computed
+        // once here and reused on every loop turn; the caller's history is never mutated.
+        List<NlAskMessage> histLocal = history == null ? List.of() : history;
+        if (!egressPermitsCellData()) {
+            histLocal = dropAssistantTurns(histLocal);
+        }
+        final List<NlAskMessage> hist = histLocal;
 
         // --- the loop ---
         List<AskOutcome> steps = new ArrayList<>();
@@ -1022,13 +1095,21 @@ public class AiAskService {
             log.debug("Cellset digest withheld from LLM by egress policy; ask proceeds schema-only");
         }
 
+        // #1553: send-time re-gate of currentQuery. When egress forbids aggregated cell data, redact
+        // a COPY whose filter members are cleared (the picked MDX member unique names are
+        // cell-derived) while keeping the query structure. Copy-not-mutate — the caller's object is
+        // untouched. Fail-closed: an unwired/denying guard strips.
+        AiQueryRequest effectiveQuery = currentQuery;
+        if (currentQuery != null && !egressPermitsCellData()) {
+            effectiveQuery = redactFilterMembers(currentQuery);
+        }
         // Serialise the current query into JSON for the provider to embed in the prompt.
         // Null/blank when absent — providers omit the "Current query" context block entirely
         // rather than say "Current query: null", which would just bloat the prompt.
         String currentQueryJson = null;
-        if (currentQuery != null) {
+        if (effectiveQuery != null) {
             try {
-                currentQueryJson = mapper.writeValueAsString(currentQuery);
+                currentQueryJson = mapper.writeValueAsString(effectiveQuery);
             } catch (JsonProcessingException e) {
                 log.debug("Failed to serialise currentQuery for ask context; omitting", e);
             }
@@ -1059,12 +1140,21 @@ public class AiAskService {
         // rails that make the ask surface safe.
         String spaceSystemPrompt = space != null ? space.systemPrompt() : null;
 
+        // #1553: send-time re-gate of history. When egress forbids aggregated cell data, drop
+        // assistant-role turns (they replay model-emitted, cell-derived figures) and keep the user's
+        // own words. New list — the caller's history is never mutated. Fail-closed via the same
+        // guard as the digest / currentQuery strips.
+        List<NlAskMessage> effectiveHistory = history == null ? List.of() : history;
+        if (!egressPermitsCellData()) {
+            effectiveHistory = dropAssistantTurns(effectiveHistory);
+        }
+
         NlAskRequest req = new NlAskRequest(
                 ref,
                 effectiveQuestion,
                 schemaJson,
                 requestSchemaJson,
-                history == null ? List.of() : history,
+                effectiveHistory,
                 effectiveDigest,
                 forceTool == null ? NlAskRequest.ForceTool.AUTO : forceTool,
                 currentQueryJson,
