@@ -37,7 +37,7 @@
         <jersey.version>3.1.9</jersey.version>
         <maven.build.timestamp.format>yyyyMMdd-HHmm</maven.build.timestamp.format>
         <saiku-query.version>0.4-SNAPSHOT</saiku-query.version>
-        <jackson.version>2.19.4</jackson.version>
+        <jackson.version>2.21.5</jackson.version>
         <!-- bi.saiku.ossie:ossie-core — external Ossie/OSI parser library
              (spiculedata/ossie). Track its releases and bump here. -->
         <ossie.version>0.1.0</ossie.version>

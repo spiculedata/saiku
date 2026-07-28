@@ -38,13 +38,20 @@
         <batik.version>1.19</batik.version>
         <jersey.version>3.1.9</jersey.version>
         <saiku-query.version>0.4-SNAPSHOT</saiku-query.version>
-        <jackson.version>2.19.4</jackson.version>
+        <jackson.version>2.21.5</jackson.version>
+        <!-- jackson-annotations stopped shipping patch releases at 2.20; from
+             then on it versions at the minor boundary only (2.20, 2.21, 2.22)
+             — there is no jackson-annotations 2.21.5. jackson-databind 2.21.5
+             pulls jackson-annotations 2.21 transitively, so pin the annotations
+             artifact to that. Annotations carries no CVEs; the GHSA advisories
+             we are clearing are in jackson-core + jackson-databind. -->
+        <jackson.annotations.version>2.21</jackson.annotations.version>
         <arrow.version>18.2.0</arrow.version>
         <caffeine.version>3.2.4</caffeine.version>
         <!-- JSON Schema (draft 2020-12) validator for the AiQueryRequest
              body. Used by AiRequestSchemaValidator to enforce shape errors
              before the converter's domain-resolution layer runs. Apache 2.0,
-             ~200KB, no heavy transitives. Pairs with Jackson 2.19.x. -->
+             ~200KB, no heavy transitives. Pairs with Jackson 2.21.x. -->
         <jsonSchemaValidator.version>1.5.8</jsonSchemaValidator.version>
         <!-- Spring GraphQL 1.4.x is the current release line paired with Spring
              Framework 6.2.x. Provides the GraphQlSource / GraphQlHttpHandler
@@ -334,7 +341,7 @@
             <dependency>
                 <groupId>com.fasterxml.jackson.core</groupId>
                 <artifactId>jackson-annotations</artifactId>
-                <version>${jackson.version}</version>
+                <version>${jackson.annotations.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.saikuanalytics</groupId>
