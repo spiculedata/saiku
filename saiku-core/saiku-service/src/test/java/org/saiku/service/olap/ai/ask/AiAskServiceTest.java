@@ -1438,6 +1438,95 @@ public class AiAskServiceTest {
         assertNull(spec.tiles().get(2).chartType());
     }
 
+    /* ---- saiku#1553: the /ai/ask/dashboard seam re-gates client-supplied history too ---- */
+
+    /**
+     * Capturing provider that records the request and returns a minimal valid dashboard so the
+     * build completes. Mirrors the report-path capturing lambdas but for the dashboard tool.
+     */
+    private static NlAskProvider capturingDashboard(AtomicReference<NlAskRequest> seen) {
+        String payload = "{\"title\":\"D\",\"tiles\":[" + "{\"title\":\"Grid\",\"type\":\"table\",\"query\":"
+                + VALID_TILE_QUERY + "}]}";
+        return req -> {
+            seen.set(req);
+            return NlAskResponse.okDashboard(payload, "m", 0, 0);
+        };
+    }
+
+    @Test
+    public void buildDashboardSchemaOnlyDropsAssistantHistoryTurnsButKeepsUserTurns() {
+        // #1553: the dashboard endpoint takes client-supplied history just like the report path. Under
+        // schema-only egress the assistant turns (replaying cell-derived figures) must be dropped
+        // before the request crosses to the LLM; only the user's own words survive.
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), capturingDashboard(seen));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.SCHEMA_ONLY));
+
+        svc.buildDashboard(CUBE, "build me a dashboard", historyWithAssistantFigure(), null);
+
+        NlAskRequest captured = seen.get();
+        assertNotNull(captured);
+        assertEquals(
+                "only the two user turns survive schema-only egress on the dashboard seam",
+                2,
+                captured.history().size());
+        for (NlAskMessage m : captured.history()) {
+            assertEquals(NlAskMessage.Role.USER, m.role());
+        }
+        assertFalse(captured.history().stream().anyMatch(m -> m.content().contains("7,000")));
+    }
+
+    @Test
+    public void buildDashboardEgressUnwiredFailsClosedAndDropsAssistantHistory() {
+        // No setEgressGuard() → null guard → fail-closed: assistant turns dropped on the dashboard seam.
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), capturingDashboard(seen));
+
+        svc.buildDashboard(CUBE, "build me a dashboard", historyWithAssistantFigure(), null);
+
+        NlAskRequest captured = seen.get();
+        assertNotNull(captured);
+        assertEquals(
+                "unwired guard fails closed on the dashboard seam",
+                2,
+                captured.history().size());
+        assertFalse(captured.history().stream().anyMatch(m -> m.content().contains("7,000")));
+    }
+
+    @Test
+    public void buildDashboardAggregatedPassesHistoryThroughUntouched() {
+        // At aggregated egress the assistant turn (and its figure) passes through intact.
+        AtomicReference<NlAskRequest> seen = new AtomicReference<>();
+        AiAskService svc = new AiAskService(fixedSchemaService(salesSchemaWithMeasure()), capturingDashboard(seen));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+
+        svc.buildDashboard(CUBE, "build me a dashboard", historyWithAssistantFigure(), null);
+
+        NlAskRequest captured = seen.get();
+        assertNotNull(captured);
+        assertEquals(
+                "aggregated egress keeps all turns including assistant on the dashboard seam",
+                3,
+                captured.history().size());
+        assertTrue(
+                "assistant figure passes through at aggregated",
+                captured.history().stream().anyMatch(m -> m.content().contains("7,000")));
+    }
+
+    @Test
+    public void buildDashboardSchemaOnlyDoesNotMutateCallerHistory() {
+        // Copy-not-mutate (#1553): the send-time strip operates on a copy; the caller's list is intact.
+        AiAskService svc = new AiAskService(
+                fixedSchemaService(salesSchemaWithMeasure()), capturingDashboard(new AtomicReference<>()));
+        svc.setEgressGuard(new AiPolicyGuard(AiPolicy.SCHEMA_ONLY));
+
+        List<NlAskMessage> history = historyWithAssistantFigure();
+        svc.buildDashboard(CUBE, "build me a dashboard", history, null);
+
+        assertEquals("caller history must not be mutated", 3, history.size());
+        assertEquals(NlAskMessage.Role.ASSISTANT, history.get(1).role());
+    }
+
     @Test
     public void buildDashboardTruncatesToTileCap() {
         // 20 tiles emitted — must truncate to the default cap (6), never error.

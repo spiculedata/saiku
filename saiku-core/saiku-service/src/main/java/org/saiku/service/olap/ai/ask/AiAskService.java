@@ -867,8 +867,10 @@ public class AiAskService {
         String requestSchemaJson;
         try {
             // Always the PII-filtered agent view (#3) — schema egress is permitted, but must stay
-            // filtered. This path sends NO cell data, so it isn't gated on the aggregated egress
-            // posture the report path uses.
+            // filtered. The dashboard is authored from the schema alone (no cellset digest, no
+            // currentQuery), but the client-supplied history CAN carry prior assistant turns whose
+            // emit_insight / emit_email_draft markdown replays cell-derived figures — so that history
+            // is send-time re-gated below (#1553), same as the report path.
             schemaJson = mapper.writeValueAsString(schema.toAgentView());
             requestSchemaJson = mapper.writeValueAsString(AiRequestJsonSchema.forRequest());
         } catch (JsonProcessingException e) {
@@ -890,12 +892,22 @@ public class AiAskService {
         }
         String spaceSystemPrompt = space != null ? space.systemPrompt() : null;
 
+        // #1553: send-time re-gate of history. When egress forbids aggregated cell data, drop
+        // assistant-role turns (they replay model-emitted, cell-derived figures) and keep the user's
+        // own words. New list — the caller's history is never mutated. Fail-closed via the same
+        // guard the report path uses. The dashboard carries no cellset digest / currentQuery, so
+        // history is the only cell-derived egress vector on this seam.
+        List<NlAskMessage> effectiveHistory = history == null ? List.of() : history;
+        if (!egressPermitsCellData()) {
+            effectiveHistory = dropAssistantTurns(effectiveHistory);
+        }
+
         NlAskRequest req = new NlAskRequest(
                 ref,
                 effectiveQuestion,
                 schemaJson,
                 requestSchemaJson,
-                history == null ? List.of() : history,
+                effectiveHistory,
                 null, // no cellset digest — the dashboard is authored from the schema alone
                 NlAskRequest.ForceTool.DASHBOARD,
                 null,
