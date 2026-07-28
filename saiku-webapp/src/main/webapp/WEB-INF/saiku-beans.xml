@@ -359,7 +359,12 @@
     </bean>
     <!-- R5: Ossie natural-language ask. Reads saiku.ai.ask.provider + API key from env/props;
          disabled by default (health returns configured=false; /ask returns 503). -->
-    <bean id="ossieAiAskServiceBean" class="org.saiku.service.ossie.ai.OssieAiAskService"/>
+    <bean id="ossieAiAskServiceBean" class="org.saiku.service.ossie.ai.OssieAiAskService">
+        <!-- saiku#1554: dedicated LLM-egress gate — strips the schema's raw column sample values
+             from the prompt when SAIKU_AI_LLM_EGRESS / ai.llm.egress doesn't permit sample-value
+             egress. Mirrors aiAskServiceBean; fail-closed when unwired. -->
+        <property name="egressGuard" ref="aiLlmEgressGuard"/>
+    </bean>
 
     <!-- ====================================================================
          GraphQL API (POST /saiku/api/graphql + GET /schema.graphql).
@@ -816,6 +821,10 @@
         <constructor-arg ref="llmProvider"/>
         <constructor-arg ref="piiFilter"/>
         <constructor-arg value="2"/>
+        <!-- saiku#1554: LLM-egress gate layered on top of the PiiFilter (defense-in-depth). Strips
+             ALL column sample values from the enrichment prompt when SAIKU_AI_LLM_EGRESS /
+             ai.llm.egress doesn't permit sample-value egress; fail-closed when unwired. -->
+        <property name="egressGuard" ref="aiLlmEgressGuard"/>
     </bean>
 
     <bean id="schemaGenExecutor"

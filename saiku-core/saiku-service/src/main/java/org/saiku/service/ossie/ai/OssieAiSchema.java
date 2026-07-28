@@ -172,6 +172,85 @@ public class OssieAiSchema {
         this.examples = v == null ? new LinkedHashMap<>() : v;
     }
 
+    /**
+     * saiku#1554. Project this schema into an agent-facing view fit to cross the trust boundary to a
+     * third-party LLM vendor, mirroring {@code AiSchema.toAgentView()} on the MDX side.
+     *
+     * <p>PII fields are already dropped upstream by {@code OssieAiSchemaProjector} (saiku#902 parity —
+     * a field with {@code pii=true} never enters this DTO), so the only value-bearing datum left to
+     * project here is {@link Field#getSampleValues()} — the raw distinct column values pulled from the
+     * warehouse. When {@code includeSampleValues} is false, every field's sample values are stripped
+     * so only schema <em>metadata</em> (dataset / field / metric names, types, descriptions,
+     * relationships, aggregation kinds) reaches the vendor; all other fields are preserved.
+     *
+     * <p>Returns a projection-correct copy — the caller's original is untouched. This matters because
+     * the projector caches its sample-value lists and shares those list references across requests, so
+     * the strip MUST copy rather than mutate in place. When {@code includeSampleValues} is true there
+     * is nothing to strip and {@code this} is returned unchanged.
+     */
+    public OssieAiSchema toAgentView(boolean includeSampleValues) {
+        if (includeSampleValues) {
+            return this;
+        }
+        OssieAiSchema view = new OssieAiSchema();
+        view.modelId = this.modelId;
+        view.connectionName = this.connectionName;
+        view.modelName = this.modelName;
+        view.description = this.description;
+        view.factDataset = this.factDataset;
+        // Metrics / relationships / aliases / examples / requestSchema carry no raw column sample
+        // values, so they are reused by reference — nothing to redact there.
+        view.metrics = this.metrics;
+        view.relationships = this.relationships;
+        view.fieldAliases = this.fieldAliases;
+        view.metricAliases = this.metricAliases;
+        view.datasetAliases = this.datasetAliases;
+        view.requestSchema = this.requestSchema;
+        view.examples = this.examples;
+        Map<String, Dataset> redacted = new LinkedHashMap<>();
+        for (Map.Entry<String, Dataset> e : this.datasets.entrySet()) {
+            redacted.put(e.getKey(), redactDatasetSamples(e.getValue()));
+        }
+        view.datasets = redacted;
+        return view;
+    }
+
+    /** Shallow copy of a dataset with every field's sample values stripped. */
+    private static Dataset redactDatasetSamples(Dataset d) {
+        Dataset copy = new Dataset();
+        copy.setName(d.getName());
+        copy.setSource(d.getSource());
+        copy.setDescription(d.getDescription());
+        copy.setPrimaryKey(d.getPrimaryKey());
+        copy.setCustomExtensions(d.getCustomExtensions());
+        Map<String, Field> fields = new LinkedHashMap<>();
+        for (Map.Entry<String, Field> e : d.getFields().entrySet()) {
+            fields.put(e.getKey(), redactFieldSamples(e.getValue()));
+        }
+        copy.setFields(fields);
+        return copy;
+    }
+
+    /**
+     * Shallow copy of a field with {@link Field#getSampleValues()} emptied. Keeps the metadata
+     * (name, label, type, description, unit, currency, cardinality, estimatedDistinct, extensions) —
+     * only the raw sample VALUES are withheld.
+     */
+    private static Field redactFieldSamples(Field f) {
+        Field copy = new Field();
+        copy.setName(f.getName());
+        copy.setLabel(f.getLabel());
+        copy.setType(f.getType());
+        copy.setDescription(f.getDescription());
+        copy.setUnit(f.getUnit());
+        copy.setCurrency(f.getCurrency());
+        copy.setCardinality(f.getCardinality());
+        copy.setEstimatedDistinct(f.getEstimatedDistinct());
+        copy.setCustomExtensions(f.getCustomExtensions());
+        copy.setSampleValues(new ArrayList<>()); // stripped — raw warehouse values withheld from the vendor
+        return copy;
+    }
+
     // ---------------- Nested types ----------------
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

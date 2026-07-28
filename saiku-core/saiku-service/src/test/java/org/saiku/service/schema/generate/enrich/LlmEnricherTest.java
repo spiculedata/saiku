@@ -11,6 +11,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.Test;
+import org.saiku.service.olap.ai.AiPolicy;
+import org.saiku.service.olap.ai.AiPolicyGuard;
 import org.saiku.service.schema.generate.draft.DraftCube;
 import org.saiku.service.schema.generate.draft.DraftDimension;
 import org.saiku.service.schema.generate.draft.DraftHierarchy;
@@ -213,6 +215,61 @@ public class LlmEnricherTest {
         SuggestionSet set = enr.enrich(twoCubeSchema(), samples());
         assertFalse(set.degraded());
         assertTrue(p.calls >= 2);
+    }
+
+    /* ---- saiku#1554: LLM-egress gate layered on top of the PiiFilter ---- */
+
+    @Test
+    public void egressUnwiredFailsClosedAndStripsAllColumnSamples() {
+        // No setEgressGuard() → guard is null → fail-closed: NO column samples reach the provider,
+        // even the non-PII ones. Only the draft schema metadata egresses.
+        RecordingProvider rec = new RecordingProvider();
+        LlmEnricher enr = new LlmEnricher(rec, new PiiFilter(), 2);
+        enr.enrich(twoCubeSchema(), samples());
+
+        assertFalse("provider should still be called", rec.seen.isEmpty());
+        for (EnrichRequest req : rec.seen) {
+            assertTrue(
+                    "unwired egress guard must fail closed and strip ALL samples",
+                    req.columnSamples().isEmpty());
+        }
+    }
+
+    @Test
+    public void egressSchemaOnlyStripsAllColumnSamples() {
+        // schema-only egress posture → raw column sample VALUES are withheld (conservative tier).
+        RecordingProvider rec = new RecordingProvider();
+        LlmEnricher enr = new LlmEnricher(rec, new PiiFilter(), 2);
+        enr.setEgressGuard(new AiPolicyGuard(AiPolicy.SCHEMA_ONLY));
+        enr.enrich(twoCubeSchema(), samples());
+
+        assertFalse(rec.seen.isEmpty());
+        for (EnrichRequest req : rec.seen) {
+            assertTrue(
+                    "schema-only egress must strip column samples",
+                    req.columnSamples().isEmpty());
+        }
+    }
+
+    @Test
+    public void egressAggregatedPassesNonPiiColumnSamplesThrough() {
+        // aggregated egress posture → non-PII samples flow (PiiFilter still strips ssn/email).
+        RecordingProvider rec = new RecordingProvider();
+        LlmEnricher enr = new LlmEnricher(rec, new PiiFilter(), 2);
+        enr.setEgressGuard(new AiPolicyGuard(AiPolicy.AGGREGATED));
+        enr.enrich(twoCubeSchema(), samples());
+
+        boolean sawNonPiiSample = false;
+        for (EnrichRequest req : rec.seen) {
+            // PiiFilter still applies underneath the egress gate — the deny-listed columns never leak.
+            assertFalse("ssn must still be filtered", req.columnSamples().containsKey("customers.ssn"));
+            assertFalse("email must still be filtered", req.columnSamples().containsKey("customers.email_address"));
+            if (req.columnSamples().containsKey("customers.customer_name")
+                    || req.columnSamples().containsKey("products.product_name")) {
+                sawNonPiiSample = true;
+            }
+        }
+        assertTrue("aggregated egress must pass non-PII samples through", sawNonPiiSample);
     }
 
     @Test

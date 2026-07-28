@@ -14,6 +14,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import org.saiku.service.olap.ai.AiDataKind;
+import org.saiku.service.olap.ai.AiPolicyGuard;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -100,6 +102,16 @@ public class OssieAiAskService {
 
     private final Config config;
 
+    /**
+     * saiku#1554. Dedicated LLM-egress guard, mirroring {@code AiAskService.egressGuard} on the MDX
+     * side. Answers "may raw column sample VALUES leave the box to a third-party LLM vendor?" —
+     * resolved from {@code SAIKU_AI_LLM_EGRESS} / {@code ai.llm.egress}, SEPARATE from the
+     * data-return {@code AiPolicyGuard} on {@code SAIKU_AI_POLICY}. Injected via setter so existing
+     * construction stays unchanged. FAIL-CLOSED: a null (unwired) guard denies egress, so an
+     * unconfigured instance strips the schema's sample values rather than leaking them.
+     */
+    private AiPolicyGuard egressGuard;
+
     public OssieAiAskService() {
         this(resolveFromEnvAndProps());
     }
@@ -111,6 +123,41 @@ public class OssieAiAskService {
         } else {
             log.info("Ossie AI ask DISABLED (set saiku.ai.ask.provider + API key to enable)");
         }
+    }
+
+    /** Spring setter — wired to {@code aiLlmEgressGuard} in {@code saiku-beans.xml}. */
+    public void setEgressGuard(AiPolicyGuard egressGuard) {
+        this.egressGuard = egressGuard;
+    }
+
+    /** The dedicated LLM-egress guard, or {@code null} if not wired (treated as egress-denied). */
+    public AiPolicyGuard egressGuard() {
+        return egressGuard;
+    }
+
+    /**
+     * Whether the schema's raw column sample VALUES may egress to the LLM vendor under the active
+     * egress posture. FAIL-CLOSED: a null (unwired) guard, or a guard whose posture doesn't permit
+     * the classified tier, returns {@code false} — sample values are stripped and only schema
+     * metadata reaches the vendor.
+     *
+     * <p><b>Classification ({@code AiDataKind}) — flagged for SEC review.</b> The datum here is
+     * {@code OssieAiSchema.Field.sampleValues}: raw distinct column values read straight from the
+     * warehouse. A strict parity argument would classify these as {@link AiDataKind#SAMPLE_MEMBERS}
+     * (floor tier), since the projector already drops {@code pii=true} fields (saiku#902 parity) and
+     * the MDX side sends its PII-filtered sample members at every posture. We deliberately chose the
+     * MORE CONSERVATIVE tier {@link AiDataKind#AGGREGATED_RESULT_VALUES} instead, because: (1) these
+     * are raw warehouse VALUES, not curated captions, and the Ossie layer carries only a coarse
+     * field-level {@code pii} flag — it lacks the per-value PII guarantee the MDX
+     * {@code SAMPLE_MEMBERS} tier documents ("already PII-filtered by saiku#902"); (2) at the higher
+     * tier the safe default posture ({@code schema-only}) strips the raw values and sends
+     * metadata-only, while an operator who trusts the vendor can opt in with
+     * {@code SAIKU_AI_LLM_EGRESS=aggregated} — giving a real, testable gate rather than a no-op at
+     * every wired posture. SEC: downgrade to {@code SAMPLE_MEMBERS} (one-line change) if strict
+     * MDX-schema parity is preferred over this conservative posture.
+     */
+    private boolean egressPermitsSampleValues() {
+        return egressGuard != null && egressGuard.canSend(AiDataKind.AGGREGATED_RESULT_VALUES);
     }
 
     public boolean isConfigured() {
@@ -148,20 +195,12 @@ public class OssieAiAskService {
         if (!config.isConfigured()) {
             return new AskResult(null, null, "provider not configured", null);
         }
-        String schemaJson;
+        String userMessage;
         try {
-            schemaJson = MAPPER.writeValueAsString(schema);
+            userMessage = buildUserMessage(question, schema, connectionName, modelName);
         } catch (Exception e) {
             return new AskResult(null, null, "failed to serialise schema: " + e.getMessage(), null);
         }
-
-        String userMessage = "Connection: " + connectionName + "\nModel: " + modelName
-                + "\n\nSchema (JSON):\n```json\n" + schemaJson
-                + "\n```\n\nQuestion: " + question
-                + "\n\nRespond with a single JSON object (no prose). The object must be a valid "
-                + "OssieAiQueryRequest with fields: connection, model, rows[], columns[], values[], "
-                + "filters[], sorts[], limit. Set connection='" + connectionName + "' and model='"
-                + modelName + "'.";
 
         try {
             String rawJson;
@@ -188,6 +227,30 @@ public class OssieAiAskService {
             log.warn("Ossie ask call failed: {}", e.getMessage());
             return new AskResult(null, null, "provider call failed: " + e.getMessage(), null);
         }
+    }
+
+    /**
+     * Build the user message sent to the LLM, applying the saiku#1554 egress projection to the
+     * schema first. Package-visible so the egress strip can be unit-tested without a live provider /
+     * network round-trip. When the egress guard doesn't permit sample-value egress the schema is
+     * projected to metadata-only ({@link OssieAiSchema#toAgentView(boolean)}) before serialisation,
+     * so raw column values never reach the vendor.
+     */
+    String buildUserMessage(String question, OssieAiSchema schema, String connectionName, String modelName)
+            throws com.fasterxml.jackson.core.JsonProcessingException {
+        boolean includeSamples = egressPermitsSampleValues();
+        if (!includeSamples) {
+            // No data in the log — just the fact that sample values were withheld by policy.
+            log.debug("Ossie schema sample values withheld from LLM by egress policy; ask proceeds metadata-only");
+        }
+        String schemaJson = MAPPER.writeValueAsString(schema.toAgentView(includeSamples));
+        return "Connection: " + connectionName + "\nModel: " + modelName
+                + "\n\nSchema (JSON):\n```json\n" + schemaJson
+                + "\n```\n\nQuestion: " + question
+                + "\n\nRespond with a single JSON object (no prose). The object must be a valid "
+                + "OssieAiQueryRequest with fields: connection, model, rows[], columns[], values[], "
+                + "filters[], sorts[], limit. Set connection='" + connectionName + "' and model='"
+                + modelName + "'.";
     }
 
     /**
