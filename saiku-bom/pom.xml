@@ -71,9 +71,9 @@
         <graphqlJavaExtendedScalars.version>24.0</graphqlJavaExtendedScalars.version>
         <!-- OWASP Java HTML Sanitizer: allowlist-sanitizes client-supplied
              summaryHtml before it's assembled into the outbound email body
-             (EmailMessageAssembler). 20240325.1 is the latest published
+             (EmailMessageAssembler). 20260101.1 is the latest published
              release on Maven Central as of this pin. -->
-        <owasp.html.sanitizer.version>20240325.1</owasp.html.sanitizer.version>
+        <owasp.html.sanitizer.version>20260101.1</owasp.html.sanitizer.version>
     </properties>
 
     <dependencyManagement>
@@ -94,7 +94,7 @@
             <dependency>
                 <groupId>org.postgresql</groupId>
                 <artifactId>postgresql</artifactId>
-                <version>42.7.11</version>
+                <version>42.7.12</version>
             </dependency>
             <!-- quack-jdbc: JDBC driver for DuckDB's native Quack client-server
                  protocol (jdbc:quack://). Lets Ossie warehouses target a remote
