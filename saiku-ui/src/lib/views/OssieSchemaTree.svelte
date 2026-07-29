@@ -3,7 +3,8 @@
   import { ossieQuery } from "$lib/stores/ossieQuery.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
-  import { Calendar, Lock, Sigma, Table2 } from "lucide-svelte";
+  import { Tooltip } from "$lib/components/ui";
+  import { Calendar, Info, Lock, Sigma, Table2 } from "lucide-svelte";
 
   interface Props {
     username: string;
@@ -56,7 +57,17 @@
     <p class="callout callout--danger">{ossieQuery.error}</p>
   {:else if ossieQuery.model}
     <section class="ossie-tree__section">
-      <header class="ossie-tree__label">Fact dataset</header>
+      <header class="ossie-tree__label">
+        Fact dataset
+        <Tooltip
+          side="right"
+          text="The anchor table for this query. Metrics aggregate at its grain, and fields you add from other datasets are auto-joined onto it via the model's relationships. Pick the central fact table your metrics are built on — dimensions join out from it."
+        >
+          <button type="button" class="ossie-tree__info" aria-label="What is the fact dataset?">
+            <Info size={13} aria-hidden="true" />
+          </button>
+        </Tooltip>
+      </header>
       <select
         class="ossie-tree__select"
         value={ossieQuery.current?.factDataset ?? ""}
@@ -155,12 +166,30 @@
     gap: var(--space-1);
   }
   .ossie-tree__label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
     font-size: var(--fs-xs);
     font-weight: var(--weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--fg-muted);
     padding-bottom: var(--space-1);
+  }
+  .ossie-tree__info {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--fg-subtle);
+    cursor: help;
+    line-height: 0;
+  }
+  .ossie-tree__info:hover,
+  .ossie-tree__info:focus-visible {
+    color: var(--fg);
   }
   .ossie-tree__select {
     padding: 6px 8px;
