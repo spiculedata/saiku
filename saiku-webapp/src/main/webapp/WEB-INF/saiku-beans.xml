@@ -591,6 +591,18 @@
         <property name="commentService" ref="commentService"/>
     </bean>
 
+    <!-- App Builder CRUD (org.saiku.web.rest.resources.apps.AppResource
+         @ /saiku/api/apps). Direct clone of the dashboards resource: apps
+         persist as opaque .saikuapp JSON blobs under the existing repo via the
+         same JCR file primitives, inheriting the permission model + path
+         conventions. The document is opaque — the UI owns the schema; the
+         backend never interprets it. -->
+    <bean id="appResource"
+          class="org.saiku.web.rest.resources.apps.AppResource">
+        <property name="datasourceService" ref="datasourceServiceBean"/>
+        <property name="sessionService" ref="sessionService"/>
+    </bean>
+
     <!-- #942 follow-up: minimal authenticated user directory for @-mention
          autocomplete (usernames only; admin user-mgmt stays on /saiku/admin). -->
     <bean id="usersResource" class="org.saiku.web.rest.resources.UsersResource">
