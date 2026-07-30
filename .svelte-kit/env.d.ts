@@ -1,0 +1,1 @@
+// See https://svelte.dev/docs/kit/environment-variables for more information

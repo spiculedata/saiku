@@ -3,6 +3,20 @@
 All notable changes to Saiku are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 4.6.4 — 2026-07-30
+
+Security patch release.
+
+### Security
+- **Inline-tile embed RLS bypass** — an embed iframe guest could read the row-level-security
+  scope from their own token's `saiku.filters` claim and send a crafted client filter override
+  that **widened** (added hidden members) or **stripped** the forced RLS filter on an inline
+  dashboard tile. The inline path applied the forced filters first and then let client overrides
+  remove/replace them. Forced filters are now applied **last and authoritatively**: on every
+  forced axis the effective member set is always a subset of the forced set — a client can only
+  narrow within the forced scope, never widen, strip, or change the operator. The saved/reference
+  tile path was not affected (it uses the fail-closed `forcedFilters` channel).
+
 ## 4.6.3 — 2026-07-20
 
 Patch release.
