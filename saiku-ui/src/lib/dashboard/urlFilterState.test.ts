@@ -1,6 +1,13 @@
 import { describe, expect, test } from "vitest";
 
-import { decodeFilterParams, encodeActiveFilters } from "./urlFilterState";
+import {
+  decodeAppFilterState,
+  decodeFilterParams,
+  encodeActiveFilters,
+  encodeAppFilterState,
+  pageFilterParam,
+} from "./urlFilterState";
+import type { DashboardFilter } from "$lib/api/dashboards";
 import type { ActiveFilter } from "$lib/stores/activeFilters.svelte";
 
 function active(
@@ -101,5 +108,85 @@ describe("decodeFilterParams", () => {
       "[Country].[Country].[USA]",
       "[Country].[Country].[Canada]",
     ]);
+  });
+});
+
+/* -------------------------------------------------------------------------
+ * App Builder per-page namespacing (Task 7). The active page rides on `p`;
+ * each page's filters live under a distinct `f~<pageId>` param so switching
+ * pages preserves every page's filters and the whole thing round-trips.
+ * ------------------------------------------------------------------------- */
+
+function filter(dim: string, hier: string, level: string, members: string[]): DashboardFilter {
+  return { dimension: dim, hierarchy: hier, level, members };
+}
+
+describe("pageFilterParam", () => {
+  test("namespaces the filter param by page id, distinct from bare `f`", () => {
+    expect(pageFilterParam("page-1")).toBe("f~page-1");
+    expect(pageFilterParam("page-1")).not.toBe("f");
+  });
+});
+
+describe("encodeAppFilterState", () => {
+  test("returns empty string with no active page and no filters", () => {
+    expect(encodeAppFilterState(null, {})).toBe("");
+  });
+
+  test("encodes the active page under `p`", () => {
+    const out = encodeAppFilterState("overview", {});
+    const params = new URL(`https://x${out}`).searchParams;
+    expect(params.get("p")).toBe("overview");
+  });
+
+  test("namespaces each page's filters under `f~<pageId>`", () => {
+    const out = encodeAppFilterState("sales", {
+      sales: [filter("Time", "Time", "Quarter", ["[Time].[Time].[1997].[Q2]"])],
+      ops: [filter("Store", "Store", "Country", ["[Store].[Store].[USA]"])],
+    });
+    const params = new URL(`https://x${out}`).searchParams;
+    expect(params.get("p")).toBe("sales");
+    expect(params.getAll("f~sales")).toEqual(["Time/Time/Quarter=[Time].[Time].[1997].[Q2]"]);
+    expect(params.getAll("f~ops")).toEqual(["Store/Store/Country=[Store].[Store].[USA]"]);
+    // No collision with the single-dashboard `f` param.
+    expect(params.getAll("f")).toEqual([]);
+  });
+
+  test("drops a page whose filters carry no members", () => {
+    const out = encodeAppFilterState("a", { a: [filter("Time", "Time", "Year", [])] });
+    const params = new URL(`https://x${out}`).searchParams;
+    expect(params.get("p")).toBe("a");
+    expect(params.getAll("f~a")).toEqual([]);
+  });
+});
+
+describe("decodeAppFilterState", () => {
+  test("round-trips encode → decode, preserving per-page isolation", () => {
+    const filtersByPage = {
+      sales: [
+        filter("Time", "Time", "Quarter", ["[Time].[Time].[1997].[Q2]"]),
+        filter("Store", "Store", "Country", ["[Store].[Store].[USA]", "[Store].[Store].[Canada]"]),
+      ],
+      ops: [filter("Product", "Product", "Family", ["[Product].[Product].[Drink]"])],
+    };
+    const encoded = encodeAppFilterState("sales", filtersByPage);
+    const decoded = decodeAppFilterState(new URL(`https://x${encoded}`).searchParams);
+    expect(decoded.activePageId).toBe("sales");
+    expect(decoded.filtersByPage).toEqual(filtersByPage);
+  });
+
+  test("null active page when `p` is absent", () => {
+    const decoded = decodeAppFilterState(new URLSearchParams());
+    expect(decoded.activePageId).toBeNull();
+    expect(decoded.filtersByPage).toEqual({});
+  });
+
+  test("ignores the bare `f` param (single-dashboard scheme)", () => {
+    const params = new URLSearchParams();
+    params.set("p", "home");
+    params.append("f", "Time/Time/Quarter=[Time].[Time].[1997].[Q2]");
+    const decoded = decodeAppFilterState(params);
+    expect(decoded.activePageId).toBe("home");
+    expect(decoded.filtersByPage).toEqual({});
   });
 });

@@ -1,9 +1,10 @@
 <script lang="ts">
   /*
-   * Filter tile for the embed dashboard bundle. Renders a dropdown / multi-select
-   * populated from GET /embed/dashboard/{path}/tile/{id}/members and emits a
-   * selection object the surrounding EmbedDashboard picks up to drive dependent
-   * chart / kpi tiles.
+   * Filter tile for the embed bundle. Renders a dropdown / multi-select
+   * populated through an injected `fetchMembers` callback (which the parent grid
+   * wires to the token-scoped dashboard OR app members endpoint) and emits a
+   * selection object the surrounding grid picks up to drive dependent chart /
+   * kpi tiles.
    *
    * Widget shapes (from tile.widget):
    *   "single-select" — one member picked at a time (undefined = clear).
@@ -11,18 +12,17 @@
    *
    * Empty selection = clear the filter (server-side merge drops the slicer).
    */
-  import { fetchTileMembers, EmbedFetchError, type EmbedFilterOverride, type EmbedMember } from "./api";
+  import { EmbedFetchError, type EmbedFilterOverride, type EmbedMember } from "./api";
   import type { EmbedDashboardTile } from "./types";
 
   interface Props {
-    server: string;
-    token: string;
-    dashboardPath: string;
     tile: EmbedDashboardTile;
+    /** Token-scoped member lookup for this tile's pinned axis. */
+    fetchMembers: (q?: string, limit?: number) => Promise<EmbedMember[]>;
     onChange: (override: EmbedFilterOverride | null) => void;
   }
 
-  let { server, token, dashboardPath, tile, onChange }: Props = $props();
+  let { tile, fetchMembers, onChange }: Props = $props();
 
   let members = $state<EmbedMember[] | null>(null);
   let loadError = $state<string | null>(null);
@@ -30,16 +30,14 @@
   let widget = $derived((tile.widget || "multi-select").toLowerCase());
 
   $effect(() => {
-    const s = server.trim();
-    const p = dashboardPath.trim();
-    if (!p || !tile.target) {
+    if (!tile.target) {
       members = null;
       return;
     }
     let cancelled = false;
     members = null;
     loadError = null;
-    fetchTileMembers(s, p, tile.id, token || undefined)
+    fetchMembers()
       .then((list) => {
         if (cancelled) return;
         members = list;

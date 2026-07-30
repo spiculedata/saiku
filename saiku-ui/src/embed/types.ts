@@ -139,3 +139,38 @@ export interface EmbedFilterTarget {
   hierarchy?: string;
   level: string;
 }
+
+/* ---------------------------- app shapes --------------------------- */
+
+/**
+ * A {@code .saikuapp} document as returned by GET /saiku/api/embed/app/{path}
+ * (App Builder — saiku#1441). A token pins ONE app; the whole document — nav +
+ * every page + every tile — rides that single grant, so the embed renders it
+ * read-only as one unit. Only the fields the read-only renderer needs are typed;
+ * anything else round-trips untouched (the launcher serves the doc verbatim).
+ */
+export interface EmbedAppDoc {
+  id: string;
+  name: string;
+  version: number;
+  logo?: string | null;
+  nav?: { position?: "rail" | "top" };
+  theme?: { mode?: "light" | "dark" | "auto" };
+  pages: EmbedAppPage[];
+}
+
+/**
+ * One page in an embedded app. {@code grid} is the SAME layout shape a dashboard
+ * uses — {cols, tiles} — so each page renders through the identical tile
+ * dispatch, and each page's tiles issue the SAME per-tile embed query the
+ * dashboard embed does (see EmbedGrid + api.fetchAppTile).
+ */
+export interface EmbedAppPage {
+  id: string;
+  title: string;
+  icon?: string;
+  grid: {
+    cols?: number;
+    tiles?: EmbedDashboardTile[];
+  };
+}

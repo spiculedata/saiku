@@ -144,6 +144,7 @@
 	         /embed/** so the more specific rule wins. -->
 	    <security:intercept-url pattern="/rest/saiku/api/embed/query/**" access="hasRole('EMBED_GUEST') or isFullyAuthenticated()" />
 	    <security:intercept-url pattern="/rest/saiku/api/embed/dashboard/**" access="hasRole('EMBED_GUEST') or isFullyAuthenticated()" />
+	    <security:intercept-url pattern="/rest/saiku/api/embed/app/**" access="hasRole('EMBED_GUEST') or isFullyAuthenticated()" />
 	    <security:intercept-url pattern="/rest/saiku/api/embed/**" access="isFullyAuthenticated()" />
       <!-- saiku#1165 audit-3: route-level admin gate (defense in depth). The
            admin resources already carry @RolesAllowed("ROLE_ADMIN"), but this

@@ -4,6 +4,8 @@
  */
 package org.saiku.web.embed;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -69,6 +71,11 @@ public class EmbedPiiInspector {
 
     private static final Logger log = LoggerFactory.getLogger(EmbedPiiInspector.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    // .saikuapp tiles carry rich UI-owned config the back-end never interprets;
+    // bind them leniently so a real, fully-authored app parses for the PII walk
+    // instead of throwing (which would only over-flag via the fail-closed path).
+    private static final ObjectMapper LENIENT =
+            new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private final DatasourceService datasourceService;
     private final AiCubeMetadataService cubeMetadataService;
@@ -100,7 +107,7 @@ public class EmbedPiiInspector {
     }
 
     /**
-     * @param resourceKind {@code "query"} or {@code "dashboard"}
+     * @param resourceKind {@code "query"}, {@code "dashboard"}, or {@code "app"}
      * @param resourcePath repository path of the resource
      * @param ownerUser owner-scoped read of the resource (the embed flow
      *     runs reads under the grantor / owner identity, so the inspector
@@ -138,6 +145,8 @@ public class EmbedPiiInspector {
                 return inspectQuery(raw, resourcePath);
             } else if ("dashboard".equals(resourceKind)) {
                 return inspectDashboard(raw, resourcePath, ownerUser, ownerRoles);
+            } else if ("app".equals(resourceKind)) {
+                return inspectApp(raw, resourcePath, ownerUser, ownerRoles);
             } else {
                 // Unknown kind — fail-closed.
                 log.warn("EmbedPiiInspector: unknown resourceKind {}, failing closed", resourceKind);
@@ -210,6 +219,52 @@ public class EmbedPiiInspector {
         if (dash.layout == null || dash.layout.tiles == null) {
             return new Result(false, List.of(), false);
         }
+        return inspectTiles(dash.layout.tiles, ownerUser, ownerRoles);
+    }
+
+    /**
+     * saiku#1441 — App Builder ({@code .saikuapp}). An app is an ordered set of pages, each
+     * carrying an inline dashboard-layout grid; a token pins the whole app as one unit. The
+     * PII posture is therefore the union of every page's tiles: we flatten all pages'
+     * {@code grid.tiles} and run the exact same tile walk the dashboard path uses, so an app
+     * embed inherits identical mint-time PII gating (FORCE_ON / public-grant refusal).
+     *
+     * <p>The doc is opaque (the UI owns its schema) so we walk the JSON tree and bind only the
+     * tile nodes; any parse failure fails CLOSED ({@code referencesPii=true}) as everywhere else.
+     */
+    private Result inspectApp(String raw, String resourcePath, String ownerUser, List<String> ownerRoles) {
+        List<DashboardTile> tiles = new ArrayList<>();
+        try {
+            JsonNode pages = MAPPER.readTree(raw).get("pages");
+            if (pages == null || !pages.isArray()) {
+                // No pages → nothing to leak.
+                return new Result(false, List.of(), false);
+            }
+            for (JsonNode page : pages) {
+                JsonNode grid = page.get("grid");
+                JsonNode tileNodes = grid == null ? null : grid.get("tiles");
+                if (tileNodes == null || !tileNodes.isArray()) {
+                    continue;
+                }
+                for (JsonNode tileNode : tileNodes) {
+                    tiles.add(LENIENT.treeToValue(tileNode, DashboardTile.class));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("EmbedPiiInspector: not valid app JSON — {}", resourcePath);
+            return new Result(true, List.of(), true);
+        }
+        if (tiles.isEmpty()) {
+            return new Result(false, List.of(), false);
+        }
+        return inspectTiles(tiles, ownerUser, ownerRoles);
+    }
+
+    /**
+     * Walk a flat list of tiles (from a dashboard layout OR an app's pages) and report whether
+     * any referenced column is PII-annotated. Extracted so dashboards and apps share one walk.
+     */
+    private Result inspectTiles(List<DashboardTile> tileList, String ownerUser, List<String> ownerRoles) {
         Set<String> seenCubes = new LinkedHashSet<>();
         // Per-walk schema cache so a multi-tile dashboard binding the same
         // cube performs ONE schema lookup, not one per tile. The per-tile
@@ -220,7 +275,7 @@ public class EmbedPiiInspector {
         java.util.Map<String, AiSchema> schemaCache = new java.util.HashMap<>();
         java.util.Set<String> brokenCubes = new java.util.HashSet<>();
         boolean anyPii = false;
-        for (DashboardTile tile : dash.layout.tiles) {
+        for (DashboardTile tile : tileList) {
             // Text / image / decorative tiles can't bind PII. Skip.
             if (tile.cube == null && tile.target == null && (tile.query == null || tile.query.path == null)) {
                 continue;

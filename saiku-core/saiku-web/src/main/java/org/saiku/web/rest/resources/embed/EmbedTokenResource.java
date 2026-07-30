@@ -388,21 +388,24 @@ public class EmbedTokenResource {
         if (kind == null || kind.isBlank()) {
             return badRequest("resourceKind", "resourceKind required");
         }
-        if (!"query".equals(kind) && !"dashboard".equals(kind) && !"ai".equals(kind)) {
-            return badRequest("resourceKind", "resourceKind must be 'query', 'dashboard', or 'ai'");
+        if (!"query".equals(kind) && !"dashboard".equals(kind) && !"ai".equals(kind) && !"app".equals(kind)) {
+            return badRequest("resourceKind", "resourceKind must be 'query', 'dashboard', 'ai', or 'app'");
         }
         if (path == null || path.isBlank()) {
             return badRequest("resourcePath", "resourcePath required");
         }
         // Defence-in-depth: a query token must end .saiku, a dashboard token
-        // .saikudash. The view endpoint also checks this but the mint layer
-        // is the right place to reject bad data before it ever lands in the
-        // store.
+        // .saikudash, an app token .saikuapp. The view endpoint also checks this
+        // but the mint layer is the right place to reject bad data before it
+        // ever lands in the store.
         if ("query".equals(kind) && !path.endsWith(".saiku")) {
             return badRequest("resourcePath", "query resourcePath must end .saiku");
         }
         if ("dashboard".equals(kind) && !path.endsWith(".saikudash")) {
             return badRequest("resourcePath", "dashboard resourcePath must end .saikudash");
+        }
+        if ("app".equals(kind) && !path.endsWith(".saikuapp")) {
+            return badRequest("resourcePath", "app resourcePath must end .saikuapp");
         }
         // For kind="ai" the resourcePath is a cube ID — connection/catalog/schema/cubeName.
         // Sanity-check the shape so the view endpoint's downstream parseCubeId can't be

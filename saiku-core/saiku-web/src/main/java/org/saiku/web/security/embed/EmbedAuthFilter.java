@@ -28,7 +28,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 /**
  * Establishes a short-lived, locked-down guest identity for valid
  * {@code <saiku-embed>} reads. It acts ONLY on the {@code /rest/saiku/api/embed/}
- * read prefixes (query + dashboard) and ONLY when the request presents a valid
+ * read prefixes (query + dashboard + ai + app) and ONLY when the request presents a valid
  * token OR targets a publicly-granted resource; for every other request it is
  * a transparent pass-through. The mint endpoint
  * ({@code /rest/saiku/api/embed/tokens}) is intentionally NOT touched — it
@@ -71,6 +71,7 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
     static final String QUERY_SEGMENT = "query/";
     static final String DASHBOARD_SEGMENT = "dashboard/";
     static final String AI_SEGMENT = "ai/";
+    static final String APP_SEGMENT = "app/";
 
     /** Mint surface — explicitly skipped so a real user's session auth still
      *  applies. */
@@ -305,8 +306,19 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
         } else if (tail.startsWith(AI_SEGMENT)) {
             kind = "ai";
             rest = tail.substring(AI_SEGMENT.length());
+        } else if (tail.startsWith(APP_SEGMENT)) {
+            kind = "app";
+            rest = tail.substring(APP_SEGMENT.length());
         } else {
             return null;
+        }
+        // Strip the app-page trailing segment (app tile read/members URLs are
+        // ".../app/<path>/page/<pageId>/tile/<tileId>/{query,members}") so the
+        // read still maps to the parent app token. Must run BEFORE the /tile/
+        // strip because "/page/" precedes "/tile/" in an app URL.
+        int pageAt = rest.indexOf("/page/");
+        if (pageAt > 0) {
+            rest = rest.substring(0, pageAt);
         }
         // Strip the tile-query trailing segment so a tile read still maps to
         // the parent dashboard token. JAX-RS leaves the path as-is in the URI.

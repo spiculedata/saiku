@@ -147,6 +147,44 @@ the space's allowlist excludes the pinned cube, the ask fails closed.
 ></saiku-embed>
 ```
 
+### A saved App Builder app (`kind="app"`)
+
+Embed a whole App Builder document (`.saikuapp`) as **one token-scoped unit**.
+The token grants exactly this one app; its navigation and **all** of its pages
+ride that single grant — the guest sees the app read-only, switching between
+pages in place.
+
+```html
+<saiku-embed
+  server="..."
+  token="..."
+  kind="app"
+  path="homes/admin/sales-portal.saikuapp"
+  height="800px"
+></saiku-embed>
+```
+
+Behind the scenes the bundle fetches the app document from
+`GET /rest/saiku/api/embed/app/{path}` (token-scoped exactly like the dashboard
+embed), then renders each page's grid through the same tile renderer the
+dashboard embed uses. Every tile issues the **same** per-tile embed query a
+dashboard tile does — the query body is pulled server-side from the pinned app
+document (never the client), so per-query row-level security and PII redaction
+are enforced identically (see "Security model" below). There is no new query
+path: an app embed is purely presentational over the existing embed query path.
+
+Mint an app token exactly like a dashboard token, with `resourceKind: "app"`
+and a `.saikuapp` path (see "Server-side: minting a token"). The minter must
+have GRANT on the app, and the mint-time PII gate elevates the token to
+`FORCE_ON` redaction when any referenced column is PII-annotated — same posture
+as a dashboard.
+
+**Author custom CSS is designer-only in Phase 1.** The per-app custom CSS an
+author sets in the App Builder is **not** applied to embeds and is **not**
+embed-configurable. Embedders theme the surface through the existing
+`--saiku-embed-*` CSS variables (and the `theme` attribute) just like every
+other embed kind — see "Styling" below.
+
 ### Anonymous public embed
 
 If the resource is marked publicly embeddable on the server
@@ -165,8 +203,8 @@ If the resource is marked publicly embeddable on the server
 | Attribute | Default     | Notes                                                                  |
 |-----------|-------------|------------------------------------------------------------------------|
 | `server`  | _(optional)_| Origin of the Saiku launcher, e.g. `https://demo.saiku.bi`. Leave empty for same-origin (v3.19+) |
-| `path`    | _(required)_| `kind=query`: saved query path (`.saiku`) — `kind=dashboard`: dashboard path (`.saikudash`) — `kind=ai`: cube ref `connection/catalog/schema/cubeName` |
-| `kind`    | `query`     | `query`, `dashboard`, or `ai`                                          |
+| `path`    | _(required)_| `kind=query`: saved query path (`.saiku`) — `kind=dashboard`: dashboard path (`.saikudash`) — `kind=ai`: cube ref `connection/catalog/schema/cubeName` — `kind=app`: App Builder document path (`.saikuapp`) |
+| `kind`    | `query`     | `query`, `dashboard`, `ai`, or `app`                                   |
 | `token`   | _(none)_    | Embed token from `POST /saiku/api/embed/tokens`. Omit for public reads |
 | `render`  | `table`     | For `kind=query`: `table`, `matrix`, `chart`, or `kpi` (v3.20)         |
 | `mode`    | `bar`       | For `render=chart`: `bar`, `line`, or `pie`                            |
@@ -330,11 +368,21 @@ An embed with none of these set renders exactly as before (ECharts defaults).
 - **Server-side authoritative.** Tokens are opaque random 256-bit ids
   with no embedded claims; the server looks them up on every request.
   Revocation takes effect on the very next request.
-- **Per-resource scope.** A token pins exactly one query or dashboard.
-  Replaying it against any other resource (or any other endpoint)
+- **Per-resource scope.** A token pins exactly one query, dashboard, cube,
+  or app. Replaying it against any other resource (or any other endpoint)
   returns the same opaque `EMBED_INVALID` 401, regardless of whether
   the request used the wrong kind, the wrong path, an expired token,
-  or a revoked one. Probes can't enumerate.
+  or a revoked one. Probes can't enumerate. An `app` token grants the one
+  `.saikuapp` document as a unit — the doc + every page's tile query is
+  served under that single pin, so a token for app A can't read app B or
+  any arbitrary repository path.
+- **RLS / PII stay fail-closed on every kind.** App-page tile queries run
+  through the exact same guarded execution as dashboard tiles: forced
+  row-level-security filters from the token are applied **last** and fail
+  closed (`RLS_UNAPPLIED` / `EMBED_RLS_UNSUPPORTED`) if they can't be
+  spliced, and a `FORCE_ON` redaction policy still emits its gateway header.
+  A client `filter=`/filter-tile override can only **narrow** a query, never
+  widen it. Embedding an app adds no new query path.
 - **Cross-origin cookie isolation.** The embed sends
   `credentials: "omit"`, so the host page's Saiku session cookie (if
   the user happens to be logged in) doesn't flow with embed reads.
