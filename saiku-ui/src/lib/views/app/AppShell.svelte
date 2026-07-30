@@ -30,6 +30,7 @@
   import AppHeader from "$lib/views/app/AppHeader.svelte";
   import AppNavRail from "$lib/views/app/AppNavRail.svelte";
   import AppTopNav from "$lib/views/app/AppTopNav.svelte";
+  import AppPageView from "$lib/views/app/AppPageView.svelte";
 
   interface Props {
     app: SaikuApp;
@@ -122,9 +123,16 @@
     {/if}
 
     <main class="saiku-app__main">
-      <!-- TODO(Task 7): replace this placeholder with an AppPageView component
-           (bound to activePage) that renders the page's dashboard grid. -->
-      <div class="saiku-app__page">{activePage?.title ?? "No page"}</div>
+      {#if activePage}
+        <!-- Renders the active page's grid through the EXISTING dashboard
+             renderer (see AppPageView). NOT keyed on page id: AppPageView must
+             stay mounted across page switches so it can preserve each page's
+             filter state (its per-page memory) — it re-hydrates the shared
+             dashboard store itself when the active page changes. -->
+        <AppPageView page={activePage} {editable} />
+      {:else}
+        <div class="saiku-app__page">No page</div>
+      {/if}
     </main>
 
     {#if app.assistantSlot.enabled}

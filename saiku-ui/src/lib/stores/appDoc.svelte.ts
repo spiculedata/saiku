@@ -190,6 +190,20 @@ class AppDocStore {
     this.activePageId = page.id;
   }
 
+  /** Replace one page's opaque {@code grid} — used when the embedded dashboard
+   *  grid is edited in place (AppPageView write-back in editable mode) so
+   *  in-grid tile edits survive a page switch. Immutable (fresh pages array +
+   *  page object). No history capture: the dashboard grid renderer owns its
+   *  own undo stack, so recording app-level undo here would double up. No-op
+   *  when the id isn't present or the grid is referentially unchanged. */
+  updatePageGrid(id: string, grid: unknown): void {
+    if (!this.current) return;
+    const target = this.current.pages.find((p) => p.id === id);
+    if (!target || target.grid === grid) return;
+    const pages: AppPage[] = this.current.pages.map((p) => (p.id === id ? { ...p, grid } : p));
+    this.current = { ...this.current, pages };
+  }
+
   /** Rename the page with {@code id}. No-op when the id isn't present. */
   renamePage(id: string, title: string): void {
     if (!this.current) return;
