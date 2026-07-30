@@ -4,6 +4,8 @@
  */
 package org.saiku.web.rest.resources.embed;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -52,7 +54,14 @@ import org.springframework.security.core.context.SecurityContextHolder;
 public class EmbedViewResource {
 
     private static final Logger log = LoggerFactory.getLogger(EmbedViewResource.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    // Lenient by design: dashboards AND .saikuapp docs carry rich UI-owned
+    // per-tile config the back-end never interprets (chart options, sparkline,
+    // conditional formatting, &c. — see DashboardTile's javadoc + saiku#1179).
+    // FAIL_ON_UNKNOWN_PROPERTIES=false lets those fields round-trip so a real,
+    // fully-authored resource parses instead of 404-ing. It only makes MORE
+    // documents parse, never fewer — no security posture changes.
+    private static final ObjectMapper MAPPER =
+            new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private DatasourceService datasourceService;
     private SessionService sessionService;
@@ -211,13 +220,118 @@ public class EmbedViewResource {
         if (dash == null || dash.layout == null || dash.layout.tiles == null) {
             return invalid();
         }
-        DashboardTile tile = null;
-        for (DashboardTile t : dash.layout.tiles) {
-            if (tileId.equals(t.id)) {
-                tile = t;
-                break;
-            }
+        // Runtime filter overrides from filter tiles. Guest supplies only the filter payload
+        // (dimension/hierarchy/level/members) — the tile's authored query is untouched; the
+        // shared runner splices the overrides into the request Filters via the validated path.
+        final java.util.List<AiFilterSelection> filterOverrides =
+                overrides == null || overrides.filters == null ? java.util.Collections.emptyList() : overrides.filters;
+        return runTileQuery(g, findTile(dash.layout.tiles, tileId), filterOverrides, "/saiku/api/embed/dashboard/tile");
+    }
+
+    /* ----------------------------- app ----------------------------- */
+
+    /**
+     * The pinned {@code .saikuapp} document (App Builder — saiku#1441). Served
+     * verbatim as opaque JSON exactly like {@link org.saiku.web.rest.resources.apps.AppResource#load}
+     * (the embed bundle owns the app schema; a typed re-serialise would silently drop UI-owned
+     * fields — saiku#1179). A token pins ONE app: the whole document (nav + every page + every
+     * tile) rides that single grant, so the guest sees the app as one unit and can't reach app B
+     * or any other repository path (the auth filter pinned {@link EmbedGuestDetails#resourcePath}).
+     *
+     * <p>Deliberately NOT a new query surface — this only ships the layout. Each page's tiles run
+     * through {@link #appTileQuery}, which shares the exact same guarded per-tile execution as the
+     * dashboard embed (see {@link #runTileQuery}); RLS/PII enforcement is therefore identical.
+     */
+    @GET
+    @Path("/app/{path:.+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response app(@PathParam("path") String pathParam) {
+        EmbedGuestDetails g = guest();
+        if (g == null || !"app".equals(g.resourceKind)) {
+            return invalid();
         }
+        String raw = loadAppRaw(g);
+        if (raw == null) {
+            return harden(Response.status(Response.Status.NOT_FOUND)
+                    .entity(Map.of("status", "NOT_FOUND", "error", "Embedded app is no longer available"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build());
+        }
+        try {
+            JsonNode node = MAPPER.readTree(raw);
+            if (node == null || !node.isObject()) {
+                log.error("embedded app {} is not a JSON object", g.resourcePath);
+                return harden(Response.serverError()
+                        .entity(Map.of("status", "ERROR", "error", "Stored app is not a JSON object"))
+                        .type(MediaType.APPLICATION_JSON)
+                        .build());
+            }
+        } catch (Exception e) {
+            log.error("embedded app {} is unparseable JSON", g.resourcePath, e);
+            return harden(Response.serverError()
+                    .entity(Map.of("status", "ERROR", "error", "Stored app is not valid JSON"))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build());
+        }
+        return withPolicyHeader(
+                harden(Response.ok(raw).type(MediaType.APPLICATION_JSON).build()), g);
+    }
+
+    /**
+     * Run a single app-page tile's authored query. The guest supplies only the page id + tile id;
+     * the query body comes from the pinned app document, never the client. This delegates to the
+     * SAME {@link #runTileQuery} the dashboard embed uses — there is deliberately no app-specific
+     * query path, so forced RLS filters + redaction policy fail-closed enforcement is identical.
+     */
+    @POST
+    @Path("/app/{path:.+}/page/{pageId}/tile/{tileId}/query")
+    @jakarta.ws.rs.Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response appTileQuery(
+            @PathParam("path") String pathParam,
+            @PathParam("pageId") String pageId,
+            @PathParam("tileId") String tileId,
+            TileQueryOverrides overrides) {
+        EmbedGuestDetails g = guest();
+        if (g == null || !"app".equals(g.resourceKind)) {
+            return invalid();
+        }
+        final java.util.List<AiFilterSelection> filterOverrides =
+                overrides == null || overrides.filters == null ? java.util.Collections.emptyList() : overrides.filters;
+        return runTileQuery(g, findAppTile(g, pageId, tileId), filterOverrides, "/saiku/api/embed/app/tile");
+    }
+
+    /**
+     * Distinct members for an app-page filter tile — same contract + same guarded path as the
+     * dashboard {@link #tileMembers}. Guest supplies only page id + tile id; the target axis + cube
+     * come from the pinned app document, so a guest can't fish for arbitrary members off the cube.
+     */
+    @GET
+    @Path("/app/{path:.+}/page/{pageId}/tile/{tileId}/members")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response appTileMembers(
+            @PathParam("path") String pathParam,
+            @PathParam("pageId") String pageId,
+            @PathParam("tileId") String tileId,
+            @jakarta.ws.rs.QueryParam("q") String q,
+            @jakarta.ws.rs.QueryParam("limit") @jakarta.ws.rs.DefaultValue("50") int limit) {
+        EmbedGuestDetails g = guest();
+        if (g == null || !"app".equals(g.resourceKind)) {
+            return invalid();
+        }
+        return runTileMembers(g, findAppTile(g, pageId, tileId), q, limit, "/saiku/api/embed/app/tile/members");
+    }
+
+    /**
+     * Shared per-tile query execution for BOTH dashboard tiles and app-page tiles — the ONE
+     * guarded query path on the embed surface. Runs under the pinned owner's scope via
+     * {@link SessionService#runAs}, injects the token's forced RLS filters (saiku#1104) and fails
+     * closed if a claim is malformed / unappliable, merges runtime filter-tile overrides via the
+     * validated slicer path, and stamps the redaction-policy + hardening headers. Because app-page
+     * tiles reuse this verbatim, embedding an app introduces NO new query path and NO RLS/PII bypass.
+     */
+    private Response runTileQuery(
+            EmbedGuestDetails g, DashboardTile tile, java.util.List<AiFilterSelection> overrides, String endpoint) {
         if (tile == null || tile.query == null) {
             return harden(Response.status(Response.Status.NOT_FOUND)
                     .entity(Map.of("status", "NOT_FOUND", "error", "No such queryable tile"))
@@ -225,11 +339,8 @@ public class EmbedViewResource {
                     .build());
         }
         final TileQuery q = tile.query;
-        // Runtime filter overrides from filter tiles. Guest supplies only the filter payload
-        // (dimension/hierarchy/level/members) — the tile's authored query is untouched; we
-        // splice the overrides into the request Filters via the same validated path.
         final java.util.List<AiFilterSelection> filterOverrides =
-                overrides == null || overrides.filters == null ? java.util.Collections.emptyList() : overrides.filters;
+                overrides == null ? java.util.Collections.emptyList() : overrides;
         try {
             Response result = sessionService.runAs(g.ownerUser, g.ownerRoles, () -> {
                 if ("inline".equals(q.kind) && q.body != null) {
@@ -256,7 +367,7 @@ public class EmbedViewResource {
                     if (!forcedTile.isEmpty()) {
                         sreq.setForcedFilters(forcedTile);
                     }
-                    // Dashboard tiles always render as records — tile renderers consume caption-keyed rows.
+                    // Tiles always render as records — tile renderers consume caption-keyed rows.
                     return aiQueryResource.executeSaved(sreq, "records");
                 }
                 return Response.status(Response.Status.BAD_REQUEST)
@@ -264,16 +375,29 @@ public class EmbedViewResource {
                         .type(MediaType.APPLICATION_JSON)
                         .build();
             });
-            audit(g, "/saiku/api/embed/dashboard/tile", outcomeFor(result.getStatus()));
+            audit(g, endpoint, outcomeFor(result.getStatus()));
             return withPolicyHeader(harden(result), g);
         } catch (RuntimeException e) {
-            log.warn("embed-view tile query failed for {}/{}", g.resourcePath, tileId, e);
-            audit(g, "/saiku/api/embed/dashboard/tile", AiAuditEntry.OUTCOME_ERROR);
+            log.warn("embed-view tile query failed for {}", g.resourcePath, e);
+            audit(g, endpoint, AiAuditEntry.OUTCOME_ERROR);
             return harden(Response.serverError()
                     .entity(Map.of("status", "ERROR", "error", "Tile query failed"))
                     .type(MediaType.APPLICATION_JSON)
                     .build());
         }
+    }
+
+    /** First tile in {@code tiles} whose id equals {@code tileId}, or null. */
+    private static DashboardTile findTile(java.util.List<DashboardTile> tiles, String tileId) {
+        if (tiles == null || tileId == null) {
+            return null;
+        }
+        for (DashboardTile t : tiles) {
+            if (tileId.equals(t.id)) {
+                return t;
+            }
+        }
+        return null;
     }
 
     /* ------------------------- filter members ---------------------- */
@@ -303,13 +427,17 @@ public class EmbedViewResource {
         if (dash == null || dash.layout == null || dash.layout.tiles == null) {
             return invalid();
         }
-        DashboardTile tile = null;
-        for (DashboardTile t : dash.layout.tiles) {
-            if (tileId.equals(t.id)) {
-                tile = t;
-                break;
-            }
-        }
+        return runTileMembers(
+                g, findTile(dash.layout.tiles, tileId), q, limit, "/saiku/api/embed/dashboard/tile/members");
+    }
+
+    /**
+     * Shared filter-tile member search for BOTH dashboard tiles and app-page tiles. The target
+     * dimension/hierarchy/level + cube come from the pinned resource's tile — never the client —
+     * and the lookup runs under the pinned owner's scope, so a guest can't fish for arbitrary
+     * members off the cube.
+     */
+    private Response runTileMembers(EmbedGuestDetails g, DashboardTile tile, String q, int limit, String endpoint) {
         if (tile == null || !"filter".equals(tile.type) || tile.target == null || tile.cube == null) {
             return harden(Response.status(Response.Status.NOT_FOUND)
                     .entity(Map.of("status", "NOT_FOUND", "error", "No such filter tile"))
@@ -329,11 +457,11 @@ public class EmbedViewResource {
                         q,
                         Math.max(1, Math.min(limit, 500)));
             });
-            audit(g, "/saiku/api/embed/dashboard/tile/members", outcomeFor(result.getStatus()));
+            audit(g, endpoint, outcomeFor(result.getStatus()));
             return withPolicyHeader(harden(result), g);
         } catch (RuntimeException e) {
-            log.warn("embed-view tile members failed for {}/{}", g.resourcePath, tileId, e);
-            audit(g, "/saiku/api/embed/dashboard/tile/members", AiAuditEntry.OUTCOME_ERROR);
+            log.warn("embed-view tile members failed for {}", g.resourcePath, e);
+            audit(g, endpoint, AiAuditEntry.OUTCOME_ERROR);
             return harden(Response.serverError()
                     .entity(Map.of("status", "ERROR", "error", "Members lookup failed"))
                     .type(MediaType.APPLICATION_JSON)
@@ -497,6 +625,70 @@ public class EmbedViewResource {
             return MAPPER.readValue(raw, Dashboard.class);
         } catch (Exception e) {
             log.error("embedded dashboard {} is unparseable", g.resourcePath, e);
+            return null;
+        }
+    }
+
+    /**
+     * Read the pinned {@code .saikuapp} document's raw JSON under the owner's data scope. The
+     * token / public-grant authorises viewing exactly this one app under exactly the owner's
+     * scope — the resource path comes from the pinned details, never the client. Returns null on
+     * a wrong suffix, an unreadable / empty file, so callers fail closed.
+     */
+    private String loadAppRaw(EmbedGuestDetails g) {
+        if (g.resourcePath == null || !g.resourcePath.endsWith(".saikuapp")) {
+            return null;
+        }
+        String raw;
+        try {
+            raw = datasourceService.getFileData(g.resourcePath, g.ownerUser, g.ownerRoles);
+        } catch (RuntimeException e) {
+            return null;
+        }
+        if (raw == null || raw.isEmpty()) {
+            return null;
+        }
+        return raw;
+    }
+
+    /**
+     * Locate one tile inside the pinned app document by (pageId, tileId). The app doc is opaque
+     * (the UI owns its schema) so we walk the JSON tree — {@code pages[].grid.tiles[]} — and bind
+     * only the matching tile node into the typed {@link DashboardTile} the shared query runner
+     * needs. Scoping by page id keeps tiles unambiguous even if two pages reuse a tile id.
+     * Returns null (→ 404) when the app, page, or tile can't be resolved.
+     */
+    private DashboardTile findAppTile(EmbedGuestDetails g, String pageId, String tileId) {
+        String raw = loadAppRaw(g);
+        if (raw == null || pageId == null || tileId == null) {
+            return null;
+        }
+        try {
+            JsonNode pages = MAPPER.readTree(raw).get("pages");
+            if (pages == null || !pages.isArray()) {
+                return null;
+            }
+            for (JsonNode page : pages) {
+                JsonNode idNode = page.get("id");
+                if (idNode == null || !pageId.equals(idNode.asText())) {
+                    continue;
+                }
+                JsonNode grid = page.get("grid");
+                JsonNode tiles = grid == null ? null : grid.get("tiles");
+                if (tiles == null || !tiles.isArray()) {
+                    return null;
+                }
+                for (JsonNode tileNode : tiles) {
+                    JsonNode tId = tileNode.get("id");
+                    if (tId != null && tileId.equals(tId.asText())) {
+                        return MAPPER.treeToValue(tileNode, DashboardTile.class);
+                    }
+                }
+                return null; // page matched, tile not in it
+            }
+            return null;
+        } catch (Exception e) {
+            log.error("embedded app {} tile lookup failed", g.resourcePath, e);
             return null;
         }
     }

@@ -34,10 +34,13 @@
    *   server  — origin of the Saiku launcher, e.g. https://demo.saiku.bi
    *   token   — opaque embed token from POST /saiku/api/embed/tokens.
    *             Omit for anonymous public reads.
-   *   kind    — "query" (default), "dashboard", or "ai"
+   *   kind    — "query" (default), "dashboard", "ai", or "app"
    *   path    — kind="query": repository path ending .saiku
    *             kind="dashboard": path ending .saikudash
    *             kind="ai": cube ref connection/catalog/schema/cubeName
+   *             kind="app": App Builder document path ending .saikuapp —
+   *                         the token grants the ONE app read-only; its nav +
+   *                         every page ride the single grant.
    *   render  — for kind=query only: "table" (default), "matrix", "chart", "kpi"
    *   mode    — for render=chart only: "bar" (default), "line", "pie"
    *   height  — CSS height for the rendered surface (default 400px)
@@ -65,6 +68,7 @@
   import EmbedChart from "./EmbedChart.svelte";
   import EmbedKpi from "./EmbedKpi.svelte";
   import EmbedDashboard from "./EmbedDashboard.svelte";
+  import EmbedApp from "./EmbedApp.svelte";
   import EmbedMatrix from "./EmbedMatrix.svelte";
   import EmbedAsk from "./EmbedAsk.svelte";
   import { fetchSavedQuery, EmbedFetchError, type EmbedFilterOverride } from "./api";
@@ -204,6 +208,8 @@
 <div class="w-full h-full overflow-auto" style="min-height: {height};" bind:this={rootEl}>
   {#if kind === "dashboard"}
     <EmbedDashboard {server} {token} {path} />
+  {:else if kind === "app"}
+    <EmbedApp {server} {token} {path} onLoad={(d) => emit("saiku:load", { kind: "app", ...d })} />
   {:else if kind === "ai"}
     <EmbedAsk
       {server}

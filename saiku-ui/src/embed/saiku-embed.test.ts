@@ -161,6 +161,27 @@ describe("<saiku-embed/>", () => {
     expect(root.querySelector('[role="figure"]')?.textContent).toContain("$42");
   });
 
+  it("fetches the token-scoped app doc URL for kind=app", async () => {
+    // kind="app" routes through the same token-scoped embed surface as the
+    // dashboard: GET /embed/app/{path} with the token in the dedicated header,
+    // credentials omitted. This is the wire evidence that an app embed reaches
+    // the guarded embed path (no separate query path).
+    nextResp = { status: 200, body: { id: "a", name: "Portal", version: 1, pages: [] } };
+    const el = document.createElement("saiku-embed");
+    el.setAttribute("server", "https://demo.saiku.bi");
+    el.setAttribute("kind", "app");
+    el.setAttribute("path", "homes/admin/portal.saikuapp");
+    el.setAttribute("token", "tok-app");
+    document.body.appendChild(el);
+    await flush();
+
+    const last = calls[calls.length - 1];
+    expect(last.url).toBe("https://demo.saiku.bi/rest/saiku/api/embed/app/homes/admin/portal.saikuapp");
+    expect(last.init?.credentials).toBe("omit");
+    const headers = (last.init?.headers ?? {}) as Record<string, string>;
+    expect(headers["X-Saiku-Embed-Token"]).toBe("tok-app");
+  });
+
   it("surfaces a friendly message instead of the raw 401 body", async () => {
     nextResp = {
       status: 401,

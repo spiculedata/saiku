@@ -310,6 +310,164 @@ public class EmbedViewResourceTest {
         assertTrue(e.endpoint.contains("/embed/"));
     }
 
+    /* ------------------- saiku#1441: app embed (RLS/PII) ------------------- */
+
+    // Minimal .saikuapp docs: one page, one tile. The tile shape is identical to
+    // a dashboard tile, so the SAME guarded runTileQuery executes it.
+    private static final String APP_INLINE_TILE = "{\"id\":\"a-1\",\"name\":\"Portal\",\"pages\":[{\"id\":\"page-1\","
+            + "\"grid\":{\"tiles\":[{\"id\":\"t1\",\"query\":{\"kind\":\"inline\",\"body\":{}}}]}}]}";
+    private static final String APP_REFERENCE_TILE =
+            "{\"id\":\"a-1\",\"name\":\"Portal\",\"pages\":[{\"id\":\"page-1\",\"grid\":{\"tiles\":[{\"id\":\"t1\","
+                    + "\"query\":{\"kind\":\"reference\",\"path\":\"/homes/admin/q.saiku\"}}]}}]}";
+
+    @Test
+    public void app_returns_loaded_app_json_owner_scoped() {
+        ds.fileContent = APP_INLINE_TILE;
+        pinGuest("app", "/homes/admin/portal.saikuapp", "admin", List.of("ROLE_ADMIN"));
+
+        Response r = resource.app("homes/admin/portal.saikuapp");
+
+        assertEquals(200, r.getStatus());
+        // App loaded as the pinned owner — never whoever sits in the session map.
+        assertEquals("admin", ds.lastReadUser);
+        assertEquals(List.of("ROLE_ADMIN"), ds.lastReadRoles);
+        assertHardenedHeaders(r);
+    }
+
+    @Test
+    public void app_refuses_when_kind_is_dashboard() {
+        // A dashboard-pinned token must NOT reach the /app endpoint (defence in
+        // depth behind the auth filter's per-kind pin).
+        pinGuest("dashboard", "/homes/admin/exec.saikudash", "admin", List.of());
+
+        Response r = resource.app("homes/admin/exec.saikudash");
+        assertEquals(401, r.getStatus());
+    }
+
+    @Test
+    public void app_missing_file_is_404() {
+        ds.fileContent = null;
+        pinGuest("app", "/homes/admin/portal.saikuapp", "admin", List.of());
+
+        Response r = resource.app("homes/admin/portal.saikuapp");
+        assertEquals(404, r.getStatus());
+    }
+
+    @Test
+    public void app_response_stamps_force_on_header_when_token_policy_is_force_on() {
+        // saiku-cloud#948 / #940: a PII-elevated app token still emits the
+        // gateway redaction header on the app-doc read.
+        ds.fileContent = APP_INLINE_TILE;
+        pinGuestWithPolicy(
+                "app",
+                "/homes/admin/portal.saikuapp",
+                "admin",
+                List.of("ROLE_ADMIN"),
+                org.saiku.web.embed.EmbedToken.RedactionPolicy.FORCE_ON);
+
+        Response r = resource.app("homes/admin/portal.saikuapp");
+
+        assertEquals(200, r.getStatus());
+        assertEquals(
+                "FORCE_ON",
+                r.getHeaderString(org.saiku.web.rest.resources.embed.EmbedViewResource.REDACTION_POLICY_HEADER));
+    }
+
+    @Test
+    public void app_tile_injects_forced_filters() {
+        // An app-page inline tile must have the token's forced RLS filter injected
+        // before execution — exactly like the dashboard inline tile.
+        ds.fileContent = APP_INLINE_TILE;
+        pinGuestJwt(
+                "app",
+                "/homes/admin/portal.saikuapp",
+                "admin",
+                List.of("ROLE_ADMIN"),
+                "u_1",
+                "[{\"dimension\":\"Customer\",\"hierarchy\":\"Customer\",\"level\":\"Customer\","
+                        + "\"op\":\"in\",\"members\":[\"[Customer].[acme]\"]}]");
+
+        Response r = resource.appTileQuery("homes/admin/portal.saikuapp", "page-1", "t1", null);
+
+        assertEquals(200, r.getStatus());
+        assertNotNull("executeAi was called for the inline app tile", ai.lastAiRequest);
+        boolean injected = ai.lastAiRequest.getFilters().stream().anyMatch(f -> "Customer".equals(f.getDimension()));
+        assertTrue("forced RLS filter must be injected into the app-page inline query", injected);
+    }
+
+    @Test
+    public void app_tile_reference_forwards_forced_filters_to_executeSaved() {
+        ds.fileContent = APP_REFERENCE_TILE;
+        pinGuestJwt(
+                "app",
+                "/homes/admin/portal.saikuapp",
+                "admin",
+                List.of(),
+                "u_1",
+                "[{\"dimension\":\"Customer\",\"level\":\"Customer\",\"members\":[\"[Customer].[acme]\"]}]");
+
+        Response r = resource.appTileQuery("homes/admin/portal.saikuapp", "page-1", "t1", null);
+
+        assertEquals(200, r.getStatus());
+        assertNotNull("reference app tile must forward forced filters to executeSaved", ai.lastSavedRequest);
+        assertEquals(1, ai.lastSavedRequest.getForcedFilters().size());
+        assertEquals("Customer", ai.lastSavedRequest.getForcedFilters().get(0).getDimension());
+    }
+
+    @Test
+    public void app_tile_forced_filters_unappliable_passes_through_fail_closed() {
+        // When executeSaved can't apply the RLS filter it returns 403 RLS_UNAPPLIED;
+        // the app embed surfaces that fail-closed status verbatim — no leak.
+        ds.fileContent = APP_REFERENCE_TILE;
+        ai.savedResponseOverride = Response.status(403)
+                .entity(Map.of("status", "RLS_UNAPPLIED", "error", "x"))
+                .build();
+        pinGuestJwt(
+                "app",
+                "/homes/admin/portal.saikuapp",
+                "admin",
+                List.of(),
+                "u_1",
+                "[{\"dimension\":\"Customer\",\"level\":\"Customer\",\"members\":[\"[Customer].[acme]\"]}]");
+
+        Response r = resource.appTileQuery("homes/admin/portal.saikuapp", "page-1", "t1", null);
+
+        assertEquals(403, r.getStatus());
+    }
+
+    @Test
+    public void app_tile_malformed_forced_filter_claim_fails_closed() {
+        // A malformed forced-filter claim must NEVER degrade to an unfiltered query.
+        // The inline injection throws before executeAi, so the tile fails closed
+        // (non-2xx) and no query runs.
+        ds.fileContent = APP_INLINE_TILE;
+        pinGuestJwt("app", "/homes/admin/portal.saikuapp", "admin", List.of(), "u_1", "{not-an-array");
+
+        Response r = resource.appTileQuery("homes/admin/portal.saikuapp", "page-1", "t1", null);
+
+        assertTrue("a malformed RLS claim must fail closed (non-2xx)", r.getStatus() >= 400);
+        assertNull("a malformed RLS claim must NOT execute the app tile query", ai.lastAiRequest);
+    }
+
+    @Test
+    public void app_tile_unknown_tile_is_404() {
+        ds.fileContent = APP_INLINE_TILE;
+        pinGuest("app", "/homes/admin/portal.saikuapp", "admin", List.of());
+
+        Response r = resource.appTileQuery("homes/admin/portal.saikuapp", "page-1", "no-such", null);
+        assertEquals(404, r.getStatus());
+        assertNull("an unknown tile must never execute a query", ai.lastAiRequest);
+    }
+
+    @Test
+    public void app_tile_refuses_when_kind_is_dashboard() {
+        // A dashboard-pinned token must not run app tile queries.
+        pinGuest("dashboard", "/homes/admin/exec.saikudash", "admin", List.of());
+
+        Response r = resource.appTileQuery("homes/admin/portal.saikuapp", "page-1", "t1", null);
+        assertEquals(401, r.getStatus());
+    }
+
     /* --------------------------- helpers ---------------------------- */
 
     private void pinGuestJwt(

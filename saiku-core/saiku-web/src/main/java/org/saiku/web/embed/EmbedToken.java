@@ -33,14 +33,16 @@ public class EmbedToken {
     /** Opaque URL-safe random id; also the store filename stem. */
     public String token;
 
-    /** What this token grants read access to. {@code "query"} (.saiku) or
-     *  {@code "dashboard"} (.saikudash). The view endpoint matches its path
-     *  segment against this so a query-token can't be replayed against the
-     *  dashboard path or vice versa. */
+    /** What this token grants read access to. {@code "query"} (.saiku),
+     *  {@code "dashboard"} (.saikudash), {@code "ai"} (a cube ref), or
+     *  {@code "app"} (.saikuapp — the App Builder document, saiku#1441). The
+     *  view endpoint matches its path segment against this so a query-token
+     *  can't be replayed against the dashboard/app path or vice versa. */
     public String resourceKind;
 
-    /** Repository path of the resource. Ends {@code .saiku} or
-     *  {@code .saikudash} depending on {@link #resourceKind}. */
+    /** Repository path of the resource. Ends {@code .saiku}, {@code .saikudash},
+     *  or {@code .saikuapp} depending on {@link #resourceKind} (or a cube ref
+     *  for {@code ai}). */
     public String resourcePath;
 
     /** Username that minted the link (must have had read on the resource). */

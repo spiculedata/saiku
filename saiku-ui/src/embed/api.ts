@@ -1,4 +1,4 @@
-import type { EmbedDashboardLayout, EmbedError, EmbedQueryResponse } from "./types";
+import type { EmbedAppDoc, EmbedDashboardLayout, EmbedError, EmbedQueryResponse } from "./types";
 
 /**
  * Fetch a saved query through the embed surface. Sends the token via the
@@ -132,6 +132,85 @@ export async function fetchDashboardTile(
   return (await resp.json()) as EmbedQueryResponse;
 }
 
+/* ------------------------------- app -------------------------------- */
+
+/**
+ * Fetch an embedded {@code .saikuapp} document (App Builder — saiku#1441). A token pins ONE app;
+ * this returns the whole document (nav + every page + every tile) so the bundle can render it
+ * read-only as a single unit. Same header / encoding / credentials:"omit" posture as
+ * {@link fetchDashboard} — the app doc is served token-scoped, so a token for app A can't read
+ * app B or any other repository path.
+ */
+export async function fetchApp(
+  server: string,
+  path: string,
+  token?: string | null,
+): Promise<EmbedAppDoc> {
+  const base = stripTrailingSlash(server);
+  const url = `${base}/rest/saiku/api/embed/app/${encodePath(path)}`;
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers["X-Saiku-Embed-Token"] = token;
+  const resp = await fetch(url, { headers, credentials: "omit" });
+  if (!resp.ok) throw await readError(resp);
+  return (await resp.json()) as EmbedAppDoc;
+}
+
+/**
+ * Run one app-page tile's authored query. Purely presentational over the SAME embed query path
+ * the dashboard tiles use — the server pulls the query body from the pinned app document (never
+ * the client), and per-query RLS/PII enforcement (forced filters applied LAST, fail-closed;
+ * FORCE_ON redaction header) carries over unchanged. The guest supplies only page id + tile id
+ * (+ optional filter-tile overrides that can only NARROW).
+ */
+export async function fetchAppTile(
+  server: string,
+  appPath: string,
+  pageId: string,
+  tileId: string,
+  token?: string | null,
+  overrides?: EmbedFilterOverride[],
+): Promise<EmbedQueryResponse> {
+  const base = stripTrailingSlash(server);
+  const url =
+    `${base}/rest/saiku/api/embed/app/${encodePath(appPath)}` +
+    `/page/${encodeURIComponent(pageId)}/tile/${encodeURIComponent(tileId)}/query`;
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers["X-Saiku-Embed-Token"] = token;
+  const body = overrides && overrides.length > 0 ? JSON.stringify({ filters: overrides }) : undefined;
+  if (body) headers["Content-Type"] = "application/json";
+  const resp = await fetch(url, { method: "POST", headers, credentials: "omit", body });
+  if (!resp.ok) throw await readError(resp);
+  return (await resp.json()) as EmbedQueryResponse;
+}
+
+/**
+ * Distinct members for an app-page filter tile. Guest supplies only page id + tile id — the
+ * target axis + cube come from the pinned app document, so a guest can't fish for arbitrary
+ * members off the cube. Same shape as {@link fetchTileMembers}.
+ */
+export async function fetchAppTileMembers(
+  server: string,
+  appPath: string,
+  pageId: string,
+  tileId: string,
+  token?: string | null,
+  q?: string,
+  limit = 50,
+): Promise<EmbedMember[]> {
+  const base = stripTrailingSlash(server);
+  const qs = new URLSearchParams();
+  if (q) qs.set("q", q);
+  qs.set("limit", String(limit));
+  const url =
+    `${base}/rest/saiku/api/embed/app/${encodePath(appPath)}` +
+    `/page/${encodeURIComponent(pageId)}/tile/${encodeURIComponent(tileId)}/members?${qs.toString()}`;
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (token) headers["X-Saiku-Embed-Token"] = token;
+  const resp = await fetch(url, { headers, credentials: "omit" });
+  if (!resp.ok) throw await readError(resp);
+  return (await resp.json()) as EmbedMember[];
+}
+
 /**
  * Fetch the distinct member captions available for a filter tile's declared
  * dimension/hierarchy/level. Guest supplies only the tile id — the target axis
@@ -238,7 +317,7 @@ export interface EmbedAskResponse {
   response?: unknown;
 }
 
-/* Re-export the dashboard shape so callers don't have to dig into types.ts. */
-export type { EmbedDashboardLayout, EmbedDashboardTile } from "./types";
+/* Re-export the dashboard + app shapes so callers don't have to dig into types.ts. */
+export type { EmbedAppDoc, EmbedAppPage, EmbedDashboardLayout, EmbedDashboardTile } from "./types";
 
 export { EmbedFetchError };
