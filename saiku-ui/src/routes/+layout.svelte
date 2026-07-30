@@ -10,7 +10,7 @@
   import { presentation } from "$lib/stores/presentation.svelte";
   import ToastStack from "$lib/components/ToastStack.svelte";
   import UpgradeBanner from "$lib/components/UpgradeBanner.svelte";
-  import { LogOut, Shield, Home, LayoutDashboard, UserRound } from "lucide-svelte";
+  import { LogOut, Shield, Home, LayoutDashboard, AppWindow, UserRound } from "lucide-svelte";
   import SessionExpiredBanner from "$lib/components/SessionExpiredBanner.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   import { installAuthInterceptor, onAuthFailure } from "$lib/api/http";
@@ -105,10 +105,11 @@
           <UserRound size={14} />
           {session.current.username}
         </span>
-        {#if !page.url.pathname.startsWith(`${base}/dashboards`) && !page.url.pathname.startsWith(`${base}/admin`)}
+        {#if !page.url.pathname.startsWith(`${base}/dashboards`) && !page.url.pathname.startsWith(`${base}/apps`) && !page.url.pathname.startsWith(`${base}/admin`)}
           <a class={buttonVariants({ variant: "outline", size: "sm" })} href="{base}/dashboards"><LayoutDashboard size={14} /><span>Dashboards</span></a>
+          <a class={buttonVariants({ variant: "outline", size: "sm" })} href="{base}/apps"><AppWindow size={14} /><span>Apps</span></a>
         {/if}
-        {#if page.url.pathname.startsWith(`${base}/dashboards`)}
+        {#if page.url.pathname.startsWith(`${base}/dashboards`) || page.url.pathname.startsWith(`${base}/apps`)}
           <a class={buttonVariants({ variant: "outline", size: "sm" })} href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
         {/if}
         {#if session.isAdmin && !page.url.pathname.startsWith(`${base}/admin`)}
