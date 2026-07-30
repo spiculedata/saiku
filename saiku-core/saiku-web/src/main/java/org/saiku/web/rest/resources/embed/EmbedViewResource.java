@@ -325,10 +325,12 @@ public class EmbedViewResource {
     /**
      * Shared per-tile query execution for BOTH dashboard tiles and app-page tiles — the ONE
      * guarded query path on the embed surface. Runs under the pinned owner's scope via
-     * {@link SessionService#runAs}, injects the token's forced RLS filters (saiku#1104) and fails
-     * closed if a claim is malformed / unappliable, merges runtime filter-tile overrides via the
-     * validated slicer path, and stamps the redaction-policy + hardening headers. Because app-page
-     * tiles reuse this verbatim, embedding an app introduces NO new query path and NO RLS/PII bypass.
+     * {@link SessionService#runAs}, applies runtime filter-tile overrides FIRST then the token's
+     * forced RLS filters LAST and authoritatively (inline: {@link #applyForcedFilters}; reference:
+     * the {@code executeSaved} forcedFilters channel) — a client filter can only NARROW within the
+     * forced set, and a malformed / unappliable claim fails closed. Stamps the redaction-policy +
+     * hardening headers. Because app-page tiles reuse this verbatim, embedding an app introduces NO
+     * new query path and NO RLS/PII bypass.
      */
     private Response runTileQuery(
             EmbedGuestDetails g, DashboardTile tile, java.util.List<AiFilterSelection> overrides, String endpoint) {
@@ -344,13 +346,19 @@ public class EmbedViewResource {
         try {
             Response result = sessionService.runAs(g.ownerUser, g.ownerRoles, () -> {
                 if ("inline".equals(q.kind) && q.body != null) {
-                    // saiku#1104: inject the JWT's forced RLS filters into the
-                    // inline query before execution; they ride the standard
-                    // (validated) slicer path in AiSchemaConverter.
-                    injectForcedFilters(q.body, g);
-                    // Filter-tile overrides splice on top of any authored / forced filters. If a
-                    // filter tile drives the same dimension as an authored filter, the override wins.
+                    // Order is LOAD-BEARING for RLS (saiku#1104 + security review): apply the
+                    // client filter-tile overrides FIRST (they may narrow/add on any axis), then
+                    // apply the token's forced RLS filters LAST and authoritatively.
                     mergeFilterOverrides(q.body, filterOverrides);
+                    // executeAi (AiSchemaConverter) has NO forced-filter channel and REJECTS two
+                    // filters on one hierarchy, and members inside one filter UNION (Mondrian
+                    // aggregates the set). So we can't append a second same-axis filter and can't
+                    // trust the client's members. applyForcedFilters collapses each forced axis to a
+                    // SINGLE server-computed filter whose members are the forced set intersected with
+                    // whatever the client/author put on that axis — a client can only narrow WITHIN
+                    // the forced set, never widen, strip, or change the operator. A malformed forced
+                    // claim throws here (fail-closed) BEFORE executeAi ever runs.
+                    applyForcedFilters(q.body, parseForcedFilters(g));
                     return aiQueryResource.executeAi(q.body, "records");
                 } else if ("reference".equals(q.kind) && q.path != null) {
                     AiSavedQueryRequest sreq = new AiSavedQueryRequest();
@@ -566,10 +574,15 @@ public class EmbedViewResource {
     }
 
     /**
-     * Splice runtime filter overrides onto an AiQueryRequest before executeAi. For each
-     * override, replace an existing filter that targets the same dimension/hierarchy/level
-     * (case-insensitive); append if no match. Empty-members overrides are pruned before the
-     * merge so a "clear filter" from a filter tile removes the corresponding slicer entirely.
+     * Splice runtime filter-tile overrides onto an AiQueryRequest. For each override, replace an
+     * existing filter that targets the same dimension/hierarchy/level (case-insensitive); append if
+     * no match. Empty-members overrides are pruned so a "clear filter" from a filter tile removes
+     * the corresponding slicer entirely.
+     *
+     * <p>SECURITY: this runs BEFORE {@link #applyForcedFilters}, so it never sees a forced RLS
+     * filter (they aren't in the list yet) and is therefore structurally incapable of removing or
+     * widening one. Any client selection it leaves on a forced axis is subsequently clamped by
+     * {@link #applyForcedFilters}. It must never be called after the forced filters are applied.
      */
     private static void mergeFilterOverrides(AiQueryRequest req, java.util.List<AiFilterSelection> overrides) {
         if (req == null || overrides == null || overrides.isEmpty()) return;
@@ -593,6 +606,83 @@ public class EmbedViewResource {
             current.add(o);
         }
         req.setFilters(current);
+    }
+
+    /**
+     * Apply the token's forced RLS filters to an inline query body AUTHORITATIVELY and LAST — the
+     * fix for the inline RLS-bypass (security review). {@code executeAi} has no separate forced
+     * channel (unlike {@code executeSaved}), rejects two filters on one hierarchy, and unions the
+     * members inside a single filter — so we can't trust the client's list and can't append a
+     * second same-axis filter. For each forced filter we therefore:
+     * <ol>
+     *   <li>remove every existing (authored OR client) filter on the same axis, remembering the
+     *       first one;</li>
+     *   <li>emit a SINGLE authoritative filter for that axis. When both the forced filter and the
+     *       removed client/authored filter are plain {@code op:"in"} member sets, the emitted
+     *       members are {@code clientMembers ∩ forcedMembers} (client can only narrow WITHIN the
+     *       forced set; any out-of-scope member is dropped). An empty intersection falls back to
+     *       the forced ceiling — NEVER empty (empty members would read as "unrestricted"). Any
+     *       other operator on either side discards the client contribution and applies the forced
+     *       filter verbatim.</li>
+     * </ol>
+     * Net invariant: on every forced axis the effective member set is always ⊆ the forced set, so
+     * a client can never widen, strip, or change the operator of an RLS restriction.
+     */
+    private static void applyForcedFilters(AiQueryRequest req, java.util.List<AiFilterSelection> forced) {
+        if (req == null || forced == null || forced.isEmpty()) return;
+        java.util.List<AiFilterSelection> current = req.getFilters();
+        if (current == null) current = new java.util.ArrayList<>();
+        for (AiFilterSelection f : forced) {
+            if (f == null || f.getDimension() == null) continue;
+            // Remove every same-axis filter (authored or client); remember the first for narrowing.
+            AiFilterSelection existing = null;
+            java.util.Iterator<AiFilterSelection> it = current.iterator();
+            while (it.hasNext()) {
+                AiFilterSelection e = it.next();
+                if (e == null) {
+                    it.remove();
+                    continue;
+                }
+                if (sameAxis(e, f)) {
+                    if (existing == null) existing = e;
+                    it.remove();
+                }
+            }
+            // Default: the forced filter is authoritative verbatim. Only when BOTH sides are plain
+            // op:"in" member sets do we honour a client NARROWING (intersection within the forced set).
+            AiFilterSelection effective = f;
+            if (isInOp(f) && existing != null && isInOp(existing)) {
+                java.util.List<String> narrowed = intersectMembers(existing.getMembers(), f.getMembers());
+                java.util.List<String> members =
+                        narrowed.isEmpty() ? new java.util.ArrayList<>(f.getMembers()) : narrowed;
+                effective = new AiFilterSelection(f.getDimension(), f.getHierarchy(), f.getLevel(), members);
+                effective.setOp("in");
+            }
+            current.add(effective);
+        }
+        req.setFilters(current);
+    }
+
+    /** True when the filter is a plain member-set inclusion (op "in" / null / empty). Only these
+     *  can be safely member-intersected; any other op (not_in / between / relative / …) on a forced
+     *  axis makes the client contribution non-narrowing, so the forced filter is applied verbatim. */
+    private static boolean isInOp(AiFilterSelection f) {
+        String op = f.getOp();
+        return op == null || op.isBlank() || "in".equalsIgnoreCase(op);
+    }
+
+    /** Members of {@code client} that are ALSO in {@code forced} (exact-match on MDX unique names),
+     *  preserving the client order. This is the RLS clamp: anything the client named outside the
+     *  forced set is dropped. */
+    private static java.util.List<String> intersectMembers(
+            java.util.List<String> client, java.util.List<String> forced) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (client == null || forced == null) return out;
+        java.util.Set<String> allowed = new java.util.HashSet<>(forced);
+        for (String m : client) {
+            if (m != null && allowed.contains(m)) out.add(m);
+        }
+        return out;
     }
 
     private static boolean sameAxis(AiFilterSelection a, AiFilterSelection b) {
@@ -708,19 +798,6 @@ public class EmbedViewResource {
                 .entity(Map.of("status", "EMBED_INVALID", "error", "Embed link is invalid or expired."))
                 .type(MediaType.APPLICATION_JSON)
                 .build());
-    }
-
-    /**
-     * saiku#1104 — append the JWT's forced RLS filters to an inline query. They
-     * ride the standard validated slicer path (AiSchemaConverter), so a forced
-     * filter can't inject bad MDX. A malformed claim must NOT degrade to an
-     * unfiltered query — a parse failure throws, and the caller fails closed.
-     */
-    private void injectForcedFilters(AiQueryRequest body, EmbedGuestDetails g) {
-        if (body == null) {
-            return;
-        }
-        body.getFilters().addAll(parseForcedFilters(g));
     }
 
     /**

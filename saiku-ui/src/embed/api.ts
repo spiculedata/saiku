@@ -158,9 +158,12 @@ export async function fetchApp(
 /**
  * Run one app-page tile's authored query. Purely presentational over the SAME embed query path
  * the dashboard tiles use — the server pulls the query body from the pinned app document (never
- * the client), and per-query RLS/PII enforcement (forced filters applied LAST, fail-closed;
- * FORCE_ON redaction header) carries over unchanged. The guest supplies only page id + tile id
- * (+ optional filter-tile overrides that can only NARROW).
+ * the client). Per-query RLS/PII enforcement carries over unchanged: the token's forced RLS
+ * filters are applied server-side LAST and authoritatively (each forced axis is collapsed to a
+ * single filter whose members are the forced set intersected with the client selection), a
+ * malformed / unappliable claim fails closed, and FORCE_ON stamps the redaction header. The
+ * guest supplies only page id + tile id (+ optional filter-tile overrides that can only NARROW
+ * WITHIN the forced set — they can never widen, strip, or re-operator an RLS restriction).
  */
 export async function fetchAppTile(
   server: string,
