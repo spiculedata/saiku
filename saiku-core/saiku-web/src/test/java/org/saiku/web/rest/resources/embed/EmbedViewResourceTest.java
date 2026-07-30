@@ -1,11 +1,14 @@
 package org.saiku.web.rest.resources.embed;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import jakarta.ws.rs.core.Response;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -13,6 +16,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.olap.ai.AiFilterSelection;
 import org.saiku.service.olap.ai.AiQueryRequest;
 import org.saiku.service.olap.ai.AiSavedQueryRequest;
 import org.saiku.service.olap.ai.audit.AiAuditEntry;
@@ -310,7 +314,140 @@ public class EmbedViewResourceTest {
         assertTrue(e.endpoint.contains("/embed/"));
     }
 
+    /* ------ security review: forced-RLS vs client-override collision (inline) ------ */
+    // The bug: on the inline path, forced RLS filters were injected FIRST then the
+    // client override REMOVED the same-axis forced filter and appended the client's
+    // members. A client could therefore widen (union in extra members) or strip
+    // (empty members) the RLS restriction. These prove the fix — forced filters are
+    // applied LAST and authoritatively; a client can only NARROW within the forced set.
+
+    private static final String DASH_INLINE_TILE =
+            "{\"layout\":{\"tiles\":[{\"id\":\"t1\",\"query\":{\"kind\":\"inline\",\"body\":{}}}]}}";
+    // Forced: Customer ∈ {acme}
+    private static final String FORCE_CUSTOMER_ACME =
+            "[{\"dimension\":\"Customer\",\"hierarchy\":\"Customer\",\"level\":\"Customer\",\"op\":\"in\","
+                    + "\"members\":[\"[Customer].[acme]\"]}]";
+    // Forced: Customer ∈ {acme, bigcorp} — used for the legitimate-narrow test
+    private static final String FORCE_CUSTOMER_ACME_BIGCORP =
+            "[{\"dimension\":\"Customer\",\"hierarchy\":\"Customer\",\"level\":\"Customer\",\"op\":\"in\","
+                    + "\"members\":[\"[Customer].[acme]\",\"[Customer].[bigcorp]\"]}]";
+
+    @Test
+    public void dashboard_inline_client_cannot_widen_forced_rls() {
+        // Exploit (a): client override widens Customer to {acme, competitor}. competitor must
+        // never reach the engine — the executed filter stays Customer ∈ {acme}.
+        ds.fileContent = DASH_INLINE_TILE;
+        pinGuestJwt("dashboard", "/homes/admin/exec.saikudash", "admin", List.of(), "u_1", FORCE_CUSTOMER_ACME);
+
+        Response r = resource.tileQuery(
+                "homes/admin/exec.saikudash",
+                "t1",
+                overrides(in("Customer", "[Customer].[acme]", "[Customer].[competitor]")));
+
+        assertEquals(200, r.getStatus());
+        AiFilterSelection cust = onlyFilterFor(ai.lastAiRequest.getFilters(), "Customer");
+        assertEquals(List.of("[Customer].[acme]"), cust.getMembers());
+        assertFalse(
+                "competitor must never reach the engine (RLS widen blocked)",
+                cust.getMembers().contains("[Customer].[competitor]"));
+    }
+
+    @Test
+    public void dashboard_inline_client_cannot_strip_forced_rls() {
+        // Exploit (b): client override with members:[] to strip the slicer. Forced Customer ∈
+        // {acme} must still be enforced.
+        ds.fileContent = DASH_INLINE_TILE;
+        pinGuestJwt("dashboard", "/homes/admin/exec.saikudash", "admin", List.of(), "u_1", FORCE_CUSTOMER_ACME);
+
+        Response r = resource.tileQuery("homes/admin/exec.saikudash", "t1", overrides(in("Customer")));
+
+        assertEquals(200, r.getStatus());
+        AiFilterSelection cust = onlyFilterFor(ai.lastAiRequest.getFilters(), "Customer");
+        assertEquals("RLS strip blocked — forced members re-applied", List.of("[Customer].[acme]"), cust.getMembers());
+    }
+
+    @Test
+    public void dashboard_inline_client_cannot_escape_forced_rls_via_operator() {
+        // Exploit variant: client tries op:"not_in" on the forced axis to invert it. The
+        // non-"in" operator on a forced axis discards the client contribution — forced applies
+        // verbatim as op:"in" {acme}.
+        ds.fileContent = DASH_INLINE_TILE;
+        pinGuestJwt("dashboard", "/homes/admin/exec.saikudash", "admin", List.of(), "u_1", FORCE_CUSTOMER_ACME);
+
+        Response r = resource.tileQuery(
+                "homes/admin/exec.saikudash", "t1", overrides(notIn("Customer", "[Customer].[acme]")));
+
+        assertEquals(200, r.getStatus());
+        AiFilterSelection cust = onlyFilterFor(ai.lastAiRequest.getFilters(), "Customer");
+        assertEquals("forced op must win", "in", cust.getOp());
+        assertEquals(List.of("[Customer].[acme]"), cust.getMembers());
+    }
+
+    @Test
+    public void dashboard_inline_client_narrow_within_forced_set_is_honoured() {
+        // Legitimate: forced Customer ∈ {acme, bigcorp}; client narrows to {acme}. The narrow is
+        // honoured because it stays WITHIN the forced set.
+        ds.fileContent = DASH_INLINE_TILE;
+        pinGuestJwt("dashboard", "/homes/admin/exec.saikudash", "admin", List.of(), "u_1", FORCE_CUSTOMER_ACME_BIGCORP);
+
+        Response r =
+                resource.tileQuery("homes/admin/exec.saikudash", "t1", overrides(in("Customer", "[Customer].[acme]")));
+
+        assertEquals(200, r.getStatus());
+        AiFilterSelection cust = onlyFilterFor(ai.lastAiRequest.getFilters(), "Customer");
+        assertEquals(List.of("[Customer].[acme]"), cust.getMembers());
+    }
+
+    @Test
+    public void dashboard_inline_client_narrows_different_axis_keeps_both() {
+        // Exploit (c) / legitimate: client narrows a DIFFERENT axis (Product). Both the forced
+        // Customer RLS and the client's Product narrowing apply.
+        ds.fileContent = DASH_INLINE_TILE;
+        pinGuestJwt("dashboard", "/homes/admin/exec.saikudash", "admin", List.of(), "u_1", FORCE_CUSTOMER_ACME);
+
+        Response r =
+                resource.tileQuery("homes/admin/exec.saikudash", "t1", overrides(in("Product", "[Product].[widgets]")));
+
+        assertEquals(200, r.getStatus());
+        List<AiFilterSelection> fs = ai.lastAiRequest.getFilters();
+        assertEquals(List.of("[Customer].[acme]"), onlyFilterFor(fs, "Customer").getMembers());
+        assertEquals(
+                List.of("[Product].[widgets]"), onlyFilterFor(fs, "Product").getMembers());
+    }
+
     /* --------------------------- helpers ---------------------------- */
+
+    /** Build a TileQueryOverrides from client filter selections. */
+    private static EmbedViewResource.TileQueryOverrides overrides(AiFilterSelection... fs) {
+        EmbedViewResource.TileQueryOverrides o = new EmbedViewResource.TileQueryOverrides();
+        o.filters = new ArrayList<>(Arrays.asList(fs));
+        return o;
+    }
+
+    /** op:"in" client filter on dim (dim=hierarchy=level for the test cube). */
+    private static AiFilterSelection in(String dim, String... members) {
+        AiFilterSelection f = new AiFilterSelection(dim, dim, dim, new ArrayList<>(Arrays.asList(members)));
+        f.setOp("in");
+        return f;
+    }
+
+    /** op:"not_in" client filter — used to prove an operator swap can't escape the RLS clamp. */
+    private static AiFilterSelection notIn(String dim, String... members) {
+        AiFilterSelection f = new AiFilterSelection(dim, dim, dim, new ArrayList<>(Arrays.asList(members)));
+        f.setOp("not_in");
+        return f;
+    }
+
+    /** Assert exactly one filter targets {@code dim} (executeAi rejects duplicate hierarchies) and
+     *  return it. */
+    private static AiFilterSelection onlyFilterFor(List<AiFilterSelection> filters, String dim) {
+        List<AiFilterSelection> matches = new ArrayList<>();
+        for (AiFilterSelection f : filters) {
+            if (dim.equals(f.getDimension())) matches.add(f);
+        }
+        assertEquals("exactly one " + dim + " slicer (executeAi rejects duplicate hierarchies)", 1, matches.size());
+        return matches.get(0);
+    }
 
     private void pinGuestJwt(
             String kind, String path, String user, List<String> roles, String sub, String forcedFiltersJson) {
