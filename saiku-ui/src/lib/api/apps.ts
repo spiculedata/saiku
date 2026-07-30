@@ -12,6 +12,10 @@
  * dashboard layout as page 0, which is the parity / back-compat guarantee.
  *
  * Mirrors the style of $lib/api/dashboards.ts (pure model + factory helpers).
+ *
+ * REST client at the foot of this file mirrors DashboardResource's client
+ * (fetch + credentials:"include") and talks to AppResource under
+ * {@code /rest/saiku/api/apps}.
  */
 
 export interface SaikuApp {
@@ -117,4 +121,79 @@ export function normaliseApp(raw: SaikuAppInput): SaikuApp {
     })),
     tags: raw.tags ?? [],
   };
+}
+
+/* =========================================================================
+ * REST client — CRUD over AppResource (/saiku/api/apps).
+ *
+ * Mirrors $lib/api/dashboards.ts: bare fetch with credentials:"include" so the
+ * session cookie rides along, JSON Accept, and a thrown Error carrying
+ * `${path} -> ${status}` on any non-2xx. The CSRF header on POST / DELETE is
+ * injected globally by the http.ts fetch interceptor — no per-call handling.
+ * ========================================================================= */
+
+const REST_BASE = "/rest/saiku/api/apps";
+
+/** One row in the saved-apps catalogue. Matches the {@code RepositoryFileObject}
+ *  shape AppResource#list returns (a flat list of {@code .saikuapp} files, each
+ *  serialised via Jackson getters). {@code path} + {@code name} are the only
+ *  fields the catalogue UI needs; the rest are carried through for #935-style
+ *  owner/modified sorting when a list view wants them. */
+export interface AppSummary {
+  path: string;
+  name: string;
+  type?: "FILE" | "FOLDER";
+  fileType?: string;
+  id?: string;
+  owner?: string | null;
+  modified?: number;
+}
+
+/** List saved apps. Throws on any non-2xx. */
+export async function listApps(): Promise<AppSummary[]> {
+  const res = await fetch(REST_BASE, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`listApps -> ${res.status}`);
+  return (await res.json()) as AppSummary[];
+}
+
+/** Load a raw app doc by repository path and normalise it into a complete
+ *  {@link SaikuApp}. Throws on any non-2xx. */
+export async function getApp(path: string): Promise<SaikuApp> {
+  const res = await fetch(`${REST_BASE}/${encodePath(path)}`, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+  const raw = (await res.json()) as SaikuAppInput;
+  return normaliseApp(raw);
+}
+
+/** Save (create or overwrite) an app at {@code path}. Throws on any non-2xx. */
+export async function saveApp(path: string, app: SaikuApp): Promise<void> {
+  const res = await fetch(`${REST_BASE}/${encodePath(path)}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(app),
+  });
+  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+}
+
+/** Delete the app at {@code path}. Throws on any non-2xx. */
+export async function deleteApp(path: string): Promise<void> {
+  const res = await fetch(`${REST_BASE}/${encodePath(path)}`, {
+    method: "DELETE",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+}
+
+/** URL-encode each path segment but leave slashes as-is — AppResource binds
+ *  {@code {path:.+}} which captures slashes natively (same as DashboardResource). */
+function encodePath(path: string): string {
+  return path.split("/").map(encodeURIComponent).join("/");
 }
