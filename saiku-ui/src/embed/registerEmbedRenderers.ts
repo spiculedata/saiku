@@ -14,9 +14,11 @@
  */
 
 import type { Component } from "svelte";
-import { registerTileRenderer } from "../lib/dashboard/tileRegistry";
+import { registerTileRenderer, type ValidateOptionsResult } from "../lib/dashboard/tileRegistry";
 import { validateEchartsOption } from "../lib/dashboard/custom/echartsOption";
+import { validateGraphConfig } from "../lib/dashboard/custom/graphTile";
 import EmbedEChartsOptionTile from "../lib/views/dashboard/tiles/custom/EmbedEChartsOptionTile.svelte";
+import EmbedGraphTile from "../lib/views/dashboard/tiles/custom/EmbedGraphTile.svelte";
 
 registerTileRenderer({
   id: "echarts-option",
@@ -29,4 +31,18 @@ registerTileRenderer({
   embedComponent: EmbedEChartsOptionTile as unknown as Component,
   isQueryable: true,
   validateOptions: validateEchartsOption,
+});
+
+registerTileRenderer({
+  id: "graph",
+  label: "Graph",
+  icon: "🕸️",
+  // component unused on the embed surface (see above) — reuse the embed
+  // component so no app module is pulled into the self-contained bundle.
+  component: EmbedGraphTile as unknown as Component,
+  embedComponent: EmbedGraphTile as unknown as Component,
+  isQueryable: true,
+  // GraphConfig is a typed shape (no index signature); widen the validated
+  // value to the registry's Record<string, unknown> at the boundary.
+  validateOptions: validateGraphConfig as (o: unknown) => ValidateOptionsResult,
 });

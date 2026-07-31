@@ -7,18 +7,22 @@
  *   - enables AddTileMenu's "Custom…" entry (gated on listTileRenderers()), and
  *   - lets Tile.svelte's `custom` branch resolve `tile.custom.renderer`.
  *
- * Currently just the `echarts-option` renderer: a declarative, validated (NO
- * code) ECharts option tile. Its embed variant is registered SEPARATELY for the
- * embed bundle (src/embed/registerEmbedRenderers.ts) so the app-only in-tile
- * component + its store graph never get pulled into the self-contained embed
- * IIFE.
+ * Two renderers today: the `echarts-option` renderer (a declarative, validated —
+ * NO code — ECharts option tile) and the `graph` renderer (records → an ECharts
+ * graph series via a declarative column mapping). Their embed variants are
+ * registered SEPARATELY for the embed bundle (src/embed/registerEmbedRenderers.ts)
+ * so the app-only in-tile components + their store graph never get pulled into
+ * the self-contained embed IIFE.
  */
 
 import type { Component } from "svelte";
-import { registerTileRenderer } from "$lib/dashboard/tileRegistry";
+import { registerTileRenderer, type ValidateOptionsResult } from "$lib/dashboard/tileRegistry";
 import { validateEchartsOption } from "$lib/dashboard/custom/echartsOption";
+import { validateGraphConfig } from "$lib/dashboard/custom/graphTile";
 import EChartsOptionTile from "$lib/views/dashboard/tiles/custom/EChartsOptionTile.svelte";
 import EmbedEChartsOptionTile from "$lib/views/dashboard/tiles/custom/EmbedEChartsOptionTile.svelte";
+import GraphTile from "$lib/views/dashboard/tiles/custom/GraphTile.svelte";
+import EmbedGraphTile from "$lib/views/dashboard/tiles/custom/EmbedGraphTile.svelte";
 
 // The registry types `component`/`embedComponent` as the prop-erased `Component`
 // (renderers are dispatched dynamically); these tiles declare a required `tile`
@@ -31,4 +35,17 @@ registerTileRenderer({
   embedComponent: EmbedEChartsOptionTile as unknown as Component,
   isQueryable: true,
   validateOptions: validateEchartsOption,
+});
+
+registerTileRenderer({
+  id: "graph",
+  label: "Graph",
+  icon: "🕸️",
+  component: GraphTile as unknown as Component,
+  embedComponent: EmbedGraphTile as unknown as Component,
+  isQueryable: true,
+  // GraphConfig is a typed shape (no index signature); the registry types the
+  // validated value as Record<string, unknown>. The runtime value is a plain
+  // record, so widen it at the registration boundary.
+  validateOptions: validateGraphConfig as (o: unknown) => ValidateOptionsResult,
 });

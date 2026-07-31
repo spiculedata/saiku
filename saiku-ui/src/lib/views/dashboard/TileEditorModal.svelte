@@ -79,6 +79,8 @@
   // renderer gets a JSON option editor with live safe-subset validation.
   import { getTileRenderer } from "$lib/dashboard/tileRegistry";
   import { validateEchartsOption } from "$lib/dashboard/custom/echartsOption";
+  // The `graph` renderer gets a declarative column-mapping editor (NO code).
+  import { validateGraphConfig, type GraphLayout } from "$lib/dashboard/custom/graphTile";
 
   interface Props {
     tile: DashboardTile;
@@ -234,6 +236,9 @@
   const isEchartsOptionTile = untrack(
     () => tile.type === "custom" && tile.custom?.renderer === "echarts-option",
   );
+  const isGraphTile = untrack(
+    () => tile.type === "custom" && tile.custom?.renderer === "graph",
+  );
   const customQueryable = untrack(() =>
     tile.type === "custom" && !!tile.custom
       ? (getTileRenderer(tile.custom.renderer)?.isQueryable ?? false)
@@ -263,6 +268,42 @@
     }
     return validateEchartsOption(parsed);
   });
+
+  // ── App Builder Phase 2 (saiku#1441): `graph` renderer column mapping ──
+  // A declarative mapping of query columns → graph endpoints (NO code). Seeded
+  // from the saved tile.custom.options, live-validated below, persisted on Save.
+  const savedGraph = untrack(() => (tile.custom?.options ?? {}) as Record<string, unknown>);
+  let graphIdCol = $state<string>(untrack(() => String(savedGraph.idCol ?? "")));
+  let graphLabelCol = $state<string>(untrack(() => String(savedGraph.labelCol ?? "")));
+  let graphSourceCol = $state<string>(untrack(() => String(savedGraph.sourceCol ?? "")));
+  let graphTargetCol = $state<string>(untrack(() => String(savedGraph.targetCol ?? "")));
+  let graphValueCol = $state<string>(untrack(() => String(savedGraph.valueCol ?? "")));
+  let graphLayout = $state<GraphLayout>(
+    untrack(() => (savedGraph.layout === "circular" ? "circular" : "force")),
+  );
+  // Assemble the current form into an options object (empty optionals dropped).
+  function graphOptionsFromForm(): Record<string, unknown> {
+    const opts: Record<string, unknown> = {
+      idCol: graphIdCol.trim(),
+      sourceCol: graphSourceCol.trim(),
+      targetCol: graphTargetCol.trim(),
+      layout: graphLayout,
+    };
+    if (graphLabelCol.trim()) opts.labelCol = graphLabelCol.trim();
+    if (graphValueCol.trim()) opts.valueCol = graphValueCol.trim();
+    return opts;
+  }
+  // Live validation feedback for the graph mapping.
+  let graphConfigValidation = $derived.by(() =>
+    validateGraphConfig({
+      idCol: graphIdCol.trim(),
+      sourceCol: graphSourceCol.trim(),
+      targetCol: graphTargetCol.trim(),
+      layout: graphLayout,
+      labelCol: graphLabelCol.trim() || undefined,
+      valueCol: graphValueCol.trim() || undefined,
+    }),
+  );
 
   // ── Issue #912: inline visual query editor ──────────────────────────
   // For chart / table tiles, "Edit query visually" mounts the workspace
@@ -702,6 +743,21 @@
       patch.custom = { renderer: tile.custom.renderer, options };
     }
 
+    // App Builder Phase 2 (saiku#1441): persist the graph column mapping.
+    // Validate again on save (defence in depth) and store the SAFE, normalised
+    // value — never raw form strings.
+    if (isGraphTile && tile.custom) {
+      const v = validateGraphConfig(graphOptionsFromForm());
+      if (!v.ok) {
+        bodyError = `Invalid graph config: ${v.error}`;
+        return;
+      }
+      patch.custom = {
+        renderer: tile.custom.renderer,
+        options: v.value as unknown as Record<string, unknown>,
+      };
+    }
+
     if (wantsQuery) {
       if (queryMode === "reference") {
         if (referencePath) {
@@ -1076,6 +1132,51 @@
             Categories + series data come from the tile's query below.
           </span>
         </label>
+      {/if}
+
+      <!-- App Builder Phase 2 (saiku#1441): graph renderer editor. A declarative
+           mapping of the query's columns → graph nodes + edges (NO code).
+           Persisted into tile.custom.options on Save. -->
+      {#if isGraphTile}
+        <fieldset class="graph-map">
+          <legend>Graph columns</legend>
+          <label class="field">
+            <span>Source column</span>
+            <input type="text" bind:value={graphSourceCol} spellcheck="false" placeholder="e.g. Parent" />
+          </label>
+          <label class="field">
+            <span>Target column</span>
+            <input type="text" bind:value={graphTargetCol} spellcheck="false" placeholder="e.g. Child" />
+          </label>
+          <label class="field">
+            <span>Id column</span>
+            <input type="text" bind:value={graphIdCol} spellcheck="false" placeholder="node id (often = source)" />
+          </label>
+          <label class="field">
+            <span>Label column <span class="hint">(optional)</span></span>
+            <input type="text" bind:value={graphLabelCol} spellcheck="false" placeholder="display name for the id node" />
+          </label>
+          <label class="field">
+            <span>Value column <span class="hint">(optional)</span></span>
+            <input type="text" bind:value={graphValueCol} spellcheck="false" placeholder="measure carried onto edges" />
+          </label>
+          <label class="field">
+            <span>Layout</span>
+            <select bind:value={graphLayout}>
+              <option value="force">Force</option>
+              <option value="circular">Circular</option>
+            </select>
+          </label>
+          {#if graphConfigValidation.ok}
+            <span class="hint ok">✓ Valid mapping — nodes + edges are built from the tile's query below.</span>
+          {:else}
+            <span class="hint error">{graphConfigValidation.error}</span>
+          {/if}
+          <span class="hint">
+            Each query row becomes an edge source → target; nodes are deduped across rows.
+            Column names must match the query's row-header / measure captions.
+          </span>
+        </fieldset>
       {/if}
 
       {#if wantsQuery}
