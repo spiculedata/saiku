@@ -11,6 +11,10 @@
    */
 
   import type { TileType } from "$lib/api/dashboards";
+  // App Builder Phase 2 (saiku#1441): surface registered custom renderers as an
+  // add-tile option. None are registered yet (they arrive in Tasks 5-7), so the
+  // entry stays disabled until a renderer is installed by import side-effect.
+  import { listTileRenderers } from "$lib/dashboard/tileRegistry";
   import { Button } from "$lib/components/ui";
 
   interface Props {
@@ -26,6 +30,11 @@
   let { onPick, disabled = false, align = "right" }: Props = $props();
 
   let open = $state(false);
+
+  // Registered custom renderers, snapshotted when the menu opens (all
+  // import-side-effect registrations have run by then). Renderer selection is
+  // deferred to the tile's ⚙ editor — this entry just seeds a "custom" tile.
+  const customRenderers = $derived(open ? listTileRenderers() : []);
 
   function pick(type: TileType): void {
     onPick(type);
@@ -90,6 +99,25 @@
           <span class="hint">A logo, diagram or screenshot from a URL or upload.</span>
         </span>
       </button>
+      <button
+        type="button"
+        class="menu-item"
+        role="menuitem"
+        disabled={customRenderers.length === 0}
+        onclick={() => pick("custom")}
+      >
+        <span class="icon" aria-hidden="true">🧩</span>
+        <span>
+          <span class="block font-medium">Custom…</span>
+          <span class="hint">
+            {#if customRenderers.length === 0}
+              No custom renderers installed.
+            {:else}
+              A pluggable renderer; pick which one in the tile's ⚙ editor.
+            {/if}
+          </span>
+        </span>
+      </button>
     </div>
   {/if}
 </div>
@@ -127,6 +155,13 @@
   .menu-item:hover, .menu-item:focus {
     background: var(--bg-subtle);
     outline: none;
+  }
+  .menu-item:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .menu-item:disabled:hover, .menu-item:disabled:focus {
+    background: transparent;
   }
   .icon {
     font-size: 1.125rem;

@@ -23,6 +23,13 @@
   import type { EmbedDashboardTile, EmbedQueryResponse, EmbedRow } from "./types";
   import EmbedChart from "./EmbedChart.svelte";
   import EmbedFilterTile from "./EmbedFilterTile.svelte";
+  // App Builder Phase 2 (saiku#1441): open the embed tile dispatch to pluggable
+  // renderers. Uses the renderer's token-scoped embedComponent; absent → the
+  // existing "Unsupported tile" placeholder. Built-in branches stay untouched.
+  // Relative import (not $lib): the embed bundle has its own vite config with no
+  // $lib alias and must stay self-contained. tileRegistry is type-only aside
+  // from the `svelte` Component type, so it bundles into the IIFE cleanly.
+  import { getTileRenderer } from "../lib/dashboard/tileRegistry";
 
   interface Props {
     /** {cols, tiles} — a dashboard layout or a single app page's grid. */
@@ -163,6 +170,14 @@
             fetchMembers={(q, limit) => fetchMembers(tile.id, q, limit)}
             onChange={(o) => onFilterChange(tile.id, o)}
           />
+        {:else if tile.type === "custom"}
+          {@const r = tile.custom ? getTileRenderer(tile.custom.renderer) : undefined}
+          {#if r?.embedComponent}
+            {@const Renderer = r.embedComponent}
+            <Renderer {tile} rows={tileData[tile.id]} />
+          {:else}
+            <div class="state muted">Unsupported tile</div>
+          {/if}
         {:else}
           <div class="state muted">Unsupported tile</div>
         {/if}

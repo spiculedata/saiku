@@ -25,6 +25,9 @@
   import TextTile from "$lib/views/dashboard/tiles/TextTile.svelte";
   import KpiTile from "$lib/views/dashboard/tiles/KpiTile.svelte";
   import ImageTile from "$lib/views/dashboard/tiles/ImageTile.svelte";
+  // App Builder Phase 2 (saiku#1441): open the tile dispatch to pluggable
+  // renderers looked up by tile.custom.renderer. Built-ins keep their branches.
+  import { getTileRenderer } from "$lib/dashboard/tileRegistry";
   import TileEditorModal from "$lib/views/dashboard/TileEditorModal.svelte";
   import { Copy, MoreVertical, Settings2, X, MessageCircle, Minus, Plus } from "lucide-svelte";
   // #942 PR2 — per-tile comments.
@@ -259,6 +262,14 @@
       <KpiTile {tile} />
     {:else if tile.type === "image"}
       <ImageTile {tile} />
+    {:else if tile.type === "custom"}
+      {@const r = tile.custom ? getTileRenderer(tile.custom.renderer) : undefined}
+      {#if r?.component}
+        {@const Renderer = r.component}
+        <Renderer {tile} onClickFilter={readOnly ? undefined : handleClickFilter} />
+      {:else}
+        <div class="p-2 text-fg-muted text-sm">Unknown renderer: {tile.custom?.renderer ?? "(none)"}</div>
+      {/if}
     {:else}
       <div class="p-2 text-danger text-sm">Unknown tile type: {tile.type}</div>
     {/if}
