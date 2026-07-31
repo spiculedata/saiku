@@ -1329,6 +1329,63 @@ describe("buildChartOption — axis titles (#1596)", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// #1599: the value (y) axis was drawing too few gridlines — a bar chart showed
+// only 0 and 20,000, so intermediate magnitudes were unreadable. The fix gives
+// the value axis an explicit splitNumber so ECharts targets several nice-number
+// intervals; compact tiles ask for fewer so a small tile doesn't crowd.
+// ---------------------------------------------------------------------------
+describe("buildChartOption — value-axis tick density (#1599)", () => {
+  const valueAxisOf = (opt: Record<string, unknown>) =>
+    (Array.isArray(opt.yAxis) ? opt.yAxis[0] : opt.yAxis) as { splitNumber?: number };
+
+  test("roomy cartesian charts request several value-axis ticks", () => {
+    for (const t of ["bar", "stackedBar", "line", "stackedLine", "area", "stackedArea"]) {
+      const opt = buildChartOption(sample(), t, opts({ dualAxis: false }), undefined, {
+        compact: false,
+      }) as Record<string, unknown>;
+      // A readable density: more than the sparse "just endpoints" the bug showed.
+      expect(valueAxisOf(opt).splitNumber, t).toBeGreaterThanOrEqual(4);
+    }
+  });
+
+  test("compact tiles use fewer ticks than roomy charts (don't over-crowd)", () => {
+    const roomy = buildChartOption(sample(), "bar", opts({ dualAxis: false }), undefined, {
+      compact: false,
+    }) as Record<string, unknown>;
+    const compact = buildChartOption(sample(), "bar", opts({ dualAxis: false }), undefined, {
+      compact: true,
+    }) as Record<string, unknown>;
+    expect(valueAxisOf(compact).splitNumber).toBeLessThan(valueAxisOf(roomy).splitNumber!);
+  });
+
+  test("waterfall's value axis gets the tick density too", () => {
+    const wf: ChartProjection = {
+      rowCategories: ["Start", "Up", "Down"],
+      columnCategories: ["Delta"],
+      matrix: [[100], [40], [-30]],
+    };
+    const opt = buildChartOption(wf, "waterfall", opts()) as Record<string, unknown>;
+    expect((opt.yAxis as { splitNumber?: number }).splitNumber).toBeGreaterThanOrEqual(4);
+  });
+
+  test("dual-axis: BOTH value axes carry the tick density", () => {
+    const disparate: ChartProjection = {
+      rowCategories: ["a", "b"],
+      columnCategories: ["Big", "Tiny"],
+      matrix: [
+        [100000, 1],
+        [120000, 2],
+      ],
+    };
+    const opt = buildChartOption(disparate, "bar", opts({ dualAxis: true })) as Record<string, unknown>;
+    const yAxis = opt.yAxis as Array<{ splitNumber?: number }>;
+    expect(yAxis).toHaveLength(2);
+    expect(yAxis[0].splitNumber).toBeGreaterThanOrEqual(4);
+    expect(yAxis[1].splitNumber).toBeGreaterThanOrEqual(4);
+  });
+});
+
 describe("brushOption / BRUSHABLE_CHART_TYPES — cross-filter (#1085)", () => {
   test("brushable cartesian kinds return a lineX single-selection brush", () => {
     for (const kind of ["bar", "stackedBar", "line", "stackedLine", "area", "stackedArea"]) {
