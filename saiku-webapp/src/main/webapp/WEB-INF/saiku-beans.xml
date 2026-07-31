@@ -887,4 +887,14 @@
         <property name="userService" ref="userServiceBean"/>
     </bean>
 
+    <!-- Cube/schema designer backend (saiku-ui/src/lib/cube-designer). Reuses the
+         schema-generator's JDBC connection provider + the datasource service;
+         auto-registered as a JAX-RS resource by SaikuJerseyApplication's @Path scan. -->
+    <bean id="cubeDesignerResource"
+          class="org.saiku.web.rest.resources.cubedesigner.CubeDesignerResource">
+        <constructor-arg ref="schemaGenConnectionProvider"/>
+        <constructor-arg ref="datasourceServiceBean"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
+
 </beans>
