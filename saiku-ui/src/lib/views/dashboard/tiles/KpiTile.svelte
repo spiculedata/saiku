@@ -395,10 +395,10 @@
     // accent var is in scope (plain dashboards keep their existing look).
     let accent: string | undefined;
     try {
-      const c = getComputedStyle(sparkHost)
-        .getPropertyValue("--saiku-app-accent")
-        .trim();
-      if (c) accent = c;
+      if (sparkHost) {
+        const c = getComputedStyle(sparkHost).getPropertyValue("--saiku-app-accent").trim();
+        if (c) accent = c;
+      }
     } catch {
       /* getComputedStyle can throw on a detached node — ignore */
     }

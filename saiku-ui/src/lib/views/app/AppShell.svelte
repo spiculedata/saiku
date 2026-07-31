@@ -31,6 +31,20 @@
   import AppNavRail from "$lib/views/app/AppNavRail.svelte";
   import AppTopNav from "$lib/views/app/AppTopNav.svelte";
   import AppPageView from "$lib/views/app/AppPageView.svelte";
+  import AppAssistant from "$lib/views/app/AppAssistant.svelte";
+
+  /** First cube bound to any tile across the app — the assistant's fallback
+   *  scope when the assistant slot doesn't name one explicitly. */
+  function firstAppCube(a: SaikuApp): AppAssistantCube | null {
+    for (const p of a.pages) {
+      const grid = p.grid as { tiles?: Array<{ cube?: AppAssistantCube }> } | null;
+      for (const t of grid?.tiles ?? []) {
+        if (t.cube?.connectionName && t.cube?.cubeName) return t.cube;
+      }
+    }
+    return null;
+  }
+  type AppAssistantCube = { connectionName: string; catalog: string; schema: string; cubeName: string };
 
   interface Props {
     app: SaikuApp;
@@ -135,11 +149,8 @@
       {/if}
     </main>
 
-    {#if app.assistantSlot.enabled}
-      <!-- Reserved right-hand assistant column (Phase 5). Empty for now — it
-           only reserves the layout track so the page region doesn't reflow when
-           the assistant lands. -->
-      <aside class="saiku-app__assistant" aria-label="Assistant"></aside>
+    {#if app.assistantSlot.enabled && !narrow}
+      <AppAssistant slot={app.assistantSlot} fallbackCube={firstAppCube(app)} />
     {/if}
   </div>
 
@@ -182,16 +193,5 @@
     padding: 1rem;
     height: 100%;
     box-sizing: border-box;
-  }
-  .saiku-app__assistant {
-    width: 20rem;
-    flex-shrink: 0;
-    border-left: 1px solid var(--border);
-    background: var(--bg-subtle, var(--bg));
-  }
-  /* Narrow: the assistant column drops below the breakpoint so the page keeps
-     the full width; the bottom-bar rail is rendered after the body. */
-  .saiku-app--narrow .saiku-app__assistant {
-    display: none;
   }
 </style>

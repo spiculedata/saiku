@@ -25,9 +25,27 @@ export interface SaikuApp {
   logo?: string | null;
   theme: AppTheme;
   nav: AppNav;
-  assistantSlot: { enabled: boolean };
+  assistantSlot: AppAssistantSlot;
   pages: AppPage[];
   tags: string[];
+}
+
+/** The right-hand "Ask" assistant column. When enabled, the app renders an
+ *  in-app natural-language chat scoped to {@link cube}, hitting /ai/ask. */
+export interface AppAssistantSlot {
+  enabled: boolean;
+  /** Panel title, e.g. "FoodMart" → rendered as "Ask FoodMart". */
+  title?: string;
+  /** Persona label shown under the title, e.g. "Sales Analyst". */
+  persona?: string;
+  /** Small scope note after the persona, e.g. "scoped to your stores". */
+  scope?: string;
+  /** Opening assistant message (markdown-ish plain text). */
+  greeting?: string;
+  /** Suggested prompt chips under a "Try asking" heading. */
+  suggestedPrompts?: string[];
+  /** Cube the assistant queries. Falls back to the first queryable tile's cube. */
+  cube?: { connectionName: string; catalog: string; schema: string; cubeName: string };
 }
 
 export interface AppTheme {
@@ -98,7 +116,7 @@ export function appFromDashboard(name: string, dashboardLayout: unknown): SaikuA
 export type SaikuAppInput = Partial<Omit<SaikuApp, "theme" | "nav" | "assistantSlot" | "pages">> & {
   theme?: Partial<AppTheme>;
   nav?: Partial<AppNav>;
-  assistantSlot?: Partial<{ enabled: boolean }>;
+  assistantSlot?: Partial<AppAssistantSlot>;
   pages?: Partial<AppPage>[];
 };
 
@@ -112,7 +130,7 @@ export function normaliseApp(raw: SaikuAppInput): SaikuApp {
     logo: raw.logo ?? null,
     theme: { mode: raw.theme?.mode ?? "auto", ...raw.theme },
     nav: { position: raw.nav?.position ?? "rail" },
-    assistantSlot: { enabled: raw.assistantSlot?.enabled ?? false },
+    assistantSlot: { ...raw.assistantSlot, enabled: raw.assistantSlot?.enabled ?? false },
     pages: (raw.pages ?? []).map((p, i) => ({
       id: p.id ?? localId("page"),
       title: p.title ?? `Page ${i + 1}`,
