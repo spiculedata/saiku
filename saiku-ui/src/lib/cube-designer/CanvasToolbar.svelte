@@ -20,7 +20,7 @@
 	} from 'lucide-svelte';
 	import type { SchemaCanvasStore } from './state.svelte.js';
 	import type { LayoutMode } from './layout.js';
-	import Tooltip from '$lib/components/ui/tooltip.svelte';
+	import Tooltip from './primitives/tooltip.svelte';
 
 	interface Props {
 		store: SchemaCanvasStore;

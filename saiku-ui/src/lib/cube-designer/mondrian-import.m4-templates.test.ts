@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest';
-import { importFromMondrianXml } from './mondrian-import';
+import { describe, expect, it } from "vitest";
+import { importFromMondrianXml } from "./mondrian-import";
 
 /**
  * Self-contained M4 import round-trip guards for the designer's importer.
@@ -9,8 +9,8 @@ import { importFromMondrianXml } from './mondrian-import';
  * there, against that repo's cube-library.)
  */
 
-describe('M4 import round-trips a Time dimension + levelType', () => {
-	const XML = `<Schema name="t" metamodelVersion="4.0">
+describe("M4 import round-trips a Time dimension + levelType", () => {
+  const XML = `<Schema name="t" metamodelVersion="4.0">
   <PhysicalSchema>
     <Table name="dim_date"><Key name="k"><Column name="date_key"/></Key></Table>
     <Table name="fact"/>
@@ -33,20 +33,23 @@ describe('M4 import round-trips a Time dimension + levelType', () => {
   </Cube>
 </Schema>`;
 
-	it('reads type="TIME" as a Time dimension and levelType back onto the level', () => {
-		const res = importFromMondrianXml(XML, { connectionId: 'test', sourceTables: [] });
-		const dim = res.state.dimensions?.find((d) => d.name === 'Calendar');
-		expect(dim?.dimensionType).toBe('Time');
-		const year = dim?.hierarchies[0]?.levels.find((l) => l.name === 'Year');
-		expect(year?.levelType).toBe('TimeYears');
-		// A non-time level carries no levelType.
-		const date = dim?.hierarchies[0]?.levels.find((l) => l.name === 'Date');
-		expect(date?.levelType).toBeUndefined();
-	});
+  it('reads type="TIME" as a Time dimension and levelType back onto the level', () => {
+    const res = importFromMondrianXml(XML, {
+      connectionId: "test",
+      sourceTables: [],
+    });
+    const dim = res.state.dimensions?.find((d) => d.name === "Calendar");
+    expect(dim?.dimensionType).toBe("Time");
+    const year = dim?.hierarchies[0]?.levels.find((l) => l.name === "Year");
+    expect(year?.levelType).toBe("TimeYears");
+    // A non-time level carries no levelType.
+    const date = dim?.hierarchies[0]?.levels.find((l) => l.name === "Date");
+    expect(date?.levelType).toBeUndefined();
+  });
 });
 
-describe('M4 import reads <TimeCalcs> back onto the cube', () => {
-	const XML = `<Schema name="t" metamodelVersion="4.0">
+describe("M4 import reads <TimeCalcs> back onto the cube", () => {
+  const XML = `<Schema name="t" metamodelVersion="4.0">
   <PhysicalSchema><Table name="fact"/></PhysicalSchema>
   <Cube name="Revenue">
     <MeasureGroups>
@@ -61,25 +64,33 @@ describe('M4 import reads <TimeCalcs> back onto the cube', () => {
   </Cube>
 </Schema>`;
 
-	it('parses yoy + rolling TimeCalcs with their attributes', () => {
-		const res = importFromMondrianXml(XML, { connectionId: 'test', sourceTables: [] });
-		const cube = res.workbenchCubes.find((c) => c.name === 'Revenue');
-		const tcs = cube?.timeCalcs ?? [];
-		expect(tcs.length).toBe(2);
-		const yoy = tcs.find((t) => t.name === 'Revenue YoY');
-		expect(yoy).toMatchObject({
-			type: 'yoy',
-			measure: 'Revenue',
-			timeDimension: 'Calendar',
-			formatString: '0.0%'
-		});
-		const roll = tcs.find((t) => t.name === 'Revenue R3');
-		expect(roll).toMatchObject({ type: 'rolling', measure: 'Revenue', window: 3, function: 'avg' });
-	});
+  it("parses yoy + rolling TimeCalcs with their attributes", () => {
+    const res = importFromMondrianXml(XML, {
+      connectionId: "test",
+      sourceTables: [],
+    });
+    const cube = res.workbenchCubes.find((c) => c.name === "Revenue");
+    const tcs = cube?.timeCalcs ?? [];
+    expect(tcs.length).toBe(2);
+    const yoy = tcs.find((t) => t.name === "Revenue YoY");
+    expect(yoy).toMatchObject({
+      type: "yoy",
+      measure: "Revenue",
+      timeDimension: "Calendar",
+      formatString: "0.0%",
+    });
+    const roll = tcs.find((t) => t.name === "Revenue R3");
+    expect(roll).toMatchObject({
+      type: "rolling",
+      measure: "Revenue",
+      window: 3,
+      function: "avg",
+    });
+  });
 });
 
-describe('M4 import reads saiku.semantic.* annotations back', () => {
-	const XML = `<Schema name="t" metamodelVersion="4.0">
+describe("M4 import reads saiku.semantic.* annotations back", () => {
+  const XML = `<Schema name="t" metamodelVersion="4.0">
   <PhysicalSchema>
     <Table name="dim_c"><Key name="k"><Column name="cid"/></Key></Table>
     <Table name="fact"/>
@@ -111,20 +122,23 @@ describe('M4 import reads saiku.semantic.* annotations back', () => {
   </Cube>
 </Schema>`;
 
-	it('round-trips dimension, level, and measure annotations', () => {
-		const res = importFromMondrianXml(XML, { connectionId: 'test', sourceTables: [] });
-		const dim = res.state.dimensions?.find((d) => d.name === 'Customer');
-		expect(dim?.annotations?.synonyms).toBe('client, account');
-		const nameLvl = dim?.hierarchies[0]?.levels.find((l) => l.name === 'Name');
-		expect(nameLvl?.annotations?.pii).toBe('true');
-		expect(nameLvl?.annotations?.cardinality).toBe('high');
-		const rev = res.state.measures?.find((m) => m.name === 'Rev');
-		expect(rev?.annotations?.unit).toBe('USD');
-	});
+  it("round-trips dimension, level, and measure annotations", () => {
+    const res = importFromMondrianXml(XML, {
+      connectionId: "test",
+      sourceTables: [],
+    });
+    const dim = res.state.dimensions?.find((d) => d.name === "Customer");
+    expect(dim?.annotations?.synonyms).toBe("client, account");
+    const nameLvl = dim?.hierarchies[0]?.levels.find((l) => l.name === "Name");
+    expect(nameLvl?.annotations?.pii).toBe("true");
+    expect(nameLvl?.annotations?.cardinality).toBe("high");
+    const rev = res.state.measures?.find((m) => m.name === "Rev");
+    expect(rev?.annotations?.unit).toBe("USD");
+  });
 });
 
-describe('M4 import round-trips a <Level caption>', () => {
-	const XML = `<Schema name="t" metamodelVersion="4.0">
+describe("M4 import round-trips a <Level caption>", () => {
+  const XML = `<Schema name="t" metamodelVersion="4.0">
   <PhysicalSchema>
     <Table name="dim_c"><Key name="k"><Column name="cid"/></Key></Table>
     <Table name="fact"/>
@@ -150,16 +164,19 @@ describe('M4 import round-trips a <Level caption>', () => {
   </Cube>
 </Schema>`;
 
-	it('reads the level caption back onto the level', () => {
-		const res = importFromMondrianXml(XML, { connectionId: 'test', sourceTables: [] });
-		const dim = res.state.dimensions?.find((d) => d.name === 'Customer');
-		const lvl = dim?.hierarchies[0]?.levels.find((l) => l.name === 'Name');
-		expect(lvl?.caption).toBe('Customer Name');
-	});
+  it("reads the level caption back onto the level", () => {
+    const res = importFromMondrianXml(XML, {
+      connectionId: "test",
+      sourceTables: [],
+    });
+    const dim = res.state.dimensions?.find((d) => d.name === "Customer");
+    const lvl = dim?.hierarchies[0]?.levels.find((l) => l.name === "Name");
+    expect(lvl?.caption).toBe("Customer Name");
+  });
 });
 
-describe('M4 import round-trips <Hierarchy> caption + allMemberName', () => {
-	const XML = `<Schema name="t" metamodelVersion="4.0">
+describe("M4 import round-trips <Hierarchy> caption + allMemberName", () => {
+  const XML = `<Schema name="t" metamodelVersion="4.0">
   <PhysicalSchema>
     <Table name="dim_c"><Key name="k"><Column name="cid"/></Key></Table>
     <Table name="fact"/>
@@ -185,17 +202,20 @@ describe('M4 import round-trips <Hierarchy> caption + allMemberName', () => {
   </Cube>
 </Schema>`;
 
-	it('reads hierarchy caption + allMemberName back', () => {
-		const res = importFromMondrianXml(XML, { connectionId: 'test', sourceTables: [] });
-		const dim = res.state.dimensions?.find((d) => d.name === 'Customer');
-		const hier = dim?.hierarchies.find((h) => h.name === 'Geo');
-		expect(hier?.caption).toBe('Customer Geography');
-		expect(hier?.allMemberName).toBe('All Customers');
-	});
+  it("reads hierarchy caption + allMemberName back", () => {
+    const res = importFromMondrianXml(XML, {
+      connectionId: "test",
+      sourceTables: [],
+    });
+    const dim = res.state.dimensions?.find((d) => d.name === "Customer");
+    const hier = dim?.hierarchies.find((h) => h.name === "Geo");
+    expect(hier?.caption).toBe("Customer Geography");
+    expect(hier?.allMemberName).toBe("All Customers");
+  });
 });
 
-describe('M4 import round-trips <Attribute> overrides (#959)', () => {
-	const XML = `<Schema name="t" metamodelVersion="4.0">
+describe("M4 import round-trips <Attribute> overrides (#959)", () => {
+  const XML = `<Schema name="t" metamodelVersion="4.0">
   <PhysicalSchema>
     <Table name="dim_c"><Key name="k"><Column name="cid"/></Key></Table>
     <Table name="fact"/>
@@ -219,14 +239,17 @@ describe('M4 import round-trips <Attribute> overrides (#959)', () => {
   </Cube>
 </Schema>`;
 
-	it('reads name / nameColumn / orderByColumn / captionColumn / description back', () => {
-		const res = importFromMondrianXml(XML, { connectionId: 'test', sourceTables: [] });
-		const dim = res.state.dimensions?.find((d) => d.name === 'Customer');
-		const a = dim?.attributes?.find((x) => x.columnName === 'country');
-		expect(a?.name).toBe('Country Name');
-		expect(a?.nameColumn).toBe('country_label');
-		expect(a?.orderByColumn).toBe('country_sort');
-		expect(a?.captionColumn).toBe('country_caption');
-		expect(a?.description).toBe('ISO country');
-	});
+  it("reads name / nameColumn / orderByColumn / captionColumn / description back", () => {
+    const res = importFromMondrianXml(XML, {
+      connectionId: "test",
+      sourceTables: [],
+    });
+    const dim = res.state.dimensions?.find((d) => d.name === "Customer");
+    const a = dim?.attributes?.find((x) => x.columnName === "country");
+    expect(a?.name).toBe("Country Name");
+    expect(a?.nameColumn).toBe("country_label");
+    expect(a?.orderByColumn).toBe("country_sort");
+    expect(a?.captionColumn).toBe("country_caption");
+    expect(a?.description).toBe("ISO country");
+  });
 });

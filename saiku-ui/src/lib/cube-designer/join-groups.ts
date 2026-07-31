@@ -4,15 +4,15 @@
  * JoinsPanel (which renders the groups). Lifted out of SchemaCanvasView.svelte
  * (audit finding #1040, template-decompose pass).
  */
-import { SchemaCanvasStore } from './state.svelte.js';
-import type { SchemaCanvasJoin } from './types.js';
+import { SchemaCanvasStore } from "./state.svelte.js";
+import type { SchemaCanvasJoin } from "./types.js";
 
 /** One rendered join group: a display label + the canonical key (so rename
  *  writes land in the right slot) + every join under that label. */
 export interface JoinGroupRender {
-	label: string;
-	canonicalKey: string;
-	joins: SchemaCanvasJoin[];
+  label: string;
+  canonicalKey: string;
+  joins: SchemaCanvasJoin[];
 }
 
 /**
@@ -20,20 +20,20 @@ export interface JoinGroupRender {
  * order = the order each group's first join appears in `store.doc.joins`.
  */
 export function computeJoinGroups(store: SchemaCanvasStore): JoinGroupRender[] {
-	const out: JoinGroupRender[] = [];
-	const byLabel = new Map<string, JoinGroupRender>();
-	for (const j of store.doc.joins) {
-		const canonicalKey = SchemaCanvasStore.joinCanonicalKey(j);
-		const label = store.joinGroupLabelFor(j);
-		let g = byLabel.get(label);
-		if (!g) {
-			g = { label, canonicalKey, joins: [] };
-			byLabel.set(label, g);
-			out.push(g);
-		}
-		g.joins.push(j);
-	}
-	return out;
+  const out: JoinGroupRender[] = [];
+  const byLabel = new Map<string, JoinGroupRender>();
+  for (const j of store.doc.joins) {
+    const canonicalKey = SchemaCanvasStore.joinCanonicalKey(j);
+    const label = store.joinGroupLabelFor(j);
+    let g = byLabel.get(label);
+    if (!g) {
+      g = { label, canonicalKey, joins: [] };
+      byLabel.set(label, g);
+      out.push(g);
+    }
+    g.joins.push(j);
+  }
+  return out;
 }
 
 /**
@@ -42,5 +42,7 @@ export function computeJoinGroups(store: SchemaCanvasStore): JoinGroupRender[] {
  * the physical bucket since the physical statement wins.
  */
 export function isSemanticGroup(g: JoinGroupRender): boolean {
-	return g.joins.every((j) => j.origin === 'cube-link' || j.origin === 'inferred-fk');
+  return g.joins.every(
+    (j) => j.origin === "cube-link" || j.origin === "inferred-fk",
+  );
 }

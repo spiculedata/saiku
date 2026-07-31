@@ -8,13 +8,16 @@
  * the running chat history + canvas summary, and turning one HTTP turn into
  * the assistant's content blocks (throwing a gateway-shaped Error on failure).
  */
-import { readGatewayErrorMessage } from './gateway-errors';
-import type { AnthropicBlock, ChatMessage } from './ai-chat-types';
+import { readGatewayErrorMessage } from "./gateway-errors";
+import type { AnthropicBlock, ChatMessage } from "./ai-chat-types";
 
 /** Wire body the gateway's DimSum endpoint expects. */
 export interface DimSumRequestBody {
-	messages: Array<{ role: ChatMessage['role']; content: ChatMessage['content'] }>;
-	canvasSummary: string;
+  messages: Array<{
+    role: ChatMessage["role"];
+    content: ChatMessage["content"];
+  }>;
+  canvasSummary: string;
 }
 
 /**
@@ -23,13 +26,13 @@ export interface DimSumRequestBody {
  * `{ role, content }` — the `ts` display metadata never goes to the server.
  */
 export function buildDimSumRequestBody(
-	messages: ChatMessage[],
-	canvasSummary: string
+  messages: ChatMessage[],
+  canvasSummary: string,
 ): DimSumRequestBody {
-	return {
-		messages: messages.map((m) => ({ role: m.role, content: m.content })),
-		canvasSummary
-	};
+  return {
+    messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    canvasSummary,
+  };
 }
 
 /**
@@ -42,27 +45,31 @@ export function buildDimSumRequestBody(
  * network (defaults to the global `fetch`).
  */
 export async function postDimSumTurn(
-	messages: ChatMessage[],
-	canvasSummary: string,
-	fetchImpl: typeof fetch = fetch
+  messages: ChatMessage[],
+  canvasSummary: string,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<AnthropicBlock[]> {
-	const resp = await fetchImpl('/api/inference/dimsum', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(buildDimSumRequestBody(messages, canvasSummary))
-	});
-	if (!resp.ok) {
-		const body = (await resp.json().catch(() => ({}))) as {
-			message?: string;
-			error?: string;
-		};
-		throw new Error(
-			readGatewayErrorMessage(resp.status, body, `AI call failed (HTTP ${resp.status}).`)
-		);
-	}
-	const payload = (await resp.json()) as {
-		stopReason?: string;
-		content?: AnthropicBlock[];
-	};
-	return payload.content ?? [];
+  const resp = await fetchImpl("/api/inference/dimsum", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(buildDimSumRequestBody(messages, canvasSummary)),
+  });
+  if (!resp.ok) {
+    const body = (await resp.json().catch(() => ({}))) as {
+      message?: string;
+      error?: string;
+    };
+    throw new Error(
+      readGatewayErrorMessage(
+        resp.status,
+        body,
+        `AI call failed (HTTP ${resp.status}).`,
+      ),
+    );
+  }
+  const payload = (await resp.json()) as {
+    stopReason?: string;
+    content?: AnthropicBlock[];
+  };
+  return payload.content ?? [];
 }

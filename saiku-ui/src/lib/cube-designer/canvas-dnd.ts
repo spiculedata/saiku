@@ -6,23 +6,23 @@
  * maths, store mutation); these functions own only the payload/handle
  * *parsing*, which is pure string work and unit-testable in isolation.
  */
-import type { SourceTableCandidate } from './types.js';
+import type { SourceTableCandidate } from "./types.js";
 
 /** A join's endpoints parsed from a SvelteFlow connection — ready to hand to
  *  `store.addJoin` (the component adds `kind`). */
 export interface ParsedConnectionJoin {
-	sourceTableId: string;
-	sourceColumnName: string;
-	targetTableId: string;
-	targetColumnName: string;
+  sourceTableId: string;
+  sourceColumnName: string;
+  targetTableId: string;
+  targetColumnName: string;
 }
 
 /** Minimal shape of SvelteFlow's `Connection` we depend on. */
 export interface ConnectionLike {
-	source: string;
-	target: string;
-	sourceHandle?: string | null;
-	targetHandle?: string | null;
+  source: string;
+  target: string;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
 }
 
 /**
@@ -31,17 +31,19 @@ export interface ConnectionLike {
  * `null` when either handle is missing or malformed (no column segment) so the
  * caller can bail without creating a bogus join.
  */
-export function parseConnectionJoin(connection: ConnectionLike): ParsedConnectionJoin | null {
-	if (!connection.sourceHandle || !connection.targetHandle) return null;
-	const [, sourceColumnName] = connection.sourceHandle.split(':');
-	const [, targetColumnName] = connection.targetHandle.split(':');
-	if (!sourceColumnName || !targetColumnName) return null;
-	return {
-		sourceTableId: connection.source,
-		sourceColumnName,
-		targetTableId: connection.target,
-		targetColumnName
-	};
+export function parseConnectionJoin(
+  connection: ConnectionLike,
+): ParsedConnectionJoin | null {
+  if (!connection.sourceHandle || !connection.targetHandle) return null;
+  const [, sourceColumnName] = connection.sourceHandle.split(":");
+  const [, targetColumnName] = connection.targetHandle.split(":");
+  if (!sourceColumnName || !targetColumnName) return null;
+  return {
+    sourceTableId: connection.source,
+    sourceColumnName,
+    targetTableId: connection.target,
+    targetColumnName,
+  };
 }
 
 /**
@@ -52,15 +54,15 @@ export function parseConnectionJoin(connection: ConnectionLike): ParsedConnectio
  * malformed — the caller treats an empty result as "nothing to drop".
  */
 export function parseDroppedTableCandidates(
-	arrayPayload: string | undefined | null,
-	singlePayload: string | undefined | null
+  arrayPayload: string | undefined | null,
+  singlePayload: string | undefined | null,
 ): SourceTableCandidate[] {
-	if (!arrayPayload && !singlePayload) return [];
-	try {
-		return arrayPayload
-			? (JSON.parse(arrayPayload) as SourceTableCandidate[])
-			: [JSON.parse(singlePayload!) as SourceTableCandidate];
-	} catch {
-		return [];
-	}
+  if (!arrayPayload && !singlePayload) return [];
+  try {
+    return arrayPayload
+      ? (JSON.parse(arrayPayload) as SourceTableCandidate[])
+      : [JSON.parse(singlePayload!) as SourceTableCandidate];
+  } catch {
+    return [];
+  }
 }
