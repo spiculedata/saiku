@@ -72,6 +72,16 @@ public final class SaikuItHarness {
         // user, so it must opt in to the default-credentials policy or bootServer
         // refuses to start. The IT JVM is a trusted local fixture, never exposed.
         System.setProperty("saiku.allowDefaultAdmin", "true");
+        // AI data-egress policy: default is fail-closed "schema-only", which 403s every AI-data
+        // egress with PERMISSION_DENIED. The data ITs need it relaxed and span BOTH egress kinds:
+        // AGGREGATED_RESULT_VALUES (AiQueryIT, AiQueryExtrasIT, AdvancedAiQueryIT, AiQueryAsyncIT,
+        // and AppBuilderIT via the embed tile-query path -> AiQueryResource#executeAi) and
+        // RAW_ROW_DATA (DrillthroughIT#asyncDrillthrough_resolvesAcrossSessions_saiku862, which
+        // needs "full"). Pin "full" (the top of schema-only < aggregated < full) so ALL data ITs
+        // are self-contained instead of silently depending on the suite being run with an external
+        // policy env. bootServer's resolveDemoAiPolicyDefault respects an explicit ai.policy, so
+        // this stands with or without demo mode. No IT asserts a more restrictive default.
+        System.setProperty("ai.policy", "full");
         // Boot port=0 → OS picks an ephemeral port. Host 127.0.0.1 to avoid
         // firewall prompts on macOS CI runners.
         Server server = SaikuLauncher.ServeCommand.bootServer(0, "127.0.0.1", "/", home);
