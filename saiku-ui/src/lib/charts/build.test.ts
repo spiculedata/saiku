@@ -253,6 +253,32 @@ describe("buildChartOption — title & legend", () => {
     expect((compactBare.grid as { top: number }).top).toBe(24);
   });
 
+  test("#1622 titled chart pushes a top legend below the #1595 title band", () => {
+    // Titled + top legend: legend drops below the title band (title.top:8) so
+    // it no longer draws on top of the title text.
+    const titledTop = buildChartOption(sample(), "bar", opts({ title: "My chart", legendPosition: "top" })) as Record<
+      string,
+      unknown
+    >;
+    expect((titledTop.legend as { top: number }).top).toBe(32);
+
+    // No title + top legend: unchanged default (top:10).
+    const untitledTop = buildChartOption(sample(), "bar", opts({ title: "", legendPosition: "top" })) as Record<
+      string,
+      unknown
+    >;
+    expect((untitledTop.legend as { top: number }).top).toBe(10);
+
+    // Titled but non-top legend: unchanged (only the top legend overlapped).
+    const titledBottom = buildChartOption(
+      sample(),
+      "bar",
+      opts({ title: "My chart", legendPosition: "bottom" }),
+    ) as Record<string, unknown>;
+    expect((titledBottom.legend as { bottom: number }).bottom).toBe(10);
+    expect((titledBottom.legend as { top?: number }).top).toBeUndefined();
+  });
+
   test("compact legend defaults to a bottom scroll legend (legacy-tile parity)", () => {
     const opt = buildChartOption(sample(), "bar", opts({ legendPosition: "bottom" }), undefined, {
       compact: true,
