@@ -1110,6 +1110,94 @@ describe("buildChartOption — x-axis label width per axis", () => {
 });
 
 // ---------------------------------------------------------------------------
+// #1598: rotated category (x-axis) tick labels were clipping at the tile edge.
+// Long member captions (city names like "Beverly Hills") rotate ~30° past 8
+// categories and drop diagonally BELOW the axis; the grid.bottom didn't reserve
+// that vertical extent, so they were cut off. The fix reserves grid.bottom for
+// the rotated drop AND ellipsizes to a responsive width (compact tiles thin
+// aggressively, roomy charts show more) so an over-long label ends in "…"
+// rather than clipping. Composes additively with #1596's axis-title room.
+// ---------------------------------------------------------------------------
+describe("buildChartOption — rotated category label clipping (#1598)", () => {
+  function rowsProjection(n: number, name?: string): ChartProjection {
+    return {
+      rowCategories: Array.from({ length: n }, (_, i) => `Very Long City Name ${i}`),
+      columnCategories: ["Sales"],
+      matrix: Array.from({ length: n }, (_, i) => [100 + i]),
+      ...(name ? { categoryAxisName: name } : {}),
+    };
+  }
+  const xLabelOf = (opt: Record<string, unknown>) =>
+    (opt.xAxis as { axisLabel: { rotate: number; width: number; overflow?: string; ellipsis?: string } })
+      .axisLabel;
+  const bottomOf = (opt: Record<string, unknown>) => (opt.grid as { bottom: number }).bottom;
+
+  test("crowded bar (>8 categories) rotates and ellipsizes with a truncation width", () => {
+    const opt = buildChartOption(rowsProjection(20), "bar", opts(), undefined, {
+      chartWidth: 900,
+    }) as Record<string, unknown>;
+    const label = xLabelOf(opt);
+    expect(label.rotate).toBe(30);
+    // A rotated over-long label truncates + ends in an ellipsis (never clips).
+    expect(label.overflow).toBe("truncate");
+    expect(label.ellipsis).toBe("…");
+    expect(label.width).toBeGreaterThan(0);
+  });
+
+  test("rotated axis reserves MORE grid.bottom than a non-rotated one (the clip fix)", () => {
+    const flat = buildChartOption(rowsProjection(4), "bar", opts(), undefined, {
+      chartWidth: 900,
+    }) as Record<string, unknown>;
+    const rotated = buildChartOption(rowsProjection(20), "bar", opts(), undefined, {
+      chartWidth: 900,
+    }) as Record<string, unknown>;
+    // Rotation only kicks in past 8 categories; the 4-category axis is flat.
+    expect(xLabelOf(flat).rotate).toBe(0);
+    expect(xLabelOf(rotated).rotate).toBe(30);
+    // The rotated axis reserves extra bottom room for the diagonal drop so the
+    // labels clear the plot instead of clipping at the tile edge.
+    expect(bottomOf(rotated)).toBeGreaterThan(bottomOf(flat));
+  });
+
+  test("compact tiles thin the rotated label harder than roomy charts", () => {
+    const roomy = buildChartOption(rowsProjection(20), "bar", opts(), undefined, {
+      compact: false,
+      chartWidth: 900,
+    }) as Record<string, unknown>;
+    const compact = buildChartOption(rowsProjection(20), "bar", opts(), undefined, {
+      compact: true,
+      chartWidth: 300,
+    }) as Record<string, unknown>;
+    // Compact caps the label narrower (earlier ellipsis) and, because a narrower
+    // label drops less, reserves less bottom than the roomy chart.
+    expect(xLabelOf(compact).width).toBeLessThan(xLabelOf(roomy).width);
+    expect(bottomOf(compact)).toBeLessThan(bottomOf(roomy));
+  });
+
+  test("tick-label room and axis-title room (#1596) compose additively", () => {
+    // Same rotated axis, with and without a category dimension title. The
+    // #1598 tick reserve and the #1596 axis-name reserve are independent, so
+    // adding a title grows the bottom further still.
+    const noTitle = buildChartOption(rowsProjection(20), "bar", opts()) as Record<string, unknown>;
+    const titled = buildChartOption(rowsProjection(20, "City"), "bar", opts()) as Record<
+      string,
+      unknown
+    >;
+    expect(xLabelOf(titled).rotate).toBe(30);
+    expect(bottomOf(titled)).toBeGreaterThan(bottomOf(noTitle));
+  });
+
+  test("waterfall rotated labels also reserve bottom room", () => {
+    const flat = buildChartOption(rowsProjection(4), "waterfall", opts()) as Record<string, unknown>;
+    const rotated = buildChartOption(rowsProjection(20), "waterfall", opts()) as Record<
+      string,
+      unknown
+    >;
+    expect(bottomOf(rotated)).toBeGreaterThan(bottomOf(flat));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // #1596: axis TITLES. Charts were rendering with bare axis numbers and no
 // measure/dimension name. The value axis defaults to the measure name(s)
 // (columnCategories); the category axis defaults to the row dimension name the
