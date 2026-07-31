@@ -19,6 +19,9 @@
 
   interface Props {
     onPick: (type: TileType) => void;
+    /** Seed a custom-renderer tile of the given registered renderer id (App
+     *  Builder Phase 2). When omitted, custom renderers aren't offered. */
+    onAddCustom?: (rendererId: string) => void;
     disabled?: boolean;
     /** Dropdown edge alignment. "right" (default) opens leftward — correct for a
      *  right-anchored dashboard toolbar. "left" opens rightward — used by the App
@@ -27,17 +30,23 @@
     align?: "left" | "right";
   }
 
-  let { onPick, disabled = false, align = "right" }: Props = $props();
+  let { onPick, onAddCustom, disabled = false, align = "right" }: Props = $props();
 
   let open = $state(false);
 
   // Registered custom renderers, snapshotted when the menu opens (all
-  // import-side-effect registrations have run by then). Renderer selection is
-  // deferred to the tile's ⚙ editor — this entry just seeds a "custom" tile.
-  const customRenderers = $derived(open ? listTileRenderers() : []);
+  // import-side-effect registrations have run by then). Each is offered as its
+  // own menu entry so picking it seeds a "custom" tile already bound to that
+  // renderer — the tile's ⚙ editor then configures the cube/query/options.
+  const customRenderers = $derived(open && onAddCustom ? listTileRenderers() : []);
 
   function pick(type: TileType): void {
     onPick(type);
+    open = false;
+  }
+
+  function pickCustom(rendererId: string): void {
+    onAddCustom?.(rendererId);
     open = false;
   }
 
@@ -99,25 +108,27 @@
           <span class="hint">A logo, diagram or screenshot from a URL or upload.</span>
         </span>
       </button>
-      <button
-        type="button"
-        class="menu-item"
-        role="menuitem"
-        disabled={customRenderers.length === 0}
-        onclick={() => pick("custom")}
-      >
-        <span class="icon" aria-hidden="true">🧩</span>
-        <span>
-          <span class="block font-medium">Custom…</span>
-          <span class="hint">
-            {#if customRenderers.length === 0}
-              No custom renderers installed.
-            {:else}
-              A pluggable renderer; pick which one in the tile's ⚙ editor.
-            {/if}
-          </span>
-        </span>
-      </button>
+      {#if onAddCustom}
+        {#if customRenderers.length === 0}
+          <button type="button" class="menu-item" role="menuitem" disabled>
+            <span class="icon" aria-hidden="true">🧩</span>
+            <span>
+              <span class="block font-medium">Custom…</span>
+              <span class="hint">No custom renderers installed.</span>
+            </span>
+          </button>
+        {:else}
+          {#each customRenderers as r (r.id)}
+            <button type="button" class="menu-item" role="menuitem" onclick={() => pickCustom(r.id)}>
+              <span class="icon" aria-hidden="true">{r.icon ?? "🧩"}</span>
+              <span>
+                <span class="block font-medium">{r.label}</span>
+                <span class="hint">Custom renderer — configure in the tile's ⚙ editor.</span>
+              </span>
+            </button>
+          {/each}
+        {/if}
+      {/if}
     </div>
   {/if}
 </div>

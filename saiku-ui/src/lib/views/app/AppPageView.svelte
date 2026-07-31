@@ -183,12 +183,22 @@
     if (!layout) return;
     dashboardStore.addTile(buildTile(layout, type, newTileId()));
   }
+
+  // Custom-renderer tile: same placement path, but seeded with the chosen
+  // renderer id so the tile renders (and its ⚙ editor opens the renderer's
+  // config) immediately — no rendererless "Unknown renderer" intermediate.
+  function handleAddCustom(rendererId: string): void {
+    const layout = dashboardStore.current?.layout;
+    if (!layout) return;
+    const base = buildTile(layout, "custom", newTileId());
+    dashboardStore.addTile({ ...base, custom: { renderer: rendererId, options: {} } });
+  }
 </script>
 
 <div class="app-page">
   {#if editable}
     <div class="app-page__toolbar">
-      <AddTileMenu onPick={handleAddTile} align="left" />
+      <AddTileMenu onPick={handleAddTile} onAddCustom={handleAddCustom} align="left" />
     </div>
   {/if}
   <!-- The panel self-hides in read-only mode when the page has no filters
