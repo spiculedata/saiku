@@ -51,7 +51,9 @@
   import EmptyState from "$lib/components/EmptyState.svelte";
   import DashboardIndexFilters from "$lib/views/dashboard/DashboardIndexFilters.svelte";
   import DashboardCatalogueTree from "$lib/views/dashboard/DashboardCatalogueTree.svelte";
-  import DashboardCataloguePinned from "$lib/views/dashboard/DashboardCataloguePinned.svelte";
+  import DashboardCataloguePinned, {
+    type PinnedDashboard,
+  } from "$lib/views/dashboard/DashboardCataloguePinned.svelte";
   import {
     Copy,
     ShieldCheck,
@@ -343,14 +345,25 @@
     return out;
   }
 
-  let recentEntries = $derived(resolveEntries(recentDashboards.all()));
-  let favouriteEntries = $derived(
+  /** Resolve the pinned nodes AND bake in each dashboard's friendly title.
+   *  Reading {@link titleForNode} (hence {@link catalogueMeta}) inside the
+   *  derivation is what makes these recompute when the enrichment fetch
+   *  lands — so the pinned rows switch from filename slug to friendly title
+   *  in lock-step with the list + tree, instead of staying stuck on the
+   *  slug they first rendered with (#1606). */
+  let recentEntries = $derived<PinnedDashboard[]>(
+    resolveEntries(recentDashboards.all()).map((n) => ({
+      path: n.path,
+      title: titleForNode(n),
+    })),
+  );
+  let favouriteEntries = $derived<PinnedDashboard[]>(
     resolveEntries(
       favouriteDashboards
         .all()
         .slice()
         .sort((a, b) => basename(a).localeCompare(basename(b))),
-    ),
+    ).map((n) => ({ path: n.path, title: titleForNode(n) })),
   );
 
   function toggleFavourite(path: string): void {
@@ -592,7 +605,6 @@
         favourites={favouriteEntries}
         recents={recentEntries}
         onToggleFavourite={toggleFavourite}
-        titleFor={titleForNode}
       />
     {/if}
 

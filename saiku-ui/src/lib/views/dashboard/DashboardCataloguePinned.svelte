@@ -1,3 +1,17 @@
+<script module lang="ts">
+  /** A pinned dashboard row (favourite or recent) with its title already
+   *  resolved by the parent. Carrying the resolved title as plain reactive
+   *  data — rather than a `titleFor(node)` closure over the parent's
+   *  catalogue metadata — means the rows re-render the moment the friendly
+   *  title lands, keeping them consistent with the list + tree. (#1606) */
+  export interface PinnedDashboard {
+    /** Repo-relative path incl. `.saikudash`; used for the link + favourite toggle. */
+    path: string;
+    /** Friendly title — the dashboard's own name when loaded, else its filename slug. */
+    title: string;
+  }
+</script>
+
 <script lang="ts">
   /*
    * Pinned sections — Favourites + "Recently viewed" — extracted from
@@ -11,26 +25,22 @@
    *                 whole interaction.
    *
    * Parent provides the resolved entry arrays (already filtered against
-   * the live listing for ACL / deleted paths). `toRepoRelative` is
-   * imported here to avoid threading the helper through a prop.
+   * the live listing for ACL / deleted paths). Each row carries its
+   * already-resolved friendly title; `toRepoRelative` is imported here to
+   * avoid threading the helper through a prop.
    */
   import { base } from "$app/paths";
   import { Button } from "$lib/components/ui";
   import { Star } from "lucide-svelte";
   import { toRepoRelative, displayPath } from "$lib/api/dashboards";
-  import type { RepositoryNode } from "$lib/api/repository";
 
   interface Props {
-    favourites: RepositoryNode[];
-    recents: RepositoryNode[];
+    favourites: PinnedDashboard[];
+    recents: PinnedDashboard[];
     onToggleFavourite: (relPath: string) => void;
-    /** Resolves a node to its human label — the dashboard's own title when
-     *  known, else its filename slug. Lets the pinned rows read the real
-     *  title rather than a raw `.saikudash` filename. (#1605) */
-    titleFor: (node: RepositoryNode) => string;
   }
 
-  let { favourites, recents, onToggleFavourite, titleFor }: Props = $props();
+  let { favourites, recents, onToggleFavourite }: Props = $props();
 </script>
 
 {#if favourites.length > 0}
@@ -42,8 +52,8 @@
       {#each favourites as e (e.path)}
         {@const relPath = toRepoRelative(e.path)}
         <li class="row">
-          <a class="link" href="{base}/dashboards/{relPath}" aria-label={titleFor(e)} title={displayPath(relPath)}>
-            <span class="name">{titleFor(e)}</span>
+          <a class="link" href="{base}/dashboards/{relPath}" aria-label={e.title} title={displayPath(relPath)}>
+            <span class="name">{e.title}</span>
             <span class="text-fg-muted text-xs overflow-hidden text-ellipsis whitespace-nowrap">{displayPath(relPath)}</span>
           </a>
           <Button variant="outline" class="icon-only star star--on" onclick={() => onToggleFavourite(relPath)} title="Remove from favourites" aria-label="Remove from favourites" aria-pressed="true">
@@ -62,8 +72,8 @@
       {#each recents as e (e.path)}
         {@const relPath = toRepoRelative(e.path)}
         <li class="row">
-          <a class="link" href="{base}/dashboards/{relPath}" aria-label={titleFor(e)} title={displayPath(relPath)}>
-            <span class="name">{titleFor(e)}</span>
+          <a class="link" href="{base}/dashboards/{relPath}" aria-label={e.title} title={displayPath(relPath)}>
+            <span class="name">{e.title}</span>
             <span class="text-fg-muted text-xs overflow-hidden text-ellipsis whitespace-nowrap">{displayPath(relPath)}</span>
           </a>
         </li>
