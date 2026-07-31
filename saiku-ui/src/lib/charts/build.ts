@@ -82,7 +82,11 @@ export interface ChartGeometry {
 function legendConfig(o: ChartOptions, tk: ThemeTokens): Record<string, unknown> {
   if (!o.showLegend) return { show: false };
   const position: Record<string, unknown> = { textStyle: { color: tk.fg } };
-  if (o.legendPosition === "top") position.top = 10;
+  // #1622: with a title present the #1595 title band sits at the very top
+  // (title.top:8); a top legend at the default top:10 would draw on top of it
+  // and read as missing. Push the legend below the title band when titled;
+  // untitled charts keep the original top:10.
+  if (o.legendPosition === "top") position.top = o.title ? 32 : 10;
   else if (o.legendPosition === "bottom") position.bottom = 10;
   else if (o.legendPosition === "left") {
     position.left = 10;
