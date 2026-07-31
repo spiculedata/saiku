@@ -172,7 +172,11 @@ Plugin `connect-src` network allowlist; a public plugin marketplace; plugin
 versioning/signing; inputs/forms/write-back (Phase 3/4); the AI-assistant panel
 (Phase 5).
 
-## 10. Open questions for review
+## 10. Resolved decisions (confirmed 2026-07-31)
+> All three confirmed per the leanings: (1) **both** config-graph and plugin-graph;
+> (2) **admin-installed registry only** in Phase 2; (3) **render** plugin tiles in
+> embeds (re-confirmed by the security review).
+
 1. **Config `graph` vs plugin `graph`:** ship both an ECharts-`graph` config
    renderer (safe, no install) AND allow a Cytoscape *plugin* (arbitrary JS,
    admin-installed)? Leaning: yes — config for the common case, plugin for the
