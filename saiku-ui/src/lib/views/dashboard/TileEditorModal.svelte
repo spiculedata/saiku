@@ -239,6 +239,12 @@
   const isGraphTile = untrack(
     () => tile.type === "custom" && tile.custom?.renderer === "graph",
   );
+  // App Builder Phase 2, Task 7 (saiku#1441): the `plugin` renderer runs
+  // arbitrary author HTML/JS in a locked-down iframe. Its editor is just a
+  // textarea for the self-contained plugin HTML.
+  const isPluginTile = untrack(
+    () => tile.type === "custom" && tile.custom?.renderer === "plugin",
+  );
   const customQueryable = untrack(() =>
     tile.type === "custom" && !!tile.custom
       ? (getTileRenderer(tile.custom.renderer)?.isQueryable ?? false)
@@ -304,6 +310,27 @@
       valueCol: graphValueCol.trim() || undefined,
     }),
   );
+
+  // ── App Builder Phase 2, Task 7 (saiku#1441): `plugin` renderer HTML ──
+  // The author's self-contained plugin HTML, seeded from the saved tile and
+  // persisted verbatim on Save (containment is the iframe sandbox + CSP, so the
+  // HTML is stored as-authored — never sanitised here).
+  let pluginHtmlText = $state<string>(
+    untrack(() => (typeof tile.custom?.options?.html === "string" ? tile.custom.options.html : "")),
+  );
+  // Example plugin skeleton for the textarea placeholder. Built with a split
+  // closing tag so the literal never terminates this component's own markup.
+  const CLOSE_SCRIPT = "</scr" + "ipt>";
+  const pluginPlaceholder =
+    '<div id="root"></div>\n<script>\n' +
+    "  const N = window.SAIKU_PLUGIN_NONCE;\n" +
+    "  addEventListener('message', (e) => {\n" +
+    "    if (e.data?.nonce !== N) return;\n" +
+    "    if (e.data.type === 'data')\n" +
+    "      root.textContent = e.data.payload.length + ' rows';\n" +
+    "  });\n" +
+    "  parent.postMessage({ type: 'ready', nonce: N }, '*');\n" +
+    CLOSE_SCRIPT;
 
   // ── Issue #912: inline visual query editor ──────────────────────────
   // For chart / table tiles, "Edit query visually" mounts the workspace
@@ -758,6 +785,17 @@
       };
     }
 
+    // App Builder Phase 2, Task 7 (saiku#1441): persist the plugin HTML. The
+    // author code is stored verbatim (the iframe sandbox + CSP contain it at
+    // render time); we only preserve any non-html options already present.
+    if (isPluginTile && tile.custom) {
+      const existing = { ...(tile.custom.options ?? {}) } as Record<string, unknown>;
+      const html = pluginHtmlText.trim();
+      if (html) existing.html = html;
+      else delete existing.html;
+      patch.custom = { renderer: tile.custom.renderer, options: existing };
+    }
+
     if (wantsQuery) {
       if (queryMode === "reference") {
         if (referencePath) {
@@ -1177,6 +1215,30 @@
             Column names must match the query's row-header / measure captions.
           </span>
         </fieldset>
+      {/if}
+
+      <!-- App Builder Phase 2, Task 7 (saiku#1441): plugin renderer editor.
+           A textarea for the self-contained plugin HTML. The code runs inside a
+           locked-down iframe (sandbox="allow-scripts" + strict CSP + per-mount
+           nonce), so it cannot read the host, make network calls, or inject
+           MDX. Persisted verbatim into tile.custom.options.html on Save. -->
+      {#if isPluginTile}
+        <label class="field">
+          <span>Plugin HTML</span>
+          <textarea
+            bind:value={pluginHtmlText}
+            rows="14"
+            spellcheck="false"
+            class="json"
+            placeholder={pluginPlaceholder}
+          ></textarea>
+          <span class="hint">
+            Runs in a sandboxed iframe with NO network access and NO access to the host
+            page. Read window.SAIKU_PLUGIN_NONCE and stamp it on every postMessage; send
+            {"{ type: 'ready', nonce }"} when loaded, then handle the init / data / theme
+            messages. Query data (below) is delivered as records.
+          </span>
+        </label>
       {/if}
 
       {#if wantsQuery}

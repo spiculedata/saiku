@@ -17,8 +17,10 @@ import type { Component } from "svelte";
 import { registerTileRenderer, type ValidateOptionsResult } from "../lib/dashboard/tileRegistry";
 import { validateEchartsOption } from "../lib/dashboard/custom/echartsOption";
 import { validateGraphConfig } from "../lib/dashboard/custom/graphTile";
+import { validatePluginOptions } from "../lib/dashboard/custom/pluginBridge";
 import EmbedEChartsOptionTile from "../lib/views/dashboard/tiles/custom/EmbedEChartsOptionTile.svelte";
 import EmbedGraphTile from "../lib/views/dashboard/tiles/custom/EmbedGraphTile.svelte";
+import EmbedPluginTile from "../lib/views/dashboard/tiles/custom/EmbedPluginTile.svelte";
 
 registerTileRenderer({
   id: "echarts-option",
@@ -45,4 +47,19 @@ registerTileRenderer({
   // GraphConfig is a typed shape (no index signature); widen the validated
   // value to the registry's Record<string, unknown> at the boundary.
   validateOptions: validateGraphConfig as (o: unknown) => ValidateOptionsResult,
+});
+
+// Tier-2 `plugin` renderer (embed surface). EmbedGrid dispatches on
+// embedComponent; `component` is set to the same embed component so no app
+// module leaks into the self-contained IIFE. Same iframe sandbox + CSP + nonce
+// containment as the in-app tile; data is the token-scoped `rows` EmbedGrid
+// already RLS/PII-filtered.
+registerTileRenderer({
+  id: "plugin",
+  label: "Plugin (sandboxed JS)",
+  icon: "🧩",
+  component: EmbedPluginTile as unknown as Component,
+  embedComponent: EmbedPluginTile as unknown as Component,
+  isQueryable: true,
+  validateOptions: validatePluginOptions,
 });
