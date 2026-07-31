@@ -727,8 +727,15 @@ export function buildChartOption(
     : {};
 
   const baseAxis = { type: "category" as const, axisLabel, axisLine, axisTick, splitLine, nameTextStyle };
+  // #1599: the value axis was drawing too few gridlines (e.g. just 0 and the max,
+  // 20,000) so intermediate magnitudes were unreadable. Give ECharts an explicit
+  // splitNumber target so it picks several nice-number intervals; compact tiles
+  // ask for fewer so a small tile's value axis doesn't crowd. `splitNumber` is a
+  // hint — ECharts still rounds to nice numbers, so labels stay clean.
+  const VALUE_AXIS_SPLIT_NUMBER = compact ? 4 : 6;
   const valueAxis = {
     type: "value" as const,
+    splitNumber: VALUE_AXIS_SPLIT_NUMBER,
     axisLabel: valueAxisLabel,
     axisLine,
     axisTick,
