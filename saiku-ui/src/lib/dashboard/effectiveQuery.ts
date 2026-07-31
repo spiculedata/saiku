@@ -260,7 +260,11 @@ export function effectiveQueryFor(
   activeFilters: ActiveFilter[],
   schema: SchemaLike | null,
 ): AiQueryRequestLike | null {
-  if (tile.type !== "chart" && tile.type !== "table") return null;
+  // chart / table + queryable custom tiles (App Builder Phase 2, saiku#1441):
+  // a custom renderer with an inline query body computes its effective query the
+  // same way. Non-query tile types (filter / text / kpi / image) have no inline
+  // body to merge, so they short-circuit to null.
+  if (tile.type !== "chart" && tile.type !== "table" && tile.type !== "custom") return null;
   if (!tile.query) return null;
   if (tile.query.kind !== "inline") {
     // Reference tiles: the caller resolves the .saiku file first, then

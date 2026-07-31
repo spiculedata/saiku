@@ -305,6 +305,19 @@ describe("effectiveQueryFor", () => {
     expect(effectiveQueryFor(filterTile, [], sampleSchema())).toBeNull();
   });
 
+  test("computes the effective query for an inline custom tile (saiku#1441)", () => {
+    // A queryable custom renderer (e.g. echarts-option) fetches through the same
+    // path as chart/table — an inline custom tile must NOT short-circuit to null.
+    const customTile = { ...inlineTile(), type: "custom" as const };
+    const result = effectiveQueryFor(
+      customTile,
+      [active("Time", "Time", "Year", ["[Time].[Time].[1998]"])],
+      sampleSchema(),
+    );
+    expect(result).not.toBeNull();
+    expect(result?.filters?.length).toBe(1);
+  });
+
   test("returns null for reference tiles (caller must resolve first)", () => {
     const refTile = {
       ...inlineTile(),

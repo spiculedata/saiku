@@ -30,6 +30,10 @@
   // $lib alias and must stay self-contained. tileRegistry is type-only aside
   // from the `svelte` Component type, so it bundles into the IIFE cleanly.
   import { getTileRenderer } from "../lib/dashboard/tileRegistry";
+  // Side-effect: register the built-in embed renderers (echarts-option) so the
+  // custom-tile dispatch below can resolve them. Kept embed-local so no app
+  // component / store graph leaks into the self-contained embed bundle.
+  import "./registerEmbedRenderers";
 
   interface Props {
     /** {cols, tiles} — a dashboard layout or a single app page's grid. */
@@ -57,7 +61,14 @@
   const hasEverFilteredRef = { current: false };
 
   function isQueryable(t: EmbedDashboardTile): boolean {
-    return t.type === "chart" || t.type === "kpi";
+    if (t.type === "chart" || t.type === "kpi") return true;
+    // A custom tile fetches only when its registered renderer declares itself
+    // queryable (e.g. echarts-option). Non-queryable custom renderers get no
+    // token-scoped fetch — the same posture as text/filter tiles.
+    if (t.type === "custom" && t.custom) {
+      return getTileRenderer(t.custom.renderer)?.isQueryable ?? false;
+    }
+    return false;
   }
 
   /** Kick off one tile fetch per queryable tile — parallel, no cross-tile

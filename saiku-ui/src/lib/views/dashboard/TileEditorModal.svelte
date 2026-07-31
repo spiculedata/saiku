@@ -75,6 +75,10 @@
   // Issue #931 — per-tile auto-refresh interval picker (chart / table / kpi).
   import { REFRESH_INTERVAL_OPTIONS, normaliseInterval } from "$lib/dashboard/autoRefresh";
   import { i18n } from "$lib/stores/i18n.svelte";
+  // App Builder Phase 2 (saiku#1441): custom tile renderers. The echarts-option
+  // renderer gets a JSON option editor with live safe-subset validation.
+  import { getTileRenderer } from "$lib/dashboard/tileRegistry";
+  import { validateEchartsOption } from "$lib/dashboard/custom/echartsOption";
 
   interface Props {
     tile: DashboardTile;
@@ -222,6 +226,44 @@
   );
   let referencePath = $state<string>(untrack(() => (tile.query?.kind === "reference" ? tile.query.path : "")));
 
+  // ── App Builder Phase 2 (saiku#1441): custom tile renderer config ──
+  // A queryable custom renderer (e.g. echarts-option) binds a cube + query the
+  // same way chart/table tiles do; wantsQuery gates the shared query-source UI.
+  // Read the stable `tile` prop under untrack (the modal never re-renders for
+  // the same tile — matches the one-shot init pattern used throughout).
+  const isEchartsOptionTile = untrack(
+    () => tile.type === "custom" && tile.custom?.renderer === "echarts-option",
+  );
+  const customQueryable = untrack(() =>
+    tile.type === "custom" && !!tile.custom
+      ? (getTileRenderer(tile.custom.renderer)?.isQueryable ?? false)
+      : false,
+  );
+  const wantsQuery = untrack(
+    () => tile.type === "chart" || tile.type === "table" || customQueryable,
+  );
+  // The author's declarative ECharts option (JSON textarea), seeded from the
+  // saved tile. Live-validated against the safe subset below.
+  let customOptionsJson = $state<string>(
+    untrack(() =>
+      tile.custom?.options && Object.keys(tile.custom.options).length > 0
+        ? JSON.stringify(tile.custom.options, null, 2)
+        : "",
+    ),
+  );
+  // Live validation feedback for the option editor — parse + safe-subset check.
+  let customOptionsValidation = $derived.by(() => {
+    const txt = customOptionsJson.trim();
+    if (!txt) return { ok: false as const, error: "Paste an ECharts option object." };
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(txt);
+    } catch (e) {
+      return { ok: false as const, error: `JSON parse error: ${(e as Error).message}` };
+    }
+    return validateEchartsOption(parsed);
+  });
+
   // ── Issue #912: inline visual query editor ──────────────────────────
   // For chart / table tiles, "Edit query visually" mounts the workspace
   // QueryCanvas inside this modal (embedded mode). The canvas + drop zones
@@ -335,7 +377,7 @@
   onMount(async () => {
     if (tile.type === "text") return; // text tiles don't need the catalogue
     cubesLoading = true;
-    const needSavedQueries = tile.type === "chart" || tile.type === "table";
+    const needSavedQueries = wantsQuery;
     if (needSavedQueries) savedQueriesLoading = true;
     try {
       const tasks: Array<Promise<void>> = [
@@ -636,7 +678,31 @@
         brushCrossFilterEnabled && BRUSHABLE_CHART_TYPES.has(chartType) ? { enabled: true } : undefined;
     }
 
-    if (tile.type === "chart" || tile.type === "table") {
+    // App Builder Phase 2 (saiku#1441): persist the echarts-option config.
+    // Validate the option again on save (defence in depth) and store the
+    // SAFE, normalised value — never the raw author text.
+    if (isEchartsOptionTile && tile.custom) {
+      const txt = customOptionsJson.trim();
+      let options: Record<string, unknown> = {};
+      if (txt) {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(txt);
+        } catch (e) {
+          bodyError = `ECharts option JSON parse error: ${(e as Error).message}`;
+          return;
+        }
+        const v = validateEchartsOption(parsed);
+        if (!v.ok) {
+          bodyError = `Invalid ECharts option: ${v.error}`;
+          return;
+        }
+        options = v.value;
+      }
+      patch.custom = { renderer: tile.custom.renderer, options };
+    }
+
+    if (wantsQuery) {
       if (queryMode === "reference") {
         if (referencePath) {
           const q: TileQuery = { kind: "reference", path: referencePath };
@@ -983,7 +1049,36 @@
         {/if}
       {/if}
 
-      {#if tile.type === "chart" || tile.type === "table"}
+      <!-- App Builder Phase 2 (saiku#1441): echarts-option renderer editor.
+           A declarative ECharts option (NO code) with live safe-subset
+           validation. Persisted into tile.custom.options on Save. -->
+      {#if isEchartsOptionTile}
+        <label class="field">
+          <span>ECharts option (JSON)</span>
+          <textarea
+            bind:value={customOptionsJson}
+            rows="12"
+            spellcheck="false"
+            class="json"
+            placeholder={JSON.stringify(
+              { title: { text: "My chart" }, xAxis: { type: "category" }, yAxis: { type: "value" }, series: [{ type: "bar" }] },
+              null,
+              2,
+            )}
+          ></textarea>
+          {#if customOptionsValidation.ok}
+            <span class="hint ok">✓ Valid option — query data is merged into the series on render.</span>
+          {:else}
+            <span class="hint error">{customOptionsValidation.error}</span>
+          {/if}
+          <span class="hint">
+            Declarative ECharts option only — functions and remote URLs are rejected.
+            Categories + series data come from the tile's query below.
+          </span>
+        </label>
+      {/if}
+
+      {#if wantsQuery}
         <!-- #912/#1175 fix: while the visual builder is open it owns the whole
              query section — hide the mode radios + the reference/inline blocks
              so they don't render on top of the embedded canvas. -->
@@ -1340,6 +1435,7 @@
     color: var(--fg-muted);
   }
   .hint.error { color: var(--danger); }
+  .hint.ok { color: var(--success, var(--accent)); }
   /* #1077, #919: chart-options + conditional-formatting styles moved
      into TileEditorChart / TileEditorTableConditional / TileEditorKpi /
      TileEditorTableSparkline (per saiku#1229). Svelte's scoped CSS
