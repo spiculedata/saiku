@@ -175,6 +175,12 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
+    /* Fill the layout main (a flex row) horizontally — without this the shell
+       sizes to its content width, which lets a stacked grid ratchet the whole
+       app narrow instead of laying tiles out across the full canvas. */
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
     box-sizing: border-box;
     background: var(--saiku-app-bg, var(--bg));
     color: var(--saiku-app-fg, var(--fg));
