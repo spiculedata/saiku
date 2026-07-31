@@ -31,6 +31,7 @@
 
 import { describe, test, expect } from "vitest";
 import DOMPurify from "dompurify";
+import { renderTinyMarkdown } from "$lib/api/tinyMarkdown";
 
 // Mirror TextTile.svelte's SANITISE_CONFIG exactly — tests cover the
 // real component contract, not a synthetic config.
@@ -38,6 +39,12 @@ function sanitise(input: string): string {
   return DOMPurify.sanitize(input, {
     FORBID_TAGS: ["style", "embed", "object", "iframe", "form"],
   });
+}
+
+// Mirror TextTile.svelte's full render pipeline: markdown -> HTML via
+// renderTinyMarkdown, then DOMPurify. tile.text is stored as markdown.
+function render(input: string): string {
+  return sanitise(renderTinyMarkdown(input));
 }
 
 describe("TextTile DOMPurify config", () => {
@@ -89,5 +96,40 @@ describe("TextTile DOMPurify config", () => {
     const out = sanitise('<object data="x">malicious</object>safe');
     expect(out).not.toContain("<object");
     expect(out).toContain("safe");
+  });
+});
+
+describe("TextTile markdown rendering (#1602)", () => {
+  test("renders a heading instead of showing the literal '#'", () => {
+    const out = render("# Sales report");
+    expect(out).toMatch(/<h[1-6]>Sales report<\/h[1-6]>/);
+    expect(out).not.toContain("# Sales report");
+  });
+
+  test("renders **bold** as <strong>, not literal asterisks", () => {
+    const out = render("**Login:** demo");
+    expect(out).toContain("<strong>Login:</strong>");
+    expect(out).not.toContain("**Login:**");
+  });
+
+  test("renders `inline code` as <code>, not literal backticks", () => {
+    const out = render("Use the `admin` account");
+    expect(out).toContain("<code>admin</code>");
+    expect(out).not.toContain("`admin`");
+  });
+
+  test("renders bullet lists", () => {
+    const out = render("- first\n- second");
+    expect(out).toContain("<ul>");
+    expect(out).toContain("<li>first</li>");
+    expect(out).toContain("<li>second</li>");
+  });
+
+  test("markdown pipeline still neutralises embedded XSS", () => {
+    const out = render("# Hi\n\n<script>alert(1)</script>");
+    // The renderer escapes source before emitting tags, so the payload
+    // survives only as inert, escaped text — never as a live <script> tag.
+    expect(out).not.toMatch(/<script/i);
+    expect(out).toContain("&lt;script&gt;");
   });
 });

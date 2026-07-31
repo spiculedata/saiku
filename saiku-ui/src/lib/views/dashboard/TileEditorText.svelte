@@ -11,6 +11,6 @@
 </script>
 
 <label class="field">
-  <span>Markdown / HTML (sanitised on render)</span>
+  <span>Markdown (sanitised on render)</span>
   <textarea bind:value={text} rows="10"></textarea>
 </label>

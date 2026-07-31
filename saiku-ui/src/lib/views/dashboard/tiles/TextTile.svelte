@@ -1,17 +1,28 @@
 <script lang="ts">
   /*
-   * Text annotation tile. Stores raw text/HTML in tile.text and renders
-   * it after sanitisation via DOMPurify. No query, no filters, no
-   * subscriptions — purely declarative.
+   * Text annotation tile. Stores markdown in tile.text, renders it to
+   * HTML with renderTinyMarkdown, then sanitises the result via DOMPurify
+   * before insertion. No query, no filters, no subscriptions — purely
+   * declarative.
+   *
+   * Why two stages: renderTinyMarkdown escapes every source node before
+   * emitting the small set of structural tags it supports (headings,
+   * bold/italic, bullets, inline code, http(s) links) — so its output is
+   * already HTML-safe, exactly as it is trusted in the AI Ask drawer.
+   * DOMPurify is kept as defence-in-depth because a TextTile's text is
+   * analyst-controllable (JCR write access), so a bug in the renderer must
+   * not become a stored-XSS sink.
    *
    * Threat model: a malicious analyst with write access to the JCR
-   * repository injects script tags or javascript: URLs. DOMPurify
-   * strips scripts, event handlers, and dangerous URL schemes by
-   * default; a sanity test in the project's vitest harness asserts
-   * the common XSS payloads don't survive (task #14).
+   * repository injects script tags or javascript: URLs. renderTinyMarkdown
+   * escapes them to inert text; DOMPurify additionally strips scripts,
+   * event handlers, and dangerous URL schemes. A sanity test in the
+   * project's vitest harness asserts the common XSS payloads don't survive
+   * (task #14).
    */
 
   import DOMPurify from "dompurify";
+  import { renderTinyMarkdown } from "$lib/api/tinyMarkdown";
   import type { DashboardTile } from "$lib/api/dashboards";
 
   interface Props {
@@ -35,7 +46,9 @@
     FORBID_TAGS: ["style", "embed", "object", "iframe", "form"],
   };
 
-  let safeHtml = $derived(DOMPurify.sanitize(tile.text ?? "", SANITISE_CONFIG));
+  let safeHtml = $derived(
+    DOMPurify.sanitize(renderTinyMarkdown(tile.text ?? ""), SANITISE_CONFIG),
+  );
 </script>
 
 <div class="text-tile">
