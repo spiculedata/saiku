@@ -603,6 +603,25 @@
         <property name="sessionService" ref="sessionService"/>
     </bean>
 
+    <!-- Tile plugin catalogue (App Builder Phase 2, saiku#1441). Admin-installed
+         self-contained HTML tile widgets under saiku-home/tile-plugins/<id>/ are
+         scanned lazily (mtime signature) and served over REST so the App Builder
+         iframe can load trusted srcdoc HTML. The plugin HTML is admin-installed,
+         NOT author-supplied — this registry is the trusted source. -->
+    <bean id="tilePluginRegistryBean"
+          class="org.saiku.service.apps.TilePluginRegistry">
+        <constructor-arg type="java.lang.String" value="${saiku.home:./saiku-home}/tile-plugins"/>
+    </bean>
+
+    <!-- Read-only REST over the tile plugin catalogue
+         (org.saiku.web.rest.resources.apps.TilePluginResource @
+         /saiku/api/tile-plugins). Full-auth (inherits the /rest/** intercept):
+         authors pick a plugin, they never supply the HTML. -->
+    <bean id="tilePluginResource"
+          class="org.saiku.web.rest.resources.apps.TilePluginResource">
+        <property name="registry" ref="tilePluginRegistryBean"/>
+    </bean>
+
     <!-- #942 follow-up: minimal authenticated user directory for @-mention
          autocomplete (usernames only; admin user-mgmt stays on /saiku/admin). -->
     <bean id="usersResource" class="org.saiku.web.rest.resources.UsersResource">

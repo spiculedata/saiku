@@ -829,6 +829,16 @@ public class SaikuLauncher implements Callable<Integer> {
                     "/seed/agent-spaces/foodmart-sales-analyst.json", spacesDir.resolve("foodmart-sales-analyst.json"));
             stageResource(
                     "/seed/agent-spaces/foodmart-finance-ops.json", spacesDir.resolve("foodmart-finance-ops.json"));
+
+            // Seed the tile plugin catalogue (App Builder Phase 2, saiku#1441) with a working
+            // example: a self-contained bar-chart tile that renders a record set under the host's
+            // strict CSP (inline JS/CSS only, no remote refs). Admin-installed plugins land under
+            // saiku-home/tile-plugins/<id>/; this one demonstrates the bundle shape + the
+            // ready/resize postMessage protocol. Idempotent — operator edits survive re-launch.
+            Path tilePluginDir = saikuHome.resolve("tile-plugins").resolve("records-bars");
+            Files.createDirectories(tilePluginDir);
+            stageResource("/seed/tile-plugins/records-bars/plugin.json", tilePluginDir.resolve("plugin.json"));
+            stageResource("/seed/tile-plugins/records-bars/plugin.html", tilePluginDir.resolve("plugin.html"));
         }
 
         /**

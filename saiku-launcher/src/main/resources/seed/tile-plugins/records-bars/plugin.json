@@ -1,0 +1,25 @@
+{
+  "id": "records-bars",
+  "label": "Records Bar Chart",
+  "optionSchema": {
+    "type": "object",
+    "properties": {
+      "labelField": {
+        "type": "string",
+        "title": "Label field",
+        "description": "Record field to use for bar labels. Defaults to the first text field."
+      },
+      "valueField": {
+        "type": "string",
+        "title": "Value field",
+        "description": "Record field to use for bar length. Defaults to the first numeric field."
+      },
+      "title": {
+        "type": "string",
+        "title": "Tile title",
+        "description": "Optional heading shown above the bars."
+      }
+    },
+    "additionalProperties": false
+  }
+}
