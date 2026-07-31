@@ -233,6 +233,26 @@ describe("buildChartOption — title & legend", () => {
     expect((opt.legend as { bottom: number }).bottom).toBe(10);
   });
 
+  test("#1595 title sits in its own top band and the grid reserves room below it", () => {
+    // Roomy chart: title pinned near the top, plot pushed below the title band.
+    const roomy = buildChartOption(sample(), "bar", opts({ title: "My chart" })) as Record<string, unknown>;
+    expect((roomy.title as { top: number }).top).toBe(8);
+    expect((roomy.grid as { top: number }).top).toBe(50);
+
+    // Compact tile WITH a title reserves the title band (was a flat 24 that
+    // let the title overlap the top gridline / data).
+    const compactTitled = buildChartOption(sample(), "bar", opts({ title: "My chart" }), undefined, {
+      compact: true,
+    }) as Record<string, unknown>;
+    expect((compactTitled.grid as { top: number }).top).toBe(44);
+
+    // Compact tile WITHOUT a title is unchanged (no wasted header band).
+    const compactBare = buildChartOption(sample(), "bar", opts({ title: "" }), undefined, {
+      compact: true,
+    }) as Record<string, unknown>;
+    expect((compactBare.grid as { top: number }).top).toBe(24);
+  });
+
   test("compact legend defaults to a bottom scroll legend (legacy-tile parity)", () => {
     const opt = buildChartOption(sample(), "bar", opts({ legendPosition: "bottom" }), undefined, {
       compact: true,
