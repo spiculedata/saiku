@@ -103,6 +103,33 @@ public class EmbedTokenResourceTest {
     }
 
     @Test
+    public void mint_returns_token_for_app_kind() {
+        // App Builder Phase 2 — a .saikuapp resource must mint a token
+        // (Phase-1 gap: the store's ALLOWED_KINDS rejected "app").
+        session.username = "admin";
+        session.roles = List.of("ROLE_ADMIN");
+        ds.allow("/homes/admin/sales.saikuapp");
+
+        EmbedTokenResource.MintRequest req = new EmbedTokenResource.MintRequest();
+        req.resourceKind = "app";
+        req.resourcePath = "/homes/admin/sales.saikuapp";
+        req.ttlHours = 24;
+        req.label = "Sales app";
+
+        Response r = resource.mint(req);
+        assertEquals(200, r.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) r.getEntity();
+        assertEquals("OK", body.get("status"));
+        assertNotNull(body.get("token"));
+        assertEquals("app", body.get("resourceKind"));
+        assertEquals("/homes/admin/sales.saikuapp", body.get("resourcePath"));
+        EmbedToken stored = tokenStore.load((String) body.get("token"));
+        assertNotNull(stored);
+        assertEquals("app", stored.resourceKind);
+    }
+
+    @Test
     public void mint_rejects_caller_without_grant() {
         session.username = "bob";
         session.roles = List.of("ROLE_USER");

@@ -51,7 +51,7 @@ public class EmbedTokenStore {
     /** Resource kinds the embed surface understands. The mint endpoint rejects
      *  anything outside this set so a typo can never persist a "ghost" kind
      *  that the view endpoint silently ignores. */
-    private static final Set<String> ALLOWED_KINDS = Set.of("query", "dashboard");
+    private static final Set<String> ALLOWED_KINDS = Set.of("query", "dashboard", "app");
 
     /** Non-null when persisting to disk; null → use {@link #memory}. */
     private final Path dir;
