@@ -389,19 +389,34 @@
       }
       return null;
     });
+    // Follow the surrounding theme accent (e.g. an App Builder app's
+    // --saiku-app-accent) so the sparkline matches the dashboard's palette
+    // instead of ECharts' default blue. Falls back to ECharts' default when no
+    // accent var is in scope (plain dashboards keep their existing look).
+    let accent: string | undefined;
+    try {
+      const c = getComputedStyle(sparkHost)
+        .getPropertyValue("--saiku-app-accent")
+        .trim();
+      if (c) accent = c;
+    } catch {
+      /* getComputedStyle can throw on a detached node — ignore */
+    }
     spark.setOption(
       {
         animation: false,
         grid: { top: 4, right: 4, bottom: 4, left: 4 },
         xAxis: { type: "category", show: false, data: values.map((_, i) => i) },
         yAxis: { type: "value", show: false, scale: true },
+        color: accent ? [accent] : undefined,
         series: [
           {
             type: "line",
             data: values,
             smooth: true,
             showSymbol: false,
-            lineStyle: { width: 1.5 },
+            lineStyle: accent ? { width: 1.6, color: accent } : { width: 1.5 },
+            areaStyle: accent ? { color: accent, opacity: 0.12 } : undefined,
           },
         ],
         tooltip: { show: false },
