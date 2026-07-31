@@ -69,6 +69,12 @@ export interface AppPage {
   id: string;
   title: string;
   icon?: string;
+  /** Optional page-title row shown above the grid (big heading + muted sub +
+   *  right-aligned meta) — the "Portland #14 · Today / Regional manager view"
+   *  band the reference dashboards open with. */
+  heading?: string;
+  subheading?: string;
+  meta?: string;
   /** Inline dashboard-layout object — opaque here; the dashboard grid
    *  (see $lib/api/dashboards → DashboardLayout) is the schema authority. */
   grid: unknown;
@@ -135,9 +141,9 @@ export function normaliseApp(raw: SaikuAppInput): SaikuApp {
     nav: { ...raw.nav, position: raw.nav?.position ?? "rail" },
     assistantSlot: { ...raw.assistantSlot, enabled: raw.assistantSlot?.enabled ?? false },
     pages: (raw.pages ?? []).map((p, i) => ({
+      ...p,
       id: p.id ?? localId("page"),
       title: p.title ?? `Page ${i + 1}`,
-      icon: p.icon,
       grid: p.grid ?? { cols: 12, tiles: [] },
     })),
     tags: raw.tags ?? [],

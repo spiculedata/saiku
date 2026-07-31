@@ -13,6 +13,7 @@
    * add / rename affordances and in-grid editing are shown.
    */
   import { onMount, untrack } from "svelte";
+  import { page } from "$app/state";
   import { appDoc } from "$lib/stores/appDoc.svelte";
   import { Button } from "$lib/components/ui";
   import { toasts } from "$lib/stores/toasts.svelte";
@@ -29,6 +30,17 @@
   /** View mode: edit (default) shows editing affordances, view is read-only. */
   let mode = $state<"edit" | "view">("edit");
   let saving = $state<boolean>(false);
+
+  // Kiosk: `?chrome=none` renders the app as a pure viewer — no edit/save
+  // controls, view mode forced. Latched (the app's URL-state mirror rewrites the
+  // query string), same as the layout's chrome-hide.
+  let kiosk = $state(false);
+  $effect(() => {
+    if (page.url.searchParams.get("chrome") === "none") {
+      kiosk = true;
+      mode = "view";
+    }
+  });
 
   onMount(() => {
     untrack(() => void appDoc.loadApp(appPath));
@@ -72,22 +84,24 @@
 {:else if appDoc.current}
   <AppShell app={appDoc.current} editable={mode === "edit"}>
     {#snippet controls()}
-      <Button
-        variant="outline"
-        size="sm"
-        onclick={toggleMode}
-        title={mode === "edit" ? "Switch to view mode" : "Switch to edit mode"}
-      >
-        {#if mode === "edit"}
-          <Eye size={14} /><span>View</span>
-        {:else}
-          <Pencil size={14} /><span>Edit</span>
-        {/if}
-      </Button>
-      {#if mode === "edit"}
-        <Button size="sm" onclick={() => void handleSave()} disabled={saving}>
-          <Save size={14} /><span>{saving ? "Saving…" : "Save"}</span>
+      {#if !kiosk}
+        <Button
+          variant="outline"
+          size="sm"
+          onclick={toggleMode}
+          title={mode === "edit" ? "Switch to view mode" : "Switch to edit mode"}
+        >
+          {#if mode === "edit"}
+            <Eye size={14} /><span>View</span>
+          {:else}
+            <Pencil size={14} /><span>Edit</span>
+          {/if}
         </Button>
+        {#if mode === "edit"}
+          <Button size="sm" onclick={() => void handleSave()} disabled={saving}>
+            <Save size={14} /><span>{saving ? "Saving…" : "Save"}</span>
+          </Button>
+        {/if}
       {/if}
     {/snippet}
   </AppShell>

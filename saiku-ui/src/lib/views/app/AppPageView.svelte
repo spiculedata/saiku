@@ -196,6 +196,15 @@
 </script>
 
 <div class="app-page">
+  {#if page.heading}
+    <div class="app-page__title">
+      <div class="app-page__title-main">
+        <h1 class="app-page__heading">{page.heading}</h1>
+        {#if page.subheading}<p class="app-page__subheading">{page.subheading}</p>{/if}
+      </div>
+      {#if page.meta}<div class="app-page__title-meta">{page.meta}</div>{/if}
+    </div>
+  {/if}
   {#if editable}
     <div class="app-page__toolbar">
       <AddTileMenu onPick={handleAddTile} onAddCustom={handleAddCustom} align="left" />
@@ -219,6 +228,33 @@
     min-width: 0;
     height: 100%;
     box-sizing: border-box;
+  }
+  .app-page__title {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 2px 2px -2px;
+  }
+  .app-page__heading {
+    margin: 0;
+    font-family: var(--saiku-app-font, Georgia, "Times New Roman", serif);
+    font-size: 1.9rem;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--saiku-app-fg, inherit);
+    text-wrap: balance;
+  }
+  .app-page__subheading {
+    margin: 5px 0 0;
+    font-size: 0.9rem;
+    color: var(--saiku-app-muted, #8a7f68);
+  }
+  .app-page__title-meta {
+    font-size: 0.85rem;
+    color: var(--saiku-app-muted, #8a7f68);
+    white-space: nowrap;
+    letter-spacing: 0.02em;
   }
   .app-page__toolbar {
     display: flex;
