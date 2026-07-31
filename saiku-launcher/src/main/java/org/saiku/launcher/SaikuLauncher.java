@@ -808,6 +808,15 @@ public class SaikuLauncher implements Callable<Integer> {
             Files.createDirectories(adminHome);
             stageResource("/seed/FoodMartTrend.saiku", adminHome.resolve("FoodMartTrend.saiku"));
 
+            // Seed the "FoodMart Ops · Store Intelligence" App Builder app (saiku#1441) — the
+            // reference .saikuapp the App Builder is measured against: full-bleed editorial shell,
+            // icon nav rail, KPI row with inline sparklines, monthly-trend chart, a Movers table
+            // with a real MoM store-sales-growth column (green/red conditional formatting), and the
+            // in-app Ask assistant. Renders at /ui/apps/homes/admin/foodmart-ops.saikuapp/. Uses the
+            // Store Sales Growth calculated member added to the Sales cube (FoodMart4.xml).
+            // Idempotent — only lands when absent, so operator edits survive re-launch.
+            stageResource("/seed/apps/foodmart-ops.saikuapp", adminHome.resolve("foodmart-ops.saikuapp"));
+
             // Public-grant the FoodMartTrend query so /ui/showcase/ can render its
             // <saiku-embed> widgets anonymously. Idempotent: if the operator already
             // manages embed-public.json we merge our entry in without touching theirs.
