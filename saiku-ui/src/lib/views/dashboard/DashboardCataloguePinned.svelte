@@ -17,19 +17,20 @@
   import { base } from "$app/paths";
   import { Button } from "$lib/components/ui";
   import { Star } from "lucide-svelte";
-  import { toRepoRelative } from "$lib/api/dashboards";
+  import { toRepoRelative, displayPath } from "$lib/api/dashboards";
   import type { RepositoryNode } from "$lib/api/repository";
 
   interface Props {
     favourites: RepositoryNode[];
     recents: RepositoryNode[];
     onToggleFavourite: (relPath: string) => void;
-    /** Used to render the entry label — usually the parent's basename
-     *  helper that strips the .saikudash extension. */
-    basename: (relPath: string) => string;
+    /** Resolves a node to its human label — the dashboard's own title when
+     *  known, else its filename slug. Lets the pinned rows read the real
+     *  title rather than a raw `.saikudash` filename. (#1605) */
+    titleFor: (node: RepositoryNode) => string;
   }
 
-  let { favourites, recents, onToggleFavourite, basename }: Props = $props();
+  let { favourites, recents, onToggleFavourite, titleFor }: Props = $props();
 </script>
 
 {#if favourites.length > 0}
@@ -41,9 +42,9 @@
       {#each favourites as e (e.path)}
         {@const relPath = toRepoRelative(e.path)}
         <li class="row">
-          <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
-            <span class="name">{basename(relPath)}</span>
-            <span class="text-fg-muted text-xs overflow-hidden text-ellipsis whitespace-nowrap">{relPath}</span>
+          <a class="link" href="{base}/dashboards/{relPath}" aria-label={titleFor(e)} title={displayPath(relPath)}>
+            <span class="name">{titleFor(e)}</span>
+            <span class="text-fg-muted text-xs overflow-hidden text-ellipsis whitespace-nowrap">{displayPath(relPath)}</span>
           </a>
           <Button variant="outline" class="icon-only star star--on" onclick={() => onToggleFavourite(relPath)} title="Remove from favourites" aria-label="Remove from favourites" aria-pressed="true">
             <Star size={14} fill="currentColor" />
@@ -61,9 +62,9 @@
       {#each recents as e (e.path)}
         {@const relPath = toRepoRelative(e.path)}
         <li class="row">
-          <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
-            <span class="name">{basename(relPath)}</span>
-            <span class="text-fg-muted text-xs overflow-hidden text-ellipsis whitespace-nowrap">{relPath}</span>
+          <a class="link" href="{base}/dashboards/{relPath}" aria-label={titleFor(e)} title={displayPath(relPath)}>
+            <span class="name">{titleFor(e)}</span>
+            <span class="text-fg-muted text-xs overflow-hidden text-ellipsis whitespace-nowrap">{displayPath(relPath)}</span>
           </a>
         </li>
       {/each}

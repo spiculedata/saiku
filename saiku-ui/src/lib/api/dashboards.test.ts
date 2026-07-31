@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import {
   cloneDashboardWithFreshIds,
   cloneTileWithFreshId,
+  displayPath,
   normaliseDashboardPath,
   normaliseRepoPath,
   toRepoRelative,
@@ -109,6 +110,24 @@ describe("toRepoRelative", () => {
 
   it("returns already-relative input cleaned up", () => {
     expect(toRepoRelative("/homes/admin/foo.saikudash/")).toBe("homes/admin/foo.saikudash");
+  });
+});
+
+describe("displayPath", () => {
+  it("drops the .saikudash extension but keeps the folder path", () => {
+    expect(displayPath("homes/admin/sales.saikudash")).toBe("homes/admin/sales");
+  });
+
+  it("drops the extension from a bare filename", () => {
+    expect(displayPath("welcome.saikudash")).toBe("welcome");
+  });
+
+  it("leaves a path without the extension unchanged", () => {
+    expect(displayPath("homes/admin/sales")).toBe("homes/admin/sales");
+  });
+
+  it("only strips a trailing extension, not one mid-path", () => {
+    expect(displayPath("homes/a.saikudash/b.saikudash")).toBe("homes/a.saikudash/b");
   });
 });
 
