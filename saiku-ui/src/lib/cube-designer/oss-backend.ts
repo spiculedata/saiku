@@ -19,7 +19,7 @@
  *  - `tryQuery`: OSS has no run-against-an-unsaved-proposal endpoint yet, so the
  *    Try-a-query tab is unavailable in this build (graceful 501).
  */
-import type { CubeDesignerBackend } from "./backend";
+import type { CubeDesignerBackend, CubeDesignerAI } from "./backend";
 
 const REST_BASE = "/rest/saiku";
 const BASE = `${REST_BASE}/admin/cube-designer`;
@@ -121,4 +121,16 @@ export const ossCubeDesignerBackend: CubeDesignerBackend = {
     const token = await r.text().catch(() => "");
     return jsonResponse({ message: convertMessage(token) }, r.status);
   },
+};
+
+/**
+ * OSS AI adapter — points the DimSum agent turn at Saiku's schema-authoring
+ * endpoint. dimsum-agent's `postDimSumTurn` posts `{messages, canvasSummary}` to
+ * its built-in URL; the injected `fetchImpl` redirects that to
+ * `/rest/saiku/admin/cube-designer/turn` (which returns `{content: [...]}`). The
+ * server 503s when no API key is configured, and the designer surfaces that.
+ */
+export const ossCubeDesignerAI: CubeDesignerAI = {
+  fetchImpl: (_input, init) =>
+    fetch(`${BASE}/turn`, { ...(init ?? {}), ...CREDS }),
 };

@@ -6,6 +6,9 @@
  */
 package org.saiku.web.rest.resources.cubedesigner;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -15,6 +18,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import java.io.IOException;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -28,6 +32,7 @@ import mondrian.rolap.M3ToM4Converter;
 import org.saiku.datasources.connection.ISaikuConnection;
 import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.datasource.DatasourceService;
+import org.saiku.service.olap.ai.cubedesigner.CubeDesignerAiService;
 import org.saiku.service.schema.generate.introspect.JdbcIntrospector;
 import org.saiku.service.schema.generate.model.DbColumn;
 import org.saiku.service.schema.generate.model.DbModel;
@@ -60,9 +65,12 @@ public class CubeDesignerResource {
     private static final int DEFAULT_SAMPLE_LIMIT = 25;
     private static final int MAX_SAMPLE_LIMIT = 500;
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private final DatasourceJdbcConnectionProvider connectionProvider;
     private final DatasourceService datasourceService;
     private UserService userService; // optional; see class doc
+    private CubeDesignerAiService aiService; // optional; absent ⇒ /turn 503s
 
     public CubeDesignerResource(
             DatasourceJdbcConnectionProvider connectionProvider, DatasourceService datasourceService) {
@@ -72,6 +80,10 @@ public class CubeDesignerResource {
 
     public void setUserService(UserService userService) {
         this.userService = userService;
+    }
+
+    public void setAiService(CubeDesignerAiService aiService) {
+        this.aiService = aiService;
     }
 
     // ── DTOs ────────────────────────────────────────────────────────────────
@@ -86,6 +98,8 @@ public class CubeDesignerResource {
     public record ConvertRequest(String mondrianXml, String dataSourceId) {}
 
     public record ConvertResult(String mondrianXml) {}
+
+    public record TurnRequest(JsonNode messages, String canvasSummary) {}
 
     // ── (1) introspect ───────────────────────────────────────────────────────
     @GET
@@ -209,6 +223,39 @@ public class CubeDesignerResource {
             // 422 Unprocessable — the schema/connection is the problem, not the request shape.
             // The typed token lets the UI show an actionable reason.
             return Response.status(422).entity(e.token()).build();
+        }
+    }
+
+    // ── (4) DimSum AI turn ─────────────────────────────────────────────────────
+    @POST
+    @Path("/turn")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response turn(TurnRequest req) {
+        Response forbidden = adminGuard();
+        if (forbidden != null) {
+            return forbidden;
+        }
+        if (aiService == null || !aiService.isConfigured()) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity("The schema-authoring AI is not configured on this server.")
+                    .build();
+        }
+        try {
+            JsonNode content =
+                    aiService.turn(req == null ? null : req.messages(), req == null ? null : req.canvasSummary());
+            ObjectNode out = MAPPER.createObjectNode();
+            out.set("content", content);
+            return Response.ok(out).build();
+        } catch (IllegalStateException e) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity("The schema-authoring AI is not configured on this server.")
+                    .build();
+        } catch (IOException e) {
+            LOG.warn("cube-designer AI turn failed", e);
+            return Response.status(Response.Status.BAD_GATEWAY)
+                    .entity("The AI provider could not be reached.")
+                    .build();
         }
     }
 

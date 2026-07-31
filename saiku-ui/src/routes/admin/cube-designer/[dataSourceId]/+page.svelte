@@ -14,8 +14,14 @@
   import { SchemaCanvasStore } from "$lib/cube-designer/state.svelte";
   import SchemaCanvasView from "$lib/cube-designer/SchemaCanvasView.svelte";
   import WorkbenchView from "$lib/cube-designer/WorkbenchView.svelte";
-  import { setCubeDesignerBackend } from "$lib/cube-designer/backend";
-  import { ossCubeDesignerBackend } from "$lib/cube-designer/oss-backend";
+  import {
+    setCubeDesignerBackend,
+    setCubeDesignerAI,
+  } from "$lib/cube-designer/backend";
+  import {
+    ossCubeDesignerBackend,
+    ossCubeDesignerAI,
+  } from "$lib/cube-designer/oss-backend";
   import { exportToMondrianXml } from "$lib/cube-designer/mondrian-export";
   import { parseProfileTables } from "$lib/cube-designer/profile-types";
   import type { SourceTableCandidate } from "$lib/cube-designer/types";
@@ -30,6 +36,7 @@
   // Store keyed on the datasource; provide the OSS backend to the designer subtree.
   const store = new SchemaCanvasStore(dataSourceId);
   setCubeDesignerBackend(ossCubeDesignerBackend);
+  setCubeDesignerAI(ossCubeDesignerAI);
 
   let sourceError = $state<string | null>(null);
   let saving = $state(false);

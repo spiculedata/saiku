@@ -890,11 +890,20 @@
     <!-- Cube/schema designer backend (saiku-ui/src/lib/cube-designer). Reuses the
          schema-generator's JDBC connection provider + the datasource service;
          auto-registered as a JAX-RS resource by SaikuJerseyApplication's @Path scan. -->
+    <bean id="cubeDesignerAiService"
+          class="org.saiku.service.olap.ai.cubedesigner.CubeDesignerAiService">
+        <constructor-arg value="${saiku.ai.ask.apiKey:}"/>
+        <constructor-arg value="${saiku.ai.ask.model:}"/>
+        <constructor-arg value="${saiku.ai.ask.endpoint:}"/>
+        <constructor-arg value="${saiku.ai.ask.timeoutSeconds:60}"/>
+    </bean>
+
     <bean id="cubeDesignerResource"
           class="org.saiku.web.rest.resources.cubedesigner.CubeDesignerResource">
         <constructor-arg ref="schemaGenConnectionProvider"/>
         <constructor-arg ref="datasourceServiceBean"/>
         <property name="userService" ref="userServiceBean"/>
+        <property name="aiService" ref="cubeDesignerAiService"/>
     </bean>
 
 </beans>
