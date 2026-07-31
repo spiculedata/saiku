@@ -624,7 +624,16 @@ export function buildChartOption(
   // y-side had 50+ series (user feedback 2026-06-07: a single "Cust…"
   // label clipped to 5 chars on a 1400px-wide chart). Callers pass the
   // axis-specific count explicitly via {@link catLabel}.
-  const ROTATED_LABEL_WIDTH = 160;
+  // #1598: when the category axis crowds, tick labels rotate to read diagonally.
+  // The truncation width is RESPONSIVE — compact tiles thin aggressively (a short
+  // cap, so long city names ellipsize early instead of sprawling off a small
+  // tile), roomy charts show more. axisLabelConfig gives every rotated label
+  // `overflow:"truncate"` + `ellipsis`, so an over-long label ends in "…" rather
+  // than clipping. The matching grid.bottom reservation is `rotatedTickBottom()`
+  // below — the two are derived from the same width + angle so they never
+  // disagree.
+  const ROTATED_LABEL_ANGLE = 30;
+  const ROTATED_LABEL_WIDTH = compact ? 72 : 160;
   const catLabel = (rotate = 0, axisCategoryCount = cols.length || 1) => {
     if (rotate !== 0) {
       return {
@@ -637,6 +646,23 @@ export function buildChartOption(
       ? 100
       : deriveAxisLabelWidth(geom.chartWidth ?? 0, axisCategoryCount);
     return { color: tk.fgMuted, rotate, ...axisLabelConfig(w) };
+  };
+
+  // #1598: extra grid.bottom (px) a rotated tick label needs so its DIAGONAL DROP
+  // clears the plot instead of clipping at the tile edge. A label capped at
+  // ROTATED_LABEL_WIDTH and rotated ROTATED_LABEL_ANGLE° drops width·sin θ and its
+  // glyph box adds line·cos θ; we reserve only the part BEYOND the single
+  // horizontal label row that the base grid.bottom already covers. Returns 0 when
+  // the axis isn't rotated (legacy layout unchanged). This is TICK-label room and
+  // is added ALONGSIDE #1596's axis-NAME room (catNameBottomPad) — the two are
+  // independent and compose, so a rotated axis that also has a dimension title
+  // reserves room for both.
+  const ROTATED_TICK_LINE_PX = 16;
+  const rotatedTickBottom = (rotated: boolean): number => {
+    if (!rotated) return 0;
+    const rad = (ROTATED_LABEL_ANGLE * Math.PI) / 180;
+    const extent = ROTATED_LABEL_WIDTH * Math.sin(rad) + ROTATED_TICK_LINE_PX * Math.cos(rad);
+    return Math.max(0, Math.ceil(extent) - ROTATED_TICK_LINE_PX);
   };
 
   const legend = compact ? compactLegend(o, tk) : legendConfig(o, tk);
@@ -1043,13 +1069,15 @@ export function buildChartOption(
             top: title ? TITLE_GRID_TOP : 24,
             left: 48 + VALUE_NAME_LEFT_PAD,
             right: 16,
-            bottom: 56 + catNameBottomPad(rows.length > 8),
+            // #1598: + rotatedTickBottom so rotated tick labels don't clip.
+            bottom: 56 + catNameBottomPad(rows.length > 8) + rotatedTickBottom(rows.length > 8),
           }
         : {
             left: 60 + VALUE_NAME_LEFT_PAD,
             top: title ? 50 : 30,
             right: 40,
-            bottom: 56 + catNameBottomPad(rows.length > 8),
+            // #1598: + rotatedTickBottom so rotated tick labels don't clip.
+            bottom: 56 + catNameBottomPad(rows.length > 8) + rotatedTickBottom(rows.length > 8),
           },
       // waterfall is a single ordered sequence — no useful "zoom window"
       // semantics. Inside-zoom stays for power users, slider hidden.
@@ -1057,8 +1085,8 @@ export function buildChartOption(
       xAxis: {
         ...baseAxis,
         // waterfall's x-axis is `rows`; pass rows.length so the
-        // per-label width is computed against the right dim.
-        axisLabel: catLabel(rows.length > 8 ? 30 : 0, rows.length),
+        // per-label width is computed against the right dim. #1598: angle const.
+        axisLabel: catLabel(rows.length > 8 ? ROTATED_LABEL_ANGLE : 0, rows.length),
         data: rows,
         // #1596: category-dimension title (or the user override).
         ...catNameCfg(rows.length > 8),
@@ -1226,13 +1254,18 @@ export function buildChartOption(
           top: title ? TITLE_GRID_TOP : 24,
           left: 48 + VALUE_NAME_LEFT_PAD,
           right: 16,
-          bottom: 36 + catNameBottomPad(xRotated),
+          // #1598: + rotatedTickBottom so rotated tick labels don't clip.
+          bottom: 36 + catNameBottomPad(xRotated) + rotatedTickBottom(xRotated),
         }
       : {
           left: 60 + VALUE_NAME_LEFT_PAD,
           top: title ? 50 : 40,
           right: hasRight ? 60 : 40,
-          bottom: (rows.length >= ZOOM_SLIDER_MIN_CATEGORIES ? 76 : 40) + catNameBottomPad(xRotated),
+          // #1598: + rotatedTickBottom so rotated tick labels clear the slider/edge.
+          bottom:
+            (rows.length >= ZOOM_SLIDER_MIN_CATEGORIES ? 76 : 40) +
+            catNameBottomPad(xRotated) +
+            rotatedTickBottom(xRotated),
         },
     // bar / line / area: x-axis is `rows`.
     dataZoom: dataZoomConfig(compact, rows.length), // #1080: x-axis zoom + pan
@@ -1242,8 +1275,8 @@ export function buildChartOption(
       // per-label width is computed against the right dim — the old
       // max(rows, cols) cramped scatter / bar single-category x-axes
       // to 40px when the y side had many series ("Cust…" / "CA /…"
-      // 2026-06-07 screenshot).
-      axisLabel: catLabel(xRotated ? 30 : 0, rows.length),
+      // 2026-06-07 screenshot). #1598: rotate uses ROTATED_LABEL_ANGLE.
+      axisLabel: catLabel(xRotated ? ROTATED_LABEL_ANGLE : 0, rows.length),
       data: rows,
       // #1596: category-dimension title (or the user override); nothing drawn
       // when neither is present.
