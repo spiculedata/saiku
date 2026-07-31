@@ -186,7 +186,11 @@
   function postToFrame(type: "init" | "data" | "theme", payload: unknown): void {
     const win = iframe?.contentWindow;
     if (!win) return;
-    win.postMessage({ type, nonce, payload }, "*");
+    // $state.snapshot unwraps Svelte's reactive $state proxy (the query records
+    // are deeply reactive) into a plain, structured-clone-able value — a raw
+    // proxy makes postMessage throw DataCloneError, which would silently strand
+    // the plugin on "Waiting for data…".
+    win.postMessage({ type, nonce, payload: $state.snapshot(payload) }, "*");
   }
 
   let records = $derived(response?.status === "SUCCESS" ? (response.data ?? []) : []);

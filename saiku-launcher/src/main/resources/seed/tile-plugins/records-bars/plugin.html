@@ -70,14 +70,15 @@
 (function () {
   "use strict";
 
-  // Best-effort nonce: the host may pass one via the location hash (#nonce=…)
-  // on the srcdoc frame, and/or include one on each data message. We echo
-  // whichever we have so the host can correlate our messages to this tile.
+  // The host injects the per-tile nonce as a global in the srcdoc
+  // (pluginBridge.buildSrcdoc → window.SAIKU_PLUGIN_NONCE). We MUST echo it on
+  // every message or the host drops them (nonce mismatch) — including our very
+  // first `ready`, without which the host never sends data. A later data message
+  // may also carry a nonce, which we adopt as a fallback.
   var nonce = null;
   try {
-    var m = /(?:^|[#&])nonce=([^&]+)/.exec(location.hash || "");
-    if (m) nonce = decodeURIComponent(m[1]);
-  } catch (e) { /* no hash access — fine */ }
+    if (typeof window.SAIKU_PLUGIN_NONCE === "string") nonce = window.SAIKU_PLUGIN_NONCE;
+  } catch (e) { /* fine */ }
 
   function post(type, extra) {
     var msg = { type: type, nonce: nonce };

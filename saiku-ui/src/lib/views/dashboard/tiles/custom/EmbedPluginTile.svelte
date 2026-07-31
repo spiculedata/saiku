@@ -102,7 +102,10 @@
   function postToFrame(type: "init" | "data" | "theme", payload: unknown): void {
     const win = iframe?.contentWindow;
     if (!win) return;
-    win.postMessage({ type, nonce, payload }, "*");
+    // Snapshot to a plain, structured-clone-able value — a reactive $state proxy
+    // makes postMessage throw DataCloneError and strands the plugin on
+    // "Waiting for data…". See PluginTile.postToFrame.
+    win.postMessage({ type, nonce, payload: $state.snapshot(payload) }, "*");
   }
 
   // On `ready` (and on rows change) push init + the token-scoped rows + theme.
