@@ -16,8 +16,11 @@
   import { Button } from "$lib/components/ui";
   import FilterSuggestionsModal from "$lib/views/dashboard/FilterSuggestionsModal.svelte";
   import PrefsMenu from "$lib/components/PrefsMenu.svelte";
+  // #1610: fold the secondary toolbar actions into an overflow "⋯ More" menu,
+  // reusing the same ContextMenu primitive the tiles / dashboards list use.
+  import ContextMenu from "$lib/components/ContextMenu.svelte";
   import type { TileType } from "$lib/api/dashboards";
-  import { Monitor, RotateCcw, X, Share2, History, Undo2, Redo2, Menu, Download } from "lucide-svelte";
+  import { Monitor, RotateCcw, X, Share2, History, Undo2, Redo2, Menu, MoreHorizontal, Download } from "lucide-svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
   // #929: client-side PNG / PDF export of the current dashboard view.
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
@@ -30,6 +33,11 @@
   // (restores the #932 behaviour lost in the #914/#915/#932 merge), now with
   // Undo/Redo folded into the collapse. Same breakpoint that stacks the grid.
   import { isNarrow, DEFAULT_STACK_BREAKPOINT } from "$lib/dashboard/responsiveLayout";
+
+  // #1610: shape of a ContextMenu entry (mirrors ContextMenu.svelte's item
+  // type; declared inline like QueryCanvas rather than imported from a
+  // component's instance script).
+  type ContextMenuItem = { id: string; label: string; disabled?: boolean; danger?: boolean; sep?: boolean };
 
   interface Props {
     name: string;
@@ -108,6 +116,7 @@
   async function runExport(format: ExportFormat): Promise<void> {
     exportMenuOpen = false;
     menuOpen = false; // also close the hamburger if we were collapsed
+    moreOpen = false; // …and the #1610 overflow menu
     if (!gridElement || exporting) return;
     exporting = true;
     exportError = null;
@@ -143,6 +152,79 @@
       document.removeEventListener("mousedown", onDocClick);
       document.removeEventListener("keydown", onKey);
     };
+  });
+
+  // #1610: overflow "⋯ More" menu (wide layout only). The primary actions
+  // (Present, undo/redo, Add tile, Save) stay inline; the secondary ones
+  // (Export, Suggest / Reset filters, History, Share) fold in here so the
+  // toolbar reads less cluttered. Reuses the shared ContextMenu primitive
+  // (fixed-positioned at moreX/moreY, anchored to the trigger's bottom-right).
+  const MORE_MENU_WIDTH = 200; // px — keep in step with ContextMenu min-width
+  let moreOpen = $state(false);
+  let moreX = $state(0);
+  let moreY = $state(0);
+
+  // Single source of truth for the overflow entries. Export's PNG / PDF
+  // sub-picker flattens to two items here (a flat menu suits the primitive
+  // better than a nested sub-menu). Disabled / visibility mirror the inline
+  // buttons exactly so behaviour is unchanged — only the location moves.
+  const moreItems: ContextMenuItem[] = $derived.by(() => {
+    const busy = !canExport || exporting;
+    const items: ContextMenuItem[] = [
+      { id: "export-png", label: i18n.t("dashboard.export.png", "Export as PNG image"), disabled: busy },
+      { id: "export-pdf", label: i18n.t("dashboard.export.pdf", "Export as PDF document"), disabled: busy },
+    ];
+    if (!readOnly) {
+      items.push({ id: "_sep-filters", label: "", sep: true });
+      items.push({ id: "suggest", label: "Suggest filters" });
+      items.push({ id: "reset", label: "Reset filters", disabled: !canResetFilters || !onResetFilters });
+    }
+    if (persisted) {
+      items.push({ id: "_sep-dash", label: "", sep: true });
+      items.push({ id: "history", label: "Version history" });
+      items.push({ id: "share", label: "Share link" });
+    }
+    return items;
+  });
+
+  // Toggle the overflow menu, anchoring it under the trigger's right edge.
+  // stopPropagation keeps this click from reaching ContextMenu's window
+  // listener, so re-clicking the trigger toggles cleanly instead of the
+  // outside-click handler racing the toggle.
+  function toggleMore(e: MouseEvent): void {
+    e.stopPropagation();
+    if (moreOpen) {
+      moreOpen = false;
+      return;
+    }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    moreX = rect.right - MORE_MENU_WIDTH;
+    moreY = rect.bottom + 4;
+    moreOpen = true;
+  }
+
+  // Route an overflow pick to the same handler the inline button used.
+  function onMorePick(id: string): void {
+    switch (id) {
+      case "export-png": void runExport("png"); break;
+      case "export-pdf": void runExport("pdf"); break;
+      case "suggest": suggestOpen = true; break;
+      case "reset": onResetFilters?.(); break;
+      case "history": historyOpen = true; break;
+      case "share": shareOpen = true; break;
+    }
+    moreOpen = false;
+  }
+
+  // Close the overflow menu on Escape (ContextMenu already handles the
+  // outside-click; this matches the hamburger / export-menu polish).
+  $effect(() => {
+    if (!moreOpen) return;
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === "Escape") moreOpen = false;
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
   });
 
   // #1175: responsive hamburger. A ResizeObserver on the header tracks its
@@ -288,10 +370,11 @@
     {/if}
   </div>
 
-  <!-- #1175: wide → all actions inline; narrow → Save stays out, the rest
-       (incl. Undo/Redo) collapse into a ☰ menu. Both render the SAME
-       snippets, so there's no duplication and nothing falls outside the
-       collapse. -->
+  <!-- Wide → primary actions inline + a "⋯ More" overflow menu for the
+       secondary ones (#1610); narrow → Save stays out and everything else
+       (primary + secondary) collapses into the ☰ hamburger (#1175). Both
+       widths render the SAME primary snippet, so nothing falls outside the
+       responsive collapse. -->
   <div class="actions">
     {#if narrow}
       {@render saveButton()}
@@ -300,17 +383,26 @@
       </Button>
       {#if menuOpen}
         <div class="actions-menu" role="menu">
+          {@render primaryActions()}
           {@render secondaryActions()}
         </div>
       {/if}
     {:else}
-      {@render secondaryActions()}
+      {@render primaryActions()}
+      <!-- #1610: secondary actions live behind this overflow menu. -->
+      <Button variant="outline" class="icon-only" aria-label="More actions" aria-haspopup="menu" aria-expanded={moreOpen} title="More actions" onclick={toggleMore}>
+        <MoreHorizontal size={16} aria-hidden="true" />
+      </Button>
+      <!-- saiku#1050: theme (dark/light/system) + language control. -->
+      <PrefsMenu placement="down" />
       {@render saveButton()}
     {/if}
   </div>
 </header>
 
-{#snippet secondaryActions()}
+<!-- #1610: PRIMARY actions — kept inline at wide widths (and rendered first
+     inside the narrow hamburger). Present, undo/redo and Add tile. -->
+{#snippet primaryActions()}
   {#if onPresent}
     <Button variant="outline" onclick={() => onPresent?.()} title="Present — fullscreen, hide chrome (press F, Esc to exit)" aria-label="Present">
       <Monitor size={14} aria-hidden="true" />
@@ -318,6 +410,25 @@
     </Button>
   {/if}
 
+  {#if !readOnly}
+    <div class="undo-redo" role="group" aria-label={i18n.t("dashboard.history.group", "Undo and redo")}>
+      <Button variant="outline" class="icon-only" onclick={() => onUndo?.()} disabled={!canUndo || !onUndo} aria-disabled={!canUndo || !onUndo} title={i18n.t("dashboard.undo.title", "Undo (Ctrl/Cmd+Z)")} aria-label={i18n.t("dashboard.undo", "Undo")}>
+        <Undo2 size={14} aria-hidden="true" />
+      </Button>
+      <Button variant="outline" class="icon-only" onclick={() => onRedo?.()} disabled={!canRedo || !onRedo} aria-disabled={!canRedo || !onRedo} title={i18n.t("dashboard.redo.title", "Redo (Ctrl/Cmd+Shift+Z)")} aria-label={i18n.t("dashboard.redo", "Redo")}>
+        <Redo2 size={14} aria-hidden="true" />
+      </Button>
+    </div>
+
+    <AddTileMenu onPick={(t) => onAddTile?.(t)} disabled={!onAddTile} />
+  {/if}
+{/snippet}
+
+<!-- #1610: SECONDARY actions — folded behind the "⋯ More" overflow at wide
+     widths (see moreItems / onMorePick); rendered as full buttons only inside
+     the narrow (#1175) hamburger, where everything already collapses. The
+     wide overflow drives the SAME handlers, so behaviour is unchanged. -->
+{#snippet secondaryActions()}
   <!-- #929: Export the current dashboard view (PNG / PDF). A small format
        picker anchors under the button; disabled until the grid mounts. -->
   <div class="relative inline-flex">
@@ -338,15 +449,6 @@
   </div>
 
   {#if !readOnly}
-    <div class="undo-redo" role="group" aria-label={i18n.t("dashboard.history.group", "Undo and redo")}>
-      <Button variant="outline" class="icon-only" onclick={() => onUndo?.()} disabled={!canUndo || !onUndo} aria-disabled={!canUndo || !onUndo} title={i18n.t("dashboard.undo.title", "Undo (Ctrl/Cmd+Z)")} aria-label={i18n.t("dashboard.undo", "Undo")}>
-        <Undo2 size={14} aria-hidden="true" />
-      </Button>
-      <Button variant="outline" class="icon-only" onclick={() => onRedo?.()} disabled={!canRedo || !onRedo} aria-disabled={!canRedo || !onRedo} title={i18n.t("dashboard.redo.title", "Redo (Ctrl/Cmd+Shift+Z)")} aria-label={i18n.t("dashboard.redo", "Redo")}>
-        <Redo2 size={14} aria-hidden="true" />
-      </Button>
-    </div>
-
     <Button variant="outline" onclick={() => (suggestOpen = true)} aria-haspopup="dialog" title="Suggest filter widgets from dimensions your tiles already use">
       🔍 Suggest filters
     </Button>
@@ -355,8 +457,6 @@
       <RotateCcw size={14} aria-hidden="true" />
       <span>Reset filters</span>
     </Button>
-
-    <AddTileMenu onPick={(t) => onAddTile?.(t)} disabled={!onAddTile} />
   {/if}
 
   {#if persisted}
@@ -399,6 +499,16 @@
 {/if}
 
 <FilterSuggestionsModal open={suggestOpen} onClose={() => (suggestOpen = false)} />
+
+<!-- #1610: the "⋯ More" overflow menu (wide layout). Anchored at moreX/moreY. -->
+<ContextMenu
+  open={moreOpen}
+  x={moreX}
+  y={moreY}
+  items={moreItems}
+  onPick={onMorePick}
+  onClose={() => (moreOpen = false)}
+/>
 
 {#if exportError}
   <div class="export-error" role="alert">
