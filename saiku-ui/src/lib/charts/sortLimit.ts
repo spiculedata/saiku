@@ -124,6 +124,9 @@ export function applySortLimit(
   const { rowCategories, columnCategories, matrix } = projection;
   const order = sortLimitOrder(projection, state);
   return {
+    // Spread first so non-reordered fields (e.g. #1596 categoryAxisName) survive
+    // the sort/limit; the reordered rows/matrix override below.
+    ...projection,
     rowCategories: order.map((i) => rowCategories[i]),
     columnCategories,
     matrix: order.map((i) => matrix[i]),

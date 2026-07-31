@@ -79,8 +79,31 @@
         leafIndices = leaf.indices;
       }
     }
+    // #1596: default category-axis title = the row hierarchy's dimension/level
+    // caption. It lives in the ROW_HEADER_HEADER corner cells (the top-left block
+    // of the column-header rows, one per pinned row-header column). Collect the
+    // non-empty captions in order, dedupe, and join — e.g. "Year", or
+    // "Product / Category" for a two-level row hierarchy. Undefined when the
+    // cellset carries no corner caption (e.g. arrow-decoded results), in which
+    // case the builder leaves the category axis untitled unless overridden.
+    const cornerNames: string[] = [];
+    for (const headerRow of parsed.columnHeaderRows) {
+      for (let c = 0; c < parsed.rowHeaderColCount; c++) {
+        const cell = headerRow[c];
+        const v = cell?.value?.trim();
+        if (v && cell?.type === "ROW_HEADER_HEADER" && !cornerNames.includes(v)) {
+          cornerNames.push(v);
+        }
+      }
+    }
+    const categoryAxisName = cornerNames.join(" / ") || undefined;
     return {
-      projection: { rowCategories: rows, columnCategories: parsed.columnCategories, matrix },
+      projection: {
+        rowCategories: rows,
+        columnCategories: parsed.columnCategories,
+        matrix,
+        categoryAxisName,
+      },
       leafIndices,
     };
   }
