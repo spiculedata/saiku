@@ -155,8 +155,8 @@
   });
 
   // #1610: overflow "⋯ More" menu (wide layout only). The primary actions
-  // (Present, undo/redo, Add tile, Save) stay inline; the secondary ones
-  // (Export, Suggest / Reset filters, History, Share) fold in here so the
+  // (Present, undo/redo, Add tile, Export, Save) stay inline; the secondary
+  // ones (Suggest / Reset filters, History, Share) fold in here so the
   // toolbar reads less cluttered. Reuses the shared ContextMenu primitive
   // (fixed-positioned at moreX/moreY, anchored to the trigger's bottom-right).
   const MORE_MENU_WIDTH = 200; // px — keep in step with ContextMenu min-width
@@ -164,23 +164,18 @@
   let moreX = $state(0);
   let moreY = $state(0);
 
-  // Single source of truth for the overflow entries. Export's PNG / PDF
-  // sub-picker flattens to two items here (a flat menu suits the primitive
-  // better than a nested sub-menu). Disabled / visibility mirror the inline
-  // buttons exactly so behaviour is unchanged — only the location moves.
+  // Single source of truth for the overflow entries. Export stays inline, so
+  // the overflow holds only the secondary filter / dashboard actions. Disabled
+  // / visibility mirror the inline buttons exactly so behaviour is unchanged —
+  // only the location moves.
   const moreItems: ContextMenuItem[] = $derived.by(() => {
-    const busy = !canExport || exporting;
-    const items: ContextMenuItem[] = [
-      { id: "export-png", label: i18n.t("dashboard.export.png", "Export as PNG image"), disabled: busy },
-      { id: "export-pdf", label: i18n.t("dashboard.export.pdf", "Export as PDF document"), disabled: busy },
-    ];
+    const items: ContextMenuItem[] = [];
     if (!readOnly) {
-      items.push({ id: "_sep-filters", label: "", sep: true });
       items.push({ id: "suggest", label: "Suggest filters" });
       items.push({ id: "reset", label: "Reset filters", disabled: !canResetFilters || !onResetFilters });
     }
     if (persisted) {
-      items.push({ id: "_sep-dash", label: "", sep: true });
+      if (items.length > 0) items.push({ id: "_sep-dash", label: "", sep: true });
       items.push({ id: "history", label: "Version history" });
       items.push({ id: "share", label: "Share link" });
     }
@@ -206,8 +201,6 @@
   // Route an overflow pick to the same handler the inline button used.
   function onMorePick(id: string): void {
     switch (id) {
-      case "export-png": void runExport("png"); break;
-      case "export-pdf": void runExport("pdf"); break;
       case "suggest": suggestOpen = true; break;
       case "reset": onResetFilters?.(); break;
       case "history": historyOpen = true; break;
@@ -401,7 +394,7 @@
 </header>
 
 <!-- #1610: PRIMARY actions — kept inline at wide widths (and rendered first
-     inside the narrow hamburger). Present, undo/redo and Add tile. -->
+     inside the narrow hamburger). Present, undo/redo, Add tile and Export. -->
 {#snippet primaryActions()}
   {#if onPresent}
     <Button variant="outline" onclick={() => onPresent?.()} title="Present — fullscreen, hide chrome (press F, Esc to exit)" aria-label="Present">
@@ -422,15 +415,11 @@
 
     <AddTileMenu onPick={(t) => onAddTile?.(t)} disabled={!onAddTile} />
   {/if}
-{/snippet}
 
-<!-- #1610: SECONDARY actions — folded behind the "⋯ More" overflow at wide
-     widths (see moreItems / onMorePick); rendered as full buttons only inside
-     the narrow (#1175) hamburger, where everything already collapses. The
-     wide overflow drives the SAME handlers, so behaviour is unchanged. -->
-{#snippet secondaryActions()}
-  <!-- #929: Export the current dashboard view (PNG / PDF). A small format
-       picker anchors under the button; disabled until the grid mounts. -->
+  <!-- #929/#1610: Export the current dashboard view (PNG / PDF) stays INLINE.
+       A small format picker anchors under the button; disabled until the grid
+       mounts. Shown in both edit and viewer modes. The inline "Exporting…"
+       busy label lives on the button while a rasterise is in flight. -->
   <div class="relative inline-flex">
     <Button variant="outline" onclick={() => (exportMenuOpen = !exportMenuOpen)} disabled={!canExport || exporting} aria-disabled={!canExport || exporting} aria-haspopup="menu" aria-expanded={exportMenuOpen} title={i18n.t("dashboard.export.title", "Export the current view as PNG or PDF")} aria-label={i18n.t("dashboard.export", "Export")}>
       <Download size={14} aria-hidden="true" />
@@ -447,7 +436,13 @@
       </div>
     {/if}
   </div>
+{/snippet}
 
+<!-- #1610: SECONDARY actions — folded behind the "⋯ More" overflow at wide
+     widths (see moreItems / onMorePick); rendered as full buttons only inside
+     the narrow (#1175) hamburger, where everything already collapses. The
+     wide overflow drives the SAME handlers, so behaviour is unchanged. -->
+{#snippet secondaryActions()}
   {#if !readOnly}
     <Button variant="outline" onclick={() => (suggestOpen = true)} aria-haspopup="dialog" title="Suggest filter widgets from dimensions your tiles already use">
       🔍 Suggest filters
