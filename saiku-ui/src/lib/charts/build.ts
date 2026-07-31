@@ -112,10 +112,18 @@ function compactLegend(o: ChartOptions, tk: ThemeTokens): Record<string, unknown
   return base;
 }
 
+// #1595: the title gets its own band pinned to the very top (a small `top`
+// inset) so it reads as a header rather than floating into the plot. The
+// cartesian grids below reserve `grid.top` room beneath this band via
+// `TITLE_GRID_TOP` so the title never overlaps the top gridline / data.
 function titleConfig(o: ChartOptions, tk: ThemeTokens): Record<string, unknown> | undefined {
   if (!o.title) return undefined;
-  return { text: o.title, left: "center", textStyle: { color: tk.fg } };
+  return { text: o.title, left: "center", top: 8, textStyle: { color: tk.fg } };
 }
+
+// #1595: grid.top (px) that reserves a clear band for the title above the plot
+// in compact tiles. Roomy charts already reserve their own (title ? 50 : …).
+const TITLE_GRID_TOP = 44;
 
 function linearRegression(vals: (number | null)[]): number[] {
   const n = vals.length;
@@ -798,8 +806,8 @@ export function buildChartOption(
       // a horizontal legend there. Rotated x-axis labels need ~60px
       // bottom room.
       grid: compact
-        ? { left: 96, top: 24, right: 16, bottom: 60 }
-        : { left: 120, top: 40, right: 96, bottom: 60 },
+        ? { left: 96, top: title ? TITLE_GRID_TOP : 24, right: 16, bottom: 60 }
+        : { left: 120, top: title ? 56 : 40, right: 96, bottom: 60 },
       xAxis: {
         ...baseAxis,
         // Heatmap categories had the same readability problem as scatter
@@ -923,7 +931,7 @@ export function buildChartOption(
       // #1080: roomy gets a slider + inside zoom; compact gets inside-only. The
       // roomy slider sits at the bottom, so reserve a little extra grid bottom.
       grid: compact
-        ? { top: 24, left: 48, right: 16, bottom: 56 }
+        ? { top: title ? TITLE_GRID_TOP : 24, left: 48, right: 16, bottom: 56 }
         : { left: 60, top: title ? 50 : 40, right: 40, bottom: 56 },
       // scatter / bubble: never draw the visible slider (the points
       // already show the full distribution and the slider added clutter
@@ -988,7 +996,7 @@ export function buildChartOption(
       tooltip: { trigger: "axis", ...tooltipStyle },
       legend,
       grid: compact
-        ? { top: 24, left: 48, right: 16, bottom: 56 }
+        ? { top: title ? TITLE_GRID_TOP : 24, left: 48, right: 16, bottom: 56 }
         : { left: 60, top: title ? 50 : 30, right: 40, bottom: 56 },
       // waterfall is a single ordered sequence — no useful "zoom window"
       // semantics. Inside-zoom stays for power users, slider hidden.
@@ -1149,7 +1157,7 @@ export function buildChartOption(
     // otherwise the plot area gets squashed for an affordance that
     // isn't present (saiku follow-up to #1080 + screenshot 2026-06-07).
     grid: compact
-      ? { top: 24, left: 48, right: 16, bottom: 36 }
+      ? { top: title ? TITLE_GRID_TOP : 24, left: 48, right: 16, bottom: 36 }
       : {
           left: 60,
           top: title ? 50 : 40,
