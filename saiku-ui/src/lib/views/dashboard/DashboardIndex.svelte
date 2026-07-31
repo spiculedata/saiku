@@ -49,17 +49,17 @@
   import RenameFolderModal from "$lib/modals/RenameFolderModal.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import ContextMenu, { type ContextMenuItem } from "$lib/components/ContextMenu.svelte";
   import DashboardIndexFilters from "$lib/views/dashboard/DashboardIndexFilters.svelte";
   import DashboardCatalogueTree from "$lib/views/dashboard/DashboardCatalogueTree.svelte";
   import DashboardCataloguePinned, {
     type PinnedDashboard,
   } from "$lib/views/dashboard/DashboardCataloguePinned.svelte";
   import {
-    Copy,
-    ShieldCheck,
     LayoutDashboard,
     Star,
     FolderInput,
+    MoreVertical,
   } from "lucide-svelte";
   import {
     applyCatalogueFilters,
@@ -95,6 +95,14 @@
 
   let newModalOpen = $state<boolean>(false);
   let deletingPath = $state<string | null>(null);
+
+  /** Per-row overflow (⋯) menu: the dashboard path whose menu is open plus
+   *  the anchor coordinates. Delete — and the other secondary actions — now
+   *  live behind this menu instead of as always-visible row buttons, so the
+   *  irreversible Delete can't be mis-clicked. (#1607) */
+  let rowMenuPath = $state<string | null>(null);
+  let rowMenuX = $state<number>(0);
+  let rowMenuY = $state<number>(0);
 
   /** Title + tags pulled out of each dashboard's JSON. Populated by
    *  {@link enrichEntries} after the listing arrives so the catalogue
@@ -240,6 +248,44 @@
         e instanceof Error ? e.message : String(e),
       );
     }
+  }
+
+  /** Anchor the row overflow menu to the ⋯ button (right edge aligned,
+   *  hanging just below it) and mark this row's menu open. Stops the click
+   *  from bubbling so ContextMenu's outside-click handler doesn't
+   *  immediately re-close the menu we just opened. (#1607) */
+  function openRowMenu(e: MouseEvent, relPath: string): void {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    rowMenuX = rect.right - 180; // 180px ≈ menu min-width; align right edge
+    rowMenuY = rect.bottom + 4;
+    rowMenuPath = relPath;
+  }
+
+  /** Items for a row's overflow menu. Permissions is admin-only; Delete is
+   *  the danger item, kept below a separator so it isn't the pointer's
+   *  default landing spot. */
+  function rowMenuItems(relPath: string): ContextMenuItem[] {
+    const items: ContextMenuItem[] = [];
+    if (session.isAdmin) {
+      items.push({ id: "permissions", label: i18n.t("saved.permissions"), disabled: aclLoading });
+    }
+    items.push({ id: "duplicate", label: "Duplicate", disabled: duplicatingPath === relPath });
+    items.push({ id: "sep", label: "", sep: true });
+    items.push({ id: "delete", label: "Delete", danger: true });
+    return items;
+  }
+
+  /** Route an overflow-menu pick to the matching row action. Reads the open
+   *  path before ContextMenu's onClose clears it. Delete still goes through
+   *  handleDelete → the confirm modal (behaviour unchanged). */
+  function onRowMenuPick(id: string): void {
+    const path = rowMenuPath;
+    if (!path) return;
+    if (id === "permissions") void openAcl(path);
+    else if (id === "duplicate") void handleDuplicate(path);
+    else if (id === "delete") handleDelete(path);
   }
 
   /** Duplicate the dashboard at {@code srcPath}: load it so we can
@@ -661,16 +707,20 @@
           <FolderInput size={14} />
         </Button>
       {/if}
-      {#if session.isAdmin}
-        <Button variant="outline" disabled={aclLoading} onclick={() => void openAcl(relPath)} title={i18n.t("saved.permissions")} aria-label={i18n.t("saved.permissions")}>
-          <ShieldCheck size={14} />
-        </Button>
-      {/if}
-      <Button variant="outline" disabled={duplicatingPath === relPath} onclick={() => void handleDuplicate(relPath)} title="Duplicate" aria-label="Duplicate dashboard">
-        <Copy size={14} />
-      </Button>
-      <Button variant="destructive" onclick={() => handleDelete(relPath)} title="Delete">
-        Delete
+      <!-- #1607: Permissions / Duplicate / Delete moved off the always-visible
+           row into this overflow (⋯) menu. Keeps the irreversible Delete out
+           of easy mis-click range while leaving Favourite as the one primary
+           quick toggle on the row. -->
+      <Button
+        variant="outline"
+        class="icon-only"
+        onclick={(e) => openRowMenu(e, relPath)}
+        title="More actions"
+        aria-label="More actions"
+        aria-haspopup="menu"
+        aria-expanded={rowMenuPath === relPath}
+      >
+        <MoreVertical size={14} />
       </Button>
     {/snippet}
 
@@ -734,6 +784,16 @@
   open={deletingPath !== null}
   onConfirm={confirmDelete}
   onCancel={() => (deletingPath = null)}
+/>
+
+<!-- #1607: shared per-row overflow menu (Permissions / Duplicate / Delete). -->
+<ContextMenu
+  open={rowMenuPath !== null}
+  x={rowMenuX}
+  y={rowMenuY}
+  items={rowMenuPath ? rowMenuItems(rowMenuPath) : []}
+  onPick={onRowMenuPick}
+  onClose={() => (rowMenuPath = null)}
 />
 
 <!-- #937 folder dialogs -->
