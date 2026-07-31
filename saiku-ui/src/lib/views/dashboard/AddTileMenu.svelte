@@ -16,9 +16,14 @@
   interface Props {
     onPick: (type: TileType) => void;
     disabled?: boolean;
+    /** Dropdown edge alignment. "right" (default) opens leftward — correct for a
+     *  right-anchored dashboard toolbar. "left" opens rightward — used by the App
+     *  Builder page toolbar so the menu opens INTO the page content instead of
+     *  over the left nav rail. */
+    align?: "left" | "right";
   }
 
-  let { onPick, disabled = false }: Props = $props();
+  let { onPick, disabled = false, align = "right" }: Props = $props();
 
   let open = $state(false);
 
@@ -49,7 +54,7 @@
   </Button>
 
   {#if open}
-    <div class="menu" role="menu">
+    <div class="menu" class:menu--left={align === "left"} role="menu">
       <button type="button" class="menu-item" role="menuitem" onclick={() => pick("chart")}>
         <span class="icon" aria-hidden="true">📊</span>
         <span>
@@ -101,6 +106,10 @@
     padding: 0.25rem;
     z-index: 10;
     min-width: 18rem;
+  }
+  .menu--left {
+    right: auto;
+    left: 0;
   }
   .menu-item {
     display: flex;

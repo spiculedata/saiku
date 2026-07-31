@@ -26,15 +26,17 @@
 
   import { onMount, untrack } from "svelte";
   import type { AppPage } from "$lib/api/apps";
-  import type { DashboardFilter } from "$lib/api/dashboards";
+  import { newTileId, type DashboardFilter, type TileType } from "$lib/api/dashboards";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
   import { appDoc } from "$lib/stores/appDoc.svelte";
+  import { buildTile } from "$lib/dashboard/tilePlacement";
   import { pageGridToDashboard, dashboardToPageGrid } from "$lib/views/app/appPageView";
   import { encodeAppFilterState, decodeAppFilterState } from "$lib/dashboard/urlFilterState";
   import DashboardGrid from "$lib/views/dashboard/DashboardGrid.svelte";
   import DashboardFilterPanel from "$lib/views/dashboard/DashboardFilterPanel.svelte";
   import DashboardFilterBar from "$lib/views/dashboard/DashboardFilterBar.svelte";
+  import AddTileMenu from "$lib/views/dashboard/AddTileMenu.svelte";
 
   interface Props {
     page: AppPage;
@@ -167,9 +169,28 @@
       appDoc.updatePageGrid(page.id, dashboardToPageGrid(doc));
     });
   });
+
+  // ------------------------------------------------------------------
+  // Add tile (edit mode). The active page's grid is hydrated into the shared
+  // dashboardStore, so we add through the SAME path DashboardEditor uses:
+  // buildTile places it in the first free slot, addTile appends it, and the
+  // write-back effect above projects the mutated store grid back into appDoc.
+  // The user then binds a cube via the tile's ⚙ (TileEditorModal). No app-
+  // specific add path — reuse keeps app + dashboard tile authoring identical.
+  // ------------------------------------------------------------------
+  function handleAddTile(type: TileType): void {
+    const layout = dashboardStore.current?.layout;
+    if (!layout) return;
+    dashboardStore.addTile(buildTile(layout, type, newTileId()));
+  }
 </script>
 
 <div class="app-page">
+  {#if editable}
+    <div class="app-page__toolbar">
+      <AddTileMenu onPick={handleAddTile} align="left" />
+    </div>
+  {/if}
   <!-- The panel self-hides in read-only mode when the page has no filters
        (its own `{#if panel || !readOnly}` guard), so it's always safe to
        mount — no wrapper condition needed here. -->
@@ -188,5 +209,16 @@
     min-width: 0;
     height: 100%;
     box-sizing: border-box;
+  }
+  .app-page__toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    /* Own stacking context above the sibling filter bar + grid so the
+       "+ Add tile" dropdown (z-index:10, anchored inside this row) floats
+       over them instead of being occluded — the app analogue of the
+       dashboard toolbar sitting in its own layer above the grid. */
+    position: relative;
+    z-index: 20;
   }
 </style>
