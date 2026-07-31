@@ -194,6 +194,6 @@ describe("buildTile", () => {
     expect(filter.h).toBe(1);
     const text = buildTile(emptyLayout(), "text", "t");
     expect(text.w).toBe(6);
-    expect(text.h).toBe(2);
+    expect(text.h).toBe(1);
   });
 });

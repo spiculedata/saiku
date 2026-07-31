@@ -9,7 +9,10 @@ import type { DashboardLayout, DashboardTile, TileType } from "$lib/api/dashboar
 /** Default size for each tile type. Tuned for the 12-column grid:
  *  - chart / table fill half the row (analyst can resize later)
  *  - filter is a wide skinny strip (full row, 1 row tall)
- *  - text is half-width, slightly shorter than chart/table
+ *  - text is half-width and a single row tall — a short note or heading
+ *    shouldn't reserve a big block of empty space that shoves charts
+ *    below the fold (#1603). The analyst resizes it up when the note is
+ *    long; the grid's auto-rows also let it grow to fit taller content.
  *  - kpi is a compact card — quarter-row width, 2 rows tall, so four
  *    fit across the top of a dashboard */
 export function defaultSizeFor(type: TileType): { w: number; h: number } {
@@ -21,7 +24,7 @@ export function defaultSizeFor(type: TileType): { w: number; h: number } {
     case "filter":
       return { w: 12, h: 1 };
     case "text":
-      return { w: 6, h: 2 };
+      return { w: 6, h: 1 };
     case "kpi":
       return { w: 3, h: 2 };
     case "image":
