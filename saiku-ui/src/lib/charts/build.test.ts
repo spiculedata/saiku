@@ -1109,6 +1109,138 @@ describe("buildChartOption — x-axis label width per axis", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// #1596: axis TITLES. Charts were rendering with bare axis numbers and no
+// measure/dimension name. The value axis defaults to the measure name(s)
+// (columnCategories); the category axis defaults to the row dimension name the
+// caller resolves (projection.categoryAxisName). An explicit user label
+// (xAxisLabel / yAxisLabel) always overrides the derived default. Auto-derived
+// titles are roomy-mode only (tiles stay tile-tight); overrides win in both.
+// ---------------------------------------------------------------------------
+describe("buildChartOption — axis titles (#1596)", () => {
+  function withDimension(): ChartProjection {
+    return { ...sample(), categoryAxisName: "Year" };
+  }
+  const yAxisOf = (opt: Record<string, unknown>) =>
+    (Array.isArray(opt.yAxis) ? opt.yAxis[0] : opt.yAxis) as {
+      name?: string;
+      nameLocation?: string;
+      nameRotate?: number;
+      nameGap?: number;
+    };
+  const xAxisOf = (opt: Record<string, unknown>) =>
+    opt.xAxis as { name?: string; nameLocation?: string; nameGap?: number };
+
+  test("value axis defaults to the measure name(s) (roomy bar)", () => {
+    const opt = buildChartOption(sample(), "bar", opts()) as Record<string, unknown>;
+    expect(yAxisOf(opt).name).toBe("Store Sales, Unit Sales");
+    // Rendered as a centred, vertical axis title.
+    expect(yAxisOf(opt).nameLocation).toBe("middle");
+    expect(yAxisOf(opt).nameRotate).toBe(90);
+  });
+
+  test("category axis defaults to the query's row dimension name (roomy)", () => {
+    const opt = buildChartOption(withDimension(), "bar", opts()) as Record<string, unknown>;
+    expect(xAxisOf(opt).name).toBe("Year");
+    expect(xAxisOf(opt).nameLocation).toBe("middle");
+  });
+
+  test("no categoryAxisName + no override → category axis stays untitled", () => {
+    const opt = buildChartOption(sample(), "bar", opts()) as Record<string, unknown>;
+    expect(xAxisOf(opt).name).toBeUndefined();
+  });
+
+  test("explicit yAxisLabel override wins over the derived measure name", () => {
+    const opt = buildChartOption(
+      withDimension(),
+      "bar",
+      opts({ yAxisLabel: "Revenue (£)" }),
+    ) as Record<string, unknown>;
+    expect(yAxisOf(opt).name).toBe("Revenue (£)");
+  });
+
+  test("explicit xAxisLabel override wins over the derived dimension name", () => {
+    const opt = buildChartOption(
+      withDimension(),
+      "bar",
+      opts({ xAxisLabel: "Fiscal Year" }),
+    ) as Record<string, unknown>;
+    expect(xAxisOf(opt).name).toBe("Fiscal Year");
+  });
+
+  test("grid grows left (value title) and bottom (category title) when titles are drawn", () => {
+    const bare = buildChartOption(sample(), "bar", opts({ dualAxis: false })) as Record<string, unknown>;
+    // sample() has a measure name (value title) but no dimension name.
+    const withDim = buildChartOption(withDimension(), "bar", opts({ dualAxis: false })) as Record<
+      string,
+      unknown
+    >;
+    const bareGrid = bare.grid as { left: number; bottom: number };
+    const dimGrid = withDim.grid as { left: number; bottom: number };
+    // Value title present in both → left already padded beyond the legacy 60.
+    expect(bareGrid.left).toBeGreaterThan(60);
+    // Adding a category title grows the bottom margin.
+    expect(dimGrid.bottom).toBeGreaterThan(bareGrid.bottom);
+  });
+
+  test("dual-axis: only the LEFT value axis carries the measure title", () => {
+    const disparate: ChartProjection = {
+      rowCategories: ["a", "b"],
+      columnCategories: ["Big", "Tiny"],
+      matrix: [
+        [100000, 1],
+        [120000, 2],
+      ],
+    };
+    const opt = buildChartOption(disparate, "bar", opts({ dualAxis: true })) as Record<string, unknown>;
+    const yAxis = opt.yAxis as Array<{ name?: string }>;
+    expect(yAxis[0].name).toBe("Big, Tiny"); // left value title
+    expect(yAxis[1].name).toBeUndefined(); // right axis stays untitled
+  });
+
+  test("waterfall gets the value + category titles too", () => {
+    const wf: ChartProjection = {
+      rowCategories: ["Start", "Up", "Down"],
+      columnCategories: ["Delta"],
+      matrix: [[100], [40], [-30]],
+      categoryAxisName: "Stage",
+    };
+    const opt = buildChartOption(wf, "waterfall", opts()) as Record<string, unknown>;
+    expect((opt.yAxis as { name?: string }).name).toBe("Delta");
+    expect((opt.xAxis as { name?: string }).name).toBe("Stage");
+  });
+
+  test("compact tiles do NOT auto-derive titles, but honour explicit overrides", () => {
+    const auto = buildChartOption(withDimension(), "bar", opts(), undefined, {
+      compact: true,
+    }) as Record<string, unknown>;
+    // Tile-tight: no derived measure / dimension title.
+    expect(yAxisOf(auto).name).toBeUndefined();
+    expect(xAxisOf(auto).name).toBeUndefined();
+
+    const overridden = buildChartOption(
+      withDimension(),
+      "bar",
+      opts({ xAxisLabel: "Yr", yAxisLabel: "Sales" }),
+      undefined,
+      { compact: true },
+    ) as Record<string, unknown>;
+    expect(yAxisOf(overridden).name).toBe("Sales");
+    expect(xAxisOf(overridden).name).toBe("Yr");
+  });
+
+  test("heatmap/scatter keep override-only titles (no misleading auto measure/dimension name)", () => {
+    // Heatmap: both axes are categorical (value is the colour) — a measure/
+    // dimension title would be wrong, so only explicit overrides apply.
+    const heat = buildChartOption(withDimension(), "heatmap", opts()) as Record<string, unknown>;
+    expect((heat.xAxis as { name?: string }).name).toBeUndefined();
+    expect((heat.yAxis as { name?: string }).name).toBeUndefined();
+    // Scatter's x-axis is the measures, not the row dimension → no auto title.
+    const scat = buildChartOption(withDimension(), "scatter", opts()) as Record<string, unknown>;
+    expect((scat.xAxis as { name?: string }).name).toBeUndefined();
+  });
+});
+
 describe("brushOption / BRUSHABLE_CHART_TYPES — cross-filter (#1085)", () => {
   test("brushable cartesian kinds return a lineX single-selection brush", () => {
     for (const kind of ["bar", "stackedBar", "line", "stackedLine", "area", "stackedArea"]) {

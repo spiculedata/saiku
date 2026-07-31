@@ -78,7 +78,14 @@ export function projectFromAiQueryResponse(response: AiQueryResponse): ChartProj
     }),
   );
 
-  return { rowCategories, columnCategories: measureKeys, matrix };
+  // #1596: the row-header column keys ARE the row dimension/level names — expose
+  // them as the projection's default category-axis title (used by the builder
+  // when no explicit xAxisLabel is set). Auto-derived axis titles are drawn in
+  // roomy mode; dashboard tiles render compact (tile-tight) so this is the
+  // source-of-truth data an explicit per-tile label would otherwise override.
+  const categoryAxisName = headerKeys.filter((k) => k.length > 0).join(" / ") || undefined;
+
+  return { rowCategories, columnCategories: measureKeys, matrix, categoryAxisName };
 }
 
 /**

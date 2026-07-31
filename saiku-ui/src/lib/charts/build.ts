@@ -59,6 +59,13 @@ export interface ChartProjection {
   columnCategories: string[];
   /** Values: matrix[row][col]. `null` = a genuinely missing cell. */
   matrix: (number | null)[][];
+  /** #1596: the row hierarchy's dimension/level name (e.g. "Year", "Product /
+   *  Category") used as the DEFAULT category-axis title when the user hasn't set
+   *  an explicit `xAxisLabel`. Derived from the query by the caller (the row
+   *  header caption); omitted for legacy callers, in which case the category
+   *  axis stays untitled unless overridden. The value axis needs no such field —
+   *  its default title is the measure name(s) in `columnCategories`. */
+  categoryAxisName?: string;
 }
 
 /** Canvas geometry + presentation density. `aspect` (w/h) keeps small-multiple
@@ -634,8 +641,42 @@ export function buildChartOption(
 
   const legend = compact ? compactLegend(o, tk) : legendConfig(o, tk);
   const title = titleConfig(o, tk);
+  // Pure axis-name overrides (used as-is by the special axis geometries below —
+  // heatmap's TWO category axes and scatter/bubble's measure x-axis — where an
+  // auto-derived measure/dimension title would be misleading).
   const xName = o.xAxisLabel || undefined;
   const yName = o.yAxisLabel || undefined;
+
+  // #1596: axis TITLES for the standard cartesian charts (bar/line/area family +
+  // waterfall) — where the y-axis is a genuine value axis and the x-axis is the
+  // row-dimension category axis. Charts were rendering with bare numbers and no
+  // measure/dimension name. Precedence: an explicit user label always wins;
+  // otherwise default from the query — value axis = the measure name(s)
+  // (columnCategories), category axis = the row dimension name the caller
+  // resolved (projection.categoryAxisName). Auto-derivation is roomy-mode only
+  // (dashboard tiles stay tile-tight; an explicit per-tile label still wins in
+  // compact). Placement is nameLocation "middle" so the title reads centred and
+  // clear of the #1595 title band at grid.top — these only touch grid.left (the
+  // vertical value title) and grid.bottom (the category title).
+  const measureAxisName = !compact && cols.length > 0 ? cols.join(", ") : undefined;
+  const valueName = yName ?? measureAxisName;
+  const categoryName = xName ?? (!compact ? projection.categoryAxisName || undefined : undefined);
+  // Vertical value-axis title config (rotated to read up the axis); a bare
+  // `{ name: undefined }` when there's nothing to draw, so legacy output for the
+  // no-title case is byte-for-byte unchanged.
+  const valueNameCfg: Record<string, unknown> = valueName
+    ? { name: valueName, nameLocation: "middle", nameGap: compact ? 40 : 56, nameRotate: 90 }
+    : { name: undefined };
+  const VALUE_NAME_LEFT_PAD = valueName ? (compact ? 22 : 34) : 0;
+  // Horizontal category-axis title config. When the category labels rotate
+  // (crowded axis), the title needs a bigger gap + bottom margin to sit clear of
+  // the angled tick labels; otherwise a tight gap under a single label row.
+  const catNameCfg = (rotated: boolean): Record<string, unknown> =>
+    categoryName
+      ? { name: categoryName, nameLocation: "middle", nameGap: rotated ? (compact ? 52 : 68) : (compact ? 26 : 32) }
+      : { name: undefined };
+  const catNameBottomPad = (rotated: boolean): number =>
+    categoryName ? (rotated ? (compact ? 34 : 46) : (compact ? 20 : 28)) : 0;
 
   // #1082: optional number formatting for VALUE text (axis labels, tooltip
   // values, data labels). `nf` is undefined when no format is set, so every
@@ -995,9 +1036,21 @@ export function buildChartOption(
       title,
       tooltip: { trigger: "axis", ...tooltipStyle },
       legend,
+      // #1596: grow grid.left/bottom for the value/category titles when drawn
+      // (pads are 0 otherwise); grid.top stays reserved for the #1595 title band.
       grid: compact
-        ? { top: title ? TITLE_GRID_TOP : 24, left: 48, right: 16, bottom: 56 }
-        : { left: 60, top: title ? 50 : 30, right: 40, bottom: 56 },
+        ? {
+            top: title ? TITLE_GRID_TOP : 24,
+            left: 48 + VALUE_NAME_LEFT_PAD,
+            right: 16,
+            bottom: 56 + catNameBottomPad(rows.length > 8),
+          }
+        : {
+            left: 60 + VALUE_NAME_LEFT_PAD,
+            top: title ? 50 : 30,
+            right: 40,
+            bottom: 56 + catNameBottomPad(rows.length > 8),
+          },
       // waterfall is a single ordered sequence — no useful "zoom window"
       // semantics. Inside-zoom stays for power users, slider hidden.
       dataZoom: dataZoomConfig(compact, rows.length, false),
@@ -1007,9 +1060,11 @@ export function buildChartOption(
         // per-label width is computed against the right dim.
         axisLabel: catLabel(rows.length > 8 ? 30 : 0, rows.length),
         data: rows,
-        name: xName,
+        // #1596: category-dimension title (or the user override).
+        ...catNameCfg(rows.length > 8),
       },
-      yAxis: { ...valueAxis, name: yName },
+      // #1596: value-axis measure title (or the user override).
+      yAxis: { ...valueAxis, ...valueNameCfg },
       series: attachMarks(
         [
         {
@@ -1062,13 +1117,16 @@ export function buildChartOption(
     threshold: SERIES_AXIS_THRESHOLD,
   });
   const hasRight = seriesSides.some((s) => s === "right");
+  // #1596: the left value axis carries the measure-name title (valueNameCfg);
+  // the right (dual) axis is left untitled — its own series names are in the
+  // legend and a second rotated title would crowd the plot.
   const yAxis = hasRight
     ? [
-        { ...valueAxis, name: yName, position: "left" as const },
+        { ...valueAxis, ...valueNameCfg, position: "left" as const },
         // Drop the right axis's splitLine so left-axis gridlines aren't doubled.
         { ...valueAxis, name: undefined, position: "right" as const, splitLine: { show: false } },
       ]
-    : { ...valueAxis, name: yName };
+    : { ...valueAxis, ...valueNameCfg };
 
   // issue #1089: the chart-level default series type (combo overrides fall back
   // to it). "area" = a line with an areaStyle fill.
@@ -1148,6 +1206,9 @@ export function buildChartOption(
         }
       : { trigger: "axis" as const, ...tooltipStyle };
 
+  // #1596: the category axis rotates its labels past 8 members; the axis title
+  // then needs a bigger gap / bottom margin to clear the angled labels.
+  const xRotated = rows.length > 8;
   return {
     ...common,
     title,
@@ -1156,13 +1217,22 @@ export function buildChartOption(
     // Reserve room for the zoom slider only when it's actually drawn —
     // otherwise the plot area gets squashed for an affordance that
     // isn't present (saiku follow-up to #1080 + screenshot 2026-06-07).
+    // #1596: grow grid.left for the vertical value title and grid.bottom for the
+    // category title — only when each title is actually drawn (pads are 0
+    // otherwise, so the legacy no-title layout is unchanged). grid.top is left to
+    // the #1595 title band.
     grid: compact
-      ? { top: title ? TITLE_GRID_TOP : 24, left: 48, right: 16, bottom: 36 }
+      ? {
+          top: title ? TITLE_GRID_TOP : 24,
+          left: 48 + VALUE_NAME_LEFT_PAD,
+          right: 16,
+          bottom: 36 + catNameBottomPad(xRotated),
+        }
       : {
-          left: 60,
+          left: 60 + VALUE_NAME_LEFT_PAD,
           top: title ? 50 : 40,
           right: hasRight ? 60 : 40,
-          bottom: rows.length >= ZOOM_SLIDER_MIN_CATEGORIES ? 76 : 40,
+          bottom: (rows.length >= ZOOM_SLIDER_MIN_CATEGORIES ? 76 : 40) + catNameBottomPad(xRotated),
         },
     // bar / line / area: x-axis is `rows`.
     dataZoom: dataZoomConfig(compact, rows.length), // #1080: x-axis zoom + pan
@@ -1173,9 +1243,11 @@ export function buildChartOption(
       // max(rows, cols) cramped scatter / bar single-category x-axes
       // to 40px when the y side had many series ("Cust…" / "CA /…"
       // 2026-06-07 screenshot).
-      axisLabel: catLabel(rows.length > 8 ? 30 : 0, rows.length),
+      axisLabel: catLabel(xRotated ? 30 : 0, rows.length),
       data: rows,
-      name: xName,
+      // #1596: category-dimension title (or the user override); nothing drawn
+      // when neither is present.
+      ...catNameCfg(xRotated),
     },
     yAxis,
     // issue #1079: reference lines/bands ride on the first measure series (or a
