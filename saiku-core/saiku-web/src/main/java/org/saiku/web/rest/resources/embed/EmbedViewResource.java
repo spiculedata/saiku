@@ -16,6 +16,8 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.util.Arrays;
 import java.util.Map;
+import org.saiku.service.apps.TilePluginParser;
+import org.saiku.service.apps.TilePluginRegistry;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.olap.ai.AiFilterSelection;
 import org.saiku.service.olap.ai.AiQueryRequest;
@@ -67,6 +69,7 @@ public class EmbedViewResource {
     private SessionService sessionService;
     private AiQueryResource aiQueryResource;
     private AiAuditLog auditLog;
+    private TilePluginRegistry pluginRegistry;
 
     public void setDatasourceService(DatasourceService s) {
         this.datasourceService = s;
@@ -82,6 +85,10 @@ public class EmbedViewResource {
 
     public void setAuditLog(AiAuditLog auditLog) {
         this.auditLog = auditLog;
+    }
+
+    public void setPluginRegistry(TilePluginRegistry pluginRegistry) {
+        this.pluginRegistry = pluginRegistry;
     }
 
     /* ---------------------------- query ---------------------------- */
@@ -320,6 +327,117 @@ public class EmbedViewResource {
             return invalid();
         }
         return runTileMembers(g, findAppTile(g, pageId, tileId), q, limit, "/saiku/api/embed/app/tile/members");
+    }
+
+    /**
+     * Token-scoped delivery of an admin-installed tile plugin's {@code plugin.html} srcdoc for the
+     * embed surface (App Builder Phase 2, saiku#1441 security fix). Embed guests cannot reach the
+     * full-auth {@code /saiku/api/tile-plugins} catalogue, so the sandboxed-plugin tile fetches its
+     * markup here instead.
+     *
+     * <p>Two guards keep this from becoming an arbitrary-plugin (or arbitrary-file) read:
+     * <ol>
+     *   <li>the {@code app} token pin (same {@code resourceKind == "app"} guard the app-tile query
+     *       uses) — a token minted for one app can only fetch through this app;</li>
+     *   <li>the {@code pluginId} MUST be referenced by a {@code type:"custom"} plugin tile inside the
+     *       PINNED app document (scan of {@code pages[].grid.tiles[]}) — a guest can therefore only
+     *       load the exact plugins the embedded app actually uses, never a probe for other installed
+     *       plugins.</li>
+     * </ol>
+     * The plugin HTML itself is admin-installed (dropped into {@code saiku-home/tile-plugins/}), never
+     * author- or client-supplied; {@code pluginId} is slug-validated before the registry is touched so
+     * it can never traverse the filesystem. Returns 404 for an unreferenced, absent, or slug-invalid
+     * id — the same opaque failure whether the plugin is missing or simply not used by this app.
+     */
+    @GET
+    @Path("/app/{path:.+}/plugin/{pluginId}/html")
+    @Produces(MediaType.TEXT_HTML)
+    public Response appPluginHtml(@PathParam("path") String pathParam, @PathParam("pluginId") String pluginId) {
+        EmbedGuestDetails g = guest();
+        if (g == null || !"app".equals(g.resourceKind)) {
+            return invalid();
+        }
+        // Reject a slug-invalid id at the door (the registry re-checks, but fail fast).
+        if (pluginRegistry == null || !TilePluginParser.isValidId(pluginId)) {
+            return pluginNotFound(pluginId);
+        }
+        // A guest may only fetch a plugin the PINNED app actually references — never an arbitrary
+        // installed plugin. Scan the pinned app doc for a type:"custom" plugin tile using this id.
+        if (!appReferencesPlugin(g, pluginId)) {
+            return pluginNotFound(pluginId);
+        }
+        String html = pluginRegistry.html(pluginId);
+        if (html == null) {
+            return pluginNotFound(pluginId);
+        }
+        return withPolicyHeader(harden(Response.ok(html, MediaType.TEXT_HTML).build()), g);
+    }
+
+    /**
+     * True when the pinned app document contains at least one {@code type:"custom"} plugin tile
+     * ({@code custom.renderer == "plugin"}) whose {@code custom.options.pluginId} equals
+     * {@code pluginId}. Walks {@code pages[].grid.tiles[]} of the opaque app JSON exactly like
+     * {@link #findAppTile}; returns false on any parse failure so the caller fails closed.
+     */
+    private boolean appReferencesPlugin(EmbedGuestDetails g, String pluginId) {
+        String raw = loadAppRaw(g);
+        if (raw == null || pluginId == null) {
+            return false;
+        }
+        try {
+            JsonNode pages = MAPPER.readTree(raw).get("pages");
+            if (pages == null || !pages.isArray()) {
+                return false;
+            }
+            for (JsonNode page : pages) {
+                JsonNode grid = page.get("grid");
+                JsonNode tiles = grid == null ? null : grid.get("tiles");
+                if (tiles == null || !tiles.isArray()) {
+                    continue;
+                }
+                for (JsonNode tileNode : tiles) {
+                    if (!isPluginTileFor(tileNode, pluginId)) {
+                        continue;
+                    }
+                    return true;
+                }
+            }
+            return false;
+        } catch (Exception e) {
+            log.error("embedded app {} plugin-reference scan failed", g.resourcePath, e);
+            return false;
+        }
+    }
+
+    /** A single tile node is a plugin tile referencing {@code pluginId} when it is
+     *  {@code type:"custom"} + {@code custom.renderer:"plugin"} + {@code custom.options.pluginId}
+     *  equal to {@code pluginId}. */
+    private static boolean isPluginTileFor(JsonNode tileNode, String pluginId) {
+        if (tileNode == null || !tileNode.isObject()) {
+            return false;
+        }
+        JsonNode type = tileNode.get("type");
+        if (type == null || !"custom".equals(type.asText())) {
+            return false;
+        }
+        JsonNode custom = tileNode.get("custom");
+        if (custom == null || !custom.isObject()) {
+            return false;
+        }
+        JsonNode renderer = custom.get("renderer");
+        if (renderer == null || !"plugin".equals(renderer.asText())) {
+            return false;
+        }
+        JsonNode options = custom.get("options");
+        JsonNode idNode = options == null ? null : options.get("pluginId");
+        return idNode != null && idNode.isTextual() && pluginId.equals(idNode.asText());
+    }
+
+    private static Response pluginNotFound(String pluginId) {
+        return harden(Response.status(Response.Status.NOT_FOUND)
+                .type(MediaType.APPLICATION_JSON)
+                .entity(Map.of("status", "NOT_FOUND", "error", "No such tile plugin"))
+                .build());
     }
 
     /**

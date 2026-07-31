@@ -1,17 +1,22 @@
 <script lang="ts">
   /*
-   * Embed variant of the `plugin` custom tile (App Builder Phase 2, Task 7,
-   * saiku#1441). Token-scoped, read-only, self-contained: renders inside the
-   * <saiku-embed/> bundle, so it uses ONLY relative imports (no `$lib` alias).
+   * Embed variant of the `plugin` custom tile (App Builder Phase 2, saiku#1441).
+   * Token-scoped, read-only, self-contained: renders inside the <saiku-embed/>
+   * bundle, so it uses ONLY relative imports (no `$lib` alias).
    *
-   * SECURITY posture is IDENTICAL to the in-app PluginTile: the exact same
-   * iframe sandbox="allow-scripts", the same strict CSP + per-mount nonce (from
-   * pluginBridge, which is pure and imports nothing), and the same
+   * SECURITY posture is IDENTICAL to the in-app PluginTile: the tile config
+   * carries ONLY a plugin id (`tile.custom.options.pluginId`); the HTML is
+   * fetched from the ADMIN registry — here via the token-scoped embed endpoint
+   * `/embed/app/{path}/plugin/{id}/html`, injected as the `fetchPluginHtml`
+   * callback by <EmbedApp>. There is NO way to supply raw HTML through tile
+   * config, closing the arbitrary-author-JS exfil hole. Same iframe
+   * sandbox="allow-scripts", same strict CSP + per-mount nonce (from
+   * pluginBridge, which is pure and imports nothing), same
    * event.source === iframe.contentWindow + nonce message authentication.
    *
    * Data path: the `rows` prop is the token-scoped, RLS/PII-filtered payload
    * <EmbedGrid> already fetched through the guarded per-tile embed query. This
-   * component adds NO second, unfiltered fetch — it only forwards those rows
+   * component adds NO second, unfiltered data fetch — it only forwards those rows
    * into the frame. The embed surface is read-only, so `filter` requests from a
    * plugin are ignored (there is no cross-filter bus here).
    */
@@ -31,23 +36,59 @@
     tile: { title?: string; custom?: { renderer: string; options?: Record<string, unknown> } };
     /** Token-scoped rows from <EmbedGrid>. undefined/null = still loading. */
     rows?: Row[] | null;
+    /** Injected by <EmbedGrid>/<EmbedApp>: fetch an installed plugin's HTML from
+     *  the token-scoped embed endpoint. Absent (e.g. dashboard embed, which has
+     *  no app-scoped plugin endpoint) → the tile renders a placeholder, NEVER an
+     *  iframe built from client-supplied markup. */
+    fetchPluginHtml?: (pluginId: string) => Promise<string>;
   }
 
-  let { tile, rows }: Props = $props();
+  let { tile, rows, fetchPluginHtml }: Props = $props();
 
-  let pluginHtml = $derived(
-    typeof tile.custom?.options?.html === "string" ? (tile.custom.options.html as string) : "",
+  let pluginId = $derived(
+    typeof tile.custom?.options?.pluginId === "string" ? (tile.custom.options.pluginId as string).trim() : "",
   );
-  let hasPlugin = $derived(pluginHtml.trim().length > 0);
+  let hasPlugin = $derived(pluginId.length > 0);
   let pluginOptions = $derived.by(() => {
     const opts = { ...(tile.custom?.options ?? {}) } as Record<string, unknown>;
-    delete opts.html;
+    delete opts.pluginId;
     return opts;
   });
 
   // Fresh cryptographic nonce per mount (not the tile id, not Math.random).
   const nonce = crypto.randomUUID();
-  let srcdoc = $derived(hasPlugin ? buildSrcdoc(pluginHtml, nonce) : "");
+
+  // Registry HTML fetched by id via the token-scoped embed endpoint. null until
+  // loaded; unavailable → placeholder (no iframe). ONLY the fetched, admin-
+  // installed markup is ever wrapped into a srcdoc.
+  let registryHtml = $state<string | null>(null);
+  let unavailable = $state(false);
+
+  $effect(() => {
+    const id = pluginId;
+    const fetcher = fetchPluginHtml;
+    registryHtml = null;
+    unavailable = false;
+    if (!id || !fetcher) {
+      if (id && !fetcher) unavailable = true;
+      return;
+    }
+    let cancelled = false;
+    fetcher(id)
+      .then((html) => {
+        if (cancelled) return;
+        if (typeof html === "string" && html.trim().length > 0) registryHtml = html;
+        else unavailable = true;
+      })
+      .catch(() => {
+        if (!cancelled) unavailable = true;
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  let srcdoc = $derived(registryHtml ? buildSrcdoc(registryHtml, nonce) : "");
 
   let iframe = $state<HTMLIFrameElement | null>(null);
   let frameReady = $state(false);
@@ -111,7 +152,9 @@
 
 {#if !hasPlugin}
   <div class="state muted">No plugin configured.</div>
-{:else if rows === undefined || rows === null}
+{:else if unavailable}
+  <div class="state muted">Plugin not installed: {pluginId}</div>
+{:else if !srcdoc || rows === undefined || rows === null}
   <div class="state muted">Loading…</div>
 {:else}
   <div class="plugin-tile">

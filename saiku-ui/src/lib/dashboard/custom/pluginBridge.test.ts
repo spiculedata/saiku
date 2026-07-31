@@ -3,6 +3,7 @@ import fc from "fast-check";
 import {
   handlePluginMessage,
   buildSrcdoc,
+  validatePluginOptions,
   PLUGIN_MIN_H,
   PLUGIN_MAX_H,
   PLUGIN_CSP,
@@ -222,6 +223,46 @@ describe("buildSrcdoc", () => {
     expect(doc).toContain("connect-src 'none'");
     expect(doc).toContain("default-src 'none'");
     expect(doc).not.toContain("allow-same-origin");
+  });
+});
+
+describe("validatePluginOptions — saiku#1441 (no arbitrary author HTML)", () => {
+  it("accepts a valid pluginId slug", () => {
+    expect(validatePluginOptions({ pluginId: "records-bars" })).toEqual({
+      ok: true,
+      value: { pluginId: "records-bars" },
+    });
+  });
+
+  it("accepts null/undefined as empty options", () => {
+    expect(validatePluginOptions(null)).toEqual({ ok: true, value: {} });
+    expect(validatePluginOptions(undefined)).toEqual({ ok: true, value: {} });
+  });
+
+  it("REJECTS a legacy inline html field outright", () => {
+    const r = validatePluginOptions({ html: "<script>alert(1)</script>" });
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects html even when a pluginId is also present (no back door)", () => {
+    const r = validatePluginOptions({ pluginId: "records-bars", html: "<div>x</div>" });
+    expect(r.ok).toBe(false);
+  });
+
+  it.each(["Bad_Id", "../etc", "a/b", "UPPER", "has space", "-leading", ""])(
+    "rejects a slug-invalid pluginId %s",
+    (id) => {
+      expect(validatePluginOptions({ pluginId: id }).ok).toBe(false);
+    },
+  );
+
+  it("passes through extra author config alongside pluginId", () => {
+    const r = validatePluginOptions({ pluginId: "records-bars", color: "blue" });
+    expect(r).toEqual({ ok: true, value: { pluginId: "records-bars", color: "blue" } });
+  });
+
+  it("rejects a non-object options blob", () => {
+    expect(validatePluginOptions("nope").ok).toBe(false);
   });
 });
 

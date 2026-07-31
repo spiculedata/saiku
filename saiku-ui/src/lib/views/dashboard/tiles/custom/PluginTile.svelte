@@ -1,21 +1,29 @@
 <script lang="ts">
   /*
-   * Custom tile renderer: `plugin` — ARBITRARY author JavaScript in a
-   * locked-down iframe sandbox (App Builder Phase 2, Task 7, saiku#1441).
+   * Custom tile renderer: `plugin` — ADMIN-INSTALLED, trusted plugin code in a
+   * locked-down iframe sandbox (App Builder Phase 2, saiku#1441).
    *
-   * SECURITY-CRITICAL. This is the ONLY tile that runs untrusted author code.
-   * Containment rests on four independent layers, each of which a reviewer will
-   * try to break:
+   * SECURITY-CRITICAL. The tile config carries ONLY a plugin id
+   * (`tile.custom.options.pluginId`); the HTML is fetched from the admin registry
+   * (`/rest/saiku/api/tile-plugins/{id}/html`) at render time. There is NO way to
+   * supply raw HTML through tile config — closing the arbitrary-author-JS hole
+   * (a dashboard author could otherwise run JS that exfiltrates the tile's data
+   * via iframe self-navigation, which the sandbox + CSP cannot block; see below).
+   *
+   * Containment for the (trusted) plugin code rests on four independent layers:
    *   1. iframe sandbox="allow-scripts" ONLY — no allow-same-origin (that would
    *      dissolve the origin barrier), no forms/popups/top-navigation/modals/
    *      downloads/pointer-lock. The frame runs at the opaque "null" origin, so
    *      it cannot read the parent DOM, cookies, localStorage, or the session
    *      token.
    *   2. A strict CSP (see pluginBridge.PLUGIN_CSP) injected as the first <head>
-   *      element: default-src 'none' + connect-src 'none' → the plugin has NO
-   *      network egress (fetch/XHR/WebSocket/EventSource/sendBeacon all blocked),
-   *      no remote scripts/styles/fonts/frames/workers; only inline script/style
-   *      and data: images.
+   *      element: default-src 'none' + connect-src 'none' blocks BACKGROUND
+   *      subresource egress (fetch/XHR/WebSocket/EventSource/sendBeacon, remote
+   *      scripts/styles/fonts/frames/workers; only inline script/style + data:
+   *      images). It does NOT stop a frame navigating ITSELF, and no CSP fetch
+   *      directive governs navigation — so the plugin can still exfiltrate the
+   *      data shown in ITS OWN tile. That is why plugin code is admin-installed
+   *      and trusted (like a server plugin JAR). See docs/APP-BUILDER-PLUGINS.md.
    *   3. A per-mount cryptographic nonce authenticates every plugin→host
    *      message (the frame's origin is "null", so event.origin is worthless).
    *   4. event.source === iframe.contentWindow gates the listener so one tile's
@@ -40,6 +48,7 @@
   import { schemaCache } from "$lib/stores/schemaCache.svelte";
   import { type SchemaLike } from "$lib/dashboard/effectiveQuery";
   import { searchMembers } from "$lib/api/aiQuery";
+  import { fetchTilePluginHtml } from "$lib/api/tilePlugins";
   import { pickMemberUniqueName } from "$lib/dashboard/clickFilterMember";
   import {
     buildSrcdoc,
@@ -60,27 +69,58 @@
 
   let { tile, onClickFilter }: Props = $props();
 
-  // The author's self-contained plugin HTML (Task 8 wires the admin registry
-  // that serves it; for now it rides on tile.custom.options.html so the tile is
-  // renderable/testable). Non-string / absent → no plugin configured.
-  let pluginHtml = $derived(
-    typeof tile.custom?.options?.html === "string" ? (tile.custom.options.html as string) : "",
+  // The tile references an admin-installed plugin by its slug id ONLY. Non-string
+  // / absent → no plugin configured. The HTML is fetched from the admin registry
+  // (never tile config), so raw author markup can never reach a srcdoc.
+  let pluginId = $derived(
+    typeof tile.custom?.options?.pluginId === "string" ? (tile.custom.options.pluginId as string).trim() : "",
   );
-  let hasPlugin = $derived(pluginHtml.trim().length > 0);
-  // Non-html options the plugin may want as config — never includes the html
-  // source, never any host/session data.
+  let hasPlugin = $derived(pluginId.length > 0);
+  // Author config the plugin may want, minus the id itself — never any
+  // host/session data.
   let pluginOptions = $derived.by(() => {
     const opts = { ...(tile.custom?.options ?? {}) } as Record<string, unknown>;
-    delete opts.html;
+    delete opts.pluginId;
     return opts;
   });
 
   // Fresh cryptographic nonce per tile mount — NOT derived from the tile id,
   // NOT Math.random. This authenticates every message from THIS frame.
   const nonce = crypto.randomUUID();
-  // Recompute the srcdoc only when the author html or nonce changes. A new
-  // srcdoc reloads the frame (and re-fires its `ready`).
-  let srcdoc = $derived(hasPlugin ? buildSrcdoc(pluginHtml, nonce) : "");
+
+  // The registry HTML, fetched by id. null until loaded; "" when the plugin
+  // isn't installed (→ inline placeholder, NO iframe). We ONLY ever build a
+  // srcdoc from this fetched, admin-installed markup.
+  let registryHtml = $state<string | null>(null);
+  let notInstalled = $state(false);
+
+  $effect(() => {
+    const id = pluginId;
+    registryHtml = null;
+    notInstalled = false;
+    if (!id) return;
+    let cancelled = false;
+    fetchTilePluginHtml(id)
+      .then((html) => {
+        if (cancelled) return;
+        if (typeof html === "string" && html.trim().length > 0) {
+          registryHtml = html;
+        } else {
+          notInstalled = true;
+        }
+      })
+      .catch(() => {
+        if (!cancelled) notInstalled = true;
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  // Recompute the srcdoc only when the fetched registry html or nonce changes. A
+  // new srcdoc reloads the frame (and re-fires its `ready`). NEVER built from
+  // anything but the registry html.
+  let srcdoc = $derived(registryHtml ? buildSrcdoc(registryHtml, nonce) : "");
 
   let iframe = $state<HTMLIFrameElement | null>(null);
   let frameReady = $state(false);
@@ -232,12 +272,18 @@
 
 {#if !hasPlugin}
   <div class="p-3 text-fg-muted text-sm">
-    No plugin configured yet — open ⚙ to paste the plugin HTML.
+    No plugin selected — open ⚙ to pick an installed plugin.
+  </div>
+{:else if notInstalled}
+  <div class="p-3 text-fg-muted text-sm">
+    Plugin not installed: {pluginId}
   </div>
 {:else if !tile.query}
   <div class="p-3 text-fg-muted text-sm">
     Tile has no query binding — open ⚙ to set one.
   </div>
+{:else if !srcdoc}
+  <div class="p-3 text-fg-muted text-sm">Loading plugin…</div>
 {:else}
   <div class="plugin-tile">
     <!--

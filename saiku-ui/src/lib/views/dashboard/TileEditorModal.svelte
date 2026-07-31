@@ -81,6 +81,7 @@
   import { validateEchartsOption } from "$lib/dashboard/custom/echartsOption";
   // The `graph` renderer gets a declarative column-mapping editor (NO code).
   import { validateGraphConfig, type GraphLayout } from "$lib/dashboard/custom/graphTile";
+  import { listTilePlugins, type TilePluginSummary } from "$lib/api/tilePlugins";
 
   interface Props {
     tile: DashboardTile;
@@ -311,26 +312,18 @@
     }),
   );
 
-  // ── App Builder Phase 2, Task 7 (saiku#1441): `plugin` renderer HTML ──
-  // The author's self-contained plugin HTML, seeded from the saved tile and
-  // persisted verbatim on Save (containment is the iframe sandbox + CSP, so the
-  // HTML is stored as-authored — never sanitised here).
-  let pluginHtmlText = $state<string>(
-    untrack(() => (typeof tile.custom?.options?.html === "string" ? tile.custom.options.html : "")),
+  // ── App Builder Phase 2 (saiku#1441): `plugin` renderer picker ──
+  // SECURITY: the author only PICKS an admin-installed plugin by its slug id.
+  // Raw HTML can NEVER ride tile config (the arbitrary-JS exfil hole — an author
+  // could otherwise run JS that navigates the frame to exfiltrate the tile's
+  // data); the markup is served only from the admin registry at render time. So
+  // the editor is a picker over GET /rest/saiku/api/tile-plugins, not a textarea.
+  let selectedPluginId = $state<string>(
+    untrack(() => (typeof tile.custom?.options?.pluginId === "string" ? tile.custom.options.pluginId : "")),
   );
-  // Example plugin skeleton for the textarea placeholder. Built with a split
-  // closing tag so the literal never terminates this component's own markup.
-  const CLOSE_SCRIPT = "</scr" + "ipt>";
-  const pluginPlaceholder =
-    '<div id="root"></div>\n<script>\n' +
-    "  const N = window.SAIKU_PLUGIN_NONCE;\n" +
-    "  addEventListener('message', (e) => {\n" +
-    "    if (e.data?.nonce !== N) return;\n" +
-    "    if (e.data.type === 'data')\n" +
-    "      root.textContent = e.data.payload.length + ' rows';\n" +
-    "  });\n" +
-    "  parent.postMessage({ type: 'ready', nonce: N }, '*');\n" +
-    CLOSE_SCRIPT;
+  let installedPlugins = $state<TilePluginSummary[]>([]);
+  let pluginsLoading = $state(false);
+  let pluginsError = $state<string | null>(null);
 
   // ── Issue #912: inline visual query editor ──────────────────────────
   // For chart / table tiles, "Edit query visually" mounts the workspace
@@ -444,6 +437,20 @@
 
   onMount(async () => {
     if (tile.type === "text") return; // text tiles don't need the catalogue
+    // Plugin tiles: load the installed-plugin catalogue for the picker.
+    if (isPluginTile) {
+      pluginsLoading = true;
+      listTilePlugins()
+        .then((list) => {
+          installedPlugins = list;
+        })
+        .catch((e: unknown) => {
+          pluginsError = e instanceof Error ? e.message : String(e);
+        })
+        .finally(() => {
+          pluginsLoading = false;
+        });
+    }
     cubesLoading = true;
     const needSavedQueries = wantsQuery;
     if (needSavedQueries) savedQueriesLoading = true;
@@ -785,14 +792,16 @@
       };
     }
 
-    // App Builder Phase 2, Task 7 (saiku#1441): persist the plugin HTML. The
-    // author code is stored verbatim (the iframe sandbox + CSP contain it at
-    // render time); we only preserve any non-html options already present.
+    // App Builder Phase 2 (saiku#1441): persist the selected plugin ID ONLY. Raw
+    // HTML never rides tile config — the markup is served from the admin registry
+    // at render time. Any legacy `html` option is dropped on save so a resaved
+    // tile can never carry author markup forward.
     if (isPluginTile && tile.custom) {
       const existing = { ...(tile.custom.options ?? {}) } as Record<string, unknown>;
-      const html = pluginHtmlText.trim();
-      if (html) existing.html = html;
-      else delete existing.html;
+      delete existing.html;
+      const pid = selectedPluginId.trim();
+      if (pid) existing.pluginId = pid;
+      else delete existing.pluginId;
       patch.custom = { renderer: tile.custom.renderer, options: existing };
     }
 
@@ -1217,26 +1226,34 @@
         </fieldset>
       {/if}
 
-      <!-- App Builder Phase 2, Task 7 (saiku#1441): plugin renderer editor.
-           A textarea for the self-contained plugin HTML. The code runs inside a
-           locked-down iframe (sandbox="allow-scripts" + strict CSP + per-mount
-           nonce), so it cannot read the host, make network calls, or inject
-           MDX. Persisted verbatim into tile.custom.options.html on Save. -->
+      <!-- App Builder Phase 2 (saiku#1441): plugin renderer picker.
+           SECURITY: the author only PICKS an admin-installed plugin by id — raw
+           HTML can never ride tile config. The chosen plugin's markup is served
+           from the admin registry at render time and runs in a locked-down
+           iframe (sandbox="allow-scripts" + strict CSP + per-mount nonce).
+           Persisted into tile.custom.options.pluginId on Save. -->
       {#if isPluginTile}
         <label class="field">
-          <span>Plugin HTML</span>
-          <textarea
-            bind:value={pluginHtmlText}
-            rows="14"
-            spellcheck="false"
-            class="json"
-            placeholder={pluginPlaceholder}
-          ></textarea>
+          <span>Plugin</span>
+          {#if pluginsLoading}
+            <span class="hint">Loading installed plugins…</span>
+          {:else if pluginsError}
+            <span class="hint error">Couldn't load plugins: {pluginsError}</span>
+          {:else if installedPlugins.length === 0}
+            <span class="hint">
+              No plugins installed — an admin installs them under saiku-home/tile-plugins/.
+            </span>
+          {:else}
+            <select bind:value={selectedPluginId}>
+              <option value="">— Select a plugin —</option>
+              {#each installedPlugins as p (p.id)}
+                <option value={p.id}>{p.label} ({p.id})</option>
+              {/each}
+            </select>
+          {/if}
           <span class="hint">
-            Runs in a sandboxed iframe with NO network access and NO access to the host
-            page. Read window.SAIKU_PLUGIN_NONCE and stamp it on every postMessage; send
-            {"{ type: 'ready', nonce }"} when loaded, then handle the init / data / theme
-            messages. Query data (below) is delivered as records.
+            Runs admin-installed, trusted plugin code in a sandboxed iframe. It cannot read the
+            host page, cookies, or session token; query data (below) is delivered as records.
           </span>
         </label>
       {/if}

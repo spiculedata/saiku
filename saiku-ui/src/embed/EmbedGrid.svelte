@@ -43,9 +43,15 @@
     fetchTile: (tileId: string, overrides: EmbedFilterOverride[]) => Promise<EmbedQueryResponse>;
     /** Populate a filter tile's member dropdown (token-scoped, pinned axis). */
     fetchMembers: (tileId: string, q?: string, limit?: number) => Promise<EmbedMember[]>;
+    /** App Builder Phase 2 (saiku#1441): fetch an ADMIN-INSTALLED plugin tile's
+     *  HTML by id from the token-scoped embed endpoint. Optional — only the app
+     *  embed wires it (the dashboard embed has no app-scoped plugin endpoint, so
+     *  a plugin tile there falls back to a placeholder rather than ever building
+     *  an iframe from client-supplied markup). */
+    fetchPluginHtml?: (pluginId: string) => Promise<string>;
   }
 
-  let { layout, fetchTile, fetchMembers }: Props = $props();
+  let { layout, fetchTile, fetchMembers, fetchPluginHtml }: Props = $props();
 
   /** tile.id → query result (chart / kpi tiles only). null = pending. */
   let tileData = $state<Record<string, EmbedRow[] | null>>({});
@@ -185,7 +191,7 @@
           {@const r = tile.custom ? getTileRenderer(tile.custom.renderer) : undefined}
           {#if r?.embedComponent}
             {@const Renderer = r.embedComponent}
-            <Renderer {tile} rows={tileData[tile.id]} />
+            <Renderer {tile} rows={tileData[tile.id]} {fetchPluginHtml} />
           {:else}
             <div class="state muted">Unsupported tile</div>
           {/if}

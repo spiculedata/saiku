@@ -761,6 +761,12 @@
         <property name="aiQueryResource" ref="aiQueryResource"/>
         <!-- saiku#1104/#906: audit embed queries (carries the JWT sub). -->
         <property name="auditLog" ref="aiAuditLog"/>
+        <!-- saiku#1441: token-scoped delivery of admin-installed tile-plugin HTML.
+             Embed guests can't reach the full-auth /tile-plugins catalogue, so the
+             sandboxed plugin tile fetches its srcdoc via /app/<path>/plugin/<id>/html,
+             gated on the plugin being referenced by the pinned app doc. Same trusted
+             registry the in-app TilePluginResource serves — never author-supplied HTML. -->
+        <property name="pluginRegistry" ref="tilePluginRegistryBean"/>
     </bean>
 
     <!-- Per-tile dashboard comments (issue #942). commentService stores a

