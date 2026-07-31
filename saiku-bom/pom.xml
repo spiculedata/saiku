@@ -39,13 +39,6 @@
         <jersey.version>3.1.9</jersey.version>
         <saiku-query.version>0.4-SNAPSHOT</saiku-query.version>
         <jackson.version>2.21.5</jackson.version>
-        <!-- jackson-annotations stopped shipping patch releases at 2.20; from
-             then on it versions at the minor boundary only (2.20, 2.21, 2.22)
-             — there is no jackson-annotations 2.21.5. jackson-databind 2.21.5
-             pulls jackson-annotations 2.21 transitively, so pin the annotations
-             artifact to that. Annotations carries no CVEs; the GHSA advisories
-             we are clearing are in jackson-core + jackson-databind. -->
-        <jackson.annotations.version>2.21</jackson.annotations.version>
         <arrow.version>18.2.0</arrow.version>
         <caffeine.version>3.2.4</caffeine.version>
         <!-- JSON Schema (draft 2020-12) validator for the AiQueryRequest
@@ -78,6 +71,21 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- Import the Jackson BOM so EVERY jackson artifact — including the
+                 ones pulled in transitively (e.g. jackson-module-jakarta-xmlbind-annotations
+                 via jersey-media-json-jackson) — resolves to one coordinated 2.21.x
+                 set instead of drifting to an old transitive version. The BOM also
+                 pins jackson-annotations itself (2.21, since annotations ships no
+                 2.21.5), which is why the manual annotations pin is no longer needed.
+                 Explicit jackson entries below still win over an imported BOM, but
+                 they match the BOM's versions so there is no divergence. -->
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>org.glassfish.jersey.test-framework</groupId>
                 <artifactId>jersey-test-framework-core</artifactId>
@@ -338,11 +346,6 @@
                 <artifactId>jackson-core</artifactId>
                 <version>${jackson.version}</version>
             </dependency-->
-            <dependency>
-                <groupId>com.fasterxml.jackson.core</groupId>
-                <artifactId>jackson-annotations</artifactId>
-                <version>${jackson.annotations.version}</version>
-            </dependency>
             <dependency>
                 <groupId>org.saikuanalytics</groupId>
                 <artifactId>saiku-web</artifactId>
