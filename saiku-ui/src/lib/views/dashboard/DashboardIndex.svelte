@@ -32,6 +32,7 @@
     newTileId,
     normaliseDashboardPath,
     toRepoRelative,
+    displayPath,
     saveDashboard,
   } from "$lib/api/dashboards";
   import { getTemplate, instantiateTemplate } from "$lib/dashboard/templates";
@@ -319,6 +320,14 @@
     return p.endsWith(".saikudash") ? p.slice(0, -".saikudash".length) : p;
   }
 
+  /** Friendly label for a repo node: the dashboard's own title (from the
+   *  enrichment fetch) when known, else its filename slug. Used by the
+   *  pinned Favourites / Recently-viewed rows so they read the human title
+   *  rather than a raw `.saikudash` filename. (#1605) */
+  function titleForNode(n: RepositoryNode): string {
+    return catalogueMeta.get(n.path)?.title ?? basename(toRepoRelative(n.path));
+  }
+
   /** Resolve {@code recentDashboards.all()} / {@code favouriteDashboards.all()}
    *  against the live entry list so paths that no longer exist (or that
    *  the user can't see for ACL reasons) don't show as broken links.
@@ -583,7 +592,7 @@
         favourites={favouriteEntries}
         recents={recentEntries}
         onToggleFavourite={toggleFavourite}
-        {basename}
+        titleFor={titleForNode}
       />
     {/if}
 
@@ -628,9 +637,9 @@
          folder tree. `showMove` adds the #937 "move to folder" button. -->
     {#snippet dashboardRow(relPath: string, label: string, showMove: boolean)}
       {@const isFav = favouriteDashboards.isFavourite(relPath)}
-      <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
+      <a class="link" href="{base}/dashboards/{relPath}" aria-label={label} title={displayPath(relPath)}>
         <span class="font-medium">{label}</span>
-        <span class="text-xs text-fg-muted whitespace-nowrap overflow-hidden text-ellipsis">{relPath}</span>
+        <span class="text-xs text-fg-muted whitespace-nowrap overflow-hidden text-ellipsis">{displayPath(relPath)}</span>
       </a>
       <Button variant="outline" class="icon-only star {isFav ? 'star--on' : ''}" onclick={() => toggleFavourite(relPath)} title={isFav ? "Remove from favourites" : "Add to favourites"} aria-label={isFav ? "Remove from favourites" : "Add to favourites"} aria-pressed={isFav}>
         <Star size={14} fill={isFav ? "currentColor" : "none"} />

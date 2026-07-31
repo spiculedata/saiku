@@ -669,6 +669,16 @@ export function normaliseRepoPath(path: string): string {
   return path.replace(/\/+/g, "/").replace(/^\/+|\/+$/g, "");
 }
 
+/** Drop the reserved `.saikudash` extension for display. The repository
+ *  stores dashboards as `<name>.saikudash` files, but the extension is an
+ *  implementation detail the catalogue shouldn't surface — a path shown to
+ *  a user should read `homes/admin/sales`, not `homes/admin/sales.saikudash`.
+ *  Directory segments and anything before the extension pass through
+ *  untouched; a path without the extension is returned unchanged. (#1605) */
+export function displayPath(path: string): string {
+  return path.endsWith(".saikudash") ? path.slice(0, -".saikudash".length) : path;
+}
+
 async function readError(res: Response): Promise<string> {
   try {
     const body = (await res.json()) as DashboardErrorResponse;

@@ -14,6 +14,7 @@
    */
   import { base } from "$app/paths";
   import { Button } from "$lib/components/ui";
+  import { displayPath } from "$lib/api/dashboards";
   import {
     Copy,
     ShieldCheck,
@@ -75,9 +76,9 @@
 
 {#snippet dashboardRow(relPath: string, label: string)}
   {@const isFav = favouriteDashboards.isFavourite(relPath)}
-  <a class="link" href="{base}/dashboards/{relPath}" title={relPath}>
+  <a class="link" href="{base}/dashboards/{relPath}" aria-label={label} title={displayPath(relPath)}>
     <span class="name">{label}</span>
-    <span class="text-fg-muted text-xs overflow-hidden text-ellipsis whitespace-nowrap">{relPath}</span>
+    <span class="text-fg-muted text-xs overflow-hidden text-ellipsis whitespace-nowrap">{displayPath(relPath)}</span>
   </a>
   <Button variant="outline" class="icon-only star {isFav ? 'star--on' : ''}" onclick={() => onToggleFavourite(relPath)} title={isFav ? "Remove from favourites" : "Add to favourites"} aria-label={isFav ? "Remove from favourites" : "Add to favourites"} aria-pressed={isFav}>
     <Star size={14} fill={isFav ? "currentColor" : "none"} />
