@@ -60,6 +60,9 @@ export interface AppTheme {
 
 export interface AppNav {
   position: "rail" | "top";
+  /** Start the left rail collapsed to icons-only (matches the compact
+   *  section-rail look of the reference dashboards). */
+  railCollapsed?: boolean;
 }
 
 export interface AppPage {
@@ -129,7 +132,7 @@ export function normaliseApp(raw: SaikuAppInput): SaikuApp {
     version: raw.version ?? 1,
     logo: raw.logo ?? null,
     theme: { mode: raw.theme?.mode ?? "auto", ...raw.theme },
-    nav: { position: raw.nav?.position ?? "rail" },
+    nav: { ...raw.nav, position: raw.nav?.position ?? "rail" },
     assistantSlot: { ...raw.assistantSlot, enabled: raw.assistantSlot?.enabled ?? false },
     pages: (raw.pages ?? []).map((p, i) => ({
       id: p.id ?? localId("page"),

@@ -13,7 +13,36 @@
    * has reorderPage(); wiring drag is a follow-up task).
    */
   import type { AppPage } from "$lib/api/apps";
-  import { LayoutDashboard, Plus, PanelLeftClose, PanelLeftOpen } from "lucide-svelte";
+  import {
+    LayoutDashboard,
+    Plus,
+    PanelLeftClose,
+    PanelLeftOpen,
+    House,
+    ChartColumnBig,
+    Boxes,
+    Users,
+    Settings,
+    Sparkles,
+    TrendingUp,
+    Table,
+  } from "lucide-svelte";
+
+  /** Named page icons an author can set via AppPage.icon. Falls back to the
+   *  generic dashboard glyph. Keeps the rail legible when collapsed to icons. */
+  const ICONS: Record<string, typeof LayoutDashboard> = {
+    home: House,
+    house: House,
+    chart: ChartColumnBig,
+    trend: TrendingUp,
+    cube: Boxes,
+    boxes: Boxes,
+    users: Users,
+    people: Users,
+    settings: Settings,
+    sparkles: Sparkles,
+    table: Table,
+  };
 
   interface Props {
     pages: AppPage[];
@@ -24,11 +53,25 @@
     onRename?: (id: string, title: string) => void;
     /** Render as a horizontal bottom bar (narrow viewport). */
     narrow?: boolean;
+    /** Start collapsed to icons-only (app.nav.railCollapsed). */
+    defaultCollapsed?: boolean;
+    /** Brand mark shown at the rail top: a logo URL or a short letter. */
+    brand?: { logo?: string | null; label?: string } | null;
   }
 
-  let { pages, activeId, editable, onSelect, onAddPage, onRename, narrow = false }: Props = $props();
+  let {
+    pages,
+    activeId,
+    editable,
+    onSelect,
+    onAddPage,
+    onRename,
+    narrow = false,
+    defaultCollapsed = false,
+    brand = null,
+  }: Props = $props();
 
-  let collapsed = $state(false);
+  let collapsed = $state(defaultCollapsed);
   let renamingId = $state<string | null>(null);
   let draft = $state("");
 
@@ -64,8 +107,18 @@
   class:saiku-app__rail--narrow={narrow}
   aria-label="App pages"
 >
+  {#if brand && !narrow}
+    <div class="saiku-app__rail-brand" aria-hidden="true">
+      {#if brand.logo}
+        <img src={brand.logo} alt="" />
+      {:else if brand.label}
+        <span>{brand.label}</span>
+      {/if}
+    </div>
+  {/if}
   <ul class="saiku-app__rail-list">
     {#each pages as page (page.id)}
+      {@const Icon = (page.icon && ICONS[page.icon]) || LayoutDashboard}
       <li>
         {#if editable && renamingId === page.id}
           <!-- svelte-ignore a11y_autofocus -->
@@ -87,7 +140,7 @@
             onclick={() => onSelect(page.id)}
             ondblclick={() => startRename(page)}
           >
-            <LayoutDashboard size={16} aria-hidden="true" />
+            <Icon size={18} aria-hidden="true" />
             <span class="saiku-app__rail-label">{page.title}</span>
           </button>
         {/if}
@@ -141,7 +194,30 @@
     font-family: var(--saiku-app-font, inherit);
   }
   .saiku-app__rail--collapsed {
-    width: 3.25rem;
+    width: 3.5rem;
+    align-items: center;
+  }
+  .saiku-app__rail-brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    flex-shrink: 0;
+    margin: 4px 0 10px;
+    overflow: hidden;
+    background: var(--saiku-app-accent, #2e5e43);
+    color: #fff;
+    font-family: Georgia, "Times New Roman", serif;
+    font-weight: 700;
+    font-size: 1.15rem;
+    line-height: 1;
+  }
+  .saiku-app__rail-brand img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
   }
   .saiku-app__rail-list {
     list-style: none;

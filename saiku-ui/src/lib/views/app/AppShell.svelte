@@ -133,6 +133,8 @@
         onSelect={handleSelect}
         onAddPage={editable ? handleAddPage : undefined}
         onRename={editable ? handleRename : undefined}
+        defaultCollapsed={app.nav.railCollapsed}
+        brand={{ logo: app.logo, label: app.name.slice(0, 1) }}
       />
     {/if}
 

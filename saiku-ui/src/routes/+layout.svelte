@@ -30,7 +30,12 @@
   // Chrome-hide: `?chrome=none` renders a page full-bleed with no Saiku topbar
   // (or upgrade banner) — for embedding an App Builder app in an iframe / kiosk
   // where the host supplies its own frame. The app's own header + nav stay.
-  const bare = $derived(page.url.searchParams.get("chrome") === "none");
+  // LATCHED: once seen, it sticks for the session — the App Builder's per-page
+  // URL-state mirror rewrites `?p=…&f~…` and would otherwise drop the param.
+  let bare = $state(false);
+  $effect(() => {
+    if (page.url.searchParams.get("chrome") === "none") bare = true;
+  });
 
   // Non-modal session-expired banner state (issue #944). The previous
   // SessionErrorModal was a blocking modal in the middle of the screen,
