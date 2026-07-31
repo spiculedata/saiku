@@ -237,9 +237,9 @@
   aria-label="Dashboard toolbar"
   bind:this={headerEl}
 >
-  <div class="flex flex-col gap-1 min-w-0">
+  <div class="title-block flex flex-col gap-1 min-w-0">
     {#if readOnly}
-      <h1 class="text-lg font-semibold m-0">{name}</h1>
+      <h1 class="dash-title text-lg font-semibold m-0">{name}</h1>
     {:else}
       <input
         class="name"
@@ -287,8 +287,6 @@
       </div>
     {/if}
   </div>
-
-  <div class="flex-1"></div>
 
   <!-- #1175: wide → all actions inline; narrow → Save stays out, the rest
        (incl. Undo/Redo) collapse into a ☰ menu. Both render the SAME
@@ -419,6 +417,13 @@
     padding: 0.5rem 0.25rem;
     border-bottom: 1px solid var(--border);
   }
+  /* #1604: the title block absorbs the toolbar's free space (it replaces the
+     old flex spacer) so the editable name / heading has room to show the full
+     dashboard title instead of being clipped at a fixed 18rem. */
+  .title-block {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
   .name {
     font-size: 1.125rem;
     font-weight: var(--weight-semibold);
@@ -426,7 +431,18 @@
     border: 1px solid transparent;
     border-radius: 4px;
     background: transparent;
+    /* #1604: fill the (now-growing) title block; keep a sensible floor and a
+       cap so the field doesn't stretch edge-to-edge on very wide screens. */
+    width: 100%;
     min-width: 18rem;
+    max-width: 44rem;
+  }
+  /* #1604: let the read-only heading use the block's full width and wrap
+     rather than clip when a long title can't fit on one line. */
+  .dash-title {
+    min-width: 0;
+    max-width: 44rem;
+    overflow-wrap: anywhere;
   }
   .name:hover, .name:focus {
     border-color: var(--border-strong);
