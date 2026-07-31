@@ -23,6 +23,7 @@
     Redo2,
     Mail,
   } from "lucide-svelte";
+  import { Tooltip } from "$lib/components/ui";
   import SaveQueryModal from "$lib/modals/SaveQueryModal.svelte";
   import SavedQueriesModal from "$lib/modals/SavedQueriesModal.svelte";
   import EmailMeThisModal from "$lib/modals/EmailMeThisModal.svelte";
@@ -374,50 +375,59 @@
 
 <div class="toolbar" role="toolbar" aria-label="Workspace toolbar">
   <div class="flex items-center gap-0.5 relative" role="group" aria-label="File">
-    <button class="tb-btn" title={i18n.t("toolbar.new")} aria-label={i18n.t("toolbar.new")} onclick={onNew}>
-      <FilePlus2 size={18} />
-    </button>
-    <button class="tb-btn" title={i18n.t("toolbar.open")} aria-label={i18n.t("toolbar.open")} onclick={onOpen}>
-      <FolderOpen size={18} />
-    </button>
-    <button
-      class="tb-btn relative"
-      title={query.dirty ? `${i18n.t("toolbar.save")} (unsaved changes)` : i18n.t("toolbar.save")}
-      aria-label={i18n.t("toolbar.save")}
-      onclick={onSave}
-    >
-      <Save size={18} />
-      {#if query.dirty}
-        <span class="tb-btn__dot" aria-hidden="true"></span>
-      {/if}
-    </button>
-    <button class="tb-btn" title={i18n.t("toolbar.saveAs")} aria-label={i18n.t("toolbar.saveAs")} onclick={onSaveAs}>
-      <Copy size={18} />
-    </button>
+    <Tooltip text={i18n.t("toolbar.new")}>
+      <button class="tb-btn" aria-label={i18n.t("toolbar.new")} onclick={onNew}>
+        <FilePlus2 size={18} />
+      </button>
+    </Tooltip>
+    <Tooltip text={i18n.t("toolbar.open")}>
+      <button class="tb-btn" aria-label={i18n.t("toolbar.open")} onclick={onOpen}>
+        <FolderOpen size={18} />
+      </button>
+    </Tooltip>
+    <Tooltip text={query.dirty ? `${i18n.t("toolbar.save")} (unsaved changes)` : i18n.t("toolbar.save")}>
+      <button
+        class="tb-btn relative"
+        aria-label={i18n.t("toolbar.save")}
+        onclick={onSave}
+      >
+        <Save size={18} />
+        {#if query.dirty}
+          <span class="tb-btn__dot" aria-hidden="true"></span>
+        {/if}
+      </button>
+    </Tooltip>
+    <Tooltip text={i18n.t("toolbar.saveAs")}>
+      <button class="tb-btn" aria-label={i18n.t("toolbar.saveAs")} onclick={onSaveAs}>
+        <Copy size={18} />
+      </button>
+    </Tooltip>
   </div>
   <div class="toolbar__sep"></div>
   <!-- Undo / redo. Disabled-state mirrors the store's canUndo / canRedo so the
        button visually goes inert at the end of each stack rather than no-oping
        on click. Cmd-Z / Cmd-Shift-Z keyboard shortcuts in the wrapper below. -->
   <div class="flex items-center gap-0.5 relative" role="group" aria-label="Undo / redo">
-    <button
-      class="tb-btn"
-      title={platform.isMac ? "Undo (⌘Z)" : "Undo (Ctrl+Z)"}
-      aria-label="Undo"
-      disabled={!query.canUndo}
-      onclick={() => query.undo()}
-    >
-      <Undo2 size={18} />
-    </button>
-    <button
-      class="tb-btn"
-      title={platform.isMac ? "Redo (⇧⌘Z)" : "Redo (Ctrl+Shift+Z)"}
-      aria-label="Redo"
-      disabled={!query.canRedo}
-      onclick={() => query.redo()}
-    >
-      <Redo2 size={18} />
-    </button>
+    <Tooltip text={platform.isMac ? "Undo (⌘Z)" : "Undo (Ctrl+Z)"}>
+      <button
+        class="tb-btn"
+        aria-label="Undo"
+        disabled={!query.canUndo}
+        onclick={() => query.undo()}
+      >
+        <Undo2 size={18} />
+      </button>
+    </Tooltip>
+    <Tooltip text={platform.isMac ? "Redo (⇧⌘Z)" : "Redo (Ctrl+Shift+Z)"}>
+      <button
+        class="tb-btn"
+        aria-label="Redo"
+        disabled={!query.canRedo}
+        onclick={() => query.redo()}
+      >
+        <Redo2 size={18} />
+      </button>
+    </Tooltip>
   </div>
   <div class="toolbar__sep"></div>
   <div class="flex items-center gap-0.5 relative relative" role="group" aria-label="Query">
@@ -462,9 +472,11 @@
       </div>
     {/if}
     {#if query.current?.type !== "MDX"}
-      <button class="tb-btn" title={i18n.t("toolbar.swap")} aria-label={i18n.t("toolbar.swap")} onclick={() => query.swapAxes()}>
-        <ArrowLeftRight size={18} />
-      </button>
+      <Tooltip text={i18n.t("toolbar.swap")}>
+        <button class="tb-btn" aria-label={i18n.t("toolbar.swap")} onclick={() => query.swapAxes()}>
+          <ArrowLeftRight size={18} />
+        </button>
+      </Tooltip>
     {/if}
   </div>
   {#if onAskAi}
