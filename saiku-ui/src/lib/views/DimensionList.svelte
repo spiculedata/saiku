@@ -72,9 +72,14 @@
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
   }
 
-  /** Click-to-drop: add measure onto COLUMNS as a measure. Mirrors the
-   *  drag-drop payload but skips the DnD machinery. Old UI behaviour. */
-  function onMeasureClick(m: SaikuMeasure): void {
+  /** #1608: add a measure to the Measures shelf — a measure's natural
+   *  axis. Reuses query.addMeasure, the SAME mutator QueryCanvas.onDropAxis
+   *  invokes on a drag-drop, so a double-click and a drop converge on
+   *  identical query state (and the same reactivity via markDirty).
+   *  addMeasure dedupes by uniqueName, so repeat activations are safe
+   *  no-ops. Wired to dblclick (mouse/touch) + keyboard activation on the
+   *  tree buttons; a bare single mouse-click no longer mutates the query. */
+  function onMeasureAdd(m: SaikuMeasure): void {
     query.addMeasure({
       name: m.name,
       uniqueName: m.uniqueName,
@@ -93,8 +98,12 @@
     });
   }
 
-  /** Click-to-drop: drop a level onto ROWS by default. */
-  function onLevelClick(dim: SaikuDimension, hier: SaikuHierarchy, lvl: SaikuLevel): void {
+  /** #1608: add a dimension level to ROWS — a level's natural default
+   *  axis. Reuses query.includeLevel, the SAME mutator the drag-drop drop
+   *  handler (QueryCanvas.onDropAxis) calls, so double-click and drop
+   *  converge on identical query state. includeLevel is idempotent for a
+   *  level already on-axis. Wired to dblclick + keyboard on the tree row. */
+  function onLevelAdd(dim: SaikuDimension, hier: SaikuHierarchy, lvl: SaikuLevel): void {
     query.includeLevel("ROWS", {
       dimensionName: dim.name,
       dimensionUniqueName: dim.uniqueName,
@@ -449,7 +458,8 @@
                 draggable="true"
                 title={measure.caption}
                 ondragstart={(e) => onMeasureDragStart(e, measure)}
-                onclick={() => onMeasureClick(measure)}
+                ondblclick={() => onMeasureAdd(measure)}
+                onclick={(e) => { if (e.detail === 0) onMeasureAdd(measure); }}
               >
                 <span class="tree__icon tree__icon--measure" aria-hidden="true">
                   {#if measure.calculated}<FunctionSquare size={13} />{:else}<Sigma size={13} />{/if}
@@ -479,7 +489,8 @@
                         draggable="true"
                         title={measure.caption}
                         ondragstart={(e) => onMeasureDragStart(e, measure)}
-                        onclick={() => onMeasureClick(measure)}
+                        ondblclick={() => onMeasureAdd(measure)}
+                        onclick={(e) => { if (e.detail === 0) onMeasureAdd(measure); }}
                       >
                         <span class="tree__icon tree__icon--measure" aria-hidden="true">
                           {#if measure.calculated}<FunctionSquare size={13} />{:else}<Sigma size={13} />{/if}
@@ -539,7 +550,8 @@
                             draggable="true"
                             title={lvl.caption}
                             ondragstart={(e) => onLevelDragStart(e, dim, hier, lvl)}
-                            onclick={() => onLevelClick(dim, hier, lvl)}
+                            ondblclick={() => onLevelAdd(dim, hier, lvl)}
+                            onclick={(e) => { if (e.detail === 0) onLevelAdd(dim, hier, lvl); }}
                           >
                             <span class="tree__icon text-fg-subtle" aria-hidden="true"><Minus size={11} /></span>
                             <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{lvl.caption || lvl.name}</span>
@@ -574,7 +586,8 @@
                                   draggable="true"
                                   title={lvl.caption}
                                   ondragstart={(e) => onLevelDragStart(e, dim, hier, lvl)}
-                                  onclick={() => onLevelClick(dim, hier, lvl)}
+                                  ondblclick={() => onLevelAdd(dim, hier, lvl)}
+                                  onclick={(e) => { if (e.detail === 0) onLevelAdd(dim, hier, lvl); }}
                                 >
                                   <span class="tree__icon text-fg-subtle" aria-hidden="true"><Minus size={11} /></span>
                                   <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{lvl.caption || lvl.name}</span>
