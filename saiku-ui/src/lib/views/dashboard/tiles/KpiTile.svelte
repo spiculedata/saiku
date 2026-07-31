@@ -20,7 +20,7 @@
    * otherwise a single-cell query is enough.
    */
 
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy } from "svelte";
   import * as echarts from "echarts";
   import { ArrowDownRight, ArrowUpRight, Minus, Settings2 } from "lucide-svelte";
   import type { CubeRef, DashboardTile, KpiConfig } from "$lib/api/dashboards";
@@ -107,14 +107,8 @@
   let spark: echarts.ECharts | null = null;
   let sparkResize: ResizeObserver | null = null;
 
-  onMount(() => {
-    if (sparkHost) {
-      spark = echarts.init(sparkHost);
-      sparkResize = new ResizeObserver(() => spark?.resize());
-      sparkResize.observe(sparkHost);
-    }
-  });
-
+  // Sparkline ECharts is lazy-initialised in the render $effect below (the host
+  // element only exists once data has loaded), so there is no onMount init here.
   onDestroy(() => {
     sparkResize?.disconnect();
     spark?.dispose();
@@ -378,6 +372,15 @@
     if (!kpi.sparkline || !wantsSeries) {
       spark?.clear();
       return;
+    }
+    // Lazy-init here (not onMount): the sparkline host is rendered only once the
+    // tile has data + sparkline is on, so at mount time sparkHost is still null.
+    // Initialising in this effect — which re-runs when sparkHost binds — is what
+    // actually gives the sparkline a canvas.
+    if (!spark && sparkHost) {
+      spark = echarts.init(sparkHost);
+      sparkResize = new ResizeObserver(() => spark?.resize());
+      sparkResize.observe(sparkHost);
     }
     if (!spark || !response || response.status !== "SUCCESS") return;
     const values = (response.data ?? []).map((row) => {

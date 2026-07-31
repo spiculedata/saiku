@@ -98,6 +98,17 @@
     return typeof v === "number" && isFinite(v);
   }
 
+  // Saiku records-format cells are {value, formatted} objects, not bare
+  // primitives — unwrap them for the numeric value and the display text.
+  function cellNum(v) {
+    if (v && typeof v === "object" && "value" in v) return isNumber(v.value) ? v.value : NaN;
+    return isNumber(v) ? v : NaN;
+  }
+  function cellText(v) {
+    if (v && typeof v === "object") return v.formatted != null ? v.formatted : (v.value != null ? v.value : "");
+    return v;
+  }
+
   // Pick sensible fields when the options don't name them.
   function pickFields(records, options) {
     var labelField = options && options.labelField;
@@ -106,12 +117,12 @@
     var keys = Object.keys(sample);
     if (!valueField) {
       for (var i = 0; i < keys.length; i++) {
-        if (isNumber(sample[keys[i]])) { valueField = keys[i]; break; }
+        if (isNumber(cellNum(sample[keys[i]]))) { valueField = keys[i]; break; }
       }
     }
     if (!labelField) {
       for (var j = 0; j < keys.length; j++) {
-        if (keys[j] !== valueField && typeof sample[keys[j]] === "string") { labelField = keys[j]; break; }
+        if (keys[j] !== valueField && !isNumber(cellNum(sample[keys[j]]))) { labelField = keys[j]; break; }
       }
       if (!labelField) labelField = keys[0];
     }
@@ -144,7 +155,7 @@
     var f = pickFields(records, options);
     var max = 0;
     for (var i = 0; i < records.length; i++) {
-      var v = records[i][f.valueField];
+      var v = cellNum(records[i][f.valueField]);
       if (isNumber(v) && Math.abs(v) > max) max = Math.abs(v);
     }
     if (max === 0) max = 1;
@@ -152,15 +163,15 @@
     var CAP = 200; // guard against a runaway record set
     for (var r = 0; r < records.length && r < CAP; r++) {
       var rec = records[r];
-      var val = rec[f.valueField];
-      var num = isNumber(val) ? val : 0;
+      var num = cellNum(rec[f.valueField]);
+      if (!isNumber(num)) num = 0;
 
       var row = document.createElement("div");
       row.className = "row";
 
       var label = document.createElement("div");
       label.className = "label";
-      escapeText(label, rec[f.labelField]);
+      escapeText(label, cellText(rec[f.labelField]));
       row.appendChild(label);
 
       var track = document.createElement("div");
@@ -173,7 +184,7 @@
 
       var value = document.createElement("div");
       value.className = "value";
-      escapeText(value, isNumber(val) ? String(val) : "");
+      escapeText(value, cellText(rec[f.valueField]));
       row.appendChild(value);
 
       root.appendChild(row);
@@ -181,13 +192,19 @@
     reportSize();
   }
 
+  // The host protocol (pluginBridge.postToFrame) delivers { type, nonce, payload }:
+  // init.payload = { options }, data.payload = the records array, theme.payload =
+  // { effective }. Read `payload`, not a flat `records`/`options` field.
+  var currentOptions = {};
   window.addEventListener("message", function (ev) {
     var data = ev && ev.data;
     if (!data || typeof data !== "object") return;
     if (data.nonce) nonce = data.nonce;
-    if (data.type === "data") {
+    if (data.type === "init") {
+      currentOptions = (data.payload && data.payload.options) || {};
+    } else if (data.type === "data") {
       try {
-        render(Array.isArray(data.records) ? data.records : [], data.options || {});
+        render(Array.isArray(data.payload) ? data.payload : [], currentOptions);
       } catch (e) {
         post("error", { message: String(e && e.message ? e.message : e) });
       }
