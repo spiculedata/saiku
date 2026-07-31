@@ -727,10 +727,18 @@
 {#if !tile.query}
   <div class="p-4 text-fg-muted text-sm">Tile has no query binding — open ⚙ to set one.</div>
 {:else}
-  <div class="chart-tile">
+  <div class="chart-tile" class:chart-tile--scroll={smallMultipleRows > 1}>
     <!-- #1090: the canvas is decorative to assistive tech; the sr-only table is
-         the accessible representation, so hide the canvas from screen readers. -->
-    <div class="canvas" bind:this={host} aria-hidden="true" style="height: {smallMultipleRows * 100}%"></div>
+         the accessible representation, so hide the canvas from screen readers.
+         #1600: a single chart fills the tile via flex (no inline height, no
+         inner scrollbar); only small multiples set an explicit N*100% height
+         and let the tile scroll. -->
+    <div
+      class="canvas"
+      bind:this={host}
+      aria-hidden="true"
+      style={smallMultipleRows > 1 ? `height: ${smallMultipleRows * 100}%` : undefined}
+    ></div>
     {#if a11y}
       <!-- #1090: visually-hidden data-table mirror for screen readers. -->
       <table class="sr-only">
@@ -785,14 +793,28 @@
     position: relative;
     height: 100%;
     width: 100%;
-    /* #1053: small multiples grow the canvas to N rows; scroll within the tile
-       so each chart stays full-size instead of shrinking. */
+    /* #1600: a single chart fills the tile exactly — the canvas flexes to the
+       tile's height (a definite value ECharts reads reliably, kept in sync by
+       the ResizeObserver), so the chart resizes to fit instead of overflowing
+       into an inner scrollbar. */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  /* #1053: small multiples grow the canvas to N rows; only then does the tile
+     scroll (block flow so the inline N*100% height is honoured) so each chart
+     stays full-size instead of shrinking. */
+  .chart-tile--scroll {
+    display: block;
     overflow-y: auto;
     overflow-x: hidden;
   }
   .canvas {
-    /* height is set inline = smallMultipleRows * 100% (100% for a single chart). */
     width: 100%;
+    /* Single chart: fill the tile's height. Small multiples override this with
+       an explicit inline height and block layout (see .chart-tile--scroll). */
+    flex: 1 1 auto;
+    min-height: 0;
   }
   /* #1090: visually hide the a11y data table while keeping it in the
      accessibility tree (standard sr-only / visually-hidden pattern). */
