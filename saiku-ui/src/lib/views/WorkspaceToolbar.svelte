@@ -558,11 +558,11 @@
     <button
       class="tb-btn"
       disabled={!mailHealth.configured}
-      title={mailHealth.configured ? i18n.t("toolbar.emailMeThis", "Email me this") : i18n.t("toolbar.emailMeThis.disabled", "Email isn't configured on this server")}
-      aria-label={i18n.t("toolbar.emailMeThis", "Email me this")}
+      title={mailHealth.configured ? i18n.t("toolbar.emailMeThis.tooltip", "Email this report") : i18n.t("toolbar.emailMeThis.disabled", "Email isn't configured on this server")}
+      aria-label={i18n.t("toolbar.emailMeThis.tooltip", "Email this report")}
       onclick={() => (emailModalOpen = true)}
     >
-      <Mail size={18} /><span class="text-sm">{i18n.t("toolbar.emailMeThis", "Email me this")}</span>
+      <Mail size={18} /><span class="text-sm">{i18n.t("toolbar.emailMeThis", "Email")}</span>
     </button>
   </div>
 </div>
