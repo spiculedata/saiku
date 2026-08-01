@@ -69,6 +69,23 @@ body {
   button {
     font-family: inherit;
     font-size: inherit;
+    /* Tailwind preflight is deliberately skipped (see tailwind.css), so raw
+       <button>s otherwise fall back to the UA default — a 2px outset white
+       border on a grey face. Replicate preflight's button normalisation here
+       so bare buttons (mode tabs, inspector tabs, the Button primitive's
+       default variant) render flat; `border-*` / `bg-*` utilities in the
+       utilities layer still override this base reset. (saiku#1636) */
+    appearance: none;
+    -webkit-appearance: none;
+    background-color: transparent;
+    background-image: none;
+    border: 0 solid transparent;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: default;
   }
 
   input,
