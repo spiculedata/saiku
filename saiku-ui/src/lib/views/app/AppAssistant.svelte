@@ -6,7 +6,7 @@
    * --saiku-assistant-* vars + the app's scoped custom CSS.
    */
   import { tick } from "svelte";
-  import { ArrowRight, Sparkles } from "lucide-svelte";
+  import { ArrowRight, Sparkles, Crosshair } from "lucide-svelte";
   import { askAi, type NlAskMessageDto } from "$lib/api/aiAsk";
   import type { AppAssistantSlot } from "$lib/api/apps";
 
@@ -22,6 +22,10 @@
   const persona = $derived(slot.persona ?? "Analyst");
   const scope = $derived(slot.scope ?? "");
   const prompts = $derived(slot.suggestedPrompts ?? []);
+  const skillPrompts = $derived(slot.skillPrompts ?? []);
+  const HeadIcon = $derived(slot.icon === "crosshair" ? Crosshair : Sparkles);
+  const footerHint = $derived(slot.footerHint ?? "");
+  const poweredBy = $derived(slot.poweredBy ?? "");
 
   interface Msg {
     role: "assistant" | "user";
@@ -97,7 +101,7 @@
 
 <aside class="assistant" aria-label="Assistant">
   <header class="assistant__head">
-    <span class="assistant__mark" aria-hidden="true"><Sparkles size={16} /></span>
+    <span class="assistant__mark" aria-hidden="true"><HeadIcon size={16} /></span>
     <span class="assistant__title">Ask <em>{title}</em></span>
   </header>
   <div class="assistant__persona">
@@ -114,11 +118,21 @@
     {#if busy}<div class="assistant__msg assistant__msg--assistant assistant__typing"><span></span><span></span><span></span></div>{/if}
   </div>
 
-  {#if prompts.length > 0}
+  {#if prompts.length > 0 || skillPrompts.length > 0}
     <div class="assistant__try">Try asking</div>
     <div class="assistant__prompts">
       {#each prompts as p}
         <button type="button" class="assistant__chip" disabled={busy} onclick={() => void send(p)}>{p}</button>
+      {/each}
+      {#each skillPrompts as sp}
+        <button
+          type="button"
+          class="assistant__chip assistant__chip--skill"
+          disabled={busy}
+          onclick={() => void send(sp)}
+        >
+          <span class="assistant__chip-cmd" aria-hidden="true">⌘</span>{sp}
+        </button>
       {/each}
     </div>
   {/if}
@@ -136,6 +150,12 @@
       <ArrowRight size={16} />
     </button>
   </form>
+  {#if footerHint || poweredBy}
+    <div class="assistant__footer">
+      {#if footerHint}<span class="assistant__hint">{footerHint}</span>{/if}
+      {#if poweredBy}<span class="assistant__powered">{poweredBy}</span>{/if}
+    </div>
+  {/if}
 </aside>
 
 <style>
@@ -292,6 +312,32 @@
   .assistant__chip:disabled {
     opacity: 0.5;
     cursor: default;
+  }
+  .assistant__chip--skill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    font-family:
+      ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.76rem;
+    color: var(--saiku-assistant-accent, #e6b98f);
+    border-color: rgba(230, 185, 143, 0.28);
+    background: rgba(230, 185, 143, 0.06);
+  }
+  .assistant__chip-cmd {
+    opacity: 0.85;
+  }
+  .assistant__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.68rem;
+    color: #6f8a79;
+  }
+  .assistant__powered {
+    margin-left: auto;
   }
   .assistant__form {
     display: flex;

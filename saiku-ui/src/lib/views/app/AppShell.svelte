@@ -135,6 +135,7 @@
         onRename={editable ? handleRename : undefined}
         defaultCollapsed={app.nav.railCollapsed}
         brand={{ logo: app.logo, label: app.name.slice(0, 1) }}
+        footer={app.nav.footer ?? null}
       />
     {/if}
 

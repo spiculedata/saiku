@@ -5,38 +5,48 @@
   "theme": {
     "mode": "light",
     "accent": "#2e5e43",
-    "customCss": "\n.saiku-app__body,.saiku-app__main,.app-page{background:#f2eee4;}\n.saiku-app__header{background:#f2eee4;border-bottom:1px solid #e4dcca;padding:16px 22px;}\n.saiku-app__name{font-family:Georgia,'Times New Roman',serif;font-size:1.5rem;font-weight:700;color:#1f3529;}\n.saiku-app__name::after{content:'  \\00B7  Store Intelligence';font-family:-apple-system,'Segoe UI',sans-serif;font-weight:600;color:#a99e82;font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;vertical-align:middle;}\n.saiku-app__rail{background:#1f352a;border-right:none;padding-top:14px;}\n.saiku-app__rail-brand{background:#c85a3a;}\n.saiku-app__rail-item{color:#9fb4a5;border-radius:10px;}\n.saiku-app__rail-item.is-active{background:#2e5e43;color:#fff;}\n.saiku-app__rail-item:hover{background:rgba(255,255,255,.06);color:#e6eee8;}\n.saiku-app__rail-collapse{color:#5f7a68;}\n.app-page__heading{color:#1f3529;font-size:2rem;}\n.app-page__subheading{color:#87805f;}\n.app-page__title-meta{color:#a99e82;text-transform:uppercase;font-size:.72rem;letter-spacing:.08em;}\n.tile{background:#fff;border:1px solid #ece7db;border-radius:14px;box-shadow:0 1px 2px rgba(30,40,30,.05),0 8px 24px rgba(31,53,41,.07);}\n.tile-header{background:transparent;border-bottom:none;padding-bottom:2px;}\n.tile:has(.kpi-tile){border-left:3px solid #2e5e43;}\n.tile:has(.kpi-tile) .tile-header{padding:12px 16px 0;}\n.tile:has(.kpi-tile) .tile-header span{font-family:-apple-system,'Segoe UI',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.07em;font-size:.66rem;color:#93876c;}\n.tile:not(:has(.kpi-tile)) .tile-header{display:none;}\n.kpi-tile{justify-content:flex-start;gap:5px;padding:6px 16px 12px;}\n.kpi-tile .value{font-family:-apple-system,'Segoe UI',sans-serif;font-size:1.9rem;font-weight:750;color:#17241d;}\n.kpi-tile .delta{font-size:.82rem;}\ntable{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;}\nthead th{text-transform:uppercase;font-size:.6rem;letter-spacing:.07em;color:#93876c;text-align:left;padding:6px 14px 9px;border-bottom:1px solid #e8e1d2;font-weight:700;}\nthead th:last-child{text-align:right;}\ntbody th,tbody td{padding:8px 14px;border-bottom:1px solid #f2ece0;font-size:.88rem;color:#2a352d;}\ntbody th{font-weight:500;text-align:left;}\ntbody td{text-align:right;font-weight:650;color:#1f3529;}\ntbody tr:hover{background:#f7f3ea;}\n.tile:has(tbody) tbody{counter-reset:mv;}\n.tile:has(tbody) tbody tr{counter-increment:mv;}\n.tile:has(tbody) tbody tr > :first-child::before{content:counter(mv);display:inline-block;width:20px;font-family:Georgia,serif;font-style:italic;font-weight:400;color:#b6ab8d;}\n.assistant__mark,.assistant__send{background:#c85a3a;}\n.assistant__title em{color:#e0a97f;}\n\n.kpi-tile{display:grid;grid-template-columns:1fr 118px;grid-template-areas:\"value spark\" \"delta spark\";align-items:center;column-gap:12px;padding:8px 16px 14px;}\n.kpi-tile .value{grid-area:value;align-self:end;}\n.kpi-tile .delta{grid-area:delta;align-self:start;}\n.kpi-tile div[aria-hidden=\"true\"]{grid-area:spark;width:118px;height:46px;align-self:center;}\n.tile:has(.kpi-tile){min-height:0;}\n\n/* header right: store context pill + live badge (kiosk controls slot is empty) */\n.saiku-app__controls{gap:10px;align-items:center;}\n.saiku-app__controls::before{content:'STORE\\00A0\\00A0\\00B7\\00A0\\00A0Portland #14\\00A0\\00A0\\25BE';display:inline-flex;align-items:center;padding:7px 14px;border-radius:9px;background:#fff;border:1px solid #e4dcca;font-family:-apple-system,'Segoe UI',sans-serif;font-size:.74rem;font-weight:650;color:#3a4a3f;box-shadow:0 1px 2px rgba(30,40,30,.05);}\n.saiku-app__controls::after{content:'\\25CF\\00A0\\00A0Live\\00A0\\00B7\\00A0Saiku';display:inline-flex;align-items:center;padding:6px 13px;border-radius:999px;background:#eaf3ec;color:#2e5e43;font-family:-apple-system,'Segoe UI',sans-serif;font-size:.72rem;font-weight:700;letter-spacing:.02em;}\n"
+    "customCss": "\n.saiku-app__body,.saiku-app__main,.app-page{background:#f2eee4;}\n.saiku-app__header{background:#f2eee4;border-bottom:1px solid #e4dcca;padding:16px 22px;}\n.saiku-app__name{font-family:Georgia,'Times New Roman',serif;font-size:1.5rem;font-weight:700;color:#1f3529;}\n.saiku-app__rail{background:#1f352a;border-right:none;padding-top:14px;}\n.saiku-app__rail-brand{background:#c85a3a;}\n.saiku-app__rail-item{color:#9fb4a5;border-radius:10px;}\n.saiku-app__rail-item.is-active{background:#2e5e43;color:#fff;}\n.saiku-app__rail-item:hover{background:rgba(255,255,255,.06);color:#e6eee8;}\n.saiku-app__rail-collapse{color:#5f7a68;}\n.app-page__heading{color:#1f3529;font-size:2rem;}\n.app-page__subheading{color:#87805f;}\n.app-page__title-meta{color:#a99e82;text-transform:uppercase;font-size:.72rem;letter-spacing:.08em;}\n.tile{background:#fff;border:1px solid #ece7db;border-radius:14px;box-shadow:0 1px 2px rgba(30,40,30,.05),0 8px 24px rgba(31,53,41,.07);}\n.tile-header{background:transparent;border-bottom:none;padding-bottom:2px;}\n.tile:has(.kpi-tile){}\n.tile:has(.kpi-tile) .tile-header{padding:12px 16px 0;}\n.tile:has(.kpi-tile) .tile-header span{font-family:-apple-system,'Segoe UI',sans-serif;font-weight:700;text-transform:uppercase;letter-spacing:.07em;font-size:.66rem;color:#93876c;}\n.tile:not(:has(.kpi-tile)):not(:has(tbody)) .tile-header{display:none;}\n.kpi-tile{justify-content:flex-start;gap:5px;padding:6px 16px 12px;}\n.kpi-tile .value{font-family:-apple-system,'Segoe UI',sans-serif;font-size:1.9rem;font-weight:750;color:#17241d;}\n.kpi-tile .delta{font-size:.82rem;}\ntable{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;}\nthead th{text-transform:uppercase;font-size:.6rem;letter-spacing:.07em;color:#93876c;text-align:left;padding:6px 14px 9px;border-bottom:1px solid #e8e1d2;font-weight:700;}\nthead th:last-child{text-align:right;}\ntbody th,tbody td{padding:8px 14px;border-bottom:1px solid #f2ece0;font-size:.88rem;color:#2a352d;}\ntbody th{font-weight:500;text-align:left;}\ntbody td{text-align:right;font-weight:650;color:#1f3529;}\ntbody tr:hover{background:#f7f3ea;}\n.tile:has(tbody) tbody{counter-reset:mv;}\n.tile:has(tbody) tbody tr{counter-increment:mv;}\n.tile:has(tbody) tbody tr > :first-child::before{content:counter(mv);display:inline-block;width:20px;font-family:Georgia,serif;font-style:italic;font-weight:400;color:#b6ab8d;}\n.assistant__mark,.assistant__send{background:#c85a3a;}\n.assistant__title em{color:#e0a97f;}\n\n.kpi-tile{display:grid;grid-template-columns:1fr 118px;grid-template-areas:\"value spark\" \"delta spark\";align-items:center;column-gap:12px;padding:8px 16px 14px;}\n.kpi-tile .value{grid-area:value;align-self:end;}\n.kpi-tile .delta{grid-area:delta;align-self:start;}\n.kpi-tile div[aria-hidden=\"true\"]{grid-area:spark;width:118px;height:46px;align-self:center;}\n.tile:has(.kpi-tile){min-height:0;}\n\n\n/* faithful-clone extras */\n.saiku-app__rail-collapse{display:none;}\n.tile:has(.kpi-tile[data-tone=\"negative\"]) .value{color:#c0492b;}\n\n/* movers card: serif title + subtitle, 6-row cap, no thead */\n.tile:has(tbody) .tile-header{padding:14px 16px 4px;display:flex;flex-direction:column;align-items:flex-start;gap:0;}\n.tile:has(tbody) .tile-header span{font-family:Georgia,'Times New Roman',serif;font-weight:700;font-size:1.05rem;color:#1f3529;text-transform:none;letter-spacing:0;}\n.tile:has(tbody) .tile-header::after{content:'Product department \\00B7 MoM';display:block;font-family:-apple-system,'Segoe UI',sans-serif;font-size:.72rem;color:#a99e82;margin-top:2px;}\n.tile:has(tbody) thead{display:none;}\n.tile:has(tbody) tbody tr:nth-child(n+7){display:none;}\n.tile:has(tbody) tbody tr > :first-child{font-weight:600;color:#26332b;}\n"
   },
   "nav": {
     "position": "rail",
-    "railCollapsed": true
+    "railCollapsed": true,
+    "footer": {
+      "settings": true,
+      "avatar": "RM"
+    }
   },
   "assistantSlot": {
     "enabled": true,
     "title": "FoodMart",
     "persona": "Sales Analyst",
     "scope": "scoped to your stores",
-    "greeting": "Morning. I'm scoped to your FoodMart Sales cube. Ask in plain English \u2014 I'll answer and build queries against the live data. Try one of the prompts below.",
+    "greeting": "Morning. I'm scoped to your Pacific NW stores and the FoodMart Sales cube. Ask in plain English — I'll answer and update the dashboard. Try one of the prompts below.",
     "suggestedPrompts": [
-      "How did Store Sales track month over month?",
-      "Break down Store Sales by Product Family.",
-      "Which Product Department sells the most?"
+      "How did Store Sales track last week vs the prior week?",
+      "Break down Store Sales by Product Family for Q4.",
+      "Which Product Department is up the most month-over-month?"
     ],
     "cube": {
       "connectionName": "unknown_foodmart",
       "catalog": "FoodMart",
       "schema": "FoodMart",
       "cubeName": "Sales"
-    }
+    },
+    "icon": "crosshair",
+    "footerHint": "↵ to send · ⇧↵ new line",
+    "poweredBy": "powered by Saiku",
+    "skillPrompts": [
+      "weekly foodmart rollup"
+    ]
   },
   "pages": [
     {
       "id": "p1",
       "title": "Overview",
       "icon": "home",
-      "heading": "FoodMart \u00b7 Today",
-      "subheading": "Regional manager view \u00b7 Pacific Northwest",
-      "meta": "Thu \u00b7 Week 41",
+      "heading": "Portland #14 · Today",
+      "subheading": "Regional manager view · Pacific Northwest",
+      "meta": "Thu · Week 41",
       "grid": {
         "cols": 12,
         "tiles": [
@@ -56,7 +66,7 @@
             "kpi": {
               "measure": "Store Sales",
               "measureCaption": "Store Sales",
-              "format": "currency",
+              "format": "custom",
               "comparison": "prior-period",
               "direction": "higher-is-better",
               "sparkline": true,
@@ -65,8 +75,11 @@
                 "hierarchy": "Time",
                 "level": "Month"
               },
-              "thresholds": {}
-            }
+              "thresholds": {},
+              "customFormat": "$c1",
+              "deltaSuffix": "vs last Thu"
+            },
+            "title": "Sales Today"
           },
           {
             "id": "k2",
@@ -93,8 +106,10 @@
                 "hierarchy": "Time",
                 "level": "Month"
               },
-              "thresholds": {}
-            }
+              "thresholds": {},
+              "deltaSuffix": "vs last Thu"
+            },
+            "title": "Units Sold"
           },
           {
             "id": "k3",
@@ -121,8 +136,10 @@
                 "hierarchy": "Time",
                 "level": "Month"
               },
-              "thresholds": {}
-            }
+              "thresholds": {},
+              "deltaSuffix": "vs last wk"
+            },
+            "title": "Baskets"
           },
           {
             "id": "k4",
@@ -149,8 +166,10 @@
                 "hierarchy": "Time",
                 "level": "Month"
               },
-              "thresholds": {}
-            }
+              "thresholds": {},
+              "deltaSuffix": "vs last Thu"
+            },
+            "title": "Customers"
           },
           {
             "id": "t1",
@@ -158,7 +177,7 @@
             "x": 0,
             "y": 2,
             "w": 8,
-            "h": 6,
+            "h": 4,
             "cube": {
               "connectionName": "unknown_foodmart",
               "catalog": "FoodMart",
@@ -194,7 +213,7 @@
               "renderer": "echarts-option",
               "options": {
                 "title": {
-                  "text": "Store Sales \u2014 monthly trend",
+                  "text": "Store Sales — this view",
                   "left": 12,
                   "top": 8,
                   "textStyle": {
@@ -202,6 +221,12 @@
                     "fontFamily": "Georgia, serif",
                     "fontWeight": "bold",
                     "fontSize": 15
+                  },
+                  "subtext": "Monthly trend",
+                  "subtextStyle": {
+                    "color": "#8a7f68",
+                    "fontSize": 11,
+                    "fontFamily": "-apple-system,'Segoe UI',sans-serif"
                   }
                 },
                 "color": [
@@ -260,7 +285,7 @@
             "x": 8,
             "y": 2,
             "w": 4,
-            "h": 6,
+            "h": 4,
             "cube": {
               "connectionName": "unknown_foodmart",
               "catalog": "FoodMart",
@@ -277,9 +302,6 @@
                   "cubeName": "Sales"
                 },
                 "measures": [
-                  {
-                    "name": "Store Sales"
-                  },
                   {
                     "name": "MoM Growth"
                   }
@@ -315,7 +337,8 @@
                   "mid": "#93876c"
                 }
               }
-            ]
+            ],
+            "title": "Movers"
           }
         ]
       }
@@ -737,5 +760,14 @@
       }
     }
   ],
-  "tags": []
+  "tags": [],
+  "header": {
+    "wordmarkAccent": "Mart",
+    "eyebrow": "Store Intelligence",
+    "contextPill": {
+      "label": "Store",
+      "value": "Portland #14"
+    },
+    "liveBadge": "Live · Saiku"
+  }
 }

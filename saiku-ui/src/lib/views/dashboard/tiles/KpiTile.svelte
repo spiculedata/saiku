@@ -435,6 +435,9 @@
       maximumFractionDigits: 1,
       signDisplay: "always",
     }).format(d.ratio);
+    if (kpi.deltaSuffix) {
+      return `${pct} ${kpi.deltaSuffix}`;
+    }
     if (kpi.comparison === "target") {
       return `${pct} ${i18n.t("dashboard.kpi.vsTarget", "vs target")}`;
     }

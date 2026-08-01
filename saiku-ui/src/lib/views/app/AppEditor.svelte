@@ -27,8 +27,11 @@
 
   let { appPath }: Props = $props();
 
-  /** View mode: edit (default) shows editing affordances, view is read-only. */
-  let mode = $state<"edit" | "view">("edit");
+  /** View mode. A saved app opens in read-only "view" (the clean published
+   *  experience — no add-tile / filters / tile toolbars); the header's Edit
+   *  button toggles into "edit". Authoring a brand-new app can still start in
+   *  edit via the builder entry point. */
+  let mode = $state<"edit" | "view">("view");
   let saving = $state<boolean>(false);
 
   // Kiosk: `?chrome=none` renders the app as a pure viewer — no edit/save

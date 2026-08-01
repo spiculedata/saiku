@@ -57,6 +57,8 @@
     defaultCollapsed?: boolean;
     /** Brand mark shown at the rail top: a logo URL or a short letter. */
     brand?: { logo?: string | null; label?: string } | null;
+    /** Pinned footer: a settings gear and/or a user-avatar disc (initials). */
+    footer?: { settings?: boolean; avatar?: string } | null;
   }
 
   let {
@@ -69,6 +71,7 @@
     narrow = false,
     defaultCollapsed = false,
     brand = null,
+    footer = null,
   }: Props = $props();
 
   let collapsed = $state(defaultCollapsed);
@@ -160,6 +163,21 @@
       </li>
     {/if}
   </ul>
+
+  {#if footer && !narrow}
+    <div class="saiku-app__rail-footer">
+      {#if footer.settings}
+        <button type="button" class="saiku-app__rail-gear" title="Settings" aria-label="Settings">
+          <Settings size={18} aria-hidden="true" />
+        </button>
+      {/if}
+      {#if footer.avatar}
+        <div class="saiku-app__rail-avatar" title={footer.avatar} aria-hidden="true">
+          {footer.avatar}
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   {#if !narrow}
     <button
@@ -272,6 +290,46 @@
     color: var(--fg);
     font: inherit;
     box-sizing: border-box;
+  }
+  /* Pinned footer: settings gear + avatar disc at the rail bottom. */
+  .saiku-app__rail-footer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0 0.25rem;
+    margin-top: 0.25rem;
+  }
+  .saiku-app__rail-gear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--saiku-app-rail-muted, #5f7a68);
+    cursor: pointer;
+  }
+  .saiku-app__rail-gear:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #e6eee8;
+  }
+  .saiku-app__rail-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background: var(--saiku-app-avatar-bg, #3f5a49);
+    color: #eaf3ec;
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
   }
   .saiku-app__rail-collapse {
     display: flex;

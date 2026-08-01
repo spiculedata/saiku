@@ -153,6 +153,10 @@ export interface KpiConfig {
   sparkline?: boolean;
   thresholds?: KpiThresholds;
   direction?: KpiDirection;
+  /** Override the comparison suffix on the delta callout (e.g. "vs last Thu",
+   *  "vs 4-wk avg"). When unset the built-in "vs prior" / "vs last year" /
+   *  "vs target" text is used. */
+  deltaSuffix?: string;
 }
 
 /* --- issue #920: table sparkline column ---------------------------------
