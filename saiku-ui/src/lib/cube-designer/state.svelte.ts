@@ -536,6 +536,19 @@ export class SchemaCanvasStore {
     kind: "zoom_in" | "zoom_out" | "fit_view" | "zoom_to_100" | "center_view";
     ts: number;
   } | null>(null);
+
+  /**
+   * Screen→flow coordinate converter, published by the in-flow JumpHandler
+   * (which can call `useSvelteFlow()`) so the pane drop handler — mounted
+   * OUTSIDE the SvelteFlow provider — can map a drop's viewport coords into
+   * flow space (saiku#1634 #3). Null until the flow mounts / in SSR + tests;
+   * consumers fall back to pane-relative pixels. Plain field (not `$state`):
+   * only read imperatively inside the drop event handler, never in a reactive
+   * position, so it needs no reactivity (and functions don't proxy cleanly).
+   */
+  screenToFlowPosition:
+    | ((screen: { x: number; y: number }) => { x: number; y: number })
+    | null = null;
   /**
    * Workbench working set — table IDs the user has pulled into the
    * Workbench view for focused side-by-side work. UI-only; not

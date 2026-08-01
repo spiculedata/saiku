@@ -19,6 +19,16 @@
 	let { store }: Props = $props();
 	const flow = useSvelteFlow();
 
+	// Publish the screen→flow converter for the (out-of-context) pane drop
+	// handler — saiku#1634 #3. Wrapped in an arrow so `flow`'s method keeps its
+	// binding; cleared on destroy so a stale reference can't outlive the flow.
+	$effect(() => {
+		store.screenToFlowPosition = (screen) => flow.screenToFlowPosition(screen);
+		return () => {
+			store.screenToFlowPosition = null;
+		};
+	});
+
 	// Approx node dims used to centre on the card's middle, not its
 	// top-left corner. The table cards have a fixed width in TableNode
 	// and a variable height depending on visible columns — using the

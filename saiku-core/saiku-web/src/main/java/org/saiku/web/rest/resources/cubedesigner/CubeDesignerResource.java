@@ -19,6 +19,9 @@ import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -39,6 +42,7 @@ import org.saiku.service.schema.generate.model.DbModel;
 import org.saiku.service.schema.generate.model.DbTable;
 import org.saiku.service.user.UserService;
 import org.saiku.web.rest.resources.schemagen.DatasourceJdbcConnectionProvider;
+import org.saiku.web.rest.util.MondrianLocation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,6 +53,7 @@ import org.slf4j.LoggerFactory;
  * <ul>
  *   <li>{@code GET  /introspect/{dataSourceId}} — the datasource's tables + columns (source sidebar)</li>
  *   <li>{@code GET  /sample/{dataSourceId}?table=&amp;schema=&amp;limit=} — preview rows for a table</li>
+ *   <li>{@code GET  /schema/{dataSourceId}} — the datasource's existing Mondrian schema XML (edit mode)</li>
  *   <li>{@code POST /convert} — upgrade a Mondrian-3 schema XML to Mondrian-4</li>
  * </ul>
  *
@@ -61,7 +66,6 @@ import org.slf4j.LoggerFactory;
 public class CubeDesignerResource {
 
     private static final Logger LOG = LoggerFactory.getLogger(CubeDesignerResource.class);
-    private static final String MONDRIAN_PREFIX = "jdbc:mondrian:";
     private static final int DEFAULT_SAMPLE_LIMIT = 25;
     private static final int MAX_SAMPLE_LIMIT = 500;
 
@@ -98,6 +102,8 @@ public class CubeDesignerResource {
     public record ConvertRequest(String mondrianXml, String dataSourceId) {}
 
     public record ConvertResult(String mondrianXml) {}
+
+    public record SchemaResult(String mondrianXml, String label) {}
 
     public record TurnRequest(JsonNode messages, String canvasSummary) {}
 
@@ -193,7 +199,63 @@ public class CubeDesignerResource {
         }
     }
 
-    // ── (3) convert (Mondrian 3 → 4) ──────────────────────────────────────────
+    // ── (3) schema (existing Mondrian XML for edit mode) ──────────────────────
+    /**
+     * saiku#1634: return the datasource's already-attached Mondrian schema XML so the designer can
+     * hydrate the canvas in edit mode (rather than opening blank). The catalog reference is parsed
+     * out of the Mondrian {@code location} ({@code Catalog=...}) and resolved three ways:
+     *
+     * <ul>
+     *   <li>{@code file:/path/Foo.xml} — read from the filesystem (the launcher's foodmart/bank use
+     *       this: {@code Catalog=file:.../FoodMart4.xml});</li>
+     *   <li>{@code res:Foo.xml} — read from the classpath (bundled schemas);</li>
+     *   <li>{@code mondrian://Name} or a bare repository path — read from the Saiku repository.</li>
+     * </ul>
+     *
+     * <p>404 when the datasource carries no catalog (plain JDBC / a fresh design target) or the
+     * referenced schema can't be found — the host treats that as "new cube, start blank". Admin-only;
+     * the {@code file:} path is already admin-authored via the datasource config, so this exposes no
+     * file an admin couldn't already reach.
+     */
+    @GET
+    @Path("/schema/{dataSourceId}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response schema(@PathParam("dataSourceId") String dataSourceId) {
+        Response forbidden = adminGuard();
+        if (forbidden != null) {
+            return forbidden;
+        }
+        SaikuDatasource ds = datasourceService.getDatasource(dataSourceId);
+        if (ds == null || ds.getProperties() == null) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("unknown datasource")
+                    .build();
+        }
+        String location = ds.getProperties().getProperty(ISaikuConnection.URL_KEY);
+        String catalog = MondrianLocation.parse(location).catalog();
+        if (catalog == null || catalog.isBlank()) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("no schema attached to this datasource")
+                    .build();
+        }
+        String xml;
+        try {
+            xml = resolveSchemaXml(catalog);
+        } catch (IOException e) {
+            LOG.warn("cube-designer schema read failed for '{}' catalog '{}'", dataSourceId, catalog, e);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity("could not read the schema")
+                    .build();
+        }
+        if (xml == null || xml.isBlank()) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("schema not found")
+                    .build();
+        }
+        return Response.ok(new SchemaResult(xml, ds.getName())).build();
+    }
+
+    // ── (4) convert (Mondrian 3 → 4) ──────────────────────────────────────────
     @POST
     @Path("/convert")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -226,7 +288,7 @@ public class CubeDesignerResource {
         }
     }
 
-    // ── (4) DimSum AI turn ─────────────────────────────────────────────────────
+    // ── (5) DimSum AI turn ─────────────────────────────────────────────────────
     @POST
     @Path("/turn")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -300,7 +362,9 @@ public class CubeDesignerResource {
         if (location == null || location.isEmpty()) {
             throw new SQLException("datasource '" + dataSourceId + "' has no location");
         }
-        String jdbcUrl = location.startsWith(MONDRIAN_PREFIX) ? extractJdbc(location) : location;
+        // Mondrian locations wrap the real JDBC URL as `Jdbc=...`; plain locations are the URL itself.
+        String parsedJdbc = MondrianLocation.parse(location).jdbc();
+        String jdbcUrl = parsedJdbc != null ? parsedJdbc.trim() : location;
         if (jdbcUrl == null || !jdbcUrl.startsWith("jdbc:")) {
             throw new SQLException("datasource '" + dataSourceId + "' has no resolvable JDBC URL");
         }
@@ -311,22 +375,41 @@ public class CubeDesignerResource {
     }
 
     /**
-     * Pull the inner {@code Jdbc=} URL out of a Mondrian location string
-     * ({@code jdbc:mondrian:Jdbc=jdbc:...;JdbcDrivers=...}). The inner value is a
-     * {@code jdbc:} URL that may contain {@code =} but, by Mondrian convention, no {@code ;}.
+     * Resolve a Mondrian {@code Catalog=} reference to its schema XML. Handles {@code file:} paths
+     * (filesystem), {@code res:} (classpath), and {@code mondrian://Name} / bare repository paths
+     * (Saiku repository). Returns null when the referenced schema can't be found.
      */
-    private static String extractJdbc(String location) {
-        String body = location.substring(MONDRIAN_PREFIX.length());
-        String needle = "Jdbc=";
-        int idx = body.indexOf(needle);
-        while (idx > 0 && body.charAt(idx - 1) != ';') {
-            idx = body.indexOf(needle, idx + 1);
+    private String resolveSchemaXml(String catalog) throws IOException {
+        String c = catalog.trim();
+        if (c.startsWith("file:")) {
+            return Files.readString(java.nio.file.Path.of(stripFileScheme(c)), StandardCharsets.UTF_8);
         }
-        if (idx < 0) {
-            return null;
+        if (c.startsWith("res:")) {
+            String resource = c.substring("res:".length());
+            try (InputStream in = getClass().getClassLoader().getResourceAsStream(resource)) {
+                return in == null ? null : new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            }
         }
-        int start = idx + needle.length();
-        int end = body.indexOf(';', start);
-        return (end < 0 ? body.substring(start) : body.substring(start, end)).trim();
+        // Repository-stored schema. addSchema writes it at `/datasources/<name>.xml`, so try the
+        // reference verbatim first, then the conventional path for a `mondrian://Name` catalog.
+        String name = c.startsWith("mondrian://") ? c.substring("mondrian://".length()) : c;
+        String data = datasourceService.getInternalFileData(name);
+        if (data == null) {
+            data = datasourceService.getInternalFileData("/datasources/" + name + ".xml");
+        }
+        return data;
+    }
+
+    /**
+     * Strip the {@code file:} scheme (and any {@code //authority}) off a file URL, leaving the path.
+     * Handles {@code file:/p}, {@code file:///p}, and {@code file://host/p}.
+     */
+    private static String stripFileScheme(String fileUrl) {
+        String path = fileUrl.substring("file:".length());
+        if (path.startsWith("//")) {
+            int slash = path.indexOf('/', 2);
+            path = slash >= 0 ? path.substring(slash) : path.substring(2);
+        }
+        return path;
     }
 }
