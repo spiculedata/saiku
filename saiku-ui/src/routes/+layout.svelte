@@ -136,7 +136,7 @@
         {#if page.url.pathname.startsWith(`${base}/admin`)}
           <a class={buttonVariants({ variant: "outline", size: "sm" })} href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
         {/if}
-        <Button variant="outline" size="sm" onclick={() => session.logout()}>
+        <Button variant="outline" size="sm" data-testid="app-signout" onclick={() => session.logout()}>
           <LogOut size={14} /><span>{i18n.t("topbar.signOut")}</span>
         </Button>
       {/if}
