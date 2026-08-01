@@ -103,7 +103,7 @@
     color: var(--saiku-app-primary, var(--saiku-app-fg, var(--fg)));
   }
   .saiku-app__name-accent {
-    color: var(--saiku-app-accent, #c85a3a);
+    color: var(--saiku-app-accent-2, var(--saiku-app-accent, #c85a3a));
   }
   .saiku-app__divider {
     width: 1px;

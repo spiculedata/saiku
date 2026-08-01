@@ -24,9 +24,11 @@
     themeVarsStyle,
     scopedCustomCss,
     appScopeId,
+    rootSelectorFor,
     isRailNav,
     resolveActivePageId,
   } from "$lib/views/app/appShell";
+  import { appSkinCss } from "$lib/views/app/appSkin";
   import AppHeader from "$lib/views/app/AppHeader.svelte";
   import AppNavRail from "$lib/views/app/AppNavRail.svelte";
   import AppTopNav from "$lib/views/app/AppTopNav.svelte";
@@ -83,14 +85,23 @@
   // $state) keeps this clear of the effect re-entrancy trap.
   // ------------------------------------------------------------------
   $effect(() => {
-    const css = scopedCustomCss(app);
     const host = rootEl;
     if (!host) return;
+    // Built-in token-driven skin FIRST (lower precedence)…
+    const skinEl = document.createElement("style");
+    skinEl.setAttribute("data-saiku-app-skin", appScopeId(app));
+    skinEl.textContent = appSkinCss(rootSelectorFor(app));
+    host.appendChild(skinEl);
+    // …then the author's advanced customCss (higher precedence, escape hatch).
+    const css = scopedCustomCss(app);
     const styleEl = document.createElement("style");
     styleEl.setAttribute("data-saiku-app-css", appScopeId(app));
     styleEl.textContent = css;
     host.appendChild(styleEl);
-    return () => styleEl.remove();
+    return () => {
+      skinEl.remove();
+      styleEl.remove();
+    };
   });
 
   function handleSelect(id: string): void {

@@ -183,7 +183,7 @@
     width: 30px;
     height: 30px;
     border-radius: 8px;
-    background: var(--saiku-app-accent, #c85a3a);
+    background: var(--saiku-app-accent-2, var(--saiku-app-accent, #c85a3a));
     color: #fff;
   }
   .assistant__title {
@@ -371,7 +371,7 @@
     flex-shrink: 0;
     border: 0;
     border-radius: 9px;
-    background: var(--saiku-app-accent, #c85a3a);
+    background: var(--saiku-app-accent-2, var(--saiku-app-accent, #c85a3a));
     color: #fff;
     cursor: pointer;
   }

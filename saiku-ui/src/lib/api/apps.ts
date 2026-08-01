@@ -77,13 +77,68 @@ export interface AppAssistantSlot {
   cube?: { connectionName: string; catalog: string; schema: string; cubeName: string };
 }
 
+/**
+ * Structured theme tokens — the design primitives every App Builder surface
+ * renders from, so a branded look is achievable with pickers + presets and no
+ * hand-written CSS (customCss stays only as an advanced escape hatch).
+ *
+ * All token fields are optional; a named {@link preset} and the built-in
+ * defaults (see appTheme.ts) fill any gaps. The legacy `primary/bg/font` fields
+ * are retained for back-compat with pre-token apps and are mapped onto the new
+ * tokens during serialisation.
+ */
 export interface AppTheme {
   mode: "light" | "dark" | "auto";
-  primary?: string;
-  accent?: string;
-  bg?: string;
+  /** Named preset key (see appThemePresets.ts) — a starting token set the
+   *  individual token fields below then override. */
+  preset?: string;
+
+  /* --- colour tokens --- */
+  /** Page background (the "ground"). */
+  ground?: string;
+  /** Card / tile / panel background. */
+  surface?: string;
+  /** Primary foreground / text. */
   fg?: string;
+  /** Muted secondary text (labels, captions). */
+  muted?: string;
+  /** Brand accent (active nav, links, primary emphasis). */
+  accent?: string;
+  /** Secondary brand mark colour (logo/wordmark highlight, brand squares) —
+   *  the second colour a two-accent identity uses. Defaults to {@link accent}. */
+  accent2?: string;
+  /** Soft accent tint (badges, active-item backgrounds). */
+  accentSoft?: string;
+  /** Strong accent (on-tint text). */
+  accentStrong?: string;
+  /** Negative / decline colour. */
+  danger?: string;
+  /** Positive / growth colour. */
+  positive?: string;
+  /** Card border colour. */
+  cardBorder?: string;
+  /** Rail (side-nav) background + its muted icon colour. */
+  railBg?: string;
+  railFg?: string;
+
+  /* --- type tokens (font-allowlist keys, see appTheme.ts) --- */
+  /** Display / heading font key. */
+  fontDisplay?: string;
+  /** Body / UI font key. */
+  fontBody?: string;
+
+  /* --- form tokens (named scales, mapped to px/values in appTheme.ts) --- */
+  radius?: "none" | "sm" | "md" | "lg" | "xl";
+  shadow?: "none" | "sm" | "md" | "lg";
+  density?: "compact" | "cozy" | "comfortable";
+
+  /* --- legacy (pre-token apps) --- */
+  primary?: string;
+  bg?: string;
   font?: string;
+
+  /** Advanced escape hatch — sanitised + scoped author CSS for the long tail
+   *  the tokens don't cover. Hidden by default in the analyst UI. */
   customCss?: string;
 }
 
