@@ -18,8 +18,9 @@
   import { Button } from "$lib/components/ui";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
-  import { Save, Pencil, Eye } from "lucide-svelte";
+  import { Save, Pencil, Eye, Palette } from "lucide-svelte";
   import AppShell from "$lib/views/app/AppShell.svelte";
+  import BrandThemePanel from "$lib/views/app/BrandThemePanel.svelte";
 
   interface Props {
     appPath: string;
@@ -77,7 +78,11 @@
 
   function toggleMode(): void {
     mode = mode === "edit" ? "view" : "edit";
+    if (mode !== "edit") themeOpen = false;
   }
+
+  /** Brand & Theme inspector open state (edit mode only). */
+  let themeOpen = $state(false);
 </script>
 
 {#if appDoc.loading}
@@ -101,6 +106,14 @@
           {/if}
         </Button>
         {#if mode === "edit"}
+          <Button
+            variant={themeOpen ? "default" : "outline"}
+            size="sm"
+            onclick={() => (themeOpen = !themeOpen)}
+            title="Brand & Theme"
+          >
+            <Palette size={14} /><span>Theme</span>
+          </Button>
           <Button size="sm" onclick={() => void handleSave()} disabled={saving}>
             <Save size={14} /><span>{saving ? "Saving…" : "Save"}</span>
           </Button>
@@ -108,6 +121,11 @@
       {/if}
     {/snippet}
   </AppShell>
+  {#if themeOpen && mode === "edit"}
+    <div class="app-editor__inspector">
+      <BrandThemePanel onClose={() => (themeOpen = false)} />
+    </div>
+  {/if}
 {:else}
   <div class="app-editor__state">No app loaded.</div>
 {/if}
@@ -120,5 +138,16 @@
     justify-content: center;
     color: var(--fg-muted);
     font-size: var(--fs-md);
+  }
+  /* Brand & Theme inspector — a right-edge overlay so it floats above the app
+     (including the assistant column) while editing, without reflowing it. */
+  .app-editor__inspector {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    display: flex;
+    box-shadow: -8px 0 28px rgba(0, 0, 0, 0.18);
   }
 </style>

@@ -204,6 +204,26 @@ class AppDocStore {
     this.current = { ...this.current, pages };
   }
 
+  /** Apply a named theme preset: set {@code preset} and drop explicit token
+   *  overrides so the preset shows cleanly. Preserves {@code mode} + the
+   *  advanced {@code customCss} escape hatch. */
+  applyPreset(key: string): void {
+    if (!this.current) return;
+    this.captureForUndo();
+    const { customCss, mode } = this.current.theme;
+    this.current = {
+      ...this.current,
+      theme: { mode, preset: key, ...(customCss ? { customCss } : {}) },
+    };
+  }
+
+  /** Patch the app-level header config (Brand & Theme → Header section). */
+  updateHeader(patch: Partial<NonNullable<SaikuApp["header"]>>): void {
+    if (!this.current) return;
+    this.captureForUndo();
+    this.current = { ...this.current, header: { ...(this.current.header ?? {}), ...patch } };
+  }
+
   /** Rename the page with {@code id}. No-op when the id isn't present. */
   renamePage(id: string, title: string): void {
     if (!this.current) return;
