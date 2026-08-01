@@ -35,7 +35,10 @@ describe("themeVarsStyle", () => {
   test("only valid theme colours reach the inline style", () => {
     const style = themeVarsStyle(app({ theme: { mode: "light", primary: "#ff0000", accent: "nope" } }));
     expect(style).toContain("--saiku-app-primary:#ff0000;");
-    expect(style).not.toContain("--saiku-app-accent");
+    // An invalid accent value never lands as the exact --saiku-app-accent var
+    // (the trailing colon distinguishes it from --saiku-app-accent-soft/-2).
+    expect(style).not.toContain("--saiku-app-accent:nope");
+    expect(style).not.toContain("--saiku-app-accent:;");
     // font always resolves (allowlist default)
     expect(style).toContain("--saiku-app-font:");
   });

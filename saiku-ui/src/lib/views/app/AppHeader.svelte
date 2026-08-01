@@ -17,9 +17,11 @@
     app: SaikuApp;
     /** Right-aligned controls (share / present / theme). Wired by later tasks. */
     controls?: Snippet;
+    /** Edit-mode selection: double-click the wordmark to edit the header. */
+    onSelect?: () => void;
   }
 
-  let { app, controls }: Props = $props();
+  let { app, controls, onSelect }: Props = $props();
 
   const header = $derived(app.header ?? {});
 
@@ -36,7 +38,13 @@
 </script>
 
 <header class="saiku-app__header">
-  <div class="saiku-app__brand">
+  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+  <div
+    class="saiku-app__brand"
+    class:saiku-app__brand--editable={onSelect}
+    title={onSelect ? "Double-click to edit header" : undefined}
+    ondblclick={onSelect}
+  >
     {#if app.logo}
       <img class="saiku-app__logo" src={app.logo} alt={app.name} />
     {/if}
@@ -87,6 +95,14 @@
     align-items: center;
     gap: 0.625rem;
     min-width: 0;
+  }
+  .saiku-app__brand--editable {
+    cursor: pointer;
+    border-radius: 6px;
+  }
+  .saiku-app__brand--editable:hover {
+    outline: 1px dashed var(--saiku-app-accent, #888);
+    outline-offset: 3px;
   }
   .saiku-app__logo {
     height: 1.75rem;

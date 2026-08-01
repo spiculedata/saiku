@@ -222,4 +222,60 @@ describe("appDoc store", () => {
       expect(appDoc.savedPath).toBe("homes/admin/x.saikuapp");
     });
   });
+
+  describe("theme / chrome mutators (graphical authoring)", () => {
+    beforeEach(() => {
+      appDoc.newApp("Brandable");
+    });
+
+    test("setTheme merges immutably", () => {
+      const before = appDoc.current!.theme;
+      appDoc.setTheme({ accent: "#123456" });
+      expect(appDoc.current!.theme.accent).toBe("#123456");
+      expect(appDoc.current!.theme).not.toBe(before); // new object
+    });
+
+    test("applyPreset sets preset and drops explicit token overrides", () => {
+      appDoc.setTheme({ accent: "#123456", ground: "#000000" });
+      appDoc.setTheme({ customCss: ".x{}" });
+      appDoc.applyPreset("editorial");
+      expect(appDoc.current!.theme.preset).toBe("editorial");
+      expect(appDoc.current!.theme.accent).toBeUndefined(); // override cleared
+      expect(appDoc.current!.theme.ground).toBeUndefined();
+      expect(appDoc.current!.theme.customCss).toBe(".x{}"); // escape hatch preserved
+    });
+
+    test("updateNav / updateAssistant / updateHeader merge immutably", () => {
+      appDoc.updateNav({ railCollapsed: true, footer: { settings: true, avatar: "RM" } });
+      expect(appDoc.current!.nav.railCollapsed).toBe(true);
+      expect(appDoc.current!.nav.footer?.avatar).toBe("RM");
+
+      appDoc.updateAssistant({ enabled: true, persona: "Analyst" });
+      expect(appDoc.current!.assistantSlot.enabled).toBe(true);
+      expect(appDoc.current!.assistantSlot.persona).toBe("Analyst");
+
+      appDoc.updateHeader({ wordmarkAccent: "Mart", liveBadge: "Live" });
+      expect(appDoc.current!.header?.wordmarkAccent).toBe("Mart");
+      expect(appDoc.current!.header?.liveBadge).toBe("Live");
+    });
+
+    test("rename / setLogo update the envelope", () => {
+      appDoc.rename("Renamed");
+      expect(appDoc.current!.name).toBe("Renamed");
+      appDoc.setLogo("data:image/png;base64,AAAA");
+      expect(appDoc.current!.logo).toBe("data:image/png;base64,AAAA");
+      appDoc.setLogo(null);
+      expect(appDoc.current!.logo).toBeNull();
+    });
+
+    test("updatePageMeta patches a page by id; unknown id is a no-op", () => {
+      const id = appDoc.current!.pages[0].id;
+      appDoc.updatePageMeta(id, { heading: "Portland #14 · Today", icon: "home" });
+      expect(appDoc.current!.pages[0].heading).toBe("Portland #14 · Today");
+      expect(appDoc.current!.pages[0].icon).toBe("home");
+      const snapshot = appDoc.current;
+      appDoc.updatePageMeta("nope", { heading: "x" });
+      expect(appDoc.current).toBe(snapshot); // no-op → same reference
+    });
+  });
 });

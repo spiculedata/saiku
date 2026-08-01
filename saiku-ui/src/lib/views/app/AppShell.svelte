@@ -53,9 +53,12 @@
     editable?: boolean;
     /** Header controls (share / present / theme) — forwarded to AppHeader. */
     controls?: Snippet;
+    /** Selection model (edit mode): a double-click on a chrome element opens
+     *  the App Inspector on the matching section. */
+    onEditChrome?: (section: "header" | "nav" | "assistant") => void;
   }
 
-  let { app, editable = false, controls }: Props = $props();
+  let { app, editable = false, controls, onEditChrome }: Props = $props();
 
   let rootEl = $state<HTMLDivElement | null>(null);
 
@@ -122,7 +125,7 @@
   data-saiku-app={appScopeId(app)}
   style={inlineThemeVars}
 >
-  <AppHeader {app} {controls} />
+  <AppHeader {app} {controls} onSelect={onEditChrome ? () => onEditChrome("header") : undefined} />
 
   {#if !rail}
     <AppTopNav

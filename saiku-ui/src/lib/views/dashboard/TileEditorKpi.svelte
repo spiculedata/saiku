@@ -72,7 +72,8 @@
       placeholder="e.g. $2 / 2% / 3"
     />
     <span class="hint">
-      $N / €N / £N for currency, N% for percent, plain N for fractional digits.
+      $N / €N / £N for currency, $cN for compact currency ($48.2K), N% for
+      percent, plain N for fractional digits.
     </span>
   </label>
 {/if}
@@ -105,6 +106,13 @@
       <option value="lower-is-better">Lower is better</option>
     </select>
   </label>
+  {#if kpiConfig.comparison !== "none"}
+    <label class="field inline">
+      <span>Delta label</span>
+      <input type="text" bind:value={kpiConfig.deltaSuffix} placeholder="vs prior" />
+      <span class="hint">Overrides the callout suffix (e.g. “vs last Thu”, “vs 4-wk avg”).</span>
+    </label>
+  {/if}
 </fieldset>
 
 <label class="checkbox">

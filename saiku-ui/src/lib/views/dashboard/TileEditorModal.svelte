@@ -263,6 +263,10 @@
         : "",
     ),
   );
+  // App Builder (saiku#1441): echarts-option display toggles — a live
+  // Trend/Breakdown segmented control + an emphasised last data point.
+  let trendBreakdown = $state<boolean>(untrack(() => !!tile.custom?.trendBreakdown));
+  let emphasizeLast = $state<boolean>(untrack(() => !!tile.custom?.emphasizeLast));
   // Live validation feedback for the option editor — parse + safe-subset check.
   let customOptionsValidation = $derived.by(() => {
     const txt = customOptionsJson.trim();
@@ -774,7 +778,7 @@
         }
         options = v.value;
       }
-      patch.custom = { renderer: tile.custom.renderer, options };
+      patch.custom = { renderer: tile.custom.renderer, options, trendBreakdown, emphasizeLast };
     }
 
     // App Builder Phase 2 (saiku#1441): persist the graph column mapping.
@@ -1178,6 +1182,14 @@
             Declarative ECharts option only — functions and remote URLs are rejected.
             Categories + series data come from the tile's query below.
           </span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" bind:checked={trendBreakdown} />
+          <span>Trend / Breakdown toggle (swap line ↔ bars over the same data)</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" bind:checked={emphasizeLast} />
+          <span>Emphasise last point (accent “current period” marker)</span>
         </label>
       {/if}
 

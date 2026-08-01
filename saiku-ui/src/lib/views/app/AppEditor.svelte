@@ -20,7 +20,7 @@
   import { i18n } from "$lib/stores/i18n.svelte";
   import { Save, Pencil, Eye, Palette } from "lucide-svelte";
   import AppShell from "$lib/views/app/AppShell.svelte";
-  import BrandThemePanel from "$lib/views/app/BrandThemePanel.svelte";
+  import AppInspector, { type InspectorSection } from "$lib/views/app/inspector/AppInspector.svelte";
 
   interface Props {
     appPath: string;
@@ -78,11 +78,19 @@
 
   function toggleMode(): void {
     mode = mode === "edit" ? "view" : "edit";
-    if (mode !== "edit") themeOpen = false;
+    if (mode !== "edit") inspectorOpen = false;
   }
 
-  /** Brand & Theme inspector open state (edit mode only). */
-  let themeOpen = $state(false);
+  /** App Inspector open state + active section (edit mode only). */
+  let inspectorOpen = $state(false);
+  let inspectorSection = $state<InspectorSection>("theme");
+
+  /** Selection model: a click on a live chrome element (in edit mode) opens the
+   *  inspector on the matching section. */
+  function openInspector(sectionId: InspectorSection): void {
+    inspectorSection = sectionId;
+    inspectorOpen = true;
+  }
 </script>
 
 {#if appDoc.loading}
@@ -90,7 +98,11 @@
 {:else if appDoc.error}
   <div class="app-editor__state text-danger">{appDoc.error}</div>
 {:else if appDoc.current}
-  <AppShell app={appDoc.current} editable={mode === "edit"}>
+  <AppShell
+    app={appDoc.current}
+    editable={mode === "edit"}
+    onEditChrome={mode === "edit" ? openInspector : undefined}
+  >
     {#snippet controls()}
       {#if !kiosk}
         <Button
@@ -107,12 +119,12 @@
         </Button>
         {#if mode === "edit"}
           <Button
-            variant={themeOpen ? "default" : "outline"}
+            variant={inspectorOpen ? "default" : "outline"}
             size="sm"
-            onclick={() => (themeOpen = !themeOpen)}
-            title="Brand & Theme"
+            onclick={() => (inspectorOpen = !inspectorOpen)}
+            title="Design — brand, header, nav, assistant, pages"
           >
-            <Palette size={14} /><span>Theme</span>
+            <Palette size={14} /><span>Design</span>
           </Button>
           <Button size="sm" onclick={() => void handleSave()} disabled={saving}>
             <Save size={14} /><span>{saving ? "Saving…" : "Save"}</span>
@@ -121,9 +133,9 @@
       {/if}
     {/snippet}
   </AppShell>
-  {#if themeOpen && mode === "edit"}
+  {#if inspectorOpen && mode === "edit"}
     <div class="app-editor__inspector">
-      <BrandThemePanel onClose={() => (themeOpen = false)} />
+      <AppInspector initialSection={inspectorSection} onClose={() => (inspectorOpen = false)} />
     </div>
   {/if}
 {:else}
