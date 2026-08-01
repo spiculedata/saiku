@@ -7,11 +7,11 @@
   <parent>
     <groupId>org.saikuanalytics</groupId>
     <artifactId>saiku</artifactId>
-    <version>4.6.4</version>
+    <version>4.7.0</version>
   </parent>
 
   <artifactId>saiku-proptest</artifactId>
-  <version>4.6.4</version>
+  <version>4.7.0</version>
   <packaging>jar</packaging>
   <name>saiku-proptest</name>
   <description>
@@ -31,7 +31,7 @@
       <dependency>
         <groupId>org.saikuanalytics</groupId>
         <artifactId>saiku-bom</artifactId>
-        <version>4.6.4</version>
+        <version>4.7.0</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>

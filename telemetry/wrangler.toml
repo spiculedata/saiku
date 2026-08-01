@@ -6,7 +6,7 @@ workers_dev = true
 # Latest released version, returned to instances as the update-check answer.
 # Bump this one line on each release (or wire it to the GitHub releases API later).
 [vars]
-LATEST_VERSION = "4.6.4"
+LATEST_VERSION = "4.7.0"
 
 # D1 (serverless SQLite). Fill database_id after `npm run db:create`.
 [[d1_databases]]

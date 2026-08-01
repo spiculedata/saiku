@@ -3,6 +3,32 @@
 All notable changes to Saiku are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 4.7.0 — 2026-08-01
+
+Feature release.
+
+### Added
+- **Visual Cube Designer in the admin panel** — the interactive schema/cube
+  designer is now open source and built into Saiku's admin UI
+  (`Admin › Datasources › Design cube`). Profile a datasource, lay tables and
+  joins out on a canvas, build dimensions/hierarchies/levels and facts/measures,
+  and emit Mondrian 4 schemas directly — no hand-written XML. It replaces the
+  old text-based schema generator. Backed by new REST endpoints under
+  `/rest/saiku/admin/cube-designer/*` (introspect, sample, convert) and a
+  faithful Mondrian 3→4 converter (`RolapSchemaUpgrader`).
+- **AI-assisted schema authoring (optional)** — with an `ANTHROPIC_API_KEY`
+  configured (`saiku.ai.ask.*`), the designer's DimSum assistant can propose
+  dimensions, hierarchies and measures conversationally against the profiled
+  warehouse. Fails closed (503) when no key is set.
+- **App Builder graphical authoring** — theme-token foundation, brand & theme
+  inspector, tile inspector with selection + field editing, and ECharts tile
+  Trend/Breakdown toggles for building dashboard apps.
+
+### Changed
+- Chart & dashboard polish: readable value-axis tick density, legend placement
+  below the title band, grid spacing for rotated category labels, and a
+  decluttered toolbar with an overflow menu.
+
 ## 4.6.4 — 2026-07-30
 
 Security patch release.
