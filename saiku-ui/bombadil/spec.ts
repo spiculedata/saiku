@@ -107,3 +107,14 @@ const clickTargets = extract((state): Array<{ name: string; x: number; y: number
 export const safeClicks = actions((): Action[] =>
   clickTargets.current.map((t) => ({ Click: { name: t.name, point: { x: t.x, y: t.y } } })),
 );
+
+/**
+ * Keep-alive fallback. On the very first (pre-hydration) state the SPA has no
+ * clickable elements yet, so every action generator returns empty and Bombadil
+ * bails with "no actions available" — an intermittent flake depending on
+ * hydration timing. Emitting a `Wait` *only when there's nothing to click*
+ * bridges the hydration gap without slowing the run once the app is interactive.
+ */
+export const keepAlive = actions((): Action[] =>
+  clickTargets.current.length === 0 ? ["Wait"] : [],
+);

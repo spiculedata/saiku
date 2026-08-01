@@ -28,13 +28,13 @@ Security session auth, local launcher target).
   login form and keep a session, so it starts with a `JSESSIONID` cookie
   injected. `run.sh` mints one automatically by logging in to the target with
   `admin`/`admin` — nothing to do for the default local setup.
-- **A compatible browser (auto-managed).** bombadil 0.6.1 speaks an older Chrome
-  DevTools Protocol, so it can't drive a bleeding-edge system Chrome (Chrome 150+
-  floods `WS Invalid message` and finds "no actions"). `run.sh` therefore
-  downloads a pinned **Chrome for Testing** (131, verified CDP-clean) into
-  `.cache-chrome/` on first run and drives it via bombadil's `test-external`
-  mode. Override with `CHROME_BIN=/path/to/'Google Chrome for Testing'` or
-  `CHROME_VERSION=<ver>`. First run downloads ~150 MB (cached thereafter).
+- **A browser (auto-managed).** `run.sh` uses bombadil's managed `browser test`
+  mode, which drives the system Chrome — nothing to install. bombadil 0.6.1
+  emits noisy `chromiumoxide WS Invalid message` warnings against a newer Chrome,
+  but they're **non-fatal**; exploration works fine (verified on Chrome 150).
+  `--instrument-javascript inline` keeps the SPA hydrating (it avoids intercepting
+  the app's external JS bundles). If a future Chrome update ever makes the CDP
+  mismatch *fatal*, see issue #1639 for the pinned Chrome-for-Testing fallback.
 
 ## Run it
 
