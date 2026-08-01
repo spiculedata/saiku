@@ -102,7 +102,10 @@
   }
 </script>
 
-<div class="flex h-svh flex-col overflow-hidden">
+<!-- flex-1 + min-w/h-0 so the designer fills the layout's <main> (a flex row)
+     across the full width AND height, instead of h-svh (which sized to the
+     viewport and left a right-hand gap / overran the topbar). -->
+<div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
   <header class="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
     <h1 class="mr-2 text-sm font-semibold text-foreground">
       Cube Designer <span class="text-muted-foreground">· {dataSourceId}</span>
