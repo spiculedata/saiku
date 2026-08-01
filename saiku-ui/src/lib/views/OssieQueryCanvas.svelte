@@ -1684,16 +1684,16 @@
     align-items: center;
     gap: 6px;
     padding: 6px 10px;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg-muted);
+    border-bottom: 1px solid hsl(var(--border));
+    background: hsl(var(--bg-muted));
     flex-wrap: wrap;
   }
   .toolbar__dropdown {
     position: absolute;
     top: calc(100% + 6px);
     left: 0;
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
     padding: 4px;
@@ -1716,12 +1716,12 @@
     background: transparent;
     border: 0;
     border-radius: 4px;
-    color: var(--fg);
+    color: hsl(var(--fg));
     font: inherit;
     cursor: pointer;
   }
   .toolbar__item:hover {
-    background: var(--bg-hover);
+    background: hsl(var(--bg-hover));
   }
   .toolbar__item:disabled {
     opacity: 0.5;
@@ -1730,7 +1730,7 @@
   .toolbar__sep {
     width: 1px;
     height: 22px;
-    background: var(--border);
+    background: hsl(var(--border));
     margin: 0 4px;
   }
   .tb-btn {
@@ -1741,14 +1741,14 @@
     background: transparent;
     border: 1px solid transparent;
     border-radius: 5px;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     cursor: pointer;
     font: inherit;
     transition: background var(--duration-fast), color var(--duration-fast);
   }
   .tb-btn:hover {
-    background: var(--bg-hover);
-    color: var(--fg);
+    background: hsl(var(--bg-hover));
+    color: hsl(var(--fg));
   }
   .tb-btn:active {
     transform: translateY(1px);
@@ -1758,20 +1758,20 @@
     cursor: not-allowed;
   }
   .tb-btn--primary {
-    background: var(--accent);
-    color: var(--bg);
-    border-color: var(--accent);
+    background: hsl(var(--primary));
+    color: hsl(var(--bg));
+    border-color: hsl(var(--primary));
   }
   .tb-btn--primary:hover {
     filter: brightness(1.1);
-    background: var(--accent);
-    color: var(--bg);
+    background: hsl(var(--primary));
+    color: hsl(var(--bg));
   }
   .tb-btn--disabled-shape,
   .tb-btn--disabled-shape:hover {
-    background: var(--bg-muted);
-    color: var(--fg-muted);
-    border-color: var(--border);
+    background: hsl(var(--bg-muted));
+    color: hsl(var(--fg-muted));
+    border-color: hsl(var(--border));
     filter: none;
     cursor: not-allowed;
   }
@@ -1780,12 +1780,12 @@
     font-size: var(--fs-sm);
   }
   .ossie-canvas__runtime {
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
     font-size: var(--fs-xs);
     margin-left: auto;
   }
   .ossie-canvas__saved-name {
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-xs);
     font-family: monospace;
   }
@@ -1794,21 +1794,21 @@
     align-items: center;
     gap: 6px;
     padding: 0 8px;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 5px;
     background: transparent;
     height: 32px;
   }
   .ossie-canvas__limit-label {
     font-size: var(--fs-xs);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     text-transform: uppercase;
     letter-spacing: 0.06em;
   }
   .ossie-canvas__limit-input {
     background: transparent;
     border: none;
-    color: var(--fg);
+    color: hsl(var(--fg));
     font-size: var(--fs-sm);
     width: 60px;
     padding: 0;
@@ -1834,17 +1834,17 @@
     text-align: left;
   }
   .ossie-result__sort-btn:hover {
-    color: var(--fg);
+    color: hsl(var(--fg));
   }
   .ossie-result__sort-btn--active {
-    color: var(--accent);
+    color: hsl(var(--primary));
   }
   .ossie-canvas__charttype {
     padding: 6px 8px;
     background: transparent;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 5px;
-    color: var(--fg);
+    color: hsl(var(--fg));
     font-size: var(--fs-sm);
     height: 32px;
   }
@@ -1852,8 +1852,8 @@
     position: fixed;
     z-index: 1000;
     min-width: 220px;
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
     padding: 4px;
@@ -1861,7 +1861,7 @@
   .ossie-ctx-menu__header {
     padding: 6px 12px;
     font-size: var(--fs-xs);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-weight: var(--weight-semibold);
     max-width: 260px;
     overflow: hidden;
@@ -1878,21 +1878,21 @@
     background: transparent;
     border: 0;
     border-radius: 4px;
-    color: var(--fg);
+    color: hsl(var(--fg));
     font: inherit;
     cursor: pointer;
   }
   .ossie-ctx-menu__item:hover {
-    background: var(--bg-hover);
+    background: hsl(var(--bg-hover));
   }
   .ossie-ctx-menu__item em {
     font-style: normal;
     font-weight: var(--weight-semibold);
-    color: var(--accent);
+    color: hsl(var(--primary));
   }
   .ossie-ctx-menu__sep {
     height: 1px;
-    background: var(--border);
+    background: hsl(var(--border));
     margin: 4px 0;
   }
   .ossie-ctx-menu__header--sub {
@@ -1902,23 +1902,23 @@
     padding-bottom: 2px;
   }
   .ossie-ctx-menu__item--active {
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-    color: var(--accent);
+    background: color-mix(in srgb, hsl(var(--primary)) 12%, transparent);
+    color: hsl(var(--primary));
   }
   .ossie-canvas__sql {
-    background: var(--bg-hover);
+    background: hsl(var(--bg-hover));
     padding: 12px;
     border-radius: 4px;
     font-family: monospace;
     font-size: var(--fs-sm);
-    color: var(--fg);
+    color: hsl(var(--fg));
     white-space: pre-wrap;
     max-height: 60vh;
     overflow: auto;
     margin: 0;
   }
   .ossie-chip__and {
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
     font-size: var(--fs-xs);
     padding: 0 2px;
   }
@@ -1929,16 +1929,16 @@
   }
   .ossie-chip__add-value {
     background: transparent;
-    border: 1px dashed var(--border);
-    color: var(--fg-subtle);
+    border: 1px dashed hsl(var(--border));
+    color: hsl(var(--fg-subtle));
     border-radius: 3px;
     padding: 1px 6px;
     font-size: var(--fs-xs);
     cursor: pointer;
   }
   .ossie-chip__add-value:hover {
-    color: var(--fg);
-    border-color: var(--border-strong);
+    color: hsl(var(--fg));
+    border-color: hsl(var(--border-strong));
   }
   .ossie-canvas__shelves {
     display: flex;
@@ -1953,8 +1953,8 @@
     gap: 6px;
     min-height: 42px;
     padding: 8px 12px;
-    background: var(--bg-subtle, var(--bg-hover));
-    border: 1px dashed var(--border-strong);
+    background: var(--bg-subtle, hsl(var(--bg-hover)));
+    border: 1px dashed hsl(var(--border-strong));
     border-radius: 4px;
     transition:
       background var(--duration-fast),
@@ -1965,16 +1965,16 @@
      and a 2px accent shadow ring so hovered shelves stand out at a glance. */
   .ossie-shelf--dragover {
     border-style: solid;
-    border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 12%, var(--bg-subtle, var(--bg-hover)));
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+    border-color: hsl(var(--primary));
+    background: color-mix(in srgb, hsl(var(--primary)) 12%, var(--bg-subtle, hsl(var(--bg-hover))));
+    box-shadow: 0 0 0 2px color-mix(in srgb, hsl(var(--primary)) 30%, transparent);
   }
   .ossie-shelf__label {
     font-size: var(--fs-xs);
     font-weight: var(--weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     margin-right: 8px;
     min-width: 60px;
   }
@@ -1983,13 +1983,13 @@
     align-items: center;
     gap: 4px;
     padding: 4px 8px;
-    background: var(--bg);
-    border: 1px solid var(--border-strong);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border-strong));
     border-radius: 4px;
     font-size: var(--fs-sm);
   }
   .ossie-chip--metric {
-    background: var(--bg-accent-subtle, var(--bg-hover));
+    background: var(--bg-accent-subtle, hsl(var(--bg-hover)));
   }
   .ossie-chip--filter {
     gap: 6px;
@@ -2000,14 +2000,14 @@
   }
   .ossie-chip__op {
     background: transparent;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 3px;
     padding: 1px 4px;
     font-size: var(--fs-xs);
   }
   .ossie-chip__value {
     background: transparent;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 3px;
     padding: 2px 6px;
     font-size: var(--fs-xs);
@@ -2019,19 +2019,19 @@
     justify-content: center;
     background: transparent;
     border: none;
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
     cursor: pointer;
     padding: 0;
     margin-left: 2px;
   }
   .ossie-chip__x:hover {
-    color: var(--fg);
+    color: hsl(var(--fg));
   }
   .ossie-canvas__result {
     flex: 1;
     min-height: 0;
     overflow: auto;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 4px;
     padding: var(--space-2);
     margin: var(--space-3);
@@ -2045,11 +2045,11 @@
   .ossie-result th,
   .ossie-result td {
     padding: 6px 10px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid hsl(var(--border));
     text-align: left;
   }
   .ossie-result th {
-    background: var(--bg-hover);
+    background: hsl(var(--bg-hover));
     font-weight: var(--weight-semibold);
     position: sticky;
     top: 0;
@@ -2066,7 +2066,7 @@
   }
   .ossie-canvas__hint,
   .ossie-canvas__empty {
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
     font-size: var(--fs-sm);
   }
 </style>

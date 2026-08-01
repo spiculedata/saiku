@@ -243,54 +243,54 @@ SELECT …</pre>
   }
   .format-row { display: flex; gap: var(--space-2); }
   .preview {
-    background: var(--bg-muted);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg-muted));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
     padding: var(--space-2) var(--space-3);
   }
-  .preview__label { font-size: var(--fs-xs); color: var(--fg-subtle); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+  .preview__label { font-size: var(--fs-xs); color: hsl(var(--fg-subtle)); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
   .preview pre {
     margin: 0;
     font-size: var(--fs-xs);
     white-space: pre-wrap;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .palette {
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
     padding: var(--space-2);
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
   }
-  .palette__title { font-size: var(--fs-xs); color: var(--fg-subtle); text-transform: uppercase; letter-spacing: 0.06em; }
+  .palette__title { font-size: var(--fs-xs); color: hsl(var(--fg-subtle)); text-transform: uppercase; letter-spacing: 0.06em; }
   .palette__btn {
     width: 100%;
     text-align: left;
     background: transparent;
     border: 0;
-    color: var(--fg);
+    color: hsl(var(--fg));
     padding: 3px 6px;
     border-radius: var(--radius-sm);
     cursor: pointer;
     font: inherit;
   }
-  .palette__btn:hover { background: var(--bg-subtle); }
-  .palette__empty { color: var(--fg-subtle); padding: 3px 6px; font-size: var(--fs-xs); }
+  .palette__btn:hover { background: hsl(var(--bg-subtle)); }
+  .palette__empty { color: hsl(var(--fg-subtle)); padding: 3px 6px; font-size: var(--fs-xs); }
   .palette__grid {
     display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 4px;
   }
   .palette__chip {
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
     padding: 2px 0;
-    color: var(--fg);
+    color: hsl(var(--fg));
     font: inherit;
     cursor: pointer;
   }
-  .palette__chip:hover { background: var(--bg-subtle); }
+  .palette__chip:hover { background: hsl(var(--bg-subtle)); }
 </style>

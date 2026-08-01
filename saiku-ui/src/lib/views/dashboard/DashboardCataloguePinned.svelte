@@ -95,7 +95,7 @@
     font-size: 0.6875rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-weight: var(--weight-semibold);
     margin: 0 0 0.25rem;
     display: inline-flex;
@@ -107,20 +107,20 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.5rem 0.625rem;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
-    background: var(--bg);
+    background: hsl(var(--bg));
   }
   .link {
     flex: 1;
     display: flex;
     flex-direction: column;
     text-decoration: none;
-    color: var(--fg);
+    color: hsl(var(--fg));
     min-width: 0;
   }
   .link:hover .name {
-    color: var(--accent);
+    color: hsl(var(--primary));
   }
   .name {
     font-weight: var(--weight-semibold);

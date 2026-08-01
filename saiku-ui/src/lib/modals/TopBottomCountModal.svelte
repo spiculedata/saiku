@@ -135,7 +135,7 @@
 <style>
   .field__hint {
     margin: var(--space-1) 0 0;
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
     font-size: var(--fs-xs);
   }
 </style>

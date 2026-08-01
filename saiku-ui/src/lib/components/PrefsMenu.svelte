@@ -66,8 +66,8 @@
     bottom: calc(100% + 6px);
     left: 0;
     z-index: 30;
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius);
     box-shadow: var(--shadow);
     padding: var(--space-3);

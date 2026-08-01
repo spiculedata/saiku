@@ -168,7 +168,7 @@ h2 { margin: 0; }
   /* .field__hint is a local convention rather than a global — mirrors TopBottomCountModal.svelte. */
   .field__hint {
     margin: var(--space-1) 0 0;
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
     font-size: var(--fs-xs);
   }
   .field__hint code {

@@ -58,8 +58,8 @@
   .mode-switch {
     display: inline-flex;
     margin-bottom: var(--space-3);
-    background: var(--bg-muted);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg-muted));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
     padding: 2px;
   }
@@ -68,17 +68,17 @@
     background: transparent;
     border: 0;
     border-radius: 3px;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font: inherit;
     font-size: var(--fs-sm);
     cursor: pointer;
   }
   .mode-switch__btn:hover {
-    color: var(--fg);
+    color: hsl(var(--fg));
   }
   .mode-switch__btn.active {
-    background: var(--bg);
-    color: var(--fg);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
     font-weight: var(--weight-medium);
     box-shadow: var(--shadow-sm);
   }

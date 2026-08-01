@@ -214,15 +214,15 @@
   .recipient {
     margin: 0;
     padding: var(--space-2) var(--space-3);
-    background: var(--bg-subtle);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg-subtle));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
-    color: var(--fg);
+    color: hsl(var(--fg));
     font-size: var(--fs-sm);
     word-break: break-all;
   }
 
   .recipient--muted {
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
   }
 </style>

@@ -358,7 +358,7 @@
 .tabs {
     display: flex;
     gap: var(--space-1);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid hsl(var(--border));
     margin-bottom: var(--space-3);
   }
   .tabs button {
@@ -368,24 +368,24 @@
     padding: var(--space-2) var(--space-3);
     cursor: pointer;
     font: inherit;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .tabs button.active {
-    color: var(--accent);
-    border-bottom-color: var(--accent);
+    color: hsl(var(--primary));
+    border-bottom-color: hsl(var(--primary));
   }
-  .hint { display: block; font-size: var(--fs-xs); margin-top: 4px; color: var(--fg-subtle); }
+  .hint { display: block; font-size: var(--fs-xs); margin-top: 4px; color: hsl(var(--fg-subtle)); }
   .preview {
     margin-top: var(--space-3);
     padding: var(--space-2);
-    background: var(--bg-subtle);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg-subtle));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
   }
   .preview__label {
     display: block;
     font-size: var(--fs-xs);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     text-transform: uppercase;
     letter-spacing: 0.06em;
     margin-bottom: 4px;
@@ -396,18 +396,18 @@
     font-size: var(--fs-xs);
     white-space: pre-wrap;
     word-break: break-all;
-    color: var(--fg);
+    color: hsl(var(--fg));
   }
   .timecalcs {
     margin-top: var(--space-3);
     padding-top: var(--space-2);
-    border-top: 1px solid var(--border);
+    border-top: 1px solid hsl(var(--border));
   }
   .timecalcs__label {
     font-size: var(--fs-xs);
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     margin-bottom: 4px;
   }
 </style>

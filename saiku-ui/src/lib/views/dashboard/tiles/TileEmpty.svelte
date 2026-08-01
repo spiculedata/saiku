@@ -49,17 +49,17 @@
     gap: 0.35rem;
     padding: 0.25rem 0.6rem;
     font-size: 0.8125rem;
-    color: var(--fg);
-    background: var(--bg-subtle);
-    border: 1px solid var(--border);
+    color: hsl(var(--fg));
+    background: hsl(var(--bg-subtle));
+    border: 1px solid hsl(var(--border));
     border-radius: 4px;
     cursor: pointer;
   }
   .reset:hover {
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
   }
   .reset:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid hsl(var(--primary));
     outline-offset: 1px;
   }
 </style>

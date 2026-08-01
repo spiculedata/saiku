@@ -116,12 +116,12 @@
     flex-direction: column;
   }
   .hist__state {
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-sm);
     padding: var(--space-3) 0;
   }
   .hist__author {
     font-size: var(--fs-xs, 0.75rem);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
 </style>

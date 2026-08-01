@@ -52,7 +52,7 @@
 <style>
 /* Shared shimmer fill. */
   .sk {
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
     border-radius: 4px;
     position: relative;
     overflow: hidden;
@@ -64,7 +64,7 @@
     background: linear-gradient(
       90deg,
       transparent 0%,
-      color-mix(in srgb, var(--fg) 8%, transparent) 50%,
+      color-mix(in srgb, hsl(var(--fg)) 8%, transparent) 50%,
       transparent 100%
     );
     transform: translateX(-100%);
@@ -108,7 +108,7 @@
   }
   .sk-row--head .skeleton-cell {
     height: 1.05rem;
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
   }
   /* KPI: a big number block + a small caption block. */
   .sk-kpi {

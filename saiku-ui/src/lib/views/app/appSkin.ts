@@ -21,7 +21,7 @@ export function appSkinCss(scope: string): string {
   const s = scope;
   return `
 ${s} .saiku-app__body, ${s} .saiku-app__main, ${s} .app-page {
-  background: var(--saiku-app-ground, var(--bg));
+  background: var(--saiku-app-ground, hsl(var(--bg)));
 }
 ${s} { font-family: var(--saiku-app-font-body, inherit); }
 
@@ -87,7 +87,7 @@ ${s} tbody th { font-weight: 500; text-align: left; }
 ${s} tbody td { text-align: right; font-weight: 650; color: var(--saiku-app-fg, #1f3529); }
 
 /* ---- nav rail ---- */
-${s} .saiku-app__rail { background: var(--saiku-app-rail-bg, var(--bg-subtle)); border-right: none; padding-top: 14px; }
+${s} .saiku-app__rail { background: var(--saiku-app-rail-bg, hsl(var(--bg-subtle))); border-right: none; padding-top: 14px; }
 ${s} .saiku-app__rail-brand { background: var(--saiku-app-accent-2, var(--saiku-app-accent, #2e5e43)); }
 ${s} .saiku-app__rail-item { color: var(--saiku-app-rail-fg, #9fb4a5); border-radius: 10px; }
 ${s} .saiku-app__rail-item.is-active { background: var(--saiku-app-accent, #2e5e43); color: #fff; }

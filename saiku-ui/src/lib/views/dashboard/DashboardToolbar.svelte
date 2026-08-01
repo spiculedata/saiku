@@ -520,7 +520,7 @@
     align-items: flex-start;
     gap: 0.75rem;
     padding: 0.5rem 0.25rem;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid hsl(var(--border));
   }
   /* #1604: the title block absorbs the toolbar's free space (it replaces the
      old flex spacer) so the editable name / heading has room to show the full
@@ -550,8 +550,8 @@
     overflow-wrap: anywhere;
   }
   .name:hover, .name:focus {
-    border-color: var(--border-strong);
-    background: var(--bg);
+    border-color: hsl(var(--border-strong));
+    background: hsl(var(--bg));
     outline: none;
   }
   .tag-chip {
@@ -560,8 +560,8 @@
     gap: 0.25rem;
     padding: 0.125rem 0.5rem;
     border-radius: 999px;
-    background: var(--bg-subtle);
-    color: var(--fg);
+    background: hsl(var(--bg-subtle));
+    color: hsl(var(--fg));
     font-size: 0.6875rem;
     line-height: 1.4;
   }
@@ -569,13 +569,13 @@
     background: none;
     border: none;
     padding: 0;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     cursor: pointer;
     display: inline-flex;
     align-items: center;
   }
   .tag-remove:hover {
-    color: var(--danger);
+    color: hsl(var(--danger));
   }
   .tag-input {
     border: 1px dashed transparent;
@@ -583,10 +583,10 @@
     padding: 0.125rem 0.375rem;
     font-size: 0.6875rem;
     min-width: 6rem;
-    color: var(--fg);
+    color: hsl(var(--fg));
   }
   .tag-input:hover, .tag-input:focus {
-    border-color: var(--border-strong);
+    border-color: hsl(var(--border-strong));
     outline: none;
   }
   .actions {
@@ -609,8 +609,8 @@
     gap: 0.25rem;
     min-width: 12rem;
     padding: 0.375rem;
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
     z-index: 60;
@@ -651,8 +651,8 @@
     gap: 0.25rem;
     min-width: 10rem;
     padding: 0.375rem;
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
     z-index: 70;
@@ -667,9 +667,9 @@
     gap: 0.5rem;
     max-width: 24rem;
     padding: 0.5rem 0.75rem;
-    background: color-mix(in srgb, var(--danger) 14%, var(--bg));
-    color: var(--danger);
-    border: 1px solid var(--danger);
+    background: color-mix(in srgb, hsl(var(--danger)) 14%, hsl(var(--bg)));
+    color: hsl(var(--danger));
+    border: 1px solid hsl(var(--danger));
     border-radius: 6px;
     font-size: 0.8125rem;
   }

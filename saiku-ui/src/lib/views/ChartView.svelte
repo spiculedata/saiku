@@ -335,8 +335,8 @@
     min-height: 320px;
     overflow-y: hidden;
     overflow-x: hidden;
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
   }
   /* Only show the scrollbar when small-multiples actually overflow. */

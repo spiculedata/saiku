@@ -138,8 +138,8 @@
     position: absolute;
     top: calc(100% + 4px);
     right: 0;
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
     padding: 0.25rem;
@@ -164,7 +164,7 @@
     font-size: 0.875rem;
   }
   .menu-item:hover, .menu-item:focus {
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
     outline: none;
   }
   .menu-item:disabled {
@@ -182,7 +182,7 @@
   .hint {
     display: block;
     font-size: 0.75rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     margin-top: 0.125rem;
   }
 </style>

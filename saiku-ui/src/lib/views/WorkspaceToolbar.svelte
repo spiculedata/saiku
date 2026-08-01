@@ -638,16 +638,16 @@
     align-items: center;
     gap: 6px;
     padding: 6px 10px;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg-muted);
+    border-bottom: 1px solid hsl(var(--border));
+    background: hsl(var(--bg-muted));
     flex-wrap: wrap;
   }
   .toolbar__dropdown {
     position: absolute;
     top: calc(100% + 6px);
     left: 0;
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
     box-shadow: 0 12px 32px rgba(0,0,0,0.35);
     padding: 4px;
@@ -664,15 +664,15 @@
     background: transparent;
     border: 0;
     border-radius: 4px;
-    color: var(--fg);
+    color: hsl(var(--fg));
     font: inherit;
     cursor: pointer;
   }
-  .toolbar__item:hover { background: var(--bg-hover); }
+  .toolbar__item:hover { background: hsl(var(--bg-hover)); }
   .toolbar__sep {
     width: 1px;
     height: 22px;
-    background: var(--border);
+    background: hsl(var(--border));
     margin: 0 4px;
   }
   .tb-btn {
@@ -683,26 +683,26 @@
     background: transparent;
     border: 1px solid transparent;
     border-radius: 5px;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     cursor: pointer;
     font: inherit;
   }
   .tb-btn { transition: background var(--duration-fast), color var(--duration-fast); }
-  .tb-btn:hover { background: var(--bg-hover); color: var(--fg); }
+  .tb-btn:hover { background: hsl(var(--bg-hover)); color: hsl(var(--fg)); }
   .tb-btn:active { transform: translateY(1px); }
   .tb-btn--primary {
-    background: var(--accent);
-    color: var(--bg);
-    border-color: var(--accent);
+    background: hsl(var(--primary));
+    color: hsl(var(--bg));
+    border-color: hsl(var(--primary));
   }
-  .tb-btn--primary:hover { filter: brightness(1.1); background: var(--accent); color: var(--bg); }
+  .tb-btn--primary:hover { filter: brightness(1.1); background: hsl(var(--primary)); color: hsl(var(--bg)); }
   .tb-btn--ai {
-    background: linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 60%, #8b5cf6) 100%);
-    color: var(--bg);
-    border-color: var(--accent);
+    background: linear-gradient(135deg, hsl(var(--primary)) 0%, color-mix(in srgb, hsl(var(--primary)) 60%, #8b5cf6) 100%);
+    color: hsl(var(--bg));
+    border-color: hsl(var(--primary));
   }
   .tb-btn--ai:hover {
-    color: var(--accent);
+    color: hsl(var(--primary));
   }
   /*
    * saiku-cloud#612 — visual cue that the query shape isn't runnable yet
@@ -712,9 +712,9 @@
    */
   .tb-btn--disabled-shape,
   .tb-btn--disabled-shape:hover {
-    background: var(--bg-muted);
-    color: var(--fg-muted);
-    border-color: var(--border);
+    background: hsl(var(--bg-muted));
+    color: hsl(var(--fg-muted));
+    border-color: hsl(var(--border));
     filter: none;
     cursor: not-allowed;
   }
@@ -724,9 +724,9 @@
     right: 4px;
     width: 7px;
     height: 7px;
-    background: var(--accent);
+    background: hsl(var(--primary));
     border-radius: 50%;
-    box-shadow: 0 0 0 2px var(--bg-muted);
+    box-shadow: 0 0 0 2px hsl(var(--bg-muted));
   }
   .split-btn {
     display: inline-flex;
@@ -750,9 +750,9 @@
     gap: 10px;
     padding: 6px 12px;
     cursor: pointer;
-    color: var(--fg);
+    color: hsl(var(--fg));
     font: inherit;
     border-radius: 4px;
   }
-  .toolbar__check:hover { background: var(--bg-subtle); }
+  .toolbar__check:hover { background: hsl(var(--bg-subtle)); }
 </style>

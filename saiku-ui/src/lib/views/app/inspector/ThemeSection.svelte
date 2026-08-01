@@ -140,28 +140,28 @@
   .presets { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
   .preset {
     display: flex; flex-direction: column; gap: 0.4rem; padding: 0.5rem;
-    border: 1px solid var(--border); border-radius: 8px; background: var(--bg-subtle);
+    border: 1px solid hsl(var(--border)); border-radius: 8px; background: hsl(var(--bg-subtle));
     cursor: pointer; text-align: left;
   }
-  .preset.is-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .preset.is-active { border-color: hsl(var(--primary)); box-shadow: 0 0 0 1px hsl(var(--primary)); }
   .swatches { display: flex; height: 22px; border-radius: 5px; overflow: hidden; }
   .swatches span { flex: 1; }
   .preset-name { font-size: 0.8rem; font-weight: 600; }
   .colours { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 0.75rem; }
   .colour { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; }
   .colour input[type="color"] {
-    width: 28px; height: 24px; padding: 0; border: 1px solid var(--border);
+    width: 28px; height: 24px; padding: 0; border: 1px solid hsl(var(--border));
     border-radius: 5px; background: none; cursor: pointer; flex-shrink: 0;
   }
   .disclosure {
-    border: 0; background: transparent; color: var(--fg-muted);
+    border: 0; background: transparent; color: hsl(var(--fg-muted));
     font-size: 0.78rem; font-weight: 600; text-align: left; padding: 0; cursor: pointer;
   }
   .brief-btn {
     align-self: flex-start;
     display: inline-flex; align-items: center; gap: 6px;
     border: 0; border-radius: 6px; padding: 0.35rem 0.7rem;
-    background: var(--accent); color: var(--accent-fg, #fff);
+    background: hsl(var(--primary)); color: var(--accent-fg, #fff);
     font-size: 0.78rem; font-weight: 600; cursor: pointer;
   }
   .brief-btn:disabled { opacity: 0.5; cursor: default; }

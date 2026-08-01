@@ -197,8 +197,8 @@
     width: 100%;
     min-width: 0;
     box-sizing: border-box;
-    background: var(--saiku-app-bg, var(--bg));
-    color: var(--saiku-app-fg, var(--fg));
+    background: var(--saiku-app-bg, hsl(var(--bg)));
+    color: var(--saiku-app-fg, hsl(var(--fg)));
     font-family: var(--saiku-app-font, inherit);
   }
   .saiku-app__body {

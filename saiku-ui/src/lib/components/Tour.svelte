@@ -153,7 +153,7 @@
   .tour { position: fixed; inset: 0; z-index: 3000; pointer-events: none; }
   .tour__highlight {
     position: absolute;
-    border: 2px solid var(--accent);
+    border: 2px solid hsl(var(--primary));
     border-radius: var(--radius-sm);
     box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
     transition: all var(--duration-normal) ease;
@@ -163,9 +163,9 @@
     position: absolute;
     width: 360px;
     max-width: calc(100vw - 24px);
-    background: var(--bg);
-    color: var(--fg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-lg);
     padding: var(--space-4);
@@ -177,8 +177,8 @@
     align-items: baseline;
     margin-bottom: var(--space-2);
   }
-  .tour__bubble .step { color: var(--fg-subtle); font-size: var(--fs-xs); }
-  .tour__bubble p { margin: 0 0 var(--space-3); color: var(--fg-muted); font-size: var(--fs-sm); }
+  .tour__bubble .step { color: hsl(var(--fg-subtle)); font-size: var(--fs-xs); }
+  .tour__bubble p { margin: 0 0 var(--space-3); color: hsl(var(--fg-muted)); font-size: var(--fs-sm); }
   .tour__bubble footer {
     display: flex;
     justify-content: flex-end;

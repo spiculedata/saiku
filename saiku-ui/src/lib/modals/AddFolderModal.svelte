@@ -36,9 +36,9 @@
 </Modal>
 
 <style>
-  .hint { color: var(--fg-muted); font-size: var(--fs-sm); margin: 0 0 var(--space-3); }
+  .hint { color: hsl(var(--fg-muted)); font-size: var(--fs-sm); margin: 0 0 var(--space-3); }
   code {
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
     padding: 0 var(--space-1);
     border-radius: var(--radius-sm);
     font-family: var(--font-mono);

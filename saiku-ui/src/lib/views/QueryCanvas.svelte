@@ -1563,10 +1563,10 @@
     gap: 6px;
     padding: 2px 8px 2px 2px;
     background: transparent;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 999px;
     font-size: 0.75rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     align-self: flex-start;
     max-width: 100%;
     white-space: nowrap;
@@ -1574,7 +1574,7 @@
     text-overflow: ellipsis;
   }
   .canvas__mdx-badge {
-    background: var(--accent);
+    background: hsl(var(--primary));
     color: white;
     border-radius: 999px;
     padding: 1px 7px;
@@ -1589,16 +1589,16 @@
     justify-content: center;
     gap: var(--space-2);
     min-height: 360px;
-    color: var(--fg-muted);
-    border: 1px dashed var(--border-strong);
+    color: hsl(var(--fg-muted));
+    border: 1px dashed hsl(var(--border-strong));
     border-radius: var(--radius-md);
   }
   .dropzone {
-    border: 1px dashed var(--border-strong);
+    border: 1px dashed hsl(var(--border-strong));
     border-radius: var(--radius-md);
     padding: var(--space-2) var(--space-3);
     min-height: 54px;
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
     /* The aside above is `display: flex; flex-direction: column` with
        `overflow-y-auto`, which makes each dropzone a flex item. Flex
        items default to `flex: 0 1 auto`, so they can shrink when the
@@ -1615,9 +1615,9 @@
   }
   .dropzone.is-dragover {
     border-style: solid;
-    border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 12%, var(--bg-muted));
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+    border-color: hsl(var(--primary));
+    background: color-mix(in srgb, hsl(var(--primary)) 12%, hsl(var(--bg-muted)));
+    box-shadow: 0 0 0 2px color-mix(in srgb, hsl(var(--primary)) 30%, transparent);
   }
   /* Keep pointer events enabled on chips so chip-to-chip reorder drops still fire. */
   .dropzone header {
@@ -1628,13 +1628,13 @@
     font-weight: var(--weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     margin-bottom: var(--space-1);
   }
   .dropzone__menu {
     background: transparent;
     border: 0;
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
     cursor: pointer;
     padding: 2px 4px;
     border-radius: 3px;
@@ -1644,7 +1644,7 @@
     transition: opacity 120ms ease;
   }
   .dropzone:hover .dropzone__menu { opacity: 1; }
-  .dropzone__menu:hover { background: var(--bg-subtle); color: var(--fg); }
+  .dropzone__menu:hover { background: hsl(var(--bg-subtle)); color: hsl(var(--fg)); }
   .chips {
     display: flex;
     flex-wrap: wrap;
@@ -1655,7 +1655,7 @@
     align-items: center;
     justify-content: center;
     min-height: 32px;
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
     font-size: var(--fs-sm);
     font-style: italic;
   }
@@ -1664,21 +1664,21 @@
     align-items: center;
     gap: var(--space-1);
     padding: 0;
-    background: var(--bg);
-    color: var(--fg);
-    border: 1px solid var(--border-strong);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
+    border: 1px solid hsl(var(--border-strong));
     border-radius: var(--radius-sm);
     font-size: var(--fs-xs);
     overflow: hidden;
   }
-  .chip:hover { background: var(--bg-subtle); }
+  .chip:hover { background: hsl(var(--bg-subtle)); }
   .chip.is-drop-before {
-    box-shadow: inset 0 3px 0 0 var(--accent), 0 0 0 1px var(--accent);
-    border-color: var(--accent);
+    box-shadow: inset 0 3px 0 0 hsl(var(--primary)), 0 0 0 1px hsl(var(--primary));
+    border-color: hsl(var(--primary));
   }
   .chip.is-drop-after {
-    box-shadow: inset 0 -3px 0 0 var(--accent), 0 0 0 1px var(--accent);
-    border-color: var(--accent);
+    box-shadow: inset 0 -3px 0 0 hsl(var(--primary)), 0 0 0 1px hsl(var(--primary));
+    border-color: hsl(var(--primary));
   }
   /* chip-group — vertical stack used for hierarchy chips on ROWS /
      COLUMNS / PAGES. Always-visible × per level, predictable width
@@ -1694,20 +1694,20 @@
        against the dropzone's content width in the same situation. */
     min-width: min(140px, 100%);
     max-width: 100%;
-    background: var(--bg-muted);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg-muted));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-md);
     overflow: hidden;
     cursor: grab;
   }
   .chip-group:active { cursor: grabbing; }
   .chip-group.is-drop-before {
-    box-shadow: 0 -2px 0 0 var(--accent), 0 0 0 1px var(--accent);
-    border-color: var(--accent);
+    box-shadow: 0 -2px 0 0 hsl(var(--primary)), 0 0 0 1px hsl(var(--primary));
+    border-color: hsl(var(--primary));
   }
   .chip-group.is-drop-after {
-    box-shadow: 0 2px 0 0 var(--accent), 0 0 0 1px var(--accent);
-    border-color: var(--accent);
+    box-shadow: 0 2px 0 0 hsl(var(--primary)), 0 0 0 1px hsl(var(--primary));
+    border-color: hsl(var(--primary));
   }
   .chip-group__head {
     display: flex;
@@ -1715,11 +1715,11 @@
     justify-content: space-between;
     gap: var(--space-2);
     padding: 4px 4px 4px var(--space-2);
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
     font-size: var(--fs-xs);
     font-weight: var(--weight-semibold);
-    color: var(--fg);
-    border-bottom: 1px solid var(--border);
+    color: hsl(var(--fg));
+    border-bottom: 1px solid hsl(var(--border));
   }
   .chip-group__title {
     background: transparent;
@@ -1738,7 +1738,7 @@
   .chip-group__x,
   .chip-group__level-x {
     background: transparent;
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
     border: 0;
     padding: 0 6px;
     font-size: 14px;
@@ -1749,8 +1749,8 @@
   }
   .chip-group__x:hover,
   .chip-group__level-x:hover {
-    color: var(--danger);
-    background: var(--bg-hover);
+    color: hsl(var(--danger));
+    background: hsl(var(--bg-hover));
   }
   .chip-group__levels {
     list-style: none;
@@ -1764,10 +1764,10 @@
     gap: var(--space-2);
     padding: 4px var(--space-2);
     font-size: var(--fs-xs);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .chip-group__level + .chip-group__level {
-    border-top: 1px dashed var(--border);
+    border-top: 1px dashed hsl(var(--border));
   }
   .chip-group__level-name {
     overflow: hidden;
@@ -1785,15 +1785,15 @@
   }
   .chip__x {
     background: transparent;
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
     border: 0;
-    border-left: 1px solid var(--border);
+    border-left: 1px solid hsl(var(--border));
     padding: 0 var(--space-1);
     font-size: 14px;
     line-height: 1;
     cursor: pointer;
   }
-  .chip__x:hover { color: var(--danger); background: var(--bg-muted); }
+  .chip__x:hover { color: hsl(var(--danger)); background: hsl(var(--bg-muted)); }
   .result-host { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   .result-host :global(.runtime) { flex: 0 0 auto; }
   .view-toggle {
@@ -1808,16 +1808,16 @@
   .view-toggle button {
     padding: var(--space-1) var(--space-3);
     background: transparent;
-    border: 1px solid var(--border-strong);
-    color: var(--fg-muted);
+    border: 1px solid hsl(var(--border-strong));
+    color: hsl(var(--fg-muted));
     border-radius: var(--radius-sm);
     cursor: pointer;
     font: inherit;
   }
   .view-toggle button.active {
-    background: var(--accent);
-    color: var(--accent-fg);
-    border-color: var(--accent);
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    border-color: hsl(var(--primary));
   }
   .view-more { position: relative; display: inline-flex; }
   .view-more > button {
@@ -1830,8 +1830,8 @@
     top: calc(100% + 4px);
     left: 0;
     min-width: 140px;
-    background: var(--bg);
-    border: 1px solid var(--border-strong);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border-strong));
     border-radius: var(--radius-sm);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
     padding: var(--space-1) 0;
@@ -1844,17 +1844,17 @@
     padding: var(--space-1) var(--space-3);
     background: transparent;
     border: none;
-    color: var(--fg);
+    color: hsl(var(--fg));
     cursor: pointer;
     font: inherit;
   }
-  .view-more__menu button:hover { background: var(--bg-subtle); }
-  .view-more__menu button.active { background: var(--accent); color: var(--accent-fg); }
+  .view-more__menu button:hover { background: hsl(var(--bg-subtle)); }
+  .view-more__menu button.active { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
   .chart-pick select {
     padding: var(--space-1) var(--space-2);
-    background: var(--bg);
-    color: var(--fg);
-    border: 1px solid var(--border-strong);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
+    border: 1px solid hsl(var(--border-strong));
     border-radius: var(--radius-sm);
   }
   .run-progress {
@@ -1862,10 +1862,10 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-1) var(--space-2);
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
-    background: var(--bg-muted);
-    color: var(--fg-muted);
+    background: hsl(var(--bg-muted));
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-sm);
   }
   .run-progress :global(.spin) {
@@ -1878,13 +1878,13 @@
     gap: 4px;
     padding: 2px 8px;
     background: transparent;
-    border: 1px solid var(--border-strong);
+    border: 1px solid hsl(var(--border-strong));
     border-radius: var(--radius-sm);
-    color: var(--fg);
+    color: hsl(var(--fg));
     cursor: pointer;
     font: inherit;
   }
-  .run-progress button:hover { background: var(--bg-subtle); }
+  .run-progress button:hover { background: hsl(var(--bg-subtle)); }
   @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }

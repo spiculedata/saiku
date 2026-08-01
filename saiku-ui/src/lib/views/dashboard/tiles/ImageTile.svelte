@@ -81,7 +81,7 @@
     flex-shrink: 0;
     padding: 0.25rem 0.5rem;
     font-size: 0.75rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     text-align: center;
     overflow-wrap: anywhere;
   }
@@ -96,7 +96,7 @@
     gap: 0.5rem;
     padding: 0.75rem;
     text-align: center;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: 0.8125rem;
   }
   /* Render the real edit-button icon (lucide Settings2) inline so the
@@ -104,6 +104,6 @@
   .image-placeholder :global(.inline-gear) {
     display: inline-block;
     vertical-align: -2px;
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
   }
 </style>

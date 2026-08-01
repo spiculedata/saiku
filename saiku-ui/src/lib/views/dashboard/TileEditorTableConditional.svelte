@@ -194,14 +194,14 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 4px;
     padding: 0.5rem 0.75rem;
     margin: 0;
   }
   .cf-section legend {
     font-size: 0.75rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     text-transform: uppercase;
     letter-spacing: 0.04em;
     padding: 0 0.25rem;
@@ -210,14 +210,14 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 4px;
     padding: 0.5rem 0.625rem;
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
   }
   .cf-rule-label {
     font-size: 0.75rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }

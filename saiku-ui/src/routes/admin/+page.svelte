@@ -68,20 +68,20 @@
     display: flex;
     gap: var(--space-2);
     padding: var(--space-2) var(--space-5);
-    background: var(--bg-muted);
-    border-bottom: 1px solid var(--border);
+    background: hsl(var(--bg-muted));
+    border-bottom: 1px solid hsl(var(--border));
   }
   .admin__tabs button {
     padding: var(--space-2) var(--space-3);
     background: transparent;
     border: 0;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font: inherit;
     cursor: pointer;
     border-bottom: 2px solid transparent;
   }
   .admin__tabs .active {
-    color: var(--fg);
-    border-bottom-color: var(--accent);
+    color: hsl(var(--fg));
+    border-bottom-color: hsl(var(--primary));
   }
 </style>

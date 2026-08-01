@@ -118,7 +118,7 @@
 .drawer {
     font-family: var(--font-sans);
     font-size: var(--fs-sm);
-    color: var(--fg);
+    color: hsl(var(--fg));
     padding: var(--space-4);
     display: flex;
     flex-direction: column;
@@ -127,7 +127,7 @@
   }
   .drawer__kind {
     margin: 0;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-xs);
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -143,25 +143,25 @@
     font-weight: var(--weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    background: var(--fg-subtle);
-    color: var(--accent-fg);
+    background: hsl(var(--fg-subtle));
+    color: hsl(var(--primary-foreground));
   }
   .drawer__badge--user {
-    background: var(--success);
+    background: hsl(var(--success));
     color: #fff;
   }
   .drawer__label {
     font-size: var(--fs-xs);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
   .drawer__input,
   .drawer__textarea {
     font: inherit;
-    color: var(--fg);
-    background: var(--bg);
-    border: 1px solid var(--border);
+    color: hsl(var(--fg));
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
     padding: var(--space-2) var(--space-3);
   }
@@ -169,7 +169,7 @@
   .drawer__textarea:focus {
     outline: none;
     box-shadow: var(--focus-ring);
-    border-color: var(--accent);
+    border-color: hsl(var(--primary));
   }
   .drawer__textarea {
     resize: vertical;
@@ -181,9 +181,9 @@
     gap: 2px var(--space-3);
     margin: 0;
     padding-top: var(--space-2);
-    border-top: 1px solid var(--border);
+    border-top: 1px solid hsl(var(--border));
     font-size: var(--fs-xs);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .drawer__meta dt {
     font-weight: var(--weight-semibold);

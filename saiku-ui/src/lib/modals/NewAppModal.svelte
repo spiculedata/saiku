@@ -94,22 +94,22 @@
   .import-badge {
     margin: 0 0 var(--space-3);
     padding: var(--space-2) var(--space-3);
-    background: var(--bg-muted);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg-muted));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-sm);
   }
   .path-preview {
     margin: var(--space-3) 0 0;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-sm);
   }
   .path-preview code {
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
     padding: 2px 6px;
     border-radius: var(--radius-sm);
-    color: var(--fg);
+    color: hsl(var(--fg));
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
   }

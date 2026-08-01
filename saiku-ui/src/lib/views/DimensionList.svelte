@@ -669,13 +669,13 @@
     margin-top: var(--space-4);
   }
   .panels__hint {
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
     font-size: var(--fs-sm);
     margin: var(--space-3) 0 0;
   }
   .panel {
-    background: var(--bg);
-    border-top: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border-top: 1px solid hsl(var(--border));
     padding-top: var(--space-3);
   }
   .panel__header {
@@ -683,7 +683,7 @@
     font-weight: var(--weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     margin-bottom: var(--space-2);
   }
   .panel__action {
@@ -692,12 +692,12 @@
     justify-content: center;
     background: transparent;
     border: 1px solid transparent;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     padding: 4px;
     border-radius: 4px;
     cursor: pointer;
   }
-  .panel__action:hover { background: var(--bg-subtle); color: var(--fg); }
+  .panel__action:hover { background: hsl(var(--bg-subtle)); color: hsl(var(--fg)); }
   .tree__drag {
     flex: 1;
     display: inline-flex;
@@ -718,14 +718,14 @@
     justify-content: center;
     background: transparent;
     border: 0;
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
     cursor: pointer;
     padding: 2px 6px;
     border-radius: 3px;
     transition: opacity 120ms ease;
   }
   .tree__row--level:hover .tree__gear { opacity: 1; }
-  .tree__gear:hover { color: var(--fg); }
+  .tree__gear:hover { color: hsl(var(--fg)); }
   .tree {
     list-style: none;
     margin: 0;
@@ -737,7 +737,7 @@
        stay readable without consuming the whole sidebar width. */
     padding-left: var(--space-3);
     margin-left: var(--space-2);
-    border-left: 1px solid var(--border);
+    border-left: 1px solid hsl(var(--border));
   }
   .tree__row {
     display: flex;
@@ -747,26 +747,26 @@
     padding: 2px var(--space-1);
     background: transparent;
     border: 0;
-    color: var(--fg);
+    color: hsl(var(--fg));
     cursor: pointer;
     font: inherit;
     text-align: left;
     border-radius: var(--radius-sm);
   }
-  .tree__row:hover { background: var(--bg-subtle); }
+  .tree__row:hover { background: hsl(var(--bg-subtle)); }
   .tree__row--measure {
-    color: var(--accent);
+    color: hsl(var(--primary));
     cursor: grab;
   }
-  .tree__row--measure .tree__icon--measure { color: var(--accent); }
-  .tree__row--level { color: var(--fg-muted); }
+  .tree__row--measure .tree__icon--measure { color: hsl(var(--primary)); }
+  .tree__row--level { color: hsl(var(--fg-muted)); }
   .tree__row--level .tree__drag { cursor: grab; }
   .tree__twisty {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 14px;
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
   }
   .tree__twisty :global(svg) {
     transition: transform var(--duration-fast) ease;
@@ -779,7 +779,7 @@
     align-items: center;
     justify-content: center;
     width: 16px;
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
   }
   /* Dim-applicability hint for virtual cubes. When a measure from a fact
      table that doesn't join the dim is selected, the dim row (and its

@@ -288,8 +288,8 @@
     flex: 1;
     min-height: 0;
     font-family: var(--font-sans);
-    color: var(--fg);
-    background: var(--bg);
+    color: hsl(var(--fg));
+    background: hsl(var(--bg));
   }
   .schemagen__title {
     display: flex;
@@ -304,7 +304,7 @@
   .schemagen__dsid {
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .schemagen__actions {
     display: flex;
@@ -314,14 +314,14 @@
   .schemagen__actions button {
     font: inherit;
     padding: var(--space-2) var(--space-3);
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
-    background: var(--bg);
-    color: var(--fg);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
     cursor: pointer;
   }
   .schemagen__actions button:hover:not(:disabled) {
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
   }
   .schemagen__actions button:disabled {
     opacity: 0.5;
@@ -334,19 +334,19 @@
     border-radius: 999px;
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    background: var(--fg-subtle);
-    color: var(--accent-fg);
+    background: hsl(var(--fg-subtle));
+    color: hsl(var(--primary-foreground));
   }
   .schemagen__pill[data-color="muted"] {
-    background: var(--border-strong);
-    color: var(--fg);
+    background: hsl(var(--border-strong));
+    color: hsl(var(--fg));
   }
   .schemagen__pill[data-color="info"] {
-    background: var(--accent);
-    color: var(--accent-fg);
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
   }
   .schemagen__pill[data-color="success"] {
-    background: var(--success);
+    background: hsl(var(--success));
     color: #fff;
   }
   .schemagen__pill[data-color="danger"] {
@@ -360,15 +360,15 @@
     justify-content: space-between;
     gap: var(--space-3);
     padding: var(--space-2) var(--space-5);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid hsl(var(--border));
   }
   .schemagen__failure {
     background: var(--danger, #c0392b);
     color: #fff;
   }
   .schemagen__error {
-    background: var(--bg-muted);
-    color: var(--fg);
+    background: hsl(var(--bg-muted));
+    color: hsl(var(--fg));
   }
   .schemagen__delta {
     display: flex;
@@ -377,7 +377,7 @@
     padding: var(--space-2) var(--space-5);
     background: var(--accent, #2b6cb0);
     color: var(--accent-fg, #fff);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid hsl(var(--border));
     font-size: var(--fs-sm);
   }
   .schemagen__error button {
@@ -407,8 +407,8 @@
     right: 0;
     bottom: 0;
     width: min(420px, 50%);
-    background: var(--bg);
-    border-left: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border-left: 1px solid hsl(var(--border));
     box-shadow: -8px 0 16px -12px rgb(0 0 0 / 0.25);
     transform: translateX(100%);
     transition: transform 180ms ease;
@@ -431,9 +431,9 @@
     line-height: 1;
     padding: var(--space-1) var(--space-2);
     cursor: pointer;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .schemagen__drawer-close:hover {
-    color: var(--fg);
+    color: hsl(var(--fg));
   }
 </style>

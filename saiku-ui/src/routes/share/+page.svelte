@@ -77,22 +77,22 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    background: var(--bg);
+    background: hsl(var(--bg));
   }
   .share-view__badge {
     font-size: var(--fs-sm);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     padding: 2px var(--space-2);
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 999px;
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
   }
   .share-view__state {
     flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-md);
   }
 </style>

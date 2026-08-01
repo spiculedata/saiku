@@ -53,7 +53,7 @@
 <style>
   .intro {
     margin: 0 0 var(--space-3);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-sm);
   }
 </style>

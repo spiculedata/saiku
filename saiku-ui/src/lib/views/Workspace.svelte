@@ -483,7 +483,7 @@
               oncontextmenu={(e) => openTabMenu(i, e)}
             >
               <span class="tab__label">{tabLabelFor(i)}</span>
-              {#if tabDirtyFor(i)}<span class="text-accent" aria-label="unsaved changes">•</span>{/if}
+              {#if tabDirtyFor(i)}<span class="text-primary" aria-label="unsaved changes">•</span>{/if}
               {#if tabs.list.length > 1}
                 <span
                   class="tab__close"
@@ -592,7 +592,7 @@
        (#1176). */
     grid-template-columns: 300px minmax(0, 1fr);
     gap: 1px;
-    background: var(--border);
+    background: hsl(var(--border));
     overflow: hidden;
   }
   .workspace--embed {
@@ -601,7 +601,7 @@
   }
   .workspace__sidebar,
   .workspace__main {
-    background: var(--bg);
+    background: hsl(var(--bg));
     min-height: 0;
     min-width: 0;
     overflow: hidden;
@@ -612,8 +612,8 @@
   }
   .workspace__sidebar-footer {
     padding: var(--space-3) var(--space-4);
-    border-top: 1px solid var(--border-strong);
-    background: var(--bg-subtle);
+    border-top: 1px solid hsl(var(--border-strong));
+    background: hsl(var(--bg-subtle));
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -626,8 +626,8 @@
     display: flex;
     align-items: stretch;
     padding: 0 var(--space-2);
-    border-bottom: 1px solid var(--border);
-    background: var(--bg-muted);
+    border-bottom: 1px solid hsl(var(--border));
+    background: hsl(var(--bg-muted));
     /* .workspace__main has overflow:hidden; without horizontal scroll
        here a third (or further) tab gets clipped past the right edge
        and the "+" button becomes unreachable, which presents to the
@@ -643,7 +643,7 @@
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-2) var(--space-3);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     border-bottom: 2px solid transparent;
     background: transparent;
     border-top: 0;
@@ -656,12 +656,12 @@
     flex-shrink: 0;
   }
   .tab:hover:not(.tab--active) {
-    color: var(--fg);
-    background: color-mix(in srgb, var(--bg) 60%, transparent);
+    color: hsl(var(--fg));
+    background: color-mix(in srgb, hsl(var(--bg)) 60%, transparent);
   }
   .tab--active {
-    color: var(--fg);
-    border-bottom-color: var(--accent);
+    color: hsl(var(--fg));
+    border-bottom-color: hsl(var(--primary));
   }
   .tab__label {
     white-space: nowrap;
@@ -678,16 +678,16 @@
     width: 10rem;
     max-width: 12rem;
     padding: 2px 4px;
-    background: var(--bg);
-    border: 1px solid var(--border-strong);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border-strong));
     border-radius: var(--radius-sm);
-    color: var(--fg);
+    color: hsl(var(--fg));
     font: inherit;
     font-size: var(--fs-sm);
     outline: none;
   }
   .tab__rename-input:focus {
-    border-color: var(--accent);
+    border-color: hsl(var(--primary));
   }
   .tab__close {
     display: inline-flex;
@@ -696,13 +696,13 @@
     width: 1.25rem;
     height: 1.25rem;
     border-radius: 50%;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: 1rem;
     line-height: 1;
     user-select: none;
   }
   .tab__close:hover {
-    background: color-mix(in srgb, var(--danger) 18%, transparent);
-    color: var(--danger);
+    background: color-mix(in srgb, hsl(var(--danger)) 18%, transparent);
+    color: hsl(var(--danger));
   }
 </style>

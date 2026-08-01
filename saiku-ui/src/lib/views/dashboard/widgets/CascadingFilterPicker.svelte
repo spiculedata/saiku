@@ -209,9 +209,9 @@
   }
   .picker-select {
     padding: 0.125rem 0.25rem;
-    border: 1px solid var(--border-strong, var(--border));
+    border: 1px solid var(--border-strong, hsl(var(--border)));
     border-radius: 4px;
-    background: var(--bg);
+    background: hsl(var(--bg));
     font-size: 0.8125rem;
     max-width: 200px;
   }

@@ -73,15 +73,15 @@
     flex-direction: column;
     gap: var(--space-2);
     padding: var(--space-3);
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
-    background: var(--bg);
+    background: hsl(var(--bg));
     font-size: var(--fs-sm);
   }
   .card__path {
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -94,15 +94,15 @@
     font-weight: var(--weight-semibold);
     letter-spacing: 0.03em;
     text-transform: uppercase;
-    color: var(--accent-fg);
-    background: var(--fg-subtle);
+    color: hsl(var(--primary-foreground));
+    background: hsl(var(--fg-subtle));
   }
   .card__tier--high {
-    background: var(--success);
+    background: hsl(var(--success));
     color: #fff;
   }
   .card__before {
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     text-decoration: line-through;
   }
   .card__btn {
@@ -112,25 +112,25 @@
     font: inherit;
     font-size: var(--fs-xs);
     padding: 4px var(--space-3);
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
-    background: var(--bg);
-    color: var(--fg);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
     cursor: pointer;
   }
   .card__btn:hover {
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
   }
   .card__btn:focus-visible {
     outline: none;
     box-shadow: var(--focus-ring);
   }
   .card__btn--accept {
-    color: var(--success);
-    border-color: var(--success);
+    color: hsl(var(--success));
+    border-color: hsl(var(--success));
   }
   .card__btn--accept:hover {
-    background: var(--success);
+    background: hsl(var(--success));
     color: #fff;
   }
 </style>

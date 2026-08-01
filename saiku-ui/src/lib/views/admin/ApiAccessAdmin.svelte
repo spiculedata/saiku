@@ -173,8 +173,8 @@
   }
   .small { font-size: 0.85rem; }
   .card {
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-md, 0.5rem);
     padding: var(--space-4);
   }
@@ -189,7 +189,7 @@
     display: inline-block;
     margin-right: var(--space-2);
     transition: transform 120ms ease;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .card[open] > summary::before { transform: rotate(90deg); }
   /* The summary owns the click target; the heading itself stays inline
@@ -221,9 +221,9 @@
     align-items: baseline;
     gap: var(--space-2);
   }
-  .kv__key { color: var(--fg-muted); font-size: 0.85rem; }
+  .kv__key { color: hsl(var(--fg-muted)); font-size: 0.85rem; }
   .kv__val {
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
     padding: 0.1rem 0.4rem;
     border-radius: 0.25rem;
     font-size: 0.85rem;
@@ -232,7 +232,7 @@
   .recipe { margin: var(--space-3) 0; }
   .recipe summary { cursor: pointer; user-select: none; }
   .recipe pre {
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
     padding: var(--space-3);
     border-radius: var(--radius-sm, 0.25rem);
     overflow: auto;
@@ -242,8 +242,8 @@
     margin-left: var(--space-2);
     font-size: 0.75rem;
     padding: 0.15rem 0.5rem;
-    background: var(--bg-muted);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg-muted));
+    border: 1px solid hsl(var(--border));
     border-radius: 0.25rem;
     cursor: pointer;
   }
@@ -253,7 +253,7 @@
     gap: var(--space-2);
     margin: var(--space-3) 0;
     padding: var(--space-3);
-    background: var(--accent-soft);
+    background: hsl(var(--accent));
     border-radius: var(--radius-sm);
   }
   .install-row .btn {
