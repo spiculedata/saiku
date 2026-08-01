@@ -20,6 +20,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Properties;
 import java.util.UUID;
 import org.saiku.datasources.datasource.SaikuDatasource;
+import org.saiku.web.rest.util.MondrianLocation;
 
 /**
  * Map from SaikuDatasources to JSON variants.
@@ -80,26 +81,26 @@ public class DataSourceMapper {
                         && ds.getProperties().getProperty("advanced").equals("false"))) {
             String location = ds.getProperties().getProperty("location");
 
-            String[] loc = location.split(";");
-
-            String[] url = loc[0].split("=", 2);
             if (ds.getProperties().getProperty("driver").equals("mondrian.olap4j.MondrianOlap4jDriver")) {
-                String[] cat = loc[1].split("=");
-                String[] drv = loc[2].split("=");
-                if (cat.length > 1) {
-                    this.schema = cat[1];
-                }
-                if (drv.length > 1) {
-                    this.driver = drv[1];
-                }
+                // saiku#1634: parse by key, not by positional ';' split. An inner Jdbc= URL that
+                // carries its own ;params (e.g. H2's ;MODE=MySQL) used to shift the Catalog and
+                // JdbcDrivers slots — the catalog leaked into 'driver' and a stray param into
+                // 'schema'. MondrianLocation anchors on the known keys instead, so ordering and
+                // embedded params no longer matter.
+                MondrianLocation parsed = MondrianLocation.parse(location);
+                this.jdbcurl = parsed.jdbc();
+                this.schema = parsed.catalog();
+                this.driver = parsed.jdbcDrivers();
                 this.connectiontype = "MONDRIAN";
             } else {
+                // XMLA: location is `jdbc:xmla:Server=<url>` — split the server URL off the head.
+                String[] url = location.split(";", 2)[0].split("=", 2);
+                if (url.length > 1) {
+                    this.jdbcurl = url[1];
+                }
                 this.connectiontype = "XMLA";
             }
             this.connectionname = ds.getName();
-            if (url.length > 1) {
-                this.jdbcurl = url[1];
-            }
             this.username = ds.getProperties().getProperty("username");
             this.password = ds.getProperties().getProperty("password");
             this.path = ds.getProperties().getProperty("path");

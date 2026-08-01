@@ -55,6 +55,18 @@ type IntrospectResponse = {
   }>;
 };
 
+/**
+ * OSS edit mode (saiku#1634): fetch a datasource's already-attached Mondrian schema XML so the host
+ * can hydrate the canvas instead of opening blank. Returns the raw Response — 200 `{ mondrianXml,
+ * label }` when a schema is attached and resolvable, 404 otherwise (⇒ new-cube target, stay blank).
+ *
+ * Deliberately NOT part of the shared {@link CubeDesignerBackend} seam: Cloud has its own
+ * library-based edit flow (`ImportController`), so this stays OSS host glue.
+ */
+export function fetchDatasourceSchema(dataSourceId: string): Promise<Response> {
+  return fetch(`${BASE}/schema/${encodeURIComponent(dataSourceId)}`, CREDS);
+}
+
 export const ossCubeDesignerBackend: CubeDesignerBackend = {
   async profileConnection(connectionId) {
     const r = await fetch(

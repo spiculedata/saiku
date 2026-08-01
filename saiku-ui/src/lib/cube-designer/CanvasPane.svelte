@@ -29,7 +29,11 @@
 	import JumpHandler from './JumpHandler.svelte';
 	import TableSidebar from './TableSidebar.svelte';
 	import type { SchemaCanvasStore } from './state.svelte.js';
-	import { parseConnectionJoin, parseDroppedTableCandidates } from './canvas-dnd.js';
+	import {
+		parseConnectionJoin,
+		parseDroppedTableCandidates,
+		resolveDropOrigin
+	} from './canvas-dnd.js';
 
 	interface Props {
 		store: SchemaCanvasStore;
@@ -110,8 +114,16 @@
 		const candidates = parseDroppedTableCandidates(arrayPayload, singlePayload);
 		if (candidates.length === 0) return;
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		const baseX = e.clientX - rect.left;
-		const baseY = e.clientY - rect.top;
+		// saiku#1634 #3: map the pointer's viewport coords into FLOW space via the
+		// converter JumpHandler published, so a panned/zoomed canvas drops the node
+		// under the cursor rather than off-screen. Falls back to pane-relative
+		// pixels (identity-viewport behaviour) when the converter isn't available.
+		const { x: baseX, y: baseY } = resolveDropOrigin(
+			store.screenToFlowPosition,
+			e.clientX,
+			e.clientY,
+			rect
+		);
 		// Each addTable / addJoin snapshots on its own so Undo peels the
 		// drop off one table at a time (last-in-first-out).  Batching used
 		// to wrap this in withUndoBatch — one snapshot for the whole drop

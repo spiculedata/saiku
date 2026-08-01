@@ -11,10 +11,14 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import jakarta.ws.rs.core.Response;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import org.junit.After;
 import org.junit.Before;
@@ -24,6 +28,7 @@ import org.saiku.datasources.datasource.SaikuDatasource;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.web.rest.resources.cubedesigner.CubeDesignerResource.IntrospectResult;
 import org.saiku.web.rest.resources.cubedesigner.CubeDesignerResource.SampleResult;
+import org.saiku.web.rest.resources.cubedesigner.CubeDesignerResource.SchemaResult;
 import org.saiku.web.rest.resources.cubedesigner.CubeDesignerResource.TableView;
 import org.saiku.web.rest.resources.schemagen.DatasourceJdbcConnectionProvider;
 
@@ -63,20 +68,43 @@ public class CubeDesignerResourceTest {
         resource = new CubeDesignerResource(provider, datasourceService);
     }
 
-    /** Hand-rolled stub (house pattern — saiku-web has no Mockito), serving one datasource by id. */
+    /** Hand-rolled stub (house pattern — saiku-web has no Mockito), serving one datasource by id
+     *  plus an optional in-memory repository (path → file content) for the schema endpoint. */
     private static final class StubDatasourceService extends DatasourceService {
         private final String id;
         private final SaikuDatasource ds;
+        private final Map<String, String> repoFiles;
 
         StubDatasourceService(String id, SaikuDatasource ds) {
+            this(id, ds, Map.of());
+        }
+
+        StubDatasourceService(String id, SaikuDatasource ds, Map<String, String> repoFiles) {
             this.id = id;
             this.ds = ds;
+            this.repoFiles = repoFiles;
         }
 
         @Override
         public SaikuDatasource getDatasource(String datasourceName) {
             return id.equals(datasourceName) ? ds : null;
         }
+
+        @Override
+        public String getInternalFileData(String path) {
+            return repoFiles.get(path);
+        }
+    }
+
+    /** Build a resource whose single datasource has the given Mondrian location + optional repo. */
+    private static CubeDesignerResource resourceFor(String location, Map<String, String> repoFiles) {
+        Properties props = new Properties();
+        props.setProperty(ISaikuConnection.URL_KEY, location);
+        props.setProperty(ISaikuConnection.USERNAME_KEY, "sa");
+        props.setProperty(ISaikuConnection.PASSWORD_KEY, "");
+        SaikuDatasource ds = new SaikuDatasource(DATA_SOURCE_ID, SaikuDatasource.Type.OLAP, props);
+        StubDatasourceService svc = new StubDatasourceService(DATA_SOURCE_ID, ds, repoFiles);
+        return new CubeDesignerResource(new DatasourceJdbcConnectionProvider(svc), svc);
     }
 
     @After
@@ -140,7 +168,59 @@ public class CubeDesignerResourceTest {
         assertEquals(400, r.getStatus());
     }
 
-    // -- (3) convert ------------------------------------------------------------
+    // -- (3) schema (edit mode) -------------------------------------------------
+
+    @Test
+    public void schema_readsExternalFileCatalog() throws Exception {
+        // The launcher's foodmart/bank pattern: Catalog=file:/abs/path/Schema.xml
+        Path tmp = Files.createTempFile("cube-designer-schema", ".xml");
+        tmp.toFile().deleteOnExit();
+        String xml = "<Schema name=\"FoodMart\"/>";
+        Files.writeString(tmp, xml, StandardCharsets.UTF_8);
+        String location =
+                "jdbc:mondrian:Jdbc=" + JDBC_URL + ";MODE=MySQL;Catalog=file:" + tmp + ";JdbcDrivers=org.h2.Driver";
+
+        Response r = resourceFor(location, Map.of()).schema(DATA_SOURCE_ID);
+        assertEquals(200, r.getStatus());
+        SchemaResult body = (SchemaResult) r.getEntity();
+        assertEquals(xml, body.mondrianXml());
+        assertEquals(DATA_SOURCE_ID, body.label());
+    }
+
+    @Test
+    public void schema_readsRepositoryCatalog() {
+        // A UI-created datasource: Catalog=mondrian://Name → /datasources/Name.xml in the repo.
+        String xml = "<Schema name=\"Sales\"/>";
+        String location = "jdbc:mondrian:Jdbc=" + JDBC_URL + ";Catalog=mondrian://Sales;JdbcDrivers=org.h2.Driver";
+
+        Response r =
+                resourceFor(location, Map.of("/datasources/Sales.xml", xml)).schema(DATA_SOURCE_ID);
+        assertEquals(200, r.getStatus());
+        SchemaResult body = (SchemaResult) r.getEntity();
+        assertEquals(xml, body.mondrianXml());
+    }
+
+    @Test
+    public void schema_noCatalogIs404() {
+        // Plain JDBC datasource (no Mondrian wrapper) → new-cube target, host stays blank.
+        Response r = resourceFor(JDBC_URL, Map.of()).schema(DATA_SOURCE_ID);
+        assertEquals(404, r.getStatus());
+    }
+
+    @Test
+    public void schema_missingRepositoryFileIs404() {
+        String location = "jdbc:mondrian:Jdbc=" + JDBC_URL + ";Catalog=mondrian://Absent;JdbcDrivers=org.h2.Driver";
+        Response r = resourceFor(location, Map.of()).schema(DATA_SOURCE_ID);
+        assertEquals(404, r.getStatus());
+    }
+
+    @Test
+    public void schema_unknownDatasourceIs404() {
+        Response r = resource.schema("no-such-ds");
+        assertEquals(404, r.getStatus());
+    }
+
+    // -- (4) convert ------------------------------------------------------------
 
     @Test
     public void convert_missingXmlIs400() {

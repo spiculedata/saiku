@@ -21,7 +21,9 @@
   import {
     ossCubeDesignerBackend,
     ossCubeDesignerAI,
+    fetchDatasourceSchema,
   } from "$lib/cube-designer/oss-backend";
+  import { hydrateFromMondrianXml } from "./edit-load";
   import { exportToMondrianXml } from "$lib/cube-designer/mondrian-export";
   import { parseProfileTables } from "$lib/cube-designer/profile-types";
   import type { SourceTableCandidate } from "$lib/cube-designer/types";
@@ -73,7 +75,33 @@
     } finally {
       store.sourceLoading = false;
     }
+    // saiku#1634 edit mode: if this datasource already has a Mondrian schema,
+    // hydrate the canvas from it. Runs after profiling so the importer can
+    // enrich imported tables against the live source catalog.
+    await loadExistingSchema();
   });
+
+  /**
+   * Fetch the datasource's attached Mondrian schema (if any) and load it onto
+   * the canvas. A 404 (no schema attached) is the new-cube path — leave the
+   * canvas blank. A parse/read error surfaces in the source-error banner.
+   */
+  async function loadExistingSchema() {
+    try {
+      const r = await fetchDatasourceSchema(dataSourceId);
+      if (!r.ok) return; // 404 ⇒ no schema attached: start a new cube, blank canvas
+      const body = (await r.json()) as { mondrianXml?: string; label?: string };
+      const xml = body.mondrianXml ?? "";
+      if (!xml) return;
+      hydrateFromMondrianXml(store, xml, dataSourceId);
+      // Mark the canvas as editing a saved schema so the workbench shows saved
+      // (not draft) state; Save then writes back under this name.
+      store.doc.lineageId = body.label?.trim() || dataSourceId;
+    } catch (e) {
+      sourceError =
+        e instanceof Error ? e.message : "could not load the existing schema";
+    }
+  }
 
   async function save() {
     saving = true;
