@@ -43,6 +43,14 @@
 
   let { tile, onClickFilter }: Props = $props();
 
+  // Trend/Breakdown toggle (opt-in via tile.custom.trendBreakdown). "trend"
+  // keeps the author's line series; "breakdown" swaps them to bars over the
+  // same query — a display-only mode switch, no re-query.
+  const ACCENT_LAST = "#c85a3a";
+  let showToggle = $derived(!!tile.custom?.trendBreakdown);
+  let emphasizeLast = $derived(!!tile.custom?.emphasizeLast);
+  let mode = $state<"trend" | "breakdown">("trend");
+
   // Whether the author has supplied any option at all — distinguishes a
   // brand-new / unconfigured tile from a genuinely invalid one.
   let hasOption = $derived(
@@ -128,6 +136,8 @@
     const r = response;
     // Repaint on theme flip so author text/axes track the current palette.
     void theme.effective;
+    const curMode = mode; // dep: re-render on toggle
+    void emphasizeLast;
     if (!chart) return;
     if (!validation.ok || !r || r.status !== "SUCCESS") {
       chart.clear();
@@ -142,9 +152,44 @@
       })),
     };
     const option = applyDataToEchartsOption(validation.value, projection);
+    applyModeAndEmphasis(option, curMode);
     // notMerge=true so a re-render never leaves stale series/axis state behind.
     chart.setOption(option, true);
   });
+
+  /** Post-process the data-filled option for the Trend/Breakdown mode + the
+   *  emphasised last point. Mutates `option` in place (it is a fresh clone from
+   *  applyDataToEchartsOption). "breakdown" turns line series into bars; the
+   *  emphasised last point recolours series[0]'s final datum. */
+  function applyModeAndEmphasis(option: Record<string, unknown>, curMode: "trend" | "breakdown"): void {
+    const series = Array.isArray(option.series) ? (option.series as Record<string, unknown>[]) : [];
+    if (curMode === "breakdown") {
+      for (const s of series) {
+        s.type = "bar";
+        delete s.areaStyle;
+        delete s.smooth;
+        delete s.lineStyle;
+        delete s.symbol;
+      }
+      return;
+    }
+    // trend mode: optionally emphasise the final point of the first series.
+    if (emphasizeLast && series.length > 0) {
+      const s0 = series[0];
+      const data = Array.isArray(s0.data) ? [...(s0.data as unknown[])] : [];
+      if (data.length > 0) {
+        const lastIdx = data.length - 1;
+        const raw = data[lastIdx];
+        const value = raw && typeof raw === "object" ? (raw as Record<string, unknown>).value : raw;
+        data[lastIdx] = {
+          value,
+          symbolSize: 10,
+          itemStyle: { color: ACCENT_LAST, borderColor: "#fff", borderWidth: 2 },
+        };
+        s0.data = data;
+      }
+    }
+  }
 
   // Best-effort click-to-filter for INLINE tiles: map a clicked category caption
   // back to a real member unique name on the tile's first row axis, mirroring
@@ -182,6 +227,22 @@
   </div>
 {:else}
   <div class="ec-tile">
+    {#if showToggle}
+      <div class="ec-toggle" role="group" aria-label="Chart mode">
+        <button
+          type="button"
+          class="ec-toggle__btn"
+          class:is-active={mode === "trend"}
+          aria-pressed={mode === "trend"}
+          onclick={() => (mode = "trend")}>Trend</button>
+        <button
+          type="button"
+          class="ec-toggle__btn"
+          class:is-active={mode === "breakdown"}
+          aria-pressed={mode === "breakdown"}
+          onclick={() => (mode = "breakdown")}>Breakdown</button>
+      </div>
+    {/if}
     <div class="canvas" bind:this={host}></div>
     {#if loading && !response}
       <div class="overlay solid"><TileLoading variant="chart" /></div>
@@ -205,6 +266,35 @@
   .canvas {
     width: 100%;
     height: 100%;
+  }
+  /* Trend / Breakdown segmented toggle, pinned top-right of the chart card. */
+  .ec-toggle {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    z-index: 2;
+    display: inline-flex;
+    padding: 3px;
+    border-radius: 9px;
+    background: var(--saiku-app-toggle-bg, #efe9dc);
+    gap: 2px;
+  }
+  .ec-toggle__btn {
+    border: 0;
+    background: transparent;
+    padding: 4px 12px;
+    border-radius: 7px;
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--saiku-app-muted, #8a7f68);
+    cursor: pointer;
+    line-height: 1.2;
+  }
+  .ec-toggle__btn.is-active {
+    background: var(--saiku-app-card, #fff);
+    color: var(--saiku-app-fg, #1f3529);
+    box-shadow: 0 1px 2px rgba(30, 40, 30, 0.12);
   }
   .overlay {
     position: absolute;

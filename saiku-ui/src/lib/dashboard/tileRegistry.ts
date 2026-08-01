@@ -23,6 +23,13 @@ export interface CustomTileConfig {
   /** Opaque renderer-specific options. Validated by the renderer's
    *  {@link TileRenderer.validateOptions} before use. */
   options: Record<string, unknown>;
+  /** echarts-option renderer only: emphasise the final data point of the first
+   *  series with an accent-coloured marker (the "current period" dot). */
+  emphasizeLast?: boolean;
+  /** echarts-option renderer only: render a "Trend / Breakdown" toggle in the
+   *  tile corner that swaps the series between a line (trend) and bars
+   *  (breakdown) over the same query — the reference trend-card control. */
+  trendBreakdown?: boolean;
 }
 
 /** Result of validating a custom tile's opaque options blob. */

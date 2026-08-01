@@ -276,7 +276,9 @@
                     }
                   }
                 ]
-              }
+              },
+              "trendBreakdown": true,
+              "emphasizeLast": true
             }
           },
           {
