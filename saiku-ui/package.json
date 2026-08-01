@@ -19,6 +19,7 @@
     "e2e": "playwright test",
     "e2e:live": "RUN_LIVE_E2E=1 playwright test",
     "e2e:ui": "playwright test --ui",
+    "fuzz": "bash bombadil/run.sh",
     "lint:tokens": "node ./scripts/check-tokens.mjs",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
@@ -26,6 +27,7 @@
     "lint": "npm run lint:tokens && npm run lint:eslint"
   },
   "devDependencies": {
+    "@antithesishq/bombadil": "^0.6.1",
     "@chromatic-com/storybook": "^5.2.1",
     "@eslint/compat": "^2.1.0",
     "@eslint/js": "^10.0.1",

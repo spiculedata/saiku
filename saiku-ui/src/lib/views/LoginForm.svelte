@@ -126,7 +126,7 @@
         required
       />
     </label>
-    <Button class="w-full" type="submit" disabled={busy}>
+    <Button class="w-full" type="submit" data-testid="login-submit" disabled={busy}>
       {busy ? i18n.t("login.submitting") : i18n.t("login.submit")}
     </Button>
     {#if showDemoPanel}

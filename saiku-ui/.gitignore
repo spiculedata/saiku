@@ -26,3 +26,6 @@ storybook-static/
 test-results/
 playwright-report/
 playwright/.cache/
+
+# Bombadil fuzz output
+bombadil/out/
