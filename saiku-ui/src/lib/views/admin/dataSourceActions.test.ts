@@ -39,36 +39,36 @@ describe("canGenerateSchema", () => {
 });
 
 describe("generateSchemaLabel", () => {
-  it("returns 'Generate schema' when the data source has no schema", () => {
-    expect(generateSchemaLabel({ id: "ds-1" })).toBe("Generate schema");
+  it("returns 'Design cube' when the data source has no schema", () => {
+    expect(generateSchemaLabel({ id: "ds-1" })).toBe("Design cube");
     expect(generateSchemaLabel({ id: "ds-1", schemaName: null })).toBe(
-      "Generate schema",
+      "Design cube",
     );
     expect(generateSchemaLabel({ id: "ds-1", schemaName: "" })).toBe(
-      "Generate schema",
+      "Design cube",
     );
     expect(generateSchemaLabel({ id: "ds-1", schemaName: "   " })).toBe(
-      "Generate schema",
+      "Design cube",
     );
   });
 
-  it("returns 'Regenerate / check for drift' when a schema is attached", () => {
+  it("returns 'Edit cube schema' when a schema is attached", () => {
     expect(generateSchemaLabel({ id: "ds-1", schemaName: "SteelWheels" })).toBe(
-      "Regenerate / check for drift",
+      "Edit cube schema",
     );
   });
 });
 
 describe("generateSchemaHref", () => {
-  it("links to the schema-generator route for the data source id", () => {
+  it("links to the cube-designer route for the data source id", () => {
     expect(generateSchemaHref({ id: "ds-1" })).toBe(
-      "/admin/schema-generator/ds-1",
+      "/admin/cube-designer/ds-1",
     );
   });
 
   it("percent-encodes ids that contain URL-unsafe characters", () => {
     const href = generateSchemaHref({ id: "foo bar/baz?x" });
-    expect(href).toBe("/admin/schema-generator/foo%20bar%2Fbaz%3Fx");
+    expect(href).toBe("/admin/cube-designer/foo%20bar%2Fbaz%3Fx");
     // the raw id must not leak through
     expect(href).not.toContain(" ");
     expect(href).not.toContain("?");

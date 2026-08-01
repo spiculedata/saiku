@@ -57,17 +57,20 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
+    "@xyflow/svelte": "^1.6.0",
     "apache-arrow": "^21.2.0",
     "bits-ui": "^2.18.1",
     "clsx": "^2.1.1",
     "css-tree": "^3.2.1",
     "echarts": "^6.0.0",
+    "elkjs": "^0.11.1",
     "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
     "lucide-svelte": "^1.0.1",
     "monaco-editor": "^0.56.0",
     "tailwind-merge": "^3.6.0",
-    "tailwind-variants": "^3.2.2"
+    "tailwind-variants": "^3.2.2",
+    "yaml": "^2.9.0"
   },
   "overrides": {
     "dompurify": "^3.4.0",

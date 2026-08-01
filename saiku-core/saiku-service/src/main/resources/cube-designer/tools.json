@@ -1,0 +1,235 @@
+[
+  {
+    "name": "list_tables",
+    "description": "List every table on this connection, split into `onCanvas` (already laid out) and `available` (in the profile catalog but not on canvas yet).  Call this whenever the user asks what tables they have or what tables they can use.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "describe_table",
+    "description": "Return full column list + neighbors (joins involving this table) for one table.  Table names are matched case-insensitively, with or without schema prefix.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "qualifiedName": {
+          "type": "string",
+          "description": "Table name, optionally schema-qualified: \"public.customer\" or \"customer\"."
+        }
+      },
+      "required": ["qualifiedName"]
+    }
+  },
+  {
+    "name": "list_joins",
+    "description": "List every join on the canvas, split into `userMade` (physical, editable) and `semantic` (cube-link, read-only).  Use this to answer \"what joins exist\" questions.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "add_table_to_canvas",
+    "description": "Add a table from the profile catalog to the canvas.  Idempotent — no-op if the table is already on canvas.  Returns { added: boolean, tableId, reason? }.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "qualifiedName": {
+          "type": "string",
+          "description": "Table name, optionally schema-qualified: \"public.customer\"."
+        }
+      },
+      "required": ["qualifiedName"]
+    }
+  },
+  {
+    "name": "remove_table_from_canvas",
+    "description": "Remove a table from the canvas.  Also removes any joins touching this table.  Returns { removed: boolean, joinsRemoved: number }.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "qualifiedName": {
+          "type": "string",
+          "description": "Table on canvas, optionally schema-qualified."
+        }
+      },
+      "required": ["qualifiedName"]
+    }
+  },
+  {
+    "name": "add_join",
+    "description": "Create a physical join between two column endpoints.  Both tables must already be on canvas — if a required table is missing, call add_table_to_canvas first, then call add_join.  Returns { added: boolean, joinId, reason? }.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "object",
+          "properties": {
+            "table": { "type": "string", "description": "Source table name (schema-qualified ok)." },
+            "column": { "type": "string", "description": "Source column name." }
+          },
+          "required": ["table", "column"]
+        },
+        "to": {
+          "type": "object",
+          "properties": {
+            "table": { "type": "string", "description": "Target table name (schema-qualified ok)." },
+            "column": { "type": "string", "description": "Target column name." }
+          },
+          "required": ["table", "column"]
+        }
+      },
+      "required": ["from", "to"]
+    }
+  },
+  {
+    "name": "remove_join",
+    "description": "Delete a physical join by its endpoints.  Only affects user-made joins; semantic cube-links are read-only.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "object",
+          "properties": {
+            "table": { "type": "string" },
+            "column": { "type": "string" }
+          },
+          "required": ["table", "column"]
+        },
+        "to": {
+          "type": "object",
+          "properties": {
+            "table": { "type": "string" },
+            "column": { "type": "string" }
+          },
+          "required": ["table", "column"]
+        }
+      },
+      "required": ["from", "to"]
+    }
+  },
+  {
+    "name": "arrange_canvas",
+    "description": "Re-arrange the tables on the canvas into a tidy layout.  Same operation the toolbar \"Arrange\" button runs.  Use when the user asks to arrange / lay out / tidy / auto-layout / organize / grid the canvas.  Modes: `star` (dim tables radiate around the fact — default, matches the button), `layered` (top-down hierarchy), `grid` (uniform grid), `byJoins` (cluster by join graph).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["star", "layered", "grid", "byJoins"],
+          "description": "Layout mode — defaults to `star` when omitted (matches the toolbar Arrange button)."
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "perform_action",
+    "description": "Trigger a canvas viewport or toolbar control the user could normally reach with a UI button.  Use this for zoom / fit / centre / undo asks.  Actions:\n  - `zoom_in` — same as the + button on the canvas controls.\n  - `zoom_out` — same as the − button.\n  - `fit_view` — same as the fullscreen button; frames every table on the canvas.\n  - `zoom_to_100` — reset zoom to 100 %.\n  - `center_view` — centre the viewport on all tables (equivalent to fit_view; use when the user says \"center the items on canvas\" or \"center everything\").\n  - `center_view_on_table` — pan and zoom onto ONE specific table; requires the extra `qualifiedName` argument.\n  - `undo_last_change` — same as the toolbar Undo button; reverts the most recent DimSum or user edit.\nCall this whenever the user asks for one of those operations — never say \"I can't control the view\" or \"I can't undo\".",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["zoom_in", "zoom_out", "fit_view", "zoom_to_100", "center_view", "center_view_on_table", "undo_last_change"],
+          "description": "Which action to perform."
+        },
+        "qualifiedName": {
+          "type": "string",
+          "description": "ONLY for action=center_view_on_table: the table to centre on, optionally schema-qualified."
+        }
+      },
+      "required": ["action"]
+    }
+  },
+  {
+    "name": "list_dimensions",
+    "description": "Read the cube's LOGICAL model built so far: the fact table, every dimension (with its table, primary key, foreign key, type and hierarchies→levels), and every measure. Call this before adding logical structure so you don't duplicate what already exists.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "set_fact_table",
+    "description": "Designate the cube's FACT table (the table whose rows are the grain of measurement, e.g. sales_fact). Measures live on this table and every dimension links to it. A cube has exactly one fact table — calling this again moves the designation. The table must already be on the canvas. Returns { factTable }.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "qualifiedName": { "type": "string", "description": "Fact table on canvas, optionally schema-qualified." }
+      },
+      "required": ["qualifiedName"]
+    }
+  },
+  {
+    "name": "create_dimension",
+    "description": "Create a Mondrian 4 shared dimension bound to a dimension table. `primaryKeyColumn` is that table's own key; `foreignKeyColumn` is the column ON THE FACT TABLE that joins to it (the ForeignKeyLink). Add a physical join between fact.foreignKeyColumn and table.primaryKeyColumn too (add_join) so the link resolves. Returns { dimension }.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "table": { "type": "string", "description": "Dimension table on canvas, optionally schema-qualified." },
+        "primaryKeyColumn": { "type": "string", "description": "The dimension table's primary-key column (its unique row id)." },
+        "foreignKeyColumn": { "type": "string", "description": "The FACT-table column that joins to this dimension (its ForeignKeyLink)." },
+        "name": { "type": "string", "description": "Dimension name. Defaults to the table name." },
+        "type": { "type": "string", "enum": ["Standard", "Time", "Geographic"], "description": "Dimension type. Use `Time` for date/calendar dimensions (needed for time intelligence)." }
+      },
+      "required": ["table", "primaryKeyColumn"]
+    }
+  },
+  {
+    "name": "add_hierarchy",
+    "description": "Add a named hierarchy to an existing dimension. A hierarchy groups levels coarse→fine (e.g. Country → State → City). A dimension can have several (e.g. a Time dim with Calendar and Fiscal). Add levels to it with add_level. Returns { dimension, hierarchy }.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "dimension": { "type": "string", "description": "Existing dimension name." },
+        "name": { "type": "string", "description": "Hierarchy name, e.g. \"Geography\" or \"Calendar\"." },
+        "hasAll": { "type": "boolean", "description": "Whether the hierarchy has an (All) member. Defaults to true." }
+      },
+      "required": ["dimension", "name"]
+    }
+  },
+  {
+    "name": "add_level",
+    "description": "Add a level to a hierarchy, referencing one column of the dimension's table. Add levels coarsest-first (Year before Month; Country before City). `column` must exist on the dimension's table. Returns { dimension, hierarchy, level }.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "dimension": { "type": "string", "description": "Existing dimension name." },
+        "hierarchy": { "type": "string", "description": "Existing hierarchy name on that dimension." },
+        "column": { "type": "string", "description": "Column on the dimension's table to expose as this level." },
+        "name": { "type": "string", "description": "Level name. Defaults to the column name." }
+      },
+      "required": ["dimension", "hierarchy", "column"]
+    }
+  },
+  {
+    "name": "add_measure",
+    "description": "Add a measure to the cube's measure group (set_fact_table first). A cube's measures live inside a measure group bound to the fact table; this folds the column into that group (creating a default one if none) as well as registering the measure. Use aggregator `count` with no column for a row-count measure. Returns { measure, measureGroup }.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "column": { "type": "string", "description": "Numeric column on the fact table. Omit only for a count(*) row-count measure." },
+        "aggregator": { "type": "string", "enum": ["sum", "count", "avg", "min", "max", "distinct-count", "median", "percentile"], "description": "Aggregation function. Defaults to sum. `median` and `percentile` are non-additive (computed via PERCENTILE_CONT at the queried grain) — use them for distribution measures like median order value or p90 latency." },
+        "percentile": { "type": "integer", "minimum": 0, "maximum": 100, "description": "Only for aggregator=percentile: the fraction 0–100 (e.g. 90 for p90). Ignored otherwise; defaults to 50." },
+        "name": { "type": "string", "description": "Measure name. Defaults to the column name." }
+      },
+      "required": ["aggregator"]
+    }
+  },
+  {
+    "name": "add_measure_group",
+    "description": "Create a named measure group on the cube, bound to the fact table (set_fact_table first). A measure group collects measures that share a fact table and dimension links — most cubes need only the default group, so only call this when you deliberately want a second group (e.g. two facts at different grains). add_measure folds measures into a group automatically. Returns { measureGroup }.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Measure group name. Defaults to \"Group N\"." }
+      },
+      "required": []
+    }
+  }
+]
