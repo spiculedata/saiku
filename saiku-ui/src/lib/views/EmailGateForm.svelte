@@ -153,8 +153,8 @@
     padding: var(--space-6);
     max-width: 380px;
     width: 100%;
-    background: var(--bg-muted);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg-muted));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-md);
   }
@@ -164,7 +164,7 @@
   }
   .gate__intro {
     margin: 0 0 var(--space-4);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-sm);
     line-height: var(--lh-normal);
   }
@@ -176,7 +176,7 @@
   .gate__sent {
     margin: 0 0 var(--space-3);
     font-size: var(--fs-sm);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .gate__code {
     letter-spacing: 0.4em;
@@ -186,7 +186,7 @@
   .gate__privacy {
     margin: var(--space-4) 0 0;
     font-size: var(--fs-xs);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     line-height: var(--lh-normal);
   }
 </style>

@@ -44,7 +44,7 @@
         onclick={() => onAddTile("chart")}
         aria-label="Add a chart tile"
       >
-        <span class="inline-flex items-center justify-center text-accent mb-1" aria-hidden="true">
+        <span class="inline-flex items-center justify-center text-primary mb-1" aria-hidden="true">
           <BarChart3 size={28} strokeWidth={1.75} />
         </span>
         <span class="font-semibold text-base">Chart</span>
@@ -57,7 +57,7 @@
         onclick={() => onAddTile("table")}
         aria-label="Add a table tile"
       >
-        <span class="inline-flex items-center justify-center text-accent mb-1" aria-hidden="true">
+        <span class="inline-flex items-center justify-center text-primary mb-1" aria-hidden="true">
           <Table2 size={28} strokeWidth={1.75} />
         </span>
         <span class="font-semibold text-base">Table</span>
@@ -70,7 +70,7 @@
         onclick={() => onAddTile("kpi")}
         aria-label="Add a KPI tile"
       >
-        <span class="inline-flex items-center justify-center text-accent mb-1" aria-hidden="true">
+        <span class="inline-flex items-center justify-center text-primary mb-1" aria-hidden="true">
           <Gauge size={28} strokeWidth={1.75} />
         </span>
         <span class="font-semibold text-base">KPI</span>
@@ -94,15 +94,15 @@
     max-width: 56rem;
     width: 100%;
     padding: 2rem 1.5rem;
-    border: 1px dashed var(--border-strong);
+    border: 1px dashed hsl(var(--border-strong));
     border-radius: 8px;
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
     text-align: center;
   }
   .subtitle {
     margin: 0;
     max-width: 36rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: 0.875rem;
     line-height: 1.5;
   }
@@ -124,20 +124,20 @@
     align-items: center;
     gap: 0.375rem;
     padding: 1.25rem 1rem;
-    background: var(--bg);
-    border: 1px solid var(--border-strong);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border-strong));
     border-radius: 6px;
     cursor: pointer;
-    color: var(--fg);
+    color: hsl(var(--fg));
     font-family: inherit;
     transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
   }
   .cta:hover {
-    border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 6%, var(--bg));
+    border-color: hsl(var(--primary));
+    background: color-mix(in srgb, hsl(var(--primary)) 6%, hsl(var(--bg)));
   }
   .cta:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid hsl(var(--primary));
     outline-offset: 2px;
   }
   .cta:active {
@@ -145,16 +145,16 @@
   }
   .cta-hint {
     font-size: 0.75rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     line-height: 1.4;
   }
   .more {
     margin: 0.25rem 0 0;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: 0.8125rem;
   }
   .more strong {
     font-weight: var(--weight-medium);
-    color: var(--fg);
+    color: hsl(var(--fg));
   }
 </style>

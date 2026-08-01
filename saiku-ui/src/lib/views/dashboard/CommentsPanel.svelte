@@ -243,7 +243,7 @@
     gap: var(--space-3);
   }
   .cmts__state {
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-sm);
     padding: var(--space-2) 0;
   }
@@ -259,18 +259,18 @@
   }
   .cmts__date {
     font-size: var(--fs-xs, 0.75rem);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .cmts__del {
     margin-left: auto;
     background: none;
     border: none;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     cursor: pointer;
     padding: 2px;
   }
   .cmts__del:hover {
-    color: var(--danger);
+    color: hsl(var(--danger));
   }
   .cmts__body {
     margin: var(--space-1) 0 0;
@@ -293,8 +293,8 @@
     margin: 0;
     padding: 4px;
     list-style: none;
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
     box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.15));
     max-height: 12rem;
@@ -311,6 +311,6 @@
     border-radius: 4px;
     cursor: pointer;
     font: inherit;
-    color: var(--fg);
+    color: hsl(var(--fg));
   }
 </style>

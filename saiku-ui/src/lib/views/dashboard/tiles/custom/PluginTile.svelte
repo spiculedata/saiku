@@ -332,7 +332,7 @@
     width: 100%;
     min-height: 40px;
     border: 0;
-    background: var(--bg);
+    background: hsl(var(--bg));
   }
   .plugin-error {
     position: absolute;
@@ -342,7 +342,7 @@
     padding: 4px 8px;
     font-size: 12px;
     color: var(--danger, #b91c1c);
-    background: var(--bg);
+    background: hsl(var(--bg));
     border-top: 1px solid var(--border, #e5e7eb);
     z-index: 2;
     white-space: pre-wrap;
@@ -354,8 +354,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--bg);
-    color: var(--fg-muted);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg-muted));
     z-index: 1;
   }
   .overlay.solid {

@@ -535,7 +535,7 @@
     font-weight: 600;
     line-height: 1.1;
     letter-spacing: -0.01em;
-    color: var(--fg);
+    color: hsl(var(--fg));
     text-align: center;
   }
   .delta {
@@ -543,7 +543,7 @@
     align-items: center;
     gap: 0.25rem;
     font-size: 0.8125rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .delta[data-tone="positive"] {
     color: var(--success, #1b8a3a);
@@ -552,13 +552,13 @@
     color: var(--danger, #c00);
   }
   .delta.delta--empty {
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-style: italic;
     cursor: help;
   }
   .caption {
     font-size: 0.75rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
@@ -571,7 +571,7 @@
     right: 0.25rem;
     top: 0.25rem;
     z-index: 2;
-    background: color-mix(in srgb, var(--bg) 80%, transparent);
+    background: color-mix(in srgb, hsl(var(--bg)) 80%, transparent);
     border-radius: 4px;
     padding: 0.0625rem 0.25rem;
     pointer-events: none;
@@ -579,13 +579,13 @@
   }
   .placeholder {
     padding: 0.75rem 1rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: 0.8125rem;
     text-align: center;
   }
   .placeholder :global(.placeholder__icon) {
     display: inline-block;
     vertical-align: -2px;
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
   }
 </style>

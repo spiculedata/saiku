@@ -58,7 +58,7 @@
     text-align: center;
     gap: var(--space-3);
     padding: var(--space-8) var(--space-5);
-    color: var(--fg);
+    color: hsl(var(--fg));
   }
   .empty-state--compact {
     padding: var(--space-5) var(--space-3);
@@ -71,8 +71,8 @@
     width: 64px;
     height: 64px;
     border-radius: 50%;
-    background: var(--bg-muted);
-    color: var(--fg-subtle);
+    background: hsl(var(--bg-muted));
+    color: hsl(var(--fg-subtle));
   }
   .empty-state--compact .empty-state__icon {
     width: 48px;
@@ -81,7 +81,7 @@
   .empty-state__description {
     margin: 0;
     max-width: 32ch;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-sm);
     line-height: var(--lh-normal);
   }

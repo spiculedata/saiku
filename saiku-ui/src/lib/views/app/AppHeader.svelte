@@ -85,9 +85,9 @@
     padding: 0.5rem 1rem;
     min-height: 3rem;
     box-sizing: border-box;
-    background: var(--saiku-app-bg, var(--bg));
-    color: var(--saiku-app-fg, var(--fg));
-    border-bottom: 1px solid var(--border);
+    background: var(--saiku-app-bg, hsl(var(--bg)));
+    color: var(--saiku-app-fg, hsl(var(--fg)));
+    border-bottom: 1px solid hsl(var(--border));
     font-family: var(--saiku-app-font, inherit);
   }
   .saiku-app__brand {
@@ -116,7 +116,7 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: var(--saiku-app-primary, var(--saiku-app-fg, var(--fg)));
+    color: var(--saiku-app-primary, var(--saiku-app-fg, hsl(var(--fg))));
   }
   .saiku-app__name-accent {
     color: var(--saiku-app-accent-2, var(--saiku-app-accent, #c85a3a));

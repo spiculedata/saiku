@@ -41,7 +41,7 @@ describe("sanitiseAndScopeCss", () => {
   // with no Url child, so the Url walk never saw them.
   test("strips remote url() hidden in a custom property (var weaponisation)", () => {
     const out = sanitiseAndScopeCss(
-      ".a{--bg:url(https://evil/track.png)} .b{background:var(--bg)}",
+      ".a{--bg:url(https://evil/track.png)} .b{background:hsl(var(--bg))}",
       ROOT,
     );
     expect(out).not.toContain("evil");

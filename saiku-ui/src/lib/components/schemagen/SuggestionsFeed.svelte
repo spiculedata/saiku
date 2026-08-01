@@ -120,14 +120,14 @@
     padding: var(--space-3);
     font-family: var(--font-sans);
     font-size: var(--fs-sm);
-    color: var(--fg);
+    color: hsl(var(--fg));
     overflow: auto;
   }
   .feed__banner {
     padding: var(--space-2) var(--space-3);
-    border: 1px solid var(--warning, var(--border-strong));
-    background: var(--bg-muted);
-    color: var(--fg);
+    border: 1px solid var(--warning, hsl(var(--border-strong)));
+    background: hsl(var(--bg-muted));
+    color: hsl(var(--fg));
     border-radius: var(--radius-sm);
     font-size: var(--fs-xs);
   }
@@ -140,14 +140,14 @@
     font: inherit;
     font-size: var(--fs-xs);
     padding: 3px var(--space-2);
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
-    background: var(--bg);
-    color: var(--fg);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
     cursor: pointer;
   }
   .feed__bulk:hover {
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
   }
   .feed__bulk:focus-visible {
     outline: none;

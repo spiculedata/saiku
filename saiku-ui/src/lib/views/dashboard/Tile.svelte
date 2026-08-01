@@ -362,9 +362,9 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
-    background: var(--bg);
+    background: hsl(var(--bg));
     overflow: hidden;
     /* issue #924: smooth the highlight/dim when a filter is hovered. */
     transition:
@@ -375,8 +375,8 @@
      tiles get a 1px accent ring (inset, so layout doesn't shift), tiles
      it won't touch fade back. Purely transient; clears on mouse-out. */
   .tile--filter-hit {
-    box-shadow: inset 0 0 0 1px var(--accent);
-    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px hsl(var(--primary));
+    border-color: hsl(var(--primary));
   }
   /* issue #915: multi-select outline. A 2px accent ring drawn with
      box-shadow (not border) so it never shifts the tile's layout, plus a
@@ -384,8 +384,8 @@
      ring naturally — both use box-shadow, last-declared wins on overlap,
      and a selected tile reads as selected first. */
   .tile--selected {
-    box-shadow: inset 0 0 0 2px var(--accent);
-    border-color: var(--accent);
+    box-shadow: inset 0 0 0 2px hsl(var(--primary));
+    border-color: hsl(var(--primary));
   }
   /* #942: comment badge sits between the title and the edit actions. */
   .tile-comment-badge {
@@ -403,7 +403,7 @@
     height: 14px;
     padding: 0 3px;
     border-radius: 999px;
-    background: var(--accent);
+    background: hsl(var(--primary));
     color: #fff;
     font-size: 0.625rem;
     line-height: 14px;
@@ -414,8 +414,8 @@
     display: flex;
     align-items: center;
     padding: 0.375rem 0.5rem;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg-muted);
+    border-bottom: 1px solid hsl(var(--border));
+    background: hsl(var(--bg-muted));
     font-size: 0.8125rem;
     /* Hint that the header doubles as the drag handle in edit mode.
        Read-only dashboards opt out via .tile-header--draggable. */
@@ -437,8 +437,8 @@
   .tile-menu {
     position: fixed;
     min-width: 10rem;
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
     padding: 0.25rem;
@@ -455,13 +455,13 @@
     text-align: left;
     cursor: pointer;
     border-radius: 4px;
-    color: var(--fg);
+    color: hsl(var(--fg));
     font: inherit;
     font-size: 0.8125rem;
   }
   .tile-menu__item:hover,
   .tile-menu__item:focus {
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
     outline: none;
   }
   /* #932/#1175: height stepper row. */
@@ -477,14 +477,14 @@
     justify-content: center;
     width: 1.5rem;
     height: 1.5rem;
-    border: 1px solid var(--border-strong, var(--border));
-    background: var(--bg);
+    border: 1px solid var(--border-strong, hsl(var(--border)));
+    background: hsl(var(--bg));
     border-radius: 4px;
-    color: var(--fg);
+    color: hsl(var(--fg));
     cursor: pointer;
   }
   .tile-menu__step:hover:not(:disabled) {
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
   }
   .tile-menu__step:disabled {
     opacity: 0.4;
@@ -494,7 +494,7 @@
     min-width: 1.25rem;
     text-align: center;
     font-size: 0.8125rem;
-    color: var(--fg);
+    color: hsl(var(--fg));
     font-variant-numeric: tabular-nums;
   }
 </style>

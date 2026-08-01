@@ -1498,7 +1498,7 @@
     z-index: 50;
   }
   .modal {
-    background: var(--bg);
+    background: hsl(var(--bg));
     border-radius: 8px;
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
     width: min(560px, 92vw);
@@ -1518,7 +1518,7 @@
     display: flex;
     align-items: center;
     padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid hsl(var(--border));
   }
   .modal-header h2 {
     margin: 0;
@@ -1535,7 +1535,7 @@
   }
   .field span:first-child {
     font-size: 0.75rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
@@ -1543,14 +1543,14 @@
     display: flex;
     gap: 0.5rem;
     align-items: flex-end;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 4px;
     padding: 0.5rem 0.75rem;
     margin: 0;
   }
   .size legend {
     font-size: 0.75rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     text-transform: uppercase;
     letter-spacing: 0.04em;
     padding: 0 0.25rem;
@@ -1563,14 +1563,14 @@
     display: flex;
     gap: 1rem;
     align-items: center;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 4px;
     padding: 0.5rem 0.75rem;
     margin: 0;
   }
   .mode legend {
     font-size: 0.75rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     text-transform: uppercase;
     letter-spacing: 0.04em;
     padding: 0 0.25rem;
@@ -1580,14 +1580,14 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 4px;
     padding: 0.5rem 0.75rem;
     margin: 0;
   }
   .anomaly legend {
     font-size: 0.75rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     text-transform: uppercase;
     letter-spacing: 0.04em;
     padding: 0 0.25rem;
@@ -1602,8 +1602,8 @@
   }
   .position-error {
     padding: 0.5rem 0.75rem;
-    background: color-mix(in srgb, var(--danger) 14%, transparent);
-    color: var(--danger);
+    background: color-mix(in srgb, hsl(var(--danger)) 14%, transparent);
+    color: hsl(var(--danger));
     border-radius: 4px;
     font-size: 0.8125rem;
   }
@@ -1612,7 +1612,7 @@
   }
   input, select, textarea {
     padding: 0.375rem 0.5rem;
-    border: 1px solid var(--border-strong);
+    border: 1px solid hsl(var(--border-strong));
     border-radius: 4px;
     font-size: 0.875rem;
     font-family: inherit;
@@ -1624,10 +1624,10 @@
   }
   .hint {
     font-size: 0.75rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
-  .hint.error { color: var(--danger); }
-  .hint.ok { color: var(--success, var(--accent)); }
+  .hint.error { color: hsl(var(--danger)); }
+  .hint.ok { color: var(--success, hsl(var(--primary))); }
   /* #1077, #919: chart-options + conditional-formatting styles moved
      into TileEditorChart / TileEditorTableConditional / TileEditorKpi /
      TileEditorTableSparkline (per saiku#1229). Svelte's scoped CSS
@@ -1648,7 +1648,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 4px;
     padding: 0.5rem 0.75rem;
     margin: 0;
@@ -1658,7 +1658,7 @@
   }
   .qe-section legend {
     font-size: 0.75rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     text-transform: uppercase;
     letter-spacing: 0.04em;
     padding: 0 0.25rem;
@@ -1673,7 +1673,7 @@
     /* A floor so the drop zones + result preview are usable even before the
        modal's flex height resolves. */
     min-height: 360px;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 4px;
     overflow: hidden;
   }

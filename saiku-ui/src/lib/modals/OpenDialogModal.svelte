@@ -71,17 +71,17 @@
 </Modal>
 
 <style>
-.hint { color: var(--fg-muted); font-size: var(--fs-sm); margin: var(--space-2) 0; }
+.hint { color: hsl(var(--fg-muted)); font-size: var(--fs-sm); margin: var(--space-2) 0; }
   .repo {
     list-style: none;
     margin: 0;
     padding: 0;
     max-height: 40vh;
     overflow: auto;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
   }
-  .repo__entry + .repo__entry { border-top: 1px solid var(--border); }
+  .repo__entry + .repo__entry { border-top: 1px solid hsl(var(--border)); }
   .repo__row {
     display: flex;
     align-items: center;
@@ -90,11 +90,11 @@
     padding: var(--space-2) var(--space-3);
     background: transparent;
     border: 0;
-    color: var(--fg);
+    color: hsl(var(--fg));
     font: inherit;
     cursor: pointer;
     text-align: left;
   }
-  .repo__row:hover:not(:disabled) { background: var(--bg-subtle); }
-  .repo__row:disabled { color: var(--fg-muted); cursor: default; }
+  .repo__row:hover:not(:disabled) { background: hsl(var(--bg-subtle)); }
+  .repo__row:disabled { color: hsl(var(--fg-muted)); cursor: default; }
 </style>

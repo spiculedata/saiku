@@ -206,8 +206,8 @@
     flex-shrink: 0;
     padding: 0.5rem;
     box-sizing: border-box;
-    background: var(--saiku-app-bg, var(--bg-subtle, var(--bg)));
-    border-right: 1px solid var(--border);
+    background: var(--saiku-app-bg, var(--bg-subtle, hsl(var(--bg))));
+    border-right: 1px solid hsl(var(--border));
     overflow-y: auto;
     font-family: var(--saiku-app-font, inherit);
   }
@@ -255,7 +255,7 @@
     border: none;
     border-radius: 6px;
     background: transparent;
-    color: var(--saiku-app-fg, var(--fg-muted));
+    color: var(--saiku-app-fg, hsl(var(--fg-muted)));
     font: inherit;
     text-align: left;
     cursor: pointer;
@@ -263,12 +263,12 @@
     overflow: hidden;
   }
   .saiku-app__rail-item:hover {
-    background: var(--bg-hover);
-    color: var(--saiku-app-fg, var(--fg));
+    background: hsl(var(--bg-hover));
+    color: var(--saiku-app-fg, hsl(var(--fg)));
   }
   .saiku-app__rail-item.is-active {
-    background: var(--saiku-app-accent, var(--accent-soft));
-    color: var(--saiku-app-primary, var(--accent));
+    background: var(--saiku-app-accent, hsl(var(--accent)));
+    color: var(--saiku-app-primary, hsl(var(--primary)));
     font-weight: 600;
   }
   .saiku-app__rail-label {
@@ -279,15 +279,15 @@
     display: none;
   }
   .saiku-app__rail-add {
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .saiku-app__rail-rename {
     width: 100%;
     padding: 0.4375rem 0.5rem;
-    border: 1px solid var(--border-strong);
+    border: 1px solid hsl(var(--border-strong));
     border-radius: 6px;
-    background: var(--bg);
-    color: var(--fg);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
     font: inherit;
     box-sizing: border-box;
   }
@@ -339,12 +339,12 @@
     border: none;
     border-radius: 6px;
     background: transparent;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     cursor: pointer;
   }
   .saiku-app__rail-collapse:hover {
-    background: var(--bg-hover);
-    color: var(--fg);
+    background: hsl(var(--bg-hover));
+    color: hsl(var(--fg));
   }
 
   /* Narrow viewport: horizontal bottom bar pinned to the foot of the shell. */
@@ -352,7 +352,7 @@
     flex-direction: row;
     width: 100%;
     border-right: none;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid hsl(var(--border));
     overflow-x: auto;
     overflow-y: hidden;
   }

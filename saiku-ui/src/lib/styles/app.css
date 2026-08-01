@@ -7,8 +7,8 @@
  * Without this wrapper, unlayered type-selector rules ALWAYS beat
  * layered utility classes — the layering algorithm prioritises
  * unlayered rules above ALL layers regardless of specificity. That's
- * what made `<a class={buttonVariants()}>` render text in `var(--accent)`
- * (the global a color) instead of `var(--accent-fg)` (the Tailwind
+ * what made `<a class={buttonVariants()}>` render text in `hsl(var(--primary))`
+ * (the global a color) instead of `hsl(var(--primary-foreground))` (the Tailwind
  * `text-primary-foreground` class) — the anchor was invisible against
  * its primary background.
  *
@@ -30,8 +30,8 @@ body {
 
 @layer base {
   body {
-    background: var(--bg);
-    color: var(--fg);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
     font-family: var(--font-sans);
     font-size: var(--fs-md);
     font-weight: var(--weight-normal);
@@ -44,7 +44,7 @@ body {
      space token grid so heading-followed-by-body has consistent rhythm. */
   h1, h2, h3, h4, h5, h6 {
     margin: 0 0 var(--space-3);
-    color: var(--fg);
+    color: hsl(var(--fg));
     font-weight: var(--weight-semibold);
     line-height: var(--lh-tight);
   }
@@ -80,7 +80,7 @@ body {
   }
 
   a {
-    color: var(--accent);
+    color: hsl(var(--primary));
     text-decoration: none;
   }
 
@@ -100,9 +100,9 @@ body {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  background: var(--bg-muted);
-  color: var(--fg);
-  border: 1px solid var(--border-strong);
+  background: hsl(var(--bg-muted));
+  color: hsl(var(--fg));
+  border: 1px solid hsl(var(--border-strong));
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition:
@@ -112,7 +112,7 @@ body {
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--bg-hover);
+  background: hsl(var(--bg-hover));
 }
 
 .btn:disabled {
@@ -138,7 +138,7 @@ body {
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  color: var(--fg-muted);
+  color: hsl(var(--fg-muted));
   cursor: pointer;
   transition:
     background var(--duration-fast),
@@ -147,9 +147,9 @@ body {
 }
 
 .icon-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: var(--border);
-  color: var(--fg);
+  background: hsl(var(--bg-hover));
+  border-color: hsl(var(--border));
+  color: hsl(var(--fg));
 }
 
 .icon-btn:disabled {
@@ -158,7 +158,7 @@ body {
 }
 
 .icon-btn--danger:hover:not(:disabled) {
-  color: var(--danger);
+  color: hsl(var(--danger));
 }
 
 /* ----------------------------------------------------------------- *
@@ -186,13 +186,13 @@ body {
 .data-grid td {
   padding: var(--space-3);
   text-align: left;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .data-grid th {
-  background: var(--bg-muted);
+  background: hsl(var(--bg-muted));
   font-weight: var(--weight-semibold);
-  color: var(--fg);
+  color: hsl(var(--fg));
 }
 
 .data-grid tbody tr {
@@ -200,11 +200,11 @@ body {
 }
 
 .data-grid tbody tr:nth-child(even) {
-  background: var(--bg-subtle);
+  background: hsl(var(--bg-subtle));
 }
 
 .data-grid tbody tr:hover {
-  background: var(--bg-hover);
+  background: hsl(var(--bg-hover));
 }
 
 .data-grid__actions {
@@ -215,25 +215,25 @@ body {
 
 .data-grid__empty {
   text-align: center;
-  color: var(--fg-muted);
+  color: hsl(var(--fg-muted));
   padding: var(--space-5);
 }
 
 .btn--primary {
-  background: var(--accent);
-  color: var(--accent-fg);
-  border-color: var(--accent);
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border-color: hsl(var(--primary));
   font-weight: var(--weight-semibold);
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: hsl(var(--primary-hover));
 }
 
 .btn--danger {
-  background: var(--danger);
+  background: hsl(var(--danger));
   color: #fff;
-  border-color: var(--danger);
+  border-color: hsl(var(--danger));
 }
 
 .field {
@@ -244,16 +244,16 @@ body {
 .field__label {
   display: block;
   margin-bottom: var(--space-1);
-  color: var(--fg-muted);
+  color: hsl(var(--fg-muted));
   font-size: var(--fs-sm);
 }
 
 .field__input {
   width: 100%;
   padding: var(--space-2) var(--space-3);
-  background: var(--bg);
-  color: var(--fg);
-  border: 1px solid var(--border-strong);
+  background: hsl(var(--bg));
+  color: hsl(var(--fg));
+  border: 1px solid hsl(var(--border-strong));
   border-radius: var(--radius-sm);
   transition:
     border-color var(--duration-fast),
@@ -261,7 +261,7 @@ body {
 }
 
 .field__input:focus-visible {
-  border-color: var(--accent);
+  border-color: hsl(var(--primary));
 }
 
 /* Invalid form-field state. Set the .field--invalid modifier on the
@@ -269,12 +269,12 @@ body {
    below renders with an alert icon. Centralized so every form modal
    communicates validation the same way. */
 .field--invalid .field__input {
-  border-color: var(--danger);
+  border-color: hsl(var(--danger));
 }
 
 .field--invalid .field__input:focus-visible {
-  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--danger);
-  border-color: var(--danger);
+  box-shadow: 0 0 0 2px hsl(var(--bg)), 0 0 0 4px hsl(var(--danger));
+  border-color: hsl(var(--danger));
 }
 
 .field__error {
@@ -282,7 +282,7 @@ body {
   gap: var(--space-1);
   align-items: center;
   margin-top: var(--space-1);
-  color: var(--danger);
+  color: hsl(var(--danger));
   font-size: var(--fs-sm);
 }
 
@@ -293,13 +293,13 @@ body {
 .callout {
   padding: var(--space-3);
   border-radius: var(--radius-sm);
-  background: var(--bg-subtle);
-  border-left: 3px solid var(--accent);
+  background: hsl(var(--bg-subtle));
+  border-left: 3px solid hsl(var(--primary));
 }
 
 .callout--danger {
-  border-left-color: var(--danger);
-  color: var(--danger);
+  border-left-color: hsl(var(--danger));
+  color: hsl(var(--danger));
 }
 
 .callout__text {
@@ -309,7 +309,7 @@ body {
 
 .callout__details {
   margin-top: var(--space-2);
-  color: var(--fg-muted);
+  color: hsl(var(--fg-muted));
   font-weight: var(--weight-normal);
 }
 
@@ -322,13 +322,13 @@ body {
 .callout__detail-text {
   margin: var(--space-2) 0 0;
   padding: var(--space-2);
-  background: var(--bg-muted);
+  background: hsl(var(--bg-muted));
   border-radius: var(--radius-sm);
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--fs-xs);
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--fg);
+  color: hsl(var(--fg));
 }
 
 /* Motion baseline. Modals, context menus, and toasts appear instantly

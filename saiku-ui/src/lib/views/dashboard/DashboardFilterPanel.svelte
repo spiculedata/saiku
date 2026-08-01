@@ -887,9 +887,9 @@
 
 <style>
 .panel {
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
-    background: var(--bg);
+    background: hsl(var(--bg));
     display: flex;
     flex-direction: column;
   }
@@ -898,8 +898,8 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.375rem 0.5rem;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg-muted);
+    border-bottom: 1px solid hsl(var(--border));
+    background: hsl(var(--bg-muted));
     font-size: 0.8125rem;
   }
   .collapse-toggle {
@@ -910,7 +910,7 @@
     border: none;
     padding: 0.125rem 0.25rem;
     cursor: pointer;
-    color: var(--fg);
+    color: hsl(var(--fg));
     font-size: inherit;
     flex: 1;
     text-align: left;
@@ -919,14 +919,14 @@
     font-weight: var(--weight-medium, 500);
   }
   .count {
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-weight: 400;
     margin-left: 0.125rem;
   }
   .add-btn {
     padding: 0.25rem 0.5rem;
-    border: 1px solid var(--border-strong, var(--border));
-    background: var(--bg);
+    border: 1px solid var(--border-strong, hsl(var(--border)));
+    background: hsl(var(--bg));
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.75rem;
@@ -934,7 +934,7 @@
   .empty {
     margin: 0;
     padding: 0.5rem 0.75rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: 0.8125rem;
     font-style: italic;
   }
@@ -951,17 +951,17 @@
     align-items: center;
     gap: 0.25rem;
     padding: 0.25rem 0.375rem;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 4px;
-    background: var(--bg);
+    background: hsl(var(--bg));
     user-select: none;
   }
   .picker--hover {
-    box-shadow: 0 0 0 2px var(--accent, color-mix(in srgb, var(--fg) 30%, transparent));
+    box-shadow: 0 0 0 2px var(--accent, color-mix(in srgb, hsl(var(--fg)) 30%, transparent));
   }
   .grip {
     cursor: grab;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     display: inline-flex;
   }
   .grip:active {
@@ -971,7 +971,7 @@
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   /* issue #924: "affects N of M tiles" hover badge. */
   .affects-badge {
@@ -979,15 +979,15 @@
     line-height: 1;
     padding: 0.125rem 0.375rem;
     border-radius: 999px;
-    background: var(--accent);
+    background: hsl(var(--primary));
     color: var(--accent-fg, #fff);
     white-space: nowrap;
   }
   .picker-select {
     padding: 0.125rem 0.25rem;
-    border: 1px solid var(--border-strong, var(--border));
+    border: 1px solid var(--border-strong, hsl(var(--border)));
     border-radius: 4px;
-    background: var(--bg);
+    background: hsl(var(--bg));
     font-size: 0.8125rem;
     max-width: 200px;
   }
@@ -995,9 +995,9 @@
      (saiku#1230); its styles live alongside the markup there. */
   .picker-date {
     padding: 0.125rem 0.25rem;
-    border: 1px solid var(--border-strong, var(--border));
+    border: 1px solid var(--border-strong, hsl(var(--border)));
     border-radius: 4px;
-    background: var(--bg);
+    background: hsl(var(--bg));
     font-size: 0.8125rem;
     font-family: inherit;
   }
@@ -1011,21 +1011,21 @@
   .picker-num {
     width: 3.5rem;
     padding: 0.125rem 0.25rem;
-    border: 1px solid var(--border-strong, var(--border));
+    border: 1px solid var(--border-strong, hsl(var(--border)));
     border-radius: 4px;
-    background: var(--bg);
+    background: hsl(var(--bg));
     font-size: 0.8125rem;
     font-family: inherit;
   }
   .topn-state {
     font-size: 0.75rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .picker-remove {
     background: transparent;
     border: none;
     cursor: pointer;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     padding: 0.125rem;
     display: inline-flex;
   }
@@ -1039,15 +1039,15 @@
     font-size: 0.75rem;
   }
   .add-field > span:first-child {
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
   .add-field select {
     padding: 0.25rem 0.375rem;
-    border: 1px solid var(--border-strong, var(--border));
+    border: 1px solid var(--border-strong, hsl(var(--border)));
     border-radius: 4px;
-    background: var(--bg);
+    background: hsl(var(--bg));
     font-size: 0.8125rem;
     min-width: 8rem;
   }

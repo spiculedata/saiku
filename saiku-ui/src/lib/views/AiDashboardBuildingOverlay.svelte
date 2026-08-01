@@ -48,7 +48,7 @@
     <div
       class="flex w-[420px] max-w-[90vw] flex-col items-center gap-4 rounded-lg border border-border bg-bg px-8 py-7 text-center shadow-lg"
     >
-      <Loader2 size={32} class="animate-spin text-accent" aria-hidden="true" />
+      <Loader2 size={32} class="animate-spin text-primary" aria-hidden="true" />
       <div class="text-lg font-semibold text-fg">
         {i18n.t("workspace.aiDashboard.buildingTitle", "Building your dashboard…")}
       </div>

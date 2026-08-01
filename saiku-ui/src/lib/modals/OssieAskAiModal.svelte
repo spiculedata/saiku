@@ -158,22 +158,22 @@
   }
   .ossie-ask__scope {
     margin: 0;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-sm);
   }
   .ossie-ask__history {
     max-height: 320px;
     overflow-y: auto;
     padding: var(--space-2);
-    background: var(--bg-subtle, var(--bg-hover));
-    border: 1px solid var(--border);
+    background: var(--bg-subtle, hsl(var(--bg-hover)));
+    border: 1px solid hsl(var(--border));
     border-radius: 4px;
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
   }
   .ossie-ask__empty {
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-sm);
     text-align: center;
     padding: var(--space-4) 0;
@@ -183,14 +183,14 @@
     gap: var(--space-2);
     padding: 6px 10px;
     border-radius: 4px;
-    background: var(--bg);
+    background: hsl(var(--bg));
   }
   .ossie-ask__turn--user {
-    background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+    background: color-mix(in srgb, hsl(var(--primary)) 8%, hsl(var(--bg)));
   }
   .ossie-ask__role {
     font-weight: var(--weight-semibold);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     min-width: 40px;
   }
   .ossie-ask__content {
@@ -211,10 +211,10 @@
   }
   .ossie-ask__input {
     padding: 8px 10px;
-    border: 1px solid var(--border-strong);
+    border: 1px solid hsl(var(--border-strong));
     border-radius: 4px;
-    background: var(--bg);
-    color: var(--fg);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
     font-family: inherit;
     font-size: var(--fs-sm);
     resize: vertical;

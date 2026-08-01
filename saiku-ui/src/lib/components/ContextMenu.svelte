@@ -51,8 +51,8 @@
   .ctx-menu {
     position: fixed;
     min-width: 180px;
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
     box-shadow: var(--shadow-lg);
     padding: 4px;
@@ -67,13 +67,13 @@
     padding: 6px 10px;
     background: transparent;
     border: 0;
-    color: var(--fg);
+    color: hsl(var(--fg));
     font: inherit;
     cursor: pointer;
     border-radius: 4px;
   }
-  .ctx-menu__item:hover:not(:disabled) { background: var(--bg-subtle); }
-  .ctx-menu__item:disabled { color: var(--fg-subtle); cursor: default; }
-  .ctx-menu__item.danger { color: var(--danger); }
-  .ctx-menu__sep { height: 1px; background: var(--border); margin: 3px 0; }
+  .ctx-menu__item:hover:not(:disabled) { background: hsl(var(--bg-subtle)); }
+  .ctx-menu__item:disabled { color: hsl(var(--fg-subtle)); cursor: default; }
+  .ctx-menu__item.danger { color: hsl(var(--danger)); }
+  .ctx-menu__sep { height: 1px; background: hsl(var(--border)); margin: 3px 0; }
 </style>

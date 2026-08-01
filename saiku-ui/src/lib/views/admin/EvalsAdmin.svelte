@@ -94,7 +94,7 @@
 
   {#if loaded && suites.length === 0}
     <div class="empty">
-      <h3 style="text-transform:none;color:var(--fg);font-size:var(--fs-md)">No eval runs recorded yet</h3>
+      <h3 style="text-transform:none;color:hsl(var(--fg));font-size:var(--fs-md)">No eval runs recorded yet</h3>
       <p class="text-fg-muted text-sm">
         This monitor plots agent accuracy over time from suites in <code>saiku-home/evals/</code>.
         Nothing has run against this deployment yet.
@@ -156,8 +156,8 @@
           <svg viewBox="0 0 {W} {H}" width="100%" preserveAspectRatio="xMidYMid meet">
             <defs>
               <linearGradient id="evalArea" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="var(--accent)" stop-opacity="0.18" />
-                <stop offset="1" stop-color="var(--accent)" stop-opacity="0" />
+                <stop offset="0" stop-color="hsl(var(--primary))" stop-opacity="0.18" />
+                <stop offset="1" stop-color="hsl(var(--primary))" stop-opacity="0" />
               </linearGradient>
             </defs>
             {#each gridLines as f (f)}
@@ -165,7 +165,7 @@
               <text class="axt" x={PL - 8} y={PT + IH * (1 - f) + 3} text-anchor="end">{(f * 100) | 0}%</text>
             {/each}
             <polygon points={areaPts} fill="url(#evalArea)" />
-            <polyline points={linePts} fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+            <polyline points={linePts} fill="none" stroke="hsl(var(--primary))" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
             {#each trend as t, i (i)}
               <circle class="dot-{band(t.passRate)}" cx={xAt(i, trend.length)} cy={yAt(t.passRate)} r={i === trend.length - 1 ? 4 : 2.6}>
                 <title>{pct(t.passRate)} · {t.total} cases · {fmtTs(t.startedAt)}</title>
@@ -219,53 +219,53 @@
 <style>
   .pane { display: flex; flex-direction: column; gap: var(--space-4); }
   h2 { margin: 0; }
-  h3 { margin: 0 0 var(--space-2); font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-muted); }
+  h3 { margin: 0 0 var(--space-2); font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: 0.04em; color: hsl(var(--fg-muted)); }
 
   .empty {
     padding: var(--space-6);
-    background: var(--bg-muted);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg-muted));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius);
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
   }
-  .empty code { font-family: var(--font-mono, monospace); font-size: var(--fs-xs); background: var(--bg-subtle); padding: 1px 5px; border-radius: 4px; }
+  .empty code { font-family: var(--font-mono, monospace); font-size: var(--fs-xs); background: hsl(var(--bg-subtle)); padding: 1px 5px; border-radius: 4px; }
 
   .suite-bar { display: flex; flex-wrap: wrap; gap: var(--space-2); }
   .suite-chip {
     display: inline-flex; align-items: center; gap: var(--space-2);
     padding: var(--space-2) var(--space-3);
-    background: var(--bg-muted); border: 1px solid var(--border); border-radius: var(--radius);
-    color: var(--fg-muted); font: inherit; cursor: pointer;
+    background: hsl(var(--bg-muted)); border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+    color: hsl(var(--fg-muted)); font: inherit; cursor: pointer;
   }
-  .suite-chip:hover { color: var(--fg); }
-  .suite-chip.active { color: var(--fg); border-color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
+  .suite-chip:hover { color: hsl(var(--fg)); }
+  .suite-chip.active { color: hsl(var(--fg)); border-color: hsl(var(--primary)); box-shadow: inset 0 -2px 0 hsl(var(--primary)); }
   .suite-chip .nm { font-weight: var(--weight-medium); }
   .suite-chip .pc { font-variant-numeric: tabular-nums; font-size: var(--fs-xs); }
-  .suite-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-subtle); }
-  .suite-chip .dot.good { background: var(--success); }
-  .suite-chip .dot.warn { background: var(--warning); }
-  .suite-chip .dot.bad { background: var(--danger); }
+  .suite-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--fg-subtle)); }
+  .suite-chip .dot.good { background: hsl(var(--success)); }
+  .suite-chip .dot.warn { background: hsl(var(--warning)); }
+  .suite-chip .dot.bad { background: hsl(var(--danger)); }
 
   .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-3); }
-  .kpi { display: flex; flex-direction: column; gap: 2px; padding: var(--space-3); background: var(--bg-muted); border: 1px solid var(--border); border-radius: var(--radius); }
-  .kpi__label { font-size: var(--fs-xs); color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .kpi { display: flex; flex-direction: column; gap: 2px; padding: var(--space-3); background: hsl(var(--bg-muted)); border: 1px solid hsl(var(--border)); border-radius: var(--radius); }
+  .kpi__label { font-size: var(--fs-xs); color: hsl(var(--fg-muted)); text-transform: uppercase; letter-spacing: 0.05em; }
 
   .rate { font-variant-numeric: tabular-nums; }
-  .rate.good { color: var(--success); }
-  .rate.warn { color: var(--warning); }
-  .rate.bad { color: var(--danger); }
+  .rate.good { color: hsl(var(--success)); }
+  .rate.warn { color: hsl(var(--warning)); }
+  .rate.bad { color: hsl(var(--danger)); }
 
-  .chart-wrap { background: var(--bg-muted); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); }
-  svg .grid { stroke: var(--border); stroke-width: 1; }
-  svg .axt { fill: var(--fg-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
-  svg .dot-good { fill: var(--success); }
-  svg .dot-warn { fill: var(--warning); }
-  svg .dot-bad { fill: var(--danger); }
+  .chart-wrap { background: hsl(var(--bg-muted)); border: 1px solid hsl(var(--border)); border-radius: var(--radius); padding: var(--space-3); }
+  svg .grid { stroke: hsl(var(--border)); stroke-width: 1; }
+  svg .axt { fill: hsl(var(--fg-muted)); font-size: 10px; font-variant-numeric: tabular-nums; }
+  svg .dot-good { fill: hsl(var(--success)); }
+  svg .dot-warn { fill: hsl(var(--warning)); }
+  svg .dot-bad { fill: hsl(var(--danger)); }
 
   table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
-  th, td { padding: 6px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
-  th { background: var(--bg-muted); font-weight: var(--weight-semibold); }
+  th, td { padding: 6px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid hsl(var(--border)); font-variant-numeric: tabular-nums; }
+  th { background: hsl(var(--bg-muted)); font-weight: var(--weight-semibold); }
   tr:last-child td { border-bottom: 0; }
 </style>

@@ -109,10 +109,10 @@
     padding: 0;
     max-height: 50vh;
     overflow: auto;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
   }
-  .list li + li { border-top: 1px solid var(--border); }
+  .list li + li { border-top: 1px solid hsl(var(--border)); }
   .list label {
     display: flex;
     align-items: center;
@@ -120,17 +120,17 @@
     padding: var(--space-2) var(--space-3);
     cursor: pointer;
   }
-  .list label:hover { background: var(--bg-subtle); }
+  .list label:hover { background: hsl(var(--bg-subtle)); }
   .badge {
     font-size: var(--fs-xs);
-    color: var(--accent);
+    color: hsl(var(--primary));
     padding: 0 var(--space-1);
-    border: 1px solid var(--accent);
+    border: 1px solid hsl(var(--primary));
     border-radius: var(--radius-sm);
   }
   .badge--hidden {
-    color: var(--fg-muted);
-    border-color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
+    border-color: hsl(var(--fg-muted));
   }
   .hidden-toggle {
     display: grid;
@@ -140,15 +140,15 @@
     align-items: center;
     margin-top: var(--space-3);
     padding: var(--space-2) var(--space-3);
-    border: 1px dashed var(--border);
+    border: 1px dashed hsl(var(--border));
     border-radius: var(--radius-sm);
     cursor: pointer;
   }
-  .hidden-toggle:hover { background: var(--bg-subtle); }
+  .hidden-toggle:hover { background: hsl(var(--bg-subtle)); }
   .hidden-toggle input { grid-row: 1 / span 2; }
   .hidden-toggle__loading {
     margin: var(--space-2) 0 0;
     font-size: var(--fs-xs);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
 </style>

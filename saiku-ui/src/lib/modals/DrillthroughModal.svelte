@@ -92,22 +92,22 @@
 
 <style>
   .cols { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); margin-bottom: var(--space-4); }
-  h3 { margin: 0 0 var(--space-2); font-size: var(--fs-sm); color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  h3 { margin: 0 0 var(--space-2); font-size: var(--fs-sm); color: hsl(var(--fg-muted)); text-transform: uppercase; letter-spacing: 0.04em; }
   .list {
     list-style: none;
     margin: 0;
     padding: 0;
     max-height: 40vh;
     overflow: auto;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
   }
-  .list li + li { border-top: 1px solid var(--border); }
+  .list li + li { border-top: 1px solid hsl(var(--border)); }
   .list label {
     display: flex;
     gap: var(--space-2);
     padding: var(--space-1) var(--space-3);
     cursor: pointer;
   }
-  .list label:hover { background: var(--bg-subtle); }
+  .list label:hover { background: hsl(var(--bg-subtle)); }
 </style>

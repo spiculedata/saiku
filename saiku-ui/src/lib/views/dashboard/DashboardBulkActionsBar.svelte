@@ -69,9 +69,9 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.375rem 0.5rem 0.375rem 0.75rem;
-    border: 1px solid var(--border-strong);
+    border: 1px solid hsl(var(--border-strong));
     border-radius: 999px;
-    background: var(--bg);
+    background: hsl(var(--bg));
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
     /* Float above the grid, centred near the bottom so it doesn't cover
        the toolbar or the tile a user is reaching for at the top. */
@@ -86,29 +86,29 @@
     align-items: center;
     gap: 0.375rem;
     padding: 0.3125rem 0.625rem;
-    border: 1px solid var(--border-strong);
-    background: var(--bg);
-    color: var(--fg);
+    border: 1px solid hsl(var(--border-strong));
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
     border-radius: 999px;
     cursor: pointer;
     font-size: 0.8125rem;
   }
   .bulk-bar__btn:hover {
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
   }
   .bulk-bar__btn--danger {
-    color: var(--danger);
-    border-color: color-mix(in srgb, var(--danger) 50%, var(--border-strong));
+    color: hsl(var(--danger));
+    border-color: color-mix(in srgb, hsl(var(--danger)) 50%, hsl(var(--border-strong)));
   }
   .bulk-bar__btn--danger:hover {
-    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    background: color-mix(in srgb, hsl(var(--danger)) 12%, transparent);
   }
   .bulk-bar__btn--ghost {
     padding: 0.3125rem;
     border-color: transparent;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .bulk-bar__btn--ghost:hover {
-    color: var(--fg);
+    color: hsl(var(--fg));
   }
 </style>

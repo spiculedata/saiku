@@ -288,15 +288,15 @@
     background: transparent;
     border: 0;
     border-radius: 3px;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     cursor: pointer;
     font: inherit;
   }
-  .repo-browser__crumb:hover { background: var(--bg-hover); color: var(--fg); }
-  .repo-browser__crumb.is-current { color: var(--fg); font-weight: var(--weight-medium); }
+  .repo-browser__crumb:hover { background: hsl(var(--bg-hover)); color: hsl(var(--fg)); }
+  .repo-browser__crumb.is-current { color: hsl(var(--fg)); font-weight: var(--weight-medium); }
   /* Applied via class={} on a lucide-svelte icon — needs :global so the
      scoped-style hash doesn't suppress it on the child component's root. */
-  :global(.repo-browser__crumb-sep) { color: var(--fg-subtle); }
+  :global(.repo-browser__crumb-sep) { color: hsl(var(--fg-subtle)); }
   .repo-browser__list {
     flex: 1;
     list-style: none;
@@ -304,9 +304,9 @@
     padding: 0;
     max-height: 40vh;
     overflow-y: auto;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
-    background: var(--bg);
+    background: hsl(var(--bg));
   }
   .repo-browser__row {
     display: flex;
@@ -316,35 +316,35 @@
     padding: var(--space-2) var(--space-3);
     background: transparent;
     border: 0;
-    border-bottom: 1px solid var(--border);
-    color: var(--fg);
+    border-bottom: 1px solid hsl(var(--border));
+    color: hsl(var(--fg));
     cursor: pointer;
     font: inherit;
     font-size: var(--fs-sm);
     text-align: left;
   }
   .repo-browser__row:last-child { border-bottom: 0; }
-  .repo-browser__row:hover { background: var(--bg-hover); }
+  .repo-browser__row:hover { background: hsl(var(--bg-hover)); }
   .repo-browser__row.is-selected {
-    background: var(--accent-soft);
-    color: var(--accent-strong);
+    background: hsl(var(--accent));
+    color: hsl(var(--primary-strong));
   }
   .repo-browser__new-folder {
     display: flex;
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-2);
-    background: var(--bg-muted);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg-muted));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .repo-browser__new-folder-input {
     flex: 1;
     padding: 6px var(--space-2);
-    background: var(--bg);
-    color: var(--fg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
     font: inherit;
     font-size: var(--fs-sm);

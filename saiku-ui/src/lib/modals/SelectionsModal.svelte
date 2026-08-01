@@ -338,13 +338,13 @@
     display: flex;
     flex-wrap: wrap;
     gap: 2px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid hsl(var(--border));
     margin-bottom: var(--space-3);
   }
   .tabs__btn {
     background: transparent;
     border: 0;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     padding: var(--space-2) var(--space-3);
     font: inherit;
     font-size: var(--fs-sm);
@@ -355,15 +355,15 @@
     align-items: center;
     gap: var(--space-2);
   }
-  .tabs__btn:hover { color: var(--fg); }
+  .tabs__btn:hover { color: hsl(var(--fg)); }
   .tabs__btn.is-active {
-    color: var(--fg);
-    border-bottom-color: var(--accent);
+    color: hsl(var(--fg));
+    border-bottom-color: hsl(var(--primary));
     font-weight: var(--weight-semibold);
   }
   .tabs__count {
-    background: var(--accent-soft);
-    color: var(--accent-strong);
+    background: hsl(var(--accent));
+    color: hsl(var(--primary-strong));
     border-radius: 999px;
     padding: 1px 6px;
     font-size: 11px;
@@ -383,11 +383,11 @@
     padding: 0;
     max-height: 45vh;
     overflow: auto;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
   }
-  .members li + li { border-top: 1px solid var(--border); }
-  .members li.empty { padding: var(--space-4); color: var(--fg-muted); text-align: center; }
+  .members li + li { border-top: 1px solid hsl(var(--border)); }
+  .members li.empty { padding: var(--space-4); color: hsl(var(--fg-muted)); text-align: center; }
   .members label {
     display: flex;
     align-items: center;
@@ -395,5 +395,5 @@
     padding: var(--space-2) var(--space-3);
     cursor: pointer;
   }
-  .members label:hover { background: var(--bg-subtle); }
+  .members label:hover { background: hsl(var(--bg-subtle)); }
 </style>

@@ -835,8 +835,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: color-mix(in srgb, var(--bg) 75%, transparent);
-    color: var(--fg-muted);
+    background: color-mix(in srgb, hsl(var(--bg)) 75%, transparent);
+    color: hsl(var(--fg-muted));
     font-size: 0.875rem;
     z-index: 1;
     pointer-events: none;
@@ -846,7 +846,7 @@
   /* Opaque, interactive overlay for the loading skeleton / error / empty
      states (which carry Retry / Reset buttons). #933 */
   .overlay.solid {
-    background: var(--bg);
+    background: hsl(var(--bg));
     pointer-events: auto;
     padding: 0;
   }
@@ -858,14 +858,14 @@
     right: 0.25rem;
     top: 0.25rem;
     z-index: 2;
-    background: color-mix(in srgb, var(--bg) 80%, transparent);
+    background: color-mix(in srgb, hsl(var(--bg)) 80%, transparent);
     border-radius: 4px;
     padding: 0.0625rem 0.25rem;
     pointer-events: none;
     max-width: calc(100% - 0.5rem);
   }
   code {
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
     padding: 0.0625em 0.25em;
     border-radius: 3px;
     font-size: 0.85em;

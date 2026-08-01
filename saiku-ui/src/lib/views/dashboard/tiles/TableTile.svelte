@@ -465,21 +465,21 @@
                               y={bar.y}
                               width={bar.width}
                               height={bar.height}
-                              fill="var(--accent)"
+                              fill="hsl(var(--primary))"
                             />
                           {/each}
                         {:else}
                           <polyline
                             points={g.polyline}
                             fill="none"
-                            stroke="var(--accent)"
+                            stroke="hsl(var(--primary))"
                             stroke-width="1.25"
                             stroke-linejoin="round"
                             stroke-linecap="round"
                             vector-effect="non-scaling-stroke"
                           />
                           {#if g.last}
-                            <circle cx={g.last.x} cy={g.last.y} r="1.5" fill="var(--accent)" />
+                            <circle cx={g.last.x} cy={g.last.y} r="1.5" fill="hsl(var(--primary))" />
                           {/if}
                         {/if}
                       </svg>
@@ -521,7 +521,7 @@
     float: right;
     margin-right: 0.25rem;
     z-index: 2;
-    background: color-mix(in srgb, var(--bg) 80%, transparent);
+    background: color-mix(in srgb, hsl(var(--bg)) 80%, transparent);
     border-radius: 4px;
     padding: 0.0625rem 0.25rem;
     pointer-events: none;
@@ -535,10 +535,10 @@
   th, td {
     padding: 0.25rem 0.5rem;
     text-align: right;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid hsl(var(--border));
   }
   th {
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
     font-weight: var(--weight-semibold);
     position: sticky;
     top: 0;
@@ -551,10 +551,10 @@
     cursor: pointer;
   }
   td.clickable:hover {
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
   }
   td.clickable:focus {
-    outline: 2px solid var(--accent);
+    outline: 2px solid hsl(var(--primary));
     outline-offset: -2px;
   }
   /* Issue #919 — conditional-format icon glyph prepended to a cell. */
@@ -571,6 +571,6 @@
     display: block;
     width: 64px;
     height: 18px;
-    color: var(--accent);
+    color: hsl(var(--primary));
   }
 </style>

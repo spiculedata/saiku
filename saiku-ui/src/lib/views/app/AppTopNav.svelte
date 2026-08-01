@@ -105,8 +105,8 @@
     display: flex;
     align-items: stretch;
     padding: 0 0.75rem;
-    background: var(--saiku-app-bg, var(--bg-subtle, var(--bg)));
-    border-bottom: 1px solid var(--border);
+    background: var(--saiku-app-bg, var(--bg-subtle, hsl(var(--bg))));
+    border-bottom: 1px solid hsl(var(--border));
     overflow-x: auto;
     font-family: var(--saiku-app-font, inherit);
   }
@@ -126,29 +126,29 @@
     border: none;
     border-bottom: 2px solid transparent;
     background: transparent;
-    color: var(--saiku-app-fg, var(--fg-muted));
+    color: var(--saiku-app-fg, hsl(var(--fg-muted)));
     font: inherit;
     white-space: nowrap;
     cursor: pointer;
   }
   .saiku-app__topnav-tab:hover {
-    color: var(--saiku-app-fg, var(--fg));
+    color: var(--saiku-app-fg, hsl(var(--fg)));
   }
   .saiku-app__topnav-tab.is-active {
-    color: var(--saiku-app-primary, var(--accent));
-    border-bottom-color: var(--saiku-app-primary, var(--accent));
+    color: var(--saiku-app-primary, hsl(var(--primary)));
+    border-bottom-color: var(--saiku-app-primary, hsl(var(--primary)));
     font-weight: 600;
   }
   .saiku-app__topnav-add {
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .saiku-app__topnav-rename {
     margin: 0.375rem 0;
     padding: 0.375rem 0.5rem;
-    border: 1px solid var(--border-strong);
+    border: 1px solid hsl(var(--border-strong));
     border-radius: 6px;
-    background: var(--bg);
-    color: var(--fg);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
     font: inherit;
   }
 </style>

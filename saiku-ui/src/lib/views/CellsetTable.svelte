@@ -681,10 +681,10 @@
               <td class="data spark-cell" role="gridcell" aria-colindex={parsed.rowHeaderColCount + (parsed.dataRows[r]?.length ?? 0) + 1}>
                 <svg viewBox={`0 0 ${SPARK_W} ${SPARK_H}`} width={SPARK_W} height={SPARK_H} aria-hidden="true">
                   {#if spark === "line"}
-                    <path d={linePath(vals, range.min, range.max, SPARK_W, SPARK_H)} stroke="var(--accent)" stroke-width="1.5" fill="none" />
+                    <path d={linePath(vals, range.min, range.max, SPARK_W, SPARK_H)} stroke="hsl(var(--primary))" stroke-width="1.5" fill="none" />
                   {:else}
                     {#each barRects(vals, range.min, range.max, SPARK_W, SPARK_H) as b}
-                      <rect x={b.x} y={b.y} width={b.w} height={b.h} fill="var(--accent)" />
+                      <rect x={b.x} y={b.y} width={b.w} height={b.h} fill="hsl(var(--primary))" />
                     {/each}
                   {/if}
                 </svg>
@@ -778,8 +778,8 @@
     flex: 1;
     min-height: 0;
     overflow: auto;
-    border: 1px solid var(--border);
-    background: var(--bg);
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--bg));
     /* Disable scroll-snap and smooth scroll-behavior. Without this, a single
        wheel-tick can carry the viewport multiple screens due to macOS
        momentum interacting with the table's tall scroll height — visible as
@@ -797,34 +797,34 @@
   .cellset th,
   .cellset td {
     padding: 3px 9px 3px 6px;
-    border-right: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
+    border-right: 1px solid hsl(var(--border));
+    border-bottom: 1px solid hsl(var(--border));
     vertical-align: top;
   }
   .cellset thead th {
     position: sticky;
     top: 0;
     z-index: 2;
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
     font-weight: var(--weight-semibold);
     text-align: left;
     white-space: nowrap;
   }
   .cellset th.all_null {
-    background: var(--bg-muted);
-    border-right: 1px solid var(--border);
+    background: hsl(var(--bg-muted));
+    border-right: 1px solid hsl(var(--border));
   }
   .cellset th.col {
     cursor: context-menu;
   }
   .cellset th.col:hover {
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
   }
   .cellset th.col_null {
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
   }
   .cellset tbody th.row {
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
     text-align: left;
     white-space: nowrap;
     cursor: context-menu;
@@ -842,18 +842,18 @@
     left: 0;
     z-index: 1;
   }
-  .cellset tbody th.row--nested { font-weight: var(--weight-medium); color: var(--fg-muted); }
+  .cellset tbody th.row--nested { font-weight: var(--weight-medium); color: hsl(var(--fg-muted)); }
   .cellset tbody th.row:hover {
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
   }
   .cellset tbody th.row_null {
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
     position: sticky;
     left: 0;
     z-index: 1;
   }
   .cellset td.data {
-    color: var(--fg);
+    color: hsl(var(--fg));
     text-align: left;
   }
   .cellset td.data-num {
@@ -861,22 +861,22 @@
     font-variant-numeric: tabular-nums;
   }
   .cellset td.data { cursor: cell; user-select: none; }
-  .cellset td.data--selected { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+  .cellset td.data--selected { background: color-mix(in srgb, hsl(var(--primary)) 28%, transparent); }
   .cellset tr.virt-spacer td {
     background: transparent;
     border: 0;
     padding: 0;
   }
   .cellset td.data--focused {
-    box-shadow: inset 0 0 0 2px var(--accent);
+    box-shadow: inset 0 0 0 2px hsl(var(--primary));
     position: relative;
   }
   .cellset-wrap:focus {
-    outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+    outline: 2px solid color-mix(in srgb, hsl(var(--primary)) 50%, transparent);
     outline-offset: -2px;
   }
   .cellset-wrap:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid hsl(var(--primary));
     outline-offset: -2px;
   }
   .sel-stats {
@@ -885,26 +885,26 @@
     align-items: center;
     gap: var(--space-4);
     padding: 6px 12px;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-top: 0;
-    background: var(--bg-muted);
-    color: var(--fg-muted);
+    background: hsl(var(--bg-muted));
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-sm);
     font-variant-numeric: tabular-nums;
   }
-  .sel-stats strong { color: var(--fg); font-weight: var(--weight-semibold); }
+  .sel-stats strong { color: hsl(var(--fg)); font-weight: var(--weight-semibold); }
   .sel-stats__clear {
     margin-left: auto;
     border: none;
     background: transparent;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     cursor: pointer;
     font-size: 16px;
     line-height: 1;
     padding: 2px 6px;
     border-radius: var(--radius-sm);
   }
-  .sel-stats__clear:hover { color: var(--danger); background: var(--bg-subtle); }
+  .sel-stats__clear:hover { color: hsl(var(--danger)); background: hsl(var(--bg-subtle)); }
   .cellset th.spark-col {
     min-width: 140px;
   }
@@ -916,10 +916,10 @@
   }
   .cellset tbody tr:hover td.data,
   .cellset tbody tr:hover th.row {
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
   }
   .runtime {
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
     font-size: var(--fs-xs);
     margin: var(--space-2) 0 0;
     flex: 0 0 auto;
@@ -927,8 +927,8 @@
   .cellset-ctx-menu {
     position: fixed;
     min-width: 180px;
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
     padding: var(--space-1) 0;
@@ -937,7 +937,7 @@
   }
   .cellset-ctx-menu__sep {
     height: 1px;
-    background: var(--border);
+    background: hsl(var(--border));
     margin: 2px 0;
   }
   .cellset-ctx-menu__item {
@@ -947,16 +947,16 @@
     padding: 4px var(--space-3);
     background: transparent;
     border: 0;
-    color: var(--fg);
+    color: hsl(var(--fg));
     font: inherit;
     cursor: pointer;
   }
   .cellset-ctx-menu__item:hover:not(:disabled),
   .cellset-ctx-menu__item--parent > button:hover {
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
   }
   .cellset-ctx-menu__item:disabled {
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
     cursor: default;
   }
   .cellset-ctx-menu__item--parent {
@@ -969,13 +969,13 @@
     padding: 4px var(--space-3);
     background: transparent;
     border: 0;
-    color: var(--fg);
+    color: hsl(var(--fg));
     font: inherit;
     cursor: pointer;
   }
   .cellset-ctx-menu__sub {
     margin-left: var(--space-2);
-    border-left: 2px solid var(--border);
-    background: var(--bg-muted);
+    border-left: 2px solid hsl(var(--border));
+    background: hsl(var(--bg-muted));
   }
 </style>

@@ -738,23 +738,23 @@
 </Modal>
 
 <style>
-.map-opts { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
-  .series-axis { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
+.map-opts { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: hsl(var(--bg-subtle)); border-radius: var(--radius-sm); }
+  .series-axis { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: hsl(var(--bg-subtle)); border-radius: var(--radius-sm); }
   .series-axis__pick { width: 8rem; flex: 0 0 auto; }
-  .number-format { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
-  .colours { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
-  .colours__pick { flex: 0 0 auto; width: 2.5rem; height: 1.75rem; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; cursor: pointer; }
+  .number-format { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: hsl(var(--bg-subtle)); border-radius: var(--radius-sm); }
+  .colours { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: hsl(var(--bg-subtle)); border-radius: var(--radius-sm); }
+  .colours__pick { flex: 0 0 auto; width: 2.5rem; height: 1.75rem; padding: 0; border: 1px solid hsl(var(--border)); border-radius: var(--radius-sm); background: none; cursor: pointer; }
   .colours__reset { flex: 0 0 auto; font-size: var(--fs-xs); }
   .colours__reset:disabled { opacity: 0.4; cursor: default; }
-  .ref { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
+  .ref { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: hsl(var(--bg-subtle)); border-radius: var(--radius-sm); }
   .ref__axis { width: 8.5rem; flex: 0 0 auto; }
   .ref__value { width: 6rem; flex: 0 0 auto; }
   .ref__label { flex: 1; min-width: 4rem; }
-  .ref__color { width: 2.25rem; height: 2rem; flex: 0 0 auto; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; }
+  .ref__color { width: 2.25rem; height: 2rem; flex: 0 0 auto; padding: 0; border: 1px solid hsl(var(--border)); border-radius: var(--radius-sm); background: none; }
   /* #1084: conditional formatting */
-  .cond { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--bg-subtle); border-radius: var(--radius-sm); }
-  .cond__measure { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--border); }
+  .cond { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: hsl(var(--bg-subtle)); border-radius: var(--radius-sm); }
+  .cond__measure { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-2); border-top: 1px solid hsl(var(--border)); }
   .cond__op { width: 7rem; flex: 0 0 auto; }
   .cond__num { width: 5.5rem; flex: 0 0 auto; }
-  .cond__color { width: 2.25rem; height: 2rem; flex: 0 0 auto; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; cursor: pointer; }
+  .cond__color { width: 2.25rem; height: 2rem; flex: 0 0 auto; padding: 0; border: 1px solid hsl(var(--border)); border-radius: var(--radius-sm); background: none; cursor: pointer; }
 </style>

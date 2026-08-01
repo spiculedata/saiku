@@ -25,7 +25,7 @@
     <div
       class="flex items-center gap-3 rounded-lg border border-border bg-bg px-6 py-4 text-fg shadow-lg"
     >
-      <Loader2 size={20} class="animate-spin text-accent" aria-hidden="true" />
+      <Loader2 size={20} class="animate-spin text-primary" aria-hidden="true" />
       <span class="text-sm font-medium">
         {i18n.t("workspace.aiEmail.preparing", "Preparing your email…")}
       </span>

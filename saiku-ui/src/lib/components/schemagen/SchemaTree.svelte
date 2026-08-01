@@ -80,14 +80,14 @@
 .tree {
     font-family: var(--font-sans);
     font-size: var(--fs-sm);
-    color: var(--fg);
+    color: hsl(var(--fg));
     padding: var(--space-2);
     overflow: auto;
   }
   .tree__root,
   .tree__children {
     padding-left: var(--space-4);
-    border-left: 1px dashed var(--border);
+    border-left: 1px dashed hsl(var(--border));
     margin-left: var(--space-2);
   }
   .tree__item {
@@ -108,7 +108,7 @@
     font: inherit;
   }
   .tree__row:hover {
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
   }
   .tree__row:focus-visible {
     outline: none;
@@ -122,11 +122,11 @@
     font-weight: var(--weight-semibold);
     letter-spacing: 0.03em;
     text-transform: uppercase;
-    color: var(--accent-fg);
-    background: var(--fg-subtle);
+    color: hsl(var(--primary-foreground));
+    background: hsl(var(--fg-subtle));
   }
   .tree__badge--user {
-    background: var(--success);
+    background: hsl(var(--success));
     color: #fff;
   }
 </style>
