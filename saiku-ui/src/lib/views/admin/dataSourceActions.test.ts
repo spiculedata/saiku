@@ -73,4 +73,12 @@ describe("generateSchemaHref", () => {
     expect(href).not.toContain(" ");
     expect(href).not.toContain("?");
   });
+
+  it("uses the datasource NAME (the backend resolves by name), not the UUID id", () => {
+    // Regression: passing ds.id (a UUID) 500s server-side because
+    // getDatasource keys on name. The link must carry the name.
+    expect(
+      generateSchemaHref({ id: "4432dd20-fcae-11e3-a3ac-0800200c9a66", name: "foodmart" }),
+    ).toBe("/admin/cube-designer/foodmart");
+  });
 });

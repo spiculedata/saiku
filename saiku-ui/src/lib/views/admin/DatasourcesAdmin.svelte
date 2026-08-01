@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { base } from "$app/paths";
   import { Button, buttonVariants } from "$lib/components/ui";
   import { adminDatasources, type AdminDatasource } from "$lib/api/admin";
   import { toasts } from "$lib/stores/toasts.svelte";
@@ -145,7 +146,7 @@
               <a
                 class={buttonVariants({ variant: "outline" })}
                 data-testid="generate-schema-link"
-                href={generateSchemaHref(ds)}
+                href={`${base}${generateSchemaHref(ds)}`}
               >
                 {generateSchemaLabel(ds)}
               </a>
