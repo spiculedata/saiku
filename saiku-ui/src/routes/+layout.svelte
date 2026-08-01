@@ -27,6 +27,24 @@
   // account-free guest — no app chrome (topbar / upgrade banner), no session.
   const isShare = $derived(page.url.pathname.startsWith(`${base}/share`));
 
+  // Chrome-hide: `?chrome=none` renders a page full-bleed with no Saiku topbar
+  // (or upgrade banner) — for embedding an App Builder app in an iframe / kiosk
+  // where the host supplies its own frame. The app's own header + nav stay.
+  // LATCHED: once seen, it sticks for the session — the App Builder's per-page
+  // URL-state mirror rewrites `?p=…&f~…` and would otherwise drop the param.
+  let bare = $state(false);
+  $effect(() => {
+    if (page.url.searchParams.get("chrome") === "none") bare = true;
+  });
+
+  // App Builder routes render full-bleed by default — an app is a standalone,
+  // branded experience with its OWN header + nav, so the generic Saiku topbar
+  // (and upgrade banner) would be redundant chrome stacked above it. This is
+  // pathname-derived (not latched) so navigating back to a dashboard restores
+  // the topbar; the per-page URL mirror only rewrites the query string, never
+  // the pathname, so it can't drop this.
+  const isAppView = $derived(page.url.pathname.startsWith(`${base}/apps/`));
+
   // Non-modal session-expired banner state (issue #944). The previous
   // SessionErrorModal was a blocking modal in the middle of the screen,
   // which is jarring on long-running dashboard / TV-wall views. We now
@@ -82,10 +100,10 @@
 </script>
 
 <div class="app" class:app--cursor-hidden={presentation.active && presentation.cursorHidden}>
-  {#if !embed.active && !presentation.active && !isShare}
+  {#if !embed.active && !presentation.active && !isShare && !bare && !isAppView}
     <UpgradeBanner />
   {/if}
-  {#if !embed.active && !presentation.active && !isShare}
+  {#if !embed.active && !presentation.active && !isShare && !bare && !isAppView}
   <header class="topbar">
     <a class="topbar__brand" href="{base}/" aria-label={i18n.t("brand")}>
       {#if brandLogo}

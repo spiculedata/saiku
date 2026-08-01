@@ -7,6 +7,9 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import jakarta.ws.rs.core.Response;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -15,6 +18,7 @@ import java.util.function.Supplier;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.saiku.service.apps.TilePluginRegistry;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.olap.ai.AiFilterSelection;
 import org.saiku.service.olap.ai.AiQueryRequest;
@@ -44,8 +48,11 @@ public class EmbedViewResourceTest {
     private StubAuditLog audit;
     private EmbedViewResource resource;
 
+    /** Marker body of the seeded {@code records-bars} plugin.html — asserted verbatim. */
+    private static final String PLUGIN_HTML_MARKER = "<div id=\"root\">RECORDS-BARS-PLUGIN</div>";
+
     @Before
-    public void setUp() {
+    public void setUp() throws Exception {
         ds = new StubDatasourceService();
         session = new StubSessionService();
         ai = new StubAiQueryResource();
@@ -55,6 +62,22 @@ public class EmbedViewResourceTest {
         resource.setSessionService(session);
         resource.setAiQueryResource(ai);
         resource.setAuditLog(audit);
+        resource.setPluginRegistry(seedPluginRegistry());
+    }
+
+    /** A real {@link TilePluginRegistry} (final class — not stubbable) rooted at a temp dir holding
+     *  one valid {@code records-bars} bundle, so the plugin-html tests exercise the actual scan +
+     *  slug validation + in-root html read rather than a mock. */
+    private static TilePluginRegistry seedPluginRegistry() throws Exception {
+        Path root = Files.createTempDirectory("saiku-tile-plugins");
+        root.toFile().deleteOnExit();
+        Path bundle = Files.createDirectory(root.resolve("records-bars"));
+        Files.writeString(
+                bundle.resolve("plugin.json"),
+                "{\"id\":\"records-bars\",\"label\":\"Records bars\"}",
+                StandardCharsets.UTF_8);
+        Files.writeString(bundle.resolve("plugin.html"), PLUGIN_HTML_MARKER, StandardCharsets.UTF_8);
+        return new TilePluginRegistry(root);
     }
 
     @After
@@ -470,6 +493,69 @@ public class EmbedViewResourceTest {
 
         Response r = resource.appTileQuery("homes/admin/portal.saikuapp", "page-1", "t1", null);
         assertEquals(401, r.getStatus());
+    }
+
+    /* ---------- saiku#1441: token-scoped plugin-html (arbitrary-JS exfil fix) ---------- */
+
+    // An app page with ONE plugin tile referencing the installed "records-bars" plugin.
+    private static final String APP_PLUGIN_TILE = "{\"id\":\"a-1\",\"name\":\"Portal\",\"pages\":[{\"id\":\"page-1\","
+            + "\"grid\":{\"tiles\":[{\"id\":\"t1\",\"type\":\"custom\",\"custom\":{\"renderer\":\"plugin\","
+            + "\"options\":{\"pluginId\":\"records-bars\"}}}]}}]}";
+
+    @Test
+    public void app_plugin_html_returns_registry_html_for_referenced_plugin() {
+        // The pinned app references records-bars AND it is installed -> serve the admin registry HTML.
+        ds.fileContent = APP_PLUGIN_TILE;
+        pinGuest("app", "/homes/admin/portal.saikuapp", "admin", List.of("ROLE_ADMIN"));
+
+        Response r = resource.appPluginHtml("homes/admin/portal.saikuapp", "records-bars");
+
+        assertEquals(200, r.getStatus());
+        assertEquals(PLUGIN_HTML_MARKER, r.getEntity());
+        assertEquals("text/html", r.getMediaType().toString());
+        assertHardenedHeaders(r);
+    }
+
+    @Test
+    public void app_plugin_html_404_when_plugin_not_referenced_by_app() {
+        // records-bars is INSTALLED but the pinned app does NOT reference it (inline tile only).
+        // A guest must not be able to fetch an installed-but-unreferenced plugin (probe defence).
+        ds.fileContent = APP_INLINE_TILE;
+        pinGuest("app", "/homes/admin/portal.saikuapp", "admin", List.of());
+
+        Response r = resource.appPluginHtml("homes/admin/portal.saikuapp", "records-bars");
+        assertEquals(404, r.getStatus());
+    }
+
+    @Test
+    public void app_plugin_html_404_when_referenced_plugin_not_installed() {
+        // The app references a plugin id that is NOT installed in the registry -> 404 (absent).
+        String appRefsMissing = APP_PLUGIN_TILE.replace("records-bars", "not-installed");
+        ds.fileContent = appRefsMissing;
+        pinGuest("app", "/homes/admin/portal.saikuapp", "admin", List.of());
+
+        Response r = resource.appPluginHtml("homes/admin/portal.saikuapp", "not-installed");
+        assertEquals(404, r.getStatus());
+    }
+
+    @Test
+    public void app_plugin_html_refuses_when_kind_is_dashboard() {
+        // Defence in depth behind the auth filter's per-kind pin: a dashboard token can't fetch
+        // app plugin HTML.
+        pinGuest("dashboard", "/homes/admin/exec.saikudash", "admin", List.of());
+
+        Response r = resource.appPluginHtml("homes/admin/portal.saikuapp", "records-bars");
+        assertEquals(401, r.getStatus());
+    }
+
+    @Test
+    public void app_plugin_html_404_for_slug_invalid_id() {
+        // A slug-invalid id is rejected before the registry is touched (never a filesystem probe).
+        ds.fileContent = APP_PLUGIN_TILE;
+        pinGuest("app", "/homes/admin/portal.saikuapp", "admin", List.of());
+
+        Response r = resource.appPluginHtml("homes/admin/portal.saikuapp", "../../etc/passwd");
+        assertEquals(404, r.getStatus());
     }
 
     /* ------ security review: forced-RLS vs client-override collision (inline) ------ */

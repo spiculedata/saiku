@@ -320,6 +320,15 @@ public class EmbedAuthFilter extends OncePerRequestFilter {
         if (pageAt > 0) {
             rest = rest.substring(0, pageAt);
         }
+        // Strip the plugin-html trailing segment (saiku#1441) so the token-scoped
+        // plugin-html read ".../app/<path>/plugin/<pluginId>/html" still maps to
+        // the parent app token. Mirrors the /page/ + /tile/ strips above; without
+        // it the resource path resolves to "<app>/plugin/<id>/html" and every
+        // plugin fetch 403s before EmbedViewResource ever runs.
+        int pluginAt = rest.indexOf("/plugin/");
+        if (pluginAt > 0) {
+            rest = rest.substring(0, pluginAt);
+        }
         // Strip the tile-query trailing segment so a tile read still maps to
         // the parent dashboard token. JAX-RS leaves the path as-is in the URI.
         int tileAt = rest.indexOf("/tile/");

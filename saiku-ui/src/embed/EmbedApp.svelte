@@ -15,7 +15,14 @@
    * unchanged. Author custom CSS is designer-only in Phase 1 and is NOT applied
    * here; embedders theme via the --saiku-embed-* CSS variables.
    */
-  import { fetchApp, fetchAppTile, fetchAppTileMembers, EmbedFetchError, type EmbedFilterOverride } from "./api";
+  import {
+    fetchApp,
+    fetchAppTile,
+    fetchAppTileMembers,
+    fetchAppPluginHtml,
+    EmbedFetchError,
+    type EmbedFilterOverride,
+  } from "./api";
   import type { EmbedAppDoc } from "./types";
   import EmbedGrid from "./EmbedGrid.svelte";
 
@@ -93,6 +100,13 @@
     return (tileId: string, q?: string, limit?: number) =>
       fetchAppTileMembers(server.trim(), path.trim(), pageId, tileId, token.trim() || undefined, q, limit);
   }
+  // saiku#1441: token-scoped delivery of admin-installed plugin HTML. The
+  // endpoint is app-scoped (not per-page) — the server verifies the id is
+  // referenced by a plugin tile in the pinned app doc, then serves the trusted
+  // registry HTML. Page-agnostic, so no pageId is bound in.
+  function pluginHtmlFetch(pluginId: string) {
+    return fetchAppPluginHtml(server.trim(), path.trim(), pluginId, token.trim() || undefined);
+  }
 </script>
 
 {#if loading && !app}
@@ -131,6 +145,7 @@
             layout={activePage.grid}
             fetchTile={tileFetch(activePage.id)}
             fetchMembers={memberFetch(activePage.id)}
+            fetchPluginHtml={pluginHtmlFetch}
           />
         {/key}
       {:else}

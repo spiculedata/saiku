@@ -216,4 +216,99 @@ test.describe("App Builder (mocked backend)", () => {
       `effect_update_depth_exceeded must never fire. Captured diagnostics:\n${allDiagnostics.join("\n")}`,
     ).toHaveLength(0);
   });
+
+  test("empty → add a tile via the toolbar → it renders and persists on save (saiku#1441)", async ({
+    page,
+  }) => {
+    // Regression guard for the App Builder add-tile affordance (AppPageView's
+    // "+ Add tile" toolbar). Before it existed the app editor could only edit
+    // pre-existing tiles — there was no way to build a blank app up to a tile,
+    // so the "empty → built out" flow was undrivable from the UI.
+    const consoleErrors: string[] = [];
+    const pageErrors: string[] = [];
+    page.on("console", (msg) => {
+      if (msg.type() === "error") consoleErrors.push(msg.text());
+    });
+    page.on("pageerror", (err) => pageErrors.push(err.message));
+
+    const backend = registerAppBackend(page);
+
+    // Create a fresh app — lands in the editor on an empty "Overview" page.
+    await page.goto("/apps");
+    await page.waitForLoadState("networkidle");
+    await page.getByRole("button", { name: "+ New app", exact: true }).first().click();
+    await page.locator("footer").getByRole("button", { name: "Create", exact: true }).click();
+    await expect(
+      page.locator(".saiku-app__rail-item").filter({ hasText: "Overview" }),
+    ).toBeVisible();
+
+    // The empty page renders no tiles yet.
+    await expect(page.locator(".tile")).toHaveCount(0);
+
+    // Add a table tile through the toolbar dropdown (edit mode only).
+    await page.getByRole("button", { name: /Add tile/ }).click();
+    await page.getByRole("menuitem", { name: /Table/ }).click();
+
+    // The tile now renders in the grid, and its ⚙ (cube-binding) is reachable —
+    // proving add-then-bind works, not just add.
+    await expect(page.locator(".tile")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Edit tile" })).toBeVisible();
+
+    // Save persists the built-out app.
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+
+    // The persisted .saikuapp now carries exactly one table tile on the first
+    // page's grid — the add-tile edit round-tripped through appDoc → POST.
+    const savedPath = backend.savedPaths()[0];
+    expect(savedPath, "app must have been persisted").toBeTruthy();
+    const doc = JSON.parse(backend.getSaved(savedPath) ?? "{}") as {
+      pages: Array<{ grid: { tiles: Array<{ id: string; type: string }> } }>;
+    };
+    const tiles = doc.pages?.[0]?.grid?.tiles ?? [];
+    expect(tiles).toHaveLength(1);
+    expect(tiles[0].type).toBe("table");
+    expect(tiles[0].id).toBeTruthy();
+
+    const allDiagnostics = [...consoleErrors, ...pageErrors];
+    expect(
+      allDiagnostics.filter((m) => m.includes("effect_update_depth_exceeded")),
+      `effect re-entrancy must never fire. Diagnostics:\n${allDiagnostics.join("\n")}`,
+    ).toHaveLength(0);
+  });
+
+  test("custom renderer picker: '+ Add tile' lists renderers → Graph seeds a bound custom tile (saiku#1441)", async ({
+    page,
+  }) => {
+    // Regression guard for the renderer-picker wiring: the registered custom
+    // renderers (echarts-option / graph / plugin) appear as their own add-tile
+    // entries, and picking one seeds a `type:"custom"` tile ALREADY bound to that
+    // renderer id — so the tile renders + its ⚙ editor opens the renderer config,
+    // with no rendererless "Unknown renderer" dead-end.
+    const backend = registerAppBackend(page);
+    await page.goto("/apps");
+    await page.waitForLoadState("networkidle");
+    await page.getByRole("button", { name: "+ New app", exact: true }).first().click();
+    await page.locator("footer").getByRole("button", { name: "Create", exact: true }).click();
+    await expect(
+      page.locator(".saiku-app__rail-item").filter({ hasText: "Overview" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: /Add tile/ }).click();
+    // The Graph renderer is offered as its own menu entry (label "Graph").
+    await page.getByRole("menuitem", { name: /Graph/ }).click();
+    await expect(page.locator(".tile")).toHaveCount(1);
+
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+
+    const savedPath = backend.savedPaths()[0];
+    const doc = JSON.parse(backend.getSaved(savedPath) ?? "{}") as {
+      pages: Array<{ grid: { tiles: Array<{ type: string; custom?: { renderer?: string } }> } }>;
+    };
+    const tiles = doc.pages?.[0]?.grid?.tiles ?? [];
+    expect(tiles).toHaveLength(1);
+    expect(tiles[0].type).toBe("custom");
+    expect(tiles[0].custom?.renderer).toBe("graph");
+  });
 });

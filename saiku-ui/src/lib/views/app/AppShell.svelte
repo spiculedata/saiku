@@ -24,22 +24,41 @@
     themeVarsStyle,
     scopedCustomCss,
     appScopeId,
+    rootSelectorFor,
     isRailNav,
     resolveActivePageId,
   } from "$lib/views/app/appShell";
+  import { appSkinCss } from "$lib/views/app/appSkin";
   import AppHeader from "$lib/views/app/AppHeader.svelte";
   import AppNavRail from "$lib/views/app/AppNavRail.svelte";
   import AppTopNav from "$lib/views/app/AppTopNav.svelte";
   import AppPageView from "$lib/views/app/AppPageView.svelte";
+  import AppAssistant from "$lib/views/app/AppAssistant.svelte";
+
+  /** First cube bound to any tile across the app — the assistant's fallback
+   *  scope when the assistant slot doesn't name one explicitly. */
+  function firstAppCube(a: SaikuApp): AppAssistantCube | null {
+    for (const p of a.pages) {
+      const grid = p.grid as { tiles?: Array<{ cube?: AppAssistantCube }> } | null;
+      for (const t of grid?.tiles ?? []) {
+        if (t.cube?.connectionName && t.cube?.cubeName) return t.cube;
+      }
+    }
+    return null;
+  }
+  type AppAssistantCube = { connectionName: string; catalog: string; schema: string; cubeName: string };
 
   interface Props {
     app: SaikuApp;
     editable?: boolean;
     /** Header controls (share / present / theme) — forwarded to AppHeader. */
     controls?: Snippet;
+    /** Selection model (edit mode): a double-click on a chrome element opens
+     *  the App Inspector on the matching section. */
+    onEditChrome?: (section: "header" | "nav" | "assistant") => void;
   }
 
-  let { app, editable = false, controls }: Props = $props();
+  let { app, editable = false, controls, onEditChrome }: Props = $props();
 
   let rootEl = $state<HTMLDivElement | null>(null);
 
@@ -69,14 +88,23 @@
   // $state) keeps this clear of the effect re-entrancy trap.
   // ------------------------------------------------------------------
   $effect(() => {
-    const css = scopedCustomCss(app);
     const host = rootEl;
     if (!host) return;
+    // Built-in token-driven skin FIRST (lower precedence)…
+    const skinEl = document.createElement("style");
+    skinEl.setAttribute("data-saiku-app-skin", appScopeId(app));
+    skinEl.textContent = appSkinCss(rootSelectorFor(app));
+    host.appendChild(skinEl);
+    // …then the author's advanced customCss (higher precedence, escape hatch).
+    const css = scopedCustomCss(app);
     const styleEl = document.createElement("style");
     styleEl.setAttribute("data-saiku-app-css", appScopeId(app));
     styleEl.textContent = css;
     host.appendChild(styleEl);
-    return () => styleEl.remove();
+    return () => {
+      skinEl.remove();
+      styleEl.remove();
+    };
   });
 
   function handleSelect(id: string): void {
@@ -97,7 +125,7 @@
   data-saiku-app={appScopeId(app)}
   style={inlineThemeVars}
 >
-  <AppHeader {app} {controls} />
+  <AppHeader {app} {controls} onSelect={onEditChrome ? () => onEditChrome("header") : undefined} />
 
   {#if !rail}
     <AppTopNav
@@ -119,6 +147,9 @@
         onSelect={handleSelect}
         onAddPage={editable ? handleAddPage : undefined}
         onRename={editable ? handleRename : undefined}
+        defaultCollapsed={app.nav.railCollapsed}
+        brand={{ logo: app.logo, label: app.name.slice(0, 1) }}
+        footer={app.nav.footer ?? null}
       />
     {/if}
 
@@ -135,11 +166,8 @@
       {/if}
     </main>
 
-    {#if app.assistantSlot.enabled}
-      <!-- Reserved right-hand assistant column (Phase 5). Empty for now — it
-           only reserves the layout track so the page region doesn't reflow when
-           the assistant lands. -->
-      <aside class="saiku-app__assistant" aria-label="Assistant"></aside>
+    {#if app.assistantSlot.enabled && !narrow}
+      <AppAssistant slot={app.assistantSlot} fallbackCube={firstAppCube(app)} />
     {/if}
   </div>
 
@@ -162,6 +190,12 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
+    /* Fill the layout main (a flex row) horizontally — without this the shell
+       sizes to its content width, which lets a stacked grid ratchet the whole
+       app narrow instead of laying tiles out across the full canvas. */
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
     box-sizing: border-box;
     background: var(--saiku-app-bg, var(--bg));
     color: var(--saiku-app-fg, var(--fg));
@@ -182,16 +216,5 @@
     padding: 1rem;
     height: 100%;
     box-sizing: border-box;
-  }
-  .saiku-app__assistant {
-    width: 20rem;
-    flex-shrink: 0;
-    border-left: 1px solid var(--border);
-    background: var(--bg-subtle, var(--bg));
-  }
-  /* Narrow: the assistant column drops below the breakpoint so the page keeps
-     the full width; the bottom-bar rail is rendered after the body. */
-  .saiku-app--narrow .saiku-app__assistant {
-    display: none;
   }
 </style>

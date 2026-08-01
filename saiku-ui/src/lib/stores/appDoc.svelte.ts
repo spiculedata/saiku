@@ -204,6 +204,26 @@ class AppDocStore {
     this.current = { ...this.current, pages };
   }
 
+  /** Apply a named theme preset: set {@code preset} and drop explicit token
+   *  overrides so the preset shows cleanly. Preserves {@code mode} + the
+   *  advanced {@code customCss} escape hatch. */
+  applyPreset(key: string): void {
+    if (!this.current) return;
+    this.captureForUndo();
+    const { customCss, mode } = this.current.theme;
+    this.current = {
+      ...this.current,
+      theme: { mode, preset: key, ...(customCss ? { customCss } : {}) },
+    };
+  }
+
+  /** Patch the app-level header config (Brand & Theme → Header section). */
+  updateHeader(patch: Partial<NonNullable<SaikuApp["header"]>>): void {
+    if (!this.current) return;
+    this.captureForUndo();
+    this.current = { ...this.current, header: { ...(this.current.header ?? {}), ...patch } };
+  }
+
   /** Rename the page with {@code id}. No-op when the id isn't present. */
   renamePage(id: string, title: string): void {
     if (!this.current) return;
@@ -259,6 +279,50 @@ class AppDocStore {
     if (!this.current) return;
     this.captureForUndo();
     this.current = { ...this.current, theme: { ...this.current.theme, ...patch } };
+  }
+
+  /** Merge a patch into the nav config (Inspector → Navigation). */
+  updateNav(patch: Partial<AppNav>): void {
+    if (!this.current) return;
+    this.captureForUndo();
+    this.current = { ...this.current, nav: { ...this.current.nav, ...patch } };
+  }
+
+  /** Merge a patch into the assistant slot (Inspector → Assistant). */
+  updateAssistant(patch: Partial<SaikuApp["assistantSlot"]>): void {
+    if (!this.current) return;
+    this.captureForUndo();
+    this.current = {
+      ...this.current,
+      assistantSlot: { ...this.current.assistantSlot, ...patch },
+    };
+  }
+
+  /** Set the app logo (data URI / URL) or clear it (null). */
+  setLogo(logo: string | null): void {
+    if (!this.current) return;
+    this.captureForUndo();
+    this.current = { ...this.current, logo };
+  }
+
+  /** Rename the app itself (Inspector → header field). */
+  rename(name: string): void {
+    if (!this.current) return;
+    this.captureForUndo();
+    this.current = { ...this.current, name };
+  }
+
+  /** Merge title/heading/subheading/meta/icon into one page (Inspector → Pages).
+   *  {@code grid} is intentionally NOT patchable here. No-op on unknown id. */
+  updatePageMeta(
+    id: string,
+    patch: Partial<Pick<AppPage, "title" | "heading" | "subheading" | "meta" | "icon">>,
+  ): void {
+    if (!this.current) return;
+    if (!this.current.pages.some((p) => p.id === id)) return;
+    this.captureForUndo();
+    const pages: AppPage[] = this.current.pages.map((p) => (p.id === id ? { ...p, ...patch } : p));
+    this.current = { ...this.current, pages };
   }
 
   // ------------------------------------------------------------------

@@ -187,6 +187,34 @@ export async function fetchAppTile(
 }
 
 /**
+ * Fetch an ADMIN-INSTALLED tile plugin's HTML through the token-scoped embed endpoint
+ * (App Builder Phase 2, saiku#1441 security fix). The server serves the markup only from the
+ * trusted registry (never from tile config) and only when {@code pluginId} is referenced by a
+ * {@code type:"custom"} plugin tile in the PINNED app document — so a guest can load exactly the
+ * plugins the embedded app uses and nothing else. Returns the raw HTML string, which
+ * {@code EmbedPluginTile} wraps in a strict-CSP sandboxed iframe srcdoc.
+ *
+ * Same header / encoding / credentials:"omit" posture as the other app fetchers. Throws
+ * {@link EmbedFetchError} on any non-2xx (404 = not installed or not referenced by this app).
+ */
+export async function fetchAppPluginHtml(
+  server: string,
+  appPath: string,
+  pluginId: string,
+  token?: string | null,
+): Promise<string> {
+  const base = stripTrailingSlash(server);
+  const url =
+    `${base}/rest/saiku/api/embed/app/${encodePath(appPath)}` +
+    `/plugin/${encodeURIComponent(pluginId)}/html`;
+  const headers: Record<string, string> = { Accept: "text/html" };
+  if (token) headers["X-Saiku-Embed-Token"] = token;
+  const resp = await fetch(url, { headers, credentials: "omit" });
+  if (!resp.ok) throw await readError(resp);
+  return await resp.text();
+}
+
+/**
  * Distinct members for an app-page filter tile. Guest supplies only page id + tile id — the
  * target axis + cube come from the pinned app document, so a guest can't fish for arbitrary
  * members off the cube. Same shape as {@link fetchTileMembers}.

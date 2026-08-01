@@ -685,6 +685,16 @@
                     visible='true' caption='Gewinn-Wachstum'>
                 <CalculatedMemberProperty name='FORMAT_STRING' value='0.0%'/>
             </CalculatedMember>
+            <CalculatedMember name='Store Sales last Period' dimension='Measures'
+                    formula='COALESCEEMPTY((Measures.[Store Sales], [Time].[Time].PREVMEMBER), Measures.[Store Sales])'
+                    visible='false'>
+                <CalculatedMemberProperty name='FORMAT_STRING' value='#,###.00'/>
+            </CalculatedMember>
+            <CalculatedMember name='Store Sales Growth' dimension='Measures'
+                    formula='([Measures].[Store Sales] - [Measures].[Store Sales last Period]) / [Measures].[Store Sales last Period]'
+                    visible='true' caption='MoM Growth'>
+                <CalculatedMemberProperty name='FORMAT_STRING' value='+0.0%;-0.0%;0.0%'/>
+            </CalculatedMember>
         </CalculatedMembers>
     </Cube>
 

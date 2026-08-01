@@ -59,6 +59,19 @@ public class EmbedTokenStoreTest {
     }
 
     @Test
+    public void create_app_then_load_roundtrips() throws Exception {
+        // App Builder Phase 2 — minting an "app" embed token must succeed
+        // (the view side already understands kind="app").
+        EmbedTokenStore store = newStore();
+        EmbedToken t = store.create("app", "/homes/admin/sales.saikuapp", "admin", List.of(), 60_000L, null);
+
+        EmbedToken got = store.load(t.token);
+        assertNotNull("minted app token must load back", got);
+        assertEquals("app", got.resourceKind);
+        assertEquals("/homes/admin/sales.saikuapp", got.resourcePath);
+    }
+
+    @Test
     public void create_rejects_unknown_resource_kind() throws Exception {
         EmbedTokenStore store = newStore();
         for (String bad : new String[] {"schema", "", null}) {

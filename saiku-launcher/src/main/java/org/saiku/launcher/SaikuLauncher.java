@@ -808,6 +808,15 @@ public class SaikuLauncher implements Callable<Integer> {
             Files.createDirectories(adminHome);
             stageResource("/seed/FoodMartTrend.saiku", adminHome.resolve("FoodMartTrend.saiku"));
 
+            // Seed the "FoodMart Ops · Store Intelligence" App Builder app (saiku#1441) — the
+            // reference .saikuapp the App Builder is measured against: full-bleed editorial shell,
+            // icon nav rail, KPI row with inline sparklines, monthly-trend chart, a Movers table
+            // with a real MoM store-sales-growth column (green/red conditional formatting), and the
+            // in-app Ask assistant. Renders at /ui/apps/homes/admin/foodmart-ops.saikuapp/. Uses the
+            // Store Sales Growth calculated member added to the Sales cube (FoodMart4.xml).
+            // Idempotent — only lands when absent, so operator edits survive re-launch.
+            stageResource("/seed/apps/foodmart-ops.saikuapp", adminHome.resolve("foodmart-ops.saikuapp"));
+
             // Public-grant the FoodMartTrend query so /ui/showcase/ can render its
             // <saiku-embed> widgets anonymously. Idempotent: if the operator already
             // manages embed-public.json we merge our entry in without touching theirs.
@@ -829,6 +838,16 @@ public class SaikuLauncher implements Callable<Integer> {
                     "/seed/agent-spaces/foodmart-sales-analyst.json", spacesDir.resolve("foodmart-sales-analyst.json"));
             stageResource(
                     "/seed/agent-spaces/foodmart-finance-ops.json", spacesDir.resolve("foodmart-finance-ops.json"));
+
+            // Seed the tile plugin catalogue (App Builder Phase 2, saiku#1441) with a working
+            // example: a self-contained bar-chart tile that renders a record set under the host's
+            // strict CSP (inline JS/CSS only, no remote refs). Admin-installed plugins land under
+            // saiku-home/tile-plugins/<id>/; this one demonstrates the bundle shape + the
+            // ready/resize postMessage protocol. Idempotent — operator edits survive re-launch.
+            Path tilePluginDir = saikuHome.resolve("tile-plugins").resolve("records-bars");
+            Files.createDirectories(tilePluginDir);
+            stageResource("/seed/tile-plugins/records-bars/plugin.json", tilePluginDir.resolve("plugin.json"));
+            stageResource("/seed/tile-plugins/records-bars/plugin.html", tilePluginDir.resolve("plugin.html"));
         }
 
         /**

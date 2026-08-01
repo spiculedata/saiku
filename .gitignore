@@ -483,3 +483,9 @@ nbdist/
 .playwright-mcp/
 welcome-demo-fixed.png
 .superpowers/
+
+# local scratch screenshots / doc dumps (App Builder demo work)
+/iter*.png
+/v[0-9]*.png
+/gold-standard.png
+/foodmart-ops-doc*.json

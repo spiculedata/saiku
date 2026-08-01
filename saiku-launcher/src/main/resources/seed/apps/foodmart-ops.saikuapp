@@ -1,0 +1,775 @@
+{
+  "name": "FoodMart Ops",
+  "version": "1.0.0",
+  "logo": null,
+  "theme": {
+    "mode": "light",
+    "preset": "editorial",
+    "customCss": "/* movers card — demo-specific composition the general skin doesn't cover */\n.tile:has(tbody) .tile-header{padding:14px 16px 4px;display:flex;flex-direction:column;align-items:flex-start;gap:0;}\n.tile:has(tbody) .tile-header span{font-family:var(--saiku-app-font-display,Georgia,serif);font-weight:700;font-size:1.05rem;color:var(--saiku-app-fg,#1f3529);text-transform:none;letter-spacing:0;}\n.tile:has(tbody) .tile-header::after{content:'Product department \\00B7 MoM';display:block;font-family:var(--saiku-app-font-body,sans-serif);font-size:.72rem;color:var(--saiku-app-muted,#a99e82);margin-top:2px;}\n.tile:has(tbody) thead{display:none;}\n.tile:has(tbody) tbody tr:nth-child(n+7){display:none;}\n.tile:has(tbody) tbody{counter-reset:mv;}\n.tile:has(tbody) tbody tr{counter-increment:mv;}\n.tile:has(tbody) tbody tr > :first-child{font-weight:600;color:var(--saiku-app-fg,#26332b);}\n.tile:has(tbody) tbody tr > :first-child::before{content:counter(mv);display:inline-block;width:20px;font-family:var(--saiku-app-font-display,Georgia,serif);font-style:italic;font-weight:400;color:#b6ab8d;}\n.tile:has(tbody) tbody tr:hover{background:#f7f3ea;}\n"
+  },
+  "nav": {
+    "position": "rail",
+    "railCollapsed": true,
+    "footer": {
+      "settings": true,
+      "avatar": "RM"
+    }
+  },
+  "assistantSlot": {
+    "enabled": true,
+    "title": "FoodMart",
+    "persona": "Sales Analyst",
+    "scope": "scoped to your stores",
+    "greeting": "Morning. I'm scoped to your Pacific NW stores and the FoodMart Sales cube. Ask in plain English — I'll answer and update the dashboard. Try one of the prompts below.",
+    "suggestedPrompts": [
+      "How did Store Sales track last week vs the prior week?",
+      "Break down Store Sales by Product Family for Q4.",
+      "Which Product Department is up the most month-over-month?"
+    ],
+    "cube": {
+      "connectionName": "unknown_foodmart",
+      "catalog": "FoodMart",
+      "schema": "FoodMart",
+      "cubeName": "Sales"
+    },
+    "icon": "crosshair",
+    "footerHint": "↵ to send · ⇧↵ new line",
+    "poweredBy": "powered by Saiku",
+    "skillPrompts": [
+      "weekly foodmart rollup"
+    ]
+  },
+  "pages": [
+    {
+      "id": "p1",
+      "title": "Overview",
+      "icon": "home",
+      "heading": "Portland #14 · Today",
+      "subheading": "Regional manager view · Pacific Northwest",
+      "meta": "Thu · Week 41",
+      "grid": {
+        "cols": 12,
+        "tiles": [
+          {
+            "id": "k1",
+            "type": "kpi",
+            "x": 0,
+            "y": 0,
+            "w": 3,
+            "h": 2,
+            "cube": {
+              "connectionName": "unknown_foodmart",
+              "catalog": "FoodMart",
+              "schema": "FoodMart",
+              "cubeName": "Sales"
+            },
+            "kpi": {
+              "measure": "Store Sales",
+              "measureCaption": "Store Sales",
+              "format": "custom",
+              "comparison": "prior-period",
+              "direction": "higher-is-better",
+              "sparkline": true,
+              "timeLevel": {
+                "dimension": "Time",
+                "hierarchy": "Time",
+                "level": "Month"
+              },
+              "thresholds": {},
+              "customFormat": "$c1",
+              "deltaSuffix": "vs last Thu"
+            },
+            "title": "Sales Today"
+          },
+          {
+            "id": "k2",
+            "type": "kpi",
+            "x": 3,
+            "y": 0,
+            "w": 3,
+            "h": 2,
+            "cube": {
+              "connectionName": "unknown_foodmart",
+              "catalog": "FoodMart",
+              "schema": "FoodMart",
+              "cubeName": "Sales"
+            },
+            "kpi": {
+              "measure": "Unit Sales",
+              "measureCaption": "Unit Sales",
+              "format": "number",
+              "comparison": "prior-period",
+              "direction": "higher-is-better",
+              "sparkline": true,
+              "timeLevel": {
+                "dimension": "Time",
+                "hierarchy": "Time",
+                "level": "Month"
+              },
+              "thresholds": {},
+              "deltaSuffix": "vs last Thu"
+            },
+            "title": "Units Sold"
+          },
+          {
+            "id": "k3",
+            "type": "kpi",
+            "x": 6,
+            "y": 0,
+            "w": 3,
+            "h": 2,
+            "cube": {
+              "connectionName": "unknown_foodmart",
+              "catalog": "FoodMart",
+              "schema": "FoodMart",
+              "cubeName": "Sales"
+            },
+            "kpi": {
+              "measure": "Sales Count",
+              "measureCaption": "Sales Count",
+              "format": "number",
+              "comparison": "prior-period",
+              "direction": "higher-is-better",
+              "sparkline": true,
+              "timeLevel": {
+                "dimension": "Time",
+                "hierarchy": "Time",
+                "level": "Month"
+              },
+              "thresholds": {},
+              "deltaSuffix": "vs last wk"
+            },
+            "title": "Baskets"
+          },
+          {
+            "id": "k4",
+            "type": "kpi",
+            "x": 9,
+            "y": 0,
+            "w": 3,
+            "h": 2,
+            "cube": {
+              "connectionName": "unknown_foodmart",
+              "catalog": "FoodMart",
+              "schema": "FoodMart",
+              "cubeName": "Sales"
+            },
+            "kpi": {
+              "measure": "Customer Count",
+              "measureCaption": "Customer Count",
+              "format": "number",
+              "comparison": "prior-period",
+              "direction": "higher-is-better",
+              "sparkline": true,
+              "timeLevel": {
+                "dimension": "Time",
+                "hierarchy": "Time",
+                "level": "Month"
+              },
+              "thresholds": {},
+              "deltaSuffix": "vs last Thu"
+            },
+            "title": "Customers"
+          },
+          {
+            "id": "t1",
+            "type": "custom",
+            "x": 0,
+            "y": 2,
+            "w": 8,
+            "h": 4,
+            "cube": {
+              "connectionName": "unknown_foodmart",
+              "catalog": "FoodMart",
+              "schema": "FoodMart",
+              "cubeName": "Sales"
+            },
+            "query": {
+              "kind": "inline",
+              "body": {
+                "cube": {
+                  "connectionName": "unknown_foodmart",
+                  "catalog": "FoodMart",
+                  "schema": "FoodMart",
+                  "cubeName": "Sales"
+                },
+                "measures": [
+                  {
+                    "name": "Store Sales"
+                  }
+                ],
+                "rows": [
+                  {
+                    "dimension": "Time",
+                    "hierarchy": "Time",
+                    "level": "Month"
+                  }
+                ],
+                "columns": [],
+                "filters": []
+              }
+            },
+            "custom": {
+              "renderer": "echarts-option",
+              "options": {
+                "title": {
+                  "text": "Store Sales — this view",
+                  "left": 16,
+                  "top": 10,
+                  "textStyle": {
+                    "color": "#1f3529",
+                    "fontFamily": "Georgia, serif",
+                    "fontWeight": "bold",
+                    "fontSize": 15
+                  },
+                  "subtext": "Monthly trend",
+                  "subtextStyle": {
+                    "color": "#8a7f68",
+                    "fontSize": 11,
+                    "fontFamily": "-apple-system,'Segoe UI',sans-serif"
+                  }
+                },
+                "color": [
+                  "#2e5e43",
+                  "#c85a3a"
+                ],
+                "tooltip": {
+                  "trigger": "axis"
+                },
+                "grid": {
+                  "left": 60,
+                  "right": 26,
+                  "top": 66,
+                  "bottom": 34
+                },
+                "xAxis": {
+                  "type": "category",
+                  "axisLabel": {
+                    "color": "#8a7f68"
+                  }
+                },
+                "yAxis": {
+                  "type": "value",
+                  "splitLine": {
+                    "lineStyle": {
+                      "color": "#efe9dc"
+                    }
+                  },
+                  "axisLabel": {
+                    "color": "#8a7f68"
+                  }
+                },
+                "series": [
+                  {
+                    "type": "line",
+                    "smooth": true,
+                    "symbolSize": 7,
+                    "lineStyle": {
+                      "width": 3,
+                      "color": "#2e5e43"
+                    },
+                    "itemStyle": {
+                      "color": "#2e5e43"
+                    },
+                    "areaStyle": {
+                      "color": "rgba(46,94,67,0.14)"
+                    }
+                  }
+                ]
+              },
+              "trendBreakdown": true,
+              "emphasizeLast": true
+            }
+          },
+          {
+            "id": "t2",
+            "type": "table",
+            "x": 8,
+            "y": 2,
+            "w": 4,
+            "h": 4,
+            "cube": {
+              "connectionName": "unknown_foodmart",
+              "catalog": "FoodMart",
+              "schema": "FoodMart",
+              "cubeName": "Sales"
+            },
+            "query": {
+              "kind": "inline",
+              "body": {
+                "cube": {
+                  "connectionName": "unknown_foodmart",
+                  "catalog": "FoodMart",
+                  "schema": "FoodMart",
+                  "cubeName": "Sales"
+                },
+                "measures": [
+                  {
+                    "name": "MoM Growth"
+                  }
+                ],
+                "rows": [
+                  {
+                    "dimension": "Product",
+                    "hierarchy": "Products",
+                    "level": "Product Department"
+                  }
+                ],
+                "columns": [],
+                "filters": [
+                  {
+                    "dimension": "Time",
+                    "hierarchy": "Time",
+                    "level": "Month",
+                    "members": [
+                      "[Time].[Time].[1997].[Q4].[12]"
+                    ]
+                  }
+                ]
+              }
+            },
+            "conditionalFormat": [
+              {
+                "column": "MoM Growth",
+                "type": "font",
+                "thresholdMode": "absolute",
+                "colors": {
+                  "high": "#2e5e43",
+                  "low": "#c85a3a",
+                  "mid": "#93876c"
+                }
+              }
+            ],
+            "title": "Movers"
+          }
+        ]
+      }
+    },
+    {
+      "id": "p2",
+      "title": "Trends",
+      "icon": "trend",
+      "grid": {
+        "cols": 12,
+        "tiles": [
+          {
+            "id": "tr1",
+            "type": "custom",
+            "x": 0,
+            "y": 0,
+            "w": 12,
+            "h": 7,
+            "cube": {
+              "connectionName": "unknown_foodmart",
+              "catalog": "FoodMart",
+              "schema": "FoodMart",
+              "cubeName": "Sales"
+            },
+            "query": {
+              "kind": "inline",
+              "body": {
+                "cube": {
+                  "connectionName": "unknown_foodmart",
+                  "catalog": "FoodMart",
+                  "schema": "FoodMart",
+                  "cubeName": "Sales"
+                },
+                "measures": [
+                  {
+                    "name": "Store Sales"
+                  },
+                  {
+                    "name": "Unit Sales"
+                  }
+                ],
+                "rows": [
+                  {
+                    "dimension": "Time",
+                    "hierarchy": "Time",
+                    "level": "Month"
+                  }
+                ],
+                "columns": [],
+                "filters": []
+              }
+            },
+            "custom": {
+              "renderer": "echarts-option",
+              "options": {
+                "title": {
+                  "text": "Sales & Units by month",
+                  "left": 12,
+                  "top": 8,
+                  "textStyle": {
+                    "color": "#1f3529",
+                    "fontFamily": "Georgia, serif",
+                    "fontWeight": "bold",
+                    "fontSize": 15
+                  }
+                },
+                "color": [
+                  "#2e5e43",
+                  "#c85a3a"
+                ],
+                "tooltip": {
+                  "trigger": "axis"
+                },
+                "grid": {
+                  "left": 58,
+                  "right": 26,
+                  "top": 52,
+                  "bottom": 34
+                },
+                "xAxis": {
+                  "type": "category",
+                  "axisLabel": {
+                    "color": "#8a7f68"
+                  }
+                },
+                "yAxis": {
+                  "type": "value",
+                  "splitLine": {
+                    "lineStyle": {
+                      "color": "#efe9dc"
+                    }
+                  },
+                  "axisLabel": {
+                    "color": "#8a7f68"
+                  }
+                },
+                "legend": {
+                  "top": 8,
+                  "right": 16
+                },
+                "series": [
+                  {
+                    "type": "line",
+                    "smooth": true,
+                    "areaStyle": {
+                      "color": "rgba(46,94,67,0.12)"
+                    }
+                  },
+                  {
+                    "type": "line",
+                    "smooth": true
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "p3",
+      "title": "Products",
+      "icon": "cube",
+      "grid": {
+        "cols": 12,
+        "tiles": [
+          {
+            "id": "pr1",
+            "type": "custom",
+            "x": 0,
+            "y": 0,
+            "w": 7,
+            "h": 7,
+            "cube": {
+              "connectionName": "unknown_foodmart",
+              "catalog": "FoodMart",
+              "schema": "FoodMart",
+              "cubeName": "Sales"
+            },
+            "query": {
+              "kind": "inline",
+              "body": {
+                "cube": {
+                  "connectionName": "unknown_foodmart",
+                  "catalog": "FoodMart",
+                  "schema": "FoodMart",
+                  "cubeName": "Sales"
+                },
+                "measures": [
+                  {
+                    "name": "Store Sales"
+                  }
+                ],
+                "rows": [
+                  {
+                    "dimension": "Product",
+                    "hierarchy": "Products",
+                    "level": "Product Family"
+                  }
+                ],
+                "columns": [],
+                "filters": []
+              }
+            },
+            "custom": {
+              "renderer": "echarts-option",
+              "options": {
+                "title": {
+                  "text": "Store Sales by family",
+                  "left": 12,
+                  "top": 8,
+                  "textStyle": {
+                    "color": "#1f3529",
+                    "fontFamily": "Georgia, serif",
+                    "fontWeight": "bold",
+                    "fontSize": 15
+                  }
+                },
+                "color": [
+                  "#2e5e43",
+                  "#c85a3a"
+                ],
+                "tooltip": {
+                  "trigger": "axis"
+                },
+                "grid": {
+                  "left": 58,
+                  "right": 26,
+                  "top": 52,
+                  "bottom": 34
+                },
+                "xAxis": {
+                  "type": "category",
+                  "axisLabel": {
+                    "color": "#8a7f68"
+                  }
+                },
+                "yAxis": {
+                  "type": "value",
+                  "splitLine": {
+                    "lineStyle": {
+                      "color": "#efe9dc"
+                    }
+                  },
+                  "axisLabel": {
+                    "color": "#8a7f68"
+                  }
+                },
+                "series": [
+                  {
+                    "type": "bar",
+                    "itemStyle": {
+                      "color": "#2e5e43"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "pr2",
+            "type": "table",
+            "x": 7,
+            "y": 0,
+            "w": 5,
+            "h": 7,
+            "cube": {
+              "connectionName": "unknown_foodmart",
+              "catalog": "FoodMart",
+              "schema": "FoodMart",
+              "cubeName": "Sales"
+            },
+            "query": {
+              "kind": "inline",
+              "body": {
+                "cube": {
+                  "connectionName": "unknown_foodmart",
+                  "catalog": "FoodMart",
+                  "schema": "FoodMart",
+                  "cubeName": "Sales"
+                },
+                "measures": [
+                  {
+                    "name": "Store Sales"
+                  }
+                ],
+                "rows": [
+                  {
+                    "dimension": "Product",
+                    "hierarchy": "Products",
+                    "level": "Product Department"
+                  }
+                ],
+                "columns": [],
+                "filters": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "p4",
+      "title": "Customers",
+      "icon": "users",
+      "grid": {
+        "cols": 12,
+        "tiles": [
+          {
+            "id": "c1",
+            "type": "kpi",
+            "x": 0,
+            "y": 0,
+            "w": 3,
+            "h": 3,
+            "cube": {
+              "connectionName": "unknown_foodmart",
+              "catalog": "FoodMart",
+              "schema": "FoodMart",
+              "cubeName": "Sales"
+            },
+            "kpi": {
+              "measure": "Customer Count",
+              "measureCaption": "Customer Count",
+              "format": "number",
+              "comparison": "prior-period",
+              "direction": "higher-is-better",
+              "sparkline": true,
+              "timeLevel": {
+                "dimension": "Time",
+                "hierarchy": "Time",
+                "level": "Month"
+              },
+              "thresholds": {}
+            }
+          },
+          {
+            "id": "c2",
+            "type": "kpi",
+            "x": 3,
+            "y": 0,
+            "w": 3,
+            "h": 3,
+            "cube": {
+              "connectionName": "unknown_foodmart",
+              "catalog": "FoodMart",
+              "schema": "FoodMart",
+              "cubeName": "Sales"
+            },
+            "kpi": {
+              "measure": "Sales Count",
+              "measureCaption": "Sales Count",
+              "format": "number",
+              "comparison": "prior-period",
+              "direction": "higher-is-better",
+              "sparkline": true,
+              "timeLevel": {
+                "dimension": "Time",
+                "hierarchy": "Time",
+                "level": "Month"
+              },
+              "thresholds": {}
+            }
+          },
+          {
+            "id": "cu1",
+            "type": "custom",
+            "x": 0,
+            "y": 3,
+            "w": 12,
+            "h": 6,
+            "cube": {
+              "connectionName": "unknown_foodmart",
+              "catalog": "FoodMart",
+              "schema": "FoodMart",
+              "cubeName": "Sales"
+            },
+            "query": {
+              "kind": "inline",
+              "body": {
+                "cube": {
+                  "connectionName": "unknown_foodmart",
+                  "catalog": "FoodMart",
+                  "schema": "FoodMart",
+                  "cubeName": "Sales"
+                },
+                "measures": [
+                  {
+                    "name": "Customer Count"
+                  }
+                ],
+                "rows": [
+                  {
+                    "dimension": "Time",
+                    "hierarchy": "Time",
+                    "level": "Month"
+                  }
+                ],
+                "columns": [],
+                "filters": []
+              }
+            },
+            "custom": {
+              "renderer": "echarts-option",
+              "options": {
+                "title": {
+                  "text": "Customer Count by month",
+                  "left": 12,
+                  "top": 8,
+                  "textStyle": {
+                    "color": "#1f3529",
+                    "fontFamily": "Georgia, serif",
+                    "fontWeight": "bold",
+                    "fontSize": 15
+                  }
+                },
+                "color": [
+                  "#2e5e43",
+                  "#c85a3a"
+                ],
+                "tooltip": {
+                  "trigger": "axis"
+                },
+                "grid": {
+                  "left": 58,
+                  "right": 26,
+                  "top": 52,
+                  "bottom": 34
+                },
+                "xAxis": {
+                  "type": "category",
+                  "axisLabel": {
+                    "color": "#8a7f68"
+                  }
+                },
+                "yAxis": {
+                  "type": "value",
+                  "splitLine": {
+                    "lineStyle": {
+                      "color": "#efe9dc"
+                    }
+                  },
+                  "axisLabel": {
+                    "color": "#8a7f68"
+                  }
+                },
+                "series": [
+                  {
+                    "type": "bar",
+                    "itemStyle": {
+                      "color": "#c85a3a"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [],
+  "header": {
+    "wordmarkAccent": "Mart",
+    "eyebrow": "Store Intelligence",
+    "contextPill": {
+      "label": "Store",
+      "value": "Portland #14"
+    },
+    "liveBadge": "Live · Saiku"
+  }
+}

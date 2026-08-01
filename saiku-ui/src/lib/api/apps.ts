@@ -25,29 +25,144 @@ export interface SaikuApp {
   logo?: string | null;
   theme: AppTheme;
   nav: AppNav;
-  assistantSlot: { enabled: boolean };
+  header?: AppHeaderConfig;
+  assistantSlot: AppAssistantSlot;
   pages: AppPage[];
   tags: string[];
 }
 
+/** Branded-header configuration — the primitives needed to pixel-port a
+ *  product header without custom CSS: a two-tone wordmark, a right-aligned
+ *  context pill (e.g. a store selector), and a live-status badge. All optional;
+ *  when absent the header falls back to a plain {@link SaikuApp.name}. */
+export interface AppHeaderConfig {
+  /** Substring of {@link SaikuApp.name} rendered in the accent colour, e.g.
+   *  "Mart" in "FoodMart Ops" → "Food<accent>Mart</accent> Ops". First match. */
+  wordmarkAccent?: string;
+  /** Small uppercase eyebrow after the wordmark (e.g. "Store Intelligence"),
+   *  separated by a vertical divider. */
+  eyebrow?: string;
+  /** Right-aligned context pill: a tiny label over a bold value with a ▾. */
+  contextPill?: { label: string; value: string };
+  /** Right-aligned live-status badge text (rendered with a ● dot), e.g.
+   *  "Live · Saiku". */
+  liveBadge?: string;
+}
+
+/** The right-hand "Ask" assistant column. When enabled, the app renders an
+ *  in-app natural-language chat scoped to {@link cube}, hitting /ai/ask. */
+export interface AppAssistantSlot {
+  enabled: boolean;
+  /** Panel title, e.g. "FoodMart" → rendered as "Ask FoodMart". */
+  title?: string;
+  /** Persona label shown under the title, e.g. "Sales Analyst". */
+  persona?: string;
+  /** Small scope note after the persona, e.g. "scoped to your stores". */
+  scope?: string;
+  /** Opening assistant message (markdown-ish plain text). */
+  greeting?: string;
+  /** Suggested prompt chips under a "Try asking" heading. */
+  suggestedPrompts?: string[];
+  /** Extra chips rendered in a monospace "skill" style (⌘ prefix) — for
+   *  named saved workflows the analyst can invoke by name. */
+  skillPrompts?: string[];
+  /** Header glyph: "sparkles" (default) or "crosshair" (a targeting reticle,
+   *  matching a scoped-assistant look). */
+  icon?: "sparkles" | "crosshair";
+  /** Keyboard hint shown in the composer footer, e.g. "↵ to send · ⇧↵ new line". */
+  footerHint?: string;
+  /** Small right-aligned attribution in the composer footer, e.g. "powered by Saiku". */
+  poweredBy?: string;
+  /** Cube the assistant queries. Falls back to the first queryable tile's cube. */
+  cube?: { connectionName: string; catalog: string; schema: string; cubeName: string };
+}
+
+/**
+ * Structured theme tokens — the design primitives every App Builder surface
+ * renders from, so a branded look is achievable with pickers + presets and no
+ * hand-written CSS (customCss stays only as an advanced escape hatch).
+ *
+ * All token fields are optional; a named {@link preset} and the built-in
+ * defaults (see appTheme.ts) fill any gaps. The legacy `primary/bg/font` fields
+ * are retained for back-compat with pre-token apps and are mapped onto the new
+ * tokens during serialisation.
+ */
 export interface AppTheme {
   mode: "light" | "dark" | "auto";
-  primary?: string;
-  accent?: string;
-  bg?: string;
+  /** Named preset key (see appThemePresets.ts) — a starting token set the
+   *  individual token fields below then override. */
+  preset?: string;
+
+  /* --- colour tokens --- */
+  /** Page background (the "ground"). */
+  ground?: string;
+  /** Card / tile / panel background. */
+  surface?: string;
+  /** Primary foreground / text. */
   fg?: string;
+  /** Muted secondary text (labels, captions). */
+  muted?: string;
+  /** Brand accent (active nav, links, primary emphasis). */
+  accent?: string;
+  /** Secondary brand mark colour (logo/wordmark highlight, brand squares) —
+   *  the second colour a two-accent identity uses. Defaults to {@link accent}. */
+  accent2?: string;
+  /** Soft accent tint (badges, active-item backgrounds). */
+  accentSoft?: string;
+  /** Strong accent (on-tint text). */
+  accentStrong?: string;
+  /** Negative / decline colour. */
+  danger?: string;
+  /** Positive / growth colour. */
+  positive?: string;
+  /** Card border colour. */
+  cardBorder?: string;
+  /** Rail (side-nav) background + its muted icon colour. */
+  railBg?: string;
+  railFg?: string;
+
+  /* --- type tokens (font-allowlist keys, see appTheme.ts) --- */
+  /** Display / heading font key. */
+  fontDisplay?: string;
+  /** Body / UI font key. */
+  fontBody?: string;
+
+  /* --- form tokens (named scales, mapped to px/values in appTheme.ts) --- */
+  radius?: "none" | "sm" | "md" | "lg" | "xl";
+  shadow?: "none" | "sm" | "md" | "lg";
+  density?: "compact" | "cozy" | "comfortable";
+
+  /* --- legacy (pre-token apps) --- */
+  primary?: string;
+  bg?: string;
   font?: string;
+
+  /** Advanced escape hatch — sanitised + scoped author CSS for the long tail
+   *  the tokens don't cover. Hidden by default in the analyst UI. */
   customCss?: string;
 }
 
 export interface AppNav {
   position: "rail" | "top";
+  /** Start the left rail collapsed to icons-only (matches the compact
+   *  section-rail look of the reference dashboards). */
+  railCollapsed?: boolean;
+  /** Pinned rail footer: a settings gear and/or a user-avatar disc showing
+   *  {@code avatar} initials — the bottom-of-rail chrome most product shells
+   *  carry. Omit for no footer. */
+  footer?: { settings?: boolean; avatar?: string };
 }
 
 export interface AppPage {
   id: string;
   title: string;
   icon?: string;
+  /** Optional page-title row shown above the grid (big heading + muted sub +
+   *  right-aligned meta) — the "Portland #14 · Today / Regional manager view"
+   *  band the reference dashboards open with. */
+  heading?: string;
+  subheading?: string;
+  meta?: string;
   /** Inline dashboard-layout object — opaque here; the dashboard grid
    *  (see $lib/api/dashboards → DashboardLayout) is the schema authority. */
   grid: unknown;
@@ -98,7 +213,7 @@ export function appFromDashboard(name: string, dashboardLayout: unknown): SaikuA
 export type SaikuAppInput = Partial<Omit<SaikuApp, "theme" | "nav" | "assistantSlot" | "pages">> & {
   theme?: Partial<AppTheme>;
   nav?: Partial<AppNav>;
-  assistantSlot?: Partial<{ enabled: boolean }>;
+  assistantSlot?: Partial<AppAssistantSlot>;
   pages?: Partial<AppPage>[];
 };
 
@@ -111,12 +226,13 @@ export function normaliseApp(raw: SaikuAppInput): SaikuApp {
     version: raw.version ?? 1,
     logo: raw.logo ?? null,
     theme: { mode: raw.theme?.mode ?? "auto", ...raw.theme },
-    nav: { position: raw.nav?.position ?? "rail" },
-    assistantSlot: { enabled: raw.assistantSlot?.enabled ?? false },
+    nav: { ...raw.nav, position: raw.nav?.position ?? "rail" },
+    ...(raw.header ? { header: raw.header } : {}),
+    assistantSlot: { ...raw.assistantSlot, enabled: raw.assistantSlot?.enabled ?? false },
     pages: (raw.pages ?? []).map((p, i) => ({
+      ...p,
       id: p.id ?? localId("page"),
       title: p.title ?? `Page ${i + 1}`,
-      icon: p.icon,
       grid: p.grid ?? { cols: 12, tiles: [] },
     })),
     tags: raw.tags ?? [],

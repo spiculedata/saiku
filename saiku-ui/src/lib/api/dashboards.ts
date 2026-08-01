@@ -9,6 +9,7 @@
  */
 
 import type { ThinQuery } from "$lib/api/query";
+import type { CustomTileConfig } from "$lib/dashboard/tileRegistry";
 import type { ChartOptions } from "$lib/views/chartTypes";
 
 const REST_BASE = "/rest/saiku/api/dashboards";
@@ -37,7 +38,7 @@ export interface InlineQuery {
 
 export type TileQuery = ReferenceQuery | InlineQuery;
 
-export type TileType = "chart" | "table" | "text" | "filter" | "kpi" | "image";
+export type TileType = "chart" | "table" | "text" | "filter" | "kpi" | "image" | "custom";
 
 export type FilterWidget = "single-select" | "multi-select" | "date-range" | "cascading-select" | "top-n";
 
@@ -152,6 +153,10 @@ export interface KpiConfig {
   sparkline?: boolean;
   thresholds?: KpiThresholds;
   direction?: KpiDirection;
+  /** Override the comparison suffix on the delta callout (e.g. "vs last Thu",
+   *  "vs 4-wk avg"). When unset the built-in "vs prior" / "vs last year" /
+   *  "vs target" text is used. */
+  deltaSuffix?: string;
 }
 
 /* --- issue #920: table sparkline column ---------------------------------
@@ -314,6 +319,10 @@ export interface DashboardTile {
   /** Image-tile config (issue #918). Only consulted when
    *  {@code type === "image"}. */
   image?: ImageConfig;
+  /** Custom-renderer config (App Builder Phase 2, saiku#1441). Only consulted
+   *  when {@code type === "custom"} — names the registered renderer and carries
+   *  its opaque options. See $lib/dashboard/tileRegistry. */
+  custom?: CustomTileConfig;
   /* --- issue #931: per-tile auto-refresh --------------------------------
    * Auto-refresh cadence in MINUTES. 0 / undefined = off (the default —
    * tiles fetch once and stay static). When set to a positive value the

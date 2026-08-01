@@ -57,6 +57,20 @@ function formatCustom(value: number, pattern: string): string {
       minimumFractionDigits: digits,
     }).format(value);
   }
+  // Compact currency, e.g. "$c1" -> "$48.2K". The "c" selects compact notation;
+  // the trailing digit count sets the fraction digits.
+  const compactMatch = p.match(/^([$€£¥])c(\d*)$/);
+  if (compactMatch) {
+    const symbol = compactMatch[1];
+    const digits = parseFractionDigits(compactMatch[2]);
+    const code = currencyCodeFor(symbol);
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: code,
+      notation: "compact",
+      maximumFractionDigits: digits,
+    }).format(value);
+  }
   const currencyMatch = p.match(/^([$€£¥])(\d*)$/);
   if (currencyMatch) {
     const symbol = currencyMatch[1];

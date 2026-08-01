@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Records Bar Chart</title>
+<style>
+  /* Self-contained: inline only. Works under the host CSP
+     default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'. */
+  :root { color-scheme: light dark; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    color: #1f2937;
+    background: transparent;
+    padding: 8px 10px;
+    box-sizing: border-box;
+  }
+  h2 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #374151;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0;
+  }
+  .label {
+    flex: 0 0 34%;
+    max-width: 34%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: right;
+    color: #4b5563;
+  }
+  .track {
+    flex: 1 1 auto;
+    background: rgba(148, 163, 184, 0.20);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .bar {
+    height: 14px;
+    min-width: 2px;
+    background: #2563eb;
+    border-radius: 3px;
+    transition: width .2s ease;
+  }
+  .value {
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+    color: #111827;
+  }
+  .empty { color: #6b7280; font-style: italic; }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e5e7eb; }
+    h2 { color: #d1d5db; }
+    .label { color: #9ca3af; }
+    .value { color: #f3f4f6; }
+    .bar { background: #3b82f6; }
+  }
+</style>
+</head>
+<body>
+<div id="root"><div class="empty">Waiting for data…</div></div>
+<script>
+(function () {
+  "use strict";
+
+  // The host injects the per-tile nonce as a global in the srcdoc
+  // (pluginBridge.buildSrcdoc → window.SAIKU_PLUGIN_NONCE). We MUST echo it on
+  // every message or the host drops them (nonce mismatch) — including our very
+  // first `ready`, without which the host never sends data. A later data message
+  // may also carry a nonce, which we adopt as a fallback.
+  var nonce = null;
+  try {
+    if (typeof window.SAIKU_PLUGIN_NONCE === "string") nonce = window.SAIKU_PLUGIN_NONCE;
+  } catch (e) { /* fine */ }
+
+  function post(type, extra) {
+    var msg = { type: type, nonce: nonce };
+    if (extra) for (var k in extra) msg[k] = extra[k];
+    try { (window.parent || window).postMessage(msg, "*"); } catch (e) {}
+  }
+
+  function reportSize() {
+    var h = Math.max(
+      document.body.scrollHeight,
+      document.documentElement ? document.documentElement.scrollHeight : 0
+    );
+    post("resize", { height: h });
+  }
+
+  function isNumber(v) {
+    return typeof v === "number" && isFinite(v);
+  }
+
+  // Saiku records-format cells are {value, formatted} objects, not bare
+  // primitives — unwrap them for the numeric value and the display text.
+  function cellNum(v) {
+    if (v && typeof v === "object" && "value" in v) return isNumber(v.value) ? v.value : NaN;
+    return isNumber(v) ? v : NaN;
+  }
+  function cellText(v) {
+    if (v && typeof v === "object") return v.formatted != null ? v.formatted : (v.value != null ? v.value : "");
+    return v;
+  }
+
+  // Pick sensible fields when the options don't name them.
+  function pickFields(records, options) {
+    var labelField = options && options.labelField;
+    var valueField = options && options.valueField;
+    var sample = records[0] || {};
+    var keys = Object.keys(sample);
+    if (!valueField) {
+      for (var i = 0; i < keys.length; i++) {
+        if (isNumber(cellNum(sample[keys[i]]))) { valueField = keys[i]; break; }
+      }
+    }
+    if (!labelField) {
+      for (var j = 0; j < keys.length; j++) {
+        if (keys[j] !== valueField && !isNumber(cellNum(sample[keys[j]]))) { labelField = keys[j]; break; }
+      }
+      if (!labelField) labelField = keys[0];
+    }
+    return { labelField: labelField, valueField: valueField };
+  }
+
+  function escapeText(node, text) {
+    node.textContent = text == null ? "" : String(text);
+  }
+
+  function render(records, options) {
+    var root = document.getElementById("root");
+    while (root.firstChild) root.removeChild(root.firstChild);
+
+    if (!records || !records.length) {
+      var empty = document.createElement("div");
+      empty.className = "empty";
+      escapeText(empty, "No records");
+      root.appendChild(empty);
+      reportSize();
+      return;
+    }
+
+    if (options && options.title) {
+      var h = document.createElement("h2");
+      escapeText(h, options.title);
+      root.appendChild(h);
+    }
+
+    var f = pickFields(records, options);
+    var max = 0;
+    for (var i = 0; i < records.length; i++) {
+      var v = cellNum(records[i][f.valueField]);
+      if (isNumber(v) && Math.abs(v) > max) max = Math.abs(v);
+    }
+    if (max === 0) max = 1;
+
+    var CAP = 200; // guard against a runaway record set
+    for (var r = 0; r < records.length && r < CAP; r++) {
+      var rec = records[r];
+      var num = cellNum(rec[f.valueField]);
+      if (!isNumber(num)) num = 0;
+
+      var row = document.createElement("div");
+      row.className = "row";
+
+      var label = document.createElement("div");
+      label.className = "label";
+      escapeText(label, cellText(rec[f.labelField]));
+      row.appendChild(label);
+
+      var track = document.createElement("div");
+      track.className = "track";
+      var bar = document.createElement("div");
+      bar.className = "bar";
+      bar.style.width = Math.max(0, (Math.abs(num) / max) * 100).toFixed(2) + "%";
+      track.appendChild(bar);
+      row.appendChild(track);
+
+      var value = document.createElement("div");
+      value.className = "value";
+      escapeText(value, cellText(rec[f.valueField]));
+      row.appendChild(value);
+
+      root.appendChild(row);
+    }
+    reportSize();
+  }
+
+  // The host protocol (pluginBridge.postToFrame) delivers { type, nonce, payload }:
+  // init.payload = { options }, data.payload = the records array, theme.payload =
+  // { effective }. Read `payload`, not a flat `records`/`options` field.
+  var currentOptions = {};
+  window.addEventListener("message", function (ev) {
+    var data = ev && ev.data;
+    if (!data || typeof data !== "object") return;
+    if (data.nonce) nonce = data.nonce;
+    if (data.type === "init") {
+      currentOptions = (data.payload && data.payload.options) || {};
+    } else if (data.type === "data") {
+      try {
+        render(Array.isArray(data.payload) ? data.payload : [], currentOptions);
+      } catch (e) {
+        post("error", { message: String(e && e.message ? e.message : e) });
+      }
+    }
+  });
+
+  // Announce readiness so the host knows it can send the first data message.
+  post("ready");
+  reportSize();
+})();
+</script>
+</body>
+</html>

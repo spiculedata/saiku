@@ -12,6 +12,12 @@
   import LoginForm from "$lib/views/LoginForm.svelte";
   import DashboardEditor from "$lib/views/dashboard/DashboardEditor.svelte";
   import DashboardIndex from "$lib/views/dashboard/DashboardIndex.svelte";
+  // App Builder Phase 2 (saiku#1441): register built-in custom tile renderers
+  // (echarts-option) by import side effect so the tile registry is populated
+  // wherever dashboards render — enables the "Custom…" add-tile entry + the
+  // custom-tile dispatch. Localised to the dashboards route (which already loads
+  // ECharts) so it stays out of the root layout chunk.
+  import "$lib/dashboard/custom/registerBuiltinRenderers";
 
   let { data } = $props();
 </script>

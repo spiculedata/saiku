@@ -20,7 +20,7 @@
    * otherwise a single-cell query is enough.
    */
 
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy } from "svelte";
   import * as echarts from "echarts";
   import { ArrowDownRight, ArrowUpRight, Minus, Settings2 } from "lucide-svelte";
   import type { CubeRef, DashboardTile, KpiConfig } from "$lib/api/dashboards";
@@ -107,14 +107,8 @@
   let spark: echarts.ECharts | null = null;
   let sparkResize: ResizeObserver | null = null;
 
-  onMount(() => {
-    if (sparkHost) {
-      spark = echarts.init(sparkHost);
-      sparkResize = new ResizeObserver(() => spark?.resize());
-      sparkResize.observe(sparkHost);
-    }
-  });
-
+  // Sparkline ECharts is lazy-initialised in the render $effect below (the host
+  // element only exists once data has loaded), so there is no onMount init here.
   onDestroy(() => {
     sparkResize?.disconnect();
     spark?.dispose();
@@ -379,6 +373,15 @@
       spark?.clear();
       return;
     }
+    // Lazy-init here (not onMount): the sparkline host is rendered only once the
+    // tile has data + sparkline is on, so at mount time sparkHost is still null.
+    // Initialising in this effect — which re-runs when sparkHost binds — is what
+    // actually gives the sparkline a canvas.
+    if (!spark && sparkHost) {
+      spark = echarts.init(sparkHost);
+      sparkResize = new ResizeObserver(() => spark?.resize());
+      sparkResize.observe(sparkHost);
+    }
     if (!spark || !response || response.status !== "SUCCESS") return;
     const values = (response.data ?? []).map((row) => {
       for (const v of Object.values(row)) {
@@ -386,19 +389,34 @@
       }
       return null;
     });
+    // Follow the surrounding theme accent (e.g. an App Builder app's
+    // --saiku-app-accent) so the sparkline matches the dashboard's palette
+    // instead of ECharts' default blue. Falls back to ECharts' default when no
+    // accent var is in scope (plain dashboards keep their existing look).
+    let accent: string | undefined;
+    try {
+      if (sparkHost) {
+        const c = getComputedStyle(sparkHost).getPropertyValue("--saiku-app-accent").trim();
+        if (c) accent = c;
+      }
+    } catch {
+      /* getComputedStyle can throw on a detached node — ignore */
+    }
     spark.setOption(
       {
         animation: false,
         grid: { top: 4, right: 4, bottom: 4, left: 4 },
         xAxis: { type: "category", show: false, data: values.map((_, i) => i) },
         yAxis: { type: "value", show: false, scale: true },
+        color: accent ? [accent] : undefined,
         series: [
           {
             type: "line",
             data: values,
             smooth: true,
             showSymbol: false,
-            lineStyle: { width: 1.5 },
+            lineStyle: accent ? { width: 1.6, color: accent } : { width: 1.5 },
+            areaStyle: accent ? { color: accent, opacity: 0.12 } : undefined,
           },
         ],
         tooltip: { show: false },
@@ -417,6 +435,9 @@
       maximumFractionDigits: 1,
       signDisplay: "always",
     }).format(d.ratio);
+    if (kpi.deltaSuffix) {
+      return `${pct} ${kpi.deltaSuffix}`;
+    }
     if (kpi.comparison === "target") {
       return `${pct} ${i18n.t("dashboard.kpi.vsTarget", "vs target")}`;
     }

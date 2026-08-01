@@ -75,6 +75,13 @@
   // Issue #931 — per-tile auto-refresh interval picker (chart / table / kpi).
   import { REFRESH_INTERVAL_OPTIONS, normaliseInterval } from "$lib/dashboard/autoRefresh";
   import { i18n } from "$lib/stores/i18n.svelte";
+  // App Builder Phase 2 (saiku#1441): custom tile renderers. The echarts-option
+  // renderer gets a JSON option editor with live safe-subset validation.
+  import { getTileRenderer } from "$lib/dashboard/tileRegistry";
+  import { validateEchartsOption } from "$lib/dashboard/custom/echartsOption";
+  // The `graph` renderer gets a declarative column-mapping editor (NO code).
+  import { validateGraphConfig, type GraphLayout } from "$lib/dashboard/custom/graphTile";
+  import { listTilePlugins, type TilePluginSummary } from "$lib/api/tilePlugins";
 
   interface Props {
     tile: DashboardTile;
@@ -222,6 +229,106 @@
   );
   let referencePath = $state<string>(untrack(() => (tile.query?.kind === "reference" ? tile.query.path : "")));
 
+  // ── App Builder Phase 2 (saiku#1441): custom tile renderer config ──
+  // A queryable custom renderer (e.g. echarts-option) binds a cube + query the
+  // same way chart/table tiles do; wantsQuery gates the shared query-source UI.
+  // Read the stable `tile` prop under untrack (the modal never re-renders for
+  // the same tile — matches the one-shot init pattern used throughout).
+  const isEchartsOptionTile = untrack(
+    () => tile.type === "custom" && tile.custom?.renderer === "echarts-option",
+  );
+  const isGraphTile = untrack(
+    () => tile.type === "custom" && tile.custom?.renderer === "graph",
+  );
+  // App Builder Phase 2, Task 7 (saiku#1441): the `plugin` renderer runs
+  // arbitrary author HTML/JS in a locked-down iframe. Its editor is just a
+  // textarea for the self-contained plugin HTML.
+  const isPluginTile = untrack(
+    () => tile.type === "custom" && tile.custom?.renderer === "plugin",
+  );
+  const customQueryable = untrack(() =>
+    tile.type === "custom" && !!tile.custom
+      ? (getTileRenderer(tile.custom.renderer)?.isQueryable ?? false)
+      : false,
+  );
+  const wantsQuery = untrack(
+    () => tile.type === "chart" || tile.type === "table" || customQueryable,
+  );
+  // The author's declarative ECharts option (JSON textarea), seeded from the
+  // saved tile. Live-validated against the safe subset below.
+  let customOptionsJson = $state<string>(
+    untrack(() =>
+      tile.custom?.options && Object.keys(tile.custom.options).length > 0
+        ? JSON.stringify(tile.custom.options, null, 2)
+        : "",
+    ),
+  );
+  // App Builder (saiku#1441): echarts-option display toggles — a live
+  // Trend/Breakdown segmented control + an emphasised last data point.
+  let trendBreakdown = $state<boolean>(untrack(() => !!tile.custom?.trendBreakdown));
+  let emphasizeLast = $state<boolean>(untrack(() => !!tile.custom?.emphasizeLast));
+  // Live validation feedback for the option editor — parse + safe-subset check.
+  let customOptionsValidation = $derived.by(() => {
+    const txt = customOptionsJson.trim();
+    if (!txt) return { ok: false as const, error: "Paste an ECharts option object." };
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(txt);
+    } catch (e) {
+      return { ok: false as const, error: `JSON parse error: ${(e as Error).message}` };
+    }
+    return validateEchartsOption(parsed);
+  });
+
+  // ── App Builder Phase 2 (saiku#1441): `graph` renderer column mapping ──
+  // A declarative mapping of query columns → graph endpoints (NO code). Seeded
+  // from the saved tile.custom.options, live-validated below, persisted on Save.
+  const savedGraph = untrack(() => (tile.custom?.options ?? {}) as Record<string, unknown>);
+  let graphIdCol = $state<string>(untrack(() => String(savedGraph.idCol ?? "")));
+  let graphLabelCol = $state<string>(untrack(() => String(savedGraph.labelCol ?? "")));
+  let graphSourceCol = $state<string>(untrack(() => String(savedGraph.sourceCol ?? "")));
+  let graphTargetCol = $state<string>(untrack(() => String(savedGraph.targetCol ?? "")));
+  let graphValueCol = $state<string>(untrack(() => String(savedGraph.valueCol ?? "")));
+  let graphLayout = $state<GraphLayout>(
+    untrack(() => (savedGraph.layout === "circular" ? "circular" : "force")),
+  );
+  // Assemble the current form into an options object (empty optionals dropped).
+  function graphOptionsFromForm(): Record<string, unknown> {
+    const opts: Record<string, unknown> = {
+      idCol: graphIdCol.trim(),
+      sourceCol: graphSourceCol.trim(),
+      targetCol: graphTargetCol.trim(),
+      layout: graphLayout,
+    };
+    if (graphLabelCol.trim()) opts.labelCol = graphLabelCol.trim();
+    if (graphValueCol.trim()) opts.valueCol = graphValueCol.trim();
+    return opts;
+  }
+  // Live validation feedback for the graph mapping.
+  let graphConfigValidation = $derived.by(() =>
+    validateGraphConfig({
+      idCol: graphIdCol.trim(),
+      sourceCol: graphSourceCol.trim(),
+      targetCol: graphTargetCol.trim(),
+      layout: graphLayout,
+      labelCol: graphLabelCol.trim() || undefined,
+      valueCol: graphValueCol.trim() || undefined,
+    }),
+  );
+
+  // ── App Builder Phase 2 (saiku#1441): `plugin` renderer picker ──
+  // SECURITY: the author only PICKS an admin-installed plugin by its slug id.
+  // Raw HTML can NEVER ride tile config (the arbitrary-JS exfil hole — an author
+  // could otherwise run JS that navigates the frame to exfiltrate the tile's
+  // data); the markup is served only from the admin registry at render time. So
+  // the editor is a picker over GET /rest/saiku/api/tile-plugins, not a textarea.
+  let selectedPluginId = $state<string>(
+    untrack(() => (typeof tile.custom?.options?.pluginId === "string" ? tile.custom.options.pluginId : "")),
+  );
+  let installedPlugins = $state<TilePluginSummary[]>([]);
+  let pluginsLoading = $state(false);
+  let pluginsError = $state<string | null>(null);
+
   // ── Issue #912: inline visual query editor ──────────────────────────
   // For chart / table tiles, "Edit query visually" mounts the workspace
   // QueryCanvas inside this modal (embedded mode). The canvas + drop zones
@@ -334,8 +441,22 @@
 
   onMount(async () => {
     if (tile.type === "text") return; // text tiles don't need the catalogue
+    // Plugin tiles: load the installed-plugin catalogue for the picker.
+    if (isPluginTile) {
+      pluginsLoading = true;
+      listTilePlugins()
+        .then((list) => {
+          installedPlugins = list;
+        })
+        .catch((e: unknown) => {
+          pluginsError = e instanceof Error ? e.message : String(e);
+        })
+        .finally(() => {
+          pluginsLoading = false;
+        });
+    }
     cubesLoading = true;
-    const needSavedQueries = tile.type === "chart" || tile.type === "table";
+    const needSavedQueries = wantsQuery;
     if (needSavedQueries) savedQueriesLoading = true;
     try {
       const tasks: Array<Promise<void>> = [
@@ -636,7 +757,59 @@
         brushCrossFilterEnabled && BRUSHABLE_CHART_TYPES.has(chartType) ? { enabled: true } : undefined;
     }
 
-    if (tile.type === "chart" || tile.type === "table") {
+    // App Builder Phase 2 (saiku#1441): persist the echarts-option config.
+    // Validate the option again on save (defence in depth) and store the
+    // SAFE, normalised value — never the raw author text.
+    if (isEchartsOptionTile && tile.custom) {
+      const txt = customOptionsJson.trim();
+      let options: Record<string, unknown> = {};
+      if (txt) {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(txt);
+        } catch (e) {
+          bodyError = `ECharts option JSON parse error: ${(e as Error).message}`;
+          return;
+        }
+        const v = validateEchartsOption(parsed);
+        if (!v.ok) {
+          bodyError = `Invalid ECharts option: ${v.error}`;
+          return;
+        }
+        options = v.value;
+      }
+      patch.custom = { renderer: tile.custom.renderer, options, trendBreakdown, emphasizeLast };
+    }
+
+    // App Builder Phase 2 (saiku#1441): persist the graph column mapping.
+    // Validate again on save (defence in depth) and store the SAFE, normalised
+    // value — never raw form strings.
+    if (isGraphTile && tile.custom) {
+      const v = validateGraphConfig(graphOptionsFromForm());
+      if (!v.ok) {
+        bodyError = `Invalid graph config: ${v.error}`;
+        return;
+      }
+      patch.custom = {
+        renderer: tile.custom.renderer,
+        options: v.value as unknown as Record<string, unknown>,
+      };
+    }
+
+    // App Builder Phase 2 (saiku#1441): persist the selected plugin ID ONLY. Raw
+    // HTML never rides tile config — the markup is served from the admin registry
+    // at render time. Any legacy `html` option is dropped on save so a resaved
+    // tile can never carry author markup forward.
+    if (isPluginTile && tile.custom) {
+      const existing = { ...(tile.custom.options ?? {}) } as Record<string, unknown>;
+      delete existing.html;
+      const pid = selectedPluginId.trim();
+      if (pid) existing.pluginId = pid;
+      else delete existing.pluginId;
+      patch.custom = { renderer: tile.custom.renderer, options: existing };
+    }
+
+    if (wantsQuery) {
       if (queryMode === "reference") {
         if (referencePath) {
           const q: TileQuery = { kind: "reference", path: referencePath };
@@ -983,7 +1156,121 @@
         {/if}
       {/if}
 
-      {#if tile.type === "chart" || tile.type === "table"}
+      <!-- App Builder Phase 2 (saiku#1441): echarts-option renderer editor.
+           A declarative ECharts option (NO code) with live safe-subset
+           validation. Persisted into tile.custom.options on Save. -->
+      {#if isEchartsOptionTile}
+        <label class="field">
+          <span>ECharts option (JSON)</span>
+          <textarea
+            bind:value={customOptionsJson}
+            rows="12"
+            spellcheck="false"
+            class="json"
+            placeholder={JSON.stringify(
+              { title: { text: "My chart" }, xAxis: { type: "category" }, yAxis: { type: "value" }, series: [{ type: "bar" }] },
+              null,
+              2,
+            )}
+          ></textarea>
+          {#if customOptionsValidation.ok}
+            <span class="hint ok">✓ Valid option — query data is merged into the series on render.</span>
+          {:else}
+            <span class="hint error">{customOptionsValidation.error}</span>
+          {/if}
+          <span class="hint">
+            Declarative ECharts option only — functions and remote URLs are rejected.
+            Categories + series data come from the tile's query below.
+          </span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" bind:checked={trendBreakdown} />
+          <span>Trend / Breakdown toggle (swap line ↔ bars over the same data)</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" bind:checked={emphasizeLast} />
+          <span>Emphasise last point (accent “current period” marker)</span>
+        </label>
+      {/if}
+
+      <!-- App Builder Phase 2 (saiku#1441): graph renderer editor. A declarative
+           mapping of the query's columns → graph nodes + edges (NO code).
+           Persisted into tile.custom.options on Save. -->
+      {#if isGraphTile}
+        <fieldset class="graph-map">
+          <legend>Graph columns</legend>
+          <label class="field">
+            <span>Source column</span>
+            <input type="text" bind:value={graphSourceCol} spellcheck="false" placeholder="e.g. Parent" />
+          </label>
+          <label class="field">
+            <span>Target column</span>
+            <input type="text" bind:value={graphTargetCol} spellcheck="false" placeholder="e.g. Child" />
+          </label>
+          <label class="field">
+            <span>Id column</span>
+            <input type="text" bind:value={graphIdCol} spellcheck="false" placeholder="node id (often = source)" />
+          </label>
+          <label class="field">
+            <span>Label column <span class="hint">(optional)</span></span>
+            <input type="text" bind:value={graphLabelCol} spellcheck="false" placeholder="display name for the id node" />
+          </label>
+          <label class="field">
+            <span>Value column <span class="hint">(optional)</span></span>
+            <input type="text" bind:value={graphValueCol} spellcheck="false" placeholder="measure carried onto edges" />
+          </label>
+          <label class="field">
+            <span>Layout</span>
+            <select bind:value={graphLayout}>
+              <option value="force">Force</option>
+              <option value="circular">Circular</option>
+            </select>
+          </label>
+          {#if graphConfigValidation.ok}
+            <span class="hint ok">✓ Valid mapping — nodes + edges are built from the tile's query below.</span>
+          {:else}
+            <span class="hint error">{graphConfigValidation.error}</span>
+          {/if}
+          <span class="hint">
+            Each query row becomes an edge source → target; nodes are deduped across rows.
+            Column names must match the query's row-header / measure captions.
+          </span>
+        </fieldset>
+      {/if}
+
+      <!-- App Builder Phase 2 (saiku#1441): plugin renderer picker.
+           SECURITY: the author only PICKS an admin-installed plugin by id — raw
+           HTML can never ride tile config. The chosen plugin's markup is served
+           from the admin registry at render time and runs in a locked-down
+           iframe (sandbox="allow-scripts" + strict CSP + per-mount nonce).
+           Persisted into tile.custom.options.pluginId on Save. -->
+      {#if isPluginTile}
+        <label class="field">
+          <span>Plugin</span>
+          {#if pluginsLoading}
+            <span class="hint">Loading installed plugins…</span>
+          {:else if pluginsError}
+            <span class="hint error">Couldn't load plugins: {pluginsError}</span>
+          {:else if installedPlugins.length === 0}
+            <span class="hint">
+              No plugins installed — an admin installs them under saiku-home/tile-plugins/.
+            </span>
+          {:else}
+            <select bind:value={selectedPluginId}>
+              <option value="">— Select a plugin —</option>
+              {#each installedPlugins as p (p.id)}
+                <option value={p.id}>{p.label} ({p.id})</option>
+              {/each}
+            </select>
+          {/if}
+          <span class="hint">
+            Runs admin-installed, trusted plugin code in a sandboxed iframe. It cannot read the
+            host page, cookies, or session token; query data (below) is delivered as records.
+          </span>
+        </label>
+      {/if}
+
+      {#if wantsQuery}
         <!-- #912/#1175 fix: while the visual builder is open it owns the whole
              query section — hide the mode radios + the reference/inline blocks
              so they don't render on top of the embedded canvas. -->
@@ -1340,6 +1627,7 @@
     color: var(--fg-muted);
   }
   .hint.error { color: var(--danger); }
+  .hint.ok { color: var(--success, var(--accent)); }
   /* #1077, #919: chart-options + conditional-formatting styles moved
      into TileEditorChart / TileEditorTableConditional / TileEditorKpi /
      TileEditorTableSparkline (per saiku#1229). Svelte's scoped CSS

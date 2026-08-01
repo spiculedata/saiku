@@ -26,15 +26,17 @@
 
   import { onMount, untrack } from "svelte";
   import type { AppPage } from "$lib/api/apps";
-  import type { DashboardFilter } from "$lib/api/dashboards";
+  import { newTileId, type DashboardFilter, type TileType } from "$lib/api/dashboards";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
   import { appDoc } from "$lib/stores/appDoc.svelte";
+  import { buildTile } from "$lib/dashboard/tilePlacement";
   import { pageGridToDashboard, dashboardToPageGrid } from "$lib/views/app/appPageView";
   import { encodeAppFilterState, decodeAppFilterState } from "$lib/dashboard/urlFilterState";
   import DashboardGrid from "$lib/views/dashboard/DashboardGrid.svelte";
   import DashboardFilterPanel from "$lib/views/dashboard/DashboardFilterPanel.svelte";
   import DashboardFilterBar from "$lib/views/dashboard/DashboardFilterBar.svelte";
+  import AddTileMenu from "$lib/views/dashboard/AddTileMenu.svelte";
 
   interface Props {
     page: AppPage;
@@ -167,9 +169,47 @@
       appDoc.updatePageGrid(page.id, dashboardToPageGrid(doc));
     });
   });
+
+  // ------------------------------------------------------------------
+  // Add tile (edit mode). The active page's grid is hydrated into the shared
+  // dashboardStore, so we add through the SAME path DashboardEditor uses:
+  // buildTile places it in the first free slot, addTile appends it, and the
+  // write-back effect above projects the mutated store grid back into appDoc.
+  // The user then binds a cube via the tile's ⚙ (TileEditorModal). No app-
+  // specific add path — reuse keeps app + dashboard tile authoring identical.
+  // ------------------------------------------------------------------
+  function handleAddTile(type: TileType): void {
+    const layout = dashboardStore.current?.layout;
+    if (!layout) return;
+    dashboardStore.addTile(buildTile(layout, type, newTileId()));
+  }
+
+  // Custom-renderer tile: same placement path, but seeded with the chosen
+  // renderer id so the tile renders (and its ⚙ editor opens the renderer's
+  // config) immediately — no rendererless "Unknown renderer" intermediate.
+  function handleAddCustom(rendererId: string): void {
+    const layout = dashboardStore.current?.layout;
+    if (!layout) return;
+    const base = buildTile(layout, "custom", newTileId());
+    dashboardStore.addTile({ ...base, custom: { renderer: rendererId, options: {} } });
+  }
 </script>
 
 <div class="app-page">
+  {#if page.heading}
+    <div class="app-page__title">
+      <div class="app-page__title-main">
+        <h1 class="app-page__heading">{page.heading}</h1>
+        {#if page.subheading}<p class="app-page__subheading">{page.subheading}</p>{/if}
+      </div>
+      {#if page.meta}<div class="app-page__title-meta">{page.meta}</div>{/if}
+    </div>
+  {/if}
+  {#if editable}
+    <div class="app-page__toolbar">
+      <AddTileMenu onPick={handleAddTile} onAddCustom={handleAddCustom} align="left" />
+    </div>
+  {/if}
   <!-- The panel self-hides in read-only mode when the page has no filters
        (its own `{#if panel || !readOnly}` guard), so it's always safe to
        mount — no wrapper condition needed here. -->
@@ -188,5 +228,43 @@
     min-width: 0;
     height: 100%;
     box-sizing: border-box;
+  }
+  .app-page__title {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 2px 2px -2px;
+  }
+  .app-page__heading {
+    margin: 0;
+    font-family: var(--saiku-app-font, Georgia, "Times New Roman", serif);
+    font-size: 1.9rem;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--saiku-app-fg, inherit);
+    text-wrap: balance;
+  }
+  .app-page__subheading {
+    margin: 5px 0 0;
+    font-size: 0.9rem;
+    color: var(--saiku-app-muted, #8a7f68);
+  }
+  .app-page__title-meta {
+    font-size: 0.85rem;
+    color: var(--saiku-app-muted, #8a7f68);
+    white-space: nowrap;
+    letter-spacing: 0.02em;
+  }
+  .app-page__toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    /* Own stacking context above the sibling filter bar + grid so the
+       "+ Add tile" dropdown (z-index:10, anchored inside this row) floats
+       over them instead of being occluded — the app analogue of the
+       dashboard toolbar sitting in its own layer above the grid. */
+    position: relative;
+    z-index: 20;
   }
 </style>

@@ -131,6 +131,10 @@ export interface EmbedDashboardTile {
   /** Filter widget subtype: "single-select" | "multi-select". Defaults to
    *  multi-select if omitted. */
   widget?: string;
+  /** Custom-renderer config (App Builder Phase 2, saiku#1441). Only consulted
+   *  when {@code type === "custom"} — names the registered renderer and carries
+   *  its opaque options. Absent renderer / embedComponent → "Unsupported tile". */
+  custom?: { renderer: string; options?: Record<string, unknown> };
 }
 
 /** Filter-tile axis binding. Mirrors the server-side {@code DashboardFilter}. */

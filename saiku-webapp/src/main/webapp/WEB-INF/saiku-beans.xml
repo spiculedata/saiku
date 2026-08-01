@@ -603,6 +603,25 @@
         <property name="sessionService" ref="sessionService"/>
     </bean>
 
+    <!-- Tile plugin catalogue (App Builder Phase 2, saiku#1441). Admin-installed
+         self-contained HTML tile widgets under saiku-home/tile-plugins/<id>/ are
+         scanned lazily (mtime signature) and served over REST so the App Builder
+         iframe can load trusted srcdoc HTML. The plugin HTML is admin-installed,
+         NOT author-supplied — this registry is the trusted source. -->
+    <bean id="tilePluginRegistryBean"
+          class="org.saiku.service.apps.TilePluginRegistry">
+        <constructor-arg type="java.lang.String" value="${saiku.home:./saiku-home}/tile-plugins"/>
+    </bean>
+
+    <!-- Read-only REST over the tile plugin catalogue
+         (org.saiku.web.rest.resources.apps.TilePluginResource @
+         /saiku/api/tile-plugins). Full-auth (inherits the /rest/** intercept):
+         authors pick a plugin, they never supply the HTML. -->
+    <bean id="tilePluginResource"
+          class="org.saiku.web.rest.resources.apps.TilePluginResource">
+        <property name="registry" ref="tilePluginRegistryBean"/>
+    </bean>
+
     <!-- #942 follow-up: minimal authenticated user directory for @-mention
          autocomplete (usernames only; admin user-mgmt stays on /saiku/admin). -->
     <bean id="usersResource" class="org.saiku.web.rest.resources.UsersResource">
@@ -742,6 +761,12 @@
         <property name="aiQueryResource" ref="aiQueryResource"/>
         <!-- saiku#1104/#906: audit embed queries (carries the JWT sub). -->
         <property name="auditLog" ref="aiAuditLog"/>
+        <!-- saiku#1441: token-scoped delivery of admin-installed tile-plugin HTML.
+             Embed guests can't reach the full-auth /tile-plugins catalogue, so the
+             sandboxed plugin tile fetches its srcdoc via /app/<path>/plugin/<id>/html,
+             gated on the plugin being referenced by the pinned app doc. Same trusted
+             registry the in-app TilePluginResource serves — never author-supplied HTML. -->
+        <property name="pluginRegistry" ref="tilePluginRegistryBean"/>
     </bean>
 
     <!-- Per-tile dashboard comments (issue #942). commentService stores a

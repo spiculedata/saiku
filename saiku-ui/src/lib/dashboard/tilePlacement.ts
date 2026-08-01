@@ -29,6 +29,10 @@ export function defaultSizeFor(type: TileType): { w: number; h: number } {
       return { w: 3, h: 2 };
     case "image":
       return { w: 4, h: 3 };
+    case "custom":
+      // App Builder Phase 2 (saiku#1441): default a custom tile to the same
+      // half-row body as chart/table; the renderer can be resized after drop.
+      return { w: 6, h: 4 };
   }
 }
 
