@@ -28,6 +28,22 @@ const MAX_FIELD = 40;
 // coarse platform fields must look boring; anything else is dropped, not stored
 const SAFE = /^[A-Za-z0-9._+-]{1,40}$/;
 
+// --- demo engagement (saiku#1636) ------------------------------------------
+// The online demo posts anonymous interaction events here so we can see which
+// surfaces visitors explore. Never fired by day-to-day self-hosted installs
+// (client gates on demoMode + the telemetry opt-out). Coarse + capped.
+const MAX_EVENTS = 50; // per request
+const DEMO_WINDOW_SECONDS = 30 * 24 * 60 * 60;
+
+// The demo is browser-driven, so /v1/event is a cross-origin POST from the demo
+// origin. Allow it (the payload is anonymous + coarse); GET stats stays public.
+const CORS: Record<string, string> = {
+	'access-control-allow-origin': '*',
+	'access-control-allow-methods': 'GET, POST, OPTIONS',
+	'access-control-allow-headers': 'content-type',
+	'access-control-max-age': '86400'
+};
+
 function str(v: unknown, max: number): string | null {
 	if (typeof v !== 'string') return null;
 	const t = v.trim();
@@ -56,6 +72,83 @@ export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const url = new URL(request.url);
 		const now = Math.floor(Date.now() / 1000);
+
+		// CORS preflight for the browser-posted demo events.
+		if (request.method === 'OPTIONS') {
+			return new Response(null, { status: 204, headers: CORS });
+		}
+
+		// --- demo engagement events (saiku#1636) --------------------------------
+		// Anonymous, coarse interaction events from the online demo ONLY (the
+		// client gates on demoMode + the telemetry opt-out). Best-effort: a bad or
+		// oversized payload is dropped, never 5xx'd.
+		if (url.pathname === '/v1/event' && request.method === 'POST') {
+			let body: Record<string, unknown>;
+			try {
+				body = (await request.json()) as Record<string, unknown>;
+			} catch {
+				return json({ error: 'invalid json' }, 400, CORS);
+			}
+			const session = str(body.session, MAX_ID);
+			if (!session) return json({ error: 'session required' }, 400, CORS);
+			const version = coarse(body.version);
+			const sessionHash = await sha256Hex(session);
+			const rawEvents = Array.isArray(body.events) ? body.events : [];
+			const rows: Array<{ type: string; name: string; detail: string | null }> = [];
+			for (const e of rawEvents.slice(0, MAX_EVENTS)) {
+				if (!e || typeof e !== 'object') continue;
+				const ev = e as Record<string, unknown>;
+				const type = coarse(ev.type);
+				const name = coarse(ev.name);
+				if (!type || !name) continue; // coarse-only; drop anything odd
+				rows.push({ type, name, detail: coarse(ev.detail) });
+			}
+			if (rows.length === 0) return json({ ok: true, stored: 0 }, 200, CORS);
+			try {
+				const stmt = env.DB.prepare(
+					`INSERT INTO demo_event (ts, session_hash, type, name, detail, version)
+					 VALUES (?1, ?2, ?3, ?4, ?5, ?6)`
+				);
+				await env.DB.batch(
+					rows.map((r) => stmt.bind(now, sessionHash, r.type, r.name, r.detail, version))
+				);
+			} catch {
+				// best effort — never fail the caller
+			}
+			return json({ ok: true, stored: rows.length }, 200, CORS);
+		}
+
+		// --- demo engagement stats (public, cacheable) --------------------------
+		if (url.pathname === '/v1/demo-stats' && request.method === 'GET') {
+			const cutoff = now - DEMO_WINDOW_SECONDS;
+			try {
+				const totals = await env.DB.prepare(
+					`SELECT count(*) AS events, count(DISTINCT session_hash) AS sessions
+					 FROM demo_event WHERE ts > ?1`
+				)
+					.bind(cutoff)
+					.first<{ events: number; sessions: number }>();
+				const byAction = await env.DB.prepare(
+					`SELECT type, name, count(*) AS n FROM demo_event
+					 WHERE ts > ?1 GROUP BY type, name ORDER BY n DESC LIMIT 100`
+				)
+					.bind(cutoff)
+					.all();
+				return json(
+					{
+						events: totals?.events ?? 0,
+						sessions: totals?.sessions ?? 0,
+						windowDays: 30,
+						byAction: byAction.results,
+						generatedAt: now
+					},
+					200,
+					{ 'cache-control': 'public, max-age=300', ...CORS }
+				);
+			} catch {
+				return json({ error: 'stats unavailable' }, 500, CORS);
+			}
+		}
 
 		// --- heartbeat + update check -------------------------------------------
 		if (url.pathname === '/v1/check' && request.method === 'POST') {

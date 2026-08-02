@@ -34,3 +34,6 @@ bombadil/out/
 bombadil/out/
 .cache-chrome/
 chrome/
+
+# Chrome-for-Testing profile created by bombadil fuzz runs
+.cft-profile/

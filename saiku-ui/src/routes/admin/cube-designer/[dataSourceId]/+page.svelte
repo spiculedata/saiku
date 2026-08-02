@@ -29,6 +29,7 @@
   import type { SourceTableCandidate } from "$lib/cube-designer/types";
   import { adminSchemas } from "$lib/api/admin";
   import { platform } from "$lib/stores/platform.svelte";
+  import { trackDemo } from "$lib/analytics/demoAnalytics";
   import Button from "$lib/components/ui/button.svelte";
   import FeedbackBanner from "$lib/design-system/FeedbackBanner.svelte";
   import {
@@ -64,6 +65,7 @@
 
   onMount(async () => {
     if (!platform.capabilities) await platform.loadCapabilities();
+    trackDemo("cube-designer", "open");
     store.switchConnection(dataSourceId);
     store.sourceLoading = true;
     store.sourceError = null;
