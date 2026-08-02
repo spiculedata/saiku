@@ -18,6 +18,10 @@ export interface PlatformCapabilities {
   emailGate?: boolean;
   /** Provider backing the gate (e.g. "workos"), or null when off. */
   emailGateProvider?: string | null;
+  /** saiku#1636: demo-only engagement analytics. `enabled` is true ONLY on the
+   *  online demo (demoMode) with telemetry not opted out; day-to-day self-hosted
+   *  installs report `enabled:false` and the SPA never emits events. */
+  demoAnalytics?: { enabled: boolean; endpoint: string };
 }
 
 class PlatformStore {

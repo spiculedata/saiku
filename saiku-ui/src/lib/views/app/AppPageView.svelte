@@ -33,6 +33,7 @@
   import { buildTile } from "$lib/dashboard/tilePlacement";
   import { pageGridToDashboard, dashboardToPageGrid } from "$lib/views/app/appPageView";
   import { encodeAppFilterState, decodeAppFilterState } from "$lib/dashboard/urlFilterState";
+  import { trackDemo } from "$lib/analytics/demoAnalytics";
   import DashboardGrid from "$lib/views/dashboard/DashboardGrid.svelte";
   import EmptyDashboardGuidance from "$lib/views/dashboard/EmptyDashboardGuidance.svelte";
   import DashboardFilterPanel from "$lib/views/dashboard/DashboardFilterPanel.svelte";
@@ -107,6 +108,9 @@
   // ------------------------------------------------------------------
   onMount(() => {
     if (typeof window === "undefined") return;
+    // Demo-only, anonymous: record that an app page was opened (no app id, just
+    // the coarse fact — inert off the hosted demo). See demoAnalytics.ts.
+    trackDemo("app", "open", editable ? "edit" : "view");
     const { activePageId, filtersByPage } = decodeAppFilterState(
       new URL(window.location.href).searchParams,
     );
@@ -190,6 +194,7 @@
   function handleAddTile(type: TileType): void {
     const layout = dashboardStore.current?.layout;
     if (!layout) return;
+    trackDemo("app", "tile-add", type);
     dashboardStore.addTile(buildTile(layout, type, newTileId()));
   }
 

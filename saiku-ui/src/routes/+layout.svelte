@@ -96,6 +96,11 @@
     if (session.current && platform.version == null) {
       platform.loadVersion();
     }
+    // Populate capabilities once per session so the demo-analytics gate (and any
+    // other capability-driven UI) has the flag without each surface re-probing.
+    if (session.current && platform.capabilities == null) {
+      platform.loadCapabilities();
+    }
   });
 </script>
 

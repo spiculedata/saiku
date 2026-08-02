@@ -156,13 +156,61 @@ public class InfoResource {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("ai", ai);
         body.put("mcp", mcp);
-        body.put("demoMode", Boolean.parseBoolean(System.getProperty("saiku.demo", "false")));
+        boolean demoMode = Boolean.parseBoolean(System.getProperty("saiku.demo", "false"));
+        body.put("demoMode", demoMode);
         // saiku#1029: tell the SPA whether the demo email gate is in front of
         // login, and which provider, so the login page can render the gate form.
         boolean emailGate = demoGate != null && demoGate.isEnabled();
         body.put("emailGate", emailGate);
         body.put("emailGateProvider", emailGate ? demoGate.providerName() : null);
+        // saiku#1636: demo-only engagement analytics. The SPA fires anonymous,
+        // coarse interaction events ONLY when this is enabled — i.e. ONLY on the
+        // online demo (demoMode) AND only when telemetry isn't opted out (the same
+        // SAIKU_TELEMETRY / DO_NOT_TRACK switch the install heartbeat honours).
+        // Day-to-day self-hosted installs report enabled:false and never emit.
+        Map<String, Object> demoAnalytics = new LinkedHashMap<>();
+        demoAnalytics.put("enabled", demoMode && telemetryEnabled());
+        demoAnalytics.put("endpoint", demoAnalyticsEndpoint());
+        body.put("demoAnalytics", demoAnalytics);
         return Response.ok(body).build();
+    }
+
+    /**
+     * saiku#1636 — mirrors {@code TelemetryService.isEnabled()}: telemetry (and
+     * therefore demo analytics) is on by default and opted out by {@code
+     * DO_NOT_TRACK}, {@code SAIKU_TELEMETRY=off|false|0|no|disabled}, or
+     * {@code -Dsaiku.telemetry.enabled=false}. Kept in sync deliberately so one
+     * switch governs both the heartbeat and demo engagement events.
+     */
+    private static boolean telemetryEnabled() {
+        String dnt = System.getenv("DO_NOT_TRACK");
+        if (dnt != null) {
+            String v = dnt.trim().toLowerCase();
+            if (v.equals("1") || v.equals("true") || v.equals("yes")) {
+                return false;
+            }
+        }
+        String flag = System.getenv("SAIKU_TELEMETRY");
+        if (flag != null) {
+            String v = flag.trim().toLowerCase();
+            if (v.equals("off") || v.equals("false") || v.equals("0") || v.equals("no") || v.equals("disabled")) {
+                return false;
+            }
+        }
+        String prop = System.getProperty("saiku.telemetry.enabled");
+        return prop == null || !"false".equalsIgnoreCase(prop.trim());
+    }
+
+    /** Demo-analytics event collector URL. Defaults to the hosted collector;
+     *  overridable for a self-hosted demo via {@code -Dsaiku.telemetry.eventEndpoint}
+     *  or {@code SAIKU_TELEMETRY_EVENT_ENDPOINT}. */
+    private static String demoAnalyticsEndpoint() {
+        String prop = System.getProperty("saiku.telemetry.eventEndpoint");
+        if (prop != null && !prop.isBlank()) {
+            return prop.trim();
+        }
+        String env = System.getenv("SAIKU_TELEMETRY_EVENT_ENDPOINT");
+        return env != null && !env.isBlank() ? env.trim() : "https://telemetry.saiku.bi/v1/event";
     }
 
     /**

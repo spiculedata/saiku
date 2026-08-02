@@ -46,6 +46,7 @@
   import { platform } from "$lib/stores/platform.svelte";
   import { mailHealth } from "$lib/stores/mailHealth.svelte";
   import { emailComposer } from "$lib/stores/emailComposer.svelte";
+  import { trackDemo } from "$lib/analytics/demoAnalytics";
   import { untrack } from "svelte";
 
   interface Props {
@@ -237,6 +238,9 @@
       warningOpen = true;
       return;
     }
+    // Demo-only, anonymous engagement signal (no query content). onRun is the
+    // explicit user click, so it doesn't count the markDirty auto-runs.
+    trackDemo("query", "run");
     await query.run();
   }
 

@@ -27,6 +27,7 @@
   import { classifyChainEnvelope } from "$lib/api/chainStep";
   import { renderTinyMarkdown } from "$lib/api/tinyMarkdown";
   import { query } from "$lib/stores/query.svelte";
+  import { trackDemo } from "$lib/analytics/demoAnalytics";
   import { X, Send, Sparkles, ChevronDown, ChevronRight, Copy, Trash2 } from "lucide-svelte";
 
   /**
@@ -748,6 +749,7 @@
   /** Route Send to the active mode. Dashboard wins over chained wins over the
    *  single ask; the toggles are mutually exclusive so at most one is on. */
   function runSend(): void {
+    trackDemo("ai", "ask", buildDashboard ? "dashboard" : buildAndReport ? "chained" : "single");
     void (buildDashboard ? submitDashboard() : buildAndReport ? submitChained() : submit());
   }
 
