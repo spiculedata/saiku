@@ -19,9 +19,11 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.saiku.repository.IRepositoryObject;
+import org.saiku.repository.RepositoryFolderObject;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.web.service.SessionService;
 import org.slf4j.Logger;
@@ -83,8 +85,34 @@ public class AppResource {
     public Response list() {
         String username = currentUsername();
         List<String> roles = currentRoles();
-        List<IRepositoryObject> files = datasourceService.getFiles(List.of(APP_EXTENSION), username, roles);
-        return Response.ok(files).type(MediaType.APPLICATION_JSON).build();
+        // getFiles returns the repository TREE (top-level folders, with matching
+        // files nested inside), not a flat list — so returning it verbatim made
+        // the Apps catalogue show repository folders (dashboards/, homes/, …)
+        // instead of the .saikuapp files, hiding the seeded example app from new
+        // users (saiku#1636). Flatten to just the .saikuapp file nodes, honouring
+        // this endpoint's documented contract.
+        List<IRepositoryObject> tree = datasourceService.getFiles(List.of(APP_EXTENSION), username, roles);
+        List<IRepositoryObject> apps = new ArrayList<>();
+        flattenApps(tree, apps);
+        return Response.ok(apps).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    /** Depth-first walk collecting only {@code .saikuapp} file nodes from the
+     *  repository tree {@link DatasourceService#getFiles} returns. */
+    private static void flattenApps(List<IRepositoryObject> nodes, List<IRepositoryObject> out) {
+        if (nodes == null) {
+            return;
+        }
+        for (IRepositoryObject node : nodes) {
+            if (node instanceof RepositoryFolderObject folder) {
+                flattenApps(folder.getRepoObjects(), out);
+            } else if (node != null
+                    && node.getType() == IRepositoryObject.Type.FILE
+                    && node.getName() != null
+                    && node.getName().endsWith(APP_EXTENSION)) {
+                out.add(node);
+            }
+        }
     }
 
     /**

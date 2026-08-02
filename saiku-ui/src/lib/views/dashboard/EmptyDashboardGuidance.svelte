@@ -24,18 +24,22 @@
      *  dashboardStore.addTile() (already implemented as handleAddTile()
      *  in DashboardEditor — same callback wired to AddTileMenu). */
     onAddTile: (type: TileType) => void;
+    /** Override the subtitle line — the App Builder passes "page" copy since a
+     *  page isn't a dashboard from the author's point of view. Defaults to the
+     *  dashboard wording. */
+    subtitle?: string;
   }
 
-  let { onAddTile }: Props = $props();
+  let {
+    onAddTile,
+    subtitle = "Pick a tile type to start building this dashboard. You can configure data, filters, and layout after the tile is dropped.",
+  }: Props = $props();
 </script>
 
 <div class="flex items-start justify-center py-10 px-4 flex-1 min-h-0" role="region" aria-label="Add your first tile">
   <div class="card">
     <h2 class="m-0 text-xl font-semibold text-fg">Add your first tile</h2>
-    <p class="subtitle">
-      Pick a tile type to start building this dashboard. You can configure data,
-      filters, and layout after the tile is dropped.
-    </p>
+    <p class="subtitle">{subtitle}</p>
 
     <div class="cta-row">
       <button

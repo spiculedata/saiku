@@ -17,6 +17,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.saiku.repository.IRepositoryObject;
 import org.saiku.repository.RepositoryFileObject;
+import org.saiku.repository.RepositoryFolderObject;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.web.service.SessionService;
 
@@ -93,6 +94,36 @@ public class AppResourceTest {
                 .equals(f.getName())));
         // The listing must be scoped to the .saikuapp extension only.
         assertEquals(List.of(".saikuapp"), stubDs.lastListType);
+    }
+
+    @Test
+    public void list_flattensRepositoryTreeToSaikuappFilesOnly() {
+        // getFiles returns the repository TREE — top-level folders with matching
+        // files nested inside. saiku#1636: the resource must flatten that to just
+        // the .saikuapp file nodes, not leak folders (which hid the seeded example
+        // app and filled the Apps catalogue with repository folder names).
+        RepositoryFileObject nested = new RepositoryFileObject(
+                "foodmart-ops.saikuapp",
+                "#homes/admin/foodmart-ops.saikuapp",
+                "saikuapp",
+                "homes/admin/foodmart-ops.saikuapp",
+                List.of());
+        RepositoryFolderObject admin =
+                new RepositoryFolderObject("admin", "#homes/admin", "homes/admin", List.of(), List.of(nested));
+        RepositoryFolderObject homes =
+                new RepositoryFolderObject("homes", "#homes", "homes", List.of(), List.of(admin));
+        RepositoryFolderObject dashboards =
+                new RepositoryFolderObject("dashboards", "#dashboards", "dashboards", List.of(), new ArrayList<>());
+        stubDs.treeOverride = List.of(dashboards, homes);
+
+        Response r = resource.list();
+        assertEquals(200, r.getStatus());
+        @SuppressWarnings("unchecked")
+        List<IRepositoryObject> apps = (List<IRepositoryObject>) r.getEntity();
+        // Exactly the one nested .saikuapp — no folders.
+        assertEquals(1, apps.size());
+        assertEquals("foodmart-ops.saikuapp", apps.get(0).getName());
+        assertEquals(IRepositoryObject.Type.FILE, apps.get(0).getType());
     }
 
     /* ---------------------------- delete ----------------------------- */
@@ -188,6 +219,8 @@ public class AppResourceTest {
         String savedContent;
         List<String> lastListType;
         boolean failOnSave;
+        /** When set, getFiles returns this tree verbatim (to exercise flattening). */
+        List<IRepositoryObject> treeOverride;
 
         @Override
         public String saveFile(String content, String path, String name, List<String> roles) {
@@ -214,6 +247,9 @@ public class AppResourceTest {
         @Override
         public List<IRepositoryObject> getFiles(List<String> type, String username, List<String> roles) {
             lastListType = type;
+            if (treeOverride != null) {
+                return treeOverride;
+            }
             List<IRepositoryObject> out = new ArrayList<>();
             for (String path : stored.keySet()) {
                 boolean matches =
