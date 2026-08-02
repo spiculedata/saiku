@@ -34,6 +34,7 @@
   import { pageGridToDashboard, dashboardToPageGrid } from "$lib/views/app/appPageView";
   import { encodeAppFilterState, decodeAppFilterState } from "$lib/dashboard/urlFilterState";
   import DashboardGrid from "$lib/views/dashboard/DashboardGrid.svelte";
+  import EmptyDashboardGuidance from "$lib/views/dashboard/EmptyDashboardGuidance.svelte";
   import DashboardFilterPanel from "$lib/views/dashboard/DashboardFilterPanel.svelte";
   import DashboardFilterBar from "$lib/views/dashboard/DashboardFilterBar.svelte";
   import AddTileMenu from "$lib/views/dashboard/AddTileMenu.svelte";
@@ -46,6 +47,14 @@
   let { page, editable = false }: Props = $props();
 
   const readOnly = $derived(!editable);
+
+  // Onboarding: an editable page with no tiles shows the same "Add your first
+  // tile" guidance the dashboard editor uses (Chart / Table / KPI CTAs wired to
+  // handleAddTile), instead of the grid's bare "No tiles yet" text — the App
+  // Builder previously left new authors with no clue how to start (saiku#1636).
+  const showEmptyGuidance = $derived(
+    editable && (dashboardStore.current?.layout.tiles.length ?? 0) === 0,
+  );
 
   // Per-page transient filter memory (click/cross layer), keyed by page id.
   // Plain object, not $state — it's imperative bookkeeping the effects read/
@@ -215,7 +224,14 @@
        mount — no wrapper condition needed here. -->
   <DashboardFilterPanel {readOnly} />
   <DashboardFilterBar {readOnly} />
-  <DashboardGrid {readOnly} />
+  {#if showEmptyGuidance}
+    <EmptyDashboardGuidance
+      onAddTile={handleAddTile}
+      subtitle="Pick a tile type to start building this page. Bind it to a cube and configure data, filters, and layout in the tile's ⚙ editor after it's dropped. Add more pages from the left rail; brand the app in the Inspector."
+    />
+  {:else}
+    <DashboardGrid {readOnly} />
+  {/if}
 </div>
 
 <style>
