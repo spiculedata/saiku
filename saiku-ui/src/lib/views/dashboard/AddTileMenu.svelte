@@ -139,6 +139,11 @@
     top: calc(100% + 4px);
     right: 0;
     background: hsl(var(--bg));
+    /* Explicit chrome foreground — the App Builder renders this menu inside a
+       light-themed app canvas, so without this the item LABELS (which set no
+       colour of their own) inherit the app's dark text and render nearly
+       invisible on the dark popover. saiku#1636. */
+    color: hsl(var(--fg));
     border: 1px solid hsl(var(--border));
     border-radius: 6px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
