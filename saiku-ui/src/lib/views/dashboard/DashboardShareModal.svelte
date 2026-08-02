@@ -156,7 +156,7 @@
     flex-direction: column;
     gap: var(--space-1);
     font-size: var(--fs-sm);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .share__ttl input {
     width: 6rem;
@@ -170,7 +170,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
-    border-top: 1px solid var(--border);
+    border-top: 1px solid hsl(var(--border));
     padding-top: var(--space-2);
   }
   .share__row {

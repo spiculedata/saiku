@@ -26,3 +26,11 @@ storybook-static/
 test-results/
 playwright-report/
 playwright/.cache/
+
+# Bombadil fuzz output
+bombadil/out/
+
+# Bombadil pinned browser (auto-downloaded, do not commit)
+bombadil/out/
+.cache-chrome/
+chrome/

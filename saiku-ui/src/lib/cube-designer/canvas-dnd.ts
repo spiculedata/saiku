@@ -46,6 +46,37 @@ export function parseConnectionJoin(
   };
 }
 
+/** A point in the flow coordinate space (post-pan/zoom). */
+export interface FlowPoint {
+  x: number;
+  y: number;
+}
+
+/** SvelteFlow's `screenToFlowPosition`, or null when the flow isn't mounted. */
+export type ScreenToFlow = ((screen: FlowPoint) => FlowPoint) | null | undefined;
+
+/**
+ * Resolve where a dropped node should land, in FLOW coordinates.
+ *
+ * saiku#1634 (#3): the drop handler lives on the pane wrapper, OUTSIDE the
+ * SvelteFlow provider, so it can't call `useSvelteFlow().screenToFlowPosition`
+ * directly. An in-flow child (JumpHandler) publishes that converter onto the
+ * store; when present we map the pointer's viewport coords through it so a
+ * panned/zoomed canvas drops the node under the cursor rather than off-screen.
+ * When absent (SSR / tests / before the flow mounts) we fall back to
+ * pane-relative pixels, which equal flow coords only at the identity viewport —
+ * the exact stale behaviour this fixes, kept as a safe default.
+ */
+export function resolveDropOrigin(
+  screenToFlow: ScreenToFlow,
+  clientX: number,
+  clientY: number,
+  rect: { left: number; top: number },
+): FlowPoint {
+  if (screenToFlow) return screenToFlow({ x: clientX, y: clientY });
+  return { x: clientX - rect.left, y: clientY - rect.top };
+}
+
 /**
  * Parse the table candidates from a pane-drop's dataTransfer payloads.
  * Prefers the multi-table payload (`application/x-saiku-tables`), falling back

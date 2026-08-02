@@ -393,16 +393,16 @@
       135deg,
       transparent 0,
       transparent 6px,
-      var(--fg-muted) 6px,
-      var(--fg-muted) 7px,
+      hsl(var(--fg-muted)) 6px,
+      hsl(var(--fg-muted)) 7px,
       transparent 7px,
       transparent 9px,
-      var(--fg-muted) 9px,
-      var(--fg-muted) 10px,
+      hsl(var(--fg-muted)) 9px,
+      hsl(var(--fg-muted)) 10px,
       transparent 10px,
       transparent 12px,
-      var(--fg-muted) 12px,
-      var(--fg-muted) 13px,
+      hsl(var(--fg-muted)) 12px,
+      hsl(var(--fg-muted)) 13px,
       transparent 13px
     );
     opacity: 0.5;
@@ -413,8 +413,8 @@
     opacity: 1;
   }
   .ghost {
-    border: 2px dashed var(--accent, color-mix(in srgb, var(--fg) 30%, transparent));
-    background: color-mix(in srgb, var(--accent, var(--fg)) 12%, transparent);
+    border: 2px dashed var(--accent, color-mix(in srgb, hsl(var(--fg)) 30%, transparent));
+    background: color-mix(in srgb, var(--accent, hsl(var(--fg))) 12%, transparent);
     border-radius: 6px;
     pointer-events: none;
     z-index: 2;
@@ -454,8 +454,8 @@
   .empty {
     padding: 3rem 1rem;
     text-align: center;
-    color: var(--fg-muted);
-    border: 2px dashed var(--border);
+    color: hsl(var(--fg-muted));
+    border: 2px dashed hsl(var(--border));
     border-radius: 8px;
   }
   .empty p { margin: 0.25rem 0; }

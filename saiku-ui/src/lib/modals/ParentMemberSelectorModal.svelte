@@ -47,10 +47,10 @@
     padding: 0;
     max-height: 50vh;
     overflow: auto;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
   }
-  .list li + li { border-top: 1px solid var(--border); }
+  .list li + li { border-top: 1px solid hsl(var(--border)); }
   .row {
     display: flex;
     flex-direction: column;
@@ -59,11 +59,11 @@
     padding: var(--space-2) var(--space-3);
     background: transparent;
     border: 0;
-    color: var(--fg);
+    color: hsl(var(--fg));
     font: inherit;
     cursor: pointer;
     text-align: left;
   }
-  .row:hover { background: var(--bg-subtle); }
-  .un { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--fg-subtle); }
+  .row:hover { background: hsl(var(--bg-subtle)); }
+  .un { font-family: var(--font-mono); font-size: var(--fs-xs); color: hsl(var(--fg-subtle)); }
 </style>

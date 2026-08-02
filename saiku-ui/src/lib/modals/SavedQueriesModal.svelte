@@ -430,7 +430,7 @@
 {/if}
 
 <style>
-.hint { color: var(--fg-muted); font-size: var(--fs-sm); margin: var(--space-2) 0; }
+.hint { color: hsl(var(--fg-muted)); font-size: var(--fs-sm); margin: var(--space-2) 0; }
   .saved__crumb {
     display: inline-flex;
     align-items: center;
@@ -439,31 +439,31 @@
     background: transparent;
     border: 0;
     border-radius: 3px;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     cursor: pointer;
     font: inherit;
   }
-  .saved__crumb:hover { background: var(--bg-hover); color: var(--fg); }
-  .saved__crumb.is-current { color: var(--fg); font-weight: var(--weight-medium); }
+  .saved__crumb:hover { background: hsl(var(--bg-hover)); color: hsl(var(--fg)); }
+  .saved__crumb.is-current { color: hsl(var(--fg)); font-weight: var(--weight-medium); }
   /* Applied via class={} on a lucide-svelte icon — needs :global so the
      scoped-style hash doesn't suppress it on the child component's root. */
-  :global(.saved__crumb-sep) { color: var(--fg-subtle); }
+  :global(.saved__crumb-sep) { color: hsl(var(--fg-subtle)); }
   .saved__search {
     display: flex;
     align-items: center;
     gap: var(--space-2);
     padding: 6px 10px;
     margin-bottom: var(--space-2);
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
-    background: var(--bg-subtle);
-    color: var(--fg-muted);
+    background: hsl(var(--bg-subtle));
+    color: hsl(var(--fg-muted));
   }
   .saved__search-input {
     flex: 1;
     background: transparent;
     border: 0;
-    color: var(--fg);
+    color: hsl(var(--fg));
     font: inherit;
     outline: none;
   }
@@ -473,7 +473,7 @@
     margin: 0;
     max-height: 50vh;
     overflow-y: auto;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
   }
   .saved__row {
@@ -482,8 +482,8 @@
     gap: var(--space-2);
     padding: var(--space-2) var(--space-3);
   }
-  .saved__row + .saved__row { border-top: 1px solid var(--border); }
-  .saved__row:hover { background: var(--bg-hover); }
+  .saved__row + .saved__row { border-top: 1px solid hsl(var(--border)); }
+  .saved__row:hover { background: hsl(var(--bg-hover)); }
   .saved__main {
     flex: 1;
     display: flex;
@@ -492,7 +492,7 @@
     text-align: left;
     background: transparent;
     border: 0;
-    color: var(--fg);
+    color: hsl(var(--fg));
     cursor: pointer;
     font: inherit;
     padding: 0;
@@ -508,17 +508,17 @@
   .saved__rename-input {
     flex: 1;
     padding: 4px 8px;
-    background: var(--bg);
-    border: 1px solid var(--border-strong);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border-strong));
     border-radius: var(--radius-sm);
-    color: var(--fg);
+    color: hsl(var(--fg));
     font: inherit;
   }
   .saved__confirm {
     margin-top: var(--space-3);
     padding: var(--space-3);
-    border: 1px solid var(--danger);
+    border: 1px solid hsl(var(--danger));
     border-radius: var(--radius-sm);
-    background: color-mix(in srgb, var(--danger) 10%, var(--bg));
+    background: color-mix(in srgb, hsl(var(--danger)) 10%, hsl(var(--bg)));
   }
 </style>

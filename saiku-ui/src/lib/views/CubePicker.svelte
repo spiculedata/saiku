@@ -155,7 +155,7 @@
     font-weight: var(--weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .cube-picker__refresh {
     /* match the select's vertical footprint so they line up at the same height */

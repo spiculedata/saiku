@@ -158,29 +158,29 @@
     gap: var(--space-1);
     text-align: left;
     padding: var(--space-3);
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-md);
-    background: var(--bg);
-    color: var(--fg);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
     cursor: pointer;
   }
   .template-card:hover {
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
   }
   .template-card--on {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent);
+    border-color: hsl(var(--primary));
+    box-shadow: 0 0 0 1px hsl(var(--primary));
   }
   .path-preview {
     margin: var(--space-3) 0 0;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-sm);
   }
   .path-preview code {
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
     padding: 2px 6px;
     border-radius: var(--radius-sm);
-    color: var(--fg);
+    color: hsl(var(--fg));
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
   }

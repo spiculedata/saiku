@@ -1,9 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { base } from "$app/paths";
   import { Button, buttonVariants } from "$lib/components/ui";
   import { adminDatasources, type AdminDatasource } from "$lib/api/admin";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { i18n } from "$lib/stores/i18n.svelte";
+  import { platform } from "$lib/stores/platform.svelte";
   import ConfirmModal from "$lib/modals/ConfirmModal.svelte";
   import Modal from "$lib/components/Modal.svelte";
   import Skeleton from "$lib/components/Skeleton.svelte";
@@ -14,6 +16,12 @@
   let error = $state<string | null>(null);
   let editing = $state<AdminDatasource | null>(null);
   let deleting = $state<AdminDatasource | null>(null);
+
+  // saiku#1636: on a public demo (SAIKU_DEMO), visitors must not be able to
+  // create / edit / delete datasources — a broken connection string takes down
+  // the shared instance for everyone. Hide every mutating control; the
+  // cube-designer link + Refresh (read-only re-introspect) stay available.
+  const demoMode = $derived(platform.capabilities?.demoMode === true);
 
   async function refresh() {
     loading = true;
@@ -27,7 +35,10 @@
     }
   }
 
-  onMount(refresh);
+  onMount(async () => {
+    if (!platform.capabilities) await platform.loadCapabilities();
+    await refresh();
+  });
 
   function startNew() {
     editing = {
@@ -88,7 +99,7 @@
   }
 
   async function save() {
-    if (!editing) return;
+    if (!editing || demoMode) return; // mutations disabled in demo mode
     try {
       if (!editing.id) await adminDatasources.create(editing);
       else await adminDatasources.update(editing);
@@ -101,7 +112,7 @@
   }
 
   async function doDelete() {
-    if (!deleting) return;
+    if (!deleting || demoMode) return; // mutations disabled in demo mode
     try {
       await adminDatasources.remove(deleting.id);
       toasts.success("Deleted", deleting.name);
@@ -126,7 +137,11 @@
 <div class="pane">
   <header class="flex justify-between items-center mb-3">
     <h2>{i18n.t("admin.tabs.datasources")}</h2>
-    <Button onclick={startNew}>{i18n.t("admin.addDatasource")}</Button>
+    {#if demoMode}
+      <span class="text-xs text-fg-muted">Read-only in demo mode</span>
+    {:else}
+      <Button onclick={startNew}>{i18n.t("admin.addDatasource")}</Button>
+    {/if}
   </header>
   {#if error}<p class="callout callout--danger">{error}</p>{/if}
   {#if loading}
@@ -145,13 +160,15 @@
               <a
                 class={buttonVariants({ variant: "outline" })}
                 data-testid="generate-schema-link"
-                href={generateSchemaHref(ds)}
+                href={`${base}${generateSchemaHref(ds)}`}
               >
                 {generateSchemaLabel(ds)}
               </a>
               <Button variant="outline" onclick={() => refreshDs(ds)}>{i18n.t("admin.refresh")}</Button>
-              <Button variant="outline" onclick={() => (editing = openForEdit(ds))}>{i18n.t("admin.edit")}</Button>
-              <Button variant="destructive" onclick={() => (deleting = ds)}>{i18n.t("admin.delete")}</Button>
+              {#if !demoMode}
+                <Button variant="outline" onclick={() => (editing = openForEdit(ds))}>{i18n.t("admin.edit")}</Button>
+                <Button variant="destructive" onclick={() => (deleting = ds)}>{i18n.t("admin.delete")}</Button>
+              {/if}
             </td>
           </tr>
         {/each}

@@ -148,7 +148,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-md);
   }
   /* Brand & Theme inspector — a right-edge overlay so it floats above the app

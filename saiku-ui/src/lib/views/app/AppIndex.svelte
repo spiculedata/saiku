@@ -266,8 +266,8 @@
   }
   .error {
     padding: 0.5rem 0.75rem;
-    background: color-mix(in srgb, var(--danger) 14%, transparent);
-    color: var(--danger);
+    background: color-mix(in srgb, hsl(var(--danger)) 14%, transparent);
+    color: hsl(var(--danger));
     border-radius: 4px;
     font-size: 0.875rem;
   }
@@ -284,12 +284,12 @@
     align-items: center;
     gap: 0.75rem;
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
-    background: var(--bg);
+    background: hsl(var(--bg));
   }
   .row:hover {
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
   }
   .link {
     flex: 1;

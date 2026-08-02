@@ -46,7 +46,7 @@
     align-items: center;
     gap: 0.25rem;
     font-size: 0.6875rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     line-height: 1;
     pointer-events: none;
     max-width: 100%;

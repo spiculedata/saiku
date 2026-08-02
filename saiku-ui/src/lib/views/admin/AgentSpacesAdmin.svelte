@@ -203,28 +203,28 @@
 <style>
   .pane { display: flex; flex-direction: column; gap: var(--space-4); }
   h2 { margin: 0; }
-  code { font-family: var(--font-mono, monospace); font-size: var(--fs-xs); background: var(--bg-subtle); padding: 1px 5px; border-radius: 4px; }
+  code { font-family: var(--font-mono, monospace); font-size: var(--fs-xs); background: hsl(var(--bg-subtle)); padding: 1px 5px; border-radius: 4px; }
 
   .layout { display: grid; grid-template-columns: 240px 1fr; gap: var(--space-4); align-items: start; }
-  .list { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-2); background: var(--bg-muted); }
-  .row { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; border: 0; background: transparent; color: var(--fg-muted); cursor: pointer; padding: var(--space-2) var(--space-3); border-radius: var(--radius); font: inherit; }
-  .row:hover { color: var(--fg); background: var(--bg-hover); }
-  .row.active { color: var(--fg); background: var(--bg-hover); box-shadow: inset 2px 0 0 var(--accent); }
+  .list { display: flex; flex-direction: column; gap: 2px; border: 1px solid hsl(var(--border)); border-radius: var(--radius); padding: var(--space-2); background: hsl(var(--bg-muted)); }
+  .row { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; border: 0; background: transparent; color: hsl(var(--fg-muted)); cursor: pointer; padding: var(--space-2) var(--space-3); border-radius: var(--radius); font: inherit; }
+  .row:hover { color: hsl(var(--fg)); background: hsl(var(--bg-hover)); }
+  .row.active { color: hsl(var(--fg)); background: hsl(var(--bg-hover)); box-shadow: inset 2px 0 0 hsl(var(--primary)); }
   .row .nm { font-weight: var(--weight-medium); }
-  .row .meta { font-size: var(--fs-xs); color: var(--fg-subtle); }
+  .row .meta { font-size: var(--fs-xs); color: hsl(var(--fg-subtle)); }
 
   .editor { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
-  .editor.empty { border: 1px dashed var(--border); border-radius: var(--radius); padding: var(--space-6); text-align: center; }
+  .editor.empty { border: 1px dashed hsl(var(--border)); border-radius: var(--radius); padding: var(--space-6); text-align: center; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
   .field { display: flex; flex-direction: column; gap: 4px; }
   .field > span { font-size: var(--fs-sm); font-weight: var(--weight-medium); }
-  .field small { font-weight: 400; color: var(--fg-muted); }
-  input, textarea { font: inherit; font-size: var(--fs-sm); padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--fg); width: 100%; }
+  .field small { font-weight: 400; color: hsl(var(--fg-muted)); }
+  input, textarea { font: inherit; font-size: var(--fs-sm); padding: 7px 10px; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--bg)); color: hsl(var(--fg)); width: 100%; }
   textarea { resize: vertical; }
-  input:disabled { color: var(--fg-muted); background: var(--bg-muted); }
-  input.invalid { border-color: var(--danger); }
+  input:disabled { color: hsl(var(--fg-muted)); background: hsl(var(--bg-muted)); }
+  input.invalid { border-color: hsl(var(--danger)); }
 
-  .cubes { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px; border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); max-height: 200px; overflow: auto; background: var(--bg-muted); }
+  .cubes { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px; border: 1px solid hsl(var(--border)); border-radius: var(--radius); padding: var(--space-3); max-height: 200px; overflow: auto; background: hsl(var(--bg-muted)); }
   .cube { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); cursor: pointer; }
 
   .actions { display: flex; gap: var(--space-2); margin-top: var(--space-2); }

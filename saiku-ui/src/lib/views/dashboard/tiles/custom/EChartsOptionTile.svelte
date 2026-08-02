@@ -302,8 +302,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--bg);
-    color: var(--fg-muted);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg-muted));
     z-index: 1;
   }
   .overlay.solid {

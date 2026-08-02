@@ -58,9 +58,9 @@
     border-radius: var(--radius-sm);
     background: linear-gradient(
       90deg,
-      var(--bg-muted) 0%,
-      var(--bg-subtle) 50%,
-      var(--bg-muted) 100%
+      hsl(var(--bg-muted)) 0%,
+      hsl(var(--bg-subtle)) 50%,
+      hsl(var(--bg-muted)) 100%
     );
     background-size: 200% 100%;
     animation: skeleton-shimmer 1.4s ease-in-out infinite;
@@ -74,7 +74,7 @@
   @media (prefers-reduced-motion: reduce) {
     .skeleton-bar {
       animation: none;
-      background: var(--bg-subtle);
+      background: hsl(var(--bg-subtle));
     }
   }
 </style>

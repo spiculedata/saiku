@@ -257,8 +257,8 @@
   }
   .error {
     padding: 0.5rem 0.75rem;
-    background: color-mix(in srgb, var(--danger) 14%, transparent);
-    color: var(--danger);
+    background: color-mix(in srgb, hsl(var(--danger)) 14%, transparent);
+    color: hsl(var(--danger));
     border-radius: 4px;
     font-size: 0.875rem;
   }
@@ -289,10 +289,10 @@
     align-items: center;
     gap: 0.375rem;
     padding: 0.375rem 0.625rem;
-    border: 1px solid var(--border-strong);
+    border: 1px solid hsl(var(--border-strong));
     border-radius: 4px;
-    background: color-mix(in srgb, var(--bg) 80%, transparent);
-    color: var(--fg);
+    background: color-mix(in srgb, hsl(var(--bg)) 80%, transparent);
+    color: hsl(var(--fg));
     font-size: 0.8125rem;
     cursor: pointer;
     opacity: 0.35;

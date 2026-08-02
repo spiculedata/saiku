@@ -1077,15 +1077,15 @@
        caps at the viewport so a misclick dragging past the left edge can't
        eat the canvas entirely. */
     max-width: 100vw;
-    background: var(--bg);
-    border-left: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border-left: 1px solid hsl(var(--border));
     box-shadow: -8px 0 24px rgba(0, 0, 0, 0.08);
     display: flex;
     flex-direction: column;
     transform: translateX(100%);
     transition: transform 0.18s ease-out;
     z-index: 100;
-    color: var(--fg);
+    color: hsl(var(--fg));
   }
   /* Suspend the slide-in transition while resizing so the width change
      follows the cursor 1:1 instead of easing per-frame. */
@@ -1111,15 +1111,15 @@
   }
   .ai-drawer__resize:hover,
   .ai-drawer--resizing .ai-drawer__resize {
-    background: color-mix(in srgb, var(--accent) 40%, transparent);
+    background: color-mix(in srgb, hsl(var(--primary)) 40%, transparent);
   }
   .ai-drawer__header {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 12px 14px;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg-muted);
+    border-bottom: 1px solid hsl(var(--border));
+    background: hsl(var(--bg-muted));
     /* Pin header + footer against any squeeze when `messages` swells —
        previously a tall conversation could nudge the footer below the
        viewport on short windows. */
@@ -1136,15 +1136,15 @@
     justify-content: center;
     background: transparent;
     border: 1px solid transparent;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     border-radius: 6px;
     padding: 5px;
     cursor: pointer;
   }
   .ai-drawer__icon-btn:hover {
-    background: var(--bg);
-    border-color: var(--border);
-    color: var(--fg);
+    background: hsl(var(--bg));
+    border-color: hsl(var(--border));
+    color: hsl(var(--fg));
   }
   .ai-drawer__banner {
     margin: 12px 14px 0;
@@ -1160,10 +1160,10 @@
   }
   .ai-drawer__banner p {
     margin: 0;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .ai-drawer__empty {
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: 0.9rem;
     line-height: 1.5;
   }
@@ -1172,7 +1172,7 @@
   }
   .ai-drawer__empty-cube {
     font-size: 0.8rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .ai-drawer__empty-cube--warn {
     color: #b45309;
@@ -1185,23 +1185,23 @@
   }
   .ai-drawer__examples-label {
     font-size: 0.78rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     margin-bottom: 2px;
   }
   .ai-drawer__example {
     text-align: left;
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
     padding: 8px 10px;
     font-size: 0.85rem;
-    color: var(--fg);
+    color: hsl(var(--fg));
     cursor: pointer;
     font-family: inherit;
   }
   .ai-drawer__example:hover {
-    border-color: var(--accent);
-    background: var(--bg-muted);
+    border-color: hsl(var(--primary));
+    background: hsl(var(--bg-muted));
   }
   .ai-drawer__turn {
     display: flex;
@@ -1222,7 +1222,7 @@
     word-break: break-word;
   }
   .ai-drawer__bubble--user {
-    background: var(--accent);
+    background: hsl(var(--primary));
     color: white;
   }
   .ai-drawer__bubble--error {
@@ -1235,25 +1235,25 @@
   }
   .ai-drawer__candidates-label {
     font-size: 0.8rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     margin-bottom: 4px;
   }
   .ai-drawer__chip {
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: 999px;
     padding: 3px 9px;
     font-size: 0.78rem;
-    color: var(--fg);
+    color: hsl(var(--fg));
     cursor: pointer;
   }
   .ai-drawer__chip:hover {
-    background: var(--bg-muted);
-    border-color: var(--accent);
+    background: hsl(var(--bg-muted));
+    border-color: hsl(var(--primary));
   }
   .ai-drawer__mdx {
     margin-top: 10px;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid hsl(var(--border));
     padding-top: 8px;
   }
   .ai-drawer__mdx-toggle {
@@ -1262,19 +1262,19 @@
     gap: 4px;
     background: transparent;
     border: 0;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: 0.78rem;
     cursor: pointer;
     padding: 2px 4px;
   }
   .ai-drawer__mdx-toggle:hover {
-    color: var(--fg);
+    color: hsl(var(--fg));
   }
   .ai-drawer__mdx-pre {
     margin: 6px 0;
     padding: 8px;
-    background: var(--bg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
     font-size: 0.75rem;
     overflow-x: auto;
@@ -1285,30 +1285,30 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    color: var(--fg);
+    background: hsl(var(--bg));
+    border: 1px solid hsl(var(--border));
+    color: hsl(var(--fg));
     border-radius: 6px;
     padding: 4px 9px;
     font-size: 0.78rem;
     cursor: pointer;
   }
   .ai-drawer__small-btn:hover {
-    background: var(--bg-muted);
+    background: hsl(var(--bg-muted));
   }
   .ai-drawer__small-btn--primary {
-    background: var(--accent);
-    border-color: var(--accent);
+    background: hsl(var(--primary));
+    border-color: hsl(var(--primary));
     color: white;
   }
   .ai-drawer__small-btn--primary:hover {
     filter: brightness(0.95);
-    background: var(--accent);
+    background: hsl(var(--primary));
   }
   .ai-drawer__model {
     margin-top: 6px;
     font-size: 0.72rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-style: italic;
   }
   /* Insight / view-change badges sit above the bubble title so the user can
@@ -1320,7 +1320,7 @@
     font-size: 0.68rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--accent);
+    color: hsl(var(--primary));
     margin-bottom: 4px;
     font-weight: 600;
   }
@@ -1333,7 +1333,7 @@
   .ai-drawer__insight-body {
     font-size: 0.85rem;
     line-height: 1.5;
-    color: var(--fg);
+    color: hsl(var(--fg));
   }
   .ai-drawer__insight-body :global(h3),
   .ai-drawer__insight-body :global(h4),
@@ -1341,13 +1341,13 @@
   .ai-drawer__insight-body :global(h6) {
     font-weight: 600;
     margin: 12px 0 4px;
-    color: var(--fg);
+    color: hsl(var(--fg));
     line-height: 1.3;
   }
   .ai-drawer__insight-body :global(h3) { font-size: 0.95rem; }
   .ai-drawer__insight-body :global(h4) { font-size: 0.9rem; }
   .ai-drawer__insight-body :global(h5),
-  .ai-drawer__insight-body :global(h6) { font-size: 0.85rem; color: var(--fg-muted); }
+  .ai-drawer__insight-body :global(h6) { font-size: 0.85rem; color: hsl(var(--fg-muted)); }
   .ai-drawer__insight-body :global(h3:first-child),
   .ai-drawer__insight-body :global(h4:first-child) { margin-top: 0; }
   .ai-drawer__insight-body :global(p) {
@@ -1363,17 +1363,17 @@
   }
   .ai-drawer__insight-body :global(strong) {
     font-weight: 600;
-    color: var(--fg);
+    color: hsl(var(--fg));
   }
   .ai-drawer__insight-body :global(code) {
     font-family: ui-monospace, SFMono-Regular, monospace;
     font-size: 0.8rem;
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
     padding: 1px 4px;
     border-radius: 3px;
   }
   .ai-drawer__insight-body :global(a) {
-    color: var(--accent);
+    color: hsl(var(--primary));
     text-decoration: underline;
   }
   /* Mode picker — segmented control above the textarea. Pill row, active gets
@@ -1388,8 +1388,8 @@
     flex: 1 1 auto;
     min-width: 0;
     background: transparent;
-    color: var(--fg-muted);
-    border: 1px solid var(--border);
+    color: hsl(var(--fg-muted));
+    border: 1px solid hsl(var(--border));
     border-radius: 999px;
     padding: 3px 10px;
     font-size: 0.72rem;
@@ -1397,17 +1397,17 @@
     transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
   }
   .ai-drawer__mode-btn:hover:not(:disabled) {
-    background: var(--bg-subtle);
-    color: var(--fg);
+    background: hsl(var(--bg-subtle));
+    color: hsl(var(--fg));
   }
   .ai-drawer__mode-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
   .ai-drawer__mode-btn--active {
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
-    color: var(--accent);
-    border-color: var(--accent);
+    background: color-mix(in srgb, hsl(var(--primary)) 14%, transparent);
+    color: hsl(var(--primary));
+    border-color: hsl(var(--primary));
     font-weight: 600;
   }
   /* "Build & report" opt-in toggle — sits between the mode bar and the input row. Plain
@@ -1426,15 +1426,15 @@
     gap: 6px;
     width: fit-content;
     font-size: 0.78rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     cursor: pointer;
   }
   .ai-drawer__chain-toggle input {
-    accent-color: var(--accent);
+    accent-color: hsl(var(--primary));
     cursor: pointer;
   }
   .ai-drawer__chain-toggle:has(input:checked) {
-    color: var(--fg);
+    color: hsl(var(--fg));
     font-weight: 600;
   }
   .ai-drawer__chain-toggle:has(input:disabled) {
@@ -1445,14 +1445,14 @@
      short successful turns don't flash it. */
   .ai-drawer__elapsed {
     font-size: 0.72rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     margin-left: 6px;
   }
   .ai-drawer__dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--fg-muted);
+    background: hsl(var(--fg-muted));
     animation: ai-drawer-pulse 1.2s ease-in-out infinite;
   }
   .ai-drawer__dot:nth-child(2) {
@@ -1481,24 +1481,24 @@
     min-height: 72px;
     max-height: 200px;
     padding: 8px 10px;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
-    background: var(--bg);
-    color: var(--fg);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
     font-family: inherit;
     font-size: 0.9rem;
   }
   .ai-drawer__input:focus {
-    outline: 2px solid var(--accent);
+    outline: 2px solid hsl(var(--primary));
     outline-offset: -1px;
-    border-color: var(--accent);
+    border-color: hsl(var(--primary));
   }
   .ai-drawer__submit {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: var(--accent);
-    border: 1px solid var(--accent);
+    background: hsl(var(--primary));
+    border: 1px solid hsl(var(--primary));
     color: white;
     border-radius: 6px;
     padding: 0 14px;

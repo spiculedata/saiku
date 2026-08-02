@@ -84,9 +84,9 @@
     flex: 1;
     min-width: 12rem;
     padding: 0.5rem 0.75rem;
-    border: 1px solid var(--border-strong);
+    border: 1px solid hsl(var(--border-strong));
     border-radius: 4px;
-    background: var(--bg);
+    background: hsl(var(--bg));
     font-size: 0.875rem;
   }
   .catalogue-filters .sort {
@@ -94,13 +94,13 @@
     align-items: center;
     gap: 0.375rem;
     font-size: 0.8125rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   .catalogue-filters select {
     padding: 0.375rem 0.5rem;
-    border: 1px solid var(--border-strong);
+    border: 1px solid hsl(var(--border-strong));
     border-radius: 4px;
-    background: var(--bg);
+    background: hsl(var(--bg));
     font-size: 0.8125rem;
   }
 </style>

@@ -175,9 +175,9 @@
     z-index: 2100; /* above ToastStack (2000), below explicit modals. */
     margin: 0 auto;
     max-width: 960px;
-    background: var(--bg);
-    color: var(--fg);
-    border: 1px solid var(--danger);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
+    border: 1px solid hsl(var(--danger));
     border-top: 0;
     border-radius: 0 0 var(--radius-md) var(--radius-md);
     box-shadow: var(--shadow-md);
@@ -192,10 +192,10 @@
     /* High-contrast left bar so the banner reads as urgent without
        borrowing the toast pattern (which is dismissible-info, not
        attention-required). */
-    border-left: 4px solid var(--danger);
+    border-left: 4px solid hsl(var(--danger));
   }
   .session-banner :global(.session-banner__icon) {
-    color: var(--danger);
+    color: hsl(var(--danger));
     flex-shrink: 0;
   }
   .session-banner__form {
@@ -203,14 +203,14 @@
     flex-direction: column;
     gap: var(--space-2);
     padding: var(--space-3);
-    border-top: 1px solid var(--border);
-    background: var(--bg-muted);
+    border-top: 1px solid hsl(var(--border));
+    background: hsl(var(--bg-muted));
   }
   .session-banner__err {
     margin: 0;
     padding: var(--space-2);
     background: var(--danger-soft, rgba(220, 38, 38, 0.1));
-    color: var(--danger);
+    color: hsl(var(--danger));
     border-radius: var(--radius-sm);
   }
   .session-banner__fields {

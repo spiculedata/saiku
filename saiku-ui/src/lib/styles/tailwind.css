@@ -1,103 +1,101 @@
 /*
- * Tailwind v4 entry — saiku-ui side.
+ * Tailwind v4 entry — saiku-ui side (saiku#1636: aligned with saiku-cloud).
  *
- * Why this file exists separately from `tokens.css` + `app.css`:
- *
- *   - `tokens.css` defines the 133 CSS custom properties this codebase
- *     has used as the single source of design truth since the Svelte
- *     port. Every `<style>` block in the codebase resolves
- *     `var(--fg)`, `var(--space-2)`, `var(--accent)` etc. against it.
+ *   - `tokens.css` defines the design tokens as HSL triples (three-tier system
+ *     ported from saiku-cloud). Colour tokens are bare `H S% L%` triples.
  *   - `app.css` is the global base layer (body, headings, button reset,
- *     scrollbar styling) — pre-existing vanilla CSS, NOT a Tailwind
- *     preflight.
- *   - This file (`tailwind.css`) is the new Tailwind v4 surface. We
- *     import the `theme` + `utilities` layers but DELIBERATELY SKIP
- *     `preflight` to avoid clobbering the existing base reset and
- *     the BEM-style component styles. New components reach for
- *     Tailwind utilities; legacy components keep working unchanged.
+ *     scrollbar) — vanilla CSS, NOT a Tailwind preflight.
+ *   - This file is the Tailwind v4 surface. We import `theme` + `utilities`
+ *     but DELIBERATELY SKIP `preflight` so the existing base reset and
+ *     BEM-style component styles are preserved.
  *
- * Compatibility bridge: `@theme inline { --color-fg: var(--fg) }` aliases
- * every existing token onto the Tailwind token namespace so
- * `text-fg`, `bg-bg-subtle`, `p-2`, `rounded-md` all resolve via the
- * same `var(--*)` chain as `var(--fg)`, `var(--bg-subtle)`,
- * `var(--space-2)`, `var(--radius-md)`. Light + dark themes already
- * flip the underlying tokens; Tailwind classes inherit that for free.
- *
- * For API consistency with saiku-cloud-dashboard's design-system
- * primitives, we ALSO alias the canonical names that codebase uses
- * (`destructive`, `foreground`, `background`, `card`, `muted`,
- * `border`, `input`, `ring`) onto saiku-ui's existing tokens. A `Badge`
- * ported verbatim from saiku-cloud needing `text-destructive` will
- * resolve to `var(--danger)` here; consumers can write either idiom.
+ * Bridge: `@theme inline { --color-x: hsl(var(--token)) }` resolves every
+ * `bg-*`/`text-*`/`border-*` utility through the same `hsl(var(--token))` chain
+ * that inline `<style>` blocks use — so utilities and inline styles agree, and
+ * opacity modifiers (`bg-primary/10`) compose correctly. Both the shadcn-shaped
+ * names (`foreground`, `card`, `primary`, `border`, …) and saiku-ui's legacy
+ * names (`fg`, `bg-muted`, `border`, …) resolve to the same tokens.
  */
 @layer theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 
+/* Tailwind v4 `dark:` variant bound to OUR theme system (explicit
+   [data-theme] override + system pref with the light guard), matching
+   saiku-cloud so ported `dark:` utilities behave identically. */
+@custom-variant dark {
+  &:where(:root[data-theme="dark"], :root[data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
+
 @theme inline {
-  /* ---- Foreground / background surfaces ---- */
-  --color-fg: var(--fg);
-  --color-fg-muted: var(--fg-muted);
-  --color-fg-subtle: var(--fg-subtle);
-  --color-bg: var(--bg);
-  --color-bg-muted: var(--bg-muted);
-  --color-bg-subtle: var(--bg-subtle);
-  --color-bg-hover: var(--bg-hover);
+  /* ---- Foreground / background surfaces (legacy names) ---- */
+  --color-fg: hsl(var(--fg));
+  --color-fg-muted: hsl(var(--fg-muted));
+  --color-fg-subtle: hsl(var(--fg-subtle));
+  --color-bg: hsl(var(--bg));
+  --color-bg-muted: hsl(var(--bg-muted));
+  --color-bg-subtle: hsl(var(--bg-subtle));
+  --color-bg-hover: hsl(var(--bg-hover));
   --color-bg-overlay: var(--bg-overlay);
 
-  /* ---- Saiku-cloud naming aliases (API parity for shared primitives) ---- */
-  --color-foreground: var(--fg);
-  --color-background: var(--bg);
-  --color-card: var(--bg-muted);
-  --color-card-foreground: var(--fg);
-  --color-popover: var(--bg);
-  --color-popover-foreground: var(--fg);
-  --color-muted: var(--bg-subtle);
-  --color-muted-foreground: var(--fg-muted);
-  --color-input: var(--border);
-  --color-ring: var(--accent);
+  /* ---- shadcn-shaped names (cube-designer + shared primitives) ---- */
+  --color-foreground: hsl(var(--foreground));
+  --color-background: hsl(var(--background));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
 
   /* ---- Borders ---- */
-  --color-border: var(--border);
-  --color-border-strong: var(--border-strong);
+  --color-border: hsl(var(--border));
+  --color-border-strong: hsl(var(--border-strong));
 
-  /* ---- Brand / accent ---- */
-  --color-accent: var(--accent);
-  --color-accent-hover: var(--accent-hover);
-  --color-accent-foreground: var(--accent-fg);
-  --color-accent-soft: var(--accent-soft);
-  --color-accent-strong: var(--accent-strong);
-  --color-primary: var(--accent);
-  --color-primary-foreground: var(--accent-fg);
-  --color-secondary: var(--bg-muted);
-  --color-secondary-foreground: var(--fg);
+  /* ---- Brand (primary) + pale accent surface ---- */
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-primary-hover: hsl(var(--primary-hover));
+  --color-primary-strong: hsl(var(--primary-strong));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  /* legacy accent-* Tailwind names → brand family (kept for any stragglers) */
+  --color-accent-hover: hsl(var(--primary-hover));
+  --color-accent-fg: hsl(var(--primary-foreground));
+  --color-accent-soft: hsl(var(--accent));
+  --color-accent-strong: hsl(var(--primary-strong));
 
   /* ---- Status tones ---- */
-  --color-success: var(--success);
-  --color-success-soft: var(--success-soft);
-  --color-success-strong: var(--success-strong);
+  --color-success: hsl(var(--success));
+  --color-success-soft: hsl(var(--success-soft));
+  --color-success-strong: hsl(var(--success-strong));
   --color-success-foreground: #ffffff;
-  --color-warning: var(--warning);
-  --color-warning-soft: var(--warning-soft);
-  --color-warning-strong: var(--warning-strong);
+  --color-warning: hsl(var(--warning));
+  --color-warning-soft: hsl(var(--warning-soft));
+  --color-warning-strong: hsl(var(--warning-strong));
   --color-warning-foreground: #ffffff;
-  --color-info: var(--accent);
-  --color-info-foreground: var(--accent-fg);
-  /* Saiku-ui calls it danger; saiku-cloud calls it destructive. Both
-     resolve to the same value so either idiom works in shared
-     primitives. */
-  --color-danger: var(--danger);
-  --color-danger-soft: var(--danger-soft);
-  --color-danger-strong: var(--danger-strong);
+  --color-info: hsl(var(--info-action));
+  --color-info-foreground: #ffffff;
+  --color-danger: hsl(var(--danger));
+  --color-danger-soft: hsl(var(--danger-soft));
+  --color-danger-strong: hsl(var(--danger-strong));
   --color-danger-foreground: #ffffff;
-  --color-destructive: var(--danger);
+  --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: #ffffff;
 
-  /* ---- Spacing scale ----
-     Tailwind v4 multiplies the spacing scale by integer + fraction
-     keys against `--spacing` (1 unit = `--spacing`). Mapping our
-     existing 4/8/12/16/24/32/48 ramp to 1/2/3/4/6/8/12 keeps the
-     `p-2` = 8px shape the rest of the world expects. */
+  /* ---- Spacing scale (1 unit = --spacing) ---- */
   --spacing: 4px;
 
   /* ---- Radii ---- */
@@ -109,7 +107,7 @@
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
 
-  /* ---- Type scale (matches saiku-ui's existing token names) ---- */
+  /* ---- Type scale ---- */
   --text-xs: var(--fs-xs);
   --text-sm: var(--fs-sm);
   --text-md: var(--fs-md);

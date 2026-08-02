@@ -56,6 +56,6 @@
 
 <style>
 .grid { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
-  .grid th, .grid td { border: 1px solid var(--border); padding: var(--space-1) var(--space-2); text-align: left; }
-  .grid th { background: var(--bg-muted); }
+  .grid th, .grid td { border: 1px solid hsl(var(--border)); padding: var(--space-1) var(--space-2); text-align: left; }
+  .grid th { background: hsl(var(--bg-muted)); }
 </style>

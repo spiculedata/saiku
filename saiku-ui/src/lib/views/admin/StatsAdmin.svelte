@@ -252,7 +252,7 @@
 <style>
 .pane { display: flex; flex-direction: column; gap: var(--space-4); }
   h2 { margin: 0; }
-  h3 { margin: 0 0 var(--space-2); font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-muted); }
+  h3 { margin: 0 0 var(--space-2); font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: 0.04em; color: hsl(var(--fg-muted)); }
   .kpis {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -263,14 +263,14 @@
     flex-direction: column;
     gap: 2px;
     padding: var(--space-3);
-    background: var(--bg-muted);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg-muted));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius);
   }
-  .kpi__label { font-size: var(--fs-xs); color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .kpi__label { font-size: var(--fs-xs); color: hsl(var(--fg-muted)); text-transform: uppercase; letter-spacing: 0.05em; }
   table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
-  th, td { padding: 6px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--border); }
-  th { background: var(--bg-muted); font-weight: var(--weight-semibold); }
+  th, td { padding: 6px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid hsl(var(--border)); }
+  th { background: hsl(var(--bg-muted)); font-weight: var(--weight-semibold); }
   tr:last-child td { border-bottom: 0; }
   /* .mdx selector dropped — Mondrian StatementInfo doesn't surface
      the source MDX, so the column was removed in the 2026-06 rework. */

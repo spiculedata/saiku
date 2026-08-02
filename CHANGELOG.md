@@ -3,6 +3,44 @@
 All notable changes to Saiku are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
+## 4.7.1 — 2026-08-02
+
+Patch release — Cube Designer fixes, a UI theme refresh aligned with Saiku
+Cloud, and a demo-mode lockdown.
+
+### Fixed
+- **Cube Designer — edit an existing cube.** Opening the designer on a datasource
+  that already has a Mondrian schema now loads that schema onto the canvas
+  instead of showing a blank one. A new `GET /rest/saiku/admin/cube-designer/
+  schema/{dataSourceId}` endpoint resolves the attached catalog (external
+  `file:`, classpath `res:`, or repository) to its XML. (saiku#1634)
+- **Datasources admin — correct driver/schema/JDBC URL.** Mondrian datasources
+  whose inner `Jdbc=` URL carries its own `;`-params (e.g. H2 `;MODE=MySQL`) were
+  mis-parsed, showing the catalog file as the driver and a stray param as the
+  schema. Parsing is now key-based and order/param tolerant. (saiku#1634)
+- **Cube Designer — drag-to-canvas.** Dropping a table now lands it under the
+  cursor after the canvas has been panned or zoomed (drop coordinates are mapped
+  into flow space). (saiku#1634)
+- **UI — flat buttons.** Raw `<button>`s no longer fall back to the browser
+  default (a 2px outset border on a grey face); the base reset that Tailwind
+  preflight would apply is now in place.
+
+### Changed
+- **UI theme aligned with Saiku Cloud.** Adopted the shared three-tier design
+  tokens: Saiku-red brand, warm-neutral light / cool-neutral dark surfaces,
+  subtle border ramp, and layered dark elevation — replacing the previous
+  indigo-accented, harsh-bordered theme.
+- **Cube Designer header.** Mode tabs restyled to a segmented group with a
+  ringed active tab, matching the Cloud designer.
+
+### Added
+- **Demo-mode lockdown (`SAIKU_DEMO`).** On a public demo, visitors can no longer
+  create/edit/delete datasources or save a schema from the Cube Designer, so a
+  broken connection or schema can't take the shared instance down. Read-only
+  actions (Refresh, opening the designer) still work.
+- **Bombadil UI fuzz harness** (`saiku-ui/bombadil/`, dev-only, not shipped in
+  the runtime) — property-based headless-browser fuzzing of the UI.
+
 ## 4.7.0 — 2026-08-01
 
 Feature release.

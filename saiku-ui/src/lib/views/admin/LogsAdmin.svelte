@@ -47,9 +47,9 @@ h2 { margin: 0; }
   .log {
     margin: 0;
     padding: var(--space-3);
-    background: var(--bg-muted);
-    color: var(--fg);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg-muted));
+    color: hsl(var(--fg));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: var(--fs-xs);

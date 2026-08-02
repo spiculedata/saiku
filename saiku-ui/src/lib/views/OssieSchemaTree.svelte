@@ -173,7 +173,7 @@
     font-weight: var(--weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     padding-bottom: var(--space-1);
   }
   .ossie-tree__info {
@@ -183,25 +183,25 @@
     padding: 0;
     border: 0;
     background: transparent;
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
     cursor: help;
     line-height: 0;
   }
   .ossie-tree__info:hover,
   .ossie-tree__info:focus-visible {
-    color: var(--fg);
+    color: hsl(var(--fg));
   }
   .ossie-tree__select {
     padding: 6px 8px;
-    background: var(--bg);
-    color: var(--fg);
-    border: 1px solid var(--border-strong);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
+    border: 1px solid hsl(var(--border-strong));
     border-radius: 4px;
     font-size: var(--fs-sm);
   }
   .ossie-tree__hint {
     font-size: var(--fs-xs);
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
     margin: 0;
   }
   .ossie-tree__list {
@@ -213,7 +213,7 @@
     gap: 2px;
   }
   .ossie-tree__list--dim {
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
   }
   .ossie-tree__group {
     display: flex;
@@ -232,7 +232,7 @@
   }
   .ossie-tree__group-count {
     font-size: var(--fs-xs);
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
   }
   .ossie-tree__children {
     list-style: none;
@@ -255,7 +255,7 @@
   }
   .ossie-tree__field:hover,
   .ossie-tree__metric:hover {
-    background: var(--bg-hover);
+    background: hsl(var(--bg-hover));
   }
   .ossie-tree__field:active,
   .ossie-tree__metric:active {
@@ -266,8 +266,8 @@
     font-size: 10px;
     padding: 1px 6px;
     border-radius: 10px;
-    background: var(--bg-accent-subtle, var(--bg-hover));
-    color: var(--fg-muted);
+    background: var(--bg-accent-subtle, hsl(var(--bg-hover)));
+    color: hsl(var(--fg-muted));
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
@@ -278,11 +278,11 @@
     padding: 3px 6px;
   }
   .ossie-tree__arrow {
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
   }
   .ossie-tree__empty {
     font-size: var(--fs-xs);
-    color: var(--fg-subtle);
+    color: hsl(var(--fg-subtle));
     padding-left: 22px;
   }
 </style>

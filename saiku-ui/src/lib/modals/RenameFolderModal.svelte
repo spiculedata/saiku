@@ -60,19 +60,19 @@
 
 <style>
   .hint {
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-sm);
     margin: 0 0 var(--space-3);
   }
   code {
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
     padding: 0 var(--space-1);
     border-radius: var(--radius-sm);
     font-family: var(--font-mono);
     font-size: 12px;
   }
   .err {
-    color: var(--danger);
+    color: hsl(var(--danger));
     font-size: var(--fs-sm);
     margin: var(--space-2) 0 0;
   }

@@ -79,8 +79,8 @@
 
 <style>
 .stats { border-collapse: separate; border-spacing: 0; width: 100%; font-size: var(--fs-sm); }
-  .stats th, .stats td { padding: 6px 12px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
-  .stats thead th { position: sticky; top: 0; background: var(--bg-muted); color: var(--fg); font-weight: var(--weight-semibold); }
-  .stats tbody th { background: var(--bg-muted); font-weight: var(--weight-medium); color: var(--fg); }
+  .stats th, .stats td { padding: 6px 12px; border-bottom: 1px solid hsl(var(--border)); text-align: left; white-space: nowrap; }
+  .stats thead th { position: sticky; top: 0; background: hsl(var(--bg-muted)); color: hsl(var(--fg)); font-weight: var(--weight-semibold); }
+  .stats tbody th { background: hsl(var(--bg-muted)); font-weight: var(--weight-medium); color: hsl(var(--fg)); }
   .stats td.n { text-align: right; font-variant-numeric: tabular-nums; }
 </style>

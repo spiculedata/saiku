@@ -21,13 +21,22 @@
   import {
     ossCubeDesignerBackend,
     ossCubeDesignerAI,
+    fetchDatasourceSchema,
   } from "$lib/cube-designer/oss-backend";
+  import { hydrateFromMondrianXml } from "./edit-load";
   import { exportToMondrianXml } from "$lib/cube-designer/mondrian-export";
   import { parseProfileTables } from "$lib/cube-designer/profile-types";
   import type { SourceTableCandidate } from "$lib/cube-designer/types";
   import { adminSchemas } from "$lib/api/admin";
+  import { platform } from "$lib/stores/platform.svelte";
   import Button from "$lib/components/ui/button.svelte";
   import FeedbackBanner from "$lib/design-system/FeedbackBanner.svelte";
+  import {
+    LayoutGrid,
+    ArrowLeftRight,
+    Sigma,
+    CheckCircle2,
+  } from "lucide-svelte";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
@@ -42,14 +51,19 @@
   let saving = $state(false);
   let saveMsg = $state<{ tone: "success" | "error"; text: string } | null>(null);
 
+  // saiku#1636: on a public demo, don't let visitors persist a (possibly broken)
+  // schema that would take cubes down for everyone. Save is disabled in demo mode.
+  const demoMode = $derived(platform.capabilities?.demoMode === true);
+
   const MODES = [
-    { m: "canvas", label: "Schema Canvas" },
-    { m: "workbench", label: "Dimensions & Hierarchies" },
-    { m: "facts", label: "Facts & Measures" },
-    { m: "validate", label: "Confirm cube" },
+    { m: "canvas", label: "Schema Canvas", Icon: LayoutGrid },
+    { m: "workbench", label: "Dimensions & Hierarchies", Icon: ArrowLeftRight },
+    { m: "facts", label: "Facts & Measures", Icon: Sigma },
+    { m: "validate", label: "Confirm cube", Icon: CheckCircle2 },
   ] as const;
 
   onMount(async () => {
+    if (!platform.capabilities) await platform.loadCapabilities();
     store.switchConnection(dataSourceId);
     store.sourceLoading = true;
     store.sourceError = null;
@@ -73,9 +87,36 @@
     } finally {
       store.sourceLoading = false;
     }
+    // saiku#1634 edit mode: if this datasource already has a Mondrian schema,
+    // hydrate the canvas from it. Runs after profiling so the importer can
+    // enrich imported tables against the live source catalog.
+    await loadExistingSchema();
   });
 
+  /**
+   * Fetch the datasource's attached Mondrian schema (if any) and load it onto
+   * the canvas. A 404 (no schema attached) is the new-cube path — leave the
+   * canvas blank. A parse/read error surfaces in the source-error banner.
+   */
+  async function loadExistingSchema() {
+    try {
+      const r = await fetchDatasourceSchema(dataSourceId);
+      if (!r.ok) return; // 404 ⇒ no schema attached: start a new cube, blank canvas
+      const body = (await r.json()) as { mondrianXml?: string; label?: string };
+      const xml = body.mondrianXml ?? "";
+      if (!xml) return;
+      hydrateFromMondrianXml(store, xml, dataSourceId);
+      // Mark the canvas as editing a saved schema so the workbench shows saved
+      // (not draft) state; Save then writes back under this name.
+      store.doc.lineageId = body.label?.trim() || dataSourceId;
+    } catch (e) {
+      sourceError =
+        e instanceof Error ? e.message : "could not load the existing schema";
+    }
+  }
+
   async function save() {
+    if (demoMode) return; // saving disabled in demo mode
     saving = true;
     saveMsg = null;
     let xml: string;
@@ -102,29 +143,46 @@
   }
 </script>
 
-<div class="flex h-svh flex-col overflow-hidden">
+<!-- flex-1 + min-w/h-0 so the designer fills the layout's <main> (a flex row)
+     across the full width AND height, instead of h-svh (which sized to the
+     viewport and left a right-hand gap / overran the topbar). -->
+<div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
   <header class="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
     <h1 class="mr-2 text-sm font-semibold text-foreground">
       Cube Designer <span class="text-muted-foreground">· {dataSourceId}</span>
     </h1>
-    <nav class="flex items-center gap-1" role="tablist" aria-label="Designer mode">
-      {#each MODES as { m, label } (m)}
+    <!-- Segmented mode tabs — one outer border, siblings share edges; active
+         tab is an inset red ring + glow (matches saiku-cloud's CanvasHeader). -->
+    <nav
+      class="flex items-stretch overflow-hidden rounded border border-border bg-background"
+      role="tablist"
+      aria-label="Designer mode"
+    >
+      {#each MODES as { m, label, Icon } (m)}
         {@const active = store.mode === m}
         <button
           type="button"
           role="tab"
           aria-selected={active}
-          class="rounded px-2 py-1 text-[11px] font-medium {active
-            ? 'bg-primary text-primary-foreground'
+          aria-label={label}
+          title={label}
+          class="relative inline-flex h-9 items-center justify-center gap-1.5 border-l border-border px-3 text-xs font-medium transition-colors first:border-l-0 {active
+            ? 'z-10 bg-card text-primary shadow-[0_0_12px_hsl(var(--primary)/0.35)] ring-2 ring-primary/60 ring-inset'
             : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
           onclick={() => store.setMode(m)}
         >
-          {label}
+          <Icon class="h-3.5 w-3.5" aria-hidden="true" />
+          <span>{label}</span>
         </button>
       {/each}
     </nav>
     <div class="ml-auto flex items-center gap-2">
-      <Button size="sm" onclick={save} disabled={saving}>
+      <Button
+        size="sm"
+        onclick={save}
+        disabled={saving || demoMode}
+        title={demoMode ? "Saving is disabled in demo mode" : undefined}
+      >
         {saving ? "Saving…" : "Save"}
       </Button>
       <Button

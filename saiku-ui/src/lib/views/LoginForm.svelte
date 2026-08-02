@@ -126,7 +126,7 @@
         required
       />
     </label>
-    <Button class="w-full" type="submit" disabled={busy}>
+    <Button class="w-full" type="submit" data-testid="login-submit" disabled={busy}>
       {busy ? i18n.t("login.submitting") : i18n.t("login.submit")}
     </Button>
     {#if showDemoPanel}
@@ -166,8 +166,8 @@
     padding: var(--space-6);
     max-width: 380px;
     width: 100%;
-    background: var(--bg-muted);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg-muted));
+    border: 1px solid hsl(var(--border));
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-md);
   }
@@ -177,7 +177,7 @@
   }
   .login__tagline {
     margin: 0 0 var(--space-4);
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-sm);
     line-height: var(--lh-normal);
   }
@@ -187,9 +187,9 @@
     align-items: flex-start;
     margin: 0 0 var(--space-3);
     padding: var(--space-3);
-    background: var(--success-soft);
-    color: var(--success-strong);
-    border-left: 3px solid var(--success);
+    background: hsl(var(--success-soft));
+    color: hsl(var(--success-strong));
+    border-left: 3px solid hsl(var(--success));
     border-radius: var(--radius-sm);
     font-size: var(--fs-sm);
     line-height: var(--lh-normal);

@@ -44,13 +44,13 @@
 </div>
 
 <style>
-  .page { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 0.4rem; overflow: hidden; }
-  .page.is-active { border-color: var(--accent); }
+  .page { border: 1px solid hsl(var(--border)); border-radius: 8px; margin-bottom: 0.4rem; overflow: hidden; }
+  .page.is-active { border-color: hsl(var(--primary)); }
   .page-head {
-    width: 100%; text-align: left; border: 0; background: var(--bg-subtle);
-    padding: 0.45rem 0.6rem; font-size: 0.82rem; font-weight: 600; color: var(--fg);
+    width: 100%; text-align: left; border: 0; background: hsl(var(--bg-subtle));
+    padding: 0.45rem 0.6rem; font-size: 0.82rem; font-weight: 600; color: hsl(var(--fg));
     cursor: pointer; display: flex; align-items: center; gap: 0.4rem;
   }
-  .dot { color: var(--accent); font-size: 0.6rem; margin-left: auto; }
+  .dot { color: hsl(var(--primary)); font-size: 0.6rem; margin-left: auto; }
   .page-fields { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.5rem 0.6rem 0.7rem; }
 </style>

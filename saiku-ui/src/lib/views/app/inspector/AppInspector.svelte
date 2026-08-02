@@ -80,8 +80,8 @@
     flex-direction: column;
     min-height: 0;
     height: 100%;
-    background: var(--bg);
-    border-left: 1px solid var(--border);
+    background: hsl(var(--bg));
+    border-left: 1px solid hsl(var(--border));
     box-sizing: border-box;
   }
   .insp__head {
@@ -90,7 +90,7 @@
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.5rem 0.5rem 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid hsl(var(--border));
   }
   .insp__tabs {
     display: flex;
@@ -100,7 +100,7 @@
   .insp__tab {
     border: 0;
     background: transparent;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: 0.78rem;
     font-weight: 600;
     padding: 0.35rem 0.5rem;
@@ -109,13 +109,13 @@
     white-space: nowrap;
   }
   .insp__tab.is-active {
-    background: var(--bg-subtle);
-    color: var(--fg);
+    background: hsl(var(--bg-subtle));
+    color: hsl(var(--fg));
   }
   .insp__close {
     border: 0;
     background: transparent;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     cursor: pointer;
     display: inline-flex;
     padding: 4px;
@@ -123,7 +123,7 @@
     flex-shrink: 0;
   }
   .insp__close:hover {
-    background: var(--bg-hover);
+    background: hsl(var(--bg-hover));
   }
   .insp__body {
     flex: 1;
@@ -144,7 +144,7 @@
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
   }
   :global(.insp .insp-row) {
     display: flex;
@@ -154,7 +154,7 @@
     font-size: 0.82rem;
   }
   :global(.insp .insp-row > span) {
-    color: var(--fg);
+    color: hsl(var(--fg));
   }
   :global(.insp .insp-input),
   :global(.insp .insp-select) {
@@ -162,10 +162,10 @@
     min-width: 0;
     max-width: 62%;
     padding: 0.32rem 0.45rem;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
-    background: var(--bg);
-    color: var(--fg);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
     font: inherit;
     font-size: 0.8rem;
     box-sizing: border-box;
@@ -178,10 +178,10 @@
     width: 100%;
     box-sizing: border-box;
     padding: 0.5rem;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
-    background: var(--bg);
-    color: var(--fg);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
     font: inherit;
     font-size: 0.8rem;
     resize: vertical;
@@ -189,31 +189,31 @@
   :global(.insp .insp-hint) {
     margin: 0;
     font-size: 0.72rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     line-height: 1.4;
   }
   :global(.insp .insp-seg) {
     display: inline-flex;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
     overflow: hidden;
     flex-shrink: 0;
   }
   :global(.insp .insp-seg button) {
     border: 0;
-    background: var(--bg);
-    color: var(--fg-muted);
+    background: hsl(var(--bg));
+    color: hsl(var(--fg-muted));
     padding: 0.28rem 0.55rem;
     font-size: 0.72rem;
     text-transform: capitalize;
     cursor: pointer;
-    border-left: 1px solid var(--border);
+    border-left: 1px solid hsl(var(--border));
   }
   :global(.insp .insp-seg button:first-child) {
     border-left: 0;
   }
   :global(.insp .insp-seg button.is-active) {
-    background: var(--accent);
+    background: hsl(var(--primary));
     color: var(--accent-fg, #fff);
   }
   :global(.insp .insp-toggle) {
@@ -233,9 +233,9 @@
     max-width: none;
   }
   :global(.insp .insp-iconbtn) {
-    border: 1px solid var(--border);
-    background: var(--bg);
-    color: var(--fg-muted);
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--bg));
+    color: hsl(var(--fg-muted));
     border-radius: 6px;
     padding: 0.3rem 0.45rem;
     cursor: pointer;
@@ -244,21 +244,21 @@
     flex-shrink: 0;
   }
   :global(.insp .insp-iconbtn:hover) {
-    background: var(--bg-hover);
-    color: var(--fg);
+    background: hsl(var(--bg-hover));
+    color: hsl(var(--fg));
   }
   :global(.insp .insp-addbtn) {
     align-self: flex-start;
-    border: 1px dashed var(--border-strong, var(--border));
+    border: 1px dashed var(--border-strong, hsl(var(--border)));
     background: transparent;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     border-radius: 6px;
     padding: 0.3rem 0.6rem;
     font-size: 0.76rem;
     cursor: pointer;
   }
   :global(.insp .insp-addbtn:hover) {
-    color: var(--fg);
-    border-color: var(--accent);
+    color: hsl(var(--fg));
+    border-color: hsl(var(--primary));
   }
 </style>

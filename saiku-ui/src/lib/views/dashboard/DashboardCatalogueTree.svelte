@@ -244,20 +244,20 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.5rem 0.625rem;
-    border: 1px solid var(--border);
+    border: 1px solid hsl(var(--border));
     border-radius: 6px;
-    background: var(--bg);
+    background: hsl(var(--bg));
   }
   .link {
     flex: 1;
     display: flex;
     flex-direction: column;
     text-decoration: none;
-    color: var(--fg);
+    color: hsl(var(--fg));
     min-width: 0;
   }
   .link:hover .name {
-    color: var(--accent);
+    color: hsl(var(--primary));
   }
   .name {
     font-weight: var(--weight-semibold);
@@ -284,10 +284,10 @@
     user-select: none;
   }
   .tree-folder-head:hover {
-    background: var(--bg-subtle);
+    background: hsl(var(--bg-subtle));
   }
   .tree-folder-head:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid hsl(var(--primary));
     outline-offset: -2px;
   }
   .tree-folder-head:hover .tree-folder-actions,
@@ -295,13 +295,13 @@
     opacity: 1;
   }
   .tree-folder-head > :global(svg) {
-    color: var(--accent);
+    color: hsl(var(--primary));
     flex: 0 0 auto;
   }
   .tree-folder-count {
     font-size: 0.6875rem;
-    color: var(--fg-muted);
-    background: var(--bg-subtle);
+    color: hsl(var(--fg-muted));
+    background: hsl(var(--bg-subtle));
     border-radius: 999px;
     padding: 0.0625rem 0.4375rem;
   }
@@ -318,7 +318,7 @@
   .tree-empty {
     list-style: none;
     font-size: 0.8125rem;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-style: italic;
     padding: 0.375rem 0.5rem;
     padding-left: calc(0.5rem + var(--depth, 0) * 1.25rem);

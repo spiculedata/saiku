@@ -136,7 +136,7 @@
         {#if page.url.pathname.startsWith(`${base}/admin`)}
           <a class={buttonVariants({ variant: "outline", size: "sm" })} href="{base}/"><Home size={14} /><span>{i18n.t("topbar.workspace")}</span></a>
         {/if}
-        <Button variant="outline" size="sm" onclick={() => session.logout()}>
+        <Button variant="outline" size="sm" data-testid="app-signout" onclick={() => session.logout()}>
           <LogOut size={14} /><span>{i18n.t("topbar.signOut")}</span>
         </Button>
       {/if}
@@ -179,14 +179,14 @@
     justify-content: space-between;
     gap: var(--space-3);
     padding: var(--space-3) var(--space-5);
-    background: var(--bg-muted);
-    border-bottom: 1px solid var(--border);
+    background: hsl(var(--bg-muted));
+    border-bottom: 1px solid hsl(var(--border));
   }
   .topbar__brand {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    color: var(--fg);
+    color: hsl(var(--fg));
     text-decoration: none;
   }
   .topbar__brand:hover { text-decoration: none; }
@@ -224,11 +224,11 @@
     align-items: center;
     gap: var(--space-1);
     padding: 4px var(--space-2);
-    background: var(--bg-subtle);
-    border: 1px solid var(--border);
+    background: hsl(var(--bg-subtle));
+    border: 1px solid hsl(var(--border));
     border-radius: 999px;
-    color: var(--fg-muted);
+    color: hsl(var(--fg-muted));
     font-size: var(--fs-sm);
   }
-  .topbar__user :global(svg) { color: var(--fg-subtle); }
+  .topbar__user :global(svg) { color: hsl(var(--fg-subtle)); }
 </style>
