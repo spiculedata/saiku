@@ -188,13 +188,24 @@ export const adminDatasources = {
 export const adminSchemas = {
   list: () => get<AdminSchema[]>("/schema"),
   get: (id: string) => get<AdminSchema>(`/schema/${encodeURIComponent(id)}`),
-  upload: async (name: string, xml: string, path?: string) => {
-    const body = new URLSearchParams({ name, xml });
-    if (path) body.set("path", path);
+  /**
+   * saiku#1655: `AdminResource.uploadSchema` (`POST /admin/schema/{id}`) is
+   * `@Consumes("multipart/form-data")` and reads `@FormDataParam("file")` (an InputStream —
+   * the schema XML bytes) plus `@FormDataParam("name")`. The previous urlencoded
+   * `name`+`xml` body never got past Jersey's media-type gate, so every Cube Designer
+   * save and Admin > Schemas upload failed with HTTP 415. The server ignores the file
+   * part's filename and accepts no `path` field — it derives the repository path as
+   * `/datasources/{name}.xml` from the `name` field alone.
+   */
+  upload: async (name: string, xml: string) => {
+    const body = new FormData();
+    body.append("file", new Blob([xml], { type: "application/xml" }), `${name}.xml`);
+    body.append("name", name);
     const res = await fetch(`${BASE}/schema/${encodeURIComponent(name)}`, {
       method: "POST",
       credentials: "include",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      // Deliberately no Content-Type header: the browser must generate the
+      // multipart boundary itself. Setting it manually breaks the upload.
       body,
     });
     if (!res.ok) throw new Error(`schema upload -> ${res.status}`);
