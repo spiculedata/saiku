@@ -48,7 +48,7 @@
     "fast-check": "^4.9.0",
     "globals": "^17.9.0",
     "happy-dom": "^20.11.1",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.1",
     "storybook": "^10.5.5",
     "svelte": "^5.56.8",
     "svelte-check": "^4.7.4",
