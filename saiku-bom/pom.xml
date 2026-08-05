@@ -808,7 +808,9 @@
             <dependency>
                 <groupId>org.eclipse.angus</groupId>
                 <artifactId>angus-mail</artifactId>
-                <version>2.0.3</version>
+                <!-- 2.0.4 fixes CVE-2025-7962 (SMTP CR/LF injection in the
+                     transport, GHSA-9342-92gg-6v29). Keep >= 2.0.4. -->
+                <version>2.0.4</version>
             </dependency>
             <!-- GreenMail 2.x: in-process SMTP server for SmtpMailSenderTest.
                  2.x supports the Jakarta namespace (1.x is javax) — required
