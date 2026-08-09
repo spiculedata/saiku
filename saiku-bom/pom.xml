@@ -33,7 +33,7 @@
              namespace (so existing imports keep working) but routes everything
              through log4j-core 2.x. slf4j-log4j12 likewise gets swapped for
              log4j-slf4j-impl, the slf4j-1.x → log4j2 binding. -->
-        <log4j2.version>2.26.0</log4j2.version>
+        <log4j2.version>2.26.1</log4j2.version>
         <!-- Batik 1.8 has CVE-2022-38398/40146/41704/42890/44729/44730. 1.17 fixes them. -->
         <batik.version>1.19</batik.version>
         <jersey.version>3.1.9</jersey.version>
