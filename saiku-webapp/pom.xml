@@ -275,7 +275,7 @@
                          before target/ exists, which leaves the extractor
                          resolving against a not-yet-created directory. -->
                     <installDirectory>${project.build.directory}/node</installDirectory>
-                    <nodeVersion>v20.18.0</nodeVersion>
+                    <nodeVersion>v22.20.0</nodeVersion>
                 </configuration>
                 <executions>
                     <execution>
