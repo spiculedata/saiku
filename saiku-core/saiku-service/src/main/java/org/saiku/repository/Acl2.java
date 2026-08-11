@@ -141,13 +141,64 @@ class Acl2 {
 
     public void addEntry(String path, @Nullable AclEntry entry) {
         if (entry != null) {
-            acl.put(path, entry);
+            acl.put(canonicalKey(path), entry);
         }
     }
 
     @Nullable
     public AclEntry getEntry(String path) {
-        return acl.containsKey(path) ? acl.get(path) : null;
+        return lookup(acl, path);
+    }
+
+    /**
+     * Canonicalise a node path into the stable key form used for {@code acl.json}
+     * entries. saiku#1660: the seed writer keyed entries by the path form
+     * {@code FilesystemRepositoryManager.createFolder(...).getPath()} produces
+     * (a raw {@code datadir + path} concatenation), while the save-time lookup in
+     * {@link #getMethods} keyed by the form {@code getNode(...)} produces
+     * ({@code resolveWithinDatadir(...).toFile().getPath()} — normalised/absolute).
+     * On some platforms (notably Windows fresh homes) these two string forms
+     * differ, so the seeded SECURED entry was never found and a legitimate admin
+     * write was denied with a 500. Routing every write AND read through this
+     * canonicaliser makes the same on-disk directory map to the same key
+     * regardless of which construction path produced the {@link File}.
+     *
+     * <p>Best-effort: {@link File#getCanonicalPath()} may touch the filesystem and
+     * can throw for exotic paths; on failure we fall back to a normalised absolute
+     * path so we never regress into denying a legitimate write.
+     */
+    @NotNull
+    private static String canonicalKey(@Nullable String path) {
+        if (path == null) {
+            return "";
+        }
+        return canonicalKey(new File(path));
+    }
+
+    @NotNull
+    private static String canonicalKey(@NotNull File file) {
+        try {
+            return file.getCanonicalPath();
+        } catch (Exception e) {
+            return file.getAbsoluteFile().toPath().normalize().toString();
+        }
+    }
+
+    /**
+     * Resolve an entry for {@code path} tolerating legacy key forms. Tries the
+     * canonical key first (fresh homes seeded/written post-#1660), then the raw
+     * {@code path} exactly as given (established homes whose {@code acl.json} was
+     * written before the canonicalisation landed). This keeps long-standing
+     * repositories working without a migration step.
+     */
+    @Nullable
+    private static AclEntry lookup(@NotNull Map<String, AclEntry> data, @NotNull String path) {
+        String canonical = canonicalKey(path);
+        AclEntry entry = data.get(canonical);
+        if (entry == null) {
+            entry = data.get(path);
+        }
+        return entry;
     }
 
     public List<String> getAdminRoles() {
@@ -234,7 +285,7 @@ class Acl2 {
             try {
                 File home = aclHome(file);
                 Map<String, AclEntry> aclData = mapper.readValue(new File(home, "acl.json"), ref);
-                AclEntry entry = aclData.get(file.getPath());
+                AclEntry entry = lookup(aclData, file.getPath());
                 if (entry != null && StringUtils.isNotBlank(entry.getOwner())) {
                     return entry.getOwner();
                 }
@@ -266,7 +317,11 @@ class Acl2 {
                 // to the parent-chain walk below (inheritance), unchanged (#940).
                 File home = aclHome(file);
                 aclData = mapper.readValue(new File(home, "acl.json"), ref);
-                entry = aclData.get(file.getPath());
+                // saiku#1660: match by canonical key (with a raw-path fallback for
+                // legacy acl.json files) so a fresh-home seed entry — keyed by the
+                // writer's path form — is found regardless of the platform-specific
+                // string divergence between the seed writer and this lookup.
+                entry = lookup(aclData, file.getPath());
             } catch (Exception e) {
                 LOG.debug("Exception: " + file.getPath(), e.getCause());
             }
