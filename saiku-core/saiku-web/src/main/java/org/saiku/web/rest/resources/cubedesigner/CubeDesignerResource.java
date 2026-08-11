@@ -405,13 +405,26 @@ public class CubeDesignerResource {
     /**
      * Strip the {@code file:} scheme (and any {@code //authority}) off a file URL, leaving the path.
      * Handles {@code file:/p}, {@code file:///p}, and {@code file://host/p}.
+     *
+     * <p>saiku#1661: on Windows a file URL for a local path is {@code file:/C:/...} (or
+     * {@code file:///C:/...}), which leaves a leading slash before the drive letter that
+     * {@link java.nio.file.Path#of} rejects with {@code InvalidPathException: Illegal char <:>
+     * at index 2}. Drop that leading slash so {@code /C:/x} → {@code C:/x}; genuine POSIX
+     * absolute paths ({@code /home/x}) are untouched.
      */
-    private static String stripFileScheme(String fileUrl) {
+    static String stripFileScheme(String fileUrl) {
         String path = fileUrl.substring("file:".length());
         if (path.startsWith("//")) {
             int slash = path.indexOf('/', 2);
             path = slash >= 0 ? path.substring(slash) : path.substring(2);
         }
+        if (path.length() >= 3 && path.charAt(0) == '/' && path.charAt(2) == ':' && isDriveLetter(path.charAt(1))) {
+            path = path.substring(1);
+        }
         return path;
+    }
+
+    private static boolean isDriveLetter(char c) {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
     }
 }
