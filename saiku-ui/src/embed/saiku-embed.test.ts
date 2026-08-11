@@ -37,7 +37,12 @@ describe("<saiku-embed/>", () => {
     // The component imports happy-dom-incompatible Svelte runtime bits
     // lazily, so we dynamically import here AFTER the global stubs.
     await import("./saiku-embed");
-  });
+    // saiku#1668: this dynamic bundle import can blow past vitest's default
+    // 10s hook timeout under the forks pool on Windows when run as part of the
+    // FULL suite (worker/module-load contention — it passes in isolation and
+    // always on CI Linux). Give the hook generous headroom so a slow import
+    // doesn't false-red every Windows full-suite run.
+  }, 30_000);
 
   afterEach(() => {
     vi.unstubAllGlobals();
