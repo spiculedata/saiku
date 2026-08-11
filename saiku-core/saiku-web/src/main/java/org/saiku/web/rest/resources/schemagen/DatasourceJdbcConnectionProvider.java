@@ -50,7 +50,9 @@ public class DatasourceJdbcConnectionProvider implements SchemaGenOrchestrator.C
 
     @Override
     public Connection get(String dataSourceId) throws SQLException {
-        SaikuDatasource ds = datasourceService.getDatasource(dataSourceId);
+        // saiku#1661: accept either the UUID id (what the admin API + cube-designer route
+        // hand out) or the connection name.
+        SaikuDatasource ds = datasourceService.getDatasourceByIdOrName(dataSourceId);
         if (ds == null) {
             throw new SQLException("no Saiku datasource named '" + dataSourceId + "'");
         }
