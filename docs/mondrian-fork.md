@@ -39,10 +39,12 @@ dialect coverage.
 Un-excluding Calcite from `saiku-webapp/pom.xml` means the runtime classpath
 now carries:
 
-- `org.apache.calcite:calcite-core:1.41.0`
-- `org.apache.calcite:calcite-linq4j:1.41.0`
-- `org.apache.calcite.avatica:avatica-core:1.27.0`
-- `org.apache.calcite.avatica:avatica-metrics:1.27.0`
+- `org.apache.calcite:calcite-core:1.42.0` (saiku#1664: bumped from 1.41.0 for
+  CVE-2026-46718 / GHSA-c2rv-hwqm-wjpg)
+- `org.apache.calcite:calcite-linq4j:1.42.0` (force-aligned to core via the
+  saiku-bom pin; the mondrian fork still declares 1.41.0 transitively)
+- `org.apache.calcite.avatica:avatica-core:1.28.0`
+- `org.apache.calcite.avatica:avatica-metrics:1.28.0`
 - `com.google.guava:guava:33.4.8-jre` (pinned; Calcite requires a newer API
   than Mondrian's historical Guava 18.0).
 - `eigenbase:eigenbase-{properties,xom,resgen}` pinned to the versions
