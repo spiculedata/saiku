@@ -91,6 +91,13 @@ public class CubeDesignerResourceTest {
         }
 
         @Override
+        public java.util.Map<String, SaikuDatasource> getDatasources(String[] roles) {
+            // Keyed by connection name — mirrors the real manager, so the id fallback
+            // in getDatasourceByIdOrName has to scan the 'id' property to find a match.
+            return ds == null ? java.util.Map.of() : java.util.Map.of(ds.getName(), ds);
+        }
+
+        @Override
         public String getInternalFileData(String path) {
             return repoFiles.get(path);
         }
@@ -115,6 +122,26 @@ public class CubeDesignerResourceTest {
     }
 
     // -- (1) introspect ---------------------------------------------------------
+
+    @Test
+    public void introspect_resolvesByDatasourceId_whenNameLookupMisses() {
+        // saiku#1661: the admin API + cube-designer route pass the UUID id, which getDatasource(name)
+        // never matches — profiling must fall back to the datasource's 'id' property. Datasource is
+        // named "unknown_foodmart" but addressed by its id "uuid-abc".
+        Properties props = new Properties();
+        props.setProperty(ISaikuConnection.URL_KEY, JDBC_URL);
+        props.setProperty(ISaikuConnection.USERNAME_KEY, "sa");
+        props.setProperty(ISaikuConnection.PASSWORD_KEY, "");
+        props.setProperty("id", "uuid-abc");
+        SaikuDatasource named = new SaikuDatasource("unknown_foodmart", SaikuDatasource.Type.OLAP, props);
+        StubDatasourceService svc = new StubDatasourceService("unknown_foodmart", named);
+        CubeDesignerResource byId = new CubeDesignerResource(new DatasourceJdbcConnectionProvider(svc), svc);
+
+        Response r = byId.introspect("uuid-abc");
+        assertEquals(200, r.getStatus());
+        IntrospectResult body = (IntrospectResult) r.getEntity();
+        assertTrue(body.tables().stream().anyMatch(t -> "CUSTOMER".equalsIgnoreCase(t.name())));
+    }
 
     @Test
     public void introspect_returnsSeededTableAndColumns() {

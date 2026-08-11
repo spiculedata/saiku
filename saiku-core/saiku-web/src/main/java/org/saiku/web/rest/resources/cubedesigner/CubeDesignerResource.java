@@ -353,7 +353,9 @@ public class CubeDesignerResource {
     private record JdbcCoords(String jdbcUrl, String user, String password) {}
 
     private JdbcCoords resolveCoords(String dataSourceId) throws SQLException {
-        SaikuDatasource ds = datasourceService.getDatasource(dataSourceId);
+        // saiku#1661: accept either the UUID id (what the admin API + cube-designer route
+        // hand out) or the connection name.
+        SaikuDatasource ds = datasourceService.getDatasourceByIdOrName(dataSourceId);
         if (ds == null || ds.getProperties() == null) {
             throw new SQLException("no Saiku datasource named '" + dataSourceId + "'");
         }

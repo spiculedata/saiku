@@ -111,6 +111,35 @@ public class DatasourceService implements Serializable {
         return datasources.getDatasource(datasourceName);
     }
 
+    /**
+     * Resolve a datasource by connection name first, then fall back to its UUID {@code id} property.
+     *
+     * <p>saiku#1661: the admin API ({@code /rest/saiku/admin/datasources}) and the cube-designer
+     * route ({@code /admin/cube-designer/{dataSourceId}}) hand out the UUID {@code id}, but
+     * {@link #getDatasource(String)} keys only by connection name — so profiling by id threw
+     * {@code "no Saiku datasource named '<uuid>'"}. Accepting either keeps existing name-based
+     * callers working while fixing id-based profiling.
+     *
+     * @return the matching datasource, or {@code null} if neither name nor id matches
+     */
+    public SaikuDatasource getDatasourceByIdOrName(String idOrName) {
+        if (idOrName == null || idOrName.isEmpty()) {
+            return null;
+        }
+        // Route through the public methods (not the datasources field) so subclasses/stubs that
+        // override getDatasource / getDatasources are respected.
+        SaikuDatasource byName = getDatasource(idOrName);
+        if (byName != null) {
+            return byName;
+        }
+        for (SaikuDatasource ds : getDatasources(null).values()) {
+            if (ds.getProperties() != null && idOrName.equals(ds.getProperties().getProperty("id"))) {
+                return ds;
+            }
+        }
+        return null;
+    }
+
     public Map<String, SaikuDatasource> getDatasources(String[] roles) {
         return datasources.getDatasources(roles);
     }

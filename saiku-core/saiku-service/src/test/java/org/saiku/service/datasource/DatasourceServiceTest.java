@@ -82,6 +82,44 @@ public class DatasourceServiceTest {
         svc.fetchDataSourceById("does-not-exist", new String[0]);
     }
 
+    // saiku#1661 — cube-designer profiling passes the UUID id the admin API hands out, so the
+    // resolver must accept either the connection name or the id.
+    @Test
+    public void getDatasourceByIdOrName_matchesByName() {
+        manager.seed(ds("unknown_foodmart", "id-uuid-1"));
+        SaikuDatasource found = svc.getDatasourceByIdOrName("unknown_foodmart");
+        assertNotNull(found);
+        assertEquals("unknown_foodmart", found.getName());
+    }
+
+    @Test
+    public void getDatasourceByIdOrName_matchesById_whenNameLookupMisses() {
+        // The store is keyed by name, so the UUID never hits getDatasource(name) — the id
+        // fallback scan is what makes cube-designer-by-id work.
+        manager.seed(ds("unknown_foodmart", "id-uuid-1"));
+        manager.seed(ds("other", "id-uuid-2"));
+        SaikuDatasource found = svc.getDatasourceByIdOrName("id-uuid-2");
+        assertNotNull(found);
+        assertEquals("other", found.getName());
+    }
+
+    @Test
+    public void getDatasourceByIdOrName_nameWinsOverIdScan() {
+        // A datasource literally named like another's id must still resolve by name first.
+        manager.seed(ds("id-uuid-2", "id-uuid-1"));
+        manager.seed(ds("plain", "id-uuid-2"));
+        SaikuDatasource found = svc.getDatasourceByIdOrName("id-uuid-2");
+        assertEquals("id-uuid-2", found.getName());
+    }
+
+    @Test
+    public void getDatasourceByIdOrName_unknownOrBlank_returnsNull() {
+        manager.seed(ds("alpha", "id-aaa"));
+        assertNull(svc.getDatasourceByIdOrName("does-not-exist"));
+        assertNull(svc.getDatasourceByIdOrName(null));
+        assertNull(svc.getDatasourceByIdOrName(""));
+    }
+
     @Test
     public void setLocaleOfDataSource_swapsExistingLocale() throws SaikuDataSourceException {
         SaikuDatasource d = ds("dl", "id-l");
