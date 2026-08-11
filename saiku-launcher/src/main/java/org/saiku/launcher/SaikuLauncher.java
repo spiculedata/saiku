@@ -572,6 +572,19 @@ public class SaikuLauncher implements Callable<Integer> {
             return "aggregated";
         }
 
+        /**
+         * saiku#1662 — true when an already-materialised runtime schema differs
+         * byte-for-byte from the bundled seed. Extracted + package-visible so the
+         * drift detection is unit-testable without a live boot. Returns false when
+         * either side is missing/empty (nothing to compare) so it never blocks boot.
+         */
+        static boolean runtimeSchemaIsStale(byte[] runtime, byte[] seed) {
+            if (runtime == null || seed == null || runtime.length == 0 || seed.length == 0) {
+                return false;
+            }
+            return !java.util.Arrays.equals(runtime, seed);
+        }
+
         private static void stageSeedAssets(Path dataDir) throws Exception {
             Path schema = dataDir.resolve("FoodMart4.xml");
             if (!Files.exists(schema)) {
@@ -579,6 +592,21 @@ public class SaikuLauncher implements Callable<Integer> {
                     if (in != null) {
                         Files.copy(in, schema, StandardCopyOption.REPLACE_EXISTING);
                         System.out.println("Seeded: " + schema);
+                    }
+                }
+            } else {
+                // saiku#1662: an established home is never re-seeded (seed-if-absent
+                // preserves user edits), so a runtime schema can silently fall
+                // behind the bundled seed after a schema change — a dev home drifted
+                // 2,000+ lines this way. Surface it on boot. WARN only: the file may
+                // be an intentional local customisation, so we never overwrite it.
+                try (InputStream in = SaikuLauncher.class.getResourceAsStream("/seed/FoodMart4.xml")) {
+                    if (in != null && runtimeSchemaIsStale(Files.readAllBytes(schema), in.readAllBytes())) {
+                        System.out.println("WARNING: " + schema + " differs from the bundled seed schema"
+                                + " (/seed/FoodMart4.xml). An established home is never re-seeded, so this"
+                                + " file will not pick up schema changes automatically. If you did not"
+                                + " customise it, delete it and relaunch to re-materialise the current seed"
+                                + " (saiku#1662).");
                     }
                 }
             }
