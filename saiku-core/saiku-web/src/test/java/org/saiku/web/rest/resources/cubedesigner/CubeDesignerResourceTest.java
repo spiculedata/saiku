@@ -215,6 +215,39 @@ public class CubeDesignerResourceTest {
     }
 
     @Test
+    public void schema_readsExternalFileCatalog_viaCanonicalFileUri() throws Exception {
+        // saiku#1661: the runtime datasource stores the Catalog as a canonical file URL —
+        // on Windows that's file:///C:/... , whose leading slash before the drive letter made
+        // resolveSchemaXml's Path.of throw InvalidPathException ("Illegal char <:> at index 2")
+        // and 500 the endpoint. Using tmp.toUri() reproduces that exact form on Windows (and the
+        // POSIX file:///home/... form on Linux), so this pins the fix on both platforms.
+        Path tmp = Files.createTempFile("cube-designer-schema-uri", ".xml");
+        tmp.toFile().deleteOnExit();
+        String xml = "<Schema name=\"FoodMart\"/>";
+        Files.writeString(tmp, xml, StandardCharsets.UTF_8);
+        String location =
+                "jdbc:mondrian:Jdbc=" + JDBC_URL + ";MODE=MySQL;Catalog=" + tmp.toUri() + ";JdbcDrivers=org.h2.Driver";
+
+        Response r = resourceFor(location, Map.of()).schema(DATA_SOURCE_ID);
+        assertEquals(200, r.getStatus());
+        assertEquals(xml, ((SchemaResult) r.getEntity()).mondrianXml());
+    }
+
+    @Test
+    public void stripFileScheme_handlesWindowsDriveAndPosixForms() {
+        // Windows drive-letter URIs: the leading slash before the drive must be dropped.
+        assertEquals("C:/Users/x.xml", CubeDesignerResource.stripFileScheme("file:/C:/Users/x.xml"));
+        assertEquals("C:/Users/x.xml", CubeDesignerResource.stripFileScheme("file:///C:/Users/x.xml"));
+        // No leading slash (already a valid Windows path) — untouched.
+        assertEquals("C:\\Users\\x.xml", CubeDesignerResource.stripFileScheme("file:C:\\Users\\x.xml"));
+        // POSIX absolute paths must NOT be altered.
+        assertEquals("/home/user/x.xml", CubeDesignerResource.stripFileScheme("file:/home/user/x.xml"));
+        assertEquals("/home/user/x.xml", CubeDesignerResource.stripFileScheme("file:///home/user/x.xml"));
+        // file://host/share form — authority stripped.
+        assertEquals("/share/x.xml", CubeDesignerResource.stripFileScheme("file://host/share/x.xml"));
+    }
+
+    @Test
     public void schema_readsRepositoryCatalog() {
         // A UI-created datasource: Catalog=mondrian://Name → /datasources/Name.xml in the repo.
         String xml = "<Schema name=\"Sales\"/>";
