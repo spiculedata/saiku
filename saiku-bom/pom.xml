@@ -698,7 +698,20 @@
                  directly, and the old 0.9.2-incubating-SNAPSHOT is no longer resolvable.
                  Any transitive consumer will pull its own declared version. -->
 
-            <!-- Pin Guava to a version Calcite 1.41 is happy with.
+            <!-- saiku#1664: force calcite-linq4j to the same release as the pinned
+                 calcite-core (1.42.0 in saiku-service/saiku-sql). The mondrian fork
+                 (pentaho:mondrian) still declares calcite-core/linq4j 1.41.0 transitively;
+                 our direct calcite-core 1.42.0 wins by nearest-wins, but mondrian's
+                 calcite-linq4j 1.41.0 is nearer than calcite-core 1.42's own 1.42.0
+                 linq4j, so without this pin we'd ship core 1.42 + linq4j 1.41 — a
+                 mismatched pair (they're released and API-coupled as a set). -->
+            <dependency>
+                <groupId>org.apache.calcite</groupId>
+                <artifactId>calcite-linq4j</artifactId>
+                <version>1.42.0</version>
+            </dependency>
+
+            <!-- Pin Guava to a version Calcite 1.42 is happy with.
                  Mondrian pulls Guava 18.0; Calcite calls Preconditions.checkArgument(boolean,String,Object)
                  which doesn't exist on 18.0. Force the newer API-compatible version. -->
             <dependency>
@@ -707,12 +720,12 @@
                 <version>33.4.8-jre</version>
             </dependency>
 
-            <!-- Pin protobuf to a 4.x version. Avatica 1.27 (Calcite 1.41) declares
-                 protobuf-java 3.25.8 in its pom but its generated proto classes call
-                 Descriptors$FileDescriptor.internalBuildGeneratedFileFrom(String[],
-                 FileDescriptor[]), an overload that only exists in protobuf 4.x.
-                 Pinning here also wins over the transitive 2.4.1 that operadriver
-                 (via serenity-bdd) would otherwise pull in. -->
+            <!-- Pin protobuf to a 4.x version. Avatica 1.28 (Calcite 1.42) declares
+                 protobuf-java 4.28.3 in its pom — this pin now matches that transitive,
+                 but its generated proto classes call Descriptors$FileDescriptor
+                 .internalBuildGeneratedFileFrom(String[], FileDescriptor[]), an overload
+                 that only exists in protobuf 4.x, and pinning here also wins over the
+                 transitive 2.4.1 that operadriver (via serenity-bdd) would otherwise pull in. -->
             <dependency>
                 <groupId>com.google.protobuf</groupId>
                 <artifactId>protobuf-java</artifactId>
@@ -720,7 +733,7 @@
             </dependency>
 
             <!-- Pin eigenbase to the versions published from spiculedata/mondrian-saiku's
-                 GH Packages registry (publish-deps.yml). calcite-core 1.41.0 transitively
+                 GH Packages registry (publish-deps.yml). calcite-core 1.42.0 transitively
                  requests eigenbase-properties 1.1.4 (not published anywhere); pinning
                  keeps Maven from trying to fetch the 1.1.4 descriptor. -->
             <dependency>
