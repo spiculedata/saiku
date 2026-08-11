@@ -268,7 +268,15 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
             // and the shared /datasources tree).
             int pos = path.lastIndexOf(sep);
             String filename = "." + sep + path.substring(pos + 1, path.length());
-            File parent = getFolder(path.substring(0, pos));
+            // saiku#1660: a path with no separator (e.g. "welcome.saikudash",
+            // as JAX-RS hands us when the client posts a bare filename) has
+            // pos == -1, so path.substring(0, pos) threw
+            // StringIndexOutOfBoundsException — surfacing as an opaque HTTP 500
+            // on a fresh home. Mirror the folder-create branch above and treat a
+            // separatorless path as living at the repository root, so it resolves
+            // to a real parent folder and the canWrite gate below still runs.
+            String parentPath = pos >= 0 ? path.substring(0, pos) : sep;
+            File parent = getFolder(parentPath);
             // saiku#895: gate the write on canWrite. #940: when OVERWRITING an
             // existing file, check that file's own ACL (which inherits the
             // parent folder when it has no per-file entry) so a per-dashboard
