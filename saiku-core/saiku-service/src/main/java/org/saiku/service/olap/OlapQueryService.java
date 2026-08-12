@@ -209,7 +209,7 @@ public class OlapQueryService implements Serializable {
             CellDataSet result = OlapResultSetUtil.cellSet2Matrix(cellSet, formatter);
             Long format = (new Date()).getTime();
 
-            result.setRuntime(new Double(format - start).intValue());
+            result.setRuntime((int) (format - start)); // saiku#1036: new Double(...) is deprecated-for-removal
             getIQuery(queryName).storeCellset(cellSet);
             getIQuery(queryName).storeFormatter(formatter);
             // we could do a check if query.getTotalFunctions() actually includes a total function and if not dont
