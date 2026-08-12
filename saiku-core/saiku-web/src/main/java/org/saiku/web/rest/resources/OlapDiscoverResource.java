@@ -423,13 +423,18 @@ public class OlapDiscoverResource implements Serializable {
             @PathParam("catalog") String catalogName,
             @PathParam("schema") String schemaName,
             @PathParam("cube") String cubeName,
-            @PathParam("hierarchy") String hierarchyName) {
+            @PathParam("hierarchy") String hierarchyName,
+            @QueryParam("includeHidden") @DefaultValue("false") boolean includeHidden) {
         if ("null".equals(schemaName)) {
             schemaName = "";
         }
         SaikuCube cube = new SaikuCube(connectionName, cubeName, cubeName, cubeName, catalogName, schemaName);
         try {
-            return olapDiscoverService.getHierarchyRootMembers(cube, hierarchyName);
+            // saiku#835: same visible-only default as the measures endpoint —
+            // members the schema author marked visible="false" (sentinel
+            // buckets, helper calc members) stay out of the dimension browser
+            // unless admin tooling opts in.
+            return filterHidden(olapDiscoverService.getHierarchyRootMembers(cube, hierarchyName), includeHidden);
         } catch (Exception e) {
             log.error(this.getClass().getName(), e);
         }
@@ -493,21 +498,31 @@ public class OlapDiscoverResource implements Serializable {
             // passes includeHidden=true to inspect helper measures the schema
             // author marked visible="false". Server-side filtering so a
             // misconfigured client can't accidentally show what it shouldn't.
-            if (!includeHidden && measures != null) {
-                List<SaikuMember> filtered = new ArrayList<>(measures.size());
-                for (SaikuMember m : measures) {
-                    // Null → treat as visible (legacy fixtures / pre-#778 data).
-                    if (m.isVisible() == null || m.isVisible()) {
-                        filtered.add(m);
-                    }
-                }
-                return filtered;
-            }
-            return measures;
+            return filterHidden(measures, includeHidden);
         } catch (Exception e) {
             log.error(this.getClass().getName(), e);
         }
         return new ArrayList<>();
+    }
+
+    /**
+     * Drop members the schema author marked {@code visible="false"} unless the caller
+     * opted in with {@code includeHidden=true}. Null visibility is treated as visible
+     * (legacy fixtures / providers without the property). Shared by the measures
+     * (saiku#778) and dimension-member (saiku#835) discovery endpoints — package
+     * visible so the filter contract is unit-testable.
+     */
+    static List<SaikuMember> filterHidden(List<SaikuMember> members, boolean includeHidden) {
+        if (includeHidden || members == null) {
+            return members;
+        }
+        List<SaikuMember> filtered = new ArrayList<>(members.size());
+        for (SaikuMember m : members) {
+            if (m == null || m.isVisible() == null || m.isVisible()) {
+                filtered.add(m);
+            }
+        }
+        return filtered;
     }
 
     /**
@@ -559,13 +574,15 @@ public class OlapDiscoverResource implements Serializable {
             @PathParam("catalog") String catalogName,
             @PathParam("schema") String schemaName,
             @PathParam("cube") String cubeName,
-            @PathParam("member") String memberName) {
+            @PathParam("member") String memberName,
+            @QueryParam("includeHidden") @DefaultValue("false") boolean includeHidden) {
         if ("null".equals(schemaName)) {
             schemaName = "";
         }
         SaikuCube cube = new SaikuCube(connectionName, cubeName, cubeName, cubeName, catalogName, schemaName);
         try {
-            return olapDiscoverService.getMemberChildren(cube, memberName);
+            // saiku#835: hidden members filtered by default (see getRootMembers).
+            return filterHidden(olapDiscoverService.getMemberChildren(cube, memberName), includeHidden);
         } catch (Exception e) {
             log.error(this.getClass().getName(), e);
         }
