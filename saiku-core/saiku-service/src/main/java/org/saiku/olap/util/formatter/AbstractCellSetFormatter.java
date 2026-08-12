@@ -376,7 +376,8 @@ abstract class AbstractCellSetFormatter implements ICellSetFormatter {
             cellValue = ""; // $NON-NLS-1$
             else {
                 try {
-                    // TODO this needs to become query / execution specific
+                    // Design note: the fallback format is a global default; a per-query /
+                    // per-execution format would be more correct if ever needed.
                     DecimalFormat myFormatter =
                             new DecimalFormat(SaikuProperties.formatDefautNumberFormat); // $NON-NLS-1$
                     DecimalFormatSymbols dfs = new DecimalFormatSymbols(SaikuProperties.locale);

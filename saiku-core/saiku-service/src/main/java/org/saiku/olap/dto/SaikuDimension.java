@@ -42,7 +42,7 @@ public class SaikuDimension extends AbstractSaikuObject {
      *  (non-NoLink) join to. Populated by {@code ObjectUtil.convert(Dimension)}
      *  via {@code SaikuMondrianHelper.getMeasureGroupsForDimension}.
      *
-     *  <p>Drives the SPA's dim-applicability hinting (saiku#TODO): when the
+     *  <p>Drives the SPA's dim-applicability hinting: when the
      *  user has measures selected from MGs {@code R}, a dimension is
      *  applicable iff {@code measureGroups ⊇ R}. Dimensions that fail this
      *  check render greyed with a tooltip explaining the unjoined MG, so

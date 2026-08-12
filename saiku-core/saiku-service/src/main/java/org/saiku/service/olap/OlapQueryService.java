@@ -112,7 +112,9 @@ public class OlapQueryService implements Serializable {
             SaikuCube scube = qd.getFakeCube(xml);
             OlapConnection con = olapDiscoverService.getNativeConnection(scube.getConnection());
             IQuery query = qd.unparse(xml, con);
-            // TODO - this is not good! could lead to duplicate queries
+            // saiku#1713: no name-collision guard - a caller-supplied name silently
+            // overwrites any query already registered under it (both branches below
+            // are identical apart from UUID generation).
             if (name == null) {
                 name = UUID.randomUUID().toString();
                 putIQuery(name, query);
@@ -227,7 +229,6 @@ public class OlapQueryService implements Serializable {
                 if (!cellSet.getAxes().get(0).getAxisOrdinal().equals(Axis.ROWS)) {
                     rowsIndex = (rowsIndex + 1) & 1;
                 }
-                // TODO - refactor this using axis ordinals etc.
                 final AxisInfo[] axisInfos = new AxisInfo[] {
                     new AxisInfo(cellSet.getAxes().get(rowsIndex)),
                     new AxisInfo(cellSet.getAxes().get((rowsIndex + 1) & 1))
@@ -338,8 +339,8 @@ public class OlapQueryService implements Serializable {
                             }
                         }
                     }
-                    // TODO: Move it to columns since drilling through with 2 filter items of the same dimension doesn't
-                    // work
+                    // saiku#1714: drillthrough with two filter items of the SAME dimension
+                    // doesn't work; the move-to-columns workaround below was never enabled.
                     //					if (filterDim.getInclusions().size() > 1) {
                     //						query.moveDimension(filterDim, Axis.COLUMNS);
                     //					}
@@ -1138,7 +1139,7 @@ public class OlapQueryService implements Serializable {
                 filters = getAxisSelection(queryName, "FILTER");
             }
             if (type.equalsIgnoreCase("xls")) {
-                // TODO - added null parameter for filters - not used anymore
+                // Filters parameter retired - null satisfies the legacy ExcelExporter signature.
                 return ExcelExporter.exportExcel(rs, formatter, null);
             }
             if (type.equalsIgnoreCase("csv")) {

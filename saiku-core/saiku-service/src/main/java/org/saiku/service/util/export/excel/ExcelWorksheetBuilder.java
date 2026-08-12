@@ -630,7 +630,7 @@ public class ExcelWorksheetBuilder {
 
     private void setGrandTotalLabel(Row sheetRow, int y, boolean header) {
         Cell cell = sheetRow.createCell(y);
-        // TODO i18n
+        // Not localised: the Excel export surface is English-only today.
         String value = "Grand Total";
         if (header) {
             fillHeaderCell(sheetRow, value, y);

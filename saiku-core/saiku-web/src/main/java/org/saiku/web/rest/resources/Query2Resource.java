@@ -785,7 +785,7 @@ public class Query2Resource {
      * @param returns The returned dimensions and levels
      * @return A query result set.
      */
-    // TODO (phase 5): drillthrough intentionally does NOT go through the
+    // Phase 5 decision: drillthrough intentionally does NOT go through the
     // SaikuQueryCache (Task 5). The cache keys for execute are MDX+params;
     // drillthrough also depends on cell position, maxrows, and returns list,
     // and invalidation semantics differ. If/when we add caching here it

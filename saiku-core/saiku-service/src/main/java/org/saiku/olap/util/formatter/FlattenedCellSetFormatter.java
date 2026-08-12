@@ -117,7 +117,9 @@ public class FlattenedCellSetFormatter extends AbstractCellSetFormatter {
         populateAxis(matrix, columnsAxis, columnsAxisInfo, true, xOffsset);
         populateAxis(matrix, rowsAxis, rowsAxisInfo, false, yOffset);
 
-        // TODO - why did we do this in the first place??? HERE BE DRAGONS
+        // saiku#1716: dead header-dedup block (blanked repeated row-header raw
+        // values) - rationale unrecovered from the 2026-04 rewrite; kept verbatim
+        // until that ticket decides restore-vs-delete. HERE BE DRAGONS:
         //		int headerwidth = matrix.getMatrixWidth();
         //		if (headerwidth > 2) {
         //			for(int yy=matrix.getMatrixHeight(); yy > matrix.getOffset() ; yy--) {
