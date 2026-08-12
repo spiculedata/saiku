@@ -2,6 +2,7 @@
   import { query } from "$lib/stores/query.svelte";
   import { selection } from "$lib/stores/selection.svelte";
   import { session } from "$lib/stores/session.svelte";
+  import { treeActions } from "$lib/stores/treeActions.svelte";
   import { mdxSegment } from "$lib/utils";
   import type { AxisLocation, ThinHierarchy, ThinMeasure } from "$lib/api/query";
 
@@ -523,6 +524,29 @@
     if (!selection.cube) {
       query.reset();
     }
+  });
+
+  $effect(() => {
+    // saiku#1095: consume cube-tree hover intents (Top N / Sort) and open the
+    // SAME axis modals + save handlers the toolbar uses — the tree never
+    // duplicates the axis-MDX composition. The handler clears the store it
+    // reads, so per the Svelte-5 effect discipline the work is deferred with
+    // queueMicrotask instead of running synchronously inside the effect.
+    const req = treeActions.request;
+    if (!req || embedded) return;
+    queueMicrotask(() => {
+      treeActions.clear();
+      if (!query.current?.queryModel) return;
+      const sortOrder = query.current.queryModel.axes.ROWS.sortOrder ?? "ASC";
+      modals.axisFilter = {
+        axis: "ROWS",
+        type: req.kind === "sort" ? "Order" : "TopCount",
+        // A measure uniqueName pre-targets the modal (both modals read it via
+        // the starts-with-"[" convention below); empty means "user picks".
+        expression: req.measureUniqueName ?? "",
+        sort: sortOrder,
+      };
+    });
   });
 
   function onDragOver(e: DragEvent) {
@@ -1499,7 +1523,9 @@
     variant={modals.axisFilter.type === "TopCount" ? "top" : "bottom"}
     measures={cubeMetadata?.measures ?? []}
     initialCount={10}
-    initialMeasure={cubeMetadata?.measures[0]?.uniqueName ?? ""}
+    initialMeasure={modals.axisFilter.expression.startsWith("[")
+      ? modals.axisFilter.expression
+      : (cubeMetadata?.measures[0]?.uniqueName ?? "")}
     open={!!modals.axisFilter}
     onSave={(expression) => onAxisFilterSave(expression)}
     onCancel={() => (closeModal("axisFilter"))}

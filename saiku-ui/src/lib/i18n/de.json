@@ -128,5 +128,7 @@
   "tile.retry": "Erneut versuchen",
   "tile.empty": "Keine Daten.",
   "tile.empty.filtered": "Keine Daten entsprechen den aktuellen Filtern.",
-  "tile.resetFilters": "Filter zurücksetzen"
+  "tile.resetFilters": "Filter zurücksetzen",
+  "panels.topN": "Top N…",
+  "panels.sortBy": "Sortieren…"
 }

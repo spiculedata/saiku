@@ -11,6 +11,7 @@
   import SelectionsModal from "$lib/modals/SelectionsModal.svelte";
   import { Badge } from "$lib/design-system";
   import { measuresHiddenToggle } from "$lib/stores/measuresHiddenToggle.svelte";
+  import { treeActions, type TreeActionKind } from "$lib/stores/treeActions.svelte";
   import {
     Sigma,
     FunctionSquare,
@@ -21,6 +22,8 @@
     Plus,
     Minus,
     Filter,
+    ListOrdered,
+    ArrowUpDown,
   } from "lucide-svelte";
   import type { CubeMetadata } from "$lib/stores/datasources.svelte";
   import type { SaikuCube, SaikuDimension, SaikuHierarchy, SaikuLevel, SaikuMeasure } from "$lib/api/discover";
@@ -113,6 +116,29 @@
       levelName: lvl.name,
       levelCaption: lvl.caption || lvl.name,
     });
+  }
+
+  /** saiku#1095: hover Top-N / Sort on a LEVEL node. Ensure the level is on
+   *  the query first (includeLevel is idempotent — merges into an existing
+   *  hierarchy), then ask QueryCanvas to open its existing axis modal.
+   *  No measure pre-target from a level: the modal's measure picker opens
+   *  exactly as it does from the axis toolbar. */
+  function onLevelAxisAction(
+    kind: TreeActionKind,
+    dim: SaikuDimension,
+    hier: SaikuHierarchy,
+    lvl: SaikuLevel,
+  ): void {
+    onLevelAdd(dim, hier, lvl);
+    treeActions.open(kind);
+  }
+
+  /** saiku#1095: hover Top-N / Sort on a MEASURE node. addMeasure dedupes by
+   *  uniqueName, so repeat clicks are safe; the measure rides along so the
+   *  modal opens pre-targeted at it. */
+  function onMeasureAxisAction(kind: TreeActionKind, m: SaikuMeasure): void {
+    onMeasureAdd(m);
+    treeActions.open(kind, m.uniqueName);
   }
 
   let metadata = $state<CubeMetadata | null>(null);
@@ -452,20 +478,38 @@
         {#if measureGroupsDerived.length <= 1}
           {#each measureGroupsDerived[0]?.[1] ?? [] as measure}
             <li class="tree__node">
-              <button
-                type="button"
-                class="tree__row tree__row--measure"
-                draggable="true"
-                title={measure.caption}
-                ondragstart={(e) => onMeasureDragStart(e, measure)}
-                ondblclick={() => onMeasureAdd(measure)}
-                onclick={(e) => { if (e.detail === 0) onMeasureAdd(measure); }}
-              >
-                <span class="tree__icon tree__icon--measure" aria-hidden="true">
-                  {#if measure.calculated}<FunctionSquare size={13} />{:else}<Sigma size={13} />{/if}
-                </span>
-                <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{measure.caption || measure.name}</span>
-              </button>
+              <span class="tree__row tree__row--measure">
+                <button
+                  type="button"
+                  class="tree__drag"
+                  draggable="true"
+                  title={measure.caption}
+                  ondragstart={(e) => onMeasureDragStart(e, measure)}
+                  ondblclick={() => onMeasureAdd(measure)}
+                  onclick={(e) => { if (e.detail === 0) onMeasureAdd(measure); }}
+                >
+                  <span class="tree__icon tree__icon--measure" aria-hidden="true">
+                    {#if measure.calculated}<FunctionSquare size={13} />{:else}<Sigma size={13} />{/if}
+                  </span>
+                  <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{measure.caption || measure.name}</span>
+                </button>
+                <!-- saiku#1095: hover actions — measures get Top N + Sort (no
+                     member filter; that needs a dimension level). -->
+                <button
+                  type="button"
+                  class="tree__gear"
+                  title={i18n.t("panels.topN")}
+                  aria-label={i18n.t("panels.topN")}
+                  onclick={() => onMeasureAxisAction("topcount", measure)}
+                ><ListOrdered size={11} /></button>
+                <button
+                  type="button"
+                  class="tree__gear"
+                  title={i18n.t("panels.sortBy")}
+                  aria-label={i18n.t("panels.sortBy")}
+                  onclick={() => onMeasureAxisAction("sort", measure)}
+                ><ArrowUpDown size={11} /></button>
+              </span>
             </li>
           {/each}
         {:else}
@@ -483,20 +527,37 @@
                 <ul class="tree">
                   {#each items as measure}
                     <li class="tree__node">
-                      <button
-                        type="button"
-                        class="tree__row tree__row--measure"
-                        draggable="true"
-                        title={measure.caption}
-                        ondragstart={(e) => onMeasureDragStart(e, measure)}
-                        ondblclick={() => onMeasureAdd(measure)}
-                        onclick={(e) => { if (e.detail === 0) onMeasureAdd(measure); }}
-                      >
-                        <span class="tree__icon tree__icon--measure" aria-hidden="true">
-                          {#if measure.calculated}<FunctionSquare size={13} />{:else}<Sigma size={13} />{/if}
-                        </span>
-                        <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{measure.caption || measure.name}</span>
-                      </button>
+                      <span class="tree__row tree__row--measure">
+                        <button
+                          type="button"
+                          class="tree__drag"
+                          draggable="true"
+                          title={measure.caption}
+                          ondragstart={(e) => onMeasureDragStart(e, measure)}
+                          ondblclick={() => onMeasureAdd(measure)}
+                          onclick={(e) => { if (e.detail === 0) onMeasureAdd(measure); }}
+                        >
+                          <span class="tree__icon tree__icon--measure" aria-hidden="true">
+                            {#if measure.calculated}<FunctionSquare size={13} />{:else}<Sigma size={13} />{/if}
+                          </span>
+                          <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{measure.caption || measure.name}</span>
+                        </button>
+                        <!-- saiku#1095: hover actions (see the flat-list branch). -->
+                        <button
+                          type="button"
+                          class="tree__gear"
+                          title={i18n.t("panels.topN")}
+                          aria-label={i18n.t("panels.topN")}
+                          onclick={() => onMeasureAxisAction("topcount", measure)}
+                        ><ListOrdered size={11} /></button>
+                        <button
+                          type="button"
+                          class="tree__gear"
+                          title={i18n.t("panels.sortBy")}
+                          aria-label={i18n.t("panels.sortBy")}
+                          onclick={() => onMeasureAxisAction("sort", measure)}
+                        ><ArrowUpDown size={11} /></button>
+                      </span>
                     </li>
                   {/each}
                 </ul>
@@ -556,6 +617,15 @@
                             <span class="tree__icon text-fg-subtle" aria-hidden="true"><Minus size={11} /></span>
                             <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{lvl.caption || lvl.name}</span>
                           </button>
+                          <!-- saiku#1095: Top N + Sort hover actions; the level is
+                               dropped onto ROWS first if not on the query yet. -->
+                          <button
+                            type="button"
+                            class="tree__gear"
+                            title={i18n.t("panels.topN")}
+                            aria-label={i18n.t("panels.topN")}
+                            onclick={() => onLevelAxisAction("topcount", dim, hier, lvl)}
+                          ><ListOrdered size={11} /></button>
                           <button
                             type="button"
                             class="tree__gear"
@@ -563,6 +633,13 @@
                             aria-label={i18n.t("panels.filterMembers")}
                             onclick={() => openDimensionFilter(dim, hier, lvl)}
                           ><Filter size={11} /></button>
+                          <button
+                            type="button"
+                            class="tree__gear"
+                            title={i18n.t("panels.sortBy")}
+                            aria-label={i18n.t("panels.sortBy")}
+                            onclick={() => onLevelAxisAction("sort", dim, hier, lvl)}
+                          ><ArrowUpDown size={11} /></button>
                         </span>
                       </li>
                     {/each}
@@ -592,6 +669,14 @@
                                   <span class="tree__icon text-fg-subtle" aria-hidden="true"><Minus size={11} /></span>
                                   <span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{lvl.caption || lvl.name}</span>
                                 </button>
+                                <!-- saiku#1095: hover actions (see the single-hierarchy branch). -->
+                                <button
+                                  type="button"
+                                  class="tree__gear"
+                                  title={i18n.t("panels.topN")}
+                                  aria-label={i18n.t("panels.topN")}
+                                  onclick={() => onLevelAxisAction("topcount", dim, hier, lvl)}
+                                ><ListOrdered size={11} /></button>
                                 <button
                                   type="button"
                                   class="tree__gear"
@@ -599,6 +684,13 @@
                                   aria-label={i18n.t("panels.filterMembers")}
                                   onclick={() => openDimensionFilter(dim, hier, lvl)}
                                 ><Filter size={11} /></button>
+                                <button
+                                  type="button"
+                                  class="tree__gear"
+                                  title={i18n.t("panels.sortBy")}
+                                  aria-label={i18n.t("panels.sortBy")}
+                                  onclick={() => onLevelAxisAction("sort", dim, hier, lvl)}
+                                ><ArrowUpDown size={11} /></button>
                               </span>
                             </li>
                           {/each}
@@ -725,6 +817,8 @@
     transition: opacity 120ms ease;
   }
   .tree__row--level:hover .tree__gear { opacity: 1; }
+  /* saiku#1095: measure rows carry hover actions too (Top N + Sort). */
+  .tree__row--measure:hover .tree__gear { opacity: 1; }
   .tree__gear:hover { color: hsl(var(--fg)); }
   .tree {
     list-style: none;
