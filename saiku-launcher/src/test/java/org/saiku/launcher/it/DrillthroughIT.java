@@ -125,6 +125,91 @@ public class DrillthroughIT {
     }
 
     @Test
+    public void compoundSameDimSlicer_cellShape_drillsThroughWithExactTotals_saiku1714() throws Exception {
+        // saiku#1714: two filter selections on the SAME dimension broke
+        // drillthrough in the OSBI era (a move-to-columns workaround sat
+        // commented in OlapQueryService for a decade). The Mondrian fork now
+        // supports compound-slicer DRILLTHROUGH. This pins the exact shape
+        // ThinQueryService.drillthrough(cellPosition…) assembles — cell tuple
+        // ON COLUMNS, the filter-axis set unparsed into WHERE — and asserts
+        // the numbers, because the pre-fix failure mode here is SILENT: rows
+        // come back, just the wrong ones.
+        String body =
+                """
+                {
+                  "name": "drill-1714-cell",
+                  "cube": {
+                    "connection": "unknown_foodmart",
+                    "catalog": "FoodMart",
+                    "schema": "FoodMart",
+                    "name": "Sales",
+                    "uniqueName": "[Sales]"
+                  },
+                  "mdx": "DRILLTHROUGH MAXROWS 99999 SELECT ([Measures].[Store Sales], [Product].[Products].[Drink].[Alcoholic Beverages]) ON COLUMNS FROM [Sales] WHERE {[Time].[Time].[1997].[Q1], [Time].[Time].[1997].[Q2]}"
+                }
+                """;
+        HttpResponse<String> resp = harness.postAuthJson("/rest/saiku/api/query/execute", body);
+        assertEquals(200, resp.statusCode());
+        JsonNode r = harness.parse(resp);
+        assertTrue(
+                "compound-slicer drillthrough must NOT error: "
+                        + resp.body().substring(0, Math.min(300, resp.body().length())),
+                r.path("error").isMissingNode() || r.path("error").isNull());
+        JsonNode cellset = r.path("cellset");
+        assertTrue("drillthrough should return rows", cellset.isArray() && cellset.size() > 1);
+
+        // Mondrian returns its aggregated compound-slicer projection (grouped
+        // rows, no per-fact time columns) — the CONTRACT is that the measure
+        // total is exact. FoodMart truth: Drink > Alcoholic Beverages,
+        // Store Sales, 1997 Q1+Q2 = 6,588.37.
+        int salesCol = -1;
+        JsonNode header = cellset.get(0);
+        for (int i = 0; i < header.size(); i++) {
+            if ("Store Sales".equals(header.get(i).path("value").asText())) {
+                salesCol = i;
+            }
+        }
+        assertTrue("Store Sales column must be present in the drillthrough", salesCol >= 0);
+        double sum = 0;
+        for (int row = 1; row < cellset.size(); row++) {
+            sum += Double.parseDouble(
+                    cellset.get(row).get(salesCol).path("value").asText());
+        }
+        assertEquals("compound-slicer drillthrough total must match the cube value", 6588.37, sum, 0.01);
+    }
+
+    @Test
+    public void compoundSameDimSlicer_wholeQueryShape_succeeds_saiku1714() throws Exception {
+        // Same saiku#1714 scenario through the OTHER assembly path —
+        // drillthrough(queryName, maxrows, returns) prefixes DRILLTHROUGH onto
+        // the full two-axis query MDX, compound WHERE included.
+        String body =
+                """
+                {
+                  "name": "drill-1714-whole",
+                  "cube": {
+                    "connection": "unknown_foodmart",
+                    "catalog": "FoodMart",
+                    "schema": "FoodMart",
+                    "name": "Sales",
+                    "uniqueName": "[Sales]"
+                  },
+                  "mdx": "DRILLTHROUGH MAXROWS 10 SELECT {[Measures].[Store Sales]} ON COLUMNS, {[Product].[Products].[Drink]} ON ROWS FROM [Sales] WHERE {[Time].[Time].[1997].[Q1], [Time].[Time].[1997].[Q2]}"
+                }
+                """;
+        HttpResponse<String> resp = harness.postAuthJson("/rest/saiku/api/query/execute", body);
+        assertEquals(200, resp.statusCode());
+        JsonNode r = harness.parse(resp);
+        assertTrue(
+                "whole-query compound-slicer drillthrough must NOT error: "
+                        + resp.body().substring(0, Math.min(300, resp.body().length())),
+                r.path("error").isMissingNode() || r.path("error").isNull());
+        assertTrue(
+                "drillthrough should return rows",
+                r.path("cellset").isArray() && r.path("cellset").size() > 1);
+    }
+
+    @Test
     public void drillthroughOnUnknownQueryId_returns4xx() throws Exception {
         HttpResponse<String> resp = harness.getAuth(AI + "/query/no-such-id/drillthrough");
         // Could be 400/404/500 depending on the not-found path; assert it

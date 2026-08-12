@@ -959,6 +959,11 @@ public class ThinQueryService implements Serializable {
             final Writer writer = new StringWriter();
             sn.getFilterAxis().unparse(new ParseTreeWriter(new PrintWriter(writer)));
             if (StringUtils.isNotBlank(writer.toString())) {
+                // saiku#1714: this WHERE may carry a compound slicer (a set — e.g. two
+                // members of the same dimension on the filter axis). The Mondrian fork
+                // executes it correctly with exact totals, but returns its aggregated
+                // drillthrough projection (grouped rows) instead of raw fact rows.
+                // Pinned in DrillthroughIT.
                 buf.append("WHERE ").append(writer.toString());
             }
             select = buf.toString();
