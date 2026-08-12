@@ -62,4 +62,50 @@ public class QueryCacheKeyTest {
         // and a role-bearing key must differ from the legacy/no-role key
         assertNotEquals(legacy, QueryCacheKey.of(query(), CUBE_VERSION, Collections.singletonList("reader")));
     }
+
+    // ── saiku#1483: cubeVersion must change when the connection's metadata epoch bumps ──
+
+    private static ThinQuery cubeQuery(String connection) {
+        ThinQuery q = query();
+        q.setCube(new org.saiku.olap.dto.SaikuCube(connection, "[Sales]", "Sales", "Sales", "FoodMart", "FoodMart"));
+        return q;
+    }
+
+    /** A schema reload (epoch bump) must produce a different fingerprint — the stale-cellset bug. */
+    @Test
+    public void cubeVersionChangesAfterEpochBump() {
+        CubeMetadataVersions.resetForTests();
+        ThinQuery q = cubeQuery("conn-a");
+        String before = QueryCacheKey.cubeVersion(q);
+        CubeMetadataVersions.bump("conn-a");
+        String after = QueryCacheKey.cubeVersion(q);
+        assertNotEquals("a schema reload must invalidate the cache key", before, after);
+        // and the full key changes with it
+        assertNotEquals(QueryCacheKey.of(q, before), QueryCacheKey.of(q, after));
+    }
+
+    /** Bumping one connection must not invalidate another connection's entries. */
+    @Test
+    public void epochBumpIsScopedToItsConnection() {
+        CubeMetadataVersions.resetForTests();
+        ThinQuery other = cubeQuery("conn-b");
+        String before = QueryCacheKey.cubeVersion(other);
+        CubeMetadataVersions.bump("conn-a");
+        assertEquals("conn-a reload must not bust conn-b's cache", before, QueryCacheKey.cubeVersion(other));
+    }
+
+    /** Stable between reloads: two computations with no bump in between are identical. */
+    @Test
+    public void cubeVersionStableWithoutReload() {
+        CubeMetadataVersions.resetForTests();
+        ThinQuery q = cubeQuery("conn-c");
+        assertEquals(QueryCacheKey.cubeVersion(q), QueryCacheKey.cubeVersion(q));
+    }
+
+    /** Null-safety: no cube (or null connection) keeps the legacy empty-fingerprint behaviour. */
+    @Test
+    public void cubeVersionNullSafety() {
+        assertEquals("", QueryCacheKey.cubeVersion(null));
+        assertEquals("", QueryCacheKey.cubeVersion(query())); // no cube set
+    }
 }

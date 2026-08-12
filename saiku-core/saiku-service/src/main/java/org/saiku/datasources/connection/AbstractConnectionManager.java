@@ -164,6 +164,11 @@ public abstract class AbstractConnectionManager implements IConnectionManager, S
         datasource = preProcess(datasource);
         ISaikuConnection con = refreshInternalConnection(name, datasource);
         con = postProcess(datasource, con);
+        // saiku#1483: every schema-reload path funnels through here (admin refresh,
+        // datasource save/update, XMLA refresh, refreshAllConnections). Bump the
+        // connection's metadata epoch so QueryCacheKey.cubeVersion changes and the
+        // cellset cache stops serving pre-reload results.
+        org.saiku.service.cache.CubeMetadataVersions.bump(name);
     }
 
     public Map<String, ISaikuConnection> getAllConnections() throws SaikuOlapException {

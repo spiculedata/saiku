@@ -131,14 +131,15 @@ public final class QueryCacheKey {
     }
 
     /**
-     * Best-effort cube-version fingerprint. Phase 5 Task 5 placeholder —
-     * intended to be replaced by a real {@code SaikuCubeMetadataVersionService}
-     * once cube-metadata versioning lands.
+     * Cube-version fingerprint: cube coordinates plus the connection's metadata epoch
+     * from {@link CubeMetadataVersions} (saiku#1483 — replaces the Phase 5 Task 5
+     * placeholder that used coordinates alone).
      *
-     * <p>TODO: replace with a real cube metadata version service that tracks
-     * schema reloads / DDL changes. For now we mix connection + catalog +
-     * cube name so a cube being reconfigured (catalog swap) naturally
-     * invalidates the cache.
+     * <p>The coordinates (connection|catalog|schema|cube) invalidate on reconfiguration
+     * (catalog swap); the epoch invalidates on schema reload — every reload path funnels
+     * through {@code AbstractConnectionManager.refreshConnection}, which bumps the epoch.
+     * Without the epoch, a schema edit + refresh kept serving pre-edit cellsets because
+     * the key never changed.
      */
     public static String cubeVersion(ThinQuery q) {
         if (q == null || q.getCube() == null) {
@@ -149,7 +150,8 @@ public final class QueryCacheKey {
         sb.append(nullSafe(c.getConnection())).append('|');
         sb.append(nullSafe(c.getCatalog())).append('|');
         sb.append(nullSafe(c.getSchema())).append('|');
-        sb.append(nullSafe(c.getName()));
+        sb.append(nullSafe(c.getName())).append('|');
+        sb.append(CubeMetadataVersions.epoch(c.getConnection()));
         return sb.toString();
     }
 
