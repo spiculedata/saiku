@@ -25,12 +25,30 @@ jobs:
       id-token: write
       actions: read # Required for Claude to read CI results on PRs
     steps:
+      # Same guard as claude-code-review.yml: without the CLAUDE_CODE_OAUTH_TOKEN
+      # secret the action fails hard, so an @claude mention would produce a red ✗
+      # instead of silence. Skip cleanly when unconfigured; self-activates once the
+      # secret is added in repo settings.
+      - name: Check token
+        id: token
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CLAUDE_CODE_OAUTH_TOKEN is not configured — skipping (add the secret in repo settings to enable)."
+          fi
+
       - name: Checkout repository
+        if: steps.token.outputs.present == 'true'
         uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
       - name: Run Claude Code
+        if: steps.token.outputs.present == 'true'
         id: claude
         uses: anthropics/claude-code-action@v1
         with:

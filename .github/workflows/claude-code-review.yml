@@ -25,12 +25,32 @@ jobs:
       id-token: write
 
     steps:
+      # The repo has no CLAUDE_CODE_OAUTH_TOKEN secret configured, so running the
+      # review action unconditionally failed on EVERY human PR — a permanent red ✗
+      # that trains people to ignore failed checks. The secrets context isn't
+      # available in job-level `if`, so gate via a step output: when the secret is
+      # absent the review steps skip and the job concludes green ("skipped" steps).
+      # The day the secret is added in repo settings, reviews activate on their own.
+      - name: Check review token
+        id: token
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CLAUDE_CODE_OAUTH_TOKEN is not configured — skipping Claude review (add the secret in repo settings to enable)."
+          fi
+
       - name: Checkout repository
+        if: steps.token.outputs.present == 'true'
         uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
       - name: Run Claude Code Review
+        if: steps.token.outputs.present == 'true'
         id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
@@ -40,4 +60,3 @@ jobs:
           prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
-
