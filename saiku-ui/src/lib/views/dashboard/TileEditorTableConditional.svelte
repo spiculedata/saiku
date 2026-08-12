@@ -82,14 +82,14 @@
       </div>
 
       <label class="field">
-        <span>Column (header caption)</span>
-        <input type="text" bind:value={cfRule.column} placeholder="e.g. Unit Sales" />
+        <span class="field__label">Column (header caption)</span>
+        <input class="field__input" type="text" bind:value={cfRule.column} placeholder="e.g. Unit Sales" />
       </label>
 
       <div class="flex gap-2 items-end">
-        <label class="field inline">
-          <span>Format</span>
-          <select bind:value={cfRule.type}>
+        <label class="field flex-1">
+          <span class="field__label">Format</span>
+          <select class="field__input" bind:value={cfRule.type}>
             {#each CONDITIONAL_TYPES as t (t.id)}
               <option value={t.id}>{t.label}</option>
             {/each}
@@ -97,9 +97,9 @@
         </label>
 
         {#if ruleUsesThresholds(cfRule)}
-          <label class="field inline">
-            <span>Threshold mode</span>
-            <select bind:value={cfRule.thresholdMode}>
+          <label class="field flex-1">
+            <span class="field__label">Threshold mode</span>
+            <select class="field__input" bind:value={cfRule.thresholdMode}>
               {#each CONDITIONAL_MODES as m (m.id)}
                 <option value={m.id}>{m.label}</option>
               {/each}
@@ -110,17 +110,17 @@
 
       {#if ruleUsesThresholds(cfRule)}
         <div class="flex gap-2 items-end">
-          <label class="field inline">
-            <span>
+          <label class="field flex-1">
+            <span class="field__label">
               Low {cfRule.thresholdMode === "relative" ? "(percentile)" : "(value)"}
             </span>
-            <input type="number" bind:value={cfRule.lowThreshold} placeholder="off" />
+            <input class="field__input" type="number" bind:value={cfRule.lowThreshold} placeholder="off" />
           </label>
-          <label class="field inline">
-            <span>
+          <label class="field flex-1">
+            <span class="field__label">
               High {cfRule.thresholdMode === "relative" ? "(percentile)" : "(value)"}
             </span>
-            <input type="number" bind:value={cfRule.highThreshold} placeholder="off" />
+            <input class="field__input" type="number" bind:value={cfRule.highThreshold} placeholder="off" />
           </label>
         </div>
         {#if cfRule.type === "font" || cfRule.type === "icon"}
@@ -133,16 +133,16 @@
 
       {#if cfRule.type === "bar"}
         <label class="field">
-          <span>Bar colour</span>
-          <input type="text" bind:value={cfRule.barColor} placeholder="#4c8dff" />
+          <span class="field__label">Bar colour</span>
+          <input class="field__input" type="text" bind:value={cfRule.barColor} placeholder="#4c8dff" />
         </label>
       {/if}
 
       {#if cfRule.type === "background" || cfRule.type === "font" || cfRule.type === "icon"}
         <div class="flex gap-2 items-end">
-          <label class="field inline">
-            <span>Low colour</span>
-            <input
+          <label class="field flex-1">
+            <span class="field__label">Low colour</span>
+            <input class="field__input"
               type="text"
               value={cfRule.colors?.low ?? ""}
               placeholder="default red"
@@ -152,9 +152,9 @@
               }}
             />
           </label>
-          <label class="field inline">
-            <span>Mid colour</span>
-            <input
+          <label class="field flex-1">
+            <span class="field__label">Mid colour</span>
+            <input class="field__input"
               type="text"
               value={cfRule.colors?.mid ?? ""}
               placeholder="default amber"
@@ -164,9 +164,9 @@
               }}
             />
           </label>
-          <label class="field inline">
-            <span>High colour</span>
-            <input
+          <label class="field flex-1">
+            <span class="field__label">High colour</span>
+            <input class="field__input"
               type="text"
               value={cfRule.colors?.high ?? ""}
               placeholder="default green"

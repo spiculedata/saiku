@@ -32,9 +32,9 @@
   </label>
 
   {#if sparklineEnabled}
-    <label class="field inline">
-      <span>Style</span>
-      <select bind:value={sparklineType}>
+    <label class="field flex-1">
+      <span class="field__label">Style</span>
+      <select class="field__input" bind:value={sparklineType}>
         <option value="line">Line</option>
         <option value="bar">Bar</option>
       </select>
@@ -61,11 +61,6 @@
     letter-spacing: 0.04em;
     padding: 0 0.25rem;
   }
-  .checkbox {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.875rem;
-    cursor: pointer;
-  }
+  /* saiku#1258: .checkbox now comes from the parent modal's
+     `.modal :global(.checkbox)` rule. */
 </style>

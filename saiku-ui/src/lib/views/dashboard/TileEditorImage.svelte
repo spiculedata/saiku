@@ -55,8 +55,8 @@
 
 {#if imageMode === "url"}
   <label class="field">
-    <span>Image URL (http/https)</span>
-    <input
+    <span class="field__label">Image URL (http/https)</span>
+    <input class="field__input"
       type="url"
       bind:value={imageUrl}
       placeholder="https://example.com/logo.png"
@@ -64,8 +64,8 @@
   </label>
 {:else}
   <label class="field">
-    <span>Upload image{imageExistingSrc ? " (replaces current)" : ""}</span>
-    <input
+    <span class="field__label">Upload image{imageExistingSrc ? " (replaces current)" : ""}</span>
+    <input class="field__input"
       type="file"
       accept="image/png,image/jpeg,image/gif,image/webp"
       onchange={(e) => {
@@ -81,8 +81,8 @@
 {/if}
 
 <label class="field">
-  <span>Fit</span>
-  <select bind:value={imageFit}>
+  <span class="field__label">Fit</span>
+  <select class="field__input" bind:value={imageFit}>
     <option value="contain">Contain (whole image, letterboxed)</option>
     <option value="cover">Cover (fill tile, crop edges)</option>
     <option value="fill">Fill (stretch to tile)</option>
@@ -91,17 +91,18 @@
 </label>
 
 <label class="field">
-  <span>Caption (optional)</span>
-  <input type="text" bind:value={imageCaption} placeholder="e.g. Q4 campaign" />
+  <span class="field__label">Caption (optional)</span>
+  <input class="field__input" type="text" bind:value={imageCaption} placeholder="e.g. Q4 campaign" />
 </label>
 
 <label class="field">
-  <span>Alt text (accessibility)</span>
-  <input type="text" bind:value={imageAlt} placeholder="Describe the image" />
+  <span class="field__label">Alt text (accessibility)</span>
+  <input class="field__input" type="text" bind:value={imageAlt} placeholder="Describe the image" />
 </label>
 
 <style>
-  /* Inherits .field, .mode, .radio, .hint from the parent's stylesheet so
-     the visual treatment is identical to the inline version. Scoped styles
-     for image-specific surface only would split the look across files. */
+  /* saiku#1258: fields use the global app.css design-system pattern
+     (.field / .field__label / .field__input) — the old comment claimed the
+     parent modal's scoped styles reached here, which Svelte scoping never
+     actually allowed. */
 </style>
