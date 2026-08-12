@@ -1443,9 +1443,13 @@ public class AiOssieResource {
      * <p>Column index alignment: the header row emits row-shelf then column-shelf then
      * metrics — same order the records-format path uses to build column descriptors —
      * so we can identify metric column positions purely from the request shape.
+     *
+     * <p>Package-visible (saiku#1402) so the call-site behaviour — cell masking + the
+     * top-level {@code suppressed} block — is unit-testable without a live Ossie
+     * datasource, matching the records-path seam (saiku#1482).
      */
     @SuppressWarnings("unchecked")
-    private void applyKAnonymityMatrix(Map<String, Object> body, OssieAiSchema schema, OssieAiQueryRequest req) {
+    void applyKAnonymityMatrix(Map<String, Object> body, OssieAiSchema schema, OssieAiQueryRequest req) {
         if (kAnonymityFilter == null || !kAnonymityFilter.enabled()) return;
         if (schema == null || req == null) return;
         int nRows = req.getRows().size();
