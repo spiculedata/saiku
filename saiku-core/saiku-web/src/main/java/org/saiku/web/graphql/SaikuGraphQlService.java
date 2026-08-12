@@ -14,6 +14,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
+import graphql.analysis.MaxQueryComplexityInstrumentation;
+import graphql.analysis.MaxQueryDepthInstrumentation;
+import graphql.execution.instrumentation.ChainedInstrumentation;
+import graphql.execution.instrumentation.Instrumentation;
 import graphql.scalars.ExtendedScalars;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.RuntimeWiring;
@@ -25,8 +29,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,6 +57,21 @@ public class SaikuGraphQlService implements InitializingBean {
     private static final Logger log = LoggerFactory.getLogger(SaikuGraphQlService.class);
 
     private static final String SDL_CLASSPATH = "graphql/saiku.graphqls";
+
+    // ── saiku#1549: query depth/complexity limits (env > system property > default) ──
+    // The engine previously built bare (no Instrumentation), so an authenticated user
+    // could submit a pathologically deep/wide document with nothing bounding CPU/memory.
+    // Defaults are sized WELL above legitimate usage — the deepest real query is
+    // cube → dimensions → hierarchies → levels → members (+ leaves) ≈ depth 7, and
+    // GraphiQL's full introspection document is ≈ depth 12 with a few hundred fields —
+    // so real clients never notice; only pathological documents get rejected. 0 disables
+    // a limit (ops escape hatch); invalid/negative values fail SAFE to the default.
+    public static final String ENV_MAX_DEPTH = "SAIKU_GRAPHQL_MAX_DEPTH";
+    public static final String PROP_MAX_DEPTH = "graphql.maxQueryDepth";
+    public static final int DEFAULT_MAX_DEPTH = 30;
+    public static final String ENV_MAX_COMPLEXITY = "SAIKU_GRAPHQL_MAX_COMPLEXITY";
+    public static final String PROP_MAX_COMPLEXITY = "graphql.maxQueryComplexity";
+    public static final int DEFAULT_MAX_COMPLEXITY = 10_000;
 
     private final ObjectMapper mapper;
     private SaikuGraphQlFetchers fetchers;
@@ -121,7 +143,19 @@ public class SaikuGraphQlService implements InitializingBean {
         boolean sdlChanged = !combined.equals(this.sdl);
         this.sdl = combined;
         this.schema = buildSchema(combined, fetchers, perCubeGenerators);
-        this.graphql = GraphQL.newGraphQL(schema).build();
+        // saiku#1549: bound query depth + complexity. Re-resolved on every rebuild so a
+        // -D override applies on the next admin refresh without a restart.
+        int maxDepth =
+                resolveLimit(System::getenv, System::getProperty, ENV_MAX_DEPTH, PROP_MAX_DEPTH, DEFAULT_MAX_DEPTH);
+        int maxComplexity = resolveLimit(
+                System::getenv, System::getProperty, ENV_MAX_COMPLEXITY, PROP_MAX_COMPLEXITY, DEFAULT_MAX_COMPLEXITY);
+        Instrumentation limits = buildLimitsInstrumentation(maxDepth, maxComplexity);
+        GraphQL.Builder engine = GraphQL.newGraphQL(schema);
+        if (limits != null) {
+            engine.instrumentation(limits);
+        }
+        this.graphql = engine.build();
+        log.info("GraphQL query limits: maxDepth={}, maxComplexity={} (0 = disabled)", maxDepth, maxComplexity);
         // Wipe persisted queries when the schema shape changed — stale hashes could still
         // parse against the old shape but reference dropped fields, silently returning nulls.
         if (sdlChanged) {
@@ -236,6 +270,53 @@ public class SaikuGraphQlService implements InitializingBean {
     /** Raw SDL — used by the {@code /schema.graphql} endpoint. */
     public String getSdl() {
         return sdl;
+    }
+
+    /**
+     * Resolve a limit from env var, then system property, then default — the same
+     * fail-safe ladder {@code KAnonymityFilter} uses. {@code 0} disables the limit;
+     * a negative or unparseable value falls back to the (protective) default rather
+     * than silently disabling enforcement.
+     */
+    static int resolveLimit(
+            Function<String, String> env, Function<String, String> prop, String envKey, String propKey, int def) {
+        String raw = env.apply(envKey);
+        if (raw == null || raw.isBlank()) {
+            raw = prop.apply(propKey);
+        }
+        if (raw == null || raw.isBlank()) {
+            return def;
+        }
+        try {
+            int v = Integer.parseInt(raw.trim());
+            if (v < 0) {
+                log.warn("Invalid {} '{}' (negative) — defaulting to {}", propKey, raw, def);
+                return def;
+            }
+            return v;
+        } catch (NumberFormatException e) {
+            log.warn("Invalid {} '{}' (not an integer) — defaulting to {}", propKey, raw, def);
+            return def;
+        }
+    }
+
+    /**
+     * Chain the depth + complexity instrumentations for the configured limits; a limit of
+     * {@code 0} drops that guard. Returns {@code null} when both are disabled so the engine
+     * builds bare exactly as before.
+     */
+    static Instrumentation buildLimitsInstrumentation(int maxDepth, int maxComplexity) {
+        List<Instrumentation> chain = new ArrayList<>(2);
+        if (maxDepth > 0) {
+            chain.add(new MaxQueryDepthInstrumentation(maxDepth));
+        }
+        if (maxComplexity > 0) {
+            chain.add(new MaxQueryComplexityInstrumentation(maxComplexity));
+        }
+        if (chain.isEmpty()) {
+            return null;
+        }
+        return chain.size() == 1 ? chain.get(0) : new ChainedInstrumentation(chain);
     }
 
     private static String loadSdl() {
