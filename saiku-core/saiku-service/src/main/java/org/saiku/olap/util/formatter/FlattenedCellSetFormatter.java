@@ -117,25 +117,12 @@ public class FlattenedCellSetFormatter extends AbstractCellSetFormatter {
         populateAxis(matrix, columnsAxis, columnsAxisInfo, true, xOffsset);
         populateAxis(matrix, rowsAxis, rowsAxisInfo, false, yOffset);
 
-        // saiku#1716: dead header-dedup block (blanked repeated row-header raw
-        // values) - rationale unrecovered from the 2026-04 rewrite; kept verbatim
-        // until that ticket decides restore-vs-delete. HERE BE DRAGONS:
-        //		int headerwidth = matrix.getMatrixWidth();
-        //		if (headerwidth > 2) {
-        //			for(int yy=matrix.getMatrixHeight(); yy > matrix.getOffset() ; yy--) {
-        //				for(int xx=0; xx < headerwidth-1;xx++) {
-        //							if (matrix.get(xx,yy-1) != null && matrix.get(xx,yy) != null &&  matrix.get(xx,yy-1).getRawValue() !=
-        // null
-        //									&& matrix.get(xx,yy-1).getRawValue().equals(matrix.get(xx, yy).getRawValue()))
-        //							{
-        //								matrix.set(xx, yy, new MemberCell());
-        //							}
-        //							else {
-        //								break;
-        //							}
-        //					}
-        //			}
-        //		}
+        // saiku#1716 resolved the "HERE BE DRAGONS" fossil that sat commented here:
+        // a repeated-row-header blanking loop, disabled Feb 2014 (b2dccb218, fix #442
+        // — "remove unnecessary loop") by the same commit that made member rawValue
+        // hold the UNIQUE NAME. Reviving it would blank unique names that the UI table
+        // renderer and export paths key on; visual dedup of repeated headers is the
+        // renderer's job. Deleted outright after 12 years dead in production.
 
         // Populate cell values
         int newyOffset = yOffset;
