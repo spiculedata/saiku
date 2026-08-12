@@ -2,6 +2,7 @@
   import { query } from "$lib/stores/query.svelte";
   import { selection } from "$lib/stores/selection.svelte";
   import { session } from "$lib/stores/session.svelte";
+  import { mdxSegment } from "$lib/utils";
   import type { AxisLocation, ThinHierarchy, ThinMeasure } from "$lib/api/query";
 
   /** UI-only zone identifier. The backend {@link AxisLocation} enum
@@ -1468,10 +1469,12 @@
       // saiku#1221 Phase 3: TimeCalc click → splice the calc's
       // [Measures] reference into the active query. Keeps the modal
       // open so users can stack multiple calcs.
+      // saiku#1286: mdxSegment escapes any ']' in the (schema-admin-
+      // authored) TimeCalc name so the unique name stays well-formed.
       query.addMeasure({
         name,
         caption: name,
-        uniqueName: `[Measures].[${name}]`,
+        uniqueName: `[Measures].${mdxSegment(name)}`,
         type: "EXACT",
       });
     }}
