@@ -1345,8 +1345,11 @@ public class AiOssieResource {
      * shelves the filter is a no-op — semantically we can't decide what "backing count" means
      * for e.g. AVG(price), so we leave those responses unchanged rather than silently
      * suppress everything.
+     *
+     * <p>Package-visible (saiku#1482) so the call-site behaviour — masking + the
+     * {@code meta.suppressed} block — is unit-testable without a live Ossie datasource.
      */
-    private void applyKAnonymity(OssieAiQueryResponse resp) {
+    void applyKAnonymity(OssieAiQueryResponse resp) {
         if (kAnonymityFilter == null || !kAnonymityFilter.enabled()) return;
         List<String> countKeys = new ArrayList<>();
         for (OssieAiQueryResponse.Column c : resp.getColumns()) {
