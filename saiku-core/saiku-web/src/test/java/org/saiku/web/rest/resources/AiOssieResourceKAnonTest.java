@@ -140,4 +140,135 @@ public class AiOssieResourceKAnonTest {
         assertEquals(700.0, (Double) rev.getValue(), 0.0001);
         assertNull(resp.getMeta().getSuppressed());
     }
+
+    // ── saiku#1402: matrix-format parity ─────────────────────────────────────
+    // Same detection heuristic as records, but index-keyed cells: columns are
+    // row-shelf dims first, then metrics in request order. A sub-k row must have
+    // its metric cells masked (raw removed) and the response must carry a
+    // top-level suppressed {count, reason} block.
+
+    private static org.saiku.service.ossie.ai.OssieAiQueryRequest matrixRequest(String countAggregation) {
+        org.saiku.service.ossie.ai.OssieAiQueryRequest req = new org.saiku.service.ossie.ai.OssieAiQueryRequest();
+        org.saiku.service.ossie.ai.OssieAiQueryRequest.FieldRef region =
+                new org.saiku.service.ossie.ai.OssieAiQueryRequest.FieldRef();
+        region.setDataset("sales");
+        region.setField("region");
+        req.setRows(new ArrayList<>(List.of(region)));
+        req.setColumns(new ArrayList<>());
+        org.saiku.service.ossie.ai.OssieAiQueryRequest.MetricRef orders =
+                new org.saiku.service.ossie.ai.OssieAiQueryRequest.MetricRef();
+        orders.setMetric("orders");
+        orders.setAggregation(countAggregation); // null -> fall back to the schema's aggregationKind
+        org.saiku.service.ossie.ai.OssieAiQueryRequest.MetricRef revenue =
+                new org.saiku.service.ossie.ai.OssieAiQueryRequest.MetricRef();
+        revenue.setMetric("revenue");
+        revenue.setAggregation("sum");
+        req.setValues(new ArrayList<>(List.of(orders, revenue)));
+        return req;
+    }
+
+    private static org.saiku.service.ossie.ai.OssieAiSchema matrixSchema() {
+        org.saiku.service.ossie.ai.OssieAiSchema schema = new org.saiku.service.ossie.ai.OssieAiSchema();
+        org.saiku.service.ossie.ai.OssieAiSchema.Metric orders = new org.saiku.service.ossie.ai.OssieAiSchema.Metric();
+        orders.setName("orders");
+        orders.setAggregationKind("count");
+        org.saiku.service.ossie.ai.OssieAiSchema.Metric revenue = new org.saiku.service.ossie.ai.OssieAiSchema.Metric();
+        revenue.setName("revenue");
+        revenue.setAggregationKind("sum");
+        schema.getMetrics().put("orders", orders);
+        schema.getMetrics().put("revenue", revenue);
+        return schema;
+    }
+
+    /** cellSetBody row: [dim, orders(count), revenue] as index-keyed {value, raw} cells. */
+    private static List<Map<String, Object>> matrixRow(String dim, double count, double revenue) {
+        List<Map<String, Object>> row = new ArrayList<>();
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("value", dim);
+        row.add(d);
+        Map<String, Object> c = new LinkedHashMap<>();
+        c.put("value", String.valueOf(count));
+        c.put("raw", count);
+        row.add(c);
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("value", String.valueOf(revenue));
+        r.put("raw", revenue);
+        row.add(r);
+        return row;
+    }
+
+    private static Map<String, Object> matrixBody(List<List<Map<String, Object>>> rows) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("format", "matrix");
+        body.put("cellSetBody", rows);
+        return body;
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void matrixSubKRowIsMaskedWithTopLevelSuppressedBlock() {
+        List<List<Map<String, Object>>> rows = new ArrayList<>();
+        rows.add(matrixRow("North", 12, 5000.0)); // >= k, untouched
+        rows.add(matrixRow("South", 3, 812.0)); // < k, masked
+        Map<String, Object> body = matrixBody(rows);
+
+        // Aggregation resolved from the SCHEMA's aggregationKind (request aggregation null).
+        resourceWithK(5).applyKAnonymityMatrix(body, matrixSchema(), matrixRequest(null));
+
+        // Large row untouched.
+        assertEquals(5000.0, (Double) rows.get(0).get(2).get("raw"), 0.0001);
+        // Small row: both metric cells masked, raw gone (nothing for a digest to read).
+        assertEquals("null", rows.get(1).get(1).get("value"));
+        assertNull(rows.get(1).get(1).get("raw"));
+        assertEquals("null", rows.get(1).get(2).get("value"));
+        assertNull(rows.get(1).get(2).get("raw"));
+        // Dimension cell intact.
+        assertEquals("South", rows.get(1).get(0).get("value"));
+        // Top-level suppressed block — acceptance box 1 of #1402.
+        Map<String, Object> sup = (Map<String, Object>) body.get("suppressed");
+        assertNotNull("matrix response must carry the top-level suppressed block", sup);
+        assertEquals(1, sup.get("count"));
+        assertEquals("k-anonymity threshold k=5", sup.get("reason"));
+    }
+
+    @Test
+    public void matrixRequestAggregationOverridesSchemaKind() {
+        // The REQUEST says count even though the schema metric is sum-shaped — the request
+        // wins (a caller asking for COUNT(revenue) has made it a backing count).
+        List<List<Map<String, Object>>> rows = new ArrayList<>();
+        rows.add(matrixRow("West", 2, 40.0));
+        Map<String, Object> body = matrixBody(rows);
+
+        org.saiku.service.ossie.ai.OssieAiQueryRequest req = matrixRequest("count");
+        req.getValues().get(0).setMetric("revenue"); // sum-shaped in the schema
+        resourceWithK(5).applyKAnonymityMatrix(body, matrixSchema(), req);
+
+        assertNotNull("request-level count aggregation must drive suppression", body.get("suppressed"));
+        assertNull(rows.get(0).get(1).get("raw"));
+    }
+
+    @Test
+    public void matrixWithoutCountShapedMetricIsANoOp() {
+        List<List<Map<String, Object>>> rows = new ArrayList<>();
+        rows.add(matrixRow("East", 1, 10.0));
+        Map<String, Object> body = matrixBody(rows);
+
+        org.saiku.service.ossie.ai.OssieAiQueryRequest req = matrixRequest("sum"); // no count anywhere
+        resourceWithK(5).applyKAnonymityMatrix(body, matrixSchema(), req);
+
+        assertNull("no count-shaped metric -> untouched", body.get("suppressed"));
+        assertEquals(10.0, (Double) rows.get(0).get(2).get("raw"), 0.0001);
+    }
+
+    @Test
+    public void matrixDisabledFilterIsANoOp() {
+        List<List<Map<String, Object>>> rows = new ArrayList<>();
+        rows.add(matrixRow("South", 1, 99.0));
+        Map<String, Object> body = matrixBody(rows);
+
+        resourceWithK(0).applyKAnonymityMatrix(body, matrixSchema(), matrixRequest(null));
+
+        assertNull(body.get("suppressed"));
+        assertEquals(99.0, (Double) rows.get(0).get(2).get("raw"), 0.0001);
+    }
 }
