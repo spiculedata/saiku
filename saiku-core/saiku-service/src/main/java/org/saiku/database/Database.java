@@ -81,6 +81,31 @@ public class Database {
         return s.replace("../../", home + "/").replace("${saiku.home}", home);
     }
 
+    /**
+     * saiku#1692: build the Mondrian location for an embedded-H2 demo datasource with
+     * forward-slash paths. On Windows the data dir arrives as a native backslash path
+     * ({@code ${saiku.home}} is {@code Path.toString()}), and backslashes inside the
+     * {@code Jdbc=} URL break the Mondrian-Calcite backend: it embeds the H2 URL in its
+     * model JSON, where {@code \U} in {@code C:\Users} is an invalid string escape —
+     * every connect then dies with {@code JsonParseException: Unrecognized character
+     * escape 'U'} (boot-time GraphQL cube-generator init included). H2 accepts forward
+     * slashes on all platforms, and {@code File.toURI()} catalog URIs are already clean.
+     * Package-visible for unit tests; byte-identical to the legacy concatenation when
+     * the dir has no backslashes.
+     */
+    static String h2MondrianLocation(String dataDir, String dbName, String mode, String catalogUri) {
+        String dir = dataDir == null ? "" : dataDir.replace('\\', '/');
+        StringBuilder sb = new StringBuilder("jdbc:mondrian:Jdbc=jdbc:h2:")
+                .append(dir)
+                .append('/')
+                .append(dbName);
+        if (mode != null && !mode.isEmpty()) {
+            sb.append(";MODE=").append(mode);
+        }
+        sb.append(";Catalog=").append(catalogUri).append(";JdbcDrivers=org.h2.Driver");
+        return sb.toString();
+    }
+
     private void initDB() {
         String url = expandSaikuHome(servletContext.getInitParameter("db.url"));
         String user = servletContext.getInitParameter("db.user");
@@ -156,10 +181,7 @@ public class Database {
                             new java.io.File(dsm.getFoodmartschema()).toURI().toString();
                     Properties p = new Properties();
                     p.setProperty("driver", "mondrian.olap4j.MondrianOlap4jDriver");
-                    p.setProperty(
-                            "location",
-                            "jdbc:mondrian:Jdbc=jdbc:h2:" + dsm.getFoodmartdir() + "/foodmart;" + "Catalog="
-                                    + catalogUri + ";JdbcDrivers=org.h2.Driver");
+                    p.setProperty("location", h2MondrianLocation(dsm.getFoodmartdir(), "foodmart", null, catalogUri));
                     p.setProperty("username", "sa");
                     p.setProperty("password", "");
                     p.setProperty("id", "4432dd20-fcae-11e3-a3ac-0800200c9a66");
@@ -233,10 +255,7 @@ public class Database {
                 new java.io.File(dsm.getFoodmartdir() + "/Bank.xml").toURI().toString();
         Properties p = new Properties();
         p.setProperty("driver", "mondrian.olap4j.MondrianOlap4jDriver");
-        p.setProperty(
-                "location",
-                "jdbc:mondrian:Jdbc=jdbc:h2:" + dsm.getFoodmartdir() + "/foodmart;" + "Catalog=" + catalogUri
-                        + ";JdbcDrivers=org.h2.Driver");
+        p.setProperty("location", h2MondrianLocation(dsm.getFoodmartdir(), "foodmart", null, catalogUri));
         p.setProperty("username", "sa");
         p.setProperty("password", "");
         p.setProperty("id", "4432dd20-fcae-11e3-a3ac-0800200c9a68");
@@ -286,9 +305,13 @@ public class Database {
                 p.setProperty("driver", "mondrian.olap4j.MondrianOlap4jDriver");
                 p.setProperty(
                         "location",
-                        "jdbc:mondrian:Jdbc=jdbc:h2:" + dsm.getEarthquakeDir() + "/earthquakes;MODE=MySQL;"
-                                + "Catalog=" + new java.io.File(dsm.getEarthquakeSchema()).toURI()
-                                + ";JdbcDrivers=org.h2.Driver");
+                        h2MondrianLocation(
+                                dsm.getEarthquakeDir(),
+                                "earthquakes",
+                                "MySQL",
+                                new java.io.File(dsm.getEarthquakeSchema())
+                                        .toURI()
+                                        .toString()));
                 p.setProperty("username", "sa");
                 p.setProperty("password", "");
                 p.setProperty("id", "4432dd20-fcae-11e3-a3ac-0800200c9a67");
