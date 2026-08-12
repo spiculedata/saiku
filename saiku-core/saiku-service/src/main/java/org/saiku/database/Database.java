@@ -72,6 +72,18 @@ public class Database {
             log.warn("Earthquakes sample data not loaded: {}", e.getMessage());
         }
         loadLegacyDatasources();
+        // saiku#1223: rebuild the workspace datasource cache from disk after the demo
+        // loaders. addDatasource() caches under the RAW name ("bank") while the on-disk
+        // .sds scan keys the same datasource workspace-prefixed ("unknown_bank"), so a
+        // first-time registration otherwise shows BOTH in /discover for the rest of the
+        // session. load() swaps in a fresh disk-scanned map (loadDatasources replaces,
+        // not merges), leaving only the canonical prefixed names. Idempotent — the same
+        // call every refreshAllConnections() makes.
+        try {
+            dsm.load();
+        } catch (Exception e) {
+            log.warn("Post-seed datasource cache reload failed: {}", e.getMessage());
+        }
     }
 
     private static String expandSaikuHome(String s) {
@@ -79,6 +91,38 @@ public class Database {
         String home = System.getProperty("saiku.home");
         if (home == null || home.isEmpty()) return s;
         return s.replace("../../", home + "/").replace("${saiku.home}", home);
+    }
+
+    /**
+     * saiku#1223: true when any registered datasource carries the given well-known {@code id}
+     * property. Used by the demo loaders (foodmart, bank, earthquakes) to skip re-registration
+     * when the repository already holds the datasource — the tenant prefix (e.g. {@code
+     * unknown_}) is applied after {@code addDatasource()}, so a name lookup misses the existing
+     * copy and the loader would register a raw-named duplicate ("bank" alongside
+     * "unknown_bank"). Fail-open: if the manager isn't ready, report not-registered so the
+     * legacy registration path still runs (worst case: the pre-fix duplicate).
+     */
+    private boolean isDatasourceRegistered(IDatasourceManager mgr, String id) {
+        try {
+            return containsDatasourceId(mgr.getDatasources(null).values(), id);
+        } catch (Exception notReady) {
+            return false;
+        }
+    }
+
+    /** Pure scan over datasource properties for a matching {@code id} — package-visible for tests. */
+    static boolean containsDatasourceId(java.util.Collection<SaikuDatasource> datasources, String id) {
+        if (datasources == null || id == null) {
+            return false;
+        }
+        for (SaikuDatasource ds : datasources) {
+            if (ds != null
+                    && ds.getProperties() != null
+                    && id.equals(ds.getProperties().getProperty("id"))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -150,21 +194,7 @@ public class Database {
                 // name check misses the staged copy. Instead, scan all
                 // registered datasources for the well-known foodmart UUID —
                 // robust against any tenant prefix.
-                boolean alreadySeeded = false;
-                try {
-                    for (SaikuDatasource ds : dsm.getDatasources(null).values()) {
-                        if (ds != null
-                                && ds.getProperties() != null
-                                && "4432dd20-fcae-11e3-a3ac-0800200c9a66"
-                                        .equals(ds.getProperties().getProperty("id"))) {
-                            alreadySeeded = true;
-                            break;
-                        }
-                    }
-                } catch (Exception ignored) {
-                    // dsm not ready / iteration failed — fall through to the
-                    // legacy registration path below (worst case: duplicate).
-                }
+                boolean alreadySeeded = isDatasourceRegistered(dsm, "4432dd20-fcae-11e3-a3ac-0800200c9a66");
                 if (!alreadySeeded) {
                     String schema = null;
                     try {
@@ -251,6 +281,14 @@ public class Database {
         } catch (Exception e) {
             log.error("Can't add Bank schema file to repo", e);
         }
+        // saiku#1223: after PR #1220 the mm_monthly guard above deliberately re-runs this
+        // block on pre-#1220 homes to add the new table — but the datasource registration
+        // below must NOT re-run when the repository already carries Bank (as unknown_bank),
+        // or /discover lists it twice. Same well-known-UUID scan the foodmart loader uses.
+        if (isDatasourceRegistered(dsm, "4432dd20-fcae-11e3-a3ac-0800200c9a68")) {
+            log.info("Bank datasource already present in repository; skipping re-registration.");
+            return;
+        }
         String catalogUri =
                 new java.io.File(dsm.getFoodmartdir() + "/Bank.xml").toURI().toString();
         Properties p = new Properties();
@@ -298,6 +336,12 @@ public class Database {
                     dsm.addSchema(schema, "/datasources/earthquakes.xml", null);
                 } catch (Exception e) {
                     log.error("Can't add schema file to repo", e);
+                }
+                // saiku#1223: same duplicate-registration class as bank — skip when the
+                // repository already carries Earthquakes under its well-known UUID.
+                if (isDatasourceRegistered(dsm, "4432dd20-fcae-11e3-a3ac-0800200c9a67")) {
+                    log.info("Earthquakes datasource already present in repository; skipping re-registration.");
+                    return;
                 }
                 Properties p = new Properties();
                 p.setProperty("advanced", "true");
