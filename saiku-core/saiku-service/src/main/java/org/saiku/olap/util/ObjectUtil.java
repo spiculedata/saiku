@@ -249,7 +249,7 @@ public class ObjectUtil {
 
     @NotNull
     public static SaikuMember convert(@NotNull Member m) {
-        return new SaikuMember(
+        SaikuMember sm = new SaikuMember(
                 m.getName(),
                 m.getUniqueName(),
                 m.getCaption(),
@@ -258,6 +258,52 @@ public class ObjectUtil {
                 m.getHierarchy().getUniqueName(),
                 m.getLevel().getUniqueName(),
                 m.isCalculated());
+        // saiku#835: non-measure members carry visibility via the standard
+        // $visible member property (olap4j Member has no isVisible()). Schema
+        // authors mark internal-only members (sentinel "Unknown" buckets,
+        // helper calc members) visible="false"; surface that on the DTO so
+        // the discovery endpoints can filter them like hidden measures (#778).
+        sm.setVisible(memberVisible(m));
+        return sm;
+    }
+
+    /**
+     * Read a member's {@code $visible} property, fail-open to {@code true} when the
+     * property is unset, unsupported by the dialect, or the read throws — hiding a
+     * member the author didn't hide is worse than showing one they did (saiku#835).
+     */
+    private static Boolean memberVisible(Member m) {
+        try {
+            return coerceVisible(m.getPropertyValue(Property.StandardMemberProperty.$visible));
+        } catch (Exception unsupportedOrFailed) {
+            return Boolean.TRUE;
+        }
+    }
+
+    /**
+     * Coerce a dialect-dependent {@code $visible} property value to a Boolean,
+     * failing OPEN (visible) on anything unrecognised. Mondrian hands back a
+     * {@link Boolean}; XMLA-style providers may hand back "true"/"false" strings
+     * or 0/1 numerics. Public: pure utility, unit-tested from the dto package.
+     */
+    public static Boolean coerceVisible(Object v) {
+        if (v == null) {
+            return Boolean.TRUE;
+        }
+        if (v instanceof Boolean) {
+            return (Boolean) v;
+        }
+        if (v instanceof Number) {
+            return ((Number) v).intValue() != 0;
+        }
+        if (v instanceof String) {
+            String s = ((String) v).trim();
+            if ("false".equalsIgnoreCase(s) || "0".equals(s)) {
+                return Boolean.FALSE;
+            }
+            return Boolean.TRUE;
+        }
+        return Boolean.TRUE;
     }
 
     @NotNull
