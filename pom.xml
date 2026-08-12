@@ -26,6 +26,10 @@
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
+        <!-- saiku#1036: silence the 9x "Using platform encoding" resource-filtering
+             warnings and make builds byte-identical across locales — children inherit
+             this (saiku-bom sets it too, but bom properties don't flow to siblings). -->
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <top.dir>${project.basedir}</top.dir>
         <!-- These properties are shadowed at module level by saiku-bom's
              dependencyManagement, but a child not importing the BOM would
@@ -214,6 +218,9 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>license-maven-plugin</artifactId>
+                <!-- saiku#1036: pin so a breaking auto-update can't surprise CI
+                     (an unpinned plugin resolves to LATEST at build time). -->
+                <version>2.4.0</version>
             </plugin>
             <plugin>
                 <groupId>org.apache.rat</groupId>

@@ -505,7 +505,7 @@ public class ThinQueryService implements Serializable {
                     + "ms\tFormat:\t" + (format - exec) + "ms\tTotals:\t" + (totals - format) + "ms\t Total: "
                     + (totals - start) + "ms");
 
-            result.setRuntime(new Double(format - start).intValue());
+            result.setRuntime((int) (format - start)); // saiku#1036: new Double(...) is deprecated-for-removal
             log.info(
                     "saiku.query.executed format=json cacheHit=false bytes=-1 runtimeMs={} rows={} queryName={}",
                     (totals - start),

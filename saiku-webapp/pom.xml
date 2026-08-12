@@ -150,7 +150,18 @@
                             <addClasspath>true</addClasspath>
                         </manifest>
                     </archive>
-
+                    <!-- saiku#1036: these two settings used to live in a SECOND
+                         maven-war-plugin declaration further down; Maven merged the
+                         duplicates with a model warning. Folded here so the
+                         effective model is explicit (applies to the exploded and
+                         custom-war executions exactly as the merge already did). -->
+                    <warSourceExcludes>WEB-INF/saiku-beans.xml</warSourceExcludes>
+                    <webResources>
+                        <resource>
+                            <directory>${project.basedir}/../saiku-ui/dist</directory>
+                            <targetPath>ui</targetPath>
+                        </resource>
+                    </webResources>
                 </configuration>
             </plugin>
             <plugin>
@@ -203,24 +214,10 @@
                     </execution>
                 </executions>
             </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <version>1.6</version>
-                <executions>
-                    <execution>
-                        <id>deploy-ui</id>
-                        <phase>prepare-package</phase>
-                        <configuration>
-                            <tasks>
-                            </tasks>
-                        </configuration>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
+            <!-- saiku#1036: a second maven-antrun-plugin declaration (id=deploy-ui,
+                 antrun 1.6, EMPTY deprecated <tasks/>) sat here doing literally
+                 nothing since the legacy UI deploy was removed — deleted. Its
+                 removal also clears the "Parameter tasks is deprecated" warning. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -243,19 +240,8 @@
                 <artifactId>jetty-ee10-maven-plugin</artifactId>
                 <version>12.0.16</version>
             </plugin>
-            <plugin>
-                <artifactId>maven-war-plugin</artifactId>
-                <version>3.5.1</version>
-                <configuration>
-                    <warSourceExcludes>WEB-INF/saiku-beans.xml</warSourceExcludes>
-                    <webResources>
-                        <resource>
-                            <directory>${project.basedir}/../saiku-ui/dist</directory>
-                            <targetPath>ui</targetPath>
-                        </resource>
-                    </webResources>
-                </configuration>
-            </plugin>
+            <!-- saiku#1036: the duplicate maven-war-plugin declaration that lived
+                 here (config-only) is folded into the single declaration above. -->
             <plugin>
                 <groupId>com.github.eirslett</groupId>
                 <artifactId>frontend-maven-plugin</artifactId>
@@ -350,20 +336,10 @@
                 </exclusion>
             </exclusions>
         </dependency>
-        <dependency>
-            <groupId>org.apache.hive</groupId>
-            <artifactId>hive-jdbc</artifactId>
-            <exclusions>
-                <exclusion><groupId>net.hydromatic</groupId><artifactId>quidem</artifactId></exclusion>
-                <exclusion><groupId>net.hydromatic</groupId><artifactId>linq4j</artifactId></exclusion>
-                <exclusion><groupId>org.pentaho</groupId><artifactId>pentaho-aggdesigner-algorithm</artifactId></exclusion>
-                <!-- hive-exec-0.13.1 ships a shaded protobuf 2.x that breaks
-                     Calcite Avatica's protobuf 4.x at class-load time
-                     (IncompatibleClassChangeError on GeneratedMessageV3
-                     vs GeneratedMessage). -->
-                <exclusion><groupId>org.apache.hive</groupId><artifactId>hive-exec</artifactId></exclusion>
-            </exclusions>
-        </dependency>
+        <!-- saiku#1036: a first hive-jdbc declaration sat here; the one further
+             down is a strict superset (adds the JDK-21-critical jdk.tools +
+             hbase:* exclusions) and won under Maven's duplicate handling anyway
+             — deleted this copy, comments preserved on the survivor. -->
         <dependency>
             <groupId>org.apache.hive</groupId>
             <artifactId>hive-cli</artifactId>
@@ -434,6 +410,10 @@
                 <exclusion><groupId>net.hydromatic</groupId><artifactId>quidem</artifactId></exclusion>
                 <exclusion><groupId>net.hydromatic</groupId><artifactId>linq4j</artifactId></exclusion>
                 <exclusion><groupId>org.pentaho</groupId><artifactId>pentaho-aggdesigner-algorithm</artifactId></exclusion>
+                <!-- hive-exec ships a shaded protobuf 2.x that breaks Calcite
+                     Avatica's protobuf 4.x at class-load time
+                     (IncompatibleClassChangeError on GeneratedMessageV3
+                     vs GeneratedMessage). -->
                 <exclusion><groupId>org.apache.hive</groupId><artifactId>hive-exec</artifactId></exclusion>
                 <!-- hive-jdbc 2.3 → hive-metastore → hbase-client → hbase-annotations
                      → jdk.tools:1.7 (system-scope ref to JDK 8 tools.jar). Same
