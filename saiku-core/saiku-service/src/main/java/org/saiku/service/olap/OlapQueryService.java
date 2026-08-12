@@ -339,11 +339,13 @@ public class OlapQueryService implements Serializable {
                             }
                         }
                     }
-                    // saiku#1714: drillthrough with two filter items of the SAME dimension
-                    // doesn't work; the move-to-columns workaround below was never enabled.
-                    //					if (filterDim.getInclusions().size() > 1) {
-                    //						query.moveDimension(filterDim, Axis.COLUMNS);
-                    //					}
+                    // saiku#1714 RESOLVED: the OSBI-era breakage (drillthrough failing when the
+                    // filter axis held two inclusions of the SAME dimension) is fixed upstream in
+                    // the Mondrian fork — compound-slicer DRILLTHROUGH now executes and its totals
+                    // are exact (verified against FoodMart; regression-pinned in DrillthroughIT).
+                    // The never-enabled move-to-columns workaround that sat commented here for a
+                    // decade is gone: moving a multi-member filter dim onto COLUMNS would have
+                    // drilled only the FIRST member's cell, silently dropping the rest.
                 }
             }
         }
