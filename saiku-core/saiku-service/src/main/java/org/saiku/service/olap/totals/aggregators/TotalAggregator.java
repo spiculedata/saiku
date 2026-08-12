@@ -66,14 +66,17 @@ public abstract class TotalAggregator {
 
     public void addData(Cell cell) {
         try {
-            // saiku#1715: totals never adopt the cell FORMAT_STRING - the fetch below
-            // was abandoned over an infinite-loop suspicion, so totals format with the
-            // constructor format only. Experiment preserved for the ticket:
-            //		if (format == null) {
-            //			String formatString = (String) cell.getPropertyValue(Property.StandardCellProperty.FORMAT_STRING);
-            //			this.format = Format.get(formatString, SaikuProperties.locale);
-            //
-            //		}
+            // saiku#1715 RESOLVED: constructor-format-only is the correct contract, so the
+            // long-abandoned "adopt the cell FORMAT_STRING" experiment is gone for good.
+            // Every aggregator that receives cells is built by TotalNode with the measure's
+            // own format (TotalsListsBuilder.getMeasureFormat reads FORMAT_STRING from the
+            // measure metadata, and calculated measures carry theirs via properties) —
+            // live-verified: base-measure totals render "#,###.00", calc-measure totals
+            // render their custom format (pinned in TotalsFormatIT). Adopting per-CELL
+            // formats here would only differ for format EXPRESSIONS that vary cell to
+            // cell, and an aggregate spanning differently-formatted cells has no single
+            // right format — the old experiment would have kept whichever cell hit
+            // addData first, i.e. nondeterministic output ordered by axis traversal.
             Object value = cell.getValue();
             if (value instanceof Number) {
                 double doubleVal;
