@@ -128,5 +128,7 @@
   "tile.retry": "Réessayer",
   "tile.empty": "Aucune donnée.",
   "tile.empty.filtered": "Aucune donnée ne correspond aux filtres actuels.",
-  "tile.resetFilters": "Réinitialiser les filtres"
+  "tile.resetFilters": "Réinitialiser les filtres",
+  "panels.topN": "Top N…",
+  "panels.sortBy": "Trier…"
 }
