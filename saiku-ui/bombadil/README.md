@@ -28,13 +28,13 @@ Security session auth, local launcher target).
   login form and keep a session, so it starts with a `JSESSIONID` cookie
   injected. `run.sh` mints one automatically by logging in to the target with
   `admin`/`admin` — nothing to do for the default local setup.
-- **A compatible browser (auto-managed).** bombadil 0.6.1 speaks an older Chrome
-  DevTools Protocol, so it can't drive a bleeding-edge system Chrome (Chrome 150+
-  floods `WS Invalid message` and finds "no actions"). `run.sh` therefore
-  downloads a pinned **Chrome for Testing** (131, verified CDP-clean) into
-  `.cache-chrome/` on first run and drives it via bombadil's `test-external`
-  mode. Override with `CHROME_BIN=/path/to/'Google Chrome for Testing'` or
-  `CHROME_VERSION=<ver>`. First run downloads ~150 MB (cached thereafter).
+- **System Chrome (managed by bombadil).** `run.sh` uses bombadil's managed
+  `browser test` mode against your system Chrome — no download, no pin
+  (saiku#1639: the old pinned Chrome-for-Testing + `test-external` path was
+  based on a wrong belief; A/B runs verified the managed mode drives Chrome
+  150 fine, and the `chromiumoxide WS Invalid message` flood in the log is
+  noisy but non-fatal). The managed mode has no browser-path flag; if a
+  future Chrome ever makes the CDP mismatch fatal, revisit pinning then.
 
 ## Run it
 
