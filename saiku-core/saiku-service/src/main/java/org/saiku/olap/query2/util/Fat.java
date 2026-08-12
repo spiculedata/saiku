@@ -486,8 +486,13 @@ public class Fat {
                     }
                     break;
                 case Measure:
-                    // saiku#1717: Measure-flavour filters are silently DROPPED here -
-                    // the query runs unconstrained. Implement or reject per that ticket.
+                    // saiku#1717: previously an empty stub — a Measure-flavour filter was
+                    // silently DROPPED and the query ran unconstrained (returning MORE
+                    // data than the client asked to constrain, with no error, no log).
+                    // Semantics: FILTER(set, <measure> <op> <numeric value>), composed
+                    // strictly from the typed parts; malformed input now throws instead
+                    // of silently widening the result.
+                    qfs.add(new GenericFilter(measurePredicate(f)));
                     break;
                 case N:
                     List<String> nexp = f.getExpressions();
@@ -508,6 +513,74 @@ public class Fat {
             }
         }
         return qfs;
+    }
+
+    /**
+     * saiku#1717 — build the MDX predicate for a Measure-flavour filter:
+     * {@code <measureRef> <op> <numericValue>}, e.g. {@code [Measures].[Store Sales] > 100000}.
+     *
+     * <p>Strictly composed from the typed parts (never a raw client expression — that's what
+     * the Generic flavour is for, and it stays as-is):
+     * <ul>
+     *   <li>{@code expressions[0]} — the measure: a bracketed unique name is used verbatim;
+     *       a bare name is wrapped as {@code [Measures].[name]} with the standard MDX
+     *       {@code ]} → {@code ]]} escape so the reference can't be broken out of.</li>
+     *   <li>{@code expressions[1]} — the comparison value: MUST parse as a number; anything
+     *       else is rejected so no free-form MDX can ride in through this typed surface.</li>
+     *   <li>{@code operator} — the comparison; {@code LIKE} has no numeric-MDX meaning and is
+     *       rejected.</li>
+     * </ul>
+     *
+     * Malformed input throws {@link IllegalArgumentException} — the pre-fix behaviour was a
+     * silent drop that WIDENED the result set, which is the worst possible failure mode for
+     * a filter. Package-visible for unit tests.
+     */
+    static String measurePredicate(ThinFilter f) {
+        List<String> mexp = f.getExpressions();
+        if (mexp == null || mexp.size() != 2) {
+            throw new IllegalArgumentException("Measure filter requires exactly 2 expressions [measure, value], got: "
+                    + (mexp == null ? "null" : String.valueOf(mexp.size())));
+        }
+        String measure = mexp.get(0) == null ? "" : mexp.get(0).trim();
+        String value = mexp.get(1) == null ? "" : mexp.get(1).trim();
+        if (measure.isEmpty()) {
+            throw new IllegalArgumentException("Measure filter: measure name/uniqueName is required");
+        }
+        try {
+            Double.parseDouble(value);
+        } catch (NumberFormatException nfe) {
+            throw new IllegalArgumentException(
+                    "Measure filter: comparison value must be numeric, got: '" + value + "'");
+        }
+        if (f.getOperator() == null) {
+            throw new IllegalArgumentException("Measure filter: comparison operator is required");
+        }
+        String op;
+        switch (f.getOperator()) {
+            case EQUALS:
+                op = "=";
+                break;
+            case NOTEQUAL:
+                op = "<>";
+                break;
+            case GREATER:
+                op = ">";
+                break;
+            case GREATER_EQUALS:
+                op = ">=";
+                break;
+            case SMALLER:
+                op = "<";
+                break;
+            case SMALLER_EQUALS:
+                op = "<=";
+                break;
+            default:
+                throw new IllegalArgumentException(
+                        "Measure filter: operator " + f.getOperator() + " is not a numeric comparison");
+        }
+        String measureRef = measure.startsWith("[") ? measure : "[Measures].[" + measure.replace("]", "]]") + "]";
+        return measureRef + " " + op + " " + value;
     }
 
     private static void extendSortableQuerySet(Query q, ISortableQuerySet qs, ThinSortableQuerySet ts) {
