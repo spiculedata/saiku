@@ -112,15 +112,17 @@ public class OlapQueryService implements Serializable {
             SaikuCube scube = qd.getFakeCube(xml);
             OlapConnection con = olapDiscoverService.getNativeConnection(scube.getConnection());
             IQuery query = qd.unparse(xml, con);
-            // saiku#1713: no name-collision guard - a caller-supplied name silently
-            // overwrites any query already registered under it (both branches below
-            // are identical apart from UUID generation).
+            // saiku#1713 RESOLVED: last-write-wins IS the contract, on purpose.
+            // This registry is the caller's own session workspace (olapQueryBean is
+            // session-scoped), the REST entry point is POST /saiku/{user}/query/{name}
+            // with create-or-replace semantics (re-opening a saved query re-registers
+            // it under the same name), and session restore (readObject below) replays
+            // every entry through this method - a reject-on-collision would break all
+            // three. Pinned in QueryNameCollisionIT.
             if (name == null) {
                 name = UUID.randomUUID().toString();
-                putIQuery(name, query);
-            } else {
-                putIQuery(name, query);
             }
+            putIQuery(name, query);
             return ObjectUtil.convert(query);
         } catch (Exception e) {
             throw new SaikuServiceException("Error creating query from xml", e);
