@@ -614,10 +614,57 @@ GET /rest/saiku/api/ai/query/{queryId}/drillthrough/columns
 }
 ```
 
-The `name` values are the MDX-qualified labels the downstream `?returns=`
-parameter expects. Use this endpoint to populate a column picker (UI) or
-to know which columns are valid before issuing a constrained drillthrough
-(agents).
+The `name` values are the MDX-qualified labels; `?returns=` accepts these
+verbatim, but agents don't need them — see the two accepted forms below.
+Use this endpoint to populate a column picker (UI) or to know which columns
+are valid before issuing a constrained drillthrough (agents).
+
+**`?returns=` accepts two forms per comma-separated token** (saiku#782):
+
+1. **Bare caption — the recommended agent path.** Exactly the keys a previous
+   drillthrough's row JSON used, so an agent can build a follow-up projection
+   straight from a result it already has, without ever seeing MDX:
+
+   ```http
+   GET /rest/saiku/api/ai/query/{queryId}/drillthrough?returns=Year,Product Family,Store Sales
+   ```
+
+   Bare tokens match case-insensitively against the cube's measure names (+
+   aliases) and every level name (+ aliases) across every hierarchy; the
+   server substitutes the fully-qualified MDX internally.
+
+2. **Fully-qualified MDX — kept for compat** with existing tooling and the
+   `/drillthrough/columns` output. Bracketed tokens pass through verbatim:
+
+   ```http
+   GET /rest/saiku/api/ai/query/{queryId}/drillthrough?returns=[Time].[Time].[Year],[Measures].[Store Sales]
+   ```
+
+Forms may be **mixed per token** in one request — each comma-separated entry
+is resolved independently:
+
+```http
+GET /rest/saiku/api/ai/query/{queryId}/drillthrough?returns=Year,[Measures].[Store Sales]
+```
+
+An unresolvable bare token returns the standard self-correction envelope —
+`status=VALIDATION_ERROR`, `field=returns`, and `available` listing the legal
+candidate set (measure names + level names) so the agent can retry without
+scraping metadata:
+
+```json
+{
+  "status": "VALIDATION_ERROR",
+  "field": "returns",
+  "error": "Unknown returns column 'Yearr'. Use either a bare measure/level caption or a fully-qualified MDX identifier like [Time].[Time].[Year].",
+  "available": ["Year", "Quarter", "Product Family", "Store Sales", "Unit Sales"]
+}
+```
+
+The schema endpoint (`GET /saiku/api/ai/schema/{cube}`) remains the
+source-of-truth for the candidate set — its `measures[].name` and
+`dimensions[].hierarchies[].levels[].name` values are exactly the bare tokens
+`returns=` resolves.
 
 **Two row-bounding options**, with different semantics:
 
