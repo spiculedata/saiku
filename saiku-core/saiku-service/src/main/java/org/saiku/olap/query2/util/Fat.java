@@ -72,7 +72,8 @@ public class Fat {
     private static void convertCalculatedMembers(Query q, List<ThinCalculatedMember> thinCms) {
         if (thinCms != null && thinCms.size() > 0) {
             for (ThinCalculatedMember qcm : thinCms) {
-                // TODO improve this
+                // Mondrian 3 vs 4 naming: 3.x hierarchy names carry no brackets, so
+                // strip them only on that scheme.
                 String name = qcm.getHierarchyName();
                 boolean mondrian3 = false;
                 if (SaikuMondrianHelper.getMondrianServer(q.getConnection())
@@ -485,7 +486,8 @@ public class Fat {
                     }
                     break;
                 case Measure:
-                    // TODO Implement this
+                    // saiku#1717: Measure-flavour filters are silently DROPPED here -
+                    // the query runs unconstrained. Implement or reject per that ticket.
                     break;
                 case N:
                     List<String> nexp = f.getExpressions();

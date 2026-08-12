@@ -66,9 +66,9 @@ public abstract class TotalAggregator {
 
     public void addData(Cell cell) {
         try {
-            // FIXME - maybe we should try to do fetch the format here, but seems to cause some issues? infinite loop?
-            // make
-            // sure we try this only once to override existing format?
+            // saiku#1715: totals never adopt the cell FORMAT_STRING - the fetch below
+            // was abandoned over an infinite-loop suspicion, so totals format with the
+            // constructor format only. Experiment preserved for the ticket:
             //		if (format == null) {
             //			String formatString = (String) cell.getPropertyValue(Property.StandardCellProperty.FORMAT_STRING);
             //			this.format = Format.get(formatString, SaikuProperties.locale);

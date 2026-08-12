@@ -22,7 +22,8 @@ public class ServletUtil {
             // ... and the query parameters
             // We identify any pathParams starting with "param" as query parameters
 
-            // FIXME we should probably be able to have array params as well
+            // Single-valued params only: repeated params (?p=a&p=b) collapse to the
+            // first value - no caller passes multi-value parameters today.
             Enumeration<String> enumeration = req.getParameterNames();
             while (enumeration.hasMoreElements()) {
                 String param = (String) enumeration.nextElement();

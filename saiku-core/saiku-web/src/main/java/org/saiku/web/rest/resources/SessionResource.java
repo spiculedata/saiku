@@ -157,7 +157,8 @@ public class SessionResource {
         try {
             userService.checkFolders();
         } catch (Exception e) {
-            // TODO detect if plugin or not.
+            // Best-effort: checkFolders must never block session creation (legacy
+            // plugin-mode deployments have no user folders to check).
         }
 
         return Response.ok().entity(sess).build();

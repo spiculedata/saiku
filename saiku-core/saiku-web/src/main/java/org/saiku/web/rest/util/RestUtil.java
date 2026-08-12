@@ -145,7 +145,6 @@ public class RestUtil {
 
                 metaprops.putAll(dcell.getProperties());
 
-                // TODO no properties  (NULL) for now -
                 return new Cell(dcell.getFormattedValue(), metaprops, Cell.Type.DATA_CELL);
             }
             if (acell instanceof MemberCell) {
@@ -171,7 +170,6 @@ public class RestUtil {
                 }
                 //				props.putAll(mcell.getProperties());
 
-                // TODO no properties  (NULL) for now -
                 if ("row_header_header".equals(mcell.getProperty("__headertype"))) {
                     headertype = Cell.Type.ROW_HEADER_HEADER;
                 }

@@ -152,7 +152,7 @@ public class SaikuMondrianHelper {
      * selected the SPA mutes dimensions whose link set is not a superset of
      * the required measure groups, so virtual cubes that mix conformed and
      * non-conformed dims surface the asymmetry instead of silently producing
-     * sparse/empty cellsets (saiku-cloud#TODO).
+     * sparse/empty cellsets (the saiku-cloud applicability-hinting feature).
      *
      * <p>Returns:
      * <ul>

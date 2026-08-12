@@ -1105,7 +1105,6 @@ public class ThinQueryService implements Serializable {
                 rowsIndex = (rowsIndex + 1) & 1;
             }
 
-            // TODO - refactor this using axis ordinals etc.
             final AxisInfo[] axisInfos = new AxisInfo[] {
                 new AxisInfo(cellSet.getAxes().get(rowsIndex)),
                 new AxisInfo(cellSet.getAxes().get((rowsIndex + 1) & 1))

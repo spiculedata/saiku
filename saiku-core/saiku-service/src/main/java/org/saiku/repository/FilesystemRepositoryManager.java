@@ -443,7 +443,6 @@ public class FilesystemRepositoryManager implements IRepositoryManager {
         Acl2 acl2 = new Acl2(node);
         acl2.setAdminRoles(userService.getAdminRoles());
         if (!acl2.canRead(node, username, roles)) {
-            // TODO Throw exception
             throw new RepositoryException();
         }
 

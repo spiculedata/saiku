@@ -33,18 +33,18 @@ public class AnonymousSessionService implements ISessionService {
     }
 
     public Map<String, Object> login(HttpServletRequest req, String username, String password) {
-        // TODO Auto-generated method stub
+        // Intentionally a no-op (saiku#1164): anonymous mode has no credential
+        // lifecycle - the fixed anonymous session is created in the constructor.
         return null;
     }
 
     public void logout(HttpServletRequest req) {
-        // TODO Auto-generated method stub
-
+        // Intentionally a no-op (saiku#1164): nothing to invalidate for the
+        // fixed anonymous session.
     }
 
     public void authenticate(HttpServletRequest req, String username, String password) {
-        // TODO Auto-generated method stub
-
+        // Intentionally a no-op (saiku#1164): anonymous mode never authenticates.
     }
 
     public Map<String, Object> getSession() {
