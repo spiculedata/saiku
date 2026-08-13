@@ -12,6 +12,9 @@
   import type { Snippet } from "svelte";
   import type { SaikuApp } from "$lib/api/apps";
   import { ChevronDown } from "lucide-svelte";
+  import { effectiveLabel, isSelectable, optionsFor } from "$lib/views/app/contextPill";
+  import { badgeFor } from "$lib/views/app/liveBadge";
+  import { appConnection } from "$lib/stores/appConnection.svelte";
 
   interface Props {
     app: SaikuApp;
@@ -19,11 +22,25 @@
     controls?: Snippet;
     /** Edit-mode selection: double-click the wordmark to edit the header. */
     onSelect?: () => void;
+    /** Currently selected context-pill label (AppShell owns the state). */
+    contextValue?: string;
+    /** Fired when the viewer picks a different context option. */
+    onContextChange?: (label: string) => void;
   }
 
-  let { app, controls, onSelect }: Props = $props();
+  let { app, controls, onSelect, contextValue, onContextChange }: Props = $props();
 
   const header = $derived(app.header ?? {});
+  const pill = $derived(header.contextPill);
+  const pillOptions = $derived(optionsFor(pill));
+  const pillSelectable = $derived(isSelectable(pill));
+  /** What the pill shows — the live selection when it's still on offer, else
+   *  the configured default (see effectiveLabel). */
+  const pillValue = $derived(effectiveLabel(pill, contextValue));
+
+  // Poll only while a header is on screen; teardown stops the timer.
+  $effect(() => appConnection.watch());
+  const badge = $derived(badgeFor(header.liveBadge, appConnection.state));
 
   /** Split the app name around the first occurrence of the accent substring so
    *  the middle run can be coloured. Returns [before, accent, after]. */
@@ -61,16 +78,35 @@
   </div>
 
   <div class="saiku-app__controls">
-    {#if header.contextPill}
-      <button type="button" class="saiku-app__ctxpill" title={header.contextPill.value}>
-        <span class="saiku-app__ctxpill-label">{header.contextPill.label}</span>
+    {#if pill}
+      <!-- With options the pill is a real control: a transparent native <select>
+           is layered over the styled face, so it keeps the design while getting
+           the platform's keyboard handling, focus ring and mobile picker for
+           free (the same trick the reference mock-up uses). -->
+      <div class="saiku-app__ctxpill" class:saiku-app__ctxpill--live={pillSelectable} title={pillValue}>
+        <span class="saiku-app__ctxpill-label">{pill.label}</span>
         <span class="saiku-app__ctxpill-value"
-          >{header.contextPill.value}<ChevronDown size={13} aria-hidden="true" /></span>
-      </button>
+          >{pillValue}<ChevronDown size={13} aria-hidden="true" /></span>
+        {#if pillSelectable}
+          <select
+            class="saiku-app__ctxpill-select"
+            aria-label={pill.label}
+            value={pillValue}
+            onchange={(e) => onContextChange?.((e.currentTarget as HTMLSelectElement).value)}
+          >
+            {#each pillOptions as o (o.label)}
+              <option value={o.label}>{o.label}</option>
+            {/each}
+          </select>
+        {/if}
+      </div>
     {/if}
-    {#if header.liveBadge}
-      <span class="saiku-app__livebadge"><span class="saiku-app__livedot" aria-hidden="true"
-        ></span>{header.liveBadge}</span>
+    {#if badge}
+      <!-- Reflects a real probe (see appConnection): green when connected,
+           amber on a demo instance, red when Saiku can't be reached. -->
+      <span class="saiku-app__livebadge" data-tone={badge.tone} title={badge.hint}>
+        <span class="saiku-app__livedot" aria-hidden="true"></span>{badge.text}
+      </span>
     {/if}
     {@render controls?.()}
   </div>
@@ -144,6 +180,7 @@
   }
   /* Context pill — tiny uppercase label over a bold value + chevron. */
   .saiku-app__ctxpill {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -153,9 +190,33 @@
     background: var(--saiku-app-card, #fff);
     border: 1px solid var(--border, #e4dcca);
     box-shadow: 0 1px 2px rgba(30, 40, 30, 0.05);
-    cursor: pointer;
     font-family: -apple-system, "Segoe UI", sans-serif;
     line-height: 1.1;
+  }
+  .saiku-app__ctxpill--live {
+    cursor: pointer;
+  }
+  .saiku-app__ctxpill--live:hover {
+    border-color: var(--saiku-app-accent, #c85a3a);
+  }
+  /* Invisible but fully functional: the real control sits over the styled face
+     so the design survives while the platform supplies the behaviour. */
+  .saiku-app__ctxpill-select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+    border: 0;
+    /* 16px avoids the iOS zoom-on-focus. */
+    font-size: 16px;
+  }
+  /* The native focus ring lands on the transparent <select>, so mirror it onto
+     the visible face — otherwise keyboard focus is invisible. */
+  .saiku-app__ctxpill:focus-within {
+    outline: 2px solid var(--saiku-app-accent, #2e5e43);
+    outline-offset: 2px;
   }
   .saiku-app__ctxpill-label {
     font-size: 0.56rem;
@@ -180,6 +241,7 @@
     border-radius: 999px;
     background: var(--saiku-app-accent-soft, #eaf3ec);
     color: var(--saiku-app-accent-strong, #2e5e43);
+    /* Tone overrides below; the accent default covers "positive". */
     font-family: -apple-system, "Segoe UI", sans-serif;
     font-size: 0.72rem;
     font-weight: 700;
@@ -192,5 +254,19 @@
     border-radius: 50%;
     background: currentColor;
     flex-shrink: 0;
+  }
+  /* A failure has to be legible even in an app whose accent happens to be red
+     or green, so these use fixed status colours rather than brand tokens. */
+  .saiku-app__livebadge[data-tone="warning"] {
+    background: #fdf1dd;
+    color: #8a5a12;
+  }
+  .saiku-app__livebadge[data-tone="danger"] {
+    background: #fdeceb;
+    color: #a3271b;
+  }
+  .saiku-app__livebadge[data-tone="neutral"] {
+    background: var(--saiku-app-ground, #f1f1ef);
+    color: var(--saiku-app-muted, #7b7a75);
   }
 </style>

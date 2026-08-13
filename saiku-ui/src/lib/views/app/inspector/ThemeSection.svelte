@@ -3,7 +3,7 @@
    * CSS. Writes through appDoc (setTheme / applyPreset) for live preview. */
   import { appDoc } from "$lib/stores/appDoc.svelte";
   import { THEME_PRESETS, resolveTokens, type ResolvedTokens } from "$lib/dashboard/appThemePresets";
-  import { FONT_ALLOWLIST } from "$lib/dashboard/appTheme";
+  import { FONT_ALLOWLIST, NUMERAL_CHOICES } from "$lib/dashboard/appTheme";
   import { themeFromBrief } from "$lib/dashboard/themeFromBrief";
   import { Sparkles } from "lucide-svelte";
 
@@ -22,6 +22,7 @@
   const RADII: ResolvedTokens["radius"][] = ["none", "sm", "md", "lg", "xl"];
   const SHADOWS: ResolvedTokens["shadow"][] = ["none", "sm", "md", "lg"];
   const DENSITIES: ResolvedTokens["density"][] = ["compact", "cozy", "comfortable"];
+  const KPI_ACCENTS: ResolvedTokens["kpiAccent"][] = ["none", "tone"];
 
   let advancedOpen = $state(false);
   let brief = $state("");
@@ -102,6 +103,13 @@
       {#each FONT_ALLOWLIST as f (f.key)}<option value={f.key}>{f.label}</option>{/each}
     </select>
   </label>
+  <label class="insp-row"><span>Numbers</span>
+    <select class="insp-select" value={tok.numerals}
+      onchange={(e) => setToken("numerals", (e.currentTarget as HTMLSelectElement).value)}>
+      {#each NUMERAL_CHOICES as n (n.key)}<option value={n.key}>{n.label}</option>{/each}
+    </select>
+  </label>
+  <p class="insp-hint">KPI headlines and numeric table cells. Monospace keeps figures aligned.</p>
 </div>
 
 <div class="insp-section">
@@ -121,6 +129,12 @@
       {#each DENSITIES as d (d)}<button type="button" class:is-active={tok.density === d} onclick={() => setToken("density", d)}>{d}</button>{/each}
     </div>
   </div>
+  <div class="insp-row"><span>KPI edge bar</span>
+    <div class="insp-seg">
+      {#each KPI_ACCENTS as k (k)}<button type="button" class:is-active={tok.kpiAccent === k} onclick={() => setToken("kpiAccent", k)}>{k}</button>{/each}
+    </div>
+  </div>
+  <p class="insp-hint">"Tone" colours each KPI's left edge by whether it's up or down.</p>
 </div>
 
 <div class="insp-section">
