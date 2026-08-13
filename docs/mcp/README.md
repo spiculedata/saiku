@@ -43,6 +43,13 @@ original design spec).
 4. Ask Claude: *"What cubes exist in Saiku?"* → it calls `list_cubes`, then
    `describe_cube`, then `run_query` — typed results, no MDX in sight.
 
+### Sample agents (Python + TypeScript)
+
+[`examples/mcp-agent/`](../../examples/mcp-agent/README.md) ships two minimal
+programmatic agents — a Claude-driven tool loop when `ANTHROPIC_API_KEY` is
+set, and an LLM-free connectivity smoke check when it isn't. They're the
+starting point for your own agent, cron job, or CI probe.
+
 ### Any other MCP client (Claude Code, Cursor, custom agents)
 
 Point a streamable-HTTP MCP client at the endpoint with Basic auth. Claude
