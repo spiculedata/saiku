@@ -27,10 +27,21 @@
     rootSelectorFor,
     isRailNav,
     resolveActivePageId,
+    firstAppCube,
   } from "$lib/views/app/appShell";
   import { appSkinCss } from "$lib/views/app/appSkin";
   import { provideAppThemeSignature } from "$lib/views/app/appThemeContext";
-  import { effectiveLabel, optionByLabel, selectionFor } from "$lib/views/app/contextPill";
+  import {
+    MAX_LEVEL_OPTIONS,
+    effectiveLabel,
+    isLevelSourced,
+    levelOptionsTruncated,
+    optionByLabel,
+    optionsFromMembers,
+    selectionFor,
+  } from "$lib/views/app/contextPill";
+  import { fetchLevelMembers } from "$lib/views/app/levelMembers";
+  import type { AppContextPillOption } from "$lib/api/apps";
   import { session } from "$lib/stores/session.svelte";
   import type { TextTokenContext } from "$lib/views/app/textTokens";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
@@ -42,18 +53,6 @@
   import AppPageView from "$lib/views/app/AppPageView.svelte";
   import AppAssistant from "$lib/views/app/AppAssistant.svelte";
 
-  /** First cube bound to any tile across the app — the assistant's fallback
-   *  scope when the assistant slot doesn't name one explicitly. */
-  function firstAppCube(a: SaikuApp): AppAssistantCube | null {
-    for (const p of a.pages) {
-      const grid = p.grid as { tiles?: Array<{ cube?: AppAssistantCube }> } | null;
-      for (const t of grid?.tiles ?? []) {
-        if (t.cube?.connectionName && t.cube?.cubeName) return t.cube;
-      }
-    }
-    return null;
-  }
-  type AppAssistantCube = { connectionName: string; catalog: string; schema: string; cubeName: string };
 
   interface Props {
     app: SaikuApp;
@@ -132,7 +131,44 @@
   const CONTEXT_PILL_SOURCE = "app-context-pill";
 
   let contextValue = $state<string | undefined>(undefined);
-  const pillLabel = $derived(effectiveLabel(app.header?.contextPill, contextValue));
+
+  /* Options read from the bound cube level, when the pill sources them that
+   * way. A hand-typed list goes stale as soon as a store opens or is renamed;
+   * the cube is the thing that actually knows. Empty until loaded, and empty
+   * forever if the fetch fails — the pill then renders as static text, which
+   * is the same as not having been configured. */
+  let contextOptions = $state<AppContextPillOption[]>([]);
+  let contextTruncated = $state(false);
+
+  $effect(() => {
+    const pill = app.header?.contextPill;
+    if (!isLevelSourced(pill)) {
+      contextOptions = [];
+      contextTruncated = false;
+      return;
+    }
+    const cube = firstAppCube(app);
+    const f = pill!.filter!;
+    let cancelled = false;
+    void fetchLevelMembers(cube, f.dimension, f.hierarchy, f.level).then((members) => {
+      if (cancelled) return;
+      contextOptions = optionsFromMembers(pill, members);
+      contextTruncated = levelOptionsTruncated(members.length);
+      if (contextTruncated) {
+        // Never present a partial list as if it were the whole level.
+        console.warn(
+          `[saiku] context selector: ${f.level} has ${members.length} members; showing the first ${MAX_LEVEL_OPTIONS}. A pill is the wrong control for a level this large.`,
+        );
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  const pillLabel = $derived(
+    effectiveLabel(app.header?.contextPill, contextValue, contextOptions),
+  );
 
   /** The live values page chrome binds against (see textTokens.ts). Recomputed
    *  whenever the selection, the app or the signed-in user changes; `now` is
@@ -153,7 +189,7 @@
   function handleContextChange(label: string): void {
     const pill = app.header?.contextPill;
     contextValue = label;
-    const selection = selectionFor(pill, optionByLabel(pill, label));
+    const selection = selectionFor(pill, optionByLabel(pill, label, contextOptions));
     if (selection.kind === "none") return;
     if (selection.kind === "clear") {
       // Remove the selection rather than registering an empty one — a filter
@@ -234,6 +270,7 @@
       {app}
       {controls}
       {contextValue}
+      {contextOptions}
       onContextChange={handleContextChange}
       onSelect={onEditChrome ? () => onEditChrome("header") : undefined} />
 

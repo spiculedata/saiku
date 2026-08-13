@@ -55,8 +55,21 @@ export interface AppContextPill {
   label: string;
   /** Current / default value shown when nothing is selected. */
   value: string;
-  /** Selectable options. Absent or empty → the pill stays static text. */
+  /** Where the selectable options come from.
+   *   - "list" (default) — the hand-authored {@link options} array.
+   *   - "level" — every member of the bound {@link filter} level, read from
+   *     the cube at render. A typed list goes stale the moment a store is
+   *     opened or renamed; the cube is the thing that actually knows.
+   *  Absent means "list", so apps authored before this field are unchanged. */
+  optionsSource?: "list" | "level";
+  /** Selectable options when {@link optionsSource} is "list". Absent or empty
+   *  → the pill stays static text. */
   options?: AppContextPillOption[];
+  /** Prepend an entry that clears the filter (an "All stores" row). Only
+   *  meaningful for "level" source — a hand-authored list can just include one. */
+  includeAll?: boolean;
+  /** Wording for that entry. Defaults to "All". */
+  allLabel?: string;
   /** The dim/hier/level the selection filters. Without it the selector only
    *  changes the displayed label — useful for a purely cosmetic pill. */
   filter?: { dimension: string; hierarchy: string; level: string };

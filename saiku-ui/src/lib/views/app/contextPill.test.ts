@@ -11,8 +11,12 @@ import { describe, expect, it } from "vitest";
 import type { AppContextPill } from "$lib/api/apps";
 import {
   ALL_MEMBER,
+  MAX_LEVEL_OPTIONS,
   effectiveLabel,
+  isLevelSourced,
   isSelectable,
+  levelOptionsTruncated,
+  optionsFromMembers,
   optionByLabel,
   optionsFor,
   selectionFor,
@@ -151,3 +155,143 @@ describe("selectionFor", () => {
   });
 });
 
+
+/* A hand-typed option list goes stale the moment a store is opened, closed or
+ * renamed. Sourcing from the bound level means the cube — the thing that
+ * actually knows — supplies the choices. */
+describe("cube-sourced options", () => {
+  const LEVEL_PILL: AppContextPill = {
+    label: "Store",
+    value: "Portland",
+    optionsSource: "level",
+    filter: TARGET,
+  };
+  const MEMBERS = [
+    { caption: "Portland", uniqueName: "[Store].[Stores].[USA].[OR].[Portland]" },
+    { caption: "Seattle", uniqueName: "[Store].[Stores].[USA].[WA].[Seattle]" },
+  ];
+
+  describe("isLevelSourced", () => {
+    it("is true only with a source AND a complete binding", () => {
+      expect(isLevelSourced(LEVEL_PILL)).toBe(true);
+      expect(isLevelSourced({ ...LEVEL_PILL, filter: undefined })).toBe(false);
+      expect(isLevelSourced({ ...LEVEL_PILL, optionsSource: "list" })).toBe(false);
+      expect(isLevelSourced(PILL)).toBe(false);
+      expect(isLevelSourced(undefined)).toBe(false);
+    });
+
+    it("is false when the binding is only half filled in", () => {
+      expect(
+        isLevelSourced({ ...LEVEL_PILL, filter: { dimension: "Store", hierarchy: "", level: "x" } }),
+      ).toBe(false);
+    });
+  });
+
+  describe("optionsFromMembers", () => {
+    it("uses each member's real unique name, not its caption", () => {
+      expect(optionsFromMembers(LEVEL_PILL, MEMBERS)).toEqual([
+        { label: "Portland", member: "[Store].[Stores].[USA].[OR].[Portland]" },
+        { label: "Seattle", member: "[Store].[Stores].[USA].[WA].[Seattle]" },
+      ]);
+    });
+
+    it("prepends an All entry on request", () => {
+      const out = optionsFromMembers({ ...LEVEL_PILL, includeAll: true }, MEMBERS);
+      expect(out[0]).toEqual({ label: "All", member: ALL_MEMBER });
+      expect(out).toHaveLength(3);
+    });
+
+    it("honours a custom All label", () => {
+      const out = optionsFromMembers(
+        { ...LEVEL_PILL, includeAll: true, allLabel: "All stores · National" },
+        MEMBERS,
+      );
+      expect(out[0].label).toBe("All stores · National");
+    });
+
+    it("skips members missing a caption or unique name", () => {
+      const out = optionsFromMembers(LEVEL_PILL, [
+        ...MEMBERS,
+        { caption: "", uniqueName: "[x]" },
+        { caption: "Ghost", uniqueName: "  " },
+      ]);
+      expect(out).toHaveLength(2);
+    });
+
+    /* A native select with thousands of entries is unusable — the cap is real,
+     * and callers are told when it bit rather than shown a partial list as if
+     * it were complete. */
+    it("caps a huge level and reports the truncation", () => {
+      const many = Array.from({ length: MAX_LEVEL_OPTIONS + 50 }, (_, i) => ({
+        caption: `M${i}`,
+        uniqueName: `[M].[${i}]`,
+      }));
+      expect(optionsFromMembers(LEVEL_PILL, many)).toHaveLength(MAX_LEVEL_OPTIONS);
+      expect(levelOptionsTruncated(many.length)).toBe(true);
+      expect(levelOptionsTruncated(MEMBERS.length)).toBe(false);
+    });
+
+    it("returns nothing without a pill", () => {
+      expect(optionsFromMembers(undefined, MEMBERS)).toEqual([]);
+    });
+  });
+
+  describe("integration with the existing helpers", () => {
+    it("is not selectable until the members have loaded", () => {
+      expect(isSelectable(LEVEL_PILL)).toBe(false);
+      expect(isSelectable(LEVEL_PILL, [])).toBe(false);
+      expect(isSelectable(LEVEL_PILL, optionsFromMembers(LEVEL_PILL, MEMBERS))).toBe(true);
+    });
+
+    it("renders the resolved options rather than any stale typed list", () => {
+      const stale: AppContextPill = { ...LEVEL_PILL, options: [{ label: "Closed store" }] };
+      const labels = optionsFor(stale, optionsFromMembers(stale, MEMBERS)).map((o) => o.label);
+      expect(labels).toEqual(["Portland", "Seattle"]);
+      expect(labels).not.toContain("Closed store");
+    });
+
+    it("selects a cube-sourced option by its real member", () => {
+      const resolved = optionsFromMembers(LEVEL_PILL, MEMBERS);
+      const s = selectionFor(LEVEL_PILL, optionByLabel(LEVEL_PILL, "Seattle", resolved));
+      expect(s.kind).toBe("set");
+      if (s.kind === "set") {
+        expect(s.filter.members).toEqual(["[Store].[Stores].[USA].[WA].[Seattle]"]);
+      }
+    });
+
+    it("validates the live label against the resolved list", () => {
+      const resolved = optionsFromMembers(LEVEL_PILL, MEMBERS);
+      expect(effectiveLabel(LEVEL_PILL, "Seattle", resolved)).toBe("Seattle");
+      // A store that has since closed falls back to a real option.
+      expect(effectiveLabel(LEVEL_PILL, "Bakersfield", resolved)).toBe("Portland");
+    });
+
+    /* A configured default that no member matches used to be synthesised as a
+     * leading entry carrying the ALL sentinel — a row reading "Portland #14"
+     * that silently cleared the filter when picked. */
+    it("never synthesises an entry for a default the cube doesn't have", () => {
+      const mismatched: AppContextPill = { ...LEVEL_PILL, value: "Portland #14" };
+      const resolved = optionsFromMembers(mismatched, MEMBERS);
+      const labels = optionsFor(mismatched, resolved).map((o) => o.label);
+      expect(labels).toEqual(["Portland", "Seattle"]);
+      expect(labels).not.toContain("Portland #14");
+    });
+
+    it("displays a real option when the configured default doesn't exist", () => {
+      const mismatched: AppContextPill = { ...LEVEL_PILL, value: "Portland #14" };
+      const resolved = optionsFromMembers(mismatched, MEMBERS);
+      expect(effectiveLabel(mismatched, undefined, resolved)).toBe("Portland");
+    });
+
+    it("prefers the All entry as the initial label, which is what's true", () => {
+      const withAll: AppContextPill = { ...LEVEL_PILL, value: "nope", includeAll: true };
+      const resolved = optionsFromMembers(withAll, MEMBERS);
+      expect(effectiveLabel(withAll, undefined, resolved)).toBe("All");
+    });
+
+    it("keeps a configured default that DOES match a member", () => {
+      const resolved = optionsFromMembers(LEVEL_PILL, MEMBERS);
+      expect(effectiveLabel(LEVEL_PILL, undefined, resolved)).toBe("Portland");
+    });
+  });
+});
