@@ -1,0 +1,91 @@
+<?xml version='1.0'?>
+<!--
+  Mondrian 4 schema for the lakehouse demo: one denormalised fact table
+  (iceberg.sales.fact_orders, seeded by seed.sql) exposed as a cube with
+  Market, Time, and Order attributes. Saiku's Mondrian + Calcite backend
+  turns the MDX you build in the UI into SQL that Trino executes against
+  Iceberg tables on MinIO.
+-->
+<Schema name='Lakehouse' metamodelVersion='4.0'>
+
+    <PhysicalSchema>
+        <Table name='fact_orders'>
+            <Key>
+                <Column name='order_key'/>
+            </Key>
+        </Table>
+    </PhysicalSchema>
+
+    <Cube name='Lakehouse Sales'>
+        <Dimensions>
+
+            <Dimension name='Market' key='Nation'>
+                <Attributes>
+                    <Attribute name='Region' table='fact_orders' keyColumn='region_name' hasHierarchy='false'/>
+                    <Attribute name='Nation' table='fact_orders' hasHierarchy='false'>
+                        <Key>
+                            <Column name='region_name'/>
+                            <Column name='nation_name'/>
+                        </Key>
+                        <Name>
+                            <Column name='nation_name'/>
+                        </Name>
+                    </Attribute>
+                </Attributes>
+                <Hierarchies>
+                    <Hierarchy name='Markets' allMemberName='All Markets'>
+                        <Level attribute='Region'/>
+                        <Level attribute='Nation'/>
+                    </Hierarchy>
+                </Hierarchies>
+            </Dimension>
+
+            <Dimension name='Time' key='Month' type='TIME'>
+                <Attributes>
+                    <Attribute name='Year' table='fact_orders' keyColumn='order_year' datatype='Integer'
+                               levelType='TimeYears' hasHierarchy='false'/>
+                    <Attribute name='Month' table='fact_orders'
+                               levelType='TimeMonths' hasHierarchy='false'>
+                        <Key>
+                            <Column name='order_year'/>
+                            <Column name='order_month'/>
+                        </Key>
+                        <Name>
+                            <Column name='order_month'/>
+                        </Name>
+                    </Attribute>
+                </Attributes>
+                <Hierarchies>
+                    <Hierarchy name='Time' allMemberName='All Time'>
+                        <Level attribute='Year'/>
+                        <Level attribute='Month'/>
+                    </Hierarchy>
+                </Hierarchies>
+            </Dimension>
+
+            <Dimension name='Order' key='Status'>
+                <Attributes>
+                    <Attribute name='Status' table='fact_orders' keyColumn='order_status' hasHierarchy='true'/>
+                    <Attribute name='Priority' table='fact_orders' keyColumn='order_priority' hasHierarchy='true'/>
+                </Attributes>
+            </Dimension>
+
+        </Dimensions>
+
+        <MeasureGroups>
+            <MeasureGroup name='Orders' table='fact_orders'>
+                <Measures>
+                    <Measure name='Total Price' column='total_price' aggregator='sum' formatString='#,###.00'/>
+                    <Measure name='Order Count' column='order_key' aggregator='count' formatString='#,###'/>
+                    <Measure name='Avg Order Value' column='total_price' aggregator='avg' formatString='#,###.00'/>
+                </Measures>
+                <DimensionLinks>
+                    <FactLink dimension='Market'/>
+                    <FactLink dimension='Time'/>
+                    <FactLink dimension='Order'/>
+                </DimensionLinks>
+            </MeasureGroup>
+        </MeasureGroups>
+    </Cube>
+
+</Schema>

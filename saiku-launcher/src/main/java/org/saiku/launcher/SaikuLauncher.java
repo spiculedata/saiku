@@ -228,6 +228,28 @@ public class SaikuLauncher implements Callable<Integer> {
             webapp.setWar(warPath.toString());
             webapp.setExtractWAR(true);
 
+            // Drop-in driver support: every *.jar in <saiku-home>/plugins joins the
+            // webapp classpath, so operators can add JDBC drivers (Trino, Redshift,
+            // ClickHouse, ...) without rebuilding the fat-JAR. Scanned once at boot;
+            // comma-separated because Windows paths contain ':'.
+            Path pluginsDir = saikuHome.resolve("plugins");
+            if (Files.isDirectory(pluginsDir)) {
+                try (var jarPaths = Files.list(pluginsDir)) {
+                    String extraClasspath = jarPaths
+                            .filter(p -> p.getFileName()
+                                    .toString()
+                                    .toLowerCase(java.util.Locale.ROOT)
+                                    .endsWith(".jar"))
+                            .map(p -> p.toAbsolutePath().toString())
+                            .sorted()
+                            .collect(java.util.stream.Collectors.joining(","));
+                    if (!extraClasspath.isEmpty()) {
+                        webapp.setExtraClasspath(extraClasspath);
+                        System.out.println("Plugins on webapp classpath: " + extraClasspath);
+                    }
+                }
+            }
+
             // saiku#1165 audit-3: global backstop on form-urlencoded request
             // bodies (the per-endpoint caps only covered specific resources).
             // Multipart/file uploads are bounded separately by the Jersey

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+    Saiku datasource for the lakehouse demo.
+
+    Copy this file to
+        <saiku-home>/repository/data/unknown/datasources/lakehouse.sds
+    and LakehouseSales.xml to
+        <saiku-home>/data/LakehouseSales.xml
+    (setup.ps1 / setup.sh replace the home-path token in the location line
+    for you), then drop the trino-jdbc jar into <saiku-home>/plugins/ and
+    start Saiku. NOTE: the token must never appear inside this comment -
+    a substituted path containing consecutive hyphens would make the XML
+    comment illegal.
+
+    The connect string reads left to right as the demo's whole thesis:
+    Mondrian (OLAP engine) → Trino JDBC → Iceberg catalog → sales schema.
+    user=saiku rides on the JDBC URL because Trino requires a user even
+    with no authentication configured.
+-->
+<dataSource>
+    <driver>mondrian.olap4j.MondrianOlap4jDriver</driver>
+    <id>7a1c9f40-lake-4dem-0000-000000000904</id>
+    <location>jdbc:mondrian:Jdbc=jdbc:trino://localhost:8090/iceberg/sales?user=saiku;Catalog=file:@SAIKU_HOME@/data/LakehouseSales.xml;JdbcDrivers=io.trino.jdbc.TrinoDriver</location>
+    <name>lakehouse</name>
+    <password></password>
+    <securityenabled>false</securityenabled>
+    <type>OLAP</type>
+    <username></username>
+</dataSource>
