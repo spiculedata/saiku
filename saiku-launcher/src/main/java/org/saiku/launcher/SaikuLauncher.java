@@ -235,8 +235,7 @@ public class SaikuLauncher implements Callable<Integer> {
             Path pluginsDir = saikuHome.resolve("plugins");
             if (Files.isDirectory(pluginsDir)) {
                 try (var jarPaths = Files.list(pluginsDir)) {
-                    String extraClasspath = jarPaths
-                            .filter(p -> p.getFileName()
+                    String extraClasspath = jarPaths.filter(p -> p.getFileName()
                                     .toString()
                                     .toLowerCase(java.util.Locale.ROOT)
                                     .endsWith(".jar"))
