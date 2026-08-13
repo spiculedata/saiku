@@ -31,6 +31,13 @@ import TileEditorTableConditional from "./TileEditorTableConditional.svelte";
 import TileEditorTableSparkline from "./TileEditorTableSparkline.svelte";
 import TileEditorText from "./TileEditorText.svelte";
 
+// Loosely-typed SSR render alias: the CASES below hold heterogeneous components as
+// `unknown`, so casting each to `Parameters<typeof render>[0]` would collapse its props
+// type to `never` and reject the `Record<string, unknown>` props object (svelte-check
+// catches this; vitest doesn't type-check). One alias keeps the call sites clean with no
+// `any` and no per-component typing.
+const renderSSR = render as (c: unknown, o: { props: Record<string, unknown> }) => { body: string };
+
 // Minimal valid props per editor — enough that each renders at least one
 // design-system `.field` block. Cube-gated pickers still render their `.field`
 // wrappers (they only `disabled` the control), so `cubePicked: true` is not
@@ -106,7 +113,7 @@ const CASES: { name: string; component: unknown; props: Record<string, unknown> 
 describe("tile editors use the global .field design-system shape (saiku#1258)", () => {
   for (const { name, component, props } of CASES) {
     it(`${name}: controls sit inside .field > .field__label + .field__input`, () => {
-      const body = render(component as Parameters<typeof render>[0], { props }).body;
+      const body = renderSSR(component, { props }).body;
 
       // The design-system trio the global app.css targets must all be present.
       expect(body, `${name} should render a .field wrapper`).toContain('class="field');
