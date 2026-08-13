@@ -24,6 +24,11 @@
 
 ***
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/dashboard-dark.png">
+  <img alt="A Saiku dashboard: KPI tiles, a sales-by-product-family bar chart, and pie charts built from a FoodMart cube" src="docs/images/dashboard-light.png">
+</picture>
+
 ## Try it in 30 seconds
 
 ```sh
