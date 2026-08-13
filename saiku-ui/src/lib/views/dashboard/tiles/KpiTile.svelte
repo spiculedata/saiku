@@ -33,10 +33,12 @@
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
   import {
     deltaLabelFor,
+    isTrailingPartial,
     formatKpi,
     kpiDelta,
     kpiThresholdToken,
     lastAndPriorValues,
+    periodLabel,
     type KpiDelta as KpiDeltaT,
   } from "$lib/dashboard/kpi";
   // #992 — year-over-year (same-period-previous-year) expansion.
@@ -339,6 +341,9 @@
         }
         return { value: null };
       });
+      // The series is used WHOLE. A partial trailing period is never dropped —
+      // its value is real and the tile reports it. Only the comparison is
+      // withheld (see `comparable` below).
       return lastAndPriorValues(series);
     }
     // Single-cell query: data has one row with one measure cell.
@@ -352,7 +357,44 @@
 
   let mainValue = $derived(valueAndPrior.current);
 
+  /* The author has declared the newest period incomplete. The value stays on
+   * screen — it is real — but it is labelled so nobody reads a part-period as a
+   * full one, and the comparison against it is withheld. */
+  let trailingIsPartial = $derived(
+    wantsSeries &&
+      response?.status === "SUCCESS" &&
+      isTrailingPartial(response.data?.length ?? 0, kpi.partialTrailing),
+  );
+
+  /** Caption of the period the headline reports, shown only when it's partial. */
+  let periodCaption = $derived.by<string | null>(() => {
+    if (!trailingIsPartial) return null;
+    const rows = response?.data ?? [];
+    const row = rows[rows.length - 1];
+    if (!row) return null;
+    // The row header (the non-measure cell) is the period's caption.
+    for (const [, v] of Object.entries(row)) {
+      if (!isAiCell(v) && typeof v === "string" && v.trim()) {
+        return periodLabel(v, kpi.timeLevel?.level);
+      }
+    }
+    return null;
+  });
+
+  let periodNote = $derived(
+    trailingIsPartial
+      ? i18n.t(
+          "dashboard.kpi.partialPeriod",
+          "This period is still incomplete, so it isn't compared against a full one — the comparison would measure the calendar, not the business.",
+        )
+      : undefined,
+  );
+
   let delta = $derived.by<KpiDeltaT | null>(() => {
+    // A part-period measured against a whole one describes the calendar, not
+    // the business — so no percentage is offered rather than a misleading one.
+    // The value itself is untouched and still on screen.
+    if (trailingIsPartial) return null;
     // prior-period and year-over-year share the last/prior series shape —
     // the difference is purely which baseline member the expansion picked.
     if (kpi.comparison === "prior-period" || kpi.comparison === "year-over-year") {
@@ -384,6 +426,8 @@
       sparkResize.observe(sparkHost);
     }
     if (!spark || !response || response.status !== "SUCCESS") return;
+    // Every point is plotted, including a partial trailing period — the chart
+    // shows the data as it is.
     const values = (response.data ?? []).map((row) => {
       for (const v of Object.values(row)) {
         if (isAiCell(v)) return v.value ?? null;
@@ -463,9 +507,20 @@
     {:else if isEmpty}
       <TileEmpty filtered={hasEffectiveFilters} onReset={resetFilters} />
     {:else}
-      <div class="value" style={mainColourToken ? `color: var(${mainColourToken});` : ""}>
+      <div
+        class="value"
+        title={periodNote}
+        style={mainColourToken ? `color: var(${mainColourToken});` : ""}>
         {formattedMain}
       </div>
+      {#if periodCaption}
+        <!-- The value above is the newest period's real figure. It is labelled
+             partial so nobody reads it as a completed one, and no comparison is
+             shown against it. -->
+        <div class="period" title={periodNote}>
+          {periodCaption} · {i18n.t("dashboard.kpi.partial", "partial")}
+        </div>
+      {/if}
       {#if delta && delta.ratio != null}
         <div class="delta" data-tone={delta.tone}>
           {#if delta.tone === "positive"}
@@ -485,7 +540,10 @@
         <div class="delta delta--empty" title={i18n.t("dashboard.kpi.noPriorPeriod.title", "The selected period has no preceding period in this cube's data.")}>
           <span>{i18n.t("dashboard.kpi.noPriorPeriod", "no prior period")}</span>
         </div>
-      {:else if kpi.measureCaption}
+      {:else if kpi.measureCaption && !trailingIsPartial}
+        <!-- Suppressed while a partial period is flagged: the "Week 52 · partial"
+             line already occupies that slot, and the measure caption would just
+             repeat the tile's own title underneath it. -->
         <div class="caption">{kpi.measureCaption}</div>
       {/if}
       {#if kpi.sparkline && wantsSeries}
@@ -523,6 +581,16 @@
        comes with container-type made .value's box width ignore its
        content, shifting it off-centre in the flex column). */
     container-type: size;
+  }
+  /* Which period the headline is actually reporting. Sits quietly under the
+     number — present only when trailing periods are excluded. */
+  .period {
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    color: var(--saiku-app-muted, hsl(var(--fg-muted)));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .value {
     /* clamp scales the number against the tile's inline size (cqi) so

@@ -121,6 +121,25 @@
 </label>
 
 {#if showTimeLevel}
+  <label class="field">
+    <span class="field__label">Incomplete trailing periods</span>
+    <input
+      class="field__input"
+      type="number"
+      min="0"
+      max="12"
+      bind:value={kpiConfig.partialTrailing} />
+    <span class="hint">
+      How many of the newest periods are still filling up. Their values are
+      still shown in full — they are marked <em>partial</em> and the
+      percentage comparison is withheld, because measuring a part-period
+      against a whole one reports the calendar rather than the business.
+      0 = every period is complete.
+    </span>
+  </label>
+{/if}
+
+{#if showTimeLevel}
   <fieldset class="size">
     <legend>Time level (for comparison + sparkline)</legend>
     <label class="field flex-1">

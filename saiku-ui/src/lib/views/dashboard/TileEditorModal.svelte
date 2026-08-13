@@ -150,6 +150,7 @@
       target: tile.kpi?.target,
       timeLevel: tile.kpi?.timeLevel ?? { dimension: "", hierarchy: "", level: "" },
       sparkline: tile.kpi?.sparkline ?? false,
+      partialTrailing: tile.kpi?.partialTrailing ?? 0,
       thresholds: tile.kpi?.thresholds ?? {},
       direction: tile.kpi?.direction ?? "higher-is-better",
     })),
@@ -933,6 +934,12 @@
         ...kpiConfig,
         timeLevel:
           needsTime && tl && tl.dimension && tl.hierarchy && tl.level ? tl : undefined,
+        // 0 is the default — omit it so an untouched tile's JSON stays empty,
+        // and so the field can't linger on a tile that no longer has a series.
+        partialTrailing:
+          needsTime && Number(kpiConfig.partialTrailing) > 0
+            ? Math.floor(Number(kpiConfig.partialTrailing))
+            : undefined,
         // Drop empty thresholds object so the JSON diff is empty when
         // the analyst doesn't touch the threshold inputs.
         thresholds:

@@ -8,7 +8,15 @@
 
 import { describe, expect, it } from "vitest";
 
-import { deltaLabelFor, formatKpi, kpiDelta, kpiThresholdToken, lastAndPriorValues } from "./kpi";
+import {
+  deltaLabelFor,
+  isTrailingPartial,
+  formatKpi,
+  kpiDelta,
+  kpiThresholdToken,
+  lastAndPriorValues,
+  periodLabel,
+} from "./kpi";
 
 describe("formatKpi", () => {
   it("renders null / undefined / NaN as an em-dash", () => {
@@ -224,5 +232,63 @@ describe("deltaLabelFor", () => {
       expect(l.key.startsWith("dashboard.kpi.")).toBe(true);
       expect(l.fallback.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("periodLabel", () => {
+  /* FoodMart's Week level names itself from week_of_year, so the caption is a
+   * bare "51" — meaningless on its own under a big number. */
+  it("prefixes the level name onto a bare ordinal", () => {
+    expect(periodLabel("51", "Week")).toBe("Week 51");
+    expect(periodLabel("12", "Month")).toBe("Month 12");
+  });
+
+  it("leaves captions that already read as a period alone", () => {
+    expect(periodLabel("December", "Month")).toBe("December");
+    expect(periodLabel("1997-Q4", "Quarter")).toBe("1997-Q4");
+    expect(periodLabel("W51", "Week")).toBe("W51");
+  });
+
+  it("falls back to the caption when there is no level name", () => {
+    expect(periodLabel("51", undefined)).toBe("51");
+    expect(periodLabel("51", "  ")).toBe("51");
+  });
+
+  it("is empty for an empty caption", () => {
+    expect(periodLabel("", "Week")).toBe("");
+    expect(periodLabel("   ", "Week")).toBe("");
+  });
+});
+
+/* The newest bucket of a time series is often still filling (or is a data
+ * boundary). The wrong response is to drop it — that hides a real figure to
+ * produce a nicer percentage. The right response is to keep showing it and
+ * withhold the COMPARISON, which is the part that would mislead. */
+describe("partial trailing periods", () => {
+  it("is off by default, so comparisons are unaffected", () => {
+    expect(isTrailingPartial(52, undefined)).toBe(false);
+    expect(isTrailingPartial(52, 0)).toBe(false);
+  });
+
+  it("marks the newest period partial when the author declares it", () => {
+    expect(isTrailingPartial(52, 1)).toBe(true);
+  });
+
+  it("ignores negative and non-numeric declarations", () => {
+    expect(isTrailingPartial(52, -1)).toBe(false);
+    expect(isTrailingPartial(52, Number.NaN)).toBe(false);
+  });
+
+  it("is false for an empty series — nothing to call partial", () => {
+    expect(isTrailingPartial(0, 1)).toBe(false);
+  });
+
+  /* The headline value must be untouched: FoodMart's stub week really did take
+   * $1,856, and that is what the tile has to show. */
+  it("never changes which value the headline reports", () => {
+    const weeks = [{ value: 11185 }, { value: 11880 }, { value: 1856 }];
+    expect(lastAndPriorValues(weeks).current).toBe(1856);
+    // Declaring the trailing period partial does not alter the series at all.
+    expect(weeks).toHaveLength(3);
   });
 });
