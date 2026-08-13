@@ -1,0 +1,74 @@
+# Saiku → Mondrian → Calcite → Trino → Iceberg demo stack.
+#
+#   MinIO      — S3-compatible object storage holding the Iceberg data files
+#   iceberg-rest — the Iceberg REST catalog (table metadata)
+#   Trino      — the query engine, exposed on :8090 (Saiku owns :8080)
+#
+# Bring it up:   docker compose up -d
+# Seed data:     ./seed.sh          (or seed.ps1 on Windows)
+# Tear down:     docker compose down -v
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: lakehouse-minio
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password
+      MINIO_DOMAIN: minio
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # console (admin/password)
+    command: ["server", "/data", "--console-address", ":9001"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot bucket bootstrap: creates the warehouse bucket then exits.
+  minio-init:
+    image: minio/mc:latest
+    container_name: lakehouse-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 admin password &&
+      mc mb -p local/warehouse &&
+      mc anonymous set public local/warehouse &&
+      echo 'warehouse bucket ready'
+      "
+
+  iceberg-rest:
+    image: apache/iceberg-rest-fixture:latest
+    container_name: lakehouse-iceberg-rest
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: password
+      AWS_REGION: us-east-1
+      CATALOG_WAREHOUSE: s3://warehouse/
+      CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
+      CATALOG_S3_ENDPOINT: http://minio:9000
+      CATALOG_S3_PATH__STYLE__ACCESS: "true"
+    ports:
+      - "8181:8181"
+
+  trino:
+    image: trinodb/trino:latest
+    container_name: lakehouse-trino
+    depends_on:
+      - iceberg-rest
+    ports:
+      - "8090:8080"   # Trino UI + JDBC on host :8090 (Saiku keeps :8080)
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog
+    healthcheck:
+      test: ["CMD", "trino", "--execute", "SELECT 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
