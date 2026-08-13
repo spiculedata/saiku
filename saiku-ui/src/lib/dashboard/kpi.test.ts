@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { formatKpi, kpiDelta, kpiThresholdToken, lastAndPriorValues } from "./kpi";
+import { deltaLabelFor, formatKpi, kpiDelta, kpiThresholdToken, lastAndPriorValues } from "./kpi";
 
 describe("formatKpi", () => {
   it("renders null / undefined / NaN as an em-dash", () => {
@@ -39,6 +39,35 @@ describe("formatKpi", () => {
   it("custom $N pattern routes through USD currency", () => {
     const out = formatKpi(99.5, "custom", "$2");
     expect(out).toMatch(/[$]\s?99\.50/);
+  });
+
+  /* The author types the symbol they want ("$c1"), so the symbol they typed is
+   * the one that must render. Left to the locale, Intl disambiguates USD as
+   * "US$" outside the en-US locale — the FoodMart Ops KPI showed "US$57k" where
+   * the design called for "$57.0k". narrowSymbol pins it while leaving grouping
+   * and symbol placement locale-correct. */
+  it.each([
+    ["en-GB", "$"],
+    ["de-DE", "$"],
+    ["ja-JP", "$"],
+  ])("custom $-pattern renders a bare $ under locale %s, never US$", (locale, symbol) => {
+    expect(formatKpi(99.5, "custom", "$2", locale)).toContain(symbol);
+    expect(formatKpi(99.5, "custom", "$2", locale)).not.toContain("US$");
+  });
+
+  it("compact currency keeps the author's digit count", () => {
+    // "$c1" — compact, one fractional digit. Without a minimum, Intl drops the
+    // ".0" and the KPI reads "$57k" where the design calls for "$57.0k".
+    expect(formatKpi(57_000, "custom", "$c1", "en-US")).toBe("$57.0K");
+    expect(formatKpi(48_200, "custom", "$c1", "en-US")).toBe("$48.2K");
+  });
+
+  it("compact currency with no digit count stays whole", () => {
+    expect(formatKpi(57_000, "custom", "$c", "en-US")).toBe("$57K");
+  });
+
+  it("named currency format also pins the narrow symbol", () => {
+    expect(formatKpi(1234, "currency", undefined, "en-GB")).not.toContain("US$");
   });
 
   it("custom bare-digit pattern fixes fractional digit count", () => {
@@ -150,5 +179,50 @@ describe("lastAndPriorValues", () => {
     expect(
       lastAndPriorValues([{ value: null }, { value: null }]),
     ).toEqual({ current: null, prior: null });
+  });
+});
+
+/* The label used to be free text with a generic fallback, so FoodMart Ops
+ * shipped four MONTH-grain KPIs announcing "vs last Thu". Deriving it from the
+ * tile's own time level makes that class of mislabelling impossible. */
+describe("deltaLabelFor", () => {
+  it.each([
+    ["Day", "vs yesterday"],
+    ["Week", "vs last week"],
+    ["Month", "vs last month"],
+    ["Quarter", "vs last quarter"],
+    ["Year", "vs last year"],
+  ])("names the grain for a %s-level prior-period comparison", (level, expected) => {
+    expect(deltaLabelFor("prior-period", { level }).fallback).toBe(expected);
+  });
+
+  it("matches level names case-insensitively and inside longer names", () => {
+    expect(deltaLabelFor("prior-period", { level: "MONTH" }).fallback).toBe("vs last month");
+    expect(deltaLabelFor("prior-period", { level: "Fiscal Quarter" }).fallback).toBe(
+      "vs last quarter",
+    );
+  });
+
+  it("prefers the more specific grain when a name contains two", () => {
+    expect(deltaLabelFor("prior-period", { level: "Week of Year" }).fallback).toBe("vs last week");
+  });
+
+  it("stays generic when no time level is configured", () => {
+    expect(deltaLabelFor("prior-period", undefined).fallback).toBe("vs prior");
+    expect(deltaLabelFor("prior-period", { level: "" }).fallback).toBe("vs prior");
+    expect(deltaLabelFor("prior-period", { level: "Store Name" }).fallback).toBe("vs prior");
+  });
+
+  it("year-over-year and target ignore the grain", () => {
+    expect(deltaLabelFor("year-over-year", { level: "Month" }).fallback).toBe("vs last year");
+    expect(deltaLabelFor("target", { level: "Month" }).fallback).toBe("vs target");
+  });
+
+  it("returns an i18n key alongside every fallback", () => {
+    for (const c of ["prior-period", "year-over-year", "target"] as const) {
+      const l = deltaLabelFor(c, { level: "Month" });
+      expect(l.key.startsWith("dashboard.kpi.")).toBe(true);
+      expect(l.fallback.length).toBeGreaterThan(0);
+    }
   });
 });

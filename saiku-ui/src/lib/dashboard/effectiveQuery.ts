@@ -213,7 +213,17 @@ export function mergeFilters(
 
     // Hierarchy isn't on either axis — replace-by-hierarchy in filters[]
     // or append.
+    //
+    // A zero-member filter means "no constraint", and the server rejects an
+    // `in` with no members ("'in' filter must specify at least one member").
+    // So an emptied filter REMOVES its entry rather than emitting an invalid
+    // one. Note this only applies here: on an axis, empty members legitimately
+    // means "every member at this level", which the branch above relies on.
     const idx = merged.findIndex((existing) => `${k(existing.dimension)}/${k(existing.hierarchy)}` === hkey);
+    if ((candidate.members?.length ?? 0) === 0) {
+      if (idx >= 0) merged.splice(idx, 1);
+      continue;
+    }
     if (idx >= 0) {
       merged[idx] = candidate;
     } else {
@@ -240,6 +250,9 @@ export function applicableSavedFilters(
   const out: FilterSelection[] = [];
   for (const af of activeFilters) {
     const f = af.filter;
+    // Same reasoning as the inline path: a zero-member filter is no constraint,
+    // and the server rejects an `in` with no members.
+    if (f.members.length === 0) continue;
     const resolved = resolveTarget(schema, f.dimension, f.hierarchy, f.level);
     if (!resolved) continue;
     out.push({

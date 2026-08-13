@@ -12,6 +12,25 @@ export function resolveFont(key: string | undefined): string {
   return (hit ?? FONT_ALLOWLIST[0]).stack;
 }
 
+/** Options for the "Numbers" type control — which stack figures are set in. */
+export const NUMERAL_CHOICES = [
+  { key: "body", label: "Same as body" },
+  { key: "display", label: "Same as headings" },
+  { key: "mono", label: "Monospace" },
+] as const;
+
+/** Resolve the numerals choice to a concrete font stack. "mono" is the
+ *  allowlist's monospace entry; the others alias the display/body stacks so
+ *  changing those carries through without a second edit. */
+export function numeralStack(
+  numerals: "body" | "display" | "mono",
+  fontDisplay: string,
+  fontBody: string,
+): string {
+  if (numerals === "mono") return resolveFont("mono-1");
+  return resolveFont(numerals === "display" ? fontDisplay : fontBody);
+}
+
 const COLOUR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 function colour(v: string | undefined): string | undefined {
   return v && COLOUR.test(v) ? v : undefined;
@@ -47,9 +66,13 @@ export function themeVars(theme: AppTheme): Record<string, string> {
   setColour("--saiku-app-rail-fg", t.railFg);
   out["--saiku-app-font-display"] = resolveFont(t.fontDisplay);
   out["--saiku-app-font-body"] = resolveFont(t.fontBody);
+  out["--saiku-app-font-numeric"] = numeralStack(t.numerals, t.fontDisplay, t.fontBody);
   out["--saiku-app-radius"] = RADIUS_SCALE[t.radius];
   out["--saiku-app-shadow"] = SHADOW_SCALE[t.shadow];
   out["--saiku-app-pad"] = DENSITY_PAD[t.density];
+  // Expressed as a width rather than a display toggle so the skin can keep one
+  // unconditional rule and let the token decide whether the bar is visible.
+  out["--saiku-app-kpi-bar"] = t.kpiAccent === "tone" ? "3px" : "0px";
 
   // Legacy aliases — keep old components + author CSS working.
   setColour("--saiku-app-primary", colour(theme.primary) ?? t.accent);

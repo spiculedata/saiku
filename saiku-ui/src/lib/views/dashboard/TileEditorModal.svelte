@@ -81,6 +81,14 @@
   import { validateEchartsOption } from "$lib/dashboard/custom/echartsOption";
   // The `graph` renderer gets a declarative column-mapping editor (NO code).
   import { validateGraphConfig, type GraphLayout } from "$lib/dashboard/custom/graphTile";
+  // The `ranked-list` renderer gets a declarative form too (NO code, NO CSS) —
+  // it exists precisely so this card stops being a custom-CSS exercise.
+  import {
+    DEFAULT_LIMIT,
+    validateRankedListConfig,
+    type RankedSort,
+    type RankedTone,
+  } from "$lib/dashboard/custom/rankedList";
   import { listTilePlugins, type TilePluginSummary } from "$lib/api/tilePlugins";
 
   interface Props {
@@ -240,6 +248,9 @@
   const isGraphTile = untrack(
     () => tile.type === "custom" && tile.custom?.renderer === "graph",
   );
+  const isRankedListTile = untrack(
+    () => tile.type === "custom" && tile.custom?.renderer === "ranked-list",
+  );
   // App Builder Phase 2, Task 7 (saiku#1441): the `plugin` renderer runs
   // arbitrary author HTML/JS in a locked-down iframe. Its editor is just a
   // textarea for the self-contained plugin HTML.
@@ -267,6 +278,9 @@
   // Trend/Breakdown segmented control + an emphasised last data point.
   let trendBreakdown = $state<boolean>(untrack(() => !!tile.custom?.trendBreakdown));
   let emphasizeLast = $state<boolean>(untrack(() => !!tile.custom?.emphasizeLast));
+  // Declarative value-axis format (see valueAxisFormat.ts for why it can't
+  // simply live in the author's option).
+  let valueFormat = $state<string>(untrack(() => tile.custom?.valueFormat ?? ""));
   // Live validation feedback for the option editor — parse + safe-subset check.
   let customOptionsValidation = $derived.by(() => {
     const txt = customOptionsJson.trim();
@@ -315,6 +329,45 @@
       valueCol: graphValueCol.trim() || undefined,
     }),
   );
+
+  // ── `ranked-list` renderer form (saiku#1441) ────────────────────────
+  // Every knob the FoodMart Ops "Movers" card needed, as fields: which columns
+  // to read, how many rows, the ordering, whether values are coloured by sign,
+  // and the muted subtitle that used to be a CSS ::after pseudo-element.
+  const savedRanked = untrack(() => (tile.custom?.options ?? {}) as Record<string, unknown>);
+  let rankedLabelCol = $state<string>(untrack(() => String(savedRanked.labelColumn ?? "")));
+  let rankedValueCol = $state<string>(untrack(() => String(savedRanked.valueColumn ?? "")));
+  let rankedSubtitle = $state<string>(untrack(() => String(savedRanked.subtitle ?? "")));
+  let rankedLimit = $state<number>(
+    untrack(() =>
+      typeof savedRanked.limit === "number" ? savedRanked.limit : DEFAULT_LIMIT,
+    ),
+  );
+  let rankedSort = $state<RankedSort>(
+    untrack(() =>
+      savedRanked.sort === "desc" || savedRanked.sort === "asc" ? savedRanked.sort : "none",
+    ),
+  );
+  let rankedTone = $state<RankedTone>(
+    untrack(() => (savedRanked.tone === "none" ? "none" : "signed")),
+  );
+  let rankedShowRank = $state<boolean>(untrack(() => savedRanked.showRank !== false));
+
+  /** Assemble the form into an options object (empty optionals dropped, so an
+   *  unset column stays inferred rather than pinned to ""). */
+  function rankedOptionsFromForm(): Record<string, unknown> {
+    const opts: Record<string, unknown> = {
+      limit: rankedLimit,
+      sort: rankedSort,
+      tone: rankedTone,
+      showRank: rankedShowRank,
+    };
+    if (rankedLabelCol.trim()) opts.labelColumn = rankedLabelCol.trim();
+    if (rankedValueCol.trim()) opts.valueColumn = rankedValueCol.trim();
+    if (rankedSubtitle.trim()) opts.subtitle = rankedSubtitle.trim();
+    return opts;
+  }
+  let rankedValidation = $derived.by(() => validateRankedListConfig(rankedOptionsFromForm()));
 
   // ── App Builder Phase 2 (saiku#1441): `plugin` renderer picker ──
   // SECURITY: the author only PICKS an admin-installed plugin by its slug id.
@@ -778,7 +831,15 @@
         }
         options = v.value;
       }
-      patch.custom = { renderer: tile.custom.renderer, options, trendBreakdown, emphasizeLast };
+      patch.custom = {
+        renderer: tile.custom.renderer,
+        options,
+        trendBreakdown,
+        emphasizeLast,
+        // Dropped when blank so clearing the field restores ECharts' defaults
+        // rather than persisting an empty pattern.
+        ...(valueFormat.trim() ? { valueFormat: valueFormat.trim() } : {}),
+      };
     }
 
     // App Builder Phase 2 (saiku#1441): persist the graph column mapping.
@@ -794,6 +855,17 @@
         renderer: tile.custom.renderer,
         options: v.value as unknown as Record<string, unknown>,
       };
+    }
+
+    // Persist the ranked-list config. Validate again on save (defence in depth)
+    // and store the normalised value, never raw form strings.
+    if (isRankedListTile && tile.custom) {
+      const v = validateRankedListConfig(rankedOptionsFromForm());
+      if (!v.ok) {
+        bodyError = `Invalid ranked list config: ${v.error}`;
+        return;
+      }
+      patch.custom = { renderer: tile.custom.renderer, options: v.value };
     }
 
     // App Builder Phase 2 (saiku#1441): persist the selected plugin ID ONLY. Raw
@@ -1191,6 +1263,16 @@
           <input type="checkbox" bind:checked={emphasizeLast} />
           <span>Emphasise last point (accent “current period” marker)</span>
         </label>
+        <label class="field">
+          <span>Value axis format <span class="hint">(optional)</span></span>
+          <input type="text" bind:value={valueFormat} spellcheck="false" placeholder="e.g. $c0" />
+        </label>
+        <span class="hint">
+          $c0 / €c1 for compact currency ($149K), $2 for plain currency, 1% for
+          percent, 0 for fractional digits. Numeric axis formatting needs a
+          function, which author options can't contain — so it's stated here and
+          compiled at render time.
+        </span>
       {/if}
 
       <!-- App Builder Phase 2 (saiku#1441): graph renderer editor. A declarative
@@ -1234,6 +1316,55 @@
           <span class="hint">
             Each query row becomes an edge source → target; nodes are deduped across rows.
             Column names must match the query's row-header / measure captions.
+          </span>
+        </fieldset>
+      {/if}
+
+      {#if isRankedListTile}
+        <fieldset class="graph-map">
+          <legend>Ranked list</legend>
+          <label class="field">
+            <span>Subtitle <span class="hint">(optional)</span></span>
+            <input type="text" bind:value={rankedSubtitle} placeholder="e.g. Product department · MoM" />
+          </label>
+          <label class="field">
+            <span>Label column <span class="hint">(optional)</span></span>
+            <input type="text" bind:value={rankedLabelCol} spellcheck="false" placeholder="blank = first text column" />
+          </label>
+          <label class="field">
+            <span>Value column <span class="hint">(optional)</span></span>
+            <input type="text" bind:value={rankedValueCol} spellcheck="false" placeholder="blank = first numeric column" />
+          </label>
+          <label class="field">
+            <span>Rows</span>
+            <input type="number" min="1" max="100" bind:value={rankedLimit} />
+          </label>
+          <label class="field">
+            <span>Order</span>
+            <select bind:value={rankedSort}>
+              <option value="none">Keep the query's order</option>
+              <option value="desc">Highest first</option>
+              <option value="asc">Lowest first</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Value colour</span>
+            <select bind:value={rankedTone}>
+              <option value="signed">By sign (up green / down red)</option>
+              <option value="none">Plain</option>
+            </select>
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" bind:checked={rankedShowRank} />
+            <span>Show rank numbers</span>
+          </label>
+          {#if rankedValidation.ok}
+            <span class="hint ok">✓ Valid — rows come from the tile's query below.</span>
+          {:else}
+            <span class="hint error">{rankedValidation.error}</span>
+          {/if}
+          <span class="hint">
+            Colours and type follow the app theme — no custom CSS needed.
           </span>
         </fieldset>
       {/if}

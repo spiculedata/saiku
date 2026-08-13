@@ -32,6 +32,7 @@
   } from "$lib/api/aiQuery";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
   import {
+    deltaLabelFor,
     formatKpi,
     kpiDelta,
     kpiThresholdToken,
@@ -435,16 +436,15 @@
       maximumFractionDigits: 1,
       signDisplay: "always",
     }).format(d.ratio);
+    // An explicit suffix still wins — some cubes need their own vocabulary
+    // ("vs last trading day"). Everything else is DERIVED from the comparison
+    // and the tile's time level, so the callout can't contradict the grain the
+    // tile actually queries (see deltaLabelFor).
     if (kpi.deltaSuffix) {
       return `${pct} ${kpi.deltaSuffix}`;
     }
-    if (kpi.comparison === "target") {
-      return `${pct} ${i18n.t("dashboard.kpi.vsTarget", "vs target")}`;
-    }
-    if (kpi.comparison === "year-over-year") {
-      return `${pct} ${i18n.t("dashboard.kpi.vsLastYear", "vs last year")}`;
-    }
-    return `${pct} ${i18n.t("dashboard.kpi.vsPrior", "vs prior")}`;
+    const label = deltaLabelFor(kpi.comparison, kpi.timeLevel);
+    return `${pct} ${i18n.t(label.key, label.fallback)}`;
   }
 </script>
 

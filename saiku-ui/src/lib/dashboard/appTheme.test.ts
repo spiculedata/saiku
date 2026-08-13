@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { themeVars, resolveFont, FONT_ALLOWLIST } from "./appTheme";
+import { themeVars, resolveFont, numeralStack, FONT_ALLOWLIST } from "./appTheme";
 
 describe("appTheme", () => {
   test("themeVars maps tokens to --saiku-app-* custom properties", () => {
@@ -53,5 +53,42 @@ describe("appTheme", () => {
     expect(vars["--saiku-app-accent"]).toBe("#123456");
     // untouched tokens still come from the preset
     expect(vars["--saiku-app-ground"]).toBe("#f2eee4");
+  });
+});
+
+describe("numerals + KPI edge-bar tokens", () => {
+  test("mono numerals resolve to the allowlist's monospace stack", () => {
+    expect(numeralStack("mono", "serif-1", "sans-1")).toBe(resolveFont("mono-1"));
+  });
+
+  test("body / display numerals alias those stacks rather than pinning a font", () => {
+    expect(numeralStack("body", "serif-1", "sans-1")).toBe(resolveFont("sans-1"));
+    expect(numeralStack("display", "serif-1", "sans-1")).toBe(resolveFont("serif-1"));
+  });
+
+  test("the editorial preset sets figures in mono — the reference look", () => {
+    const vars = themeVars({ mode: "light", preset: "editorial" });
+    expect(vars["--saiku-app-font-numeric"]).toBe(resolveFont("mono-1"));
+  });
+
+  test("numerals are overridable per app without touching the body font", () => {
+    const vars = themeVars({ mode: "light", preset: "editorial", numerals: "body" });
+    expect(vars["--saiku-app-font-numeric"]).toBe(resolveFont("sans-1"));
+    expect(vars["--saiku-app-font-body"]).toBe(resolveFont("sans-1"));
+  });
+
+  /* The bar is expressed as a width so the skin needs one unconditional rule
+   * rather than a display toggle it can't express from a custom property. */
+  test("kpiAccent serialises to a bar width, zero when off", () => {
+    expect(themeVars({ mode: "light", kpiAccent: "tone" })["--saiku-app-kpi-bar"]).toBe("3px");
+    expect(themeVars({ mode: "light", kpiAccent: "none" })["--saiku-app-kpi-bar"]).toBe("0px");
+  });
+
+  test("defaults keep the bar off so existing apps are unchanged", () => {
+    expect(themeVars({ mode: "light" })["--saiku-app-kpi-bar"]).toBe("0px");
+  });
+
+  test("the editorial preset turns the bar on", () => {
+    expect(themeVars({ mode: "light", preset: "editorial" })["--saiku-app-kpi-bar"]).toBe("3px");
   });
 });

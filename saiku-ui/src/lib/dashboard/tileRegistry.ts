@@ -30,6 +30,11 @@ export interface CustomTileConfig {
    *  tile corner that swaps the series between a line (trend) and bars
    *  (breakdown) over the same query — the reference trend-card control. */
   trendBreakdown?: boolean;
+  /** echarts-option renderer only: value-axis number format, as a KPI-style
+   *  pattern ("$c0", "2%", "0"). Declarative because ECharts numeric axis
+   *  formatting needs a FUNCTION and the option validator rejects those — see
+   *  valueAxisFormat.ts. Blank/absent leaves ECharts' default labels. */
+  valueFormat?: string;
 }
 
 /** Result of validating a custom tile's opaque options blob. */

@@ -115,6 +115,17 @@ class ActiveFiltersStore {
     ];
   }
 
+  /** Drop the click filter(s) pushed under a given source id. Symmetric with
+   *  {@link clearCrossesFrom}; used by the App Builder's header context
+   *  selector when the viewer picks its "All" entry, so the selection is
+   *  REMOVED rather than registered as an empty (and therefore invalid)
+   *  constraint. No-op when the source has none. */
+  clearClicksFrom(sourceTileId: string): void {
+    this.clicks = this.clicks.filter(
+      (c) => !(c.source.kind === "click" && c.source.tileId === sourceTileId),
+    );
+  }
+
   /** Drop the cross-filter emitted by a given source tile (brush cleared /
    *  Esc / click-outside on that tile). No-op if the tile has none. */
   clearCrossesFrom(sourceTileId: string): void {
