@@ -155,6 +155,9 @@ persist with the dashboard.
 ## 8. Layout & editing
 
 - **Grid** — 12-column responsive grid; drag to move, drag a corner to resize.
+- **Duplicate a tile** — the ⋮ tile-actions menu has **Duplicate**: an exact
+  copy (query, options, formatting) drops next to the original, ready to tweak.
+  The fastest way to build a row of similar KPIs.
 - **Multi-select** — Ctrl/Cmd-click (or shift-click to extend) tiles, then use the
   **bulk actions** bar to duplicate or delete several at once.
 - **Undo / redo** — full edit history with keyboard shortcuts.
