@@ -699,29 +699,10 @@
     "eyebrow": "Store Intelligence",
     "contextPill": {
       "label": "Store",
-      "value": "Portland #14",
-      "options": [
-        {
-          "label": "Portland #14",
-          "member": "[Store].[Stores].[USA].[OR].[Portland]"
-        },
-        {
-          "label": "Seattle #3",
-          "member": "[Store].[Stores].[USA].[WA].[Seattle]"
-        },
-        {
-          "label": "San Francisco #22",
-          "member": "[Store].[Stores].[USA].[CA].[San Francisco]"
-        },
-        {
-          "label": "Salem #7",
-          "member": "[Store].[Stores].[USA].[OR].[Salem]"
-        },
-        {
-          "label": "All stores · National",
-          "member": "*"
-        }
-      ],
+      "value": "All stores · National",
+      "optionsSource": "level",
+      "includeAll": true,
+      "allLabel": "All stores · National",
       "filter": {
         "dimension": "Store",
         "hierarchy": "Stores",

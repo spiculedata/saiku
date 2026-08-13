@@ -10,7 +10,7 @@
    * falls back to a plain app name + logo.
    */
   import type { Snippet } from "svelte";
-  import type { SaikuApp } from "$lib/api/apps";
+  import type { AppContextPillOption, SaikuApp } from "$lib/api/apps";
   import { ChevronDown } from "lucide-svelte";
   import { effectiveLabel, isSelectable, optionsFor } from "$lib/views/app/contextPill";
   import { badgeFor } from "$lib/views/app/liveBadge";
@@ -26,17 +26,20 @@
     contextValue?: string;
     /** Fired when the viewer picks a different context option. */
     onContextChange?: (label: string) => void;
+    /** Options read from the bound cube level, when the pill sources them that
+     *  way. Owned by AppShell (it holds the cube); empty until they load. */
+    contextOptions?: AppContextPillOption[];
   }
 
-  let { app, controls, onSelect, contextValue, onContextChange }: Props = $props();
+  let { app, controls, onSelect, contextValue, onContextChange, contextOptions }: Props = $props();
 
   const header = $derived(app.header ?? {});
   const pill = $derived(header.contextPill);
-  const pillOptions = $derived(optionsFor(pill));
-  const pillSelectable = $derived(isSelectable(pill));
+  const pillOptions = $derived(optionsFor(pill, contextOptions));
+  const pillSelectable = $derived(isSelectable(pill, contextOptions));
   /** What the pill shows — the live selection when it's still on offer, else
    *  the configured default (see effectiveLabel). */
-  const pillValue = $derived(effectiveLabel(pill, contextValue));
+  const pillValue = $derived(effectiveLabel(pill, contextValue, contextOptions));
 
   // Poll only while a header is on screen; teardown stops the timer.
   $effect(() => appConnection.watch());

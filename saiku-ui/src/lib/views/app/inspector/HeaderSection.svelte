@@ -4,7 +4,9 @@
   import { appDoc } from "$lib/stores/appDoc.svelte";
 
   import { Trash2 } from "lucide-svelte";
-  import { ALL_MEMBER } from "$lib/views/app/contextPill";
+  import { ALL_MEMBER, MAX_LEVEL_OPTIONS, isLevelSourced } from "$lib/views/app/contextPill";
+  import { fetchLevelMembers } from "$lib/views/app/levelMembers";
+  import { firstAppCube } from "$lib/views/app/appShell";
   import type { AppContextPill, AppContextPillOption } from "$lib/api/apps";
 
   const app = $derived(appDoc.current);
@@ -32,6 +34,29 @@
     const next = pillOptions.filter((_, i) => i !== index);
     setPill({ options: next.length > 0 ? next : undefined });
   }
+  const levelSourced = $derived(pill.optionsSource === "level");
+
+  /* How many members the bound level actually has — shown so the author can
+   * see the list is real, and warned when it exceeds what a dropdown can
+   * usefully offer. Null until a complete binding exists. The fetch is the same
+   * cached one the shell uses, so opening the inspector costs no extra request. */
+  let memberCount = $state<number | null>(null);
+  $effect(() => {
+    const a = app;
+    if (!a || !isLevelSourced(pill)) {
+      memberCount = null;
+      return;
+    }
+    const f = pill.filter!;
+    let cancelled = false;
+    void fetchLevelMembers(firstAppCube(a), f.dimension, f.hierarchy, f.level).then((m) => {
+      if (!cancelled) memberCount = m.length;
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
+
   /** Drop the binding entirely once every part is blank, so a half-typed
    *  target never reaches the filter store. */
   function setFilterPart(part: "dimension" | "hierarchy" | "level", value: string): void {
@@ -69,24 +94,60 @@
   </label>
 
   <div class="insp-label">Options</div>
-  <p class="insp-hint">
-    Add options to turn the pill into a selector. Leave "member" blank to match
-    by the caption you typed; use <code>{ALL_MEMBER}</code> for an "all" entry
-    that clears the filter.
-  </p>
-  <div class="insp-list">
-    {#each pillOptions as o, i (i)}
-      <div class="insp-list-item ctx-opt">
-        <input class="insp-input" placeholder="Label, e.g. Seattle #3" value={o.label}
-          oninput={(e) => setOption(i, { label: val(e) })} />
-        <input class="insp-input" placeholder="Member (optional)" value={o.member ?? ""}
-          oninput={(e) => setOption(i, { member: opt(val(e)) })} />
-        <button type="button" class="insp-iconbtn" aria-label="Remove option"
-          onclick={() => removeOption(i)}><Trash2 size={13} /></button>
-      </div>
-    {/each}
+  <div class="insp-row"><span>Source</span>
+    <div class="insp-seg">
+      <button type="button" class:is-active={!levelSourced}
+        onclick={() => setPill({ optionsSource: "list" })}>Typed list</button>
+      <button type="button" class:is-active={levelSourced}
+        onclick={() => setPill({ optionsSource: "level" })}>From cube</button>
+    </div>
   </div>
-  <button type="button" class="insp-addbtn" onclick={addOption}>+ Add option</button>
+
+  {#if levelSourced}
+    <p class="insp-hint">
+      Every member of the level below, read from the cube. A typed list goes
+      stale the moment something is added or renamed — the cube always knows.
+    </p>
+    <label class="insp-row insp-toggle"><span>Add an "all" entry</span>
+      <input type="checkbox" checked={pill.includeAll ?? false}
+        onchange={(e) => setPill({ includeAll: (e.currentTarget as HTMLInputElement).checked })} />
+    </label>
+    {#if pill.includeAll}
+      <label class="insp-row"><span>"All" wording</span>
+        <input class="insp-input" placeholder="All" value={pill.allLabel ?? ""}
+          oninput={(e) => setPill({ allLabel: opt(val(e)) })} />
+      </label>
+    {/if}
+    <p class="insp-hint" class:ctx-warn={(memberCount ?? 0) > MAX_LEVEL_OPTIONS}>
+      {#if memberCount === null}
+        Fill in the level below to load the options.
+      {:else if memberCount > MAX_LEVEL_OPTIONS}
+        {memberCount} members — only the first {MAX_LEVEL_OPTIONS} will be
+        offered. A dropdown is the wrong control for a level this large.
+      {:else}
+        {memberCount} option{memberCount === 1 ? "" : "s"} loaded from the cube.
+      {/if}
+    </p>
+  {:else}
+    <p class="insp-hint">
+      Add options to turn the pill into a selector. Leave "member" blank to match
+      by the caption you typed; use <code>{ALL_MEMBER}</code> for an "all" entry
+      that clears the filter.
+    </p>
+    <div class="insp-list">
+      {#each pillOptions as o, i (i)}
+        <div class="insp-list-item ctx-opt">
+          <input class="insp-input" placeholder="Label, e.g. Seattle #3" value={o.label}
+            oninput={(e) => setOption(i, { label: val(e) })} />
+          <input class="insp-input" placeholder="Member (optional)" value={o.member ?? ""}
+            oninput={(e) => setOption(i, { member: opt(val(e)) })} />
+          <button type="button" class="insp-iconbtn" aria-label="Remove option"
+            onclick={() => removeOption(i)}><Trash2 size={13} /></button>
+        </div>
+      {/each}
+    </div>
+    <button type="button" class="insp-addbtn" onclick={addOption}>+ Add option</button>
+  {/if}
 
   <div class="insp-label">Filters on</div>
   <label class="insp-row"><span>Dimension</span>
@@ -114,6 +175,9 @@
     display: grid;
     grid-template-columns: 1fr 1fr auto;
     gap: 0.35rem;
+  }
+  .ctx-warn {
+    color: var(--saiku-app-danger, #a3271b);
   }
   code {
     font-size: 0.72rem;
