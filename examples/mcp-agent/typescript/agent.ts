@@ -65,7 +65,10 @@ async function smoke(mcp: Client): Promise<void> {
   const body = (examples[0].request as Record<string, unknown>) ?? examples[0];
   const resultRaw = resultText(await mcp.callTool({ name: "run_query", arguments: body }));
   const result = JSON.parse(resultRaw);
-  if (result.status && result.status !== "SUCCESS") throw new Error(`run_query failed: ${result.error}`);
+  // Require an explicit SUCCESS status — a missing/blank status means the server didn't
+  // confirm the query ran, so the smoke check must not silently pass on it.
+  if (result.status !== "SUCCESS")
+    throw new Error(`run_query failed: status=${JSON.stringify(result.status)}, error=${result.error}`);
   const rows = result.data ?? [];
   console.log(`ran example query: status=${result.status}, ${rows.length} data rows — smoke check PASSED`);
 }

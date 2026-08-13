@@ -86,8 +86,10 @@ async def smoke(session: ClientSession) -> None:
     body = examples[0].get("request", examples[0])
     result_raw = tool_result_text(await session.call_tool("run_query", body))
     result = json.loads(result_raw)
-    if result.get("status") not in (None, "SUCCESS"):
-        sys.exit(f"run_query failed: {result.get('error')}")
+    # Require an explicit SUCCESS status — a missing/blank status means the server
+    # didn't confirm the query ran, so the smoke check must not silently pass on it.
+    if result.get("status") != "SUCCESS":
+        sys.exit(f"run_query failed: status={result.get('status')!r}, error={result.get('error')}")
     rows = result.get("data") or []
     print(f"ran example query: status={result.get('status')}, {len(rows)} data rows — smoke check PASSED")
 
