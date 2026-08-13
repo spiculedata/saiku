@@ -36,8 +36,8 @@
 </script>
 
 <label class="field">
-  <span>Measure</span>
-  <select
+  <span class="field__label">Measure</span>
+  <select class="field__input"
     value={kpiConfig.measure ?? ""}
     disabled={!cubePicked || measures.length === 0}
     onchange={(e) => {
@@ -55,8 +55,8 @@
 </label>
 
 <label class="field">
-  <span>Format</span>
-  <select bind:value={kpiConfig.format}>
+  <span class="field__label">Format</span>
+  <select class="field__input" bind:value={kpiConfig.format}>
     <option value="number">Number</option>
     <option value="currency">Currency</option>
     <option value="percent">Percent</option>
@@ -65,8 +65,8 @@
 </label>
 {#if kpiConfig.format === "custom"}
   <label class="field">
-    <span>Custom pattern</span>
-    <input
+    <span class="field__label">Custom pattern</span>
+    <input class="field__input"
       type="text"
       bind:value={kpiConfig.customFormat}
       placeholder="e.g. $2 / 2% / 3"
@@ -80,9 +80,9 @@
 
 <fieldset class="size">
   <legend>Comparison</legend>
-  <label class="field inline">
-    <span>Mode</span>
-    <select bind:value={kpiConfig.comparison}>
+  <label class="field flex-1">
+    <span class="field__label">Mode</span>
+    <select class="field__input" bind:value={kpiConfig.comparison}>
       <option value="none">None</option>
       <option value="prior-period">Prior period</option>
       <option value="year-over-year">Year over year</option>
@@ -90,26 +90,26 @@
     </select>
   </label>
   {#if kpiConfig.comparison === "target"}
-    <label class="field inline">
-      <span>Target</span>
-      <input
+    <label class="field flex-1">
+      <span class="field__label">Target</span>
+      <input class="field__input"
         type="number"
         bind:value={kpiConfig.target}
         placeholder="e.g. 100000"
       />
     </label>
   {/if}
-  <label class="field inline">
-    <span>Direction</span>
-    <select bind:value={kpiConfig.direction}>
+  <label class="field flex-1">
+    <span class="field__label">Direction</span>
+    <select class="field__input" bind:value={kpiConfig.direction}>
       <option value="higher-is-better">Higher is better</option>
       <option value="lower-is-better">Lower is better</option>
     </select>
   </label>
   {#if kpiConfig.comparison !== "none"}
-    <label class="field inline">
-      <span>Delta label</span>
-      <input type="text" bind:value={kpiConfig.deltaSuffix} placeholder="vs prior" />
+    <label class="field flex-1">
+      <span class="field__label">Delta label</span>
+      <input class="field__input" type="text" bind:value={kpiConfig.deltaSuffix} placeholder="vs prior" />
       <span class="hint">Overrides the callout suffix (e.g. “vs last Thu”, “vs 4-wk avg”).</span>
     </label>
   {/if}
@@ -123,18 +123,18 @@
 {#if showTimeLevel}
   <fieldset class="size">
     <legend>Time level (for comparison + sparkline)</legend>
-    <label class="field inline">
-      <span>Dimension</span>
-      <select bind:value={kpiConfig.timeLevel!.dimension} disabled={!cubePicked}>
+    <label class="field flex-1">
+      <span class="field__label">Dimension</span>
+      <select class="field__input" bind:value={kpiConfig.timeLevel!.dimension} disabled={!cubePicked}>
         <option value="">— pick —</option>
         {#each dimensions as d, _id (_id)}
           <option value={d}>{d}</option>
         {/each}
       </select>
     </label>
-    <label class="field inline">
-      <span>Hierarchy</span>
-      <select
+    <label class="field flex-1">
+      <span class="field__label">Hierarchy</span>
+      <select class="field__input"
         bind:value={kpiConfig.timeLevel!.hierarchy}
         disabled={!kpiConfig.timeLevel?.dimension}
       >
@@ -144,9 +144,9 @@
         {/each}
       </select>
     </label>
-    <label class="field inline">
-      <span>Level</span>
-      <select
+    <label class="field flex-1">
+      <span class="field__label">Level</span>
+      <select class="field__input"
         bind:value={kpiConfig.timeLevel!.level}
         disabled={!kpiConfig.timeLevel?.hierarchy}
       >
@@ -161,25 +161,25 @@
 
 <fieldset class="size">
   <legend>Threshold colouring (optional)</legend>
-  <label class="field inline">
-    <span>Red ≤ / ≥</span>
-    <input
+  <label class="field flex-1">
+    <span class="field__label">Red ≤ / ≥</span>
+    <input class="field__input"
       type="number"
       bind:value={kpiConfig.thresholds!.red}
       placeholder="off"
     />
   </label>
-  <label class="field inline">
-    <span>Yellow</span>
-    <input
+  <label class="field flex-1">
+    <span class="field__label">Yellow</span>
+    <input class="field__input"
       type="number"
       bind:value={kpiConfig.thresholds!.yellow}
       placeholder="off"
     />
   </label>
-  <label class="field inline">
-    <span>Green</span>
-    <input
+  <label class="field flex-1">
+    <span class="field__label">Green</span>
+    <input class="field__input"
       type="number"
       bind:value={kpiConfig.thresholds!.green}
       placeholder="off"
@@ -188,14 +188,7 @@
 </fieldset>
 
 <style>
-  /* Same look as the parent's checkbox affordance — duplicated rather
-     than relying on parent-scoped CSS reaching child slots, which
-     Svelte's scoped styles do not do. */
-  .checkbox {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.875rem;
-    cursor: pointer;
-  }
+  /* saiku#1258: .field/.checkbox/.size/.hint styling now comes from the
+     global app.css pattern + the parent modal's `.modal :global(...)` rules,
+     so nothing needs duplicating here anymore. */
 </style>

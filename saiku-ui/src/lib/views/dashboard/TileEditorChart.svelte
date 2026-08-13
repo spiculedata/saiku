@@ -22,8 +22,8 @@
 </script>
 
 <label class="field">
-  <span>Chart type</span>
-  <select bind:value={chartType}>
+  <span class="field__label">Chart type</span>
+  <select class="field__input" bind:value={chartType}>
     {#each CHART_TYPES as ct (ct.id)}
       <option value={ct.id}>{ct.label} ({ct.group})</option>
     {/each}
@@ -31,7 +31,7 @@
 </label>
 <!-- #1077: per-tile chart options via the reused workspace editor. -->
 <div class="field">
-  <span>Chart options</span>
+  <span class="field__label">Chart options</span>
   <Button variant="outline" class="chart-opts-btn" onclick={onOpenChartOptions}>
     Title, axes, legend, dual-axis &amp; trend…
   </Button>

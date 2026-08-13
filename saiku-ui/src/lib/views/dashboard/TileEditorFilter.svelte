@@ -35,8 +35,8 @@
 </script>
 
 <label class="field">
-  <span>Widget</span>
-  <select bind:value={widget}>
+  <span class="field__label">Widget</span>
+  <select class="field__input" bind:value={widget}>
     <option value="single-select">single-select</option>
     <option value="multi-select">multi-select</option>
     <option value="date-range">date-range</option>
@@ -44,8 +44,8 @@
   </select>
 </label>
 <label class="field">
-  <span>Dimension</span>
-  <select bind:value={filterTarget.dimension} disabled={!cubePicked}>
+  <span class="field__label">Dimension</span>
+  <select class="field__input" bind:value={filterTarget.dimension} disabled={!cubePicked}>
     <option value="">— pick —</option>
     {#each dimensions as d, _id (_id)}
       <option value={d}>{d}</option>
@@ -53,8 +53,8 @@
   </select>
 </label>
 <label class="field">
-  <span>Hierarchy</span>
-  <select bind:value={filterTarget.hierarchy} disabled={!filterTarget.dimension}>
+  <span class="field__label">Hierarchy</span>
+  <select class="field__input" bind:value={filterTarget.hierarchy} disabled={!filterTarget.dimension}>
     <option value="">— pick —</option>
     {#each hierarchies as h, _ih (_ih)}
       <option value={h}>{h}</option>
@@ -62,8 +62,8 @@
   </select>
 </label>
 <label class="field">
-  <span>Level</span>
-  <select bind:value={filterTarget.level} disabled={!filterTarget.hierarchy}>
+  <span class="field__label">Level</span>
+  <select class="field__input" bind:value={filterTarget.level} disabled={!filterTarget.hierarchy}>
     <option value="">— pick —</option>
     {#each levels as l, _il (_il)}
       <option value={l}>{l}</option>
@@ -74,18 +74,18 @@
 {#if widget === "cascading-select"}
   <fieldset class="size">
     <legend>Cascade (walk the hierarchy level-by-level)</legend>
-    <label class="field inline">
-      <span>Start level</span>
-      <select bind:value={cascadeStartLevel} disabled={!filterTarget.hierarchy}>
+    <label class="field flex-1">
+      <span class="field__label">Start level</span>
+      <select class="field__input" bind:value={cascadeStartLevel} disabled={!filterTarget.hierarchy}>
         <option value="">— use level above —</option>
         {#each levels as l, _il (_il)}
           <option value={l}>{l}</option>
         {/each}
       </select>
     </label>
-    <label class="field inline">
-      <span>Depth</span>
-      <input type="number" min="1" max="6" bind:value={cascadeDepth} />
+    <label class="field flex-1">
+      <span class="field__label">Depth</span>
+      <input class="field__input" type="number" min="1" max="6" bind:value={cascadeDepth} />
     </label>
   </fieldset>
   <span class="hint">

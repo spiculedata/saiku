@@ -976,27 +976,27 @@
     </header>
     <div class="p-4 overflow-auto flex flex-col gap-3">
       <label class="field">
-        <span>Title</span>
-        <input type="text" bind:value={title} placeholder={`Untitled ${tile.type}`} />
+        <span class="field__label">Title</span>
+        <input class="field__input" type="text" bind:value={title} placeholder={`Untitled ${tile.type}`} />
       </label>
 
       <fieldset class="size">
         <legend>Position &amp; size (12-col grid)</legend>
-        <label class="field inline">
-          <span>x</span>
-          <input type="number" min="0" max="11" bind:value={tileX} />
+        <label class="field flex-1">
+          <span class="field__label">x</span>
+          <input class="field__input" type="number" min="0" max="11" bind:value={tileX} />
         </label>
-        <label class="field inline">
-          <span>y</span>
-          <input type="number" min="0" bind:value={tileY} />
+        <label class="field flex-1">
+          <span class="field__label">y</span>
+          <input class="field__input" type="number" min="0" bind:value={tileY} />
         </label>
-        <label class="field inline">
-          <span>w</span>
-          <input type="number" min="1" max="12" bind:value={tileW} />
+        <label class="field flex-1">
+          <span class="field__label">w</span>
+          <input class="field__input" type="number" min="1" max="12" bind:value={tileW} />
         </label>
-        <label class="field inline">
-          <span>h</span>
-          <input type="number" min="1" bind:value={tileH} />
+        <label class="field flex-1">
+          <span class="field__label">h</span>
+          <input class="field__input" type="number" min="1" bind:value={tileH} />
         </label>
       </fieldset>
       {#if positionError}
@@ -1025,13 +1025,13 @@
 
       {#if tile.type !== "text" && tile.type !== "image"}
         <label class="field">
-          <span>Cube</span>
+          <span class="field__label">Cube</span>
           {#if cubesLoading}
             <span class="hint">Loading…</span>
           {:else if cubesError}
             <span class="hint error">{cubesError}</span>
           {:else}
-            <select onchange={handleCubeChange} disabled={cubes.length === 0}>
+            <select class="field__input" onchange={handleCubeChange} disabled={cubes.length === 0}>
               <option value="">— pick a cube —</option>
               {#each cubes as c (cubeKey(c))}
                 <option value={cubeKey(c)} selected={cube ? cubeKey(c) === cubeKey(cube) : false}>
@@ -1060,18 +1060,18 @@
             </label>
             {#if anomalyEnabled}
               <label class="field">
-                <span>{i18n.t("dashboard.anomaly.method", "Method")}</span>
+                <span class="field__label">{i18n.t("dashboard.anomaly.method", "Method")}</span>
                 <!-- Only methods the backend actually implements are offered. STL is a
                      registered-but-throwing stub (saiku#908) — surfacing it here let a user
                      pick a method that 400s. Re-add when StlAnomalyDetector is implemented. -->
-                <select bind:value={anomalyMethod}>
+                <select class="field__input" bind:value={anomalyMethod}>
                   <option value="zscore">{i18n.t("dashboard.anomaly.method.zscore", "Z-score")}</option>
                   <option value="mad">{i18n.t("dashboard.anomaly.method.mad", "MAD (robust)")}</option>
                 </select>
               </label>
               <label class="field">
-                <span>{i18n.t("dashboard.anomaly.threshold", "Threshold")}</span>
-                <input
+                <span class="field__label">{i18n.t("dashboard.anomaly.threshold", "Threshold")}</span>
+                <input class="field__input"
                   type="number"
                   min="0"
                   step="0.1"
@@ -1081,8 +1081,8 @@
                 <span class="hint">{i18n.t("dashboard.anomaly.threshold.hint", "Sigmas from expectation. Blank uses the method default.")}</span>
               </label>
               <label class="field">
-                <span>{i18n.t("dashboard.anomaly.timeAxis", "Time axis")}</span>
-                <input
+                <span class="field__label">{i18n.t("dashboard.anomaly.timeAxis", "Time axis")}</span>
+                <input class="field__input"
                   type="text"
                   bind:value={anomalyTimeAxis}
                   placeholder={i18n.t("dashboard.anomaly.timeAxis.placeholder", "Defaults to the first row axis")}
@@ -1101,31 +1101,31 @@
             </label>
             {#if forecastEnabled}
               <label class="field">
-                <span>{i18n.t("dashboard.forecast.method", "Method")}</span>
+                <span class="field__label">{i18n.t("dashboard.forecast.method", "Method")}</span>
                 <!-- Only ETS is implemented; ARIMA + Prophet are registered-but-throwing
                      stubs (saiku#908). Offering them let a user pick a method that 400s.
                      Re-add when ArimaForecaster / ProphetForecaster are implemented. -->
-                <select bind:value={forecastMethod}>
+                <select class="field__input" bind:value={forecastMethod}>
                   <option value="ets">{i18n.t("dashboard.forecast.method.ets", "Exponential smoothing")}</option>
                 </select>
               </label>
               <label class="field">
-                <span>{i18n.t("dashboard.forecast.horizon", "Horizon (points)")}</span>
-                <input type="number" min="1" max="365" step="1" bind:value={forecastHorizon} />
+                <span class="field__label">{i18n.t("dashboard.forecast.horizon", "Horizon (points)")}</span>
+                <input class="field__input" type="number" min="1" max="365" step="1" bind:value={forecastHorizon} />
                 <span class="hint"
                   >{i18n.t("dashboard.forecast.horizon.hint", "How many future points to project.")}</span
                 >
               </label>
               <label class="field">
-                <span>{i18n.t("dashboard.forecast.confidence", "Confidence")}</span>
-                <input type="number" min="0.5" max="0.999" step="0.01" bind:value={forecastConfidence} />
+                <span class="field__label">{i18n.t("dashboard.forecast.confidence", "Confidence")}</span>
+                <input class="field__input" type="number" min="0.5" max="0.999" step="0.01" bind:value={forecastConfidence} />
                 <span class="hint"
                   >{i18n.t("dashboard.forecast.confidence.hint", "Prediction-interval level, e.g. 0.95.")}</span
                 >
               </label>
               <label class="field">
-                <span>{i18n.t("dashboard.forecast.timeAxis", "Time axis")}</span>
-                <input
+                <span class="field__label">{i18n.t("dashboard.forecast.timeAxis", "Time axis")}</span>
+                <input class="field__input"
                   type="text"
                   bind:value={forecastTimeAxis}
                   placeholder={i18n.t("dashboard.forecast.timeAxis.placeholder", "Defaults to the first row axis")}
@@ -1161,12 +1161,12 @@
            validation. Persisted into tile.custom.options on Save. -->
       {#if isEchartsOptionTile}
         <label class="field">
-          <span>ECharts option (JSON)</span>
+          <span class="field__label">ECharts option (JSON)</span>
           <textarea
             bind:value={customOptionsJson}
             rows="12"
             spellcheck="false"
-            class="json"
+            class="field__input json"
             placeholder={JSON.stringify(
               { title: { text: "My chart" }, xAxis: { type: "category" }, yAxis: { type: "value" }, series: [{ type: "bar" }] },
               null,
@@ -1200,28 +1200,28 @@
         <fieldset class="graph-map">
           <legend>Graph columns</legend>
           <label class="field">
-            <span>Source column</span>
-            <input type="text" bind:value={graphSourceCol} spellcheck="false" placeholder="e.g. Parent" />
+            <span class="field__label">Source column</span>
+            <input class="field__input" type="text" bind:value={graphSourceCol} spellcheck="false" placeholder="e.g. Parent" />
           </label>
           <label class="field">
-            <span>Target column</span>
-            <input type="text" bind:value={graphTargetCol} spellcheck="false" placeholder="e.g. Child" />
+            <span class="field__label">Target column</span>
+            <input class="field__input" type="text" bind:value={graphTargetCol} spellcheck="false" placeholder="e.g. Child" />
           </label>
           <label class="field">
-            <span>Id column</span>
-            <input type="text" bind:value={graphIdCol} spellcheck="false" placeholder="node id (often = source)" />
+            <span class="field__label">Id column</span>
+            <input class="field__input" type="text" bind:value={graphIdCol} spellcheck="false" placeholder="node id (often = source)" />
           </label>
           <label class="field">
-            <span>Label column <span class="hint">(optional)</span></span>
-            <input type="text" bind:value={graphLabelCol} spellcheck="false" placeholder="display name for the id node" />
+            <span class="field__label">Label column <span class="hint">(optional)</span></span>
+            <input class="field__input" type="text" bind:value={graphLabelCol} spellcheck="false" placeholder="display name for the id node" />
           </label>
           <label class="field">
-            <span>Value column <span class="hint">(optional)</span></span>
-            <input type="text" bind:value={graphValueCol} spellcheck="false" placeholder="measure carried onto edges" />
+            <span class="field__label">Value column <span class="hint">(optional)</span></span>
+            <input class="field__input" type="text" bind:value={graphValueCol} spellcheck="false" placeholder="measure carried onto edges" />
           </label>
           <label class="field">
-            <span>Layout</span>
-            <select bind:value={graphLayout}>
+            <span class="field__label">Layout</span>
+            <select class="field__input" bind:value={graphLayout}>
               <option value="force">Force</option>
               <option value="circular">Circular</option>
             </select>
@@ -1246,7 +1246,7 @@
            Persisted into tile.custom.options.pluginId on Save. -->
       {#if isPluginTile}
         <label class="field">
-          <span>Plugin</span>
+          <span class="field__label">Plugin</span>
           {#if pluginsLoading}
             <span class="hint">Loading installed plugins…</span>
           {:else if pluginsError}
@@ -1256,7 +1256,7 @@
               No plugins installed — an admin installs them under saiku-home/tile-plugins/.
             </span>
           {:else}
-            <select bind:value={selectedPluginId}>
+            <select class="field__input" bind:value={selectedPluginId}>
               <option value="">— Select a plugin —</option>
               {#each installedPlugins as p (p.id)}
                 <option value={p.id}>{p.label} ({p.id})</option>
@@ -1337,7 +1337,7 @@
         {#if !queryEditorOpen}
         {#if queryMode === "reference"}
           <label class="field">
-            <span>Saved query (.saiku file)</span>
+            <span class="field__label">Saved query (.saiku file)</span>
             {#if savedQueriesLoading}
               <span class="hint">Loading…</span>
             {:else if savedQueriesError}
@@ -1348,7 +1348,7 @@
                 save a query from the main workspace first.
               </span>
             {:else}
-              <select bind:value={referencePath}>
+              <select class="field__input" bind:value={referencePath}>
                 <option value="">— pick a saved query —</option>
                 {#each savedQueries as q (q.path)}
                   <option value={q.path}>{q.path}</option>
@@ -1363,12 +1363,12 @@
           </label>
         {:else}
           <label class="field">
-            <span>Inline query body (AiQueryRequest JSON)</span>
+            <span class="field__label">Inline query body (AiQueryRequest JSON)</span>
             <textarea
               bind:value={inlineBodyJson}
               rows="10"
               spellcheck="false"
-              class="json"
+              class="field__input json"
               placeholder={JSON.stringify(
                 { cube: cube ?? null, measures: [{ name: "..." }], rows: [] },
                 null,
@@ -1443,8 +1443,8 @@
            ════════════════════════════════════════════════════════════ -->
       {#if tile.type === "chart" || tile.type === "table" || tile.type === "kpi"}
         <label class="field">
-          <span>{i18n.t("dashboard.refresh.label", "Auto-refresh")}</span>
-          <select
+          <span class="field__label">{i18n.t("dashboard.refresh.label", "Auto-refresh")}</span>
+          <select class="field__input"
             value={String(refreshInterval)}
             onchange={(e) => (refreshInterval = Number((e.target as HTMLSelectElement).value))}
           >
@@ -1526,20 +1526,17 @@
     flex: 1;
     text-transform: capitalize;
   }
-  /* #912: when the modal is in wide (visual-editor) mode, let the body
-     consume the leftover height so the embedded .qe-section can grow. */
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-  .field span:first-child {
-    font-size: 0.75rem;
-    color: hsl(var(--fg-muted));
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .size {
+  /* saiku#1258: field layout now comes from the global app.css design-system
+     pattern (.field / .field__label / .field__input) — the same one
+     ChartEditorModal uses. The scoped .field / .field.inline rules that used
+     to live here never reached the child tile editors (Svelte scoping does
+     not cross component boundaries), which is exactly why the editor looked
+     ragged. Side-by-side pairs are `field flex-1` inside the flex fieldsets. */
+  /* saiku#1258: fieldset/hint/checkbox affordances are shared with the child
+     tile editors rendered inside this modal, so they're declared as
+     descendant :global rules — plain scoped rules never reached the children
+     and left their fieldsets/hints unstyled. */
+  .modal :global(.size) {
     display: flex;
     gap: 0.5rem;
     align-items: flex-end;
@@ -1548,18 +1545,14 @@
     padding: 0.5rem 0.75rem;
     margin: 0;
   }
-  .size legend {
+  .modal :global(.size legend) {
     font-size: 0.75rem;
     color: hsl(var(--fg-muted));
     text-transform: uppercase;
     letter-spacing: 0.04em;
     padding: 0 0.25rem;
   }
-  .field.inline {
-    flex: 1;
-    min-width: 4rem;
-  }
-  .mode {
+  .modal :global(.mode) {
     display: flex;
     gap: 1rem;
     align-items: center;
@@ -1568,7 +1561,7 @@
     padding: 0.5rem 0.75rem;
     margin: 0;
   }
-  .mode legend {
+  .modal :global(.mode legend) {
     font-size: 0.75rem;
     color: hsl(var(--fg-muted));
     text-transform: uppercase;
@@ -1592,8 +1585,8 @@
     letter-spacing: 0.04em;
     padding: 0 0.25rem;
   }
-  .radio,
-  .checkbox {
+  .modal :global(.radio),
+  .modal :global(.checkbox) {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
@@ -1607,27 +1600,17 @@
     border-radius: 4px;
     font-size: 0.8125rem;
   }
-  .field.inline input {
-    width: 100%;
-  }
-  input, select, textarea {
-    padding: 0.375rem 0.5rem;
-    border: 1px solid hsl(var(--border-strong));
-    border-radius: 4px;
-    font-size: 0.875rem;
-    font-family: inherit;
-  }
   textarea.json {
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
     font-size: 0.8125rem;
     white-space: pre;
   }
-  .hint {
+  .modal :global(.hint) {
     font-size: 0.75rem;
     color: hsl(var(--fg-muted));
   }
-  .hint.error { color: hsl(var(--danger)); }
-  .hint.ok { color: var(--success, hsl(var(--primary))); }
+  .modal :global(.hint.error) { color: hsl(var(--danger)); }
+  .modal :global(.hint.ok) { color: var(--success, hsl(var(--primary))); }
   /* #1077, #919: chart-options + conditional-formatting styles moved
      into TileEditorChart / TileEditorTableConditional / TileEditorKpi /
      TileEditorTableSparkline (per saiku#1229). Svelte's scoped CSS
