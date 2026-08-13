@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import mondrian.olap4j.SaikuMondrianHelper;
 import org.apache.commons.lang3.StringUtils;
 import org.olap4j.Axis;
@@ -49,6 +50,16 @@ import org.slf4j.LoggerFactory;
 public class Fat {
 
     private static final Logger log = LoggerFactory.getLogger(Fat.class);
+
+    /**
+     * saiku#1721 — conservative shape a bracketed Measure reference must match before it is
+     * emitted verbatim into a {@code FILTER(...)}: one or more {@code [segment]} tokens joined
+     * by dots, where no segment contains a nested {@code [} or {@code ]}. This admits legitimate
+     * unique names like {@code [Measures].[Store Sales]} while rejecting smuggled MDX such as
+     * {@code [Measures].[Store Sales] > 0 OR [Measures].[Unit Sales]} — anything carrying an
+     * operator, a comparison, or unbalanced/nested brackets outside a segment fails the match.
+     */
+    private static final Pattern BRACKETED_MEASURE_REF = Pattern.compile("^(\\[[^\\[\\]]+\\]\\.)*\\[[^\\[\\]]+\\]$");
 
     public static Query convert(ThinQuery tq, Cube cube) throws SQLException {
 
@@ -446,7 +457,11 @@ public class Fat {
         }
     }
 
-    private static List<IFilterFunction> convertFilters(Query q, List<ThinFilter> filters) {
+    // Package-visible for the wiring test (saiku#1721): the 17 measurePredicate unit tests all
+    // call the helper directly, so reverting the call site at "case Measure:" back to a drop-stub
+    // keeps them green. This entry point lets a test prove the call site actually wires the
+    // predicate into the filter set.
+    static List<IFilterFunction> convertFilters(Query q, List<ThinFilter> filters) {
         List<IFilterFunction> qfs = new ArrayList<>();
         for (ThinFilter f : filters) {
             switch (f.getFlavour()) {
@@ -522,9 +537,12 @@ public class Fat {
      * <p>Strictly composed from the typed parts (never a raw client expression — that's what
      * the Generic flavour is for, and it stays as-is):
      * <ul>
-     *   <li>{@code expressions[0]} — the measure: a bracketed unique name is used verbatim;
+     *   <li>{@code expressions[0]} — the measure: a bracketed unique name is used verbatim
+     *       ONLY if it matches the conservative {@link #BRACKETED_MEASURE_REF} shape (dotted
+     *       {@code [segment]} tokens with no nested brackets or trailing operators), otherwise
+     *       it is rejected — this is what stops crafted MDX from riding the bracketed branch;
      *       a bare name is wrapped as {@code [Measures].[name]} with the standard MDX
-     *       {@code ]} → {@code ]]} escape so the reference can't be broken out of.</li>
+     *       {@code ]} → {@code ]]} escape so the bare reference can't be broken out of.</li>
      *   <li>{@code expressions[1]} — the comparison value: MUST parse as a number; anything
      *       else is rejected so no free-form MDX can ride in through this typed surface.</li>
      *   <li>{@code operator} — the comparison; {@code LIKE} has no numeric-MDX meaning and is
@@ -579,7 +597,20 @@ public class Fat {
                 throw new IllegalArgumentException(
                         "Measure filter: operator " + f.getOperator() + " is not a numeric comparison");
         }
-        String measureRef = measure.startsWith("[") ? measure : "[Measures].[" + measure.replace("]", "]]") + "]";
+        String measureRef;
+        if (measure.startsWith("[")) {
+            // saiku#1721: a bracketed reference is emitted verbatim into FILTER(...), so it must
+            // match the conservative unique-name shape. Reject anything carrying operators, nested
+            // brackets, or trailing MDX — otherwise a crafted expressions[0] such as
+            // "[Measures].[Store Sales] > 0 OR [Measures].[Unit Sales]" smuggles arbitrary MDX.
+            if (!BRACKETED_MEASURE_REF.matcher(measure).matches()) {
+                throw new IllegalArgumentException(
+                        "Measure filter: bracketed measure reference is not a valid unique name: '" + measure + "'");
+            }
+            measureRef = measure;
+        } else {
+            measureRef = "[Measures].[" + measure.replace("]", "]]") + "]";
+        }
         return measureRef + " " + op + " " + value;
     }
 
