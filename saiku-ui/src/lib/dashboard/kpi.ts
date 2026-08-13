@@ -256,6 +256,30 @@ export function kpiDelta(
  *  cell becomes the headline number, the second-to-last becomes the
  *  baseline. Cells with null value are skipped so a blank "no data"
  *  row doesn't poison the comparison. */
+/**
+ * Is the newest point of a series an incomplete period?
+ *
+ * `count` is the author's declaration that the last N periods are still
+ * filling. The tile cannot work this out for itself: query metadata carries no
+ * dates to compare against a clock, and inferring it from the values would hide
+ * genuine collapses.
+ *
+ * Nothing is dropped as a result of this — the value is real and stays on
+ * screen. It governs only whether a COMPARISON against it is meaningful.
+ */
+export function isTrailingPartial(seriesLength: number, count: number | undefined): boolean {
+  const n = typeof count === "number" && Number.isFinite(count) ? Math.floor(count) : 0;
+  return n > 0 && seriesLength > 0;
+}
+
+export function periodLabel(caption: string, levelName: string | undefined): string {
+  const c = caption.trim();
+  if (!c) return "";
+  const level = (levelName ?? "").trim();
+  if (!level || !/^\d+$/.test(c)) return c;
+  return `${level} ${c}`;
+}
+
 export function lastAndPriorValues(
   series: ReadonlyArray<{ value: number | null }>,
 ): { current: number | null; prior: number | null } {

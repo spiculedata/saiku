@@ -151,6 +151,22 @@ export interface KpiConfig {
    *  sparkline. */
   timeLevel?: TimeLevelRef;
   sparkline?: boolean;
+  /** Declares that the last N periods of the series are INCOMPLETE — the
+   *  current week/month still filling up, or a data boundary.
+   *
+   *  This does NOT hide them. The headline still reports the newest period's
+   *  real value, and the sparkline still plots every point: the data is what it
+   *  is, and suppressing an inconvenient figure would be a worse lie than the
+   *  one this fixes. What it suppresses is the false COMPARISON — a part-period
+   *  measured against a whole one. FoodMart's weekly series ends on a stub week
+   *  52 (1,856 against 11,880 for week 51); the −84% that produces describes
+   *  the calendar, not the business, so it is withheld and the period is
+   *  labelled "partial" instead.
+   *
+   *  The tile cannot detect this itself — query metadata carries no dates, and
+   *  inferring it from the values would hide genuine collapses. Defaults to 0,
+   *  so existing tiles are unchanged. */
+  partialTrailing?: number;
   thresholds?: KpiThresholds;
   direction?: KpiDirection;
   /** Override the comparison suffix on the delta callout (e.g. "vs last Thu",
