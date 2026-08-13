@@ -84,9 +84,15 @@ public class TotalsFormatIT {
                 "totals query must NOT error: "
                         + resp.body().substring(0, Math.min(300, resp.body().length())),
                 r.path("error").isMissingNode() || r.path("error").isNull());
-        assertTrue(
-                "grand total must carry the measure's #,###.00 format, body=" + totalsSnippet(resp.body()),
-                resp.body().contains("565,238.13"));
+        // saiku#1723: assert the exact formatted string AT THE TOTALS POSITION, not anywhere in the
+        // payload. body.contains("565,238.13") would also pass if a data row or some other surface
+        // carried that string — the contract is that the GRAND-TOTAL cell is formatted. The grand
+        // total lives at rowTotalsLists[0][0].cells[0][0].value (a Total[][] whose first Total's
+        // first cell-row holds one cell per details-measure).
+        assertEquals(
+                "grand total (rowTotalsLists[0][0]) must carry the base measure's #,###.00 format",
+                "565,238.13",
+                grandTotalCell(r, 0));
     }
 
     @Test
@@ -113,22 +119,38 @@ public class TotalsFormatIT {
                 "totals query must NOT error: "
                         + resp.body().substring(0, Math.min(300, resp.body().length())),
                 r.path("error").isMissingNode() || r.path("error").isNull());
-        assertTrue(
-                "calc-measure grand total must carry its 0.00% format, body=" + totalsSnippet(resp.body()),
-                resp.body().contains("113047626.00%"));
-        // The base measure's total must still be there, formatted its own way.
-        assertTrue(
-                "base-measure grand total must keep #,###.00 alongside the calc measure, body="
-                        + totalsSnippet(resp.body()),
-                resp.body().contains("565,238.13"));
+        // saiku#1723: pin BOTH measures' formats at their exact totals positions. The grand-total
+        // cell-row carries one cell per details-measure in order: [0] = Store Sales, [1] = Double
+        // Sales. Asserting the position (not body.contains) guards against a future surface carrying
+        // "0.00%"/"113047626.00%" elsewhere, and against the two totals swapping columns.
+        assertEquals(
+                "calc-measure grand total (rowTotalsLists[0][0], col 1) must carry its 0.00% format",
+                "113047626.00%", grandTotalCell(r, 1));
+        assertEquals(
+                "base-measure grand total (rowTotalsLists[0][0], col 0) must keep #,###.00 alongside the calc measure",
+                "565,238.13",
+                grandTotalCell(r, 0));
     }
 
-    /** Trim assertion output to the totals region rather than dumping the whole cellset. */
-    private static String totalsSnippet(String body) {
-        int idx = body.indexOf("rowTotalsLists");
-        if (idx < 0) {
-            return body.substring(0, Math.min(400, body.length()));
-        }
-        return body.substring(idx, Math.min(idx + 400, body.length()));
+    /**
+     * saiku#1723 — read the grand-total cell for the {@code measureIndex}-th details measure from the
+     * parsed response. Path: {@code rowTotalsLists[0][0].cells[0][measureIndex].value}. Fails with a
+     * descriptive assertion (rather than an NPE) if any node on the path is missing, so a totals
+     * regression surfaces as a readable message.
+     */
+    private static String grandTotalCell(JsonNode root, int measureIndex) {
+        JsonNode rowTotalsLists = root.path("rowTotalsLists");
+        assertTrue("response must carry a rowTotalsLists array", rowTotalsLists.isArray() && rowTotalsLists.size() > 0);
+        JsonNode grandTotalGroup = rowTotalsLists.path(0);
+        assertTrue(
+                "rowTotalsLists[0] must be a non-empty Total[]",
+                grandTotalGroup.isArray() && grandTotalGroup.size() > 0);
+        JsonNode cellRows = grandTotalGroup.path(0).path("cells");
+        assertTrue("grand-total Total must carry a cells[][]", cellRows.isArray() && cellRows.size() > 0);
+        JsonNode cellRow = cellRows.path(0);
+        assertTrue(
+                "grand-total cell-row must have a cell for measure index " + measureIndex,
+                cellRow.isArray() && cellRow.size() > measureIndex);
+        return cellRow.path(measureIndex).path("value").asText();
     }
 }
