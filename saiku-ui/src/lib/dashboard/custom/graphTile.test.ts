@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { recordsToGraph, validateGraphConfig, type GraphConfig } from "./graphTile";
+import {
+  recordsToGraph,
+  validateGraphConfig,
+  weightRange,
+  nodeSize,
+  NODE_SIZE_MIN,
+  NODE_SIZE_MAX,
+  NODE_SIZE_DEFAULT,
+  type GraphConfig,
+} from "./graphTile";
 
 const EDGE_CONFIG: GraphConfig = {
   idCol: "source",
@@ -21,17 +30,22 @@ describe("recordsToGraph — nodes", () => {
   });
 
   it("defaults a node's name to its id when no labelCol is configured", () => {
-    const { nodes } = recordsToGraph([{ source: "A", target: "B" }], EDGE_CONFIG);
+    const { nodes } = recordsToGraph(
+      [{ source: "A", target: "B" }],
+      EDGE_CONFIG,
+    );
     const a = nodes.find((n) => n.id === "A");
     expect(a?.name).toBe("A");
   });
 
   it("attaches a labelCol name to the node identified by idCol", () => {
     const records = [{ id: "A", label: "Acme Corp", source: "A", target: "B" }];
-    const { nodes } = recordsToGraph(
-      records,
-      { idCol: "id", labelCol: "label", sourceCol: "source", targetCol: "target" },
-    );
+    const { nodes } = recordsToGraph(records, {
+      idCol: "id",
+      labelCol: "label",
+      sourceCol: "source",
+      targetCol: "target",
+    });
     const a = nodes.find((n) => n.id === "A");
     expect(a?.name).toBe("Acme Corp");
   });
@@ -93,7 +107,9 @@ describe("recordsToGraph — valueCol", () => {
   });
 
   it("leaves link.value unset when the value cell is non-numeric", () => {
-    const records = [{ source: "A", target: "B", weight: { value: null, formatted: "-" } }];
+    const records = [
+      { source: "A", target: "B", weight: { value: null, formatted: "-" } },
+    ];
     const config: GraphConfig = { ...EDGE_CONFIG, valueCol: "weight" };
     const { links } = recordsToGraph(records, config);
     expect(links[0].value).toBeUndefined();
@@ -107,7 +123,10 @@ describe("recordsToGraph — malformed / empty input", () => {
 
   it("returns an empty graph for a non-array input", () => {
     expect(recordsToGraph(null, EDGE_CONFIG)).toEqual({ nodes: [], links: [] });
-    expect(recordsToGraph(undefined, EDGE_CONFIG)).toEqual({ nodes: [], links: [] });
+    expect(recordsToGraph(undefined, EDGE_CONFIG)).toEqual({
+      nodes: [],
+      links: [],
+    });
     expect(recordsToGraph({ source: "A" } as unknown, EDGE_CONFIG)).toEqual({
       nodes: [],
       links: [],
@@ -124,7 +143,11 @@ describe("recordsToGraph — malformed / empty input", () => {
 
 describe("validateGraphConfig — accept", () => {
   it("accepts the minimal required column mapping and defaults layout to force", () => {
-    const r = validateGraphConfig({ idCol: "src", sourceCol: "src", targetCol: "tgt" });
+    const r = validateGraphConfig({
+      idCol: "src",
+      sourceCol: "src",
+      targetCol: "tgt",
+    });
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value).toEqual({
@@ -167,9 +190,15 @@ describe("validateGraphConfig — reject", () => {
   });
 
   it("rejects a missing or empty required column", () => {
-    expect(validateGraphConfig({ sourceCol: "s", targetCol: "t" }).ok).toBe(false);
-    expect(validateGraphConfig({ idCol: "", sourceCol: "s", targetCol: "t" }).ok).toBe(false);
-    expect(validateGraphConfig({ idCol: "i", sourceCol: "  ", targetCol: "t" }).ok).toBe(false);
+    expect(validateGraphConfig({ sourceCol: "s", targetCol: "t" }).ok).toBe(
+      false,
+    );
+    expect(
+      validateGraphConfig({ idCol: "", sourceCol: "s", targetCol: "t" }).ok,
+    ).toBe(false);
+    expect(
+      validateGraphConfig({ idCol: "i", sourceCol: "  ", targetCol: "t" }).ok,
+    ).toBe(false);
     expect(validateGraphConfig({ idCol: "i", sourceCol: "s" }).ok).toBe(false);
   });
 
@@ -181,5 +210,72 @@ describe("validateGraphConfig — reject", () => {
       valueCol: 42,
     });
     expect(r.ok).toBe(false);
+  });
+});
+
+/*
+ * Node symbol sizing (saiku#1755). The original scale was absolute —
+ * `min(60, 20 + sqrt(value))` — which saturates at value > 1600, so every node
+ * in a graph weighted by any real measure (revenue, volume) rendered at the
+ * cap and the weighting conveyed nothing. Sizing is now relative to the
+ * weights actually present.
+ */
+describe("node sizing (saiku#1755)", () => {
+  it("returns null range when no node carries a weight", () => {
+    expect(weightRange([{ id: "a", name: "A" }])).toBeNull();
+  });
+
+  it("spans the full size band across a currency-scale spread", () => {
+    const nodes = [
+      { id: "s", name: "State", value: 5_304_323 },
+      { id: "r", name: "Region", value: 21_009_113 },
+    ];
+    const range = weightRange(nodes);
+    expect(nodeSize(5_304_323, range)).toBe(NODE_SIZE_MIN);
+    expect(nodeSize(21_009_113, range)).toBe(NODE_SIZE_MAX);
+  });
+
+  it("is monotonic in value", () => {
+    const range = { min: 0, max: 1_000_000 };
+    const sizes = [0, 1_000, 100_000, 500_000, 1_000_000].map((v) =>
+      nodeSize(v, range),
+    );
+    expect(sizes[0]).toBe(NODE_SIZE_MIN); // a zero weight is the lightest node, not "unweighted"
+    for (let i = 1; i < sizes.length; i++)
+      expect(sizes[i]).toBeGreaterThanOrEqual(sizes[i - 1]);
+  });
+
+  it("keeps every node inside the band", () => {
+    const range = { min: 10, max: 20 };
+    for (const v of [-5, 0, 10, 15, 20, 1e12]) {
+      const s = nodeSize(v, range);
+      expect(s).toBeGreaterThanOrEqual(NODE_SIZE_MIN);
+      expect(s).toBeLessThanOrEqual(NODE_SIZE_MAX);
+    }
+  });
+
+  it("gives equal-weight nodes one consistent size", () => {
+    const range = weightRange([
+      { id: "a", name: "A", value: 500 },
+      { id: "b", name: "B", value: 500 },
+    ]);
+    expect(nodeSize(500, range)).toBe(nodeSize(500, range));
+  });
+
+  it("falls back to the default only when there is no usable weight", () => {
+    const range = { min: 1, max: 100 };
+    expect(nodeSize(undefined, range)).toBe(NODE_SIZE_DEFAULT);
+    expect(nodeSize(Number.NaN, range)).toBe(NODE_SIZE_DEFAULT);
+    expect(nodeSize(50, null)).toBe(NODE_SIZE_DEFAULT);
+  });
+
+  it("sizes negative weights (a loss is a weight, not a missing value)", () => {
+    const range = weightRange([
+      { id: "a", name: "A", value: -500 },
+      { id: "b", name: "B", value: 1_500 },
+    ]);
+    expect(range).toEqual({ min: -500, max: 1_500 });
+    expect(nodeSize(-500, range)).toBe(NODE_SIZE_MIN);
+    expect(nodeSize(1_500, range)).toBe(NODE_SIZE_MAX);
   });
 });

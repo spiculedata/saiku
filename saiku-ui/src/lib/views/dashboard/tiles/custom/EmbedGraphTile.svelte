@@ -19,7 +19,12 @@
   import { TooltipComponent, LegendComponent } from "echarts/components";
   import { CanvasRenderer } from "echarts/renderers";
   import type { EChartsType } from "echarts/types/dist/shared";
-  import { recordsToGraph, validateGraphConfig } from "../../../../dashboard/custom/graphTile";
+  import {
+    recordsToGraph,
+    validateGraphConfig,
+    weightRange,
+    nodeSize,
+  } from "../../../../dashboard/custom/graphTile";
 
   // Register the module set once at module scope (ECharts dedupes repeats).
   use([GraphChart, TooltipComponent, LegendComponent, CanvasRenderer]);
@@ -60,10 +65,6 @@
     };
   });
 
-  function nodeSize(value: number | undefined): number {
-    if (value === undefined || !Number.isFinite(value) || value <= 0) return 24;
-    return Math.min(60, 20 + Math.sqrt(value));
-  }
 
   $effect(() => {
     if (!chart) return;
@@ -85,12 +86,17 @@
           circular: { rotateLabel: true },
           emphasis: { focus: "adjacency" },
           lineStyle: { color: "source", curveness: 0.1 },
-          data: graph.nodes.map((n) => ({
-            id: n.id,
-            name: n.name,
-            value: n.value,
-            symbolSize: nodeSize(n.value),
-          })),
+          data: (() => {
+            // Sizing is relative to the weights this graph actually carries
+            // (saiku#1755), so the scale works whatever the measure's units.
+            const range = weightRange(graph.nodes);
+            return graph.nodes.map((n) => ({
+              id: n.id,
+              name: n.name,
+              value: n.value,
+              symbolSize: nodeSize(n.value, range),
+            }));
+          })(),
           links: graph.links.map((l) => ({
             source: l.source,
             target: l.target,

@@ -29,7 +29,12 @@
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
   import { schemaCache } from "$lib/stores/schemaCache.svelte";
   import { type SchemaLike } from "$lib/dashboard/effectiveQuery";
-  import { recordsToGraph, validateGraphConfig } from "$lib/dashboard/custom/graphTile";
+  import {
+    recordsToGraph,
+    validateGraphConfig,
+    weightRange,
+    nodeSize,
+  } from "$lib/dashboard/custom/graphTile";
   import { searchMembers } from "$lib/api/aiQuery";
   import { pickMemberUniqueName } from "$lib/dashboard/clickFilterMember";
   import { theme } from "$lib/stores/theme.svelte";
@@ -151,12 +156,17 @@
           circular: { rotateLabel: true },
           emphasis: { focus: "adjacency" },
           lineStyle: { color: "source", curveness: 0.1 },
-          data: graph.nodes.map((n) => ({
-            id: n.id,
-            name: n.name,
-            value: n.value,
-            symbolSize: nodeSize(n.value),
-          })),
+          data: (() => {
+            // Sizing is relative to the weights this graph actually carries
+            // (saiku#1755), so the scale works whatever the measure's units.
+            const range = weightRange(graph.nodes);
+            return graph.nodes.map((n) => ({
+              id: n.id,
+              name: n.name,
+              value: n.value,
+              symbolSize: nodeSize(n.value, range),
+            }));
+          })(),
           links: graph.links.map((l) => ({
             source: l.source,
             target: l.target,
@@ -169,12 +179,6 @@
     chart.setOption(option, true);
   });
 
-  // Scale node symbol size gently by weight when a valueCol is configured;
-  // undefined weight → a stable default so every node stays visible.
-  function nodeSize(value: number | undefined): number {
-    if (value === undefined || !Number.isFinite(value) || value <= 0) return 24;
-    return Math.min(60, 20 + Math.sqrt(value));
-  }
 
   // Best-effort click-to-filter for INLINE tiles: map a clicked node id back to
   // a real member unique name on the tile's first row axis, mirroring the
