@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, test, expect } from "vitest";
 import {
   computeFilterAffinity,
   isFilterableTile,
@@ -143,5 +143,81 @@ describe("computeFilterAffinity", () => {
     const r = computeFilterAffinity(productTarget, [], resolve);
     expect(r.affectedCount).toBe(0);
     expect(r.totalCount).toBe(0);
+  });
+});
+
+/* ====================================================================
+ * saiku#1821 — the "affects N of M" count must include model-backed tiles.
+ *
+ * The check resolved the target's dim/hier/level against the tile's MDX
+ * schema, which a semantic-model tile does not have. Once a filter could
+ * genuinely reach a model through a binding, the badge started under-counting:
+ * a filter narrowing three cube tiles and three model tiles read
+ * "Affects 3 of 7", and the three it disowned moved anyway.
+ * ==================================================================== */
+describe("computeFilterAffinity — semantic bindings (saiku#1821)", () => {
+  const cube: CubeRef = { connectionName: "c", catalog: "FoodMart", schema: "FoodMart", cubeName: "Store" };
+  const model: CubeRef = {
+    kind: "ossie",
+    connectionName: "unknown_Flights",
+    modelName: "Flights",
+    catalog: "Flights",
+    schema: "Flights",
+    cubeName: "Flights",
+  };
+
+  const schema = {
+    dimensions: {
+      store: {
+        name: "Store",
+        hierarchies: { stores: { name: "Stores", levels: { "store state": { name: "Store State" } } } },
+      },
+    },
+  } as unknown as SchemaLike;
+
+  const tiles: AffinityTile[] = [
+    { id: "cube-chart", type: "chart", cube, query: { kind: "inline", body: {} } },
+    { id: "model-chart", type: "chart", cube: model, query: { kind: "inline", body: {} } },
+    { id: "model-kpi", type: "kpi", cube: model, kpi: { measure: "flight_count" } },
+    { id: "text", type: "text" },
+  ];
+
+  const target = {
+    dimension: "Store",
+    hierarchy: "Stores",
+    level: "Store State",
+    bindings: [
+      { kind: "ossie" as const, cube: model, dataset: "airport", field: "airport_state" },
+      { kind: "mdx" as const, cube, dimension: "Store", hierarchy: "Stores", level: "Store State" },
+    ],
+  };
+
+  test("counts the model tiles the filter reaches through its binding", () => {
+    const a = computeFilterAffinity(target, tiles, () => schema);
+    expect(a.affected.has("model-chart")).toBe(true);
+    expect(a.affected.has("model-kpi")).toBe(true);
+    expect(a.affectedCount).toBe(3);
+    expect(a.totalCount).toBe(4);
+  });
+
+  test("still counts the cube tile via schema resolution", () => {
+    expect(computeFilterAffinity(target, tiles, () => schema).affected.has("cube-chart")).toBe(true);
+  });
+
+  test("a model tile the filter has no binding for is NOT counted", () => {
+    const other: CubeRef = { ...model, modelName: "TPCDS", cubeName: "TPCDS" };
+    const a = computeFilterAffinity(target, [{ id: "other", type: "chart", cube: other, query: { kind: "inline", body: {} } }], () => schema);
+    expect(a.affectedCount).toBe(0);
+  });
+
+  test("a model tile is judged without needing a schema at all", () => {
+    // schemaFor returns null for a model — the old path bailed there.
+    const a = computeFilterAffinity(target, tiles, () => null);
+    expect(a.affected.has("model-chart")).toBe(true);
+    expect(a.affected.has("cube-chart")).toBe(false);
+  });
+
+  test("text tiles never count", () => {
+    expect(computeFilterAffinity(target, tiles, () => schema).affected.has("text")).toBe(false);
   });
 });

@@ -14,12 +14,20 @@
 
 import { resolveTarget, type SchemaLike } from "$lib/dashboard/effectiveQuery";
 import type { CubeRef, DashboardTile } from "$lib/api/dashboards";
+// saiku#1803: model-backed tiles are reached through a semantic binding, not by
+// resolving a dim/hier/level in an MDX schema.
+import { isOssieSource } from "$lib/dashboard/tileSource";
+import { filterReachesSource, type SemanticFilter } from "$lib/dashboard/semanticFilter";
 
 /** The dim/hier/level a panel filter targets. */
 export interface FilterTarget {
   dimension: string;
   hierarchy: string;
   level: string;
+  /** saiku#1803: per-source bindings, when the caller has them. Without these a
+   *  filter can only be judged against MDX tiles, which is what made the badge
+   *  under-report once semantic filters existed. */
+  bindings?: SemanticFilter["bindings"];
 }
 
 /** Just the tile fields the affinity check reads — keeps callers (and
@@ -64,6 +72,18 @@ export function computeFilterAffinity(
   for (const t of tiles) {
     if (!isFilterableTile(t)) continue;
     if (!t.cube) continue;
+
+    // saiku#1803: a tile bound to an Ossie semantic model has no MDX schema to
+    // resolve a dim/hier/level against — it is reached through the filter's
+    // semantic BINDING instead. Counting only the MDX path made the badge
+    // actively wrong once semantic filters existed: a filter narrowing three
+    // cube tiles and three model tiles read "Affects 3 of 7", and the three it
+    // didn't mention moved anyway.
+    if (isOssieSource(t.cube)) {
+      if (filterReachesSource(target as SemanticFilter, t.cube)) affected.add(t.id);
+      continue;
+    }
+
     const schema = schemaFor(t.cube);
     if (!schema) continue;
     if (resolveTarget(schema, target.dimension, target.hierarchy, target.level)) {

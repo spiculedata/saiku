@@ -19,6 +19,7 @@
  */
 
 import type { CubeRef } from "$lib/api/dashboards";
+import { isOssieSource } from "$lib/dashboard/tileSource";
 
 /** Loose schema shape — narrowed when the applicability check needs it. */
 export type AiSchemaLike = Record<string, unknown>;
@@ -40,6 +41,24 @@ class SchemaCacheStore {
     const key = cubeKey(cube);
     const cached = this.resolved.get(key);
     if (cached) return cached;
+
+    // saiku#1821: an Ossie semantic model has no MDX schema, and asking the
+    // cube endpoint for one fails. A failed fetch is not cached (see the
+    // rejection path below), so every caller that primes schemas on an
+    // interaction — the filter panel does it on hover AND on focus — fired a
+    // fresh doomed request each time, and each rejection still ticked the
+    // reactive version through the surrounding re-render. The visible symptom
+    // was a filter you could not click: focusing the <select> re-primed, the
+    // panel re-rendered, and the browser closed the open dropdown.
+    //
+    // Answer definitively and cache it: a model has no dimensions to resolve an
+    // MDX dim/hier/level against, which is exactly what applicability checks
+    // need to know.
+    if (isOssieSource(cube)) {
+      const empty = { dimensions: {} } as AiSchemaLike;
+      this.resolved.set(key, empty);
+      return empty;
+    }
     const inflight = this.inflight.get(key);
     if (inflight) return inflight;
 
