@@ -295,6 +295,15 @@
   function closeToolsMenu() { toolsMenuOpen = false; }
   function closeExportMenu() { exportMenuOpen = false; }
 
+  /** "Email" now lives inside the Export dropdown alongside XLS/CSV/PDF rather
+   *  than as its own toolbar button. Same action as before — close the menu and
+   *  open the Email-me-this composer (POST /saiku/api/email/self flow). The item
+   *  stays gated by mailHealth.configured, so this only fires when configured. */
+  function emailFromExport() {
+    exportMenuOpen = false;
+    emailModalOpen = true;
+  }
+
   function openDrillAcross() {
     closeToolsMenu();
     drillAcrossOpen = true;
@@ -555,19 +564,19 @@
         <button type="button" class="toolbar__item" onclick={() => exportCurrent("pdf")}>
           <FileType size={16} /> <span>{i18n.t("toolbar.export.pdf")}</span>
         </button>
+        <div class="toolbar__item-sep" role="separator"></div>
+        <button
+          type="button"
+          class="toolbar__item"
+          disabled={!mailHealth.configured}
+          title={mailHealth.configured ? i18n.t("toolbar.emailMeThis.tooltip", "Email this report") : i18n.t("toolbar.emailMeThis.disabled", "Email isn't configured on this server")}
+          aria-label={i18n.t("toolbar.emailMeThis.tooltip", "Email this report")}
+          onclick={emailFromExport}
+        >
+          <Mail size={16} /> <span>{i18n.t("toolbar.emailMeThis", "Email")}</span>
+        </button>
       </div>
     {/if}
-  </div>
-  <div class="flex items-center gap-0.5 relative" role="group" aria-label="Email">
-    <button
-      class="tb-btn"
-      disabled={!mailHealth.configured}
-      title={mailHealth.configured ? i18n.t("toolbar.emailMeThis.tooltip", "Email this report") : i18n.t("toolbar.emailMeThis.disabled", "Email isn't configured on this server")}
-      aria-label={i18n.t("toolbar.emailMeThis.tooltip", "Email this report")}
-      onclick={() => (emailModalOpen = true)}
-    >
-      <Mail size={18} /><span class="text-sm">{i18n.t("toolbar.emailMeThis", "Email")}</span>
-    </button>
   </div>
 </div>
 
@@ -672,7 +681,17 @@
     font: inherit;
     cursor: pointer;
   }
-  .toolbar__item:hover { background: hsl(var(--bg-hover)); }
+  .toolbar__item:hover:not(:disabled) { background: hsl(var(--bg-hover)); }
+  .toolbar__item:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  /* Horizontal rule between dropdown item groups (e.g. exports vs Email). */
+  .toolbar__item-sep {
+    height: 1px;
+    margin: 4px 6px;
+    background: hsl(var(--border));
+  }
   .toolbar__sep {
     width: 1px;
     height: 22px;
