@@ -9,7 +9,7 @@ class MailMessageTest {
 
     @Test
     void nullLists_becomeEmpty_andListsAreDefensivelyCopied() {
-        MailMessage m = new MailMessage("to@x.com", "from@x.com", "Subj", "<p>hi</p>", null, null);
+        MailMessage m = MailMessage.of("to@x.com", "from@x.com", "Subj", "<p>hi</p>", null, null);
         assertNotNull(m.inlineImages());
         assertNotNull(m.attachments());
         assertTrue(m.inlineImages().isEmpty());
@@ -19,14 +19,14 @@ class MailMessageTest {
     @Test
     void requiredFields_areValidated() {
         assertThrows(
-                NullPointerException.class, () -> new MailMessage(null, "from@x.com", "s", "b", List.of(), List.of()));
+                NullPointerException.class, () -> MailMessage.of(null, "from@x.com", "s", "b", List.of(), List.of()));
         assertThrows(
-                NullPointerException.class, () -> new MailMessage("to@x.com", null, "s", "b", List.of(), List.of()));
+                NullPointerException.class, () -> MailMessage.of("to@x.com", null, "s", "b", List.of(), List.of()));
     }
 
     @Test
     void carriesInlineImageAndAttachment() {
-        MailMessage m = new MailMessage(
+        MailMessage m = MailMessage.of(
                 "to@x.com",
                 "from@x.com",
                 "s",

@@ -213,7 +213,7 @@ public class MailConfigResource {
         }
 
         // FIXED message. Recipient = cfg.selfTo() ONLY; subject/body are constants (no client input).
-        MailMessage msg = new MailMessage(cfg.selfTo(), cfg.from(), TEST_SUBJECT, TEST_HTML_BODY, List.of(), List.of());
+        MailMessage msg = MailMessage.of(cfg.selfTo(), cfg.from(), TEST_SUBJECT, TEST_HTML_BODY, List.of(), List.of());
         try {
             sender.send(msg);
             // Never log the MailConfig instance — outcome booleans only.
