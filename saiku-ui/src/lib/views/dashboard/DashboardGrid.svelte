@@ -291,7 +291,14 @@
   {#if dash.layout.tiles.length === 0}
     <div class="empty">
       <p>No tiles yet.</p>
-      <p class="hint">Use <em>Add tile</em> in the toolbar to start building.</p>
+      <!-- saiku#1762: an App opens in VIEW mode, where there is no toolbar to
+           use — pointing at one was a dead end on the first screen after
+           creating an app. Only the editable state names the toolbar. -->
+      {#if readOnly}
+        <p class="hint">Click <em>Edit</em> to start building.</p>
+      {:else}
+        <p class="hint">Use <em>Add tile</em> in the toolbar to start building.</p>
+      {/if}
     </div>
   {:else}
     <!-- The grid's onclick only clears the multi-selection when the user clicks

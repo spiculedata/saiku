@@ -34,7 +34,9 @@ export const CHART_TYPES: { id: ChartType; label: string; group: string }[] = [
   { id: "bubble", label: "Bubble", group: "Points" },
   // issue #1071: world-countries choropleth (Phase 1). Place names come from
   // the row hierarchy; the active (first) measure drives the colour.
-  { id: "map", label: "Map (choropleth)", group: "Geo" },
+  // saiku#1758: the scope is in the label, because it is only discoverable
+  // otherwise by binding sub-national rows and getting a blank map back.
+  { id: "map", label: "Map (choropleth — by country)", group: "Geo" },
 ];
 
 /** issue #1071: sequential / diverging colour ramps for the map visualMap. */

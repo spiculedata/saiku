@@ -58,7 +58,8 @@
   import { chartSummary } from "$lib/charts/a11y";
   // issue #1071: map tiles need the GeoJSON registered with ECharts before
   // setOption — lazy-loaded here (the builder/adapter stay pure).
-  import { ensureGeoMap, isGeoMapRegistered } from "$lib/charts/geoMaps";
+  import { ensureGeoMap, isGeoMapRegistered, geoFeatureNames } from "$lib/charts/geoMaps";
+  import { geoCoverage, geoCoverageNotice } from "$lib/charts/geoMatch";
   // #1092: preserve the dataZoom window (+ brush) across re-renders (tile resize
   // / theme flip / same-shape data refresh). Pure decision in the helper.
   import { reconcileZoomState } from "$lib/charts/zoomState";
@@ -238,6 +239,21 @@
     const r = response;
     if (!r || r.status !== "SUCCESS") return null;
     return chartSummary(tile.chartType ?? "bar", tile.title ?? "", projectFromAiQueryResponse(r));
+  });
+
+  // saiku#1758: how much of a map tile's data actually landed on the basemap.
+  // ECharts ignores map data whose name matches no feature — correct for
+  // rendering (a missing country beats a wrong one) but silent, so a cube's US
+  // states bound to the country map painted ONE shape (Georgia, the country)
+  // and read as a genuine result. Recomputed when the map finishes registering
+  // (mapReadyTick), since the feature list is empty until then.
+  let geoNotice = $derived.by(() => {
+    if ((tile.chartType ?? "bar") !== "map") return null;
+    void mapReadyTick;
+    const r = response;
+    if (!r || r.status !== "SUCCESS") return null;
+    const names = projectFromAiQueryResponse(r).rowCategories;
+    return geoCoverageNotice(geoCoverage(names, geoFeatureNames("world")));
   });
 
   /* ----------------------------- lifecycle --------------------------- */
@@ -739,6 +755,12 @@
   <div class="p-4 text-fg-muted text-sm">Tile has no query binding — open ⚙ to set one.</div>
 {:else}
   <div class="chart-tile" class:chart-tile--scroll={smallMultipleRows > 1}>
+    {#if geoNotice}
+      <!-- saiku#1758: say how much of the data actually placed. ECharts drops
+           unmatched map names silently, so a states-on-a-country-map tile
+           rendered one shape out of sixteen and looked like a real result. -->
+      <p class="geo-notice">{geoNotice}</p>
+    {/if}
     <!-- #1090: the canvas is decorative to assistive tech; the sr-only table is
          the accessible representation, so hide the canvas from screen readers.
          #1600: a single chart fills the tile via flex (no inline height, no
@@ -800,6 +822,20 @@
 <TileDrillthrough bind:this={drill} cube={resolvedCube} />
 
 <style>
+  /* saiku#1758: partial-match notice for a choropleth. Muted rather than an
+     error — the chart still drew what it could — but always visible, because
+     the failure mode it reports is one that otherwise looks like a result. */
+  .geo-notice {
+    flex: none;
+    margin: 0;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.75rem;
+    line-height: 1.35;
+    color: var(--saiku-app-fg-muted, var(--fg-muted, #64748b));
+    background: var(--saiku-app-bg-muted, var(--bg-muted, #f1f5f9));
+    border-bottom: 1px solid var(--saiku-app-border, var(--border, #e2e8f0));
+  }
+
 .chart-tile {
     position: relative;
     height: 100%;

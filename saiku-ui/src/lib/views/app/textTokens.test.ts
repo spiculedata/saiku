@@ -6,7 +6,12 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { isoWeek, renderTokens, TOKEN_HELP } from "./textTokens";
+import {
+  isoWeek,
+  renderTokens,
+  tokenHelp,
+  FILTER_TOKEN_PLACEHOLDER,
+} from "./textTokens";
 
 // Thursday, 9 October 1997 — ISO week 41, the week FoodMart Ops' meta line names.
 const NOW = new Date(1997, 9, 9);
@@ -34,7 +39,9 @@ describe("isoWeek", () => {
 
 describe("renderTokens", () => {
   it("returns literals untouched", () => {
-    expect(renderTokens("Portland #14 · Today", CTX)).toBe("Portland #14 · Today");
+    expect(renderTokens("Portland #14 · Today", CTX)).toBe(
+      "Portland #14 · Today",
+    );
     expect(renderTokens("", CTX)).toBe("");
     expect(renderTokens(null, CTX)).toBe("");
     expect(renderTokens(undefined, CTX)).toBe("");
@@ -60,7 +67,9 @@ describe("renderTokens", () => {
 
   it("falls back to All for a dimension with no selection", () => {
     expect(renderTokens("{filter:Region}", CTX)).toBe("All");
-    expect(renderTokens("{filter:Region}", { ...CTX, allLabel: "Everywhere" })).toBe("Everywhere");
+    expect(
+      renderTokens("{filter:Region}", { ...CTX, allLabel: "Everywhere" }),
+    ).toBe("Everywhere");
   });
 
   it("resolves date tokens", () => {
@@ -72,11 +81,15 @@ describe("renderTokens", () => {
   });
 
   it("rebuilds the frozen meta line as a live one", () => {
-    expect(renderTokens("{date:weekday} · Week {week}", CTX)).toBe("Thu · Week 41");
+    expect(renderTokens("{date:weekday} · Week {week}", CTX)).toBe(
+      "Thu · Week 41",
+    );
   });
 
   it("resolves several tokens in one string", () => {
-    expect(renderTokens("{context} · {date:weekday}", CTX)).toBe("Seattle #3 · Thu");
+    expect(renderTokens("{context} · {date:weekday}", CTX)).toBe(
+      "Seattle #3 · Thu",
+    );
   });
 
   /* A silent blank is undiagnosable — the author needs to SEE the typo. */
@@ -113,12 +126,28 @@ describe("renderTokens", () => {
   });
 });
 
-describe("TOKEN_HELP", () => {
+describe("tokenHelp", () => {
   /* The inspector shows this list; if it advertises a token the resolver
    * doesn't implement, authors get "{…}" rendered back at them. */
   it("only advertises tokens that actually resolve", () => {
-    for (const { token } of TOKEN_HELP) {
+    for (const { token } of tokenHelp("Store")) {
       expect(renderTokens(token, CTX), token).not.toBe(token);
     }
+  });
+
+  /* saiku#1761: the {filter:…} chip named a FoodMart dimension in every app. */
+  it("names the app's own dimension in the filter chip", () => {
+    const chip = tokenHelp("Geography").find((t) =>
+      t.token.startsWith("{filter:"),
+    );
+    expect(chip?.token).toBe("{filter:Geography}");
+  });
+
+  it("falls back to a neutral placeholder, never a sample dataset's dimension", () => {
+    const chip = tokenHelp().find((t) => t.token.startsWith("{filter:"));
+    expect(chip?.token).toBe(`{filter:${FILTER_TOKEN_PLACEHOLDER}}`);
+    expect(
+      tokenHelp("   ").find((t) => t.token.startsWith("{filter:"))?.token,
+    ).toBe(`{filter:${FILTER_TOKEN_PLACEHOLDER}}`);
   });
 });

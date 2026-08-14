@@ -23,7 +23,12 @@ export type FilterSource =
    *  emits a (usually multi-member) filter on its row hierarchy. Carries the
    *  source tile id so the SOURCE tile can exclude its own cross-filter and
    *  keep full context (unlike click filters, which apply everywhere). */
-  | { kind: "cross"; tileId: string };
+  | { kind: "cross"; tileId: string }
+  /** App-scoped selection (saiku#1754) — the App Builder's header context
+   *  pill. Unlike clicks it is NOT page state: it belongs to the app shell and
+   *  must survive the per-page hydrate, or a page renders unfiltered numbers
+   *  under a header still claiming the selection. */
+  | { kind: "app"; sourceId: string };
 
 export interface ActiveFilter {
   /** Stable per-instance id; used as the chip key. */
@@ -48,6 +53,11 @@ class ActiveFiltersStore {
    *  like clicks — cleared on dashboard swap. */
   crosses = $state<ActiveFilter[]>([]);
 
+  /** App-scoped selections (saiku#1754) — currently just the App Builder's
+   *  header context pill. Deliberately NOT cleared by {@link resetTransient}:
+   *  an app-level scope outlives the page hydrate that swaps the grid. */
+  appLevel = $state<ActiveFilter[]>([]);
+
   /** Derived: panel filters from the active dashboard. Re-derived
    *  whenever {@code dashboardStore.current.filterPanel} changes. */
   panel = $derived<ActiveFilter[]>(
@@ -63,18 +73,23 @@ class ActiveFiltersStore {
     })),
   );
 
-  /** Derived: the merged active set. Panel first, clicks second, brush
-   *  cross-filters last — when entries target the same (dim, hier, level),
-   *  the most-intentional (cross > click > panel) wins. Per-tile source
-   *  exclusion (a tile ignoring its OWN cross-filter) happens downstream in
-   *  effectiveQueryFor, which knows the consuming tile id. */
-  all = $derived<ActiveFilter[]>((() => {
-    const byKey = new Map<string, ActiveFilter>();
-    for (const f of this.panel) byKey.set(targetKey(f.filter), f);
-    for (const f of this.clicks) byKey.set(targetKey(f.filter), f);
-    for (const f of this.crosses) byKey.set(targetKey(f.filter), f);
-    return Array.from(byKey.values());
-  })());
+  /** Derived: the merged active set. Panel first, then the app-level scope,
+   *  then clicks, brush cross-filters last — when entries target the same
+   *  (dim, hier, level), the most-intentional
+   *  (cross > click > app > panel) wins. An in-page click therefore still
+   *  narrows past the app's context pill. Per-tile source exclusion (a tile
+   *  ignoring its OWN cross-filter) happens downstream in effectiveQueryFor,
+   *  which knows the consuming tile id. */
+  all = $derived<ActiveFilter[]>(
+    (() => {
+      const byKey = new Map<string, ActiveFilter>();
+      for (const f of this.panel) byKey.set(targetKey(f.filter), f);
+      for (const f of this.appLevel) byKey.set(targetKey(f.filter), f);
+      for (const f of this.clicks) byKey.set(targetKey(f.filter), f);
+      for (const f of this.crosses) byKey.set(targetKey(f.filter), f);
+      return Array.from(byKey.values());
+    })(),
+  );
 
   /* ------------------------------ mutators ----------------------------- */
 
@@ -126,6 +141,39 @@ class ActiveFiltersStore {
     );
   }
 
+  /** Push (or replace) the app-level selection for a source (saiku#1754).
+   *  One entry per (source, target): re-picking in the App Builder's context
+   *  pill replaces the previous scope rather than stacking. */
+  pushApp(filter: DashboardFilter, sourceId: string): void {
+    const key = targetKey(filter);
+    const without = this.appLevel.filter(
+      (a) =>
+        !(
+          a.source.kind === "app" &&
+          a.source.sourceId === sourceId &&
+          targetKey(a.filter) === key
+        ),
+    );
+    this.appLevel = [
+      ...without,
+      {
+        id: `app-${sourceId}-${key}-${Date.now()}`,
+        source: { kind: "app", sourceId },
+        filter,
+      },
+    ];
+  }
+
+  /** Drop the app-level filter(s) registered under a source id — the context
+   *  pill's "All" entry. An empty members[] is no constraint at all, so the
+   *  entry is removed rather than registered empty (same reasoning as
+   *  {@link clearClicksFrom}). No-op when the source has none. */
+  clearApp(sourceId: string): void {
+    this.appLevel = this.appLevel.filter(
+      (a) => !(a.source.kind === "app" && a.source.sourceId === sourceId),
+    );
+  }
+
   /** Drop the cross-filter emitted by a given source tile (brush cleared /
    *  Esc / click-outside on that tile). No-op if the tile has none. */
   clearCrossesFrom(sourceTileId: string): void {
@@ -148,14 +196,23 @@ class ActiveFiltersStore {
       this.crosses = this.crosses.filter((c) => c.id !== id);
       return;
     }
+    const app = this.appLevel.find((a) => a.id === id);
+    if (app) {
+      this.appLevel = this.appLevel.filter((a) => a.id !== id);
+      return;
+    }
     const panelMatch = this.panel.find((p) => p.id === id);
     if (panelMatch && panelMatch.source.kind === "panel") {
-      dashboardStore.updatePanelFilter(panelMatch.source.filterId, { members: [] });
+      dashboardStore.updatePanelFilter(panelMatch.source.filterId, {
+        members: [],
+      });
     }
   }
 
   /** Wipe transient click + cross state on dashboard switch. Panel filters
-   *  re-derive automatically from the new dashboardStore.current. */
+   *  re-derive automatically from the new dashboardStore.current, and the
+   *  app-level scope (saiku#1754) deliberately survives — it belongs to the
+   *  app shell, not to the page being swapped out. */
   resetTransient(): void {
     this.clicks = [];
     this.crosses = [];

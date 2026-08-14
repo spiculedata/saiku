@@ -68,10 +68,27 @@ export function themeFromBrief(brief: string): Partial<AppTheme> {
   const patch: Partial<AppTheme> = {};
 
   // 1. Base preset from vibe words.
-  if (has(b, "dark", "night", "control ?room", "ops", "terminal")) patch.preset = "dark-ops";
-  else if (has(b, "minimal", "clean", "simple", "spare", "understated")) patch.preset = "minimal";
-  else if (has(b, "editorial", "magazine", "serif", "warm", "cream", "elegant", "premium")) patch.preset = "editorial";
-  else if (has(b, "corporate", "enterprise", "business", "professional", "bank")) patch.preset = "corporate";
+  if (has(b, "dark", "night", "control ?room", "ops", "terminal"))
+    patch.preset = "dark-ops";
+  else if (has(b, "minimal", "clean", "simple", "spare", "understated"))
+    patch.preset = "minimal";
+  else if (
+    has(
+      b,
+      "editorial",
+      "magazine",
+      "serif",
+      "warm",
+      "cream",
+      "elegant",
+      "premium",
+    )
+  )
+    patch.preset = "editorial";
+  else if (
+    has(b, "corporate", "enterprise", "business", "professional", "bank")
+  )
+    patch.preset = "corporate";
   else patch.preset = "corporate"; // neutral default
 
   patch.mode = patch.preset === "dark-ops" ? "dark" : "light";
@@ -82,20 +99,37 @@ export function themeFromBrief(brief: string): Partial<AppTheme> {
   if (colours[1]) patch.accent2 = colours[1];
 
   // 3. Type.
-  if (has(b, "serif", "editorial", "magazine", "elegant")) patch.fontDisplay = "serif-1";
+  if (has(b, "serif", "editorial", "magazine", "elegant"))
+    patch.fontDisplay = "serif-1";
   else if (has(b, "sans", "modern", "clean")) patch.fontDisplay = "sans-1";
+  /* saiku#1763: scope the monospace request to the NOUN it modifies. It used to
+   * land on headings whatever was asked for, so "monospace figures" — the
+   * request a data product actually makes — set monospace headings and left the
+   * figures in the body sans, the exact opposite. Numbers has its own token,
+   * and its own help text describing this case. */
   if (has(b, "mono", "monospace", "technical", "code")) {
-    patch.fontDisplay = "mono-1";
-    patch.fontBody = "sans-1";
+    if (has(b, "figures", "numbers", "numerals", "digits")) {
+      patch.numerals = "mono";
+    } else if (has(b, "body", "copy", "paragraph", "prose")) {
+      patch.fontBody = "mono-1";
+    } else {
+      // Unqualified — headings, as before.
+      patch.fontDisplay = "mono-1";
+      patch.fontBody = "sans-1";
+    }
   }
 
   // 4. Form.
   if (has(b, "rounded", "friendly", "soft", "pill")) patch.radius = "xl";
   else if (has(b, "sharp", "square", "crisp", "hard")) patch.radius = "none";
-  if (has(b, "flat", "no shadow", "borderless")) patch.shadow = "none";
+  // saiku#1763: "hairline" describes a 1px border with no elevation — it was
+  // falling through to the "card" branch below and coming out with a shadow.
+  if (has(b, "flat", "no shadow", "borderless", "hairline"))
+    patch.shadow = "none";
   else if (has(b, "elevated", "floating", "depth", "card")) patch.shadow = "lg";
   if (has(b, "compact", "dense", "tight")) patch.density = "compact";
-  else if (has(b, "airy", "spacious", "roomy", "comfortable")) patch.density = "comfortable";
+  else if (has(b, "airy", "spacious", "roomy", "comfortable"))
+    patch.density = "comfortable";
 
   return patch;
 }

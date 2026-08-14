@@ -81,10 +81,68 @@ export function aliasGeoName(raw: string): string {
  *  name present in `featureNames`, or null if none matches (after alias +
  *  case-insensitive comparison). Used to validate / report coverage; the
  *  builder itself uses {@link aliasGeoName} since it has no feature list. */
-export function matchGeoName(raw: string, featureNames: readonly string[]): string | null {
+export function matchGeoName(
+  raw: string,
+  featureNames: readonly string[],
+): string | null {
   const candidate = aliasGeoName(raw).toLowerCase();
   for (const fn of featureNames) {
     if (fn.toLowerCase() === candidate) return fn;
   }
   return null;
+}
+
+/* -------------------------------------------------------------------------
+ * Coverage reporting (saiku#1758)
+ *
+ * ECharts silently drops map data whose name matches no feature, which is the
+ * right rendering behaviour (a missing country, never a wrong one) but a poor
+ * reporting one: binding a cube's US states to the country basemap painted
+ * exactly one shape — Georgia, the COUNTRY — and said nothing. One shaded
+ * country out of sixteen rows looks like a result, and a US state landing on
+ * the wrong continent is worse than a blank map.
+ * ---------------------------------------------------------------------- */
+
+/** How much of a map tile's data actually landed on the basemap. */
+export interface GeoCoverage {
+  /** Row names offered to the map. */
+  total: number;
+  /** How many resolved to a feature. */
+  matched: number;
+  /** The names that didn't, in row order. */
+  unmatched: string[];
+}
+
+/** Measure how many of `names` resolve against `featureNames`.
+ *
+ *  Returns null when the feature list is empty — the map hasn't registered
+ *  yet, and "nothing matched" would be a lie about the data rather than a
+ *  fact about it. */
+export function geoCoverage(
+  names: readonly string[],
+  featureNames: readonly string[],
+): GeoCoverage | null {
+  if (featureNames.length === 0) return null;
+  const unmatched: string[] = [];
+  let matched = 0;
+  for (const n of names) {
+    if (matchGeoName(n, featureNames)) matched++;
+    else unmatched.push(n);
+  }
+  return { total: names.length, matched, unmatched };
+}
+
+/** How many unmatched names to name before summarising the rest. */
+const NOTICE_SAMPLE = 3;
+
+/** A one-line, human notice for a partial match — or null when there's nothing
+ *  worth saying (full coverage, or no data). Deliberately states the ratio
+ *  first: "1 of 16 categories" is the fact that reframes the picture. */
+export function geoCoverageNotice(coverage: GeoCoverage | null): string | null {
+  if (!coverage || coverage.total === 0) return null;
+  if (coverage.unmatched.length === 0) return null;
+  const sample = coverage.unmatched.slice(0, NOTICE_SAMPLE).join(", ");
+  const rest = coverage.unmatched.length - NOTICE_SAMPLE;
+  const tail = rest > 0 ? `, +${rest} more` : "";
+  return `${coverage.matched} of ${coverage.total} categories matched the country map (no match: ${sample}${tail}). This map plots countries — sub-national names won't place.`;
 }

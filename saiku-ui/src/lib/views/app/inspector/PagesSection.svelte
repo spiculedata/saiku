@@ -3,10 +3,16 @@
    * icon) + add page. The active page is expanded. Writes via appDoc. */
   import { appDoc } from "$lib/stores/appDoc.svelte";
   import { Plus } from "lucide-svelte";
-  import { TOKEN_HELP } from "$lib/views/app/textTokens";
+  import { tokenHelp } from "$lib/views/app/textTokens";
 
   const pages = $derived(appDoc.current?.pages ?? []);
   const activeId = $derived(appDoc.activePageId);
+
+  /** The binding chips, with {filter:…} naming THIS app's dimension — the one
+   *  the context pill filters on (saiku#1761). The list used to hardcode a
+   *  FoodMart dimension, so in any other app the chip copied a binding that
+   *  renders literally and reads as broken. */
+  const tokens = $derived(tokenHelp(appDoc.current?.header?.contextPill?.filter?.dimension));
 
   /** Icon keys the rail understands (see AppNavRail ICONS map). */
   const ICON_KEYS = ["home", "chart", "trend", "cube", "boxes", "users", "people", "settings", "sparkles", "table"];
@@ -57,7 +63,7 @@
               Anything else is used literally.
             </p>
             <div class="token-list">
-              {#each TOKEN_HELP as t (t.token)}
+              {#each tokens as t (t.token)}
                 <button type="button" class="token" title="Copy {t.token}"
                   onclick={() => copy(t.token)}>
                   <code>{t.token}</code><span>{t.describes}</span>

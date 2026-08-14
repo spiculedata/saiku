@@ -12,6 +12,7 @@
    */
 
   import { activeFilters, type ActiveFilter } from "$lib/stores/activeFilters.svelte";
+  import { memberCaption } from "$lib/dashboard/dashboardExport";
 
   interface Props {
     readOnly?: boolean;
@@ -21,7 +22,11 @@
 
   function chipLabel(af: ActiveFilter): string {
     const f = af.filter;
-    const members = f.members.length === 0 ? "(any)" : f.members.join(", ");
+    // saiku#1762: show the member CAPTION, not its MDX unique name — the chip
+    // read "Region: [Geography].[Geography].[West]" while the pill, the
+    // dropdown and the page heading all said "West".
+    const members =
+      f.members.length === 0 ? "(any)" : f.members.map(memberCaption).join(", ");
     return `${f.level}: ${members}`;
   }
 

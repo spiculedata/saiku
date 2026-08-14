@@ -48,3 +48,17 @@ export async function ensureGeoMap(name = "world"): Promise<void> {
     inflight.delete(name);
   }
 }
+
+/** The feature names in a registered map, or [] when it isn't registered yet.
+ *  Lets a rendering surface report how much of its data actually placed
+ *  (saiku#1758) — the pure builder can't, having no feature list. */
+export function geoFeatureNames(name = "world"): string[] {
+  if (!registered.has(name)) return [];
+  const map = echarts.getMap(name) as
+    | { geoJSON?: { features?: Array<{ properties?: { name?: unknown } }> } }
+    | undefined;
+  const features = map?.geoJSON?.features ?? [];
+  return features
+    .map((f) => f?.properties?.name)
+    .filter((n): n is string => typeof n === "string" && n.length > 0);
+}

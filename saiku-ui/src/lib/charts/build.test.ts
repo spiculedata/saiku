@@ -357,6 +357,88 @@ describe("buildChartOption — small multiples (pie/donut/treemap/sunburst)", ()
   });
 });
 
+/*
+ * Measure-vs-measure scatter (saiku#1759). With two measures a scatter has an
+ * obvious meaning — x = first measure, y = second — and that is the whole point
+ * of the chart type. It used to plot the MEASURES as two x-axis categories with
+ * one series per row member, so every point sat in one of two vertical stacks
+ * and no relationship between the measures was visible: a strictly worse
+ * rendering of what Bar already shows.
+ */
+describe("buildChartOption — scatter x/y (saiku#1759)", () => {
+  test("plots the first measure against the second", () => {
+    const opt = buildChartOption(sample(), "scatter", opts()) as Record<string, unknown>;
+    const series = opt.series as Array<{ type: string; data: Array<{ value: number[] }> }>;
+    expect(series).toHaveLength(1);
+    expect(series[0].data.map((d) => d.value)).toEqual([
+      [565238.13, 266773],
+      [612482.65, 282417],
+    ]);
+  });
+
+  test("uses value axes named after the two measures", () => {
+    const opt = buildChartOption(sample(), "scatter", opts()) as Record<string, unknown>;
+    const x = opt.xAxis as { type?: string; name?: string; data?: unknown };
+    const y = opt.yAxis as { type?: string; name?: string };
+    expect(x.type).toBe("value");
+    expect(x.name).toBe("Store Sales");
+    expect(y.name).toBe("Unit Sales");
+    expect(x.data).toBeUndefined(); // no category axis any more
+  });
+
+  test("carries the row member on each point so it can be identified", () => {
+    const opt = buildChartOption(sample(), "scatter", opts()) as Record<string, unknown>;
+    const series = opt.series as Array<{ data: Array<{ name: string }> }>;
+    expect(series[0].data.map((d) => d.name)).toEqual(["1997", "1998"]);
+  });
+
+  test("bubble sizes points by a third measure when present", () => {
+    const proj = {
+      rowCategories: ["A", "B"],
+      columnCategories: ["X", "Y", "Size"],
+      matrix: [
+        [1, 2, 10],
+        [3, 4, 40],
+      ],
+    };
+    const opt = buildChartOption(proj, "bubble", opts()) as Record<string, unknown>;
+    const series = opt.series as Array<{ data: Array<{ value: number[] }> }>;
+    expect(series[0].data.map((d) => d.value)).toEqual([
+      [1, 2, 10],
+      [3, 4, 40],
+    ]);
+  });
+
+  test("keeps the category layout when there is only one measure", () => {
+    const opt = buildChartOption(singleMeasure(), "scatter", opts()) as Record<string, unknown>;
+    const x = opt.xAxis as { type?: string; data?: string[] };
+    expect(x.data).toEqual(["Store Sales"]);
+  });
+
+  test("labels points with the member name, not the raw value", () => {
+    const opt = buildChartOption(sample(), "scatter", opts()) as Record<string, unknown>;
+    const series = opt.series as Array<{ label: { show: boolean; formatter?: string } }>;
+    expect(series[0].label.show).toBe(true);
+    expect(series[0].label.formatter).toBe("{b}");
+  });
+
+  test("drops point labels once there are too many to read", () => {
+    const many = {
+      rowCategories: Array.from({ length: 60 }, (_, i) => `m${i}`),
+      columnCategories: ["X", "Y"],
+      matrix: Array.from({ length: 60 }, (_, i) => [i, i * 2]),
+    };
+    const opt = buildChartOption(many, "scatter", opts()) as Record<string, unknown>;
+    const series = opt.series as Array<{ label: { show: boolean } }>;
+    expect(series[0].label.show).toBe(false);
+  });
+
+  test("survives an empty projection", () => {
+    const empty = { rowCategories: [], columnCategories: [], matrix: [] };
+    expect(() => buildChartOption(empty, "scatter", opts())).not.toThrow();
+  });
+});
+
 describe("buildChartOption — matrix types (heatmap/radar/scatter/waterfall)", () => {
   test("heatmap emits [col,row,value] tuples + a visualMap", () => {
     const opt = buildChartOption(sample(), "heatmap", opts()) as Record<string, unknown>;
@@ -821,15 +903,19 @@ describe("buildChartOption — named palettes + series colours (#1081)", () => {
     expect(data.find((d) => d.name === "1998")?.itemStyle?.color).toBe("#00ff00");
   });
 
-  test("scatter applies the override to the matching (row-named) series", () => {
+  test("scatter applies the override at the data-item (point) level by row name", () => {
     const opt = buildChartOption(
       sample(),
       "scatter",
       opts({ seriesColors: { "1998": "#0000ff" } }),
     ) as Record<string, unknown>;
-    const series = opt.series as Array<{ name: string; color?: string }>;
-    expect(series.find((s) => s.name === "1997")?.color).toBeUndefined();
-    expect(series.find((s) => s.name === "1998")?.color).toBe("#0000ff");
+    // saiku#1759: one series, a point per row member — so the override lands
+    // on the data item, exactly as pie does it.
+    const data = (
+      opt.series as Array<{ data: { name: string; itemStyle?: { color?: string } }[] }>
+    )[0].data;
+    expect(data.find((d) => d.name === "1997")?.itemStyle).toBeUndefined();
+    expect(data.find((d) => d.name === "1998")?.itemStyle?.color).toBe("#0000ff");
   });
 
   test("colour-blind-safe (highContrast) overrides the named palette", () => {
@@ -1111,10 +1197,13 @@ describe("buildChartOption — x-axis label width per axis", () => {
     };
   }
 
-  test("scatter with 3 x-categories + 50 y-series gets a roomy x-label width", () => {
-    // chartWidth=1400, axisCategoryCount=3 → per=466 → clamped MAX 160.
-    // Old behaviour: max(3, 50) = 50, per=28, clamped MIN 40 → "CA /…".
-    const opt = buildChartOption(lopsided(3, 50), "scatter", opts(), undefined, {
+  test("scatter with 1 x-category + 50 y-series gets a roomy x-label width", () => {
+    // chartWidth=1400, axisCategoryCount=1 → per=1400 → clamped MAX 160.
+    // Old behaviour: max(1, 50) = 50, per=28, clamped MIN 40 → "CA /…".
+    // Single-measure, because with 2+ measures a scatter now plots them
+    // against each other on VALUE axes and has no category x at all
+    // (saiku#1759) — the category layout survives only for one measure.
+    const opt = buildChartOption(lopsided(1, 50), "scatter", opts(), undefined, {
       compact: false,
       chartWidth: 1400,
     }) as Record<string, unknown>;
@@ -1349,9 +1438,18 @@ describe("buildChartOption — axis titles (#1596)", () => {
     const heat = buildChartOption(withDimension(), "heatmap", opts()) as Record<string, unknown>;
     expect((heat.xAxis as { name?: string }).name).toBeUndefined();
     expect((heat.yAxis as { name?: string }).name).toBeUndefined();
-    // Scatter's x-axis is the measures, not the row dimension → no auto title.
+    // Scatter (saiku#1759) now plots measure-vs-measure on value axes, so
+    // naming those axes after the two measures is correct rather than
+    // misleading — the #1596 reasoning applied to the old category layout.
     const scat = buildChartOption(withDimension(), "scatter", opts()) as Record<string, unknown>;
-    expect((scat.xAxis as { name?: string }).name).toBeUndefined();
+    expect((scat.xAxis as { name?: string }).name).toBe("Store Sales");
+    // An explicit override still wins.
+    const over = buildChartOption(
+      withDimension(),
+      "scatter",
+      opts({ xAxisLabel: "Volume" }),
+    ) as Record<string, unknown>;
+    expect((over.xAxis as { name?: string }).name).toBe("Volume");
   });
 });
 

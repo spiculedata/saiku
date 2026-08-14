@@ -41,6 +41,11 @@
    * usefully offer. Null until a complete binding exists. The fetch is the same
    * cached one the shell uses, so opening the inspector costs no extra request. */
   let memberCount = $state<number | null>(null);
+  /** saiku#1762: the pill has no cube of its own — it resolves against the
+   *  app's first tile cube. On an app with no tiles yet there is nothing to
+   *  read, and the bare "0 options loaded from the cube." read as a broken
+   *  level name rather than an empty app. */
+  const hasCube = $derived(!!app && !!firstAppCube(app));
   $effect(() => {
     const a = app;
     if (!a || !isLevelSourced(pill)) {
@@ -121,6 +126,9 @@
     <p class="insp-hint" class:ctx-warn={(memberCount ?? 0) > MAX_LEVEL_OPTIONS}>
       {#if memberCount === null}
         Fill in the level below to load the options.
+      {:else if !hasCube}
+        No cube in this app yet — add a tile bound to a cube and the options
+        will load.
       {:else if memberCount > MAX_LEVEL_OPTIONS}
         {memberCount} members — only the first {MAX_LEVEL_OPTIONS} will be
         offered. A dropdown is the wrong control for a level this large.

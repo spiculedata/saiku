@@ -47,9 +47,13 @@
     /** Values the page's heading / subheading / meta tokens resolve against
      *  (see textTokens.ts). Absent → text renders as written. */
     tokens?: TextTokenContext;
+    /** The header context pill's current selection, mirrored into the URL as
+     *  `ctx` (saiku#1754). App-level, so it is written once rather than into
+     *  each page's filter slot. */
+    contextLabel?: string | null;
   }
 
-  let { page, editable = false, tokens }: Props = $props();
+  let { page, editable = false, tokens, contextLabel = null }: Props = $props();
 
   // Page chrome supports bindings, so a heading can track the current context
   // selection and a meta line can be today's date instead of a frozen string.
@@ -82,14 +86,19 @@
   // the user EDITING it). Cleared on the next microtask.
   let suppressWriteBack = false;
 
-  /** Snapshot the active page's live filter set (as plain DashboardFilters). */
+  /** Snapshot the active page's live filter set (as plain DashboardFilters).
+   *  App-level entries are excluded (saiku#1754): the header context pill
+   *  belongs to the shell, so stashing it per page would both duplicate it
+   *  into every page's URL slot and let a stale copy outlive a later change. */
   function snapshotActiveFilters(): DashboardFilter[] {
-    return activeFilters.all.map((af) => ({
-      dimension: af.filter.dimension,
-      hierarchy: af.filter.hierarchy,
-      level: af.filter.level,
-      members: [...(af.filter.members ?? [])],
-    }));
+    return activeFilters.all
+      .filter((af) => af.source.kind !== "app")
+      .map((af) => ({
+        dimension: af.filter.dimension,
+        hierarchy: af.filter.hierarchy,
+        level: af.filter.level,
+        members: [...(af.filter.members ?? [])],
+      }));
   }
 
   /** Hydrate the shared renderer with `p`'s grid and restore `p`'s filters.
@@ -149,30 +158,36 @@
   });
 
   // ------------------------------------------------------------------
-  // URL mirror: reflect the active page + every page's filters. Skips the
-  // first run so we don't immediately re-encode the URL we just decoded on
-  // mount (same state, possibly different param order). replaceState keeps it
-  // a shareable deep link without a SvelteKit navigation.
+  // URL mirror: reflect the active page, every page's filters, and the
+  // app-level context selection. Skips the first run so we don't immediately
+  // re-encode the URL we just decoded on mount (same state, possibly different
+  // param order). replaceState keeps it a shareable deep link without a
+  // SvelteKit navigation.
   // ------------------------------------------------------------------
   let urlMirrorInit = $state(false);
   $effect(() => {
-    // Track the live filter set + active page so the URL follows both.
+    // Track the live filter set + active page + context so the URL follows all.
     const all = activeFilters.all;
     const activeId = page.id;
+    const ctx = contextLabel;
     if (typeof window === "undefined") return;
     if (!urlMirrorInit) {
       urlMirrorInit = true;
       return;
     }
     const map: Record<string, DashboardFilter[]> = { ...pageFilters };
-    map[activeId] = all.map((af) => ({
-      dimension: af.filter.dimension,
-      hierarchy: af.filter.hierarchy,
-      level: af.filter.level,
-      members: [...(af.filter.members ?? [])],
-    }));
+    // App-level entries are excluded here for the same reason they're excluded
+    // from the per-page stash (saiku#1754) — they ride in `ctx`, once.
+    map[activeId] = all
+      .filter((af) => af.source.kind !== "app")
+      .map((af) => ({
+        dimension: af.filter.dimension,
+        hierarchy: af.filter.hierarchy,
+        level: af.filter.level,
+        members: [...(af.filter.members ?? [])],
+      }));
     const next = new URL(window.location.href);
-    next.search = encodeAppFilterState(activeId, map);
+    next.search = encodeAppFilterState(activeId, map, ctx);
     if (next.toString() !== window.location.href) {
       window.history.replaceState(null, "", next.toString());
     }

@@ -75,8 +75,7 @@ export interface GraphConfig {
  *  registry's {@code ValidateOptionsResult} so it can back a
  *  {@code TileRenderer.validateOptions}. */
 export type ValidateGraphConfigResult =
-  | { ok: true; value: GraphConfig }
-  | { ok: false; error: string };
+  { ok: true; value: GraphConfig } | { ok: false; error: string };
 
 /** The typed {value, formatted} cell envelope (a measure cell). Detected
  *  structurally to avoid importing `$lib/api/aiQuery` (keeps this module
@@ -97,7 +96,8 @@ function cellText(v: unknown): string {
   if (typeof v === "string") return v.trim();
   if (typeof v === "number") return Number.isFinite(v) ? String(v) : "";
   if (isCellLike(v)) {
-    if (typeof v.formatted === "string" && v.formatted.trim().length > 0) return v.formatted.trim();
+    if (typeof v.formatted === "string" && v.formatted.trim().length > 0)
+      return v.formatted.trim();
     return v.value === null || v.value === undefined ? "" : String(v.value);
   }
   return "";
@@ -107,7 +107,10 @@ function cellText(v: unknown): string {
  *  number, or a numeric string. Non-numeric → null. */
 function cellNumber(v: unknown): number | null {
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
-  if (isCellLike(v)) return typeof v.value === "number" && Number.isFinite(v.value) ? v.value : null;
+  if (isCellLike(v))
+    return typeof v.value === "number" && Number.isFinite(v.value)
+      ? v.value
+      : null;
   if (typeof v === "string") {
     const trimmed = v.trim();
     if (trimmed === "") return null;
@@ -134,8 +137,12 @@ function cellNumber(v: unknown): number | null {
  * Tolerates a non-array / empty / malformed input by returning
  * `{ nodes: [], links: [] }`. Pure; never mutates its input.
  */
-export function recordsToGraph(records: unknown, config: GraphConfig): GraphData {
-  if (!Array.isArray(records) || records.length === 0) return { nodes: [], links: [] };
+export function recordsToGraph(
+  records: unknown,
+  config: GraphConfig,
+): GraphData {
+  if (!Array.isArray(records) || records.length === 0)
+    return { nodes: [], links: [] };
 
   const nodes = new Map<string, GraphNode>();
   const links: GraphLink[] = [];
@@ -208,7 +215,10 @@ export function validateGraphConfig(o: unknown): ValidateGraphConfigResult {
 
   for (const key of ["idCol", "sourceCol", "targetCol"] as const) {
     if (!isNonEmptyString(obj[key])) {
-      return { ok: false, error: `"${key}" is required and must be a non-empty string.` };
+      return {
+        ok: false,
+        error: `"${key}" is required and must be a non-empty string.`,
+      };
     }
   }
   for (const key of ["labelCol", "valueCol"] as const) {
@@ -228,4 +238,60 @@ export function validateGraphConfig(o: unknown): ValidateGraphConfigResult {
   if (isNonEmptyString(obj.valueCol)) value.valueCol = obj.valueCol.trim();
 
   return { ok: true, value };
+}
+
+/* -------------------------------------------------------------------------
+ * Node symbol sizing (saiku#1755)
+ *
+ * Sizing must be RELATIVE to the weights in the graph, not absolute. The
+ * original `min(60, 20 + sqrt(value))` saturated above value 1600, so a graph
+ * weighted by any real measure — revenue, script volume, headcount — rendered
+ * every node at the cap and the weighting told the reader nothing.
+ * ---------------------------------------------------------------------- */
+
+/** Smallest node diameter, in px — the lightest weighted node. */
+export const NODE_SIZE_MIN = 20;
+/** Largest node diameter, in px — the heaviest weighted node. */
+export const NODE_SIZE_MAX = 60;
+/** Diameter for a node with no usable weight, and for every node when the
+ *  graph carries no `valueCol` at all. Sits inside the band so an unweighted
+ *  graph looks deliberate rather than uniformly tiny. */
+export const NODE_SIZE_DEFAULT = 24;
+
+/** The span of usable weights across `nodes`, or null when none carries one
+ *  (no `valueCol`, or every value missing / non-finite).
+ *
+ *  Zero and negative weights COUNT: a measure can legitimately be 0 (a region
+ *  with no sales) or negative (a loss, a returns line), and excluding them
+ *  would push those nodes onto the "unweighted" default — rendering a
+ *  zero-weight node LARGER than a small positive one. */
+export function weightRange(
+  nodes: readonly GraphNode[],
+): { min: number; max: number } | null {
+  const values = nodes
+    .map((n) => n.value)
+    .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  if (values.length === 0) return null;
+  return { min: Math.min(...values), max: Math.max(...values) };
+}
+
+/** Map one node weight onto the symbol-size band, relative to `range`.
+ *
+ *  `sqrt` on the NORMALISED position (not the raw value) keeps the mid-range
+ *  legible without letting one huge node flatten everything else, and — unlike
+ *  the absolute scale it replaces — the largest node always reaches the top of
+ *  the band whatever the units are. A degenerate range (every node equal)
+ *  yields one consistent mid-band size. */
+export function nodeSize(
+  value: number | undefined,
+  range: { min: number; max: number } | null,
+): number {
+  if (range === null) return NODE_SIZE_DEFAULT;
+  if (typeof value !== "number" || !Number.isFinite(value))
+    return NODE_SIZE_DEFAULT;
+  const span = range.max - range.min;
+  if (span <= 0) return (NODE_SIZE_MIN + NODE_SIZE_MAX) / 2;
+  const clamped = Math.min(Math.max(value, range.min), range.max);
+  const t = (clamped - range.min) / span;
+  return NODE_SIZE_MIN + (NODE_SIZE_MAX - NODE_SIZE_MIN) * Math.sqrt(t);
 }
