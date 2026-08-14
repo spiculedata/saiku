@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 import { toAiQueryResponse } from "$lib/dashboard/ossieResponse";
-import { projectFromAiQueryResponse } from "$lib/dashboard/chartOptions";
+import { buildChartOption, projectFromAiQueryResponse } from "$lib/dashboard/chartOptions";
 
 /** Verbatim from the IT probe: flight_count by carrier.carrier_name. */
 function realSuccess() {
@@ -136,5 +136,34 @@ describe("toAiQueryResponse — errors", () => {
   it("is safe on null / garbage", () => {
     expect(toAiQueryResponse(null).data).toEqual([]);
     expect(toAiQueryResponse(undefined).status).toBe("SUCCESS");
+  });
+});
+
+describe("toAiQueryResponse — the last step before the canvas", () => {
+  it("builds a complete ECharts option from the real payload", () => {
+    // The furthest a headless test can follow a model-backed tile: real captured
+    // response -> adapter -> shared projection -> the option the tile hands to
+    // ECharts. Everything after this is the library drawing pixels, which is not
+    // where a bug of this class lives — the last one was the envelope, two steps
+    // upstream, and no amount of hand-written fixtures caught it.
+    const opt = buildChartOption(toAiQueryResponse(realSuccess()), "bar") as Record<string, unknown>;
+    expect(opt).not.toBeNull();
+
+    const xAxis = opt.xAxis as { type?: string; data?: string[] };
+    expect(xAxis.type).toBe("category");
+    expect(xAxis.data).toEqual(["American Airlines", "Delta Air Lines", "Southwest Airlines"]);
+
+    const series = opt.series as Array<{ name?: string; type?: string; data?: unknown[] }>;
+    expect(series).toHaveLength(1);
+    expect(series[0].name).toBe("flight_count");
+    expect(series[0].type).toBe("bar");
+    expect(series[0].data).toEqual([18, 18, 12]);
+  });
+
+  it("an empty slice yields no option rather than an empty chart frame", () => {
+    // The WA / OR case: the tile falls through to its empty state, which since
+    // saiku#1804 names the source that came up empty.
+    const empty = toAiQueryResponse({ ...realSuccess(), records: [], meta: { rowCount: 0 } });
+    expect(buildChartOption(empty, "bar")).toBeNull();
   });
 });
