@@ -92,8 +92,10 @@ class RecipientConsentStoreTest {
 
     @Test
     void confirm_expiredToken_doesNotFlip(@TempDir Path home) {
-        // Zero TTL => the token is already expired the instant it is minted.
-        RecipientConsentStore s = new RecipientConsentStore(home, 0L);
+        // Negative TTL => tokenExpiresAt is unambiguously in the past, so expiry is deterministic.
+        // (A zero TTL risks a same-millisecond flake: it only reads as expired if confirm lands in a
+        // strictly later ms than the request.)
+        RecipientConsentStore s = new RecipientConsentStore(home, -1000L);
         String token = s.requestConsent("alice@example.com");
         assertFalse(s.confirm("alice@example.com", token));
         assertFalse(s.isConfirmed("alice@example.com"));

@@ -68,7 +68,9 @@ public class ConsentConfirmResourceTest {
 
     @Test
     public void expiredToken_returns200_butDoesNotConfirm() throws Exception {
-        RecipientConsentStore expiring = new RecipientConsentStore(home, 0L);
+        // Negative TTL => tokenExpiresAt is unambiguously in the past (deterministic; avoids the
+        // same-millisecond flake a zero TTL risks).
+        RecipientConsentStore expiring = new RecipientConsentStore(home, -1000L);
         String token = expiring.requestConsent("alice@example.com");
         ConsentConfirmResource r = new ConsentConfirmResource();
         r.setConsentStore(expiring);
