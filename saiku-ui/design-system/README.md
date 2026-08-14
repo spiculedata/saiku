@@ -97,9 +97,12 @@ npm run check     # svelte-check
 
 ## Releasing
 
-The package carries **its own version**, independent of both the saiku reactor (4.x) and
-saiku-ui (3.x) — it moves on its own cadence, because coupling it to product releases
-would mean saiku-cloud waits for a full Saiku release every time a token changes.
+The package carries **its own version**, starting at 1.0.0 and independent of both the
+saiku reactor (4.x) and saiku-ui (3.x) — it moves on its own cadence, because coupling it
+to product releases would mean saiku-cloud waits for a full Saiku release every time a
+token changes. (The sibling `@concepttocloud/saiku-embed*` packages deliberately mirror
+saiku-ui's version because they *are* saiku-ui's embed bundle; this one isn't, so its
+version number is its own and actually means something about design-system compatibility.)
 
 To cut a release: bump `version` here and merge to `development`. The
 `.github/workflows/design-system.yml` workflow builds, type-checks, verifies every export
