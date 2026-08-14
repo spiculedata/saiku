@@ -13,38 +13,13 @@
    * has reorderPage(); wiring drag is a follow-up task).
    */
   import type { AppPage } from "$lib/api/apps";
-  import {
-    LayoutDashboard,
-    Plus,
-    PanelLeftClose,
-    PanelLeftOpen,
-    House,
-    ChartColumnBig,
-    Boxes,
-    Users,
-    Settings,
-    Sparkles,
-    TrendingUp,
-    Table,
-  } from "lucide-svelte";
+  import { Plus, PanelLeftClose, PanelLeftOpen, Settings } from "lucide-svelte";
+  // saiku#1805: the vocabulary lives in one module the picker reads too — the
+  // rail and the inspector kept separate lists and had already drifted.
+  import { pageIcon } from "$lib/views/app/pageIcons";
   import { resolveAvatar, type AvatarSource } from "$lib/views/app/userInitials";
   import { session } from "$lib/stores/session.svelte";
 
-  /** Named page icons an author can set via AppPage.icon. Falls back to the
-   *  generic dashboard glyph. Keeps the rail legible when collapsed to icons. */
-  const ICONS: Record<string, typeof LayoutDashboard> = {
-    home: House,
-    house: House,
-    chart: ChartColumnBig,
-    trend: TrendingUp,
-    cube: Boxes,
-    boxes: Boxes,
-    users: Users,
-    people: Users,
-    settings: Settings,
-    sparkles: Sparkles,
-    table: Table,
-  };
 
   interface Props {
     pages: AppPage[];
@@ -136,7 +111,7 @@
   {/if}
   <ul class="saiku-app__rail-list">
     {#each pages as page (page.id)}
-      {@const Icon = (page.icon && ICONS[page.icon]) || LayoutDashboard}
+      {@const Icon = pageIcon(page.icon)}
       <li>
         {#if editable && renamingId === page.id}
           <!-- svelte-ignore a11y_autofocus -->

@@ -12,7 +12,11 @@
    * Deferred: reorder-drag of tabs is not implemented (store has reorderPage()).
    */
   import type { AppPage } from "$lib/api/apps";
-  import { LayoutDashboard, Plus } from "lucide-svelte";
+  import { Plus } from "lucide-svelte";
+  // saiku#1805: the top nav drew the generic dashboard glyph on EVERY tab, so a
+  // page icon an author set (and the rail honoured) silently did nothing here —
+  // five differently-purposed pages all wearing the same mark.
+  import { pageIcon } from "$lib/views/app/pageIcons";
 
   interface Props {
     pages: AppPage[];
@@ -69,6 +73,7 @@
             aria-label="Rename page"
           />
         {:else}
+          {@const Icon = pageIcon(page.icon)}
           <button
             type="button"
             class="saiku-app__topnav-tab"
@@ -78,7 +83,7 @@
             onclick={() => onSelect(page.id)}
             ondblclick={() => startRename(page)}
           >
-            <LayoutDashboard size={15} aria-hidden="true" />
+            <Icon size={15} aria-hidden="true" />
             <span class="saiku-app__topnav-label">{page.title}</span>
           </button>
         {/if}
