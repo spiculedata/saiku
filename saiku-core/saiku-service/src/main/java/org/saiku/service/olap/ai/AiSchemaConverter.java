@@ -344,16 +344,32 @@ public class AiSchemaConverter {
 
         String setExpr;
         if (sel.getMembers() != null && !sel.getMembers().isEmpty()) {
+            // saiku#1774: members may sit at an ANCESTOR level of the axis level —
+            // "show me the Warehouse Names under [Warehouses].[USA].[WA]". That is
+            // the shape a dashboard/App context filter produces when it scopes a
+            // coarse level while a tile groups by a finer one. Previously the only
+            // options were to reject it or to collapse the axis down to the filter's
+            // level, which silently turned a 13-warehouse ranked list into a single
+            // "WA" row. Emit Descendants() instead: it keeps the tile's own grain
+            // and stays axis-only, so it never trips Mondrian's
+            // hierarchy-on-axis-and-slicer rule the way a WHERE clause would.
+            boolean ancestorScope = allMembersAtAncestorLevel(sel.getMembers(), level, hierarchy);
             StringBuilder s = new StringBuilder("{");
             for (int i = 0; i < sel.getMembers().size(); i++) {
                 String m = sel.getMembers().get(i);
                 validateMemberRef(m, fieldPath + ".members[" + i + "]");
-                validateMemberLevelMatch(m, level, hierarchy, fieldPath + ".members[" + i + "]");
+                if (!ancestorScope) {
+                    validateMemberLevelMatch(m, level, hierarchy, fieldPath + ".members[" + i + "]");
+                } else {
+                    // Still enforce dim/hierarchy agreement — only the depth check
+                    // is relaxed, and only because we're about to descend from it.
+                    validateMemberDimHierMatch(m, hierarchy, fieldPath + ".members[" + i + "]");
+                }
                 if (i > 0) s.append(", ");
                 s.append(m);
             }
             s.append("}");
-            setExpr = s.toString();
+            setExpr = ancestorScope ? "Descendants(" + s + ", " + level.uniqueName + ")" : s.toString();
         } else {
             setExpr = level.uniqueName + ".Members";
         }
@@ -986,6 +1002,62 @@ public class AiSchemaConverter {
      * 0-based index in the hierarchy's levels map; the "(All)" pseudo-level at
      * index 0 has depth 0, the first real level has depth 1, etc.
      */
+    /**
+     * saiku#1774 — true when EVERY supplied member sits at the same level, and that
+     * level is strictly shallower than the declared axis level (i.e. they are
+     * ancestors of what the axis wants to show).
+     *
+     * <p>Conservative by design: key-form refs ({@code [Lvl].&[Key]}) and anything
+     * whose depth can't be read return false, so the caller falls through to the
+     * existing strict same-level validation and nothing that used to be an error
+     * quietly becomes a Descendants() query.
+     */
+    private static boolean allMembersAtAncestorLevel(
+            List<String> members, AiSchema.Level declared, AiSchema.Hierarchy hier) {
+        if (members == null || members.isEmpty()) return false;
+        int expectedDepth = levelDepth(declared, hier);
+        if (expectedDepth <= 0) return false; // nothing shallower than the top level
+        int hasAllOffset = hierHasAllLevel(hier) ? 0 : 1;
+        Integer common = null;
+        for (String m : members) {
+            if (m == null || m.indexOf("&[") >= 0) return false;
+            int segments = countBracketedSegments(m);
+            if (segments < 2) return false;
+            int depth = segments - 2 - hasAllOffset;
+            if (depth < 0 || depth >= expectedDepth) return false;
+            if (common == null) common = depth;
+            else if (common != depth) return false;
+        }
+        return common != null;
+    }
+
+    /** The dim/hierarchy half of {@link #validateMemberLevelMatch}, split out so the
+     *  saiku#1774 ancestor path can keep enforcing it while relaxing only depth. */
+    private static void validateMemberDimHierMatch(String memberRef, AiSchema.Hierarchy hier, String fieldPath) {
+        if (memberRef != null && memberRef.indexOf("&[") >= 0) return;
+        String[] dimHier = firstTwoSegments(memberRef);
+        if (hier == null || dimHier == null || dimHier[0] == null) return;
+        String expectedDim = extractDimFromHierarchyUniqueName(hier.uniqueName);
+        if (expectedDim != null && !expectedDim.equalsIgnoreCase(dimHier[0])) {
+            throw new AiValidationException(
+                    fieldPath,
+                    "Member '" + memberRef + "' belongs to dimension '" + dimHier[0]
+                            + "', but the axis declares dimension '" + expectedDim
+                            + "'. Move the member into a filter on its own dimension, or supply a member from '"
+                            + expectedDim + "'.",
+                    null);
+        }
+        String expectedHier = extractHierFromHierarchyUniqueName(hier.uniqueName, expectedDim);
+        if (expectedHier != null && dimHier[1] != null && !expectedHier.equalsIgnoreCase(dimHier[1])) {
+            throw new AiValidationException(
+                    fieldPath,
+                    "Member '" + memberRef + "' belongs to hierarchy '" + dimHier[1] + "' under dimension '"
+                            + dimHier[0] + "', but the axis declares hierarchy '" + expectedHier
+                            + "'. Supply a member from hierarchy '" + expectedHier + "'.",
+                    null);
+        }
+    }
+
     private static void validateMemberLevelMatch(
             String memberRef, AiSchema.Level declared, AiSchema.Hierarchy hier, String fieldPath) {
         // Skip key-form refs ([Lvl].&[Key]) — their depth is set by the

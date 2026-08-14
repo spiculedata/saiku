@@ -976,7 +976,18 @@
                         </Name>
                     </Attribute>
                     <!-- Use the_month as source for the name, so members look like
-                        [Time].[1997].[Q1].[Jan] rather than [Time].[1997].[Q1].[1]. -->
+                        [Time].[1997].[Q1].[Jan] rather than [Time].[1997].[Q1].[1].
+                        saiku#1795: OrderBy is load-bearing BECAUSE of that Name.
+                        Without it Mondrian sorts the members by their name column,
+                        and `the_month` is text — so the level came back sorted
+                        alphabetically WITHIN each quarter (February, January, March
+                        / April, June, May / August, July, September / December,
+                        November, October). Every monthly chart then plotted a
+                        plausible but fictitious shape, and the App Builder chart
+                        tile can't repair it: its sort options order by measure
+                        value, not by category. The shared Time dimension above
+                        escapes this only because its Name is the numeric
+                        month_of_year. Order by the month ordinal, not the label. -->
                     <Attribute name='Month' hasHierarchy='false'>
                         <Key>
                             <Column name='the_year'/>
@@ -985,6 +996,10 @@
                         <Name>
                             <Column name='the_month'/>
                         </Name>
+                        <OrderBy>
+                            <Column name='the_year'/>
+                            <Column name='month_of_year'/>
+                        </OrderBy>
                     </Attribute>
                     <Attribute name='Date' keyColumn='the_date' hasHierarchy='false'/>
                     <Attribute name='Time Id' keyColumn='time_id' hasHierarchy='false'/>

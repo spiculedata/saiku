@@ -47,16 +47,35 @@ public class AiCell {
     public AiCell() {}
 
     public AiCell(Double value, String formatted, String unit) {
-        this.value = value;
+        this.value = finiteOrNull(value);
         this.formatted = formatted;
         this.unit = unit;
     }
 
     public AiCell(Double value, String formatted, String unit, Map<String, String> properties) {
-        this.value = value;
+        this.value = finiteOrNull(value);
         this.formatted = formatted;
         this.unit = unit;
         this.properties = properties;
+    }
+
+    /**
+     * saiku#1780 — collapse non-finite results to null.
+     *
+     * <p>A divide-by-zero calculated measure (FoodMart's {@code Stock To Sales
+     * Ratio} sliced by a warehouse geography, for instance) evaluates to
+     * {@code Infinity}. Jackson serialises that as the bare token {@code Infinity},
+     * which is not valid JSON per RFC 8259 — strict parsers reject the whole
+     * response — and any client lenient enough to accept it then renders the
+     * literal text "Infinity" in a KPI headline or a table cell.
+     *
+     * <p>Null is the honest answer: the ratio is undefined, exactly like a
+     * missing cell. {@code formatted} is left alone so the server's own rendering
+     * of the cell is still visible to anyone debugging.
+     */
+    private static Double finiteOrNull(Double v) {
+        if (v == null || v.isNaN() || v.isInfinite()) return null;
+        return v;
     }
 
     public Double getValue() {
@@ -64,7 +83,7 @@ public class AiCell {
     }
 
     public void setValue(Double v) {
-        this.value = v;
+        this.value = finiteOrNull(v);
     }
 
     public String getFormatted() {

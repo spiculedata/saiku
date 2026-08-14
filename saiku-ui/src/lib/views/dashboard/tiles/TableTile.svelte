@@ -40,6 +40,9 @@
   } from "$lib/dashboard/filterSuggestions";
   import type { CubeRef } from "$lib/api/dashboards";
   import { parseFormattedCell } from "$lib/cellset/cellFormat";
+  // saiku#1770 — per-column number formatting, sharing the KPI / ranked-list
+  // pattern vocabulary ($cN, $N, N%, N) so authors learn one syntax.
+  import { formatKpi } from "$lib/dashboard/kpi";
   // Issue #930 — right-click a measure cell to drill into its raw fact rows.
   import TileDrillthrough from "./TileDrillthrough.svelte";
   import { drillthroughPosition } from "$lib/dashboard/drillthroughCoord";
@@ -315,8 +318,15 @@
     });
   }
 
-  function renderCell(v: AiCell | string): string {
+  /** saiku#1770: apply the tile's per-column pattern when one is set for this
+   *  column, falling back to the server's formatted text. Only numeric cells are
+   *  re-formatted — a row header or a null cell keeps whatever it already says. */
+  function renderCell(v: AiCell | string, columnCaption?: string): string {
     if (typeof v === "string") return v;
+    const pattern = columnCaption ? tile.columnFormats?.[columnCaption] : undefined;
+    if (pattern && typeof v?.value === "number" && Number.isFinite(v.value)) {
+      return formatKpi(v.value, "custom", pattern);
+    }
     return v.formatted ?? "";
   }
 
@@ -414,7 +424,7 @@
               <tr>
                 {#each columns as col, ci (ci)}
                   {@const v = row[col.caption]}
-                  {@const fmt = parseFormattedCell(renderCell(v))}
+                  {@const fmt = parseFormattedCell(renderCell(v, col.caption))}
                   {@const cf = cellFormatFor(col.caption, v)}
                   {@const cfStyle = cellFormatToStyle(cf)}
                   <!-- svelte-ignore a11y_no_static_element_interactions

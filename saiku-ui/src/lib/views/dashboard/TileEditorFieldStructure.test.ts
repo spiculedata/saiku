@@ -46,7 +46,7 @@ const CASES: { name: string; component: unknown; props: Record<string, unknown> 
   {
     name: "TileEditorChart",
     component: TileEditorChart,
-    props: { chartType: "bar", chartOptionsTouched: false, onOpenChartOptions: () => {} },
+    props: { chartType: "bar", chartOptionsCustomised: false, onOpenChartOptions: () => {} },
   },
   {
     name: "TileEditorFilter",
@@ -126,6 +126,63 @@ describe("tile editors use the global .field design-system shape (saiku#1258)", 
       expect(labelIdx).toBeGreaterThanOrEqual(0);
       expect(inputIdx).toBeGreaterThanOrEqual(0);
       expect(labelIdx, `${name}: label should come before the input`).toBeLessThan(inputIdx);
+    });
+  }
+});
+
+/**
+ * saiku#1789 — the custom-renderer config forms (ranked list, graph) are declared
+ * INLINE in TileEditorModal.svelte rather than as child `TileEditor*.svelte`
+ * components, so the SSR sweep above never sees them. The ranked-list fieldset
+ * shipped with bare `<span>` / `<input>` and no `.field__label` / `.field__input`,
+ * and because `app.css` declares `.field { display: block }` and does the stacking
+ * on the CHILD classes, every label overprinted its own control.
+ *
+ * Asserted against source rather than SSR: rendering TileEditorModal needs a cube,
+ * a live query store and a mounted client harness the repo doesn't have.
+ */
+describe("inline custom-renderer forms use the .field design-system shape (saiku#1789)", () => {
+  const src = readFileSync(
+    fileURLToPath(new URL("./TileEditorModal.svelte", import.meta.url)),
+    "utf8",
+  );
+
+  /** Pull one `<fieldset …><legend>NAME</legend> … </fieldset>` block out of the source. */
+  function fieldsetByLegend(legend: string): string {
+    const start = src.indexOf(`<legend>${legend}</legend>`);
+    expect(start, `fieldset with <legend>${legend}</legend> not found`).toBeGreaterThan(-1);
+    const end = src.indexOf("</fieldset>", start);
+    expect(end, `unterminated fieldset for ${legend}`).toBeGreaterThan(start);
+    return src.slice(start, end);
+  }
+
+  for (const legend of ["Ranked list", "Graph columns"]) {
+    it(`${legend}: every .field labels with .field__label and controls with .field__input`, () => {
+      const block = fieldsetByLegend(legend);
+
+      // Each `<label class="field">` opens a field row; count them so a future
+      // refactor that drops the fieldset can't make this vacuously pass.
+      const fields = block.match(/<label class="field"/g) ?? [];
+      expect(fields.length, `${legend} should declare at least one .field row`).toBeGreaterThan(2);
+
+      // The label span carrying the caption must be classed, or it lays out
+      // inline alongside the control instead of stacking above it.
+      const bareLabelSpan = /<label class="field">\s*<span>(?!\s*<)/;
+      expect(
+        bareLabelSpan.test(block),
+        `${legend}: a .field row opens with an unclassed <span> — add class="field__label" ` +
+          `or it renders on the same line as its control`,
+      ).toBe(false);
+
+      // Every control inside the fieldset needs .field__input for its width.
+      const controls = block.match(/<(input|select|textarea)\b[^>]*>/g) ?? [];
+      const unclassed = controls.filter(
+        (c) => !c.includes("field__input") && !c.includes('type="checkbox"'),
+      );
+      expect(
+        unclassed,
+        `${legend}: ${unclassed.length} control(s) lack class="field__input"`,
+      ).toEqual([]);
     });
   }
 });

@@ -270,6 +270,16 @@
     <label class="field">
       <span class="field__label">{i18n.t("modal.chart.chartTitle")}</span>
       <input class="field__input" bind:value={form.title} placeholder={i18n.t("modal.chart.chartTitlePlaceholder")} />
+      <!-- saiku#1776: this title is drawn INSIDE the plot, on top of the tile's
+           own header — set both and the heading renders twice. The two fields
+           live in different editors, so say so here rather than let authors
+           discover it after saving. -->
+      <span class="hint">
+        {i18n.t(
+          "modal.chart.chartTitleHint",
+          "Drawn inside the chart, beneath the tile's own title. Leave blank to show just the tile title.",
+        )}
+      </span>
     </label>
 
     {#if chartType === "map"}
@@ -296,6 +306,21 @@
         </div>
         <p class="text-fg-subtle text-xs m-0">{i18n.t("modal.chart.map.hint")}</p>
       </div>
+    {/if}
+
+    <!-- saiku#1775: the heatmap paints from `colorRamp` too, but the control was
+         gated to maps — so every heatmap was stuck on the "blues" default with no
+         way to move it, and read as ignoring the app theme. Same picker, without
+         the map-only "missing data" option beside it. -->
+    {#if chartType === "heatmap"}
+      <label class="field">
+        <span class="field__label">{i18n.t("modal.chart.map.colorRamp")}</span>
+        <select class="field__input" bind:value={form.colorRamp}>
+          {#each COLOR_RAMP_IDS as r}
+            <option value={r}>{i18n.t(`modal.chart.map.ramp.${r}`)}</option>
+          {/each}
+        </select>
+      </label>
     {/if}
 
     {#if chartType !== "map"}

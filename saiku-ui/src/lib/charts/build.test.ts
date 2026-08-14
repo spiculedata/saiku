@@ -10,6 +10,8 @@ import { describe, test, expect } from "vitest";
 import {
   buildChartOption,
   brushOption,
+  stripSharedMeasurePrefix,
+  shouldLabelScatter,
   BRUSHABLE_CHART_TYPES,
   type ChartProjection,
 } from "$lib/charts/build";
@@ -240,11 +242,25 @@ describe("buildChartOption — title & legend", () => {
     expect((roomy.grid as { top: number }).top).toBe(50);
 
     // Compact tile WITH a title reserves the title band (was a flat 24 that
-    // let the title overlap the top gridline / data).
+    // let the title overlap the top gridline / data). DEFAULT_CHART_OPTIONS has
+    // legendPosition "top", so the default titled tile clears the title band AND
+    // the legend row beneath it — 44 + 24. (saiku#1776: this used to be a bare 44
+    // with the legend pinned at top:0, i.e. drawn across the title.)
     const compactTitled = buildChartOption(sample(), "bar", opts({ title: "My chart" }), undefined, {
       compact: true,
     }) as Record<string, unknown>;
-    expect((compactTitled.grid as { top: number }).top).toBe(44);
+    expect((compactTitled.grid as { top: number }).top).toBe(68);
+
+    // With no top legend competing for the band, the reservation is the title
+    // band alone — this is the constant #1595 pinned.
+    const compactTitledNoTopLegend = buildChartOption(
+      sample(),
+      "bar",
+      opts({ title: "My chart", legendPosition: "bottom" }),
+      undefined,
+      { compact: true },
+    ) as Record<string, unknown>;
+    expect((compactTitledNoTopLegend.grid as { top: number }).top).toBe(44);
 
     // Compact tile WITHOUT a title is unchanged (no wasted header band).
     const compactBare = buildChartOption(sample(), "bar", opts({ title: "" }), undefined, {
@@ -277,6 +293,27 @@ describe("buildChartOption — title & legend", () => {
     ) as Record<string, unknown>;
     expect((titledBottom.legend as { bottom: number }).bottom).toBe(10);
     expect((titledBottom.legend as { top?: number }).top).toBeUndefined();
+  });
+
+  test("#1776 a COMPACT titled chart also pushes a top legend below the title band", () => {
+    // #1622 only fixed the roomy/workspace legend. App and dashboard tiles render
+    // compact, where the top legend stayed pinned at 0 and drew straight across the
+    // #1595 title band (title.top:8) — the overlap came back on every App Builder
+    // chart that set both a title and a top legend.
+    const titledTop = buildChartOption(sample(), "bar", opts({ title: "My chart", legendPosition: "top" }), undefined, {
+      compact: true,
+    }) as Record<string, unknown>;
+    expect((titledTop.legend as { top: number }).top).toBe(32);
+
+    // Untitled compact tile keeps the flush-to-top legend — no wasted band.
+    const untitledTop = buildChartOption(sample(), "bar", opts({ title: "", legendPosition: "top" }), undefined, {
+      compact: true,
+    }) as Record<string, unknown>;
+    expect((untitledTop.legend as { top: number }).top).toBe(0);
+
+    // A titled compact tile with a top legend must also push the PLOT below both
+    // the title band and the legend row, or the legend lands on the top gridline.
+    expect((titledTop.grid as { top: number }).top).toBeGreaterThan(44);
   });
 
   test("compact legend defaults to a bottom scroll legend (legacy-tile parity)", () => {
@@ -446,6 +483,44 @@ describe("buildChartOption — matrix types (heatmap/radar/scatter/waterfall)", 
     expect(series[0].type).toBe("heatmap");
     expect(series[0].data).toHaveLength(4);
     expect(opt.visualMap).toBeDefined();
+  });
+
+  /*
+   * saiku#1793 — in a dashboard tile (compact) the heatmap reserved grid.right: 16
+   * while still parking the vertical visualMap at right: 16, so the colour ramp was
+   * painted ON TOP of the last column of cells. The roomy path already reserved 96.
+   * A legend that obscures the data it describes is worse than no legend.
+   */
+  test("heatmap reserves a right gutter for the visualMap in compact tiles", () => {
+    for (const compact of [false, true]) {
+      const opt = buildChartOption(sample(), "heatmap", opts(), undefined, { compact }) as Record<
+        string,
+        unknown
+      >;
+      const grid = opt.grid as { right: number };
+      const vm = opt.visualMap as { right: number };
+
+      expect(
+        grid.right,
+        `compact=${compact}: grid.right (${grid.right}) must clear the visualMap ` +
+          `parked at right:${vm.right}, or the ramp overlaps the last column`,
+      ).toBeGreaterThan(vm.right);
+    }
+  });
+
+  /*
+   * saiku#1793 — the ramp carried no min/max text, so the colours mapped to no
+   * numbers at all: the only way to read a value off the chart was to hover.
+   * ECharts renders continuous-visualMap end labels only when `text` is supplied.
+   */
+  test("heatmap visualMap labels its range so colours read as values", () => {
+    const opt = buildChartOption(sample(), "heatmap", opts()) as Record<string, unknown>;
+    const vm = opt.visualMap as { min: number; max: number; text?: [string, string] };
+
+    expect(vm.text, "visualMap has no end labels — the ramp is unreadable").toBeDefined();
+    // ECharts orders `text` as [high, low].
+    expect(vm.text?.[0]).toContain(String(Math.round(vm.max)).slice(0, 3));
+    expect(vm.text?.[1]).toContain(String(Math.round(vm.min)).slice(0, 3));
   });
 
   test("radar uses cols as indicators + rows as series entries", () => {
@@ -1617,5 +1692,98 @@ describe("buildChartOption — combo charts / per-series type (#1089)", () => {
     const us = series.find((s) => s.name === "Unit Sales")!;
     expect(us.type).toBe("line");
     expect(us.yAxisIndex).toBe(1); // right axis
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * saiku#1771 — heatmap axis labels                                    *
+ * ------------------------------------------------------------------ */
+
+describe("stripSharedMeasurePrefix", () => {
+  test("strips a measure prefix shared by every caption", () => {
+    expect(
+      stripSharedMeasurePrefix([
+        "Units Shipped | Beverly Hills",
+        "Units Shipped | Los Angeles",
+        "Units Shipped | San Diego",
+      ]),
+    ).toEqual(["Beverly Hills", "Los Angeles", "San Diego"]);
+  });
+
+  test("leaves captions alone when the prefixes differ (multi-measure)", () => {
+    const multi = ["Units Shipped | Drink", "Units Ordered | Drink"];
+    expect(stripSharedMeasurePrefix(multi)).toEqual(multi);
+  });
+
+  test("leaves plain captions alone", () => {
+    const plain = ["Drink", "Food", "Non-Consumable"];
+    expect(stripSharedMeasurePrefix(plain)).toEqual(plain);
+  });
+
+  test("leaves a mix of composite and plain captions alone", () => {
+    const mixed = ["Units Shipped | Drink", "Food"];
+    expect(stripSharedMeasurePrefix(mixed)).toEqual(mixed);
+  });
+
+  test("keeps later pipes in the member name", () => {
+    expect(stripSharedMeasurePrefix(["Units Shipped | A | B"])).toEqual(["A | B"]);
+  });
+
+  test("does not strip when the remainder would be empty", () => {
+    const odd = ["Units Shipped | "];
+    expect(stripSharedMeasurePrefix(odd)).toEqual(odd);
+  });
+
+  test("handles the empty list", () => {
+    expect(stripSharedMeasurePrefix([])).toEqual([]);
+  });
+});
+
+describe("buildChartOption — heatmap axis labels (saiku#1771)", () => {
+  test("heatmap x axis drops the shared measure prefix", () => {
+    const proj: ChartProjection = {
+      rowCategories: ["Beverly Hills", "Portland"],
+      columnCategories: ["Units Shipped | Drink", "Units Shipped | Food"],
+      matrix: [
+        [1, 2],
+        [3, 4],
+      ],
+    };
+    const opt = buildChartOption(proj, "heatmap", opts(), undefined, { compact: true }) as Record<string, unknown>;
+    expect((opt.xAxis as { data: string[] }).data).toEqual(["Drink", "Food"]);
+    // Rows never carry the measure — untouched.
+    expect((opt.yAxis as { data: string[] }).data).toEqual(["Beverly Hills", "Portland"]);
+  });
+
+  test("heatmap keeps full captions when two measures share the axis", () => {
+    const proj: ChartProjection = {
+      rowCategories: ["Beverly Hills"],
+      columnCategories: ["Units Shipped | Drink", "Units Ordered | Drink"],
+      matrix: [[1, 2]],
+    };
+    const opt = buildChartOption(proj, "heatmap", opts(), undefined, { compact: true }) as Record<string, unknown>;
+    expect((opt.xAxis as { data: string[] }).data).toEqual(["Units Shipped | Drink", "Units Ordered | Drink"]);
+  });
+});
+
+describe("shouldLabelScatter (saiku#1781)", () => {
+  const rep = (n: number, s: string) => Array.from({ length: n }, () => s);
+
+  test("labels a handful of short member names", () => {
+    expect(shouldLabelScatter(rep(13, "CA"))).toBe(true);
+  });
+
+  test("stops labelling 13 long warehouse names — the reported case", () => {
+    // "Quality Warehousing and Trucking", "Jorgensen Service Storage" … 13 of
+    // these overprint into an unreadable smear well under the 25-point cap.
+    expect(shouldLabelScatter(rep(13, "Quality Warehousing and Trucking"))).toBe(false);
+  });
+
+  test("still respects the hard point cap for short labels", () => {
+    expect(shouldLabelScatter(rep(30, "A"))).toBe(false);
+  });
+
+  test("no points means no labels", () => {
+    expect(shouldLabelScatter([])).toBe(false);
   });
 });

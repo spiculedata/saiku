@@ -329,6 +329,17 @@ export interface DashboardTile {
   /** Per-column conditional formatting rules. Only consulted when
    *  {@code type === "table"}. See the issue-#919 block below. */
   conditionalFormat?: ConditionalFormatRule[];
+  /** saiku#1770 — per-column number formatting, keyed by header caption
+   *  (same keying as {@link conditionalFormat}). Values use the KPI /
+   *  ranked-list pattern vocabulary: `$cN` compact currency, `$N` plain
+   *  currency, `N%` percent, bare `N` fractional digits.
+   *
+   *  Without this the table was the only value-bearing tile with no number
+   *  formatting at all, so it printed whatever the cube's formatString
+   *  produced — an integer count carrying `#.0` rendered "10759.0", with no
+   *  thousands separator, next to money at three decimals. Unset columns keep
+   *  the server's formatted text, so existing tiles are unchanged. */
+  columnFormats?: Record<string, string>;
   /** Sparkline column config (issue #920). Only consulted when
    *  {@code type === "table"}. See the issue-#920 block above. */
   sparkline?: SparklineConfig;

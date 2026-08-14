@@ -56,6 +56,8 @@
   import TileEditorKpi from "$lib/views/dashboard/TileEditorKpi.svelte";
   import TileEditorTableConditional from "$lib/views/dashboard/TileEditorTableConditional.svelte";
   import TileEditorTableSparkline from "$lib/views/dashboard/TileEditorTableSparkline.svelte";
+  // saiku#1770 — per-column number formatting (table only).
+  import TileEditorTableFormats from "$lib/views/dashboard/TileEditorTableFormats.svelte";
   // ── Issue #912: inline visual query editor (embedded QueryCanvas) ──
   import QueryCanvas from "$lib/views/QueryCanvas.svelte";
   import DimensionList from "$lib/views/DimensionList.svelte";
@@ -98,6 +100,16 @@
 
   let { tile, onClose }: Props = $props();
 
+  /** saiku#1781: display casing for the header. `tile.type` is a lowercase
+   *  discriminator, and the old `text-transform: capitalize` turned "kpi" into
+   *  the misspelt "Kpi". Acronyms get their real casing; everything else is
+   *  sentence-cased from the discriminator so a new tile type still reads fine
+   *  without touching this map. */
+  const TILE_TYPE_LABELS: Record<string, string> = { kpi: "KPI" };
+  const tileTypeLabel = $derived(
+    TILE_TYPE_LABELS[tile.type] ?? tile.type.charAt(0).toUpperCase() + tile.type.slice(1),
+  );
+
   // Per-tile editable form state — initialised from the source tile.
   // untrack() so the inits read the prop without subscribing; the modal
   // never re-renders for the same tile, so the one-shot read is the
@@ -114,6 +126,13 @@
     untrack(() => ({ ...DEFAULT_CHART_OPTIONS, ...(tile.chartOptions ?? {}) })),
   );
   let chartOptionsTouched = $state(false);
+  // saiku#1790: chartOptionsTouched answers "were options edited in THIS session?"
+  // and must stay that way — it gates persistence, and seeding it from the tile
+  // would stamp DEFAULT_CHART_OPTIONS onto a legacy tile, the exact regression
+  // #1077 exists to prevent. The hint asks a different question ("does this tile
+  // have custom options?"), so it gets its own read-only flag; otherwise every
+  // reopen of a customised tile reported "Using dashboard defaults."
+  const chartOptionsCustomised = $derived(chartOptionsTouched || tile.chartOptions != null);
   let chartOptionsOpen = $state(false);
   let text = $state(untrack(() => tile.text ?? ""));
   // Position + size — numeric controls per the design's "no drag-resize"
@@ -194,6 +213,10 @@
       })),
     ),
   );
+  // ── saiku#1770: per-column number formatting (table only) ──
+  // Working copy keyed by header caption, deep-cloned so Cancel discards.
+  let columnFormats = $state<Record<string, string>>(untrack(() => ({ ...(tile.columnFormats ?? {}) })));
+
   // ── Issue #920: opt-in inline sparkline column (table only) ──
   // Working copy of the table tile's sparkline config; persisted in
   // handleSave under the table-guarded block. Isolated so it rebases
@@ -983,6 +1006,9 @@
           return out;
         });
       patch.conditionalFormat = cleaned.length > 0 ? cleaned : undefined;
+      // saiku#1770 — drop the key entirely when empty so untouched tiles stay
+      // byte-identical in the saved document.
+      patch.columnFormats = Object.keys(columnFormats).length > 0 ? { ...columnFormats } : undefined;
 
       // ── Issue #920: persist sparkline column config. Only store when
       // enabled so a fresh / opted-out tile keeps tidy JSON. ──
@@ -1054,7 +1080,7 @@
 >
   <div class="modal" class:modal--wide={queryEditorOpen} role="dialog" aria-label="Edit tile">
     <header class="modal-header">
-      <h2>Edit {tile.type} tile</h2>
+      <h2>Edit {tileTypeLabel} tile</h2>
       <button type="button" class="border-0 bg-transparent text-xl cursor-pointer text-fg-muted" aria-label="Close" onclick={handleClose}>×</button>
     </header>
     <div class="p-4 overflow-auto flex flex-col gap-3">
@@ -1129,7 +1155,7 @@
       {#if tile.type === "chart"}
         <TileEditorChart
           bind:chartType
-          {chartOptionsTouched}
+          {chartOptionsCustomised}
           onOpenChartOptions={() => (chartOptionsOpen = true)}
         />
 
@@ -1335,32 +1361,33 @@
         <fieldset class="graph-map">
           <legend>Ranked list</legend>
           <label class="field">
-            <span>Subtitle <span class="hint">(optional)</span></span>
-            <input type="text" bind:value={rankedSubtitle} placeholder="e.g. Product department · MoM" />
+            <span class="field__label">Subtitle <span class="hint">(optional)</span></span>
+            <input class="field__input" type="text" bind:value={rankedSubtitle} placeholder="e.g. Product department · MoM" />
           </label>
           <label class="field">
-            <span>Label column <span class="hint">(optional)</span></span>
-            <input type="text" bind:value={rankedLabelCol} spellcheck="false" placeholder="blank = inferred" />
+            <span class="field__label">Label column <span class="hint">(optional)</span></span>
+            <input class="field__input" type="text" bind:value={rankedLabelCol} spellcheck="false" placeholder="blank = inferred" />
           </label>
           <label class="field">
-            <span>Value column <span class="hint">(optional)</span></span>
-            <input type="text" bind:value={rankedValueCol} spellcheck="false" placeholder="blank = inferred" />
+            <span class="field__label">Value column <span class="hint">(optional)</span></span>
+            <input class="field__input" type="text" bind:value={rankedValueCol} spellcheck="false" placeholder="blank = inferred" />
           </label>
           <label class="field">
-            <span>Rows</span>
-            <input type="number" min="1" max="100" bind:value={rankedLimit} />
+            <span class="field__label">Rows</span>
+            <input class="field__input" type="number" min="1" max="100" bind:value={rankedLimit} />
           </label>
           <label class="field">
-            <span>Order</span>
-            <select bind:value={rankedSort}>
+            <span class="field__label">Order</span>
+            <select class="field__input" bind:value={rankedSort}>
               <option value="none">Keep the query's order</option>
               <option value="desc">Highest first</option>
               <option value="asc">Lowest first</option>
             </select>
           </label>
           <label class="field">
-            <span>Value format <span class="hint">(optional)</span></span>
+            <span class="field__label">Value format <span class="hint">(optional)</span></span>
             <input
+              class="field__input"
               type="text"
               bind:value={rankedValueFormat}
               spellcheck="false"
@@ -1372,8 +1399,8 @@
             </span>
           </label>
           <label class="field">
-            <span>Value colour</span>
-            <select bind:value={rankedTone}>
+            <span class="field__label">Value colour</span>
+            <select class="field__input" bind:value={rankedTone}>
               <option value="signed">By sign (up green / down red)</option>
               <option value="none">Plain</option>
             </select>
@@ -1585,6 +1612,10 @@
            $lib/dashboard/sparkline.ts; this is config capture only.
            ════════════════════════════════════════════════════════════ -->
       {#if tile.type === "table"}
+        <TileEditorTableFormats bind:columnFormats />
+      {/if}
+
+      {#if tile.type === "table"}
         <TileEditorTableSparkline bind:sparklineEnabled bind:sparklineType />
       {/if}
 
@@ -1654,6 +1685,13 @@
   }
   .modal {
     background: hsl(var(--bg));
+    /* saiku#1794: this modal mounts INSIDE the .saiku-app shell, which paints
+       `color: var(--saiku-app-fg, …)`. Re-establishing only the chrome ground
+       left the app's ink inheriting onto it — controls that deliberately take
+       their colour from the parent (label.checkbox, label.radio) rendered
+       app-dark on the modal's dark panel and read as disabled. Ground and ink
+       have to be claimed together. */
+    color: hsl(var(--fg));
     border-radius: 8px;
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
     width: min(560px, 92vw);
@@ -1679,7 +1717,9 @@
     margin: 0;
     font-size: 1rem;
     flex: 1;
-    text-transform: capitalize;
+    /* saiku#1781: `text-transform: capitalize` over a raw tile.type rendered
+       "Edit Kpi Tile". The heading now supplies its own casing via
+       tileTypeLabel, so leave the text alone. */
   }
   /* saiku#1258: field layout now comes from the global app.css design-system
      pattern (.field / .field__label / .field__input) — the same one
@@ -1790,9 +1830,15 @@
     border-radius: 4px;
     padding: 0.5rem 0.75rem;
     margin: 0;
-    /* Let the embed take the freed-up vertical space when the modal grows. */
-    flex: 1;
-    min-height: 0;
+    /* Let the embed take the freed-up vertical space when the modal grows.
+       saiku#1773: `flex: 1` alone means `flex-basis: 0%`, and paired with
+       `min-height: 0` inside the modal body — a CONTENT-SIZED `overflow-auto`
+       column flex container, so there is no free space to distribute — the
+       fieldset collapsed to its legend (35px) while `.qe-embed`'s 360px floor
+       overflowed it. Everything after this block (Auto-refresh, table
+       conditional formatting, sparkline) then painted on top of the builder.
+       `1 0 auto` keeps the grow behaviour but floors the box at its content. */
+    flex: 1 0 auto;
   }
   .qe-section legend {
     font-size: 0.75rem;
@@ -1807,10 +1853,15 @@
     grid-template-columns: 240px 1fr;
     gap: 0.5rem;
     flex: 1;
-    min-height: 0;
     /* A floor so the drop zones + result preview are usable even before the
-       modal's flex height resolves. */
+       modal's flex height resolves. (Previously preceded by a `min-height: 0`
+       that this declaration always overrode — dropped as dead in saiku#1773.) */
     min-height: 360px;
+    /* saiku#1773: now that `.qe-section` is content-sized (`flex: 1 0 auto`)
+       the embed would otherwise grow to the full height of the cube tree —
+       ~2000px — and the modal body would just scroll past it. Cap it so the
+       sidebar and canvas use their own internal scrollers as designed. */
+    max-height: 60vh;
     border: 1px solid hsl(var(--border));
     border-radius: 4px;
     overflow: hidden;

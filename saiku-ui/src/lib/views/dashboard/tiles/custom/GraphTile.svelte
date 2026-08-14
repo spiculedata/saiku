@@ -34,8 +34,11 @@
     validateGraphConfig,
     weightRange,
     nodeSize,
+    graphLayoutBox,
+    graphLabelExtent,
   } from "$lib/dashboard/custom/graphTile";
   import { searchMembers } from "$lib/api/aiQuery";
+  import { resolveChartTokensFor } from "$lib/dashboard/appChartTheme";
   import { pickMemberUniqueName } from "$lib/dashboard/clickFilterMember";
   import { theme } from "$lib/stores/theme.svelte";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
@@ -143,19 +146,30 @@
       return;
     }
     const graph = recordsToGraph(r.data ?? [], validation.value);
+    // saiku#1775: paint from the App shell's tokens like every other tile. With
+    // nothing set, ECharts fell back to its own #5470c6 and the graph was the one
+    // blue element on a cyan/amber app — the docs promise custom renderers
+    // "follow the App theme". Outside an App this resolves to the Saiku UI
+    // tokens, so dashboards are unchanged in spirit but now theme-aware too.
+    const tokens = resolveChartTokensFor(host);
     const option = {
       tooltip: { trigger: "item" },
       series: [
         {
           type: "graph",
           layout: validation.value.layout ?? "force",
+          // saiku#1793: inset the node ring so the outward-drawn labels have room.
+          // Without a layout box ECharts sizes the ring to the container and every
+          // outer label is clipped at the tile edge.
+          ...graphLayoutBox(validation.value.layout),
           roam: true,
           draggable: true,
-          label: { show: true, position: "right" },
+          label: { show: true, position: "right", color: tokens.fg, ...graphLabelExtent() },
+          itemStyle: { color: tokens.accent },
           force: { repulsion: 140, edgeLength: 90, gravity: 0.08 },
           circular: { rotateLabel: true },
           emphasis: { focus: "adjacency" },
-          lineStyle: { color: "source", curveness: 0.1 },
+          lineStyle: { color: "source", curveness: 0.1, opacity: 0.55 },
           data: (() => {
             // Sizing is relative to the weights this graph actually carries
             // (saiku#1755), so the scale works whatever the measure's units.

@@ -204,6 +204,23 @@
       }
       items.push({ id: "_sep2", sep: true, label: "" });
     }
+    // saiku#1778: a level could only reach Columns by DRAGGING it there —
+    // double-click always targets Rows and no menu offered a move. That made
+    // every two-axis chart (heatmap above all, which is defined by having a
+    // level on each axis) impossible to build without a mouse drag, and
+    // unreachable entirely by keyboard.
+    if (axis === "ROWS" || axis === "COLUMNS") {
+      const to: AxisLocation = axis === "ROWS" ? "COLUMNS" : "ROWS";
+      items.push({ id: "_sepMove", sep: true, label: "" });
+      items.push({
+        id: `moveTo:${to}`,
+        label:
+          to === "COLUMNS"
+            ? i18n.t("canvas.menu.moveToColumns", "Move to Columns")
+            : i18n.t("canvas.menu.moveToRows", "Move to Rows"),
+      });
+    }
+    items.push({ id: "_sep3", sep: true, label: "" });
     items.push({ id: "remove", label: i18n.t("canvas.menu.removeHierarchy"), danger: true });
     menu = {
       open: true,
@@ -291,6 +308,10 @@
       if (id === "selections") openSelections(m.axis, m.hierarchy);
       else if (id === "dateFilter") openDateFilterDirect(m.axis, m.hierarchy);
       else if (id === "remove") query.removeHierarchy(m.hierarchy.name);
+      // saiku#1778: keyboard/menu route to the opposite axis (drag was the only way).
+      else if (id.startsWith("moveTo:")) {
+        query.moveHierarchyToAxis(m.hierarchy.name, id.substring("moveTo:".length) as AxisLocation);
+      }
       else if (id.startsWith("removeLevel:")) {
         const levelName = id.substring("removeLevel:".length);
         // No explicit run() here — query.removeLevel calls markDirty

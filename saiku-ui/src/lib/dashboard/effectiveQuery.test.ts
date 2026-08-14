@@ -515,3 +515,86 @@ describe("mergeFilters — zero-member filters are no constraint", () => {
     expect(out[0].dimension).toBe("Product");
   });
 });
+
+/* saiku#1774 — an App context pill scoping a COARSE level while the tile groups
+ * by a FINER one. The old merge replaced the axis with the pill's level, so a
+ * ranked list of 13 warehouse names collapsed to a single "WA" row. The axis
+ * must keep its own grain and carry the ancestor member, which the converter
+ * renders as Descendants(members, level). */
+describe("mergeFilters — saiku#1774 ancestor scoping", () => {
+  const warehouseSchema: SchemaLike = {
+    dimensions: {
+      warehouse: {
+        name: "Warehouse",
+        hierarchies: {
+          warehouses: {
+            name: "Warehouses",
+            levels: {
+              country: { name: "Country" },
+              "state province": { name: "State Province" },
+              city: { name: "City" },
+              "warehouse name": { name: "Warehouse Name" },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  const waFilter = {
+    filter: {
+      dimension: "Warehouse",
+      hierarchy: "Warehouses",
+      level: "State Province",
+      members: ["[Warehouse].[Warehouses].[USA].[WA]"],
+    },
+  } as unknown as ActiveFilter;
+
+  test("keeps a finer axis level and scopes it to the filter's ancestor member", () => {
+    const base: AiQueryRequestLike = {
+      cube: { connectionName: "foodmart", cubeName: "Warehouse" },
+      measures: [{ name: "Units Shipped" }],
+      rows: [{ dimension: "Warehouse", hierarchy: "Warehouses", level: "Warehouse Name" }],
+    };
+
+    const out = mergeFilters(base, [waFilter], warehouseSchema);
+
+    expect(out.rows).toHaveLength(1);
+    // Grain preserved — this is the bug.
+    expect(out.rows![0].level).toBe("Warehouse Name");
+    expect(out.rows![0].members).toEqual(["[Warehouse].[Warehouses].[USA].[WA]"]);
+    // Must NOT also land in filters[] — the same hierarchy on an axis AND in the
+    // slicer is rejected by the converter.
+    expect(out.filters ?? []).toHaveLength(0);
+  });
+
+  test("still collapses when the filter's level is already on the axis", () => {
+    const base: AiQueryRequestLike = {
+      cube: { connectionName: "foodmart", cubeName: "Warehouse" },
+      measures: [{ name: "Units Shipped" }],
+      rows: [
+        { dimension: "Warehouse", hierarchy: "Warehouses", level: "Country" },
+        { dimension: "Warehouse", hierarchy: "Warehouses", level: "State Province" },
+      ],
+    };
+
+    const out = mergeFilters(base, [waFilter], warehouseSchema);
+
+    expect(out.rows).toHaveLength(1);
+    expect(out.rows![0].level).toBe("State Province");
+  });
+
+  test("applies the same rule on the columns axis", () => {
+    const base: AiQueryRequestLike = {
+      cube: { connectionName: "foodmart", cubeName: "Warehouse" },
+      measures: [{ name: "Units Shipped" }],
+      columns: [{ dimension: "Warehouse", hierarchy: "Warehouses", level: "City" }],
+    };
+
+    const out = mergeFilters(base, [waFilter], warehouseSchema);
+
+    expect(out.columns).toHaveLength(1);
+    expect(out.columns![0].level).toBe("City");
+    expect(out.columns![0].members).toEqual(["[Warehouse].[Warehouses].[USA].[WA]"]);
+  });
+});

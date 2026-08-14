@@ -295,3 +295,52 @@ export function nodeSize(
   const t = (clamped - range.min) / span;
   return NODE_SIZE_MIN + (NODE_SIZE_MAX - NODE_SIZE_MIN) * Math.sqrt(t);
 }
+
+/** The ECharts `series-graph` layout box — how far the node ring is inset from
+ *  the tile's edges. */
+export interface GraphLayoutBox {
+  left: string;
+  right: string;
+  top: string;
+  bottom: string;
+}
+
+/**
+ * saiku#1793 — reserve room for the node labels.
+ *
+ * The graph series set no layout box, so ECharts sized the node ring to fill the
+ * container and the labels — drawn OUTSIDE each node (`position: "right"`, and
+ * rotated outward from the ring under `circular`) — were clipped at every edge:
+ * "Partial College" arrived as "Partial Colleg", "Graduate Degree" as "…uate
+ * Degree".
+ *
+ * A circular layout needs the deeper inset: its labels radiate in all directions
+ * from the ring, so they overflow top and bottom as readily as left and right. A
+ * force layout keeps its nodes nearer the middle and only really needs horizontal
+ * room for the right-positioned label.
+ *
+ * Percentages rather than pixels so the inset tracks the tile — a fixed 60px
+ * gutter would swallow a small tile whole.
+ */
+export function graphLayoutBox(layout: GraphLayout | undefined): GraphLayoutBox {
+  return layout === "circular"
+    ? { left: "20%", right: "20%", top: "16%", bottom: "16%" }
+    : { left: "12%", right: "12%", top: "8%", bottom: "8%" };
+}
+
+/**
+ * saiku#1793 — the label extent a node label may occupy before it ellipsizes.
+ *
+ * Insetting the ring (graphLayoutBox) reclaims most of the clipping, but a
+ * circular layout rotates its top/bottom labels to near-vertical, where a name
+ * like "High School Degree" is far taller than any inset worth reserving — past
+ * roughly 30% top AND bottom the plot is mostly gutter. Capping the label
+ * instead lets the long tail degrade to an ellipsis INSIDE the tile rather than
+ * running off the canvas, and the full name stays available on hover.
+ */
+export const GRAPH_LABEL_MAX_PX = 96;
+
+/** ECharts `series-graph.label` constraints that keep a long name inside the tile. */
+export function graphLabelExtent(): { width: number; overflow: "truncate" } {
+  return { width: GRAPH_LABEL_MAX_PX, overflow: "truncate" };
+}

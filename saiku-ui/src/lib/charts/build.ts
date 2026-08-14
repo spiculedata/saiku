@@ -86,7 +86,7 @@ function legendConfig(o: ChartOptions, tk: ThemeTokens): Record<string, unknown>
   // (title.top:8); a top legend at the default top:10 would draw on top of it
   // and read as missing. Push the legend below the title band when titled;
   // untitled charts keep the original top:10.
-  if (o.legendPosition === "top") position.top = o.title ? 32 : 10;
+  if (o.legendPosition === "top") position.top = o.title ? TITLE_LEGEND_TOP : 10;
   else if (o.legendPosition === "bottom") position.bottom = 10;
   else if (o.legendPosition === "left") {
     position.left = 10;
@@ -108,7 +108,11 @@ function legendConfig(o: ChartOptions, tk: ThemeTokens): Record<string, unknown>
 function compactLegend(o: ChartOptions, tk: ThemeTokens): Record<string, unknown> {
   if (!o.showLegend) return { show: false };
   const base: Record<string, unknown> = { type: "scroll", textStyle: { color: tk.fg } };
-  if (o.legendPosition === "top") base.top = 0;
+  // saiku#1776: mirror the #1622 roomy-legend fix here. Compact is what dashboard
+  // AND App Builder tiles render as, so leaving this pinned at 0 put the legend
+  // straight across the #1595 title band (title.top:8) on every titled tile — the
+  // overlap #1622 closed, still live on the path most authors actually use.
+  if (o.legendPosition === "top") base.top = o.title ? TITLE_LEGEND_TOP : 0;
   else if (o.legendPosition === "left") {
     base.left = 0;
     base.top = "middle";
@@ -136,9 +140,92 @@ function titleConfig(o: ChartOptions, tk: ThemeTokens): Record<string, unknown> 
 // in compact tiles. Roomy charts already reserve their own (title ? 50 : …).
 const TITLE_GRID_TOP = 44;
 
+// #1622/#1776: y offset for a TOP legend when a title band is present, so the
+// legend row sits under the title instead of across it. Shared by the roomy
+// (`legendConfig`) and compact (`compactLegend`) legends — they diverged once,
+// which is exactly how the overlap came back on tiles.
+const TITLE_LEGEND_TOP = 32;
+
+// saiku#1776: vertical room one horizontal legend row needs. When a compact tile
+// is BOTH titled and top-legended the plot has to clear the title band *and* the
+// legend row beneath it, or the legend lands on the top gridline.
+const LEGEND_ROW_H = 24;
+
+/** saiku#1595/#1776: `grid.top` for a compact tile — reserve the title band, plus
+ *  the legend row when a top legend renders under it. */
+function compactGridTop(o: ChartOptions): number {
+  if (!o.title) return 24;
+  const topLegend = o.showLegend && o.legendPosition === "top";
+  return topLegend ? TITLE_GRID_TOP + LEGEND_ROW_H : TITLE_GRID_TOP;
+}
+
+/** saiku#1793: where the heatmap's vertical colour ramp sits, inset from the
+ *  right edge, and the grid gutter that must clear it. The gutter has to exceed
+ *  the inset by the ramp's own width plus its end labels, or the legend paints
+ *  over the last column of cells. */
+const HEATMAP_RAMP_INSET = 16;
+const HEATMAP_RAMP_GUTTER = 76;
+
+/** Fallback format for the ramp's end labels when the tile sets none — a raw
+ *  565238.13 is far too long to sit beside a 140px colour bar. */
+const HEATMAP_RAMP_FORMAT: NumberFormat = { abbreviate: true, decimals: 1 };
+
 /** saiku#1759: label scatter points up to this many rows. Past it the labels
  *  overlap into noise and the tooltip is the better affordance. */
 const SCATTER_LABEL_MAX = 25;
+
+/** saiku#1781: a point budget alone isn't enough — 13 points carrying names like
+ *  "Quality Warehousing and Trucking" already overprint each other into a smear,
+ *  well under the 25-point cap. Labels are drawn to the RIGHT of each point, so
+ *  what actually collides is total label WIDTH; approximate it as
+ *  points × average label length and cap that instead. Tuned so the historical
+ *  case that motivated the 25 cap (short member names) still labels, while long
+ *  names bow out to the tooltip earlier. */
+const SCATTER_LABEL_MAX_CHARS = 220;
+
+/** Should a scatter/bubble plot draw per-point labels? */
+export function shouldLabelScatter(captions: string[]): boolean {
+  if (captions.length === 0) return false;
+  if (captions.length > SCATTER_LABEL_MAX) return false;
+  const chars = captions.reduce((sum, c) => sum + (c?.length ?? 0), 0);
+  return chars <= SCATTER_LABEL_MAX_CHARS;
+}
+
+/** Separator the server uses between a measure and a member in a composite
+ *  column caption ("Units Shipped | Beverly Hills"). */
+const MEASURE_MEMBER_SEP = " | ";
+
+/**
+ * saiku#1771 — drop the measure prefix from column captions when EVERY caption
+ * shares it.
+ *
+ * When one measure is spread across a level on the column axis, the result
+ * metadata captions each column `"<measure> | <member>"`. A heatmap puts those
+ * captions straight on its category axis, where the labels then truncate to
+ * `"Units Ship…"` — identical for every column, so the axis carries no
+ * information at all.
+ *
+ * Only strips when all captions agree on the prefix: with two measures across
+ * the axis ("Units Shipped | Drink" / "Units Ordered | Drink") the measure name
+ * IS the distinguishing part and must stay. Also refuses to produce an empty
+ * label. Pure.
+ */
+export function stripSharedMeasurePrefix(captions: string[]): string[] {
+  if (captions.length === 0) return captions;
+  let prefix: string | null = null;
+  const members: string[] = [];
+  for (const caption of captions) {
+    const at = caption.indexOf(MEASURE_MEMBER_SEP);
+    if (at <= 0) return captions; // plain caption (or leading separator) — leave the set alone
+    const head = caption.slice(0, at);
+    const tail = caption.slice(at + MEASURE_MEMBER_SEP.length);
+    if (tail.length === 0) return captions; // nothing left to label with
+    if (prefix === null) prefix = head;
+    else if (prefix !== head) return captions; // prefixes differ — they carry meaning
+    members.push(tail);
+  }
+  return members;
+}
 
 function linearRegression(vals: (number | null)[]): number[] {
   const n = vals.length;
@@ -870,6 +957,10 @@ export function buildChartOption(
   }
 
   if (t === "heatmap") {
+    // saiku#1771: the heatmap is the one type that puts columnCategories on a
+    // CATEGORY AXIS rather than into the legend, so a shared "<measure> | "
+    // prefix is pure noise here — and it's the part that survives truncation.
+    const heatCols = stripSharedMeasurePrefix(cols);
     const data: [number, number, number][] = [];
     for (let i = 0; i < matrix.length; i++) {
       for (let j = 0; j < (matrix[i]?.length ?? 0); j++) {
@@ -887,8 +978,12 @@ export function buildChartOption(
       // leave the bottom narrow now that the heatmap no longer paints
       // a horizontal legend there. Rotated x-axis labels need ~60px
       // bottom room.
+      // saiku#1793: the compact grid used to keep right: 16 — the same inset the
+      // visualMap parks at — so in a dashboard tile the colour ramp was painted
+      // over the last column of cells. The gutter has to clear the ramp in BOTH
+      // modes; a legend that hides the data it describes is worse than none.
       grid: compact
-        ? { left: 96, top: title ? TITLE_GRID_TOP : 24, right: 16, bottom: 60 }
+        ? { left: 96, top: compactGridTop(o), right: HEATMAP_RAMP_GUTTER, bottom: 60 }
         : { left: 120, top: title ? 56 : 40, right: 96, bottom: 60 },
       xAxis: {
         ...baseAxis,
@@ -896,7 +991,7 @@ export function buildChartOption(
         // / bar (user feedback 2026-06-07): "Alcohol…" / "Breakfa…" /
         // "Eggs / …" with no way to read full names. Rotate when crowded.
         axisLabel: catLabel(cols.length > 8 ? 30 : 0),
-        data: cols,
+        data: heatCols,
         name: xName,
       },
       yAxis: { ...baseAxis, data: rows, inverse: true, name: yName },
@@ -910,9 +1005,19 @@ export function buildChartOption(
         max,
         calculable: false,
         orient: "vertical",
-        right: 16,
+        right: HEATMAP_RAMP_INSET,
         top: "center",
         itemHeight: 140,
+        // saiku#1793: ECharts draws end labels on a continuous visualMap only
+        // when `text` is supplied, so the ramp shipped as an unlabelled colour
+        // bar — the values it encoded were reachable only by hovering a cell.
+        // ECharts orders this [high, low]. Honour the tile's number format when
+        // the author set one; otherwise abbreviate, because a raw 565238.13 is
+        // far too long to sit at the end of a 140px ramp.
+        text: [
+          formatNumber(max, nf ?? HEATMAP_RAMP_FORMAT),
+          formatNumber(min, nf ?? HEATMAP_RAMP_FORMAT),
+        ],
         textStyle: { color: tk.fgMuted },
       },
       // Heatmap doesn't get the bottom slider either — the colour-band
@@ -1030,7 +1135,7 @@ export function buildChartOption(
         tooltip: { ...tooltipStyle, trigger: "item" },
         legend: { show: false },
         grid: compact
-          ? { top: title ? TITLE_GRID_TOP : 24, left: 60, right: 24, bottom: 56 }
+          ? { top: compactGridTop(o), left: 60, right: 24, bottom: 56 }
           : { left: 72, top: title ? 50 : 40, right: 40, bottom: 56 },
         dataZoom: dataZoomConfig(compact, rows.length, false),
         // An explicit author label always wins (#1596 precedence); the measure
@@ -1057,7 +1162,7 @@ export function buildChartOption(
               // every point instead of the member it belongs to. A declarative
               // template, so no function sneaks into the option.
               label:
-                rows.length <= SCATTER_LABEL_MAX
+                shouldLabelScatter(rows)
                   ? {
                       show: true,
                       position: "right",
@@ -1104,7 +1209,7 @@ export function buildChartOption(
       // #1080: roomy gets a slider + inside zoom; compact gets inside-only. The
       // roomy slider sits at the bottom, so reserve a little extra grid bottom.
       grid: compact
-        ? { top: title ? TITLE_GRID_TOP : 24, left: 48, right: 16, bottom: 56 }
+        ? { top: compactGridTop(o), left: 48, right: 16, bottom: 56 }
         : { left: 60, top: title ? 50 : 40, right: 40, bottom: 56 },
       // scatter / bubble: never draw the visible slider (the points
       // already show the full distribution and the slider added clutter
@@ -1172,7 +1277,7 @@ export function buildChartOption(
       // (pads are 0 otherwise); grid.top stays reserved for the #1595 title band.
       grid: compact
         ? {
-            top: title ? TITLE_GRID_TOP : 24,
+            top: compactGridTop(o),
             left: 48 + VALUE_NAME_LEFT_PAD,
             right: 16,
             // #1598: + rotatedTickBottom so rotated tick labels don't clip.
@@ -1357,7 +1462,7 @@ export function buildChartOption(
     // the #1595 title band.
     grid: compact
       ? {
-          top: title ? TITLE_GRID_TOP : 24,
+          top: compactGridTop(o),
           left: 48 + VALUE_NAME_LEFT_PAD,
           right: 16,
           // #1598: + rotatedTickBottom so rotated tick labels don't clip.
