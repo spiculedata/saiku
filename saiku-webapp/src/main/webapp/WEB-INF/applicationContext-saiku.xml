@@ -129,6 +129,14 @@
 	         response is a generic 200 (no enumeration oracle). Scoped to EXACTLY this
 	         one path (not a broader /mail/** prefix). Must precede /rest/** below. -->
 	    <security:intercept-url pattern="/rest/saiku/mail/unsubscribe" access="permitAll" />
+    <!-- saiku#1811 PR3: PUBLIC double-opt-in consent confirm. A recipient must be able
+         to confirm their OWN consent from a mail client with no Saiku login, so it is
+         permitAll. It only ever flips a PENDING consent record to CONFIRMED (via a
+         constant-time salted-hash token match) and never sends mail — it cannot enable a
+         send. Generic 200 for valid/invalid/expired/unknown alike (no enumeration
+         oracle). Scoped to EXACTLY this one path (not a broader /mail/** prefix). Must
+         precede /rest/** below. -->
+    <security:intercept-url pattern="/rest/saiku/mail/consent/confirm" access="permitAll" />
 	    <!-- saiku#941 shareable read-only links. The guest VIEW surface admits
 	         ROLE_SHARE_GUEST (established by shareTokenAuthFilter on a valid
 	         token) OR a logged-in user previewing the link. That role unlocks
