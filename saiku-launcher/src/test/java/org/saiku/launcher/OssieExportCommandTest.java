@@ -20,10 +20,14 @@ import picocli.CommandLine;
  * "converted nothing".
  *
  * <p>The documented usage is a pipeline, where stderr is routinely discarded and the exit status
- * is the only signal the caller reads. Because every MDX schema Saiku ships uses the Mondrian 4
- * MeasureGroup shape the converter skips, the common case was an empty {@code semantic_model: []}
- * on stdout, an explanation on stderr nobody sees, and exit 0 — so a build step consuming the YAML
- * carried on with a model that had no datasets and no metrics.
+ * is the only signal the caller reads, so an export that converted nothing must not report
+ * success.
+ *
+ * <p>saiku#1813 changed what "converts nothing" MEANS. When these tests were written, the
+ * Mondrian 4 MeasureGroup shape was unsupported — which was every schema Saiku ships — so an M4
+ * fixture was the natural way to produce an all-skipped export. M4 now converts, so that fixture
+ * exercises the SUCCESS path and the exit-code test needs a shape the converter genuinely still
+ * declines: a virtual cube, which remains a documented non-goal.
  */
 public class OssieExportCommandTest {
 
@@ -36,7 +40,7 @@ public class OssieExportCommandTest {
             + "<Measure name='M' column='c' aggregator='sum'/>"
             + "</Cube></Schema>";
 
-    /** Mondrian 4: measures live in a MeasureGroup. The converter skips the cube. */
+    /** Mondrian 4: measures live in a MeasureGroup. Converts since saiku#1813. */
     private static final String MONDRIAN_4 = "<Schema name='M4' metamodelVersion='4.0'>"
             + "<PhysicalSchema><Table name='f'/></PhysicalSchema>"
             + "<Cube name='Rx'>"
@@ -44,6 +48,11 @@ public class OssieExportCommandTest {
             + "    <Measures><Measure name='M' column='c' aggregator='sum'/></Measures>"
             + "  </MeasureGroup></MeasureGroups>"
             + "</Cube></Schema>";
+
+    /** A cube the converter still declines: no fact table and no measure group, so it yields no
+     *  datasets at all. Virtual cubes and <DimensionUsage> shapes land here too. */
+    private static final String UNCONVERTIBLE =
+            "<Schema name='V'><Cube name='Virtual'><VirtualCube name='V'/></Cube></Schema>";
 
     private int run(String schemaXml, Path out) throws Exception {
         Path in = tmp.newFile().toPath();
@@ -54,7 +63,15 @@ public class OssieExportCommandTest {
     @Test
     public void convertingNothingExitsNonZero() throws Exception {
         Path out = tmp.newFile().toPath();
-        assertEquals("an all-skipped export must not report success", 4, run(MONDRIAN_4, out));
+        assertEquals("an all-skipped export must not report success", 4, run(UNCONVERTIBLE, out));
+    }
+
+    @Test
+    public void mondrian4NowConvertsAndExitsZero() throws Exception {
+        // saiku#1813. This fixture used to be THE example of an all-skipped export.
+        Path out = tmp.newFile().toPath();
+        assertEquals(0, run(MONDRIAN_4, out));
+        assertTrue(Files.readString(out).contains("name: Rx"));
     }
 
     @Test
@@ -62,7 +79,7 @@ public class OssieExportCommandTest {
         // The non-zero exit is the signal; the file itself must still be well-formed rather than
         // truncated or absent, so a caller that ignores the code gets something parseable.
         Path out = tmp.newFile().toPath();
-        run(MONDRIAN_4, out);
+        run(UNCONVERTIBLE, out);
         assertTrue(Files.readString(out).contains("semantic_model: []"));
     }
 

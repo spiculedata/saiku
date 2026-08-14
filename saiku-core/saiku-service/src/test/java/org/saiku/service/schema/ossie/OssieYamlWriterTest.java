@@ -10,7 +10,10 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import bi.saiku.ossie.OssieYamlWriter;
+import bi.saiku.ossie.model.Dataset;
+import bi.saiku.ossie.model.Field;
 import bi.saiku.ossie.model.OssieDocument;
+import bi.saiku.ossie.model.SemanticModel;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
@@ -20,8 +23,6 @@ import com.networknt.schema.SpecVersion;
 import com.networknt.schema.ValidationMessage;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Set;
 import org.junit.Test;
 
@@ -65,24 +66,60 @@ public class OssieYamlWriterTest {
         assertTrue(yaml.contains("MDX"));
     }
 
+    /**
+     * saiku#1813 — the Mondrian 4 round-trip, against a slice taken VERBATIM from the shipped
+     * FoodMart4 schema and checked into test resources.
+     *
+     * <p>This replaces a check that read {@code ../../saiku-home/data/FoodMart4.xml} and returned
+     * early when absent — the same gitignored-runtime-file trap as #1808: silent on CI, and a
+     * different test on every developer machine.
+     *
+     * <p>The slice is not invented. It keeps the Store dimension precisely because that is where
+     * the real schema broke the first cut of the M4 reader: its attributes declare columns as
+     * {@code <Key>} / {@code <Name>} CHILD ELEMENTS rather than {@code keyColumn} /
+     * {@code nameColumn} attributes, and {@code Store City} keys on a COMPOUND
+     * {@code store_state + store_city}. Reading only the attribute form left those fields with no
+     * {@code expression}, which Ossie's schema rejects — and no hand-written fixture caught it.
+     */
     @Test
-    public void foodmartSchemaEmitsValidOssie() throws Exception {
-        Path schema = Path.of(System.getProperty("user.dir"))
-                .resolve("../../saiku-home/data/FoodMart4.xml")
-                .normalize();
-        if (!Files.exists(schema)) {
-            // Local dev only; not on CI unless the launcher module is checked out alongside.
-            return;
-        }
-        try (InputStream in = Files.newInputStream(schema)) {
+    public void foodmart4SliceEmitsValidOssie() throws Exception {
+        try (InputStream in = getClass().getResourceAsStream("/ossie/foodmart4-slice.xml")) {
+            assertNotNull("foodmart4-slice.xml must be on the test classpath", in);
             OssieDocument doc = converter.convert(in);
-            String yaml = writer.writeAsString(doc);
-            // The important assertion is that whatever comes out validates against Ossie's schema.
-            // FoodMart uses Mondrian 4's <Dimensions>/<MeasureGroups>/<Measures> wrapper shape
-            // which the first-cut converter (saiku#1384 slice 1) doesn't yet parse — those cubes
-            // get skipped (see MondrianToOssieConverter#skippedCubes) rather than emitted as
-            // schema-invalid stubs. The Mondrian-4-MG follow-up (saiku#TBD) will populate them.
-            assertValidatesAgainstOssieSchema(yaml);
+            assertTrue(
+                    "the slice must convert, not be skipped",
+                    !doc.getSemanticModel().isEmpty());
+            assertValidatesAgainstOssieSchema(writer.writeAsString(doc));
+        }
+    }
+
+    @Test
+    public void foodmart4SliceGivesEveryFieldAnExpression() throws Exception {
+        // The specific defect the real schema exposed. Asserted directly so a regression names
+        // itself rather than surfacing as an opaque Ossie validation failure.
+        try (InputStream in = getClass().getResourceAsStream("/ossie/foodmart4-slice.xml")) {
+            OssieDocument doc = converter.convert(in);
+            for (SemanticModel sm : doc.getSemanticModel()) {
+                for (Dataset ds : sm.getDatasets()) {
+                    for (Field f : ds.getFields()) {
+                        assertNotNull(
+                                "field '" + f.getName() + "' on dataset '" + ds.getName()
+                                        + "' has no expression — Ossie requires one",
+                                f.getExpression());
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    public void noLinkProducesNoRelationship() throws Exception {
+        try (InputStream in = getClass().getResourceAsStream("/ossie/foodmart4-slice.xml")) {
+            OssieDocument doc = converter.convert(in);
+            SemanticModel sm = doc.getSemanticModel().get(0);
+            assertTrue(
+                    "a <NoLink> dimension must not produce a relationship",
+                    sm.getRelationships().stream().noneMatch(r -> "Nonexistent".equals(r.getTo())));
         }
     }
 
