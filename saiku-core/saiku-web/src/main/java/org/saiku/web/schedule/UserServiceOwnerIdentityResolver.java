@@ -21,12 +21,11 @@ import org.slf4j.LoggerFactory;
  * {@link OwnerIdentity#absent()} — the runner then refuses to run and auto-disables the job. This
  * resolver never returns a best-effort grant.
  *
- * <p><b>PR3 scope note.</b> Today's {@link UserService} / {@code JdbcUserDAO} surface exposes user
- * existence and roles keyed by username, but does NOT surface the account's {@code enabled} flag by
- * username ({@code SaikuUser} carries no enabled field). This resolver therefore treats "present in
- * the user store" as the existence gate; wiring a true enabled-state check is a PR4 concern (the seam
- * is designed for it — {@link OwnerIdentity#absent()} already means "gone OR disabled"). PR3 remains
- * runtime-dormant regardless: no Spring bean instantiates this yet.
+ * <p><b>PR4 enabled-gate.</b> {@link OwnerIdentity#present()} means the owner EXISTS <b>and</b> is
+ * ENABLED. The account's enabled state comes from the authoritative {@code USERS.ENABLED} column,
+ * surfaced onto {@link SaikuUser#isEnabled()} in PR4 (the column already existed and is written on
+ * every create/update; PR3 simply hadn't mapped it). A present-but-disabled account resolves {@link
+ * OwnerIdentity#absent()}, so its jobs never run and are auto-disabled by the engine.
  */
 public final class UserServiceOwnerIdentityResolver implements OwnerIdentityResolver {
 
@@ -56,6 +55,12 @@ public final class UserServiceOwnerIdentityResolver implements OwnerIdentityReso
             }
             if (owner == null) {
                 log.debug("Owner '{}' not found in user store — resolving absent (fail-closed)", username);
+                return OwnerIdentity.absent();
+            }
+            // saiku#1809 PR4: EXISTS is not enough — the account must also be ENABLED. A disabled owner
+            // (USERS.ENABLED = 0) resolves absent, so the engine SKIPs + auto-disables the job at once.
+            if (!owner.isEnabled()) {
+                log.debug("Owner '{}' is disabled — resolving absent (fail-closed)", username);
                 return OwnerIdentity.absent();
             }
             // Re-read CURRENT roles live — never a stale snapshot. getRoles reflects the store as of

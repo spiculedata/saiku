@@ -173,13 +173,31 @@ public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
         insertRole(user);
     }
 
-    private static final class UserMapper implements RowMapper {
+    // Package-private (was private) so JdbcUserDAOUserMapperTest can drive mapRow directly against
+    // controlled H2 ResultSets — covers the saiku#1809 PR4 USERS.ENABLED backward-compat branches
+    // (disabled / SQL-NULL / missing-column fallback) without a mocking framework (Mockito is not on
+    // this module's classpath).
+    static final class UserMapper implements RowMapper {
         public Object mapRow(ResultSet rs, int rowNum) throws SQLException {
             SaikuUser user = new SaikuUser();
             user.setId(rs.getInt("user_id"));
             user.setUsername(rs.getString("username"));
             user.setEmail(rs.getString("email"));
             user.setPassword(rs.getString("password"));
+            // saiku#1809 PR4: surface the USERS.ENABLED column (already SELECTed by
+            // getAllUsers/getUserById) so a disabled account is visible to callers — the scheduler's
+            // owner-identity gate refuses to run a disabled owner's job. A missing column (older query)
+            // or SQL NULL is treated as enabled, preserving legacy behaviour.
+            boolean enabled = true;
+            try {
+                int e = rs.getInt("enabled");
+                if (!rs.wasNull()) {
+                    enabled = e != 0;
+                }
+            } catch (SQLException noSuchColumn) {
+                // Query didn't select ENABLED — leave the default (enabled).
+            }
+            user.setEnabled(enabled);
             if (rs.getString("ROLES") != null) {
                 List<String> list =
                         new ArrayList(Arrays.asList(rs.getString("ROLES").split(",")));

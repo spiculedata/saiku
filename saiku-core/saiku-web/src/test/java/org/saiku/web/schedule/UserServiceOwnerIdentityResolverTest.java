@@ -43,8 +43,13 @@ public class UserServiceOwnerIdentityResolverTest {
     }
 
     private static SaikuUser user(String name) {
+        return user(name, true);
+    }
+
+    private static SaikuUser user(String name, boolean enabled) {
         SaikuUser u = new SaikuUser();
         u.setUsername(name);
+        u.setEnabled(enabled);
         return u;
     }
 
@@ -58,6 +63,20 @@ public class UserServiceOwnerIdentityResolverTest {
 
         assertTrue(id.present());
         assertEquals(List.of("ROLE_USER", "ROLE_SALES"), id.currentRoles());
+    }
+
+    @Test
+    public void disabledOwner_failsClosed() {
+        // saiku#1809 PR4: a present-but-DISABLED account (USERS.ENABLED = 0) must resolve absent, so its
+        // jobs never run and the engine auto-disables them. present() == EXISTS *and* ENABLED.
+        FakeUserService svc = new FakeUserService();
+        svc.users.add(user("alice", false));
+        svc.rolesToReturn = new String[] {"ROLE_USER"};
+
+        OwnerIdentity id = new UserServiceOwnerIdentityResolver(svc).resolve("alice");
+
+        assertFalse("a disabled owner must resolve absent (fail-closed)", id.present());
+        assertTrue(id.currentRoles().isEmpty());
     }
 
     @Test
