@@ -49,7 +49,7 @@
   import {
     buildChartOption,
     isSupportedChartKind,
-    projectFromAiQueryResponse,
+    projectForChart,
   } from "$lib/dashboard/chartOptions";
   // #1085: brush cross-filter — the pure ECharts `brush` config + the set of
   // chart kinds that support an x-range brush.
@@ -238,7 +238,14 @@
   let a11y = $derived.by(() => {
     const r = response;
     if (!r || r.status !== "SUCCESS") return null;
-    return chartSummary(tile.chartType ?? "bar", tile.title ?? "", projectFromAiQueryResponse(r));
+    // saiku#1797: the SAME projection the canvas draws (rollups dropped, sorted,
+    // trimmed) — a screen-reader table that lists rows the chart doesn't show is
+    // worse than no table.
+    return chartSummary(
+      tile.chartType ?? "bar",
+      tile.title ?? "",
+      projectForChart(r, tile.chartOptions),
+    );
   });
 
   // saiku#1758: how much of a map tile's data actually landed on the basemap.
@@ -252,7 +259,7 @@
     void mapReadyTick;
     const r = response;
     if (!r || r.status !== "SUCCESS") return null;
-    const names = projectFromAiQueryResponse(r).rowCategories;
+    const names = projectForChart(r, tile.chartOptions).rowCategories;
     return geoCoverageNotice(geoCoverage(names, geoFeatureNames("world")));
   });
 
@@ -685,7 +692,10 @@
       return;
     }
 
-    const cats = projectFromAiQueryResponse(r).rowCategories;
+    // saiku#1797: ECharts' dataIndex indexes the DISPLAYED series, so the lookup
+    // must use the sorted/trimmed projection — reading captions out of the raw
+    // one cross-filters on whichever members happened to sit at those indices.
+    const cats = projectForChart(r, tile.chartOptions).rowCategories;
     const captions = Array.from(idx)
       .sort((a, b) => a - b)
       .map((i) => cats[i])

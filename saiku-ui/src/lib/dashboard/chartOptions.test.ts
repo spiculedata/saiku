@@ -4,7 +4,7 @@
  */
 
 import { describe, test, expect } from "vitest";
-import { buildChartOption, isSupportedChartKind } from "$lib/dashboard/chartOptions";
+import { buildChartOption, isSupportedChartKind, projectForChart } from "$lib/dashboard/chartOptions";
 import { DEFAULT_CHART_OPTIONS } from "$lib/views/chartTypes";
 import type { AiQueryResponse } from "$lib/api/aiQuery";
 
@@ -287,5 +287,151 @@ describe("buildChartOption — rejection", () => {
   test("returns null when there's no data", () => {
     const empty: AiQueryResponse = { ...sampleResponse(), data: [] };
     expect(buildChartOption(empty, "bar")).toBeNull();
+  });
+});
+
+/* ====================================================================
+ * saiku#1797 — sortDirection / topN / hideRollupRows on TILES.
+ *
+ * These three ChartOptions fields were applied only by the workspace
+ * (ChartView.svelte); the tile adapter went straight from the raw projection
+ * to the builder, so the editor wrote them, the docs promised them, and the
+ * tile silently rendered the query's natural order at full length.
+ * ==================================================================== */
+
+/** Five cities, deliberately unsorted, one measure. */
+function citiesResponse(): AiQueryResponse {
+  const row = (city: string, sqft: number) => ({
+    "Store City": city,
+    "Store Sqft": { value: sqft, formatted: String(sqft) },
+  });
+  return {
+    queryId: "q2",
+    status: "SUCCESS",
+    format: "records",
+    metadata: {
+      rows: [],
+      columns: [{ name: "Store Sqft", caption: "Store Sqft" }],
+      measures: ["Store Sqft"],
+    },
+    data: [
+      row("Vancouver", 23112),
+      row("Hidalgo", 68966),
+      row("Victoria", 34452),
+      row("Salem", 27694),
+      row("Bremerton", 39696),
+    ],
+    totalRows: 5,
+  };
+}
+
+/** Two-level row axis: the rollup rows carry an empty deeper header cell,
+ *  exactly as /ai/query serialises them in `records` format. */
+function stateAndStoreResponse(): AiQueryResponse {
+  const row = (state: string, store: string, sqft: number) => ({
+    "Store State": state,
+    "Store Name": store,
+    "Store Sqft": { value: sqft, formatted: String(sqft) },
+  });
+  return {
+    queryId: "q3",
+    status: "SUCCESS",
+    format: "records",
+    metadata: {
+      rows: [],
+      columns: [{ name: "Store Sqft", caption: "Store Sqft" }],
+      measures: ["Store Sqft"],
+    },
+    data: [
+      row("BC", "", 57564), // rollup
+      row("BC", "Store 19", 23112),
+      row("BC", "Store 20", 34452),
+      row("DF", "", 36509), // rollup
+      row("DF", "Store 9", 36509),
+    ],
+    totalRows: 5,
+  };
+}
+
+function categoriesOf(opt: Record<string, unknown>): string[] {
+  const axis = opt.xAxis as { data?: string[] } | Array<{ data?: string[] } | undefined>;
+  const first = Array.isArray(axis) ? axis[0] : axis;
+  return first?.data ?? [];
+}
+
+describe("projectForChart — saiku#1797", () => {
+  test("sortDirection desc orders the categories by the first measure", () => {
+    const p = projectForChart(citiesResponse(), {
+      ...DEFAULT_CHART_OPTIONS,
+      sortDirection: "desc",
+    });
+    expect(p.rowCategories).toEqual(["Hidalgo", "Bremerton", "Victoria", "Salem", "Vancouver"]);
+    expect(p.matrix[0][0]).toBe(68966);
+  });
+
+  test("topN trims to the leading N after sorting", () => {
+    const p = projectForChart(citiesResponse(), {
+      ...DEFAULT_CHART_OPTIONS,
+      sortDirection: "desc",
+      topN: 3,
+    });
+    expect(p.rowCategories).toEqual(["Hidalgo", "Bremerton", "Victoria"]);
+    expect(p.matrix.length).toBe(3);
+  });
+
+  test("hideRollupRows drops the partial-header rows of a multi-level axis", () => {
+    const p = projectForChart(stateAndStoreResponse(), DEFAULT_CHART_OPTIONS);
+    expect(p.rowCategories).toEqual(["BC / Store 19", "BC / Store 20", "DF / Store 9"]);
+  });
+
+  test("hideRollupRows off keeps every row", () => {
+    const p = projectForChart(stateAndStoreResponse(), {
+      ...DEFAULT_CHART_OPTIONS,
+      hideRollupRows: false,
+    });
+    expect(p.rowCategories.length).toBe(5);
+  });
+
+  test("a single-level axis is untouched by the rollup filter", () => {
+    const p = projectForChart(citiesResponse(), DEFAULT_CHART_OPTIONS);
+    expect(p.rowCategories.length).toBe(5);
+  });
+
+  test("an all-rollup result is left alone rather than emptied", () => {
+    // Every row partial (no leaves at all) — dropping them would blank the tile,
+    // so the filter stands down exactly as the workspace's does.
+    const allRollups: AiQueryResponse = {
+      ...stateAndStoreResponse(),
+      data: (stateAndStoreResponse().data ?? []).filter((r) => r["Store Name"] === ""),
+    };
+    const p = projectForChart(allRollups, DEFAULT_CHART_OPTIONS);
+    expect(p.rowCategories.length).toBe(2);
+  });
+
+  test("no options = the raw projection (legacy tiles unchanged)", () => {
+    const p = projectForChart(stateAndStoreResponse());
+    expect(p.rowCategories.length).toBe(5);
+  });
+});
+
+describe("buildChartOption — saiku#1797 wiring", () => {
+  test("the built option carries the sorted, trimmed categories", () => {
+    const opt = buildChartOption(citiesResponse(), "bar", 1, undefined, {
+      ...DEFAULT_CHART_OPTIONS,
+      sortDirection: "desc",
+      topN: 3,
+    }) as Record<string, unknown>;
+    expect(categoriesOf(opt)).toEqual(["Hidalgo", "Bremerton", "Victoria"]);
+  });
+
+  test("legacy tiles with no per-tile options keep the query's order", () => {
+    const opt = buildChartOption(citiesResponse(), "bar") as Record<string, unknown>;
+    expect(categoriesOf(opt)).toEqual([
+      "Vancouver",
+      "Hidalgo",
+      "Victoria",
+      "Salem",
+      "Bremerton",
+    ]);
   });
 });
