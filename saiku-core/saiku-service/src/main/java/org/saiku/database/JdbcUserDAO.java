@@ -173,7 +173,11 @@ public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
         insertRole(user);
     }
 
-    private static final class UserMapper implements RowMapper {
+    // Package-private (was private) so JdbcUserDAOUserMapperTest can drive mapRow directly against
+    // controlled H2 ResultSets — covers the saiku#1809 PR4 USERS.ENABLED backward-compat branches
+    // (disabled / SQL-NULL / missing-column fallback) without a mocking framework (Mockito is not on
+    // this module's classpath).
+    static final class UserMapper implements RowMapper {
         public Object mapRow(ResultSet rs, int rowNum) throws SQLException {
             SaikuUser user = new SaikuUser();
             user.setId(rs.getInt("user_id"));
