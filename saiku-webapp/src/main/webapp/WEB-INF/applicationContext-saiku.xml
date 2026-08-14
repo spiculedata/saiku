@@ -121,6 +121,14 @@
 	         unlock the login form), so they're anonymous-accessible. They're
 	         inert unless demo mode + WorkOS are configured. -->
 	    <security:intercept-url pattern="/rest/saiku/demo/gate/**" access="permitAll" />
+	    <!-- saiku#1811 PR2: PUBLIC one-click unsubscribe. Must be usable from a mail
+	         client with no Saiku login (RFC 8058 List-Unsubscribe-Post one-click), so
+	         it is permitAll. FAIL-SAFE: this endpoint only ever ADDS to the suppression
+	         list (shrinks the mailable set) and never sends mail — it cannot enable a
+	         send. Anti-forgery is enforced in the resource by an HMAC token, and the
+	         response is a generic 200 (no enumeration oracle). Scoped to EXACTLY this
+	         one path (not a broader /mail/** prefix). Must precede /rest/** below. -->
+	    <security:intercept-url pattern="/rest/saiku/mail/unsubscribe" access="permitAll" />
 	    <!-- saiku#941 shareable read-only links. The guest VIEW surface admits
 	         ROLE_SHARE_GUEST (established by shareTokenAuthFilter on a valid
 	         token) OR a logged-in user previewing the link. That role unlocks

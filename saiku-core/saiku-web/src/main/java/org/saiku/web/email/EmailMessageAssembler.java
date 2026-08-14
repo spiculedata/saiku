@@ -56,7 +56,7 @@ public class EmailMessageAssembler {
             attachments.add(new Attachment("analysis.pdf", "application/pdf", pdf));
         }
 
-        return new MailMessage(to, fromAddress, subject, html.toString(), inline, attachments);
+        return MailMessage.of(to, fromAddress, subject, html.toString(), inline, attachments);
     }
 
     private String validateAddress(String address) {

@@ -37,6 +37,16 @@ public class SmtpMailSender implements MailSender {
             msg.setRecipient(Message.RecipientType.TO, new InternetAddress(m.to()));
             msg.setSubject(m.subject(), "UTF-8");
 
+            // saiku#1811 PR2: optional List-Unsubscribe plumbing. ADDITIVE + null-safe — when the
+            // message carries no unsubscribe value the headers are never touched, so the existing
+            // self-send / test-send MIME output is byte-for-byte unchanged. When present we emit the
+            // RFC 2369 List-Unsubscribe header plus the RFC 8058 one-click marker.
+            String listUnsub = m.listUnsubscribe();
+            if (listUnsub != null && !listUnsub.isBlank()) {
+                msg.setHeader("List-Unsubscribe", listUnsub);
+                msg.setHeader("List-Unsubscribe-Post", "List-Unsubscribe=One-Click");
+            }
+
             MimeMultipart related = new MimeMultipart("related");
             MimeBodyPart html = new MimeBodyPart();
             html.setContent(m.htmlBody(), "text/html; charset=UTF-8");

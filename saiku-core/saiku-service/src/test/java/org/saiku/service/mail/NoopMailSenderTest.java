@@ -14,7 +14,7 @@ class NoopMailSenderTest {
 
     @Test
     void send_completesWithoutThrowing_whenUnconfigured() {
-        MailMessage m = new MailMessage("to@x.com", "from@x.com", "s", "<p>b</p>", List.of(), List.of());
+        MailMessage m = MailMessage.of("to@x.com", "from@x.com", "s", "<p>b</p>", List.of(), List.of());
         assertDoesNotThrow(() -> new NoopMailSender().send(m));
     }
 }

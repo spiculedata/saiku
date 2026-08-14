@@ -99,6 +99,10 @@ public class EmailResource {
                     .entity(Map.of("error", "email recipient not configured"))
                     .build();
         }
+        // #1811 PR3: the RecipientGate slots in HERE — it will consult the SuppressionStore FIRST
+        // (top-veto: a suppressed recipient is dropped before any consent/allowlist check), then
+        // enforce consent + the recipient-trust allowlist. In PR2 the recipient is still only ever the
+        // server's own selfTo, so suppression is not yet consulted on this path.
         try {
             MailMessage msg = assembler.assemble(body, mailConfig.from(), mailConfig.selfTo());
             mailSender.send(msg);

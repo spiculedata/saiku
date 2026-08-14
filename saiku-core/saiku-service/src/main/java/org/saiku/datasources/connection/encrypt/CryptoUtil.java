@@ -185,6 +185,17 @@ public class CryptoUtil {
         return pass1.equals(pass2);
     }
 
+    /**
+     * Exposes the raw per-install key bytes (32 bytes, AES-256) for callers that need to derive a
+     * SEPARATE secondary key — currently only the unsubscribe-token HMAC signer (saiku#1811 PR2). This
+     * is the SAME per-install key that {@link #encrypt(String)} uses (see {@link InstallKeyProvider}),
+     * so no new key mechanism is invented; the token signer domain-separates it with an HMAC label
+     * before use. Never log the returned bytes.
+     */
+    public static byte[] installKeyMaterial() {
+        return InstallKeyProvider.getKeyBytes();
+    }
+
     public static void main(String[] args) throws Exception {
 
         String db = "63cb6745f7b4324f";
