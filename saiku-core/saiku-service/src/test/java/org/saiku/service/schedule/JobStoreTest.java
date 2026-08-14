@@ -6,6 +6,7 @@ package org.saiku.service.schedule;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -136,6 +137,64 @@ class JobStoreTest {
             assertNull(s.load(bad), "malformed/traversal id must not resolve: " + bad);
             assertFalse(s.delete(bad), "malformed/traversal id must not delete: " + bad);
         }
+    }
+
+    @Test
+    void setEnabled_rejects_traversal_and_malformed_ids(@TempDir Path home) {
+        JobStore s = store(home);
+        Path dir = home.resolve("jobs");
+        for (String bad : new String[] {"../escape", "..\\escape", "a/b", "/etc/passwd", "C:\\windows", "", "short"}) {
+            // A malformed id must be rejected outright — no record, no path escape, no throw.
+            assertNull(s.setEnabled(bad, true), "malformed/traversal id must not toggle: " + bad);
+        }
+        // Belt-and-braces: nothing was written into (or above) the jobs dir by the rejected calls.
+        try (Stream<Path> paths = Files.list(dir)) {
+            assertEquals(0, paths.count(), "rejected setEnabled ids must not have written any file");
+        } catch (IOException e) {
+            fail(e);
+        }
+    }
+
+    @Test
+    void id_regex_length_boundaries(@TempDir Path home) throws Exception {
+        JobStore s = store(home);
+        Path dir = home.resolve("jobs");
+        // JOB_ID is {16,64}. Plant a real record at a valid-length id, then probe the four boundaries.
+        String base = "A".repeat(64);
+        // 15 chars → rejected (below the min).
+        assertNull(s.load(base.substring(0, 15)), "15-char id is below the {16,64} min and must be rejected");
+        assertFalse(s.delete(base.substring(0, 15)));
+        // 65 chars → rejected (above the max) — this branch previously had zero coverage.
+        assertNull(s.load(base + "A"), "65-char id is above the {16,64} max and must be rejected");
+        assertFalse(s.delete(base + "A"));
+        // 16 chars → accepted: a real file at that id loads back.
+        String id16 = "B".repeat(16);
+        Files.writeString(dir.resolve(id16 + ".json"), "{\"id\":\"" + id16 + "\",\"ownerUsername\":\"admin\"}");
+        assertNotNull(s.load(id16), "16-char id is the {16,64} min and must be accepted");
+        // 64 chars → accepted.
+        String id64 = "C".repeat(64);
+        Files.writeString(dir.resolve(id64 + ".json"), "{\"id\":\"" + id64 + "\",\"ownerUsername\":\"admin\"}");
+        assertNotNull(s.load(id64), "64-char id is the {16,64} max and must be accepted");
+    }
+
+    @Test
+    void corruptFile_load_returnsNull_and_listAll_skips_neverThrows(@TempDir Path home) throws Exception {
+        JobStore s = store(home);
+        Path dir = home.resolve("jobs");
+        // A valid, loadable job so we can prove listAll returns the good ones while skipping the bad.
+        ScheduledJobFile good = createTypical(s, "admin");
+
+        // Plant a garbage .json at a syntactically valid id — unparseable content.
+        String corruptId = "D".repeat(20);
+        Files.writeString(dir.resolve(corruptId + ".json"), "this is not json {{{");
+
+        // load() on the corrupt id swallows the parse error and returns null — never throws.
+        assertNull(assertDoesNotThrow(() -> s.load(corruptId)), "corrupt file must load as null, not throw");
+
+        // listAll() skips the unreadable file and still returns the good record — never throws.
+        List<ScheduledJobFile> all = assertDoesNotThrow(s::listAll);
+        assertEquals(1, all.size(), "listAll must skip the corrupt file and keep the good one");
+        assertEquals(good.getId(), all.get(0).getId());
     }
 
     @Test
