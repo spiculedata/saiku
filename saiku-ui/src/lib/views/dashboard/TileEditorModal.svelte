@@ -353,6 +353,9 @@
     untrack(() => (savedRanked.tone === "none" ? "none" : "signed")),
   );
   let rankedShowRank = $state<boolean>(untrack(() => savedRanked.showRank !== false));
+  let rankedValueFormat = $state<string>(
+    untrack(() => String(savedRanked.valueFormat ?? "")),
+  );
 
   /** Assemble the form into an options object (empty optionals dropped, so an
    *  unset column stays inferred rather than pinned to ""). */
@@ -366,6 +369,7 @@
     if (rankedLabelCol.trim()) opts.labelColumn = rankedLabelCol.trim();
     if (rankedValueCol.trim()) opts.valueColumn = rankedValueCol.trim();
     if (rankedSubtitle.trim()) opts.subtitle = rankedSubtitle.trim();
+    if (rankedValueFormat.trim()) opts.valueFormat = rankedValueFormat.trim();
     return opts;
   }
   let rankedValidation = $derived.by(() => validateRankedListConfig(rankedOptionsFromForm()));
@@ -1336,11 +1340,11 @@
           </label>
           <label class="field">
             <span>Label column <span class="hint">(optional)</span></span>
-            <input type="text" bind:value={rankedLabelCol} spellcheck="false" placeholder="blank = first text column" />
+            <input type="text" bind:value={rankedLabelCol} spellcheck="false" placeholder="blank = inferred" />
           </label>
           <label class="field">
             <span>Value column <span class="hint">(optional)</span></span>
-            <input type="text" bind:value={rankedValueCol} spellcheck="false" placeholder="blank = first numeric column" />
+            <input type="text" bind:value={rankedValueCol} spellcheck="false" placeholder="blank = inferred" />
           </label>
           <label class="field">
             <span>Rows</span>
@@ -1353,6 +1357,19 @@
               <option value="desc">Highest first</option>
               <option value="asc">Lowest first</option>
             </select>
+          </label>
+          <label class="field">
+            <span>Value format <span class="hint">(optional)</span></span>
+            <input
+              type="text"
+              bind:value={rankedValueFormat}
+              spellcheck="false"
+              placeholder="e.g. $c1 / 2% / 0"
+            />
+            <span class="hint">
+              $cN for compact currency ($27.4M), $N for plain currency, N% for percent, N for
+              fractional digits. Blank keeps the cube's own formatting.
+            </span>
           </label>
           <label class="field">
             <span>Value colour</span>

@@ -25,6 +25,8 @@
  * compiles this module without the alias (same constraint as graphTile.ts).
  */
 
+import { formatKpi } from "../kpi";
+
 /** Sort applied to the projected rows. "none" preserves query order. */
 export type RankedSort = "desc" | "asc" | "none";
 
@@ -48,6 +50,10 @@ export interface RankedListConfig {
   tone?: RankedTone;
   /** Muted line under the tile title (e.g. "Product department · MoM"). */
   subtitle?: string;
+  /** Optional display pattern for the value, in the same vocabulary the KPI
+   *  tile and the ECharts value axis use ("$c1", "€0", "2%", "0"). Unset, the
+   *  server's own `formatted` string is shown (saiku#1757). */
+  valueFormat?: string;
   /** Show the leading rank numeral. Default true. */
   showRank?: boolean;
 }
@@ -182,12 +188,20 @@ export function projectRankedList(
   if (!labelColumn) return [];
 
   const tone = config.tone ?? "signed";
+  const pattern = config.valueFormat?.trim();
   const projected = rows.map((r) => {
     const value = valueColumn ? cellNumber(r[valueColumn]) : null;
+    // An author pattern wins when there IS a number to apply it to; otherwise
+    // fall back to whatever the server formatted, so a non-numeric cell shows
+    // its real text ("n/a") rather than a formatted NaN.
+    const serverText = valueColumn ? cellText(r[valueColumn]) : "";
     return {
       label: cellText(r[labelColumn]),
       value,
-      formatted: valueColumn ? cellText(r[valueColumn]) : "",
+      formatted:
+        pattern && value !== null
+          ? formatKpi(value, "custom", pattern)
+          : serverText,
       tone: toneFor(value, tone),
     };
   });
@@ -228,7 +242,7 @@ export function validateRankedListConfig(options: unknown): ValidateResult {
   }
   const o = options as Record<string, unknown>;
 
-  for (const k of ["labelColumn", "valueColumn", "subtitle"]) {
+  for (const k of ["labelColumn", "valueColumn", "subtitle", "valueFormat"]) {
     if (o[k] !== undefined && typeof o[k] !== "string") {
       return { ok: false, error: `"${k}" must be a string.` };
     }

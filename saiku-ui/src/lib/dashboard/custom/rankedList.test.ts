@@ -295,3 +295,60 @@ describe("validateRankedListConfig", () => {
     expect(validateRankedListConfig("nope").ok).toBe(false);
   });
 });
+
+/*
+ * Value formatting (saiku#1757). The ranked list is the one tile whose whole
+ * job is a scannable column of figures, and it was the only one that could not
+ * format them — a "top brands" card printed $27,432,535.99 per row. It now
+ * takes the same pattern vocabulary as the KPI tile and the ECharts value axis.
+ */
+describe("valueFormat (saiku#1757)", () => {
+  const BRANDS = [
+    {
+      Brand: "Oncovera",
+      "Net Revenue": { value: 27432535.99, formatted: "$27,432,535.99" },
+    },
+    {
+      Brand: "Immunext",
+      "Net Revenue": { value: 22019828.22, formatted: "$22,019,828.22" },
+    },
+  ];
+
+  it("compacts currency with the $cN pattern", () => {
+    const rows = projectRankedList(BRANDS, { valueFormat: "$c1" });
+    expect(rows[0].formatted).toBe("$27.4M");
+  });
+
+  it("keeps the server's formatted string when no pattern is set", () => {
+    expect(projectRankedList(BRANDS, {})[0].formatted).toBe("$27,432,535.99");
+  });
+
+  it("falls back to the server string when the value isn't numeric", () => {
+    const rows = projectRankedList(
+      [{ Brand: "X", Total: { value: null, formatted: "n/a" } }],
+      {
+        valueFormat: "$c1",
+      },
+    );
+    expect(rows[0].formatted).toBe("n/a");
+  });
+
+  it("formats percentages", () => {
+    const rows = projectRankedList(
+      [{ D: "Cardio", Growth: { value: 0.226, formatted: "0.226" } }],
+      {
+        valueFormat: "1%",
+      },
+    );
+    expect(rows[0].formatted).toBe("22.6%");
+  });
+
+  it("accepts valueFormat through the validator", () => {
+    const r = validateRankedListConfig({ valueFormat: "$c1" });
+    expect(r.ok).toBe(true);
+  });
+
+  it("rejects a non-string valueFormat", () => {
+    expect(validateRankedListConfig({ valueFormat: 2 }).ok).toBe(false);
+  });
+});
