@@ -18,15 +18,19 @@ import org.junit.Test;
  * {@code <intercept-url pattern="/rest/saiku/admin/**" access="hasRole('ADMIN')"/>} in
  * {@code applicationContext-saiku.xml}, evaluated BEFORE the generic
  * {@code /rest/** isFullyAuthenticated()} rule. That gate is platform-independent, so the
- * boundary assertions below (non-admin → 403, anonymous → 401) hold on every runtime. The
- * admin's own happy-path access is a plain 200.
+ * boundary assertions below (non-admin → 403, anonymous → 401) hold on every runtime.
  *
- * <p>Historical note: an earlier revision of this IT pinned the admin GETs at 403 and blamed a
- * JAX-RS {@code @RolesAllowed} "gap". That 403 was a platform-VARIABLE artifact of the JAX-RS
- * {@code SecurityContext} role mapping (Linux CI resolved ROLE_ADMIN and returned 200; Windows
- * did not and returned 403) — a reliability wart in a redundant layer, never an exposure, because
- * the URL gate already denies non-admins first. The pins now match the shipped runtime and the
- * (Linux-only) CI: admin → 200.
+ * <p>saiku#1732: the admin's own happy-path access is now a deterministic 200. It used to be a
+ * platform-VARIABLE 403 (the JAX-RS {@code SecurityContext} intermittently failed to surface
+ * ROLE_ADMIN from the Spring principal — 200 on some JVM launches, 403 on others). The root fix is
+ * {@code SaikuJaxrsSecurityContextFilter}: it installs a JAX-RS SecurityContext sourced directly
+ * from Spring's {@code SecurityContextHolder} before Jersey's {@code RolesAllowedDynamicFeature}
+ * runs, so {@code @RolesAllowed} matches the Spring authorities deterministically on every platform.
+ *
+ * <p>{@code StatisticsResource} ({@code /rest/saiku/statistics/**}) is included below because it is
+ * guarded ONLY by {@code @RolesAllowed("ROLE_ADMIN")} — there is no {@code /admin/**} URL gate over
+ * it — so it is the highest-value regression lock for this fix: proving non-admin → 403 there
+ * confirms the deterministic JAX-RS layer does not leak it, and admin → 200 confirms the fix.
  */
 public class AdminIT {
 
@@ -118,6 +122,42 @@ public class AdminIT {
                 "non-admin must be allowed on a normal isFullyAuthenticated() endpoint (/api/discover),"
                         + " proving the admin 403 is a role denial, body=" + resp.body(),
                 200,
+                resp.statusCode());
+    }
+
+    // ---- StatisticsResource: single-layer-guarded (@RolesAllowed only, NO /admin/** URL gate).
+    //      Highest-value lock for saiku#1732 — the JAX-RS layer is the ONLY thing keeping a
+    //      non-admin out, and that layer is exactly what the fix makes deterministic. If the fix
+    //      ever regresses (or a future @RolesAllowed typo lands), these are the tests that catch a
+    //      sensitive-data leak (statistics expose other users' Mondrian query activity). ----
+
+    private static final String STATS = "/rest/saiku/statistics/mondrian";
+
+    @Test
+    public void statistics_asAdmin_ok_deterministic_saiku1732() throws Exception {
+        // Pre-fix this flipped 200/403 across JVM launches; the SaikuJaxrsSecurityContextFilter fix
+        // makes it a stable 200 for a genuine admin on every platform.
+        HttpResponse<String> resp = harness.getAuth(STATS);
+        assertEquals("admin must reliably reach StatisticsResource (200), body=" + resp.body(), 200, resp.statusCode());
+    }
+
+    @Test
+    public void statistics_nonAdmin_isForbidden_403_saiku1732() throws Exception {
+        // StatisticsResource has NO /admin/** URL gate — its ONLY guard is @RolesAllowed("ROLE_ADMIN")
+        // on the (now deterministic) JAX-RS layer. A ROLE_USER-only principal must still be denied.
+        HttpResponse<String> resp = harness.getAuth(VIEWER_USER, VIEWER_PASS, STATS);
+        assertEquals(
+                "non-admin must be FORBIDDEN on the single-layer-guarded StatisticsResource, body=" + resp.body(),
+                403,
+                resp.statusCode());
+    }
+
+    @Test
+    public void statistics_anonymous_isUnauthorized_401_saiku1732() throws Exception {
+        HttpResponse<String> resp = harness.getAnon(STATS);
+        assertEquals(
+                "anonymous must be UNAUTHORIZED (401) on StatisticsResource, body=" + resp.body(),
+                401,
                 resp.statusCode());
     }
 }
