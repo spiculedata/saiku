@@ -5,10 +5,11 @@
    * Styling defaults to a dark editorial panel and is themeable through
    * --saiku-assistant-* vars + the app's scoped custom CSS.
    */
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import { ArrowRight, Sparkles, Crosshair } from "lucide-svelte";
   import { askAi, type NlAskMessageDto } from "$lib/api/aiAsk";
   import type { AppAssistantSlot } from "$lib/api/apps";
+  import { withGreeting, type AssistantMessage } from "$lib/views/app/appAssistant";
 
   interface Props {
     slot: AppAssistantSlot;
@@ -27,20 +28,24 @@
   const footerHint = $derived(slot.footerHint ?? "");
   const poweredBy = $derived(slot.poweredBy ?? "");
 
-  interface Msg {
-    role: "assistant" | "user";
-    text: string;
-    kind?: "greeting" | "reply" | "error";
-  }
+  type Msg = AssistantMessage;
   let messages = $state<Msg[]>([]);
   let input = $state("");
   let busy = $state(false);
   let scroller = $state<HTMLDivElement | null>(null);
 
-  // Seed the greeting once (and re-seed if the configured greeting changes).
+  // Seed the greeting, and RE-seed when the author edits it (saiku#1760). The
+  // previous guard (`if (messages.length === 0)`) made the re-seed a no-op, so
+  // an inspector edit didn't show until a full reload.
+  //
+  // Tracks slot.greeting only: `messages` is read inside untrack because this
+  // effect also WRITES it, and a tracked read of your own write is the Svelte 5
+  // re-entrancy trap (effect_update_depth_exceeded — see CLAUDE.md).
   $effect(() => {
-    const g = slot.greeting ?? "Ask me about this dashboard in plain English.";
-    if (messages.length === 0) messages = [{ role: "assistant", text: g, kind: "greeting" }];
+    const g = slot.greeting;
+    untrack(() => {
+      messages = withGreeting(messages, g);
+    });
   });
 
   async function scrollDown(): Promise<void> {
