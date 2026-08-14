@@ -1,0 +1,76 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  Hadoop core-site for the standalone Hive Metastore so it can resolve
+  s3://warehouse/... locations against MinIO. The metastore reads these
+  settings from this file (JVM -D flags don't reach its Configuration),
+  so CREATE SCHEMA / CREATE TABLE with an s3:// location can create the
+  directory marker. Trino still does all the real data IO.
+
+  Trino writes table locations with the `s3://` scheme, but Hadoop's
+  S3A filesystem only auto-registers `s3a://`. So we bind BOTH `s3` and
+  `s3a` to S3AFileSystem, and duplicate the credential/endpoint settings
+  under the `fs.s3.*` prefix, or HMS throws "No FileSystem for scheme s3".
+-->
+<configuration>
+    <property>
+        <name>fs.s3.impl</name>
+        <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+    </property>
+    <property>
+        <name>fs.AbstractFileSystem.s3.impl</name>
+        <value>org.apache.hadoop.fs.s3a.S3A</value>
+    </property>
+    <property>
+        <name>fs.s3.endpoint</name>
+        <value>http://minio:9000</value>
+    </property>
+    <property>
+        <name>fs.s3.access.key</name>
+        <value>admin</value>
+    </property>
+    <property>
+        <name>fs.s3.secret.key</name>
+        <value>password</value>
+    </property>
+    <property>
+        <name>fs.s3.path.style.access</name>
+        <value>true</value>
+    </property>
+    <property>
+        <name>fs.s3.connection.ssl.enabled</name>
+        <value>false</value>
+    </property>
+    <property>
+        <name>fs.s3.aws.credentials.provider</name>
+        <value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value>
+    </property>
+    <property>
+        <name>fs.s3a.endpoint</name>
+        <value>http://minio:9000</value>
+    </property>
+    <property>
+        <name>fs.s3a.access.key</name>
+        <value>admin</value>
+    </property>
+    <property>
+        <name>fs.s3a.secret.key</name>
+        <value>password</value>
+    </property>
+    <property>
+        <name>fs.s3a.path.style.access</name>
+        <value>true</value>
+    </property>
+    <property>
+        <name>fs.s3a.connection.ssl.enabled</name>
+        <value>false</value>
+    </property>
+    <property>
+        <name>fs.s3a.aws.credentials.provider</name>
+        <value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value>
+    </property>
+    <property>
+        <name>fs.s3a.impl</name>
+        <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+    </property>
+</configuration>
