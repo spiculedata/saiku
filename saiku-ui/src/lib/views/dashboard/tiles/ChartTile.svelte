@@ -817,7 +817,7 @@
       </div>
     {:else if isEmpty}
       <div class="overlay solid">
-        <TileEmpty filtered={hasEffectiveFilters} onReset={resetFilters} />
+        <TileEmpty filtered={hasEffectiveFilters} onReset={resetFilters} cubeName={resolvedCube?.cubeName} />
       </div>
     {/if}
     {#if autoRefreshOn && auto.lastUpdated > 0}

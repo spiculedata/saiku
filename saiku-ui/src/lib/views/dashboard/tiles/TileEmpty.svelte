@@ -16,17 +16,30 @@
     /** True when dashboard filters are narrowing this tile (enables reset). */
     filtered?: boolean;
     onReset?: () => void;
+    /** saiku#1804: the tile's own cube, named in the filtered message. */
+    cubeName?: string | null;
   }
-  let { message = null, filtered = false, onReset }: Props = $props();
+  let { message = null, filtered = false, onReset, cubeName = null }: Props = $props();
+
+  /* saiku#1804: tiles carry their own cube, so one page can mix them — and a
+     scope valid for one cube can be empty in another (FoodMart ships to US
+     stores only, so selecting Mexico empties every Warehouse tile while the
+     Store tiles answer fine). A row of KPIs where two show numbers and two show
+     "No data matches the current filters" reads as two broken tiles. Naming the
+     cube turns it into a fact about the data. */
+  const filteredMessage = $derived(
+    cubeName
+      ? i18n
+          .t("tile.empty.filteredIn", "No {cube} data matches the current filters.")
+          .replace("{cube}", cubeName)
+      : i18n.t("tile.empty.filtered", "No data matches the current filters."),
+  );
 </script>
 
 <div class="h-full w-full box-border flex flex-col items-center justify-center gap-2 p-3 text-center text-fg-muted">
   <Inbox size={22} aria-hidden="true" />
   <p class="msg">
-    {message ??
-      (filtered
-        ? i18n.t("tile.empty.filtered", "No data matches the current filters.")
-        : i18n.t("tile.empty", "No data."))}
+    {message ?? (filtered ? filteredMessage : i18n.t("tile.empty", "No data."))}
   </p>
   {#if filtered && onReset}
     <button type="button" class="reset" onclick={onReset}>

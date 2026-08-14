@@ -19,8 +19,11 @@
      *  (saiku#1761: it used to default to "FoodMart", branding every
      *  unconfigured assistant after the sample dataset). */
     appName?: string;
+    /** saiku#1804: cubes this app's tiles use that the assistant is NOT bound
+     *  to. Empty on a single-cube app. */
+    blindCubes?: Array<{ cubeName: string }>;
   }
-  let { slot, fallbackCube = null, appName }: Props = $props();
+  let { slot, fallbackCube = null, appName, blindCubes = [] }: Props = $props();
 
   const cube = $derived(slot.cube ?? fallbackCube ?? null);
   const title = $derived(slot.title ?? appName ?? "this app");
@@ -31,6 +34,19 @@
   const HeadIcon = $derived(slot.icon === "crosshair" ? Crosshair : Sparkles);
   const footerHint = $derived(slot.footerHint ?? "");
   const poweredBy = $derived(slot.poweredBy ?? "");
+
+  /* saiku#1804: /ai/ask takes exactly ONE cube, but tiles carry their own, so an
+     app can span several. The assistant then answers confidently about part of
+     the app and knows nothing about the rest — and the author's scope note
+     ("scoped to the store estate") reads as though it covers all of it. Name
+     what it can actually see, so a question it can't answer looks like a scope
+     limit rather than the assistant being wrong. */
+  const blindNames = $derived(blindCubes.map((c) => c.cubeName).filter(Boolean));
+  const scopeNote = $derived(
+    blindNames.length > 0 && cube
+      ? `reads ${cube.cubeName} only — not ${blindNames.join(", ")}`
+      : "",
+  );
 
   type Msg = AssistantMessage;
   let messages = $state<Msg[]>([]);
@@ -116,6 +132,11 @@
   <div class="assistant__persona">
     Persona <span class="assistant__pill">{persona}</span>{#if scope}<span class="assistant__scope"> · {scope}</span>{/if}
   </div>
+  {#if scopeNote}
+    <!-- saiku#1804: only on a multi-cube app; a single-cube assistant's scope
+         note is already the whole truth and this would be noise. -->
+    <div class="assistant__cubes" title="The assistant answers from one cube.">{scopeNote}</div>
+  {/if}
 
   <div class="assistant__log" bind:this={scroller}>
     {#each messages as m}
@@ -221,6 +242,13 @@
     border-radius: 999px;
     color: #eaf1ea;
     font-weight: 600;
+  }
+  .assistant__cubes {
+    padding: 0 14px 6px;
+    font-size: .68rem;
+    letter-spacing: .02em;
+    color: var(--saiku-assistant-muted, var(--saiku-app-muted, #8a7f68));
+    opacity: .85;
   }
   .assistant__scope {
     color: #86a08f;

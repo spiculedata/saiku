@@ -786,6 +786,7 @@
   "tile.retry": "Retry",
   "tile.empty": "No data.",
   "tile.empty.filtered": "No data matches the current filters.",
+  "tile.empty.filteredIn": "No {cube} data matches the current filters.",
   "tile.resetFilters": "Reset filters",
   "dashboard.kpi.vsYesterday": "vs yesterday",
   "dashboard.kpi.vsLastWeek": "vs last week",

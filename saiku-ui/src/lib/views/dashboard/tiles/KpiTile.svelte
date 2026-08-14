@@ -512,7 +512,7 @@
     {:else if error}
       <TileError message={error} onRetry={retry} />
     {:else if isEmpty}
-      <TileEmpty filtered={hasEffectiveFilters} onReset={resetFilters} />
+      <TileEmpty filtered={hasEffectiveFilters} onReset={resetFilters} cubeName={tile.cube?.cubeName} />
     {:else}
       <div
         class="value"

@@ -241,7 +241,7 @@
       <div class="overlay solid"><TileError message={error} onRetry={retry} /></div>
     {:else if isEmpty}
       <div class="overlay solid">
-        <TileEmpty filtered={hasEffectiveFilters} onReset={resetFilters} />
+        <TileEmpty filtered={hasEffectiveFilters} onReset={resetFilters} cubeName={tile.cube?.cubeName} />
       </div>
     {/if}
   </div>

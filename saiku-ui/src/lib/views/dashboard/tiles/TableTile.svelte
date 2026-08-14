@@ -426,7 +426,7 @@
     {:else if response && response.status === "SUCCESS"}
       {@const rows = response.data ?? []}
       {#if rows.length === 0}
-        <TileEmpty filtered={hasEffectiveFilters} onReset={resetFilters} />
+        <TileEmpty filtered={hasEffectiveFilters} onReset={resetFilters} cubeName={resolvedCube?.cubeName} />
       {:else}
         <table>
           <thead>

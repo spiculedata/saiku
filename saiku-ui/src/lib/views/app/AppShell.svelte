@@ -28,6 +28,7 @@
     isRailNav,
     resolveActivePageId,
     firstAppCube,
+    assistantBlindCubes,
   } from "$lib/views/app/appShell";
   import { appSkinCss } from "$lib/views/app/appSkin";
   import { provideAppThemeSignature } from "$lib/views/app/appThemeContext";
@@ -343,6 +344,7 @@
         <AppAssistant
           slot={app.assistantSlot}
           fallbackCube={firstAppCube(app)}
+          blindCubes={assistantBlindCubes(app, app.assistantSlot.cube ?? firstAppCube(app))}
           appName={app.name}
         />
       {/if}
