@@ -252,7 +252,7 @@
     // Both halves are needed for a usable predicate; until then just record
     // what has been picked so the selects keep their value.
     const next = withBinding(f as SemanticFilter, { kind: "ossie", cube, dataset, field });
-    dashboardStore.updatePanelFilter(f.id, { bindings: next.bindings } as Partial<PanelFilter>);
+    dashboardStore.updatePanelFilter(f.id, { bindings: next.bindings });
   }
 
   function fieldsOf(cube: CubeRef, dataset: string): string[] {

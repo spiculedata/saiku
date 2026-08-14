@@ -38,28 +38,22 @@
  * Pure: no DOM, no fetches.
  */
 
-import type { CubeRef, DashboardFilter } from "$lib/api/dashboards";
+import type {
+  CubeRef,
+  DashboardFilter,
+  FilterBinding,
+  MdxFilterBinding,
+  OssieFilterBinding,
+} from "$lib/api/dashboards";
 import { leafSegment } from "$lib/dashboard/clickFilterMember";
 import { isOssieSource, sameSource } from "$lib/dashboard/tileSource";
 
-/** How a concept is addressed on a Mondrian cube. */
-export interface MdxBinding {
-  kind: "mdx";
-  cube: CubeRef;
-  dimension: string;
-  hierarchy: string;
-  level: string;
-}
-
-/** How a concept is addressed on an Ossie semantic model. */
-export interface OssieBinding {
-  kind: "ossie";
-  cube: CubeRef;
-  dataset: string;
-  field: string;
-}
-
-export type FilterBinding = MdxBinding | OssieBinding;
+/* The binding shapes are part of the PERSISTED document, so they live with the
+ * rest of the schema in $lib/api/dashboards and are re-exported here for the
+ * resolution logic's callers. */
+export type MdxBinding = MdxFilterBinding;
+export type OssieBinding = OssieFilterBinding;
+export type { FilterBinding };
 
 /** One predicate in an Ossie query body — mirrors OssieAiQueryRequest.FilterExpr.
  *  `op` is EQ for a single value and IN for several, which is the whole range a
@@ -72,16 +66,10 @@ export interface OssieFilterExpr {
   values?: string[];
 }
 
-/** The filter shape this module reads — DashboardFilter plus the #1803 fields.
- *  Both additions are optional, so a legacy filter satisfies it as-is. */
-export type SemanticFilter = DashboardFilter & {
-  /** The concept's display name, e.g. "Country". Falls back to the level. */
-  label?: string;
-  /** Per-source targets. Absent = legacy single-MDX-target behaviour. */
-  bindings?: FilterBinding[];
-  /** Source-neutral selection. Absent = derive from `members`. */
-  captions?: string[];
-};
+/** The filter shape this module reads. DashboardFilter already carries the
+ *  #1803 fields (all optional), so a legacy filter satisfies it as-is; the alias
+ *  exists to say "read as a semantic filter" at a call site. */
+export type SemanticFilter = DashboardFilter;
 
 /**
  * The selection as captions.

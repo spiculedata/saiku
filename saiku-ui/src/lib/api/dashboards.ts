@@ -108,6 +108,28 @@ export interface CascadingSelectConfig {
 }
 /* --- end issue #922 block ------------------------------------------------- */
 
+/** saiku#1803: how one concept is addressed on a Mondrian cube. */
+export interface MdxFilterBinding {
+  kind: "mdx";
+  cube: CubeRef;
+  dimension: string;
+  hierarchy: string;
+  level: string;
+}
+
+/** saiku#1803: how one concept is addressed on an Ossie semantic model. */
+export interface OssieFilterBinding {
+  kind: "ossie";
+  cube: CubeRef;
+  dataset: string;
+  field: string;
+}
+
+/** One target of a semantic filter, in the vocabulary of one source kind.
+ *  Resolution logic lives in $lib/dashboard/semanticFilter; this is the
+ *  persisted shape. */
+export type FilterBinding = MdxFilterBinding | OssieFilterBinding;
+
 /** A dim/hier/level filter — used as both a dashboard-level default and
  *  as the {@code target} of a filter-widget tile. */
 export interface DashboardFilter {
@@ -115,6 +137,22 @@ export interface DashboardFilter {
   hierarchy: string;
   level: string;
   members: string[]; // MDX unique names; empty = "any"
+
+  /* --- saiku#1803: semantic mapping ---------------------------------------
+   * All three optional; a filter without them behaves exactly as it did before,
+   * which is the state of every dashboard and app already saved.
+   *
+   * A filter names a CONCEPT and carries a binding per source, so one control
+   * narrows a cube tile and a semantic-model tile at once. The selection travels
+   * as CAPTIONS (source-neutral) and each binding resolves it in its own
+   * vocabulary at query time. */
+
+  /** Display name of the concept, e.g. "State". Falls back to {@link level}. */
+  label?: string;
+  /** Per-source targets. Absent = the legacy single-MDX-target behaviour. */
+  bindings?: FilterBinding[];
+  /** Source-neutral selection. Absent = derived from {@link members}. */
+  captions?: string[];
 }
 
 /** Display format for the KPI tile's main number. "custom" enables the
