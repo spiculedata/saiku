@@ -114,6 +114,46 @@ export async function executeAiQuery(
   }
 }
 
+/**
+ * POST /ai/ossie/query — the semantic-model twin of {@link executeAiQuery}
+ * (saiku#1803).
+ *
+ * A separate endpoint because the REQUEST shapes share no fields: a cube query
+ * names measures and dimension/hierarchy/level axes, a model query names
+ * metrics and dataset/field axes. The RESPONSE envelope is identical, right
+ * down to the typed cells and the VALIDATION_ERROR `field` + `available`
+ * self-correction hints — which is why every renderer downstream of the fetch
+ * is untouched by this.
+ *
+ * Error handling mirrors executeAiQuery exactly: a 400 carrying a parseable
+ * body is returned verbatim so the tile renders the structured validation
+ * message rather than a generic failure.
+ */
+export async function executeOssieQuery(
+  body: Record<string, unknown>,
+  format: "records" | "matrix" = "records",
+): Promise<AiQueryResponse> {
+  const url = `${REST_BASE}/ossie/query?format=${encodeURIComponent(format)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!text) {
+    throw new Error(`executeOssieQuery -> ${res.status}: empty body`);
+  }
+  try {
+    return JSON.parse(text) as AiQueryResponse;
+  } catch (e) {
+    throw new Error(`executeOssieQuery -> ${res.status}: non-JSON response (${(e as Error).message})`);
+  }
+}
+
 /** True if the cell-shaped value is an AiCell (has .formatted), false
  *  otherwise (e.g. row-header string). Cheap structural narrow. */
 export function isAiCell(v: unknown): v is AiCell {

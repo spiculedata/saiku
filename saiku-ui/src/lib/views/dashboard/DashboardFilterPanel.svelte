@@ -47,12 +47,18 @@
     type CubeRef,
     type FilterWidget,
     type PanelFilter,
+    listOssieDatasets,
+    type AiOssieDataset,
   } from "$lib/api/dashboards";
   // issue #921: Top-N / Bottom-N widget — rank a level by a measure and keep
   // the top/bottom N. Pure resolution in $lib/dashboard/topN; the query runs
   // via the AI Query API (order+limit → TopCount/BottomCount).
   import { executeAiQuery } from "$lib/api/aiQuery";
   import { buildTopNQuery, clampTopN, rankedCaptionsToUniqueNames } from "$lib/dashboard/topN";
+  // saiku#1803 — a filter names a CONCEPT and carries a binding per source, so
+  // one control narrows cube tiles and semantic-model tiles alike.
+  import { filterLabel, withBinding, type SemanticFilter } from "$lib/dashboard/semanticFilter";
+  import { isOssieSource, sourceKey, sourceLabel } from "$lib/dashboard/tileSource";
 
   interface Props {
     readOnly?: boolean;
@@ -202,6 +208,57 @@
     }
     return [];
   });
+
+  /* ------------- saiku#1803: semantic bindings per filter --------------- */
+
+  /** The distinct Ossie models this dashboard's tiles read. Empty on an
+   *  all-cube dashboard, which hides the mapping UI entirely — an author who
+   *  has no semantic-model tiles should never see the concept. */
+  let ossieSources = $derived.by<CubeRef[]>(() => {
+    const seen = new Set<string>();
+    const out: CubeRef[] = [];
+    for (const t of dashboardStore.current?.layout?.tiles ?? []) {
+      const c = t.cube;
+      if (!c || !isOssieSource(c)) continue;
+      const key = sourceKey(c);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(c);
+    }
+    return out;
+  });
+
+  /** Lazily-loaded dataset/field catalogue per model, for the binding picker. */
+  let ossieCatalogue = $state<Record<string, AiOssieDataset[]>>({});
+
+  function ensureOssieCatalogue(cube: CubeRef): void {
+    const key = sourceKey(cube);
+    if (ossieCatalogue[key]) return;
+    ocatalogueLoading.add(key);
+    void listOssieDatasets(cube.connectionName, cube.modelName ?? cube.cubeName).then((ds) => {
+      ossieCatalogue = { ...ossieCatalogue, [key]: ds };
+    });
+  }
+  const ocatalogueLoading = new Set<string>();
+
+  function bindingOf(f: PanelFilter, cube: CubeRef): { dataset: string; field: string } {
+    const b = ((f as SemanticFilter).bindings ?? []).find(
+      (x) => x.kind === "ossie" && sourceKey(x.cube) === sourceKey(cube),
+    );
+    return b && b.kind === "ossie" ? { dataset: b.dataset, field: b.field } : { dataset: "", field: "" };
+  }
+
+  function setBinding(f: PanelFilter, cube: CubeRef, dataset: string, field: string): void {
+    // Both halves are needed for a usable predicate; until then just record
+    // what has been picked so the selects keep their value.
+    const next = withBinding(f as SemanticFilter, { kind: "ossie", cube, dataset, field });
+    dashboardStore.updatePanelFilter(f.id, { bindings: next.bindings });
+  }
+
+  function fieldsOf(cube: CubeRef, dataset: string): string[] {
+    const ds = ossieCatalogue[sourceKey(cube)] ?? [];
+    return ds.find((d) => d.name === dataset)?.fields ?? [];
+  }
 
   /* --------------------- per-row member catalogues --------------------- */
 
@@ -688,12 +745,55 @@
                   <GripVertical size={14} />
                 </span>
               {/if}
-              <span class="picker-label">{f.level}</span>
+              <span class="picker-label">{filterLabel(f as SemanticFilter)}</span>
               <!-- issue #924: how many tiles this filter narrows, shown while hovered. -->
               {#if filterAffinityHover.hoveredFilterId === f.id}
                 <span class="affects-badge" aria-live="polite">
                   Affects {filterAffinityHover.affectedCount} of {filterAffinityHover.totalCount} tiles
                 </span>
+              {/if}
+              {#if !readOnly && ossieSources.length > 0}
+                <!-- saiku#1803: map this concept onto the semantic models on
+                     this dashboard, so ONE control narrows both kinds of tile.
+                     Only rendered when a model tile exists — an all-cube
+                     dashboard never sees the concept. -->
+                <details class="bindings" ontoggle={() => ossieSources.forEach(ensureOssieCatalogue)}>
+                  <summary title="Map this filter onto the semantic models on this dashboard">
+                    also applies to…
+                  </summary>
+                  {#each ossieSources as src (sourceKey(src))}
+                    {@const b = bindingOf(f, src)}
+                    <div class="binding-row">
+                      <span class="binding-src">{sourceLabel(src)}</span>
+                      <select
+                        class="picker-select"
+                        aria-label="Dataset on {sourceLabel(src)}"
+                        value={b.dataset}
+                        onchange={(e) =>
+                          setBinding(f, src, (e.currentTarget as HTMLSelectElement).value, "")}>
+                        <option value="">— dataset —</option>
+                        {#each ossieCatalogue[sourceKey(src)] ?? [] as d (d.name)}
+                          <option value={d.name}>{d.name}</option>
+                        {/each}
+                      </select>
+                      <select
+                        class="picker-select"
+                        aria-label="Field on {sourceLabel(src)}"
+                        value={b.field}
+                        disabled={!b.dataset}
+                        onchange={(e) =>
+                          setBinding(f, src, b.dataset, (e.currentTarget as HTMLSelectElement).value)}>
+                        <option value="">— field —</option>
+                        {#each fieldsOf(src, b.dataset) as fld (fld)}
+                          <option value={fld}>{fld}</option>
+                        {/each}
+                      </select>
+                    </div>
+                  {/each}
+                  <p class="binding-hint">
+                    The selection travels as its caption and is resolved in each source.
+                  </p>
+                </details>
               {/if}
               {#if f.widget === "cascading-select" && f.cube}
                 <!-- issue #922: N stacked dropdowns walking the hierarchy.
@@ -886,6 +986,31 @@
 {/if}
 
 <style>
+  /* saiku#1803: per-source binding editor on a filter row. */
+  .bindings { font-size: 0.7rem; }
+  .bindings > summary {
+    cursor: pointer;
+    color: var(--saiku-app-muted, hsl(var(--fg-muted)));
+    list-style: none;
+  }
+  .binding-row {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+  }
+  .binding-src {
+    min-width: 5rem;
+    color: var(--saiku-app-muted, hsl(var(--fg-muted)));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .binding-hint {
+    margin: 0.35rem 0 0;
+    color: var(--saiku-app-muted, hsl(var(--fg-muted)));
+    font-style: italic;
+  }
 /* saiku#1800: the filter panel renders INSIDE an App page, full page width and
    directly under the title band, so painting it from the global Saiku UI tokens
    punched a charcoal slab into a light App (and vice versa). Every colour below

@@ -35,11 +35,20 @@ import picocli.CommandLine.Option;
  *
  * <pre>{@code
  * # Convert a schema on disk to YAML on disk.
- * saiku ossie-export --in saiku-home/data/Pharma.xml --out pharma.ossie.yaml
+ * saiku ossie-export --in my-classic3-schema.xml --out my.ossie.yaml
  *
  * # Or pipe on stdin / stdout for scripting.
- * cat saiku-home/data/Pharma.xml | saiku ossie-export > pharma.ossie.yaml
+ * cat my-classic3-schema.xml | saiku ossie-export > my.ossie.yaml
  * }</pre>
+ *
+ * <p><b>Exit codes:</b> {@code 0} converted at least one cube; {@code 2} input unreadable;
+ * {@code 3} output unwritable; {@code 4} every cube was skipped, so the YAML is an empty model.
+ *
+ * <p><b>Mondrian 4 is not supported yet</b>, and that is the shape every schema Saiku ships uses
+ * (FoodMart4, Bank, Pharma all declare {@code <MeasureGroup>}). Pointing this command at one of
+ * them writes {@code semantic_model: []} and exits 4. The examples above deliberately no longer
+ * name a shipped schema — the previous ones used {@code saiku-home/data/Pharma.xml}, so the
+ * documented worked example produced nothing (saiku#1808).
  */
 @Command(
         name = "ossie-export",
@@ -88,6 +97,19 @@ public class OssieExportCommand implements Callable<Integer> {
         try (PrintWriter tty = new PrintWriter(System.err, true)) {
             tty.println("ossie-export: wrote " + doc.getSemanticModel().size() + " semantic model(s) to "
                     + (out == null ? "stdout" : out.toString()));
+        }
+
+        // saiku#1808: converting NOTHING is a failure, and must not exit 0.
+        //
+        // The documented usage is a pipeline — `cat schema.xml | saiku ossie-export > out.yaml` —
+        // where stderr is routinely discarded and the exit code is the only signal the caller
+        // reads. Every MDX schema Saiku ships uses the Mondrian 4 MeasureGroup shape this
+        // converter skips, so the common case was: empty `semantic_model: []` on stdout, an
+        // explanation on stderr nobody sees, and success. A build step consuming that YAML would
+        // carry on with a model containing no datasets and no metrics.
+        if (doc.getSemanticModel().isEmpty() && !converter.getSkippedCubes().isEmpty()) {
+            System.err.println("ossie-export: no cube could be converted — the output is an empty model.");
+            return 4;
         }
         return 0;
     }

@@ -122,26 +122,81 @@ public class OssieYamlWriterTest {
                 yaml.contains("pii") && yaml.contains("true"));
     }
 
-    /** Kept as an opt-in deep check against the full Pharma schema when the runtime file exists
-     *  locally; the inline fixture above is the CI gate. */
+    /* ====================================================================
+     * saiku#1808 — what used to live here was an "opt-in deep check" that read
+     * ../../saiku-home/data/Pharma.xml, a GITIGNORED runtime file, and returned
+     * early when it was absent. That made it two different tests:
+     *
+     *   - on CI, where no saiku-home exists, it passed without asserting
+     *     anything at all — a permanent green;
+     *   - on a developer machine with a materialised home, it ran and FAILED,
+     *     so `mvn verify` was red locally and green on CI, and the failure
+     *     looked like whatever you happened to be working on.
+     *
+     * The failure was real but the assertion misdescribed it. Every MDX schema
+     * Saiku ships — FoodMart4, Bank AND Pharma — uses the Mondrian 4
+     * <MeasureGroup> shape, which this converter deliberately does not handle
+     * yet, so it skips the cube and emits an empty model. The test reported
+     * that as "PII flags missing", which sent you looking at the annotation
+     * path (the subject of #1496) instead of at cube recognition.
+     *
+     * PII propagation is already covered on CI by
+     * piiAnnotationSurvivesExportToYaml() above, against an inline classic-3
+     * fixture. So the useful test here is not another PII assertion — it is
+     * pinning the M4 behaviour itself, which nothing covered.
+     * ==================================================================== */
+
+    /** The Mondrian 4 shape, reduced to the part the converter trips on: measures live in a
+     *  {@code <MeasureGroup>} rather than directly on the {@code <Cube>}. */
+    private static final String MONDRIAN_4_SCHEMA = "<Schema name='M4' metamodelVersion='4.0'>"
+            + "<PhysicalSchema><Table name='rx_fact'/></PhysicalSchema>"
+            + "<Cube name='Rx'>"
+            + "  <Dimensions><Dimension name='Prescriber' table='dim_prescriber' key='Prescriber'>"
+            + "    <Attributes><Attribute name='Prescriber' keyColumn='prescriberkey'/></Attributes>"
+            + "  </Dimension></Dimensions>"
+            + "  <MeasureGroups><MeasureGroup name='Rx' table='rx_fact'>"
+            + "    <Measures><Measure name='Scripts' column='script_count' aggregator='sum'/></Measures>"
+            + "  </MeasureGroup></MeasureGroups>"
+            + "</Cube></Schema>";
+
     @Test
-    public void pharmaSchemaEmitsValidOssieAndPreservesPii() throws Exception {
-        Path schema = Path.of(System.getProperty("user.dir"))
-                .resolve("../../saiku-home/data/Pharma.xml")
-                .normalize();
-        if (!Files.exists(schema)) {
-            return;
-        }
-        try (InputStream in = Files.newInputStream(schema)) {
-            OssieDocument doc = converter.convert(in);
-            String yaml = writer.writeAsString(doc);
-            assertValidatesAgainstOssieSchema(yaml);
-            // Pharma marks Prescriber name + NPI PII. Both should surface in the emitted YAML as
-            // custom_extensions with vendor_name=SAIKU and a JSON payload naming pii=true.
-            assertTrue(
-                    "expected at least one SAIKU vendor extension carrying pii=true",
-                    yaml.contains("vendor_name: SAIKU") && yaml.contains("pii"));
-        }
+    public void mondrian4CubeIsSkippedAndReported() throws Exception {
+        OssieDocument doc = convert(MONDRIAN_4_SCHEMA);
+
+        // The gap itself: no semantic model comes out...
+        assertTrue(
+                "expected the M4 cube to produce no semantic model — got "
+                        + doc.getSemanticModel().size(),
+                doc.getSemanticModel().isEmpty());
+        // ...but it must be REPORTED, not silently dropped. This is the only
+        // signal `saiku ossie-export` has to tell an operator why their YAML is
+        // empty, so it is the part that must not regress.
+        assertTrue(
+                "the skipped cube must be reported by name — got: " + converter.getSkippedCubes(),
+                converter.getSkippedCubes().contains("Rx"));
+    }
+
+    @Test
+    public void mondrian4OutputStillValidatesAsOssie() throws Exception {
+        // An empty model is a legitimate Ossie document; emitting something
+        // schema-invalid would be worse than emitting nothing.
+        assertValidatesAgainstOssieSchema(writer.writeAsString(convert(MONDRIAN_4_SCHEMA)));
+    }
+
+    @Test
+    public void classic3CubeIsNotReportedAsSkipped() throws Exception {
+        // Guards the inverse: whatever makes M4 skip must not catch a shape the
+        // converter genuinely handles.
+        convert("<Schema name='T'><Cube name='C'><Table name='f'/>"
+                + "<Measure name='M' column='c' aggregator='sum'/></Cube></Schema>");
+        assertTrue(
+                "a classic-3 cube must not be reported skipped — got: " + converter.getSkippedCubes(),
+                converter.getSkippedCubes().isEmpty());
+    }
+
+    private OssieDocument convert(String schemaXml) throws Exception {
+        return converter.convert(
+                new java.io.ByteArrayInputStream(schemaXml.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
     }
 
     @Test

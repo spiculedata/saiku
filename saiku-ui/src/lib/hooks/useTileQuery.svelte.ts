@@ -23,9 +23,14 @@
 
 import {
   executeAiQuery,
+  executeOssieQuery,
   executeSavedQuery,
   type AiQueryResponse,
 } from "$lib/api/aiQuery";
+// saiku#1803 — a tile can be bound to an Ossie semantic model instead of a cube.
+import { isOssieSource } from "$lib/dashboard/tileSource";
+import { ossieEffectiveQueryFor } from "$lib/dashboard/ossieEffectiveQuery";
+import type { SemanticFilter } from "$lib/dashboard/semanticFilter";
 import {
   effectiveQueryFor,
   applicableSavedFilters,
@@ -110,6 +115,41 @@ export function runTileQueryEffect(
 
   const tileQuery = tile.query;
   if (!tileQuery) return;
+
+  /* --- saiku#1803: Ossie-backed tile ------------------------------------
+   * Routed before the reference branch because a saved `.saiku` is an MDX
+   * artefact — there is no such thing as a reference query on a semantic
+   * model, so an ossie tile is always inline. The response envelope matches
+   * /ai/query exactly (typed cells, VALIDATION_ERROR + field + available), so
+   * everything below this function is untouched. */
+  if (isOssieSource(tile.cube)) {
+    // ActiveFilter wraps the target; the #1803 semantic fields (label /
+    // bindings / captions) ride on the DashboardFilter itself.
+    const body = ossieEffectiveQueryFor(
+      tile,
+      activeFilters.map((a) => a.filter as SemanticFilter),
+    );
+    if (!body) return;
+    const key = `ossie:${JSON.stringify({ q: body, x: deps.dedupeExtra ?? null })}`;
+    if (key === state.lastQueryJson) return;
+    state.lastQueryJson = key;
+    state.loading = true;
+    state.error = null;
+    void (async () => {
+      try {
+        const r = await executeOssieQuery(body, "records");
+        state.response = r;
+        if (r.status !== "SUCCESS") state.error = r.error ?? `Query failed: ${r.status}`;
+        else state.auto.markUpdated();
+      } catch (e: unknown) {
+        state.error = e instanceof Error ? e.message : String(e);
+        state.response = null;
+      } finally {
+        state.loading = false;
+      }
+    })();
+    return;
+  }
 
   if (tileQuery.kind === "reference") {
     // Reference tile: server loads the saved ThinQuery, merges any

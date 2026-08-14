@@ -26,11 +26,17 @@
   import type { CubeRef, DashboardTile, KpiConfig } from "$lib/api/dashboards";
   import {
     executeAiQuery,
+    executeOssieQuery,
     isAiCell,
     type AiCell,
     type AiQueryResponse,
   } from "$lib/api/aiQuery";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
+  // saiku#1803 — a KPI can sit on an Ossie semantic model. This tile builds its
+  // own request rather than going through useTileQuery, so it needs its own
+  // branch or an ossie-bound KPI would POST an MDX body to /ai/query.
+  import { isOssieSource } from "$lib/dashboard/tileSource";
+  import { ossieFiltersFor, type SemanticFilter } from "$lib/dashboard/semanticFilter";
   import {
     deltaDirection,
     deltaLabelFor,
@@ -135,7 +141,12 @@
   // time-based delta — prior-period or year-over-year); false when a
   // single-cell query is enough.
   let wantsSeries = $derived(
-    !!kpi.timeLevel &&
+    // saiku#1803: a comparison / sparkline needs a time LEVEL, which is an MDX
+    // concept. The Ossie equivalent (a time field on a dataset) is phase 4, so
+    // an ossie KPI renders the single number rather than half-building a series
+    // it can't complete.
+    !isOssieSource(cube) &&
+      !!kpi.timeLevel &&
       (kpi.sparkline === true ||
         kpi.comparison === "prior-period" ||
         kpi.comparison === "year-over-year"),
@@ -196,6 +207,42 @@
     void refreshTick;
     if (!measure || !c) {
       response = null;
+      return;
+    }
+
+    /* --- saiku#1803: ossie-backed KPI ----------------------------------
+     * A single-cell metric query. `measure` holds the METRIC name here, and
+     * the active filters are translated through their semantic bindings the
+     * same way a chart or table tile's are. */
+    if (isOssieSource(c)) {
+      const body: Record<string, unknown> = {
+        connection: c.connectionName,
+        model: c.modelName ?? c.cubeName,
+        values: [{ metric: measure }],
+        rows: [],
+        filters: ossieFiltersFor(
+          active.map((a) => a.filter as SemanticFilter),
+          c,
+        ),
+      };
+      const json = JSON.stringify(body);
+      if (json === lastQueryJson) return;
+      lastQueryJson = json;
+      loading = true;
+      error = null;
+      void (async () => {
+        try {
+          const r = await executeOssieQuery(body, "records");
+          response = r;
+          if (r.status !== "SUCCESS") error = r.error ?? `Query failed: ${r.status}`;
+          else auto.markUpdated();
+        } catch (e: unknown) {
+          error = e instanceof Error ? e.message : String(e);
+          response = null;
+        } finally {
+          loading = false;
+        }
+      })();
       return;
     }
 
