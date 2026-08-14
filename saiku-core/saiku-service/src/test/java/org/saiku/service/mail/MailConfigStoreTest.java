@@ -149,6 +149,30 @@ class MailConfigStoreTest {
     }
 
     @Test
+    void corruptCiphertext_decryptsToNull_neverThrows_neverLeaks(@TempDir Path home) throws Exception {
+        // Belt-and-braces on the encrypt-at-rest guarantee: a v2:-prefixed but garbage/truncated
+        // ciphertext on disk (tampering, partial write, key rotation) must NOT surface as plaintext
+        // and must NOT blow up the sender — decryptOrNull() swallows it to null and logs.
+        Path file = home.resolve("mail-config.json");
+        Files.writeString(
+                file,
+                "{\n"
+                        + "  \"host\": \"smtp.example.com\",\n"
+                        + "  \"port\": 587,\n"
+                        + "  \"from\": \"reports@example.com\",\n"
+                        + "  \"selfTo\": \"admin@example.com\",\n"
+                        + "  \"password\": \"v2:not-valid-base64-or-gcm!!\"\n"
+                        + "}\n");
+
+        MailConfigStore s = store(home);
+        MailConfig cfg = assertDoesNotThrow(() -> s.toMailConfig().orElseThrow());
+        assertNull(cfg.password(), "undecryptable ciphertext must become null, never plaintext");
+        // The rest of the config still loads — only the unusable secret is dropped.
+        assertEquals("smtp.example.com", cfg.host());
+        assertEquals("reports@example.com", cfg.from());
+    }
+
+    @Test
     void save_returnsRedactedView_notThePassword(@TempDir Path home) {
         MailConfigStore s = store(home);
         MailConfigView returned =
