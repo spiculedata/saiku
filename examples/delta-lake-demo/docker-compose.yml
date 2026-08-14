@@ -1,0 +1,91 @@
+# Saiku → Mondrian → Calcite → Trino → Delta Lake demo stack.
+#
+#   MinIO      — S3-compatible object storage holding the Delta data files
+#   hive-metastore — standalone Hive Metastore (Delta's table catalog; the
+#                    delta_lake connector needs an HMS, not a REST catalog)
+#   Trino      — the query engine, exposed on :8091 (Saiku owns :8080,
+#                the Iceberg demo owns :8090)
+#
+# This is the SIBLING of examples/lakehouse-demo/ (Iceberg). The ONLY
+# meaningful diff vs that stack: Iceberg's REST catalog is swapped for a
+# Hive Metastore, and Trino's connector is delta_lake instead of iceberg.
+# Saiku, Mondrian and Calcite are byte-identical between the two demos.
+#
+# Bring it up:   docker compose up -d
+# Seed data:     ./seed.sh          (or seed.ps1 on Windows)
+# Tear down:     docker compose down -v
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: delta-minio
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password
+      MINIO_DOMAIN: minio
+    ports:
+      - "9002:9000"   # S3 API   (Iceberg demo uses 9000)
+      - "9003:9001"   # console   (Iceberg demo uses 9001)
+    command: ["server", "/data", "--console-address", ":9001"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot bucket bootstrap: creates the warehouse bucket then exits.
+  minio-init:
+    image: minio/mc:latest
+    container_name: delta-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 admin password &&
+      mc mb -p local/warehouse &&
+      mc anonymous set public local/warehouse &&
+      echo 'warehouse bucket ready'
+      "
+
+  # Standalone Hive Metastore backed by embedded Derby (no external DB
+  # container needed for a laptop demo). Delta table metadata lives here;
+  # the actual Parquet + _delta_log files live in MinIO. Data is ephemeral
+  # by design — `docker compose down -v` wipes it, re-seed to recreate.
+  hive-metastore:
+    image: apache/hive:4.0.0
+    container_name: delta-hive-metastore
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      SERVICE_NAME: metastore
+      # The standalone metastore is launched via `hadoop jar`, which builds
+      # its classpath from HADOOP_CLASSPATH (NOT /opt/hive/lib/* and NOT
+      # HIVE_AUX_JARS_PATH). The hadoop-aws + aws-sdk jars ship in the image
+      # under hadoop/tools/lib but aren't on that classpath by default, so
+      # HMS can't resolve s3:// locations. Putting them on HADOOP_CLASSPATH
+      # is the clean fix — the entrypoint appends TEZ libs to this var, so
+      # it's honoured. The mounted core-site.xml supplies the S3A endpoint +
+      # MinIO credentials. Trino does all the real data IO; HMS only creates
+      # the schema directory marker on S3.
+      HADOOP_CLASSPATH: /opt/hadoop/share/hadoop/tools/lib/hadoop-aws-3.3.6.jar:/opt/hadoop/share/hadoop/tools/lib/aws-java-sdk-bundle-1.12.367.jar
+    volumes:
+      - ./hive/conf/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+    ports:
+      - "9083:9083"   # Thrift metastore
+
+  trino:
+    image: trinodb/trino:latest
+    container_name: delta-trino
+    depends_on:
+      - hive-metastore
+    ports:
+      - "8091:8080"   # Trino UI + JDBC on host :8091
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog
+    healthcheck:
+      test: ["CMD", "trino", "--execute", "SELECT 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20

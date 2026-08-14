@@ -18,9 +18,11 @@ import { registerTileRenderer, type ValidateOptionsResult } from "../lib/dashboa
 import { validateEchartsOption } from "../lib/dashboard/custom/echartsOption";
 import { validateGraphConfig } from "../lib/dashboard/custom/graphTile";
 import { validatePluginOptions } from "../lib/dashboard/custom/pluginBridge";
+import { validateRankedListConfig } from "../lib/dashboard/custom/rankedList";
 import EmbedEChartsOptionTile from "../lib/views/dashboard/tiles/custom/EmbedEChartsOptionTile.svelte";
 import EmbedGraphTile from "../lib/views/dashboard/tiles/custom/EmbedGraphTile.svelte";
 import EmbedPluginTile from "../lib/views/dashboard/tiles/custom/EmbedPluginTile.svelte";
+import EmbedRankedListTile from "../lib/views/dashboard/tiles/custom/EmbedRankedListTile.svelte";
 
 registerTileRenderer({
   id: "echarts-option",
@@ -47,6 +49,19 @@ registerTileRenderer({
   // GraphConfig is a typed shape (no index signature); widen the validated
   // value to the registry's Record<string, unknown> at the boundary.
   validateOptions: validateGraphConfig as (o: unknown) => ValidateOptionsResult,
+});
+
+// Ranked-list ("Movers") card. Pure markup — no chart library — so it adds
+// essentially nothing to the self-contained bundle.
+registerTileRenderer({
+  id: "ranked-list",
+  label: "Ranked list",
+  icon: "\u{1F3C5}",
+  // component unused on the embed surface (see above).
+  component: EmbedRankedListTile as unknown as Component,
+  embedComponent: EmbedRankedListTile as unknown as Component,
+  isQueryable: true,
+  validateOptions: validateRankedListConfig,
 });
 
 // Tier-2 `plugin` renderer (embed surface). EmbedGrid dispatches on

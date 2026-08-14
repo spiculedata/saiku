@@ -116,6 +116,37 @@ public class FatMeasureFilterTest {
                 Fat.measurePredicate(measureFilter(FilterOperator.GREATER, "[Measures].[Margin]", "1e6")));
     }
 
+    // ---- saiku#1721: bracketed-branch MDX-injection hardening ----
+
+    @Test
+    public void bracketedInjectionPayloadIsRejected() {
+        // The bracketed branch was emitted verbatim into FILTER(...), so a crafted
+        // expressions[0] carrying an operator + a second member smuggled arbitrary MDX.
+        assertThrowsIae(
+                measureFilter(
+                        FilterOperator.GREATER, "[Measures].[Store Sales] > 0 OR [Measures].[Unit Sales]", "200000"),
+                "not a valid unique name");
+    }
+
+    @Test
+    public void bracketedRefWithTrailingMdxIsRejected() {
+        assertThrowsIae(
+                measureFilter(FilterOperator.GREATER, "[Measures].[Store Sales]) OR (1=1", "0"),
+                "not a valid unique name");
+        assertThrowsIae(
+                measureFilter(FilterOperator.GREATER, "[Measures].[Store Sales] + [Measures].[Store Cost]", "0"),
+                "not a valid unique name");
+    }
+
+    @Test
+    public void legitBracketedUniqueNamesStillPass() {
+        // A single-segment and a multi-segment (dotted) unique name both survive the shape check.
+        assertEquals(
+                "[Measures].[Store Sales] > 200000",
+                Fat.measurePredicate(measureFilter(FilterOperator.GREATER, "[Measures].[Store Sales]", "200000")));
+        assertEquals("[Profit] < 0", Fat.measurePredicate(measureFilter(FilterOperator.SMALLER, "[Profit]", "0")));
+    }
+
     // ---- rejection paths (previously ALL of these were silent no-ops) ----
 
     @Test

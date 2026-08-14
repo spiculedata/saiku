@@ -32,6 +32,7 @@
   import { appDoc } from "$lib/stores/appDoc.svelte";
   import { buildTile } from "$lib/dashboard/tilePlacement";
   import { pageGridToDashboard, dashboardToPageGrid } from "$lib/views/app/appPageView";
+  import { renderTokens, type TextTokenContext } from "$lib/views/app/textTokens";
   import { encodeAppFilterState, decodeAppFilterState } from "$lib/dashboard/urlFilterState";
   import { trackDemo } from "$lib/analytics/demoAnalytics";
   import DashboardGrid from "$lib/views/dashboard/DashboardGrid.svelte";
@@ -43,9 +44,18 @@
   interface Props {
     page: AppPage;
     editable?: boolean;
+    /** Values the page's heading / subheading / meta tokens resolve against
+     *  (see textTokens.ts). Absent → text renders as written. */
+    tokens?: TextTokenContext;
   }
 
-  let { page, editable = false }: Props = $props();
+  let { page, editable = false, tokens }: Props = $props();
+
+  // Page chrome supports bindings, so a heading can track the current context
+  // selection and a meta line can be today's date instead of a frozen string.
+  const heading = $derived(renderTokens(page.heading, tokens));
+  const subheading = $derived(renderTokens(page.subheading, tokens));
+  const meta = $derived(renderTokens(page.meta, tokens));
 
   const readOnly = $derived(!editable);
 
@@ -210,13 +220,13 @@
 </script>
 
 <div class="app-page">
-  {#if page.heading}
+  {#if heading}
     <div class="app-page__title">
       <div class="app-page__title-main">
-        <h1 class="app-page__heading">{page.heading}</h1>
-        {#if page.subheading}<p class="app-page__subheading">{page.subheading}</p>{/if}
+        <h1 class="app-page__heading">{heading}</h1>
+        {#if subheading}<p class="app-page__subheading">{subheading}</p>{/if}
       </div>
-      {#if page.meta}<div class="app-page__title-meta">{page.meta}</div>{/if}
+      {#if meta}<div class="app-page__title-meta">{meta}</div>{/if}
     </div>
   {/if}
   {#if editable}

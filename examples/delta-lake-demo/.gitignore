@@ -1,0 +1,4 @@
+# Generated at runtime by setup.sh / setup.ps1 — never commit.
+# Contains the downloaded Trino JDBC driver, a substituted datasource
+# descriptor with an absolute local path, and Saiku's repository/logs.
+delta-home/

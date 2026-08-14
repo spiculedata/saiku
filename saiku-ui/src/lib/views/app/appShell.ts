@@ -9,6 +9,7 @@
  */
 
 import type { SaikuApp } from "$lib/api/apps";
+import type { CubeRef } from "$lib/api/dashboards";
 import { themeVars } from "$lib/dashboard/appTheme";
 import { sanitiseAndScopeCss } from "$lib/dashboard/cssSanitiser";
 
@@ -63,4 +64,20 @@ export function isRailNav(app: SaikuApp): boolean {
 export function resolveActivePageId(app: SaikuApp, storeActiveId: string | null): string | null {
   if (storeActiveId && app.pages.some((p) => p.id === storeActiveId)) return storeActiveId;
   return app.pages[0]?.id ?? null;
+}
+
+/** First cube bound to any tile across the app.
+ *
+ *  Several surfaces need "the cube this app is about" without the author having
+ *  named one: the assistant's fallback scope, and the header context selector
+ *  when it reads its options from a level. Shared here so the shell and the
+ *  inspector agree on which cube that is. */
+export function firstAppCube(app: SaikuApp): CubeRef | null {
+  for (const p of app.pages) {
+    const grid = p.grid as { tiles?: Array<{ cube?: CubeRef }> } | null;
+    for (const t of grid?.tiles ?? []) {
+      if (t.cube?.connectionName && t.cube?.cubeName) return t.cube;
+    }
+  }
+  return null;
 }

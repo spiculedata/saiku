@@ -31,6 +31,16 @@
   import { searchMembers } from "$lib/api/aiQuery";
   import { pickMemberUniqueName } from "$lib/dashboard/clickFilterMember";
   import { theme } from "$lib/stores/theme.svelte";
+  // The author option is layered over a themed baseline so anything it doesn't
+  // state (title colour, axis colours, series palette) follows the app theme.
+  import {
+    appEchartsBase,
+    readAppBrandTokens,
+    resolveChartTokensFor,
+    withAppEchartsDefaults,
+  } from "$lib/dashboard/appChartTheme";
+  import { getAppThemeSignature } from "$lib/views/app/appThemeContext";
+  import { applyValueAxisFormat } from "$lib/dashboard/custom/valueAxisFormat";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import TileLoading from "../TileLoading.svelte";
   import TileError from "../TileError.svelte";
@@ -43,10 +53,14 @@
 
   let { tile, onClickFilter }: Props = $props();
 
+  // Null outside an App Builder app. getContext must run at init.
+  const appThemeSignature = getAppThemeSignature();
+
   // Trend/Breakdown toggle (opt-in via tile.custom.trendBreakdown). "trend"
   // keeps the author's line series; "breakdown" swaps them to bars over the
   // same query — a display-only mode switch, no re-query.
-  const ACCENT_LAST = "#c85a3a";
+  /** Fallback "current period" marker colour, used outside a themed app. */
+  const ACCENT_LAST_FALLBACK = "#c85a3a";
   let showToggle = $derived(!!tile.custom?.trendBreakdown);
   let emphasizeLast = $derived(!!tile.custom?.emphasizeLast);
   let mode = $state<"trend" | "breakdown">("trend");
@@ -136,6 +150,8 @@
     const r = response;
     // Repaint on theme flip so author text/axes track the current palette.
     void theme.effective;
+    // …and on an app re-theme (canvas, so no CSS-var repaint — see ChartTile).
+    void appThemeSignature?.();
     const curMode = mode; // dep: re-render on toggle
     void emphasizeLast;
     if (!chart) return;
@@ -151,8 +167,22 @@
         data: proj.matrix.map((row) => row[j]),
       })),
     };
-    const option = applyDataToEchartsOption(validation.value, projection);
-    applyModeAndEmphasis(option, curMode);
+    const filled = applyDataToEchartsOption(validation.value, projection);
+    // Layer the author's option over the app's themed baseline. Author wins at
+    // every leaf; the baseline only fills what they left unsaid.
+    const brand = readAppBrandTokens(host);
+    const tokens = resolveChartTokensFor(host);
+    const option = withAppEchartsDefaults(
+      filled,
+      appEchartsBase(tokens, {
+        body: brand?.fontBody || "inherit",
+        display: brand?.fontDisplay || brand?.fontBody || "inherit",
+      }),
+    );
+    applyModeAndEmphasis(option, curMode, brand?.accent2 || ACCENT_LAST_FALLBACK, tokens.bg);
+    // Compiled from the tile's declarative pattern — the author never supplies
+    // a function, so the validator's no-functions rule stays absolute.
+    applyValueAxisFormat(option, tile.custom?.valueFormat);
     // notMerge=true so a re-render never leaves stale series/axis state behind.
     chart.setOption(option, true);
   });
@@ -161,7 +191,12 @@
    *  emphasised last point. Mutates `option` in place (it is a fresh clone from
    *  applyDataToEchartsOption). "breakdown" turns line series into bars; the
    *  emphasised last point recolours series[0]'s final datum. */
-  function applyModeAndEmphasis(option: Record<string, unknown>, curMode: "trend" | "breakdown"): void {
+  function applyModeAndEmphasis(
+    option: Record<string, unknown>,
+    curMode: "trend" | "breakdown",
+    accentLast: string,
+    surface: string,
+  ): void {
     const series = Array.isArray(option.series) ? (option.series as Record<string, unknown>[]) : [];
     if (curMode === "breakdown") {
       for (const s of series) {
@@ -184,7 +219,7 @@
         data[lastIdx] = {
           value,
           symbolSize: 10,
-          itemStyle: { color: ACCENT_LAST, borderColor: "#fff", borderWidth: 2 },
+          itemStyle: { color: accentLast, borderColor: surface, borderWidth: 2 },
         };
         s0.data = data;
       }

@@ -232,6 +232,11 @@ public class SaikuLauncher implements Callable<Integer> {
             // webapp classpath, so operators can add JDBC drivers (Trino, Redshift,
             // ClickHouse, ...) without rebuilding the fat-JAR. Scanned once at boot;
             // comma-separated because Windows paths contain ':'.
+            // TRUST MODEL: this is a local-operator-only affordance. Any jar dropped here
+            // runs with full webapp privileges (it's on the servlet classpath), so the
+            // plugins/ directory MUST be owner-writable only — never group/world-writable,
+            // never fed from an untrusted or network-mounted location. Treat it exactly like
+            // adding a jar to the server's own classpath, because that is what it is.
             Path pluginsDir = saikuHome.resolve("plugins");
             if (Files.isDirectory(pluginsDir)) {
                 try (var jarPaths = Files.list(pluginsDir)) {

@@ -54,7 +54,9 @@ it was rebuilt as a modern Semantic Layer on top of:
 
 - **Mondrian 4.8.1.x (Spicule fork)** — with a Calcite-based SQL planner
   alongside the legacy `SqlQuery` builder. Calcite is the default; force
-  legacy with `-Dmondrian.backend=legacy`.
+  legacy with `-Dmondrian.backend=legacy`. The Calcite planner reaches
+  modern engines too — see [`examples/lakehouse-demo`](examples/lakehouse-demo)
+  for a Saiku → Mondrian → Calcite → Trino → Iceberg walkthrough.
 - **Apache Arrow** wire format for cellsets, so the browser and any
   programmatic consumer share a zero-copy result envelope.
 - **Jetty 12 EE10 + Jersey 3.1 + Spring 6 + Spring Security 6.5** in a
@@ -72,6 +74,12 @@ typed `{value, formatted, unit}` cells. Every validation failure carries
 a `{status, field, available}` envelope so an agent can self-correct
 without scraping logs.
 
+The same self-describing, self-correcting contract has a **SQL-side twin at
+`/rest/saiku/api/ai/ossie/*`** for datasets modelled with the Ossie semantic
+layer — same list → schema → query shape, same `VALIDATION_ERROR` envelope,
+plus `POST /ai/ossie/ask` for a plain-language question. Anomaly and forecast
+endpoints (`/ai/anomaly`, `/ai/forecast`) share the same typed envelope.
+
 The container also bundles **`saiku-mcp`**, a stdio
 [Model Context Protocol](https://modelcontextprotocol.io) wrapper so Claude
 Desktop / Cursor / Cline can wire to a running Saiku with one line of
@@ -88,6 +96,22 @@ See [`docs/AI-QUERY-API.md`](docs/AI-QUERY-API.md) and
 [`docs/schema-annotations.md`](docs/schema-annotations.md) for the typed
 contract and the `saiku.semantic.*` annotation namespace cubes use to
 describe themselves to agents.
+
+## Agent Skills & Spaces
+
+Admins can extend the AI surface without code:
+
+- **Skills** (`saiku-home/skills/*.md`) — markdown workflows with YAML
+  frontmatter, discoverable from `/ai/ask`. Invoke one explicitly by prefixing
+  an ask with `/<skill-name>`, or ask naturally and let the LLM route via the
+  skill catalogue.
+- **Spaces** (`saiku-home/agent-spaces/*.json`) — named personas that scope an
+  ask to a system prompt, a cube allowlist and a skill allowlist.
+  `POST /ai/spaces/{id}/ask` enforces the persona server-side, so a cube outside
+  the allowlist is a 403 the user can't override.
+
+See [`docs/SKILLS-SPEC.md`](docs/SKILLS-SPEC.md) and
+[`docs/AGENT-SPACES-SPEC.md`](docs/AGENT-SPACES-SPEC.md).
 
 ## Dashboards
 

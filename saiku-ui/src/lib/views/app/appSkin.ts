@@ -62,14 +62,41 @@ ${s} .kpi-tile {
 }
 ${s} .kpi-tile .value {
   grid-area: value; align-self: end;
-  font-family: var(--saiku-app-font-body, sans-serif);
-  font-size: 1.9rem; font-weight: 750; color: var(--saiku-app-fg, #17241d);
+  /* Figures follow the "Numbers" type token, not the body font — a monospace
+     stack gives the tabular, ledger-like headline data products use. */
+  font-family: var(--saiku-app-font-numeric, var(--saiku-app-font-body, sans-serif));
+  font-variant-numeric: tabular-nums;
+  font-size: 1.9rem; font-weight: 750; letter-spacing: -.01em;
+  color: var(--saiku-app-fg, #17241d);
 }
-${s} .kpi-tile .delta { grid-area: delta; align-self: start; white-space: nowrap; font-size: .76rem; }
+${s} .kpi-tile .delta { grid-area: delta; align-self: start; white-space: nowrap; font-size: .76rem; font-weight: 650; }
+/* The delta reads direction at a glance, so it takes the positive/negative
+   tokens rather than inheriting body ink. */
+${s} .kpi-tile .delta[data-tone="positive"] { color: var(--saiku-app-positive, #2e7d55); }
+${s} .kpi-tile .delta[data-tone="negative"] { color: var(--saiku-app-danger, #c0492b); }
+${s} .kpi-tile .delta[data-tone="flat"], ${s} .kpi-tile .delta--empty { color: var(--saiku-app-muted, #93876c); }
 ${s} .kpi-tile div[aria-hidden="true"] { grid-area: spark; width: 96px; align-self: center; }
 ${s} .tile:has(.kpi-tile[data-tone="negative"]) .value { color: var(--saiku-app-danger, #c0492b); }
-/* chart cards hide their generic header (the ECharts option carries the title) */
-${s} .tile:not(:has(.kpi-tile)):not(:has(tbody)) .tile-header { display: none; }
+
+/* Tone-coloured edge bar. Width is the token (0px when the theme's KPI accent
+   is "none"), so this stays a single unconditional rule. */
+${s} .tile:has(.kpi-tile) { position: relative; overflow: hidden; }
+${s} .tile:has(.kpi-tile)::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0;
+  width: var(--saiku-app-kpi-bar, 0px);
+  background: var(--saiku-app-accent, #2e5e43);
+  pointer-events: none;
+}
+${s} .tile:has(.kpi-tile[data-tone="positive"])::before { background: var(--saiku-app-positive, #2e7d55); }
+${s} .tile:has(.kpi-tile[data-tone="negative"])::before { background: var(--saiku-app-danger, #c0492b); }
+/* Chart cards hide their generic header in VIEW mode — the ECharts option
+   carries its own title, so the generic one would double up. The guard is
+   load-bearing: the tile header also carries the configure / menu / remove
+   buttons, so hiding it unconditionally left chart tiles unreachable from the
+   authoring UI (a freshly added Chart tile renders "open the gear to set a
+   query" with no gear to open). AppShell stamps data-saiku-app-edit on the
+   root while editing, which switches this rule off. */
+${s}:not([data-saiku-app-edit]) .tile:not(:has(.kpi-tile)):not(:has(tbody)) .tile-header { display: none; }
 
 /* ---- tables ---- */
 ${s} table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
@@ -84,7 +111,10 @@ ${s} tbody th, ${s} tbody td {
   font-size: .88rem; color: var(--saiku-app-fg, #2a352d);
 }
 ${s} tbody th { font-weight: 500; text-align: left; }
-${s} tbody td { text-align: right; font-weight: 650; color: var(--saiku-app-fg, #1f3529); }
+${s} tbody td {
+  text-align: right; font-weight: 650; color: var(--saiku-app-fg, #1f3529);
+  font-family: var(--saiku-app-font-numeric, var(--saiku-app-font-body, sans-serif));
+}
 
 /* ---- nav rail ---- */
 ${s} .saiku-app__rail { background: var(--saiku-app-rail-bg, hsl(var(--bg-subtle))); border-right: none; padding-top: 14px; }

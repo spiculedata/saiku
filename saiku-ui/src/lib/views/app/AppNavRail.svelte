@@ -27,6 +27,8 @@
     TrendingUp,
     Table,
   } from "lucide-svelte";
+  import { resolveAvatar, type AvatarSource } from "$lib/views/app/userInitials";
+  import { session } from "$lib/stores/session.svelte";
 
   /** Named page icons an author can set via AppPage.icon. Falls back to the
    *  generic dashboard glyph. Keeps the rail legible when collapsed to icons. */
@@ -58,7 +60,10 @@
     /** Brand mark shown at the rail top: a logo URL or a short letter. */
     brand?: { logo?: string | null; label?: string } | null;
     /** Pinned footer: a settings gear and/or a user-avatar disc (initials). */
-    footer?: { settings?: boolean; avatar?: string } | null;
+    footer?: { settings?: boolean; avatar?: string; avatarSource?: AvatarSource } | null;
+    /** What the footer gear opens. Omitted → the gear is not rendered at all:
+     *  a button that opens nothing is worse than no button. */
+    onSettings?: () => void;
   }
 
   let {
@@ -72,11 +77,21 @@
     defaultCollapsed = false,
     brand = null,
     footer = null,
+    onSettings,
   }: Props = $props();
 
   let collapsed = $state(defaultCollapsed);
   let renamingId = $state<string | null>(null);
   let draft = $state("");
+
+  /* User disc. Follows the signed-in user when the app asks it to, so the same
+   * app doesn't badge every viewer with one author's initials. The tooltip
+   * carries the full username — the disc itself only has room for two glyphs,
+   * and it's no longer aria-hidden now that it identifies a real person. */
+  const avatarText = $derived(resolveAvatar(footer, session.current?.username));
+  const avatarTitle = $derived(
+    footer?.avatarSource === "user" ? (session.current?.username ?? avatarText) : avatarText,
+  );
 
   function startRename(page: AppPage): void {
     if (!editable) return;
@@ -166,14 +181,15 @@
 
   {#if footer && !narrow}
     <div class="saiku-app__rail-footer">
-      {#if footer.settings}
-        <button type="button" class="saiku-app__rail-gear" title="Settings" aria-label="Settings">
+      {#if footer.settings && onSettings}
+        <button type="button" class="saiku-app__rail-gear" title="App settings"
+          aria-label="App settings" onclick={onSettings}>
           <Settings size={18} aria-hidden="true" />
         </button>
       {/if}
-      {#if footer.avatar}
-        <div class="saiku-app__rail-avatar" title={footer.avatar} aria-hidden="true">
-          {footer.avatar}
+      {#if avatarText}
+        <div class="saiku-app__rail-avatar" title={avatarTitle}>
+          {avatarText}
         </div>
       {/if}
     </div>

@@ -5,15 +5,17 @@
   "theme": {
     "mode": "light",
     "preset": "editorial",
-    "customCss": "/* movers card — demo-specific composition the general skin doesn't cover */\n.tile:has(tbody) .tile-header{padding:14px 16px 4px;display:flex;flex-direction:column;align-items:flex-start;gap:0;}\n.tile:has(tbody) .tile-header span{font-family:var(--saiku-app-font-display,Georgia,serif);font-weight:700;font-size:1.05rem;color:var(--saiku-app-fg,#1f3529);text-transform:none;letter-spacing:0;}\n.tile:has(tbody) .tile-header::after{content:'Product department \\00B7 MoM';display:block;font-family:var(--saiku-app-font-body,sans-serif);font-size:.72rem;color:var(--saiku-app-muted,#a99e82);margin-top:2px;}\n.tile:has(tbody) thead{display:none;}\n.tile:has(tbody) tbody tr:nth-child(n+7){display:none;}\n.tile:has(tbody) tbody{counter-reset:mv;}\n.tile:has(tbody) tbody tr{counter-increment:mv;}\n.tile:has(tbody) tbody tr > :first-child{font-weight:600;color:var(--saiku-app-fg,#26332b);}\n.tile:has(tbody) tbody tr > :first-child::before{content:counter(mv);display:inline-block;width:20px;font-family:var(--saiku-app-font-display,Georgia,serif);font-style:italic;font-weight:400;color:#b6ab8d;}\n.tile:has(tbody) tbody tr:hover{background:#f7f3ea;}\n"
+    "numerals": "mono",
+    "kpiAccent": "tone"
   },
   "nav": {
     "position": "rail",
     "railCollapsed": true,
     "footer": {
       "settings": true,
-      "avatar": "RM"
-    }
+      "avatarSource": "user"
+    },
+    "railFullHeight": true
   },
   "assistantSlot": {
     "enabled": true,
@@ -44,9 +46,9 @@
       "id": "p1",
       "title": "Overview",
       "icon": "home",
-      "heading": "Portland #14 · Today",
+      "heading": "{context} · Overview",
       "subheading": "Regional manager view · Pacific Northwest",
-      "meta": "Thu · Week 41",
+      "meta": "{date:weekday} · Week {week}",
       "grid": {
         "cols": 12,
         "tiles": [
@@ -76,10 +78,9 @@
                 "level": "Month"
               },
               "thresholds": {},
-              "customFormat": "$c1",
-              "deltaSuffix": "vs last Thu"
+              "customFormat": "$c1"
             },
-            "title": "Sales Today"
+            "title": "Store Sales"
           },
           {
             "id": "k2",
@@ -106,8 +107,7 @@
                 "hierarchy": "Time",
                 "level": "Month"
               },
-              "thresholds": {},
-              "deltaSuffix": "vs last Thu"
+              "thresholds": {}
             },
             "title": "Units Sold"
           },
@@ -136,8 +136,7 @@
                 "hierarchy": "Time",
                 "level": "Month"
               },
-              "thresholds": {},
-              "deltaSuffix": "vs last wk"
+              "thresholds": {}
             },
             "title": "Baskets"
           },
@@ -166,8 +165,7 @@
                 "hierarchy": "Time",
                 "level": "Month"
               },
-              "thresholds": {},
-              "deltaSuffix": "vs last Thu"
+              "thresholds": {}
             },
             "title": "Customers"
           },
@@ -201,8 +199,18 @@
                 "rows": [
                   {
                     "dimension": "Time",
-                    "hierarchy": "Time",
-                    "level": "Month"
+                    "hierarchy": "Weekly",
+                    "level": "Week",
+                    "members": [
+                      "[Time].[Weekly].[1997].[34]",
+                      "[Time].[Weekly].[1997].[35]",
+                      "[Time].[Weekly].[1997].[36]",
+                      "[Time].[Weekly].[1997].[37]",
+                      "[Time].[Weekly].[1997].[38]",
+                      "[Time].[Weekly].[1997].[39]",
+                      "[Time].[Weekly].[1997].[40]",
+                      "[Time].[Weekly].[1997].[41]"
+                    ]
                   }
                 ],
                 "columns": [],
@@ -217,22 +225,14 @@
                   "left": 16,
                   "top": 10,
                   "textStyle": {
-                    "color": "#1f3529",
-                    "fontFamily": "Georgia, serif",
                     "fontWeight": "bold",
                     "fontSize": 15
                   },
-                  "subtext": "Monthly trend",
+                  "subtext": "Weekly trend · last 8 weeks",
                   "subtextStyle": {
-                    "color": "#8a7f68",
-                    "fontSize": 11,
-                    "fontFamily": "-apple-system,'Segoe UI',sans-serif"
+                    "fontSize": 11
                   }
                 },
-                "color": [
-                  "#2e5e43",
-                  "#c85a3a"
-                ],
                 "tooltip": {
                   "trigger": "axis"
                 },
@@ -245,19 +245,12 @@
                 "xAxis": {
                   "type": "category",
                   "axisLabel": {
-                    "color": "#8a7f68"
+                    "formatter": "W{value}"
                   }
                 },
                 "yAxis": {
                   "type": "value",
-                  "splitLine": {
-                    "lineStyle": {
-                      "color": "#efe9dc"
-                    }
-                  },
-                  "axisLabel": {
-                    "color": "#8a7f68"
-                  }
+                  "scale": true
                 },
                 "series": [
                   {
@@ -265,25 +258,22 @@
                     "smooth": true,
                     "symbolSize": 7,
                     "lineStyle": {
-                      "width": 3,
-                      "color": "#2e5e43"
-                    },
-                    "itemStyle": {
-                      "color": "#2e5e43"
+                      "width": 3
                     },
                     "areaStyle": {
-                      "color": "rgba(46,94,67,0.14)"
+                      "opacity": 0.14
                     }
                   }
                 ]
               },
               "trendBreakdown": true,
-              "emphasizeLast": true
+              "emphasizeLast": true,
+              "valueFormat": "$c1"
             }
           },
           {
             "id": "t2",
-            "type": "table",
+            "type": "custom",
             "x": 8,
             "y": 2,
             "w": 4,
@@ -328,18 +318,16 @@
                 ]
               }
             },
-            "conditionalFormat": [
-              {
-                "column": "MoM Growth",
-                "type": "font",
-                "thresholdMode": "absolute",
-                "colors": {
-                  "high": "#2e5e43",
-                  "low": "#c85a3a",
-                  "mid": "#93876c"
-                }
+            "custom": {
+              "renderer": "ranked-list",
+              "options": {
+                "subtitle": "Product department · MoM",
+                "limit": 6,
+                "sort": "none",
+                "tone": "signed",
+                "showRank": true
               }
-            ],
+            },
             "title": "Movers"
           }
         ]
@@ -401,16 +389,10 @@
                   "left": 12,
                   "top": 8,
                   "textStyle": {
-                    "color": "#1f3529",
-                    "fontFamily": "Georgia, serif",
                     "fontWeight": "bold",
                     "fontSize": 15
                   }
                 },
-                "color": [
-                  "#2e5e43",
-                  "#c85a3a"
-                ],
                 "tooltip": {
                   "trigger": "axis"
                 },
@@ -421,21 +403,10 @@
                   "bottom": 34
                 },
                 "xAxis": {
-                  "type": "category",
-                  "axisLabel": {
-                    "color": "#8a7f68"
-                  }
+                  "type": "category"
                 },
                 "yAxis": {
-                  "type": "value",
-                  "splitLine": {
-                    "lineStyle": {
-                      "color": "#efe9dc"
-                    }
-                  },
-                  "axisLabel": {
-                    "color": "#8a7f68"
-                  }
+                  "type": "value"
                 },
                 "legend": {
                   "top": 8,
@@ -446,7 +417,7 @@
                     "type": "line",
                     "smooth": true,
                     "areaStyle": {
-                      "color": "rgba(46,94,67,0.12)"
+                      "opacity": 0.14
                     }
                   },
                   {
@@ -513,16 +484,10 @@
                   "left": 12,
                   "top": 8,
                   "textStyle": {
-                    "color": "#1f3529",
-                    "fontFamily": "Georgia, serif",
                     "fontWeight": "bold",
                     "fontSize": 15
                   }
                 },
-                "color": [
-                  "#2e5e43",
-                  "#c85a3a"
-                ],
                 "tooltip": {
                   "trigger": "axis"
                 },
@@ -533,28 +498,14 @@
                   "bottom": 34
                 },
                 "xAxis": {
-                  "type": "category",
-                  "axisLabel": {
-                    "color": "#8a7f68"
-                  }
+                  "type": "category"
                 },
                 "yAxis": {
-                  "type": "value",
-                  "splitLine": {
-                    "lineStyle": {
-                      "color": "#efe9dc"
-                    }
-                  },
-                  "axisLabel": {
-                    "color": "#8a7f68"
-                  }
+                  "type": "value"
                 },
                 "series": [
                   {
-                    "type": "bar",
-                    "itemStyle": {
-                      "color": "#2e5e43"
-                    }
+                    "type": "bar"
                   }
                 ]
               }
@@ -711,16 +662,10 @@
                   "left": 12,
                   "top": 8,
                   "textStyle": {
-                    "color": "#1f3529",
-                    "fontFamily": "Georgia, serif",
                     "fontWeight": "bold",
                     "fontSize": 15
                   }
                 },
-                "color": [
-                  "#2e5e43",
-                  "#c85a3a"
-                ],
                 "tooltip": {
                   "trigger": "axis"
                 },
@@ -731,28 +676,14 @@
                   "bottom": 34
                 },
                 "xAxis": {
-                  "type": "category",
-                  "axisLabel": {
-                    "color": "#8a7f68"
-                  }
+                  "type": "category"
                 },
                 "yAxis": {
-                  "type": "value",
-                  "splitLine": {
-                    "lineStyle": {
-                      "color": "#efe9dc"
-                    }
-                  },
-                  "axisLabel": {
-                    "color": "#8a7f68"
-                  }
+                  "type": "value"
                 },
                 "series": [
                   {
-                    "type": "bar",
-                    "itemStyle": {
-                      "color": "#c85a3a"
-                    }
+                    "type": "bar"
                   }
                 ]
               }
@@ -768,7 +699,15 @@
     "eyebrow": "Store Intelligence",
     "contextPill": {
       "label": "Store",
-      "value": "Portland #14"
+      "value": "All stores · National",
+      "optionsSource": "level",
+      "includeAll": true,
+      "allLabel": "All stores · National",
+      "filter": {
+        "dimension": "Store",
+        "hierarchy": "Stores",
+        "level": "Store City"
+      }
     },
     "liveBadge": "Live · Saiku"
   }
