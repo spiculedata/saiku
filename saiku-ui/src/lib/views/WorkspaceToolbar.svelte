@@ -52,9 +52,14 @@
   interface Props {
     /** Open the AI Query drawer. Owned by Workspace so the drawer can overlay the canvas. */
     onAskAi?: () => void;
+    /** Whether the backend NL Ask provider is configured. When false the Ask AI
+     *  button is shown DISABLED with an "AI isn't configured" tooltip rather than
+     *  hidden, so the (env-configured) feature is discoverable. This exposes no
+     *  config surface — configuration stays ops/env-only. */
+    aiConfigured?: boolean;
   }
 
-  let { onAskAi }: Props = $props();
+  let { onAskAi, aiConfigured = false }: Props = $props();
 
   let nonEmpty = $state(true);
   let visualTotals = $state(false);
@@ -492,20 +497,19 @@
       </Tooltip>
     {/if}
   </div>
-  {#if onAskAi}
-    <div class="toolbar__sep"></div>
-    <div class="flex items-center gap-0.5 relative" role="group" aria-label={i18n.t("workspace.aiQuery.title")}>
-      <button
-        class="tb-btn tb-btn--ai"
-        title={i18n.t("workspace.aiQuery.open")}
-        aria-label={i18n.t("workspace.aiQuery.open")}
-        onclick={() => onAskAi?.()}
-      >
-        <Sparkles size={18} />
-        <span class="text-sm">{i18n.t("workspace.aiQuery.title")}</span>
-      </button>
-    </div>
-  {/if}
+  <div class="toolbar__sep"></div>
+  <div class="flex items-center gap-0.5 relative" role="group" aria-label={i18n.t("workspace.aiQuery.title")}>
+    <button
+      class="tb-btn tb-btn--ai"
+      disabled={!aiConfigured}
+      title={aiConfigured ? i18n.t("workspace.aiQuery.open") : i18n.t("workspace.aiQuery.disabled", "AI isn't configured on this server")}
+      aria-label={i18n.t("workspace.aiQuery.open")}
+      onclick={() => onAskAi?.()}
+    >
+      <Sparkles size={18} />
+      <span class="text-sm">{i18n.t("workspace.aiQuery.title")}</span>
+    </button>
+  </div>
   <div class="toolbar__sep"></div>
   <div class="flex items-center gap-0.5 relative relative" role="group" aria-label="Tools">
     <button
@@ -711,8 +715,8 @@
     font: inherit;
   }
   .tb-btn { transition: background var(--duration-fast), color var(--duration-fast); }
-  .tb-btn:hover { background: hsl(var(--bg-hover)); color: hsl(var(--fg)); }
-  .tb-btn:active { transform: translateY(1px); }
+  .tb-btn:hover:not(:disabled) { background: hsl(var(--bg-hover)); color: hsl(var(--fg)); }
+  .tb-btn:active:not(:disabled) { transform: translateY(1px); }
   .tb-btn--primary {
     background: hsl(var(--primary));
     color: hsl(var(--bg));
@@ -724,8 +728,20 @@
     color: hsl(var(--bg));
     border-color: hsl(var(--primary));
   }
-  .tb-btn--ai:hover {
+  .tb-btn--ai:hover:not(:disabled) {
     color: hsl(var(--primary));
+  }
+  /* saiku: Ask AI shown DISABLED (not hidden) when the provider isn't
+   * configured — muted + not-allowed, and the AI gradient is dropped so it
+   * reads as unavailable while the tooltip explains why. Mirrors the disabled
+   * Email item in the Export dropdown. */
+  .tb-btn--ai:disabled,
+  .tb-btn--ai:disabled:hover {
+    background: hsl(var(--bg-muted));
+    color: hsl(var(--fg-muted));
+    border-color: hsl(var(--border));
+    filter: none;
+    cursor: not-allowed;
   }
   /*
    * saiku-cloud#612 — visual cue that the query shape isn't runnable yet

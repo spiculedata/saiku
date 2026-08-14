@@ -513,7 +513,10 @@
            active so the user can't click into confused states. The Ossie canvas below
            carries its own minimal toolbar (Save / Load / Run). -->
       {#if selection.mode !== "ossie"}
-        <WorkspaceToolbar onAskAi={aiAskHealth.configured ? () => (aiDrawerOpen = true) : undefined} />
+        <WorkspaceToolbar
+          onAskAi={() => (aiDrawerOpen = true)}
+          aiConfigured={aiAskHealth.configured}
+        />
       {/if}
     {/if}
     <!-- Canvas branches on selection.mode too so the workbench renders the SQL-flavoured
