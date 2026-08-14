@@ -1,13 +1,15 @@
 /*
- * Tailwind v4 entry — saiku-ui side (saiku#1636: aligned with saiku-cloud).
+ * Tailwind v4 entry — shared by saiku-ui and the Saiku Cloud dashboard.
+ * (saiku#1636 aligned the two; they were unified into this package after.)
  *
- *   - `tokens.css` defines the design tokens as HSL triples (three-tier system
- *     ported from saiku-cloud). Colour tokens are bare `H S% L%` triples.
- *   - `app.css` is the global base layer (body, headings, button reset,
- *     scrollbar) — vanilla CSS, NOT a Tailwind preflight.
+ *   - `tokens.css` defines the design tokens as HSL triples (three-tier
+ *     system). Colour tokens are bare `H S% L%` triples. Import it FIRST.
  *   - This file is the Tailwind v4 surface. We import `theme` + `utilities`
- *     but DELIBERATELY SKIP `preflight` so the existing base reset and
- *     BEM-style component styles are preserved.
+ *     but DELIBERATELY SKIP `preflight`: saiku-ui's base layer (`app.css`)
+ *     is vanilla CSS that relies on browser defaults and breaks under it.
+ *     saiku-cloud, which has always run with preflight, opts back in with
+ *     `@import "tailwindcss/preflight.css" layer(base);` after this file.
+ *     Don't "fix" this by adding preflight here.
  *
  * Bridge: `@theme inline { --color-x: hsl(var(--token)) }` resolves every
  * `bg-*`/`text-*`/`border-*` utility through the same `hsl(var(--token))` chain
@@ -61,6 +63,13 @@
   --color-border: hsl(var(--border));
   --color-border-strong: hsl(var(--border-strong));
 
+  /* ---- Elevation surfaces (bg-elev-2 etc.) ---- */
+  --color-elev-0: hsl(var(--elev-0));
+  --color-elev-1: hsl(var(--elev-1));
+  --color-elev-2: hsl(var(--elev-2));
+  --color-elev-3: hsl(var(--elev-3));
+  --color-elev-4: hsl(var(--elev-4));
+
   /* ---- Brand (primary) + pale accent surface ---- */
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
@@ -78,22 +87,26 @@
   --color-accent-strong: hsl(var(--primary-strong));
 
   /* ---- Status tones ---- */
+  /* Foregrounds resolve through the --on-* tokens rather than a literal
+     #ffffff so a future theme can darken the on-tone text without editing
+     the bridge. They all resolve to white today; saiku-cloud already did
+     it this way and the two bridges are now identical in behaviour. */
   --color-success: hsl(var(--success));
   --color-success-soft: hsl(var(--success-soft));
   --color-success-strong: hsl(var(--success-strong));
-  --color-success-foreground: #ffffff;
+  --color-success-foreground: hsl(var(--success-foreground));
   --color-warning: hsl(var(--warning));
   --color-warning-soft: hsl(var(--warning-soft));
   --color-warning-strong: hsl(var(--warning-strong));
-  --color-warning-foreground: #ffffff;
-  --color-info: hsl(var(--info-action));
-  --color-info-foreground: #ffffff;
+  --color-warning-foreground: hsl(var(--warning-foreground));
+  --color-info: hsl(var(--info));
+  --color-info-foreground: hsl(var(--info-foreground));
   --color-danger: hsl(var(--danger));
   --color-danger-soft: hsl(var(--danger-soft));
   --color-danger-strong: hsl(var(--danger-strong));
-  --color-danger-foreground: #ffffff;
+  --color-danger-foreground: hsl(var(--destructive-foreground));
   --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: #ffffff;
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
 
   /* ---- Spacing scale (1 unit = --spacing) ---- */
   --spacing: 4px;

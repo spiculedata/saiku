@@ -6,7 +6,7 @@
 -->
 <script module lang="ts">
 	import { defineMeta } from '@storybook/addon-svelte-csf';
-	import PageHeader from './PageHeader.svelte';
+	import { PageHeader } from '$lib/design-system';
 
 	const { Story } = defineMeta({
 		title: 'Compounds/PageHeader',

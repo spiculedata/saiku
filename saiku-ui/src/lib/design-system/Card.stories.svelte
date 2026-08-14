@@ -1,5 +1,5 @@
 <!--
-  Primitives/Card — shadcn primitive at `src/lib/components/ui/card.svelte`
+  Primitives/Card — shadcn primitive from @concepttocloud/saiku-design-system/ui
   plus its composable parts (CardHeader, CardTitle, CardDescription,
   CardContent). Use when you need a bordered surface with a header strip.
   Plain bordered cards without a header strip can use the same Card or
@@ -8,7 +8,7 @@
 <script module lang="ts">
 	import { defineMeta } from '@storybook/addon-svelte-csf';
 	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui';
-	import Button from '$lib/components/ui/button.svelte';
+	import { Button } from '$lib/components/ui';
 
 	const { Story } = defineMeta({
 		title: 'Primitives/Card',

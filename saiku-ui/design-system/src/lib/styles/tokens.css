@@ -377,12 +377,23 @@
   --danger: var(--error-action);
   --danger-soft: var(--error-pale);
   --danger-strong: var(--error-text);
-  --success: var(--success-action);
+  /* The tone aliases point at the -text (600) weight, NOT -action (500).
+     saiku-ui originally pointed them at -action and saiku-cloud at -text,
+     so `text-success` rendered a different green in each product. Unified
+     on -text because it wins both ways: 600 clears AA as body text on a
+     light surface (500 does not), and white-on-600 clears AA for the
+     `bg-success` fill (white-on-500 sits at ~2.8:1). See the shared
+     design-system package README for the dark-mode caveat on `bg-*`. */
+  --success: var(--success-text);
   --success-soft: var(--success-pale);
   --success-strong: var(--success-text);
-  --warning: var(--warning-action);
+  --success-foreground: var(--on-success-action);
+  --warning: var(--warning-text);
   --warning-soft: var(--warning-pale);
   --warning-strong: var(--warning-text);
+  --warning-foreground: var(--on-warning-action);
+  --info: var(--info-text);
+  --info-foreground: var(--on-info-action);
 
   /* Full-value colour tokens (NOT triples — consumed directly). */
   --bg-overlay: hsl(20 16% 12% / 0.32);

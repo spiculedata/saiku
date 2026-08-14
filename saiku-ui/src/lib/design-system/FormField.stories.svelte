@@ -1,7 +1,7 @@
 <script module lang="ts">
 	import { defineMeta } from '@storybook/addon-svelte-csf';
-	import FormField from './FormField.svelte';
-	import Input from '$lib/components/ui/input.svelte';
+	import { FormField } from '$lib/design-system';
+	import { Input } from '$lib/components/ui';
 
 	const { Story } = defineMeta({
 		title: 'Compounds/FormField',

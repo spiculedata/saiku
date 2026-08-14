@@ -1,0 +1,9 @@
+# Intentionally near-empty.
+#
+# `dist/` is git-ignored (it's a build output), and npm falls back to
+# .gitignore when no .npmignore exists — which would silently publish a
+# package with no dist/ at all. This file's existence stops that fallback;
+# the `files` array in package.json is the real allowlist.
+node_modules/
+src/
+*.tsbuildinfo

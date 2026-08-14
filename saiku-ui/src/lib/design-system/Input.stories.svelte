@@ -1,5 +1,5 @@
 <!--
-  Primitives/Input — shadcn primitive at `src/lib/components/ui/input.svelte`.
+  Primitives/Input — shadcn primitive from @concepttocloud/saiku-design-system/ui.
   Use for any single-line text entry. Pair with a <label class="flex
   flex-col gap-1 text-sm"><span class="font-medium">…</span><Input /></label>
   for the standard form-field shape — there's no separate Label primitive
@@ -7,7 +7,7 @@
 -->
 <script module lang="ts">
 	import { defineMeta } from '@storybook/addon-svelte-csf';
-	import Input from '$lib/components/ui/input.svelte';
+	import { Input } from '$lib/components/ui';
 
 	const { Story } = defineMeta({
 		title: 'Primitives/Input',

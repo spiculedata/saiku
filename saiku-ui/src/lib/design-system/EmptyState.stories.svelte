@@ -1,6 +1,6 @@
 <script module lang="ts">
 	import { defineMeta } from '@storybook/addon-svelte-csf';
-	import EmptyState from './EmptyState.svelte';
+	import { EmptyState } from '$lib/design-system';
 
 	const { Story } = defineMeta({
 		title: 'Compounds/EmptyState',

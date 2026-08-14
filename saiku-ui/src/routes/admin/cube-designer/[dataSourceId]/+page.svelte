@@ -30,8 +30,8 @@
   import { adminSchemas } from "$lib/api/admin";
   import { platform } from "$lib/stores/platform.svelte";
   import { trackDemo } from "$lib/analytics/demoAnalytics";
-  import Button from "$lib/components/ui/button.svelte";
-  import FeedbackBanner from "$lib/design-system/FeedbackBanner.svelte";
+  import { Button } from "$lib/components/ui";
+  import { FeedbackBanner } from "$lib/design-system";
   import {
     LayoutGrid,
     ArrowLeftRight,
