@@ -151,6 +151,17 @@
            ensures a future un-annotated /admin resource can't be reached by a
            non-admin. Must precede /rest/** (more specific first). -->
       <security:intercept-url pattern="/rest/saiku/admin/**" access="hasRole('ADMIN')" />
+      <!-- saiku#1751 defence-in-depth: StatisticsResource (/rest/saiku/statistics/**,
+           LIVE) and DataSourceResource (/rest/saiku/{username}/org.saiku.datasources/**,
+           currently unmounted) are guarded ONLY by JAX-RS @RolesAllowed("ROLE_ADMIN"),
+           with no /admin/** URL gate over them. saiku#1732 made that JAX-RS layer
+           deterministic (the primary fix), but these URL gates are belt-and-braces so a
+           future @RolesAllowed typo — or a re-enabled DataSourceResource without the
+           annotation — can't silently expose other users' Mondrian query activity or
+           backend DB connection details/passwords to a non-admin. Must precede /rest/**
+           (more specific first); ant matcher — `*` matches the single {username} segment. -->
+      <security:intercept-url pattern="/rest/saiku/statistics/**" access="hasRole('ADMIN')" />
+      <security:intercept-url pattern="/rest/saiku/*/org.saiku.datasources/**" access="hasRole('ADMIN')" />
       <security:intercept-url pattern="/rest/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/json/**" access="isFullyAuthenticated()" />
       <security:intercept-url pattern="/WEB-INF/classes/legacy-schema" access="isAnonymous()" />
