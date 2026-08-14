@@ -12,6 +12,16 @@ Every piece is open source, and the whole thing runs on your laptop. Saiku's
 Calcite-based Mondrian backend already ships the Trino dialect, so there's
 nothing to build — this walkthrough is pure assembly.
 
+> **⚠️ Local only — no authentication.** This demo is deliberately wide open so
+> it runs on a laptop with zero setup: the MinIO `warehouse` bucket is made
+> **anonymously public**, the MinIO root and S3 access keys are the hardcoded
+> `admin` / `password`, and the Trino coordinator + web UI (host `:8090`) run
+> with **no password**. Treat every port here as untrusted. **Never bind these
+> ports to a public interface, a shared host, or a corporate network, and never
+> reuse these credentials.** Run it only on `localhost`, and tear the stack down
+> (`docker compose down -v`) when you're done. It is a walkthrough, not a
+> template for any deployment.
+
 ## What you need
 
 - Docker (Compose v2)

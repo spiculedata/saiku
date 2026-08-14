@@ -27,26 +27,32 @@
     rootSelectorFor,
     isRailNav,
     resolveActivePageId,
+    firstAppCube,
   } from "$lib/views/app/appShell";
   import { appSkinCss } from "$lib/views/app/appSkin";
+  import { provideAppThemeSignature } from "$lib/views/app/appThemeContext";
+  import {
+    MAX_LEVEL_OPTIONS,
+    effectiveLabel,
+    isLevelSourced,
+    levelOptionsTruncated,
+    optionByLabel,
+    optionsFromMembers,
+    selectionFor,
+  } from "$lib/views/app/contextPill";
+  import { fetchLevelMembers } from "$lib/views/app/levelMembers";
+  import type { AppContextPillOption } from "$lib/api/apps";
+  import { session } from "$lib/stores/session.svelte";
+  import type { TextTokenContext } from "$lib/views/app/textTokens";
+  import { activeFilters } from "$lib/stores/activeFilters.svelte";
+  import { searchMembers } from "$lib/api/aiQuery";
+  import { pickMemberUniqueName } from "$lib/dashboard/clickFilterMember";
   import AppHeader from "$lib/views/app/AppHeader.svelte";
   import AppNavRail from "$lib/views/app/AppNavRail.svelte";
   import AppTopNav from "$lib/views/app/AppTopNav.svelte";
   import AppPageView from "$lib/views/app/AppPageView.svelte";
   import AppAssistant from "$lib/views/app/AppAssistant.svelte";
 
-  /** First cube bound to any tile across the app — the assistant's fallback
-   *  scope when the assistant slot doesn't name one explicitly. */
-  function firstAppCube(a: SaikuApp): AppAssistantCube | null {
-    for (const p of a.pages) {
-      const grid = p.grid as { tiles?: Array<{ cube?: AppAssistantCube }> } | null;
-      for (const t of grid?.tiles ?? []) {
-        if (t.cube?.connectionName && t.cube?.cubeName) return t.cube;
-      }
-    }
-    return null;
-  }
-  type AppAssistantCube = { connectionName: string; catalog: string; schema: string; cubeName: string };
 
   interface Props {
     app: SaikuApp;
@@ -55,7 +61,7 @@
     controls?: Snippet;
     /** Selection model (edit mode): a double-click on a chrome element opens
      *  the App Inspector on the matching section. */
-    onEditChrome?: (section: "header" | "nav" | "assistant") => void;
+    onEditChrome?: (section: "theme" | "header" | "nav" | "assistant" | "pages") => void;
   }
 
   let { app, editable = false, controls, onEditChrome }: Props = $props();
@@ -63,6 +69,9 @@
   let rootEl = $state<HTMLDivElement | null>(null);
 
   const inlineThemeVars = $derived(themeVarsStyle(app));
+  // Canvas-based tiles can't repaint from a CSS-var change on their own; this
+  // is the dependency their render effect reads to know a re-theme happened.
+  provideAppThemeSignature(() => inlineThemeVars);
   const rail = $derived(isRailNav(app));
   const activeId = $derived(resolveActivePageId(app, appDoc.activePageId));
   const activePage = $derived(app.pages.find((p) => p.id === activeId) ?? null);
@@ -72,6 +81,9 @@
   // bottom bar. Reuses DEFAULT_STACK_BREAKPOINT (no new magic number).
   // ------------------------------------------------------------------
   let narrow = $state(false);
+  /** Rail runs the whole shell height with the header beside it. Never on a
+   *  narrow layout — there the rail collapses to a bottom bar. */
+  const railFull = $derived(rail && !narrow && !!app.nav.railFullHeight);
   $effect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
     const mq = window.matchMedia(`(max-width: ${DEFAULT_STACK_BREAKPOINT}px)`);
@@ -107,6 +119,113 @@
     };
   });
 
+  /* ------------------------------------------------------------------
+   * Header context selector (the "STORE / Portland #14 ▾" control).
+   *
+   * The selection is pushed as a CLICK-source filter under one synthetic
+   * source id: the store re-uses that slot on every push, so switching store
+   * replaces the previous selection rather than stacking filters. Selecting an
+   * "All" entry pushes an empty member list, which the filter store treats as
+   * "any".
+   * ------------------------------------------------------------------ */
+  const CONTEXT_PILL_SOURCE = "app-context-pill";
+
+  let contextValue = $state<string | undefined>(undefined);
+
+  /* Options read from the bound cube level, when the pill sources them that
+   * way. A hand-typed list goes stale as soon as a store opens or is renamed;
+   * the cube is the thing that actually knows. Empty until loaded, and empty
+   * forever if the fetch fails — the pill then renders as static text, which
+   * is the same as not having been configured. */
+  let contextOptions = $state<AppContextPillOption[]>([]);
+  let contextTruncated = $state(false);
+
+  $effect(() => {
+    const pill = app.header?.contextPill;
+    if (!isLevelSourced(pill)) {
+      contextOptions = [];
+      contextTruncated = false;
+      return;
+    }
+    const cube = firstAppCube(app);
+    const f = pill!.filter!;
+    let cancelled = false;
+    void fetchLevelMembers(cube, f.dimension, f.hierarchy, f.level).then((members) => {
+      if (cancelled) return;
+      contextOptions = optionsFromMembers(pill, members);
+      contextTruncated = levelOptionsTruncated(members.length);
+      if (contextTruncated) {
+        // Never present a partial list as if it were the whole level.
+        console.warn(
+          `[saiku] context selector: ${f.level} has ${members.length} members; showing the first ${MAX_LEVEL_OPTIONS}. A pill is the wrong control for a level this large.`,
+        );
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  const pillLabel = $derived(
+    effectiveLabel(app.header?.contextPill, contextValue, contextOptions),
+  );
+
+  /** The live values page chrome binds against (see textTokens.ts). Recomputed
+   *  whenever the selection, the app or the signed-in user changes; `now` is
+   *  sampled per recompute, which is as fresh as a heading needs. */
+  const tokenContext = $derived<TextTokenContext>({
+    username: session.current?.username,
+    appName: app.name,
+    context: pillLabel,
+    filters: app.header?.contextPill?.filter?.dimension
+      ? { [app.header.contextPill.filter.dimension]: pillLabel }
+      : {},
+    allLabel: "All",
+  });
+  // Caption -> unique-name lookups, so re-picking a store doesn't re-hit the
+  // members endpoint.
+  const contextMemberCache = new Map<string, Promise<string | null>>();
+
+  function handleContextChange(label: string): void {
+    const pill = app.header?.contextPill;
+    contextValue = label;
+    const selection = selectionFor(pill, optionByLabel(pill, label, contextOptions));
+    if (selection.kind === "none") return;
+    if (selection.kind === "clear") {
+      // Remove the selection rather than registering an empty one — a filter
+      // with no members is no constraint, and emitting it produced a stray
+      // "(any)" chip plus an invalid zero-member `in` on every tile.
+      activeFilters.clearClicksFrom(CONTEXT_PILL_SOURCE);
+      return;
+    }
+    if (selection.kind === "set") {
+      activeFilters.pushClick(selection.filter, CONTEXT_PILL_SOURCE);
+      return;
+    }
+    // "resolve": the author typed a caption, so ask the cube for its real
+    // unique name before filtering. A miss leaves the filter untouched rather
+    // than pushing a member no tile could match.
+    const cube = firstAppCube(app);
+    if (!cube) return;
+    const { dimension, hierarchy, level } = selection.target;
+    const key = `${dimension}/${hierarchy}/${level}|${selection.caption}`;
+    let lookup = contextMemberCache.get(key);
+    if (!lookup) {
+      lookup = searchMembers(cube, dimension, hierarchy, level, selection.caption)
+        .then((hits) => pickMemberUniqueName(hits, selection.caption))
+        .catch(() => null);
+      contextMemberCache.set(key, lookup);
+    }
+    void lookup.then((uniqueName) => {
+      if (!uniqueName) {
+        contextMemberCache.delete(key); // don't cache a miss — allow a retry
+        console.warn(`[saiku] context pill: no member matched "${selection.caption}" in ${level}`);
+        return;
+      }
+      activeFilters.pushClick({ ...selection.target, members: [uniqueName] }, CONTEXT_PILL_SOURCE);
+    });
+  }
+
   function handleSelect(id: string): void {
     appDoc.setActivePage(id);
   }
@@ -118,57 +237,74 @@
   }
 </script>
 
+<!-- One definition, two possible positions: beside the header (full-height rail)
+     or inside the body below it. A snippet keeps the props in a single place. -->
+{#snippet navRail()}
+  <AppNavRail
+    pages={app.pages}
+    {activeId}
+    {editable}
+    onSelect={handleSelect}
+    onAddPage={editable ? handleAddPage : undefined}
+    onRename={editable ? handleRename : undefined}
+    defaultCollapsed={app.nav.railCollapsed}
+    brand={{ logo: app.logo, label: app.name.slice(0, 1) }}
+    footer={app.nav.footer ?? null}
+    onSettings={onEditChrome ? () => onEditChrome("theme") : undefined}
+  />
+{/snippet}
+
 <div
   bind:this={rootEl}
   class="saiku-app"
   class:saiku-app--narrow={narrow}
+  class:saiku-app--rail-full={railFull}
   data-saiku-app={appScopeId(app)}
+  data-saiku-app-edit={editable ? "" : undefined}
   style={inlineThemeVars}
 >
-  <AppHeader {app} {controls} onSelect={onEditChrome ? () => onEditChrome("header") : undefined} />
+  {#if railFull}{@render navRail()}{/if}
 
-  {#if !rail}
-    <AppTopNav
-      pages={app.pages}
-      {activeId}
-      {editable}
-      onSelect={handleSelect}
-      onAddPage={editable ? handleAddPage : undefined}
-      onRename={editable ? handleRename : undefined}
-    />
-  {/if}
+  <div class="saiku-app__frame">
+    <AppHeader
+      {app}
+      {controls}
+      {contextValue}
+      {contextOptions}
+      onContextChange={handleContextChange}
+      onSelect={onEditChrome ? () => onEditChrome("header") : undefined} />
 
-  <div class="saiku-app__body">
-    {#if rail && !narrow}
-      <AppNavRail
+    {#if !rail}
+      <AppTopNav
         pages={app.pages}
         {activeId}
         {editable}
         onSelect={handleSelect}
         onAddPage={editable ? handleAddPage : undefined}
         onRename={editable ? handleRename : undefined}
-        defaultCollapsed={app.nav.railCollapsed}
-        brand={{ logo: app.logo, label: app.name.slice(0, 1) }}
-        footer={app.nav.footer ?? null}
       />
     {/if}
 
-    <main class="saiku-app__main">
-      {#if activePage}
-        <!-- Renders the active page's grid through the EXISTING dashboard
-             renderer (see AppPageView). NOT keyed on page id: AppPageView must
-             stay mounted across page switches so it can preserve each page's
-             filter state (its per-page memory) — it re-hydrates the shared
-             dashboard store itself when the active page changes. -->
-        <AppPageView page={activePage} {editable} />
-      {:else}
-        <div class="saiku-app__page">No page</div>
-      {/if}
-    </main>
+    <div class="saiku-app__body">
+      {#if rail && !narrow && !railFull}{@render navRail()}{/if}
 
-    {#if app.assistantSlot.enabled && !narrow}
-      <AppAssistant slot={app.assistantSlot} fallbackCube={firstAppCube(app)} />
-    {/if}
+      <main class="saiku-app__main">
+        {#if activePage}
+          <!-- Renders the active page's grid through the EXISTING dashboard
+               renderer (see AppPageView). NOT keyed on page id: AppPageView must
+               stay mounted across page switches so it can preserve each page's
+               filter state (its per-page memory) — it re-hydrates the shared
+               dashboard store itself when the active page changes. -->
+          <AppPageView page={activePage} {editable} tokens={tokenContext} />
+        {:else}
+          <div class="saiku-app__page">No page</div>
+        {/if}
+      </main>
+
+      {#if app.assistantSlot.enabled && !narrow}
+        <AppAssistant slot={app.assistantSlot} fallbackCube={firstAppCube(app)} />
+      {/if}
+    </div>
   </div>
 
   {#if rail && narrow}
@@ -200,6 +336,19 @@
     background: var(--saiku-app-bg, hsl(var(--bg)));
     color: var(--saiku-app-fg, hsl(var(--fg)));
     font-family: var(--saiku-app-font, inherit);
+  }
+  /* The header + nav + body column. Always present; when the rail is
+     full-height the shell turns into a row and this becomes its second cell,
+     which is what puts the rail alongside the header instead of under it. */
+  .saiku-app__frame {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+  }
+  .saiku-app--rail-full {
+    flex-direction: row;
   }
   .saiku-app__body {
     display: flex;

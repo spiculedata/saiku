@@ -442,3 +442,76 @@ describe("effectiveQueryFor — #1085 cross-filter source exclusion", () => {
     expect(result?.filters).toHaveLength(1); // click still applies to its own source
   });
 });
+
+/* An emptied filter means "no constraint". Emitting it as a zero-member `in`
+ * makes the server reject the whole query with
+ *   "'in' filter must specify at least one member"
+ * — which is what an App Builder context selector's "All stores" entry hit:
+ * every chart and table on the page went red while the KPIs (a different code
+ * path) kept working. */
+describe("mergeFilters — zero-member filters are no constraint", () => {
+  function baseQuery(): AiQueryRequestLike {
+    return {
+      cube: { connectionName: "foodmart", cubeName: "Sales" },
+      measures: [{ name: "Unit Sales" }],
+      rows: [{ dimension: "Product", hierarchy: "Products", level: "Product Family" }],
+      filters: [
+        { dimension: "Time", hierarchy: "Time", level: "Year", members: ["[Time].[Time].[1997]"] },
+      ],
+    };
+  }
+
+  test("removes a baked-in filter the viewer emptied", () => {
+    const result = mergeFilters(baseQuery(), [active("Time", "Time", "Year", [])], sampleSchema());
+    expect(result.filters).toEqual([]);
+  });
+
+  test("never appends an empty filter", () => {
+    const noRows: AiQueryRequestLike = {
+      cube: { connectionName: "foodmart", cubeName: "Sales" },
+      measures: [{ name: "Unit Sales" }],
+      rows: [{ dimension: "Time", hierarchy: "Time", level: "Year" }],
+      filters: [],
+    };
+    const result = mergeFilters(noRows, [active("Product", "Products", "Product Family", [])], sampleSchema());
+    expect(result.filters).toEqual([]);
+  });
+
+  test("leaves other filters intact", () => {
+    const result = mergeFilters(
+      baseQuery(),
+      [active("Product", "Products", "Product Family", [])],
+      sampleSchema(),
+    );
+    expect(result.filters).toHaveLength(1);
+    expect(result.filters?.[0].dimension).toBe("Time");
+  });
+
+  /* On an AXIS, empty members legitimately means "every member at this level",
+   * so the axis-collapse path must keep working. */
+  test("still reaches the axis when the emptied filter targets a row hierarchy", () => {
+    const result = mergeFilters(
+      baseQuery(),
+      [active("Product", "Products", "Product Family", [])],
+      sampleSchema(),
+    );
+    // The axis entry survives with an empty member list ("all members at this
+    // level") and, crucially, nothing was appended to filters[].
+    expect(result.rows?.[0]).toMatchObject({
+      dimension: "Product",
+      hierarchy: "Products",
+      level: "Product Family",
+      members: [],
+    });
+    expect(result.filters?.some((f) => f.dimension === "Product")).toBe(false);
+  });
+
+  test("applicableSavedFilters drops empty filters too", () => {
+    const out = applicableSavedFilters(sampleSchema(), [
+      active("Time", "Time", "Year", []),
+      active("Product", "Products", "Product Family", ["[Product].[Products].[Drink]"]),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].dimension).toBe("Product");
+  });
+});

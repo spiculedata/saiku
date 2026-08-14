@@ -20,12 +20,15 @@ import { registerTileRenderer, type ValidateOptionsResult } from "$lib/dashboard
 import { validateEchartsOption } from "$lib/dashboard/custom/echartsOption";
 import { validateGraphConfig } from "$lib/dashboard/custom/graphTile";
 import { validatePluginOptions } from "$lib/dashboard/custom/pluginBridge";
+import { validateRankedListConfig } from "$lib/dashboard/custom/rankedList";
 import EChartsOptionTile from "$lib/views/dashboard/tiles/custom/EChartsOptionTile.svelte";
 import EmbedEChartsOptionTile from "$lib/views/dashboard/tiles/custom/EmbedEChartsOptionTile.svelte";
 import GraphTile from "$lib/views/dashboard/tiles/custom/GraphTile.svelte";
 import EmbedGraphTile from "$lib/views/dashboard/tiles/custom/EmbedGraphTile.svelte";
 import PluginTile from "$lib/views/dashboard/tiles/custom/PluginTile.svelte";
 import EmbedPluginTile from "$lib/views/dashboard/tiles/custom/EmbedPluginTile.svelte";
+import RankedListTile from "$lib/views/dashboard/tiles/custom/RankedListTile.svelte";
+import EmbedRankedListTile from "$lib/views/dashboard/tiles/custom/EmbedRankedListTile.svelte";
 
 // The registry types `component`/`embedComponent` as the prop-erased `Component`
 // (renderers are dispatched dynamically); these tiles declare a required `tile`
@@ -51,6 +54,19 @@ registerTileRenderer({
   // validated value as Record<string, unknown>. The runtime value is a plain
   // record, so widen it at the registration boundary.
   validateOptions: validateGraphConfig as (o: unknown) => ValidateOptionsResult,
+});
+
+// The "Movers" card as a tile — a ranked run of label + signed value rows.
+// Exists so that composition stops being a custom-CSS exercise; see
+// rankedList.ts for the `.tile:has(tbody)` hack it replaces.
+registerTileRenderer({
+  id: "ranked-list",
+  label: "Ranked list",
+  icon: "🏅",
+  component: RankedListTile as unknown as Component,
+  embedComponent: EmbedRankedListTile as unknown as Component,
+  isQueryable: true,
+  validateOptions: validateRankedListConfig,
 });
 
 // Tier-2 `plugin` renderer — runs ARBITRARY author JavaScript inside a

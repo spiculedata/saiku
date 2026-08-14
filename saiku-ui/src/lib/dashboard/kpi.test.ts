@@ -8,7 +8,15 @@
 
 import { describe, expect, it } from "vitest";
 
-import { formatKpi, kpiDelta, kpiThresholdToken, lastAndPriorValues } from "./kpi";
+import {
+  deltaLabelFor,
+  isTrailingPartial,
+  formatKpi,
+  kpiDelta,
+  kpiThresholdToken,
+  lastAndPriorValues,
+  periodLabel,
+} from "./kpi";
 
 describe("formatKpi", () => {
   it("renders null / undefined / NaN as an em-dash", () => {
@@ -39,6 +47,35 @@ describe("formatKpi", () => {
   it("custom $N pattern routes through USD currency", () => {
     const out = formatKpi(99.5, "custom", "$2");
     expect(out).toMatch(/[$]\s?99\.50/);
+  });
+
+  /* The author types the symbol they want ("$c1"), so the symbol they typed is
+   * the one that must render. Left to the locale, Intl disambiguates USD as
+   * "US$" outside the en-US locale — the FoodMart Ops KPI showed "US$57k" where
+   * the design called for "$57.0k". narrowSymbol pins it while leaving grouping
+   * and symbol placement locale-correct. */
+  it.each([
+    ["en-GB", "$"],
+    ["de-DE", "$"],
+    ["ja-JP", "$"],
+  ])("custom $-pattern renders a bare $ under locale %s, never US$", (locale, symbol) => {
+    expect(formatKpi(99.5, "custom", "$2", locale)).toContain(symbol);
+    expect(formatKpi(99.5, "custom", "$2", locale)).not.toContain("US$");
+  });
+
+  it("compact currency keeps the author's digit count", () => {
+    // "$c1" — compact, one fractional digit. Without a minimum, Intl drops the
+    // ".0" and the KPI reads "$57k" where the design calls for "$57.0k".
+    expect(formatKpi(57_000, "custom", "$c1", "en-US")).toBe("$57.0K");
+    expect(formatKpi(48_200, "custom", "$c1", "en-US")).toBe("$48.2K");
+  });
+
+  it("compact currency with no digit count stays whole", () => {
+    expect(formatKpi(57_000, "custom", "$c", "en-US")).toBe("$57K");
+  });
+
+  it("named currency format also pins the narrow symbol", () => {
+    expect(formatKpi(1234, "currency", undefined, "en-GB")).not.toContain("US$");
   });
 
   it("custom bare-digit pattern fixes fractional digit count", () => {
@@ -150,5 +187,108 @@ describe("lastAndPriorValues", () => {
     expect(
       lastAndPriorValues([{ value: null }, { value: null }]),
     ).toEqual({ current: null, prior: null });
+  });
+});
+
+/* The label used to be free text with a generic fallback, so FoodMart Ops
+ * shipped four MONTH-grain KPIs announcing "vs last Thu". Deriving it from the
+ * tile's own time level makes that class of mislabelling impossible. */
+describe("deltaLabelFor", () => {
+  it.each([
+    ["Day", "vs yesterday"],
+    ["Week", "vs last week"],
+    ["Month", "vs last month"],
+    ["Quarter", "vs last quarter"],
+    ["Year", "vs last year"],
+  ])("names the grain for a %s-level prior-period comparison", (level, expected) => {
+    expect(deltaLabelFor("prior-period", { level }).fallback).toBe(expected);
+  });
+
+  it("matches level names case-insensitively and inside longer names", () => {
+    expect(deltaLabelFor("prior-period", { level: "MONTH" }).fallback).toBe("vs last month");
+    expect(deltaLabelFor("prior-period", { level: "Fiscal Quarter" }).fallback).toBe(
+      "vs last quarter",
+    );
+  });
+
+  it("prefers the more specific grain when a name contains two", () => {
+    expect(deltaLabelFor("prior-period", { level: "Week of Year" }).fallback).toBe("vs last week");
+  });
+
+  it("stays generic when no time level is configured", () => {
+    expect(deltaLabelFor("prior-period", undefined).fallback).toBe("vs prior");
+    expect(deltaLabelFor("prior-period", { level: "" }).fallback).toBe("vs prior");
+    expect(deltaLabelFor("prior-period", { level: "Store Name" }).fallback).toBe("vs prior");
+  });
+
+  it("year-over-year and target ignore the grain", () => {
+    expect(deltaLabelFor("year-over-year", { level: "Month" }).fallback).toBe("vs last year");
+    expect(deltaLabelFor("target", { level: "Month" }).fallback).toBe("vs target");
+  });
+
+  it("returns an i18n key alongside every fallback", () => {
+    for (const c of ["prior-period", "year-over-year", "target"] as const) {
+      const l = deltaLabelFor(c, { level: "Month" });
+      expect(l.key.startsWith("dashboard.kpi.")).toBe(true);
+      expect(l.fallback.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("periodLabel", () => {
+  /* FoodMart's Week level names itself from week_of_year, so the caption is a
+   * bare "51" — meaningless on its own under a big number. */
+  it("prefixes the level name onto a bare ordinal", () => {
+    expect(periodLabel("51", "Week")).toBe("Week 51");
+    expect(periodLabel("12", "Month")).toBe("Month 12");
+  });
+
+  it("leaves captions that already read as a period alone", () => {
+    expect(periodLabel("December", "Month")).toBe("December");
+    expect(periodLabel("1997-Q4", "Quarter")).toBe("1997-Q4");
+    expect(periodLabel("W51", "Week")).toBe("W51");
+  });
+
+  it("falls back to the caption when there is no level name", () => {
+    expect(periodLabel("51", undefined)).toBe("51");
+    expect(periodLabel("51", "  ")).toBe("51");
+  });
+
+  it("is empty for an empty caption", () => {
+    expect(periodLabel("", "Week")).toBe("");
+    expect(periodLabel("   ", "Week")).toBe("");
+  });
+});
+
+/* The newest bucket of a time series is often still filling (or is a data
+ * boundary). The wrong response is to drop it — that hides a real figure to
+ * produce a nicer percentage. The right response is to keep showing it and
+ * withhold the COMPARISON, which is the part that would mislead. */
+describe("partial trailing periods", () => {
+  it("is off by default, so comparisons are unaffected", () => {
+    expect(isTrailingPartial(52, undefined)).toBe(false);
+    expect(isTrailingPartial(52, 0)).toBe(false);
+  });
+
+  it("marks the newest period partial when the author declares it", () => {
+    expect(isTrailingPartial(52, 1)).toBe(true);
+  });
+
+  it("ignores negative and non-numeric declarations", () => {
+    expect(isTrailingPartial(52, -1)).toBe(false);
+    expect(isTrailingPartial(52, Number.NaN)).toBe(false);
+  });
+
+  it("is false for an empty series — nothing to call partial", () => {
+    expect(isTrailingPartial(0, 1)).toBe(false);
+  });
+
+  /* The headline value must be untouched: FoodMart's stub week really did take
+   * $1,856, and that is what the tile has to show. */
+  it("never changes which value the headline reports", () => {
+    const weeks = [{ value: 11185 }, { value: 11880 }, { value: 1856 }];
+    expect(lastAndPriorValues(weeks).current).toBe(1856);
+    // Declaring the trailing period partial does not alter the series at all.
+    expect(weeks).toHaveLength(3);
   });
 });

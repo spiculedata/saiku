@@ -28,9 +28,13 @@ export interface ResolvedTokens {
   railFg: string;
   fontDisplay: string; // font-allowlist key
   fontBody: string; // font-allowlist key
+  /** Font-allowlist key figures use (KPI headline, numeric table cells). */
+  numerals: "body" | "display" | "mono";
   radius: "none" | "sm" | "md" | "lg" | "xl";
   shadow: "none" | "sm" | "md" | "lg";
   density: "compact" | "cozy" | "comfortable";
+  /** Coloured edge bar on KPI tiles, keyed to the delta direction. */
+  kpiAccent: "none" | "tone";
 }
 
 /** Neutral light default — a considered off-white/ink base, not stark. */
@@ -50,9 +54,11 @@ export const DEFAULT_TOKENS: ResolvedTokens = {
   railFg: "#9aa6b6",
   fontDisplay: "sans-1",
   fontBody: "sans-1",
+  numerals: "body",
   radius: "md",
   shadow: "sm",
   density: "cozy",
+  kpiAccent: "none",
 };
 
 /** One entry in the preset gallery. */
@@ -85,9 +91,11 @@ export const THEME_PRESETS: ThemePreset[] = [
       railFg: "#9fb4a5",
       fontDisplay: "serif-1",
       fontBody: "sans-1",
+      numerals: "mono",
       radius: "lg",
       shadow: "md",
       density: "cozy",
+      kpiAccent: "tone",
     },
   },
   {
@@ -132,9 +140,11 @@ export const THEME_PRESETS: ThemePreset[] = [
       railFg: "#7c8896",
       fontDisplay: "sans-1",
       fontBody: "sans-1",
+      numerals: "mono",
       radius: "md",
       shadow: "lg",
       density: "cozy",
+      kpiAccent: "tone",
     },
   },
   {
@@ -193,9 +203,11 @@ export function resolveTokens(theme: AppTheme): ResolvedTokens {
     railFg: pick("railFg"),
     fontDisplay: pick("fontDisplay"),
     fontBody: pick("fontBody"),
+    numerals: pick("numerals"),
     radius: pick("radius"),
     shadow: pick("shadow"),
     density: pick("density"),
+    kpiAccent: pick("kpiAccent"),
   };
 }
 

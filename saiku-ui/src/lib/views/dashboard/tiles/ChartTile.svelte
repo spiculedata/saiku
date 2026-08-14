@@ -64,7 +64,11 @@
   import { reconcileZoomState } from "$lib/charts/zoomState";
   import { isSingleMeasureKind, smallMultipleRowCount } from "$lib/dashboard/smallMultiples";
   import { theme } from "$lib/stores/theme.svelte";
-  import { resolveThemeTokens } from "$lib/views/chartTheme";
+  // Inside an App Builder app the chart must paint from the APP's tokens, not
+  // the Saiku UI's — see appChartTheme.ts. Outside one it falls through to the
+  // global resolver, so plain dashboards are unchanged.
+  import { resolveChartTokensFor } from "$lib/dashboard/appChartTheme";
+  import { getAppThemeSignature } from "$lib/views/app/appThemeContext";
   import type { CubeRef } from "$lib/api/dashboards";
   // Issue #930 — right-click a data point to drill into its raw fact rows.
   import TileDrillthrough from "./TileDrillthrough.svelte";
@@ -98,6 +102,9 @@
   // one-time read is intentional.
   // svelte-ignore state_referenced_locally
   const sharedResponse = getShareViewResponse(tile.id);
+
+  // Null outside an App Builder app. getContext must run at init.
+  const appThemeSignature = getAppThemeSignature();
 
   let host = $state<HTMLDivElement | null>(null);
   // `$state.raw` so the ECharts instance is reactive on *reassignment*
@@ -398,6 +405,10 @@
     void theme.effective;
     // #1091: repaint when the colour-blind-safe pref flips.
     void theme.colorBlindSafe;
+    // …and when the APP's theme changes. A canvas doesn't repaint from a CSS
+    // custom-property change, so without this dep an app re-theme would leave
+    // the chart on the old palette until something else forced a render.
+    void appThemeSignature?.();
     if (!chart) return;
     unsupported = !isSupportedChartKind(kind);
     if (!r || r.status !== "SUCCESS") {
@@ -420,7 +431,7 @@
     const aspect = host && host.clientHeight > 0 ? host.clientWidth / host.clientHeight : 1;
     // #1077: per-tile chart options (title/axes/legend/dualAxis/trend). Undefined
     // on legacy tiles → the adapter falls back to the dashboard baseline.
-    const option = buildChartOption(r, kind, aspect, resolveThemeTokens(), tile.chartOptions);
+    const option = buildChartOption(r, kind, aspect, resolveChartTokensFor(host), tile.chartOptions);
     if (option) {
       // #907: layer anomaly markPoints on top of the freshly-built option,
       // leaving the existing render path untouched when detection is off / no

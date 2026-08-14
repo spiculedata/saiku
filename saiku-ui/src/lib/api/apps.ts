@@ -35,6 +35,46 @@ export interface SaikuApp {
  *  product header without custom CSS: a two-tone wordmark, a right-aligned
  *  context pill (e.g. a store selector), and a live-status badge. All optional;
  *  when absent the header falls back to a plain {@link SaikuApp.name}. */
+/** One entry in the header context selector. */
+export interface AppContextPillOption {
+  /** Shown in the selector, e.g. "Portland #14 · Pacific NW". */
+  label: string;
+  /** MDX member unique name to filter on. Two special cases:
+   *   - {@code "*"} (or blank label-only with no match) means ALL — selecting
+   *     it clears the filter rather than adding one.
+   *   - blank resolves {@link label} as a member CAPTION against the bound
+   *     level, so an author can type "Portland #14" instead of hunting down
+   *     "[Store].[Stores].[USA].[OR].[Portland].[Store 14]". */
+  member?: string;
+}
+
+/** Header context selector — the "STORE / Portland #14 ▾" control. Static text
+ *  when it has no {@link options}; a real filter control when it does. */
+export interface AppContextPill {
+  /** Tiny uppercase label above the value, e.g. "Store". */
+  label: string;
+  /** Current / default value shown when nothing is selected. */
+  value: string;
+  /** Where the selectable options come from.
+   *   - "list" (default) — the hand-authored {@link options} array.
+   *   - "level" — every member of the bound {@link filter} level, read from
+   *     the cube at render. A typed list goes stale the moment a store is
+   *     opened or renamed; the cube is the thing that actually knows.
+   *  Absent means "list", so apps authored before this field are unchanged. */
+  optionsSource?: "list" | "level";
+  /** Selectable options when {@link optionsSource} is "list". Absent or empty
+   *  → the pill stays static text. */
+  options?: AppContextPillOption[];
+  /** Prepend an entry that clears the filter (an "All stores" row). Only
+   *  meaningful for "level" source — a hand-authored list can just include one. */
+  includeAll?: boolean;
+  /** Wording for that entry. Defaults to "All". */
+  allLabel?: string;
+  /** The dim/hier/level the selection filters. Without it the selector only
+   *  changes the displayed label — useful for a purely cosmetic pill. */
+  filter?: { dimension: string; hierarchy: string; level: string };
+}
+
 export interface AppHeaderConfig {
   /** Substring of {@link SaikuApp.name} rendered in the accent colour, e.g.
    *  "Mart" in "FoodMart Ops" → "Food<accent>Mart</accent> Ops". First match. */
@@ -42,8 +82,10 @@ export interface AppHeaderConfig {
   /** Small uppercase eyebrow after the wordmark (e.g. "Store Intelligence"),
    *  separated by a vertical divider. */
   eyebrow?: string;
-  /** Right-aligned context pill: a tiny label over a bold value with a ▾. */
-  contextPill?: { label: string; value: string };
+  /** Right-aligned context pill: a tiny label over a bold value with a ▾.
+   *  With {@link AppContextPill.options} it becomes a real selector that
+   *  filters the whole app. */
+  contextPill?: AppContextPill;
   /** Right-aligned live-status badge text (rendered with a ● dot), e.g.
    *  "Live · Saiku". */
   liveBadge?: string;
@@ -126,11 +168,18 @@ export interface AppTheme {
   fontDisplay?: string;
   /** Body / UI font key. */
   fontBody?: string;
+  /** Which font carries figures — KPI headline numbers and numeric table
+   *  cells. "mono" gives the tabular, ledger-like look data products use;
+   *  "body"/"display" reuse those stacks. */
+  numerals?: "body" | "display" | "mono";
 
   /* --- form tokens (named scales, mapped to px/values in appTheme.ts) --- */
   radius?: "none" | "sm" | "md" | "lg" | "xl";
   shadow?: "none" | "sm" | "md" | "lg";
   density?: "compact" | "cozy" | "comfortable";
+  /** Coloured edge bar on KPI tiles. "tone" colours it by the delta's
+   *  direction (positive / negative / accent when flat); "none" omits it. */
+  kpiAccent?: "none" | "tone";
 
   /* --- legacy (pre-token apps) --- */
   primary?: string;
@@ -147,10 +196,23 @@ export interface AppNav {
   /** Start the left rail collapsed to icons-only (matches the compact
    *  section-rail look of the reference dashboards). */
   railCollapsed?: boolean;
-  /** Pinned rail footer: a settings gear and/or a user-avatar disc showing
-   *  {@code avatar} initials — the bottom-of-rail chrome most product shells
-   *  carry. Omit for no footer. */
-  footer?: { settings?: boolean; avatar?: string };
+  /** Run the rail the full height of the shell, with the header beside it
+   *  rather than above it — the product-shell look where the rail is the
+   *  outermost chrome. Ignored on narrow layouts, where the rail becomes a
+   *  bottom bar. */
+  railFullHeight?: boolean;
+  /** Pinned rail footer: a settings gear and/or a user-avatar disc — the
+   *  bottom-of-rail chrome most product shells carry. Omit for no footer. */
+  footer?: {
+    settings?: boolean;
+    /** Literal initials. Used only when {@link avatarSource} is "fixed". */
+    avatar?: string;
+    /** Where the disc's initials come from. "user" derives them from the
+     *  signed-in user (what a real avatar does); "fixed" renders
+     *  {@link avatar} verbatim. Absent means "fixed", so apps authored before
+     *  this field keep their literal. */
+    avatarSource?: "user" | "fixed";
+  };
 }
 
 export interface AppPage {

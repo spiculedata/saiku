@@ -238,6 +238,8 @@
   "dashboard.bulk.clear": "Clear selection",
   "dashboard.kpi.vsPrior": "vs prior",
   "dashboard.kpi.vsLastYear": "vs last year",
+  "dashboard.kpi.partial": "partial",
+  "dashboard.kpi.partialPeriod": "This period is still incomplete, so it isn't compared against a full one — the comparison would measure the calendar, not the business.",
   "dashboard.anomaly.legend": "Anomaly detection",
   "dashboard.anomaly.enable": "Detect anomalies",
   "dashboard.anomaly.method": "Method",
@@ -779,5 +781,9 @@
   "tile.retry": "Retry",
   "tile.empty": "No data.",
   "tile.empty.filtered": "No data matches the current filters.",
-  "tile.resetFilters": "Reset filters"
+  "tile.resetFilters": "Reset filters",
+  "dashboard.kpi.vsYesterday": "vs yesterday",
+  "dashboard.kpi.vsLastWeek": "vs last week",
+  "dashboard.kpi.vsLastMonth": "vs last month",
+  "dashboard.kpi.vsLastQuarter": "vs last quarter"
 }

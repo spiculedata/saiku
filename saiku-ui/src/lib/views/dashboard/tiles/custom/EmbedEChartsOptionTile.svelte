@@ -41,6 +41,7 @@
     applyDataToEchartsOption,
     type EChartsDataProjection,
   } from "../../../../dashboard/custom/echartsOption";
+  import { applyValueAxisFormat } from "../../../../dashboard/custom/valueAxisFormat";
 
   // Register the module set once at module scope (ECharts dedupes repeats).
   use([
@@ -73,7 +74,9 @@
   type Row = Record<string, Cell>;
 
   interface Props {
-    tile: { custom?: { renderer: string; options?: Record<string, unknown> } };
+    tile: {
+      custom?: { renderer: string; options?: Record<string, unknown>; valueFormat?: string };
+    };
     /** Token-scoped rows from <EmbedGrid>. undefined/null = still loading. */
     rows?: Row[] | null;
   }
@@ -133,6 +136,8 @@
     }
     const rs = rows ?? [];
     const option = applyDataToEchartsOption(validation.value, project(rs));
+    // Same declarative value-axis format as the in-app tile.
+    applyValueAxisFormat(option, tile.custom?.valueFormat);
     chart.setOption(option, { notMerge: true });
   });
 </script>
