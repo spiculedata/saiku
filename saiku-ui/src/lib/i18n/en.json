@@ -596,6 +596,7 @@
   "confirm.discardUnsaved": "Discard unsaved changes?",
   "workspace.aiQuery.title": "Ask the AI",
   "workspace.aiQuery.open": "Ask the AI (NL → query)",
+  "workspace.aiQuery.disabled": "AI isn't configured on this server",
   "workspace.aiQuery.close": "Close AI panel",
   "workspace.aiQuery.clear": "Clear conversation",
   "workspace.aiQuery.placeholder": "Ask in plain English — e.g. \"show sales by country last quarter\". ⌘/Ctrl+Enter to send.",
