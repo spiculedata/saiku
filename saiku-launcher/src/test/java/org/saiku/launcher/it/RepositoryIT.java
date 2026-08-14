@@ -42,7 +42,8 @@ public class RepositoryIT {
 
     @Test
     public void saveAndReadAndDeleteResource_endToEnd() throws Exception {
-        String name = "/homes/home:admin/it-test-resource-" + System.nanoTime() + ".saiku";
+        // saiku#1738: Windows-safe repository segment (no colon) — see SaikuItHarness#adminHomePath.
+        String name = "/" + SaikuItHarness.adminHomePath("it-test-resource-" + System.nanoTime() + ".saiku");
         String content = "{\"it-marker\":\"hello-world\"}";
 
         // Save
