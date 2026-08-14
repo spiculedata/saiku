@@ -31,7 +31,7 @@
   <div class="insp-section">
     <div class="insp-label">Identity</div>
     <label class="insp-row"><span>Title (Ask …)</span>
-      <input class="insp-input" placeholder="FoodMart" value={a.title ?? ""} oninput={(e) => set({ title: opt(val(e)) })} />
+      <input class="insp-input" placeholder={appDoc.current?.name ?? "this app"} value={a.title ?? ""} oninput={(e) => set({ title: opt(val(e)) })} />
     </label>
     <label class="insp-row"><span>Persona</span>
       <input class="insp-input" placeholder="Sales Analyst" value={a.persona ?? ""} oninput={(e) => set({ persona: opt(val(e)) })} />

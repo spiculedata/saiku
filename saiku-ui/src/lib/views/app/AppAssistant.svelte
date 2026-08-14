@@ -15,11 +15,15 @@
     slot: AppAssistantSlot;
     /** Fallback cube (first queryable tile's) when the slot names none. */
     fallbackCube?: { connectionName: string; catalog: string; schema: string; cubeName: string } | null;
+    /** The app's name — the panel's title when the slot doesn't set one
+     *  (saiku#1761: it used to default to "FoodMart", branding every
+     *  unconfigured assistant after the sample dataset). */
+    appName?: string;
   }
-  let { slot, fallbackCube = null }: Props = $props();
+  let { slot, fallbackCube = null, appName }: Props = $props();
 
   const cube = $derived(slot.cube ?? fallbackCube ?? null);
-  const title = $derived(slot.title ?? "FoodMart");
+  const title = $derived(slot.title ?? appName ?? "this app");
   const persona = $derived(slot.persona ?? "Analyst");
   const scope = $derived(slot.scope ?? "");
   const prompts = $derived(slot.suggestedPrompts ?? []);

@@ -340,7 +340,11 @@
       </main>
 
       {#if app.assistantSlot.enabled && !narrow}
-        <AppAssistant slot={app.assistantSlot} fallbackCube={firstAppCube(app)} />
+        <AppAssistant
+          slot={app.assistantSlot}
+          fallbackCube={firstAppCube(app)}
+          appName={app.name}
+        />
       {/if}
     </div>
   </div>
