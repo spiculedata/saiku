@@ -99,10 +99,12 @@ public class EmailResource {
                     .entity(Map.of("error", "email recipient not configured"))
                     .build();
         }
-        // #1811 PR3: the RecipientGate slots in HERE — it will consult the SuppressionStore FIRST
-        // (top-veto: a suppressed recipient is dropped before any consent/allowlist check), then
-        // enforce consent + the recipient-trust allowlist. In PR2 the recipient is still only ever the
-        // server's own selfTo, so suppression is not yet consulted on this path.
+        // #1811 PR4: the multi-recipient send layer will live in a SEPARATE send path (not this
+        // self-send path). There, the admin-supplied recipient list is passed through
+        // recipientGate.clear(addresses) BEFORE any send, and ONLY the survivors are mailed — the gate
+        // consults the SuppressionStore FIRST (top-veto), then the recipient-trust allowlist, then
+        // CONFIRMED double-opt-in consent. This self-send path stays selfTo-ONLY and is intentionally
+        // NOT gated (the recipient is the server's own configured address, never a third party).
         try {
             MailMessage msg = assembler.assemble(body, mailConfig.from(), mailConfig.selfTo());
             mailSender.send(msg);
