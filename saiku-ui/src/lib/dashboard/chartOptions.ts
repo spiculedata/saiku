@@ -23,6 +23,7 @@ import { DEFAULT_CHART_OPTIONS, isChartType } from "$lib/views/chartTypes";
 import { type ThemeTokens, DEFAULT_THEME_TOKENS } from "$lib/views/chartTheme";
 import { buildChartOption as buildSharedChartOption, type ChartProjection } from "$lib/charts/build";
 import { applySortLimit } from "$lib/charts/sortLimit";
+import { partitionRollups } from "$lib/dashboard/rollupRows";
 
 /** All chart kinds the workspace exposes. Kept as an alias to the canonical
  *  ChartType so existing imports (`import type { ChartKind }`) still resolve. */
@@ -78,14 +79,13 @@ export function projectFromAiQueryResponse(
     else headerKeys.push(k);
   }
 
-  // A leaf has every header cell filled. Single-level axes are all leaves, so
-  // this is a no-op there. Stand down when it would empty the tile (a result
-  // that is ALL rollups is a legitimate shape, not a bug to filter away) —
-  // same guard ChartView's `leaf.indices.length > 0 && < matrix.length` applies.
+  // Stand down when dropping rollups would empty the tile — a result that is
+  // ALL subtotals is a legitimate shape, not a bug to filter away. Same guard
+  // ChartView's `leaf.indices.length > 0 && < matrix.length` applies.
   let rows = all;
-  if (hideRollupRows && headerKeys.length > 1) {
-    const leaves = all.filter((r) => headerKeys.every((k) => String(r[k] ?? "").length > 0));
-    if (leaves.length > 0 && leaves.length < all.length) rows = leaves;
+  if (hideRollupRows) {
+    const { leaves, allRollups } = partitionRollups(all);
+    if (!allRollups && leaves.length < all.length) rows = leaves;
   }
 
   const rowCategories = rows.map((r, i) => {

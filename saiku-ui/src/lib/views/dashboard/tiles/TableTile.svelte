@@ -56,6 +56,8 @@
   // geometry lives in $lib/dashboard/sparkline; this component only
   // collects each row's numeric measure values and renders the SVG.
   import { sparklineGeometry, sparklineBars, numericValues } from "$lib/dashboard/sparkline";
+  // saiku#1802 — subtotal detection shared with the chart tile.
+  import { partitionRollups, isRollupRow } from "$lib/dashboard/rollupRows";
   // Issue #933 — shared loading / error / empty states.
   import TileLoading from "./TileLoading.svelte";
   import TileError from "./TileError.svelte";
@@ -206,17 +208,35 @@
   let columnValues = $derived<Record<string, unknown[]>>((() => {
     const rules = tile.conditionalFormat;
     if (!rules || rules.length === 0) return {};
-    const rows = response?.data ?? [];
+    // saiku#1802: rank against the LEAVES only. A subtotal is the sum of the
+    // rows beneath it, so leaving rollups in the basis puts every parent at the
+    // top of the distribution and pushes its own children down a band — on a
+    // state/store register every store read as "small" against its own state.
+    // (A subtotal still gets a colour of its own; it is just not a rival.)
+    const all = response?.data ?? [];
+    const { leaves, allRollups } = partitionRollups(all);
+    const basis = allRollups ? all : leaves;
     const index: Record<string, unknown[]> = {};
     for (const rule of rules) {
       const vals: unknown[] = [];
-      for (const row of rows) {
+      for (const row of basis) {
         const cell = row[rule.column];
         vals.push(isAiCell(cell) ? cell.value : cell);
       }
       index[rule.column] = vals;
     }
     return index;
+  })());
+
+  // saiku#1802: which rows are subtotals, so the render can mark them. A table
+  // KEEPS its rollups — a table is where a subtotal is actually wanted — but an
+  // unmarked one is indistinguishable from a leaf with a missing caption, which
+  // on a site register reads as a store whose name failed to load.
+  let rollupFlags = $derived<boolean[]>((() => {
+    const all = response?.data ?? [];
+    const { headerKeys, allRollups } = partitionRollups(all);
+    if (allRollups) return all.map(() => false);
+    return all.map((row) => isRollupRow(row, headerKeys));
   })());
 
   /** The un-formatted numeric source for a cell — AiCell.value when the
@@ -421,7 +441,10 @@
           </thead>
           <tbody>
             {#each rows as row, i (i)}
-              <tr>
+              <!-- saiku#1802: a subtotal row reads as a leaf with a missing
+                   caption unless it is marked. Styled, not hidden — a table is
+                   the one tile where a subtotal earns its place. -->
+              <tr class:rollup={rollupFlags[i]}>
                 {#each columns as col, ci (ci)}
                   {@const v = row[col.caption]}
                   {@const fmt = parseFormattedCell(renderCell(v, col.caption))}
@@ -558,6 +581,13 @@
   }
   th.row-header, td.row-header {
     text-align: left;
+  }
+  /* saiku#1802: subtotal rows. Weight and a faint ground, not a colour — the
+     row still carries whatever conditional formatting its cells earned, and a
+     second hue there would fight it. */
+  tr.rollup > td {
+    font-weight: var(--weight-semibold);
+    background: var(--saiku-app-ground, hsl(var(--bg-muted)));
   }
   td.clickable {
     cursor: pointer;
