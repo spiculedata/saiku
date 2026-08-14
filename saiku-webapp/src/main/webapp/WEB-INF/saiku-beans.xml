@@ -978,4 +978,12 @@
         <property name="aiService" ref="cubeDesignerAiService"/>
     </bean>
 
+    <!--
+      #1809 PR4: periodic-send job scheduler wiring goes here. PR2 ships the engine
+      (org.saiku.service.schedule.JobScheduler) + handler SPI but leaves it runtime-dormant —
+      no bean is declared, so nothing starts the ticker in the running app, no real send
+      handler is registered, and jobs never run under the owner's identity (runAs is PR3).
+      A later slice declares the JobScheduler bean here, registers handlers, and calls start().
+    -->
+
 </beans>
