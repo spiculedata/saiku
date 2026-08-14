@@ -66,6 +66,10 @@
 {/if}
 
 <style>
+/* saiku#1800: the active-filter chips sit on the App page, so they take the
+   App's tokens with the global ones as fallback. The default-value chip is a
+   tint of the accent -- against a dark global --primary on a light App it was
+   pale pink text on white and effectively unreadable. */
   .filter-bar {
     display: flex;
     flex-wrap: wrap;
@@ -77,18 +81,18 @@
     align-items: center;
     gap: 0.25rem;
     padding: 0.25rem 0.5rem;
-    background: hsl(var(--bg-subtle));
+    background: var(--saiku-app-ground, hsl(var(--bg-subtle)));
     border-radius: 999px;
     font-size: 0.8125rem;
-    color: hsl(var(--fg));
+    color: var(--saiku-app-fg, hsl(var(--fg)));
   }
   /* Subtle source affordance — click filters look slightly bolder so users
      see which chips came from their interaction vs the dashboard's defaults. */
   .chip[data-source="click"] {
-    background: color-mix(in srgb, hsl(var(--primary)) 18%, transparent);
+    background: color-mix(in srgb, var(--saiku-app-accent, hsl(var(--primary))) 18%, transparent);
   }
   .chip[data-source="panel"] {
-    background: hsl(var(--bg-subtle));
+    background: var(--saiku-app-ground, hsl(var(--bg-subtle)));
   }
   .chip-x {
     border: none;
@@ -97,6 +101,6 @@
     font-size: 1rem;
     line-height: 1;
     padding: 0 0.125rem;
-    color: hsl(var(--fg-muted));
+    color: var(--saiku-app-muted, hsl(var(--fg-muted)));
   }
 </style>

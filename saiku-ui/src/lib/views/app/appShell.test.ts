@@ -15,6 +15,10 @@ import {
   navPosition,
   isRailNav,
   resolveActivePageId,
+  appCubes,
+  assistantBlindCubes,
+  cubeKey,
+  firstAppCube,
 } from "$lib/views/app/appShell";
 
 function app(patch: Partial<SaikuApp> = {}): SaikuApp {
@@ -106,5 +110,78 @@ describe("resolveActivePageId", () => {
 
   test("null when the app has no pages", () => {
     expect(resolveActivePageId(app({ pages: [] }), null)).toBeNull();
+  });
+});
+
+/* ====================================================================
+ * saiku#1804 — an app can span cubes, and the surfaces that assumed one
+ * need to know when that assumption doesn't hold.
+ * ==================================================================== */
+describe("appCubes / assistantBlindCubes", () => {
+  const cube = (name: string) => ({
+    connectionName: "unknown_foodmart",
+    catalog: "FoodMart",
+    schema: "FoodMart",
+    cubeName: name,
+  });
+
+  const multiCubeApp = () =>
+    ({
+      ...app(),
+      pages: [
+        {
+          id: "p1",
+          title: "Portfolio",
+          grid: {
+            cols: 12,
+            tiles: [
+              { id: "a", cube: cube("Store") },
+              { id: "b", cube: cube("Store") },
+              { id: "c", cube: cube("Warehouse") },
+              { id: "t", type: "text" }, // no cube — text tiles bind to nothing
+            ],
+          },
+        },
+        {
+          id: "p2",
+          title: "Supply",
+          grid: { cols: 12, tiles: [{ id: "d", cube: cube("Warehouse") }] },
+        },
+      ],
+    }) as unknown as Parameters<typeof appCubes>[0];
+
+  test("lists each distinct cube once, in page-then-tile order", () => {
+    expect(appCubes(multiCubeApp()).map((c) => c.cubeName)).toEqual(["Store", "Warehouse"]);
+  });
+
+  test("skips tiles with no cube of their own", () => {
+    expect(appCubes(multiCubeApp())).toHaveLength(2);
+  });
+
+  test("firstAppCube still answers with the first one", () => {
+    expect(firstAppCube(multiCubeApp())?.cubeName).toBe("Store");
+  });
+
+  test("names the cubes the assistant can't see", () => {
+    const blind = assistantBlindCubes(multiCubeApp(), cube("Store"));
+    expect(blind.map((c) => c.cubeName)).toEqual(["Warehouse"]);
+  });
+
+  test("a single-cube app leaves the assistant with no blind spot", () => {
+    const oneCube = {
+      ...app(),
+      pages: [{ id: "p1", title: "One", grid: { cols: 12, tiles: [{ id: "a", cube: cube("Store") }] } }],
+    } as unknown as Parameters<typeof appCubes>[0];
+    expect(assistantBlindCubes(oneCube, cube("Store"))).toEqual([]);
+  });
+
+  test("no bound cube means nothing to report as blind", () => {
+    expect(assistantBlindCubes(multiCubeApp(), null)).toEqual([]);
+  });
+
+  test("cubeKey separates same-named cubes in different catalogs", () => {
+    expect(cubeKey(cube("Sales"))).not.toBe(
+      cubeKey({ ...cube("Sales"), catalog: "Other" }),
+    );
   });
 });

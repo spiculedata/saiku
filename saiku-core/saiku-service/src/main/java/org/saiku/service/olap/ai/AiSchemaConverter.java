@@ -306,8 +306,25 @@ public class AiSchemaConverter {
             }
             AiSchema.Measure m = lookupMeasure(ob.getBy(), schema);
             if (req.getLimit() > 0) {
-                rowExpr = (ob.isAscending() ? "BottomCount(" : "TopCount(") + rowExpr + ", " + req.getLimit() + ", "
-                        + m.uniqueName + ")";
+                if (ob.isAscending()) {
+                    // saiku#1801: BottomCount ranks BEFORE the axis's NON EMPTY.
+                    // Members with no value for the measure are the lowest of
+                    // all, so they fill the budget and are then stripped: a
+                    // request for 8 rows came back with 3, status SUCCESS, no
+                    // hint why. Rank a pre-filtered set so the N that survive
+                    // are the N that were asked for. TopCount needs none of
+                    // this -- nulls sort last there, and never make the cut.
+                    //
+                    // Only when the caller wants non-empty rows. "Bottom 5 by
+                    // Sales with the empties" is a coherent question (which
+                    // members have no data?) and the filter would silently
+                    // answer a different one.
+                    String rankSet =
+                            req.isNonEmpty() ? "FILTER(" + rowExpr + ", NOT ISEMPTY(" + m.uniqueName + "))" : rowExpr;
+                    rowExpr = "BottomCount(" + rankSet + ", " + req.getLimit() + ", " + m.uniqueName + ")";
+                } else {
+                    rowExpr = "TopCount(" + rowExpr + ", " + req.getLimit() + ", " + m.uniqueName + ")";
+                }
             } else {
                 rowExpr = "Order(" + rowExpr + ", " + m.uniqueName + ", " + (ob.isAscending() ? "BASC" : "BDESC") + ")";
             }

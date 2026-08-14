@@ -73,11 +73,49 @@ export function resolveActivePageId(app: SaikuApp, storeActiveId: string | null)
  *  when it reads its options from a level. Shared here so the shell and the
  *  inspector agree on which cube that is. */
 export function firstAppCube(app: SaikuApp): CubeRef | null {
+  return appCubes(app)[0] ?? null;
+}
+
+/** Fully-qualified identity of a cube reference — the key two tiles must share
+ *  to count as "the same cube". */
+export function cubeKey(c: CubeRef): string {
+  return [c.connectionName, c.catalog, c.schema, c.cubeName].join("/");
+}
+
+/**
+ * Every distinct cube the app's tiles are bound to, in page-then-tile order
+ * (saiku#1804).
+ *
+ * Tiles carry their own cube, so an app can legitimately span several — an
+ * estate app pairing a footprint cube that has no time dimension with a
+ * replenishment cube that does. Surfaces that used to assume ONE cube need to
+ * know when that assumption doesn't hold, rather than silently describing the
+ * whole app by whichever cube happened to be first.
+ */
+export function appCubes(app: SaikuApp): CubeRef[] {
+  const seen = new Set<string>();
+  const out: CubeRef[] = [];
   for (const p of app.pages) {
     const grid = p.grid as { tiles?: Array<{ cube?: CubeRef }> } | null;
     for (const t of grid?.tiles ?? []) {
-      if (t.cube?.connectionName && t.cube?.cubeName) return t.cube;
+      const c = t.cube;
+      if (!c?.connectionName || !c?.cubeName) continue;
+      const key = cubeKey(c);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(c);
     }
   }
-  return null;
+  return out;
+}
+
+/**
+ * The cubes in this app that the assistant CANNOT see, given the cube it is
+ * bound to. Empty for a single-cube app — the common case, where the assistant's
+ * scope note is the whole truth.
+ */
+export function assistantBlindCubes(app: SaikuApp, bound: CubeRef | null): CubeRef[] {
+  if (!bound) return [];
+  const key = cubeKey(bound);
+  return appCubes(app).filter((c) => cubeKey(c) !== key);
 }

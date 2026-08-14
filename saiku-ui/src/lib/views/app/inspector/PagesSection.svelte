@@ -5,6 +5,11 @@
   import { Plus, Trash2 } from "lucide-svelte";
   import { tokenHelp } from "$lib/views/app/textTokens";
   import { pageTileCount, tilesPhrase } from "$lib/views/app/pageTiles";
+  import {
+    PAGE_ICON_KEYS,
+    pageIcon,
+    DEFAULT_PAGE_ICON as DefaultIcon,
+  } from "$lib/views/app/pageIcons";
 
   const pages = $derived(appDoc.current?.pages ?? []);
   const activeId = $derived(appDoc.activePageId);
@@ -40,8 +45,10 @@
    *  renders literally and reads as broken. */
   const tokens = $derived(tokenHelp(appDoc.current?.header?.contextPill?.filter?.dimension));
 
-  /** Icon keys the rail understands (see AppNavRail ICONS map). */
-  const ICON_KEYS = ["home", "chart", "trend", "cube", "boxes", "users", "people", "settings", "sparkles", "table"];
+  /* saiku#1805: the vocabulary comes from the shared registry the rail and the
+     top nav render from. This list used to be hand-maintained beside theirs and
+     had drifted — it omitted "house", a key the renderer honoured, so it could
+     be typed into a document but not chosen here. */
 
   const val = (e: Event) => (e.currentTarget as HTMLInputElement).value;
   const opt = (v: string) => (v.trim() === "" ? undefined : v);
@@ -71,11 +78,37 @@
         <div class="page-fields">
           <label class="insp-row"><span>Tab title</span>
             <input class="insp-input" value={p.title ?? ""} oninput={(e) => appDoc.updatePageMeta(p.id, { title: val(e) })} /></label>
-          <label class="insp-row"><span>Icon</span>
-            <select class="insp-select" value={p.icon ?? ""} onchange={(e) => appDoc.updatePageMeta(p.id, { icon: opt((e.currentTarget as HTMLSelectElement).value) })}>
-              <option value="">— default —</option>
-              {#each ICON_KEYS as k (k)}<option value={k}>{k}</option>{/each}
-            </select></label>
+          <div class="insp-row insp-row--icons">
+            <span>Icon</span>
+            <!-- A grid of the glyphs themselves: the choice IS the picture, and
+                 a list of key names ("boxes", "layers") made the author guess
+                 what each one draws. -->
+            <div class="icon-grid" role="radiogroup" aria-label="Page icon">
+              <button
+                type="button"
+                class="icon-swatch"
+                class:is-active={!p.icon}
+                role="radio"
+                aria-checked={!p.icon}
+                title="Default"
+                onclick={() => appDoc.updatePageMeta(p.id, { icon: undefined })}>
+                <DefaultIcon size={15} aria-hidden="true" />
+              </button>
+              {#each PAGE_ICON_KEYS as k (k)}
+                {@const Glyph = pageIcon(k)}
+                <button
+                  type="button"
+                  class="icon-swatch"
+                  class:is-active={p.icon === k}
+                  role="radio"
+                  aria-checked={p.icon === k}
+                  title={k}
+                  onclick={() => appDoc.updatePageMeta(p.id, { icon: k })}>
+                  <Glyph size={15} aria-hidden="true" />
+                </button>
+              {/each}
+            </div>
+          </div>
           <label class="insp-row"><span>Heading</span>
             <input class="insp-input" placeholder="Portland #14 · Today" value={p.heading ?? ""} oninput={(e) => appDoc.updatePageMeta(p.id, { heading: opt(val(e)) })} /></label>
           <label class="insp-row"><span>Subheading</span>
@@ -127,6 +160,36 @@
 </div>
 
 <style>
+  /* saiku#1805: the icon picker is a swatch grid, not a name list. */
+  .insp-row--icons {
+    display: block;
+  }
+  .icon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(28px, 1fr));
+    gap: 4px;
+    margin-top: 4px;
+  }
+  .icon-swatch {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 4px;
+    background: hsl(var(--bg));
+    color: hsl(var(--fg-muted));
+    cursor: pointer;
+    padding: 0;
+  }
+  .icon-swatch:hover {
+    color: hsl(var(--fg));
+  }
+  .icon-swatch.is-active {
+    border-color: hsl(var(--primary));
+    color: hsl(var(--primary));
+  }
+
   .page { border: 1px solid hsl(var(--border)); border-radius: 8px; margin-bottom: 0.4rem; overflow: hidden; }
   .page.is-active { border-color: hsl(var(--primary)); }
   .page-head {

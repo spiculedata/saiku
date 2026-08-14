@@ -54,14 +54,26 @@ ${s} .tile:has(.kpi-tile) .tile-header span {
   font-size: .66rem; color: var(--saiku-app-muted, #93876c);
 }
 ${s} .tile:has(.kpi-tile) .tile-header { padding: 12px 16px 0; }
+/* Two columns: a stack of text on the left, the sparkline on the right.
+   saiku#1798: the rows are IMPLICIT rather than a fixed "value/delta" area map.
+   Named areas only covered the two children a comparison KPI happens to have,
+   so anything else the tile can render — the measure caption on a KPI with no
+   comparison, the "Week 52 · partial" period line — had no area and auto-placed
+   into the SPARK column, where a caption like "Grocery Sqft" wrapped down a
+   96px gutter. Pinning every child to column 1 and spanning the sparkline down
+   column 2 lets each text line take its own row in DOM order, whatever the tile
+   is showing. */
 ${s} .kpi-tile {
   display: grid;
   grid-template-columns: 1fr 96px;
-  grid-template-areas: "value spark" "delta spark";
   align-items: center; column-gap: 10px; padding: 8px 16px 14px;
 }
+${s} .kpi-tile > * { grid-column: 1; }
+/* No sparkline (a cube with no time dimension can't have one) → reclaim the
+   gutter, or the number sits in two thirds of a tile whose neighbour fills it. */
+${s} .kpi-tile:not(:has(div[aria-hidden="true"])) { grid-template-columns: 1fr; }
 ${s} .kpi-tile .value {
-  grid-area: value; align-self: end;
+  align-self: end;
   /* Figures follow the "Numbers" type token, not the body font — a monospace
      stack gives the tabular, ledger-like headline data products use. */
   font-family: var(--saiku-app-font-numeric, var(--saiku-app-font-body, sans-serif));
@@ -69,13 +81,21 @@ ${s} .kpi-tile .value {
   font-size: 1.9rem; font-weight: 750; letter-spacing: -.01em;
   color: var(--saiku-app-fg, #17241d);
 }
-${s} .kpi-tile .delta { grid-area: delta; align-self: start; white-space: nowrap; font-size: .76rem; font-weight: 650; }
+${s} .kpi-tile .delta { align-self: start; white-space: nowrap; font-size: .76rem; font-weight: 650; }
+/* The second line of a KPI, whichever one the tile has: the comparison callout,
+   the partial-period note, or the measure caption. They share a slot because the
+   markup makes them mutually exclusive. */
+${s} .kpi-tile .period, ${s} .kpi-tile .caption {
+  align-self: start; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: .68rem; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--saiku-app-muted, #93876c);
+}
 /* The delta reads direction at a glance, so it takes the positive/negative
    tokens rather than inheriting body ink. */
 ${s} .kpi-tile .delta[data-tone="positive"] { color: var(--saiku-app-positive, #2e7d55); }
 ${s} .kpi-tile .delta[data-tone="negative"] { color: var(--saiku-app-danger, #c0492b); }
 ${s} .kpi-tile .delta[data-tone="flat"], ${s} .kpi-tile .delta--empty { color: var(--saiku-app-muted, #93876c); }
-${s} .kpi-tile div[aria-hidden="true"] { grid-area: spark; width: 96px; align-self: center; }
+${s} .kpi-tile div[aria-hidden="true"] { grid-column: 2; grid-row: 1 / -1; width: 96px; align-self: center; }
 ${s} .tile:has(.kpi-tile[data-tone="negative"]) .value { color: var(--saiku-app-danger, #c0492b); }
 
 /* Tone-coloured edge bar. Width is the token (0px when the theme's KPI accent

@@ -32,6 +32,7 @@
   } from "$lib/api/aiQuery";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
   import {
+    deltaDirection,
     deltaLabelFor,
     isTrailingPartial,
     formatKpi,
@@ -511,7 +512,7 @@
     {:else if error}
       <TileError message={error} onRetry={retry} />
     {:else if isEmpty}
-      <TileEmpty filtered={hasEffectiveFilters} onReset={resetFilters} />
+      <TileEmpty filtered={hasEffectiveFilters} onReset={resetFilters} cubeName={tile.cube?.cubeName} />
     {:else}
       <div
         class="value"
@@ -528,10 +529,13 @@
         </div>
       {/if}
       {#if delta && delta.ratio != null}
+        <!-- saiku#1798: the arrow is the SIGN of the change; the colour
+             (data-tone) is whether that change is good. Two signals, two
+             questions — picking both from tone made "-7%" point up. -->
         <div class="delta" data-tone={delta.tone}>
-          {#if delta.tone === "positive"}
+          {#if deltaDirection(delta) === "up"}
             <ArrowUpRight size={14} aria-hidden="true" />
-          {:else if delta.tone === "negative"}
+          {:else if deltaDirection(delta) === "down"}
             <ArrowDownRight size={14} aria-hidden="true" />
           {:else}
             <Minus size={14} aria-hidden="true" />

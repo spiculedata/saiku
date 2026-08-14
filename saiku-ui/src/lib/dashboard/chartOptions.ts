@@ -22,6 +22,8 @@ import type { ChartOptions } from "$lib/views/chartTypes";
 import { DEFAULT_CHART_OPTIONS, isChartType } from "$lib/views/chartTypes";
 import { type ThemeTokens, DEFAULT_THEME_TOKENS } from "$lib/views/chartTheme";
 import { buildChartOption as buildSharedChartOption, type ChartProjection } from "$lib/charts/build";
+import { applySortLimit } from "$lib/charts/sortLimit";
+import { partitionRollups } from "$lib/dashboard/rollupRows";
 
 /** All chart kinds the workspace exposes. Kept as an alias to the canonical
  *  ChartType so existing imports (`import type { ChartKind }`) still resolve. */
@@ -51,19 +53,39 @@ function isAiCell(v: unknown): v is AiCell {
 
 /** Normalise an AiQueryResponse into the shared {rowCategories,
  *  columnCategories, matrix} projection — the same shape ChartView's
- *  parseCellset path produces, so both surfaces feed the builder identically. */
-export function projectFromAiQueryResponse(response: AiQueryResponse): ChartProjection {
-  const rows = response.data ?? [];
-  if (rows.length === 0) return { rowCategories: [], columnCategories: [], matrix: [] };
+ *  parseCellset path produces, so both surfaces feed the builder identically.
+ *
+ *  `hideRollupRows` (saiku#1797) mirrors ChartView's deriveLeafRows step. A
+ *  multi-level row axis comes back with the rollup rows interleaved among the
+ *  leaves; in `records` format a rollup is the row whose DEEPER header cells are
+ *  blank ({"Store State": "BC", "Store Name": ""}). Rollups are sums of their own
+ *  children, so on a chart they dwarf every leaf. Off by default so callers that
+ *  want the raw shape (the a11y mirror's row count, the geo-coverage notice) opt
+ *  in explicitly. */
+export function projectFromAiQueryResponse(
+  response: AiQueryResponse,
+  hideRollupRows = false,
+): ChartProjection {
+  const all = response.data ?? [];
+  if (all.length === 0) return { rowCategories: [], columnCategories: [], matrix: [] };
 
   // Pick row-header columns (plain string keys) vs measure columns (AiCell
   // keys) from the first row's shape — insertion order.
-  const firstRow = rows[0];
+  const firstRow = all[0];
   const headerKeys: string[] = [];
   const measureKeys: string[] = [];
   for (const k of Object.keys(firstRow)) {
     if (isAiCell(firstRow[k])) measureKeys.push(k);
     else headerKeys.push(k);
+  }
+
+  // Stand down when dropping rollups would empty the tile — a result that is
+  // ALL subtotals is a legitimate shape, not a bug to filter away. Same guard
+  // ChartView's `leaf.indices.length > 0 && < matrix.length` applies.
+  let rows = all;
+  if (hideRollupRows) {
+    const { leaves, allRollups } = partitionRollups(all);
+    if (!allRollups && leaves.length < all.length) rows = leaves;
   }
 
   const rowCategories = rows.map((r, i) => {
@@ -108,8 +130,36 @@ export function buildChartOption(
   options?: ChartOptions,
 ): Record<string, unknown> | null {
   if (!isChartType(kind)) return null;
-  const projection = projectFromAiQueryResponse(response);
-  if (projection.matrix.length === 0) return null;
   const effective = options ?? DASHBOARD_BASELINE;
+  const projection = projectForChart(response, effective);
+  if (projection.matrix.length === 0) return null;
   return buildSharedChartOption(projection, kind, effective, tk, { aspect, compact: true });
+}
+
+/**
+ * The projection a chart tile actually DRAWS: rollup rows dropped, then the
+ * categories sorted / trimmed per {@link ChartOptions.sortDirection} and
+ * {@link ChartOptions.topN} (saiku#1797).
+ *
+ * Every tile surface that reasons about "which category is at index i" must go
+ * through this, not {@link projectFromAiQueryResponse} — the accessible table
+ * mirror, the brush cross-filter's dataIndex → caption lookup, and the option
+ * builder itself. ECharts hands back indices into the DISPLAYED series, so a
+ * caller reading captions out of the unsorted projection cross-filters on the
+ * wrong members. That is the same "ONE source of truth" rule ChartView keeps
+ * with its leafProjection/sortLimitOrder pair.
+ *
+ * With no options this is the raw projection, so pre-#1077 tiles (which carry no
+ * `chartOptions` at all) render exactly as they did.
+ */
+export function projectForChart(
+  response: AiQueryResponse,
+  options?: ChartOptions,
+): ChartProjection {
+  if (!options) return projectFromAiQueryResponse(response);
+  return applySortLimit(projectFromAiQueryResponse(response, options.hideRollupRows), {
+    direction: options.sortDirection,
+    measureIndex: 0,
+    topN: options.topN,
+  });
 }

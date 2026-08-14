@@ -39,8 +39,12 @@ export const CHART_TYPES: { id: ChartType; label: string; group: string }[] = [
   { id: "map", label: "Map (choropleth — by country)", group: "Geo" },
 ];
 
-/** issue #1071: sequential / diverging colour ramps for the map visualMap. */
-export type ChartColorRamp = "blues" | "greens" | "reds" | "viridis" | "diverging";
+/** issue #1071: sequential / diverging colour ramps for the map visualMap.
+ *  saiku#1799 adds "theme" — derive the ramp from the active theme's accent,
+ *  so a heatmap or choropleth in a branded app is in the brand's hue rather
+ *  than a stock blue. It is the default for newly authored tiles; tiles saved
+ *  with an explicit ramp keep it. */
+export type ChartColorRamp = "theme" | "blues" | "greens" | "reds" | "viridis" | "diverging";
 
 /** Set of all supported chart-type ids, derived from CHART_TYPES so it can
  *  never drift from the palette. */
@@ -229,7 +233,9 @@ export const DEFAULT_CHART_OPTIONS: ChartOptions = {
   seriesAxis: {},
   // issue #1089: inert default — no per-series type overrides (uniform chart).
   seriesType: {},
-  colorRamp: "blues",
+  // saiku#1799: theme-derived by default. Saved tiles carry their own literal
+  // ("blues" for everything authored before this), so only new tiles move.
+  colorRamp: "theme",
   mapMissing: "blank",
   sortDirection: "none",
   topN: null,

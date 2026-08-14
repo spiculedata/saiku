@@ -285,7 +285,7 @@
       <div class="overlay solid"><TileError message={error} onRetry={retry} /></div>
     {:else if isEmpty}
       <div class="overlay solid">
-        <TileEmpty filtered={hasEffectiveFilters} onReset={resetFilters} />
+        <TileEmpty filtered={hasEffectiveFilters} onReset={resetFilters} cubeName={tile.cube?.cubeName} />
       </div>
     {/if}
   </div>
@@ -337,8 +337,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: hsl(var(--bg));
-    color: hsl(var(--fg-muted));
+    background: var(--saiku-app-surface, hsl(var(--bg)));
+    color: var(--saiku-app-muted, hsl(var(--fg-muted)));
     z-index: 1;
   }
   .overlay.solid {

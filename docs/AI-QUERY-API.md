@@ -893,6 +893,8 @@ appends these as a dashed continuation with a shaded confidence band.
     }
   ],
   "limit": 0,                                      // Optional. With order > 0 → TopCount/BottomCount; without order → HEAD(rows, N).
+                                                   // A bottom-N (direction "asc" + limit) ranks a set pre-filtered to
+                                                   // NOT ISEMPTY(measure) when nonEmpty is on, so N rows in = N rows out.
   "visualTotals": false,                           // Optional. Wraps rows in VISUALTOTALS().
   "nonEmpty": true                                 // Optional. Default true.
 }

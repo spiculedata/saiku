@@ -157,3 +157,44 @@ describe("appSkinCss", () => {
     }
   });
 });
+
+/* ====================================================================
+ * saiku#1798 — the KPI grid must place EVERY text child in the left column.
+ *
+ * The skin used a fixed `grid-template-areas: "value spark" "delta spark"`, so
+ * only .value and .delta had a home. A KPI on a cube with no time dimension
+ * renders neither a delta nor a sparkline — it renders .caption, which had no
+ * area and auto-placed into the 96px spark gutter, where "Grocery Sqft" wrapped
+ * over two lines beside a number sitting in a half-empty box.
+ * ==================================================================== */
+describe("appSkinCss — KPI grid (saiku#1798)", () => {
+  const css = appSkinCss(SCOPE);
+
+  test("pins every KPI child to the text column rather than naming two areas", () => {
+    expect(css).toContain(`${SCOPE} .kpi-tile > * { grid-column: 1; }`);
+    // The old fixed area map is what stranded the caption; it must be gone.
+    expect(css).not.toContain('grid-template-areas: "value spark" "delta spark"');
+  });
+
+  test("the sparkline spans the second column for as many rows as there are", () => {
+    const rule = css
+      .split("\n")
+      .find((l) => l.includes('.kpi-tile div[aria-hidden="true"]'));
+    expect(rule).toBeTruthy();
+    expect(rule).toContain("grid-column: 2");
+    expect(rule).toContain("grid-row: 1 / -1");
+  });
+
+  test("a KPI with no sparkline reclaims the gutter", () => {
+    expect(css).toContain(
+      `${SCOPE} .kpi-tile:not(:has(div[aria-hidden="true"])) { grid-template-columns: 1fr; }`,
+    );
+  });
+
+  test("the caption and the partial-period line are styled as the second line", () => {
+    const rule = css
+      .split("\n")
+      .find((l) => l.includes(".kpi-tile .period,") && l.includes(".kpi-tile .caption"));
+    expect(rule).toBeTruthy();
+  });
+});

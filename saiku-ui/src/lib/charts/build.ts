@@ -417,7 +417,7 @@ function attachMarks(
 
 /* issue #1071: sequential / diverging colour ramps for the map visualMap.
  * Light→dark low→high; ECharts interpolates between the stops. */
-const COLOR_RAMPS: Record<ChartColorRamp, string[]> = {
+const COLOR_RAMPS: Record<Exclude<ChartColorRamp, "theme">, string[]> = {
   blues: ["#deebf7", "#9ecae1", "#4292c6", "#08519c"],
   greens: ["#e5f5e0", "#a1d99b", "#41ab5d", "#006d2c"],
   reds: ["#fee0d2", "#fc9272", "#ef3b2c", "#a50f15"],
@@ -425,8 +425,23 @@ const COLOR_RAMPS: Record<ChartColorRamp, string[]> = {
   diverging: ["#2166ac", "#67a9cf", "#f7f7f7", "#ef8a62", "#b2182b"],
 };
 
-function colorRampFor(ramp: ChartColorRamp | undefined): string[] {
-  return COLOR_RAMPS[ramp ?? "blues"] ?? COLOR_RAMPS.blues;
+/**
+ * The magnitude ramp for a heatmap / choropleth.
+ *
+ * saiku#1799: "theme" (the default for tiles authored from now on) defers to the
+ * ramp the active theme derived from its own accent, so a heatmap in a
+ * terracotta app is terracotta rather than a stock blue that reads as a foreign
+ * element. A theme that supplies none — the global Saiku theme, whose tokens are
+ * HSL triplets ECharts can't parse — falls back to blues, which is what a
+ * heatmap effectively painted before. An explicitly named ramp always wins:
+ * picking one is an author decision about the data, not about the brand.
+ */
+function colorRampFor(ramp: ChartColorRamp | undefined, tk?: ThemeTokens): string[] {
+  if (ramp === undefined || ramp === "theme") {
+    const themed = tk?.sequentialRamp;
+    return themed && themed.length > 1 ? themed : COLOR_RAMPS.blues;
+  }
+  return COLOR_RAMPS[ramp] ?? COLOR_RAMPS.blues;
 }
 
 /* #1081: resolve the active categorical colour CYCLE (the option-level `color`
@@ -1019,6 +1034,10 @@ export function buildChartOption(
           formatNumber(min, nf ?? HEATMAP_RAMP_FORMAT),
         ],
         textStyle: { color: tk.fgMuted },
+        // saiku#1799: the heatmap shipped with NO inRange, so it painted ECharts'
+        // default blue regardless of theme OR of the ramp picker #1775 added to
+        // the editor — the control was wired, the renderer never read it.
+        inRange: { color: colorRampFor(o.colorRamp, tk) },
       },
       // Heatmap doesn't get the bottom slider either — the colour-band
       // already shows the full distribution at a glance and the slider
@@ -1091,7 +1110,7 @@ export function buildChartOption(
         left: compact ? 4 : 10,
         bottom: compact ? 4 : 20,
         textStyle: { color: tk.fgMuted },
-        inRange: { color: colorRampFor(o.colorRamp) },
+        inRange: { color: colorRampFor(o.colorRamp, tk) },
       },
       series: [
         {
@@ -1321,14 +1340,22 @@ export function buildChartOption(
           data: positives,
           // #1091: the default pos/neg blue/red isn't colour-blind safe; swap to
           // the Okabe-Ito-derived pair (bordered) when high-contrast is on.
-          itemStyle: { color: hc ? COLORBLIND_WATERFALL.positive : "#4c9ee6", ...seriesBorder },
+          // saiku#1799: otherwise take the theme's growth colour. The literal is
+          // the fallback for a theme that names none, not the first choice.
+          itemStyle: {
+            color: hc ? COLORBLIND_WATERFALL.positive : (tk.positive ?? "#4c9ee6"),
+            ...seriesBorder,
+          },
         },
         {
           type: "bar",
           name: `-${cols[0] ?? "Negative"}`,
           stack: "waterfall",
           data: negatives,
-          itemStyle: { color: hc ? COLORBLIND_WATERFALL.negative : "#e66c6c", ...seriesBorder },
+          itemStyle: {
+            color: hc ? COLORBLIND_WATERFALL.negative : (tk.danger ?? "#e66c6c"),
+            ...seriesBorder,
+          },
         },
       ],
         markLine,

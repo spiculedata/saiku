@@ -14,6 +14,7 @@ import {
   APP_CHART_VARS,
   PALETTE_SIZE,
   appChartPalette,
+  appSequentialRamp,
   appChartTokens,
   appEchartsBase,
   mixHex,
@@ -258,5 +259,60 @@ describe("withAppEchartsDefaults", () => {
       (o.title as Record<string, Record<string, unknown>>).textStyle.color;
     expect(colourOf(light)).toBe("#1f3529");
     expect(colourOf(night)).toBe("#e6edf3");
+  });
+});
+
+/* ====================================================================
+ * saiku#1799 — the magnitude ramp and the sign colours a heatmap / waterfall
+ * needs, derived from the brand rather than shipped as literals.
+ * ==================================================================== */
+describe("appSequentialRamp", () => {
+  const brand = (over: Partial<AppBrandTokens> = {}): AppBrandTokens => ({
+    fg: "#17241d",
+    muted: "#93876c",
+    surface: "#ffffff",
+    ground: "#faf7f2",
+    cardBorder: "#e6e0d4",
+    accent: "#b4542e",
+    accent2: "#2f6f5c",
+    accentStrong: "#8c3f22",
+    positive: "#2e7d55",
+    danger: "#c0492b",
+    fontBody: "sans-serif",
+    fontDisplay: "serif",
+    ...over,
+  });
+
+  it("runs from near-surface to the accent at full strength", () => {
+    const ramp = appSequentialRamp(brand());
+    expect(ramp).not.toBeNull();
+    expect(ramp).toHaveLength(3);
+    // The high end IS the accent; the low end is close to the card it sits on.
+    expect(ramp?.[ramp.length - 1]).toBe("#b4542e");
+    expect(ramp?.[0]).not.toBe(ramp?.[ramp.length - 1]);
+  });
+
+  it("blends toward the card, so a dark app's low end goes dark not white", () => {
+    const light = appSequentialRamp(brand())?.[0] ?? "";
+    const dark = appSequentialRamp(brand({ surface: "#101816" }))?.[0] ?? "";
+    const lum = (hex: string) => (parseHex(hex) ?? [0, 0, 0]).reduce((a, b) => a + b, 0);
+    expect(lum(light)).toBeGreaterThan(lum(dark));
+  });
+
+  it("declines to invent a ramp when the accent isn't a parseable hex", () => {
+    expect(appSequentialRamp(brand({ accent: "oklch(0.6 0.2 30)" }))).toBeNull();
+  });
+
+  it("appChartTokens carries the ramp and the sign colours through", () => {
+    const tk = appChartTokens(brand());
+    expect(tk.positive).toBe("#2e7d55");
+    expect(tk.danger).toBe("#c0492b");
+    expect(tk.sequentialRamp?.[2]).toBe("#b4542e");
+  });
+
+  it("leaves them unset when the brand names nothing parseable, so the builder's fallbacks stand", () => {
+    const tk = appChartTokens(brand({ positive: "", danger: "", accent: "#b4542e" }));
+    expect(tk.positive).toBeUndefined();
+    expect(tk.danger).toBeUndefined();
   });
 });

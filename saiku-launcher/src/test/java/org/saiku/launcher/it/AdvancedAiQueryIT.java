@@ -431,4 +431,94 @@ public class AdvancedAiQueryIT {
                 "error must name the offending member, got: " + r.path("error").asText(),
                 r.path("error").asText().contains("Pizza"));
     }
+
+    /* ---- saiku#1801: a bottom-N returns the N rows it was asked for -------
+     *
+     * The Store cube is the sharp case: 24 stores, only 20 with a recorded
+     * footprint. BottomCount is evaluated before the axis's NON EMPTY, so
+     * ranking the raw member set spent the budget on the four null-footprint
+     * stores and NON EMPTY then stripped them -- "limit": 8 answered with 3
+     * rows, status SUCCESS, nothing to indicate the request had been cut.
+     */
+
+    private static final String STORE_CUBE = "unknown_foodmart/FoodMart/FoodMart/Store";
+
+    @Test
+    public void bottomNReturnsTheRequestedRowCount() throws Exception {
+        String body =
+                """
+                {
+                  "cube": "%s",
+                  "measures": [{"name": "Store Sqft"}],
+                  "rows": [{"dimension": "Store", "hierarchy": "Stores", "level": "Store Name"}],
+                  "order": [{"by": "Store Sqft", "direction": "asc"}],
+                  "limit": 8
+                }
+                """
+                        .formatted(STORE_CUBE);
+        HttpResponse<String> resp = harness.postAuthJson(QUERY, body);
+        assertEquals("expected 200, got " + resp.statusCode() + " body=" + resp.body(), 200, resp.statusCode());
+        JsonNode r = harness.parse(resp);
+        assertEquals("SUCCESS", r.path("status").asText());
+        assertEquals(
+                "asked for 8 rows, got " + r.path("data").size() + " -- mdx: "
+                        + r.path("metadata").path("generatedMdx").asText(),
+                8,
+                r.path("data").size());
+    }
+
+    @Test
+    public void bottomNIsActuallyTheLowestValues() throws Exception {
+        // Guard against "fixed" by over-fetching: the 8 rows must be the 8
+        // SMALLEST, ascending, not merely eight rows.
+        String body =
+                """
+                {
+                  "cube": "%s",
+                  "measures": [{"name": "Store Sqft"}],
+                  "rows": [{"dimension": "Store", "hierarchy": "Stores", "level": "Store Name"}],
+                  "order": [{"by": "Store Sqft", "direction": "asc"}],
+                  "limit": 8
+                }
+                """
+                        .formatted(STORE_CUBE);
+        JsonNode r = harness.parse(harness.postAuthJson(QUERY, body));
+        double prev = Double.NEGATIVE_INFINITY;
+        for (JsonNode row : r.path("data")) {
+            double v = row.path("Store Sqft").path("value").asDouble();
+            assertTrue("rows must ascend, got " + v + " after " + prev, v >= prev);
+            prev = v;
+        }
+        // The whole level, ranked ascending with no limit, starts with the same
+        // member -- so the trim really is off the bottom of the full ranking.
+        String unlimited = body.replace("\n                  \"limit\": 8\n", "\n");
+        JsonNode all = harness.parse(harness.postAuthJson(QUERY, unlimited));
+        assertEquals(
+                "bottom-8 must start where the full ascending ranking starts",
+                all.path("data").get(0).path("Store Name").asText(),
+                r.path("data").get(0).path("Store Name").asText());
+    }
+
+    @Test
+    public void topNIsUnaffected() throws Exception {
+        // TopCount never needed the pre-filter (nulls rank last); assert the
+        // fix did not perturb it.
+        String body =
+                """
+                {
+                  "cube": "%s",
+                  "measures": [{"name": "Store Sqft"}],
+                  "rows": [{"dimension": "Store", "hierarchy": "Stores", "level": "Store Name"}],
+                  "order": [{"by": "Store Sqft", "direction": "desc"}],
+                  "limit": 8
+                }
+                """
+                        .formatted(STORE_CUBE);
+        JsonNode r = harness.parse(harness.postAuthJson(QUERY, body));
+        assertEquals("SUCCESS", r.path("status").asText());
+        assertEquals(8, r.path("data").size());
+        assertFalse(
+                "top-N needs no ISEMPTY pre-filter",
+                r.path("metadata").path("generatedMdx").asText().contains("ISEMPTY"));
+    }
 }
