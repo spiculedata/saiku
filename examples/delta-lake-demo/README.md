@@ -173,6 +173,96 @@ Delta lakehouse through the same 12 tools documented in
 [`docs/mcp/`](../../docs/mcp/README.md). (Note the connection name is
 `unknown_delta` here, vs `unknown_lakehouse` in the Iceberg demo.)
 
+## Run it with your own data
+
+This demo points at a throwaway TPC-H star on a local MinIO. To analyse **your
+own** warehouse instead, you change three things — the connector, the schema,
+and the data — and nothing in Saiku/Mondrian/Calcite. Here's what each one is
+and how to swap it.
+
+### 1. Point Trino at your catalog (the connector)
+
+Everything Trino can query, Saiku can pivot. `trino/catalog/delta.properties` is
+the only file that knows *where* the data lives:
+
+```properties
+connector.name=delta_lake
+hive.metastore.uri=thrift://hive-metastore:9083   # your metastore
+fs.s3.enabled=true
+s3.endpoint=http://minio:9000                     # your object store
+s3.aws-access-key=admin
+s3.aws-secret-key=password
+```
+
+- **Already have a Delta lakehouse?** Repoint `hive.metastore.uri` at your Hive
+  Metastore (or set `hive.metastore=glue` for AWS Glue) and the `s3.*` block at
+  your bucket/endpoint (drop `s3.endpoint` for real AWS S3). Delete the seed
+  step entirely — your tables are already registered.
+- **Different engine, not Delta?** Drop in a different Trino catalog file:
+  `iceberg.properties` (see the [Iceberg demo](../lakehouse-demo/)),
+  `postgresql.properties`, `mysql.properties`, `bigquery.properties`,
+  `snowflake.properties`, … — [any Trino connector](https://trino.io/docs/current/connector.html).
+  **This is the whole point of fronting your warehouse with Trino:** Saiku's
+  Calcite `TrinoSqlDialect` never changes, so swapping the lakehouse is a
+  connector file, not a code change. Update the catalog name in the datasource
+  URL (below) to match.
+- **Skip Trino, connect Saiku straight to a JDBC warehouse?** You can — point
+  the datasource `Jdbc=` at Postgres/MySQL/Snowflake/etc. directly and drop the
+  matching JDBC driver in `<home>/plugins/`. Trino only earns its keep when you
+  want ONE SQL surface over many stores, or lakehouse formats (Delta/Iceberg)
+  that your BI-side JDBC driver can't read natively.
+
+### 2. Describe your cube (the Mondrian M4 schema)
+
+`saiku/LakehouseSales.xml` is a [Mondrian 4 schema](https://mondrian.pentaho.com/documentation/schema.php):
+it maps your physical tables/columns to OLAP **dimensions**, **hierarchies**,
+**levels**, and **measures** — the drag-and-drop vocabulary the UI shows. To
+model your own star:
+
+- Repoint `<Table name='fact_orders'>` at **your** fact table, and set its
+  `<Key>` to your grain column.
+- For each thing you slice **by** (region, product, date, customer…) add a
+  `<Dimension>` with `<Attribute>`s bound to your columns, and a `<Hierarchy>`
+  ordering the levels (e.g. `Year → Quarter → Month`, or `Category → Product`).
+- For each thing you **measure** add a `<Measure>` with your numeric column and
+  an `aggregator` (`sum`, `count`, `avg`, `min`, `max`, `distinct-count`) plus a
+  `formatString`.
+- Keep integer keys **integer** in the warehouse (or `CAST(... AS INTEGER)` in
+  your load): a float year like `1992.0` breaks Mondrian's Time levels — that's
+  why the seed casts. Snowflaked dims (a separate `dim_*` table) work too — add
+  more `<Table>`s and join them; this demo is deliberately one denormalised
+  table to stay simple.
+
+The schema is where "your dimensions and measures" live; it references only
+column names, so it's engine-agnostic — the same XML works over Delta, Iceberg,
+Postgres, or anything else Trino/JDBC exposes with those columns.
+
+### 3. Bring your own data (instead of TPC-H)
+
+The seed is only here to *create* demo tables — if your tables already exist,
+**you don't seed at all**; you just make sure they're registered in the
+metastore your catalog points at.
+
+- **Existing Delta/Iceberg tables in a lakehouse:** nothing to seed — repoint
+  the connector (step 1) and go.
+- **Files you want to register:** `CREATE TABLE … WITH (location='s3://…')` (Trino
+  writes the `_delta_log`), or register externally-written Delta via Trino's
+  `register_table` procedure.
+- **Loading from elsewhere:** the seed shows the pattern — `CREATE TABLE … AS
+  SELECT` from any Trino-reachable source (another catalog, a CSV via the `hive`
+  connector, `tpch`/`tpcds` generators). Swap the `SELECT` for yours.
+
+Then update the datasource so it names **your** catalog/schema and loads **your**
+Mondrian file. The one line in `saiku/delta.sds` (setup substitutes the home
+path):
+
+```
+jdbc:mondrian:Jdbc=jdbc:trino://localhost:8091/<your_catalog>/<your_schema>?user=saiku;Catalog=file:<home>/data/<YourSchema>.xml;JdbcDrivers=io.trino.jdbc.TrinoDriver
+```
+
+Restart Saiku; your cube appears in the picker. Nothing about the UI, Mondrian,
+or Calcite changed — you swapped a connector, a schema, and a table.
+
 ## Teardown
 
 ```bash
