@@ -1,0 +1,122 @@
+<!--
+  saiku#1813 — a TRIMMED slice taken VERBATIM from the shipped FoodMart4 schema,
+  checked in so the Mondrian-4 round-trip runs on CI instead of depending on a
+  gitignored saiku-home (the trap #1808 was about).
+
+  The Store dimension is kept because it carries both awkward attribute shapes:
+  columns declared as <Key>/<Name> CHILD ELEMENTS rather than keyColumn /
+  nameColumn attributes, and a COMPOUND key ("Store City" keys on store_state +
+  store_city). Reading only the attribute form left those fields with no
+  `expression`, which Ossie's schema rejects — a bug that reached the real
+  schema and that no hand-written fixture caught. So this fixture is taken FROM
+  the real schema rather than invented alongside it.
+
+  A <NoLink> is added to pin that it produces no relationship.
+-->
+<Schema name="FoodMartSlice" metamodelVersion="4.0">
+  <PhysicalSchema>
+    <Table name="sales_fact_1997">
+      <ColumnDefs>
+        <CalculatedColumnDef name="promotion_sales">
+          <ExpressionView>
+            <SQL dialect="access">
+                            Iif(<Column table="sales_fact_1997" name="promotion_id" /> = 0, 0,
+                            <Column table="sales_fact_1997" name="store_sales" />)
+                        </SQL>
+            <SQL dialect="generic">
+                        case when <Column table="sales_fact_1997" name="promotion_id" /> = 0 then 0
+                        else <Column table="sales_fact_1997" name="store_sales" /> end
+                    </SQL>
+          </ExpressionView>
+        </CalculatedColumnDef>
+      </ColumnDefs>
+    </Table>
+    <Table name="store">
+      <Key>
+        <Column name="store_id" />
+      </Key>
+    </Table>
+  </PhysicalSchema>
+  <Cube name="Slice">
+    <Dimensions>
+      <Dimension name="Store" table="store" key="Store Id">
+        <Attributes>
+          <Attribute name="Store Country" hasHierarchy="false">
+            <Key>
+              <Column name="store_country" />
+            </Key>
+          </Attribute>
+          <Attribute name="Store State" keyColumn="store_state" hasHierarchy="false" />
+          <Attribute name="Store City" hasHierarchy="false">
+            <Key>
+              <Column name="store_state" />
+              <Column name="store_city" />
+            </Key>
+            <Name>
+              <Column name="store_city" />
+            </Name>
+          </Attribute>
+          <Attribute name="Store Id" keyColumn="store_id" hasHierarchy="false" />
+          <Attribute name="Store Name" keyColumn="store_name" hasHierarchy="false">
+            <Property attribute="Store Type" />
+            <Property attribute="Store Manager" />
+            <Property attribute="Store Sqft" />
+            <Property attribute="Grocery Sqft" />
+            <Property attribute="Frozen Sqft" />
+            <Property attribute="Meat Sqft" />
+            <Property attribute="Has coffee bar" />
+            <Property attribute="Street address" />
+          </Attribute>
+          <Attribute name="Store Type" keyColumn="store_type" hierarchyAllMemberName="All Store Types" />
+          <Attribute name="Store Manager" keyColumn="store_manager" hasHierarchy="false" />
+          <Attribute name="Store Sqft" keyColumn="store_sqft" hasHierarchy="false" />
+          <Attribute name="Grocery Sqft" keyColumn="grocery_sqft" hasHierarchy="false" />
+          <Attribute name="Frozen Sqft" keyColumn="frozen_sqft" hasHierarchy="false" />
+          <Attribute name="Meat Sqft" keyColumn="meat_sqft" hasHierarchy="false" />
+          <Attribute name="Has coffee bar" keyColumn="coffee_bar" hasHierarchy="false" />
+          <Attribute name="Street address" keyColumn="store_street_address" hasHierarchy="false" />
+        </Attributes>
+        <Hierarchies>
+          <Hierarchy name="Stores" allMemberName="All Stores">
+            <Level attribute="Store Country">
+              <Annotations>
+                <Annotation name="saiku.semantic.description">Store's country.</Annotation>
+                <Annotation name="saiku.semantic.synonyms">nation, country code</Annotation>
+                <Annotation name="saiku.semantic.cardinality">low</Annotation>
+              </Annotations>
+            </Level>
+            <Level attribute="Store State">
+              <Annotations>
+                <Annotation name="saiku.semantic.description">Store's state or province.</Annotation>
+                <Annotation name="saiku.semantic.synonyms">state, province, region</Annotation>
+                <Annotation name="saiku.semantic.cardinality">low</Annotation>
+              </Annotations>
+            </Level>
+            <Level attribute="Store City">
+              <Annotations>
+                <Annotation name="saiku.semantic.description">Store's city.</Annotation>
+                <Annotation name="saiku.semantic.synonyms">town, locality</Annotation>
+                <Annotation name="saiku.semantic.cardinality">medium</Annotation>
+              </Annotations>
+            </Level>
+            <Level attribute="Store Name" />
+          </Hierarchy>
+          <Hierarchy name="Store Size in SQFT">
+            <Level attribute="Store Sqft" />
+          </Hierarchy>
+        </Hierarchies>
+      </Dimension>
+    </Dimensions>
+    <MeasureGroups>
+      <MeasureGroup name="Slice" table="sales_fact_1997">
+        <Measures>
+          <Measure name="Unit Sales" column="unit_sales" aggregator="sum" />
+        </Measures>
+        <DimensionLinks>
+          <ForeignKeyLink dimension="Store" foreignKeyColumn="store_id" />
+          <NoLink dimension="Nonexistent" />
+        </DimensionLinks>
+      </MeasureGroup>
+    </MeasureGroups>
+  </Cube>
+</Schema>

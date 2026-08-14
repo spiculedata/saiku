@@ -10,6 +10,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import bi.saiku.ossie.OssieYamlWriter;
 import bi.saiku.ossie.model.CustomExtension;
 import bi.saiku.ossie.model.Dataset;
 import bi.saiku.ossie.model.DimensionMeta;
@@ -35,6 +36,8 @@ import org.xml.sax.SAXException;
 public class MondrianToOssieConverterTest {
 
     private final MondrianToOssieConverter converter = new MondrianToOssieConverter();
+
+    private final OssieYamlWriter writer = new OssieYamlWriter();
 
     @Test
     public void cubeBecomesSemanticModelWithFactAndDimensions()
@@ -246,6 +249,153 @@ public class MondrianToOssieConverterTest {
         OssieDocument doc = convert("<Schema name='T'></Schema>");
         assertTrue(doc.getSemanticModel().isEmpty());
         assertFalse("version should always be set", doc.getVersion().isBlank());
+    }
+
+    /* ==================================================================
+     * saiku#1813 — Mondrian 4.
+     *
+     * Every MDX schema Saiku ships (FoodMart4, Bank, Pharma) uses this shape:
+     * measures in a <MeasureGroup>, dimensions as <Attributes> + <Hierarchies>,
+     * joins declared as <ForeignKeyLink> rather than a foreignKey attribute.
+     * The classic-3 path recognised none of it, so `ossie-export` returned an
+     * empty model for all three.
+     * ================================================================== */
+
+    /** The M4 shape, trimmed to what the converter has to read. */
+    private static final String M4 = "<Schema name='P' metamodelVersion='4.0'>"
+            + "<PhysicalSchema>"
+            + "  <Table name='fact_rx'/>"
+            + "  <Table name='dim_product'><Key><Column name='productkey'/></Key></Table>"
+            + "  <Table name='dim_prescriber'><Key><Column name='prescriberkey'/></Key></Table>"
+            + "</PhysicalSchema>"
+            + "<Cube name='Rx'>"
+            + "  <Dimensions>"
+            + "    <Dimension name='Product' table='dim_product' key='Product Id'>"
+            + "      <Attributes>"
+            + "        <Attribute name='Product Id' keyColumn='productkey'/>"
+            + "        <Attribute name='Brand' keyColumn='brand'/>"
+            + "      </Attributes>"
+            + "      <Hierarchies><Hierarchy name='Product'>"
+            + "        <Level attribute='Brand'/>"
+            + "      </Hierarchy></Hierarchies>"
+            + "    </Dimension>"
+            + "    <Dimension name='Prescriber' table='dim_prescriber' key='Prescriber'>"
+            + "      <Attributes>"
+            + "        <Attribute name='Prescriber' keyColumn='prescriberkey' nameColumn='prescribername'/>"
+            + "      </Attributes>"
+            + "      <Hierarchies><Hierarchy name='Prescriber'>"
+            + "        <Level attribute='Prescriber'>"
+            + "          <Annotations><Annotation name='saiku.semantic.pii'>true</Annotation></Annotations>"
+            + "        </Level>"
+            + "      </Hierarchy></Hierarchies>"
+            + "    </Dimension>"
+            + "  </Dimensions>"
+            + "  <MeasureGroups><MeasureGroup name='Rx' table='fact_rx'>"
+            + "    <Measures>"
+            + "      <Measure name='Rx Count' column='rxkey' aggregator='distinct-count'/>"
+            + "      <Measure name='Quantity' column='quantity' aggregator='sum'/>"
+            + "    </Measures>"
+            + "    <DimensionLinks>"
+            + "      <ForeignKeyLink dimension='Product' foreignKeyColumn='productkey'/>"
+            + "      <ForeignKeyLink dimension='Prescriber' foreignKeyColumn='prescriberkey'/>"
+            + "    </DimensionLinks>"
+            + "  </MeasureGroup></MeasureGroups>"
+            + "</Cube></Schema>";
+
+    @Test
+    public void mondrian4CubeIsConvertedNotSkipped() throws Exception {
+        OssieDocument doc = convert(M4);
+        assertEquals(1, doc.getSemanticModel().size());
+        assertTrue(
+                "no cube should be skipped — got: " + converter.getSkippedCubes(),
+                converter.getSkippedCubes().isEmpty());
+    }
+
+    @Test
+    public void measureGroupTableBecomesTheFactDataset() throws Exception {
+        SemanticModel sm = convert(M4).getSemanticModel().get(0);
+        assertTrue(
+                "expected a fact dataset named after the MeasureGroup's table",
+                sm.getDatasets().stream().anyMatch(d -> "fact_rx".equals(d.getName())));
+    }
+
+    @Test
+    public void measureGroupMeasuresBecomeMetrics() throws Exception {
+        SemanticModel sm = convert(M4).getSemanticModel().get(0);
+        assertEquals(
+                java.util.List.of("Rx Count", "Quantity"),
+                sm.getMetrics().stream().map(Metric::getName).toList());
+    }
+
+    @Test
+    public void eachDimensionBecomesADatasetOfItsAttributes() throws Exception {
+        SemanticModel sm = convert(M4).getSemanticModel().get(0);
+        Dataset product = sm.getDatasets().stream()
+                .filter(d -> "dim_product".equals(d.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(
+                java.util.List.of("Product Id", "Brand"),
+                product.getFields().stream().map(Field::getName).toList());
+    }
+
+    @Test
+    public void physicalSchemaKeyBecomesThePrimaryKey() throws Exception {
+        SemanticModel sm = convert(M4).getSemanticModel().get(0);
+        Dataset product = sm.getDatasets().stream()
+                .filter(d -> "dim_product".equals(d.getName()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(java.util.List.of("productkey"), product.getPrimaryKey());
+    }
+
+    @Test
+    public void foreignKeyLinkBecomesARelationship() throws Exception {
+        SemanticModel sm = convert(M4).getSemanticModel().get(0);
+        Relationship rel = sm.getRelationships().stream()
+                .filter(r -> "dim_product".equals(r.getTo()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("fact_rx", rel.getFrom());
+        assertEquals(java.util.List.of("productkey"), rel.getFromColumns());
+        assertEquals(java.util.List.of("productkey"), rel.getToColumns());
+    }
+
+    /**
+     * The point of #1496, on the shape it was actually reported against. A PII
+     * annotation sits on the <Level>, but the Ossie FIELD comes from the
+     * <Attribute> the level references — so it has to be carried across, or the
+     * flag is dropped exactly where it matters most.
+     */
+    @Test
+    public void levelAnnotationsLandOnTheAttributesField() throws Exception {
+        String yaml = writer.writeAsString(convert(M4));
+        assertTrue(
+                "expected the PII flag to survive onto the prescriber field — got:\n" + yaml,
+                yaml.contains("vendor_name: SAIKU") && yaml.contains("pii"));
+    }
+
+    @Test
+    public void noLinkDimensionGetsNoRelationship() throws Exception {
+        String xml = M4.replace(
+                "<ForeignKeyLink dimension='Prescriber' foreignKeyColumn='prescriberkey'/>",
+                "<NoLink dimension='Prescriber'/>");
+        SemanticModel sm = convert(xml).getSemanticModel().get(0);
+        assertTrue(
+                "a NoLink dimension must not produce a relationship",
+                sm.getRelationships().stream().noneMatch(r -> "dim_prescriber".equals(r.getTo())));
+    }
+
+    @Test
+    public void classic3StillWorks() throws Exception {
+        // The M4 path must not capture a classic-3 cube.
+        SemanticModel sm = convert("<Schema name='T'><Cube name='C'><Table name='f'/>"
+                        + "<Measure name='M' column='c' aggregator='sum'/></Cube></Schema>")
+                .getSemanticModel()
+                .get(0);
+        assertEquals(
+                java.util.List.of("M"),
+                sm.getMetrics().stream().map(Metric::getName).toList());
     }
 
     private OssieDocument convert(String xml) throws IOException, SAXException, ParserConfigurationException {
