@@ -485,6 +485,44 @@ describe("buildChartOption — matrix types (heatmap/radar/scatter/waterfall)", 
     expect(opt.visualMap).toBeDefined();
   });
 
+  /*
+   * saiku#1793 — in a dashboard tile (compact) the heatmap reserved grid.right: 16
+   * while still parking the vertical visualMap at right: 16, so the colour ramp was
+   * painted ON TOP of the last column of cells. The roomy path already reserved 96.
+   * A legend that obscures the data it describes is worse than no legend.
+   */
+  test("heatmap reserves a right gutter for the visualMap in compact tiles", () => {
+    for (const compact of [false, true]) {
+      const opt = buildChartOption(sample(), "heatmap", opts(), undefined, { compact }) as Record<
+        string,
+        unknown
+      >;
+      const grid = opt.grid as { right: number };
+      const vm = opt.visualMap as { right: number };
+
+      expect(
+        grid.right,
+        `compact=${compact}: grid.right (${grid.right}) must clear the visualMap ` +
+          `parked at right:${vm.right}, or the ramp overlaps the last column`,
+      ).toBeGreaterThan(vm.right);
+    }
+  });
+
+  /*
+   * saiku#1793 — the ramp carried no min/max text, so the colours mapped to no
+   * numbers at all: the only way to read a value off the chart was to hover.
+   * ECharts renders continuous-visualMap end labels only when `text` is supplied.
+   */
+  test("heatmap visualMap labels its range so colours read as values", () => {
+    const opt = buildChartOption(sample(), "heatmap", opts()) as Record<string, unknown>;
+    const vm = opt.visualMap as { min: number; max: number; text?: [string, string] };
+
+    expect(vm.text, "visualMap has no end labels — the ramp is unreadable").toBeDefined();
+    // ECharts orders `text` as [high, low].
+    expect(vm.text?.[0]).toContain(String(Math.round(vm.max)).slice(0, 3));
+    expect(vm.text?.[1]).toContain(String(Math.round(vm.min)).slice(0, 3));
+  });
+
   test("radar uses cols as indicators + rows as series entries", () => {
     const opt = buildChartOption(sample(), "radar", opts()) as Record<string, unknown>;
     const radar = opt.radar as { indicator: { name: string }[] };

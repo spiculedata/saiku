@@ -24,6 +24,8 @@
     validateGraphConfig,
     weightRange,
     nodeSize,
+    graphLayoutBox,
+    graphLabelExtent,
   } from "../../../../dashboard/custom/graphTile";
 
   // Register the module set once at module scope (ECharts dedupes repeats).
@@ -79,9 +81,12 @@
         {
           type: "graph",
           layout: validation.value.layout ?? "force",
+          // saiku#1793: reserve room for the outward-drawn node labels, or the
+          // ring fills the container and every outer label clips at the edge.
+          ...graphLayoutBox(validation.value.layout),
           roam: true,
           draggable: true,
-          label: { show: true, position: "right" },
+          label: { show: true, position: "right", ...graphLabelExtent() },
           force: { repulsion: 140, edgeLength: 90, gravity: 0.08 },
           circular: { rotateLabel: true },
           emphasis: { focus: "adjacency" },

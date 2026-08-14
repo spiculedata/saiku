@@ -159,6 +159,17 @@ function compactGridTop(o: ChartOptions): number {
   return topLegend ? TITLE_GRID_TOP + LEGEND_ROW_H : TITLE_GRID_TOP;
 }
 
+/** saiku#1793: where the heatmap's vertical colour ramp sits, inset from the
+ *  right edge, and the grid gutter that must clear it. The gutter has to exceed
+ *  the inset by the ramp's own width plus its end labels, or the legend paints
+ *  over the last column of cells. */
+const HEATMAP_RAMP_INSET = 16;
+const HEATMAP_RAMP_GUTTER = 76;
+
+/** Fallback format for the ramp's end labels when the tile sets none — a raw
+ *  565238.13 is far too long to sit beside a 140px colour bar. */
+const HEATMAP_RAMP_FORMAT: NumberFormat = { abbreviate: true, decimals: 1 };
+
 /** saiku#1759: label scatter points up to this many rows. Past it the labels
  *  overlap into noise and the tooltip is the better affordance. */
 const SCATTER_LABEL_MAX = 25;
@@ -967,8 +978,12 @@ export function buildChartOption(
       // leave the bottom narrow now that the heatmap no longer paints
       // a horizontal legend there. Rotated x-axis labels need ~60px
       // bottom room.
+      // saiku#1793: the compact grid used to keep right: 16 — the same inset the
+      // visualMap parks at — so in a dashboard tile the colour ramp was painted
+      // over the last column of cells. The gutter has to clear the ramp in BOTH
+      // modes; a legend that hides the data it describes is worse than none.
       grid: compact
-        ? { left: 96, top: compactGridTop(o), right: 16, bottom: 60 }
+        ? { left: 96, top: compactGridTop(o), right: HEATMAP_RAMP_GUTTER, bottom: 60 }
         : { left: 120, top: title ? 56 : 40, right: 96, bottom: 60 },
       xAxis: {
         ...baseAxis,
@@ -990,9 +1005,19 @@ export function buildChartOption(
         max,
         calculable: false,
         orient: "vertical",
-        right: 16,
+        right: HEATMAP_RAMP_INSET,
         top: "center",
         itemHeight: 140,
+        // saiku#1793: ECharts draws end labels on a continuous visualMap only
+        // when `text` is supplied, so the ramp shipped as an unlabelled colour
+        // bar — the values it encoded were reachable only by hovering a cell.
+        // ECharts orders this [high, low]. Honour the tile's number format when
+        // the author set one; otherwise abbreviate, because a raw 565238.13 is
+        // far too long to sit at the end of a 140px ramp.
+        text: [
+          formatNumber(max, nf ?? HEATMAP_RAMP_FORMAT),
+          formatNumber(min, nf ?? HEATMAP_RAMP_FORMAT),
+        ],
         textStyle: { color: tk.fgMuted },
       },
       // Heatmap doesn't get the bottom slider either — the colour-band

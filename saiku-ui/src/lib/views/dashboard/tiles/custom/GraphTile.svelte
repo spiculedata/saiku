@@ -34,6 +34,8 @@
     validateGraphConfig,
     weightRange,
     nodeSize,
+    graphLayoutBox,
+    graphLabelExtent,
   } from "$lib/dashboard/custom/graphTile";
   import { searchMembers } from "$lib/api/aiQuery";
   import { resolveChartTokensFor } from "$lib/dashboard/appChartTheme";
@@ -156,9 +158,13 @@
         {
           type: "graph",
           layout: validation.value.layout ?? "force",
+          // saiku#1793: inset the node ring so the outward-drawn labels have room.
+          // Without a layout box ECharts sizes the ring to the container and every
+          // outer label is clipped at the tile edge.
+          ...graphLayoutBox(validation.value.layout),
           roam: true,
           draggable: true,
-          label: { show: true, position: "right", color: tokens.fg },
+          label: { show: true, position: "right", color: tokens.fg, ...graphLabelExtent() },
           itemStyle: { color: tokens.accent },
           force: { repulsion: 140, edgeLength: 90, gravity: 0.08 },
           circular: { rotateLabel: true },

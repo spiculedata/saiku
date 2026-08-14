@@ -520,7 +520,7 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
     "grid": {
       "bottom": 60,
       "left": 96,
-      "right": 16,
+      "right": 76,
       "top": 24,
     },
     "series": [
@@ -576,6 +576,10 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "min": 266773,
       "orient": "vertical",
       "right": 16,
+      "text": [
+        "612.5k",
+        "266.8k",
+      ],
       "textStyle": {
         "color": "#475569",
       },
@@ -2435,6 +2439,10 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "min": 266773,
       "orient": "vertical",
       "right": 16,
+      "text": [
+        "612.5k",
+        "266.8k",
+      ],
       "textStyle": {
         "color": "#475569",
       },

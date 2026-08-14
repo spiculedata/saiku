@@ -7,6 +7,8 @@ import {
   NODE_SIZE_MIN,
   NODE_SIZE_MAX,
   NODE_SIZE_DEFAULT,
+  graphLayoutBox,
+  graphLabelExtent,
   type GraphConfig,
 } from "./graphTile";
 
@@ -277,5 +279,49 @@ describe("node sizing (saiku#1755)", () => {
     expect(range).toEqual({ min: -500, max: 1_500 });
     expect(nodeSize(-500, range)).toBe(NODE_SIZE_MIN);
     expect(nodeSize(1_500, range)).toBe(NODE_SIZE_MAX);
+  });
+});
+
+/*
+ * saiku#1793 — node labels are drawn outside the node (position: "right", and
+ * rotated outward from the ring under `circular`). With no layout box the ring
+ * filled the container and every outer label was clipped at the tile edge.
+ */
+describe("graphLayoutBox", () => {
+  it("insets on all four sides for both layouts", () => {
+    for (const layout of ["force", "circular"] as const) {
+      const box = graphLayoutBox(layout);
+      for (const side of ["left", "right", "top", "bottom"] as const) {
+        const pct = Number.parseFloat(box[side]);
+        expect(pct, `${layout}.${side} should reserve label room`).toBeGreaterThan(0);
+        // Sanity ceiling: past this the plot area is mostly gutter.
+        expect(pct, `${layout}.${side} inset is implausibly large`).toBeLessThan(30);
+      }
+    }
+  });
+
+  it("gives a circular layout more room than a force layout", () => {
+    // Circular labels radiate in every direction; force keeps nodes central.
+    const circular = graphLayoutBox("circular");
+    const force = graphLayoutBox("force");
+    for (const side of ["left", "right", "top", "bottom"] as const) {
+      expect(Number.parseFloat(circular[side])).toBeGreaterThan(Number.parseFloat(force[side]));
+    }
+  });
+
+  it("defaults to the force box when no layout is set", () => {
+    expect(graphLayoutBox(undefined)).toEqual(graphLayoutBox("force"));
+  });
+});
+
+describe("graphLabelExtent (saiku#1793)", () => {
+  it("caps the label so an over-long name ellipsizes inside the tile", () => {
+    const extent = graphLabelExtent();
+    expect(extent.overflow).toBe("truncate");
+    expect(extent.width).toBeGreaterThan(0);
+    // Wide enough to carry a typical member name, narrow enough that a rotated
+    // label still lands inside the gutter graphLayoutBox reserves.
+    expect(extent.width).toBeGreaterThanOrEqual(64);
+    expect(extent.width).toBeLessThanOrEqual(160);
   });
 });
