@@ -160,13 +160,12 @@ public class ConsentInviteServiceTest {
     }
 
     @Test
-    public void invalidAddress_isRefused() {
-        // Allowlist can't hold a malformed address, so "not allowlisted" is the natural outcome;
-        // assert no send regardless.
+    public void invalidAddress_isRefused_asNotAllowlisted() {
+        // The allowlist gate runs first and normalises identically to the store, so a malformed address
+        // can never BE on the allowlist -> the pinned outcome is NOT_ALLOWLISTED (the invalid address is
+        // rejected before consent is ever requested). Assert exactly that, and that nothing is sent.
         CapturingSender sender = new CapturingSender();
-        ConsentInviteService.Outcome o = service(true).invite(sender, FROM, "not-an-email");
-        assertTrue(
-                o == ConsentInviteService.Outcome.NOT_ALLOWLISTED || o == ConsentInviteService.Outcome.INVALID_ADDRESS);
+        assertEquals(ConsentInviteService.Outcome.NOT_ALLOWLISTED, service(true).invite(sender, FROM, "not-an-email"));
         assertTrue(sender.sent.isEmpty());
     }
 }

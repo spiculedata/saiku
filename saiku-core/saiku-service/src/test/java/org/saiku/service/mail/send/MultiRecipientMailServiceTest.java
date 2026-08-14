@@ -248,12 +248,43 @@ public class MultiRecipientMailServiceTest {
         CapturingSender sender = new CapturingSender();
         service(true).send(sender, FROM, List.of("u1@example.com", "u2@example.com"), content());
         for (MailMessage m : sender.sent) {
+            String self = m.to();
+            String other = self.equals("u1@example.com") ? "u2@example.com" : "u1@example.com";
             org.junit.Assert.assertNotNull("each message must carry List-Unsubscribe", m.listUnsubscribe());
             // The unsubscribe link is for THIS recipient (its address is in the header).
             assertTrue(m.listUnsubscribe()
-                    .contains(java.net.URLEncoder.encode(m.to(), java.nio.charset.StandardCharsets.UTF_8)));
-            // And the token verifies for THIS recipient.
+                    .contains(java.net.URLEncoder.encode(self, java.nio.charset.StandardCharsets.UTF_8)));
+            // The token is a security control — assert it, don't just comment it. Extract the token from
+            // the header value and prove it VALIDATES for THIS recipient's address...
+            String token = unsubscribeTokenFromHeader(m.listUnsubscribe());
+            org.junit.Assert.assertNotNull("List-Unsubscribe must carry a token", token);
+            assertTrue(
+                    "the per-recipient unsubscribe token must verify for THIS recipient", tokens.verify(self, token));
+            // ...and does NOT validate for a DIFFERENT recipient's address (an unsubscribe minted for
+            // one recipient can't be replayed to unsubscribe another).
+            assertFalse("the token must NOT verify for a different recipient's address", tokens.verify(other, token));
         }
+    }
+
+    /** Pull the {@code token} query param out of a {@code <https://.../unsubscribe?address=..&token=..>} value. */
+    private static String unsubscribeTokenFromHeader(String header) {
+        if (header == null) {
+            return null;
+        }
+        int i = header.indexOf("token=");
+        if (i < 0) {
+            return null;
+        }
+        String tail = header.substring(i + "token=".length());
+        int amp = tail.indexOf('&');
+        if (amp >= 0) {
+            tail = tail.substring(0, amp);
+        }
+        // Trim the trailing '>' from the RFC 2369 angle-bracket wrapper, if present.
+        if (tail.endsWith(">")) {
+            tail = tail.substring(0, tail.length() - 1);
+        }
+        return java.net.URLDecoder.decode(tail, java.nio.charset.StandardCharsets.UTF_8);
     }
 
     // ================================================================ partial success
