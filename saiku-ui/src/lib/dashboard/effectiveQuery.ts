@@ -103,6 +103,32 @@ export function resolveTarget(
   return { dimension: dim.name, hierarchy: hier.name, level: lvl.name };
 }
 
+/** saiku#1774 — 0-based position of a level within its hierarchy, or -1 when it
+ *  doesn't resolve. `levels` is an insertion-ordered record mirroring the
+ *  server's level order, so the index IS the depth. */
+export function levelDepth(schema: SchemaLike, dimension: string, hierarchy: string, level: string): number {
+  const dimKeyRaw = k(dimension);
+  const dim = schema.dimensions[schema.dimensionAliases?.[dimKeyRaw] ?? dimKeyRaw];
+  const hier = dim?.hierarchies[k(hierarchy)];
+  if (!hier) return -1;
+  return Object.keys(hier.levels).indexOf(k(level));
+}
+
+/** The axis entry sitting at the deepest level among `entries` (all assumed to
+ *  share one hierarchy). Null when none resolve. */
+function deepestAxisEntry(schema: SchemaLike, entries: AxisSelection[]): AxisSelection | null {
+  let best: AxisSelection | null = null;
+  let bestDepth = -1;
+  for (const a of entries) {
+    const d = levelDepth(schema, a.dimension, a.hierarchy, a.level);
+    if (d > bestDepth) {
+      bestDepth = d;
+      best = a;
+    }
+  }
+  return best;
+}
+
 /* --------------------------- applicability --------------------------- */
 
 /** Does this filter target a resolvable dim/hier/level in the schema? */
@@ -197,12 +223,39 @@ export function mergeFilters(
     const onCols = !onRows && columns.some((a) => `${k(a.dimension)}/${k(a.hierarchy)}` === hkey);
 
     if (onRows || onCols) {
-      const axisReplacement: AxisSelection = {
-        dimension: candidate.dimension,
-        hierarchy: candidate.hierarchy,
-        level: candidate.level,
-        members: (candidate.members ?? []).slice(),
-      };
+      // saiku#1774: collapsing to the FILTER's level is right for a drilldown
+      // (Country+State on the axis, narrowed by a State chip → render at State).
+      // It is wrong when the tile groups FINER than the filter: an App context
+      // pill on warehouse State Province against a list of Warehouse Names used
+      // to replace the axis, turning 13 warehouses into a single "WA" row. When
+      // the axis is deeper, keep the tile's own level and hand the ancestor
+      // members to it — the converter emits Descendants(members, level), which
+      // narrows without changing the grain and stays axis-only (a WHERE slicer
+      // would trip Mondrian's hierarchy-on-two-axes rule).
+      const axisLevels = (onRows ? rows : columns).filter(
+        (a) => `${k(a.dimension)}/${k(a.hierarchy)}` === hkey,
+      );
+      const filterDepth = levelDepth(schema, candidate.dimension, candidate.hierarchy, candidate.level);
+      const deepest = deepestAxisEntry(schema, axisLevels);
+      // Only descend when the filter's level ISN'T already on the axis. If it is,
+      // the tile is showing a drilldown THROUGH the filtered level and collapsing
+      // to it is the established, wanted behaviour (Country+State narrowed by a
+      // State chip → render at State).
+      const filterLevelOnAxis = axisLevels.some((a) => k(a.level) === k(candidate.level));
+      const axisIsFiner =
+        !filterLevelOnAxis &&
+        deepest != null &&
+        filterDepth >= 0 &&
+        levelDepth(schema, deepest.dimension, deepest.hierarchy, deepest.level) > filterDepth;
+
+      const axisReplacement: AxisSelection = axisIsFiner
+        ? { ...deepest, members: (candidate.members ?? []).slice() }
+        : {
+            dimension: candidate.dimension,
+            hierarchy: candidate.hierarchy,
+            level: candidate.level,
+            members: (candidate.members ?? []).slice(),
+          };
       if (onRows) {
         rows = collapseAxisOnHierarchy(rows, hkey, axisReplacement);
       } else {
