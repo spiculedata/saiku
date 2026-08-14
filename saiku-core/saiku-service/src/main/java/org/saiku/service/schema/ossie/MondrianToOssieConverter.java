@@ -54,8 +54,12 @@ import org.xml.sax.SAXException;
  * <p>Deliberately not supported in this iteration (issues to file separately):
  *
  * <ul>
- *   <li>Mondrian 4 {@code <MeasureGroup>} with {@code <NoLink>} — the classic-3 shape covers
- *       every schema we ship (FoodMart, Bank, Pharma). MG shape follows in a v2.
+ *   <li>Mondrian 4 {@code <MeasureGroup>} with {@code <NoLink>}. <b>This is the shape every MDX
+ *       schema Saiku ships actually uses</b> — FoodMart4, Bank and Pharma all declare
+ *       MeasureGroups — so in practice this converter maps none of them and
+ *       {@code saiku ossie-export} returns an empty model for all three. (An earlier version of
+ *       this list claimed "the classic-3 shape covers every schema we ship"; it never did. See
+ *       saiku#1808 for how that mistake stayed invisible.) Tracked separately for a v2.
  *   <li>Virtual cubes.
  *   <li>Parent-child hierarchies.
  *   <li>Shared dimensions consumed via {@code <DimensionUsage>} (uses {@code source=…}).
