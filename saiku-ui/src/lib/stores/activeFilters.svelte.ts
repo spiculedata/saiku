@@ -13,7 +13,7 @@
  */
 
 import { dashboardStore } from "$lib/stores/dashboard.svelte";
-import type { DashboardFilter } from "$lib/api/dashboards";
+import type { DashboardFilter, PanelFilter } from "$lib/api/dashboards";
 
 /** Where an ActiveFilter came from. Source identity drives precedence. */
 export type FilterSource =
@@ -36,6 +36,31 @@ export interface ActiveFilter {
   source: FilterSource;
   /** Dim/hier/level target. Members empty = "any" (no-op, but registered). */
   filter: DashboardFilter;
+}
+
+
+/**
+ * Project a panel filter onto the active-filter set (saiku#1803).
+ *
+ * Exported and tested on its own because the bug it fixes was invisible in a
+ * $derived: the projection used to name four fields explicitly, and so silently
+ * dropped the semantic-mapping fields added to DashboardFilter later — label,
+ * bindings, captions. Every unit test built ActiveFilters directly and passed;
+ * the effect only showed on a real page, where picking a state narrowed the
+ * cube tiles and left the semantic-model tiles showing everything, because the
+ * tile never saw the binding that told it how to address the concept.
+ *
+ * Spreading rather than listing means the next field added to DashboardFilter
+ * arrives here for free instead of going missing.
+ */
+export function panelFilterToActive(f: PanelFilter): ActiveFilter {
+  // Strip the fields that belong to the PANEL ROW rather than to the target.
+  const { id, widget: _widget, cube: _cube, cascading: _cascading, topN: _topN, ...target } = f;
+  return {
+    id: `panel-${id}`,
+    source: { kind: "panel", filterId: id },
+    filter: { ...target, members: target.members ?? [] },
+  };
 }
 
 /** Compose a target key from a filter for precedence comparison. Two
@@ -61,16 +86,7 @@ class ActiveFiltersStore {
   /** Derived: panel filters from the active dashboard. Re-derived
    *  whenever {@code dashboardStore.current.filterPanel} changes. */
   panel = $derived<ActiveFilter[]>(
-    (dashboardStore.current?.filterPanel?.filters ?? []).map((f) => ({
-      id: `panel-${f.id}`,
-      source: { kind: "panel" as const, filterId: f.id },
-      filter: {
-        dimension: f.dimension,
-        hierarchy: f.hierarchy,
-        level: f.level,
-        members: f.members ?? [],
-      },
-    })),
+    (dashboardStore.current?.filterPanel?.filters ?? []).map(panelFilterToActive),
   );
 
   /** Derived: the merged active set. Panel first, then the app-level scope,

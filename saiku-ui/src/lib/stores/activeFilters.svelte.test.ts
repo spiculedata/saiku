@@ -5,7 +5,7 @@
  */
 
 import { beforeEach, describe, expect, test } from "vitest";
-import { activeFilters, targetKey } from "./activeFilters.svelte";
+import { activeFilters, panelFilterToActive, targetKey } from "./activeFilters.svelte";
 import type { DashboardFilter } from "$lib/api/dashboards";
 
 function filter(members: string[], level = "Product Family"): DashboardFilter {
@@ -176,5 +176,78 @@ describe("app-level filters (saiku#1754)", () => {
     );
     activeFilters.clearChip(activeFilters.appLevel[0].id);
     expect(activeFilters.appLevel).toHaveLength(0);
+  });
+});
+
+/* ====================================================================
+ * saiku#1803 — the panel → active projection must carry the WHOLE target.
+ *
+ * It used to name dimension/hierarchy/level/members explicitly, which meant
+ * every field added to DashboardFilter afterwards was dropped on the way to
+ * the tile. Nothing caught it: these tests build ActiveFilters directly, and
+ * the projection lived inline in a $derived. What it broke was only visible on
+ * a running page — a semantic filter narrowed the cube tiles and left the
+ * semantic-model tiles showing everything.
+ * ==================================================================== */
+describe("panelFilterToActive — saiku#1803", () => {
+  const cube = { connectionName: "c", catalog: "cat", schema: "s", cubeName: "Store" };
+  const model = {
+    kind: "ossie" as const,
+    connectionName: "unknown_Flights",
+    modelName: "Flights",
+    catalog: "Flights",
+    schema: "Flights",
+    cubeName: "Flights",
+  };
+
+  const panelFilter = () => ({
+    id: "f-state",
+    widget: "single-select" as const,
+    cube,
+    label: "State",
+    dimension: "Store",
+    hierarchy: "Stores",
+    level: "Store State",
+    members: ["[Store].[Stores].[USA].[CA]"],
+    captions: ["CA"],
+    bindings: [
+      { kind: "ossie" as const, cube: model, dataset: "airport", field: "airport_state" },
+    ],
+  });
+
+  test("carries the semantic mapping fields through to the tile", () => {
+    const a = panelFilterToActive(panelFilter());
+    expect(a.filter.label).toBe("State");
+    expect(a.filter.captions).toEqual(["CA"]);
+    expect(a.filter.bindings).toHaveLength(1);
+    expect(a.filter.bindings?.[0]).toMatchObject({ dataset: "airport", field: "airport_state" });
+  });
+
+  test("still carries the classic target", () => {
+    const a = panelFilterToActive(panelFilter());
+    expect(a.filter.dimension).toBe("Store");
+    expect(a.filter.hierarchy).toBe("Stores");
+    expect(a.filter.level).toBe("Store State");
+    expect(a.filter.members).toEqual(["[Store].[Stores].[USA].[CA]"]);
+  });
+
+  test("strips the fields that belong to the panel row, not the target", () => {
+    const a = panelFilterToActive(panelFilter()) as unknown as {
+      filter: Record<string, unknown>;
+    };
+    for (const k of ["id", "widget", "cube", "cascading", "topN"]) {
+      expect(a.filter[k], k).toBeUndefined();
+    }
+  });
+
+  test("tags the source with the panel filter id", () => {
+    const a = panelFilterToActive(panelFilter());
+    expect(a.id).toBe("panel-f-state");
+    expect(a.source).toEqual({ kind: "panel", filterId: "f-state" });
+  });
+
+  test("defaults a missing members list to empty", () => {
+    const { members: _m, ...noMembers } = panelFilter();
+    expect(panelFilterToActive(noMembers as never).filter.members).toEqual([]);
   });
 });

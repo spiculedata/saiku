@@ -66,6 +66,20 @@
 
   let { readOnly = false }: Props = $props();
 
+  /* saiku#1820: `readOnly` gates STRUCTURE — adding, removing, reordering and
+   * retuning a filter — and must never gate SELECTION.
+   *
+   * It was applied to the member <select> too, so in an App's view mode (where
+   * readOnly is simply !editable) every picker rendered `disabled`. A published
+   * App showed its Filters bar and no reader could touch it, which is the whole
+   * point of putting a filter there. It survived this long because selecting a
+   * member programmatically — which is what a test or a script does — ignores
+   * the disabled attribute entirely; only a real click is refused.
+   *
+   * The URL already carries the selection (`?f~<page>=…`) so a reader's filtered
+   * view is shareable, which is the clearest evidence selection was always meant
+   * to work here. */
+
   let panel = $derived(dashboardStore.current?.filterPanel ?? null);
   let collapsed = $derived(panel?.collapsed ?? false);
 
@@ -602,15 +616,39 @@
     const tiles = dashboardStore.current?.layout.tiles ?? [];
     // Prime any not-yet-cached tile cube so a moment-later re-hover
     // resolves (peek is sync; get is fire-and-forget, ticks schemaCache).
+    //
+    // saiku#1821: only when it is actually MISSING. This used to call get()
+    // unconditionally on every hover and every focus; a cube whose schema
+    // failed to load is never cached, so it re-requested forever, and each
+    // rejection re-rendered the panel. Focusing the <select> therefore closed
+    // its own dropdown, which read to the user as a filter you cannot click.
     for (const t of tiles) {
-      if (t.cube) void schemaCache.get(t.cube).catch(() => {});
+      if (t.cube && !schemaCache.peek(t.cube)) void schemaCache.get(t.cube).catch(() => {});
     }
     const affinity = computeFilterAffinity(
-      { dimension: f.dimension, hierarchy: f.hierarchy, level: f.level },
+      // saiku#1803: bindings included so model-backed tiles are counted too.
+      { dimension: f.dimension, hierarchy: f.hierarchy, level: f.level, bindings: f.bindings },
       tiles,
       (cube) => schemaCache.peek(cube) as SchemaLike | null,
     );
     filterAffinityHover.set(f.id, affinity);
+  }
+
+  /** saiku#1821: the keyboard path. Shows the same hint WITHOUT priming any
+   *  schemas — focus lands on the <select> at the exact moment the browser is
+   *  opening its dropdown, and any async work that re-renders the row closes
+   *  it. Uses whatever is already cached; a keyboard user gets the hint once
+   *  a hover (or another tile) has warmed the cache. */
+  function hintOnly(f: PanelFilter): void {
+    const tiles = dashboardStore.current?.layout.tiles ?? [];
+    filterAffinityHover.set(
+      f.id,
+      computeFilterAffinity(
+        { dimension: f.dimension, hierarchy: f.hierarchy, level: f.level, bindings: f.bindings },
+        tiles,
+        (cube) => schemaCache.peek(cube) as SchemaLike | null,
+      ),
+    );
   }
 
   function unhoverFilter(): void {
@@ -737,7 +775,7 @@
               onpointerdown={(e) => onPickerPointerDown(e, f.id)}
               onmouseenter={() => hoverFilter(f)}
               onmouseleave={unhoverFilter}
-              onfocusin={() => hoverFilter(f)}
+              onfocusin={() => hintOnly(f)}
               onfocusout={unhoverFilter}
             >
               {#if !readOnly}
@@ -748,6 +786,14 @@
               <span class="picker-label">{filterLabel(f as SemanticFilter)}</span>
               <!-- issue #924: how many tiles this filter narrows, shown while hovered. -->
               {#if filterAffinityHover.hoveredFilterId === f.id}
+                <!-- saiku#1821: OUT OF FLOW. This used to be an ordinary child
+                     of the .picker flex row, so appearing on hover pushed the
+                     select sideways — the control moved away from the cursor
+                     that was arriving at it, which made the filter genuinely
+                     hard to click and the row appear to jump. Absolutely
+                     positioned above the row it can't reflow anything, and
+                     pointer-events:none means it can never eat the click
+                     either. -->
                 <span class="affects-badge" aria-live="polite">
                   Affects {filterAffinityHover.affectedCount} of {filterAffinityHover.totalCount} tiles
                 </span>
@@ -808,7 +854,7 @@
                   defaultStartLevel={f.level}
                   depth={f.cascading?.depth ?? 0}
                   selections={cascadeSelections(f.id)}
-                  {readOnly}
+                  readOnly={false}
                   onCommit={(next, members) =>
                     handleCascadeCommit(f.id, next, members)}
                 />
@@ -819,7 +865,7 @@
                     type="date"
                     class="picker-date"
                     value={dr.from}
-                    disabled={readOnly}
+                    
                     aria-label="From"
                     onchange={(e) => setDateRange(f.id, (e.target as HTMLInputElement).value, dr.to)}
                   />
@@ -828,7 +874,7 @@
                     type="date"
                     class="picker-date"
                     value={dr.to}
-                    disabled={readOnly}
+                    
                     aria-label="To"
                     onchange={(e) => setDateRange(f.id, dr.from, (e.target as HTMLInputElement).value)}
                   />
@@ -886,7 +932,7 @@
                 <select
                   class="picker-select"
                   value={selected}
-                  disabled={readOnly}
+                  
                   onchange={(e) => handleMemberChange(f.id, e)}
                 >
                   <option value="">— any —</option>
@@ -1082,6 +1128,8 @@
     touch-action: none;
   }
   .picker {
+    /* saiku#1821: containing block for the out-of-flow "affects N of M" badge. */
+    position: relative;
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
@@ -1110,6 +1158,14 @@
   }
   /* issue #924: "affects N of M tiles" hover badge. */
   .affects-badge {
+    /* saiku#1821 — see the markup comment: this must not participate in the
+       row's layout, or hovering the filter moves the control you are reaching
+       for. Anchored to .picker (position: relative) and floated above it. */
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 0;
+    z-index: 3;
+    pointer-events: none;
     font-size: 0.6875rem;
     line-height: 1;
     padding: 0.125rem 0.375rem;
@@ -1117,6 +1173,7 @@
     background: var(--saiku-app-accent, hsl(var(--primary)));
     color: var(--accent-fg, #fff);
     white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   }
   .picker-select {
     padding: 0.125rem 0.25rem;
