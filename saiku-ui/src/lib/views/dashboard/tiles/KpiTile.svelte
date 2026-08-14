@@ -262,8 +262,14 @@
       // lastAndPriorValues then computes a real delta vs that earlier
       // member. Slicers at a *different* level (e.g. Year=1997 with
       // timeLevel=Quarter) fall back to "drop slicer, enumerate full
-      // series" — handling Year→Quarter descent needs server-side
-      // Descendants() support we don't have yet.
+      // series".
+      //
+      // saiku#1774 landed the server-side Descendants() support this used to
+      // wait on: AiSchemaConverter now accepts axis members at an ancestor
+      // level of the axis level and emits Descendants({members}, [Level]).
+      // So Year→Quarter descent is now expressible — the fallback below is a
+      // remaining gap rather than a blocked one. See saiku#1749, whose
+      // period-to-date comparison depends on exactly this.
       if (slicer && slicer.level.toLowerCase() === tl.level.toLowerCase()) {
         needsPriorExpansion = { rowHierKey, slicer };
       }
