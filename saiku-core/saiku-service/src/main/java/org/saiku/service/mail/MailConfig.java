@@ -19,6 +19,20 @@ public record MailConfig(
     }
 
     /**
+     * Redacted {@code toString()} — the SMTP {@link #password()} is NEVER printed (saiku#943 P0-B,
+     * SEC). A record's generated {@code toString()} would otherwise render the plaintext password, so
+     * a stray {@code log.info("... {}", mailConfig)} anywhere would leak the credential. Overriding
+     * here closes that at the source rather than relying on every call site to remember not to log
+     * the instance. {@code passwordSet} shows presence without the value.
+     */
+    @Override
+    public String toString() {
+        return "MailConfig[host=" + host + ", port=" + port + ", username=" + username + ", passwordSet="
+                + notBlank(password) + ", from=" + from + ", startTls=" + startTls + ", ssl=" + ssl + ", selfTo="
+                + selfTo + "]";
+    }
+
+    /**
      * True when an admin has configured the fixed self-send recipient
      * ({@code SAIKU_MAIL_SELF_TO} / {@code saiku.mail.self.to}). The
      * {@code /email/self} endpoint fails closed unless this is set — the
