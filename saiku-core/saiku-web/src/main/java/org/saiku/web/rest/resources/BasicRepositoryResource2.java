@@ -47,6 +47,7 @@ import org.saiku.repository.IRepositoryObject;
 import org.saiku.service.ISessionService;
 import org.saiku.service.datasource.DatasourceService;
 import org.saiku.service.util.exception.SaikuServiceException;
+import org.saiku.web.rest.util.SessionRoles;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -111,8 +112,8 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
         }
 
         String username = sessionService.getAllSessionObjects().get("username").toString();
-        List<String> roles =
-                (List<String>) sessionService.getAllSessionObjects().get("roles");
+        // saiku#1752: authoritative SecurityContextHolder read, not the session "roles" map.
+        List<String> roles = SessionRoles.currentRoles();
         // type=null is a perfectly valid "give me everything" call — the legacy
         // unconditional split() NPE'd whenever a Basic-auth request hit a
         // ScopedRepo cache populated by a prior form-login (CsrfIT was the
@@ -144,8 +145,8 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
         try {
             String username =
                     sessionService.getAllSessionObjects().get("username").toString();
-            List<String> roles =
-                    (List<String>) sessionService.getAllSessionObjects().get("roles");
+            // saiku#1752: authoritative SecurityContextHolder read, not the session "roles" map.
+            List<String> roles = SessionRoles.currentRoles();
             return datasourceService.getResourceACL(file, username, roles);
 
         } catch (Exception e) {
@@ -168,8 +169,8 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
         try {
             String username =
                     sessionService.getAllSessionObjects().get("username").toString();
-            List<String> roles =
-                    (List<String>) sessionService.getAllSessionObjects().get("roles");
+            // saiku#1752: authoritative SecurityContextHolder read, not the session "roles" map.
+            List<String> roles = SessionRoles.currentRoles();
             datasourceService.setResourceACL(file, aclEntry, username, roles);
             return Response.ok().build();
 
@@ -191,8 +192,8 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
     @Path("/resource")
     public Response getResource(@QueryParam("file") String file) {
         String username = sessionService.getAllSessionObjects().get("username").toString();
-        List<String> roles =
-                (List<String>) sessionService.getAllSessionObjects().get("roles");
+        // saiku#1752: authoritative SecurityContextHolder read, not the session "roles" map.
+        List<String> roles = SessionRoles.currentRoles();
 
         byte[] data = new byte[0];
         try {
@@ -221,8 +222,8 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
     @Path("/resource")
     public Response saveResource(@FormParam("file") String file, @FormParam("content") String content) {
         String username = sessionService.getAllSessionObjects().get("username").toString();
-        List<String> roles =
-                (List<String>) sessionService.getAllSessionObjects().get("roles");
+        // saiku#1752: authoritative SecurityContextHolder read, not the session "roles" map.
+        List<String> roles = SessionRoles.currentRoles();
         String resp = datasourceService.saveFile(content, file, username, roles);
         if (resp.equals("Save Okay")) {
             return Response.ok().build();
@@ -248,8 +249,8 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
     @Path("/resource")
     public Response deleteResource(@QueryParam("file") String file) {
         String username = sessionService.getAllSessionObjects().get("username").toString();
-        List<String> roles =
-                (List<String>) sessionService.getAllSessionObjects().get("roles");
+        // saiku#1752: authoritative SecurityContextHolder read, not the session "roles" map.
+        List<String> roles = SessionRoles.currentRoles();
         String resp = datasourceService.removeFile(file, username, roles);
         if (resp.equals("Remove Okay")) {
             return Response.ok().build();
@@ -272,8 +273,8 @@ public class BasicRepositoryResource2 implements ISaikuRepository {
     @Path("/resource/move")
     public Response moveResource(@FormParam("source") String source, @FormParam("target") String target) {
         String username = sessionService.getAllSessionObjects().get("username").toString();
-        List<String> roles =
-                (List<String>) sessionService.getAllSessionObjects().get("roles");
+        // saiku#1752: authoritative SecurityContextHolder read, not the session "roles" map.
+        List<String> roles = SessionRoles.currentRoles();
         String resp = datasourceService.moveFile(source, target, username, roles);
         if (resp.equals("Move Okay")) {
             return Response.ok().entity("{}").build();
