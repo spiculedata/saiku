@@ -19,8 +19,12 @@
   import { Button } from "$lib/components/ui";
   import { dashboardStore } from "$lib/stores/dashboard.svelte";
   import { schemaCache } from "$lib/stores/schemaCache.svelte";
+  // saiku#1803 — source discrimination shared with the tile fetch path.
+  import { sourceKey, ossieSource } from "$lib/dashboard/tileSource";
   import {
     listAiCubes,
+    listAiOssieModels,
+    type AiOssieModelSummary,
     type AiCubeSummary,
     type CubeRef,
     type DashboardFilter,
@@ -514,6 +518,9 @@
 
   // Cube catalogue + saved-query catalogue, fetched once on open.
   let cubes = $state<AiCubeSummary[]>([]);
+  // saiku#1803 — Ossie semantic models offered alongside the cubes. Empty on a
+  // deployment with no Ossie datasources, which is the normal case.
+  let ossieModels = $state<AiOssieModelSummary[]>([]);
   let cubesError = $state<string | null>(null);
   let cubesLoading = $state(false);
   let savedQueries = $state<RepositoryNode[]>([]);
@@ -541,6 +548,11 @@
     if (needSavedQueries) savedQueriesLoading = true;
     try {
       const tasks: Array<Promise<void>> = [
+        // saiku#1803: resolves to [] rather than throwing when no Ossie
+        // datasource is configured, so it never blocks the cube list.
+        listAiOssieModels().then((m) => {
+          ossieModels = m;
+        }),
         listAiCubes()
           .then((c) => {
             cubes = c;
@@ -703,12 +715,26 @@
     }
   });
 
+  // saiku#1803: the picker's option value must distinguish a cube from a model
+  // of the same name on the same connection, so it carries the kind.
   function cubeKey(c: CubeRef): string {
-    return `${c.connectionName}/${c.catalog}/${c.schema}/${c.cubeName}`;
+    return sourceKey(c);
+  }
+
+  function ossieKey(m: AiOssieModelSummary): string {
+    return sourceKey(ossieSource(m.connectionName, m.modelName));
   }
 
   function handleCubeChange(e: Event): void {
     const v = (e.target as HTMLSelectElement).value;
+    // saiku#1803: an Ossie model is a source like any other. Checked first so a
+    // model never falls through to the cube projection below, which would strip
+    // the kind and leave a tile silently pointed at /ai/query.
+    const model = ossieModels.find((m) => ossieKey(m) === v);
+    if (model) {
+      cube = ossieSource(model.connectionName, model.modelName);
+      return;
+    }
     const picked = cubes.find((c) => cubeKey(c) === v);
     // Project the AiCubeSummary down to the four CubeRef fields the
     // server's AiCubeRef accepts. Extra summary fields (cubeCaption,
@@ -1141,12 +1167,26 @@
             <span class="hint error">{cubesError}</span>
           {:else}
             <select class="field__input" onchange={handleCubeChange} disabled={cubes.length === 0}>
-              <option value="">— pick a cube —</option>
-              {#each cubes as c (cubeKey(c))}
-                <option value={cubeKey(c)} selected={cube ? cubeKey(c) === cubeKey(cube) : false}>
-                  {c.cubeCaption ?? c.cubeName} ({c.connectionName})
-                </option>
-              {/each}
+              <option value="">— pick a source —</option>
+              <!-- saiku#1803: grouped so the two vocabularies are visibly
+                   different things. A tile on a model queries /ai/ossie/query
+                   and is filtered through its semantic bindings. -->
+              <optgroup label="Cubes (MDX)">
+                {#each cubes as c (cubeKey(c))}
+                  <option value={cubeKey(c)} selected={cube ? cubeKey(c) === cubeKey(cube) : false}>
+                    {c.cubeCaption ?? c.cubeName} ({c.connectionName})
+                  </option>
+                {/each}
+              </optgroup>
+              {#if ossieModels.length > 0}
+                <optgroup label="Semantic models (SQL)">
+                  {#each ossieModels as m (ossieKey(m))}
+                    <option value={ossieKey(m)} selected={cube ? ossieKey(m) === cubeKey(cube) : false}>
+                      {m.modelName} ({m.connectionName})
+                    </option>
+                  {/each}
+                </optgroup>
+              {/if}
             </select>
           {/if}
         </label>

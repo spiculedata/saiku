@@ -15,11 +15,29 @@ import type { ChartOptions } from "$lib/views/chartTypes";
 const REST_BASE = "/rest/saiku/api/dashboards";
 
 /** Cube ref shape — matches AiCubeRef on the Java side. */
+/**
+ * What a tile is bound to.
+ *
+ * Historically this was always a Mondrian cube, so the four MDX coordinates are
+ * required and `kind` is absent. saiku#1803 adds Ossie semantic models as a
+ * second source: `kind: "ossie"` uses `connectionName` + {@link modelName}, and
+ * fills `catalog` / `schema` / `cubeName` with the model name so the many
+ * places that render "the thing this tile is on" keep working untouched.
+ *
+ * `kind` is OPTIONAL and absent means `"mdx"` — every `.saikudash` and
+ * `.saikuapp` already in the field stays valid and keeps its current meaning.
+ * Read it through {@link isOssieSource} rather than comparing the field, so the
+ * absent-means-mdx rule lives in one place.
+ */
 export interface CubeRef {
   connectionName: string;
   catalog: string;
   schema: string;
   cubeName: string;
+  /** saiku#1803. Absent = "mdx". */
+  kind?: "mdx" | "ossie";
+  /** saiku#1803, Ossie only: the semantic model's name. */
+  modelName?: string;
 }
 
 /** Saved-query reference. */
@@ -572,6 +590,79 @@ export async function listAiCubes(): Promise<AiCubeSummary[]> {
   });
   if (!res.ok) throw new Error(`listAiCubes -> ${res.status}`);
   return (await res.json()) as AiCubeSummary[];
+}
+
+/** One row from GET /ai/ossie/models (saiku#1803). */
+export interface AiOssieModelSummary {
+  connectionName: string;
+  modelName: string;
+  description?: string;
+  factDataset?: string;
+  datasetCount?: number;
+  metricCount?: number;
+}
+
+/**
+ * GET /rest/saiku/api/ai/ossie/models — the semantic models the current user
+ * can query (saiku#1803).
+ *
+ * Resolves to an empty list rather than throwing when the endpoint is absent or
+ * errors: a deployment with no Ossie datasources is the normal case, and a tile
+ * editor that refuses to open its source picker because an optional surface is
+ * unavailable would be a regression for every existing user.
+ */
+export async function listAiOssieModels(): Promise<AiOssieModelSummary[]> {
+  try {
+    const res = await fetch("/rest/saiku/api/ai/ossie/models", {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return [];
+    const raw = (await res.json()) as unknown;
+    return Array.isArray(raw) ? (raw as AiOssieModelSummary[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** One dataset of an Ossie model, reduced to what a binding picker needs. */
+export interface AiOssieDataset {
+  name: string;
+  fields: string[];
+}
+
+/**
+ * GET /rest/saiku/api/ai/ossie/schema/{connection}/{model} — datasets + field
+ * names, for the semantic-filter binding picker (saiku#1803).
+ *
+ * Tolerant by design: the AI schema envelope has grown fields over time and a
+ * binding picker that threw on an unexpected shape would take the whole filter
+ * panel down. Anything unparseable resolves to an empty list, which the picker
+ * renders as "no datasets" rather than an error.
+ */
+export async function listOssieDatasets(
+  connectionName: string,
+  modelName: string,
+): Promise<AiOssieDataset[]> {
+  try {
+    const url = `/rest/saiku/api/ai/ossie/schema/${encodeURIComponent(connectionName)}/${encodeURIComponent(modelName)}`;
+    const res = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
+    if (!res.ok) return [];
+    const raw = (await res.json()) as { datasets?: unknown };
+    const datasets = raw?.datasets;
+    if (!datasets || typeof datasets !== "object") return [];
+    // The envelope keys datasets by name, each carrying a `fields` map keyed by
+    // field name (same shape the MDX /ai/schema uses for dimensions).
+    return Object.entries(datasets as Record<string, unknown>).map(([name, d]) => {
+      const fields = (d as { fields?: unknown })?.fields;
+      return {
+        name: ((d as { name?: string })?.name ?? name) as string,
+        fields: fields && typeof fields === "object" ? Object.keys(fields as Record<string, unknown>) : [],
+      };
+    });
+  } catch {
+    return [];
+  }
 }
 
 /** Mint a fresh tile id for the add-tile flow. Exposed so the modal
