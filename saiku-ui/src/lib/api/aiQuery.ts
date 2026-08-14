@@ -12,6 +12,10 @@
 
 const REST_BASE = "/rest/saiku/api/ai";
 
+// saiku#1803: /ai/ossie/query answers in its own envelope; this maps it onto
+// AiQueryResponse so every tile renderer is unchanged. See ossieResponse.ts.
+import { toAiQueryResponse } from "$lib/dashboard/ossieResponse";
+
 /** Server-side enum mirror. */
 export type AiQueryStatus =
   | "SUCCESS"
@@ -118,16 +122,22 @@ export async function executeAiQuery(
  * POST /ai/ossie/query — the semantic-model twin of {@link executeAiQuery}
  * (saiku#1803).
  *
- * A separate endpoint because the REQUEST shapes share no fields: a cube query
- * names measures and dimension/hierarchy/level axes, a model query names
- * metrics and dataset/field axes. The RESPONSE envelope is identical, right
- * down to the typed cells and the VALIDATION_ERROR `field` + `available`
- * self-correction hints — which is why every renderer downstream of the fetch
- * is untouched by this.
+ * A separate endpoint because neither half matches. The REQUEST shapes share no
+ * fields: a cube query names measures and dimension/hierarchy/level axes, a
+ * model query names metrics and dataset/field axes. And the RESPONSE envelope
+ * differs too — rows arrive as `records`, the column descriptors are top-level
+ * rather than under `metadata`, and there is no `status` on success:
  *
- * Error handling mirrors executeAiQuery exactly: a 400 carrying a parseable
- * body is returned verbatim so the tile renders the structured validation
- * message rather than a generic failure.
+ *   { queryId, columns: [...], records: [...], meta: { rowCount }, runtime }
+ *
+ * What DOES match is the cell: `{value, formatted}` for a measure, a plain
+ * string for a row header. So `toAiQueryResponse` renames the wrapper and every
+ * renderer downstream of this function stays untouched, which is the property
+ * the whole feature rests on.
+ *
+ * (The surfaces are described as "the same shape" in docs/AI-OSSIE-API.md. That
+ * is true of the request semantics and the cells, and false of the envelope —
+ * believing it wholesale is what made the first cut of this render nothing.)
  */
 export async function executeOssieQuery(
   body: Record<string, unknown>,
@@ -148,7 +158,10 @@ export async function executeOssieQuery(
     throw new Error(`executeOssieQuery -> ${res.status}: empty body`);
   }
   try {
-    return JSON.parse(text) as AiQueryResponse;
+    // Both the 200 and the 400 bodies go through the adapter — it normalises
+    // the two error shapes this endpoint can emit into the same
+    // status/error/field/available envelope the tiles already render.
+    return toAiQueryResponse(JSON.parse(text));
   } catch (e) {
     throw new Error(`executeOssieQuery -> ${res.status}: non-JSON response (${(e as Error).message})`);
   }
