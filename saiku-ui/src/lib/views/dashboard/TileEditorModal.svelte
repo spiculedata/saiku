@@ -56,6 +56,8 @@
   import TileEditorKpi from "$lib/views/dashboard/TileEditorKpi.svelte";
   import TileEditorTableConditional from "$lib/views/dashboard/TileEditorTableConditional.svelte";
   import TileEditorTableSparkline from "$lib/views/dashboard/TileEditorTableSparkline.svelte";
+  // saiku#1770 — per-column number formatting (table only).
+  import TileEditorTableFormats from "$lib/views/dashboard/TileEditorTableFormats.svelte";
   // ── Issue #912: inline visual query editor (embedded QueryCanvas) ──
   import QueryCanvas from "$lib/views/QueryCanvas.svelte";
   import DimensionList from "$lib/views/DimensionList.svelte";
@@ -204,6 +206,10 @@
       })),
     ),
   );
+  // ── saiku#1770: per-column number formatting (table only) ──
+  // Working copy keyed by header caption, deep-cloned so Cancel discards.
+  let columnFormats = $state<Record<string, string>>(untrack(() => ({ ...(tile.columnFormats ?? {}) })));
+
   // ── Issue #920: opt-in inline sparkline column (table only) ──
   // Working copy of the table tile's sparkline config; persisted in
   // handleSave under the table-guarded block. Isolated so it rebases
@@ -993,6 +999,9 @@
           return out;
         });
       patch.conditionalFormat = cleaned.length > 0 ? cleaned : undefined;
+      // saiku#1770 — drop the key entirely when empty so untouched tiles stay
+      // byte-identical in the saved document.
+      patch.columnFormats = Object.keys(columnFormats).length > 0 ? { ...columnFormats } : undefined;
 
       // ── Issue #920: persist sparkline column config. Only store when
       // enabled so a fresh / opted-out tile keeps tidy JSON. ──
@@ -1594,6 +1603,10 @@
            row's numeric measure cells. Geometry maths lives in
            $lib/dashboard/sparkline.ts; this is config capture only.
            ════════════════════════════════════════════════════════════ -->
+      {#if tile.type === "table"}
+        <TileEditorTableFormats bind:columnFormats />
+      {/if}
+
       {#if tile.type === "table"}
         <TileEditorTableSparkline bind:sparklineEnabled bind:sparklineType />
       {/if}
