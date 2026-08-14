@@ -126,6 +126,13 @@
     untrack(() => ({ ...DEFAULT_CHART_OPTIONS, ...(tile.chartOptions ?? {}) })),
   );
   let chartOptionsTouched = $state(false);
+  // saiku#1790: chartOptionsTouched answers "were options edited in THIS session?"
+  // and must stay that way — it gates persistence, and seeding it from the tile
+  // would stamp DEFAULT_CHART_OPTIONS onto a legacy tile, the exact regression
+  // #1077 exists to prevent. The hint asks a different question ("does this tile
+  // have custom options?"), so it gets its own read-only flag; otherwise every
+  // reopen of a customised tile reported "Using dashboard defaults."
+  const chartOptionsCustomised = $derived(chartOptionsTouched || tile.chartOptions != null);
   let chartOptionsOpen = $state(false);
   let text = $state(untrack(() => tile.text ?? ""));
   // Position + size — numeric controls per the design's "no drag-resize"
@@ -1148,7 +1155,7 @@
       {#if tile.type === "chart"}
         <TileEditorChart
           bind:chartType
-          {chartOptionsTouched}
+          {chartOptionsCustomised}
           onOpenChartOptions={() => (chartOptionsOpen = true)}
         />
 
@@ -1354,32 +1361,33 @@
         <fieldset class="graph-map">
           <legend>Ranked list</legend>
           <label class="field">
-            <span>Subtitle <span class="hint">(optional)</span></span>
-            <input type="text" bind:value={rankedSubtitle} placeholder="e.g. Product department · MoM" />
+            <span class="field__label">Subtitle <span class="hint">(optional)</span></span>
+            <input class="field__input" type="text" bind:value={rankedSubtitle} placeholder="e.g. Product department · MoM" />
           </label>
           <label class="field">
-            <span>Label column <span class="hint">(optional)</span></span>
-            <input type="text" bind:value={rankedLabelCol} spellcheck="false" placeholder="blank = inferred" />
+            <span class="field__label">Label column <span class="hint">(optional)</span></span>
+            <input class="field__input" type="text" bind:value={rankedLabelCol} spellcheck="false" placeholder="blank = inferred" />
           </label>
           <label class="field">
-            <span>Value column <span class="hint">(optional)</span></span>
-            <input type="text" bind:value={rankedValueCol} spellcheck="false" placeholder="blank = inferred" />
+            <span class="field__label">Value column <span class="hint">(optional)</span></span>
+            <input class="field__input" type="text" bind:value={rankedValueCol} spellcheck="false" placeholder="blank = inferred" />
           </label>
           <label class="field">
-            <span>Rows</span>
-            <input type="number" min="1" max="100" bind:value={rankedLimit} />
+            <span class="field__label">Rows</span>
+            <input class="field__input" type="number" min="1" max="100" bind:value={rankedLimit} />
           </label>
           <label class="field">
-            <span>Order</span>
-            <select bind:value={rankedSort}>
+            <span class="field__label">Order</span>
+            <select class="field__input" bind:value={rankedSort}>
               <option value="none">Keep the query's order</option>
               <option value="desc">Highest first</option>
               <option value="asc">Lowest first</option>
             </select>
           </label>
           <label class="field">
-            <span>Value format <span class="hint">(optional)</span></span>
+            <span class="field__label">Value format <span class="hint">(optional)</span></span>
             <input
+              class="field__input"
               type="text"
               bind:value={rankedValueFormat}
               spellcheck="false"
@@ -1391,8 +1399,8 @@
             </span>
           </label>
           <label class="field">
-            <span>Value colour</span>
-            <select bind:value={rankedTone}>
+            <span class="field__label">Value colour</span>
+            <select class="field__input" bind:value={rankedTone}>
               <option value="signed">By sign (up green / down red)</option>
               <option value="none">Plain</option>
             </select>
@@ -1677,6 +1685,13 @@
   }
   .modal {
     background: hsl(var(--bg));
+    /* saiku#1794: this modal mounts INSIDE the .saiku-app shell, which paints
+       `color: var(--saiku-app-fg, …)`. Re-establishing only the chrome ground
+       left the app's ink inheriting onto it — controls that deliberately take
+       their colour from the parent (label.checkbox, label.radio) rendered
+       app-dark on the modal's dark panel and read as disabled. Ground and ink
+       have to be claimed together. */
+    color: hsl(var(--fg));
     border-radius: 8px;
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
     width: min(560px, 92vw);

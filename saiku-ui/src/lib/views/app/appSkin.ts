@@ -89,14 +89,29 @@ ${s} .tile:has(.kpi-tile)::before {
 }
 ${s} .tile:has(.kpi-tile[data-tone="positive"])::before { background: var(--saiku-app-positive, #2e7d55); }
 ${s} .tile:has(.kpi-tile[data-tone="negative"])::before { background: var(--saiku-app-danger, #c0492b); }
-/* Chart cards hide their generic header in VIEW mode — the ECharts option
-   carries its own title, so the generic one would double up. The guard is
-   load-bearing: the tile header also carries the configure / menu / remove
-   buttons, so hiding it unconditionally left chart tiles unreachable from the
-   authoring UI (a freshly added Chart tile renders "open the gear to set a
-   query" with no gear to open). AppShell stamps data-saiku-app-edit on the
-   root while editing, which switches this rule off. */
-${s}:not([data-saiku-app-edit]) .tile:not(:has(.kpi-tile)):not(:has(tbody)) .tile-header { display: none; }
+/* A chart that draws its OWN title hides the generic header in VIEW mode, or the
+   heading renders twice (#1776).
+
+   Two guards are load-bearing:
+
+   1. data-saiku-app-edit — the tile header also carries the configure / menu /
+      remove buttons, so hiding it unconditionally left chart tiles unreachable
+      from the authoring UI (a freshly added Chart tile renders "open the gear to
+      set a query" with no gear to open). AppShell stamps the attribute on the
+      root while editing, which switches this rule off.
+
+   2. data-chart-titled — saiku#1788. This used to select
+      .tile:not(:has(.kpi-tile)):not(:has(tbody)) — i.e. "not a KPI and not a
+      table" as a stand-in for "is a chart". It got both ends wrong: chart tiles
+      render a screen-reader data table (table.sr-only > tbody) for
+      accessibility, so they satisfied :has(tbody) and KEPT the header this rule
+      exists to hide; while text and custom-renderer tiles (ranked list, graph)
+      matched and silently LOST the author's title, having no title of their own
+      to replace it with. Tile.svelte now stamps data-chart-titled only when a
+      chart actually carries chartOptions.title — the one case where the generic
+      header genuinely duplicates something. Never key app chrome off an
+      accessibility affordance. */
+${s}:not([data-saiku-app-edit]) .tile[data-chart-titled] .tile-header { display: none; }
 
 /* ---- tables ---- */
 ${s} table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }

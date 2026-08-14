@@ -41,6 +41,16 @@
 
   let { tile, readOnly = false }: Props = $props();
 
+  /* saiku#1788: does this chart draw a title of its own inside the plot? The App
+     Builder skin hides the generic tile header in view mode only when it would
+     duplicate that title (#1776). Stamped as an attribute rather than inferred
+     from DOM shape — the previous CSS guessed via :has(tbody), which chart tiles
+     satisfy through their sr-only accessibility table, so the rule both missed
+     charts and swallowed the titles of text / ranked-list / graph tiles. */
+  const chartDrawsOwnTitle = $derived(
+    tile.type === "chart" && (tile.chartOptions?.title ?? "").trim().length > 0,
+  );
+
   let editorOpen = $state(false);
 
   // #942: comments act on a dashboard that ACTUALLY EXISTS on the server.
@@ -202,6 +212,7 @@
   class:tile--filter-hit={filterAffinityHover.active && filterAffinityHover.isAffected(tile.id)}
   class:tile--filter-miss={filterAffinityHover.active && !filterAffinityHover.isAffected(tile.id)}
   data-tile-type={tile.type}
+  data-chart-titled={chartDrawsOwnTitle ? "" : undefined}
   oncontextmenu={openContextMenu}
   onclick={handleSelectClick}
 >

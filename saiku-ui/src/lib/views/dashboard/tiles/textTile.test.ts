@@ -30,6 +30,8 @@
  */
 
 import { describe, test, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import DOMPurify from "dompurify";
 import { renderTinyMarkdown } from "$lib/api/tinyMarkdown";
 
@@ -131,5 +133,78 @@ describe("TextTile markdown rendering (#1602)", () => {
     // survives only as inert, escaped text — never as a live <script> tag.
     expect(out).not.toMatch(/<script/i);
     expect(out).toContain("&lt;script&gt;");
+  });
+});
+
+/*
+ * saiku#1787 — a TextTile inside an App Builder shell painted its body from
+ * `hsl(var(--fg))`, the SAIKU UI CHROME foreground. The chrome around an app is
+ * dark while the app surface is light, so --fg resolved to the dark-theme
+ * foreground (#fcfcfd) and was painted onto the app's white card: a 1.02:1
+ * contrast ratio, i.e. invisible text with no other symptom.
+ *
+ * Every other tile paints from the app-scoped `--saiku-app-*` tokens that
+ * appSkin.ts emits, which is why only this tile was hit. The token must lead,
+ * with the chrome token as the fallback for a TextTile on a plain dashboard
+ * (outside any app shell), where --saiku-app-fg is simply unset.
+ */
+describe("TextTile theming (saiku#1787)", () => {
+  // Resolved from the vitest cwd (saiku-ui root) rather than import.meta.url:
+  // this file runs under @vitest-environment jsdom, where import.meta.url is not
+  // a file: URL and fileURLToPath() throws.
+  const src = readFileSync(
+    resolve(process.cwd(), "src/lib/views/dashboard/tiles/TextTile.svelte"),
+    "utf8",
+  );
+  const styleBlock = src.match(/<style[^>]*>([\s\S]*?)<\/style>/)?.[1] ?? "";
+
+  test("has a .text-tile colour declaration at all", () => {
+    // Guard: if the rule is renamed away, the assertions below would pass vacuously.
+    expect(styleBlock).toMatch(/\.text-tile\s*\{[^}]*color:/);
+  });
+
+  test("body colour leads with the app theme token, not the chrome token", () => {
+    const rule = styleBlock.match(/\.text-tile\s*\{[^}]*\}/)?.[0] ?? "";
+    const colour = rule.match(/color:\s*([^;]+);/)?.[1]?.trim() ?? "";
+
+    expect(
+      colour.startsWith("var(--saiku-app-fg"),
+      `.text-tile paints from "${colour}" — inside an app shell the chrome ` +
+        `--fg is the wrong ground and renders near-invisible. Lead with ` +
+        `var(--saiku-app-fg, …).`,
+    ).toBe(true);
+
+    // …and still degrade to the chrome token on a plain dashboard.
+    expect(colour).toContain("--fg");
+  });
+
+  /*
+   * The body colour alone isn't enough: app.css declares a global
+   * `h1…h6 { color: hsl(var(--fg)) }`, and an explicit colour on the heading
+   * beats the colour inherited from .text-tile — so a `### Heading` stayed
+   * chrome-white on the app's white card even after the body was fixed.
+   * The tile's heading reset must therefore re-inherit, and must span every
+   * level renderTinyMarkdown can emit (it maps # … #### onto h3…h6).
+   */
+  test("heading reset covers every level tinyMarkdown emits (h3–h6)", () => {
+    const selectors =
+      styleBlock.match(/((?:\s*\.text-tile\s*:global\(h[1-6]\)\s*,?)+)\s*\{/)?.[1] ?? "";
+    for (const level of ["h3", "h4", "h5", "h6"]) {
+      expect(
+        selectors,
+        `.text-tile heading reset does not cover ${level} — renderTinyMarkdown ` +
+          `emits it, and the global app.css h1…h6 colour would win`,
+      ).toContain(`:global(${level})`);
+    }
+  });
+
+  test("headings re-inherit the tile's themed colour", () => {
+    const headingRule =
+      styleBlock.match(/(?:\s*\.text-tile\s*:global\(h[1-6]\)\s*,?)+\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(
+      /color:\s*inherit/.test(headingRule),
+      "the .text-tile heading reset must set color: inherit, or app.css's global " +
+        "h1…h6 rule repaints headings in the Saiku chrome foreground",
+    ).toBe(true);
   });
 });

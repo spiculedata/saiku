@@ -191,6 +191,10 @@
     transform: translate(-50%, -50%);
     z-index: 101;
     background: hsl(var(--bg));
+    /* saiku#1794: mounted inside the .saiku-app shell, which paints its own
+       `color`. Claim the chrome ink alongside the chrome ground, or inheriting
+       controls render the app's foreground on this panel. */
+    color: hsl(var(--fg));
     border: 1px solid hsl(var(--border));
     border-radius: 8px;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);

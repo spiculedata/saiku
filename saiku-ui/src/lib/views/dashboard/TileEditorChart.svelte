@@ -11,12 +11,12 @@
 
   interface Props {
     chartType: string;
-    chartOptionsTouched: boolean;
+    chartOptionsCustomised: boolean;
     onOpenChartOptions: () => void;
   }
   let {
     chartType = $bindable(),
-    chartOptionsTouched,
+    chartOptionsCustomised,
     onOpenChartOptions,
   }: Props = $props();
 </script>
@@ -36,7 +36,7 @@
     Title, axes, legend, dual-axis &amp; trend…
   </Button>
   <span class="hint">
-    {chartOptionsTouched ? "Customised for this tile." : "Using dashboard defaults."}
+    {chartOptionsCustomised ? "Customised for this tile." : "Using dashboard defaults."}
   </span>
 </div>
 

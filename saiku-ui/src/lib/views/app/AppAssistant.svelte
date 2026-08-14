@@ -155,7 +155,7 @@
     <textarea
       class="assistant__input"
       rows="1"
-      placeholder="Ask about sales, products, trends…"
+      placeholder={`Ask ${title}…`}
       bind:value={input}
       onkeydown={onKeydown}
       disabled={busy}
