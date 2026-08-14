@@ -16,6 +16,7 @@ npm install @concepttocloud/saiku-design-system
 | --- | --- |
 | `@concepttocloud/saiku-design-system` | Compounds: `PageHeader`, `FeedbackBanner`, `Badge`, `EmptyState`, `SectionCard`, `Toast`, `FormField`, `SortableColumnHeader`, plus the `TONES` / `TONE_CLASSES` / `SIZES` vocabulary. |
 | `@concepttocloud/saiku-design-system/ui` | shadcn-shaped primitives: `Button` (+ `buttonVariants`), `Card` group, `Input`, `Tooltip`. |
+| `@concepttocloud/saiku-design-system/ui/button-variants` | Just the button class contract (`buttonVariants` + its types). Import from here, not the `/ui` barrel, when you only want the classes — the barrel pulls in every primitive, `Tooltip`'s `bits-ui` dependency included. |
 | `@concepttocloud/saiku-design-system/tokens.css` | The token layer — every colour, space, radius, type, weight, shadow and duration token, with light + dark values. |
 | `@concepttocloud/saiku-design-system/tailwind.css` | Tailwind v4 entry: `@theme inline` bridge mapping the tokens onto Tailwind's namespace, plus the `dark:` custom variant. |
 

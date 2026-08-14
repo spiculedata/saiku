@@ -1,6 +1,6 @@
 {
   "name": "@concepttocloud/saiku-design-system",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Saiku's shared design system — CSS design tokens, a Tailwind v4 theme bridge, and the Svelte 5 primitives and compounds used across Saiku and Saiku Cloud.",
   "license": "Apache-2.0",
   "type": "module",
@@ -16,6 +16,10 @@
       "types": "./dist/ui/index.d.ts",
       "svelte": "./dist/ui/index.js",
       "default": "./dist/ui/index.js"
+    },
+    "./ui/button-variants": {
+      "types": "./dist/ui/button-variants.d.ts",
+      "default": "./dist/ui/button-variants.js"
     },
     "./tokens.css": "./dist/styles/tokens.css",
     "./tailwind.css": "./dist/styles/tailwind.css",
