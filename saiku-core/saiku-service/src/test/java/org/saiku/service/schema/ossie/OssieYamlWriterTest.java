@@ -123,75 +123,62 @@ public class OssieYamlWriterTest {
     }
 
     /* ====================================================================
-     * saiku#1808 — what used to live here was an "opt-in deep check" that read
-     * ../../saiku-home/data/Pharma.xml, a GITIGNORED runtime file, and returned
-     * early when it was absent. That made it two different tests:
+     * saiku#1808 / saiku#1813 — the Pharma check used to read a GITIGNORED
+     * runtime file (../../saiku-home/data/Pharma.xml) and return early when it
+     * was absent: a permanent green on CI, a hard failure on any developer
+     * machine with a materialised home.
      *
-     *   - on CI, where no saiku-home exists, it passed without asserting
-     *     anything at all — a permanent green;
-     *   - on a developer machine with a materialised home, it ran and FAILED,
-     *     so `mvn verify` was red locally and green on CI, and the failure
-     *     looked like whatever you happened to be working on.
+     * Its assertion also misdescribed the failure. It read "expected a SAIKU
+     * vendor extension carrying pii=true", which points at the annotation path,
+     * when the cause was that the converter did not recognise the cube AT ALL —
+     * every MDX schema Saiku ships uses the Mondrian 4 <MeasureGroup> shape.
      *
-     * The failure was real but the assertion misdescribed it. Every MDX schema
-     * Saiku ships — FoodMart4, Bank AND Pharma — uses the Mondrian 4
-     * <MeasureGroup> shape, which this converter deliberately does not handle
-     * yet, so it skips the cube and emits an empty model. The test reported
-     * that as "PII flags missing", which sent you looking at the annotation
-     * path (the subject of #1496) instead of at cube recognition.
-     *
-     * PII propagation is already covered on CI by
-     * piiAnnotationSurvivesExportToYaml() above, against an inline classic-3
-     * fixture. So the useful test here is not another PII assertion — it is
-     * pinning the M4 behaviour itself, which nothing covered.
+     * #1813 added that support, so the assertion can come back — against a
+     * checked-in fixture that runs identically everywhere.
      * ==================================================================== */
 
-    /** The Mondrian 4 shape, reduced to the part the converter trips on: measures live in a
-     *  {@code <MeasureGroup>} rather than directly on the {@code <Cube>}. */
+    /** The Mondrian 4 shape, with PII annotated where a schema author puts it: on the LEVEL. */
     private static final String MONDRIAN_4_SCHEMA = "<Schema name='M4' metamodelVersion='4.0'>"
-            + "<PhysicalSchema><Table name='rx_fact'/></PhysicalSchema>"
+            + "<PhysicalSchema>"
+            + "  <Table name='rx_fact'/>"
+            + "  <Table name='dim_prescriber'><Key><Column name='prescriberkey'/></Key></Table>"
+            + "</PhysicalSchema>"
             + "<Cube name='Rx'>"
             + "  <Dimensions><Dimension name='Prescriber' table='dim_prescriber' key='Prescriber'>"
-            + "    <Attributes><Attribute name='Prescriber' keyColumn='prescriberkey'/></Attributes>"
+            + "    <Attributes>"
+            + "      <Attribute name='Prescriber' keyColumn='prescriberkey' nameColumn='prescribername'/>"
+            + "    </Attributes>"
+            + "    <Hierarchies><Hierarchy name='Prescriber'>"
+            + "      <Level attribute='Prescriber'>"
+            + "        <Annotations><Annotation name='saiku.semantic.pii'>true</Annotation></Annotations>"
+            + "      </Level>"
+            + "    </Hierarchy></Hierarchies>"
             + "  </Dimension></Dimensions>"
             + "  <MeasureGroups><MeasureGroup name='Rx' table='rx_fact'>"
             + "    <Measures><Measure name='Scripts' column='script_count' aggregator='sum'/></Measures>"
+            + "    <DimensionLinks>"
+            + "      <ForeignKeyLink dimension='Prescriber' foreignKeyColumn='prescriberkey'/>"
+            + "    </DimensionLinks>"
             + "  </MeasureGroup></MeasureGroups>"
             + "</Cube></Schema>";
 
     @Test
-    public void mondrian4CubeIsSkippedAndReported() throws Exception {
+    public void mondrian4SchemaConvertsAndPreservesPii() throws Exception {
         OssieDocument doc = convert(MONDRIAN_4_SCHEMA);
-
-        // The gap itself: no semantic model comes out...
         assertTrue(
-                "expected the M4 cube to produce no semantic model — got "
-                        + doc.getSemanticModel().size(),
-                doc.getSemanticModel().isEmpty());
-        // ...but it must be REPORTED, not silently dropped. This is the only
-        // signal `saiku ossie-export` has to tell an operator why their YAML is
-        // empty, so it is the part that must not regress.
+                "the M4 cube must convert, not be skipped",
+                !doc.getSemanticModel().isEmpty());
         assertTrue(
-                "the skipped cube must be reported by name — got: " + converter.getSkippedCubes(),
-                converter.getSkippedCubes().contains("Rx"));
-    }
-
-    @Test
-    public void mondrian4OutputStillValidatesAsOssie() throws Exception {
-        // An empty model is a legitimate Ossie document; emitting something
-        // schema-invalid would be worse than emitting nothing.
-        assertValidatesAgainstOssieSchema(writer.writeAsString(convert(MONDRIAN_4_SCHEMA)));
-    }
-
-    @Test
-    public void classic3CubeIsNotReportedAsSkipped() throws Exception {
-        // Guards the inverse: whatever makes M4 skip must not catch a shape the
-        // converter genuinely handles.
-        convert("<Schema name='T'><Cube name='C'><Table name='f'/>"
-                + "<Measure name='M' column='c' aggregator='sum'/></Cube></Schema>");
-        assertTrue(
-                "a classic-3 cube must not be reported skipped — got: " + converter.getSkippedCubes(),
+                "no cube should be skipped — got: " + converter.getSkippedCubes(),
                 converter.getSkippedCubes().isEmpty());
+
+        String yaml = writer.writeAsString(doc);
+        assertValidatesAgainstOssieSchema(yaml);
+        // The annotation sits on the <Level>; the FIELD comes from the <Attribute> the level
+        // references, so this only passes if the flag is carried across.
+        assertTrue(
+                "expected the PII flag to survive — got:\n" + yaml,
+                yaml.contains("vendor_name: SAIKU") && yaml.contains("pii"));
     }
 
     private OssieDocument convert(String schemaXml) throws Exception {

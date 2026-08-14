@@ -86,8 +86,9 @@ public final class MondrianToOssieConverter {
 
     public OssieDocument convert(Element schemaEl) {
         OssieDocument out = new OssieDocument();
+        Element physicalSchema = firstChild(schemaEl, "PhysicalSchema");
         for (Element cube : childrenNamed(schemaEl, "Cube")) {
-            SemanticModel sm = convertCube(cube);
+            SemanticModel sm = convertCube(cube, physicalSchema);
             // Ossie's core schema requires `datasets` to have at least one entry. Cubes that
             // yield zero datasets are almost always Mondrian 4 <MeasureGroup> shape or virtual
             // cubes — neither of which this first-cut converter recognises. Emit them into
@@ -110,7 +111,238 @@ public final class MondrianToOssieConverter {
 
     /* ---------------- cube ---------------- */
 
-    private SemanticModel convertCube(Element cube) {
+    private SemanticModel convertCube(Element cube, Element physicalSchema) {
+        // saiku#1813: Mondrian 4 puts measures in a <MeasureGroup> and dimensions
+        // under <Dimensions>/<Attributes>. It is the shape EVERY schema Saiku
+        // ships uses, so this is the common path, not the exotic one.
+        if (firstChild(cube, "MeasureGroups") != null) {
+            return convertCubeM4(cube, physicalSchema);
+        }
+        return convertCubeClassic3(cube);
+    }
+
+    /* ---------------- Mondrian 4 (saiku#1813) ---------------- */
+
+    /**
+     * Convert a Mondrian 4 cube.
+     *
+     * <p>Shape differences that matter, all of them structural rather than cosmetic:
+     *
+     * <ul>
+     *   <li>The fact table comes from {@code <MeasureGroup table=…>}, not a {@code <Table>} child
+     *       of the cube.
+     *   <li>A dimension names its table on itself ({@code <Dimension table= key=…>}) and its
+     *       columns as {@code <Attribute keyColumn= nameColumn=…>}; the {@code <Hierarchy>} then
+     *       ORDERS those attributes by reference. So fields come from attributes, not levels.
+     *   <li>Joins are declared per measure-group as {@code <ForeignKeyLink dimension=
+     *       foreignKeyColumn=…>}, and the dimension side of the key comes from
+     *       {@code <PhysicalSchema><Table><Key>}.
+     *   <li>{@code <NoLink dimension=…>} explicitly declares NO join — it must not produce a
+     *       relationship (see CLAUDE.md on virtual cubes).
+     * </ul>
+     */
+    private SemanticModel convertCubeM4(Element cube, Element physicalSchema) {
+        SemanticModel sm = new SemanticModel();
+        sm.setName(attr(cube, "name"));
+        sm.setDescription(nullIfBlank(attr(cube, "description")));
+        applyAnnotationsToAiContext(cube, sm::setAiContext);
+        applyAnnotationsToExtensions(cube, sm.getCustomExtensions());
+
+        Map<String, List<String>> tableKeys = readPhysicalKeys(physicalSchema);
+
+        // Dimension datasets first, keyed by DIMENSION name so the links below resolve.
+        Map<String, Dataset> byDimension = new LinkedHashMap<>();
+        Element dims = firstChild(cube, "Dimensions");
+        if (dims != null) {
+            for (Element dim : childrenNamed(dims, "Dimension")) {
+                Dataset ds = convertM4Dimension(dim, tableKeys);
+                if (ds == null) continue;
+                byDimension.put(attr(dim, "name"), ds);
+                sm.getDatasets().add(ds);
+            }
+        }
+
+        // Each measure group contributes a fact dataset, its metrics, and its links.
+        Element groups = firstChild(cube, "MeasureGroups");
+        Dataset firstFact = null;
+        if (groups != null) {
+            for (Element mg : childrenNamed(groups, "MeasureGroup")) {
+                String table = attr(mg, "table");
+                if (table == null || table.isBlank()) continue;
+                Dataset fact = new Dataset();
+                fact.setName(sanitiseName(table));
+                fact.setSource(qualifyTable(null, table));
+                fact.setDescription("Fact table for measure group '" + attr(mg, "name") + "'.");
+                for (String k : tableKeys.getOrDefault(table, List.of())) {
+                    fact.getPrimaryKey().add(k);
+                }
+                sm.getDatasets().add(fact);
+                if (firstFact == null) firstFact = fact;
+
+                Element measures = firstChild(mg, "Measures");
+                if (measures != null) {
+                    for (Element measure : childrenNamed(measures, "Measure")) {
+                        sm.getMetrics().add(convertMeasure(sm.getName(), fact, measure));
+                    }
+                }
+
+                Element links = firstChild(mg, "DimensionLinks");
+                if (links != null) {
+                    for (Element link : childrenNamed(links, "ForeignKeyLink")) {
+                        Dataset dim = byDimension.get(attr(link, "dimension"));
+                        String fk = attr(link, "foreignKeyColumn");
+                        if (dim == null
+                                || fk == null
+                                || fk.isBlank()
+                                || dim.getPrimaryKey().isEmpty()) {
+                            continue;
+                        }
+                        Relationship rel = new Relationship();
+                        rel.setName(sanitiseName(fact.getName() + "_to_" + dim.getName()));
+                        rel.setFrom(fact.getName());
+                        rel.setTo(dim.getName());
+                        rel.getFromColumns().add(fk);
+                        rel.getToColumns().add(dim.getPrimaryKey().get(0));
+                        sm.getRelationships().add(rel);
+                    }
+                    // <NoLink> is deliberately not iterated: it declares the ABSENCE of a join.
+                }
+            }
+        }
+
+        for (Element calc : childrenNamed(cube, "CalculatedMember")) {
+            sm.getMetrics().add(convertCalculatedMember(sm.getName(), calc));
+        }
+        Element calcs = firstChild(cube, "CalculatedMembers");
+        if (calcs != null) {
+            for (Element calc : childrenNamed(calcs, "CalculatedMember")) {
+                sm.getMetrics().add(convertCalculatedMember(sm.getName(), calc));
+            }
+        }
+        return sm;
+    }
+
+    /** {@code <PhysicalSchema><Table name=…><Key><Column name=…/></Key></Table>} → table → key columns. */
+    private Map<String, List<String>> readPhysicalKeys(Element physicalSchema) {
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        if (physicalSchema == null) return out;
+        for (Element t : childrenNamed(physicalSchema, "Table")) {
+            Element key = firstChild(t, "Key");
+            if (key == null) continue;
+            List<String> cols = new ArrayList<>();
+            for (Element c : childrenNamed(key, "Column")) {
+                String n = attr(c, "name");
+                if (n != null && !n.isBlank()) cols.add(n);
+            }
+            if (!cols.isEmpty()) out.put(attr(t, "name"), cols);
+        }
+        return out;
+    }
+
+    /**
+     * One M4 dimension → one dataset.
+     *
+     * <p>Fields come from {@code <Attribute>}, but ANNOTATIONS live on the {@code <Level>} that
+     * references an attribute — which is where a schema author naturally writes
+     * {@code saiku.semantic.pii}. Carrying them across is the whole point of #1496 on this shape:
+     * read only the attributes and the PII flags vanish silently.
+     */
+    private Dataset convertM4Dimension(Element dim, Map<String, List<String>> tableKeys) {
+        String table = attr(dim, "table");
+        if (table == null || table.isBlank()) return null;
+        Dataset ds = new Dataset();
+        ds.setName(sanitiseName(table));
+        ds.setSource(qualifyTable(null, table));
+        for (String k : tableKeys.getOrDefault(table, List.of())) {
+            ds.getPrimaryKey().add(k);
+        }
+        applyAnnotationsToAiContext(dim, ds::setAiContext);
+        applyAnnotationsToExtensions(dim, ds.getCustomExtensions());
+
+        // Level element per attribute NAME, so annotations can be lifted onto the field.
+        Map<String, Element> levelByAttribute = new LinkedHashMap<>();
+        Element hiers = firstChild(dim, "Hierarchies");
+        if (hiers != null) {
+            for (Element h : childrenNamed(hiers, "Hierarchy")) {
+                for (Element lvl : childrenNamed(h, "Level")) {
+                    String ref = attr(lvl, "attribute");
+                    if (ref != null && !levelByAttribute.containsKey(ref)) levelByAttribute.put(ref, lvl);
+                }
+            }
+        }
+
+        Element attrs = firstChild(dim, "Attributes");
+        if (attrs != null) {
+            for (Element a : childrenNamed(attrs, "Attribute")) {
+                Field f = new Field();
+                String name = attr(a, "name");
+                f.setName(name);
+                // An attribute names its columns EITHER as attributes (keyColumn / nameColumn)
+                // OR as <Key>/<Name> child elements — FoodMart4 uses the latter throughout, and
+                // its <Key> is frequently COMPOUND ("Store City" keys on store_state +
+                // store_city). Ossie's schema requires an expression on every field, so an
+                // attribute whose column can't be resolved would emit an invalid document; the
+                // display column is the honest single-column choice, falling back to the last
+                // key column (the leaf of a compound key is the one that identifies the member).
+                String column = firstNonBlank(
+                        attr(a, "nameColumn"),
+                        firstColumnOf(firstChild(a, "Name")),
+                        attr(a, "keyColumn"),
+                        lastColumnOf(firstChild(a, "Key")));
+                if (column == null) {
+                    // Nothing to express it with — skip rather than emit a schema-invalid field.
+                    continue;
+                }
+                f.setExpression(Expression.ansi(column));
+                String levelType = attr(a, "levelType");
+                if (levelType != null && levelType.startsWith("Time")) {
+                    f.setDimension(new DimensionMeta(true));
+                }
+                applyAnnotationsToAiContext(a, f::setAiContext);
+                applyAnnotationsToExtensions(a, f.getCustomExtensions());
+                Element lvl = levelByAttribute.get(name);
+                if (lvl != null) {
+                    applyAnnotationsToAiContext(lvl, f::setAiContext);
+                    applyAnnotationsToExtensions(lvl, f.getCustomExtensions());
+                }
+                ds.getFields().add(f);
+            }
+        }
+        return ds;
+    }
+
+    private static String firstNonBlank(String... candidates) {
+        for (String c : candidates) {
+            if (c != null && !c.isBlank()) return c;
+        }
+        return null;
+    }
+
+    /** First {@code <Column name=…/>} under {@code parent}, or null. */
+    private String firstColumnOf(Element parent) {
+        if (parent == null) return null;
+        for (Element c : childrenNamed(parent, "Column")) {
+            String n = attr(c, "name");
+            if (n != null && !n.isBlank()) return n;
+        }
+        return null;
+    }
+
+    /** LAST {@code <Column>} under {@code parent} — for a compound key, the leaf column is the
+     *  one that actually identifies the member ({@code store_state, store_city} → store_city). */
+    private String lastColumnOf(Element parent) {
+        if (parent == null) return null;
+        String last = null;
+        for (Element c : childrenNamed(parent, "Column")) {
+            String n = attr(c, "name");
+            if (n != null && !n.isBlank()) last = n;
+        }
+        return last;
+    }
+
+    /* ---------------- classic Mondrian 3 ---------------- */
+
+    private SemanticModel convertCubeClassic3(Element cube) {
         SemanticModel sm = new SemanticModel();
         sm.setName(attr(cube, "name"));
         sm.setDescription(nullIfBlank(attr(cube, "description")));
