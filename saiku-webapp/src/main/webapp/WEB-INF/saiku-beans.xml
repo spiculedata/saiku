@@ -231,10 +231,14 @@
         <constructor-arg ref="mailConfigStore"/>
     </bean>
 
-    <!-- POST/GET /saiku/api/admin/mail-config — admin mail-setup wizard.
-         Request-scoped + scoped-proxy (reads the request SecurityContext via
-         userService.isAdmin()). Returns MailConfigView only (never the
-         password). Auto-registered with Jersey by SaikuJerseyApplication. -->
+    <!-- GET/POST /saiku/api/admin/mail-config — admin mail-setup wizard, plus
+         POST /saiku/api/admin/mail-config/test (P0-C): a rate-limited test send
+         to the admin's own configured selfTo ONLY (never a client recipient —
+         anti-relay boundary). Request-scoped + scoped-proxy (reads the request
+         SecurityContext via userService.isAdmin()). Returns MailConfigView only
+         (never the password). The test-send rate limiter and the sender factory
+         default via field-init, so no extra properties are needed here.
+         Auto-registered with Jersey by SaikuJerseyApplication. -->
     <bean id="mailConfigResource" scope="request" class="org.saiku.web.email.MailConfigResource">
         <aop:scoped-proxy/>
         <property name="mailConfigStore" ref="mailConfigStore"/>
