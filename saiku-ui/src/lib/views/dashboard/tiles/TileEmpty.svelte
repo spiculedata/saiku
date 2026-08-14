@@ -49,14 +49,14 @@
     gap: 0.35rem;
     padding: 0.25rem 0.6rem;
     font-size: 0.8125rem;
-    color: hsl(var(--fg));
-    background: hsl(var(--bg-subtle));
-    border: 1px solid hsl(var(--border));
+    color: var(--saiku-app-fg, hsl(var(--fg)));
+    background: var(--saiku-app-ground, hsl(var(--bg-subtle)));
+    border: 1px solid var(--saiku-app-card-border, hsl(var(--border)));
     border-radius: 4px;
     cursor: pointer;
   }
   .reset:hover {
-    background: hsl(var(--bg-muted));
+    background: var(--saiku-app-ground, hsl(var(--bg-muted)));
   }
   .reset:focus-visible {
     outline: 2px solid hsl(var(--primary));

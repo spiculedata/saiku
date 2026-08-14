@@ -886,10 +886,15 @@
 {/if}
 
 <style>
+/* saiku#1800: the filter panel renders INSIDE an App page, full page width and
+   directly under the title band, so painting it from the global Saiku UI tokens
+   punched a charcoal slab into a light App (and vice versa). Every colour below
+   asks the App for its token first and keeps the global one as the fallback, so
+   a plain dashboard is unchanged. */
 .panel {
-    border: 1px solid hsl(var(--border));
+    border: 1px solid var(--saiku-app-card-border, hsl(var(--border)));
     border-radius: 6px;
-    background: hsl(var(--bg));
+    background: var(--saiku-app-surface, hsl(var(--bg)));
     display: flex;
     flex-direction: column;
   }
@@ -898,8 +903,8 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.375rem 0.5rem;
-    border-bottom: 1px solid hsl(var(--border));
-    background: hsl(var(--bg-muted));
+    border-bottom: 1px solid var(--saiku-app-card-border, hsl(var(--border)));
+    background: var(--saiku-app-ground, hsl(var(--bg-muted)));
     font-size: 0.8125rem;
   }
   .collapse-toggle {
@@ -910,7 +915,7 @@
     border: none;
     padding: 0.125rem 0.25rem;
     cursor: pointer;
-    color: hsl(var(--fg));
+    color: var(--saiku-app-fg, hsl(var(--fg)));
     font-size: inherit;
     flex: 1;
     text-align: left;
@@ -919,14 +924,19 @@
     font-weight: var(--weight-medium, 500);
   }
   .count {
-    color: hsl(var(--fg-muted));
+    color: var(--saiku-app-muted, hsl(var(--fg-muted)));
     font-weight: 400;
     margin-left: 0.125rem;
   }
   .add-btn {
     padding: 0.25rem 0.5rem;
-    border: 1px solid var(--border-strong, hsl(var(--border)));
-    background: hsl(var(--bg));
+    border: 1px solid var(--border-strong, var(--saiku-app-card-border, hsl(var(--border))));
+    background: var(--saiku-app-surface, hsl(var(--bg)));
+    /* saiku#1800: this had no colour of its own, so it inherited the button
+       default and rendered dark-on-dark — an "+ Add filter" you could only find
+       by hovering. The only affordance in the panel that is pure text needs the
+       ink pinned, not just the ground. */
+    color: var(--saiku-app-fg, hsl(var(--fg)));
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.75rem;
@@ -934,7 +944,7 @@
   .empty {
     margin: 0;
     padding: 0.5rem 0.75rem;
-    color: hsl(var(--fg-muted));
+    color: var(--saiku-app-muted, hsl(var(--fg-muted)));
     font-size: 0.8125rem;
     font-style: italic;
   }
@@ -951,17 +961,17 @@
     align-items: center;
     gap: 0.25rem;
     padding: 0.25rem 0.375rem;
-    border: 1px solid hsl(var(--border));
+    border: 1px solid var(--saiku-app-card-border, hsl(var(--border)));
     border-radius: 4px;
-    background: hsl(var(--bg));
+    background: var(--saiku-app-surface, hsl(var(--bg)));
     user-select: none;
   }
   .picker--hover {
-    box-shadow: 0 0 0 2px var(--accent, color-mix(in srgb, hsl(var(--fg)) 30%, transparent));
+    box-shadow: 0 0 0 2px var(--accent, color-mix(in srgb, var(--saiku-app-fg, hsl(var(--fg))) 30%, transparent));
   }
   .grip {
     cursor: grab;
-    color: hsl(var(--fg-muted));
+    color: var(--saiku-app-muted, hsl(var(--fg-muted)));
     display: inline-flex;
   }
   .grip:active {
@@ -971,7 +981,7 @@
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: hsl(var(--fg-muted));
+    color: var(--saiku-app-muted, hsl(var(--fg-muted)));
   }
   /* issue #924: "affects N of M tiles" hover badge. */
   .affects-badge {
@@ -979,15 +989,15 @@
     line-height: 1;
     padding: 0.125rem 0.375rem;
     border-radius: 999px;
-    background: hsl(var(--primary));
+    background: var(--saiku-app-accent, hsl(var(--primary)));
     color: var(--accent-fg, #fff);
     white-space: nowrap;
   }
   .picker-select {
     padding: 0.125rem 0.25rem;
-    border: 1px solid var(--border-strong, hsl(var(--border)));
+    border: 1px solid var(--border-strong, var(--saiku-app-card-border, hsl(var(--border))));
     border-radius: 4px;
-    background: hsl(var(--bg));
+    background: var(--saiku-app-surface, hsl(var(--bg)));
     font-size: 0.8125rem;
     max-width: 200px;
   }
@@ -995,9 +1005,9 @@
      (saiku#1230); its styles live alongside the markup there. */
   .picker-date {
     padding: 0.125rem 0.25rem;
-    border: 1px solid var(--border-strong, hsl(var(--border)));
+    border: 1px solid var(--border-strong, var(--saiku-app-card-border, hsl(var(--border))));
     border-radius: 4px;
-    background: hsl(var(--bg));
+    background: var(--saiku-app-surface, hsl(var(--bg)));
     font-size: 0.8125rem;
     font-family: inherit;
   }
@@ -1011,21 +1021,21 @@
   .picker-num {
     width: 3.5rem;
     padding: 0.125rem 0.25rem;
-    border: 1px solid var(--border-strong, hsl(var(--border)));
+    border: 1px solid var(--border-strong, var(--saiku-app-card-border, hsl(var(--border))));
     border-radius: 4px;
-    background: hsl(var(--bg));
+    background: var(--saiku-app-surface, hsl(var(--bg)));
     font-size: 0.8125rem;
     font-family: inherit;
   }
   .topn-state {
     font-size: 0.75rem;
-    color: hsl(var(--fg-muted));
+    color: var(--saiku-app-muted, hsl(var(--fg-muted)));
   }
   .picker-remove {
     background: transparent;
     border: none;
     cursor: pointer;
-    color: hsl(var(--fg-muted));
+    color: var(--saiku-app-muted, hsl(var(--fg-muted)));
     padding: 0.125rem;
     display: inline-flex;
   }
@@ -1039,15 +1049,15 @@
     font-size: 0.75rem;
   }
   .add-field > span:first-child {
-    color: hsl(var(--fg-muted));
+    color: var(--saiku-app-muted, hsl(var(--fg-muted)));
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
   .add-field select {
     padding: 0.25rem 0.375rem;
-    border: 1px solid var(--border-strong, hsl(var(--border)));
+    border: 1px solid var(--border-strong, var(--saiku-app-card-border, hsl(var(--border))));
     border-radius: 4px;
-    background: hsl(var(--bg));
+    background: var(--saiku-app-surface, hsl(var(--bg)));
     font-size: 0.8125rem;
     min-width: 8rem;
   }

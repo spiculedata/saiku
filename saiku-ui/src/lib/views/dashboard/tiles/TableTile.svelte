@@ -548,7 +548,9 @@
     border-bottom: 1px solid hsl(var(--border));
   }
   th {
-    background: hsl(var(--bg-muted));
+    /* saiku#1800: the sticky header strip spans the tile, so the global
+       --bg-muted drew a charcoal band across every table in a light App. */
+    background: var(--saiku-app-ground, hsl(var(--bg-muted)));
     font-weight: var(--weight-semibold);
     position: sticky;
     top: 0;

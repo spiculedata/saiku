@@ -892,8 +892,16 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: color-mix(in srgb, hsl(var(--bg)) 75%, transparent);
-    color: hsl(var(--fg-muted));
+    /* saiku#1800: an overlay covers the WHOLE tile body, so painting it from
+       the global --bg punched a charcoal rectangle into a light App whenever a
+       chart had nothing to draw. Prefer the App's card colour; the global token
+       is the fallback for a plain dashboard, where nothing changes. */
+    background: color-mix(
+      in srgb,
+      var(--saiku-app-surface, hsl(var(--bg))) 75%,
+      transparent
+    );
+    color: var(--saiku-app-muted, hsl(var(--fg-muted)));
     font-size: 0.875rem;
     z-index: 1;
     pointer-events: none;
@@ -903,7 +911,7 @@
   /* Opaque, interactive overlay for the loading skeleton / error / empty
      states (which carry Retry / Reset buttons). #933 */
   .overlay.solid {
-    background: hsl(var(--bg));
+    background: var(--saiku-app-surface, hsl(var(--bg)));
     pointer-events: auto;
     padding: 0;
   }
