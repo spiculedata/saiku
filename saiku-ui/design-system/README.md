@@ -93,5 +93,17 @@ npm run build     # svelte-package: src/lib → dist (JS + .d.ts + CSS passthrou
 npm run check     # svelte-check
 ```
 
-`dist/` is generated and git-ignored. The version tracks `saiku-ui/package.json`; the
-release workflow publishes on tag.
+`dist/` is generated and git-ignored.
+
+## Releasing
+
+The package carries **its own version**, independent of both the saiku reactor (4.x) and
+saiku-ui (3.x) — it moves on its own cadence, because coupling it to product releases
+would mean saiku-cloud waits for a full Saiku release every time a token changes.
+
+To cut a release: bump `version` here and merge to `development`. The
+`.github/workflows/design-system.yml` workflow builds, type-checks, verifies every export
+target exists, then publishes. It checks the registry first and skips cleanly if the
+version is already out, so merging a package change without a version bump is a no-op
+rather than a failure. `workflow_dispatch` offers a `dry_run` input to build and verify
+without publishing.

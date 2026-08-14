@@ -1,0 +1,116 @@
+name: design-system
+
+# Publishes @concepttocloud/saiku-design-system — the design tokens, Tailwind
+# v4 theme bridge and Svelte primitives shared by saiku-ui (this repo) and the
+# Saiku Cloud dashboard (private repo, consumes this from npm).
+#
+# This is DELIBERATELY not part of release.yml. The design system moves on its
+# own cadence: coupling it to product releases would mean saiku-cloud waits for
+# a full Saiku release every time a token changes. One publish path, triggered
+# by changes to the package itself.
+#
+# Publishing is idempotent — the job checks the registry first and skips
+# cleanly when the version is already out there, so a merge that touches the
+# package without bumping its version is a no-op rather than a failure. To cut
+# a new version: bump `version` in saiku-ui/design-system/package.json and
+# merge; the push trigger does the rest.
+on:
+  push:
+    branches: [development, main]
+    paths:
+      - "saiku-ui/design-system/**"
+      - ".github/workflows/design-system.yml"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and verify, but don't publish"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build, verify, publish to npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+          cache-dependency-path: saiku-ui/package-lock.json
+
+      - name: Install + build
+        working-directory: saiku-ui
+        # design-system is an npm workspace of saiku-ui, so `npm ci` at the app
+        # root installs it and runs its `prepare` (svelte-package), which is
+        # what populates dist/. Build explicitly anyway so a future change to
+        # `prepare` can't silently ship an empty package.
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build --workspace @concepttocloud/saiku-design-system
+
+      - name: Type-check the package
+        working-directory: saiku-ui/design-system
+        run: npm run check
+
+      - name: Verify the built package is complete
+        # svelte-package can fail "successfully" (a bad --input path, say) and
+        # leave a dist/ with no entry points. Publishing that breaks every
+        # consumer with a resolution error rather than a build failure, so
+        # assert every export target exists before we go near the registry.
+        id: verify
+        run: |
+          set -euo pipefail
+          DS=saiku-ui/design-system
+          for f in dist/index.js dist/index.d.ts dist/ui/index.js dist/ui/index.d.ts \
+                   dist/styles/tokens.css dist/styles/tailwind.css; do
+            if [ ! -s "$DS/$f" ]; then
+              echo "::error::design-system build is missing $f"
+              exit 1
+            fi
+          done
+          VERSION=$(node -p "require('./$DS/package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "built @concepttocloud/saiku-design-system@$VERSION"
+
+      - name: Check whether this version is already published
+        # Explicit check rather than swallowing npm's 409 on publish: a
+        # swallowed error hides a genuine failure (bad token, registry outage)
+        # behind the same warning as the benign already-published case.
+        id: registry
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.verify.outputs.version }}"
+          if npm view "@concepttocloud/saiku-design-system@$VERSION" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::@concepttocloud/saiku-design-system@$VERSION is already published — nothing to do. Bump the version in saiku-ui/design-system/package.json to cut a new release."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::@concepttocloud/saiku-design-system@$VERSION is not on the registry — will publish."
+          fi
+
+      - name: Publish
+        if: steps.registry.outputs.exists == 'false' && !inputs.dry_run
+        working-directory: saiku-ui/design-system
+        # NPM_TOKEN is an Automation token on the npm org, already used by the
+        # embed packages in release.yml.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
+
+      - name: Summary
+        run: |
+          VERSION="${{ steps.verify.outputs.version }}"
+          if [ "${{ steps.registry.outputs.exists }}" = "true" ]; then
+            echo "⏭  @concepttocloud/saiku-design-system@$VERSION already published — skipped." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "🧪 Dry run — @concepttocloud/saiku-design-system@$VERSION built and verified, not published." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "✅ Published @concepttocloud/saiku-design-system@$VERSION" >> "$GITHUB_STEP_SUMMARY"
+          fi
