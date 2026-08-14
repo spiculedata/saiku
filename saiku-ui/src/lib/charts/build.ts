@@ -163,6 +163,23 @@ function compactGridTop(o: ChartOptions): number {
  *  overlap into noise and the tooltip is the better affordance. */
 const SCATTER_LABEL_MAX = 25;
 
+/** saiku#1781: a point budget alone isn't enough — 13 points carrying names like
+ *  "Quality Warehousing and Trucking" already overprint each other into a smear,
+ *  well under the 25-point cap. Labels are drawn to the RIGHT of each point, so
+ *  what actually collides is total label WIDTH; approximate it as
+ *  points × average label length and cap that instead. Tuned so the historical
+ *  case that motivated the 25 cap (short member names) still labels, while long
+ *  names bow out to the tooltip earlier. */
+const SCATTER_LABEL_MAX_CHARS = 220;
+
+/** Should a scatter/bubble plot draw per-point labels? */
+export function shouldLabelScatter(captions: string[]): boolean {
+  if (captions.length === 0) return false;
+  if (captions.length > SCATTER_LABEL_MAX) return false;
+  const chars = captions.reduce((sum, c) => sum + (c?.length ?? 0), 0);
+  return chars <= SCATTER_LABEL_MAX_CHARS;
+}
+
 /** Separator the server uses between a measure and a member in a composite
  *  column caption ("Units Shipped | Beverly Hills"). */
 const MEASURE_MEMBER_SEP = " | ";
@@ -1120,7 +1137,7 @@ export function buildChartOption(
               // every point instead of the member it belongs to. A declarative
               // template, so no function sneaks into the option.
               label:
-                rows.length <= SCATTER_LABEL_MAX
+                shouldLabelScatter(rows)
                   ? {
                       show: true,
                       position: "right",

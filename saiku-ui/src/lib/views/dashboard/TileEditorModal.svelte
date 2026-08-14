@@ -98,6 +98,16 @@
 
   let { tile, onClose }: Props = $props();
 
+  /** saiku#1781: display casing for the header. `tile.type` is a lowercase
+   *  discriminator, and the old `text-transform: capitalize` turned "kpi" into
+   *  the misspelt "Kpi". Acronyms get their real casing; everything else is
+   *  sentence-cased from the discriminator so a new tile type still reads fine
+   *  without touching this map. */
+  const TILE_TYPE_LABELS: Record<string, string> = { kpi: "KPI" };
+  const tileTypeLabel = $derived(
+    TILE_TYPE_LABELS[tile.type] ?? tile.type.charAt(0).toUpperCase() + tile.type.slice(1),
+  );
+
   // Per-tile editable form state — initialised from the source tile.
   // untrack() so the inits read the prop without subscribing; the modal
   // never re-renders for the same tile, so the one-shot read is the
@@ -1054,7 +1064,7 @@
 >
   <div class="modal" class:modal--wide={queryEditorOpen} role="dialog" aria-label="Edit tile">
     <header class="modal-header">
-      <h2>Edit {tile.type} tile</h2>
+      <h2>Edit {tileTypeLabel} tile</h2>
       <button type="button" class="border-0 bg-transparent text-xl cursor-pointer text-fg-muted" aria-label="Close" onclick={handleClose}>×</button>
     </header>
     <div class="p-4 overflow-auto flex flex-col gap-3">
@@ -1679,7 +1689,9 @@
     margin: 0;
     font-size: 1rem;
     flex: 1;
-    text-transform: capitalize;
+    /* saiku#1781: `text-transform: capitalize` over a raw tile.type rendered
+       "Edit Kpi Tile". The heading now supplies its own casing via
+       tileTypeLabel, so leave the text alone. */
   }
   /* saiku#1258: field layout now comes from the global app.css design-system
      pattern (.field / .field__label / .field__input) — the same one

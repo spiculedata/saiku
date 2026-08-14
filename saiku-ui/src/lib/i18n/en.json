@@ -127,6 +127,8 @@
   "canvas.menu.editSelections": "Edit selections…",
   "canvas.menu.removeHierarchy": "Remove hierarchy",
   "canvas.menu.removeLevel": "Remove level",
+  "canvas.menu.moveToColumns": "Move to Columns",
+  "canvas.menu.moveToRows": "Move to Rows",
   "canvas.menu.position": "Position",
   "canvas.menu.position.colsMeasures": "Columns | Measures",
   "canvas.menu.position.measuresCols": "Measures | Columns",

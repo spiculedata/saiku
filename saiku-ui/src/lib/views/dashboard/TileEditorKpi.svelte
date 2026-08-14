@@ -66,10 +66,13 @@
 {#if kpiConfig.format === "custom"}
   <label class="field">
     <span class="field__label">Custom pattern</span>
+    <!-- saiku#1781: the placeholder leads with $c1. Compact currency is the
+         pattern the docs recommend for money KPIs and the one authors actually
+         want, but it was the only one the placeholder left out. -->
     <input class="field__input"
       type="text"
       bind:value={kpiConfig.customFormat}
-      placeholder="e.g. $2 / 2% / 3"
+      placeholder="e.g. $c1 / $2 / 2% / 3"
     />
     <span class="hint">
       $N / €N / £N for currency, $cN for compact currency ($48.2K), N% for

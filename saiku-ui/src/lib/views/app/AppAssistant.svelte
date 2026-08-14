@@ -120,7 +120,12 @@
   <div class="assistant__log" bind:this={scroller}>
     {#each messages as m}
       <div class="assistant__msg assistant__msg--{m.role}" class:is-error={m.kind === "error"}>
-        {#if m.kind === "greeting"}<div class="assistant__eyebrow">{title.toUpperCase()} ANALYST</div>{/if}
+        <!-- saiku#1781: this used to be `{title} ANALYST`, which contradicted the
+             configured persona shown on the line directly above ("Persona: Supply
+             Chain Analyst" over a greeting bylined "FULFILMENT ANALYST"). The
+             persona already defaults to "Analyst" when unset, so the old wording
+             is preserved for apps that never set one. -->
+        {#if m.kind === "greeting"}<div class="assistant__eyebrow">{persona.toUpperCase()}</div>{/if}
         <p>{m.text}</p>
       </div>
     {/each}

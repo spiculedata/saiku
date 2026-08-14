@@ -11,6 +11,7 @@ import {
   buildChartOption,
   brushOption,
   stripSharedMeasurePrefix,
+  shouldLabelScatter,
   BRUSHABLE_CHART_TYPES,
   type ChartProjection,
 } from "$lib/charts/build";
@@ -1724,5 +1725,27 @@ describe("buildChartOption — heatmap axis labels (saiku#1771)", () => {
     };
     const opt = buildChartOption(proj, "heatmap", opts(), undefined, { compact: true }) as Record<string, unknown>;
     expect((opt.xAxis as { data: string[] }).data).toEqual(["Units Shipped | Drink", "Units Ordered | Drink"]);
+  });
+});
+
+describe("shouldLabelScatter (saiku#1781)", () => {
+  const rep = (n: number, s: string) => Array.from({ length: n }, () => s);
+
+  test("labels a handful of short member names", () => {
+    expect(shouldLabelScatter(rep(13, "CA"))).toBe(true);
+  });
+
+  test("stops labelling 13 long warehouse names — the reported case", () => {
+    // "Quality Warehousing and Trucking", "Jorgensen Service Storage" … 13 of
+    // these overprint into an unreadable smear well under the 25-point cap.
+    expect(shouldLabelScatter(rep(13, "Quality Warehousing and Trucking"))).toBe(false);
+  });
+
+  test("still respects the hard point cap for short labels", () => {
+    expect(shouldLabelScatter(rep(30, "A"))).toBe(false);
+  });
+
+  test("no points means no labels", () => {
+    expect(shouldLabelScatter([])).toBe(false);
   });
 });
