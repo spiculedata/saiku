@@ -289,45 +289,39 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
     ],
     "grid": {
       "bottom": 56,
-      "left": 48,
-      "right": 16,
+      "left": 60,
+      "right": 24,
       "top": 24,
     },
     "legend": {
-      "textStyle": {
-        "color": "#0f172a",
-      },
-      "top": 0,
-      "type": "scroll",
+      "show": false,
     },
     "series": [
       {
         "data": [
-          [
-            0,
-            565238.13,
-          ],
-          [
-            1,
-            266773,
-          ],
+          {
+            "name": "1997",
+            "value": [
+              565238.13,
+              266773,
+            ],
+          },
+          {
+            "name": "1998",
+            "value": [
+              612482.65,
+              282417,
+            ],
+          },
         ],
-        "name": "1997",
-        "symbolSize": [Function],
-        "type": "scatter",
-      },
-      {
-        "data": [
-          [
-            0,
-            612482.65,
-          ],
-          [
-            1,
-            282417,
-          ],
-        ],
-        "name": "1998",
+        "label": {
+          "color": "#475569",
+          "fontSize": 10,
+          "formatter": "{b}",
+          "position": "right",
+          "show": true,
+        },
+        "name": "Unit Sales",
         "symbolSize": [Function],
         "type": "scatter",
       },
@@ -342,15 +336,11 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "textStyle": {
         "color": "#0f172a",
       },
+      "trigger": "item",
     },
     "xAxis": {
       "axisLabel": {
         "color": "#475569",
-        "ellipsis": "…",
-        "hideOverlap": true,
-        "overflow": "truncate",
-        "rotate": 0,
-        "width": 100,
       },
       "axisLine": {
         "lineStyle": {
@@ -362,11 +352,9 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
           "color": "#e2e8f0",
         },
       },
-      "data": [
-        "Store Sales",
-        "Unit Sales",
-      ],
-      "name": undefined,
+      "name": "Store Sales",
+      "nameGap": 30,
+      "nameLocation": "middle",
       "nameTextStyle": {
         "color": "#0f172a",
       },
@@ -376,7 +364,8 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
           "opacity": 0.5,
         },
       },
-      "type": "category",
+      "splitNumber": 4,
+      "type": "value",
     },
     "yAxis": {
       "axisLabel": {
@@ -392,7 +381,7 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
           "color": "#e2e8f0",
         },
       },
-      "name": undefined,
+      "name": "Unit Sales",
       "nameTextStyle": {
         "color": "#0f172a",
       },
@@ -1010,45 +999,39 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
     ],
     "grid": {
       "bottom": 56,
-      "left": 48,
-      "right": 16,
+      "left": 60,
+      "right": 24,
       "top": 24,
     },
     "legend": {
-      "textStyle": {
-        "color": "#0f172a",
-      },
-      "top": 0,
-      "type": "scroll",
+      "show": false,
     },
     "series": [
       {
         "data": [
-          [
-            0,
-            565238.13,
-          ],
-          [
-            1,
-            266773,
-          ],
+          {
+            "name": "1997",
+            "value": [
+              565238.13,
+              266773,
+            ],
+          },
+          {
+            "name": "1998",
+            "value": [
+              612482.65,
+              282417,
+            ],
+          },
         ],
-        "name": "1997",
-        "symbolSize": 10,
-        "type": "scatter",
-      },
-      {
-        "data": [
-          [
-            0,
-            612482.65,
-          ],
-          [
-            1,
-            282417,
-          ],
-        ],
-        "name": "1998",
+        "label": {
+          "color": "#475569",
+          "fontSize": 10,
+          "formatter": "{b}",
+          "position": "right",
+          "show": true,
+        },
+        "name": "Unit Sales",
         "symbolSize": 10,
         "type": "scatter",
       },
@@ -1063,15 +1046,11 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "textStyle": {
         "color": "#0f172a",
       },
+      "trigger": "item",
     },
     "xAxis": {
       "axisLabel": {
         "color": "#475569",
-        "ellipsis": "…",
-        "hideOverlap": true,
-        "overflow": "truncate",
-        "rotate": 0,
-        "width": 100,
       },
       "axisLine": {
         "lineStyle": {
@@ -1083,11 +1062,9 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
           "color": "#e2e8f0",
         },
       },
-      "data": [
-        "Store Sales",
-        "Unit Sales",
-      ],
-      "name": undefined,
+      "name": "Store Sales",
+      "nameGap": 30,
+      "nameLocation": "middle",
       "nameTextStyle": {
         "color": "#0f172a",
       },
@@ -1097,7 +1074,8 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
           "opacity": 0.5,
         },
       },
-      "type": "category",
+      "splitNumber": 4,
+      "type": "value",
     },
     "yAxis": {
       "axisLabel": {
@@ -1113,7 +1091,7 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
           "color": "#e2e8f0",
         },
       },
-      "name": undefined,
+      "name": "Unit Sales",
       "nameTextStyle": {
         "color": "#0f172a",
       },
@@ -2170,44 +2148,39 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
     ],
     "grid": {
       "bottom": 56,
-      "left": 60,
+      "left": 72,
       "right": 40,
       "top": 40,
     },
     "legend": {
-      "textStyle": {
-        "color": "#0f172a",
-      },
-      "top": 10,
+      "show": false,
     },
     "series": [
       {
         "data": [
-          [
-            0,
-            565238.13,
-          ],
-          [
-            1,
-            266773,
-          ],
+          {
+            "name": "1997",
+            "value": [
+              565238.13,
+              266773,
+            ],
+          },
+          {
+            "name": "1998",
+            "value": [
+              612482.65,
+              282417,
+            ],
+          },
         ],
-        "name": "1997",
-        "symbolSize": [Function],
-        "type": "scatter",
-      },
-      {
-        "data": [
-          [
-            0,
-            612482.65,
-          ],
-          [
-            1,
-            282417,
-          ],
-        ],
-        "name": "1998",
+        "label": {
+          "color": "#475569",
+          "fontSize": 10,
+          "formatter": "{b}",
+          "position": "right",
+          "show": true,
+        },
+        "name": "Unit Sales",
         "symbolSize": [Function],
         "type": "scatter",
       },
@@ -2222,15 +2195,11 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "textStyle": {
         "color": "#0f172a",
       },
+      "trigger": "item",
     },
     "xAxis": {
       "axisLabel": {
         "color": "#475569",
-        "ellipsis": "…",
-        "hideOverlap": true,
-        "overflow": "truncate",
-        "rotate": 0,
-        "width": 120,
       },
       "axisLine": {
         "lineStyle": {
@@ -2242,11 +2211,9 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
           "color": "#e2e8f0",
         },
       },
-      "data": [
-        "Store Sales",
-        "Unit Sales",
-      ],
-      "name": undefined,
+      "name": "Store Sales",
+      "nameGap": 30,
+      "nameLocation": "middle",
       "nameTextStyle": {
         "color": "#0f172a",
       },
@@ -2256,7 +2223,8 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
           "opacity": 0.5,
         },
       },
-      "type": "category",
+      "splitNumber": 6,
+      "type": "value",
     },
     "yAxis": {
       "axisLabel": {
@@ -2272,7 +2240,7 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
           "color": "#e2e8f0",
         },
       },
-      "name": undefined,
+      "name": "Unit Sales",
       "nameTextStyle": {
         "color": "#0f172a",
       },
@@ -2892,44 +2860,39 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
     ],
     "grid": {
       "bottom": 56,
-      "left": 60,
+      "left": 72,
       "right": 40,
       "top": 40,
     },
     "legend": {
-      "textStyle": {
-        "color": "#0f172a",
-      },
-      "top": 10,
+      "show": false,
     },
     "series": [
       {
         "data": [
-          [
-            0,
-            565238.13,
-          ],
-          [
-            1,
-            266773,
-          ],
+          {
+            "name": "1997",
+            "value": [
+              565238.13,
+              266773,
+            ],
+          },
+          {
+            "name": "1998",
+            "value": [
+              612482.65,
+              282417,
+            ],
+          },
         ],
-        "name": "1997",
-        "symbolSize": 10,
-        "type": "scatter",
-      },
-      {
-        "data": [
-          [
-            0,
-            612482.65,
-          ],
-          [
-            1,
-            282417,
-          ],
-        ],
-        "name": "1998",
+        "label": {
+          "color": "#475569",
+          "fontSize": 10,
+          "formatter": "{b}",
+          "position": "right",
+          "show": true,
+        },
+        "name": "Unit Sales",
         "symbolSize": 10,
         "type": "scatter",
       },
@@ -2944,15 +2907,11 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
       "textStyle": {
         "color": "#0f172a",
       },
+      "trigger": "item",
     },
     "xAxis": {
       "axisLabel": {
         "color": "#475569",
-        "ellipsis": "…",
-        "hideOverlap": true,
-        "overflow": "truncate",
-        "rotate": 0,
-        "width": 120,
       },
       "axisLine": {
         "lineStyle": {
@@ -2964,11 +2923,9 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
           "color": "#e2e8f0",
         },
       },
-      "data": [
-        "Store Sales",
-        "Unit Sales",
-      ],
-      "name": undefined,
+      "name": "Store Sales",
+      "nameGap": 30,
+      "nameLocation": "middle",
       "nameTextStyle": {
         "color": "#0f172a",
       },
@@ -2978,7 +2935,8 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
           "opacity": 0.5,
         },
       },
-      "type": "category",
+      "splitNumber": 6,
+      "type": "value",
     },
     "yAxis": {
       "axisLabel": {
@@ -2994,7 +2952,7 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
           "color": "#e2e8f0",
         },
       },
-      "name": undefined,
+      "name": "Unit Sales",
       "nameTextStyle": {
         "color": "#0f172a",
       },

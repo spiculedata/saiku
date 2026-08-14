@@ -136,6 +136,10 @@ function titleConfig(o: ChartOptions, tk: ThemeTokens): Record<string, unknown> 
 // in compact tiles. Roomy charts already reserve their own (title ? 50 : …).
 const TITLE_GRID_TOP = 44;
 
+/** saiku#1759: label scatter points up to this many rows. Past it the labels
+ *  overlap into noise and the tooltip is the better affordance. */
+const SCATTER_LABEL_MAX = 25;
+
 function linearRegression(vals: (number | null)[]): number[] {
   const n = vals.length;
   let sumX = 0,
@@ -1001,6 +1005,97 @@ export function buildChartOption(
 
   if (t === "scatter" || t === "bubble") {
     const bubbleMax = Math.max(1, ...matrix.flatMap((r) => r.map((v) => Math.abs(v ?? 0))));
+
+    /* saiku#1759: with two or more measures, plot them AGAINST each other —
+     * x = first measure, y = second, and for bubble a third drives the radius.
+     * That is what a scatter is for: the volume-vs-value quadrant read that
+     * finds a high-volume/low-value segment.
+     *
+     * The previous layout put the MEASURES on a category x-axis and made a
+     * series per row member, so every point landed in one of N vertical stacks
+     * and no relationship between the measures could be seen — a strictly worse
+     * rendering of what Bar already shows. With a single measure there is no
+     * pair to plot, so that layout remains (below) as the only thing available.
+     *
+     * One series, not one per row: a point per row member with its name
+     * attached, so a 200-member level doesn't produce a 200-entry legend. The
+     * axis names carry the meaning, so the legend is suppressed. */
+    if (cols.length >= 2 && rows.length > 0) {
+      const xName2 = cols[0];
+      const yName2 = cols[1];
+      const sizeMax = Math.max(1, ...matrix.map((r) => Math.abs(r[2] ?? 0)));
+      return {
+        ...common,
+        title,
+        tooltip: { ...tooltipStyle, trigger: "item" },
+        legend: { show: false },
+        grid: compact
+          ? { top: title ? TITLE_GRID_TOP : 24, left: 60, right: 24, bottom: 56 }
+          : { left: 72, top: title ? 50 : 40, right: 40, bottom: 56 },
+        dataZoom: dataZoomConfig(compact, rows.length, false),
+        // An explicit author label always wins (#1596 precedence); the measure
+        // name is the default. Unlike the old category layout, naming these
+        // axes is CORRECT here — they really are the two measures.
+        xAxis: {
+          ...valueAxis,
+          name: xName ?? xName2,
+          nameLocation: "middle",
+          nameGap: 30,
+        },
+        yAxis: { ...valueAxis, name: yName ?? yName2 },
+        series: attachMarks(
+          [
+            {
+              type: "scatter",
+              name: yName2,
+              ...itemStyleHC,
+              // Label the points while they're still individually readable;
+              // past that the labels overlap into noise and the tooltip is the
+              // better affordance.
+              // "{b}" is the data item's NAME — ECharts' default for a scatter
+              // label is the value, which printed "366.09585846108934" next to
+              // every point instead of the member it belongs to. A declarative
+              // template, so no function sneaks into the option.
+              label:
+                rows.length <= SCATTER_LABEL_MAX
+                  ? {
+                      show: true,
+                      position: "right",
+                      formatter: "{b}",
+                      fontSize: 10,
+                      color: tk.fgMuted,
+                    }
+                  : { show: false },
+              symbolSize:
+                t === "bubble"
+                  ? (val: unknown) => {
+                      const v = Array.isArray(val) ? (val[2] as number | undefined) : undefined;
+                      if (v == null || !Number.isFinite(v)) return hc ? 14 : 10;
+                      return Math.max(hc ? 10 : 6, Math.sqrt(Math.abs(v) / sizeMax) * 40);
+                    }
+                  : hc
+                    ? 14
+                    : 10,
+              // #1081 per-member colour override applies at the DATA ITEM here
+              // (one series, many members), the same way pie does it.
+              data: rows.map((name, i) => ({
+                name,
+                ...(seriesColorFor(o, name)
+                  ? { itemStyle: { color: seriesColorFor(o, name) } }
+                  : {}),
+                value:
+                  t === "bubble" && matrix[i].length > 2
+                    ? [matrix[i][0] ?? 0, matrix[i][1] ?? 0, matrix[i][2] ?? 0]
+                    : [matrix[i][0] ?? 0, matrix[i][1] ?? 0],
+              })),
+            },
+          ],
+          markLine,
+          markArea,
+        ),
+      };
+    }
+
     return {
       ...common,
       title,
