@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  deltaDirection,
   deltaLabelFor,
   isTrailingPartial,
   formatKpi,
@@ -290,5 +291,33 @@ describe("partial trailing periods", () => {
     expect(lastAndPriorValues(weeks).current).toBe(1856);
     // Declaring the trailing period partial does not alter the series at all.
     expect(weeks).toHaveLength(3);
+  });
+});
+
+/* ====================================================================
+ * saiku#1798 — the delta ARROW follows the sign of the change, while the
+ * COLOUR (tone) keeps following direction/goodness. Before this the glyph was
+ * picked from tone too, so a lower-is-better measure that fell rendered
+ * "↗ -7%": an up arrow next to a negative number.
+ * ==================================================================== */
+describe("deltaDirection — saiku#1798", () => {
+  it("points down for a fall and up for a rise, whatever the tone", () => {
+    // higher-is-better: a fall is bad, and still points down.
+    expect(deltaDirection(kpiDelta(93, 100, "higher-is-better"))).toBe("down");
+    // lower-is-better: the SAME fall is good — green — but still points down.
+    expect(deltaDirection(kpiDelta(93, 100, "lower-is-better"))).toBe("down");
+    expect(deltaDirection(kpiDelta(107, 100, "higher-is-better"))).toBe("up");
+    expect(deltaDirection(kpiDelta(107, 100, "lower-is-better"))).toBe("up");
+  });
+
+  it("keeps the tone answering 'is this good?' independently of the arrow", () => {
+    expect(kpiDelta(93, 100, "lower-is-better").tone).toBe("positive");
+    expect(kpiDelta(93, 100, "higher-is-better").tone).toBe("negative");
+  });
+
+  it("is flat for no change, no ratio, or no delta at all", () => {
+    expect(deltaDirection(kpiDelta(100, 100))).toBe("flat");
+    expect(deltaDirection(kpiDelta(null, 100))).toBe("flat");
+    expect(deltaDirection(null)).toBe("flat");
   });
 });

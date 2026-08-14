@@ -251,6 +251,27 @@ export function kpiDelta(
   return { ratio, tone: better ? "positive" : "negative" };
 }
 
+/** Which way the delta ARROW points. */
+export type DeltaDirection = "up" | "down" | "flat";
+
+/**
+ * The arrow direction for a delta — read off the SIGN of the change, never off
+ * {@link KpiDelta.tone} (saiku#1798).
+ *
+ * The two encodings answer different questions and the tile needs both: colour
+ * says "is this good?" (tone, which folds in `higher-is-better` /
+ * `lower-is-better`), the arrow says "which way did it move?". Picking the glyph
+ * from tone made them one signal and set the arrow at odds with the number
+ * beside it — a supply time down 7% rendered "↗ -7%", because a fall is *good*
+ * on a lower-is-better measure. Two tiles in a row with the same sign got
+ * opposite arrows.
+ */
+export function deltaDirection(delta: KpiDelta | null | undefined): DeltaDirection {
+  const ratio = delta?.ratio;
+  if (ratio == null || !Number.isFinite(ratio) || ratio === 0) return "flat";
+  return ratio > 0 ? "up" : "down";
+}
+
 /** Return the last two numeric cells from a time-sorted result series.
  *  Used by the KPI tile when comparison is "prior-period": the latest
  *  cell becomes the headline number, the second-to-last becomes the
