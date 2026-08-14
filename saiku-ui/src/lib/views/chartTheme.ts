@@ -38,6 +38,17 @@ export interface ThemeTokens {
    *  of the hard-coded blue/red. Set by the colour-blind-safe global pref.
    *  Optional (defaults to off) so token literals predating #1091 stay valid. */
   highContrast?: boolean;
+  /** saiku#1799: the theme's growth / decline colours, for the charts that
+   *  encode a SIGN rather than a category — the waterfall's rise and fall bars.
+   *  Optional: absent (the global Saiku theme, whose tokens are HSL triplets
+   *  rather than colours ECharts can parse) keeps the historical blue/red, so
+   *  plain dashboards are unchanged and only a branded app repaints. */
+  positive?: string;
+  danger?: string;
+  /** saiku#1799: a low → high sequential ramp derived from the theme, for the
+   *  charts that encode MAGNITUDE as colour (heatmap, choropleth). Optional for
+   *  the same reason as above; callers fall back to a named ramp. */
+  sequentialRamp?: string[];
 }
 
 export const CHART_FALLBACK_COLORS = [

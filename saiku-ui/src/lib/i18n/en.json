@@ -411,6 +411,7 @@
   "modal.chart.trend.wma": "Weighted moving average",
   "modal.chart.map.title": "Map options",
   "modal.chart.map.colorRamp": "Colour ramp",
+  "modal.chart.map.ramp.theme": "Theme",
   "modal.chart.map.ramp.blues": "Blues",
   "modal.chart.map.ramp.greens": "Greens",
   "modal.chart.map.ramp.reds": "Reds",

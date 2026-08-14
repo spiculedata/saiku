@@ -49,7 +49,7 @@
   ];
 
   // issue #1071: map colour ramps (must mirror COLOR_RAMPS in charts/build.ts).
-  const COLOR_RAMP_IDS: ChartColorRamp[] = ["blues", "greens", "reds", "viridis", "diverging"];
+  const COLOR_RAMP_IDS: ChartColorRamp[] = ["theme", "blues", "greens", "reds", "viridis", "diverging"];
 
   // issue #1081: named categorical palettes (single source: chartTheme.ts).
   const PALETTES = PALETTE_IDS;

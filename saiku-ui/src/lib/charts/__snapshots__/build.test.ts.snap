@@ -571,6 +571,14 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
     },
     "visualMap": {
       "calculable": false,
+      "inRange": {
+        "color": [
+          "#deebf7",
+          "#9ecae1",
+          "#4292c6",
+          "#08519c",
+        ],
+      },
       "itemHeight": 140,
       "max": 612482.65,
       "min": 266773,
@@ -2434,6 +2442,14 @@ exports[`buildChartOption — coverage of all 15 types > snapshot of every type'
     },
     "visualMap": {
       "calculable": false,
+      "inRange": {
+        "color": [
+          "#deebf7",
+          "#9ecae1",
+          "#4292c6",
+          "#08519c",
+        ],
+      },
       "itemHeight": 140,
       "max": 612482.65,
       "min": 266773,

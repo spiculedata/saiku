@@ -1787,3 +1787,108 @@ describe("shouldLabelScatter (saiku#1781)", () => {
     expect(shouldLabelScatter([])).toBe(false);
   });
 });
+
+/* ====================================================================
+ * saiku#1799 — heatmap and waterfall follow the theme.
+ *
+ * #1775 closed with the table data bars and the graph nodes fixed and the
+ * heatmap's ramp PICKER added to the editor — but the renderer never read
+ * `colorRamp` for a heatmap, so the visualMap shipped with no `inRange` at all
+ * and painted ECharts' default blue whatever the picker said. The waterfall was
+ * cleared as "already themed" on a cyan app, where its hard-coded #4c9ee6
+ * passes for the accent; on any other accent it plainly isn't.
+ * ==================================================================== */
+describe("buildChartOption — theme-following colour (saiku#1799)", () => {
+  const brand: ThemeTokens = {
+    ...DEFAULT_THEME_TOKENS,
+    accent: "#b4542e",
+    positive: "#2f6f5c",
+    danger: "#c0492b",
+    sequentialRamp: ["#f7ece7", "#dfa78f", "#b4542e"],
+  };
+
+  function visualMapOf(opt: Record<string, unknown>): { inRange?: { color?: string[] } } {
+    return opt.visualMap as { inRange?: { color?: string[] } };
+  }
+
+  test("the heatmap ramp comes from the theme by default", () => {
+    const opt = buildChartOption(sample(), "heatmap", opts(), brand) as Record<string, unknown>;
+    expect(visualMapOf(opt).inRange?.color).toEqual(brand.sequentialRamp);
+  });
+
+  test("an author's named ramp still wins over the theme", () => {
+    const o: ChartOptions = { ...opts(), colorRamp: "greens" };
+    const opt = buildChartOption(sample(), "heatmap", o, brand) as Record<string, unknown>;
+    const colors = visualMapOf(opt).inRange?.color ?? [];
+    expect(colors).not.toEqual(brand.sequentialRamp);
+    expect(colors[colors.length - 1]).toMatch(/^#/);
+  });
+
+  test("a theme with no ramp of its own falls back to blues rather than nothing", () => {
+    const opt = buildChartOption(sample(), "heatmap", opts(), DEFAULT_THEME_TOKENS) as Record<
+      string,
+      unknown
+    >;
+    const colors = visualMapOf(opt).inRange?.color ?? [];
+    expect(colors.length).toBeGreaterThan(0);
+  });
+
+  test("the map keeps honouring its own ramp choice", () => {
+    const places: ChartProjection = {
+      rowCategories: ["USA", "Mexico"],
+      columnCategories: ["Store Sqft"],
+      matrix: [[271020], [243012]],
+    };
+    const o: ChartOptions = { ...opts(), colorRamp: "greens" };
+    const opt = buildChartOption(places, "map", o, brand) as Record<string, unknown>;
+    expect(visualMapOf(opt).inRange?.color).toEqual(
+      buildChartOption(places, "map", { ...opts(), colorRamp: "greens" }, DEFAULT_THEME_TOKENS)
+        ? visualMapOf(opt).inRange?.color
+        : [],
+    );
+    expect(visualMapOf(opt).inRange?.color).not.toEqual(brand.sequentialRamp);
+  });
+
+  test("waterfall bars take the theme's positive / danger tokens", () => {
+    const proj: ChartProjection = {
+      rowCategories: ["a", "b"],
+      columnCategories: ["Profit"],
+      matrix: [[100], [-40]],
+    };
+    const opt = buildChartOption(proj, "waterfall", opts(), brand) as Record<string, unknown>;
+    const series = opt.series as Array<{ itemStyle?: { color?: string } }>;
+    // [0] is the transparent spacer; [1] positive, [2] negative.
+    expect(series[1].itemStyle?.color).toBe("#2f6f5c");
+    expect(series[2].itemStyle?.color).toBe("#c0492b");
+  });
+
+  test("a theme with no positive/danger keeps the historical waterfall colours", () => {
+    const proj: ChartProjection = {
+      rowCategories: ["a", "b"],
+      columnCategories: ["Profit"],
+      matrix: [[100], [-40]],
+    };
+    const opt = buildChartOption(proj, "waterfall", opts(), DEFAULT_THEME_TOKENS) as Record<
+      string,
+      unknown
+    >;
+    const series = opt.series as Array<{ itemStyle?: { color?: string } }>;
+    expect(series[1].itemStyle?.color).toBe("#4c9ee6");
+    expect(series[2].itemStyle?.color).toBe("#e66c6c");
+  });
+
+  test("colour-blind-safe still outranks the theme on a waterfall", () => {
+    const proj: ChartProjection = {
+      rowCategories: ["a", "b"],
+      columnCategories: ["Profit"],
+      matrix: [[100], [-40]],
+    };
+    const opt = buildChartOption(proj, "waterfall", opts(), {
+      ...brand,
+      highContrast: true,
+    }) as Record<string, unknown>;
+    const series = opt.series as Array<{ itemStyle?: { color?: string } }>;
+    expect(series[1].itemStyle?.color).toBe(COLORBLIND_WATERFALL.positive);
+    expect(series[2].itemStyle?.color).toBe(COLORBLIND_WATERFALL.negative);
+  });
+});

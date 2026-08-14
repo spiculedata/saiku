@@ -131,9 +131,37 @@ export function appChartPalette(b: AppBrandTokens): string[] {
   return out.slice(0, PALETTE_SIZE);
 }
 
+/** Number of stops in the sequential ramp handed to a heatmap / choropleth
+ *  visualMap. Three is enough for ECharts to interpolate a readable gradient
+ *  without the mid-tone washing out against the card. */
+const RAMP_STOPS = 3;
+
+/**
+ * A low → high sequential ramp in the brand's own hue (saiku#1799).
+ *
+ * Built by blending the accent toward the card surface rather than toward white,
+ * so the pale end of the ramp sits on the card instead of hovering above it —
+ * on a dark app that means the low end goes DARKER, which is what "low" should
+ * look like there. Returns null when the accent isn't a parseable hex, and the
+ * caller then falls back to a named ramp rather than inventing a gradient.
+ */
+export function appSequentialRamp(b: AppBrandTokens): string[] | null {
+  if (!parseHex(b.accent)) return null;
+  const surface = parseHex(b.surface) ? b.surface : "#ffffff";
+  const stops: string[] = [];
+  for (let i = 0; i < RAMP_STOPS; i++) {
+    // i = 0 is almost all surface (the "no value here" end), the last stop is
+    // the accent at full strength.
+    const towardSurface = 1 - i / (RAMP_STOPS - 1);
+    stops.push(mixHex(b.accent, surface, towardSurface * 0.88));
+  }
+  return stops;
+}
+
 /** Map the app's brand tokens onto the ECharts theme tokens the chart builders
  *  consume. Pure — callers overlay the colour-blind-safe preference. */
 export function appChartTokens(b: AppBrandTokens): ThemeTokens {
+  const ramp = appSequentialRamp(b);
   return {
     fg: b.fg,
     fgMuted: b.muted,
@@ -145,6 +173,13 @@ export function appChartTokens(b: AppBrandTokens): ThemeTokens {
     accent: b.accent,
     chartColors: appChartPalette(b),
     highContrast: false,
+    // saiku#1799: the sign-encoding and magnitude-encoding charts (waterfall,
+    // heatmap, choropleth) had no theme colour to reach for and shipped
+    // literals. Only set when the brand names something parseable, so the
+    // builder's own fallbacks stay in charge otherwise.
+    ...(parseHex(b.positive) ? { positive: b.positive } : {}),
+    ...(parseHex(b.danger) ? { danger: b.danger } : {}),
+    ...(ramp ? { sequentialRamp: ramp } : {}),
   };
 }
 
