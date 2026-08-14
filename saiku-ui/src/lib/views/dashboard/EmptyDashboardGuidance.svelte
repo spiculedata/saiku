@@ -82,9 +82,13 @@
       </button>
     </div>
 
+    <!-- saiku#1762: this promised a "filter widget" in the + Add tile menu.
+         There isn't one — the menu is Chart / Table / KPI / Text / Image plus
+         the custom renderers, and filters live in the Filters panel. -->
     <p class="more">
-      Need a text note or filter widget? Use
+      Need a text note, an image or a custom renderer? Use
       <strong>+ Add tile</strong> in the toolbar above for the full list.
+      Filters are added in the <strong>Filters</strong> panel.
     </p>
   </div>
 </div>
