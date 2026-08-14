@@ -333,6 +333,89 @@ public class JobSchedulerTest {
         s.tick(); // should be a no-op-ish; must not throw
     }
 
+    /* ---------------- saiku#1809 PR3 carry-forward fixes (engine side) ---------------- */
+
+    /**
+     * Carry-forward fix #2 (QA on PR2): shutdown must ACTUALLY terminate the ticker/worker threads,
+     * not merely leave a post-shutdown {@code tick()} non-throwing. Assert real termination via
+     * {@link JobScheduler#awaitTermination}.
+     */
+    @Test(timeout = 5000)
+    public void shutdown_terminatesTickerAndWorkerThreads() throws Exception {
+        MutableClock clock = new MutableClock(1_000_000L);
+        JobStore store = new JobStore((String) null);
+        JobScheduler s = new JobScheduler(store, clock, JobRunner.DIRECT);
+        s.start();
+        s.shutdown();
+        assertTrue(
+                "both the ticker and worker pools must actually terminate on shutdown",
+                s.awaitTermination(5, TimeUnit.SECONDS));
+    }
+
+    /**
+     * Carry-forward fix #1 (SEC+QA on PR2): a manual {@code runNow()} and a concurrent ticker
+     * {@code tick()} of the SAME job must resolve to exactly ONE execution — the overlap guard now
+     * covers both triggers, so they can never interleave into a double-run.
+     */
+    @Test(timeout = 10000)
+    public void runNowAndTick_sameJob_executeExactlyOnce() throws Exception {
+        MutableClock clock = new MutableClock(1_000_000L);
+        JobStore store = new JobStore((String) null);
+        scheduler = new JobScheduler(store, clock, JobRunner.DIRECT);
+        RecordingHandler h = new RecordingHandler();
+        h.entered = new CountDownLatch(1);
+        h.release = new CountDownLatch(1);
+        scheduler.registerHandler("TEST", h);
+
+        final ScheduledJobFile job = newJob(store, 60_000L); // due (nextRunAt=0)
+
+        // Kick off a manual runNow on a separate thread; it acquires the overlap guard and blocks
+        // inside the handler on the release latch.
+        Thread manual = new Thread(() -> scheduler.runNow(job));
+        manual.start();
+        assertTrue("manual runNow should have entered the handler", h.entered.await(5, TimeUnit.SECONDS));
+
+        // While that run is in flight, a ticker tick of the same job must be overlap-SKIPPED, not run.
+        scheduler.tick();
+        // Give the (rejected) worker path a beat to record the SKIP; the guard is already held.
+        assertTrue("the job's guard must be held while runNow is in flight", scheduler.isRunning(job.getId()));
+
+        // Release the in-flight run and let it finish.
+        h.release.countDown();
+        manual.join(5000);
+        // Drain: wait for the guard to clear.
+        long deadline = System.currentTimeMillis() + 5000;
+        while (scheduler.isRunning(job.getId()) && System.currentTimeMillis() < deadline) {
+            Thread.yield();
+        }
+
+        assertEquals("exactly one execution across runNow + concurrent tick", 1, h.calls.get());
+    }
+
+    /**
+     * Engine recognises {@link OwnerUnavailableException} specially: instead of the
+     * backoff-then-eventually-disable failure path, the run is SKIPPED and the job auto-disables
+     * IMMEDIATELY (a job for a deleted/disabled owner stops firing at once).
+     */
+    @Test(timeout = 5000)
+    public void ownerUnavailable_marksSkippedAndAutoDisablesImmediately() {
+        MutableClock clock = new MutableClock(1_000_000L);
+        JobStore store = new JobStore((String) null);
+        // A runner that always signals the owner is gone/disabled.
+        JobRunner ownerGone = (job, handler) -> {
+            throw new OwnerUnavailableException("owner deleted");
+        };
+        scheduler = new JobScheduler(store, clock, ownerGone);
+        scheduler.registerHandler("TEST", new RecordingHandler());
+
+        ScheduledJobFile after = scheduler.runNow(newJob(store, 60_000L));
+
+        assertEquals(JobStatus.SKIPPED, after.getLastStatus());
+        assertFalse("owner-unavailable must auto-disable immediately", after.isEnabled());
+        // It is NOT the normal failure path — the consecutive-failure counter is not bumped.
+        assertEquals(0, after.getConsecutiveFailures());
+    }
+
     @Test(timeout = 5000)
     public void noOpHandlerSucceeds() {
         MutableClock clock = new MutableClock(1_000_000L);

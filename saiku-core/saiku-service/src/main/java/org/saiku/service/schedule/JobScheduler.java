@@ -39,7 +39,9 @@ import org.slf4j.LoggerFactory;
  *
  * <p><b>Due</b> = {@code enabled && nextRunAt <= now && cooldownUntil <= now}. A job whose prior run
  * is still in flight is SKIPPED (per-job overlap guard, {@link #running}) — a job is never run
- * concurrently with itself.
+ * concurrently with itself. saiku#1809 PR3 routes BOTH triggers — the ticker's {@link
+ * #submit(ScheduledJobFile)} and a manual {@link #runNow(ScheduledJobFile)} — through the same guard,
+ * so a manual run can never interleave with a ticker run of the same job.
  *
  * <p><b>After a run</b> the engine writes {@code lastRunAt / lastStatus / lastError (short, sanitized)
  * / consecutiveFailures / cooldownUntil / nextRunAt} back via {@link JobStore#save}. On failure it
@@ -171,6 +173,11 @@ public class JobScheduler {
     /**
      * Submit a due job to the worker pool, honouring the per-job overlap guard. If the prior run is
      * still in flight the submit is skipped and the job is marked {@link JobStatus#SKIPPED}.
+     *
+     * <p>saiku#1809 PR3 (carry-forward fix #1): the guard is acquired HERE, before the worker runs,
+     * and {@link #runNow(ScheduledJobFile)} acquires the SAME guard — so a manual {@code runNow()} and
+     * a ticker {@code tick()} of the same job can never execute concurrently. The worker calls
+     * {@link #executeGuarded(ScheduledJobFile)} (guard already held) and releases it in a finally.
      */
     private void submit(ScheduledJobFile job) {
         final String id = job.getId();
@@ -182,7 +189,7 @@ public class JobScheduler {
         try {
             workers.execute(() -> {
                 try {
-                    runNow(job);
+                    executeGuarded(job);
                 } finally {
                     running.remove(id);
                 }
@@ -196,12 +203,39 @@ public class JobScheduler {
 
     /**
      * Run one job now, synchronously on the caller's thread, and write bookkeeping back to the store.
-     * This is the deterministic entry point tests drive. Reloads the job first so it operates on the
-     * freshest on-disk state (and no-ops on a deleted job).
+     * This is the deterministic entry point tests drive.
      *
-     * @return the persisted post-run record, or null if the job vanished / has no handler
+     * <p>saiku#1809 PR3 (carry-forward fix #1): this now goes through the SAME per-job overlap guard
+     * as the ticker path ({@link #submit(ScheduledJobFile)}). If a run for this id is already in flight
+     * (e.g. a concurrent {@code tick()} already picked it up) this call does NOT execute a second run —
+     * it marks the job {@link JobStatus#SKIPPED} and returns without invoking the handler. Whatever the
+     * trigger, a job can never run concurrently with itself.
+     *
+     * @return the persisted post-run record, or null if the job vanished / has no handler / was
+     *     overlap-skipped
      */
     ScheduledJobFile runNow(ScheduledJobFile job) {
+        if (job == null || job.getId() == null) {
+            return null;
+        }
+        final String id = job.getId();
+        if (running.putIfAbsent(id, Boolean.TRUE) != null) {
+            // A run for this id is already in flight (ticker or another manual run) — never double-run.
+            return markSkipped(id);
+        }
+        try {
+            return executeGuarded(job);
+        } finally {
+            running.remove(id);
+        }
+    }
+
+    /**
+     * The actual run + bookkeeping, assuming the per-job overlap guard for {@code job.getId()} is
+     * already held by the caller ({@link #runNow} or {@link #submit}'s worker). Reloads the job first
+     * so it operates on the freshest on-disk state (and no-ops on a deleted job).
+     */
+    private ScheduledJobFile executeGuarded(ScheduledJobFile job) {
         ScheduledJobFile current = store.load(job.getId());
         if (current == null) {
             return null;
@@ -225,6 +259,15 @@ public class JobScheduler {
             current.setConsecutiveFailures(0);
             current.setCooldownUntil(0L);
             current.setNextRunAt(computeNextRunAt(current, startedAt));
+        } catch (OwnerUnavailableException oue) {
+            // saiku#1809 PR3: owner gone/disabled — never fired, never retried. Mark SKIPPED and
+            // auto-disable immediately so a job for a deleted user stops firing at once (rather than
+            // grinding through the backoff-then-disable failure path).
+            current.setLastStatus(JobStatus.SKIPPED);
+            current.setLastError(sanitize(shortMessage(oue)));
+            current.setEnabled(false);
+            current.setNextRunAt(computeNextRunAt(current, startedAt));
+            log.warn("Auto-disabled job {} — owner unavailable: {}", current.getId(), sanitize(shortMessage(oue)));
         } catch (Exception e) {
             current.setLastStatus(JobStatus.FAILED);
             current.setLastError(sanitize(shortMessage(e)));
@@ -270,16 +313,17 @@ public class JobScheduler {
         return interval > 0 ? lastRunAt + interval : fallback;
     }
 
-    private void markSkipped(String id) {
+    private ScheduledJobFile markSkipped(String id) {
         try {
             ScheduledJobFile j = store.load(id);
             if (j != null) {
                 j.setLastStatus(JobStatus.SKIPPED);
-                store.save(j);
+                return store.save(j);
             }
         } catch (Exception e) {
             log.debug("Could not mark job {} SKIPPED: {}", id, e.toString());
         }
+        return null;
     }
 
     /** First line of the throwable's message (or its simple class name), never a stack trace. */
@@ -337,6 +381,20 @@ public class JobScheduler {
         log.info("JobScheduler shutting down — {} in-flight", running.size());
         ticker.shutdownNow();
         workers.shutdownNow();
+    }
+
+    /**
+     * Block until both the ticker and worker pools have actually terminated, or the timeout elapses.
+     * Returns true only if BOTH pools terminated within the budget (saiku#1809 PR3 carry-forward fix
+     * #2 — QA asked the shutdown test to assert real thread termination, not merely that a post-
+     * shutdown {@code tick()} doesn't throw). Visible for tests.
+     */
+    boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
+        long deadlineNanos = System.nanoTime() + unit.toNanos(timeout);
+        boolean tickerDone = ticker.awaitTermination(timeout, unit);
+        long remaining = Math.max(0L, deadlineNanos - System.nanoTime());
+        boolean workersDone = workers.awaitTermination(remaining, TimeUnit.NANOSECONDS);
+        return tickerDone && workersDone;
     }
 
     /** Snapshot of registered handlers (defensive copy) — visible for tests / diagnostics. */
