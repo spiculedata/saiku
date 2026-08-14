@@ -51,7 +51,16 @@ export const DEFAULT_BAND_COLORS: Record<Exclude<Band, "none">, string> = {
   high: "#3fa45b", // green
 };
 
-const DEFAULT_BAR_COLOR = "#4c8dff";
+/**
+ * saiku#1775 — data-bar fill.
+ *
+ * This used to be a bare `#4c8dff`, so a table on a cyan/amber App Builder theme
+ * grew blue bars that read as a foreign element (the docs promise custom tiles
+ * "follow the App theme"). Resolve against the App shell's accent token and keep
+ * the old blue as the fallback, so dashboards outside an App — where the token
+ * isn't defined — render exactly as before.
+ */
+const DEFAULT_BAR_COLOR = "var(--saiku-app-accent, #4c8dff)";
 
 /** Coerce an arbitrary cell value into a finite number, or null. Accepts
  *  raw numbers and numeric strings (commas / spaces stripped); everything

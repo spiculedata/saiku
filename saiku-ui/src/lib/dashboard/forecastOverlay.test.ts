@@ -99,3 +99,53 @@ describe("applyForecastOverlay", () => {
     expect(applyForecastOverlay({ series: [{ name: "S", data: [1] }] }, { S: [fp(1, 0, 2)] }, "#999")).toBe(0);
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * saiku#1777 — band clamping + legend hygiene                         *
+ * ------------------------------------------------------------------ */
+
+describe("saiku#1777 forecast band", () => {
+  const widening: ForecastPoint[] = [
+    { value: 15000, lower: 9000, upper: 21000, forecast: true },
+    { value: 14000, lower: 2000, upper: 26000, forecast: true },
+    { value: 13000, lower: -6000, upper: 32000, forecast: true },
+  ];
+
+  it("clamps the band base to the floor for a non-negative series", () => {
+    // Observed shipments never go below zero, so a band that dips to -6000 drags
+    // the whole y-axis negative and squashes the real data into the top half.
+    const out = buildForecastSeries("Units Shipped", "#37c2c9", widening, 2, 16000, 0);
+    const base = out.find((s) => s.name.includes("band base"))!;
+    for (const v of base.data) {
+      if (v != null) expect(v).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("keeps the band's upper edge intact when the lower edge is clamped", () => {
+    const out = buildForecastSeries("Units Shipped", "#37c2c9", widening, 2, 16000, 0);
+    const base = out.find((s) => s.name.includes("band base"))!;
+    const range = out.find((s) => s.name.includes("(confidence)"))!;
+    // base + range must still reach the forecast's upper bound.
+    const i = 2 + 2; // observedCount + third horizon point
+    expect((base.data[i] as number) + (range.data[i] as number)).toBeCloseTo(32000);
+  });
+
+  it("leaves the band alone when the series legitimately goes negative", () => {
+    const out = buildForecastSeries("Warehouse Profit", "#37c2c9", widening, 2, 16000, null);
+    const base = out.find((s) => s.name.includes("band base"))!;
+    expect(base.data[4]).toBe(-6000);
+  });
+
+  it("keeps the internal band-base series out of the legend", () => {
+    const option: Record<string, unknown> = {
+      xAxis: { type: "category", data: ["1", "2"] },
+      legend: { type: "scroll" },
+      series: [{ name: "Units Shipped", type: "line", data: [10, 20] }],
+    };
+    applyForecastOverlay(option, { "Units Shipped": widening }, "#37c2c9");
+    const legendData = (option.legend as { data?: string[] }).data!;
+    expect(legendData).toContain("Units Shipped");
+    expect(legendData).toContain("Units Shipped (forecast)");
+    expect(legendData.some((n) => n.includes("band base"))).toBe(false);
+  });
+});

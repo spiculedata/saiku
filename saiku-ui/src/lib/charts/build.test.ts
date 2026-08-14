@@ -10,6 +10,7 @@ import { describe, test, expect } from "vitest";
 import {
   buildChartOption,
   brushOption,
+  stripSharedMeasurePrefix,
   BRUSHABLE_CHART_TYPES,
   type ChartProjection,
 } from "$lib/charts/build";
@@ -1652,5 +1653,76 @@ describe("buildChartOption — combo charts / per-series type (#1089)", () => {
     const us = series.find((s) => s.name === "Unit Sales")!;
     expect(us.type).toBe("line");
     expect(us.yAxisIndex).toBe(1); // right axis
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * saiku#1771 — heatmap axis labels                                    *
+ * ------------------------------------------------------------------ */
+
+describe("stripSharedMeasurePrefix", () => {
+  test("strips a measure prefix shared by every caption", () => {
+    expect(
+      stripSharedMeasurePrefix([
+        "Units Shipped | Beverly Hills",
+        "Units Shipped | Los Angeles",
+        "Units Shipped | San Diego",
+      ]),
+    ).toEqual(["Beverly Hills", "Los Angeles", "San Diego"]);
+  });
+
+  test("leaves captions alone when the prefixes differ (multi-measure)", () => {
+    const multi = ["Units Shipped | Drink", "Units Ordered | Drink"];
+    expect(stripSharedMeasurePrefix(multi)).toEqual(multi);
+  });
+
+  test("leaves plain captions alone", () => {
+    const plain = ["Drink", "Food", "Non-Consumable"];
+    expect(stripSharedMeasurePrefix(plain)).toEqual(plain);
+  });
+
+  test("leaves a mix of composite and plain captions alone", () => {
+    const mixed = ["Units Shipped | Drink", "Food"];
+    expect(stripSharedMeasurePrefix(mixed)).toEqual(mixed);
+  });
+
+  test("keeps later pipes in the member name", () => {
+    expect(stripSharedMeasurePrefix(["Units Shipped | A | B"])).toEqual(["A | B"]);
+  });
+
+  test("does not strip when the remainder would be empty", () => {
+    const odd = ["Units Shipped | "];
+    expect(stripSharedMeasurePrefix(odd)).toEqual(odd);
+  });
+
+  test("handles the empty list", () => {
+    expect(stripSharedMeasurePrefix([])).toEqual([]);
+  });
+});
+
+describe("buildChartOption — heatmap axis labels (saiku#1771)", () => {
+  test("heatmap x axis drops the shared measure prefix", () => {
+    const proj: ChartProjection = {
+      rowCategories: ["Beverly Hills", "Portland"],
+      columnCategories: ["Units Shipped | Drink", "Units Shipped | Food"],
+      matrix: [
+        [1, 2],
+        [3, 4],
+      ],
+    };
+    const opt = buildChartOption(proj, "heatmap", opts(), undefined, { compact: true }) as Record<string, unknown>;
+    expect((opt.xAxis as { data: string[] }).data).toEqual(["Drink", "Food"]);
+    // Rows never carry the measure — untouched.
+    expect((opt.yAxis as { data: string[] }).data).toEqual(["Beverly Hills", "Portland"]);
+  });
+
+  test("heatmap keeps full captions when two measures share the axis", () => {
+    const proj: ChartProjection = {
+      rowCategories: ["Beverly Hills"],
+      columnCategories: ["Units Shipped | Drink", "Units Ordered | Drink"],
+      matrix: [[1, 2]],
+    };
+    const opt = buildChartOption(proj, "heatmap", opts(), undefined, { compact: true }) as Record<string, unknown>;
+    expect((opt.xAxis as { data: string[] }).data).toEqual(["Units Shipped | Drink", "Units Ordered | Drink"]);
   });
 });

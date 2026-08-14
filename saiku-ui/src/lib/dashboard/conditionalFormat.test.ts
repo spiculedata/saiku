@@ -289,4 +289,18 @@ describe("cellFormatToStyle", () => {
     expect(s).toContain("100%");
     expect(s).not.toContain("150%");
   });
+  /* saiku#1775 — a table on a cyan/amber App theme grew blue data bars because
+     the default fill was a bare hex. It now resolves against the App shell's
+     accent token, with the historical blue kept as the fallback so dashboards
+     outside an App (where the token is undefined) look exactly as before. */
+  test("#1775 defaults the data bar to the app accent token with a blue fallback", () => {
+    const s = cellFormatToStyle({ barWidthPct: 50 })!;
+    expect(s).toContain("var(--saiku-app-accent, #4c8dff)");
+  });
+
+  test("#1775 an explicit barColor still wins over the token", () => {
+    const s = cellFormatToStyle({ barWidthPct: 50, barColor: "#ff0000" })!;
+    expect(s).toContain("#ff0000");
+    expect(s).not.toContain("--saiku-app-accent");
+  });
 });

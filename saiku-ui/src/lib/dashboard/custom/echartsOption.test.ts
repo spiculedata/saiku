@@ -230,4 +230,42 @@ describe("applyDataToEchartsOption", () => {
     applyDataToEchartsOption(input, projection);
     expect(input.series[0]).toEqual({ type: "bar" });
   });
+
+  /* saiku#1772 — horizontal bar. The built-in Chart tile has no horizontal
+     variant, so `yAxis:{type:"category"}` + `xAxis:{type:"value"}` is a main
+     reason to reach for this renderer. Categories used to go to xAxis
+     unconditionally, leaving the y axis labelled 0,1,2… */
+  it("#1772 feeds categories to a declared category yAxis (horizontal bar)", () => {
+    const merged = applyDataToEchartsOption(
+      { xAxis: { type: "value" }, yAxis: { type: "category" }, series: [{ type: "bar", name: "Units" }] },
+      projection,
+    );
+    expect((merged.yAxis as { data: string[] }).data).toEqual(["Jan", "Feb", "Mar"]);
+    // The value axis must NOT be handed categories.
+    expect((merged.xAxis as { data?: string[] }).data).toBeUndefined();
+    expect((merged.xAxis as { type: string }).type).toBe("value");
+  });
+
+  it("#1772 defaults the missing opposite axis to a value axis", () => {
+    const merged = applyDataToEchartsOption({ yAxis: { type: "category" }, series: [{ type: "bar" }] }, projection);
+    expect((merged.yAxis as { data: string[] }).data).toEqual(["Jan", "Feb", "Mar"]);
+    expect(merged.xAxis).toEqual({ type: "value" });
+  });
+
+  it("#1772 leaves the vertical default alone when xAxis is the category axis", () => {
+    const merged = applyDataToEchartsOption(
+      { xAxis: { type: "category" }, yAxis: { type: "value" }, series: [{ type: "bar" }] },
+      projection,
+    );
+    expect((merged.xAxis as { data: string[] }).data).toEqual(["Jan", "Feb", "Mar"]);
+    expect((merged.yAxis as { data?: string[] }).data).toBeUndefined();
+  });
+
+  it("#1772 respects author-supplied axis data on the category yAxis", () => {
+    const merged = applyDataToEchartsOption(
+      { yAxis: { type: "category", data: ["A", "B"] }, series: [{ type: "bar" }] },
+      projection,
+    );
+    expect((merged.yAxis as { data: string[] }).data).toEqual(["A", "B"]);
+  });
 });

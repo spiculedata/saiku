@@ -341,12 +341,20 @@ function withCategoryData(axis: unknown, categories: string[]): Record<string, u
   return a;
 }
 
-/** Apply the category axis to `xAxis`, tolerating a single axis or an array. */
+/** Apply the category axis, tolerating a single axis or an array. */
 function applyCategoryAxis(axis: unknown, categories: string[]): unknown {
   if (Array.isArray(axis)) {
     return axis.map((a, i) => (i === 0 ? withCategoryData(a, categories) : a));
   }
   return withCategoryData(axis, categories);
+}
+
+/** saiku#1772: true when the author EXPLICITLY declared this axis as categorical.
+ *  Deliberately strict — an absent or untyped axis is not "explicit", so the
+ *  historical default (categories on x) still applies when nothing says otherwise. */
+function isDeclaredCategoryAxis(axis: unknown): boolean {
+  const first = Array.isArray(axis) ? axis[0] : axis;
+  return !!first && typeof first === "object" && (first as Record<string, unknown>).type === "category";
 }
 
 /**
@@ -382,8 +390,20 @@ export function applyDataToEchartsOption(
   );
 
   if (!isPie) {
-    opt.xAxis = applyCategoryAxis(opt.xAxis, categories);
-    if (opt.yAxis === undefined || opt.yAxis === null) opt.yAxis = { type: "value" };
+    // saiku#1772: feed the categories to whichever axis the author declared as
+    // categorical, not always x. A horizontal bar is written
+    // `yAxis:{type:"category"}` + `xAxis:{type:"value"}` — and horizontal bar is
+    // one of the shapes the built-in Chart tile can't produce, so it's a main
+    // reason to reach for this renderer. Forcing categories onto x left the y
+    // axis rendering 0,1,2… while the bars themselves were correct.
+    // When both (or neither) are explicitly categorical, x keeps priority.
+    if (isDeclaredCategoryAxis(opt.yAxis) && !isDeclaredCategoryAxis(opt.xAxis)) {
+      opt.yAxis = applyCategoryAxis(opt.yAxis, categories);
+      if (opt.xAxis === undefined || opt.xAxis === null) opt.xAxis = { type: "value" };
+    } else {
+      opt.xAxis = applyCategoryAxis(opt.xAxis, categories);
+      if (opt.yAxis === undefined || opt.yAxis === null) opt.yAxis = { type: "value" };
+    }
   }
 
   if (declared.length === 0) {

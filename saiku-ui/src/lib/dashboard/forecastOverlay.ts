@@ -53,6 +53,13 @@ export interface OverlaySeries {
  * @param points the horizon forecast points
  * @param observedCount number of observed categories (forecast starts after)
  * @param lastObserved the last observed value (connection anchor), or null
+ * @param floor saiku#1777 — lower bound the band may not cross, or null for no
+ *   clamp. A widening interval on a count measure (shipments, baskets, days)
+ *   runs its lower edge below zero, and because the band participates in the
+ *   y-axis extent that drags the whole axis negative — on a 14k–23k series the
+ *   axis stretched to −20,000 and squashed the real data into the top half.
+ *   Callers pass 0 when every observed value is non-negative; the UPPER edge is
+ *   never touched, so the band still shows the full uncertainty above.
  */
 export function buildForecastSeries(
   name: string,
@@ -60,6 +67,7 @@ export function buildForecastSeries(
   points: ForecastPoint[],
   observedCount: number,
   lastObserved: number | null,
+  floor: number | null = null,
 ): OverlaySeries[] {
   const total = observedCount + points.length;
   const line: (number | null)[] = new Array(total).fill(null);
@@ -76,15 +84,20 @@ export function buildForecastSeries(
     const p = points[i];
     const idx = observedCount + i;
     line[idx] = p.value;
-    base[idx] = p.lower;
-    range[idx] = Math.max(0, p.upper - p.lower);
+    // saiku#1777: lift the band's lower edge to the floor, then re-derive the
+    // range from the CLAMPED base so base+range still lands on `p.upper` —
+    // clamping the base alone would silently inflate the band's top.
+    const lower = floor == null ? p.lower : Math.max(floor, p.lower);
+    base[idx] = lower;
+    range[idx] = Math.max(0, p.upper - lower);
   }
 
   const stack = `forecast-band-${name}`;
   return [
     // Transparent base sitting at `lower`.
     {
-      name: `${name} (forecast band base)`,
+      // Named via the shared suffix so the legend filter can't drift from it.
+      name: `${name}${BAND_BASE_SUFFIX}`,
       type: "line",
       data: base,
       stack,
@@ -178,7 +191,11 @@ export function applyForecastOverlay(
         ((s as { color?: unknown }).color as string) ??
         defaultColor;
     const lastObserved = lastFinite((s as { data?: unknown }).data);
-    extra.push(...buildForecastSeries(name, color, pts, observedCount, lastObserved));
+    // saiku#1777: only clamp when the OBSERVED data says the measure can't go
+    // negative. A profit or variance series that genuinely dips below zero keeps
+    // its full band.
+    const floor = allNonNegative((s as { data?: unknown }).data) ? 0 : null;
+    extra.push(...buildForecastSeries(name, color, pts, observedCount, lastObserved, floor));
     applied++;
   }
   if (applied === 0) return 0;
@@ -186,5 +203,42 @@ export function applyForecastOverlay(
   // Append future category labels + the overlay series.
   axisData.push(...forecastLabels(horizon));
   chartSeries.push(...extra);
+
+  // saiku#1777: the band is drawn as a transparent base + a stacked visible
+  // range. The base is pure plumbing, but with no explicit `legend.data` ECharts
+  // derives the legend from every series name and cheerfully lists
+  // "<measure> (forecast band base)" next to the real ones. Pin the legend to
+  // the series a reader should actually see.
+  const legend = (option as { legend?: unknown }).legend;
+  if (legend && typeof legend === "object" && !Array.isArray(legend)) {
+    (legend as Record<string, unknown>).data = chartSeries
+      .map((s) => (s && typeof s === "object" ? (s as { name?: unknown }).name : undefined))
+      .filter((n): n is string => typeof n === "string" && !isInternalOverlaySeries(n));
+  }
   return applied;
+}
+
+/** saiku#1777: name suffix of the transparent stacking base behind the band. */
+const BAND_BASE_SUFFIX = " (forecast band base)";
+
+/** True for overlay series that exist only to draw the band and must stay out
+ *  of the legend. */
+export function isInternalOverlaySeries(name: string): boolean {
+  return name.endsWith(BAND_BASE_SUFFIX);
+}
+
+/** True when every finite point in an ECharts data array is >= 0. Empty / all
+ *  null data counts as non-negative — there's nothing to contradict the floor. */
+function allNonNegative(data: unknown): boolean {
+  if (!Array.isArray(data)) return false;
+  for (const v of data) {
+    const n =
+      typeof v === "number"
+        ? v
+        : v && typeof v === "object" && typeof (v as { value?: unknown }).value === "number"
+          ? (v as { value: number }).value
+          : null;
+    if (n != null && Number.isFinite(n) && n < 0) return false;
+  }
+  return true;
 }

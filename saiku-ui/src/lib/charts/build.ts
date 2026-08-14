@@ -163,6 +163,42 @@ function compactGridTop(o: ChartOptions): number {
  *  overlap into noise and the tooltip is the better affordance. */
 const SCATTER_LABEL_MAX = 25;
 
+/** Separator the server uses between a measure and a member in a composite
+ *  column caption ("Units Shipped | Beverly Hills"). */
+const MEASURE_MEMBER_SEP = " | ";
+
+/**
+ * saiku#1771 — drop the measure prefix from column captions when EVERY caption
+ * shares it.
+ *
+ * When one measure is spread across a level on the column axis, the result
+ * metadata captions each column `"<measure> | <member>"`. A heatmap puts those
+ * captions straight on its category axis, where the labels then truncate to
+ * `"Units Ship…"` — identical for every column, so the axis carries no
+ * information at all.
+ *
+ * Only strips when all captions agree on the prefix: with two measures across
+ * the axis ("Units Shipped | Drink" / "Units Ordered | Drink") the measure name
+ * IS the distinguishing part and must stay. Also refuses to produce an empty
+ * label. Pure.
+ */
+export function stripSharedMeasurePrefix(captions: string[]): string[] {
+  if (captions.length === 0) return captions;
+  let prefix: string | null = null;
+  const members: string[] = [];
+  for (const caption of captions) {
+    const at = caption.indexOf(MEASURE_MEMBER_SEP);
+    if (at <= 0) return captions; // plain caption (or leading separator) — leave the set alone
+    const head = caption.slice(0, at);
+    const tail = caption.slice(at + MEASURE_MEMBER_SEP.length);
+    if (tail.length === 0) return captions; // nothing left to label with
+    if (prefix === null) prefix = head;
+    else if (prefix !== head) return captions; // prefixes differ — they carry meaning
+    members.push(tail);
+  }
+  return members;
+}
+
 function linearRegression(vals: (number | null)[]): number[] {
   const n = vals.length;
   let sumX = 0,
@@ -893,6 +929,10 @@ export function buildChartOption(
   }
 
   if (t === "heatmap") {
+    // saiku#1771: the heatmap is the one type that puts columnCategories on a
+    // CATEGORY AXIS rather than into the legend, so a shared "<measure> | "
+    // prefix is pure noise here — and it's the part that survives truncation.
+    const heatCols = stripSharedMeasurePrefix(cols);
     const data: [number, number, number][] = [];
     for (let i = 0; i < matrix.length; i++) {
       for (let j = 0; j < (matrix[i]?.length ?? 0); j++) {
@@ -919,7 +959,7 @@ export function buildChartOption(
         // / bar (user feedback 2026-06-07): "Alcohol…" / "Breakfa…" /
         // "Eggs / …" with no way to read full names. Rotate when crowded.
         axisLabel: catLabel(cols.length > 8 ? 30 : 0),
-        data: cols,
+        data: heatCols,
         name: xName,
       },
       yAxis: { ...baseAxis, data: rows, inverse: true, name: yName },
