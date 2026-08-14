@@ -41,7 +41,9 @@ public class SmtpMailSender implements MailSender {
             // message carries no unsubscribe value the headers are never touched, so the existing
             // self-send / test-send MIME output is byte-for-byte unchanged. When present we emit the
             // RFC 2369 List-Unsubscribe header plus the RFC 8058 one-click marker.
-            String listUnsub = m.listUnsubscribe();
+            // saiku#1811 PR4 (SEC carry-forward #1): now that a real per-recipient value is set, CRLF-strip
+            // it before setHeader so a smuggled CR/LF can't inject an extra SMTP header (header injection).
+            String listUnsub = stripCrlf(m.listUnsubscribe());
             if (listUnsub != null && !listUnsub.isBlank()) {
                 msg.setHeader("List-Unsubscribe", listUnsub);
                 msg.setHeader("List-Unsubscribe-Post", "List-Unsubscribe=One-Click");
@@ -100,5 +102,17 @@ public class SmtpMailSender implements MailSender {
             });
         }
         return Session.getInstance(p);
+    }
+
+    /**
+     * Strip CR/LF (and trim) so a header value can never smuggle an extra SMTP header via injection
+     * (saiku#1811 PR4, SEC carry-forward #1). Returns null when the input is null; blank after stripping
+     * is returned as-is (the caller treats blank as "no header").
+     */
+    private static String stripCrlf(String s) {
+        if (s == null) {
+            return null;
+        }
+        return s.replace('\r', ' ').replace('\n', ' ').trim();
     }
 }

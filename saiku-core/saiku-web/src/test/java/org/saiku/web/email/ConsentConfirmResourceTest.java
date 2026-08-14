@@ -120,4 +120,41 @@ public class ConsentConfirmResourceTest {
         assertEquals(200, resp.getStatus());
         assertFalse(store.isConfirmed("not-an-email"));
     }
+
+    // ---- saiku#1811 PR4, SEC carry-forward #2: per-target-address confirm cap ----
+
+    @Test
+    public void perAddressCap_returns429_afterBudgetExhausted_forSameAddress() {
+        ConsentConfirmResource r = resource();
+        // Generous per-IP limiter so it isn't the one that trips; a 2-per-window per-ADDRESS cap.
+        r.setRateLimiter(new org.saiku.web.security.ratelimit.AiRateLimiter(1000, 60_000L));
+        r.setAddressRateLimiter(new org.saiku.web.security.ratelimit.AiRateLimiter(2, 60_000L));
+        assertEquals(200, r.confirm("bogus1", "victim@example.com").getStatus());
+        assertEquals(200, r.confirm("bogus2", "victim@example.com").getStatus());
+        // Third attempt against the SAME address is capped even though the per-IP budget is fine.
+        assertEquals(429, r.confirm("bogus3", "victim@example.com").getStatus());
+    }
+
+    @Test
+    public void perAddressCap_isolatesDifferentAddresses() {
+        ConsentConfirmResource r = resource();
+        r.setRateLimiter(new org.saiku.web.security.ratelimit.AiRateLimiter(1000, 60_000L));
+        r.setAddressRateLimiter(new org.saiku.web.security.ratelimit.AiRateLimiter(1, 60_000L));
+        // Exhaust the cap for address A.
+        assertEquals(200, r.confirm("x", "a@example.com").getStatus());
+        assertEquals(429, r.confirm("x", "a@example.com").getStatus());
+        // A different address B still has its own budget — the cap is per-address, not global.
+        assertEquals(200, r.confirm("x", "b@example.com").getStatus());
+    }
+
+    @Test
+    public void perAddressCap_429BodyIsGeneric_noAddressEchoed() {
+        ConsentConfirmResource r = resource();
+        r.setRateLimiter(new org.saiku.web.security.ratelimit.AiRateLimiter(1000, 60_000L));
+        r.setAddressRateLimiter(new org.saiku.web.security.ratelimit.AiRateLimiter(1, 60_000L));
+        r.confirm("x", "secret@example.com");
+        Response capped = r.confirm("x", "secret@example.com");
+        assertEquals(429, capped.getStatus());
+        assertFalse(capped.getEntity().toString().contains("secret@example.com"));
+    }
 }

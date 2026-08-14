@@ -324,10 +324,60 @@
         <aop:scoped-proxy/>
         <property name="consentStore" ref="recipientConsentStore"/>
     </bean>
-    <!-- #1811 PR4: the admin "invite a recipient" action (POST an address to request
-         consent) will live in a new admin-only resource here; it will call
-         recipientConsentStore.requestConsent(...) and then mail the recipient their
-         confirm link. Nothing is wired to send in PR3. -->
+    <!-- saiku#1811 PR4 (the send gate — consent invite + multi-recipient send). THIS IS
+         THE FIRST CODE THAT CAN MAIL A NON-SELF ADDRESS. Fenced by a default-OFF, ops-only
+         master flag (saiku.mail.sendToOthers.enabled / SAIKU_MAIL_SEND_TO_OTHERS_ENABLED):
+         with the flag OFF (the default) NO path here can mail a non-self address and the
+         app behaves exactly as before — self-send / test-send stay selfTo-only.
+
+         mailSendPolicy: the default-OFF master switch (env/prop only; never settable from
+         HTTP). Every non-self send consults it FIRST and fails closed when off. -->
+    <bean id="mailSendPolicy" class="org.saiku.service.mail.send.MailSendPolicy"/>
+
+    <!-- mailLinkBuilder: builds the absolute per-recipient List-Unsubscribe link and the
+         consent-confirm link from the ops-only public base URL (SAIKU_PUBLIC_BASE_URL /
+         saiku.public.baseUrl). Never from a request, so a client can't point a link at an
+         attacker host. -->
+    <bean id="mailLinkBuilder" class="org.saiku.service.mail.send.MailLinkBuilder"/>
+
+    <!-- multiRecipientMailService: resolves the admin's recipient references, passes them
+         through recipientGate.clear() (not suppressed AND allowlisted AND consent CONFIRMED),
+         and sends ONE individually-addressed message per cleared recipient (never a shared
+         TO/CC/BCC — the recipient list never leaks), each with its own List-Unsubscribe.
+         Per-recipient partial success; rejected recipients silently dropped (logged by count,
+         never address); per-batch cap. Fails closed when the master flag is off. -->
+    <bean id="multiRecipientMailService" class="org.saiku.service.mail.send.MultiRecipientMailService">
+        <constructor-arg ref="mailSendPolicy"/>
+        <constructor-arg ref="recipientGate"/>
+        <constructor-arg ref="unsubscribeTokens"/>
+        <constructor-arg ref="mailLinkBuilder"/>
+    </bean>
+
+    <!-- consentInviteService: the ONE consent-exempt send (the double-opt-in bootstrap).
+         Allowlist-gated, NEVER to a suppressed address, server-constant subject/body, and
+         also behind the master flag. requestConsent() mints the token; one invite carries the
+         confirm link to the allowlisted address only. -->
+    <bean id="consentInviteService" class="org.saiku.service.mail.send.ConsentInviteService">
+        <constructor-arg ref="mailSendPolicy"/>
+        <constructor-arg ref="recipientTrustStore"/>
+        <constructor-arg ref="suppressionStore"/>
+        <constructor-arg ref="recipientConsentStore"/>
+        <constructor-arg ref="mailLinkBuilder"/>
+    </bean>
+
+    <!-- GET /saiku/api/admin/mail-send/status, POST /saiku/api/admin/mail-send/invite,
+         POST /saiku/api/admin/mail-send — admin surface for the send gate. Admin-only
+         (class @RolesAllowed + per-method isAdmin() + the /rest/saiku/admin/** Spring URL
+         gate). Both send endpoints 403 unless the master flag is on. Per-admin rate limits
+         (invite + send) default via field-init. Request-scoped + scoped-proxy (reads the
+         request SecurityContext). Auto-registered with Jersey by SaikuJerseyApplication. -->
+    <bean id="mailSendResource" scope="request" class="org.saiku.web.email.MailSendResource">
+        <aop:scoped-proxy/>
+        <property name="multiRecipientMailService" ref="multiRecipientMailService"/>
+        <property name="consentInviteService" ref="consentInviteService"/>
+        <property name="mailConfigResolver" ref="mailConfigResolver"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
 
     <!-- saiku#1029: demo email gate. fromEnvironment() reads WORKOS_API_KEY +
          WORKOS_CLIENT_ID (both required), SAIKU_DEMO_GATE_TTL_DAYS, and the
