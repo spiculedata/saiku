@@ -36,6 +36,17 @@ public class EmailMessageAssembler {
 
     public MailMessage assemble(EmailSelfRequest req, String fromAddress, String toAddress) {
         String to = validateAddress(toAddress);
+        Content c = assembleContent(req);
+        return MailMessage.of(to, fromAddress, c.subject(), c.htmlBody(), c.inlineImages(), c.attachments());
+    }
+
+    /**
+     * Validate + sanitize + decode the client artifacts into a recipient-agnostic {@link Content} (no
+     * {@code To:}/{@code From:} bound). Reused by the multi-recipient send path (saiku#1811, PR4), which
+     * delivers the SAME sanitized content to every cleared recipient, individually addressed. The exact
+     * same OWASP-sanitized summary + size-capped chart/PDF discipline as {@link #assemble} applies.
+     */
+    public Content assembleContent(EmailSelfRequest req) {
         String subject = stripCrlf(req.getSubject() == null ? "" : req.getSubject());
 
         String summary = req.getSummaryHtml() == null || req.getSummaryHtml().isBlank()
@@ -56,8 +67,12 @@ public class EmailMessageAssembler {
             attachments.add(new Attachment("analysis.pdf", "application/pdf", pdf));
         }
 
-        return MailMessage.of(to, fromAddress, subject, html.toString(), inline, attachments);
+        return new Content(subject, html.toString(), inline, attachments);
     }
+
+    /** Recipient-agnostic composed content: sanitized subject + HTML body + inline images + attachments. */
+    public record Content(
+            String subject, String htmlBody, List<InlineImage> inlineImages, List<Attachment> attachments) {}
 
     private String validateAddress(String address) {
         if (address == null || address.isBlank()) {
