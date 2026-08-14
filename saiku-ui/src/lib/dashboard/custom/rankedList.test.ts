@@ -80,11 +80,88 @@ describe("pickColumns", () => {
   });
 
   it("ignores a configured column that isn't in the result", () => {
-    expect(pickColumns(MOVERS, { valueColumn: "Nope" }).valueColumn).toBe("Growth");
+    expect(pickColumns(MOVERS, { valueColumn: "Nope" }).valueColumn).toBe(
+      "Growth",
+    );
   });
 
   it("returns nulls for an empty result", () => {
-    expect(pickColumns([], {})).toEqual({ labelColumn: null, valueColumn: null });
+    expect(pickColumns([], {})).toEqual({
+      labelColumn: null,
+      valueColumn: null,
+    });
+  });
+
+  /*
+   * saiku#1756. Column detection sniffed whether a cell PARSES as a number,
+   * so a dimension whose captions happen to look numeric — a prescriber decile
+   * ("10.0"), a year, a store number, a size band — was picked as the value and
+   * the measure became the label. The card rendered currency as its label and
+   * the decile as its value, with no error.
+   *
+   * A measure arrives as the typed { value, formatted } envelope, and that is
+   * what identifies it — not what its text parses to.
+   */
+  it("prefers the typed measure cell over a numeric-looking caption (saiku#1756)", () => {
+    const decileRows = [
+      {
+        Decile: "10.0",
+        "Net Revenue": { value: 19824863.52, formatted: "$19,824,863.52" },
+      },
+      {
+        Decile: "9.0",
+        "Net Revenue": { value: 12391476.06, formatted: "$12,391,476.06" },
+      },
+    ];
+    expect(pickColumns(decileRows, {})).toEqual({
+      labelColumn: "Decile",
+      valueColumn: "Net Revenue",
+    });
+  });
+
+  it("still infers correctly when the caption column comes second", () => {
+    const rows = [
+      { "Net Revenue": { value: 10, formatted: "$10" }, Year: "2024" },
+    ];
+    expect(pickColumns(rows, {})).toEqual({
+      labelColumn: "Year",
+      valueColumn: "Net Revenue",
+    });
+  });
+
+  it("falls back to numeric sniffing when no typed cell is present", () => {
+    const plain = [
+      { Region: "West", Total: 120 },
+      { Region: "South", Total: 90 },
+    ];
+    expect(pickColumns(plain, {})).toEqual({
+      labelColumn: "Region",
+      valueColumn: "Total",
+    });
+  });
+
+  it("still picks a numeric-string value column when that is all there is", () => {
+    const rows = [{ Region: "West", Total: "120" }];
+    expect(pickColumns(rows, {})).toEqual({
+      labelColumn: "Region",
+      valueColumn: "Total",
+    });
+  });
+
+  it("projects the decile ladder the right way round end to end (saiku#1756)", () => {
+    const decileRows = [
+      {
+        Decile: "9.0",
+        "Net Revenue": { value: 12391476.06, formatted: "$12,391,476.06" },
+      },
+      {
+        Decile: "10.0",
+        "Net Revenue": { value: 19824863.52, formatted: "$19,824,863.52" },
+      },
+    ];
+    const rows = projectRankedList(decileRows, { sort: "desc" });
+    expect(rows[0].label).toBe("10.0");
+    expect(rows[0].formatted).toBe("$19,824,863.52");
   });
 });
 
@@ -117,7 +194,9 @@ describe("projectRankedList", () => {
   });
 
   it("treats zero as flat, not positive", () => {
-    const rows = projectRankedList([{ d: "Flat", v: { value: 0, formatted: "0.0%" } }]);
+    const rows = projectRankedList([
+      { d: "Flat", v: { value: 0, formatted: "0.0%" } },
+    ]);
     expect(rows[0].tone).toBe("flat");
   });
 
@@ -130,7 +209,11 @@ describe("projectRankedList", () => {
    * otherwise "top 3" silently means "first 3 rows, re-ordered". */
   it("sorts before truncating so top-N is the real top-N", () => {
     const rows = projectRankedList(MOVERS, { sort: "desc", limit: 3 });
-    expect(rows.map((r) => r.label)).toEqual(["Produce", "Beverages", "Snack Foods"]);
+    expect(rows.map((r) => r.label)).toEqual([
+      "Produce",
+      "Beverages",
+      "Snack Foods",
+    ]);
     expect(rows.map((r) => r.rank)).toEqual([1, 2, 3]);
   });
 
@@ -145,11 +228,9 @@ describe("projectRankedList", () => {
       { d: "Big", v: 10 },
       { d: "Small", v: 1 },
     ];
-    expect(projectRankedList(recs, { sort: "desc" }).map((r) => r.label)).toEqual([
-      "Big",
-      "Small",
-      "None",
-    ]);
+    expect(
+      projectRankedList(recs, { sort: "desc" }).map((r) => r.label),
+    ).toEqual(["Big", "Small", "None"]);
   });
 
   it("returns an empty list for empty / missing records", () => {

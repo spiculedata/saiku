@@ -15,9 +15,11 @@
  *
  *   { labelColumn?, valueColumn?, limit?, sort?, tone?, subtitle?, showRank? }
  *
- * Column names are optional: omitted, the projection picks the first textual
- * column as the label and the first numeric column as the value, so a tile
- * bound to a two-column query works with no configuration at all.
+ * Column names are optional: omitted, the projection picks the first typed
+ * measure cell as the value and the first remaining column as the label, so a
+ * tile bound to a two-column query works with no configuration at all. See
+ * {@link pickColumns} for why that inference is structural rather than a test
+ * of whether the text parses as a number (saiku#1756).
  *
  * Self-contained on purpose — no `$lib` imports — because the embed bundle
  * compiles this module without the alias (same constraint as graphTile.ts).
@@ -32,9 +34,11 @@ export type RankedTone = "signed" | "none";
 
 /** Declarative config for the `ranked-list` renderer. */
 export interface RankedListConfig {
-  /** Column holding the row label. Default: first non-numeric column. */
+  /** Column holding the row label. Default: the first column that isn't the
+   *  value column. */
   labelColumn?: string;
-  /** Column holding the ranked value. Default: first numeric column. */
+  /** Column holding the ranked value. Default: the first typed measure cell
+   *  (falling back to the first numeric column when the result has none). */
   valueColumn?: string;
   /** Max rows rendered. Default {@link DEFAULT_LIMIT}. */
   limit?: number;
@@ -70,7 +74,9 @@ interface CellLike {
 }
 
 function isCell(v: unknown): v is CellLike {
-  return typeof v === "object" && v !== null && ("value" in v || "formatted" in v);
+  return (
+    typeof v === "object" && v !== null && ("value" in v || "formatted" in v)
+  );
 }
 
 /** Numeric reading of a record cell, or null when there isn't one. Handles the
@@ -95,7 +101,8 @@ export function cellText(v: unknown): string {
   if (typeof v === "string") return v;
   if (typeof v === "number") return String(v);
   if (isCell(v)) {
-    if (typeof v.formatted === "string" && v.formatted !== "") return v.formatted;
+    if (typeof v.formatted === "string" && v.formatted !== "")
+      return v.formatted;
     return v.value == null ? "" : String(v.value);
   }
   return String(v);
@@ -109,9 +116,20 @@ export function normaliseLimit(limit: unknown): number {
   return Math.min(n, MAX_LIMIT);
 }
 
-/** Pick the label + value columns: explicit config wins; otherwise the first
- *  column that never parses as a number is the label and the first that always
- *  does is the value. */
+/** Pick the label + value columns: explicit config wins; otherwise the value
+ *  column is inferred STRUCTURALLY and the label is what's left.
+ *
+ *  Structurally, because sniffing whether a cell parses as a number gets it
+ *  backwards on any cube whose captions look numeric (saiku#1756) — a
+ *  prescriber decile ("10.0"), a year, a store number, a size band. Such a
+ *  card rendered the measure as its label and the dimension as its value, with
+ *  no error to show for it.
+ *
+ *  A measure comes back from /ai/query as the typed { value, formatted }
+ *  envelope; a row caption is a bare string. That envelope is the signal, and
+ *  it can't be confused by the caption's text. Number sniffing stays as the
+ *  fallback for record shapes that carry no typed cells at all (plain
+ *  number-valued records from a plugin or a hand-built result). */
 export function pickColumns(
   records: Array<Record<string, unknown>>,
   config: RankedListConfig,
@@ -119,15 +137,24 @@ export function pickColumns(
   const first = records[0];
   const keys = first ? Object.keys(first) : [];
   const numeric = (k: string) => records.some((r) => cellNumber(r[k]) !== null);
+  const typedMeasure = (k: string) => records.some((r) => isCell(r[k]));
+  const hasTypedMeasure = keys.some(typedMeasure);
+  /** A column that can hold the ranked value: the typed measure envelope when
+   *  the result has any, else anything that reads as a number. */
+  const valueCandidate = (k: string) =>
+    hasTypedMeasure ? typedMeasure(k) : numeric(k);
 
   const valueColumn =
     config.valueColumn && keys.includes(config.valueColumn)
       ? config.valueColumn
-      : (keys.find((k) => k !== config.labelColumn && numeric(k)) ?? null);
+      : (keys.find((k) => k !== config.labelColumn && valueCandidate(k)) ??
+        null);
   const labelColumn =
     config.labelColumn && keys.includes(config.labelColumn)
       ? config.labelColumn
-      : (keys.find((k) => k !== valueColumn && !numeric(k)) ?? keys.find((k) => k !== valueColumn) ?? null);
+      : (keys.find((k) => k !== valueColumn && !valueCandidate(k)) ??
+        keys.find((k) => k !== valueColumn) ??
+        null);
 
   return { labelColumn, valueColumn };
 }
@@ -184,8 +211,7 @@ export function projectRankedList(
 
 /** Result shape shared by every custom renderer's options validator. */
 export type ValidateResult =
-  | { ok: true; value: Record<string, unknown> }
-  | { ok: false; error: string };
+  { ok: true; value: Record<string, unknown> } | { ok: false; error: string };
 
 const SORTS: RankedSort[] = ["desc", "asc", "none"];
 const TONES: RankedTone[] = ["signed", "none"];
