@@ -539,9 +539,84 @@ public class AiSchemaConverterTest {
 
         ThinQuery tq = converter.convert(req, schema);
 
+        assertTrue(tq.getMdx(), tq.getMdx().contains("BottomCount("));
+        assertTrue(tq.getMdx(), tq.getMdx().contains("[Measures].[Store Sales])"));
+    }
+
+    /* ------ saiku#1801: bottom-N must rank only rows that survive NON EMPTY ---
+     *
+     * BottomCount is evaluated BEFORE the axis's NON EMPTY. Members with no
+     * value for the measure rank lowest, so they take up the budget and are
+     * then stripped -- a request for 8 rows came back with 3, SUCCESS, no hint
+     * why. TopCount is unaffected: nulls sort last, so they never make the cut.
+     */
+
+    @Test
+    public void bottomCountFiltersEmptyMembersBeforeRanking() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Time", "Time By", "Year")));
+        AiOrderBy ob = new AiOrderBy();
+        ob.setBy("Store Sales");
+        ob.setDirection("asc");
+        req.setOrder(Collections.singletonList(ob));
+        req.setLimit(5);
+
+        String mdx = converter.convert(req, schema).getMdx();
+
         assertTrue(
-                tq.getMdx(),
-                tq.getMdx().contains("BottomCount([Time].[Time By].[Year].Members, 5, [Measures].[Store Sales])"));
+                "bottom-N should rank a pre-filtered set -- got: " + mdx,
+                mdx.contains("BottomCount(FILTER([Time].[Time By].[Year].Members, "
+                        + "NOT ISEMPTY([Measures].[Store Sales])), 5, [Measures].[Store Sales])"));
+    }
+
+    @Test
+    public void topCountIsLeftAlone() {
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Time", "Time By", "Year")));
+        AiOrderBy ob = new AiOrderBy();
+        ob.setBy("Store Sales");
+        ob.setDirection("desc");
+        req.setOrder(Collections.singletonList(ob));
+        req.setLimit(5);
+
+        String mdx = converter.convert(req, schema).getMdx();
+
+        assertTrue("top-N needs no pre-filter -- got: " + mdx, !mdx.contains("ISEMPTY"));
+    }
+
+    @Test
+    public void bottomCountKeepsEmptyMembersWhenNonEmptyIsOff() {
+        // Asking for empties AND a bottom-N is a coherent request -- "which
+        // members have no data?" -- so the pre-filter must not override it.
+        AiQueryRequest req = baseReq();
+        req.setNonEmpty(false);
+        req.setRows(Collections.singletonList(new AiAxisSelection("Time", "Time By", "Year")));
+        AiOrderBy ob = new AiOrderBy();
+        ob.setBy("Store Sales");
+        ob.setDirection("asc");
+        req.setOrder(Collections.singletonList(ob));
+        req.setLimit(5);
+
+        String mdx = converter.convert(req, schema).getMdx();
+
+        assertTrue("got: " + mdx, !mdx.contains("ISEMPTY"));
+        assertTrue("got: " + mdx, mdx.contains("BottomCount([Time].[Time By].[Year].Members, 5,"));
+    }
+
+    @Test
+    public void bottomCountWithoutLimitIsPlainOrder() {
+        // Order alone returns the whole level, so nothing is lost to NON EMPTY
+        // and there is nothing to protect the ranking budget from.
+        AiQueryRequest req = baseReq();
+        req.setRows(Collections.singletonList(new AiAxisSelection("Time", "Time By", "Year")));
+        AiOrderBy ob = new AiOrderBy();
+        ob.setBy("Store Sales");
+        ob.setDirection("asc");
+        req.setOrder(Collections.singletonList(ob));
+
+        String mdx = converter.convert(req, schema).getMdx();
+
+        assertTrue("got: " + mdx, mdx.contains("Order(") && !mdx.contains("ISEMPTY"));
     }
 
     @Test
