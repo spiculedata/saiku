@@ -86,7 +86,7 @@ function legendConfig(o: ChartOptions, tk: ThemeTokens): Record<string, unknown>
   // (title.top:8); a top legend at the default top:10 would draw on top of it
   // and read as missing. Push the legend below the title band when titled;
   // untitled charts keep the original top:10.
-  if (o.legendPosition === "top") position.top = o.title ? 32 : 10;
+  if (o.legendPosition === "top") position.top = o.title ? TITLE_LEGEND_TOP : 10;
   else if (o.legendPosition === "bottom") position.bottom = 10;
   else if (o.legendPosition === "left") {
     position.left = 10;
@@ -108,7 +108,11 @@ function legendConfig(o: ChartOptions, tk: ThemeTokens): Record<string, unknown>
 function compactLegend(o: ChartOptions, tk: ThemeTokens): Record<string, unknown> {
   if (!o.showLegend) return { show: false };
   const base: Record<string, unknown> = { type: "scroll", textStyle: { color: tk.fg } };
-  if (o.legendPosition === "top") base.top = 0;
+  // saiku#1776: mirror the #1622 roomy-legend fix here. Compact is what dashboard
+  // AND App Builder tiles render as, so leaving this pinned at 0 put the legend
+  // straight across the #1595 title band (title.top:8) on every titled tile — the
+  // overlap #1622 closed, still live on the path most authors actually use.
+  if (o.legendPosition === "top") base.top = o.title ? TITLE_LEGEND_TOP : 0;
   else if (o.legendPosition === "left") {
     base.left = 0;
     base.top = "middle";
@@ -135,6 +139,25 @@ function titleConfig(o: ChartOptions, tk: ThemeTokens): Record<string, unknown> 
 // #1595: grid.top (px) that reserves a clear band for the title above the plot
 // in compact tiles. Roomy charts already reserve their own (title ? 50 : …).
 const TITLE_GRID_TOP = 44;
+
+// #1622/#1776: y offset for a TOP legend when a title band is present, so the
+// legend row sits under the title instead of across it. Shared by the roomy
+// (`legendConfig`) and compact (`compactLegend`) legends — they diverged once,
+// which is exactly how the overlap came back on tiles.
+const TITLE_LEGEND_TOP = 32;
+
+// saiku#1776: vertical room one horizontal legend row needs. When a compact tile
+// is BOTH titled and top-legended the plot has to clear the title band *and* the
+// legend row beneath it, or the legend lands on the top gridline.
+const LEGEND_ROW_H = 24;
+
+/** saiku#1595/#1776: `grid.top` for a compact tile — reserve the title band, plus
+ *  the legend row when a top legend renders under it. */
+function compactGridTop(o: ChartOptions): number {
+  if (!o.title) return 24;
+  const topLegend = o.showLegend && o.legendPosition === "top";
+  return topLegend ? TITLE_GRID_TOP + LEGEND_ROW_H : TITLE_GRID_TOP;
+}
 
 /** saiku#1759: label scatter points up to this many rows. Past it the labels
  *  overlap into noise and the tooltip is the better affordance. */
@@ -888,7 +911,7 @@ export function buildChartOption(
       // a horizontal legend there. Rotated x-axis labels need ~60px
       // bottom room.
       grid: compact
-        ? { left: 96, top: title ? TITLE_GRID_TOP : 24, right: 16, bottom: 60 }
+        ? { left: 96, top: compactGridTop(o), right: 16, bottom: 60 }
         : { left: 120, top: title ? 56 : 40, right: 96, bottom: 60 },
       xAxis: {
         ...baseAxis,
@@ -1030,7 +1053,7 @@ export function buildChartOption(
         tooltip: { ...tooltipStyle, trigger: "item" },
         legend: { show: false },
         grid: compact
-          ? { top: title ? TITLE_GRID_TOP : 24, left: 60, right: 24, bottom: 56 }
+          ? { top: compactGridTop(o), left: 60, right: 24, bottom: 56 }
           : { left: 72, top: title ? 50 : 40, right: 40, bottom: 56 },
         dataZoom: dataZoomConfig(compact, rows.length, false),
         // An explicit author label always wins (#1596 precedence); the measure
@@ -1104,7 +1127,7 @@ export function buildChartOption(
       // #1080: roomy gets a slider + inside zoom; compact gets inside-only. The
       // roomy slider sits at the bottom, so reserve a little extra grid bottom.
       grid: compact
-        ? { top: title ? TITLE_GRID_TOP : 24, left: 48, right: 16, bottom: 56 }
+        ? { top: compactGridTop(o), left: 48, right: 16, bottom: 56 }
         : { left: 60, top: title ? 50 : 40, right: 40, bottom: 56 },
       // scatter / bubble: never draw the visible slider (the points
       // already show the full distribution and the slider added clutter
@@ -1172,7 +1195,7 @@ export function buildChartOption(
       // (pads are 0 otherwise); grid.top stays reserved for the #1595 title band.
       grid: compact
         ? {
-            top: title ? TITLE_GRID_TOP : 24,
+            top: compactGridTop(o),
             left: 48 + VALUE_NAME_LEFT_PAD,
             right: 16,
             // #1598: + rotatedTickBottom so rotated tick labels don't clip.
@@ -1357,7 +1380,7 @@ export function buildChartOption(
     // the #1595 title band.
     grid: compact
       ? {
-          top: title ? TITLE_GRID_TOP : 24,
+          top: compactGridTop(o),
           left: 48 + VALUE_NAME_LEFT_PAD,
           right: 16,
           // #1598: + rotatedTickBottom so rotated tick labels don't clip.

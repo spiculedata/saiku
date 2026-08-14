@@ -143,6 +143,17 @@ public class SaikuLauncher implements Callable<Integer> {
             if (isDemoModeRequested() && System.getProperty("spring.profiles.active") == null) {
                 System.setProperty("spring.profiles.active", "demo");
             }
+            // saiku#1769: the launcher's demo switch is the SAIKU_DEMO env var, but the
+            // webapp reads a SYSTEM PROPERTY (InfoResource -> System.getProperty("saiku.demo")),
+            // which is what /info/capabilities reports as `demoMode` and what the UI keys its
+            // demo affordances off (pre-filled credential, "Try the demo" panel). Without this
+            // bridge SAIKU_DEMO=true seeds demo users and prints the admin/admin banner while
+            // the UI still renders a production login — i.e. the advertised credential is
+            // unreachable. An explicit -Dsaiku.demo always wins, same as the profile above.
+            String demoFlag = resolveDemoModeProperty(isDemoModeRequested(), System.getProperty("saiku.demo"));
+            if (demoFlag != null) {
+                System.setProperty("saiku.demo", demoFlag);
+            }
             // Demo dashboards ship KPI + chart tiles that hit /ai/query for
             // aggregated result values. Relax the AiPolicy default to
             // AGGREGATED in demo mode — see resolveDemoAiPolicyDefault for
@@ -345,6 +356,18 @@ public class SaikuLauncher implements Callable<Integer> {
                 System.out.println("  /homes/<user>/ — useful for tutorials, NOT for production.");
                 System.out.println("  Drop demo mode by unsetting SAIKU_DEMO and removing");
                 System.out.println("  -Dspring.profiles.active=demo. See saiku#897.");
+                // saiku#1769: the admin row above is only true when the EFFECTIVE users file
+                // still carries the shipped default. A <saiku-home>/users.properties written by
+                // an earlier SAIKU_ADMIN_PASSWORD boot outranks the WAR default, so the banner
+                // would otherwise advertise admin/admin while the real password is the rotated
+                // one nobody remembers — the instance reads as broken rather than locked.
+                if (!adminIsDefault) {
+                    System.out.println();
+                    System.out.println("  NOTE: admin/admin above is NOT in effect — an external");
+                    System.out.println("  users.properties (or SAIKU_ADMIN_PASSWORD) has rotated the");
+                    System.out.println("  admin password. Delete <saiku-home>/users.properties to");
+                    System.out.println("  restore the demo credential, or sign in with the rotated one.");
+                }
             } else {
                 System.out.println("  SECURITY: default credentials (admin/admin) are active.");
             }
@@ -591,6 +614,30 @@ public class SaikuLauncher implements Callable<Integer> {
          * @return {@code "aggregated"} when demo mode should provide the relaxed default;
          *         {@code null} to leave {@code ai.policy} untouched
          */
+        /**
+         * saiku#1769 — decide the {@code saiku.demo} system property under demo mode.
+         *
+         * <p>The launcher's demo switch is the {@code SAIKU_DEMO} env var, but the webapp reads a
+         * system property: {@code InfoResource} does {@code System.getProperty("saiku.demo")} and
+         * publishes it as {@code demoMode} on {@code /info/capabilities}. The UI keys every demo
+         * affordance off that flag — the pre-filled credential, the "Try the demo" panel, the
+         * "Sign in as demo user" button. With no bridge, {@code SAIKU_DEMO=true} seeds the demo
+         * users and prints the admin/admin banner while the UI renders a production login form,
+         * so the advertised credential is effectively unreachable.
+         *
+         * <p>An explicit {@code -Dsaiku.demo=...} always wins, mirroring how the Spring profile
+         * and {@code ai.policy} defaulting behave. Empty / whitespace counts as unset.
+         *
+         * @param demoMode  whether demo mode was requested (from {@link #isDemoModeRequested()})
+         * @param propValue current value of the {@code saiku.demo} system property (may be null)
+         * @return {@code "true"} when the launcher should set the property; {@code null} to leave it
+         */
+        static String resolveDemoModeProperty(boolean demoMode, String propValue) {
+            if (!demoMode) return null;
+            if (propValue != null && !propValue.isBlank()) return null;
+            return "true";
+        }
+
         static String resolveDemoAiPolicyDefault(boolean demoMode, String envValue, String propValue) {
             if (!demoMode) return null;
             if (envValue != null && !envValue.isBlank()) return null;

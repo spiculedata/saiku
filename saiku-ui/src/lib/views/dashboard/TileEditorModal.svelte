@@ -1790,9 +1790,15 @@
     border-radius: 4px;
     padding: 0.5rem 0.75rem;
     margin: 0;
-    /* Let the embed take the freed-up vertical space when the modal grows. */
-    flex: 1;
-    min-height: 0;
+    /* Let the embed take the freed-up vertical space when the modal grows.
+       saiku#1773: `flex: 1` alone means `flex-basis: 0%`, and paired with
+       `min-height: 0` inside the modal body — a CONTENT-SIZED `overflow-auto`
+       column flex container, so there is no free space to distribute — the
+       fieldset collapsed to its legend (35px) while `.qe-embed`'s 360px floor
+       overflowed it. Everything after this block (Auto-refresh, table
+       conditional formatting, sparkline) then painted on top of the builder.
+       `1 0 auto` keeps the grow behaviour but floors the box at its content. */
+    flex: 1 0 auto;
   }
   .qe-section legend {
     font-size: 0.75rem;
@@ -1807,10 +1813,15 @@
     grid-template-columns: 240px 1fr;
     gap: 0.5rem;
     flex: 1;
-    min-height: 0;
     /* A floor so the drop zones + result preview are usable even before the
-       modal's flex height resolves. */
+       modal's flex height resolves. (Previously preceded by a `min-height: 0`
+       that this declaration always overrode — dropped as dead in saiku#1773.) */
     min-height: 360px;
+    /* saiku#1773: now that `.qe-section` is content-sized (`flex: 1 0 auto`)
+       the embed would otherwise grow to the full height of the cube tree —
+       ~2000px — and the modal body would just scroll past it. Cap it so the
+       sidebar and canvas use their own internal scrollers as designed. */
+    max-height: 60vh;
     border: 1px solid hsl(var(--border));
     border-radius: 4px;
     overflow: hidden;

@@ -270,6 +270,16 @@
     <label class="field">
       <span class="field__label">{i18n.t("modal.chart.chartTitle")}</span>
       <input class="field__input" bind:value={form.title} placeholder={i18n.t("modal.chart.chartTitlePlaceholder")} />
+      <!-- saiku#1776: this title is drawn INSIDE the plot, on top of the tile's
+           own header — set both and the heading renders twice. The two fields
+           live in different editors, so say so here rather than let authors
+           discover it after saving. -->
+      <span class="hint">
+        {i18n.t(
+          "modal.chart.chartTitleHint",
+          "Drawn inside the chart, beneath the tile's own title. Leave blank to show just the tile title.",
+        )}
+      </span>
     </label>
 
     {#if chartType === "map"}

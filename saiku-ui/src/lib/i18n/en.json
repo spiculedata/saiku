@@ -361,6 +361,7 @@
   "modal.chart.title": "Chart editor",
   "modal.chart.chartTitle": "Title",
   "modal.chart.chartTitlePlaceholder": "Chart title",
+  "modal.chart.chartTitleHint": "Drawn inside the chart, beneath the tile's own title. Leave blank to show just the tile title.",
   "modal.chart.xAxis": "X axis label",
   "modal.chart.yAxis": "Y axis label",
   "modal.chart.legend": "Legend",

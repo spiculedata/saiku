@@ -240,11 +240,25 @@ describe("buildChartOption — title & legend", () => {
     expect((roomy.grid as { top: number }).top).toBe(50);
 
     // Compact tile WITH a title reserves the title band (was a flat 24 that
-    // let the title overlap the top gridline / data).
+    // let the title overlap the top gridline / data). DEFAULT_CHART_OPTIONS has
+    // legendPosition "top", so the default titled tile clears the title band AND
+    // the legend row beneath it — 44 + 24. (saiku#1776: this used to be a bare 44
+    // with the legend pinned at top:0, i.e. drawn across the title.)
     const compactTitled = buildChartOption(sample(), "bar", opts({ title: "My chart" }), undefined, {
       compact: true,
     }) as Record<string, unknown>;
-    expect((compactTitled.grid as { top: number }).top).toBe(44);
+    expect((compactTitled.grid as { top: number }).top).toBe(68);
+
+    // With no top legend competing for the band, the reservation is the title
+    // band alone — this is the constant #1595 pinned.
+    const compactTitledNoTopLegend = buildChartOption(
+      sample(),
+      "bar",
+      opts({ title: "My chart", legendPosition: "bottom" }),
+      undefined,
+      { compact: true },
+    ) as Record<string, unknown>;
+    expect((compactTitledNoTopLegend.grid as { top: number }).top).toBe(44);
 
     // Compact tile WITHOUT a title is unchanged (no wasted header band).
     const compactBare = buildChartOption(sample(), "bar", opts({ title: "" }), undefined, {
@@ -277,6 +291,27 @@ describe("buildChartOption — title & legend", () => {
     ) as Record<string, unknown>;
     expect((titledBottom.legend as { bottom: number }).bottom).toBe(10);
     expect((titledBottom.legend as { top?: number }).top).toBeUndefined();
+  });
+
+  test("#1776 a COMPACT titled chart also pushes a top legend below the title band", () => {
+    // #1622 only fixed the roomy/workspace legend. App and dashboard tiles render
+    // compact, where the top legend stayed pinned at 0 and drew straight across the
+    // #1595 title band (title.top:8) — the overlap came back on every App Builder
+    // chart that set both a title and a top legend.
+    const titledTop = buildChartOption(sample(), "bar", opts({ title: "My chart", legendPosition: "top" }), undefined, {
+      compact: true,
+    }) as Record<string, unknown>;
+    expect((titledTop.legend as { top: number }).top).toBe(32);
+
+    // Untitled compact tile keeps the flush-to-top legend — no wasted band.
+    const untitledTop = buildChartOption(sample(), "bar", opts({ title: "", legendPosition: "top" }), undefined, {
+      compact: true,
+    }) as Record<string, unknown>;
+    expect((untitledTop.legend as { top: number }).top).toBe(0);
+
+    // A titled compact tile with a top legend must also push the PLOT below both
+    // the title band and the legend row, or the legend lands on the top gridline.
+    expect((titledTop.grid as { top: number }).top).toBeGreaterThan(44);
   });
 
   test("compact legend defaults to a bottom scroll legend (legacy-tile parity)", () => {
