@@ -1040,15 +1040,74 @@
         <property name="aiService" ref="cubeDesignerAiService"/>
     </bean>
 
-    <!--
-      #1809 PR4: periodic-send job scheduler wiring goes here. PR2 ships the engine
-      (org.saiku.service.schedule.JobScheduler) + handler SPI; PR3 adds the owner-identity JobRunner
-      (org.saiku.web.schedule.OwnerIdentityJobRunner) that runs a job as its owner via
-      SessionService.runAs, fail-closed on a missing/disabled owner. All of it stays runtime-dormant —
-      no bean is declared, so nothing starts the ticker in the running app, no real send handler is
-      registered, and no OwnerIdentityJobRunner is instantiated. A later slice declares the
-      JobScheduler bean here (wiring in the OwnerIdentityJobRunner + OwnerIdentityResolver), registers
-      handlers, and calls start().
-    -->
+    <!-- ====================================================================
+         #1809 PR4: periodic-send job scheduler — WIRED LIVE.
+
+         PR2 shipped the engine (JobScheduler) + handler SPI; PR3 added the
+         owner-identity JobRunner (OwnerIdentityJobRunner) that runs a job as its
+         owner via SessionService.runAs, fail-closed on a missing/DISABLED owner.
+         PR4 turns it on: the ticker starts (init-method="start"), an admin CRUD
+         resource is exposed, and the owner enabled-gate is enforced.
+
+         *** NO MAIL IS SENT. *** There is NO real send handler in the app — only
+         the no-op handler is registered. Neither the ticker nor a manual run can
+         send anything. A job whose type has no registered handler is recorded
+         FAILED by the engine (it never throws), so the ticker survives an empty
+         store or an unknown-type job.
+         ==================================================================== -->
+
+    <!-- File-backed job store under ${saiku.home}/jobs (same ctor shape as mailConfigStore). -->
+    <bean id="jobStore" class="org.saiku.service.schedule.JobStore">
+        <constructor-arg type="java.lang.String" value="${saiku.home:./saiku-home}"/>
+    </bean>
+
+    <!-- System UTC clock injected into the engine so time is a seam (tests use a mutable clock). -->
+    <bean id="jobSchedulerClock" class="java.time.Clock" factory-method="systemUTC"/>
+
+    <!-- Resolves a job owner's CURRENT identity fresh from the authoritative UserService: present()
+         means EXISTS *and* ENABLED (USERS.ENABLED), and currentRoles() is re-read live. A
+         missing/disabled owner resolves absent, so the runner refuses to run + the engine auto-disables. -->
+    <bean id="ownerIdentityResolver" class="org.saiku.web.schedule.UserServiceOwnerIdentityResolver">
+        <constructor-arg ref="userServiceBean"/>
+    </bean>
+
+    <!-- The owner-identity JobRunner: runs each job's handler AS the job owner via
+         SessionService.runAs, with exactly the owner's current roles — never the stale snapshot, never
+         an admin/ambient token. Fail-closed on a missing/disabled/owner-less job. -->
+    <bean id="ownerIdentityJobRunner" class="org.saiku.web.schedule.OwnerIdentityJobRunner">
+        <constructor-arg ref="sessionService"/>
+        <constructor-arg ref="ownerIdentityResolver"/>
+    </bean>
+
+    <!-- The no-op handler — sends nothing, touches no external system, always succeeds. It is the ONLY
+         handler wired in PR4; a real EMAIL_SUBSCRIPTION / WEBHOOK_DIGEST handler lands in a later slice. -->
+    <bean id="noOpJobHandler" class="org.saiku.service.schedule.NoOpJobHandler"/>
+
+    <!-- The live engine. init-method="start" starts the ticker at boot; destroy-method="shutdown"
+         stops both the ticker and worker pools cleanly on context close. The handler registry contains
+         ONLY the no-op handler (keyed "NOOP") — no send handler exists, so nothing can be delivered. -->
+    <bean id="jobScheduler" class="org.saiku.service.schedule.JobScheduler"
+          init-method="start" destroy-method="shutdown">
+        <constructor-arg ref="jobStore"/>
+        <constructor-arg ref="jobSchedulerClock"/>
+        <constructor-arg ref="ownerIdentityJobRunner"/>
+        <property name="handlers">
+            <map>
+                <entry key="NOOP" value-ref="noOpJobHandler"/>
+            </map>
+        </property>
+    </bean>
+
+    <!-- GET/POST/DELETE /saiku/admin/jobs — admin CRUD + fire-now. Admin-only (class @RolesAllowed +
+         per-method isAdmin(), plus the /rest/saiku/admin/** Spring URL gate). Request-scoped +
+         scoped-proxy (reads the request SecurityContext via userService.isAdmin()/getActiveUsername()).
+         Returns ScheduledJobView only (never the on-disk ScheduledJobFile). Auto-registered with Jersey
+         by SaikuJerseyApplication. -->
+    <bean id="schedulerResource" scope="request" class="org.saiku.web.rest.resources.SchedulerResource">
+        <aop:scoped-proxy/>
+        <property name="jobStore" ref="jobStore"/>
+        <property name="jobScheduler" ref="jobScheduler"/>
+        <property name="userService" ref="userServiceBean"/>
+    </bean>
 
 </beans>

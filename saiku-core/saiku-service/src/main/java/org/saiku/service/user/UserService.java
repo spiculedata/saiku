@@ -97,6 +97,28 @@ public class UserService implements IUserManager, Serializable {
         return uDAO.findByUserId(id);
     }
 
+    /**
+     * Whether {@code username} names an account that both EXISTS and is ENABLED (saiku#1809 PR4).
+     * Reflects the authoritative {@code USERS.ENABLED} column via {@link #getUsers()}. Fail-closed: an
+     * unknown/blank username, or any lookup error, returns {@code false} — never a best-effort grant.
+     * The scheduler's owner-identity gate calls this so a disabled owner's job never runs.
+     */
+    public boolean isEnabled(String username) {
+        if (username == null || username.isBlank()) {
+            return false;
+        }
+        try {
+            for (SaikuUser u : getUsers()) {
+                if (u != null && username.equals(u.getUsername())) {
+                    return u.isEnabled();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not resolve enabled-state for user '{}' — treating as disabled (fail-closed)", username);
+        }
+        return false;
+    }
+
     public String[] getRoles(SaikuUser user) {
         return uDAO.getRoles(user);
     }

@@ -180,6 +180,20 @@ public class JdbcUserDAO extends JdbcDaoSupport implements UserDAO {
             user.setUsername(rs.getString("username"));
             user.setEmail(rs.getString("email"));
             user.setPassword(rs.getString("password"));
+            // saiku#1809 PR4: surface the USERS.ENABLED column (already SELECTed by
+            // getAllUsers/getUserById) so a disabled account is visible to callers — the scheduler's
+            // owner-identity gate refuses to run a disabled owner's job. A missing column (older query)
+            // or SQL NULL is treated as enabled, preserving legacy behaviour.
+            boolean enabled = true;
+            try {
+                int e = rs.getInt("enabled");
+                if (!rs.wasNull()) {
+                    enabled = e != 0;
+                }
+            } catch (SQLException noSuchColumn) {
+                // Query didn't select ENABLED — leave the default (enabled).
+            }
+            user.setEnabled(enabled);
             if (rs.getString("ROLES") != null) {
                 List<String> list =
                         new ArrayList(Arrays.asList(rs.getString("ROLES").split(",")));

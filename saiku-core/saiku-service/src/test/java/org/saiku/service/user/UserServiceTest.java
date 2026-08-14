@@ -4,11 +4,13 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import org.junit.After;
 import org.junit.Test;
+import org.saiku.database.dto.SaikuUser;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -111,6 +113,56 @@ public class UserServiceTest {
         assertFalse(
                 "an authenticated principal with no authorities must not be admin",
                 userService().isAdmin());
+    }
+
+    // ---- saiku#1809 PR4: isEnabled(username) reflects USERS.ENABLED, fail-closed ----
+
+    @Test
+    public void isEnabled_trueForEnabledUser() {
+        UserService us = usersOf(user("alice", true), user("bob", true));
+        assertTrue(us.isEnabled("alice"));
+    }
+
+    @Test
+    public void isEnabled_falseForDisabledUser() {
+        UserService us = usersOf(user("alice", false));
+        assertFalse("a disabled account must report not-enabled", us.isEnabled("alice"));
+    }
+
+    @Test
+    public void isEnabled_failsClosedForUnknownOrBlank() {
+        UserService us = usersOf(user("alice", true));
+        assertFalse("unknown username -> false (fail-closed)", us.isEnabled("nobody"));
+        assertFalse("blank username -> false (fail-closed)", us.isEnabled("   "));
+        assertFalse("null username -> false (fail-closed)", us.isEnabled(null));
+    }
+
+    @Test
+    public void isEnabled_failsClosedOnLookupError() {
+        UserService us = new UserService() {
+            @Override
+            public List<SaikuUser> getUsers() {
+                throw new RuntimeException("db down");
+            }
+        };
+        assertFalse("a lookup error must report not-enabled (fail-closed)", us.isEnabled("alice"));
+    }
+
+    private static SaikuUser user(String name, boolean enabled) {
+        SaikuUser u = new SaikuUser();
+        u.setUsername(name);
+        u.setEnabled(enabled);
+        return u;
+    }
+
+    private static UserService usersOf(SaikuUser... users) {
+        final List<SaikuUser> list = new ArrayList<>(Arrays.asList(users));
+        return new UserService() {
+            @Override
+            public List<SaikuUser> getUsers() {
+                return list;
+            }
+        };
     }
 
     // ---- helpers -----------------------------------------------------------
