@@ -52,7 +52,10 @@ describe("encodeActiveFilters", () => {
   test("dedupes filters that target the same dim/hier/level (defensive)", () => {
     const out = encodeActiveFilters([
       active("Time", "Time", "Quarter", ["[Time].[Time].[1997].[Q2]"]),
-      active("Time", "Time", "Quarter", ["[Time].[Time].[1997].[Q3]"], { kind: "click", tileId: "t1" }),
+      active("Time", "Time", "Quarter", ["[Time].[Time].[1997].[Q3]"], {
+        kind: "click",
+        tileId: "t1",
+      }),
     ]);
     const params = new URL(`https://x${out}`).searchParams.getAll("f");
     expect(params).toHaveLength(1);
@@ -66,7 +69,9 @@ describe("decodeFilterParams", () => {
       active("Country", "Country", "Country", ["[Country].[Country].[USA]"]),
     ];
     const encoded = encodeActiveFilters(filters);
-    const decoded = decodeFilterParams(new URL(`https://x${encoded}`).searchParams);
+    const decoded = decodeFilterParams(
+      new URL(`https://x${encoded}`).searchParams,
+    );
     expect(decoded).toEqual([
       {
         dimension: "Time",
@@ -102,7 +107,10 @@ describe("decodeFilterParams", () => {
 
   test("splits comma-separated member lists", () => {
     const params = new URLSearchParams();
-    params.append("f", "Country/Country/Country=[Country].[Country].[USA],[Country].[Country].[Canada]");
+    params.append(
+      "f",
+      "Country/Country/Country=[Country].[Country].[USA],[Country].[Country].[Canada]",
+    );
     const decoded = decodeFilterParams(params);
     expect(decoded[0].members).toEqual([
       "[Country].[Country].[USA]",
@@ -117,7 +125,12 @@ describe("decodeFilterParams", () => {
  * pages preserves every page's filters and the whole thing round-trips.
  * ------------------------------------------------------------------------- */
 
-function filter(dim: string, hier: string, level: string, members: string[]): DashboardFilter {
+function filter(
+  dim: string,
+  hier: string,
+  level: string,
+  members: string[],
+): DashboardFilter {
   return { dimension: dim, hierarchy: hier, level, members };
 }
 
@@ -146,14 +159,20 @@ describe("encodeAppFilterState", () => {
     });
     const params = new URL(`https://x${out}`).searchParams;
     expect(params.get("p")).toBe("sales");
-    expect(params.getAll("f~sales")).toEqual(["Time/Time/Quarter=[Time].[Time].[1997].[Q2]"]);
-    expect(params.getAll("f~ops")).toEqual(["Store/Store/Country=[Store].[Store].[USA]"]);
+    expect(params.getAll("f~sales")).toEqual([
+      "Time/Time/Quarter=[Time].[Time].[1997].[Q2]",
+    ]);
+    expect(params.getAll("f~ops")).toEqual([
+      "Store/Store/Country=[Store].[Store].[USA]",
+    ]);
     // No collision with the single-dashboard `f` param.
     expect(params.getAll("f")).toEqual([]);
   });
 
   test("drops a page whose filters carry no members", () => {
-    const out = encodeAppFilterState("a", { a: [filter("Time", "Time", "Year", [])] });
+    const out = encodeAppFilterState("a", {
+      a: [filter("Time", "Time", "Year", [])],
+    });
     const params = new URL(`https://x${out}`).searchParams;
     expect(params.get("p")).toBe("a");
     expect(params.getAll("f~a")).toEqual([]);
@@ -165,12 +184,19 @@ describe("decodeAppFilterState", () => {
     const filtersByPage = {
       sales: [
         filter("Time", "Time", "Quarter", ["[Time].[Time].[1997].[Q2]"]),
-        filter("Store", "Store", "Country", ["[Store].[Store].[USA]", "[Store].[Store].[Canada]"]),
+        filter("Store", "Store", "Country", [
+          "[Store].[Store].[USA]",
+          "[Store].[Store].[Canada]",
+        ]),
       ],
-      ops: [filter("Product", "Product", "Family", ["[Product].[Product].[Drink]"])],
+      ops: [
+        filter("Product", "Product", "Family", ["[Product].[Product].[Drink]"]),
+      ],
     };
     const encoded = encodeAppFilterState("sales", filtersByPage);
-    const decoded = decodeAppFilterState(new URL(`https://x${encoded}`).searchParams);
+    const decoded = decodeAppFilterState(
+      new URL(`https://x${encoded}`).searchParams,
+    );
     expect(decoded.activePageId).toBe("sales");
     expect(decoded.filtersByPage).toEqual(filtersByPage);
   });
@@ -188,5 +214,61 @@ describe("decodeAppFilterState", () => {
     const decoded = decodeAppFilterState(params);
     expect(decoded.activePageId).toBe("home");
     expect(decoded.filtersByPage).toEqual({});
+  });
+});
+
+/*
+ * App-level context scope in the URL (saiku#1754). The App Builder's header
+ * context pill is app chrome, so it round-trips once as `ctx=<label>` rather
+ * than being duplicated into every page's `f~<pageId>` slot. The label (not the
+ * filter) is what's carried, so the restored pill and the restored scope cannot
+ * disagree — the shell re-applies the selection through its normal path.
+ */
+describe("app context scope (saiku#1754)", () => {
+  test("encodes the context label alongside the active page", () => {
+    const s = encodeAppFilterState("page-1", {}, "West");
+    expect(new URLSearchParams(s).get("ctx")).toBe("West");
+  });
+
+  test("omits the param when there is no selection", () => {
+    expect(
+      new URLSearchParams(encodeAppFilterState("page-1", {}, null)).has("ctx"),
+    ).toBe(false);
+    expect(
+      new URLSearchParams(encodeAppFilterState("page-1", {}, "")).has("ctx"),
+    ).toBe(false);
+  });
+
+  test("round-trips a label containing separators", () => {
+    const label = "All regions · National";
+    const decoded = decodeAppFilterState(
+      new URLSearchParams(encodeAppFilterState("p", {}, label)),
+    );
+    expect(decoded.contextLabel).toBe(label);
+  });
+
+  test("decodes to null when absent", () => {
+    expect(
+      decodeAppFilterState(new URLSearchParams("?p=page-1")).contextLabel,
+    ).toBeNull();
+  });
+
+  test("does not disturb per-page filter round-tripping", () => {
+    const byPage = {
+      "page-1": [
+        {
+          dimension: "Geography",
+          hierarchy: "Geography",
+          level: "Region",
+          members: ["[G].[West]"],
+        },
+      ],
+    };
+    const decoded = decodeAppFilterState(
+      new URLSearchParams(encodeAppFilterState("page-1", byPage, "West")),
+    );
+    expect(decoded.filtersByPage["page-1"]).toHaveLength(1);
+    expect(decoded.activePageId).toBe("page-1");
+    expect(decoded.contextLabel).toBe("West");
   });
 });

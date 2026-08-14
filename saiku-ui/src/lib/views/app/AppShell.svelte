@@ -16,7 +16,7 @@
    * Active page is driven by the appDoc store (activePageId, with a fallback to
    * page 0); nav selection routes back through appDoc.setActivePage.
    */
-  import type { Snippet } from "svelte";
+  import { onMount, type Snippet } from "svelte";
   import type { SaikuApp } from "$lib/api/apps";
   import { appDoc } from "$lib/stores/appDoc.svelte";
   import { DEFAULT_STACK_BREAKPOINT } from "$lib/dashboard/responsiveLayout";
@@ -44,6 +44,7 @@
   import type { AppContextPillOption } from "$lib/api/apps";
   import { session } from "$lib/stores/session.svelte";
   import type { TextTokenContext } from "$lib/views/app/textTokens";
+  import { decodeAppFilterState } from "$lib/dashboard/urlFilterState";
   import { activeFilters } from "$lib/stores/activeFilters.svelte";
   import { searchMembers } from "$lib/api/aiQuery";
   import { pickMemberUniqueName } from "$lib/dashboard/clickFilterMember";
@@ -122,11 +123,17 @@
   /* ------------------------------------------------------------------
    * Header context selector (the "STORE / Portland #14 ▾" control).
    *
-   * The selection is pushed as a CLICK-source filter under one synthetic
+   * The selection is pushed as an APP-source filter under one synthetic
    * source id: the store re-uses that slot on every push, so switching store
    * replaces the previous selection rather than stacking filters. Selecting an
-   * "All" entry pushes an empty member list, which the filter store treats as
-   * "any".
+   * "All" entry removes the entry entirely (an empty member list is no
+   * constraint).
+   *
+   * It is an app-level filter, NOT a click (saiku#1754): clicks are page state
+   * and AppPageView wipes them on every page switch, so a pill pushed as a
+   * click filtered only the page it was set on while the header went on
+   * displaying the selection everywhere — a page of national numbers under a
+   * header claiming a region. The app layer survives the page hydrate.
    * ------------------------------------------------------------------ */
   const CONTEXT_PILL_SOURCE = "app-context-pill";
 
@@ -195,11 +202,11 @@
       // Remove the selection rather than registering an empty one — a filter
       // with no members is no constraint, and emitting it produced a stray
       // "(any)" chip plus an invalid zero-member `in` on every tile.
-      activeFilters.clearClicksFrom(CONTEXT_PILL_SOURCE);
+      activeFilters.clearApp(CONTEXT_PILL_SOURCE);
       return;
     }
     if (selection.kind === "set") {
-      activeFilters.pushClick(selection.filter, CONTEXT_PILL_SOURCE);
+      activeFilters.pushApp(selection.filter, CONTEXT_PILL_SOURCE);
       return;
     }
     // "resolve": the author typed a caption, so ask the cube for its real
@@ -222,9 +229,35 @@
         console.warn(`[saiku] context pill: no member matched "${selection.caption}" in ${level}`);
         return;
       }
-      activeFilters.pushClick({ ...selection.target, members: [uniqueName] }, CONTEXT_PILL_SOURCE);
+      activeFilters.pushApp({ ...selection.target, members: [uniqueName] }, CONTEXT_PILL_SOURCE);
     });
   }
+
+  /* Deep-link restore for the context selection (saiku#1754). The URL carries
+   * the selected LABEL (`ctx`), and we replay it through handleContextChange —
+   * the same path a viewer's pick takes — so the pill's displayed value and the
+   * filter it registers are produced together and cannot disagree. Deferred
+   * until the pill's cube-sourced options have loaded, since resolving a label
+   * to a member needs them. */
+  let contextRestored = false;
+  let pendingContextLabel = $state<string | null>(null);
+  onMount(() => {
+    if (typeof window === "undefined") return;
+    const { contextLabel } = decodeAppFilterState(new URL(window.location.href).searchParams);
+    if (!contextLabel) return;
+    pendingContextLabel = contextLabel;
+  });
+  $effect(() => {
+    const label = pendingContextLabel;
+    if (!label || contextRestored) return;
+    // A typed-list pill is ready immediately; a cube-sourced one must wait for
+    // its members, or the label resolves against an empty option set.
+    const pill = app.header?.contextPill;
+    if (isLevelSourced(pill) && contextOptions.length === 0) return;
+    contextRestored = true;
+    pendingContextLabel = null;
+    handleContextChange(label);
+  });
 
   function handleSelect(id: string): void {
     appDoc.setActivePage(id);
@@ -295,7 +328,12 @@
                stay mounted across page switches so it can preserve each page's
                filter state (its per-page memory) — it re-hydrates the shared
                dashboard store itself when the active page changes. -->
-          <AppPageView page={activePage} {editable} tokens={tokenContext} />
+          <AppPageView
+            page={activePage}
+            {editable}
+            tokens={tokenContext}
+            contextLabel={contextValue ?? null}
+          />
         {:else}
           <div class="saiku-app__page">No page</div>
         {/if}

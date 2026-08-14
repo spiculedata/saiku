@@ -40,6 +40,13 @@ const MEMBER_SEP = ",";
 /** Query-param key that carries the active page id for an app. */
 export const PAGE_PARAM = "p";
 
+/** Query-param key carrying the App Builder header context pill's selection
+ *  (saiku#1754). App-level, so it appears ONCE rather than being copied into
+ *  every page's `f~<pageId>` slot. The selected *label* is what round-trips —
+ *  the shell re-applies it through the same path a click takes, so the restored
+ *  pill and the restored scope cannot disagree. */
+export const CONTEXT_PARAM = "ctx";
+
 /** Separator between the `f` namespace and a page id in the per-page filter
  *  param name (`f~<pageId>`). Chosen so it can't appear in the bare `f` used by
  *  the single-dashboard path. */
@@ -65,7 +72,10 @@ function appendFilterParams(
     const members = (f.members ?? []).filter((m) => m && m.length > 0);
     if (members.length === 0) continue;
     seen.add(target);
-    params.append(paramName, `${target}${KEY_VALUE_SEP}${members.join(MEMBER_SEP)}`);
+    params.append(
+      paramName,
+      `${target}${KEY_VALUE_SEP}${members.join(MEMBER_SEP)}`,
+    );
   }
 }
 
@@ -115,11 +125,13 @@ export function decodeFilterParams(search: URLSearchParams): DashboardFilter[] {
   return parseFilterValues(search.getAll(PARAM));
 }
 
-/** Decoded App Builder URL state: which page is active plus each page's own
- *  filter set, keyed by page id. */
+/** Decoded App Builder URL state: which page is active, each page's own
+ *  filter set (keyed by page id), and the app-level context selection. */
 export interface AppFilterState {
   activePageId: string | null;
   filtersByPage: Record<string, DashboardFilter[]>;
+  /** The header context pill's selected label, or null when unset. */
+  contextLabel: string | null;
 }
 
 /** Encode the App Builder's page + per-page filter state into a URL query
@@ -129,9 +141,11 @@ export interface AppFilterState {
 export function encodeAppFilterState(
   activePageId: string | null,
   filtersByPage: Record<string, DashboardFilter[]>,
+  contextLabel?: string | null,
 ): string {
   const params = new URLSearchParams();
   if (activePageId) params.set(PAGE_PARAM, activePageId);
+  if (contextLabel) params.set(CONTEXT_PARAM, contextLabel);
   for (const [pageId, filters] of Object.entries(filtersByPage)) {
     appendFilterParams(params, pageFilterParam(pageId), filters);
   }
@@ -145,6 +159,7 @@ export function encodeAppFilterState(
  *  `filtersByPage`. */
 export function decodeAppFilterState(search: URLSearchParams): AppFilterState {
   const activePageId = search.get(PAGE_PARAM);
+  const contextLabel = search.get(CONTEXT_PARAM);
   const filtersByPage: Record<string, DashboardFilter[]> = {};
   const prefix = `${PARAM}${PAGE_FILTER_SEP}`;
   for (const key of new Set(search.keys())) {
@@ -154,5 +169,9 @@ export function decodeAppFilterState(search: URLSearchParams): AppFilterState {
     const filters = parseFilterValues(search.getAll(key));
     if (filters.length > 0) filtersByPage[pageId] = filters;
   }
-  return { activePageId: activePageId || null, filtersByPage };
+  return {
+    activePageId: activePageId || null,
+    filtersByPage,
+    contextLabel: contextLabel || null,
+  };
 }
