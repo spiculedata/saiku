@@ -2,11 +2,37 @@
   /* Inspector → Pages. Per-page meta (title / heading / subheading / meta /
    * icon) + add page. The active page is expanded. Writes via appDoc. */
   import { appDoc } from "$lib/stores/appDoc.svelte";
-  import { Plus } from "lucide-svelte";
+  import { Plus, Trash2 } from "lucide-svelte";
   import { tokenHelp } from "$lib/views/app/textTokens";
+  import { pageTileCount, tilesPhrase } from "$lib/views/app/pageTiles";
 
   const pages = $derived(appDoc.current?.pages ?? []);
   const activeId = $derived(appDoc.activePageId);
+
+  /* saiku#1792: pages could be added but never removed — the only delete-like
+   * control in the whole shell was "Remove filter", so a mis-click on "Add page"
+   * (which sits directly under the page list you click to switch pages) was
+   * permanent short of hand-editing the .saikuapp JSON.
+   *
+   * appDoc.deletePage already existed, tested, and refuses the last page; only
+   * the affordance was missing.
+   *
+   * Two-step inline confirm rather than window.confirm: removing a page discards
+   * its whole grid, so it shouldn't be one click — but a modal dialog for an
+   * inspector action is heavy, and a blocking native dialog is worse. The button
+   * arms itself, names what will be lost, and disarms on cancel or page switch. */
+  let armedId = $state<string | null>(null);
+
+  /** Disarm whenever the expanded page changes, so an armed confirm can never
+   *  be inherited by a different page's button. */
+  $effect(() => {
+    if (armedId !== null && armedId !== activeId) armedId = null;
+  });
+
+  function removePage(id: string): void {
+    appDoc.deletePage(id);
+    armedId = null;
+  }
 
   /** The binding chips, with {filter:…} naming THIS app's dimension — the one
    *  the context pill filters on (saiku#1761). The list used to hardcode a
@@ -72,6 +98,27 @@
             </div>
             {#if copied}<p class="insp-hint">Copied {copied}</p>{/if}
           </details>
+
+          {#if pages.length <= 1}
+            <p class="insp-hint">An app keeps at least one page, so this one can't be removed.</p>
+          {:else if armedId === p.id}
+            {@const lost = tilesPhrase(pageTileCount(p.grid))}
+            <p class="insp-hint danger-hint">
+              Remove “{p.title || "Untitled"}”{lost ? ` and its ${lost}` : ""}? Undo will bring it back.
+            </p>
+            <div class="page-danger">
+              <button type="button" class="page-remove is-armed" onclick={() => removePage(p.id)}>
+                <Trash2 size={13} /> Remove page
+              </button>
+              <button type="button" class="page-cancel" onclick={() => (armedId = null)}>Cancel</button>
+            </div>
+          {:else}
+            <div class="page-danger">
+              <button type="button" class="page-remove" onclick={() => (armedId = p.id)}>
+                <Trash2 size={13} /> Remove page
+              </button>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
@@ -104,4 +151,24 @@
     font-size: 0.72rem; color: hsl(var(--fg)); background: hsl(var(--bg-subtle));
     padding: 0 0.25em; border-radius: 3px; white-space: nowrap;
   }
+  /* saiku#1792 — removal sits below the fields, visually separated, and stays
+     quiet until armed. Destructive tone only on the armed state so the resting
+     control doesn't shout at an author who is just editing a heading. */
+  .page-danger {
+    display: flex; align-items: center; gap: 0.4rem;
+    margin-top: 0.15rem; padding-top: 0.45rem;
+    border-top: 1px solid hsl(var(--border));
+  }
+  .page-remove, .page-cancel {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    border: 1px solid hsl(var(--border)); border-radius: 6px;
+    background: transparent; color: hsl(var(--fg-muted));
+    padding: 0.25rem 0.5rem; font-size: 0.76rem; cursor: pointer;
+  }
+  .page-remove:hover { color: hsl(var(--danger)); border-color: hsl(var(--danger)); }
+  .page-remove.is-armed {
+    background: hsl(var(--danger)); border-color: hsl(var(--danger)); color: #fff;
+  }
+  .page-cancel:hover { color: hsl(var(--fg)); }
+  .danger-hint { color: hsl(var(--danger)); }
 </style>
