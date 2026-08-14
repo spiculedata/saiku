@@ -311,9 +311,9 @@ public class AiQueryResource {
         long start = System.currentTimeMillis();
         String username =
                 java.util.Objects.toString(sessionService.getAllSessionObjects().get("username"), null);
-        @SuppressWarnings("unchecked")
-        java.util.List<String> roles =
-                (java.util.List<String>) sessionService.getAllSessionObjects().get("roles");
+        // saiku#1752: roles come from the single authoritative SecurityContextHolder reader, not the
+        // lazily-seeded session "roles" map (see SessionRoles / saiku#1747).
+        java.util.List<String> roles = org.saiku.web.rest.util.SessionRoles.currentRoles();
         String raw;
         try {
             raw = datasourceService.getFileData(path, username, roles);

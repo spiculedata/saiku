@@ -9,6 +9,7 @@ import jakarta.ws.rs.core.Response;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -52,6 +53,12 @@ public class EmbedTokenResourceTest {
         resource.setDatasourceService(ds);
         resource.setSessionService(session);
         resource.setUserService(users);
+    }
+
+    @After
+    public void tearDown() {
+        // saiku#1752: don't bleed the seeded SecurityContext authorities into the next test.
+        org.saiku.web.rest.resources.RoleTestSupport.clear();
     }
 
     /* ---------------------------- mint ---------------------------- */
@@ -522,6 +529,10 @@ public class EmbedTokenResourceTest {
 
         @Override
         public Map<String, Object> getAllSessionObjects() {
+            // saiku#1752: the resource now reads roles authoritatively from SecurityContextHolder,
+            // not this map. Seed the holder from the fields the tests set so the existing
+            // "session.roles = ..." assignments keep driving the role-scoped assertions.
+            org.saiku.web.rest.resources.RoleTestSupport.authenticate(username, roles);
             Map<String, Object> m = new HashMap<>();
             m.put("username", username);
             m.put("roles", roles);

@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.saiku.repository.IRepositoryObject;
@@ -45,6 +46,12 @@ public class AppResourceTest {
         resource = new AppResource();
         resource.setDatasourceService(stubDs);
         resource.setSessionService(new StubSessionService("admin", List.of("ROLE_ADMIN")));
+    }
+
+    @After
+    public void tearDown() {
+        // saiku#1752: don't bleed the seeded SecurityContext authorities into the next test.
+        org.saiku.web.rest.resources.RoleTestSupport.clear();
     }
 
     /* -------------------------- round-trip --------------------------- */
@@ -272,7 +279,13 @@ public class AppResourceTest {
         }
 
         @Override
+        @SuppressWarnings("unchecked")
         public Map<String, Object> getAllSessionObjects() {
+            // saiku#1752: the resource now reads roles authoritatively from SecurityContextHolder,
+            // not this map. Seed the holder from the stubbed session so role-scoped paths still see
+            // the roles the test set up.
+            org.saiku.web.rest.resources.RoleTestSupport.authenticate(
+                    (String) session.get("username"), (List<String>) session.get("roles"));
             return session;
         }
     }
