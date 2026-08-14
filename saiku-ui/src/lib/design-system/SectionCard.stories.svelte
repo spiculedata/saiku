@@ -1,7 +1,6 @@
 <script module lang="ts">
 	import { defineMeta } from '@storybook/addon-svelte-csf';
-	import SectionCard from './SectionCard.svelte';
-	import EmptyState from './EmptyState.svelte';
+	import { SectionCard, EmptyState } from '$lib/design-system';
 
 	const { Story } = defineMeta({
 		title: 'Compounds/SectionCard',

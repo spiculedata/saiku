@@ -59,7 +59,7 @@
 
 <script lang="ts">
 	import type { HTMLButtonAttributes } from 'svelte/elements';
-	import { cn } from '$lib/utils';
+	import { cn } from '../utils';
 
 	interface Props extends HTMLButtonAttributes {
 		variant?: ButtonVariant;

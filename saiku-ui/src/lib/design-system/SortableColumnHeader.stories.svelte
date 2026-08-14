@@ -1,6 +1,6 @@
 <script module lang="ts">
 	import { defineMeta } from '@storybook/addon-svelte-csf';
-	import SortableColumnHeader from './SortableColumnHeader.svelte';
+	import { SortableColumnHeader } from '$lib/design-system';
 
 	type Key = 'filename' | 'size' | 'uploaded';
 

@@ -6,7 +6,7 @@
   (--success, --warning, --destructive, --info) so light AND dark
   mode both work without hardcoded `text-emerald-200` etc.
 
-  Tone vocabulary and class map come from `$lib/design-system/tokens.ts`
+  Tone vocabulary and class map come from `./tokens.ts`
   — a single source of truth so banners, badges, and any future
   tone-driven component all share the same Tailwind utility strings.
 

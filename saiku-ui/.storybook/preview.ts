@@ -1,10 +1,15 @@
 import type { Preview } from '@storybook/sveltekit';
-// Load saiku-ui's design tokens + Tailwind layer + global app CSS so
-// components render here exactly as they do in the workbench. tokens.css
-// carries every CSS variable (--fg, --bg, --accent, --success, etc.) for
-// both light AND dark mode, so the theme toggle below "just works."
-import '../src/lib/styles/tokens.css';
-import '../src/lib/styles/tailwind.css';
+// Load the design tokens + Tailwind layer + global app CSS so components
+// render here exactly as they do in the workbench. tokens.css carries every
+// CSS variable (--fg, --bg, --accent, --success, etc.) for both light AND
+// dark mode, so the theme toggle below "just works."
+//
+// Tokens and the Tailwind bridge come from the shared design-system package
+// (source at ../design-system/), which is where they now live so saiku-ui
+// and saiku-cloud share one set. app.css stays local — it's saiku-ui's own
+// base layer, not part of the design system.
+import '@concepttocloud/saiku-design-system/tokens.css';
+import '@concepttocloud/saiku-design-system/tailwind.css';
 import '../src/lib/styles/app.css';
 
 const preview: Preview = {

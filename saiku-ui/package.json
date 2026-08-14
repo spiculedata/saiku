@@ -3,6 +3,10 @@
   "private": true,
   "version": "3.20.0",
   "type": "module",
+  "//workspaces": "design-system/ is the shared design system, published as @concepttocloud/saiku-design-system. It's a workspace rather than a `file:` dep so npm hoists svelte/bits-ui to one copy — two svelte installs make `Snippet` from the package structurally incompatible with `Snippet` in the app.",
+  "workspaces": [
+    "design-system"
+  ],
   "scripts": {
     "dev": "vite dev",
     "build:app": "vite build",
@@ -59,6 +63,7 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
+    "@concepttocloud/saiku-design-system": "*",
     "@xyflow/svelte": "^1.6.0",
     "apache-arrow": "^21.2.0",
     "bits-ui": "^2.18.1",
