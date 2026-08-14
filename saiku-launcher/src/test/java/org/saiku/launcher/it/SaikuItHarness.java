@@ -160,6 +160,28 @@ public final class SaikuItHarness {
         return home;
     }
 
+    /**
+     * saiku#1738 — Windows-portable repository segment for the admin user's home.
+     *
+     * <p>Saiku's runtime home convention is {@code homes/home:<user>}, but the colon in that
+     * segment is illegal in a Windows filesystem path: the server materialises repository paths
+     * via {@code Paths.get(...)} in {@code FilesystemRepositoryManager.resolveWithinDatadir}, and
+     * on Windows {@code Paths.get("homes/home:admin/...")} throws {@link
+     * java.nio.file.InvalidPathException} (a colon is only legal at index 1, the drive letter). So
+     * {@code RepositoryIT}/{@code AppBuilderIT} — which drive real save/load/delete through that
+     * path — failed on a local Windows dev machine. CI is Linux-only, so it never surfaced there.
+     *
+     * <p>These ITs only need a valid, writable repository location under {@code homes/}; the exact
+     * segment name is not asserted. A colon-free segment resolves identically on every OS (including
+     * the Linux CI runners, so behaviour there is unchanged) while staying Windows-safe.
+     *
+     * @param child the leaf resource name (e.g. an app or {@code .saiku} filename)
+     * @return {@code homes/home-admin/<child>} — no leading slash
+     */
+    public static String adminHomePath(String child) {
+        return "homes/home-admin/" + child;
+    }
+
     /** Issue a GET against {@code path} with admin Basic auth. */
     public HttpResponse<String> getAuth(String path) throws Exception {
         return http.send(

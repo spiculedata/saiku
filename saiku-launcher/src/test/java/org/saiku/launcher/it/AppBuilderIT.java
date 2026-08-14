@@ -97,12 +97,13 @@ public class AppBuilderIT {
         // ONLY credential, exactly as a third-party host page presents it.
         guestClient =
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+        // saiku#1738: Windows-safe repository segment (no colon) — see SaikuItHarness#adminHomePath.
         appFileName = "it-app-" + System.nanoTime() + ".saikuapp";
-        appRepoPath = "homes/home:admin/" + appFileName;
+        appRepoPath = SaikuItHarness.adminHomePath(appFileName);
         embedResourcePath = "/" + appRepoPath;
 
         customAppFileName = "it-app-custom-" + System.nanoTime() + ".saikuapp";
-        customAppRepoPath = "homes/home:admin/" + customAppFileName;
+        customAppRepoPath = SaikuItHarness.adminHomePath(customAppFileName);
         customEmbedResourcePath = "/" + customAppRepoPath;
 
         // Stage the REAL records-bars seed plugin into the harness home so the embed plugin-html
