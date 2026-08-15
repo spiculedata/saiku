@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { adminLogs } from '$lib/api/admin';
-	import { Button } from '$lib/components/ui';
+	import { Button, Select } from '$lib/components/ui';
 	import { toasts } from '$lib/stores/toasts.svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
 
@@ -27,11 +27,11 @@
 	<header class="mb-3 flex items-center justify-between">
 		<h2>{i18n.t('admin.tabs.logs')}</h2>
 		<div class="controls">
-			<select class="field__input" bind:value={name}>
+			<Select bind:value={name}>
 				{#each LOG_NAMES as n}
 					<option value={n}>{n}</option>
 				{/each}
-			</select>
+			</Select>
 			<Button onclick={load} disabled={loading}>
 				{loading ? i18n.t('admin.logs.loading') : i18n.t('admin.logs.fetch')}
 			</Button>

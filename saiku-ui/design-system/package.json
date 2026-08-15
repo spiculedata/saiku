@@ -1,6 +1,6 @@
 {
 	"name": "@concepttocloud/saiku-design-system",
-	"version": "2.1.0",
+	"version": "2.2.0",
 	"description": "Saiku's shared design system — CSS design tokens, a Tailwind v4 theme bridge, and the Svelte 5 primitives and compounds used across Saiku and Saiku Cloud.",
 	"license": "Apache-2.0",
 	"type": "module",

@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Button } from '$lib/components/ui';
+	import { Button, Input, Textarea } from '$lib/components/ui';
 	import { adminSchemas, type AdminSchema } from '$lib/api/admin';
 	import { toasts } from '$lib/stores/toasts.svelte';
 	import { i18n } from '$lib/stores/i18n.svelte';
 	import ConfirmModal from '$lib/modals/ConfirmModal.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Skeleton } from '$lib/design-system';
+	import { FormField, Skeleton } from '$lib/design-system';
 
 	let list = $state<AdminSchema[]>([]);
 	let loading = $state(true);
@@ -96,19 +96,15 @@
 </div>
 
 <Modal title="Upload schema" open={uploading} size="lg" onClose={() => (uploading = false)}>
-	<label class="field">
-		<span class="field__label">Name</span>
-		<input class="field__input" bind:value={uploadName} />
-	</label>
-	<label class="field">
-		<span class="field__label">XML file</span>
+	<FormField label="Name">
+		<Input bind:value={uploadName} />
+	</FormField>
+	<FormField label="XML file">
 		<input type="file" accept=".xml" onchange={pickFile} />
-	</label>
-	<label class="field">
-		<span class="field__label">XML content</span>
-		<textarea class="field__input xml" bind:value={uploadXml} rows="10" spellcheck="false"
-		></textarea>
-	</label>
+	</FormField>
+	<FormField label="XML content">
+		<Textarea class="xml" bind:value={uploadXml} rows={10} spellcheck="false"></Textarea>
+	</FormField>
 	{#snippet footer()}
 		<Button variant="outline" onclick={() => (uploading = false)}>Cancel</Button>
 		<Button onclick={doUpload}>Upload</Button>

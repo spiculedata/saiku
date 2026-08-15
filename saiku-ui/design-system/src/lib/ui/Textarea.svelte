@@ -10,12 +10,12 @@
 
 	let {
 		tone = 'default',
-		value = $bindable(''),
+		value = $bindable<string | null>(''),
 		rows = 4,
 		...rest
 	}: {
 		tone?: Tone;
-		value?: string;
+		value?: string | null;
 		rows?: number;
 	} & Omit<HTMLTextareaAttributes, 'value'> = $props();
 

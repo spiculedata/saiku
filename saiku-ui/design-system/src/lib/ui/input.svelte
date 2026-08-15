@@ -29,7 +29,10 @@
 		size?: InputSize;
 		tone?: InputTone;
 		iconLeft?: Snippet;
-		value?: string;
+		// Nullable: a raw <input> accepts null, and app state routinely models
+		// "not set yet" that way. Refusing it would push `?? ''` into every
+		// call site, which can't be done with bind:.
+		value?: string | null;
 		class?: string;
 	} & Omit<HTMLInputAttributes, 'size' | 'value' | 'class'>;
 
@@ -37,7 +40,7 @@
 		size = 'md',
 		tone = 'default',
 		iconLeft,
-		value = $bindable(''),
+		value = $bindable<string | null>(''),
 		class: className,
 		...restProps
 	}: Props = $props();

@@ -26,7 +26,9 @@
 	import type { Snippet } from 'svelte';
 
 	interface Props {
-		label: string;
+		// A snippet as well as a string: several labels carry inline <small>
+		// annotations, and a string prop can't express those without {@html}.
+		label: string | Snippet;
 		hint?: string;
 		error?: string;
 		required?: boolean;
@@ -51,7 +53,10 @@
 -->
 <label class="flex flex-col gap-1 text-sm" data-testid={testid}>
 	<span class="text-fg-muted">
-		{label}{#if required}<span class="ml-0.5 text-destructive" aria-hidden="true">*</span>{/if}
+		{#if typeof label === 'function'}{@render label()}{:else}{label}{/if}{#if required}<span
+				class="ml-0.5 text-destructive"
+				aria-hidden="true">*</span
+			>{/if}
 	</span>
 	{@render children()}
 	{#if error}
