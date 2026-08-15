@@ -256,7 +256,8 @@ public class OlapMetaExplorer {
      */
     public OlapConnection getNativeConnection(String name) throws SaikuOlapException {
         if (StringUtils.isBlank(name)) {
-            throw new SaikuOlapException("No connection name was given. Available connections: " + availableConnections());
+            throw new SaikuOlapException(
+                    "No connection name was given. Available connections: " + availableConnections());
         }
         try {
             OlapConnection con = connections.getOlapConnection(name);
@@ -277,7 +278,8 @@ public class OlapMetaExplorer {
      */
     private String availableConnections() {
         try {
-            List<String> names = new ArrayList<>(connections.getAllOlapConnections().keySet());
+            List<String> names =
+                    new ArrayList<>(connections.getAllOlapConnections().keySet());
             Collections.sort(names);
             return names.isEmpty() ? "(none)" : String.join(", ", names);
         } catch (Exception e) {

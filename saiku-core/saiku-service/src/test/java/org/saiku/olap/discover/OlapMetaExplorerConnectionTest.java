@@ -114,8 +114,7 @@ class OlapMetaExplorerConnectionTest {
 
     @Test
     void theRejectionListsTheConnectionsThatDoExist() {
-        OlapMetaExplorer explorer =
-                new OlapMetaExplorer(new StubConnectionManager("unknown_foodmart", "unknown_bank"));
+        OlapMetaExplorer explorer = new OlapMetaExplorer(new StubConnectionManager("unknown_foodmart", "unknown_bank"));
 
         SaikuOlapException e =
                 assertThrows(SaikuOlapException.class, () -> explorer.getNativeConnection("designer_e2e"));
